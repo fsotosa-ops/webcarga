@@ -63,6 +63,7 @@ jobs:
             --min-instances=0
             --max-instances=3
             --service-account=${{ env.CLOUD_RUN_SA }}
+            --allow-unauthenticated
             --set-env-vars=BROWSER_HEADLESS=true
             --set-secrets=QANALYTICS_USER=qanalytics-user:latest,QANALYTICS_PASS=qanalytics-pass:latest,GCS_BUCKET_NAME=gcs-bucket-name:latest
 
