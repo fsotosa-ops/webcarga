@@ -62,12 +62,9 @@ class JobResult(BaseModel):
     source: str = Field(..., description="Nombre del TMS de origen (ej: 'qanalytics').")
     product: str = Field(..., description="Producto de datos (ej: 'monitor-trips').")
     client_name: str
-    extracted_at: date = Field(
+    timestamp: int = Field(
         ...,
-        description=(
-            "Fecha en que se ejecutó la extracción (no confundir con el rango "
-            "de los datos). Particiona los artefactos en el datalake."
-        ),
+        description="Unix epoch de la corrida de extracción. Identifica la versión del archivo.",
     )
     date_from: date
     date_to: date

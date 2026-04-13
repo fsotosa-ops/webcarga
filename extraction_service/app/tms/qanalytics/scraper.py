@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from datetime import date
 
 from playwright.async_api import (
@@ -8,7 +9,7 @@ from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
-from app.tms.base import BaseTMSExtractor, ExtractionArtifact, hive_path
+from app.tms.base import BaseTMSExtractor, ExtractionArtifact, build_path
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -40,14 +41,14 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         date_to: date,
         timeout_ms: int,
     ) -> ExtractionArtifact:
-        # `extracted_at` se fija UNA SOLA VEZ al inicio de la corrida — todos
-        # los paths derivados (local + GCS) lo comparten para que coincidan.
-        extracted_at = date.today()
+        # Timestamp Unix fijado UNA SOLA VEZ al inicio — todos los paths
+        # derivados (local + GCS) lo comparten para que coincidan.
+        ts = int(time.time())
 
         logger.info(
             f"Iniciando extracción QAnalytics — cliente={client_name} "
             f"desde={date_from.isoformat()} hasta={date_to.isoformat()} "
-            f"extracted_at={extracted_at.isoformat()}"
+            f"ts={ts}"
         )
 
         downloads_dir = os.path.join(os.getcwd(), "downloads")
@@ -89,7 +90,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 local_path = await self._download_export(
                     page,
                     client_name,
-                    extracted_at,
+                    ts,
                     date_from,
                     date_to,
                     downloads_dir,
@@ -100,7 +101,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                     source=self.SOURCE_NAME,
                     product=self.PRODUCT_NAME,
                     client_name=client_name,
-                    extracted_at=extracted_at,
+                    timestamp=ts,
                     date_from=date_from,
                     date_to=date_to,
                 )
@@ -182,7 +183,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         self,
         page: Page,
         client_name: str,
-        extracted_at: date,
+        timestamp: int,
         date_from: date,
         date_to: date,
         downloads_dir: str,
@@ -192,10 +193,8 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         Click al botón real de exportación (`onclick="exportar_tabla()"`,
         qanalytics.html:450). Genera un .xls vía el plugin jQuery table2excel.
 
-        El path local se construye con `hive_path` para mantener una ÚNICA
+        El path local se construye con `build_path` para mantener una ÚNICA
         fuente de verdad compartida con el blob de GCS (ver `app.tms.base`).
-        Re-runs en el mismo `extracted_at` sobreescriben (idempotente);
-        re-runs en otro día crean una partición nueva y conservan historial.
         """
         logger.info("[STEP export] Click botón de exportación")
         async with page.expect_download(timeout=timeout_ms) as download_info:
@@ -203,11 +202,11 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         download = await download_info.value
 
         ext = os.path.splitext(download.suggested_filename)[1] or ".xls"
-        relative_path = hive_path(
+        relative_path = build_path(
             source=self.SOURCE_NAME,
             product=self.PRODUCT_NAME,
             client=client_name,
-            extracted_at=extracted_at,
+            timestamp=timestamp,
             date_from=date_from,
             date_to=date_to,
             extension=ext,

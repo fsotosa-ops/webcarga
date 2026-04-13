@@ -3,44 +3,40 @@ from dataclasses import dataclass
 from datetime import date
 
 
-def hive_path(
+def build_path(
     *,
     source: str,
     product: str,
     client: str,
-    extracted_at: date,
+    timestamp: int,
     date_from: date,
     date_to: date,
     extension: str = ".xls",
 ) -> str:
     """
-    Construye un path Hive-style para los artefactos de extracción.
+    Construye el path para artefactos de extracción en local y GCS.
 
     Resultado:
-        tms/{source}/{product}/client={client}/extracted_at={YYYY-MM-DD}/from={YYYY-MM-DD}_to={YYYY-MM-DD}{ext}
+        tms/{source}/{product}/{client}/{client}_{YYYYMMDD}_{YYYYMMDD}_{timestamp}{ext}
 
-    Por qué Hive-style:
-      - Tools como Spark, BigQuery, Athena, DuckDB descubren automáticamente
-        las particiones `key=value` y las exponen como columnas. Cero parser custom.
-      - `tms/` es el prefijo raíz del datalake en Cloud Storage.
-      - `{source}` identifica el TMS (ej: qanalytics).
-      - `{product}` identifica el producto de datos (ej: monitor-trips, invoices).
-      - `extracted_at` particiona por fecha de corrida → re-extraer las mismas
-        fechas en otro día crea una nueva partición y conserva historial
-        (útil para datos tardíos / correcciones del proveedor / auditoría).
-      - El filename final encodea el RANGO de los datos (`from`/`to`) que es
-        ortogonal a la fecha de extracción.
+    Ejemplo:
+        tms/qanalytics/monitor-trips/walmart/walmart_20260413_20260413_1744584396.xls
+
+    Convenciones:
+      - `tms/{source}/{product}/` → prefijo fijo que identifica origen y tipo de dato.
+      - `{client}/` → carpeta por cliente para trazabilidad y filtrado.
+      - `{client}_{from}_{to}` → rango de datos extraídos.
+      - `_{timestamp}` → Unix epoch de la corrida. Garantiza unicidad incluso con
+        múltiples extracciones el mismo día.
 
     Esta función es la única fuente de verdad: el scraper la usa para el path
-    local, el runner la usa para el blob de GCS. Si cambian los segmentos, se
-    cambian acá una sola vez.
+    local, el runner la usa para el blob de GCS.
     """
+    fmt = "%Y%m%d"
     return (
-        f"tms/{source}/"
-        f"{product}/"
-        f"client={client}/"
-        f"extracted_at={extracted_at.isoformat()}/"
-        f"from={date_from.isoformat()}_to={date_to.isoformat()}{extension}"
+        f"tms/{source}/{product}/{client}/"
+        f"{client}_{date_from.strftime(fmt)}_{date_to.strftime(fmt)}"
+        f"_{timestamp}{extension}"
     )
 
 
@@ -52,7 +48,7 @@ class ExtractionArtifact:
     source: str
     product: str
     client_name: str
-    extracted_at: date
+    timestamp: int
     date_from: date
     date_to: date
 

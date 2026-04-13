@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from app.api.schemas import ExtractionRequest, Job, JobResult
 from app.core.config import settings
 from app.jobs.store import job_store
-from app.tms.base import hive_path
+from app.tms.base import build_path
 from app.tms.factory import get_tms_extractor
 from app.utils.gcs_client import upload_file_to_gcs
 
@@ -37,16 +37,16 @@ async def _run_job(job_id: str, source_name: str, request: ExtractionRequest) ->
         # job queda DONE con local_path válido. El pipeline puede reintentar
         # la subida o leer del filesystem si conoce el path.
         #
-        # IMPORTANTE: el blob_name se arma con el MISMO `hive_path` que usó
+        # IMPORTANTE: el blob_name se arma con el MISMO `build_path` que usó
         # el scraper para el archivo local — misma fuente de verdad, así el
         # path de GCS y el local son trazables uno con el otro.
         gcs_uri = None
         try:
-            blob_name = hive_path(
+            blob_name = build_path(
                 source=artifact.source,
                 product=artifact.product,
                 client=artifact.client_name,
-                extracted_at=artifact.extracted_at,
+                timestamp=artifact.timestamp,
                 date_from=artifact.date_from,
                 date_to=artifact.date_to,
             )
@@ -66,7 +66,7 @@ async def _run_job(job_id: str, source_name: str, request: ExtractionRequest) ->
                 source=artifact.source,
                 product=artifact.product,
                 client_name=artifact.client_name,
-                extracted_at=artifact.extracted_at,
+                timestamp=artifact.timestamp,
                 date_from=artifact.date_from,
                 date_to=artifact.date_to,
             ),
