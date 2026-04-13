@@ -62,6 +62,7 @@ jobs:
             --concurrency=1
             --min-instances=0
             --max-instances=3
+            --no-cpu-throttling
             --service-account=${{ env.CLOUD_RUN_SA }}
             --allow-unauthenticated
             --set-env-vars=BROWSER_HEADLESS=true

@@ -1,0 +1,58 @@
+{
+insertId: "69dd724c000bdc3a9f36e442"
+jsonPayload: {
+message: "Iniciando extracción QAnalytics — cliente=walmart desde=2026-04-13 hasta=2026-04-13 extracted_at=2026-04-13"
+name: "app.tms.qanalytics.scraper"
+timestamp: "2026-04-13 22:46:36,777"
+}
+labels: {3}
+logName: "projects/webcarga-dev-493220/logs/run.googleapis.com%2Fstdout"
+receiveTimestamp: "2026-04-13T22:46:37.114444744Z"
+resource: {2}
+severity: "INFO"
+timestamp: "2026-04-13T22:46:36.777274Z"
+}
+
+insertId: "69dd7310000be0c483ff025a"
+jsonPayload: {
+exc_info: "Traceback (most recent call last):
+  File "/app/app/api/routes.py", line 29, in _run_job
+    artifact = await extractor.extract(
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/tms/qanalytics/scraper.py", line 57, in extract
+    browser = await p.firefox.launch(headless=settings.BROWSER_HEADLESS)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/playwright/async_api/_generated.py", line 14740, in launch
+    await self._impl_obj.launch(
+  File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_browser_type.py", line 95, in launch
+    Browser, from_channel(await self._channel.send("launch", params))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_connection.py", line 62, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_connection.py", line 492, in wrap_api_call
+    return await cb()
+           ^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_connection.py", line 100, in inner_send
+    result = next(iter(done)).result()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+playwright._impl._errors.Error: Executable doesn't exist at /home/appuser/.cache/ms-playwright/firefox-1429/firefox/firefox
+╔════════════════════════════════════════════════════════════╗
+║ Looks like Playwright was just installed or updated.       ║
+║ Please run the following command to download new browsers: ║
+║                                                            ║
+║     playwright install                                     ║
+║                                                            ║
+║ <3 Playwright Team                                         ║
+╚════════════════════════════════════════════════════════════╝"
+message: "[job b1f371b9-2cf5-4d32-a90f-9f9c483b12ff] Falló la extracción"
+name: "app.api.routes"
+timestamp: "2026-04-13 22:49:52,579"
+}
+labels: {3}
+logName: "projects/webcarga-dev-493220/logs/run.googleapis.com%2Fstdout"
+receiveTimestamp: "2026-04-13T22:49:52.787574989Z"
+resource: {2}
+severity: "ERROR"
+timestamp: "2026-04-13T22:49:52.778436Z"
+}

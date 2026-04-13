@@ -8,16 +8,23 @@ COPY pyproject.toml .
 # Instalar dependencias (sin el proyecto en sí aún)
 RUN pip install --no-cache-dir .
 
-# Instalar Firefox y sus dependencias de sistema
-RUN playwright install --with-deps firefox
-
-# Copiar código de la aplicación (cambios de código no invalidan el layer de deps)
-COPY app/ app/
-
-# Usuario no-root por seguridad
+# Crear usuario no-root ANTES de instalar browsers
 RUN useradd -m appuser \
     && mkdir -p /app/downloads \
     && chown -R appuser:appuser /app/downloads
+
+# Instalar Firefox como appuser para que quede en /home/appuser/.cache/ms-playwright/
+USER appuser
+RUN playwright install firefox
+
+# Volver a root para instalar dependencias de sistema de Firefox
+USER root
+RUN playwright install-deps firefox
+
+# Copiar código de la aplicación
+COPY app/ app/
+
+# Correr como non-root
 USER appuser
 
 ENV PORT=8080
