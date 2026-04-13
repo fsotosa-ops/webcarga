@@ -6,6 +6,7 @@ from datetime import date
 def hive_path(
     *,
     source: str,
+    product: str,
     client: str,
     extracted_at: date,
     date_from: date,
@@ -16,13 +17,14 @@ def hive_path(
     Construye un path Hive-style para los artefactos de extracción.
 
     Resultado:
-        {source}/client={client}/extracted_at={YYYY-MM-DD}/from={YYYY-MM-DD}_to={YYYY-MM-DD}{ext}
+        tms/{source}/{product}/client={client}/extracted_at={YYYY-MM-DD}/from={YYYY-MM-DD}_to={YYYY-MM-DD}{ext}
 
     Por qué Hive-style:
       - Tools como Spark, BigQuery, Athena, DuckDB descubren automáticamente
         las particiones `key=value` y las exponen como columnas. Cero parser custom.
-      - El primer segmento (`source`) NO usa `key=` porque actúa como "tabla" raíz;
-        los siguientes son partition keys.
+      - `tms/` es el prefijo raíz que agrupa todas las fuentes TMS.
+      - `{source}` identifica el TMS (ej: qanalytics).
+      - `{product}` identifica el producto de datos (ej: monitor-trips, invoices).
       - `extracted_at` particiona por fecha de corrida → re-extraer las mismas
         fechas en otro día crea una nueva partición y conserva historial
         (útil para datos tardíos / correcciones del proveedor / auditoría).
@@ -34,7 +36,8 @@ def hive_path(
     cambian acá una sola vez.
     """
     return (
-        f"{source}/"
+        f"tms/{source}/"
+        f"{product}/"
         f"client={client}/"
         f"extracted_at={extracted_at.isoformat()}/"
         f"from={date_from.isoformat()}_to={date_to.isoformat()}{extension}"
@@ -47,6 +50,7 @@ class ExtractionArtifact:
 
     local_path: str
     source: str
+    product: str
     client_name: str
     extracted_at: date
     date_from: date
@@ -57,6 +61,8 @@ class BaseTMSExtractor(ABC):
     # Cada implementación debe declarar su nombre canónico — debe coincidir
     # con la key en `app.tms.factory.EXTRACTORS`.
     SOURCE_NAME: str = ""
+    # Producto de datos que extrae este extractor (ej: monitor-trips, invoices).
+    PRODUCT_NAME: str = ""
 
     @abstractmethod
     async def extract(

@@ -44,6 +44,7 @@ async def _run_job(job_id: str, source_name: str, request: ExtractionRequest) ->
         try:
             blob_name = hive_path(
                 source=artifact.source,
+                product=artifact.product,
                 client=artifact.client_name,
                 extracted_at=artifact.extracted_at,
                 date_from=artifact.date_from,
@@ -63,6 +64,7 @@ async def _run_job(job_id: str, source_name: str, request: ExtractionRequest) ->
                 local_path=artifact.local_path,
                 gcs_uri=gcs_uri,
                 source=artifact.source,
+                product=artifact.product,
                 client_name=artifact.client_name,
                 extracted_at=artifact.extracted_at,
                 date_from=artifact.date_from,
@@ -92,6 +94,22 @@ async def get_job(job_id: str) -> Job:
     return job
 
 
+@router.get("/extract/sources")
+def list_sources():
+    from app.tms.factory import EXTRACTORS
+
+    return {
+        "sources": [
+            {"name": name, "product": ext.PRODUCT_NAME}
+            for name, ext in EXTRACTORS.items()
+        ]
+    }
+
+
 @router.get("/health")
-def health_check():
-    return {"status": "ok"}
+async def health_check():
+    return {
+        "status": "ok",
+        "version": settings.API_VERSION,
+        "jobs_in_memory": len(job_store._jobs),
+    }

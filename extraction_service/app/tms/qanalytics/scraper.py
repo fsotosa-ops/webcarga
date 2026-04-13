@@ -30,6 +30,7 @@ DATE_FORMAT_APP = "%d-%m-%Y"
 
 class QAnalyticsExtractor(BaseTMSExtractor):
     SOURCE_NAME = "qanalytics"
+    PRODUCT_NAME = "monitor-trips"
 
     async def extract(
         self,
@@ -53,8 +54,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         os.makedirs(downloads_dir, exist_ok=True)
 
         async with async_playwright() as p:
-            # Firefox es más estable con los certificados de qanalytics.cl
-            browser = await p.firefox.launch(headless=False)
+            browser = await p.chromium.launch(headless=settings.BROWSER_HEADLESS)
             context = await browser.new_context(
                 accept_downloads=True,
                 ignore_https_errors=True,
@@ -98,6 +98,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 return ExtractionArtifact(
                     local_path=local_path,
                     source=self.SOURCE_NAME,
+                    product=self.PRODUCT_NAME,
                     client_name=client_name,
                     extracted_at=extracted_at,
                     date_from=date_from,
@@ -204,6 +205,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         ext = os.path.splitext(download.suggested_filename)[1] or ".xls"
         relative_path = hive_path(
             source=self.SOURCE_NAME,
+            product=self.PRODUCT_NAME,
             client=client_name,
             extracted_at=extracted_at,
             date_from=date_from,

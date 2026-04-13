@@ -60,6 +60,7 @@ class JobResult(BaseModel):
         ),
     )
     source: str = Field(..., description="Nombre del TMS de origen (ej: 'qanalytics').")
+    product: str = Field(..., description="Producto de datos (ej: 'monitor-trips').")
     client_name: str
     extracted_at: date = Field(
         ...,
