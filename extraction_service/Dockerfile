@@ -8,8 +8,8 @@ COPY pyproject.toml .
 # Instalar dependencias (sin el proyecto en sí aún)
 RUN pip install --no-cache-dir .
 
-# Instalar Chromium y sus dependencias de sistema
-RUN playwright install --with-deps chromium
+# Instalar Firefox y sus dependencias de sistema
+RUN playwright install --with-deps firefox
 
 # Copiar código de la aplicación (cambios de código no invalidan el layer de deps)
 COPY app/ app/
