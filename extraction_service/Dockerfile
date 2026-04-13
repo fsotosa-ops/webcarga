@@ -15,7 +15,9 @@ RUN playwright install --with-deps chromium
 COPY app/ app/
 
 # Usuario no-root por seguridad
-RUN useradd -m appuser
+RUN useradd -m appuser \
+    && mkdir -p /app/downloads \
+    && chown -R appuser:appuser /app/downloads
 USER appuser
 
 ENV PORT=8080

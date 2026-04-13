@@ -22,7 +22,7 @@ def hive_path(
     Por qué Hive-style:
       - Tools como Spark, BigQuery, Athena, DuckDB descubren automáticamente
         las particiones `key=value` y las exponen como columnas. Cero parser custom.
-      - `tms/` es el prefijo raíz que agrupa todas las fuentes TMS.
+      - `tms/` es el prefijo raíz del datalake en Cloud Storage.
       - `{source}` identifica el TMS (ej: qanalytics).
       - `{product}` identifica el producto de datos (ej: monitor-trips, invoices).
       - `extracted_at` particiona por fecha de corrida → re-extraer las mismas
