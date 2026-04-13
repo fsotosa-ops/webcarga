@@ -54,7 +54,15 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         os.makedirs(downloads_dir, exist_ok=True)
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=settings.BROWSER_HEADLESS)
+            browser = await p.chromium.launch(
+                headless=settings.BROWSER_HEADLESS,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--single-process",
+                ],
+            )
             context = await browser.new_context(
                 accept_downloads=True,
                 ignore_https_errors=True,
