@@ -22,5 +22,16 @@ class Settings(BaseSettings):
     WINGSUITE_PASS: str
     WINGSUITE_URL: str = "https://suite.wing.cl/web/core/inicio_sesion.php"
 
+    # Cap de jobs concurrentes por instancia. En Cloud Run la instancia se
+    # marca "libre" cuando sale el 202, pero el scraper sigue corriendo en
+    # background — sin este cap dos browsers de TMS distintos colisionan por
+    # memoria/CPU en la misma instancia. 1 = serial (matches concurrency=1
+    # del servicio); subir solo si la instancia tiene RAM/CPU de sobra.
+    MAX_CONCURRENT_JOBS: int = 1
+    # Hard cap por job — si un scraper se cuelga (login atorado, XHR que
+    # nunca llega, redirect loop), el job muere en FAILED y el semáforo se
+    # libera. Evita que un job zombie bloquee la instancia para siempre.
+    JOB_TIMEOUT_MS: int = 600_000
+
 
 settings = Settings()

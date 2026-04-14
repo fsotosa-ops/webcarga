@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# Serializa extracciones dentro de la misma instancia. Cloud Run marca la
+# instancia como libre al devolver 202, pero el `asyncio.create_task` sigue
+# corriendo en background; sin este semáforo, un segundo POST cae en la
+# misma instancia y levanta un segundo Firefox que compite por RAM/CPU con
+# el que ya estaba, causando timeouts de sesión (caso reproducido:
+# wingsuite en curso + POST qanalytics → login qanalytics falló).
+#
+# Con MAX_CONCURRENT_JOBS=1 esto equivale a una FIFO de un slot por
+# instancia; el escalado se hace sumando instancias (max-instances en Cloud Run).
+_job_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_JOBS)
+
+
 # Respuestas de error reutilizadas en la doc OpenAPI — mantienen un solo
 # lugar de verdad para los shapes de error que expone el API.
 ERROR_400 = {
@@ -34,62 +46,81 @@ async def _run_job(
     creó — usamos `asyncio.create_task` (no `BackgroundTasks`) porque las
     extracciones tardan minutos y no queremos que el ciclo de vida del
     response las afecte.
+
+    El semáforo serializa extracciones en la misma instancia — ver el
+    comentario junto a `_job_semaphore`. Los jobs que llegan mientras
+    otro corre quedan `queued` hasta que el slot se libere.
     """
-    await job_store.mark_running(job_id)
-    try:
-        extractor = get_adapter(source, product)
-        artifact = await extractor.extract(
-            client_name=request.client_name,
-            date_from=request.date_from,
-            date_to=request.date_to,
-            timeout_ms=request.timeout_ms,
-        )
-
-        # Subida a GCS best-effort: si falla, dejamos gcs_uri=None pero el
-        # job queda DONE con local_path válido. El pipeline puede reintentar
-        # la subida o leer del filesystem si conoce el path.
-        #
-        # IMPORTANTE: el blob_name se arma con el MISMO `build_path` que usó
-        # el scraper para el archivo local — misma fuente de verdad, así el
-        # path de GCS y el local son trazables uno con el otro.
-        gcs_uri = None
+    async with _job_semaphore:
+        await job_store.mark_running(job_id)
         try:
-            # Respetamos la extensión real del artifact — cada TMS produce un
-            # formato distinto (qanalytics=.xls, wingsuite=.csv).
-            ext = os.path.splitext(artifact.local_path)[1] or ".bin"
-            blob_name = build_path(
-                source=artifact.source,
-                product=artifact.product,
-                client=artifact.client_name,
-                timestamp=artifact.timestamp,
-                date_from=artifact.date_from,
-                date_to=artifact.date_to,
-                extension=ext,
+            extractor = get_adapter(source, product)
+            # Hard timeout por job: si el scraper se cuelga, el job muere
+            # FAILED y el semáforo se libera. Sin esto, un job zombie
+            # bloquea la instancia hasta que Cloud Run la recicle.
+            artifact = await asyncio.wait_for(
+                extractor.extract(
+                    client_name=request.client_name,
+                    date_from=request.date_from,
+                    date_to=request.date_to,
+                    timeout_ms=request.timeout_ms,
+                ),
+                timeout=settings.JOB_TIMEOUT_MS / 1000,
             )
-            gcs_uri = upload_file_to_gcs(
-                local_file_path=artifact.local_path,
-                bucket_name=settings.GCS_BUCKET_NAME,
-                destination_blob_name=blob_name,
-            )
-        except Exception as gcs_err:
-            logger.error(f"[job {job_id}] Falló subida a GCS: {gcs_err}")
 
-        await job_store.mark_done(
-            job_id,
-            JobResult(
-                local_path=artifact.local_path,
-                gcs_uri=gcs_uri,
-                source=artifact.source,
-                product=artifact.product,
-                client_name=artifact.client_name,
-                timestamp=artifact.timestamp,
-                date_from=artifact.date_from,
-                date_to=artifact.date_to,
-            ),
-        )
-    except Exception as e:
-        logger.exception(f"[job {job_id}] Falló la extracción")
-        await job_store.mark_failed(job_id, str(e))
+            # Subida a GCS best-effort: si falla, dejamos gcs_uri=None pero el
+            # job queda DONE con local_path válido. El pipeline puede reintentar
+            # la subida o leer del filesystem si conoce el path.
+            #
+            # IMPORTANTE: el blob_name se arma con el MISMO `build_path` que usó
+            # el scraper para el archivo local — misma fuente de verdad, así el
+            # path de GCS y el local son trazables uno con el otro.
+            gcs_uri = None
+            try:
+                # Respetamos la extensión real del artifact — cada TMS produce un
+                # formato distinto (qanalytics=.xls, wingsuite=.csv).
+                ext = os.path.splitext(artifact.local_path)[1] or ".bin"
+                blob_name = build_path(
+                    source=artifact.source,
+                    product=artifact.product,
+                    client=artifact.client_name,
+                    timestamp=artifact.timestamp,
+                    date_from=artifact.date_from,
+                    date_to=artifact.date_to,
+                    extension=ext,
+                )
+                gcs_uri = upload_file_to_gcs(
+                    local_file_path=artifact.local_path,
+                    bucket_name=settings.GCS_BUCKET_NAME,
+                    destination_blob_name=blob_name,
+                )
+            except Exception as gcs_err:
+                logger.error(f"[job {job_id}] Falló subida a GCS: {gcs_err}")
+
+            await job_store.mark_done(
+                job_id,
+                JobResult(
+                    local_path=artifact.local_path,
+                    gcs_uri=gcs_uri,
+                    source=artifact.source,
+                    product=artifact.product,
+                    client_name=artifact.client_name,
+                    timestamp=artifact.timestamp,
+                    date_from=artifact.date_from,
+                    date_to=artifact.date_to,
+                ),
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[job {job_id}] Timeout ({settings.JOB_TIMEOUT_MS}ms) — "
+                "el scraper no terminó a tiempo."
+            )
+            await job_store.mark_failed(
+                job_id, f"Job timeout after {settings.JOB_TIMEOUT_MS}ms"
+            )
+        except Exception as e:
+            logger.exception(f"[job {job_id}] Falló la extracción")
+            await job_store.mark_failed(job_id, str(e))
 
 
 @router.post(
