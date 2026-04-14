@@ -5,6 +5,8 @@
 - Deploy de extraction_service en Cloud Run con CI/CD via GitHub Actions
 - Servicio escalable para múltiples TMS ("torres de control")
 - QAnalytics adapter escribe en `tms/qanalytics/monitor-trips/`
+- Wingsuite adapter escribe en `tms/wingsuite/viajes-transportista/` (integrado 2026-04-14, séptima iteración — ver `extraction_service/AGENTLOG.md` para detalle)
+- API unificado (octava iteración, 2026-04-14): `POST /jobs` con `{source, product, ...}` en el body, producto canónico `trips` para qanalytics y wingsuite. Endpoints legacy `/extract/*` quedan como alias deprecados.
 
 ## 2. Qué Hicimos
 
@@ -56,6 +58,9 @@
 - [ ] Push a main para triggear primer deploy
 - [ ] Verificar health check en Cloud Run URL
 - [ ] Test E2E: POST /extract/qanalytics → job DONE con gcs_uri correcto
+- [x] Integrar Wingsuite como nuevo TMS (ver `extraction_service/AGENTLOG.md`)
+- [ ] Test E2E Wingsuite: POST /extract/wingsuite → job DONE con gcs_uri bajo `tms/wingsuite/viajes-transportista/...`
+- [ ] Agregar secrets `WINGSUITE_USER`/`WINGSUITE_PASS` a init-gcp.sh y deploy.yml
 
 ## 4. Decisiones de Arquitectura
 - **Chromium** sobre Firefox (mejor soporte headless, alineado con Dockerfile)

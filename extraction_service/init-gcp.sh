@@ -33,9 +33,11 @@ GITHUB_ORG_OR_USER="fsotosa-ops"  # ← CAMBIAR: tu usuario u org de GitHub
 GITHUB_REPO="webcarga"                  # ← CAMBIAR: nombre del repo en GitHub
 
 # Secrets (valores que se guardarán en Secret Manager)
-QANALYTICS_USER_VALUE="76376879-1"      # ← CAMBIAR si es diferente
-QANALYTICS_PASS_VALUE="q8791"           # ← CAMBIAR si es diferente
-GCS_BUCKET_VALUE="sandbox-webcarga"     # ← CAMBIAR si es diferente
+QANALYTICS_USER_VALUE="76376879-1"             # ← CAMBIAR si es diferente
+QANALYTICS_PASS_VALUE="q8791"                  # ← CAMBIAR si es diferente
+WINGSUITE_USER_VALUE="operaciones@webcarga.com"  # ← CAMBIAR si es diferente
+WINGSUITE_PASS_VALUE="webcarga2024"            # ← CAMBIAR si es diferente
+GCS_BUCKET_VALUE="sandbox-webcarga"            # ← CAMBIAR si es diferente
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "══════════════════════════════════════════════════════════════"
@@ -89,6 +91,8 @@ create_secret() {
 
 create_secret "qanalytics-user" "${QANALYTICS_USER_VALUE}"
 create_secret "qanalytics-pass" "${QANALYTICS_PASS_VALUE}"
+create_secret "wingsuite-user" "${WINGSUITE_USER_VALUE}"
+create_secret "wingsuite-pass" "${WINGSUITE_PASS_VALUE}"
 create_secret "gcs-bucket-name" "${GCS_BUCKET_VALUE}"
 
 # ─── 5. Crear Service Accounts ───────────────────────────────────────────────

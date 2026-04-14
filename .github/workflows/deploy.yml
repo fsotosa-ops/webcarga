@@ -66,7 +66,7 @@ jobs:
             --service-account=${{ env.CLOUD_RUN_SA }}
             --allow-unauthenticated
             --set-env-vars=BROWSER_HEADLESS=true
-            --set-secrets=QANALYTICS_USER=qanalytics-user:latest,QANALYTICS_PASS=qanalytics-pass:latest,GCS_BUCKET_NAME=gcs-bucket-name:latest
+            --set-secrets=QANALYTICS_USER=qanalytics-user:latest,QANALYTICS_PASS=qanalytics-pass:latest,WINGSUITE_USER=wingsuite-user:latest,WINGSUITE_PASS=wingsuite-pass:latest,GCS_BUCKET_NAME=gcs-bucket-name:latest
 
       - name: Show service URL
         run: |

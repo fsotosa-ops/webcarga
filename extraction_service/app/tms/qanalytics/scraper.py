@@ -31,7 +31,10 @@ DATE_FORMAT_APP = "%d-%m-%Y"
 
 class QAnalyticsExtractor(BaseTMSExtractor):
     SOURCE_NAME = "qanalytics"
-    PRODUCT_NAME = "monitor-trips"
+    # "trips" es el nombre canónico del producto de datos — compartido con
+    # wingsuite y cualquier futuro TMS que exponga viajes. La nomenclatura
+    # interna de QAnalytics ("monitor-trips") queda como detalle de implementación.
+    PRODUCT_NAME = "trips"
 
     async def extract(
         self,

@@ -2,7 +2,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     PROJECT_NAME: str = "Extraction API Service"
     API_VERSION: str = "v1"
@@ -13,6 +17,10 @@ class Settings(BaseSettings):
     QANALYTICS_USER: str
     QANALYTICS_PASS: str
     QANALYTICS_URL: str = "https://www.qanalytics.cl/qnew/inicioQMGPS.aspx#"
+
+    WINGSUITE_USER: str
+    WINGSUITE_PASS: str
+    WINGSUITE_URL: str = "https://suite.wing.cl/web/core/inicio_sesion.php"
 
 
 settings = Settings()

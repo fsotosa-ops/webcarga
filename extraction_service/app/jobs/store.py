@@ -20,12 +20,19 @@ class JobStore:
         self._jobs: dict[str, Job] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, source_name: str, request: ExtractionRequest) -> Job:
+    async def create(
+        self,
+        *,
+        source: str,
+        product: str,
+        request: ExtractionRequest,
+    ) -> Job:
         async with self._lock:
             now = datetime.now(timezone.utc)
             job = Job(
                 job_id=str(uuid.uuid4()),
-                source_name=source_name,
+                source=source,
+                product=product,
                 status=JobStatus.QUEUED,
                 created_at=now,
                 updated_at=now,

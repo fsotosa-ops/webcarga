@@ -2,36 +2,37 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ExtractionRequest(BaseModel):
-    """
-    Request body para disparar una extracción.
+    """Parámetros de la corrida — independientes del TMS y del producto.
 
-    Diseñado para consumo desde un data pipeline: el cliente SIEMPRE pasa
-    fechas explícitas en formato ISO `YYYY-MM-DD`. Sin defaults, sin atajos
-    relativos, sin formatos alternativos. Esto elimina por construcción los
-    422 ambiguos que surgían cuando había múltiples caminos de validación.
+    Queda almacenado en `Job.request`. En `POST /jobs` llega envuelto en
+    `JobRequest` (que suma `source` y `product`).
     """
 
     client_name: str = Field(
         ...,
         min_length=1,
-        description="Nombre del cliente para la extracción (ej: 'walmart').",
+        description="Identificador del cliente en el TMS (login, mandante o tenant según el adapter).",
+        examples=["walmart"],
     )
     date_from: date = Field(
         ...,
-        description="Fecha desde, ISO YYYY-MM-DD (inclusive).",
+        description="Inicio del rango de datos (inclusive). Fecha de los datos, no de la corrida.",
+        examples=["2026-04-01"],
     )
     date_to: date = Field(
         ...,
-        description="Fecha hasta, ISO YYYY-MM-DD (inclusive).",
+        description="Fin del rango de datos (inclusive). Debe ser ≥ `date_from`.",
+        examples=["2026-04-14"],
     )
     timeout_ms: int = Field(
         90_000,
         ge=1_000,
-        description="Timeout por operación de Playwright, en milisegundos.",
+        description="Timeout por operación Playwright, en ms. Subir a `180000+` para rangos grandes o TMS lentos.",
+        examples=[180000],
     )
 
     @model_validator(mode="after")
@@ -39,6 +40,37 @@ class ExtractionRequest(BaseModel):
         if self.date_from > self.date_to:
             raise ValueError("'date_from' no puede ser posterior a 'date_to'.")
         return self
+
+
+class JobRequest(ExtractionRequest):
+    """Body de `POST /jobs`. Extiende `ExtractionRequest` con las dos
+    dimensiones que identifican qué se extrae y de dónde."""
+
+    source: str = Field(
+        ...,
+        min_length=1,
+        description="TMS del cual extraer. Ver `GET /sources` para la lista vigente.",
+        examples=["wingsuite"],
+    )
+    product: str = Field(
+        ...,
+        min_length=1,
+        description="Producto de datos canónico (vocabulario del servicio, no del proveedor).",
+        examples=["trips"],
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "source": "wingsuite",
+                "product": "trips",
+                "client_name": "demo",
+                "date_from": "2026-04-01",
+                "date_to": "2026-04-14",
+                "timeout_ms": 180000,
+            }
+        }
+    )
 
 
 class JobStatus(str, Enum):
@@ -49,35 +81,46 @@ class JobStatus(str, Enum):
 
 
 class JobResult(BaseModel):
-    """Resultado final de una corrida exitosa."""
+    """Artefacto producido por una corrida exitosa."""
 
-    local_path: str = Field(..., description="Ruta local del archivo descargado.")
+    local_path: str = Field(
+        ...,
+        description="Ruta del archivo en el contenedor. Efímero en Cloud Run; la fuente de verdad es `gcs_uri`.",
+    )
     gcs_uri: Optional[str] = Field(
         None,
-        description=(
-            "URI GCS del archivo subido. Puede ser None si la subida falló "
-            "pero el archivo local existe — el pipeline puede reintentar."
-        ),
+        description="URI del blob en GCS. `null` si la subida falló (el pipeline puede reintentar desde `local_path`).",
     )
-    source: str = Field(..., description="Nombre del TMS de origen (ej: 'qanalytics').")
-    product: str = Field(..., description="Producto de datos (ej: 'monitor-trips').")
-    client_name: str
+    source: str = Field(..., description="TMS de origen (espejo del input).")
+    product: str = Field(..., description="Producto extraído (espejo del input).")
+    client_name: str = Field(..., description="Cliente solicitado (espejo del input).")
     timestamp: int = Field(
         ...,
-        description="Unix epoch de la corrida de extracción. Identifica la versión del archivo.",
+        description="Unix epoch del arranque de la corrida. Sufijo del filename, identifica esta ejecución.",
     )
-    date_from: date
-    date_to: date
+    date_from: date = Field(..., description="Inicio del rango extraído (espejo del input).")
+    date_to: date = Field(..., description="Fin del rango extraído (espejo del input).")
 
 
 class Job(BaseModel):
-    """Representación pública de un job de extracción."""
+    """Representación pública de un job. Devuelto por `POST /jobs` y
+    `GET /jobs/{job_id}` en cualquier estado."""
 
-    job_id: str
-    source_name: str
-    status: JobStatus
-    created_at: datetime
-    updated_at: datetime
-    request: ExtractionRequest
-    result: Optional[JobResult] = None
-    error: Optional[str] = None
+    job_id: str = Field(..., description="UUID asignado al crear el job. Usar con `GET /jobs/{job_id}`.")
+    source: str = Field(..., description="TMS que ejecuta el job.")
+    product: str = Field(..., description="Producto de datos solicitado.")
+    status: JobStatus = Field(
+        ...,
+        description="`queued` → `running` → (`done` | `failed`).",
+    )
+    created_at: datetime = Field(..., description="Timestamp UTC de creación.")
+    updated_at: datetime = Field(..., description="Timestamp UTC del último cambio de estado.")
+    request: ExtractionRequest = Field(..., description="Parámetros originales del job.")
+    result: Optional[JobResult] = Field(
+        None,
+        description="Poblado solo cuando `status=done`. `null` en los demás estados.",
+    )
+    error: Optional[str] = Field(
+        None,
+        description="Mensaje de error. Poblado solo cuando `status=failed`.",
+    )
