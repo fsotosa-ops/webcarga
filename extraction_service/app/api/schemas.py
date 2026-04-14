@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ExtractionRequest(BaseModel):
@@ -35,6 +35,16 @@ class ExtractionRequest(BaseModel):
         examples=[180000],
     )
 
+    @field_validator("client_name", mode="before")
+    @classmethod
+    def _normalize_client_name(cls, v):
+        # Normaliza a minúsculas + trim. Afecta filename, GCS blob y el
+        # valor pasado al TMS — mantenemos un solo casing canónico para
+        # evitar fragmentación del datalake (`WALMART_...` vs `walmart_...`).
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+
     @model_validator(mode="after")
     def _check_range(self) -> "ExtractionRequest":
         if self.date_from > self.date_to:
@@ -58,6 +68,13 @@ class JobRequest(ExtractionRequest):
         description="Producto de datos canónico (vocabulario del servicio, no del proveedor).",
         examples=["trips"],
     )
+
+    @field_validator("source", "product", mode="before")
+    @classmethod
+    def _normalize_source_product(cls, v):
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
 
     model_config = ConfigDict(
         json_schema_extra={

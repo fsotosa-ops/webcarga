@@ -8,7 +8,7 @@ from app.api.schemas import ExtractionRequest, Job, JobRequest, JobResult
 from app.core.config import settings
 from app.jobs.store import job_store
 from app.tms.base import build_path
-from app.tms.factory import get_adapter, get_tms_extractor, list_sources
+from app.tms.factory import get_adapter, list_sources
 from app.utils.gcs_client import upload_file_to_gcs
 
 logger = logging.getLogger(__name__)
@@ -92,11 +92,6 @@ async def _run_job(
         await job_store.mark_failed(job_id, str(e))
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# API unificada — jobs como recurso de primera clase.
-# ──────────────────────────────────────────────────────────────────────────────
-
-
 @router.post(
     "/jobs",
     status_code=202,
@@ -178,69 +173,3 @@ async def health_check():
         "version": settings.API_VERSION,
         "jobs_in_memory": len(job_store._jobs),
     }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Endpoints legacy — mantenidos como alias deprecados para no romper
-# pipelines que aún apuntan al contrato viejo. Eliminar cuando todos los
-# consumidores migren a `/jobs` y `/sources`.
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-@router.post(
-    "/extract/{source_name}",
-    status_code=202,
-    response_model=Job,
-    deprecated=True,
-    tags=["Legacy"],
-    summary="[DEPRECATED] Disparar extracción",
-    response_description="Job creado. Alias a `POST /jobs`.",
-)
-async def trigger_extraction_legacy(
-    source_name: str, request: ExtractionRequest
-) -> Job:
-    """**Deprecado** — migrar a `POST /jobs` con `{source, product}` en el body.
-
-    Infere `product` desde el único producto que expone el TMS. Se vuelve
-    ambiguo cuando un TMS soporte múltiples productos; eliminar cuando los
-    consumidores terminen de migrar.
-    """
-    extractor = get_tms_extractor(source_name)
-    logger.warning(
-        f"[deprecated] POST /extract/{source_name} — migrar a POST /jobs "
-        f"con {{'source': '{source_name}', 'product': '{extractor.PRODUCT_NAME}', ...}}"
-    )
-    job = await job_store.create(
-        source=source_name,
-        product=extractor.PRODUCT_NAME,
-        request=request,
-    )
-    asyncio.create_task(
-        _run_job(job.job_id, source_name, extractor.PRODUCT_NAME, request)
-    )
-    return job
-
-
-@router.get(
-    "/extract/jobs/{job_id}",
-    response_model=Job,
-    deprecated=True,
-    tags=["Legacy"],
-    summary="[DEPRECATED] Consultar job",
-    response_description="Alias a `GET /jobs/{job_id}`.",
-)
-async def get_job_legacy(job_id: str) -> Job:
-    """**Deprecado** — migrar a `GET /jobs/{job_id}`."""
-    return await get_job(job_id)
-
-
-@router.get(
-    "/extract/sources",
-    deprecated=True,
-    tags=["Legacy"],
-    summary="[DEPRECATED] Listar sources",
-    response_description="Alias a `GET /sources`.",
-)
-def list_sources_legacy():
-    """**Deprecado** — migrar a `GET /sources`."""
-    return get_sources()

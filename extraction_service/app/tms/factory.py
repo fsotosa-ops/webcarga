@@ -22,9 +22,8 @@ def list_sources() -> list[dict]:
     ]
 
 
-def get_tms_extractor(source_name: str) -> BaseTMSExtractor:
-    """Resuelve un extractor por `source` únicamente. Usado por el endpoint
-    legacy `POST /extract/{source}` donde el `product` se deriva del adapter."""
+def _get_by_source(source_name: str) -> BaseTMSExtractor:
+    """Lookup por `source` únicamente. Helper interno de `get_adapter`."""
     extractor = EXTRACTORS.get(source_name.lower())
     if not extractor:
         available = ", ".join(sorted(EXTRACTORS.keys()))
@@ -42,7 +41,7 @@ def get_adapter(source: str, product: str) -> BaseTMSExtractor:
     puede pedir un producto que el TMS no expone (ej. `qanalytics/invoices`
     cuando qanalytics solo expone `trips`).
     """
-    extractor = get_tms_extractor(source)
+    extractor = _get_by_source(source)
     if extractor.PRODUCT_NAME.lower() != product.lower():
         raise HTTPException(
             status_code=400,

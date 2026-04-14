@@ -57,13 +57,6 @@ TAGS_METADATA = [
         "name": "Ops",
         "description": "Health checks y métricas operacionales.",
     },
-    {
-        "name": "Legacy",
-        "description": (
-            "Endpoints deprecados — alias al contrato `/jobs` mientras "
-            "los consumidores migran. Eliminar cuando el uso caiga a 0."
-        ),
-    },
 ]
 
 app = FastAPI(
