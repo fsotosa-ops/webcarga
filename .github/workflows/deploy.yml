@@ -56,9 +56,9 @@ jobs:
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           flags: >-
-            --memory=2Gi
+            --memory=4Gi
             --cpu=2
-            --timeout=300
+            --timeout=600
             --concurrency=1
             --min-instances=0
             --max-instances=3
@@ -66,7 +66,7 @@ jobs:
             --service-account=${{ env.CLOUD_RUN_SA }}
             --allow-unauthenticated
             --set-env-vars=BROWSER_HEADLESS=true
-            --set-secrets=QANALYTICS_USER=qanalytics-user:latest,QANALYTICS_PASS=qanalytics-pass:latest,WINGSUITE_USER=wingsuite-user:latest,WINGSUITE_PASS=wingsuite-pass:latest,GCS_BUCKET_NAME=gcs-bucket-name:latest
+            --set-secrets=QANALYTICS_USER=qanalytics-user:latest,QANALYTICS_PASS=qanalytics-pass:latest,WINGSUITE_USER=wingsuite-user:latest,WINGSUITE_PASS=wingsuite-pass:latest,SODIMAC_USER=sodimac-user:latest,SODIMAC_PASS=sodimac-pass:latest,SODIMAC_URL=sodimac-url:latest,GCS_BUCKET_NAME=gcs-bucket-name:latest
 
       - name: Show service URL
         run: |

@@ -2,6 +2,7 @@ from fastapi import HTTPException
 
 from app.tms.base import BaseTMSExtractor
 from app.tms.qanalytics.scraper import QAnalyticsExtractor
+from app.tms.sodimac.scraper import SodimacExtractor
 from app.tms.wingsuite.scraper import WingsuiteExtractor
 
 
@@ -11,6 +12,7 @@ from app.tms.wingsuite.scraper import WingsuiteExtractor
 EXTRACTORS: dict[str, BaseTMSExtractor] = {
     "qanalytics": QAnalyticsExtractor(),
     "wingsuite": WingsuiteExtractor(),
+    "sodimac": SodimacExtractor(),
 }
 
 

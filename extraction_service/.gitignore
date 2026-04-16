@@ -16,3 +16,5 @@ AGENTLOG.md
 CLAUDE.md
 
 logextraction.txt
+.chrome-profile-sodimac/
+extraction_service/tests/

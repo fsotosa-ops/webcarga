@@ -23,3 +23,15 @@ dev = [
     "black",
     "flake8"
 ]
+
+[tool.setuptools.packages.find]
+# Excluir `tests/` del empaquetado — setuptools con auto-discovery falla si
+# ve más de un top-level (`app` + `tests`). El directorio de tests existe
+# pero no es parte del paquete instalable.
+include = ["app*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requiere credenciales TMS + red; correr con INTEGRATION=1"
+]

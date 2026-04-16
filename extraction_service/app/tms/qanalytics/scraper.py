@@ -2,6 +2,7 @@ import os
 import logging
 import time
 from datetime import date
+from typing import Optional
 
 from playwright.async_api import (
     Page,
@@ -40,10 +41,17 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         self,
         *,
         client_name: str,
-        date_from: date,
-        date_to: date,
+        date_from: Optional[date],
+        date_to: Optional[date],
         timeout_ms: int,
     ) -> ExtractionArtifact:
+        # QAnalytics filtra por rango — si no llegan fechas, es un input inválido
+        # para este TMS (solo sodimac acepta None).
+        if date_from is None or date_to is None:
+            raise ValueError(
+                f"{self.SOURCE_NAME} requiere date_from y date_to."
+            )
+
         # Timestamp Unix fijado UNA SOLA VEZ al inicio — todos los paths
         # derivados (local + GCS) lo comparten para que coincidan.
         ts = int(time.time())

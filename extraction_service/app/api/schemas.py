@@ -18,14 +18,21 @@ class ExtractionRequest(BaseModel):
         description="Identificador del cliente en el TMS (login, mandante o tenant según el adapter).",
         examples=["walmart"],
     )
-    date_from: date = Field(
-        ...,
-        description="Inicio del rango de datos (inclusive). Fecha de los datos, no de la corrida.",
+    date_from: Optional[date] = Field(
+        None,
+        description=(
+            "Inicio del rango de datos (inclusive). Fecha de los datos, no de la corrida. "
+            "Opcional: TMS sin filtro de rango (ej. sodimac) lo aceptan en `null`; "
+            "wingsuite/qanalytics lo requieren y rechazan la corrida si falta."
+        ),
         examples=["2026-04-01"],
     )
-    date_to: date = Field(
-        ...,
-        description="Fin del rango de datos (inclusive). Debe ser ≥ `date_from`.",
+    date_to: Optional[date] = Field(
+        None,
+        description=(
+            "Fin del rango de datos (inclusive). Debe ser ≥ `date_from` si ambos están presentes. "
+            "Opcional: ver nota en `date_from`."
+        ),
         examples=["2026-04-14"],
     )
     timeout_ms: int = Field(
@@ -47,7 +54,10 @@ class ExtractionRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_range(self) -> "ExtractionRequest":
-        if self.date_from > self.date_to:
+        # Solo validamos el orden cuando ambos están presentes. Si uno solo
+        # viene `None` es un input inválido para cualquier TMS con filtro de
+        # fecha — ese error se levanta en el adapter con mensaje explícito.
+        if self.date_from and self.date_to and self.date_from > self.date_to:
             raise ValueError("'date_from' no puede ser posterior a 'date_to'.")
         return self
 
@@ -115,8 +125,12 @@ class JobResult(BaseModel):
         ...,
         description="Unix epoch del arranque de la corrida. Sufijo del filename, identifica esta ejecución.",
     )
-    date_from: date = Field(..., description="Inicio del rango extraído (espejo del input).")
-    date_to: date = Field(..., description="Fin del rango extraído (espejo del input).")
+    date_from: Optional[date] = Field(
+        None, description="Inicio del rango extraído (espejo del input). `null` si el TMS no soporta filtro de fecha."
+    )
+    date_to: Optional[date] = Field(
+        None, description="Fin del rango extraído (espejo del input). `null` si el TMS no soporta filtro de fecha."
+    )
 
 
 class Job(BaseModel):

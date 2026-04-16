@@ -13,13 +13,21 @@ RUN useradd -m appuser \
     && mkdir -p /app/downloads \
     && chown -R appuser:appuser /app/downloads
 
-# Instalar Firefox como appuser para que quede en /home/appuser/.cache/ms-playwright/
+# Firefox: bundle portable que `playwright install` deja en el cache del user
+# (/home/appuser/.cache/ms-playwright/). Lo usan wingsuite y qanalytics.
 USER appuser
 RUN playwright install firefox
 
-# Volver a root para instalar dependencias de sistema de Firefox
+# Deps de sistema de Firefox (libdbus, libgtk, etc.) — requiere root.
 USER root
 RUN playwright install-deps firefox
+
+# Chrome real: `playwright install chrome` baja el .deb oficial de Google y lo
+# instala a /opt/google/chrome/ — instalación sistémica, obliga a root. Lo
+# usa sodimac via `channel="chrome"` (único stack que pasó el Bot Management
+# de CF sobre tms.falabella.supply, confirmado por la PoC). `--with-deps`
+# resuelve también las libs del sistema en una sola pasada.
+RUN playwright install --with-deps chrome
 
 # Copiar código de la aplicación
 COPY app/ app/

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date
+from typing import Optional
 
 
 def build_path(
@@ -9,8 +10,8 @@ def build_path(
     product: str,
     client: str,
     timestamp: int,
-    date_from: date,
-    date_to: date,
+    date_from: Optional[date],
+    date_to: Optional[date],
     extension: str = ".xls",
 ) -> str:
     """
@@ -31,11 +32,19 @@ def build_path(
 
     Esta función es la única fuente de verdad: el scraper la usa para el path
     local, el runner la usa para el blob de GCS.
+
+    Fallback None → today: para TMS sin filtro de rango (ej. sodimac) donde
+    `date_from`/`date_to` llegan en None, usamos `date.today()` como placeholder
+    estable dentro de una misma corrida — el timestamp de la corrida garantiza
+    unicidad aunque la misma extracción se repita el mismo día.
     """
     fmt = "%Y%m%d"
+    today = date.today()
+    df = date_from or today
+    dt = date_to or today
     return (
         f"tms/{source}/{product}/{client}/"
-        f"{client}_{date_from.strftime(fmt)}_{date_to.strftime(fmt)}"
+        f"{client}_{df.strftime(fmt)}_{dt.strftime(fmt)}"
         f"_{timestamp}{extension}"
     )
 
@@ -49,8 +58,11 @@ class ExtractionArtifact:
     product: str
     client_name: str
     timestamp: int
-    date_from: date
-    date_to: date
+    # Opcionales: los adapters cuyo TMS no soporta filtro de rango (ej. sodimac,
+    # donde la UI no expone date pickers) pueden devolver None. El runner usa
+    # `today` como fallback al construir el filename via `build_path`.
+    date_from: Optional[date]
+    date_to: Optional[date]
 
 
 class BaseTMSExtractor(ABC):
@@ -65,8 +77,13 @@ class BaseTMSExtractor(ABC):
         self,
         *,
         client_name: str,
-        date_from: date,
-        date_to: date,
+        date_from: Optional[date],
+        date_to: Optional[date],
         timeout_ms: int,
     ) -> ExtractionArtifact:
-        """Ejecuta la extracción y devuelve el artefacto local."""
+        """Ejecuta la extracción y devuelve el artefacto local.
+
+        `date_from`/`date_to` son Optional para soportar TMS sin filtro de rango.
+        Los adapters que los requieren deben validarlos y levantar ValueError
+        explícito si llegan en None.
+        """

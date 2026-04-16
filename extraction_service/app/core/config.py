@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     WINGSUITE_PASS: str
     WINGSUITE_URL: str = "https://suite.wing.cl/web/core/inicio_sesion.php"
 
+    SODIMAC_USER: str
+    SODIMAC_PASS: str
+    SODIMAC_URL: str = "https://tms.falabella.supply/login"
+
     # Cap de jobs concurrentes por instancia. En Cloud Run la instancia se
     # marca "libre" cuando sale el 202, pero el scraper sigue corriendo en
     # background — sin este cap dos browsers de TMS distintos colisionan por
