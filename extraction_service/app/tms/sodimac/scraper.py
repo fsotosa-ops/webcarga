@@ -14,16 +14,16 @@ from app.tms.base import BaseTMSExtractor, ExtractionArtifact, build_path
 logger = logging.getLogger(__name__)
 
 
-# Selectores del portal Sodimac (tms.falabella.supply) — validados contra el
-# DOM real (dump en poc_sodimac/codigo_fuente/step1b_transportista_tab.html).
+# Selectores del portal Sodimac (tms.falabella.supply).
 # El portal corre Angular Material y usa las directivas `mat-table`, `mat-row`,
 # `mat-cell`, `mat-header-cell` como ATRIBUTOS sobre tags HTML nativos
 # (`<th mat-header-cell>`), no como componentes custom.
 # NO cambiar a selectores tipo `<mat-header-cell>` — no matchean.
 #
-# El tab TRANSPORTISTA es un `<div class="mat-tab-label">`, no un `<button>`.
+# El tab TRANSPORTISTA se ubica por ROLE (ARIA), no por clase — Material
+# rota los classnames entre versiones (`.mat-tab-label` ↔ `.mat-mdc-tab`)
+# pero el role="tab" está en la spec de ARIA y lo mantiene cualquier versión.
 # El botón Ingresar es `<button class="login__submit">` con un `<span>` interno.
-SEL_TAB_TRANSPORTISTA = "div.mat-tab-label:has-text('TRANSPORTISTA')"
 SEL_USERNAME = "[formcontrolname='username']"
 SEL_PASSWORD = "[formcontrolname='password']"
 SEL_BTN_INGRESAR = "button.login__submit"
@@ -38,8 +38,19 @@ SEL_BTN_INGRESAR = "button.login__submit"
 SEL_NAV_GESTIONAR = "a[href='/carrier-shipment-request']"
 URL_REQUESTS = "https://tms.falabella.supply/carrier-shipment-request"
 
-SEL_PAGINATOR_LABEL = ".mat-paginator-range-label"
-SEL_PAGINATOR_NEXT = "mat-paginator .mat-paginator-navigation-next"
+# Angular Material rotó a MDC entre versiones: classnames pasaron de
+# `.mat-paginator-*` a `.mat-mdc-paginator-*`. Matcheamos ambas con selector
+# compuesto para no romper si vuelven a cambiar o si distintos clientes ven
+# distintas builds. En JS-land (wait_for_function) usamos la misma lista.
+SEL_PAGINATOR_LABEL = ".mat-paginator-range-label, .mat-mdc-paginator-range-label"
+SEL_PAGINATOR_NEXT = (
+    "mat-paginator .mat-paginator-navigation-next, "
+    "mat-paginator .mat-mdc-paginator-navigation-next"
+)
+JS_SEL_RANGE_LABEL = (
+    "document.querySelector("
+    "'.mat-paginator-range-label, .mat-mdc-paginator-range-label')"
+)
 SEL_PAGE_SIZE_SELECT = "Filas por página"
 
 SEL_TABLE_HEADERS = "table[mat-table] th[mat-header-cell]"
@@ -234,7 +245,10 @@ class SodimacExtractor(BaseTMSExtractor):
         # así cualquier regresión del form (CF, selectores, creds) falla
         # explícito en esta corrida, no disfrazado por cookies cacheadas.
         logger.info("[STEP login] Click tab TRANSPORTISTA + fill credenciales")
-        await page.locator(SEL_TAB_TRANSPORTISTA).first.click(timeout=timeout_ms)
+        # get_by_role("tab", name=...) es accessibility-first y resiste cambios
+        # de classname de Material. Si este path falla, el screenshot+HTML dump
+        # del `except` global muestra el DOM real para re-ajustar.
+        await page.get_by_role("tab", name="TRANSPORTISTA").click(timeout=timeout_ms)
         await page.wait_for_selector(SEL_USERNAME, state="visible", timeout=timeout_ms)
         await page.fill(SEL_USERNAME, settings.SODIMAC_USER)
         await page.fill(SEL_PASSWORD, settings.SODIMAC_PASS)
@@ -293,12 +307,12 @@ class SodimacExtractor(BaseTMSExtractor):
         # de que el backend responda. Esperamos al paginador con total > 0.
         logger.info(f"Esperando data real en la tabla (timeout={timeout_ms}ms)")
         await page.wait_for_function(
-            """() => {
-                const el = document.querySelector('.mat-paginator-range-label');
+            f"""() => {{
+                const el = {JS_SEL_RANGE_LABEL};
                 if (!el) return false;
                 const m = el.textContent.trim().match(/de\\s+(\\d+)/i);
                 return !!m && parseInt(m[1], 10) > 0;
-            }""",
+            }}""",
             timeout=timeout_ms,
         )
         total_label = (
@@ -309,25 +323,56 @@ class SodimacExtractor(BaseTMSExtractor):
     async def _set_page_size(
         self, page: Page, size: int, timeout_ms: int
     ) -> None:
-        """Abre el mat-select del paginador y selecciona `size`. Espera a que
-        el range-label refleje el cambio antes de retornar."""
+        """Abre el mat-select del paginador y selecciona `size`. Si la opción
+        pedida no existe (p.ej. el portal la sacó del mat-select), seguimos
+        con el default del portal — no es un error fatal, sólo obligamos a
+        paginar más veces. Priorizamos correctitud sobre velocidad."""
         logger.info(f"[STEP size] Ajustando page size a {size}")
         prev_label = (
-            await page.locator(SEL_PAGINATOR_LABEL).inner_text()
+            await page.locator(SEL_PAGINATOR_LABEL).first.inner_text()
         ).strip()
-        await page.get_by_role("combobox", name=SEL_PAGE_SIZE_SELECT).click()
+        try:
+            await page.get_by_role(
+                "combobox", name=SEL_PAGE_SIZE_SELECT
+            ).click(timeout=15000)
+        except Exception as combo_err:
+            logger.warning(
+                f"No se pudo abrir el combobox de page size ({combo_err}); "
+                "sigo con el default del paginador."
+            )
+            return
+
         # `exact=True` evita matchear "200" o "120" cuando pedimos "20".
-        await page.get_by_role("option", name=str(size), exact=True).click()
-        await page.wait_for_function(
-            """(prev) => {
-                const el = document.querySelector('.mat-paginator-range-label');
-                return el && el.textContent.trim() !== prev;
-            }""",
-            arg=prev_label,
-            timeout=timeout_ms,
-        )
+        option = page.get_by_role("option", name=str(size), exact=True)
+        try:
+            await option.click(timeout=10000)
+        except Exception as opt_err:
+            logger.warning(
+                f"Opción '{size}' no disponible en el mat-select "
+                f"({opt_err}); cierro el dropdown y sigo con default."
+            )
+            # Cerrar el combobox para no tapar la tabla con el overlay.
+            await page.keyboard.press("Escape")
+            return
+
+        try:
+            await page.wait_for_function(
+                f"""(prev) => {{
+                    const el = {JS_SEL_RANGE_LABEL};
+                    return el && el.textContent.trim() !== prev;
+                }}""",
+                arg=prev_label,
+                timeout=timeout_ms,
+            )
+        except Exception as wait_err:
+            logger.warning(
+                f"range-label no actualizó tras elegir '{size}' "
+                f"({wait_err}); continúo con lo que haya en pantalla."
+            )
+            return
+
         new_label = (
-            await page.locator(SEL_PAGINATOR_LABEL).inner_text()
+            await page.locator(SEL_PAGINATOR_LABEL).first.inner_text()
         ).strip()
         logger.info(f"Page size OK: '{prev_label}' → '{new_label}'")
 
@@ -392,16 +437,16 @@ class SodimacExtractor(BaseTMSExtractor):
                 break
 
             prev_label = (
-                await page.locator(SEL_PAGINATOR_LABEL).inner_text()
+                await page.locator(SEL_PAGINATOR_LABEL).first.inner_text()
             ).strip()
-            await page.locator(SEL_PAGINATOR_NEXT).click()
+            await page.locator(SEL_PAGINATOR_NEXT).first.click()
             # Espera determinista: el range-label cambia sólo cuando Angular
             # re-renderizó con la siguiente tanda. No usamos `networkidle`.
             await page.wait_for_function(
-                """(prev) => {
-                    const el = document.querySelector('.mat-paginator-range-label');
+                f"""(prev) => {{
+                    const el = {JS_SEL_RANGE_LABEL};
                     return el && el.textContent.trim() !== prev;
-                }""",
+                }}""",
                 arg=prev_label,
                 timeout=timeout_ms,
             )
@@ -500,15 +545,20 @@ class SodimacExtractor(BaseTMSExtractor):
 
     @staticmethod
     async def _next_is_disabled(page: Page) -> bool:
-        """Tres formas en que Material marca el botón "siguiente" deshabilitado.
-        Hay que chequear las tres porque Material las rota entre versiones."""
-        nxt = page.locator(SEL_PAGINATOR_NEXT)
+        """Material marca el botón "siguiente" deshabilitado de varias formas
+        y las rota entre versiones. Chequeamos attributes primero y luego las
+        clases — pero con token match, no substring: `mat-mdc-button-disabled`
+        marca disabled, mientras que `mat-mdc-button-disabled-interactive` NO
+        (un substring check daba falso positivo contra el último)."""
+        nxt = page.locator(SEL_PAGINATOR_NEXT).first
         if await nxt.get_attribute("disabled") is not None:
             return True
         if await nxt.get_attribute("aria-disabled") == "true":
             return True
         cls = await nxt.get_attribute("class") or ""
-        return "mat-button-disabled" in cls
+        tokens = cls.split()
+        disabled_markers = {"mat-button-disabled", "mat-mdc-button-disabled"}
+        return any(t in disabled_markers for t in tokens)
 
     @staticmethod
     def _write_csv(path: str, headers: list[str], rows: list[dict]) -> None:
@@ -524,10 +574,21 @@ class SodimacExtractor(BaseTMSExtractor):
 
     @staticmethod
     async def _safe_screenshot(page: Page, label: str) -> None:
-        """Best-effort screenshot a /tmp. No debe enmascarar la excepción original."""
+        """Best-effort screenshot + HTML dump a /tmp. No debe enmascarar la
+        excepción original. El HTML permite diagnosticar selectores stale
+        (ej.: Material rotó classnames) sin tener que re-ejecutar con browser
+        visible."""
+        png_path = f"/tmp/error_sodimac_{label}.png"
+        html_path = f"/tmp/error_sodimac_{label}.html"
         try:
-            path = f"/tmp/error_sodimac_{label}.png"
-            await page.screenshot(path=path, full_page=True)
-            logger.info(f"Screenshot guardado: {path}")
+            await page.screenshot(path=png_path, full_page=True)
+            logger.info(f"Screenshot guardado: {png_path}")
         except Exception as shot_err:
             logger.warning(f"No se pudo capturar screenshot {label}: {shot_err}")
+        try:
+            html = await page.content()
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            logger.info(f"HTML guardado: {html_path}")
+        except Exception as html_err:
+            logger.warning(f"No se pudo capturar HTML {label}: {html_err}")
