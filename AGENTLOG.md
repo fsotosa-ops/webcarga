@@ -10,6 +10,10 @@
 
 ## 2. Qué Hicimos
 
+### 2026-04-18 — Sodimac respeta date_from/date_to (décima iteración extraction_service)
+- Scraper sodimac ahora filtra por rango: early-stop si la tabla viene DESC por FECHA + filtro post-fetch sobre la columna FECHA (DD-MM-YYYY). Detalle en `extraction_service/AGENTLOG.md`.
+- `SODIMAC_DUMP_PAGE=1` agregado como helper para investigar si el portal expone un filtro nativo (path para una eventual iteración Branch A).
+
 ### Fase 1: Bugs Críticos Corregidos
 - **Browser mismatch**: Scraper cambiado de Firefox → Chromium (alineado con Dockerfile)
 - **headless=False → configurable**: `BROWSER_HEADLESS=True` por defecto, configurable via env var

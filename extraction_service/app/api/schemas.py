@@ -22,8 +22,8 @@ class ExtractionRequest(BaseModel):
         None,
         description=(
             "Inicio del rango de datos (inclusive). Fecha de los datos, no de la corrida. "
-            "Opcional: TMS sin filtro de rango (ej. sodimac) lo aceptan en `null`; "
-            "wingsuite/qanalytics lo requieren y rechazan la corrida si falta."
+            "Opcional: se acepta `null` y el adapter decide — wingsuite/qanalytics lo requieren "
+            "y fallan si falta; sodimac lo aplica como filtro post-fetch sobre la columna FECHA."
         ),
         examples=["2026-04-01"],
     )

@@ -3,7 +3,7 @@ import csv
 import logging
 import os
 import time
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from playwright.async_api import Page, async_playwright
@@ -76,18 +76,17 @@ class SodimacExtractor(BaseTMSExtractor):
         date_to: Optional[date],
         timeout_ms: int,
     ) -> ExtractionArtifact:
-        # La UI de Sodimac no expone filtro de fechas — la tabla siempre muestra
-        # el set completo de solicitudes del transportista. Si llegan fechas,
-        # solo se usan para el filename via `build_path`. Loguear WARNING si
-        # el rango no cubre `today` para que el caller note la mismatch.
-        if date_from or date_to:
-            today = date.today()
-            if (date_from and date_from > today) or (date_to and date_to < today):
-                logger.warning(
-                    f"sodimac no filtra por fecha — rango {date_from}→{date_to} "
-                    f"no cubre today={today.isoformat()}. Se extrae todo de todos modos."
-                )
-
+        # Sodimac no expone (hasta donde vimos) filtro de fechas en la UI, así
+        # que el filtrado por rango se hace en dos capas:
+        #   1) Early-stop en `_scrape_table` si detecta la tabla ordenada
+        #      estrictamente DESC por FECHA — corta la paginación apenas el
+        #      último row cae debajo de `date_from`.
+        #   2) Filtro post-fetch en `_filter_by_date` sobre la columna FECHA
+        #      (formato `DD-MM-YYYY`) — garantiza que el CSV final respete
+        #      `[date_from, date_to]` aunque el early-stop no aplique.
+        # Si aparece un filtro nativo en el portal (ver SODIMAC_DUMP_PAGE más
+        # abajo) conviene migrar a ese path porque evita paginar páginas que
+        # se descartan enteras.
         ts = int(time.time())
 
         logger.info(
@@ -165,7 +164,11 @@ class SodimacExtractor(BaseTMSExtractor):
             try:
                 await self._login(page, timeout_ms)
                 await self._navigate_to_requests(page, timeout_ms)
-                headers, rows = await self._scrape_table(page, timeout_ms)
+                await self._maybe_dump_investigation(page)
+                headers, rows = await self._scrape_table(
+                    page, timeout_ms, date_from=date_from, date_to=date_to
+                )
+                rows = self._filter_by_date(rows, date_from, date_to)
 
                 relative_path = build_path(
                     source=self.SOURCE_NAME,
@@ -328,7 +331,14 @@ class SodimacExtractor(BaseTMSExtractor):
         ).strip()
         logger.info(f"Page size OK: '{prev_label}' → '{new_label}'")
 
-    async def _scrape_table(self, page: Page, timeout_ms: int):
+    async def _scrape_table(
+        self,
+        page: Page,
+        timeout_ms: int,
+        *,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+    ):
         logger.info("[STEP scrape] Recorriendo tabla de solicitudes")
 
         await self._set_page_size(page, self.PAGE_SIZE, timeout_ms)
@@ -337,19 +347,46 @@ class SodimacExtractor(BaseTMSExtractor):
         headers = [h.strip() for h in raw_headers if h.strip()]
         logger.info(f"Headers detectados: {headers}")
 
+        # Early-stop sólo si detectamos la primera página estrictamente DESC
+        # por FECHA. El portal no documenta el sort, así que inferimos; si la
+        # evidencia es ambigua (empates, parseos fallidos, mezcla ASC/DESC)
+        # desactivamos el early-stop y dejamos que el post-fetch filter haga
+        # el trabajo — prioriza correctitud sobre velocidad.
+        sort_desc: Optional[bool] = None
         all_rows: list[dict] = []
         page_num = 1
         while True:
             await page.wait_for_selector(SEL_TABLE_ROWS, timeout=timeout_ms)
             row_locators = page.locator(SEL_TABLE_ROWS)
             n = await row_locators.count()
+            page_rows: list[dict] = []
             for i in range(n):
                 raw_cells = await row_locators.nth(i).locator(
                     SEL_TABLE_CELLS
                 ).all_inner_texts()
                 cells = [c.strip() for c in raw_cells]
-                all_rows.append(dict(zip(headers, cells)))
+                page_rows.append(dict(zip(headers, cells)))
+            all_rows.extend(page_rows)
             logger.info(f"Página {page_num}: +{n} filas (total={len(all_rows)})")
+
+            if page_num == 1 and date_from and "FECHA" in headers:
+                sort_desc = self._is_desc_by_fecha(page_rows)
+                logger.info(
+                    f"Sort FECHA DESC detectado: {sort_desc} "
+                    f"(early-stop={'ON' if sort_desc else 'OFF'})"
+                )
+
+            # Early-stop: si la tabla viene DESC y el último row de esta página
+            # ya cae por debajo de `date_from`, las páginas siguientes son
+            # todas más viejas — no tiene sentido paginar.
+            if sort_desc and date_from and page_rows:
+                last_fecha = self._parse_fecha(page_rows[-1].get("FECHA", ""))
+                if last_fecha and last_fecha < date_from:
+                    logger.info(
+                        f"Early-stop: last FECHA={last_fecha} < date_from={date_from} "
+                        f"— cortando paginación en página {page_num}."
+                    )
+                    break
 
             if await self._next_is_disabled(page):
                 break
@@ -371,6 +408,95 @@ class SodimacExtractor(BaseTMSExtractor):
             page_num += 1
 
         return headers, all_rows
+
+    @staticmethod
+    def _parse_fecha(fecha_str: str) -> Optional[date]:
+        """Parsea la columna FECHA del portal (`DD-MM-YYYY`). Devuelve None
+        si el string está vacío o no matchea el formato — el caller decide
+        qué hacer (descartar la fila, loguear, etc.)."""
+        if not fecha_str:
+            return None
+        try:
+            return datetime.strptime(fecha_str.strip(), "%d-%m-%Y").date()
+        except ValueError:
+            return None
+
+    @classmethod
+    def _is_desc_by_fecha(cls, rows: list[dict]) -> bool:
+        """True si todas las filas con FECHA parseable están ordenadas
+        estrictamente DESC (o iguales). Filas con FECHA ilegible se saltan.
+        Necesita ≥2 fechas parseables para afirmar; si no, retorna False
+        (no podemos garantizar el sort, mejor ir seguro)."""
+        fechas = [cls._parse_fecha(r.get("FECHA", "")) for r in rows]
+        fechas = [f for f in fechas if f is not None]
+        if len(fechas) < 2:
+            return False
+        return all(fechas[i] >= fechas[i + 1] for i in range(len(fechas) - 1))
+
+    @classmethod
+    def _filter_by_date(
+        cls,
+        rows: list[dict],
+        date_from: Optional[date],
+        date_to: Optional[date],
+    ) -> list[dict]:
+        """Filtra las filas por la columna FECHA según `[date_from, date_to]`.
+        Filas con FECHA ilegible se descartan cuando hay filtro activo (no
+        podemos evaluarlas) y se logean. Sin filtro → passthrough."""
+        if not (date_from or date_to):
+            return rows
+
+        filtered: list[dict] = []
+        dropped_unparseable = 0
+        for row in rows:
+            parsed = cls._parse_fecha(row.get("FECHA", ""))
+            if parsed is None:
+                dropped_unparseable += 1
+                continue
+            if date_from and parsed < date_from:
+                continue
+            if date_to and parsed > date_to:
+                continue
+            filtered.append(row)
+
+        if dropped_unparseable:
+            logger.warning(
+                f"Filtro FECHA: {dropped_unparseable} filas descartadas por "
+                "FECHA no parseable (formato esperado: DD-MM-YYYY)."
+            )
+        logger.info(
+            f"Filtro FECHA [{date_from}..{date_to}]: "
+            f"{len(filtered)}/{len(rows)} filas retenidas."
+        )
+        return filtered
+
+    @staticmethod
+    async def _maybe_dump_investigation(page: Page) -> None:
+        """Si `SODIMAC_DUMP_PAGE=1`, vuelca HTML + screenshot de la página
+        `/carrier-shipment-request` a `/tmp/` para inspeccionar si el portal
+        expone filtros nativos (date picker, drawer de filtros, etc.). Uso:
+
+            BROWSER_HEADLESS=False SODIMAC_DUMP_PAGE=1 INTEGRATION=1 \
+              ./venv/bin/python -m pytest -v tests/test_sodimac_adapter.py -s
+
+        Luego revisar `/tmp/sodimac_requests_page.html` y `.png` para ver si
+        hay un botón/panel de filtros que valga la pena integrar — eso
+        habilitaría reducir la paginación en origen en vez de filtrar en
+        cliente."""
+        if os.getenv("SODIMAC_DUMP_PAGE") != "1":
+            return
+        try:
+            html = await page.content()
+            html_path = "/tmp/sodimac_requests_page.html"
+            png_path = "/tmp/sodimac_requests_page.png"
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            await page.screenshot(path=png_path, full_page=True)
+            logger.info(
+                f"[INVESTIGATE] HTML → {html_path}, screenshot → {png_path}"
+            )
+        except Exception as err:
+            logger.warning(f"[INVESTIGATE] Falló el dump: {err}")
 
     @staticmethod
     async def _next_is_disabled(page: Page) -> bool:
