@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 # Selectores del HTML de Wingsuite — concentrados acá para que cambios del
-# proveedor sean un solo punto de edición. Validados contra los dumps de
-# `codigo_fuente*.html` del POC (webcarga-dev/poc_wingsuite).
+# proveedor sean un solo punto de edición.
 SEL_USERNAME = "#username"
 SEL_PASSWORD = "#password"
 SEL_SIDE_MENU = "#side-menu"
@@ -30,14 +29,18 @@ SEL_PAGE_CONTENT = "#page-content"
 SEL_DATE_FROM = "#fecha_inicio"
 SEL_DATE_TO = "#fecha_fin"
 
-# IDs del reporte "Viajes por Transportista" dentro del módulo Logística.
-# La app expone la navegación como `funcionesTema.cargarPaginaBd(app, reporte)`.
+# IDs del reporte "Reporte de Viajes de Transportistas" dentro del módulo
+# Logística. La app expone la navegación como
+# `funcionesTema.cargarPaginaBd(app, reporte)`.
 APP_ID_LOGISTICA = "5"
-REPORT_ID_VIAJES = "4134"
+REPORT_ID_VIAJES = "50051"
 
-# Endpoint XHR que trae las filas en el body de la respuesta. No es una URL
-# completa, solo un fragmento único para filtrar en `expect_response`.
-RESPONSE_MARKER_VIAJES = "viajes.obtener_completo_transportista"
+# Fragmento de URL del XHR que trae las filas del reporte 50051. Es un GET a
+# `…/api/logistics/viajes.obtener_resumen_transportista/2.0.0?…&fecha_inicio=
+# DD-MM-YYYY&fecha_fin=DD-MM-YYYY&…&xxIdFuncionalidad=50051`. El predicate de
+# captura combina este fragmento con los valores efectivos de fecha para
+# desambiguar del fetch automático que el reporte dispara con defaults.
+RESPONSE_URL_FRAGMENT_VIAJES = "viajes.obtener_resumen_transportista"
 
 # Formato que Wingsuite espera en sus inputs de fecha (dd-mm-YYYY).
 DATE_FORMAT_APP = "%d-%m-%Y"
@@ -52,7 +55,8 @@ class WingsuiteExtractor(BaseTMSExtractor):
     SOURCE_NAME = "wingsuite"
     # "trips" es el nombre canónico del producto de datos — compartido con
     # qanalytics y cualquier futuro TMS. El nombre del reporte en la UI de
-    # Wingsuite ("Viajes por Transportista", id 4134) queda como detalle interno.
+    # Wingsuite ("Reporte de Viajes de Transportistas", id 50051) queda como
+    # detalle interno.
     PRODUCT_NAME = "trips"
 
     async def extract(
@@ -110,9 +114,8 @@ class WingsuiteExtractor(BaseTMSExtractor):
                 # página viva con `#side-menu` para aislar ese detalle.
                 page = await self._login(page, context, timeout_ms)
                 await self._navigate_to_logistics_module(page, timeout_ms)
-                await self._open_report(page, timeout_ms)
 
-                local_path = await self._apply_filters_and_download(
+                local_path = await self._load_report_and_download(
                     page,
                     client_name,
                     ts,
@@ -200,31 +203,7 @@ class WingsuiteExtractor(BaseTMSExtractor):
         await page.goto(target_url, timeout=timeout_ms)
         await page.wait_for_selector(SEL_SIDE_MENU, state="visible", timeout=timeout_ms)
 
-    async def _open_report(self, page: Page, timeout_ms: int) -> None:
-        logger.info(
-            f"[STEP report] Abriendo reporte {REPORT_ID_VIAJES} "
-            "(Viajes por Transportista)"
-        )
-        # El onload del módulo dispara cargarPaginaBd pero puede no haber corrido
-        # aún; forzamos para evitar condiciones de carrera.
-        await page.evaluate(
-            f"funcionesTema.cargarPaginaBd('{APP_ID_LOGISTICA}','{REPORT_ID_VIAJES}')"
-        )
-        await page.wait_for_selector(
-            SEL_PAGE_CONTENT, state="visible", timeout=timeout_ms
-        )
-        # Esperar a que el contenido del reporte termine de pintar dentro del
-        # contenedor — sin esto, los selectores de los filtros pueden existir
-        # pero sin sus handlers jQuery bindeados.
-        await page.wait_for_function(
-            f"document.querySelector('{SEL_PAGE_CONTENT}').innerText.trim().length > 0",
-            timeout=timeout_ms,
-        )
-        # Hard wait corto para asegurar que el datetimepicker se inicialice.
-        # Medido empíricamente en el POC; si el sitio se ralentiza, subir acá.
-        await page.wait_for_timeout(1500)
-
-    async def _apply_filters_and_download(
+    async def _load_report_and_download(
         self,
         page: Page,
         client_name: str,
@@ -234,50 +213,93 @@ class WingsuiteExtractor(BaseTMSExtractor):
         downloads_dir: str,
         timeout_ms: int,
     ) -> str:
-        logger.info("[STEP filters] Aplicando rango de fechas y disparando búsqueda")
-
-        await page.wait_for_selector(SEL_DATE_FROM, state="visible", timeout=timeout_ms)
-
-        # Setear rangos via jQuery .val() directamente. `locator.fill()` abre el
-        # datepicker bootstrap y deja a buscar_listado() sin disparar el XHR.
+        # Abrir el reporte 50051 y capturar el JSON que trae las filas en una
+        # sola transacción. El reporte dispara un fetch automático al cargar
+        # con fechas default (mes en curso); aplicar filtros y forzar el click
+        # "Ver Datos" dispara otro fetch con las fechas pedidas. El predicate
+        # filtra por `fecha_inicio`/`fecha_fin` exactos para captar el correcto
+        # sin importar cuál de los dos eventos lo originó.
         from_str = date_from.strftime(DATE_FORMAT_APP)
         to_str = date_to.strftime(DATE_FORMAT_APP)
-        await page.evaluate(
-            """
-            ([fi, ff]) => {
-                if (typeof jQuery === 'undefined') {
-                    throw new Error('jQuery no está disponible en la página');
-                }
-                jQuery('#fecha_inicio').val(fi);
-                jQuery('#fecha_fin').val(ff);
-            }
-            """,
-            [from_str, to_str],
+        logger.info(
+            f"[STEP report] Abriendo reporte {REPORT_ID_VIAJES} "
+            f"(Reporte de Viajes de Transportistas) [{from_str} → {to_str}]"
         )
 
-        # Leer del DOM los valores efectivos y fallar explícito si no coinciden.
-        effective = await page.evaluate(
-            "() => ({ fi: document.querySelector('#fecha_inicio').value, "
-            "ff: document.querySelector('#fecha_fin').value })"
-        )
-        if effective["fi"] != from_str or effective["ff"] != to_str:
-            raise RuntimeError(
-                f"No se pudo setear el rango. Esperado={from_str}/{to_str}, "
-                f"obtenido={effective['fi']}/{effective['ff']}"
+        if os.environ.get("WINGSUITE_DUMP_XHR") == "1":
+            page.on(
+                "response",
+                lambda r: logger.info(
+                    f"[xhr] {r.status} {r.request.method} {r.url}"
+                ),
             )
-        logger.info(f"Rango efectivo: {effective['fi']} → {effective['ff']}")
 
-        # Interceptar el XHR del endpoint de viajes. Los botones nativos CSV/Excel
-        # del DataTables no disparan descarga real (sólo copiar/dinámica); el XHR
-        # trae todas las filas en JSON.
-        #
         # TODO: si aparecen rangos grandes donde el endpoint pagina, implementar
         # paginación aquí — por ahora asumimos que una respuesta trae todo.
         async with page.expect_response(
-            lambda r: RESPONSE_MARKER_VIAJES in r.url,
+            lambda r: (
+                RESPONSE_URL_FRAGMENT_VIAJES in r.url
+                and f"fecha_inicio={from_str}" in r.url
+                and f"fecha_fin={to_str}" in r.url
+                and r.status == 200
+            ),
             timeout=timeout_ms,
         ) as resp_info:
-            await page.evaluate("buscar_listado()")
+            # El onload del módulo dispara cargarPaginaBd pero puede no haber
+            # corrido aún; forzamos para evitar condiciones de carrera.
+            await page.evaluate(
+                f"funcionesTema.cargarPaginaBd('{APP_ID_LOGISTICA}','{REPORT_ID_VIAJES}')"
+            )
+            await page.wait_for_selector(
+                SEL_PAGE_CONTENT, state="visible", timeout=timeout_ms
+            )
+            # Esperar a que el contenido del reporte termine de pintar — sin
+            # esto, los selectores de los filtros pueden existir pero sin sus
+            # handlers jQuery bindeados.
+            await page.wait_for_function(
+                f"document.querySelector('{SEL_PAGE_CONTENT}').innerText.trim().length > 0",
+                timeout=timeout_ms,
+            )
+            # Hard wait corto para que el datetimepicker se inicialice.
+            await page.wait_for_timeout(1500)
+
+            await page.wait_for_selector(SEL_DATE_FROM, state="visible", timeout=timeout_ms)
+
+            # Setear rangos vía jQuery .val() directamente. `locator.fill()`
+            # abre el datepicker bootstrap y deja al click de "Ver Datos" sin
+            # disparar el XHR.
+            await page.evaluate(
+                """
+                ([fi, ff]) => {
+                    if (typeof jQuery === 'undefined') {
+                        throw new Error('jQuery no está disponible en la página');
+                    }
+                    jQuery('#fecha_inicio').val(fi);
+                    jQuery('#fecha_fin').val(ff);
+                }
+                """,
+                [from_str, to_str],
+            )
+
+            # Leer del DOM los valores efectivos y fallar explícito si no
+            # coinciden — protege contra cambios de IDs en el reporte.
+            effective = await page.evaluate(
+                "() => ({ fi: document.querySelector('#fecha_inicio').value, "
+                "ff: document.querySelector('#fecha_fin').value })"
+            )
+            if effective["fi"] != from_str or effective["ff"] != to_str:
+                raise RuntimeError(
+                    f"No se pudo setear el rango. Esperado={from_str}/{to_str}, "
+                    f"obtenido={effective['fi']}/{effective['ff']}"
+                )
+            logger.info(f"Rango efectivo: {effective['fi']} → {effective['ff']}")
+
+            # Click "Ver Datos" — clickeamos por accessible name para no
+            # acoplarnos al nombre del handler global. Si el fetch automático
+            # con defaults ya matcheó el predicate, el click es redundante e
+            # inofensivo; si no, este click lanza el XHR con las fechas
+            # pedidas.
+            await page.get_by_role("button", name="Ver Datos").click()
 
         response = await resp_info.value
         payload = await response.json()
