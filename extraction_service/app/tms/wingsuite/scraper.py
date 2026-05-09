@@ -1,6 +1,5 @@
 import asyncio
 import csv
-import json
 import logging
 import os
 import time
@@ -15,7 +14,14 @@ from playwright.async_api import (
 )
 
 from app.core.config import settings
-from app.tms.base import BaseTMSExtractor, ExtractionArtifact, build_path
+from app.tms.base import (
+    CSV_DELIMITER,
+    BaseTMSExtractor,
+    ExtractionArtifact,
+    build_path,
+    get_downloads_dir,
+    stringify,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +50,6 @@ RESPONSE_URL_FRAGMENT_VIAJES = "viajes.obtener_resumen_transportista"
 
 # Formato que Wingsuite espera en sus inputs de fecha (dd-mm-YYYY).
 DATE_FORMAT_APP = "%d-%m-%Y"
-
-# DataTables del sitio exporta CSV con separador ';' — mantenemos la misma
-# convención para que archivos producidos por el adapter sean intercambiables
-# con los que un analista exportaría manualmente desde la UI.
-CSV_DELIMITER = ";"
 
 
 class WingsuiteExtractor(BaseTMSExtractor):
@@ -84,8 +85,7 @@ class WingsuiteExtractor(BaseTMSExtractor):
             f"ts={ts}"
         )
 
-        downloads_dir = os.path.join(os.getcwd(), "downloads")
-        os.makedirs(downloads_dir, exist_ok=True)
+        downloads_dir = get_downloads_dir()
 
         async with async_playwright() as p:
             # Firefox alineado con qanalytics y el Dockerfile. Chromium
@@ -361,27 +361,10 @@ class WingsuiteExtractor(BaseTMSExtractor):
             writer.writeheader()
             for row in rows:
                 writer.writerow(
-                    {k: _stringify(row.get(k)) for k in fieldnames}
+                    {k: stringify(row.get(k)) for k in fieldnames}
                 )
 
     # ------------------------------------------------------------------ #
     # Utilidades
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    async def _safe_screenshot(page: Page, label: str) -> None:
-        """Best-effort screenshot a /tmp — nunca tira excepción nueva."""
-        try:
-            path = f"/tmp/error_wingsuite_{label}.png"
-            await page.screenshot(path=path, full_page=True)
-            logger.info(f"Screenshot guardado: {path}")
-        except Exception as shot_err:
-            logger.warning(f"No se pudo capturar screenshot {label}: {shot_err}")
-
-
-def _stringify(value) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False)
-    return str(value)

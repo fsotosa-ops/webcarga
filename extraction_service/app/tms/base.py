@@ -1,7 +1,31 @@
+import json
+import logging
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# Shared by all CSV-producing adapters.
+CSV_DELIMITER = ";"
+
+
+def stringify(value) -> str:
+    """Serialize a cell value to string; handles None, dict, and list."""
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def get_downloads_dir() -> str:
+    """Return (and create) the shared downloads directory."""
+    path = os.path.join(os.getcwd(), "downloads")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def build_path(
@@ -87,3 +111,20 @@ class BaseTMSExtractor(ABC):
         Los adapters que los requieren deben validarlos y levantar ValueError
         explícito si llegan en None.
         """
+
+    async def _safe_screenshot(self, page, label: str) -> None:
+        """Best-effort screenshot + HTML dump to /tmp. Never raises."""
+        png_path = f"/tmp/{self.SOURCE_NAME}_{label}.png"
+        html_path = f"/tmp/{self.SOURCE_NAME}_{label}.html"
+        try:
+            await page.screenshot(path=png_path, full_page=True)
+            logger.info(f"Screenshot guardado: {png_path}")
+        except Exception as err:
+            logger.warning(f"No se pudo capturar screenshot {label}: {err}")
+        try:
+            html = await page.content()
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            logger.info(f"HTML guardado: {html_path}")
+        except Exception as err:
+            logger.warning(f"No se pudo capturar HTML {label}: {err}")

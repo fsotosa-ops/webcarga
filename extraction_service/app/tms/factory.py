@@ -1,55 +1,44 @@
 from fastapi import HTTPException
 
 from app.tms.base import BaseTMSExtractor
+from app.tms.qanalytics.cumplimiento_citas import QAnalyticsCumplimientoCitasExtractor
+from app.tms.qanalytics.cumplimiento_sap import QAnalyticsCumplimientoExtractor
 from app.tms.qanalytics.scraper import QAnalyticsExtractor
 from app.tms.sodimac.scraper import SodimacExtractor
 from app.tms.wingsuite.scraper import WingsuiteExtractor
 
-
-# Registro canónico: source → instancia del adapter.
-# Cuando un TMS gane soporte para más de un producto, reemplazar por
-# `(source, product) → adapter` y actualizar `get_adapter`.
-EXTRACTORS: dict[str, BaseTMSExtractor] = {
-    "qanalytics": QAnalyticsExtractor(),
-    "wingsuite": WingsuiteExtractor(),
-    "sodimac": SodimacExtractor(),
+# Registro canónico: (source, product) → instancia del adapter.
+EXTRACTORS: dict[tuple[str, str], BaseTMSExtractor] = {
+    ("qanalytics", "trips"): QAnalyticsExtractor(),
+    ("qanalytics", "cumplimiento-sap"): QAnalyticsCumplimientoExtractor(),
+    ("qanalytics", "cumplimiento-citas"): QAnalyticsCumplimientoCitasExtractor(),
+    ("wingsuite", "trips"): WingsuiteExtractor(),
+    ("sodimac", "trips"): SodimacExtractor(),
 }
 
 
 def list_sources() -> list[dict]:
     """Catálogo público: qué TMS hay y qué productos expone cada uno."""
-    return [
-        {"source": name, "products": [ext.PRODUCT_NAME]}
-        for name, ext in EXTRACTORS.items()
-    ]
-
-
-def _get_by_source(source_name: str) -> BaseTMSExtractor:
-    """Lookup por `source` únicamente. Helper interno de `get_adapter`."""
-    extractor = EXTRACTORS.get(source_name.lower())
-    if not extractor:
-        available = ", ".join(sorted(EXTRACTORS.keys()))
-        raise HTTPException(
-            status_code=400,
-            detail=f"TMS '{source_name}' no soportado. Disponibles: {available}",
-        )
-    return extractor
+    sources: dict[str, list[str]] = {}
+    for source, product in EXTRACTORS:
+        sources.setdefault(source, []).append(product)
+    return [{"source": s, "products": ps} for s, ps in sources.items()]
 
 
 def get_adapter(source: str, product: str) -> BaseTMSExtractor:
-    """Resuelve un extractor validando source + product.
+    """Resuelve un extractor validando (source, product).
 
-    El endpoint unificado `POST /jobs` usa esto: garantiza que el pipeline no
-    puede pedir un producto que el TMS no expone (ej. `qanalytics/invoices`
-    cuando qanalytics solo expone `trips`).
+    Retorna 400 si el combo no está registrado, listando los disponibles.
     """
-    extractor = _get_by_source(source)
-    if extractor.PRODUCT_NAME.lower() != product.lower():
+    key = (source.lower(), product.lower())
+    extractor = EXTRACTORS.get(key)
+    if not extractor:
+        available = ", ".join(f"{s}/{p}" for s, p in sorted(EXTRACTORS))
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Producto '{product}' no disponible para TMS '{source}'. "
-                f"Disponibles: [{extractor.PRODUCT_NAME}]"
+                f"Combo '{source}/{product}' no soportado. "
+                f"Disponibles: {available}"
             ),
         )
     return extractor

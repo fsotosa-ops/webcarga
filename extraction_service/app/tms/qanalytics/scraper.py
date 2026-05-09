@@ -1,5 +1,6 @@
-import os
+import asyncio
 import logging
+import os
 import time
 from datetime import date
 from typing import Optional
@@ -10,7 +11,7 @@ from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
-from app.tms.base import BaseTMSExtractor, ExtractionArtifact, build_path
+from app.tms.base import BaseTMSExtractor, ExtractionArtifact, build_path, get_downloads_dir
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -62,8 +63,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
             f"ts={ts}"
         )
 
-        downloads_dir = os.path.join(os.getcwd(), "downloads")
-        os.makedirs(downloads_dir, exist_ok=True)
+        downloads_dir = get_downloads_dir()
 
         async with async_playwright() as p:
             browser = await p.firefox.launch(headless=settings.BROWSER_HEADLESS)
@@ -73,7 +73,6 @@ class QAnalyticsExtractor(BaseTMSExtractor):
             )
             page = await context.new_page()
 
-            # Listeners de diagnóstico — útiles cuando el sitio tira errores JS
             page.on(
                 "console",
                 lambda msg: logger.info(f"[browser console] {msg.type}: {msg.text}"),
@@ -83,9 +82,34 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 lambda exc: logger.error(f"[browser pageerror] {exc}"),
             )
 
+            async def _log_response_async(response):
+                url = response.url
+                if response.request.resource_type not in ("xhr", "fetch", "document"):
+                    return
+                # ★ marca requests a páginas/APIs del propio QAnalytics
+                marker = "★" if ("qanalytics" in url or ".aspx" in url) else " "
+                if marker == "★":
+                    try:
+                        body_preview = (await response.text())[:300]
+                    except Exception:
+                        body_preview = "<no-body>"
+                    logger.info(
+                        f"[xhr]{marker} {response.status} "
+                        f"{response.request.method} {url} "
+                        f"body[:300]={body_preview!r}"
+                    )
+                else:
+                    logger.info(
+                        f"[xhr]{marker} {response.status} "
+                        f"{response.request.method} {url}"
+                    )
+
+            page.on("response", lambda r: asyncio.create_task(_log_response_async(r)))
+
             try:
                 await self._login(page, client_name, timeout_ms)
                 await self._navigate_to_distribucion(page)
+                await self._maybe_dump_page(page, "post_nav")
 
                 # La página abre #modal_pendiente automáticamente al cargar si hay
                 # gestiones pendientes. Hay que procesarlo antes de tocar nada más.
@@ -336,11 +360,27 @@ class QAnalyticsExtractor(BaseTMSExtractor):
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    async def _safe_screenshot(page: Page, label: str) -> None:
-        """Best-effort screenshot — nunca tira excepción nueva."""
+    async def _maybe_dump_page(page: Page, label: str) -> None:
+        """Si QANALYTICS_DUMP_PAGE=1, vuelca HTML + screenshot a /tmp/.
+
+        Uso:
+            BROWSER_HEADLESS=False QANALYTICS_DUMP_PAGE=1 \\
+              uvicorn app.main:app --reload --port 8080
+
+        Luego revisar /tmp/qanalytics_dump_post_nav.html para confirmar que
+        los selectores (#txt_fecini, #btn_buscar, exportar_tabla, etc.) existen
+        en la página correcta antes de interactuar con ellos.
+        """
+        if os.getenv("QANALYTICS_DUMP_PAGE") != "1":
+            return
         try:
-            path = f"error_debug_{label}.png"
-            await page.screenshot(path=path)
-            logger.info(f"Screenshot guardado: {path}")
-        except Exception as shot_err:
-            logger.warning(f"No se pudo capturar screenshot {label}: {shot_err}")
+            html_path = f"/tmp/qanalytics_dump_{label}.html"
+            png_path = f"/tmp/qanalytics_dump_{label}.png"
+            html = await page.content()
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            await page.screenshot(path=png_path, full_page=True)
+            logger.info(f"[DUMP] {label} → {html_path} | {png_path}")
+        except Exception as err:
+            logger.warning(f"[DUMP] {label} falló: {err}")
+
