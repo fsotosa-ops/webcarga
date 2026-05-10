@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/usuario/Desktop/projects/webcarga/monitor-app/.claude/hooks/post-tool-use.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

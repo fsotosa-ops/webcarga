@@ -10,6 +10,27 @@
 
 ## 2. Qué Hicimos
 
+### 2026-05-10 — Deploy Vercel + skills y hooks de automatización (vigésimo-tercera iteración)
+
+**Deploy a Vercel completado:**
+- URL producción: `https://frontend-two-alpha-39.vercel.app`
+- Proyecto Vercel: `fsotosas-projects-7b3a7c7c/frontend`
+- Env vars cargadas: `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` (todos los ambientes)
+- `SUPABASE_SERVICE_ROLE_KEY` aún pendiente (ver pendientes)
+- Build exitoso en Vercel: Next.js 16.2.6 + Turbopack, 13 páginas
+
+**Skills creados en `monitor-app/.claude/commands/`:**
+- `/deploy` — ciclo completo: verificar cambios → build local → push → `vercel --prod` → reportar URL
+- `/check-env` — compara `.env.local` vs Vercel, detecta vars faltantes, propone fix
+
+**Hook registrado en `monitor-app/.claude/settings.json`:**
+- PostToolUse hook que detecta commits con cambios en `monitor-app/frontend/` y sugiere `/deploy`
+
+**Pendiente:**
+- Agregar `SUPABASE_SERVICE_ROLE_KEY` en Vercel (Dashboard → Project Settings → API → service_role) para activar crear/eliminar usuarios en admin panel
+- Agregar URL de producción Vercel en Supabase → Authentication → URL Configuration → Redirect URLs para que OAuth funcione desde Vercel
+- Renombrar el alias de Vercel a algo más descriptivo (ej. `webcarga-monitor.vercel.app`) desde el dashboard
+
 ### 2026-05-09 — Roles 5-nivel + password strength + login redesign (vigésimo-segunda iteración)
 
 **Roles implementados** (5 niveles, jerarquía ascendente):

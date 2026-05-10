@@ -18,6 +18,7 @@
 |----------|------|--------|
 | extraction_service | `extraction_service/` | Activo en Cloud Run |
 | monitor-app | `monitor-app/backend/supabase/` | En desarrollo (Supabase) |
+| monitor-app/frontend | `monitor-app/frontend/` | Deployado en Vercel |
 
 ### extraction_service — TMS soportados
 
@@ -78,7 +79,19 @@ curl -s http://localhost:8080/api/v1/jobs/{job_id} | python3 -m json.tool
 ```
 
 ### Skills disponibles (slash commands)
+
+**extraction_service:**
 - `/run-tests` — corre pytest de extraction_service
 - `/start-dev` — inicia el servidor local
 - `/smoke-test` — hace POST + poll de un job completo
 - `/new-tms` — guía para agregar un nuevo adapter TMS
+
+**monitor-app/frontend (Vercel):**
+- `/deploy` — ciclo completo: build local → push → deploy producción → verificar env
+- `/check-env` — compara `.env.local` vs Vercel, detecta faltantes
+
+**Vercel config:**
+- Proyecto: `fsotosas-projects-7b3a7c7c/frontend`
+- URL producción: `https://frontend-two-alpha-39.vercel.app`
+- Root dir: `monitor-app/frontend/`
+- Framework: Next.js 16.2.6
