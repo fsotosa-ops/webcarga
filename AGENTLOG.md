@@ -10,6 +10,116 @@
 
 ## 2. Qué Hicimos
 
+### 2026-05-09 — Roles 5-nivel + password strength + login redesign (vigésimo-segunda iteración)
+
+**Roles implementados** (5 niveles, jerarquía ascendente):
+- `viewer` → solo lectura
+- `writer` → edita campos básicos del Diario (toggles activo/trabajando/vacaciones/sosafe, texto teléfono/observaciones)
+- `editor` → edita todos los campos sensibles (comentarios, pendientes_am, asistencia S-D, turno mañana, etc.)
+- `admin` → editor + gestión de usuarios (no puede manejar owners ni admins)
+- `owner` → acceso total, protegido — mapea a whitelist (felipe@sumadots.com, pablo.abuhomor@webcarga.com)
+
+**Enforcement frontend:**
+- `hasRole(userRole, required)` en `lib/types.ts` compara posición en jerarquía
+- `canManage(actorRole, targetRole)` controla qué filas en UsersTable son editables
+- DiarioTable recibe `userRole` prop → muestra ReadonlyToggle y texto estático para viewers
+- Badge "Solo lectura" visible en toolbar de la tabla si no tiene permisos
+
+**Password strength:**
+- `PasswordStrength.tsx` — 5 checks, barra proporcional, label (Muy débil → Muy fuerte)
+- `isPasswordValid()` requiere ≥4 de 5 checks (8+ chars, mayús, minús, número, especial)
+- Integrado en RegisterForm y CreateUserForm; botón submit deshabilitado mientras no cumple
+
+**UsersTable mejorado:**
+- Dropdown de rol en línea (click sobre badge) con descripciones de cada rol
+- Admins solo pueden asignar viewer/writer/editor; owners pueden asignar cualquier rol
+- Admins no pueden editar filas de otros admins ni de owners
+
+**Login rediseñado:**
+- Pantalla centrada con fondo oscuro radial gradient + grid texture sutil
+- Logo grande centrado con gradiente accent
+- Card blanca compacta con tab bar de borde inferior (accent border-b-2 activo)
+- Divider "o" minimalista entre form y OAuth buttons
+- Eliminado el panel lateral que "ensuciaba" la vista
+
+**OAuth y creación de usuarios:**
+- Los usuarios que usan Google/Microsoft no necesitan ser creados manualmente — se crean solos en el primer login OAuth; el trigger asigna role=operador y el admin cambia el rol después.
+
+### 2026-05-09 — Diario 2.0: Arquitectura de objetos + simplificación frontend (vigésimo-primera iteración)
+
+**Estructura simplificada** — solo 3 módulos:
+1. **Diario** (`/dashboard/diario`) — tabla operacional con date nav, sin mapa ni KPIs
+2. **Transportistas** (`/dashboard/transportistas`) — cards de EETTs con stats; drill-down a `/transportistas/[slug]` con tabs Conductores / Vehículos / Viajes
+3. **Admin Usuarios** (`/dashboard/admin/usuarios`) — crear, dar de alta/baja, eliminar
+
+**Arquitectura de objetos anidados:**
+- Viaje → EETT → Conductores + Vehículos
+- Conductor identificado por `rut_conductor` = `dni_driver` de silver (ID interno TMS, no necesariamente RUT)
+- EETT identificada por nombre (slug) desde `v_diario_trips.eett`
+- Navegación drill-down: Diario → click EETT → perfil EETT → click conductor → perfil conductor
+- Breadcrumbs contextuales en todos los perfiles
+
+**Archivos creados:**
+- `app/dashboard/diario/page.tsx` — date navigation (anterior/hoy/siguiente) + DiarioTable
+- `app/dashboard/transportistas/page.tsx` — grid de cards por EETT con status badges
+- `app/dashboard/transportistas/[slug]/page.tsx` — perfil EETT con tabs
+- `app/dashboard/conductores/[id]/page.tsx` — perfil conductor: vehículos, status breakdown, historial
+- `lib/actions/users.ts` — server actions `createUser` + `deleteUser` (requiere SUPABASE_SERVICE_ROLE_KEY)
+- `components/admin/CreateUserForm.tsx` — modal de creación de usuario
+
+**Archivos modificados:**
+- `components/dashboard/Sidebar.tsx` — solo Diario + Transportistas + [Admin] Usuarios
+- `components/dashboard/DiarioTable.tsx` — EETT y conductor clickeables como links
+- `components/admin/UsersTable.tsx` — botón "Crear usuario", botón eliminar (+ confirm dialog)
+- `proxy.ts` — redirect /login → /dashboard/diario
+- `app/dashboard/operaciones/page.tsx` — redirect a /dashboard/diario
+
+**Pendiente:**
+- Agregar `SUPABASE_SERVICE_ROLE_KEY` en `.env.local` para activar creación/eliminación de usuarios (Supabase Dashboard → Project Settings → API)
+
+### 2026-05-09 — Diario 2.0: UI Redesign Figma (vigésima iteración)
+
+- **Figma MCP rate-limited** (View seat Professional plan) — implementación basada en design tokens del plan, screenshots no disponibles.
+- **Mejoras UI implementadas**:
+  - `app/layout.tsx` — añadida fuente Poppins (mencionada en spec Figma)
+  - `app/globals.css` — añadida variable `--font-poppins`
+  - `components/dashboard/KPICard.tsx` — rediseñado con top-border de color de status (Figma style), label en Poppins con color del status
+  - `components/dashboard/Topbar.tsx` — breadcrumb "Home / Gestor de Viajes", avatar con gradient, initials de nombre completo
+  - `components/dashboard/Sidebar.tsx` — active indicator dot (accent), iconos con color accent cuando activos, label "Diario 2.0", opacidades refinadas
+  - `components/dashboard/DiarioTable.tsx` — badges con colores exactos de marca (inline styles), filtro EETT agregado, search icon, empty state, header uppercase/tracking, zebra stripes más sutiles
+  - `app/dashboard/operaciones/page.tsx` — soporte `searchParams` (Promise) para `fecha` param, fecha formateada en header, OriginRanking rediseñada con header propio
+  - `app/login/page.tsx` — panel izquierdo branding en desktop (gradiente oscuro), layout 2 columnas en lg+
+- **Build verificado**: `next build` sin errores. Dev server activo en localhost:3000.
+
+### 2026-05-09 — Diario 2.0: Gold Layer + Frontend Next.js (decimonovena iteración)
+
+- **Gold migration aplicada** en Supabase (`viclzoftiudkepqnhekv`): schema gold, vista `gold.v_diario_trips` (JOIN silver + normalized_status), tabla `gold.diario_manual_fields` (RLS), tabla `public.profiles` (trigger auto-create).
+- **Mapeos de status extendidos**: además de los del plan original, se agregaron Sodimac "Finalizada"→CERRADO FINALIZADO, "Publicada"/"Presentada"→ASIGNADO, "Rechazada en andén"/"Carga rechazada"→CANCELADO; Wingsuite "Ejecucion"→RUTA. Verificado con SQL: 2.292 filas, todos los status normalizados.
+- **config.toml actualizado**: `schemas = ["public", "graphql_public", "silver", "gold"]` para exponer gold en PostgREST.
+- **Frontend Next.js 16.2.6** inicializado en `monitor-app/frontend/`. Stack: TypeScript, Tailwind v4, App Router.
+- **Dependencias instaladas**: @supabase/supabase-js, @supabase/ssr, @tanstack/react-table v8, leaflet + react-leaflet, recharts, lucide-react.
+- **Archivos creados**:
+  - `proxy.ts` (reemplaza middleware.ts en Next.js 16) — auth guard, redirige a /login si no hay sesión
+  - `lib/types.ts` — tipos generados + gold schema manual (DiarioTrip, DiarioManualFields, Database con schema gold)
+  - `lib/supabase/client.ts` + `server.ts` — createClient() y createGoldClient() tipados correctamente
+  - `lib/geocoding.ts` — lookup lat/lng de ~35 ciudades chilenas
+  - `app/globals.css` — colores WebCarga via Tailwind v4 @theme
+  - `app/layout.tsx` — fuentes Roboto + Mulish
+  - `app/login/page.tsx` + `components/auth/LoginForm.tsx` + `OAuthButtons.tsx`
+  - `app/auth/callback/route.ts` — OAuth callback handler
+  - `app/dashboard/layout.tsx` — Sidebar + Topbar layout
+  - `components/dashboard/Sidebar.tsx` — nav lateral #182635
+  - `components/dashboard/Topbar.tsx` — fecha, usuario desde profiles
+  - `components/dashboard/KPICard.tsx` + `KPIGrid.tsx` — 8 KPIs por normalized_status
+  - `components/dashboard/MapaViajes.tsx` + `MapaViajesWrapper.tsx` — Leaflet (SSR-safe con dynamic import en client component)
+  - `components/dashboard/DiarioTable.tsx` — @tanstack/react-table, filtro global + por estado, paginación 20/pág
+  - `components/dashboard/ManualFieldCell.tsx` — ToggleCell (toggle booleano) + TextCell (edición inline) con UPSERT
+  - `app/dashboard/operaciones/page.tsx` — página principal: KPIs + Mapa + OriginRanking + DiarioTable
+- **Build verificado**: `next build` pasa sin errores TypeScript.
+- **Auth guard verificado**: `curl localhost:3000` → 307 redirect a /login.
+
+
+
 ### 2026-04-28 — Wingsuite cambia al reporte 50051 (décima-tercera iteración extraction_service)
 - Adapter de Wingsuite ahora abre **"Reporte de Viajes de Transportistas"** (id `50051`) en lugar de "Reporte Completo de Viajes por Transportista" (id `4134`). Endpoint XHR confirmado: `GET viajes.obtener_resumen_transportista` con `fecha_inicio`/`fecha_fin` en query string.
 - Refactor: `_open_report` y `_apply_filters_and_download` fusionados en `_load_report_and_download` para que el `expect_response` envuelva la apertura del reporte (el 50051 dispara fetch automático al cargar). Predicate filtra por fechas exactas para descartar el fetch con defaults cuando no coinciden con lo pedido.
@@ -83,6 +193,21 @@
 - API: `POST /api/v1/jobs` con `{"source":"qanalytics","product":"cumplimiento-sap",...}` ahora funciona. `GET /api/v1/sources` devuelve qanalytics con products `["trips","cumplimiento-sap"]`.
 - **simplify aplicado** sobre base.py, wingsuite, sodimac, qanalytics: `CSV_DELIMITER`, `stringify`, `get_downloads_dir`, `_safe_screenshot` centralizados en `BaseTMSExtractor`. Timeout hardcodeado en `_set_page_size` corregido. XHR body read gateado a URLs críticas. Batch `page.evaluate()` para scrape de tabla.
 
+### 2026-05-09 — MCPs, Skills del video y Skills + Hooks de deuda técnica (decimoctava iteración)
+- **MCPs validados**: Google Drive (`mcp__claude_ai_Google_Drive__*`) y Figma (`mcp__claude_ai_Figma__*`) confirmados funcionales — ambos responden desde esta sesión de Claude Code usando la cuenta felipe@sumadots.com. No requieren configuración adicional: están como "deferred tools" disponibles en toda sesión.
+- **Skills instaladas** (video: `anthropics/skills` desde GitHub):
+  - `xlsx` — manejo de Excel/CSV — copiado a `.agents/skills/xlsx/`
+  - `webapp-testing` — testing de web apps — copiado a `.agents/skills/webapp-testing/`
+  - Registrados en `monitor-app/skills-lock.json`
+- **Slash commands de deuda técnica** en `.claude/commands/`:
+  - `/debt-scan` — escanea TODOs/FIXMEs/HACK, type ignores, pass vacíos, deps sin versión
+  - `/debt-log` — añade item a `TECH_DEBT.md` con prioridad y contexto
+  - `/dep-audit` — audita `requirements.txt`, versiones latest y vulnerabilidades
+- **Hooks nuevos/mejorados** en `.claude/hooks/`:
+  - `skill-context.sh` → `UserPromptSubmit`: inyecta contexto de MCPs/skills cuando el prompt menciona figma/excel/drive/supabase
+  - `smart-stop.sh` → `Stop`: muestra archivos con cambios reales en lugar de echo genérico
+  - `debt-detector.sh` → `PostToolUse(Edit|Write)`: detecta nuevos TODO/FIXME en diffs y sugiere `/debt-log`
+
 ### 2026-05-08 — Claude Code skills & hooks (decimocuarta iteración)
 - **CLAUDE.md root mejorado**: Añadida sección de contexto del proyecto con mapa de archivos, tabla de TMS, patrón de arquitectura y comandos frecuentes. Elimina exploración de archivos al inicio de cada sesión.
 - **extraction_service/CLAUDE.md mejorado**: Documentación técnica completa — estructura de directorios, cómo correr tests/dev/smoke test, guía de 4 pasos para agregar un TMS, variables de entorno y notas de browser por TMS.
@@ -93,7 +218,40 @@
   - `/smoke-test [source]` — E2E: POST job + poll hasta done/failed
   - `/new-tms` — template completo para agregar un adapter TMS
 
-## 3. Checklist
+## 3. Checklist — Diario 2.0 Frontend
+- [x] Gold migration aplicada (schema + vista + tablas + RLS + triggers)
+- [x] config.toml: gold + silver en schemas API
+- [x] Next.js 16 inicializado con TypeScript + Tailwind v4 + App Router
+- [x] proxy.ts (auth guard — Next.js 16 rename de middleware)
+- [x] Supabase auth (email/password + OAuth Google + Microsoft)
+- [x] Dashboard layout (Sidebar #182635 + Topbar con perfil de usuario)
+- [x] KPI cards (8 estados normalizados con colores Figma)
+- [x] Mapa distribución por origen (Leaflet + geocoding lookup Chile)
+- [x] DiarioTable (@tanstack/react-table + filtros + paginación)
+- [x] ManualFieldCell: ToggleCell + TextCell (UPSERT a diario_manual_fields)
+- [x] Build verde sin errores TypeScript
+### 2026-05-09 — Auth completo + Panel Admin (vigésima iteración)
+- **Migración `admin_roles_and_profiles`**: columna `profiles.active` (BOOLEAN DEFAULT TRUE), función `is_admin()` (SECURITY DEFINER), políticas RLS admin en profiles.
+- **Migración `superadmin_auto_assign`**: tabla `admin_whitelist` (felipe@sumadots.com, pablo.abuhomor@webcarga.com), trigger `handle_new_user` actualizado para asignar `role=admin` automáticamente a emails de la whitelist en primer sign-up/OAuth.
+- **Registro**: `components/auth/RegisterForm.tsx` — sign-up con nombre + email + contraseña; redirige directo si email confirmations off, muestra mensaje si on.
+- **Recuperar contraseña**: `app/forgot-password/page.tsx` + `ForgotPasswordForm.tsx` → `supabase.auth.resetPasswordForEmail` con redirectTo `/auth/reset-password`.
+- **Cambiar contraseña**: `app/auth/reset-password/page.tsx` + `ResetPasswordForm.tsx` → intercambia code del URL → `supabase.auth.updateUser({ password })`.
+- **Login page actualizado**: tabs Ingresar/Registrarse + link "¿Olvidaste tu contraseña?".
+- **Proxy.ts actualizado**: `/forgot-password` agregado a rutas públicas.
+- **Panel Admin** (`/dashboard/admin/usuarios`):
+  - `app/dashboard/admin/layout.tsx` — guard: solo `role=admin`, redirige a `/dashboard/operaciones` si no.
+  - `components/admin/UsersTable.tsx` — tabla con toggle de role (operador↔admin) y toggle active, optimistic updates, búsqueda por nombre/email.
+  - KPIs: total usuarios, admins, activos.
+- **Dashboard layout**: verifica `profiles.active`; si false → redirect a `/login?error=cuenta_desactivada`.
+- **Sidebar**: acepta `role` prop del server layout; muestra sección Admin con link a /admin/usuarios solo para admins; botón de cerrar sesión.
+- **Build verde**: 11 rutas sin errores TypeScript.
+
+- [ ] Configurar Google OAuth en Google Cloud Console → Supabase
+- [ ] Configurar Microsoft OAuth en Azure AD → Supabase
+- [ ] Test E2E: login → /dashboard/operaciones → tabla con datos reales
+- [ ] Leaflet CSS import: verificar que el mapa se renderiza bien en browser
+
+## 3b. Checklist — extraction_service (anterior)
 - [x] Fix browser mismatch (Firefox → Chromium)
 - [x] Fix headless=False → configurable
 - [x] Eliminar credenciales hardcodeadas de config.py

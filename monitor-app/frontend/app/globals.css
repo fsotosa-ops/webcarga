@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+:root {
+  --sidebar-bg: #182635;
+  --accent: #1cb9ec;
+  --status-ruta: #62a420;
+  --status-carga: #053bfa;
+  --status-descarga: #ea6b25;
+  --status-incidente: #b00020;
+  --status-pendiente: #8a00dd;
+  --bg-main: #e5e5e5;
+  --text-primary: #192a3e;
+  --border-color: #dfe0eb;
+}
+
+@theme inline {
+  --color-sidebar: var(--sidebar-bg);
+  --color-accent: var(--accent);
+  --color-status-ruta: var(--status-ruta);
+  --color-status-carga: var(--status-carga);
+  --color-status-descarga: var(--status-descarga);
+  --color-status-incidente: var(--status-incidente);
+  --color-status-pendiente: var(--status-pendiente);
+  --color-bg-main: var(--bg-main);
+  --color-text-primary: var(--text-primary);
+  --color-border: var(--border-color);
+  --font-sans: var(--font-roboto), system-ui, sans-serif;
+  --font-mulish: var(--font-mulish), system-ui, sans-serif;
+  --font-poppins: var(--font-poppins), system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
