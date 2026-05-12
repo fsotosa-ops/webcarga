@@ -187,6 +187,41 @@ export function hasRole(userRole: string | undefined, required: UserRole): boole
   return userIdx >= reqIdx
 }
 
+// ── Trips (app.trips via FastAPI) ──────────────────────────────────
+
+export type TripMilestone = {
+  status_id: string
+  status:    string
+  ts:        string | null
+  local:     string | null
+}
+
+export type Trip = {
+  id:                     string
+  tms_name:               string
+  client_name:            string | null
+  planning_date:          string | null
+  current_status:         string | null
+  tractor_plate:          string | null
+  trailer_plate:          string | null
+  driver_name:            string | null
+  driver_rut:             string | null
+  transporter:            string | null
+  origin:                 string | null
+  milestones:             TripMilestone[]
+  activo:                 boolean
+  trabajando:             boolean
+  asignado:               boolean
+  primera_vuelta:         boolean
+  estado_manual:          string | null
+  locales:                string | null
+  observaciones:          string | null
+  comentarios:            string | null
+  manually_edited_fields: string[]
+  edited_at:              string | null
+  updated_at:             string | null
+}
+
 // ── Transporter Profiles (app.transporter_profiles via FastAPI) ────
 
 export type TransporterDriver = {

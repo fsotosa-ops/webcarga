@@ -11,6 +11,52 @@
 
 ## 2. Qué Hicimos
 
+### 2026-05-12 — app.trips aggregate + Diario 2.0 UX refactor (vigésimo-quinta iteración)
+
+**Objetivo:** Modelo de datos de viajes con milestones (patrón `app.transporter_profiles`) + Diario frontend con tabs En Curso/Historial y slide-over de Bitácora.
+
+**Migración SQL aplicada** en Supabase (`viclzoftiudkepqnhekv`):
+- `app.trips` — tabla agregada (una fila por `otm_id`): campos del viaje + `milestones JSONB` + Bitácora operativa (activo, trabajando, asignado, primera_vuelta, estado_manual, locales, observaciones, comentarios) + `manually_edited_fields TEXT[]`
+- `app.safe_upsert_trip(otm_id, milestone_jsonb, is_latest)` — función que el pipeline llama para agregar milestones sin pisar campos protegidos. Misma mecánica que `app.safe_update_transporter`.
+- Índices en `planning_date`, `current_status`, `tractor_plate`, `driver_rut`
+- RLS: `trips_select` policy para `authenticated`
+- Archivo de migración: `monitor-app/backend/supabase/migrations/20260512000000_app_trips.sql`
+
+**FastAPI — trips router** (`monitor-app/backend/api/app/routers/trips.py`):
+- `GET /api/v1/trips/` — lista paginada con filtros: fecha, view (en_curso|historial), q, fecha_desde, fecha_hasta, status
+- `GET /api/v1/trips/{id}` — detalle completo con milestones JSONB
+- `PATCH /api/v1/trips/{id}` — edita Bitácora + marca `manually_edited_fields` (require_editor)
+- `DELETE /api/v1/trips/{id}/overrides/{field}` — resetea campo al control del pipeline
+- `app/schemas/trip.py` — `TripPatch` con 8 campos opcionales
+- `main.py` actualizado: incluye `trips_router`
+
+**Frontend Diario 2.0** — rediseño completo:
+- `lib/types.ts` — nuevos tipos `Trip`, `TripMilestone`
+- `lib/api/trips.ts` — cliente HTTP tipado con JWT para trips
+- `app/dashboard/diario/page.tsx` — Client Component con:
+  - Tabs: "En Curso (Hoy)" (filtrado por status activo) / "Base Histórica y Filtros"
+  - Navegación de fechas (En Curso)
+  - Filtros historial: fecha_desde, fecha_hasta, status select
+  - Un viaje por fila (no N filas por status)
+  - Slide-over se abre al clickear un viaje
+- `components/dashboard/TripTable.tsx` — tabla de viajes con StatusBadge, columnas: Fecha | Tracto/Rampla | Conductor | EETT | Origen | Estado | →
+- `components/dashboard/TripSlideOver.tsx` — panel derecho con:
+  - Header oscuro (patente + conductor)
+  - Timeline de milestones (historial cronológico del viaje)
+  - Bitácora Operativa: 4 toggles (Activo/Trabajando/Asignado/1ra Vuelta) + Estado select + Locales text + Observaciones textarea + Comentarios textarea + botón Guardar
+- Build Next.js verde: 12 rutas sin errores TypeScript
+
+**Arquitectura de datos:**
+- `silver.tms_trips` — filas raw del pipeline (una por status moment, `otm_id` es el viaje)
+- El pipeline llama `app.safe_upsert_trip()` para agregar cada milestone nuevo
+- `app.trips` — vista agregada: el frontend solo toca esta tabla
+- `manually_edited_fields` protege los campos del pipeline (tractor_plate, driver_name, current_status, etc.)
+
+**Pendiente:**
+- Poblar `app.trips` desde `silver.tms_trips` existentes (backfill vía dbt o query directa)
+- Deploy del backend actualizado a Cloud Run (trigger CI/CD con push al repo)
+- Integrar `app.safe_upsert_trip()` en el pipeline/dbt para viajes nuevos
+
 ### 2026-05-11 — FastAPI Monitor API + Transporter Profiles (vigésimo-cuarta iteración)
 
 **Objetivo:** API profesional sobre `app.transporter_profiles` (2.830 registros) para normalizar/editar datos desde el frontend.
