@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { createUser } from '@/lib/actions/users'
-import { X, UserPlus, Eye, EyeOff, Chrome } from 'lucide-react'
+import { X, UserPlus, Eye, EyeOff } from 'lucide-react'
 import PasswordStrength, { isPasswordValid } from '@/components/auth/PasswordStrength'
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, type UserRole } from '@/lib/types'
 
