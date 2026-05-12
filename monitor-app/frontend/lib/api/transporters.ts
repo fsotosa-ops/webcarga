@@ -8,7 +8,7 @@ import type {
 } from '@/lib/types'
 import { createBrowserClient } from '@supabase/ssr'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001'
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 async function getToken(): Promise<string> {
   const sb = createBrowserClient(
