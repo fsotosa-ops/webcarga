@@ -77,6 +77,12 @@ export const transportersApi = {
       body: JSON.stringify(body),
     }),
 
+  patchDriver: (id: string, did: string, body: { rut?: string; name?: string }) =>
+    apiFetch<{ data: TransporterDriver }>(`/api/v1/transporters/${id}/drivers/${did}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
   removeDriver: (id: string, did: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/transporters/${id}/drivers/${did}`, {
       method: 'DELETE',

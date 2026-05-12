@@ -85,6 +85,11 @@ class AddDriverReq(BaseModel):
     name: str
 
 
+class PatchDriverReq(BaseModel):
+    rut: Optional[str] = None
+    name: Optional[str] = None
+
+
 class AddVehicleReq(BaseModel):
     type: str
     plate: str

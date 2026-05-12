@@ -7,6 +7,7 @@ from ..auth import get_current_user, require_admin, require_editor
 from ..db import get_pool
 from ..schemas.transporter import (
     AddDriverReq,
+    PatchDriverReq,
     AddTrailerReq,
     AddVehicleReq,
     PaginatedResponse,
@@ -204,6 +205,51 @@ async def add_driver(
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="No encontrado")
     return {"data": new}
+
+
+@router.patch("/{tid}/drivers/{did}")
+async def patch_driver(
+    tid: str,
+    did: str,
+    body: PatchDriverReq,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    row = await pool.fetchrow(
+        "SELECT drivers FROM app.transporter_profiles WHERE id = $1", tid
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    drivers = list(row["drivers"] or [])
+    updated = None
+    for d in drivers:
+        if d["id"] == did:
+            if body.rut is not None:
+                d["rut"] = body.rut
+            if body.name is not None:
+                d["name"] = body.name
+            updated = d
+            break
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Conductor no encontrado")
+
+    await pool.execute(
+        """
+        UPDATE app.transporter_profiles SET
+            drivers = $2::jsonb,
+            manually_edited_fields = (
+                SELECT ARRAY(SELECT DISTINCT unnest(
+                    COALESCE(manually_edited_fields, '{}') || ARRAY['drivers']
+                ))
+            ),
+            edited_by = $3::uuid, edited_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+        """,
+        tid, json.dumps(drivers), user["sub"],
+    )
+    return {"data": updated}
 
 
 @router.delete("/{tid}/drivers/{did}")

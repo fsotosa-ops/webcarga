@@ -57,6 +57,25 @@
 - Deploy del backend actualizado a Cloud Run (trigger CI/CD con push al repo)
 - Integrar `app.safe_upsert_trip()` en el pipeline/dbt para viajes nuevos
 
+### 2026-05-12 — Rediseño Empresa Detail Page — 2-column layout (vigésimo-sexta iteración)
+
+**Objetivo:** Reemplazar la vista tabbed de la empresa (Info | Conductores | Flota | Ramplas) por el diseño de `monitor-app/index.html`: header con iniciales coloreadas + 2 columnas simultáneas (Conductores izquierda, Flota/Ramplas derecha) + slide-over de edición.
+
+**Archivo modificado:** `monitor-app/frontend/app/dashboard/transportistas/empresa/[id]/page.tsx`
+
+**Cambios:**
+- Eliminado el sistema de tabs (`Tab` type + `tab` state)
+- Company Header: cuadro de iniciales con color determinístico, razón social bold, RUT, botón "Editar Datos Empresa" (solo visible con rol editor)
+- 2-column grid (`xl:grid-cols-2`, `h-[680px]` con overflow-y-auto en cada panel):
+  - **Conductores:** cards con avatar circular de iniciales coloreado, nombre, RUT, botón eliminar
+  - **Flota:** Tractos como cards con placa en `bg-slate-800` badge oscuro + tipo; Ramplas como sección separada dentro del mismo panel con `bg-gray-100` badge
+- Slide-over "Editar Datos Empresa" abre desde la derecha (mismo patrón que TripSlideOver) — contiene todos los `EditableField` de info + contactabilidad
+- Botones "+ Tracto" y "+ Rampla" separados en el header del panel Flota
+- TypeScript: compila limpio (0 errores)
+
+**Pendiente:**
+- Deploy a Vercel (push to main → CI/CD)
+
 ### 2026-05-11 — FastAPI Monitor API + Transporter Profiles (vigésimo-cuarta iteración)
 
 **Objetivo:** API profesional sobre `app.transporter_profiles` (2.830 registros) para normalizar/editar datos desde el frontend.
