@@ -20,9 +20,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar role={profile?.role} />
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Topbar />
-        <main className="flex-1 overflow-y-auto bg-bg-main">
+        {/* pb-16 md:pb-0: space for mobile bottom nav */}
+        <main className="flex-1 overflow-y-auto bg-bg-main pb-16 md:pb-0">
           {children}
         </main>
       </div>

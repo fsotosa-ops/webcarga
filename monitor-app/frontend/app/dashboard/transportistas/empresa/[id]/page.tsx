@@ -263,68 +263,62 @@ export default function EmpresaDetailPage() {
     : null
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-5">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
-        <Link href="/dashboard/transportistas" className="hover:text-accent transition-colors">Empresas de Transportes</Link>
+        <Link href="/dashboard/transportistas" className="hover:text-accent transition-colors shrink-0">Empresas</Link>
         <ChevronRight size={13} />
-        <span className="text-text-primary font-medium truncate max-w-xs">{tp.business_name ?? id}</span>
+        <span className="text-text-primary font-medium truncate">{tp.business_name ?? id}</span>
       </nav>
 
       {/* Header */}
-      <div className="bg-white rounded-xl border border-border p-5 flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-          <Building2 size={22} className="text-gray-500" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="font-mulish font-bold text-xl text-text-primary">{tp.business_name ?? '—'}</h1>
-            {stageColor && (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: stageColor.bg, color: stageColor.text }}>
-                {tp.account_stage}
-              </span>
-            )}
-            {tp.manually_edited_fields.length > 0 && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">
-                Editado manualmente
-              </span>
-            )}
+      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+            <Building2 size={20} className="text-gray-500" />
           </div>
-          {tp.rut && <p className="text-sm text-gray-400 mt-0.5">RUT: {tp.rut}</p>}
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-mulish font-bold text-lg md:text-xl text-text-primary">{tp.business_name ?? '—'}</h1>
+              {stageColor && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: stageColor.bg, color: stageColor.text }}>
+                  {tp.account_stage}
+                </span>
+              )}
+              {tp.manually_edited_fields.length > 0 && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado</span>
+              )}
+            </div>
+            {tp.rut && <p className="text-sm text-gray-400 mt-0.5">RUT: {tp.rut}</p>}
             {tp.admin_id && (
-              <span className="text-[10px] text-gray-400 font-mono bg-gray-100 px-2 py-0.5 rounded">
-                Admin ID: #{tp.admin_id}
+              <span className="text-[10px] text-gray-400 font-mono bg-gray-100 px-2 py-0.5 rounded mt-1 inline-block">
+                #{tp.admin_id}
               </span>
             )}
-            <span className="text-[10px] text-gray-300 font-mono bg-gray-50 px-2 py-0.5 rounded border border-border/40 select-all" title="Transporter ID (UUID)">
-              {tp.id}
-            </span>
           </div>
-          {!canEdit && (
-            <p className="text-[10px] text-gray-300 mt-1">Solo lectura — necesitas rol editor+ para editar</p>
-          )}
         </div>
-        <div className="grid grid-cols-3 gap-6 shrink-0">
+
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-border/60">
           {[
-            { label: 'Conductores', value: tp.drivers.length,  icon: Users },
-            { label: 'Vehículos',   value: tp.vehicles.length, icon: Truck },
-            { label: 'Ramplas',     value: tp.trailers.length, icon: Truck },
+            { label: 'Conductores', value: tp.drivers.length },
+            { label: 'Vehículos',   value: tp.vehicles.length },
+            { label: 'Ramplas',     value: tp.trailers.length },
           ].map(({ label, value }) => (
             <div key={label} className="text-center">
-              <p className="font-mulish font-bold text-2xl text-text-primary">{value}</p>
-              <p className="text-xs text-gray-400">{label}</p>
+              <p className="font-mulish font-bold text-xl md:text-2xl text-text-primary">{value}</p>
+              <p className="text-[10px] md:text-xs text-gray-400">{label}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-0 border-b border-border">
+      {/* Tabs — scrollable on mobile */}
+      <div className="flex gap-0 border-b border-border overflow-x-auto scrollbar-none">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 md:px-4 py-2.5 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
               tab === t.id ? 'border-accent text-accent' : 'border-transparent text-gray-500 hover:text-text-primary'
             }`}>
             {t.label}

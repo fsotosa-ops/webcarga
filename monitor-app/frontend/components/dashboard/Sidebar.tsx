@@ -7,8 +7,8 @@ import { useRouter } from 'next/navigation'
 import { Truck, Building2, Users, LogOut } from 'lucide-react'
 
 const navItems = [
-  { href: '/dashboard/diario',          label: 'Diario',          icon: Truck },
-  { href: '/dashboard/transportistas',  label: 'Empresas de Transportes',  icon: Building2 },
+  { href: '/dashboard/diario',         label: 'Diario',    icon: Truck },
+  { href: '/dashboard/transportistas', label: 'Empresas',  icon: Building2 },
 ]
 
 interface SidebarProps {
@@ -26,72 +26,96 @@ export default function Sidebar({ role }: SidebarProps) {
     router.refresh()
   }
 
+  const isAdmin = pathname.startsWith('/dashboard/admin')
+
   return (
-    <aside className="w-56 bg-sidebar min-h-screen flex flex-col shrink-0">
-      <div className="px-5 py-5 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center shrink-0 shadow-lg">
-            <span className="text-white font-mulish font-bold text-sm">W</span>
-          </div>
-          <div>
-            <p className="text-white font-mulish font-bold text-sm leading-tight">WebCarga</p>
-            <p className="text-white/40 text-[11px]">Diario 2.0</p>
+    <>
+      {/* ── Desktop sidebar (md+) ─────────────────────────────── */}
+      <aside className="hidden md:flex w-56 bg-sidebar min-h-screen flex-col shrink-0">
+        <div className="px-5 py-5 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center shrink-0 shadow-lg">
+              <span className="text-white font-mulish font-bold text-sm">W</span>
+            </div>
+            <div>
+              <p className="text-white font-mulish font-bold text-sm leading-tight">WebCarga</p>
+              <p className="text-white/40 text-[11px]">Diario 2.0</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
+          {navItems.map(({ href, label, icon: Icon }) => {
+            const active = pathname.startsWith(href)
+            return (
+              <Link key={href} href={href}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                  active ? 'bg-white/10 text-white font-medium' : 'text-white/55 hover:bg-white/5 hover:text-white/80'
+                }`}>
+                <Icon size={16} className={active ? 'text-accent' : ''} />
+                {label}
+                {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent" />}
+              </Link>
+            )
+          })}
+
+          {role === 'admin' && (
+            <div className="pt-3 mt-3 border-t border-white/10">
+              <p className="px-3 text-[10px] font-semibold text-white/25 uppercase tracking-widest mb-1.5">Admin</p>
+              <Link href="/dashboard/admin/usuarios"
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                  isAdmin ? 'bg-white/10 text-white font-medium' : 'text-white/55 hover:bg-white/5 hover:text-white/80'
+                }`}>
+                <Users size={16} className={isAdmin ? 'text-accent' : ''} />
+                Usuarios
+                {isAdmin && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent" />}
+              </Link>
+            </div>
+          )}
+        </nav>
+
+        <div className="px-3 py-4 border-t border-white/10">
+          <button onClick={signOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-white/55 hover:bg-white/5 hover:text-white/80 transition-all">
+            <LogOut size={16} />
+            Cerrar sesión
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Mobile bottom nav ─────────────────────────────────── */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/10 flex items-stretch">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                active
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-white/55 hover:bg-white/5 hover:text-white/80'
-              }`}
-            >
-              <Icon size={16} className={active ? 'text-accent' : ''} />
-              {label}
-              {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent" />}
+            <Link key={href} href={href}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
+                active ? 'text-white' : 'text-white/45 hover:text-white/80'
+              }`}>
+              <Icon size={21} className={active ? 'text-accent' : ''} />
+              <span className="text-[10px] font-medium">{label}</span>
+              {active && <div className="w-1 h-1 rounded-full bg-accent" />}
             </Link>
           )
         })}
 
         {role === 'admin' && (
-          <div className="pt-3 mt-3 border-t border-white/10">
-            <p className="px-3 text-[10px] font-semibold text-white/25 uppercase tracking-widest mb-1.5">
-              Admin
-            </p>
-            <Link
-              href="/dashboard/admin/usuarios"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                pathname.startsWith('/dashboard/admin')
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-white/55 hover:bg-white/5 hover:text-white/80'
-              }`}
-            >
-              <Users size={16} className={pathname.startsWith('/dashboard/admin') ? 'text-accent' : ''} />
-              Usuarios
-              {pathname.startsWith('/dashboard/admin') && (
-                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent" />
-              )}
-            </Link>
-          </div>
+          <Link href="/dashboard/admin/usuarios"
+            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
+              isAdmin ? 'text-white' : 'text-white/45 hover:text-white/80'
+            }`}>
+            <Users size={21} className={isAdmin ? 'text-accent' : ''} />
+            <span className="text-[10px] font-medium">Admin</span>
+            {isAdmin && <div className="w-1 h-1 rounded-full bg-accent" />}
+          </Link>
         )}
-      </nav>
 
-      <div className="px-3 py-4 border-t border-white/10">
-        <button
-          onClick={signOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-white/55 hover:bg-white/5 hover:text-white/80 transition-all"
-        >
-          <LogOut size={16} />
-          Cerrar sesión
+        <button onClick={signOut}
+          className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-white/45 hover:text-white/80 transition-colors">
+          <LogOut size={21} />
+          <span className="text-[10px] font-medium">Salir</span>
         </button>
-      </div>
-    </aside>
+      </nav>
+    </>
   )
 }

@@ -56,7 +56,7 @@ export default function EmpresasTransportePage() {
   const totalPages = Math.ceil(total / LIMIT)
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
@@ -167,8 +167,8 @@ export default function EmpresasTransportePage() {
         </>
       ) : (
         <>
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-xl border border-border overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-border text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   <th className="px-5 py-3 text-left">Empresa</th>

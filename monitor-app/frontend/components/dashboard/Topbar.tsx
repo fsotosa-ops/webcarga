@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { Bell, ChevronRight, Home } from 'lucide-react'
+import { Bell } from 'lucide-react'
 
 export default async function Topbar() {
   const supabase = await createClient()
@@ -14,19 +14,24 @@ export default async function Topbar() {
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
-    <header className="h-14 bg-white border-b border-border flex items-center px-6 shrink-0 gap-4">
-      <nav className="flex items-center gap-1 text-sm flex-1 min-w-0">
-        <Home size={14} className="text-gray-400 shrink-0" />
-        <ChevronRight size={12} className="text-gray-300 shrink-0" />
-        <span className="text-text-primary font-medium truncate">Gestor de Viajes</span>
-      </nav>
+    <header className="h-14 bg-white border-b border-border flex items-center px-4 md:px-6 shrink-0 gap-3">
+      {/* Mobile brand — visible only when sidebar is hidden */}
+      <div className="md:hidden flex items-center gap-2 shrink-0">
+        <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shadow">
+          <span className="text-white font-mulish font-bold text-xs">W</span>
+        </div>
+        <span className="font-mulish font-bold text-sm text-text-primary">WebCarga</span>
+      </div>
 
-      <div className="flex items-center gap-3">
+      {/* Spacer on desktop (breadcrumb placeholder) */}
+      <div className="hidden md:block flex-1" />
+
+      <div className="flex items-center gap-2.5 ml-auto">
         <button className="relative p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Notificaciones">
           <Bell size={17} className="text-gray-500" />
         </button>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-semibold"
             style={{ background: 'linear-gradient(135deg, #1cb9ec 0%, #0e8db5 100%)' }}
