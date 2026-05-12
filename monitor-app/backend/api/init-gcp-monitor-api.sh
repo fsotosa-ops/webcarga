@@ -31,10 +31,13 @@ WIF_PROVIDER_ID="github-provider"
 GITHUB_ORG_OR_USER="fsotosa-ops"
 GITHUB_REPO="webcarga"
 
-# Secretos del monitor API — completar antes de ejecutar, NO commitear con valores reales
-DATABASE_URL_VALUE="postgresql://postgres:CAMBIAR_DB_PASSWORD@db.CAMBIAR_PROJECT_REF.supabase.co:5432/postgres"
-SUPABASE_URL_VALUE="https://CAMBIAR_PROJECT_REF.supabase.co"
-SUPABASE_SERVICE_ROLE_KEY_VALUE="CAMBIAR_SERVICE_ROLE_KEY"
+# Secretos del monitor API
+# Lee de variables de entorno si están definidas, si no usa placeholders.
+# Uso recomendado:
+#   export $(grep -v '^#' monitor-app/backend/api/.env | xargs) && bash init-gcp-monitor-api.sh
+DATABASE_URL_VALUE="${DATABASE_URL:-postgresql://postgres:CAMBIAR_DB_PASSWORD@db.CAMBIAR_PROJECT_REF.supabase.co:5432/postgres}"
+SUPABASE_URL_VALUE="${SUPABASE_URL:-https://CAMBIAR_PROJECT_REF.supabase.co}"
+SUPABASE_SERVICE_ROLE_KEY_VALUE="${SUPABASE_SERVICE_ROLE_KEY:-CAMBIAR_SERVICE_ROLE_KEY}"
 ALLOWED_ORIGINS_VALUE='["https://frontend-two-alpha-39.vercel.app"]'
 # ─────────────────────────────────────────────────────────────────────────────
 
