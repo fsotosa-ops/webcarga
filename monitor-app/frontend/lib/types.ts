@@ -187,6 +187,63 @@ export function hasRole(userRole: string | undefined, required: UserRole): boole
   return userIdx >= reqIdx
 }
 
+// ── Transporter Profiles (app.transporter_profiles via FastAPI) ────
+
+export type TransporterDriver = {
+  id: string
+  rut: string
+  name: string
+}
+
+export type TransporterVehicle = {
+  id: string
+  type: string
+  plate: string
+}
+
+export type TransporterTrailer = {
+  id: string
+  plate: string
+}
+
+export type TransporterContactability = {
+  emails: string[]
+  phones: string[]
+}
+
+export type TransporterProfile = {
+  id: string
+  admin_id: string | null
+  business_name: string | null
+  rut: string | null
+  account_stage: string | null
+  contactability: TransporterContactability | null
+  drivers: TransporterDriver[]
+  vehicles: TransporterVehicle[]
+  trailers: TransporterTrailer[]
+  manually_edited_fields: string[]
+  edited_at: string | null
+}
+
+export type TransporterListItem = {
+  id: string
+  admin_id: string | null
+  business_name: string | null
+  rut: string | null
+  account_stage: string | null
+  driver_count: number
+  vehicle_count: number
+  trailer_count: number
+  has_manual_edits: boolean
+}
+
+export type TransporterListResponse = {
+  data: TransporterListItem[]
+  count: number
+  page: number
+  limit: number
+}
+
 // Can an admin manage (change role / deactivate) a target user?
 export function canManage(actorRole: UserRole, targetRole: UserRole): boolean {
   if (actorRole === 'owner') return true

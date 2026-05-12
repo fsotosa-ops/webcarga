@@ -1,37 +1,61 @@
 'use client'
 
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export default function OAuthButtons() {
   const supabase = createClient()
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState<'google' | 'azure' | null>(null)
 
   async function signInWith(provider: 'google' | 'azure') {
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        ...(provider === 'azure' && {
-          scopes: 'email profile',
-        }),
-      },
-    })
+    setError(null)
+    setLoading(provider)
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          ...(provider === 'azure' && { scopes: 'email profile' }),
+        },
+      })
+      if (error) setError(error.message)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error inesperado')
+    } finally {
+      setLoading(null)
+    }
   }
 
   return (
     <div className="flex flex-col gap-3">
+      {error && (
+        <p className="text-xs text-red-500 text-center bg-red-50 rounded-lg px-3 py-2">{error}</p>
+      )}
+
       <button
         onClick={() => signInWith('google')}
-        className="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg border border-border text-sm font-medium text-text-primary hover:bg-gray-50 transition-colors"
+        disabled={loading !== null}
+        className="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg border border-border text-sm font-medium text-text-primary hover:bg-gray-50 disabled:opacity-60 transition-colors"
       >
-        <GoogleIcon />
+        {loading === 'google' ? (
+          <span className="w-[18px] h-[18px] border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+        ) : (
+          <GoogleIcon />
+        )}
         Continuar con Google
       </button>
 
       <button
         onClick={() => signInWith('azure')}
-        className="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg border border-border text-sm font-medium text-text-primary hover:bg-gray-50 transition-colors"
+        disabled={loading !== null}
+        className="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg border border-border text-sm font-medium text-text-primary hover:bg-gray-50 disabled:opacity-60 transition-colors"
       >
-        <MicrosoftIcon />
+        {loading === 'azure' ? (
+          <span className="w-[18px] h-[18px] border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+        ) : (
+          <MicrosoftIcon />
+        )}
         Continuar con Microsoft
       </button>
     </div>

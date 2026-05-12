@@ -8,7 +8,7 @@ import { Truck, Building2, Users, LogOut } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard/diario',          label: 'Diario',          icon: Truck },
-  { href: '/dashboard/transportistas',  label: 'Transportistas',  icon: Building2 },
+  { href: '/dashboard/transportistas',  label: 'Empresas de Transportes',  icon: Building2 },
 ]
 
 interface SidebarProps {

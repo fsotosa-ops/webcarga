@@ -36,7 +36,7 @@ export default async function EETTDetailPage({ params, searchParams }: PageProps
       <div className="p-6">
         <p className="text-sm text-gray-400">No se encontraron viajes para &quot;{eettNombre}&quot;</p>
         <Link href="/dashboard/transportistas" className="text-sm text-accent hover:underline mt-2 inline-block">
-          ← Volver a transportistas
+          ← Volver a Empresas de Transportes
         </Link>
       </div>
     )
@@ -87,7 +87,7 @@ export default async function EETTDetailPage({ params, searchParams }: PageProps
     <div className="p-6 space-y-5">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
-        <Link href="/dashboard/transportistas" className="hover:text-accent transition-colors">Transportistas</Link>
+        <Link href="/dashboard/transportistas" className="hover:text-accent transition-colors">Empresas de Transportes</Link>
         <ChevronRight size={13} />
         <span className="text-text-primary font-medium">{eettNombre}</span>
       </nav>

@@ -2,6 +2,7 @@
 > Proyecto: webcarga
 
 ## 1. Meta Actual
+- **FastAPI Monitor API** (`monitor-app/backend/api/`) — API operacional de master data de transportistas, pendiente deploy Cloud Run
 - Deploy de extraction_service en Cloud Run con CI/CD via GitHub Actions
 - Servicio escalable para múltiples TMS ("torres de control")
 - QAnalytics adapter escribe en `tms/qanalytics/monitor-trips/`
@@ -9,6 +10,57 @@
 - API unificado (octava iteración, 2026-04-14): `POST /jobs` con `{source, product, ...}` en el body, producto canónico `trips` para qanalytics y wingsuite. Endpoints legacy `/extract/*` quedan como alias deprecados.
 
 ## 2. Qué Hicimos
+
+### 2026-05-11 — FastAPI Monitor API + Transporter Profiles (vigésimo-cuarta iteración)
+
+**Objetivo:** API profesional sobre `app.transporter_profiles` (2.830 registros) para normalizar/editar datos desde el frontend.
+
+**Migración SQL aplicada** en Supabase (`viclzoftiudkepqnhekv`):
+- `GRANT USAGE ON SCHEMA app TO authenticated` — expone schema a PostgREST
+- RLS habilitado en `app.transporter_profiles` (policies select + write)
+- Columnas de tracking añadidas: `manually_edited_fields TEXT[]`, `edited_by UUID`, `edited_at`, `created_at`, `updated_at`
+- Función `app.safe_update_transporter(uuid, jsonb)` — el pipeline llama esto para respetar campos editados manualmente
+
+**FastAPI scaffold completo** en `monitor-app/backend/api/`:
+- `app/main.py` — FastAPI + CORS + lifespan (asyncpg pool)
+- `app/config.py` — pydantic-settings (`DATABASE_URL`, `SUPABASE_JWT_SECRET`)
+- `app/db.py` — asyncpg pool via `app.state.pool`
+- `app/auth.py` — JWT Supabase (HS256, audience=authenticated), lookup rol en `public.profiles`
+- `app/schemas/transporter.py` — Pydantic: Driver, Vehicle, Trailer, Contactability, TransporterPatch (normaliza RUT y business_name)
+- `app/routers/transporters.py` — endpoints completos:
+  - `GET /api/v1/transporters` — lista paginada + search
+  - `GET /api/v1/transporters/{id}` — detalle
+  - `PATCH /api/v1/transporters/{id}` — editar + marca `manually_edited_fields`
+  - `DELETE /api/v1/transporters/{id}/overrides/{field}` — resetear campo al pipeline
+  - `POST/DELETE /api/v1/transporters/{id}/drivers/{did}`
+  - `POST/DELETE /api/v1/transporters/{id}/vehicles/{vid}`
+  - `POST/DELETE /api/v1/transporters/{id}/trailers/{trid}`
+  - `DELETE /api/v1/transporters/{id}` — hard delete (admin+)
+- `Dockerfile` — Cloud Run compatible (puerto 8080)
+- `requirements.txt` — fastapi, uvicorn, asyncpg, pydantic-settings, PyJWT
+- App importa limpia: `from app.main import app` → OK
+
+**Completado en vigésimo-cuarta iteración (continuación):**
+- `pyproject.toml` — `supabase==2.10.0` (pin exacto; resuelve backtracking de pip), `requires-python = ">=3.11"`
+- `venv` con Python 3.11 creado y `.[dev]` instalado limpio en segundos
+- Import verificado: `from app.main import app` → OK, 11 endpoints registrados
+- `lib/api/transporters.ts` — cliente HTTP tipado con JWT Supabase (browser)
+- `lib/types.ts` — tipos `TransporterProfile`, `TransporterListItem`, `TransporterListResponse`, `Driver`, `Vehicle`, `Trailer`, `Contactability`
+- `app/dashboard/transportistas/empresa/[id]/page.tsx` — Client Component con tabs (Info, Conductores, Flota, Ramplas), inline edit por campo, badge "Protegido" + botón "↩ Restaurar", add/remove drivers/vehicles/trailers
+- `.env.local` — `NEXT_PUBLIC_API_URL=http://localhost:8001` añadido
+- Build Next.js verde: 12 rutas sin errores TypeScript
+
+**Pendiente:**
+- Crear `.env` con `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` para test E2E local con uvicorn
+- Verificar E2E: uvicorn local en :8001 + curl con token real → lista + patch + reset
+- Deploy FastAPI a Cloud Run
+- Actualizar `NEXT_PUBLIC_API_URL` en Vercel con URL Cloud Run real
+- Agregar `SUPABASE_SERVICE_ROLE_KEY` en `.env` del API (obtener de Supabase Dashboard → Project Settings → API)
+
+**Arquitectura de prioridad pipeline vs edits manuales:**
+- `manually_edited_fields TEXT[]` en `app.transporter_profiles` lista qué campos no puede pisar el pipeline
+- El pipeline usa `app.safe_update_transporter(id, jsonb)` para respetar esos campos
+- `DELETE /overrides/{field}` libera el campo → vuelve a ser actualizable por el pipeline
 
 ### 2026-05-10 — Deploy Vercel + skills y hooks de automatización (vigésimo-tercera iteración)
 
