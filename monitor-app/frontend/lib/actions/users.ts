@@ -7,8 +7,8 @@ import type { Database } from '@/lib/types'
 export async function createUser(formData: FormData) {
   const email = formData.get('email') as string
   const full_name = formData.get('full_name') as string
-  const password = formData.get('password') as string
-  const role = (formData.get('role') as string) || 'operador'
+  const password = (formData.get('password') as string) || ''
+  const role = (formData.get('role') as string) || 'viewer'
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceKey) {
@@ -31,17 +31,19 @@ export async function createUser(formData: FormData) {
     }
   )
 
-  const { data, error } = await supabase.auth.admin.createUser({
+  const createParams: Parameters<typeof supabase.auth.admin.createUser>[0] = {
     email,
-    password,
     email_confirm: true,
     user_metadata: { full_name },
-  })
+  }
+  if (password) createParams.password = password
+
+  const { data, error } = await supabase.auth.admin.createUser(createParams)
 
   if (error) return { error: error.message }
 
-  if (data.user && role === 'admin') {
-    await supabase.from('profiles').update({ role: 'admin' }).eq('id', data.user.id)
+  if (data.user) {
+    await supabase.from('profiles').update({ role }).eq('id', data.user.id)
   }
 
   return { success: true }
