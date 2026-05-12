@@ -2,10 +2,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Instalar dependencias via pyproject.toml (sin editable install)
+# Install dependencies first (layer cache friendly)
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir \
+    "fastapi>=0.115" \
+    "uvicorn[standard]>=0.30" \
+    "asyncpg>=0.30" \
+    "pydantic>=2.7" \
+    "pydantic-settings>=2.3" \
+    "supabase==2.10.0"
 
+# Copy app code
 COPY app/ ./app/
 
 ENV PORT=8080
