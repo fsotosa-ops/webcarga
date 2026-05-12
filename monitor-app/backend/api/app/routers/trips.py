@@ -1,8 +1,16 @@
 import json
+from datetime import date as _date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import get_current_user, require_editor
 from ..db import get_pool
 from ..schemas.trip import TripPatch
+
+
+def _parse_date(s: str) -> _date | None:
+    try:
+        return _date.fromisoformat(s) if s else None
+    except ValueError:
+        return None
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
@@ -38,15 +46,15 @@ async def list_trips(
         params.append(value)
         filters.append(clause.replace("?", f"${len(params)}"))
 
-    if fecha:
-        add("planning_date = ?::date", fecha)
+    if d := _parse_date(fecha):
+        add("planning_date = ?", d)
     if view == "en_curso":
         closed_sql = ", ".join(f"'{s}'" for s in CLOSED_STATUSES)
         filters.append(f"current_status NOT IN ({closed_sql})")
-    if fecha_desde:
-        add("planning_date >= ?::date", fecha_desde)
-    if fecha_hasta:
-        add("planning_date <= ?::date", fecha_hasta)
+    if d := _parse_date(fecha_desde):
+        add("planning_date >= ?", d)
+    if d := _parse_date(fecha_hasta):
+        add("planning_date <= ?", d)
     if status:
         add("current_status = ?", status)
 
@@ -92,36 +100,33 @@ async def patch_trip(
 
     data = body.model_dump(exclude_none=True)
 
+    # Build SET clauses dynamically — only update fields that were sent
+    sets: list[str] = []
+    vals: list = [trip_id]
+
+    bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
+    str_fields  = ("estado_manual", "locales", "observaciones", "comentarios")
+
+    for field in bool_fields:
+        if field in data:
+            vals.append(data[field])
+            sets.append(f"{field} = ${len(vals)}")
+
+    for field in str_fields:
+        if field in data:
+            vals.append(data[field])
+            sets.append(f"{field} = ${len(vals)}")
+
+    vals.append(sent)
+    sets.append(f"manually_edited_fields = ARRAY(SELECT DISTINCT unnest(COALESCE(manually_edited_fields,'{{}}') || ${len(vals)}::text[]))")
+
+    vals.append(user["sub"])
+    sets.append(f"edited_by = ${len(vals)}::uuid")
+    sets.append("edited_at = NOW(), updated_at = NOW()")
+
     await pool.execute(
-        """
-        UPDATE app.trips SET
-          activo          = CASE WHEN $2::boolean IS NOT NULL THEN $2 ELSE activo         END,
-          trabajando      = CASE WHEN $3::boolean IS NOT NULL THEN $3 ELSE trabajando     END,
-          asignado        = CASE WHEN $4::boolean IS NOT NULL THEN $4 ELSE asignado       END,
-          primera_vuelta  = CASE WHEN $5::boolean IS NOT NULL THEN $5 ELSE primera_vuelta END,
-          estado_manual   = COALESCE($6, estado_manual),
-          locales         = COALESCE($7, locales),
-          observaciones   = COALESCE($8, observaciones),
-          comentarios     = COALESCE($9, comentarios),
-          manually_edited_fields = ARRAY(
-            SELECT DISTINCT unnest(COALESCE(manually_edited_fields,'{}') || $10::text[])
-          ),
-          edited_by  = $11::uuid,
-          edited_at  = NOW(),
-          updated_at = NOW()
-        WHERE id = $1
-        """,
-        trip_id,
-        data.get("activo"),
-        data.get("trabajando"),
-        data.get("asignado"),
-        data.get("primera_vuelta"),
-        data.get("estado_manual"),
-        data.get("locales"),
-        data.get("observaciones"),
-        data.get("comentarios"),
-        sent,
-        user["sub"],
+        f"UPDATE app.trips SET {', '.join(sets)} WHERE id = $1",
+        *vals,
     )
     return await get_trip(trip_id, pool, _)
 
