@@ -36,9 +36,9 @@ class ExtractionRequest(BaseModel):
         examples=["2026-04-14"],
     )
     timeout_ms: int = Field(
-        90_000,
+        180_000,
         ge=1_000,
-        description="Timeout por operación Playwright, en ms. Subir a `180000+` para rangos grandes o TMS lentos.",
+        description="Timeout por operación Playwright, en ms. Subir a `300000+` para rangos grandes o TMS lentos.",
         examples=[180000],
     )
 

@@ -22,9 +22,10 @@ class QAnalyticsCumplimientoExtractor(QAnalyticsExtractor):
 
     PRODUCT_NAME = "cumplimiento-sap"
 
-    async def _navigate_to_distribucion(self, page: Page) -> None:
+    async def _navigate_to_distribucion(self, page: Page, timeout_ms: int) -> None:
         await page.click('a.dropdown-toggle.NavQA >> text="Módulo Distribución"')
         await page.click(f'a[href="{HREF_CUMPLIMIENTO}"]')
+        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
 
     async def _set_date_range(self, page: Page, date_from: date, date_to: date) -> None:
         from_str = date_from.strftime(DATE_FORMAT_APP)

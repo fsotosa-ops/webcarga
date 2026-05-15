@@ -107,21 +107,29 @@ class QAnalyticsExtractor(BaseTMSExtractor):
             page.on("response", lambda r: asyncio.create_task(_log_response_async(r)))
 
             try:
+                t0 = time.time()
                 await self._login(page, client_name, timeout_ms)
-                await self._navigate_to_distribucion(page)
+                logger.info(f"[TIMING] login: {time.time()-t0:.1f}s")
+
+                t0 = time.time()
+                await self._navigate_to_distribucion(page, timeout_ms)
                 await self._maybe_dump_page(page, "post_nav")
+                logger.info(f"[TIMING] navigate: {time.time()-t0:.1f}s")
 
-                # La página abre #modal_pendiente automáticamente al cargar si hay
-                # gestiones pendientes. Hay que procesarlo antes de tocar nada más.
+                t0 = time.time()
                 await self._handle_pendientes_modal_if_open(page, label="auto-load")
+                logger.info(f"[TIMING] modal auto-load: {time.time()-t0:.1f}s")
 
-                # Aplicar el rango de fechas pedido por el usuario
+                t0 = time.time()
                 await self._set_date_range(page, date_from, date_to)
-                await self._submit_search(page)
+                await self._submit_search(page, timeout_ms)
+                logger.info(f"[TIMING] dates+search: {time.time()-t0:.1f}s")
 
-                # Tras filtrar puede aparecer otra vez el modal de pendientes
+                t0 = time.time()
                 await self._handle_pendientes_modal_if_open(page, label="post-filter")
+                logger.info(f"[TIMING] modal post-filter: {time.time()-t0:.1f}s")
 
+                t0 = time.time()
                 local_path = await self._download_export(
                     page,
                     client_name,
@@ -131,6 +139,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                     downloads_dir,
                     timeout_ms,
                 )
+                logger.info(f"[TIMING] download: {time.time()-t0:.1f}s")
                 return ExtractionArtifact(
                     local_path=local_path,
                     source=self.SOURCE_NAME,
@@ -159,12 +168,14 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         await page.fill("input[name='ContrasenaT']", settings.QANALYTICS_PASS)
         await page.fill("input[name='ClienteT']", client_name)
         await page.click("#BtnTransporte")
+        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
 
-    async def _navigate_to_distribucion(self, page: Page) -> None:
+    async def _navigate_to_distribucion(self, page: Page, timeout_ms: int) -> None:
         await page.click('a.dropdown-toggle.NavQA >> text="Módulo Distribución"')
         await page.click(
             'a[href="gestion_planificacion_programados_dist_transporte_walmart.aspx"]'
         )
+        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
 
     async def _set_date_range(
         self, page: Page, date_from: date, date_to: date
@@ -201,7 +212,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 f"Esperado={from_str}/{to_str}, obtenido={actual_from}/{actual_to}"
             )
 
-    async def _submit_search(self, page: Page) -> None:
+    async def _submit_search(self, page: Page, timeout_ms: int) -> None:
         """
         Click a #btn_buscar para que la app aplique el filtro de fechas.
         Solo es seguro hacerlo si el modal de pendientes NO está visible (Bootstrap
@@ -209,7 +220,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         """
         logger.info("[STEP search] Click #btn_buscar para aplicar filtro de fechas")
         try:
-            await page.locator(SEL_BTN_BUSCAR).click(timeout=15000)
+            await page.locator(SEL_BTN_BUSCAR).click(timeout=min(timeout_ms, 60_000))
         except Exception:
             await self._safe_screenshot(page, "search_failed")
             raise
