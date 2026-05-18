@@ -333,8 +333,11 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 let marked = 0;
                 checkboxes.forEach(chk => {
                     if (!chk.checked) {
-                        chk.checked = true;
-                        chk.dispatchEvent(new Event('change', { bubbles: true }));
+                        // .click() dispara el atributo onclick del elemento,
+                        // incluyendo handlers de QAnalytics que rellenan
+                        // "fecha de salida" por fila — necesario para valida_GP().
+                        // dispatchEvent('change') no activa onclick attributes.
+                        chk.click();
                     }
                     if (chk.checked) marked++;
                 });
