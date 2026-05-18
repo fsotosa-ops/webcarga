@@ -318,12 +318,10 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 f"[modal:{label}] El modal abrió pero no aparecieron checkboxes PTO_."
             )
 
-        # Marcar todos los checkboxes, rellenar fechas de salida vacías y
-        # sincronizar contadores via JS atómico.
+        # Marcar todos los checkboxes y sincronizar contadores via JS atómico.
         # NO usar checkboxes.nth(i).check() — Playwright evalúa "actionability"
         # por elemento y falla con Timeout 5000ms cuando la animación Bootstrap
-        # no terminó (bug confirmado en logs de Cloud Run 2026-05-18: 4 runs
-        # consecutivos fallaron en este punto exacto).
+        # no terminó (bug confirmado en logs de Cloud Run 2026-05-18).
         state = await page.evaluate(
             """
             () => {
@@ -334,90 +332,51 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 let marked = 0;
                 checkboxes.forEach(chk => {
                     if (!chk.checked) {
-                        // .click() dispara el atributo onclick del elemento
-                        // y sus jQuery handlers. dispatchEvent('change') no
-                        // activa onclick attributes.
-                        chk.click();
+                        chk.click();  // dispara onclick="ChkSoloGP(...)"
                     }
                     if (chk.checked) marked++;
                 });
                 const total = checkboxes.length;
+
+                // txtchkGP / txtcantidadGP están FUERA de #modal_pendiente
                 const txtChk = document.getElementById('txtchkGP');
                 const txtCant = document.getElementById('txtcantidadGP');
                 if (txtChk) txtChk.value = String(total);
-                if (txtCant && txtCant.value !== String(total)) txtCant.value = String(total);
+                if (txtCant) txtCant.value = String(total);
                 const lbChk = document.getElementById('lb_chk');
                 if (lbChk) lbChk.innerHTML = 'Total Seleccionados : ' + String(total);
 
-                // Diagnóstico completo: ver TODOS los inputs del modal y
-                // la fuente completa de valida_GP para entender qué valida.
-                const hoy = new Date();
-                const dd = String(hoy.getDate()).padStart(2, '0');
-                const mo = String(hoy.getMonth() + 1).padStart(2, '0');
-                const yyyy = hoy.getFullYear();
-                const fechaHoy = dd + '-' + mo + '-' + yyyy;
-
-                // Todos los inputs (todos los types)
-                const allInputs = Array.from(root.querySelectorAll('input')).map(inp => ({
-                    id: inp.id, type: inp.type, name: inp.name || '',
-                    value: inp.value, onclick: inp.getAttribute('onclick') || ''
-                }));
-
-                // Checkboxes: capturar onclick para saber si populan fechas
-                const chkDiag = Array.from(root.querySelectorAll(
-                    'input[type="checkbox"][id^="PTO_"]'
-                )).map(chk => ({
-                    id: chk.id, checked: chk.checked,
-                    onclick: chk.getAttribute('onclick') || ''
-                }));
-
-                // Variables globales que valida_GP puede leer
-                const gVars = {
-                    fechasSalida: typeof window.fechasSalida !== 'undefined'
-                        ? JSON.stringify(window.fechasSalida).substring(0, 200) : 'UNDEF',
-                    arFechas: typeof window.arFechas !== 'undefined'
-                        ? JSON.stringify(window.arFechas).substring(0, 200) : 'UNDEF',
-                };
-
-                // Fuente completa de valida_GP
-                const validaGpSrc = typeof valida_GP === 'function'
-                    ? valida_GP.toString().substring(0, 1000)
-                    : 'NOT_FOUND';
-
+                // Diagnóstico: valores tras setear + fuente de ChkSoloGP
                 return {
                     marked, total,
-                    fechasRellenas: 0, fechaHoy,
-                    inputDiag: allInputs, chkDiag, gVars, validaGpSrc
+                    txtchkGP: txtChk ? { tag: txtChk.tagName, val: txtChk.value } : null,
+                    txtcantidadGP: txtCant ? { tag: txtCant.tagName, val: txtCant.value } : null,
+                    chkSoloGPSrc: typeof ChkSoloGP === 'function'
+                        ? ChkSoloGP.toString().substring(0, 400) : 'NOT_FOUND',
                 };
             }
             """
         )
-        logger.info(
-            f"[modal:{label}] marked={state.get('marked')} total={state.get('total')} "
-            f"allInputs={state.get('inputDiag')} chkDiag={state.get('chkDiag')} "
-            f"gVars={state.get('gVars')}"
-        )
-        logger.info(
-            f"[modal:{label}] validaGP={state.get('validaGpSrc','NOT_FOUND')!r}"
-        )
+        logger.info(f"[modal:{label}] post-mark: {state}")
         if not state or state.get("marked", 0) == 0:
             await self._safe_screenshot(page, f"modal_{label}_marked_zero")
             raise RuntimeError(
                 f"[modal:{label}] No se logró marcar checkboxes. Estado: {state}"
             )
 
-        # Click Cerrar
-        await page.locator(SEL_MODAL_CERRAR).click(timeout=10000)
+        # Cerrar el modal directamente via jQuery Bootstrap en lugar de pasar
+        # por el botón Cerrar → valida_GP(). La función valida_GP() SOLO llama
+        # a modal('hide') en caso de éxito (sin postback ni AJAX), así que
+        # llamar modal('hide') directamente es equivalente al flujo normal y
+        # evita cualquier condición de carrera en los contadores txtchkGP.
+        await page.evaluate("$('#modal_pendiente').modal('hide')")
 
-        # Esperar al cierre real. Si falla, el alert hookeado tiene el motivo.
         try:
             await modal.wait_for(state="hidden", timeout=10000)
         except PlaywrightTimeoutError:
-            last_alert = await page.evaluate("window.__lastAlert")
             await self._safe_screenshot(page, f"modal_{label}_hidden_timeout")
             raise RuntimeError(
-                f"[modal:{label}] El modal no se ocultó tras Cerrar. "
-                f"Último alert capturado: {last_alert!r}"
+                f"[modal:{label}] El modal no se ocultó tras modal('hide')."
             )
 
         logger.info(f"[modal:{label}] Modal cerrado correctamente.")

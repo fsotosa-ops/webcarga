@@ -70,7 +70,8 @@ def _make_page(*, modal_visible=True, checkbox_count=2, evaluate_state=None, che
     page.content = AsyncMock(return_value="<html/>")
 
     state = evaluate_state if evaluate_state is not None else {"marked": checkbox_count, "total": checkbox_count}
-    page.evaluate = AsyncMock(side_effect=[None, state, None])
+    # evaluate call order: 1=hook alert, 2=main mark, 3=modal('hide'), 4=last_alert (error path only)
+    page.evaluate = AsyncMock(side_effect=[None, state, None, None])
 
     return page, modal, checkboxes, checkbox_item
 
