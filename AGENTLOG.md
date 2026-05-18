@@ -11,6 +11,34 @@
 
 ## 2. Qué Hicimos
 
+### 2026-05-18 — QAnalytics scraper: fix timeout + datos pre-filtro (vigésimo-séptima iteración)
+
+**Problema**: pipelines QAnalytics fallaban de forma inconsistente con `Timeout 5000ms exceeded`. Logs de Cloud Run confirmaron 4 runs consecutivos fallando en el mismo punto exacto del modal handler.
+
+**Root cause confirmado por logs**:
+- `checkboxes.nth(i).check(timeout=5000)` — Playwright evalúa "actionability" por elemento. Cuando la animación Bootstrap del modal (~300ms CSS transition) no terminó, el backdrop cubre los checkboxes y Playwright los marca como "intercepted" → timeout. La navegación tardaba 30-33s (servidor QAnalytics lento) lo que dejaba menos margen para la animación.
+- Secundario: `#btn_buscar` se clickeaba sin esperar la respuesta XHR del UpdatePanel de ASP.NET. El export podía capturar datos pre-filtro (XHR del search llegaba 4s después del click al export).
+
+**Tres fixes implementados** (`extraction_service/app/tms/qanalytics/scraper.py`):
+
+1. **Modal — eliminar loop `.check()`**: Reemplazado `for i in range(n): await checkboxes.nth(i).check(timeout=5000)` por un único `page.evaluate()` atómico que ya existía en el código (la segunda pasada). El JS marca todos los checkboxes + sincroniza contadores sin pasar por las validaciones de actionability de Playwright.
+
+2. **Modal — wait animación Bootstrap**: Añadido `await page.wait_for_timeout(400)` después de `modal.wait_for(state="visible")` para dejar que el CSS transition complete antes de interactuar.
+
+3. **Search — expect_response**: `_submit_search` ahora envuelve el click de `#btn_buscar` en `async with page.expect_response(lambda r: ".aspx" in r.url and r.request.method == "POST" and r.status == 200, timeout=...)`. Garantiza que la tabla ASP.NET UpdatePanel tiene datos filtrados antes de que el export corra.
+
+**Tests**: `tests/test_qanalytics_adapter.py` — 7 tests unitarios (sin browser, sin credenciales). Cubren los 3 bugs con mocks de Playwright. RED → GREEN confirmado. Sin regresión en tests de sodimac.
+
+**Checklist (vigésimo-séptima):**
+- [x] Root cause confirmado via logs Cloud Run
+- [x] Tests RED escritos antes del fix
+- [x] Fix 1: eliminar loop `.check()` → evaluate atómico
+- [x] Fix 2: `wait_for_timeout(400)` post modal visible
+- [x] Fix 3: `expect_response` en `_submit_search`
+- [x] 7/7 tests GREEN
+- [ ] Deploy a Cloud Run (push a main → CI/CD)
+- [ ] Verificar en logs que ya no aparece `Timeout 5000ms exceeded` en modal
+
 ### 2026-05-12 — app.trips aggregate + Diario 2.0 UX refactor (vigésimo-quinta iteración)
 
 **Objetivo:** Modelo de datos de viajes con milestones (patrón `app.transporter_profiles`) + Diario frontend con tabs En Curso/Historial y slide-over de Bitácora.

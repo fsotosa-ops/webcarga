@@ -214,13 +214,20 @@ class QAnalyticsExtractor(BaseTMSExtractor):
 
     async def _submit_search(self, page: Page, timeout_ms: int) -> None:
         """
-        Click a #btn_buscar para que la app aplique el filtro de fechas.
-        Solo es seguro hacerlo si el modal de pendientes NO está visible (Bootstrap
-        pone un backdrop encima que bloquea el click).
+        Click a #btn_buscar y espera la respuesta del UpdatePanel de ASP.NET.
+
+        QAnalytics usa UpdatePanel: el click dispara un POST al mismo .aspx que
+        devuelve HTML parcial con la tabla filtrada. Sin esperar esa respuesta,
+        el export captura la tabla pre-filtro (bug confirmado en logs 2026-05-18:
+        XHR de búsqueda llegaba 4s después del click al botón de export).
         """
-        logger.info("[STEP search] Click #btn_buscar para aplicar filtro de fechas")
+        logger.info("[STEP search] Click #btn_buscar — esperando respuesta UpdatePanel")
         try:
-            await page.locator(SEL_BTN_BUSCAR).click(timeout=min(timeout_ms, 60_000))
+            async with page.expect_response(
+                lambda r: ".aspx" in r.url and r.request.method == "POST" and r.status == 200,
+                timeout=min(timeout_ms, 60_000),
+            ):
+                await page.locator(SEL_BTN_BUSCAR).click(timeout=min(timeout_ms, 60_000))
         except Exception:
             await self._safe_screenshot(page, "search_failed")
             raise
@@ -286,10 +293,14 @@ class QAnalyticsExtractor(BaseTMSExtractor):
             logger.info(f"[modal:{label}] No hay modal abierto, sigo.")
             return
 
+        # Bootstrap anima el modal con CSS transition (~300ms). Si se interactúa
+        # antes de que termine, el backdrop cubre los checkboxes y Playwright los
+        # marca como "not stable" / "intercepted". Esperar que la animación complete.
+        await page.wait_for_timeout(400)
+
         logger.info(f"[modal:{label}] Modal abierto. Procesando…")
 
-        # Hook window.alert para capturar mensajes de valida_GP() (si fallara la
-        # validación, en lugar de un Timeout opaco vamos a poder leer el mensaje).
+        # Hook window.alert para capturar mensajes de valida_GP().
         await page.evaluate(
             "window.__lastAlert = null;"
             "window.alert = (msg) => { window.__lastAlert = msg; };"
@@ -307,16 +318,11 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 f"[modal:{label}] El modal abrió pero no aparecieron checkboxes PTO_."
             )
 
-        # Marcar todos via locator.check() (más estable que chk.checked = true:
-        # Playwright respeta actionability y dispara eventos nativos).
-        checkboxes = page.locator(SEL_MODAL_CHECKBOXES)
-        n = await checkboxes.count()
-        logger.info(f"[modal:{label}] Marcando {n} checkbox(es)…")
-        for i in range(n):
-            await checkboxes.nth(i).check(timeout=5000)
-
-        # Sincronizar contadores ocultos que valida_GP() exige
-        # (txtchkGP == txtcantidadGP). Sin esto el botón Cerrar dispara un alert.
+        # Marcar todos los checkboxes y sincronizar contadores via JS atómico.
+        # NO usar checkboxes.nth(i).check() — Playwright evalúa "actionability"
+        # por elemento y falla con Timeout 5000ms cuando la animación Bootstrap
+        # no terminó (bug confirmado en logs de Cloud Run 2026-05-18: 4 runs
+        # consecutivos fallaron en este punto exacto).
         state = await page.evaluate(
             """
             () => {
