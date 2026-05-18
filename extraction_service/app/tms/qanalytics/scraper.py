@@ -318,7 +318,8 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 f"[modal:{label}] El modal abrió pero no aparecieron checkboxes PTO_."
             )
 
-        # Marcar todos los checkboxes y sincronizar contadores via JS atómico.
+        # Marcar todos los checkboxes, rellenar fechas de salida vacías y
+        # sincronizar contadores via JS atómico.
         # NO usar checkboxes.nth(i).check() — Playwright evalúa "actionability"
         # por elemento y falla con Timeout 5000ms cuando la animación Bootstrap
         # no terminó (bug confirmado en logs de Cloud Run 2026-05-18: 4 runs
@@ -333,10 +334,9 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 let marked = 0;
                 checkboxes.forEach(chk => {
                     if (!chk.checked) {
-                        // .click() dispara el atributo onclick del elemento,
-                        // incluyendo handlers de QAnalytics que rellenan
-                        // "fecha de salida" por fila — necesario para valida_GP().
-                        // dispatchEvent('change') no activa onclick attributes.
+                        // .click() dispara el atributo onclick del elemento
+                        // y sus jQuery handlers. dispatchEvent('change') no
+                        // activa onclick attributes.
                         chk.click();
                     }
                     if (chk.checked) marked++;
@@ -348,11 +348,48 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 if (txtCant && txtCant.value !== String(total)) txtCant.value = String(total);
                 const lbChk = document.getElementById('lb_chk');
                 if (lbChk) lbChk.innerHTML = 'Total Seleccionados : ' + String(total);
-                return { marked, total };
+
+                // valida_GP() también exige fechas de salida por fila.
+                // Rellenar con la fecha de hoy (dd-mm-yyyy) cualquier input
+                // de texto vacío en el modal que no sea un contador oculto.
+                const hoy = new Date();
+                const dd = String(hoy.getDate()).padStart(2, '0');
+                const mo = String(hoy.getMonth() + 1).padStart(2, '0');
+                const yyyy = hoy.getFullYear();
+                const fechaHoy = dd + '-' + mo + '-' + yyyy;
+                const textInputs = root.querySelectorAll(
+                    'input[type="text"]:not([id="txtchkGP"]):not([id="txtcantidadGP"])'
+                );
+                let fechasRellenas = 0;
+                const inputDiag = [];
+                textInputs.forEach(inp => {
+                    inputDiag.push({
+                        id: inp.id, name: inp.name || '',
+                        value: inp.value,
+                        onclick: inp.getAttribute('onclick') || ''
+                    });
+                    if (!inp.value || inp.value.trim() === '') {
+                        inp.value = fechaHoy;
+                        inp.dispatchEvent(new Event('change', {bubbles: true}));
+                        inp.dispatchEvent(new Event('input', {bubbles: true}));
+                        fechasRellenas++;
+                    }
+                });
+
+                // Capturar fuente de valida_GP para diagnóstico en logs
+                const validaGpSrc = typeof valida_GP === 'function'
+                    ? valida_GP.toString().substring(0, 500)
+                    : 'NOT_FOUND';
+
+                return { marked, total, fechasRellenas, inputDiag, validaGpSrc, fechaHoy };
             }
             """
         )
-        logger.info(f"[modal:{label}] Estado tras marcar: {state}")
+        logger.info(
+            f"[modal:{label}] Estado tras marcar: marked={state.get('marked')} "
+            f"total={state.get('total')} fechasRellenas={state.get('fechasRellenas')} "
+            f"inputs={state.get('inputDiag')} validaGp[:100]={str(state.get('validaGpSrc',''))[:100]!r}"
+        )
         if not state or state.get("marked", 0) == 0:
             await self._safe_screenshot(page, f"modal_{label}_marked_zero")
             raise RuntimeError(
