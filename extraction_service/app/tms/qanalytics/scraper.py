@@ -349,46 +349,56 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 const lbChk = document.getElementById('lb_chk');
                 if (lbChk) lbChk.innerHTML = 'Total Seleccionados : ' + String(total);
 
-                // valida_GP() también exige fechas de salida por fila.
-                // Rellenar con la fecha de hoy (dd-mm-yyyy) cualquier input
-                // de texto vacío en el modal que no sea un contador oculto.
+                // Diagnóstico completo: ver TODOS los inputs del modal y
+                // la fuente completa de valida_GP para entender qué valida.
                 const hoy = new Date();
                 const dd = String(hoy.getDate()).padStart(2, '0');
                 const mo = String(hoy.getMonth() + 1).padStart(2, '0');
                 const yyyy = hoy.getFullYear();
                 const fechaHoy = dd + '-' + mo + '-' + yyyy;
-                const textInputs = root.querySelectorAll(
-                    'input[type="text"]:not([id="txtchkGP"]):not([id="txtcantidadGP"])'
-                );
-                let fechasRellenas = 0;
-                const inputDiag = [];
-                textInputs.forEach(inp => {
-                    inputDiag.push({
-                        id: inp.id, name: inp.name || '',
-                        value: inp.value,
-                        onclick: inp.getAttribute('onclick') || ''
-                    });
-                    if (!inp.value || inp.value.trim() === '') {
-                        inp.value = fechaHoy;
-                        inp.dispatchEvent(new Event('change', {bubbles: true}));
-                        inp.dispatchEvent(new Event('input', {bubbles: true}));
-                        fechasRellenas++;
-                    }
-                });
 
-                // Capturar fuente de valida_GP para diagnóstico en logs
+                // Todos los inputs (todos los types)
+                const allInputs = Array.from(root.querySelectorAll('input')).map(inp => ({
+                    id: inp.id, type: inp.type, name: inp.name || '',
+                    value: inp.value, onclick: inp.getAttribute('onclick') || ''
+                }));
+
+                // Checkboxes: capturar onclick para saber si populan fechas
+                const chkDiag = Array.from(root.querySelectorAll(
+                    'input[type="checkbox"][id^="PTO_"]'
+                )).map(chk => ({
+                    id: chk.id, checked: chk.checked,
+                    onclick: chk.getAttribute('onclick') || ''
+                }));
+
+                // Variables globales que valida_GP puede leer
+                const gVars = {
+                    fechasSalida: typeof window.fechasSalida !== 'undefined'
+                        ? JSON.stringify(window.fechasSalida).substring(0, 200) : 'UNDEF',
+                    arFechas: typeof window.arFechas !== 'undefined'
+                        ? JSON.stringify(window.arFechas).substring(0, 200) : 'UNDEF',
+                };
+
+                // Fuente completa de valida_GP
                 const validaGpSrc = typeof valida_GP === 'function'
-                    ? valida_GP.toString().substring(0, 500)
+                    ? valida_GP.toString().substring(0, 1000)
                     : 'NOT_FOUND';
 
-                return { marked, total, fechasRellenas, inputDiag, validaGpSrc, fechaHoy };
+                return {
+                    marked, total,
+                    fechasRellenas: 0, fechaHoy,
+                    inputDiag: allInputs, chkDiag, gVars, validaGpSrc
+                };
             }
             """
         )
         logger.info(
-            f"[modal:{label}] Estado tras marcar: marked={state.get('marked')} "
-            f"total={state.get('total')} fechasRellenas={state.get('fechasRellenas')} "
-            f"inputs={state.get('inputDiag')} validaGp[:100]={str(state.get('validaGpSrc',''))[:100]!r}"
+            f"[modal:{label}] marked={state.get('marked')} total={state.get('total')} "
+            f"allInputs={state.get('inputDiag')} chkDiag={state.get('chkDiag')} "
+            f"gVars={state.get('gVars')}"
+        )
+        logger.info(
+            f"[modal:{label}] validaGP={state.get('validaGpSrc','NOT_FOUND')!r}"
         )
         if not state or state.get("marked", 0) == 0:
             await self._safe_screenshot(page, f"modal_{label}_marked_zero")
