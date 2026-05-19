@@ -9,7 +9,14 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { transportersApi } from '@/lib/api/transporters'
-import type { TransporterProfile } from '@/lib/types'
+import type {
+  TransporterProfile, TransporterDriver, TransporterVehicle,
+  CompanyGovernance, ComplianceStatus, DriverGovernance,
+} from '@/lib/types'
+import { ComplianceBadge } from '@/components/dashboard/ComplianceBadge'
+import {
+  getAlertStatus, getDriverAlertStatus, getVehicleAlertStatus, formatExpiry,
+} from '@/lib/compliance'
 
 const ACCOUNT_STAGES = ['Lead', 'Operational']
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
@@ -32,26 +39,69 @@ function getInitials(name: string | null) {
     : name.slice(0, 2).toUpperCase()
 }
 
+// ── Governance helpers ────────────────────────────────────────────
+
+const COMPLIANCE_CFG = {
+  ok:         { cls: 'bg-green-100 text-green-700', label: 'OK' },
+  pendiente:  { cls: 'bg-amber-50 text-amber-600',  label: 'Pendiente' },
+  actualizar: { cls: 'bg-blue-50 text-blue-600',    label: 'Actualizar' },
+  n_a:        { cls: 'bg-gray-100 text-gray-500',   label: 'N/A' },
+} as const
+
+function GovernanceStatusBadge({ status }: { status: ComplianceStatus | null }) {
+  if (!status) return <span className="text-xs text-gray-200">—</span>
+  const { cls, label } = COMPLIANCE_CFG[status]
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
+      {label}
+    </span>
+  )
+}
+
+const GOVERNANCE_DOC_LABELS: { key: keyof CompanyGovernance; label: string }[] = [
+  { key: 'rol_sii',            label: 'ROL SII' },
+  { key: 'copia_ci_rep_legal', label: 'C.I. Rep. Legal' },
+  { key: 'anexo_2_walmart',    label: 'ANEXO 2 WMT' },
+  { key: 'contrato_webcarga',  label: 'Contrato WC' },
+  { key: 'f30_multas',         label: 'F30 Multas' },
+  { key: 'f43',                label: 'F43' },
+  { key: 'politica_seguridad', label: 'Política Seg.' },
+  { key: 'cert_mutual',        label: 'Cert. Mutual' },
+  { key: 'riohs_timbrado',     label: 'RIOHS' },
+  { key: 'creacion_walmart',   label: 'Creación WMT' },
+  { key: 'carpeta_tributaria', label: 'Carpeta Trib.' },
+  { key: 'cuenta_empresa',     label: 'Cuenta Emp.' },
+]
+
 // ── Driver card with inline edit ─────────────────────────────────
 function DriverCard({
   driver, canEdit, onPatch, onRemove,
 }: {
-  driver: { id: string; rut: string; name: string }
+  driver: TransporterDriver
   canEdit: boolean
-  onPatch: (body: { rut?: string; name?: string }) => Promise<void>
+  onPatch: (body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
   onRemove: () => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft]     = useState({ rut: driver.rut, name: driver.name })
+  const [draftGov, setDraftGov] = useState({
+    id_expiry:      driver.governance?.id_expiry      ?? null as string | null,
+    license_expiry: driver.governance?.license_expiry ?? null as string | null,
+  })
   const [saving, setSaving]   = useState(false)
   const [err, setErr]         = useState<string | null>(null)
 
+  const dAlert = getDriverAlertStatus(driver)
   const dColor = getInitialColor(driver.name)
 
   const handleSave = async () => {
     setSaving(true); setErr(null)
     try {
-      await onPatch({ rut: draft.rut, name: draft.name })
+      await onPatch({
+        rut:  draft.rut,
+        name: draft.name,
+        governance: { ...(driver.governance ?? {}), ...draftGov } as DriverGovernance,
+      })
       setEditing(false)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
@@ -62,6 +112,10 @@ function DriverCard({
 
   const handleCancel = () => {
     setDraft({ rut: driver.rut, name: driver.name })
+    setDraftGov({
+      id_expiry:      driver.governance?.id_expiry      ?? null,
+      license_expiry: driver.governance?.license_expiry ?? null,
+    })
     setEditing(false)
     setErr(null)
   }
@@ -70,7 +124,9 @@ function DriverCard({
     <div className="bg-white border border-border rounded-xl p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 mt-0.5"
+          className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 mt-0.5 ${
+            dAlert === 'expired' ? 'ring-2 ring-red-400' : dAlert === 'expiring_soon' ? 'ring-2 ring-amber-300' : ''
+          }`}
           style={{ backgroundColor: dColor }}
         >
           {driver.name ? driver.name[0].toUpperCase() : '?'}
@@ -91,6 +147,24 @@ function DriverCard({
                 placeholder="RUT"
                 className="w-full text-sm font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
               />
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Venc. C.I.</label>
+                  <input type="date"
+                    value={draftGov.id_expiry ?? ''}
+                    onChange={e => setDraftGov(v => ({ ...v, id_expiry: e.target.value || null }))}
+                    className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Venc. Licencia</label>
+                  <input type="date"
+                    value={draftGov.license_expiry ?? ''}
+                    onChange={e => setDraftGov(v => ({ ...v, license_expiry: e.target.value || null }))}
+                    className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  />
+                </div>
+              </div>
               {err && <p className="text-xs text-red-500">{err}</p>}
               <div className="flex gap-2">
                 <button
@@ -112,13 +186,32 @@ function DriverCard({
               <p className="text-xs text-gray-500 mt-0.5">
                 RUT: <span className="font-mono">{driver.rut}</span>
               </p>
+              {driver.governance?.id_expiry && (
+                <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1.5">
+                  C.I: <span className="font-mono">{formatExpiry(driver.governance.id_expiry)}</span>
+                  <ComplianceBadge status={getAlertStatus(driver.governance.id_expiry)} />
+                </p>
+              )}
+              {driver.governance?.license_expiry && (
+                <p className="text-[10px] text-gray-400 flex items-center gap-1.5">
+                  Lic: <span className="font-mono">{formatExpiry(driver.governance.license_expiry)}</span>
+                  <ComplianceBadge status={getAlertStatus(driver.governance.license_expiry)} />
+                </p>
+              )}
             </>
           )}
         </div>
 
         {canEdit && !editing && (
           <div className="flex items-center gap-1 shrink-0">
-            <button onClick={() => { setDraft({ rut: driver.rut, name: driver.name }); setEditing(true) }}
+            <button onClick={() => {
+              setDraft({ rut: driver.rut, name: driver.name })
+              setDraftGov({
+                id_expiry:      driver.governance?.id_expiry      ?? null,
+                license_expiry: driver.governance?.license_expiry ?? null,
+              })
+              setEditing(true)
+            }}
               className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 transition-all">
               <PenLine size={13} />
             </button>
@@ -265,7 +358,7 @@ export default function EmpresaDetailPage() {
     try { await transportersApi.addDriver(id, driverForm); setDriverForm({ rut: '', name: '' }); setAddDriverOpen(false); await load() }
     finally { setSubmitting(false) }
   }
-  const handlePatchDriver = async (did: string, body: { rut?: string; name?: string }) => {
+  const handlePatchDriver = async (did: string, body: { rut?: string; name?: string; governance?: DriverGovernance }) => {
     const res = await transportersApi.patchDriver(id, did, body)
     setTp(prev => prev ? {
       ...prev,
@@ -310,6 +403,8 @@ export default function EmpresaDetailPage() {
   const protected_ = new Set(tp.manually_edited_fields)
   const initColor  = getInitialColor(tp.business_name)
   const initials   = getInitials(tp.business_name)
+  const hasGovernanceData = tp.company_governance &&
+    Object.values(tp.company_governance).some(v => v !== null)
 
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
@@ -473,30 +568,52 @@ export default function EmpresaDetailPage() {
             )}
 
             {/* Tractos */}
-            {tp.vehicles.map(v => (
-              <div key={v.id} className="bg-white border border-border rounded-xl p-4 shadow-sm">
-                <div className="flex items-start justify-between border-b border-border/60 pb-3 mb-3">
-                  <div>
-                    <span className="text-[9px] text-gray-400 block uppercase font-bold mb-1">Tracto</span>
-                    <span className="text-base font-black bg-slate-800 text-white px-3 py-1 rounded-lg inline-block shadow-sm">
-                      {v.plate}
-                    </span>
+            {tp.vehicles.map(v => {
+              const vAlert = getVehicleAlertStatus(v)
+              return (
+                <div key={v.id} className="bg-white border border-border rounded-xl p-4 shadow-sm">
+                  <div className="flex items-start justify-between border-b border-border/60 pb-3 mb-3">
+                    <div>
+                      <span className="text-[9px] text-gray-400 block uppercase font-bold mb-1">Tracto</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-black bg-slate-800 text-white px-3 py-1 rounded-lg inline-block shadow-sm">
+                          {v.plate}
+                        </span>
+                        {vAlert !== 'ok' && <ComplianceBadge status={vAlert} compact />}
+                      </div>
+                    </div>
+                    {canEdit && (
+                      <button onClick={() => handleRemoveVehicle(v.id)}
+                        className="p-1.5 text-gray-300 hover:text-red-400 transition-colors mt-1">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
-                  {canEdit && (
-                    <button onClick={() => handleRemoveVehicle(v.id)}
-                      className="p-1.5 text-gray-300 hover:text-red-400 transition-colors mt-1">
-                      <Trash2 size={13} />
-                    </button>
+                  {v.type && (
+                    <div className="mb-2">
+                      <span className="text-[9px] text-gray-400 uppercase font-bold">Tipo</span>
+                      <span className="ml-2 text-xs text-gray-700 font-medium">{v.type}</span>
+                    </div>
+                  )}
+                  {v.governance && (
+                    <div className="space-y-1 border-t border-border/60 pt-2">
+                      {([
+                        ['Permiso Circ.', v.governance.circ_permit_expiry],
+                        ['Rev. Técnica',  v.governance.tech_inspection_expiry],
+                        ['Gases',         v.governance.gas_emissions_expiry],
+                        ['SOAP',          v.governance.soap_insurance_expiry],
+                      ] as [string, string | null][]).filter(([, d]) => d).map(([label, dateStr]) => (
+                        <div key={label} className="flex items-center gap-1.5">
+                          <span className="text-[9px] text-gray-400 w-20 shrink-0">{label}</span>
+                          <span className="text-[10px] font-mono text-gray-600">{formatExpiry(dateStr)}</span>
+                          <ComplianceBadge status={getAlertStatus(dateStr)} compact />
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-                {v.type && (
-                  <div>
-                    <span className="text-[9px] text-gray-400 uppercase font-bold">Tipo</span>
-                    <span className="ml-2 text-xs text-gray-700 font-medium">{v.type}</span>
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            })}
 
             {/* Ramplas */}
             {tp.trailers.length > 0 && (
@@ -525,6 +642,28 @@ export default function EmpresaDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Gobernanza Empresa ── */}
+      {hasGovernanceData && (
+        <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-white">
+          <div className="bg-gray-50 px-5 py-4 border-b border-border flex items-center justify-between">
+            <h4 className="font-bold text-slate-800 text-base">Gobernanza Empresa</h4>
+            {tp.company_governance!.avance_total != null && (
+              <span className="text-xs text-gray-500 font-mono">
+                Avance: <span className="font-bold text-slate-700">{tp.company_governance!.avance_total.toFixed(0)}%</span>
+              </span>
+            )}
+          </div>
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {GOVERNANCE_DOC_LABELS.map(({ key, label }) => (
+              <div key={key} className="text-center">
+                <p className="text-[9px] text-gray-400 uppercase font-bold mb-1">{label}</p>
+                <GovernanceStatusBadge status={tp.company_governance![key] as ComplianceStatus | null} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Info / Edit Slide-Over ── */}
       <div
@@ -593,6 +732,37 @@ export default function EmpresaDetailPage() {
                   : <span className="text-xs text-gray-300 italic">sin teléfonos</span>}
               </div>
             </div>
+          </div>
+
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-2">Gobernanza</h2>
+          <div>
+            {GOVERNANCE_DOC_LABELS.map(({ key, label }) => {
+              const current = (tp.company_governance?.[key] ?? '') as ComplianceStatus | ''
+              return (
+                <div key={key} className="flex items-center gap-3 py-2 border-b border-border/60 last:border-0">
+                  <span className="text-xs text-gray-400 w-32 shrink-0">{label}</span>
+                  {canEdit ? (
+                    <select
+                      value={current}
+                      onChange={async (e) => {
+                        const val = e.target.value as ComplianceStatus | ''
+                        const newGov = { ...(tp.company_governance ?? {}), [key]: val || null } as CompanyGovernance
+                        setTp(await transportersApi.patch(id, { company_governance: newGov }))
+                      }}
+                      className="flex-1 text-xs border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                    >
+                      <option value="">—</option>
+                      <option value="ok">OK</option>
+                      <option value="pendiente">Pendiente</option>
+                      <option value="actualizar">Actualizar</option>
+                      <option value="n_a">N/A</option>
+                    </select>
+                  ) : (
+                    <GovernanceStatusBadge status={current || null} />
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {tp.edited_at && (
