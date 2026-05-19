@@ -44,6 +44,7 @@ export type TripPatch = {
   estado_manual?:  string
   observaciones?:  string
   comentarios?:    string
+  driver_name?:    string
 }
 
 export type FleetLinkPayload = {
@@ -55,24 +56,32 @@ export type FleetLinkPayload = {
 
 export const tripsApi = {
   list: (params?: {
-    fecha?:       string
-    view?:        'en_curso' | 'historial'
-    q?:           string
-    fecha_desde?: string
-    fecha_hasta?: string
-    status?:      string
-    page?:        number
-    limit?:       number
+    fecha?:          string
+    view?:           'en_curso' | 'historial'
+    q?:              string
+    fecha_desde?:    string
+    fecha_hasta?:    string
+    status?:         string
+    activo?:         boolean
+    trabajando?:     boolean
+    asignado?:       boolean
+    primera_vuelta?: boolean
+    page?:           number
+    limit?:          number
   }) => {
     const qs = new URLSearchParams()
-    if (params?.fecha)       qs.set('fecha',       params.fecha)
-    if (params?.view)        qs.set('view',        params.view)
-    if (params?.q)           qs.set('q',           params.q)
-    if (params?.fecha_desde) qs.set('fecha_desde', params.fecha_desde)
-    if (params?.fecha_hasta) qs.set('fecha_hasta', params.fecha_hasta)
-    if (params?.status)      qs.set('status',      params.status)
-    if (params?.page)        qs.set('page',        String(params.page))
-    if (params?.limit)       qs.set('limit',       String(params.limit))
+    if (params?.fecha)           qs.set('fecha',           params.fecha)
+    if (params?.view)            qs.set('view',            params.view)
+    if (params?.q)               qs.set('q',               params.q)
+    if (params?.fecha_desde)     qs.set('fecha_desde',     params.fecha_desde)
+    if (params?.fecha_hasta)     qs.set('fecha_hasta',     params.fecha_hasta)
+    if (params?.status)          qs.set('status',          params.status)
+    if (params?.activo         != null) qs.set('activo',         String(params.activo))
+    if (params?.trabajando     != null) qs.set('trabajando',     String(params.trabajando))
+    if (params?.asignado       != null) qs.set('asignado',       String(params.asignado))
+    if (params?.primera_vuelta != null) qs.set('primera_vuelta', String(params.primera_vuelta))
+    if (params?.page)            qs.set('page',            String(params.page))
+    if (params?.limit)           qs.set('limit',           String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<TripListResponse>(`/api/v1/trips/${suffix}`)
   },

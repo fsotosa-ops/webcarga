@@ -211,12 +211,14 @@ export type Trip = {
   tms_name:               string
   client_name:            string | null
   planning_date:          string | null
+  status_reported_at:     string | null
   current_status:         string | null
   tractor_plate:          string | null
   trailer_plate:          string | null
   driver_name:            string | null
   driver_rut:             string | null
-  transporter:            string | null
+  transporter:            string | null   // linked company (tp.business_name) only
+  transporter_tms:        string | null   // TMS-reported name (fleet->>'transporter_name_tms')
   origin:                 string | null
   cargo_type:             string | null
   stops:                  TripStop[]

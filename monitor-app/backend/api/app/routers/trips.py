@@ -32,13 +32,15 @@ _TRIP_SELECT = """
     t.tms_name,
     t.client_name,
     t.planning_date,
+    t.status_reported_at,
     t.current_status_tms                          AS current_status,
     t.fleet->>'tractor_plate'                     AS tractor_plate,
     t.fleet->>'trailer_plate'                     AS trailer_plate,
-    t.fleet->>'driver_name_tms'                   AS driver_name,
+    COALESCE(fl.driver_name_raw,
+             t.fleet->>'driver_name_tms')         AS driver_name,
     t.fleet->>'driver_rut_tms'                    AS driver_rut,
-    COALESCE(tp.business_name,
-             t.fleet->>'transporter_name_tms')    AS transporter,
+    tp.business_name                              AS transporter,
+    t.fleet->>'transporter_name_tms'              AS transporter_tms,
     t.origin,
     t.cargo_type,
     t.stops,
@@ -52,7 +54,6 @@ _TRIP_SELECT = """
     t.manually_edited_fields,
     t.fleet_link_id,
     fl.transporter_id                             AS transporter_profile_id,
-    fl.tractor_plate                              AS linked_tractor_plate,
     t.edited_at,
     t.updated_at
 """
@@ -72,6 +73,10 @@ async def list_trips(
     fecha_desde: str = Query(""),
     fecha_hasta: str = Query(""),
     status: str = Query(""),
+    activo: str = Query(""),
+    trabajando: str = Query(""),
+    asignado: str = Query(""),
+    primera_vuelta: str = Query(""),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
     pool=Depends(get_pool),
@@ -80,8 +85,10 @@ async def list_trips(
     filters: list[str] = [
         "($1 = '' OR t.fleet->>'tractor_plate' ILIKE '%'||$1||'%' "
         "OR t.fleet->>'driver_name_tms' ILIKE '%'||$1||'%' "
+        "OR COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms') ILIKE '%'||$1||'%' "
         "OR t.fleet->>'driver_rut_tms' ILIKE '%'||$1||'%' "
-        "OR COALESCE(tp.business_name, t.fleet->>'transporter_name_tms') ILIKE '%'||$1||'%')"
+        "OR tp.business_name ILIKE '%'||$1||'%' "
+        "OR t.fleet->>'transporter_name_tms' ILIKE '%'||$1||'%')"
     ]
     params: list = [q]
 
@@ -100,6 +107,22 @@ async def list_trips(
         add("t.planning_date <= ?", d)
     if status:
         add("t.current_status_tms = ?", status)
+    if activo == "true":
+        filters.append("t.activo = true")
+    elif activo == "false":
+        filters.append("t.activo = false")
+    if trabajando == "true":
+        filters.append("t.trabajando = true")
+    elif trabajando == "false":
+        filters.append("t.trabajando = false")
+    if asignado == "true":
+        filters.append("t.asignado = true")
+    elif asignado == "false":
+        filters.append("t.asignado = false")
+    if primera_vuelta == "true":
+        filters.append("t.primera_vuelta = true")
+    elif primera_vuelta == "false":
+        filters.append("t.primera_vuelta = false")
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit
@@ -151,41 +174,66 @@ async def patch_trip(
     if not exists:
         raise HTTPException(404, "Viaje no encontrado")
 
-    sent = body.sent_fields()
-    if not sent:
+    data = body.model_dump(exclude_none=True)
+    if not data:
         raise HTTPException(422, "Ningún campo enviado")
 
-    data = body.model_dump(exclude_none=True)
-    sets: list[str] = []
-    vals: list = [trip_id]
+    # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
+    if "driver_name" in data:
+        new_name = data.pop("driver_name")
+        link_id = await pool.fetchval("SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id)
+        if link_id:
+            await pool.execute(
+                "UPDATE app.trip_fleet_links SET driver_name_raw = $1, updated_at = NOW() WHERE id = $2",
+                new_name, link_id,
+            )
+        else:
+            new_link_id = await pool.fetchval(
+                """INSERT INTO app.trip_fleet_links
+                   (trip_id, driver_name_raw, link_source, created_by)
+                   VALUES ($1, $2, 'manual', $3) RETURNING id""",
+                trip_id, new_name, user["sub"],
+            )
+            await pool.execute(
+                "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
+                new_link_id, trip_id,
+            )
 
+    # Remaining fields go to app.trips
     bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
     str_fields  = ("estado_manual", "observaciones", "comentarios")
+    trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields)}
 
-    for field in bool_fields:
-        if field in data:
-            vals.append(data[field])
-            sets.append(f"{field} = ${len(vals)}")
+    if trip_fields:
+        sent = list(trip_fields.keys())
+        sets: list[str] = []
+        vals: list = [trip_id]
 
-    for field in str_fields:
-        if field in data:
-            vals.append(data[field])
-            sets.append(f"{field} = ${len(vals)}")
+        for field in bool_fields:
+            if field in trip_fields:
+                vals.append(trip_fields[field])
+                sets.append(f"{field} = ${len(vals)}")
 
-    vals.append(sent)
-    sets.append(
-        f"manually_edited_fields = ARRAY(SELECT DISTINCT unnest("
-        f"COALESCE(manually_edited_fields,'{{}}') || ${len(vals)}::text[]))"
-    )
-    vals.append(user["sub"])
-    sets.append(f"edited_by = ${len(vals)}::uuid")
-    sets.append("edited_at = NOW(), updated_at = NOW()")
+        for field in str_fields:
+            if field in trip_fields:
+                vals.append(trip_fields[field])
+                sets.append(f"{field} = ${len(vals)}")
 
-    await pool.execute(
-        f"UPDATE app.trips SET {', '.join(sets)} WHERE id = $1",
-        *vals,
-    )
-    return await get_trip(trip_id, pool, _)
+        vals.append(sent)
+        sets.append(
+            f"manually_edited_fields = ARRAY(SELECT DISTINCT unnest("
+            f"COALESCE(manually_edited_fields,'{{}}') || ${len(vals)}::text[]))"
+        )
+        vals.append(user["sub"])
+        sets.append(f"edited_by = ${len(vals)}::uuid")
+        sets.append("edited_at = NOW(), updated_at = NOW()")
+
+        await pool.execute(
+            f"UPDATE app.trips SET {', '.join(sets)} WHERE id = $1",
+            *vals,
+        )
+
+    return await get_trip(trip_id, pool, user)
 
 
 @router.post("/{trip_id}/fleet-link")

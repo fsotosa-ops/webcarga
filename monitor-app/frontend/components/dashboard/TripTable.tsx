@@ -1,8 +1,10 @@
 'use client'
 
-import type { AlertStatus, ComplianceAlertSummary, Trip } from '@/lib/types'
+import { useState } from 'react'
+import { Check, Loader2, PenLine, X } from 'lucide-react'
+import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
-import { ChevronRight } from 'lucide-react'
+import { tripsApi } from '@/lib/api/trips'
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   'ASIGNADO':              { bg: '#e8eeff', text: '#053bfa' },
@@ -20,6 +22,13 @@ const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   'CERRADO POR OTRO VIAJE': { bg: '#f3f4f6', text: '#9ca3af' },
   'CERRADO FINALIZADO CC':  { bg: '#f3f4f6', text: '#9ca3af' },
   'DEVUELTO':               { bg: '#fee2e2', text: '#b00020' },
+  'EN PANA':                { bg: '#fee2e2', text: '#b00020' },
+}
+
+const TMS_CHIP: Record<string, { label: string; cls: string }> = {
+  qanalytics: { label: 'QA',  cls: 'bg-blue-50 text-blue-600 border-blue-100' },
+  wingsuite:  { label: 'WS',  cls: 'bg-purple-50 text-purple-600 border-purple-100' },
+  sodimac:    { label: 'SDM', cls: 'bg-orange-50 text-orange-600 border-orange-100' },
 }
 
 function StatusBadge({ status }: { status: string | null }) {
@@ -37,14 +46,161 @@ function StatusBadge({ status }: { status: string | null }) {
   )
 }
 
+function TmsChip({ tms }: { tms: string }) {
+  const cfg = TMS_CHIP[tms.toLowerCase()]
+  if (!cfg) return <span className="text-[9px] text-gray-400 font-mono">{tms}</span>
+  return (
+    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function FlagDots({ activo, trabajando, asignado, primera_vuelta }: {
+  activo: boolean; trabajando: boolean; asignado: boolean; primera_vuelta: boolean
+}) {
+  const flags = [
+    { label: 'A',  title: 'Activo',      active: activo,        color: 'bg-blue-400' },
+    { label: 'T',  title: 'Trabajando',  active: trabajando,    color: 'bg-green-400' },
+    { label: 'As', title: 'Asignado',    active: asignado,      color: 'bg-violet-400' },
+    { label: '1V', title: '1ra Vuelta',  active: primera_vuelta, color: 'bg-amber-400' },
+  ]
+  return (
+    <div className="flex gap-0.5 items-center">
+      {flags.map(f => (
+        <span
+          key={f.label}
+          title={f.title}
+          className={`text-[8px] font-bold px-1 py-0.5 rounded ${
+            f.active
+              ? `${f.color} text-white`
+              : 'bg-gray-100 text-gray-300'
+          }`}
+        >
+          {f.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function StopPills({ stops }: { stops: TripStop[] }) {
+  if (!stops || stops.length === 0) return <span className="text-gray-200 text-xs">—</span>
+  const MAX_VISIBLE = 2
+  const visible = stops.slice(0, MAX_VISIBLE)
+  const extra = stops.length - MAX_VISIBLE
+  return (
+    <div className="flex flex-wrap gap-1">
+      {visible.map((s, i) => (
+        <span
+          key={s.stop_id ?? i}
+          title={`${s.local ?? s.destination_city ?? '—'} · ${s.on_time_status ?? 'sin estado'}`}
+          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full max-w-[90px] truncate ${
+            s.on_time_status === 'ON TIME'
+              ? 'bg-green-50 text-green-600 border border-green-100'
+              : s.on_time_status === 'OFF TIME'
+              ? 'bg-amber-50 text-amber-600 border border-amber-100'
+              : 'bg-gray-50 text-gray-400 border border-gray-100'
+          }`}
+        >
+          {s.local ?? s.destination_city ?? '—'}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="text-[9px] text-gray-400 font-semibold px-1 py-0.5">+{extra}</span>
+      )}
+    </div>
+  )
+}
+
+function ConductorCell({
+  trip,
+  alertStatus,
+  onSaved,
+}: {
+  trip: Trip
+  alertStatus: AlertStatus | undefined
+  onSaved: (t: Trip) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft]     = useState(trip.driver_name ?? '')
+  const [saving, setSaving]   = useState(false)
+
+  const handleSave = async (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation()
+    if (!draft.trim() || draft === trip.driver_name) { setEditing(false); return }
+    setSaving(true)
+    try {
+      const updated = await tripsApi.patch(trip.id, { driver_name: draft.trim() })
+      onSaved(updated)
+      setEditing(false)
+    } catch { /* ignore */ } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDraft(trip.driver_name ?? '')
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 min-w-[140px]" onClick={e => e.stopPropagation()}>
+        <input
+          autoFocus
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSave(e); if (e.key === 'Escape') { setDraft(trip.driver_name ?? ''); setEditing(false) } }}
+          className="text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30"
+        />
+        <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
+          {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+        </button>
+        <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
+          <X size={11} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="group cursor-text"
+      onClick={e => { e.stopPropagation(); setDraft(trip.driver_name ?? ''); setEditing(true) }}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-slate-700 font-medium leading-tight">
+          {trip.driver_name ?? <span className="text-gray-300 italic">sin asignar</span>}
+        </span>
+        <ComplianceBadge status={alertStatus ?? null} compact />
+        <PenLine size={10} className="text-gray-200 group-hover:text-accent/60 transition-colors shrink-0" />
+      </div>
+      {trip.driver_rut && (
+        <div className="text-[9px] text-gray-400 font-mono mt-0.5">{trip.driver_rut}</div>
+      )}
+      <div className="mt-1">
+        <FlagDots
+          activo={trip.activo}
+          trabajando={trip.trabajando}
+          asignado={trip.asignado}
+          primera_vuelta={trip.primera_vuelta}
+        />
+      </div>
+    </div>
+  )
+}
+
 interface Props {
   trips:         Trip[]
   selectedId:    string | null
   onSelect:      (trip: Trip) => void
+  onSaved:       (trip: Trip) => void
   alertSummary?: ComplianceAlertSummary | null
 }
 
-export function TripTable({ trips, selectedId, onSelect, alertSummary }: Props) {
+export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }: Props) {
   if (trips.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-border p-12 text-center text-sm text-gray-400">
@@ -55,23 +211,29 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary }: Props) 
 
   return (
     <div className="bg-white rounded-xl border border-border overflow-hidden overflow-x-auto">
-      <table className="w-full text-sm min-w-[640px]">
+      <table className="w-full text-sm" style={{ minWidth: 980 }}>
         <thead>
-          <tr className="bg-gray-50 border-b border-border text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            <th className="px-4 py-3 text-left">Fecha</th>
-            <th className="px-4 py-3 text-left">Tracto · Rampla</th>
-            <th className="px-4 py-3 text-left">Conductor</th>
-            <th className="px-4 py-3 text-left">EETT</th>
-            <th className="px-4 py-3 text-left">Origen</th>
-            <th className="px-4 py-3 text-left">Estado</th>
-            <th className="px-3 py-3 text-center w-8"></th>
+          <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+            <th className="px-3 py-2.5 text-left w-[72px]">Fecha</th>
+            <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
+            <th className="px-3 py-2.5 text-left w-[110px]">Patente</th>
+            <th className="px-3 py-2.5 text-left w-[160px]">Conductor · Flags</th>
+            <th className="px-3 py-2.5 text-left w-[130px]">EETT</th>
+            <th className="px-3 py-2.5 text-left w-[110px]">Cliente</th>
+            <th className="px-3 py-2.5 text-left w-[120px]">Origen · Carga</th>
+            <th className="px-3 py-2.5 text-left">Destinos</th>
+            <th className="px-3 py-2.5 text-left w-[110px]">Estado</th>
+            <th className="px-2 py-2.5 w-6"></th>
           </tr>
         </thead>
         <tbody>
           {trips.map((trip, i) => {
-            const isActive = trip.id === selectedId
+            const isActive    = trip.id === selectedId
             const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
             const driverAlert = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
+            const currentStatus = trip.estado_manual ?? trip.current_status
+            const statusColor   = currentStatus ? STATUS_COLOR[currentStatus] : null
+
             return (
               <tr
                 key={trip.id}
@@ -84,58 +246,107 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary }: Props) 
                     : 'hover:bg-gray-50/70'
                 }`}
               >
-                <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                  {trip.planning_date
-                    ? new Date(trip.planning_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: '2-digit' })
-                    : '—'}
+                {/* FECHA */}
+                <td className="px-3 py-2.5">
+                  <p className="text-[11px] text-gray-700 font-medium whitespace-nowrap">
+                    {trip.planning_date
+                      ? new Date(trip.planning_date + 'T12:00:00').toLocaleDateString('es-CL', {
+                          day: '2-digit', month: '2-digit',
+                        })
+                      : '—'}
+                  </p>
+                  {trip.status_reported_at && (
+                    <p className="text-[9px] text-gray-300 whitespace-nowrap mt-0.5">
+                      {new Date(trip.status_reported_at).toLocaleTimeString('es-CL', {
+                        hour: '2-digit', minute: '2-digit',
+                      })}
+                    </p>
+                  )}
                 </td>
-                <td className="px-4 py-3">
+
+                {/* TMS */}
+                <td className="px-2 py-2.5">
+                  <TmsChip tms={trip.tms_name ?? ''} />
+                </td>
+
+                {/* PATENTE */}
+                <td className="px-3 py-2.5">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs font-medium text-text-primary">
+                    <span className="font-mono text-xs font-bold text-slate-800">
                       {trip.tractor_plate ?? '—'}
                     </span>
-                    <ComplianceBadge
-                      status={plateAlert ?? null}
-                      tooltip={plateAlert === 'expired' ? 'Documento de vehículo vencido' : 'Documento vence pronto'}
-                      compact
-                    />
+                    <ComplianceBadge status={plateAlert ?? null} compact
+                      tooltip={plateAlert === 'expired' ? 'Vehículo vencido' : 'Vence pronto'} />
                   </div>
                   {trip.trailer_plate && (
-                    <div className="font-mono text-[10px] text-gray-400">{trip.trailer_plate}</div>
+                    <div className="font-mono text-[9px] text-gray-400 mt-0.5">{trip.trailer_plate}</div>
                   )}
                 </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm text-text-primary">{trip.driver_name ?? '—'}</span>
-                    <ComplianceBadge
-                      status={driverAlert ?? null}
-                      tooltip={driverAlert === 'expired' ? 'Documento de conductor vencido' : 'Documento vence pronto'}
-                      compact
-                    />
-                  </div>
-                  {trip.driver_rut && (
-                    <div className="text-[10px] text-gray-400 font-mono">{trip.driver_rut}</div>
+
+                {/* CONDUCTOR + FLAGS */}
+                <td className="px-3 py-2.5">
+                  <ConductorCell
+                    trip={trip}
+                    alertStatus={driverAlert}
+                    onSaved={onSaved}
+                  />
+                </td>
+
+                {/* EETT — solo empresa vinculada */}
+                <td className="px-3 py-2.5">
+                  {trip.transporter_profile_id ? (
+                    <span className="text-xs font-medium text-slate-700 leading-tight block truncate max-w-[120px]">
+                      {trip.transporter}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-gray-300 italic">sin vincular</span>
                   )}
                 </td>
-                <td className="px-4 py-3 max-w-[140px]">
-                  <p className="text-xs text-gray-600 truncate">{trip.transporter ?? '—'}</p>
-                  {trip.client_name && (
-                    <p className="text-[10px] text-gray-400 truncate mt-0.5">{trip.client_name}</p>
-                  )}
+
+                {/* CLIENTE */}
+                <td className="px-3 py-2.5">
+                  <span className="text-[11px] text-gray-500 truncate block max-w-[100px]">
+                    {trip.client_name ?? '—'}
+                  </span>
                 </td>
-                <td className="px-4 py-3 max-w-[120px]">
-                  <p className="text-xs text-gray-500 truncate">{trip.origin ?? '—'}</p>
-                  {trip.tms_name && (
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mt-0.5 inline-block">
-                      {trip.tms_name}
+
+                {/* ORIGEN · CARGA */}
+                <td className="px-3 py-2.5">
+                  <p className="text-[11px] text-gray-600 truncate max-w-[110px]">
+                    {trip.origin ?? '—'}
+                  </p>
+                  {trip.cargo_type && (
+                    <span className="text-[9px] text-gray-400 bg-gray-50 border border-gray-100 px-1 py-0.5 rounded mt-0.5 inline-block truncate max-w-[110px]">
+                      {trip.cargo_type}
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={trip.estado_manual ?? trip.current_status} />
+
+                {/* DESTINOS */}
+                <td className="px-3 py-2.5 max-w-[200px]">
+                  <StopPills stops={trip.stops} />
                 </td>
-                <td className="px-3 py-3 text-center">
-                  <ChevronRight size={14} className={`transition-colors ${isActive ? 'text-accent' : 'text-gray-300'}`} />
+
+                {/* ESTADO */}
+                <td className="px-3 py-2.5">
+                  {statusColor ? (
+                    <span
+                      className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={{ backgroundColor: statusColor.bg, color: statusColor.text }}
+                    >
+                      {currentStatus}
+                    </span>
+                  ) : (
+                    <StatusBadge status={currentStatus} />
+                  )}
+                  {trip.estado_manual && (
+                    <span className="text-[8px] text-accent block mt-0.5">override</span>
+                  )}
+                </td>
+
+                {/* Chevron */}
+                <td className="px-2 py-2.5 text-center">
+                  <span className={`text-xs ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
                 </td>
               </tr>
             )
