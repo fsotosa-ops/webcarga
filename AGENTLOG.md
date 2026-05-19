@@ -11,6 +11,50 @@
 
 ## 2. Qué Hicimos
 
+### 2026-05-19 — Governance & Compliance Tracking + Fix crítico trips router (vigésimo-octava iteración)
+
+**Objetivo:** (1) Corregir el router de viajes (completamente roto, usaba columnas que no existen en DB). (2) Agregar gobernanza/cumplimiento desde el Excel a transporter_profiles. (3) Alertas de vencimiento en monitor y empresa.
+
+**Root cause del trips router**: `app.trips` usa `fleet JSONB` (no columnas directas), `stops JSONB` (no `milestones`), `current_status_tms` (no `current_status`). El router anterior consultaba ~10 columnas inexistentes → toda la API de viajes devolvía error.
+
+**DB Migrations aplicadas** (Supabase `viclzoftiudkepqnhekv`):
+- `20260519000001_governance_fields.sql` — `ADD COLUMN company_governance JSONB` a `app.transporter_profiles` + vista `app.v_compliance_alerts` (LATERAL jsonb_array_elements sobre drivers/vehicles, alerta expired/expiring_soon a 30 días)
+- `20260519000002_trips_fleet_backfill.sql` — PL/pgSQL que linkea trips existentes a transporter_profiles por plate matching → **607/883 trips vinculados**
+
+**Backend API** (`monitor-app/backend/api/`):
+- `schemas/trip.py` — eliminado campo `locales` (columna no existe en DB)
+- `routers/trips.py` — reescritura completa: `_TRIP_SELECT` mapea `fleet->>'tractor_plate' AS tractor_plate`, `current_status_tms AS current_status`, etc.; LEFT JOINs con `trip_fleet_links` y `transporter_profiles`; filtros corregidos (`fleet->>` + `current_status_tms`); 2 nuevos endpoints `POST/DELETE /{id}/fleet-link`
+- `schemas/transporter.py` — nuevos modelos: `DriverGovernance`, `VehicleGovernance`, `CompanyGovernance`, `ComplianceAlertSummary`; `Driver` y `Vehicle` extendidos con `governance`; `PatchVehicleReq`, `has_active_alerts` en `TransporterListItem`
+- `routers/transporters.py` — `GET /compliance-alerts/summary` (consulta `v_compliance_alerts`, devuelve dict {rut→status} y {plate→status}); `patch_transporter` incluye `company_governance`; `patch_driver` aplica `governance` al JSONB; `_row_to_dict` parsea `company_governance`
+
+**Frontend** (`monitor-app/frontend/`):
+- `lib/types.ts` — `TripMilestone` → `TripStop` (estructura real de `stops JSONB`); `Trip` alineado con API real (`stops[]`, `transporter_profile_id`, `fleet_link_id`, sin `locales`/`milestones`); nuevos tipos `ComplianceStatus`, `AlertStatus`, `DriverGovernance`, `VehicleGovernance`, `CompanyGovernance`, `ComplianceAlertSummary`; `TransporterDriver/Vehicle` con `governance`; `TransporterProfile` con `company_governance`
+- `lib/compliance.ts` — `getAlertStatus()`, `getDriverAlertStatus()`, `getVehicleAlertStatus()`, `formatExpiry()` (threshold = 30 días)
+- `lib/api/trips.ts` — `locales` eliminado de `TripPatch`; `assignFleetLink()` + `removeFleetLink()` añadidos
+- `lib/api/transporters.ts` — `getComplianceAlertSummary()`; `company_governance` en `TransporterPatch`; `governance` en `patchDriver`
+- `components/dashboard/ComplianceBadge.tsx` — badge rojo/ámbar con dot compact para tablas
+- `components/dashboard/TripTable.tsx` — prop `alertSummary`; dots de alerta en columnas Tracto y Conductor
+- `components/dashboard/TripSlideOver.tsx` — sección "Paradas del viaje" (reemplaza milestones); eliminado campo `locales`; `TransporterAssignSection` para vincular EETT manualmente; sección "Empresa de Transporte" con desvincular
+- `app/dashboard/diario/page.tsx` — carga `getComplianceAlertSummary` al montar; pasa `alertSummary` a TripTable
+- `app/dashboard/transportistas/empresa/[id]/page.tsx` — `DriverCard` con fechas vencimiento C.I./Licencia + anillo rojo/ámbar en avatar + edición inline de fechas; vehicles cards con fechas + dot de alerta; `GovernancePanel` debajo del 2-column grid (grid de badges por documento); sección Gobernanza en slide-over con dropdowns editables (ok/pendiente/actualizar/n_a) por cada documento
+
+**Resultado:** TypeScript 0 errores, `npm run build` verde (13 rutas), 607 trips pre-vinculados.
+
+**Checklist (vigésimo-octava):**
+- [x] Migration governance_fields aplicada + verificada
+- [x] Migration trips_fleet_backfill aplicada → 607/883 vinculados
+- [x] trips.py router reescrito (columnas reales)
+- [x] transporter.py schemas extendidos con governance
+- [x] transporters.py compliance-alerts endpoint + patch con company_governance
+- [x] Frontend types alineados con DB real
+- [x] ComplianceBadge + compliance.ts helpers
+- [x] TripTable con alert dots
+- [x] TripSlideOver con stops + fleet-link assignment
+- [x] Empresa detail page con governance panel + edición
+- [x] Build verde, 0 errores TypeScript
+- [ ] Deploy a Cloud Run (backend) — push main → CI/CD
+- [ ] Deploy a Vercel (frontend) — push main → CI/CD
+
 ### 2026-05-18 — QAnalytics scraper: fix timeout + datos pre-filtro (vigésimo-séptima iteración)
 
 **Problema**: pipelines QAnalytics fallaban de forma inconsistente con `Timeout 5000ms exceeded`. Logs de Cloud Run confirmaron 4 runs consecutivos fallando en el mismo punto exacto del modal handler.
@@ -29,6 +73,13 @@
 
 **Tests**: `tests/test_qanalytics_adapter.py` — 7 tests unitarios (sin browser, sin credenciales). Cubren los 3 bugs con mocks de Playwright. RED → GREEN confirmado. Sin regresión en tests de sodimac.
 
+**Bug residual descubierto post-deploy (2026-05-18 22:32+)**: Los 3 fixes resolvieron el `Timeout 5000ms exceeded` del modal pero `valida_GP()` sigue rechazando el cierre con: "Debe ingresar fechas de salida y/o marcar todos los registros como pendiente". Los checkboxes SÍ están marcados (marked=2, total=2). El problema es que `valida_GP()` también exige **fechas de salida** por fila, que son inputs de texto en el modal no llenados por el scraper. `chk.click()` no las llena automáticamente.
+
+**Fix adicional (commit 99c668e, 2026-05-18 23:00)** — `scraper.py::_handle_pendientes_modal_if_open`:
+- Luego de marcar checkboxes, encuentra todos `input[type="text"]:not([id="txtchkGP"]):not([id="txtcantidadGP"])` en el modal
+- Rellena los vacíos con `fechaHoy` (dd-mm-yyyy)
+- Retorna `validaGpSrc[:500]` + `inputDiag` en el evaluate para diagnóstico en logs de Cloud Run
+
 **Checklist (vigésimo-séptima):**
 - [x] Root cause confirmado via logs Cloud Run
 - [x] Tests RED escritos antes del fix
@@ -36,8 +87,9 @@
 - [x] Fix 2: `wait_for_timeout(400)` post modal visible
 - [x] Fix 3: `expect_response` en `_submit_search`
 - [x] 7/7 tests GREEN
-- [ ] Deploy a Cloud Run (push a main → CI/CD)
-- [ ] Verificar en logs que ya no aparece `Timeout 5000ms exceeded` en modal
+- [x] Deploy a Cloud Run (revision 00020, commit 99c668e, ~23:00)
+- [ ] Verificar logs revision 00020 — que `fechasRellenas > 0` y modal cierra
+- [ ] Si aún falla: leer `validaGpSrc` e `inputDiag` de los logs para diagnóstico exacto
 
 ### 2026-05-12 — app.trips aggregate + Diario 2.0 UX refactor (vigésimo-quinta iteración)
 
