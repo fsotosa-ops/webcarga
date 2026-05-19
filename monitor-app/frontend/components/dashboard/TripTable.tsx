@@ -1,6 +1,7 @@
 'use client'
 
-import type { Trip } from '@/lib/types'
+import type { AlertStatus, ComplianceAlertSummary, Trip } from '@/lib/types'
+import { ComplianceBadge } from './ComplianceBadge'
 import { ChevronRight } from 'lucide-react'
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
@@ -37,12 +38,13 @@ function StatusBadge({ status }: { status: string | null }) {
 }
 
 interface Props {
-  trips:      Trip[]
-  selectedId: string | null
-  onSelect:   (trip: Trip) => void
+  trips:         Trip[]
+  selectedId:    string | null
+  onSelect:      (trip: Trip) => void
+  alertSummary?: ComplianceAlertSummary | null
 }
 
-export function TripTable({ trips, selectedId, onSelect }: Props) {
+export function TripTable({ trips, selectedId, onSelect, alertSummary }: Props) {
   if (trips.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-border p-12 text-center text-sm text-gray-400">
@@ -68,6 +70,8 @@ export function TripTable({ trips, selectedId, onSelect }: Props) {
         <tbody>
           {trips.map((trip, i) => {
             const isActive = trip.id === selectedId
+            const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
+            const driverAlert = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
             return (
               <tr
                 key={trip.id}
@@ -86,15 +90,29 @@ export function TripTable({ trips, selectedId, onSelect }: Props) {
                     : '—'}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="font-mono text-xs font-medium text-text-primary">
-                    {trip.tractor_plate ?? '—'}
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-medium text-text-primary">
+                      {trip.tractor_plate ?? '—'}
+                    </span>
+                    <ComplianceBadge
+                      status={plateAlert ?? null}
+                      tooltip={plateAlert === 'expired' ? 'Documento de vehículo vencido' : 'Documento vence pronto'}
+                      compact
+                    />
                   </div>
                   {trip.trailer_plate && (
                     <div className="font-mono text-[10px] text-gray-400">{trip.trailer_plate}</div>
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="text-sm text-text-primary">{trip.driver_name ?? '—'}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-text-primary">{trip.driver_name ?? '—'}</span>
+                    <ComplianceBadge
+                      status={driverAlert ?? null}
+                      tooltip={driverAlert === 'expired' ? 'Documento de conductor vencido' : 'Documento vence pronto'}
+                      compact
+                    />
+                  </div>
                   {trip.driver_rut && (
                     <div className="text-[10px] text-gray-400 font-mono">{trip.driver_rut}</div>
                   )}

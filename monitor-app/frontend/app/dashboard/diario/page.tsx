@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
-import type { Trip } from '@/lib/types'
+import { transportersApi } from '@/lib/api/transporters'
+import type { Trip, ComplianceAlertSummary } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 
@@ -43,6 +44,7 @@ export default function DiarioPage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState<string | null>(null)
   const [selected, setSelected]     = useState<Trip | null>(null)
+  const [alertSummary, setAlertSummary] = useState<ComplianceAlertSummary | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -59,6 +61,12 @@ export default function DiarioPage() {
   }, [tab, fecha, q, fechaDesde, fechaHasta, statusFilter])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    transportersApi.getComplianceAlertSummary()
+      .then(setAlertSummary)
+      .catch(console.error)
+  }, [])
 
   function handleSaved(updated: Trip) {
     setSelected(updated)
@@ -195,6 +203,7 @@ export default function DiarioPage() {
               trips={trips}
               selectedId={selected?.id ?? null}
               onSelect={setSelected}
+              alertSummary={alertSummary}
             />
           )}
         </div>
