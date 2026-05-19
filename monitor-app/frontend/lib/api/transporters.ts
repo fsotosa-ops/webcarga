@@ -98,6 +98,12 @@ export const transportersApi = {
       body: JSON.stringify(body),
     }),
 
+  patchVehicle: (id: string, vid: string, body: { type?: string; plate?: string; governance?: import('@/lib/types').VehicleGovernance }) =>
+    apiFetch<{ data: TransporterVehicle }>(`/api/v1/transporters/${id}/vehicles/${vid}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
   removeVehicle: (id: string, vid: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/transporters/${id}/vehicles/${vid}`, {
       method: 'DELETE',

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, Clock, Loader2 } from 'lucide-react'
+import { X, Clock, Loader2, Building2 } from 'lucide-react'
 import type { Trip, TransporterListItem } from '@/lib/types'
 import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
@@ -30,18 +30,23 @@ const ESTADO_OPTIONS = [
   'RETORNADO CD', 'EN PANA', 'CANCELADO', 'CERRADO FINALIZADO',
 ]
 
+const TMS_LABELS: Record<string, string> = {
+  qanalytics: 'QA',
+  wingsuite:  'WS',
+  sodimac:    'SDM',
+}
+
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-[10px] text-gray-500 font-bold uppercase">{label}</span>
-      <label className="flex items-center cursor-pointer w-fit">
-        <div
-          onClick={() => onChange(!value)}
-          className={`w-10 h-6 rounded-full relative transition-colors cursor-pointer ${value ? 'bg-accent' : 'bg-gray-200'}`}
-        >
-          <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${value ? 'left-5' : 'left-1'}`} />
-        </div>
-      </label>
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className={`w-10 h-6 rounded-full relative transition-colors ${value ? 'bg-accent' : 'bg-gray-200'}`}
+      >
+        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${value ? 'left-5' : 'left-1'}`} />
+      </button>
     </div>
   )
 }
@@ -82,12 +87,14 @@ function TransporterAssignSection({
 
   return (
     <div className="space-y-2">
-      <p className="text-[10px] text-gray-400">
-        Sin EETT vinculada.{currentTransporter && ` TMS reporta: "${currentTransporter}"`}
-      </p>
+      {currentTransporter && (
+        <p className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded border border-border/60">
+          TMS reporta: <span className="font-medium text-gray-600">{currentTransporter}</span>
+        </p>
+      )}
       <input
         type="text"
-        placeholder="Buscar empresa..."
+        placeholder="Buscar y vincular empresa…"
         value={query}
         onChange={e => { setQuery(e.target.value); search(e.target.value) }}
         className="w-full text-xs border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30"
@@ -97,6 +104,7 @@ function TransporterAssignSection({
           {results.map(tp => (
             <li key={tp.id}>
               <button
+                type="button"
                 onClick={() => assign(tp.id)}
                 disabled={saving}
                 className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between"
@@ -129,13 +137,13 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
   useEffect(() => {
     if (!trip) return
     setForm({
-      activo:         trip.activo,
-      trabajando:     trip.trabajando,
-      asignado:       trip.asignado,
-      primera_vuelta: trip.primera_vuelta,
-      estado_manual:  trip.estado_manual ?? '',
-      observaciones:  trip.observaciones ?? '',
-      comentarios:    trip.comentarios ?? '',
+      activo:         trip.activo         ?? false,
+      trabajando:     trip.trabajando     ?? false,
+      asignado:       trip.asignado       ?? false,
+      primera_vuelta: trip.primera_vuelta ?? false,
+      estado_manual:  trip.estado_manual  ?? '',
+      observaciones:  trip.observaciones  ?? '',
+      comentarios:    trip.comentarios    ?? '',
     })
     setErr(null)
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -164,6 +172,9 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
   }
 
   const isOpen = !!trip
+  const tmsLabel = trip?.tms_name ? (TMS_LABELS[trip.tms_name] ?? trip.tms_name) : null
+  const currentStatus = trip?.estado_manual ?? trip?.current_status
+  const statusColor = currentStatus ? STATUS_COLOR[currentStatus] : null
 
   return (
     <>
@@ -187,13 +198,34 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
           <>
             {/* Header */}
             <div className="px-5 py-4 bg-slate-900 flex items-start justify-between gap-3 shrink-0">
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-white truncate">
-                  Gestión: {trip.tractor_plate ?? 'Sin patente'}
-                </h3>
-                <p className="text-[11px] text-white/50 mt-0.5 truncate">
-                  {trip.driver_name ?? '—'} · {trip.tms_name}
-                </p>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-base font-bold text-white truncate">
+                    {trip.tractor_plate ?? 'Sin patente'}
+                  </h3>
+                  {statusColor && (
+                    <span
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                      style={{ backgroundColor: statusColor.bg, color: statusColor.text }}
+                    >
+                      {currentStatus}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[11px] text-white/50 truncate">
+                    {trip.driver_name ?? '—'}
+                    {trip.driver_rut && <span className="font-mono ml-1 opacity-70">· {trip.driver_rut}</span>}
+                  </p>
+                  {tmsLabel && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/60 shrink-0">
+                      {tmsLabel}
+                    </span>
+                  )}
+                  {trip.client_name && (
+                    <span className="text-[10px] text-white/40 truncate">{trip.client_name}</span>
+                  )}
+                </div>
               </div>
               <button
                 onClick={onClose}
@@ -210,7 +242,7 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
               {(trip.stops?.length ?? 0) > 0 && (
                 <section>
                   <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-                    Paradas del viaje ({trip.stops.length})
+                    Paradas ({trip.stops.length})
                   </h4>
                   <div className="space-y-2">
                     {trip.stops.map((stop, i) => (
@@ -250,16 +282,17 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
 
               {/* Empresa de Transporte */}
               <section>
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                  Empresa de Transporte
+                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                  <Building2 size={10} /> Empresa de Transporte
                 </h4>
                 {trip.transporter_profile_id ? (
-                  <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 border border-border">
+                  <div className="flex items-center justify-between bg-accent/5 rounded-lg px-3 py-2.5 border border-accent/15">
                     <div>
-                      <p className="text-xs font-medium text-slate-700">{trip.transporter ?? '—'}</p>
+                      <p className="text-sm font-semibold text-slate-800">{trip.transporter ?? '—'}</p>
                       <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{trip.tractor_plate ?? ''}</p>
                     </div>
                     <button
+                      type="button"
                       onClick={async () => {
                         await tripsApi.removeFleetLink(trip.id)
                         onSaved({ ...trip, transporter_profile_id: null, fleet_link_id: null })
@@ -294,7 +327,7 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white rounded-lg border border-border/60 p-3">
                   <Toggle
                     label="Activo"
-                    value={form.activo ?? true}
+                    value={form.activo ?? false}
                     onChange={v => setForm(f => ({ ...f, activo: v }))}
                   />
                   <Toggle
@@ -316,14 +349,14 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
 
                 {/* Estado */}
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Estado</label>
+                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Estado Override</label>
                   <select
                     value={form.estado_manual ?? ''}
                     onChange={e => setForm(f => ({ ...f, estado_manual: e.target.value }))}
                     className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
                   >
                     {ESTADO_OPTIONS.map(s => (
-                      <option key={s} value={s}>{s || 'Sin override'}</option>
+                      <option key={s} value={s}>{s || 'Sin override (usa estado TMS)'}</option>
                     ))}
                   </select>
                 </div>
@@ -358,6 +391,7 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
 
                 {/* Save */}
                 <button
+                  type="button"
                   onClick={handleSave}
                   disabled={saving}
                   className="w-full flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-60 transition-colors"

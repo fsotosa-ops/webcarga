@@ -117,11 +117,19 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary }: Props) 
                     <div className="text-[10px] text-gray-400 font-mono">{trip.driver_rut}</div>
                   )}
                 </td>
-                <td className="px-4 py-3 text-xs text-gray-600 max-w-[140px] truncate">
-                  {trip.transporter ?? '—'}
+                <td className="px-4 py-3 max-w-[140px]">
+                  <p className="text-xs text-gray-600 truncate">{trip.transporter ?? '—'}</p>
+                  {trip.client_name && (
+                    <p className="text-[10px] text-gray-400 truncate mt-0.5">{trip.client_name}</p>
+                  )}
                 </td>
-                <td className="px-4 py-3 text-xs text-gray-500 max-w-[120px] truncate">
-                  {trip.origin ?? '—'}
+                <td className="px-4 py-3 max-w-[120px]">
+                  <p className="text-xs text-gray-500 truncate">{trip.origin ?? '—'}</p>
+                  {trip.tms_name && (
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mt-0.5 inline-block">
+                      {trip.tms_name}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={trip.estado_manual ?? trip.current_status} />

@@ -10,6 +10,7 @@ from ..schemas.transporter import (
     PatchDriverReq,
     AddTrailerReq,
     AddVehicleReq,
+    PatchVehicleReq,
     ComplianceAlertSummary,
     PaginatedResponse,
     TransporterPatch,
@@ -359,6 +360,55 @@ async def add_vehicle(
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="No encontrado")
     return {"data": new}
+
+
+@router.patch("/{tid}/vehicles/{vid}")
+async def patch_vehicle(
+    tid: str,
+    vid: str,
+    body: PatchVehicleReq,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    row = await pool.fetchrow(
+        "SELECT vehicles FROM app.transporter_profiles WHERE id = $1", tid
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    vehicles = list(row["vehicles"] or [])
+    updated = None
+    for v in vehicles:
+        if v["id"] == vid:
+            if body.type is not None:
+                v["type"] = body.type
+            if body.plate is not None:
+                v["plate"] = body.plate
+            if body.governance is not None:
+                gov = body.governance.model_dump(mode="json", exclude_none=False)
+                existing_gov = v.get("governance") or {}
+                v["governance"] = {**existing_gov, **{k: val for k, val in gov.items() if val is not None}}
+            updated = v
+            break
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
+
+    await pool.execute(
+        """
+        UPDATE app.transporter_profiles SET
+            vehicles = $2::jsonb,
+            manually_edited_fields = (
+                SELECT ARRAY(SELECT DISTINCT unnest(
+                    COALESCE(manually_edited_fields, '{}') || ARRAY['vehicles']
+                ))
+            ),
+            edited_by = $3::uuid, edited_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+        """,
+        tid, json.dumps(vehicles), user["sub"],
+    )
+    return {"data": updated}
 
 
 @router.delete("/{tid}/vehicles/{vid}")
