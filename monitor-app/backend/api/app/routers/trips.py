@@ -12,6 +12,7 @@ def _parse_date(s: str) -> _date | None:
     except ValueError:
         return None
 
+
 router = APIRouter(prefix="/trips", tags=["trips"])
 
 CLOSED_STATUSES = (
@@ -22,6 +23,45 @@ CLOSED_STATUSES = (
     "CERRADO POR OTRO VIAJE",
     "CANCELADO",
 )
+
+# SQL fragment that maps actual DB columns to the expected API response shape.
+# fleet JSONB holds tractor/driver info; trip_fleet_links holds the resolved
+# transporter_profile link.
+_TRIP_SELECT = """
+    t.id,
+    t.tms_name,
+    t.client_name,
+    t.planning_date,
+    t.current_status_tms                          AS current_status,
+    t.fleet->>'tractor_plate'                     AS tractor_plate,
+    t.fleet->>'trailer_plate'                     AS trailer_plate,
+    t.fleet->>'driver_name_tms'                   AS driver_name,
+    t.fleet->>'driver_rut_tms'                    AS driver_rut,
+    COALESCE(tp.business_name,
+             t.fleet->>'transporter_name_tms')    AS transporter,
+    t.origin,
+    t.cargo_type,
+    t.stops,
+    t.activo,
+    t.trabajando,
+    t.asignado,
+    t.primera_vuelta,
+    t.estado_manual,
+    t.observaciones,
+    t.comentarios,
+    t.manually_edited_fields,
+    t.fleet_link_id,
+    fl.transporter_id                             AS transporter_profile_id,
+    fl.tractor_plate                              AS linked_tractor_plate,
+    t.edited_at,
+    t.updated_at
+"""
+
+_TRIP_FROM = """
+    FROM app.trips t
+    LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
+    LEFT JOIN app.transporter_profiles tp ON tp.id = fl.transporter_id
+"""
 
 
 @router.get("/")
@@ -38,7 +78,10 @@ async def list_trips(
     _=Depends(get_current_user),
 ):
     filters: list[str] = [
-        "($1 = '' OR tractor_plate ILIKE '%'||$1||'%' OR driver_name ILIKE '%'||$1||'%' OR driver_rut ILIKE '%'||$1||'%' OR transporter ILIKE '%'||$1||'%')"
+        "($1 = '' OR t.fleet->>'tractor_plate' ILIKE '%'||$1||'%' "
+        "OR t.fleet->>'driver_name_tms' ILIKE '%'||$1||'%' "
+        "OR t.fleet->>'driver_rut_tms' ILIKE '%'||$1||'%' "
+        "OR COALESCE(tp.business_name, t.fleet->>'transporter_name_tms') ILIKE '%'||$1||'%')"
     ]
     params: list = [q]
 
@@ -47,40 +90,54 @@ async def list_trips(
         filters.append(clause.replace("?", f"${len(params)}"))
 
     if d := _parse_date(fecha):
-        add("planning_date = ?", d)
+        add("t.planning_date = ?", d)
     if view == "en_curso":
         closed_sql = ", ".join(f"'{s}'" for s in CLOSED_STATUSES)
-        filters.append(f"current_status NOT IN ({closed_sql})")
+        filters.append(f"t.current_status_tms NOT IN ({closed_sql})")
     if d := _parse_date(fecha_desde):
-        add("planning_date >= ?", d)
+        add("t.planning_date >= ?", d)
     if d := _parse_date(fecha_hasta):
-        add("planning_date <= ?", d)
+        add("t.planning_date <= ?", d)
     if status:
-        add("current_status = ?", status)
+        add("t.current_status_tms = ?", status)
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit
 
     rows = await pool.fetch(
-        f"SELECT id, tms_name, client_name, planning_date, current_status, "
-        f"tractor_plate, trailer_plate, driver_name, driver_rut, transporter, origin, "
-        f"activo, trabajando, asignado, primera_vuelta, estado_manual, locales, "
-        f"observaciones, comentarios, manually_edited_fields, edited_at, updated_at "
-        f"FROM app.trips {where} "
-        f"ORDER BY planning_date DESC, updated_at DESC "
+        f"SELECT {_TRIP_SELECT} {_TRIP_FROM} {where} "
+        f"ORDER BY t.planning_date DESC, t.updated_at DESC "
         f"LIMIT {limit} OFFSET {offset}",
         *params,
     )
-    count = await pool.fetchval(f"SELECT COUNT(*) FROM app.trips {where}", *params)
-    return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit}
+    count = await pool.fetchval(
+        f"SELECT COUNT(*) {_TRIP_FROM} {where}", *params
+    )
+    data = []
+    for r in rows:
+        d = dict(r)
+        if d.get("stops") and isinstance(d["stops"], str):
+            d["stops"] = json.loads(d["stops"])
+        data.append(d)
+    return {"data": data, "count": count, "page": page, "limit": limit}
 
 
 @router.get("/{trip_id}")
-async def get_trip(trip_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
-    row = await pool.fetchrow("SELECT * FROM app.trips WHERE id = $1", trip_id)
+async def get_trip(
+    trip_id: str,
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    row = await pool.fetchrow(
+        f"SELECT {_TRIP_SELECT} {_TRIP_FROM} WHERE t.id = $1",
+        trip_id,
+    )
     if not row:
         raise HTTPException(404, "Viaje no encontrado")
-    return dict(row)
+    d = dict(row)
+    if d.get("stops") and isinstance(d["stops"], str):
+        d["stops"] = json.loads(d["stops"])
+    return d
 
 
 @router.patch("/{trip_id}")
@@ -99,13 +156,11 @@ async def patch_trip(
         raise HTTPException(422, "Ningún campo enviado")
 
     data = body.model_dump(exclude_none=True)
-
-    # Build SET clauses dynamically — only update fields that were sent
     sets: list[str] = []
     vals: list = [trip_id]
 
     bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
-    str_fields  = ("estado_manual", "locales", "observaciones", "comentarios")
+    str_fields  = ("estado_manual", "observaciones", "comentarios")
 
     for field in bool_fields:
         if field in data:
@@ -118,8 +173,10 @@ async def patch_trip(
             sets.append(f"{field} = ${len(vals)}")
 
     vals.append(sent)
-    sets.append(f"manually_edited_fields = ARRAY(SELECT DISTINCT unnest(COALESCE(manually_edited_fields,'{{}}') || ${len(vals)}::text[]))")
-
+    sets.append(
+        f"manually_edited_fields = ARRAY(SELECT DISTINCT unnest("
+        f"COALESCE(manually_edited_fields,'{{}}') || ${len(vals)}::text[]))"
+    )
     vals.append(user["sub"])
     sets.append(f"edited_by = ${len(vals)}::uuid")
     sets.append("edited_at = NOW(), updated_at = NOW()")
@@ -131,6 +188,71 @@ async def patch_trip(
     return await get_trip(trip_id, pool, _)
 
 
+@router.post("/{trip_id}/fleet-link")
+async def assign_fleet_link(
+    trip_id: str,
+    body: dict,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Create or replace a manual fleet link for a trip."""
+    exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
+    if not exists:
+        raise HTTPException(404, "Viaje no encontrado")
+
+    transporter_id = body.get("transporter_id")
+    if not transporter_id:
+        raise HTTPException(422, "transporter_id requerido")
+
+    old_link_id = await pool.fetchval(
+        "SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id
+    )
+    if old_link_id:
+        await pool.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", old_link_id)
+
+    link_id = await pool.fetchval(
+        """
+        INSERT INTO app.trip_fleet_links
+          (trip_id, transporter_id, tractor_plate, trailer_plate,
+           driver_name_raw, link_source, created_by)
+        VALUES ($1, $2, $3, $4, $5, 'manual', $6)
+        RETURNING id
+        """,
+        trip_id,
+        transporter_id,
+        body.get("tractor_plate"),
+        body.get("trailer_plate"),
+        body.get("driver_name"),
+        user["sub"],
+    )
+
+    await pool.execute(
+        "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
+        link_id, trip_id,
+    )
+
+    return await get_trip(trip_id, pool, user)
+
+
+@router.delete("/{trip_id}/fleet-link")
+async def remove_fleet_link(
+    trip_id: str,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Remove the manual fleet link from a trip."""
+    link_id = await pool.fetchval(
+        "SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id
+    )
+    if link_id:
+        await pool.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", link_id)
+        await pool.execute(
+            "UPDATE app.trips SET fleet_link_id = NULL, updated_at = NOW() WHERE id = $1",
+            trip_id,
+        )
+    return {"ok": True}
+
+
 @router.delete("/{trip_id}/overrides/{field}")
 async def reset_field(
     trip_id: str,
@@ -138,7 +260,8 @@ async def reset_field(
     pool=Depends(get_pool),
     user=Depends(require_editor),
 ):
-    VALID = {"tractor_plate", "trailer_plate", "driver_name", "driver_rut", "current_status", "transporter"}
+    VALID = {"estado_manual", "observaciones", "comentarios",
+             "activo", "trabajando", "asignado", "primera_vuelta"}
     if field not in VALID:
         raise HTTPException(422, f"Campo no restaurable: {field}")
     await pool.execute(
@@ -148,7 +271,6 @@ async def reset_field(
             updated_at = NOW()
         WHERE id = $1
         """,
-        trip_id,
-        field,
+        trip_id, field,
     )
     return {"ok": True, "field": field}
