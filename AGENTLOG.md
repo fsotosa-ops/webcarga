@@ -52,8 +52,34 @@
 - [x] TripSlideOver con stops + fleet-link assignment
 - [x] Empresa detail page con governance panel + edición
 - [x] Build verde, 0 errores TypeScript
-- [ ] Deploy a Cloud Run (backend) — push main → CI/CD
-- [ ] Deploy a Vercel (frontend) — push main → CI/CD
+- [x] Push a GitHub → Vercel deploy triggered
+
+### 2026-05-19 (continuación) — UX fixes post-review (vigésimo-novena iteración)
+
+**Problema:** Revisión de 5 capturas de pantalla del usuario reveló:
+1. Toggle bug: `<label>` wrapping `<div onClick>` causaba side-effects de click; `activo ?? true` causaba que valores null se mostraran como ON
+2. TripTable sin `tms_name`/`client_name` visibles
+3. Empresa detail page con forms de gobernanza incompletos (solo 2 campos date, faltaban 8 dropdowns de documentos para conductores; vehiculos sin edit mode)
+4. Empresa page no mostraba estado de cumplimiento al glance
+
+**Fixes implementados:**
+- `TripSlideOver.tsx`: Toggle usando `<button type="button">` (no `<label>`); `activo ?? false` (no `?? true`); driver RUT en header; tms chip; client_name visible; copy más claro para EETT asignada/sin asignar
+- `TripTable.tsx`: `client_name` secondary line en columna EETT; `tms_name` badge bajo columna Origen
+- `empresa/[id]/page.tsx`: DriverCard completo con 8 dropdowns governance (anexo_3_walmart, epp, das_odi, hoja_de_vida, cert_antecedentes, validado_walmart, contrato_trabajo, creacion_walmart) + 2 date expiry; nuevo VehicleCard con edit mode (4 expiry dates + 5 doc dropdowns); compliance summary badge en company header ("X cond. vencidos", "Documentación al día"); alert count chips por sección; GovernancePanel siempre visible
+- `transporters.ts` (API): añadido `patchVehicle()` method
+- `transporters.py` (backend): nuevo endpoint `PATCH /{tid}/vehicles/{vid}` + importado `PatchVehicleReq`
+
+**Resultado:** 0 errores TypeScript, build verde, 14 routes backend. Push → Vercel deploy en curso.
+
+**Checklist (vigésimo-novena):**
+- [x] Toggle bug fix: <button> + default false
+- [x] tms_name / client_name visibles en TripTable
+- [x] DriverCard con 8 governance doc dropdowns
+- [x] VehicleCard con edit mode completo
+- [x] Compliance summary en empresa header
+- [x] PATCH vehicle endpoint backend
+- [x] 0 TypeScript errors, build verde
+- [x] Push main → Vercel deploy triggered
 
 ### 2026-05-18 — QAnalytics scraper: fix timeout + datos pre-filtro (vigésimo-séptima iteración)
 
