@@ -189,11 +189,21 @@ export function hasRole(userRole: string | undefined, required: UserRole): boole
 
 // ── Trips (app.trips via FastAPI) ──────────────────────────────────
 
-export type TripMilestone = {
-  status_id: string
-  status:    string
-  ts:        string | null
-  local:     string | null
+export type TripStop = {
+  stop_id:            string
+  local:              string | null
+  planning_date:      string | null
+  arrival_date:       string | null
+  departure_date:     string | null
+  unload_start:       string | null
+  unload_end:         string | null
+  gps_arrival_date:   string | null
+  gps_departure_date: string | null
+  on_time_status:     'ON TIME' | 'OFF TIME' | null
+  destination_city:   string | null
+  destination_region: string | null
+  s2s:                string | null
+  temperature:        number | null
 }
 
 export type Trip = {
@@ -208,18 +218,76 @@ export type Trip = {
   driver_rut:             string | null
   transporter:            string | null
   origin:                 string | null
-  milestones:             TripMilestone[]
+  cargo_type:             string | null
+  stops:                  TripStop[]
   activo:                 boolean
   trabajando:             boolean
   asignado:               boolean
   primera_vuelta:         boolean
   estado_manual:          string | null
-  locales:                string | null
   observaciones:          string | null
   comentarios:            string | null
+  fleet_link_id:          string | null
+  transporter_profile_id: string | null
   manually_edited_fields: string[]
   edited_at:              string | null
   updated_at:             string | null
+}
+
+// ── Compliance & Governance ─────────────────────────────────────────
+
+export type ComplianceStatus = 'ok' | 'pendiente' | 'actualizar' | 'n_a'
+export type AlertStatus = 'expired' | 'expiring_soon' | 'ok'
+
+export type DriverGovernance = {
+  id_expiry:          string | null
+  license_expiry:     string | null
+  anexo_3_walmart:    ComplianceStatus | null
+  epp:                ComplianceStatus | null
+  das_odi:            ComplianceStatus | null
+  hoja_de_vida:       ComplianceStatus | null
+  cert_antecedentes:  ComplianceStatus | null
+  validado_walmart:   ComplianceStatus | null
+  contrato_trabajo:   ComplianceStatus | null
+  creacion_walmart:   ComplianceStatus | null
+  avance_total:       number | null
+}
+
+export type VehicleGovernance = {
+  year:                   number | null
+  circ_permit_expiry:     string | null
+  tech_inspection_expiry: string | null
+  gas_emissions_expiry:   string | null
+  soap_insurance_expiry:  string | null
+  poliza_rc:              ComplianceStatus | null
+  gps:                    ComplianceStatus | null
+  seguro_carga:           ComplianceStatus | null
+  mantencion_camara_frio: ComplianceStatus | null
+  creacion_walmart:       ComplianceStatus | null
+}
+
+export type CompanyGovernance = {
+  rol_sii:            ComplianceStatus | null
+  copia_ci_rep_legal: ComplianceStatus | null
+  anexo_2_walmart:    ComplianceStatus | null
+  contrato_webcarga:  ComplianceStatus | null
+  f30_multas:         ComplianceStatus | null
+  f43:                ComplianceStatus | null
+  politica_seguridad: ComplianceStatus | null
+  cert_mutual:        ComplianceStatus | null
+  riohs_timbrado:     ComplianceStatus | null
+  creacion_walmart:   ComplianceStatus | null
+  carpeta_tributaria: ComplianceStatus | null
+  cuenta_empresa:     ComplianceStatus | null
+  avance_8020:        number | null
+  avance_total:       number | null
+}
+
+export type ComplianceAlertSummary = {
+  driver_ruts:         Record<string, AlertStatus>
+  plates:              Record<string, AlertStatus>
+  total_expired:       number
+  total_expiring_soon: number
 }
 
 // ── Transporter Profiles (app.transporter_profiles via FastAPI) ────
@@ -228,12 +296,14 @@ export type TransporterDriver = {
   id: string
   rut: string
   name: string
+  governance: DriverGovernance | null
 }
 
 export type TransporterVehicle = {
   id: string
   type: string
   plate: string
+  governance: VehicleGovernance | null
 }
 
 export type TransporterTrailer = {
@@ -256,6 +326,7 @@ export type TransporterProfile = {
   drivers: TransporterDriver[]
   vehicles: TransporterVehicle[]
   trailers: TransporterTrailer[]
+  company_governance: CompanyGovernance | null
   manually_edited_fields: string[]
   edited_at: string | null
 }
@@ -270,6 +341,7 @@ export type TransporterListItem = {
   vehicle_count: number
   trailer_count: number
   has_manual_edits: boolean
+  has_active_alerts: boolean
 }
 
 export type TransporterListResponse = {
