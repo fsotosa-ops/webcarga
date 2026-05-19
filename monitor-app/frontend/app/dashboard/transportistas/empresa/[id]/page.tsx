@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronRight, PenLine, Check, X, RotateCcw,
-  Plus, Trash2, Loader2, AlertTriangle, Clock, ShieldCheck,
+  Trash2, Loader2, AlertTriangle, ShieldCheck,
+  Search, Eye, EyeOff,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { transportersApi } from '@/lib/api/transporters'
@@ -17,6 +18,8 @@ import { ComplianceBadge } from '@/components/dashboard/ComplianceBadge'
 import {
   getAlertStatus, getDriverAlertStatus, getVehicleAlertStatus, formatExpiry,
 } from '@/lib/compliance'
+
+type Tab = 'conductores' | 'tractos' | 'gobernanza'
 
 const ACCOUNT_STAGES = ['Lead', 'Operational']
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
@@ -114,52 +117,45 @@ const VEHICLE_DOC_LABELS: { key: keyof VehicleGovernance; label: string }[] = [
   { key: 'creacion_walmart',       label: 'Creación WMT' },
 ]
 
-// ── Driver card with inline edit ─────────────────────────────────
-function DriverCard({
-  driver, canEdit, onPatch, onRemove,
+const VEHICLE_EXPIRY_LABELS = [
+  { key: 'circ_permit_expiry',     label: 'P. Circ.' },
+  { key: 'tech_inspection_expiry', label: 'Rev. Téc.' },
+  { key: 'gas_emissions_expiry',   label: 'Gases' },
+  { key: 'soap_insurance_expiry',  label: 'SOAP' },
+] as const
+
+// ── Driver row ────────────────────────────────────────────────────
+function DriverRow({
+  driver, companyName, companyRut, canEdit, expanded, onToggleExpand, onPatch, onRemove, onToggleWmt,
 }: {
   driver: TransporterDriver
+  companyName: string | null
+  companyRut: string | null
   canEdit: boolean
+  expanded: boolean
+  onToggleExpand: () => void
   onPatch: (body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
   onRemove: () => Promise<void>
+  onToggleWmt: () => Promise<void>
 }) {
-  const [editing, setEditing] = useState(false)
   const [draft, setDraft]     = useState({ rut: driver.rut, name: driver.name })
   const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
-    id_expiry:          driver.governance?.id_expiry          ?? null,
-    license_expiry:     driver.governance?.license_expiry     ?? null,
-    anexo_3_walmart:    driver.governance?.anexo_3_walmart    ?? null,
-    epp:                driver.governance?.epp                ?? null,
-    das_odi:            driver.governance?.das_odi            ?? null,
-    hoja_de_vida:       driver.governance?.hoja_de_vida       ?? null,
-    cert_antecedentes:  driver.governance?.cert_antecedentes  ?? null,
-    validado_walmart:   driver.governance?.validado_walmart   ?? null,
-    contrato_trabajo:   driver.governance?.contrato_trabajo   ?? null,
-    creacion_walmart:   driver.governance?.creacion_walmart   ?? null,
+    id_expiry:         driver.governance?.id_expiry         ?? null,
+    license_expiry:    driver.governance?.license_expiry    ?? null,
+    anexo_3_walmart:   driver.governance?.anexo_3_walmart   ?? null,
+    epp:               driver.governance?.epp               ?? null,
+    das_odi:           driver.governance?.das_odi           ?? null,
+    hoja_de_vida:      driver.governance?.hoja_de_vida      ?? null,
+    cert_antecedentes: driver.governance?.cert_antecedentes ?? null,
+    validado_walmart:  driver.governance?.validado_walmart  ?? null,
+    contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
+    creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
   })
-  const [saving, setSaving]   = useState(false)
-  const [err, setErr]         = useState<string | null>(null)
+  const [saving, setSaving]       = useState(false)
+  const [savingWmt, setSavingWmt] = useState(false)
+  const [err, setErr]             = useState<string | null>(null)
 
-  const dAlert = getDriverAlertStatus(driver)
-  const dColor = getInitialColor(driver.name)
-
-  const handleSave = async () => {
-    setSaving(true); setErr(null)
-    try {
-      await onPatch({
-        rut:  draft.rut,
-        name: draft.name,
-        governance: { ...(driver.governance ?? {}), ...draftGov } as DriverGovernance,
-      })
-      setEditing(false)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al guardar')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleCancel = () => {
+  useEffect(() => {
     setDraft({ rut: driver.rut, name: driver.name })
     setDraftGov({
       id_expiry:         driver.governance?.id_expiry         ?? null,
@@ -173,172 +169,244 @@ function DriverCard({
       contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
       creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
     })
-    setEditing(false)
-    setErr(null)
+  }, [driver])
+
+  const dAlert     = getDriverAlertStatus(driver)
+  const wmtEnabled = driver.governance?.validado_walmart === 'ok'
+
+  const handleSave = async () => {
+    setSaving(true); setErr(null)
+    try {
+      await onPatch({
+        rut:  draft.rut,
+        name: draft.name,
+        governance: { ...(driver.governance ?? {}), ...draftGov } as DriverGovernance,
+      })
+      onToggleExpand()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleToggleWmt = async () => {
+    setSavingWmt(true)
+    try { await onToggleWmt() }
+    finally { setSavingWmt(false) }
   }
 
   return (
-    <div className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
-      {/* Top row: avatar + name/rut + edit button */}
-      <div className="flex items-start gap-3 p-4">
-        <div
-          className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 ${
-            dAlert === 'expired' ? 'ring-2 ring-red-400' : dAlert === 'expiring_soon' ? 'ring-2 ring-amber-300' : ''
-          }`}
-          style={{ backgroundColor: dColor }}
-        >
-          {driver.name ? driver.name[0].toUpperCase() : '?'}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <p className="font-bold text-slate-800 text-sm truncate">{driver.name}</p>
-          <p className="text-[11px] text-gray-500 font-mono mt-0.5">{driver.rut}</p>
-          {/* Expiry dates in view mode */}
-          {!editing && (
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-              {driver.governance?.id_expiry && (
-                <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                  C.I: <span className="font-mono">{formatExpiry(driver.governance.id_expiry)}</span>
-                  <ComplianceBadge status={getAlertStatus(driver.governance.id_expiry)} compact />
-                </span>
-              )}
-              {driver.governance?.license_expiry && (
-                <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                  Lic: <span className="font-mono">{formatExpiry(driver.governance.license_expiry)}</span>
-                  <ComplianceBadge status={getAlertStatus(driver.governance.license_expiry)} compact />
-                </span>
-              )}
+    <>
+      <tr className="border-b border-border/60 last:border-0 hover:bg-blue-50/20 transition-colors">
+        {/* Nombre · RUT */}
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${
+                dAlert === 'expired' ? 'ring-2 ring-red-400' : dAlert === 'expiring_soon' ? 'ring-2 ring-amber-300' : ''
+              }`}
+              style={{ backgroundColor: getInitialColor(driver.name) }}
+            >
+              {driver.name?.[0]?.toUpperCase() ?? '?'}
             </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-800 leading-tight">{driver.name}</p>
+              <p className="text-[11px] font-mono text-gray-400 mt-0.5">{driver.rut}</p>
+            </div>
+          </div>
+        </td>
+
+        {/* EETT */}
+        <td className="px-4 py-3">
+          <p className="text-sm text-gray-700 leading-tight">{companyName ?? '—'}</p>
+          <p className="text-[11px] font-mono text-gray-400 mt-0.5">{companyRut ?? '—'}</p>
+        </td>
+
+        {/* Vencimientos */}
+        <td className="px-4 py-3">
+          <div className="space-y-0.5">
+            {driver.governance?.id_expiry ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-gray-400 w-8 shrink-0">C.I.</span>
+                <span className="text-[11px] font-mono text-gray-600">{formatExpiry(driver.governance.id_expiry)}</span>
+                <ComplianceBadge status={getAlertStatus(driver.governance.id_expiry)} compact />
+              </div>
+            ) : <span className="text-[11px] text-gray-200 italic">C.I. —</span>}
+            {driver.governance?.license_expiry ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-gray-400 w-8 shrink-0">Lic.</span>
+                <span className="text-[11px] font-mono text-gray-600">{formatExpiry(driver.governance.license_expiry)}</span>
+                <ComplianceBadge status={getAlertStatus(driver.governance.license_expiry)} compact />
+              </div>
+            ) : <span className="text-[11px] text-gray-200 italic">Lic. —</span>}
+          </div>
+        </td>
+
+        {/* Estado docs */}
+        <td className="px-4 py-3">
+          <div className="flex flex-wrap gap-1">
+            {DRIVER_DOC_LABELS.map(({ key, label }) => {
+              const val = driver.governance?.[key as keyof DriverGovernance] as ComplianceStatus | null
+              if (!val) return null
+              const { cls } = COMPLIANCE_CFG[val]
+              return (
+                <span key={key} title={label} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
+                  {label}
+                </span>
+              )
+            })}
+            {!driver.governance && <span className="text-[11px] text-gray-300 italic">sin datos</span>}
+          </div>
+        </td>
+
+        {/* GC Habilitado (Validado WMT) */}
+        <td className="px-4 py-3">
+          {wmtEnabled ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+              Walmart
+            </span>
+          ) : (
+            <span className="text-[11px] text-gray-300 italic">—</span>
           )}
-        </div>
+        </td>
 
-        {canEdit && !editing && (
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 transition-all"
-            >
-              <PenLine size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={onRemove}
-              className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Doc status chips in view mode */}
-      {!editing && driver.governance && (
-        <div className="px-4 pb-3 flex flex-wrap gap-1.5">
-          {DRIVER_DOC_LABELS.map(({ key, label }) => {
-            const val = driver.governance![key as keyof DriverGovernance] as ComplianceStatus | null
-            if (!val) return null
-            const { cls } = COMPLIANCE_CFG[val]
-            return (
-              <span key={key} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
-                {label}
-              </span>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Edit form */}
-      {editing && (
-        <div className="border-t border-border/60 p-4 space-y-3 bg-gray-50/50">
-          <div className="space-y-2">
-            <input
-              value={draft.name}
-              onChange={e => setDraft(v => ({ ...v, name: e.target.value }))}
-              placeholder="Nombre completo"
-              className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
-            />
-            <input
-              value={draft.rut}
-              onChange={e => setDraft(v => ({ ...v, rut: e.target.value }))}
-              placeholder="RUT"
-              className="w-full text-sm font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
-            />
-          </div>
-
-          {/* Expiry dates */}
-          <div>
-            <p className="text-[9px] font-bold text-gray-500 uppercase mb-1.5">Vencimientos</p>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[9px] text-gray-400 block mb-0.5">C.I.</label>
-                <input type="date"
-                  value={draftGov.id_expiry ?? ''}
-                  onChange={e => setDraftGov(v => ({ ...v, id_expiry: e.target.value || null }))}
-                  className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+        {/* Acciones */}
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            {/* WMT toggle */}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={handleToggleWmt}
+                disabled={savingWmt}
+                title={wmtEnabled ? 'Deshabilitar WMT' : 'Habilitar WMT'}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                  wmtEnabled ? 'bg-accent' : 'bg-gray-200'
+                } disabled:opacity-50`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    wmtEnabled ? 'translate-x-4' : 'translate-x-0'
+                  }`}
                 />
-              </div>
-              <div>
-                <label className="text-[9px] text-gray-400 block mb-0.5">Licencia</label>
-                <input type="date"
-                  value={draftGov.license_expiry ?? ''}
-                  onChange={e => setDraftGov(v => ({ ...v, license_expiry: e.target.value || null }))}
-                  className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
-                />
-              </div>
-            </div>
+              </button>
+            )}
+            {/* Eye / Edit */}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                title="Ver / Editar"
+                className={`p-1.5 rounded-lg border transition-all ${
+                  expanded
+                    ? 'border-accent bg-accent/5 text-accent'
+                    : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
+                }`}
+              >
+                {expanded ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+            )}
+            {canEdit && (
+              <button type="button" onClick={onRemove}
+                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
+        </td>
+      </tr>
 
-          {/* Document status */}
-          <div>
-            <p className="text-[9px] font-bold text-gray-500 uppercase mb-1.5">Documentación</p>
-            <div className="space-y-1.5">
-              {DRIVER_DOC_LABELS.map(({ key, label }) => (
-                <div key={key} className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 w-36 shrink-0">{label}</span>
-                  <GovernanceSelect
-                    value={draftGov[key as keyof typeof draftGov] as ComplianceStatus | null}
-                    onChange={v => setDraftGov(prev => ({ ...prev, [key]: v }))}
-                  />
+      {/* Expandable edit form */}
+      {expanded && (
+        <tr className="bg-slate-50">
+          <td colSpan={6} className="px-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Basic data */}
+              <div className="space-y-2">
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Conductor</p>
+                <input
+                  value={draft.name}
+                  onChange={e => setDraft(v => ({ ...v, name: e.target.value }))}
+                  placeholder="Nombre completo"
+                  className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                />
+                <input
+                  value={draft.rut}
+                  onChange={e => setDraft(v => ({ ...v, rut: e.target.value }))}
+                  placeholder="RUT"
+                  className="w-full text-sm font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                />
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <label className="text-[9px] text-gray-400 block mb-0.5">Venc. C.I.</label>
+                    <input type="date"
+                      value={draftGov.id_expiry ?? ''}
+                      onChange={e => setDraftGov(v => ({ ...v, id_expiry: e.target.value || null }))}
+                      className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-gray-400 block mb-0.5">Venc. Licencia</label>
+                    <input type="date"
+                      value={draftGov.license_expiry ?? ''}
+                      onChange={e => setDraftGov(v => ({ ...v, license_expiry: e.target.value || null }))}
+                      className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                    />
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          {err && <p className="text-xs text-red-500">{err}</p>}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
-            >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-              Guardar
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
+              {/* Doc status */}
+              <div>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Documentación</p>
+                <div className="space-y-1.5">
+                  {DRIVER_DOC_LABELS.map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 w-36 shrink-0">{label}</span>
+                      <GovernanceSelect
+                        value={draftGov[key as keyof typeof draftGov] as ComplianceStatus | null}
+                        onChange={v => setDraftGov(prev => ({ ...prev, [key]: v }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {err && <p className="text-xs text-red-500 mt-2">{err}</p>}
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={handleSave} disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+              >
+                {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                Guardar
+              </button>
+              <button type="button" onClick={onToggleExpand}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50">
+                Cancelar
+              </button>
+            </div>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   )
 }
 
-// ── Vehicle card with inline edit ────────────────────────────────
-function VehicleCard({
-  vehicle, canEdit, onPatch, onRemove,
+// ── Vehicle row ───────────────────────────────────────────────────
+function VehicleRow({
+  vehicle, canEdit, expanded, onToggleExpand, onPatch, onRemove,
 }: {
   vehicle: TransporterVehicle
   canEdit: boolean
+  expanded: boolean
+  onToggleExpand: () => void
   onPatch: (body: { type?: string; plate?: string; governance?: VehicleGovernance }) => Promise<void>
   onRemove: () => Promise<void>
 }) {
-  const [editing, setEditing] = useState(false)
   const [draft, setDraft]     = useState({ type: vehicle.type, plate: vehicle.plate })
   const [draftGov, setDraftGov] = useState<Partial<VehicleGovernance>>({
     circ_permit_expiry:     vehicle.governance?.circ_permit_expiry     ?? null,
@@ -351,28 +419,10 @@ function VehicleCard({
     mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
     creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
   })
-  const [saving, setSaving]   = useState(false)
-  const [err, setErr]         = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState<string | null>(null)
 
-  const vAlert = getVehicleAlertStatus(vehicle)
-
-  const handleSave = async () => {
-    setSaving(true); setErr(null)
-    try {
-      await onPatch({
-        type:  draft.type,
-        plate: draft.plate,
-        governance: { ...(vehicle.governance ?? {}), ...draftGov } as VehicleGovernance,
-      })
-      setEditing(false)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al guardar')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleCancel = () => {
+  useEffect(() => {
     setDraft({ type: vehicle.type, plate: vehicle.plate })
     setDraftGov({
       circ_permit_expiry:     vehicle.governance?.circ_permit_expiry     ?? null,
@@ -385,25 +435,33 @@ function VehicleCard({
       mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
       creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
     })
-    setEditing(false)
-    setErr(null)
+  }, [vehicle])
+
+  const vAlert = getVehicleAlertStatus(vehicle)
+
+  const handleSave = async () => {
+    setSaving(true); setErr(null)
+    try {
+      await onPatch({
+        type:  draft.type,
+        plate: draft.plate,
+        governance: { ...(vehicle.governance ?? {}), ...draftGov } as VehicleGovernance,
+      })
+      onToggleExpand()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const EXPIRY_LABELS = [
-    { key: 'circ_permit_expiry',     label: 'Permiso Circ.' },
-    { key: 'tech_inspection_expiry', label: 'Rev. Técnica' },
-    { key: 'gas_emissions_expiry',   label: 'Gases' },
-    { key: 'soap_insurance_expiry',  label: 'SOAP' },
-  ] as const
-
   return (
-    <div className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
-      {/* Header row */}
-      <div className="flex items-start justify-between p-4 pb-3">
-        <div>
-          <span className="text-[9px] text-gray-400 uppercase font-bold block mb-1">Tracto</span>
+    <>
+      <tr className="border-b border-border/60 last:border-0 hover:bg-blue-50/20 transition-colors">
+        {/* Patente + tipo */}
+        <td className="px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-black bg-slate-800 text-white px-3 py-1 rounded-lg inline-block shadow-sm">
+            <span className="text-sm font-black bg-slate-800 text-white px-3 py-1 rounded-lg font-mono shadow-sm">
               {vehicle.plate}
             </span>
             {vAlert !== 'ok' && <ComplianceBadge status={vAlert} compact />}
@@ -411,133 +469,148 @@ function VehicleCard({
           {vehicle.type && (
             <span className="text-[10px] text-gray-400 mt-1 block">{vehicle.type}</span>
           )}
-        </div>
-        {canEdit && !editing && (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 transition-all"
-            >
-              <PenLine size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={onRemove}
-              className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        )}
-      </div>
+        </td>
 
-      {/* Expiry dates in view mode */}
-      {!editing && vehicle.governance && (
-        <div className="px-4 pb-3 space-y-1">
-          {EXPIRY_LABELS.filter(({ key }) => vehicle.governance![key]).map(({ key, label }) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <span className="text-[9px] text-gray-400 w-24 shrink-0">{label}</span>
-              <span className="text-[10px] font-mono text-gray-600">{formatExpiry(vehicle.governance![key])}</span>
-              <ComplianceBadge status={getAlertStatus(vehicle.governance![key])} compact />
-            </div>
-          ))}
-          <div className="flex flex-wrap gap-1.5 pt-1">
+        {/* Vencimientos */}
+        <td className="px-4 py-3">
+          <div className="space-y-0.5">
+            {VEHICLE_EXPIRY_LABELS.map(({ key, label }) => {
+              const val = vehicle.governance?.[key] ?? null
+              if (!val) return null
+              return (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-gray-400 w-14 shrink-0">{label}</span>
+                  <span className="text-[11px] font-mono text-gray-600">{formatExpiry(val)}</span>
+                  <ComplianceBadge status={getAlertStatus(val)} compact />
+                </div>
+              )
+            })}
+            {!vehicle.governance && <span className="text-[11px] text-gray-300 italic">sin datos</span>}
+          </div>
+        </td>
+
+        {/* Estado docs */}
+        <td className="px-4 py-3">
+          <div className="flex flex-wrap gap-1">
             {VEHICLE_DOC_LABELS.map(({ key, label }) => {
-              const val = vehicle.governance![key] as ComplianceStatus | null
+              const val = vehicle.governance?.[key] as ComplianceStatus | null
               if (!val) return null
               const { cls } = COMPLIANCE_CFG[val]
               return (
-                <span key={key} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
+                <span key={key} title={label} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
                   {label}
                 </span>
               )
             })}
           </div>
-        </div>
-      )}
+        </td>
 
-      {/* Edit form */}
-      {editing && (
-        <div className="border-t border-border/60 p-4 space-y-3 bg-gray-50/50">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Tipo</label>
-              <input
-                value={draft.type}
-                onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
-                placeholder="Semi, etc."
-                className="w-full text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
-              />
-            </div>
-            <div>
-              <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Patente</label>
-              <input
-                value={draft.plate}
-                onChange={e => setDraft(v => ({ ...v, plate: e.target.value.toUpperCase() }))}
-                className="w-full text-sm font-mono border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white uppercase"
-              />
-            </div>
+        {/* Acciones */}
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            {canEdit && (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                title="Ver / Editar"
+                className={`p-1.5 rounded-lg border transition-all ${
+                  expanded
+                    ? 'border-accent bg-accent/5 text-accent'
+                    : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
+                }`}
+              >
+                {expanded ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+            )}
+            {canEdit && (
+              <button type="button" onClick={onRemove}
+                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
+        </td>
+      </tr>
 
-          {/* Expiry dates */}
-          <div>
-            <p className="text-[9px] font-bold text-gray-500 uppercase mb-1.5">Vencimientos</p>
-            <div className="grid grid-cols-2 gap-2">
-              {EXPIRY_LABELS.map(({ key, label }) => (
-                <div key={key}>
-                  <label className="text-[9px] text-gray-400 block mb-0.5">{label}</label>
-                  <input type="date"
-                    value={draftGov[key] ?? ''}
-                    onChange={e => setDraftGov(v => ({ ...v, [key]: e.target.value || null }))}
-                    className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
-                  />
+      {/* Expandable edit form */}
+      {expanded && (
+        <tr className="bg-slate-50">
+          <td colSpan={4} className="px-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Vehículo</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Tipo</label>
+                    <input
+                      value={draft.type}
+                      onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
+                      placeholder="Semi, etc."
+                      className="w-full text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Patente</label>
+                    <input
+                      value={draft.plate}
+                      onChange={e => setDraft(v => ({ ...v, plate: e.target.value.toUpperCase() }))}
+                      className="w-full text-sm font-mono border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white uppercase"
+                    />
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Document status */}
-          <div>
-            <p className="text-[9px] font-bold text-gray-500 uppercase mb-1.5">Documentación</p>
-            <div className="space-y-1.5">
-              {VEHICLE_DOC_LABELS.map(({ key, label }) => (
-                <div key={key} className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 w-36 shrink-0">{label}</span>
-                  <GovernanceSelect
-                    value={draftGov[key as keyof typeof draftGov] as ComplianceStatus | null}
-                    onChange={v => setDraftGov(prev => ({ ...prev, [key]: v }))}
-                  />
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {VEHICLE_EXPIRY_LABELS.map(({ key, label }) => (
+                    <div key={key}>
+                      <label className="text-[9px] text-gray-400 block mb-0.5">{label}</label>
+                      <input type="date"
+                        value={draftGov[key] ?? ''}
+                        onChange={e => setDraftGov(v => ({ ...v, [key]: e.target.value || null }))}
+                        className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                      />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          {err && <p className="text-xs text-red-500">{err}</p>}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
-            >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-              Guardar
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
+              <div>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Documentación</p>
+                <div className="space-y-1.5">
+                  {VEHICLE_DOC_LABELS.map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 w-36 shrink-0">{label}</span>
+                      <GovernanceSelect
+                        value={draftGov[key as keyof typeof draftGov] as ComplianceStatus | null}
+                        onChange={v => setDraftGov(prev => ({ ...prev, [key]: v }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {err && <p className="text-xs text-red-500 mt-2">{err}</p>}
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={handleSave} disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+              >
+                {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                Guardar
+              </button>
+              <button type="button" onClick={onToggleExpand}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50">
+                Cancelar
+              </button>
+            </div>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   )
 }
 
-// ── Editable field (used inside the info slide-over) ─────────────
+// ── Editable field ────────────────────────────────────────────────
 function EditableField({
   label, value, field, isProtected, canEdit, onSave, onReset, options,
 }: {
@@ -556,13 +629,6 @@ function EditableField({
     if (draft === (value ?? '')) { setEditing(false); return }
     setSaving(true); setFieldErr(null)
     try { await onSave(field, draft); setEditing(false) }
-    catch (e) { setFieldErr(e instanceof Error ? e.message : 'Error') }
-    finally { setSaving(false) }
-  }
-
-  const handleReset = async () => {
-    setSaving(true); setFieldErr(null)
-    try { await onReset(field) }
     catch (e) { setFieldErr(e instanceof Error ? e.message : 'Error') }
     finally { setSaving(false) }
   }
@@ -608,7 +674,7 @@ function EditableField({
               </button>
             )}
             {isProtected && canEdit && (
-              <button onClick={handleReset}
+              <button onClick={async () => { setSaving(true); try { await onReset(field) } finally { setSaving(false) } }}
                 className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-amber-500 hover:border-amber-300 shrink-0">
                 {saving ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
               </button>
@@ -624,11 +690,17 @@ function EditableField({
 // ── Main Page ─────────────────────────────────────────────────────
 export default function EmpresaDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [tp, setTp]           = useState<TransporterProfile | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
-  const [canEdit, setCanEdit] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
+  const [tp, setTp]               = useState<TransporterProfile | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState<string | null>(null)
+  const [canEdit, setCanEdit]     = useState(false)
+  const [editOpen, setEditOpen]   = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('conductores')
+
+  const [expandedDriver,  setExpandedDriver]  = useState<string | null>(null)
+  const [expandedVehicle, setExpandedVehicle] = useState<string | null>(null)
+  const [driverQ,         setDriverQ]         = useState('')
+  const [vehicleQ,        setVehicleQ]        = useState('')
 
   const [addDriverOpen, setAddDriverOpen]   = useState(false)
   const [driverForm, setDriverForm]         = useState({ rut: '', name: '' })
@@ -663,6 +735,7 @@ export default function EmpresaDetailPage() {
   const handleResetField = async (field: string) => {
     await transportersApi.resetField(id, field); await load()
   }
+
   const handleAddDriver = async () => {
     if (!driverForm.rut || !driverForm.name) return
     setSubmitting(true)
@@ -673,16 +746,25 @@ export default function EmpresaDetailPage() {
       await load()
     } finally { setSubmitting(false) }
   }
+
   const handlePatchDriver = async (did: string, body: { rut?: string; name?: string; governance?: DriverGovernance }) => {
     const res = await transportersApi.patchDriver(id, did, body)
-    setTp(prev => prev ? {
-      ...prev,
-      drivers: prev.drivers.map(d => d.id === did ? res.data : d),
-    } : prev)
+    setTp(prev => prev ? { ...prev, drivers: prev.drivers.map(d => d.id === did ? res.data : d) } : prev)
   }
+
+  const handleToggleWmt = async (driver: TransporterDriver) => {
+    const current = driver.governance?.validado_walmart
+    const next: ComplianceStatus = current === 'ok' ? 'pendiente' : 'ok'
+    const res = await transportersApi.patchDriver(id, driver.id, {
+      governance: { ...(driver.governance ?? {}), validado_walmart: next } as DriverGovernance,
+    })
+    setTp(prev => prev ? { ...prev, drivers: prev.drivers.map(d => d.id === driver.id ? res.data : d) } : prev)
+  }
+
   const handleRemoveDriver = async (did: string) => {
     await transportersApi.removeDriver(id, did); await load()
   }
+
   const handleAddVehicle = async () => {
     if (!vehicleForm.plate) return
     setSubmitting(true)
@@ -693,16 +775,16 @@ export default function EmpresaDetailPage() {
       await load()
     } finally { setSubmitting(false) }
   }
+
   const handlePatchVehicle = async (vid: string, body: { type?: string; plate?: string; governance?: VehicleGovernance }) => {
     const res = await transportersApi.patchVehicle(id, vid, body)
-    setTp(prev => prev ? {
-      ...prev,
-      vehicles: prev.vehicles.map(v => v.id === vid ? res.data : v),
-    } : prev)
+    setTp(prev => prev ? { ...prev, vehicles: prev.vehicles.map(v => v.id === vid ? res.data : v) } : prev)
   }
+
   const handleRemoveVehicle = async (vid: string) => {
     await transportersApi.removeVehicle(id, vid); await load()
   }
+
   const handleAddTrailer = async () => {
     if (!trailerForm.plate) return
     setSubmitting(true)
@@ -713,6 +795,7 @@ export default function EmpresaDetailPage() {
       await load()
     } finally { setSubmitting(false) }
   }
+
   const handleRemoveTrailer = async (trid: string) => {
     await transportersApi.removeTrailer(id, trid); await load()
   }
@@ -733,16 +816,27 @@ export default function EmpresaDetailPage() {
   const initColor  = getInitialColor(tp.business_name)
   const initials   = getInitials(tp.business_name)
 
-  // Compliance summary
   const driverAlerts  = tp.drivers.filter(d => getDriverAlertStatus(d) !== 'ok')
   const vehicleAlerts = tp.vehicles.filter(v => getVehicleAlertStatus(v) !== 'ok')
   const expiredDrivers  = driverAlerts.filter(d => getDriverAlertStatus(d) === 'expired').length
   const expiredVehicles = vehicleAlerts.filter(v => getVehicleAlertStatus(v) === 'expired').length
 
+  const filteredDrivers = tp.drivers.filter(d =>
+    !driverQ || d.name.toLowerCase().includes(driverQ.toLowerCase()) || d.rut.includes(driverQ)
+  )
+  const filteredVehicles = tp.vehicles.filter(v =>
+    !vehicleQ || v.plate.toLowerCase().includes(vehicleQ.toLowerCase()) || (v.type ?? '').toLowerCase().includes(vehicleQ.toLowerCase())
+  )
+
+  const TABS: { key: Tab; label: string; count?: number }[] = [
+    { key: 'conductores', label: 'Conductores', count: tp.drivers.length },
+    { key: 'tractos',     label: 'Tractos',     count: tp.vehicles.length },
+    { key: 'gobernanza',  label: 'Gobernanza Empresa' },
+  ]
+
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
 
-      {/* Backdrop for edit panel */}
       {editOpen && (
         <div className="fixed inset-0 bg-black/20 z-40 md:hidden" onClick={() => setEditOpen(false)} />
       )}
@@ -784,7 +878,6 @@ export default function EmpresaDetailPage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Alert indicators */}
             {(expiredDrivers > 0 || expiredVehicles > 0) && (
               <div className="flex items-center gap-1.5 text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">
                 <AlertTriangle size={13} />
@@ -804,173 +897,252 @@ export default function EmpresaDetailPage() {
                 onClick={() => setEditOpen(true)}
                 className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition border border-border shadow-sm"
               >
-                Editar Datos Empresa
+                Editar Empresa
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* 2-column grid: Conductores | Flota */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        {/* ── CONDUCTORES ── */}
-        <div className="border border-border rounded-xl overflow-hidden flex flex-col shadow-sm bg-white">
-          <div className="bg-gray-50 px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <h4 className="font-bold text-slate-800 text-base">
-                Conductores ({tp.drivers.length})
-              </h4>
-              {driverAlerts.length > 0 && (
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  expiredDrivers > 0 ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
+      {/* Tabs */}
+      <div className="bg-white rounded-xl border border-border overflow-hidden shadow-sm">
+        {/* Tab nav */}
+        <div className="flex border-b border-border bg-gray-50">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`px-5 py-3.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === t.key
+                  ? 'border-accent text-accent bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {t.label}
+              {t.count !== undefined && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                  activeTab === t.key ? 'bg-accent/10 text-accent' : 'bg-gray-200 text-gray-500'
                 }`}>
-                  {driverAlerts.length} con alerta
+                  {t.count}
                 </span>
               )}
-            </div>
-            {canEdit && (
-              <button
-                onClick={() => setAddDriverOpen(v => !v)}
-                className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
-              >
-                + Nuevo
-              </button>
-            )}
-          </div>
-
-          {addDriverOpen && (
-            <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2 shrink-0">
-              <input placeholder="RUT" value={driverForm.rut}
-                onChange={e => setDriverForm(v => ({ ...v, rut: e.target.value }))}
-                className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32" />
-              <input placeholder="Nombre completo" value={driverForm.name}
-                onChange={e => setDriverForm(v => ({ ...v, name: e.target.value }))}
-                className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1" />
-              <button onClick={handleAddDriver} disabled={submitting || !driverForm.rut || !driverForm.name}
-                className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
-                {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-              </button>
-              <button onClick={() => setAddDriverOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          <div className="p-4 overflow-y-auto flex-1 bg-gray-50/50 space-y-3 max-h-[640px]">
-            {tp.drivers.length === 0 && (
-              <div className="py-10 text-center text-sm text-gray-300">Sin conductores registrados</div>
-            )}
-            {tp.drivers.map(d => (
-              <DriverCard
-                key={d.id}
-                driver={d}
-                canEdit={canEdit}
-                onPatch={(body) => handlePatchDriver(d.id, body)}
-                onRemove={() => handleRemoveDriver(d.id)}
-              />
-            ))}
-          </div>
+            </button>
+          ))}
         </div>
 
-        {/* ── FLOTA (Tractos + Ramplas) ── */}
-        <div className="border border-border rounded-xl overflow-hidden flex flex-col shadow-sm bg-white">
-          <div className="bg-gray-50 px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <h4 className="font-bold text-slate-800 text-base">
-                Flota ({tp.vehicles.length + tp.trailers.length})
-              </h4>
-              {vehicleAlerts.length > 0 && (
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  expiredVehicles > 0 ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
-                }`}>
-                  {vehicleAlerts.length} con alerta
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {canEdit && (
-                <>
-                  <button onClick={() => setAddVehicleOpen(v => !v)}
-                    className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition">
-                    + Tracto
+        {/* ── CONDUCTORES TAB ── */}
+        {activeTab === 'conductores' && (
+          <div>
+            {/* Toolbar */}
+            <div className="px-5 py-3 border-b border-border bg-white flex items-center justify-between gap-3 flex-wrap">
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  value={driverQ}
+                  onChange={e => setDriverQ(e.target.value)}
+                  placeholder="Filtrar por nombre o RUT…"
+                  className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                {driverAlerts.length > 0 && (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    expiredDrivers > 0 ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    {driverAlerts.length} con alerta
+                  </span>
+                )}
+                {canEdit && (
+                  <button
+                    onClick={() => setAddDriverOpen(v => !v)}
+                    className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition flex items-center gap-1"
+                  >
+                    + Nuevo Conductor
                   </button>
-                  <button onClick={() => setAddTrailerOpen(v => !v)}
-                    className="text-xs bg-white hover:bg-gray-50 text-gray-700 font-bold px-3 py-1.5 rounded-lg shadow-sm transition border border-border">
-                    + Rampla
-                  </button>
-                </>
-              )}
+                )}
+              </div>
             </div>
-          </div>
 
-          {addVehicleOpen && (
-            <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2 shrink-0">
-              <input placeholder="Tipo (ej: Semi)" value={vehicleForm.type}
-                onChange={e => setVehicleForm(v => ({ ...v, type: e.target.value }))}
-                className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-28" />
-              <input placeholder="Patente" value={vehicleForm.plate}
-                onChange={e => setVehicleForm(v => ({ ...v, plate: e.target.value }))}
-                className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-24 font-mono uppercase" />
-              <button onClick={handleAddVehicle} disabled={submitting || !vehicleForm.plate}
-                className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
-                {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-              </button>
-              <button onClick={() => setAddVehicleOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          {addTrailerOpen && (
-            <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2 shrink-0">
-              <span className="text-xs text-gray-500 shrink-0">Rampla</span>
-              <input placeholder="Patente" value={trailerForm.plate}
-                onChange={e => setTrailerForm({ plate: e.target.value })}
-                className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32 font-mono uppercase" />
-              <button onClick={handleAddTrailer} disabled={submitting || !trailerForm.plate}
-                className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
-                {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-              </button>
-              <button onClick={() => setAddTrailerOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          <div className="p-4 overflow-y-auto flex-1 bg-gray-50/50 space-y-3 max-h-[640px]">
-            {tp.vehicles.length === 0 && tp.trailers.length === 0 && (
-              <div className="py-10 text-center text-sm text-gray-300">Sin flota registrada</div>
+            {/* Add form */}
+            {addDriverOpen && (
+              <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2">
+                <input placeholder="RUT" value={driverForm.rut}
+                  onChange={e => setDriverForm(v => ({ ...v, rut: e.target.value }))}
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32" />
+                <input placeholder="Nombre completo" value={driverForm.name}
+                  onChange={e => setDriverForm(v => ({ ...v, name: e.target.value }))}
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1" />
+                <button onClick={handleAddDriver} disabled={submitting || !driverForm.rut || !driverForm.name}
+                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
+                  {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
+                </button>
+                <button onClick={() => setAddDriverOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                  <X size={14} />
+                </button>
+              </div>
             )}
 
-            {/* Tractos */}
-            {tp.vehicles.map(v => (
-              <VehicleCard
-                key={v.id}
-                vehicle={v}
-                canEdit={canEdit}
-                onPatch={(body) => handlePatchVehicle(v.id, body)}
-                onRemove={() => handleRemoveVehicle(v.id)}
-              />
-            ))}
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: 860 }}>
+                <thead>
+                  <tr className="bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wide">
+                    <th className="px-4 py-3 text-left">Nombres y Apellidos · RUT</th>
+                    <th className="px-4 py-3 text-left">EETT · RUT EETT</th>
+                    <th className="px-4 py-3 text-left">Vencimientos</th>
+                    <th className="px-4 py-3 text-left">Documentación</th>
+                    <th className="px-4 py-3 text-left">GC Habilitado</th>
+                    <th className="px-4 py-3 text-left w-32">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {filteredDrivers.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-300">
+                        {driverQ ? 'Sin resultados para la búsqueda' : 'Sin conductores registrados'}
+                      </td>
+                    </tr>
+                  )}
+                  {filteredDrivers.map((d, i) => (
+                    <DriverRow
+                      key={d.id}
+                      driver={d}
+                      companyName={tp.business_name}
+                      companyRut={tp.rut}
+                      canEdit={canEdit}
+                      expanded={expandedDriver === d.id}
+                      onToggleExpand={() => setExpandedDriver(prev => prev === d.id ? null : d.id)}
+                      onPatch={(body) => handlePatchDriver(d.id, body)}
+                      onRemove={() => handleRemoveDriver(d.id)}
+                      onToggleWmt={() => handleToggleWmt(d)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
-            {/* Ramplas */}
+        {/* ── TRACTOS TAB ── */}
+        {activeTab === 'tractos' && (
+          <div>
+            {/* Toolbar */}
+            <div className="px-5 py-3 border-b border-border bg-white flex items-center justify-between gap-3 flex-wrap">
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  value={vehicleQ}
+                  onChange={e => setVehicleQ(e.target.value)}
+                  placeholder="Filtrar por patente o tipo…"
+                  className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                {vehicleAlerts.length > 0 && (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    expiredVehicles > 0 ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    {vehicleAlerts.length} con alerta
+                  </span>
+                )}
+                {canEdit && (
+                  <button onClick={() => setAddVehicleOpen(v => !v)}
+                    className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition">
+                    + Nuevo Tracto
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Add form */}
+            {addVehicleOpen && (
+              <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2">
+                <input placeholder="Tipo (ej: Semi)" value={vehicleForm.type}
+                  onChange={e => setVehicleForm(v => ({ ...v, type: e.target.value }))}
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-28" />
+                <input placeholder="Patente" value={vehicleForm.plate}
+                  onChange={e => setVehicleForm(v => ({ ...v, plate: e.target.value }))}
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-24 font-mono uppercase" />
+                <button onClick={handleAddVehicle} disabled={submitting || !vehicleForm.plate}
+                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
+                  {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
+                </button>
+                <button onClick={() => setAddVehicleOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Vehicles table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: 700 }}>
+                <thead>
+                  <tr className="bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wide">
+                    <th className="px-4 py-3 text-left">Patente · Tipo</th>
+                    <th className="px-4 py-3 text-left">Vencimientos</th>
+                    <th className="px-4 py-3 text-left">Documentación</th>
+                    <th className="px-4 py-3 text-left w-28">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {filteredVehicles.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-10 text-center text-sm text-gray-300">
+                        {vehicleQ ? 'Sin resultados' : 'Sin tractos registrados'}
+                      </td>
+                    </tr>
+                  )}
+                  {filteredVehicles.map((v) => (
+                    <VehicleRow
+                      key={v.id}
+                      vehicle={v}
+                      canEdit={canEdit}
+                      expanded={expandedVehicle === v.id}
+                      onToggleExpand={() => setExpandedVehicle(prev => prev === v.id ? null : v.id)}
+                      onPatch={(body) => handlePatchVehicle(v.id, body)}
+                      onRemove={() => handleRemoveVehicle(v.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Ramplas (simple list) */}
             {tp.trailers.length > 0 && (
-              <div className="pt-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Ramplas</p>
-                <div className="space-y-2">
+              <div className="border-t border-border p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    Remolques / Ramplas ({tp.trailers.length})
+                  </p>
+                  {canEdit && (
+                    <button onClick={() => setAddTrailerOpen(v => !v)}
+                      className="text-xs bg-white hover:bg-gray-50 text-gray-700 font-bold px-3 py-1.5 rounded-lg shadow-sm transition border border-border">
+                      + Rampla
+                    </button>
+                  )}
+                </div>
+                {addTrailerOpen && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <input placeholder="Patente" value={trailerForm.plate}
+                      onChange={e => setTrailerForm({ plate: e.target.value })}
+                      className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32 font-mono uppercase" />
+                    <button onClick={handleAddTrailer} disabled={submitting || !trailerForm.plate}
+                      className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
+                      {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
+                    </button>
+                    <button onClick={() => setAddTrailerOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
                   {tp.trailers.map(t => (
-                    <div key={t.id} className="bg-white border border-border rounded-xl px-4 py-3 shadow-sm flex items-center justify-between">
-                      <div>
-                        <span className="text-[9px] text-gray-400 uppercase font-bold block mb-1">Remolque</span>
-                        <span className="text-sm font-bold bg-gray-100 border border-border px-3 py-1 rounded-lg text-gray-800 inline-block font-mono">
-                          {t.plate}
-                        </span>
-                      </div>
+                    <div key={t.id} className="flex items-center gap-2 bg-gray-50 border border-border rounded-xl px-3 py-2">
+                      <span className="text-sm font-bold font-mono text-gray-700">{t.plate}</span>
                       {canEdit && (
                         <button onClick={() => handleRemoveTrailer(t.id)}
-                          className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
-                          <Trash2 size={13} />
+                          className="text-gray-300 hover:text-red-400 transition-colors">
+                          <Trash2 size={12} />
                         </button>
                       )}
                     </div>
@@ -978,30 +1150,65 @@ export default function EmpresaDetailPage() {
                 </div>
               </div>
             )}
+            {tp.trailers.length === 0 && canEdit && (
+              <div className="border-t border-border px-5 py-3 flex items-center justify-between">
+                <span className="text-xs text-gray-300">Sin ramplas registradas</span>
+                <button onClick={() => setAddTrailerOpen(v => !v)}
+                  className="text-xs bg-white hover:bg-gray-50 text-gray-700 font-bold px-3 py-1.5 rounded-lg shadow-sm transition border border-border">
+                  + Rampla
+                </button>
+              </div>
+            )}
+            {addTrailerOpen && tp.trailers.length === 0 && (
+              <div className="px-5 pb-3 flex items-center gap-2">
+                <input placeholder="Patente" value={trailerForm.plate}
+                  onChange={e => setTrailerForm({ plate: e.target.value })}
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32 font-mono uppercase" />
+                <button onClick={handleAddTrailer} disabled={submitting || !trailerForm.plate}
+                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
+                  {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
+                </button>
+                <button onClick={() => setAddTrailerOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* ── Gobernanza Empresa ── */}
-      <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-white">
-        <div className="bg-gray-50 px-5 py-4 border-b border-border flex items-center justify-between">
-          <h4 className="font-bold text-slate-800 text-base">Gobernanza Empresa</h4>
-          {tp.company_governance?.avance_total != null && (
-            <span className="text-xs text-gray-500 font-mono">
-              Avance: <span className="font-bold text-slate-700">{tp.company_governance.avance_total.toFixed(0)}%</span>
-            </span>
-          )}
-        </div>
-        <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-          {GOVERNANCE_DOC_LABELS.map(({ key, label }) => (
-            <div key={key} className="text-center">
-              <p className="text-[9px] text-gray-400 uppercase font-bold mb-1">{label}</p>
-              <GovernanceStatusBadge status={tp.company_governance?.[key] as ComplianceStatus | null ?? null} />
+        {/* ── GOBERNANZA TAB ── */}
+        {activeTab === 'gobernanza' && (
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-slate-800">Gobernanza Empresa</h4>
+              {tp.company_governance?.avance_total != null && (
+                <span className="text-xs text-gray-500 font-mono">
+                  Avance: <span className="font-bold text-slate-700">{tp.company_governance.avance_total.toFixed(0)}%</span>
+                </span>
+              )}
             </div>
-          ))}
-        </div>
-        {!tp.company_governance && (
-          <p className="text-xs text-gray-300 text-center pb-4">Sin datos de gobernanza — edita desde el panel lateral</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              {GOVERNANCE_DOC_LABELS.map(({ key, label }) => (
+                <div key={key} className="bg-gray-50 border border-border rounded-xl p-3 text-center">
+                  <p className="text-[9px] text-gray-400 uppercase font-bold mb-2">{label}</p>
+                  {canEdit ? (
+                    <GovernanceSelect
+                      value={tp.company_governance?.[key] as ComplianceStatus | null ?? null}
+                      onChange={async (val) => {
+                        const newGov = { ...(tp.company_governance ?? {}), [key]: val } as CompanyGovernance
+                        setTp(await transportersApi.patch(id, { company_governance: newGov }))
+                      }}
+                    />
+                  ) : (
+                    <GovernanceStatusBadge status={tp.company_governance?.[key] as ComplianceStatus | null ?? null} />
+                  )}
+                </div>
+              ))}
+            </div>
+            {!tp.company_governance && (
+              <p className="text-xs text-gray-300 text-center py-4">Sin datos de gobernanza registrados</p>
+            )}
+          </div>
         )}
       </div>
 
@@ -1072,29 +1279,6 @@ export default function EmpresaDetailPage() {
                   : <span className="text-xs text-gray-300 italic">sin teléfonos</span>}
               </div>
             </div>
-          </div>
-
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-2">Gobernanza</h2>
-          <div>
-            {GOVERNANCE_DOC_LABELS.map(({ key, label }) => {
-              const current = (tp.company_governance?.[key] ?? '') as ComplianceStatus | ''
-              return (
-                <div key={key} className="flex items-center gap-3 py-2 border-b border-border/60 last:border-0">
-                  <span className="text-xs text-gray-400 w-32 shrink-0">{label}</span>
-                  {canEdit ? (
-                    <GovernanceSelect
-                      value={current || null}
-                      onChange={async (val) => {
-                        const newGov = { ...(tp.company_governance ?? {}), [key]: val } as CompanyGovernance
-                        setTp(await transportersApi.patch(id, { company_governance: newGov }))
-                      }}
-                    />
-                  ) : (
-                    <GovernanceStatusBadge status={current || null} />
-                  )}
-                </div>
-              )
-            })}
           </div>
 
           {tp.edited_at && (

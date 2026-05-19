@@ -278,9 +278,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
                     <ComplianceBadge status={plateAlert ?? null} compact
                       tooltip={plateAlert === 'expired' ? 'Vehículo vencido' : 'Vence pronto'} />
                   </div>
-                  {trip.trailer_plate && (
-                    <div className="font-mono text-[9px] text-gray-400 mt-0.5">{trip.trailer_plate}</div>
-                  )}
                 </td>
 
                 {/* CONDUCTOR + FLAGS */}
