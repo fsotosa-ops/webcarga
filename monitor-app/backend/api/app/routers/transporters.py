@@ -10,6 +10,7 @@ from ..schemas.transporter import (
     PatchDriverReq,
     AddTrailerReq,
     AddVehicleReq,
+    ComplianceAlertSummary,
     PaginatedResponse,
     TransporterPatch,
 )
@@ -26,7 +27,7 @@ VALID_OVERRIDE_FIELDS = {
 
 def _row_to_dict(row) -> dict:
     d = dict(row)
-    for key in ("contactability", "drivers", "vehicles", "trailers"):
+    for key in ("contactability", "drivers", "vehicles", "trailers", "company_governance"):
         if isinstance(d.get(key), str):
             d[key] = json.loads(d[key])
     for key in ("edited_at", "updated_at", "created_at"):
@@ -83,6 +84,48 @@ async def list_transporters(
     return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit}
 
 
+# ── COMPLIANCE ALERTS ─────────────────────────────────────────────
+
+@router.get("/compliance-alerts/summary", response_model=ComplianceAlertSummary)
+async def compliance_alerts_summary(
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT entity_rut, entity_plate, entity_type, alert_status
+            FROM app.v_compliance_alerts
+            WHERE alert_status IN ('expired', 'expiring_soon')
+            """
+        )
+    driver_ruts: dict[str, str] = {}
+    plates: dict[str, str] = {}
+    total_expired = total_expiring = 0
+
+    for row in rows:
+        status = row["alert_status"]
+        if status == "expired":
+            total_expired += 1
+        else:
+            total_expiring += 1
+        if row["entity_type"] == "driver" and row["entity_rut"]:
+            existing = driver_ruts.get(row["entity_rut"])
+            if not existing or existing == "expiring_soon":
+                driver_ruts[row["entity_rut"]] = status
+        elif row["entity_type"] == "vehicle" and row["entity_plate"]:
+            existing = plates.get(row["entity_plate"])
+            if not existing or existing == "expiring_soon":
+                plates[row["entity_plate"]] = status
+
+    return ComplianceAlertSummary(
+        driver_ruts=driver_ruts,
+        plates=plates,
+        total_expired=total_expired,
+        total_expiring_soon=total_expiring,
+    )
+
+
 # ── DETAIL ────────────────────────────────────────────────────────
 
 @router.get("/{tid}")
@@ -119,21 +162,22 @@ async def patch_transporter(
     await pool.execute(
         """
         UPDATE app.transporter_profiles SET
-            business_name  = COALESCE($2,        business_name),
-            rut            = COALESCE($3,        rut),
-            account_stage  = COALESCE($4,        account_stage),
-            contactability = COALESCE($5::jsonb, contactability),
-            drivers        = COALESCE($6::jsonb, drivers),
-            vehicles       = COALESCE($7::jsonb, vehicles),
-            trailers       = COALESCE($8::jsonb, trailers),
+            business_name      = COALESCE($2,         business_name),
+            rut                = COALESCE($3,         rut),
+            account_stage      = COALESCE($4,         account_stage),
+            contactability     = COALESCE($5::jsonb,  contactability),
+            drivers            = COALESCE($6::jsonb,  drivers),
+            vehicles           = COALESCE($7::jsonb,  vehicles),
+            trailers           = COALESCE($8::jsonb,  trailers),
+            company_governance = COALESCE($9::jsonb,  company_governance),
             manually_edited_fields = (
                 SELECT ARRAY(
                     SELECT DISTINCT unnest(
-                        COALESCE(manually_edited_fields, '{}') || $9::text[]
+                        COALESCE(manually_edited_fields, '{}') || $10::text[]
                     )
                 )
             ),
-            edited_by  = $10::uuid,
+            edited_by  = $11::uuid,
             edited_at  = NOW(),
             updated_at = NOW()
         WHERE id = $1
@@ -142,10 +186,11 @@ async def patch_transporter(
         data.get("business_name"),
         data.get("rut"),
         data.get("account_stage"),
-        json.dumps(data["contactability"]) if "contactability" in data else None,
-        json.dumps(data["drivers"])        if "drivers"        in data else None,
-        json.dumps(data["vehicles"])       if "vehicles"       in data else None,
-        json.dumps(data["trailers"])       if "trailers"       in data else None,
+        json.dumps(data["contactability"])     if "contactability"     in data else None,
+        json.dumps(data["drivers"])            if "drivers"            in data else None,
+        json.dumps(data["vehicles"])           if "vehicles"           in data else None,
+        json.dumps(data["trailers"])           if "trailers"           in data else None,
+        json.dumps(data["company_governance"]) if "company_governance" in data else None,
         sent,
         user["sub"],
     )
@@ -229,6 +274,10 @@ async def patch_driver(
                 d["rut"] = body.rut
             if body.name is not None:
                 d["name"] = body.name
+            if body.governance is not None:
+                gov = body.governance.model_dump(mode="json", exclude_none=False)
+                existing_gov = d.get("governance") or {}
+                d["governance"] = {**existing_gov, **{k: v for k, v in gov.items() if v is not None}}
             updated = d
             break
 
