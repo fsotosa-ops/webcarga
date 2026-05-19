@@ -1,4 +1,7 @@
 import type {
+  ComplianceAlertSummary,
+  CompanyGovernance,
+  DriverGovernance,
   TransporterListResponse,
   TransporterProfile,
   TransporterDriver,
@@ -37,13 +40,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type TransporterPatch = {
-  business_name?: string
-  rut?: string
-  account_stage?: string
-  contactability?: TransporterContactability
-  drivers?: TransporterDriver[]
-  vehicles?: TransporterVehicle[]
-  trailers?: TransporterTrailer[]
+  business_name?:      string
+  rut?:                string
+  account_stage?:      string
+  contactability?:     TransporterContactability
+  drivers?:            TransporterDriver[]
+  vehicles?:           TransporterVehicle[]
+  trailers?:           TransporterTrailer[]
+  company_governance?: CompanyGovernance
 }
 
 export const transportersApi = {
@@ -77,7 +81,7 @@ export const transportersApi = {
       body: JSON.stringify(body),
     }),
 
-  patchDriver: (id: string, did: string, body: { rut?: string; name?: string }) =>
+  patchDriver: (id: string, did: string, body: { rut?: string; name?: string; governance?: DriverGovernance }) =>
     apiFetch<{ data: TransporterDriver }>(`/api/v1/transporters/${id}/drivers/${did}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
@@ -109,4 +113,7 @@ export const transportersApi = {
     apiFetch<{ ok: boolean }>(`/api/v1/transporters/${id}/trailers/${trid}`, {
       method: 'DELETE',
     }),
+
+  getComplianceAlertSummary: () =>
+    apiFetch<ComplianceAlertSummary>(`/api/v1/transporters/compliance-alerts/summary`),
 }
