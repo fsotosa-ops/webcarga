@@ -19,7 +19,7 @@ import {
   getAlertStatus, getDriverAlertStatus, getVehicleAlertStatus, formatExpiry,
 } from '@/lib/compliance'
 
-type Tab = 'conductores' | 'tractos'
+type Tab = 'conductores' | 'equipos'
 
 const ACCOUNT_STAGES = ['Lead', 'Operational']
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
@@ -132,7 +132,7 @@ const VEHICLE_EXPIRY_LABELS = [
 
 // ── Driver row ────────────────────────────────────────────────────
 function DriverRow({
-  driver, canEdit, expanded, onToggleExpand, onPatch, onRemove, onToggleWmt,
+  driver, canEdit, expanded, onToggleExpand, onPatch, onRemove,
 }: {
   driver: TransporterDriver
   canEdit: boolean
@@ -140,7 +140,6 @@ function DriverRow({
   onToggleExpand: () => void
   onPatch: (body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
   onRemove: () => Promise<void>
-  onToggleWmt: () => Promise<void>
 }) {
   const [draft, setDraft]       = useState({ rut: driver.rut, name: driver.name })
   const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
@@ -155,9 +154,8 @@ function DriverRow({
     contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
     creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
   })
-  const [saving, setSaving]       = useState(false)
-  const [savingWmt, setSavingWmt] = useState(false)
-  const [err, setErr]             = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState<string | null>(null)
 
   useEffect(() => {
     setDraft({ rut: driver.rut, name: driver.name })
@@ -175,8 +173,7 @@ function DriverRow({
     })
   }, [driver])
 
-  const dAlert     = getDriverAlertStatus(driver)
-  const wmtEnabled = driver.governance?.validado_walmart === 'ok'
+  const dAlert = getDriverAlertStatus(driver)
 
   const handleSave = async () => {
     setSaving(true); setErr(null)
@@ -253,34 +250,6 @@ function DriverRow({
           </div>
         </td>
 
-        {/* GC Habilitado + toggle WMT */}
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            {wmtEnabled ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                Walmart
-              </span>
-            ) : (
-              <span className="text-[11px] text-gray-300">—</span>
-            )}
-            {canEdit && (
-              <button
-                type="button"
-                onClick={async () => { setSavingWmt(true); try { await onToggleWmt() } finally { setSavingWmt(false) } }}
-                disabled={savingWmt}
-                title={wmtEnabled ? 'Deshabilitar WMT' : 'Habilitar WMT'}
-                className={`relative inline-flex h-4 w-8 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${
-                  wmtEnabled ? 'bg-green-500' : 'bg-gray-200'
-                }`}
-              >
-                <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-                  wmtEnabled ? 'translate-x-4' : 'translate-x-0'
-                }`} />
-              </button>
-            )}
-          </div>
-        </td>
-
         {/* Edit */}
         <td className="px-3 py-3">
           {canEdit && (
@@ -312,7 +281,7 @@ function DriverRow({
       {/* Expandable edit form */}
       {expanded && (
         <tr className="bg-slate-50">
-          <td colSpan={5} className="px-4 py-4">
+          <td colSpan={4} className="px-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Conductor</p>
@@ -458,64 +427,102 @@ function VehicleRow({
   return (
     <>
       <tr className="border-b border-border/60 last:border-0 hover:bg-blue-50/20 transition-colors">
-        {/* Patente + tipo */}
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-black bg-slate-800 text-white px-3 py-1 rounded-lg font-mono shadow-sm">
+        {/* Equipo */}
+        <td className="px-3 py-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-black bg-slate-800 text-white px-2.5 py-0.5 rounded-lg font-mono shadow-sm whitespace-nowrap">
               {vehicle.plate}
             </span>
             {vAlert !== 'ok' && <ComplianceBadge status={vAlert} compact />}
           </div>
-          {vehicle.type && (
-            <span className="text-[10px] text-gray-400 mt-1 block">{vehicle.type}</span>
-          )}
-          {vehicle.governance?.year && (
-            <span className="text-[9px] text-gray-400 mt-0.5 block">{vehicle.governance.year}</span>
-          )}
+          {vehicle.type && <span className="text-[10px] text-gray-400 mt-0.5 block truncate max-w-[120px]">{vehicle.type}</span>}
         </td>
 
-        {/* Vencimientos */}
-        <td className="px-4 py-3">
-          <div className="space-y-0.5">
-            {VEHICLE_EXPIRY_LABELS.map(({ key, label }) => {
-              const val = vehicle.governance?.[key] ?? null
-              if (!val) return null
-              return (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-gray-400 w-14 shrink-0">{label}</span>
-                  <span className="text-[11px] font-mono text-gray-600">{formatExpiry(val)}</span>
-                  <ComplianceBadge status={getAlertStatus(val)} compact />
-                </div>
-              )
-            })}
-            {!vehicle.governance && <span className="text-[11px] text-gray-300 italic">sin datos</span>}
-          </div>
+        {/* Padrón */}
+        <td className="px-2 py-2.5 text-center">
+          <GovernanceStatusBadge status={vehicle.governance?.padron ?? null} />
         </td>
 
-        {/* Documentación */}
-        <td className="px-4 py-3">
-          <div className="flex flex-wrap gap-1">
-            {VEHICLE_DOC_LABELS.map(({ key, label }) => {
-              const val = vehicle.governance?.[key] as ComplianceStatus | null
-              if (!val || val === 'n_a') return null
-              const { cls } = COMPLIANCE_CFG[val]
-              return (
-                <span key={key} title={label} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
-                  {label}
-                </span>
-              )
-            })}
-          </div>
+        {/* P. Circ. */}
+        <td className="px-2 py-2.5">
+          {vehicle.governance?.circ_permit_expiry ? (
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="text-[10px] font-mono text-gray-600">{formatExpiry(vehicle.governance.circ_permit_expiry)}</span>
+              <ComplianceBadge status={getAlertStatus(vehicle.governance.circ_permit_expiry)} compact />
+            </div>
+          ) : <span className="text-gray-200 text-[10px]">—</span>}
+        </td>
+
+        {/* Re. Téc. */}
+        <td className="px-2 py-2.5">
+          {vehicle.governance?.tech_inspection_expiry ? (
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="text-[10px] font-mono text-gray-600">{formatExpiry(vehicle.governance.tech_inspection_expiry)}</span>
+              <ComplianceBadge status={getAlertStatus(vehicle.governance.tech_inspection_expiry)} compact />
+            </div>
+          ) : <span className="text-gray-200 text-[10px]">—</span>}
+        </td>
+
+        {/* Gases */}
+        <td className="px-2 py-2.5">
+          {vehicle.governance?.gas_emissions_expiry ? (
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="text-[10px] font-mono text-gray-600">{formatExpiry(vehicle.governance.gas_emissions_expiry)}</span>
+              <ComplianceBadge status={getAlertStatus(vehicle.governance.gas_emissions_expiry)} compact />
+            </div>
+          ) : <span className="text-gray-200 text-[10px]">—</span>}
+        </td>
+
+        {/* SOAP */}
+        <td className="px-2 py-2.5">
+          {vehicle.governance?.soap_insurance_expiry ? (
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="text-[10px] font-mono text-gray-600">{formatExpiry(vehicle.governance.soap_insurance_expiry)}</span>
+              <ComplianceBadge status={getAlertStatus(vehicle.governance.soap_insurance_expiry)} compact />
+            </div>
+          ) : <span className="text-gray-200 text-[10px]">—</span>}
+        </td>
+
+        {/* Póliza RC */}
+        <td className="px-2 py-2.5 text-center">
+          <GovernanceStatusBadge status={vehicle.governance?.poliza_rc ?? null} />
+        </td>
+
+        {/* Año */}
+        <td className="px-2 py-2.5 text-center">
+          <span className="text-[10px] font-mono text-gray-600">
+            {vehicle.governance?.year ?? <span className="text-gray-200">—</span>}
+          </span>
+        </td>
+
+        {/* GPS */}
+        <td className="px-2 py-2.5 text-center">
+          <GovernanceStatusBadge status={vehicle.governance?.gps ?? null} />
+        </td>
+
+        {/* Seg. Carga */}
+        <td className="px-2 py-2.5 text-center">
+          <GovernanceStatusBadge status={vehicle.governance?.seguro_carga ?? null} />
+        </td>
+
+        {/* Cám. Frío */}
+        <td className="px-2 py-2.5 text-center">
+          <GovernanceStatusBadge status={vehicle.governance?.mantencion_camara_frio ?? null} />
+        </td>
+
+        {/* Creación WMT */}
+        <td className="px-2 py-2.5 text-center">
+          <GovernanceStatusBadge status={vehicle.governance?.creacion_walmart ?? null} />
         </td>
 
         {/* Edit */}
-        <td className="px-3 py-3">
+        <td className="px-2 py-2.5">
           {canEdit && (
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={onToggleExpand}
-                title="Editar tracto"
+                title="Editar equipo"
                 className={`p-1.5 rounded-lg border transition-all ${
                   expanded
                     ? 'border-accent bg-accent/5 text-accent'
@@ -539,7 +546,7 @@ function VehicleRow({
       {/* Expandable edit form */}
       {expanded && (
         <tr className="bg-slate-50">
-          <td colSpan={4} className="px-4 py-4">
+          <td colSpan={13} className="px-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Tracto</p>
@@ -819,8 +826,6 @@ export default function EmpresaDetailPage() {
   const [driverForm,     setDriverForm]     = useState({ rut: '', name: '' })
   const [addVehicleOpen, setAddVehicleOpen] = useState(false)
   const [vehicleForm,    setVehicleForm]    = useState({ type: '', plate: '' })
-  const [addTrailerOpen, setAddTrailerOpen] = useState(false)
-  const [trailerForm,    setTrailerForm]    = useState({ plate: '' })
   const [submitting,     setSubmitting]     = useState(false)
 
   useEffect(() => {
@@ -865,15 +870,6 @@ export default function EmpresaDetailPage() {
     setTp(prev => prev ? { ...prev, drivers: prev.drivers.map(d => d.id === did ? res.data : d) } : prev)
   }
 
-  const handleToggleWmt = async (driver: TransporterDriver) => {
-    const current = driver.governance?.validado_walmart
-    const next: ComplianceStatus = current === 'ok' ? 'pendiente' : 'ok'
-    const res = await transportersApi.patchDriver(id, driver.id, {
-      governance: { ...(driver.governance ?? {}), validado_walmart: next } as DriverGovernance,
-    })
-    setTp(prev => prev ? { ...prev, drivers: prev.drivers.map(d => d.id === driver.id ? res.data : d) } : prev)
-  }
-
   const handleRemoveDriver = async (did: string) => {
     await transportersApi.removeDriver(id, did); await load()
   }
@@ -896,21 +892,6 @@ export default function EmpresaDetailPage() {
 
   const handleRemoveVehicle = async (vid: string) => {
     await transportersApi.removeVehicle(id, vid); await load()
-  }
-
-  const handleAddTrailer = async () => {
-    if (!trailerForm.plate) return
-    setSubmitting(true)
-    try {
-      await transportersApi.addTrailer(id, trailerForm)
-      setTrailerForm({ plate: '' })
-      setAddTrailerOpen(false)
-      await load()
-    } finally { setSubmitting(false) }
-  }
-
-  const handleRemoveTrailer = async (trid: string) => {
-    await transportersApi.removeTrailer(id, trid); await load()
   }
 
   if (loading) return (
@@ -945,13 +926,13 @@ export default function EmpresaDetailPage() {
 
   const TABS: { key: Tab; label: string; count: number }[] = [
     { key: 'conductores', label: 'Conductores', count: tp.drivers.length },
-    { key: 'tractos',     label: 'Tractos',     count: tp.vehicles.length },
+    { key: 'equipos',     label: 'Equipos',     count: tp.vehicles.length },
   ]
 
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
       {editOpen && (
-        <div className="fixed inset-0 bg-black/20 z-40 md:hidden" onClick={() => setEditOpen(false)} />
+        <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setEditOpen(false)} />
       )}
 
       {/* Breadcrumb */}
@@ -1103,20 +1084,19 @@ export default function EmpresaDetailPage() {
             )}
 
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: 760 }}>
+              <table className="w-full text-sm" style={{ minWidth: 680 }}>
                 <thead>
                   <tr className="bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wide">
                     <th className="px-4 py-3 text-left">Conductor</th>
                     <th className="px-4 py-3 text-left">Vencimientos</th>
                     <th className="px-4 py-3 text-left">Documentación</th>
-                    <th className="px-4 py-3 text-left">GC Habilitado</th>
                     <th className="px-3 py-3 w-20"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
                   {filteredDrivers.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-300">
+                      <td colSpan={4} className="px-4 py-10 text-center text-sm text-gray-300">
                         {driverQ ? 'Sin resultados' : 'Sin conductores registrados'}
                       </td>
                     </tr>
@@ -1130,7 +1110,6 @@ export default function EmpresaDetailPage() {
                       onToggleExpand={() => setExpandedDriver(prev => prev === d.id ? null : d.id)}
                       onPatch={body => handlePatchDriver(d.id, body)}
                       onRemove={() => handleRemoveDriver(d.id)}
-                      onToggleWmt={() => handleToggleWmt(d)}
                     />
                   ))}
                 </tbody>
@@ -1139,8 +1118,8 @@ export default function EmpresaDetailPage() {
           </div>
         )}
 
-        {/* ── TRACTOS TAB ── */}
-        {activeTab === 'tractos' && (
+        {/* ── EQUIPOS TAB ── */}
+        {activeTab === 'equipos' && (
           <div>
             <div className="px-5 py-3 border-b border-border bg-white flex items-center justify-between gap-3 flex-wrap">
               <div className="relative">
@@ -1165,7 +1144,7 @@ export default function EmpresaDetailPage() {
                     onClick={() => setAddVehicleOpen(v => !v)}
                     className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
                   >
-                    + Tracto
+                    + Equipo
                   </button>
                 )}
               </div>
@@ -1199,20 +1178,29 @@ export default function EmpresaDetailPage() {
             )}
 
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: 620 }}>
+              <table className="w-full text-sm" style={{ minWidth: 1080 }}>
                 <thead>
-                  <tr className="bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wide">
-                    <th className="px-4 py-3 text-left">Tracto</th>
-                    <th className="px-4 py-3 text-left">Vencimientos</th>
-                    <th className="px-4 py-3 text-left">Documentación</th>
-                    <th className="px-3 py-3 w-20"></th>
+                  <tr className="bg-slate-800 text-[9px] font-semibold text-white uppercase tracking-wide">
+                    <th className="px-3 py-2.5 text-left w-36">Equipo</th>
+                    <th className="px-2 py-2.5 text-center w-20">Padrón</th>
+                    <th className="px-2 py-2.5 text-left w-24">P. Circ.</th>
+                    <th className="px-2 py-2.5 text-left w-24">Re. Téc.</th>
+                    <th className="px-2 py-2.5 text-left w-24">Gases</th>
+                    <th className="px-2 py-2.5 text-left w-24">SOAP</th>
+                    <th className="px-2 py-2.5 text-center w-20">Póliza RC</th>
+                    <th className="px-2 py-2.5 text-center w-14">Año</th>
+                    <th className="px-2 py-2.5 text-center w-20">GPS</th>
+                    <th className="px-2 py-2.5 text-center w-20">Seg. Carga</th>
+                    <th className="px-2 py-2.5 text-center w-20">Cám. Frío</th>
+                    <th className="px-2 py-2.5 text-center w-24">Creación WMT</th>
+                    <th className="px-2 py-2.5 w-16"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
                   {filteredVehicles.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-4 py-10 text-center text-sm text-gray-300">
-                        {vehicleQ ? 'Sin resultados' : 'Sin tractos registrados'}
+                      <td colSpan={13} className="px-4 py-10 text-center text-sm text-gray-300">
+                        {vehicleQ ? 'Sin resultados' : 'Sin equipos registrados'}
                       </td>
                     </tr>
                   )}
@@ -1231,58 +1219,6 @@ export default function EmpresaDetailPage() {
               </table>
             </div>
 
-            {/* Ramplas */}
-            <div className="border-t border-border px-5 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                  Remolques / Ramplas ({tp.trailers.length})
-                </p>
-                {canEdit && (
-                  <button
-                    onClick={() => setAddTrailerOpen(v => !v)}
-                    className="text-xs text-gray-600 font-bold px-3 py-1.5 rounded-lg border border-border hover:bg-gray-50 transition"
-                  >
-                    + Rampla
-                  </button>
-                )}
-              </div>
-              {addTrailerOpen && (
-                <div className="flex items-center gap-2 mb-3">
-                  <input
-                    placeholder="Patente"
-                    value={trailerForm.plate}
-                    onChange={e => setTrailerForm({ plate: e.target.value })}
-                    className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32 font-mono uppercase"
-                  />
-                  <button
-                    onClick={handleAddTrailer}
-                    disabled={submitting || !trailerForm.plate}
-                    className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
-                  >
-                    {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-                  </button>
-                  <button onClick={() => setAddTrailerOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                    <X size={14} />
-                  </button>
-                </div>
-              )}
-              {tp.trailers.length === 0 ? (
-                <p className="text-xs text-gray-300">Sin ramplas registradas</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {tp.trailers.map(t => (
-                    <div key={t.id} className="flex items-center gap-2 bg-gray-50 border border-border rounded-xl px-3 py-1.5">
-                      <span className="text-sm font-bold font-mono text-gray-700">{t.plate}</span>
-                      {canEdit && (
-                        <button onClick={() => handleRemoveTrailer(t.id)} className="text-gray-300 hover:text-red-400 transition-colors">
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </div>
@@ -1290,7 +1226,7 @@ export default function EmpresaDetailPage() {
       {/* ── Edit Slide-Over ── */}
       <div
         className={`
-          fixed md:absolute inset-y-0 right-0 z-50
+          fixed inset-y-0 right-0 z-50
           w-full sm:w-[440px]
           bg-white border-l border-border shadow-2xl flex flex-col
           transition-transform duration-300
