@@ -3,7 +3,7 @@ from datetime import date
 from typing import Literal, Optional
 from pydantic import BaseModel, field_validator
 
-ComplianceStatus = Literal['ok', 'pendiente', 'actualizar', 'n_a']
+ComplianceStatus = Literal['ok', 'pendiente', 'actualizar', 'n_a', 'factible']
 
 
 class DriverGovernance(BaseModel):
@@ -26,6 +26,7 @@ class VehicleGovernance(BaseModel):
     tech_inspection_expiry: Optional[date] = None
     gas_emissions_expiry:   Optional[date] = None
     soap_insurance_expiry:  Optional[date] = None
+    padron:                 Optional[ComplianceStatus] = None
     poliza_rc:              Optional[ComplianceStatus] = None
     gps:                    Optional[ComplianceStatus] = None
     seguro_carga:           Optional[ComplianceStatus] = None

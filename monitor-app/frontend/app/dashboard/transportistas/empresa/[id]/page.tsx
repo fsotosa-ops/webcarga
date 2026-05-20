@@ -49,6 +49,7 @@ const COMPLIANCE_CFG = {
   pendiente:  { cls: 'bg-amber-50 text-amber-600',   label: 'Pendiente' },
   actualizar: { cls: 'bg-blue-50 text-blue-600',     label: 'Actualizar' },
   n_a:        { cls: 'bg-gray-100 text-gray-500',    label: 'N/A' },
+  factible:   { cls: 'bg-teal-50 text-teal-700',     label: 'Factible' },
 } as const
 
 function GovernanceStatusBadge({ status }: { status: ComplianceStatus | null }) {
@@ -79,6 +80,7 @@ function GovernanceSelect({
       <option value="pendiente">Pendiente</option>
       <option value="actualizar">Actualizar</option>
       <option value="n_a">N/A</option>
+      <option value="factible">Factible</option>
     </select>
   )
 }
@@ -113,6 +115,7 @@ const DRIVER_DOC_LABELS: { key: keyof DriverGovernance; label: string }[] = [
 
 // Vehicle docs (Excel sheet "Vehiculos_Equipos", no-expiry columns)
 const VEHICLE_DOC_LABELS: { key: keyof VehicleGovernance; label: string }[] = [
+  { key: 'padron',                 label: 'Padrón' },
   { key: 'poliza_rc',              label: 'Póliza RC' },
   { key: 'gps',                    label: 'GPS' },
   { key: 'seguro_carga',           label: 'Seguro Carga' },
@@ -402,10 +405,12 @@ function VehicleRow({
 }) {
   const [draft, setDraft]       = useState({ type: vehicle.type, plate: vehicle.plate })
   const [draftGov, setDraftGov] = useState<Partial<VehicleGovernance>>({
+    year:                   vehicle.governance?.year                   ?? null,
     circ_permit_expiry:     vehicle.governance?.circ_permit_expiry     ?? null,
     tech_inspection_expiry: vehicle.governance?.tech_inspection_expiry ?? null,
     gas_emissions_expiry:   vehicle.governance?.gas_emissions_expiry   ?? null,
     soap_insurance_expiry:  vehicle.governance?.soap_insurance_expiry  ?? null,
+    padron:                 vehicle.governance?.padron                 ?? null,
     poliza_rc:              vehicle.governance?.poliza_rc              ?? null,
     gps:                    vehicle.governance?.gps                    ?? null,
     seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
@@ -418,10 +423,12 @@ function VehicleRow({
   useEffect(() => {
     setDraft({ type: vehicle.type, plate: vehicle.plate })
     setDraftGov({
+      year:                   vehicle.governance?.year                   ?? null,
       circ_permit_expiry:     vehicle.governance?.circ_permit_expiry     ?? null,
       tech_inspection_expiry: vehicle.governance?.tech_inspection_expiry ?? null,
       gas_emissions_expiry:   vehicle.governance?.gas_emissions_expiry   ?? null,
       soap_insurance_expiry:  vehicle.governance?.soap_insurance_expiry  ?? null,
+      padron:                 vehicle.governance?.padron                 ?? null,
       poliza_rc:              vehicle.governance?.poliza_rc              ?? null,
       gps:                    vehicle.governance?.gps                    ?? null,
       seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
@@ -461,6 +468,9 @@ function VehicleRow({
           </div>
           {vehicle.type && (
             <span className="text-[10px] text-gray-400 mt-1 block">{vehicle.type}</span>
+          )}
+          {vehicle.governance?.year && (
+            <span className="text-[9px] text-gray-400 mt-0.5 block">{vehicle.governance.year}</span>
           )}
         </td>
 
@@ -551,6 +561,17 @@ function VehicleRow({
                       className="w-full text-sm font-mono border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white uppercase"
                     />
                   </div>
+                </div>
+                <div className="pt-1">
+                  <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Año</label>
+                  <input
+                    type="number"
+                    min={1990} max={2030}
+                    value={draftGov.year ?? ''}
+                    onChange={e => setDraftGov(v => ({ ...v, year: e.target.value ? parseInt(e.target.value) : null }))}
+                    placeholder="2020"
+                    className="w-full text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   {VEHICLE_EXPIRY_LABELS.map(({ key, label }) => (

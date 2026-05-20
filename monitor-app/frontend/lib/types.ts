@@ -238,7 +238,7 @@ export type Trip = {
 
 // ── Compliance & Governance ─────────────────────────────────────────
 
-export type ComplianceStatus = 'ok' | 'pendiente' | 'actualizar' | 'n_a'
+export type ComplianceStatus = 'ok' | 'pendiente' | 'actualizar' | 'n_a' | 'factible'
 export type AlertStatus = 'expired' | 'expiring_soon' | 'ok'
 
 export type DriverGovernance = {
@@ -261,6 +261,7 @@ export type VehicleGovernance = {
   tech_inspection_expiry: string | null
   gas_emissions_expiry:   string | null
   soap_insurance_expiry:  string | null
+  padron:                 ComplianceStatus | null
   poliza_rc:              ComplianceStatus | null
   gps:                    ComplianceStatus | null
   seguro_carga:           ComplianceStatus | null
