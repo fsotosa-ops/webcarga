@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Clock, Loader2, Building2 } from 'lucide-react'
 import type { Trip, TransporterListItem } from '@/lib/types'
 import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
@@ -52,20 +52,26 @@ function TransporterAssignSection({
   const [searchErr, setSearchErr] = useState<string | null>(null)
   const [saving, setSaving]   = useState(false)
 
-  const search = useCallback(async (q: string) => {
-    if (q.length < 2) { setResults([]); setSearchErr(null); return }
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); setSearchErr(null); setSearching(false); return }
     setSearching(true)
     setSearchErr(null)
-    try {
-      const res = await transportersApi.list({ q, page: 1, limit: 8 })
-      setResults(res.data)
-    } catch (e) {
-      setSearchErr(e instanceof Error ? e.message : 'Error al buscar')
-      setResults([])
-    } finally {
-      setSearching(false)
-    }
-  }, [])
+    const ctrl = new AbortController()
+    const t = setTimeout(async () => {
+      try {
+        const res = await transportersApi.list({ q: query, page: 1, limit: 12 })
+        if (!ctrl.signal.aborted) setResults(res.data)
+      } catch (e) {
+        if (!ctrl.signal.aborted) {
+          setSearchErr(e instanceof Error ? e.message : 'Error al buscar')
+          setResults([])
+        }
+      } finally {
+        if (!ctrl.signal.aborted) setSearching(false)
+      }
+    }, 300)
+    return () => { clearTimeout(t); ctrl.abort() }
+  }, [query])
 
   const assign = async (profileId: string) => {
     setSaving(true)
@@ -92,7 +98,7 @@ function TransporterAssignSection({
           type="text"
           placeholder="Buscar empresa por nombre o RUT…"
           value={query}
-          onChange={e => { setQuery(e.target.value); search(e.target.value) }}
+          onChange={e => setQuery(e.target.value)}
           className="w-full text-xs border border-border rounded-lg px-3 py-2 pr-7 focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
         {searching && (
@@ -103,7 +109,7 @@ function TransporterAssignSection({
         <p className="text-[10px] text-red-500 px-1">{searchErr}</p>
       )}
       {results.length > 0 && (
-        <ul className="border border-border rounded-lg divide-y divide-border overflow-hidden bg-white shadow-sm">
+        <ul className="border border-border rounded-lg divide-y divide-border overflow-y-auto max-h-52 bg-white shadow-md">
           {results.map(tp => (
             <li key={tp.id}>
               <button
