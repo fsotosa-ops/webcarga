@@ -6,7 +6,7 @@ import Link from 'next/link'
 import {
   ChevronRight, PenLine, Check, X, RotateCcw,
   Trash2, Loader2, AlertTriangle, ShieldCheck,
-  Search, Eye, EyeOff,
+  Search, ChevronDown,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { transportersApi } from '@/lib/api/transporters'
@@ -19,7 +19,7 @@ import {
   getAlertStatus, getDriverAlertStatus, getVehicleAlertStatus, formatExpiry,
 } from '@/lib/compliance'
 
-type Tab = 'conductores' | 'tractos' | 'gobernanza'
+type Tab = 'conductores' | 'tractos'
 
 const ACCOUNT_STAGES = ['Lead', 'Operational']
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
@@ -45,14 +45,14 @@ function getInitials(name: string | null) {
 // ── Governance helpers ────────────────────────────────────────────
 
 const COMPLIANCE_CFG = {
-  ok:         { cls: 'bg-green-100 text-green-700', label: 'OK' },
-  pendiente:  { cls: 'bg-amber-50 text-amber-600',  label: 'Pendiente' },
-  actualizar: { cls: 'bg-blue-50 text-blue-600',    label: 'Actualizar' },
-  n_a:        { cls: 'bg-gray-100 text-gray-500',   label: 'N/A' },
+  ok:         { cls: 'bg-green-100 text-green-700',  label: 'OK' },
+  pendiente:  { cls: 'bg-amber-50 text-amber-600',   label: 'Pendiente' },
+  actualizar: { cls: 'bg-blue-50 text-blue-600',     label: 'Actualizar' },
+  n_a:        { cls: 'bg-gray-100 text-gray-500',    label: 'N/A' },
 } as const
 
 function GovernanceStatusBadge({ status }: { status: ComplianceStatus | null }) {
-  if (!status) return <span className="text-xs text-gray-200">—</span>
+  if (!status) return <span className="text-[10px] text-gray-300">—</span>
   const { cls, label } = COMPLIANCE_CFG[status]
   return (
     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
@@ -83,21 +83,23 @@ function GovernanceSelect({
   )
 }
 
-const GOVERNANCE_DOC_LABELS: { key: keyof CompanyGovernance; label: string }[] = [
+// Empresa-level docs (Excel sheet "Empresas")
+const COMPANY_DOC_LABELS: { key: keyof CompanyGovernance; label: string }[] = [
   { key: 'rol_sii',            label: 'ROL SII' },
   { key: 'copia_ci_rep_legal', label: 'C.I. Rep. Legal' },
-  { key: 'anexo_2_walmart',    label: 'ANEXO 2 WMT' },
-  { key: 'contrato_webcarga',  label: 'Contrato WC' },
-  { key: 'f30_multas',         label: 'F30 Multas' },
-  { key: 'f43',                label: 'F43' },
+  { key: 'anexo_2_walmart',   label: 'ANEXO 2 WMT' },
+  { key: 'contrato_webcarga', label: 'Contrato WC' },
+  { key: 'f30_multas',        label: 'F30 Multas' },
+  { key: 'f43',               label: 'F43' },
   { key: 'politica_seguridad', label: 'Política Seg.' },
-  { key: 'cert_mutual',        label: 'Cert. Mutual' },
-  { key: 'riohs_timbrado',     label: 'RIOHS' },
-  { key: 'creacion_walmart',   label: 'Creación WMT' },
+  { key: 'cert_mutual',       label: 'Cert. Mutual' },
+  { key: 'riohs_timbrado',    label: 'RIOHS' },
+  { key: 'creacion_walmart',  label: 'Creación WMT' },
   { key: 'carpeta_tributaria', label: 'Carpeta Trib.' },
-  { key: 'cuenta_empresa',     label: 'Cuenta Emp.' },
+  { key: 'cuenta_empresa',    label: 'Cuenta Empresa' },
 ]
 
+// Driver docs (Excel sheet "Conductores", no-expiry columns)
 const DRIVER_DOC_LABELS: { key: keyof DriverGovernance; label: string }[] = [
   { key: 'anexo_3_walmart',   label: 'ANEXO 3 WMT' },
   { key: 'epp',               label: 'EPP' },
@@ -109,11 +111,12 @@ const DRIVER_DOC_LABELS: { key: keyof DriverGovernance; label: string }[] = [
   { key: 'creacion_walmart',  label: 'Creación WMT' },
 ]
 
+// Vehicle docs (Excel sheet "Vehiculos_Equipos", no-expiry columns)
 const VEHICLE_DOC_LABELS: { key: keyof VehicleGovernance; label: string }[] = [
   { key: 'poliza_rc',              label: 'Póliza RC' },
   { key: 'gps',                    label: 'GPS' },
   { key: 'seguro_carga',           label: 'Seguro Carga' },
-  { key: 'mantencion_camara_frio', label: 'Mant. Cámara Fría' },
+  { key: 'mantencion_camara_frio', label: 'Cámara Frío' },
   { key: 'creacion_walmart',       label: 'Creación WMT' },
 ]
 
@@ -126,11 +129,9 @@ const VEHICLE_EXPIRY_LABELS = [
 
 // ── Driver row ────────────────────────────────────────────────────
 function DriverRow({
-  driver, companyName, companyRut, canEdit, expanded, onToggleExpand, onPatch, onRemove, onToggleWmt,
+  driver, canEdit, expanded, onToggleExpand, onPatch, onRemove, onToggleWmt,
 }: {
   driver: TransporterDriver
-  companyName: string | null
-  companyRut: string | null
   canEdit: boolean
   expanded: boolean
   onToggleExpand: () => void
@@ -138,7 +139,7 @@ function DriverRow({
   onRemove: () => Promise<void>
   onToggleWmt: () => Promise<void>
 }) {
-  const [draft, setDraft]     = useState({ rut: driver.rut, name: driver.name })
+  const [draft, setDraft]       = useState({ rut: driver.rut, name: driver.name })
   const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
     id_expiry:         driver.governance?.id_expiry         ?? null,
     license_expiry:    driver.governance?.license_expiry    ?? null,
@@ -178,8 +179,8 @@ function DriverRow({
     setSaving(true); setErr(null)
     try {
       await onPatch({
-        rut:  draft.rut,
-        name: draft.name,
+        rut:        draft.rut,
+        name:       draft.name,
         governance: { ...(driver.governance ?? {}), ...draftGov } as DriverGovernance,
       })
       onToggleExpand()
@@ -190,21 +191,16 @@ function DriverRow({
     }
   }
 
-  const handleToggleWmt = async () => {
-    setSavingWmt(true)
-    try { await onToggleWmt() }
-    finally { setSavingWmt(false) }
-  }
-
   return (
     <>
       <tr className="border-b border-border/60 last:border-0 hover:bg-blue-50/20 transition-colors">
-        {/* Nombre · RUT */}
+        {/* Conductor */}
         <td className="px-4 py-3">
           <div className="flex items-center gap-2.5">
             <div
               className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${
-                dAlert === 'expired' ? 'ring-2 ring-red-400' : dAlert === 'expiring_soon' ? 'ring-2 ring-amber-300' : ''
+                dAlert === 'expired'       ? 'ring-2 ring-red-400' :
+                dAlert === 'expiring_soon' ? 'ring-2 ring-amber-300' : ''
               }`}
               style={{ backgroundColor: getInitialColor(driver.name) }}
             >
@@ -217,38 +213,32 @@ function DriverRow({
           </div>
         </td>
 
-        {/* EETT */}
-        <td className="px-4 py-3">
-          <p className="text-sm text-gray-700 leading-tight">{companyName ?? '—'}</p>
-          <p className="text-[11px] font-mono text-gray-400 mt-0.5">{companyRut ?? '—'}</p>
-        </td>
-
         {/* Vencimientos */}
         <td className="px-4 py-3">
           <div className="space-y-0.5">
             {driver.governance?.id_expiry ? (
               <div className="flex items-center gap-1.5">
-                <span className="text-[9px] text-gray-400 w-8 shrink-0">C.I.</span>
+                <span className="text-[9px] text-gray-400 w-7 shrink-0">C.I.</span>
                 <span className="text-[11px] font-mono text-gray-600">{formatExpiry(driver.governance.id_expiry)}</span>
                 <ComplianceBadge status={getAlertStatus(driver.governance.id_expiry)} compact />
               </div>
-            ) : <span className="text-[11px] text-gray-200 italic">C.I. —</span>}
+            ) : <p className="text-[11px] text-gray-200 italic">C.I. —</p>}
             {driver.governance?.license_expiry ? (
               <div className="flex items-center gap-1.5">
-                <span className="text-[9px] text-gray-400 w-8 shrink-0">Lic.</span>
+                <span className="text-[9px] text-gray-400 w-7 shrink-0">Lic.</span>
                 <span className="text-[11px] font-mono text-gray-600">{formatExpiry(driver.governance.license_expiry)}</span>
                 <ComplianceBadge status={getAlertStatus(driver.governance.license_expiry)} compact />
               </div>
-            ) : <span className="text-[11px] text-gray-200 italic">Lic. —</span>}
+            ) : <p className="text-[11px] text-gray-200 italic">Lic. —</p>}
           </div>
         </td>
 
-        {/* Estado docs */}
+        {/* Documentación */}
         <td className="px-4 py-3">
           <div className="flex flex-wrap gap-1">
             {DRIVER_DOC_LABELS.map(({ key, label }) => {
               const val = driver.governance?.[key as keyof DriverGovernance] as ComplianceStatus | null
-              if (!val) return null
+              if (!val || val === 'n_a') return null
               const { cls } = COMPLIANCE_CFG[val]
               return (
                 <span key={key} title={label} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
@@ -260,69 +250,67 @@ function DriverRow({
           </div>
         </td>
 
-        {/* GC Habilitado (Validado WMT) */}
-        <td className="px-4 py-3">
-          {wmtEnabled ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-              Walmart
-            </span>
-          ) : (
-            <span className="text-[11px] text-gray-300 italic">—</span>
-          )}
-        </td>
-
-        {/* Acciones */}
+        {/* GC Habilitado + toggle WMT */}
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
-            {/* WMT toggle */}
+            {wmtEnabled ? (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                Walmart
+              </span>
+            ) : (
+              <span className="text-[11px] text-gray-300">—</span>
+            )}
             {canEdit && (
               <button
                 type="button"
-                onClick={handleToggleWmt}
+                onClick={async () => { setSavingWmt(true); try { await onToggleWmt() } finally { setSavingWmt(false) } }}
                 disabled={savingWmt}
                 title={wmtEnabled ? 'Deshabilitar WMT' : 'Habilitar WMT'}
-                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-                  wmtEnabled ? 'bg-accent' : 'bg-gray-200'
-                } disabled:opacity-50`}
+                className={`relative inline-flex h-4 w-8 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${
+                  wmtEnabled ? 'bg-green-500' : 'bg-gray-200'
+                }`}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    wmtEnabled ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
+                <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                  wmtEnabled ? 'translate-x-4' : 'translate-x-0'
+                }`} />
               </button>
             )}
-            {/* Eye / Edit */}
-            {canEdit && (
+          </div>
+        </td>
+
+        {/* Edit */}
+        <td className="px-3 py-3">
+          {canEdit && (
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={onToggleExpand}
-                title="Ver / Editar"
+                title="Editar conductor"
                 className={`p-1.5 rounded-lg border transition-all ${
                   expanded
                     ? 'border-accent bg-accent/5 text-accent'
                     : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
                 }`}
               >
-                {expanded ? <EyeOff size={13} /> : <Eye size={13} />}
+                <PenLine size={12} />
               </button>
-            )}
-            {canEdit && (
-              <button type="button" onClick={onRemove}
-                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
-                <Trash2 size={13} />
+              <button
+                type="button"
+                onClick={onRemove}
+                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
+              >
+                <Trash2 size={12} />
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </td>
       </tr>
 
       {/* Expandable edit form */}
       {expanded && (
         <tr className="bg-slate-50">
-          <td colSpan={6} className="px-4 py-4">
+          <td colSpan={5} className="px-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Basic data */}
               <div className="space-y-2">
                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Conductor</p>
                 <input
@@ -340,7 +328,8 @@ function DriverRow({
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <div>
                     <label className="text-[9px] text-gray-400 block mb-0.5">Venc. C.I.</label>
-                    <input type="date"
+                    <input
+                      type="date"
                       value={draftGov.id_expiry ?? ''}
                       onChange={e => setDraftGov(v => ({ ...v, id_expiry: e.target.value || null }))}
                       className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
@@ -348,7 +337,8 @@ function DriverRow({
                   </div>
                   <div>
                     <label className="text-[9px] text-gray-400 block mb-0.5">Venc. Licencia</label>
-                    <input type="date"
+                    <input
+                      type="date"
                       value={draftGov.license_expiry ?? ''}
                       onChange={e => setDraftGov(v => ({ ...v, license_expiry: e.target.value || null }))}
                       className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
@@ -357,7 +347,6 @@ function DriverRow({
                 </div>
               </div>
 
-              {/* Doc status */}
               <div>
                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Documentación</p>
                 <div className="space-y-1.5">
@@ -378,14 +367,18 @@ function DriverRow({
             <div className="flex gap-2 mt-3">
               <button
                 type="button"
-                onClick={handleSave} disabled={saving}
+                onClick={handleSave}
+                disabled={saving}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                 Guardar
               </button>
-              <button type="button" onClick={onToggleExpand}
-                className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50">
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50"
+              >
                 Cancelar
               </button>
             </div>
@@ -407,7 +400,7 @@ function VehicleRow({
   onPatch: (body: { type?: string; plate?: string; governance?: VehicleGovernance }) => Promise<void>
   onRemove: () => Promise<void>
 }) {
-  const [draft, setDraft]     = useState({ type: vehicle.type, plate: vehicle.plate })
+  const [draft, setDraft]       = useState({ type: vehicle.type, plate: vehicle.plate })
   const [draftGov, setDraftGov] = useState<Partial<VehicleGovernance>>({
     circ_permit_expiry:     vehicle.governance?.circ_permit_expiry     ?? null,
     tech_inspection_expiry: vehicle.governance?.tech_inspection_expiry ?? null,
@@ -443,8 +436,8 @@ function VehicleRow({
     setSaving(true); setErr(null)
     try {
       await onPatch({
-        type:  draft.type,
-        plate: draft.plate,
+        type:       draft.type,
+        plate:      draft.plate,
         governance: { ...(vehicle.governance ?? {}), ...draftGov } as VehicleGovernance,
       })
       onToggleExpand()
@@ -489,12 +482,12 @@ function VehicleRow({
           </div>
         </td>
 
-        {/* Estado docs */}
+        {/* Documentación */}
         <td className="px-4 py-3">
           <div className="flex flex-wrap gap-1">
             {VEHICLE_DOC_LABELS.map(({ key, label }) => {
               const val = vehicle.governance?.[key] as ComplianceStatus | null
-              if (!val) return null
+              if (!val || val === 'n_a') return null
               const { cls } = COMPLIANCE_CFG[val]
               return (
                 <span key={key} title={label} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>
@@ -505,30 +498,31 @@ function VehicleRow({
           </div>
         </td>
 
-        {/* Acciones */}
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            {canEdit && (
+        {/* Edit */}
+        <td className="px-3 py-3">
+          {canEdit && (
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={onToggleExpand}
-                title="Ver / Editar"
+                title="Editar tracto"
                 className={`p-1.5 rounded-lg border transition-all ${
                   expanded
                     ? 'border-accent bg-accent/5 text-accent'
                     : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
                 }`}
               >
-                {expanded ? <EyeOff size={13} /> : <Eye size={13} />}
+                <PenLine size={12} />
               </button>
-            )}
-            {canEdit && (
-              <button type="button" onClick={onRemove}
-                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
-                <Trash2 size={13} />
+              <button
+                type="button"
+                onClick={onRemove}
+                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
+              >
+                <Trash2 size={12} />
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </td>
       </tr>
 
@@ -538,14 +532,14 @@ function VehicleRow({
           <td colSpan={4} className="px-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Vehículo</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Tracto</p>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Tipo</label>
                     <input
                       value={draft.type}
                       onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
-                      placeholder="Semi, etc."
+                      placeholder="Tractocamión, etc."
                       className="w-full text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
                     />
                   </div>
@@ -562,7 +556,8 @@ function VehicleRow({
                   {VEHICLE_EXPIRY_LABELS.map(({ key, label }) => (
                     <div key={key}>
                       <label className="text-[9px] text-gray-400 block mb-0.5">{label}</label>
-                      <input type="date"
+                      <input
+                        type="date"
                         value={draftGov[key] ?? ''}
                         onChange={e => setDraftGov(v => ({ ...v, [key]: e.target.value || null }))}
                         className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
@@ -592,14 +587,18 @@ function VehicleRow({
             <div className="flex gap-2 mt-3">
               <button
                 type="button"
-                onClick={handleSave} disabled={saving}
+                onClick={handleSave}
+                disabled={saving}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                 Guardar
               </button>
-              <button type="button" onClick={onToggleExpand}
-                className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50">
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50"
+              >
                 Cancelar
               </button>
             </div>
@@ -640,15 +639,22 @@ function EditableField({
         {editing ? (
           <div className="flex items-center gap-2 flex-1">
             {options ? (
-              <select className="flex-1 text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                value={draft} onChange={e => setDraft(e.target.value)} autoFocus>
+              <select
+                className="flex-1 text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                autoFocus
+              >
                 {options.map(o => <option key={o}>{o}</option>)}
               </select>
             ) : (
-              <input className="flex-1 text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                value={draft} onChange={e => setDraft(e.target.value)}
+              <input
+                className="flex-1 text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false) }}
-                autoFocus />
+                autoFocus
+              />
             )}
             <button onClick={handleSave} disabled={saving}
               className="p-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 disabled:opacity-50">
@@ -668,14 +674,18 @@ function EditableField({
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 shrink-0">Protegido</span>
             )}
             {canEdit && (
-              <button onClick={() => { setDraft(value ?? ''); setEditing(true) }}
-                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 shrink-0">
+              <button
+                onClick={() => { setDraft(value ?? ''); setEditing(true) }}
+                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 shrink-0"
+              >
                 <PenLine size={13} />
               </button>
             )}
             {isProtected && canEdit && (
-              <button onClick={async () => { setSaving(true); try { await onReset(field) } finally { setSaving(false) } }}
-                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-amber-500 hover:border-amber-300 shrink-0">
+              <button
+                onClick={async () => { setSaving(true); try { await onReset(field) } finally { setSaving(false) } }}
+                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-amber-500 hover:border-amber-300 shrink-0"
+              >
                 {saving ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
               </button>
             )}
@@ -683,6 +693,88 @@ function EditableField({
         )}
       </div>
       {fieldErr && <p className="text-xs text-red-500 mt-1 pl-[9.5rem]">{fieldErr}</p>}
+    </div>
+  )
+}
+
+// ── Company Docs panel (inline in header) ─────────────────────────
+function CompanyDocsPanel({
+  tp, canEdit, onUpdate,
+}: {
+  tp: TransporterProfile
+  canEdit: boolean
+  onUpdate: (updated: TransporterProfile) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const id = tp.id
+
+  const hasAnyDoc = COMPANY_DOC_LABELS.some(
+    ({ key }) => tp.company_governance?.[key] != null
+  )
+
+  const okCount      = COMPANY_DOC_LABELS.filter(({ key }) => tp.company_governance?.[key] === 'ok').length
+  const pendingCount = COMPANY_DOC_LABELS.filter(({ key }) => {
+    const v = tp.company_governance?.[key]
+    return v === 'pendiente' || v === 'actualizar'
+  }).length
+
+  return (
+    <div className="border-t border-border/60 mt-4 pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors w-full"
+      >
+        <ChevronDown
+          size={13}
+          className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+        <span className="font-semibold uppercase tracking-wide text-[10px]">Documentos de la Empresa</span>
+        <span className="flex items-center gap-1.5 ml-1">
+          {okCount > 0 && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">
+              {okCount} OK
+            </span>
+          )}
+          {pendingCount > 0 && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
+              {pendingCount} pendiente{pendingCount > 1 ? 's' : ''}
+            </span>
+          )}
+          {!hasAnyDoc && (
+            <span className="text-[10px] text-gray-300">sin datos</span>
+          )}
+          {tp.company_governance?.avance_total != null && (
+            <span className="text-[10px] text-gray-400 font-mono ml-1">
+              {tp.company_governance.avance_total.toFixed(0)}% avance
+            </span>
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          {COMPANY_DOC_LABELS.map(({ key, label }) => {
+            const val = tp.company_governance?.[key] as ComplianceStatus | null ?? null
+            return (
+              <div key={key} className="bg-gray-50 border border-border/60 rounded-lg p-2 text-center">
+                <p className="text-[9px] text-gray-400 uppercase font-bold mb-1.5 leading-tight">{label}</p>
+                {canEdit ? (
+                  <GovernanceSelect
+                    value={val}
+                    onChange={async (newVal) => {
+                      const newGov = { ...(tp.company_governance ?? {}), [key]: newVal } as CompanyGovernance
+                      onUpdate(await transportersApi.patch(id, { company_governance: newGov }))
+                    }}
+                  />
+                ) : (
+                  <GovernanceStatusBadge status={val} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -702,13 +794,13 @@ export default function EmpresaDetailPage() {
   const [driverQ,         setDriverQ]         = useState('')
   const [vehicleQ,        setVehicleQ]        = useState('')
 
-  const [addDriverOpen, setAddDriverOpen]   = useState(false)
-  const [driverForm, setDriverForm]         = useState({ rut: '', name: '' })
+  const [addDriverOpen,  setAddDriverOpen]  = useState(false)
+  const [driverForm,     setDriverForm]     = useState({ rut: '', name: '' })
   const [addVehicleOpen, setAddVehicleOpen] = useState(false)
-  const [vehicleForm, setVehicleForm]       = useState({ type: '', plate: '' })
+  const [vehicleForm,    setVehicleForm]    = useState({ type: '', plate: '' })
   const [addTrailerOpen, setAddTrailerOpen] = useState(false)
-  const [trailerForm, setTrailerForm]       = useState({ plate: '' })
-  const [submitting, setSubmitting]         = useState(false)
+  const [trailerForm,    setTrailerForm]    = useState({ plate: '' })
+  const [submitting,     setSubmitting]     = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -812,12 +904,12 @@ export default function EmpresaDetailPage() {
     </div>
   )
 
-  const protected_ = new Set(tp.manually_edited_fields)
-  const initColor  = getInitialColor(tp.business_name)
-  const initials   = getInitials(tp.business_name)
+  const protected_      = new Set(tp.manually_edited_fields)
+  const initColor       = getInitialColor(tp.business_name)
+  const initials        = getInitials(tp.business_name)
 
-  const driverAlerts  = tp.drivers.filter(d => getDriverAlertStatus(d) !== 'ok')
-  const vehicleAlerts = tp.vehicles.filter(v => getVehicleAlertStatus(v) !== 'ok')
+  const driverAlerts    = tp.drivers.filter(d => getDriverAlertStatus(d) !== 'ok')
+  const vehicleAlerts   = tp.vehicles.filter(v => getVehicleAlertStatus(v) !== 'ok')
   const expiredDrivers  = driverAlerts.filter(d => getDriverAlertStatus(d) === 'expired').length
   const expiredVehicles = vehicleAlerts.filter(v => getVehicleAlertStatus(v) === 'expired').length
 
@@ -825,18 +917,18 @@ export default function EmpresaDetailPage() {
     !driverQ || d.name.toLowerCase().includes(driverQ.toLowerCase()) || d.rut.includes(driverQ)
   )
   const filteredVehicles = tp.vehicles.filter(v =>
-    !vehicleQ || v.plate.toLowerCase().includes(vehicleQ.toLowerCase()) || (v.type ?? '').toLowerCase().includes(vehicleQ.toLowerCase())
+    !vehicleQ ||
+    v.plate.toLowerCase().includes(vehicleQ.toLowerCase()) ||
+    (v.type ?? '').toLowerCase().includes(vehicleQ.toLowerCase())
   )
 
-  const TABS: { key: Tab; label: string; count?: number }[] = [
+  const TABS: { key: Tab; label: string; count: number }[] = [
     { key: 'conductores', label: 'Conductores', count: tp.drivers.length },
     { key: 'tractos',     label: 'Tractos',     count: tp.vehicles.length },
-    { key: 'gobernanza',  label: 'Gobernanza Empresa' },
   ]
 
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
-
       {editOpen && (
         <div className="fixed inset-0 bg-black/20 z-40 md:hidden" onClick={() => setEditOpen(false)} />
       )}
@@ -850,22 +942,22 @@ export default function EmpresaDetailPage() {
 
       {/* Company Header */}
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex items-start gap-4 flex-1 min-w-0">
             <div
               className="w-12 h-12 md:w-14 md:h-14 rounded-xl flex items-center justify-center font-bold text-lg md:text-xl text-white shrink-0 shadow-sm"
               style={{ backgroundColor: initColor }}
             >
               {initials}
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">
                 {tp.business_name ?? '—'}
               </h1>
-              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {tp.rut && (
                   <p className="text-xs text-gray-500">
-                    RUT: <span className="font-mono text-gray-700 bg-gray-50 px-1 rounded border border-border/60">{tp.rut}</span>
+                    RUT: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{tp.rut}</span>
                   </p>
                 )}
                 {tp.account_stage && (
@@ -873,34 +965,36 @@ export default function EmpresaDetailPage() {
                     {tp.account_stage}
                   </span>
                 )}
+                {(expiredDrivers > 0 || expiredVehicles > 0) && (
+                  <span className="inline-flex items-center gap-1 text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-2 py-0.5">
+                    <AlertTriangle size={11} />
+                    {expiredDrivers > 0 && `${expiredDrivers} cond.`}
+                    {expiredDrivers > 0 && expiredVehicles > 0 && ' · '}
+                    {expiredVehicles > 0 && `${expiredVehicles} veh.`}
+                    {' '}vencido{expiredDrivers + expiredVehicles > 1 ? 's' : ''}
+                  </span>
+                )}
+                {driverAlerts.length === 0 && vehicleAlerts.length === 0 && tp.drivers.length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 border border-green-100 rounded-lg px-2 py-0.5">
+                    <ShieldCheck size={11} />
+                    Documentación al día
+                  </span>
+                )}
               </div>
+
+              {/* Company docs — inline collapsible */}
+              <CompanyDocsPanel tp={tp} canEdit={canEdit} onUpdate={setTp} />
             </div>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            {(expiredDrivers > 0 || expiredVehicles > 0) && (
-              <div className="flex items-center gap-1.5 text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">
-                <AlertTriangle size={13} />
-                {expiredDrivers > 0 && `${expiredDrivers} cond. vencido${expiredDrivers > 1 ? 's' : ''}`}
-                {expiredDrivers > 0 && expiredVehicles > 0 && ', '}
-                {expiredVehicles > 0 && `${expiredVehicles} veh. vencido${expiredVehicles > 1 ? 's' : ''}`}
-              </div>
-            )}
-            {driverAlerts.length === 0 && vehicleAlerts.length === 0 && tp.drivers.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-green-600 bg-green-50 border border-green-100 rounded-lg px-3 py-1.5">
-                <ShieldCheck size={13} />
-                Documentación al día
-              </div>
-            )}
-            {canEdit && (
-              <button
-                onClick={() => setEditOpen(true)}
-                className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition border border-border shadow-sm"
-              >
-                Editar Empresa
-              </button>
-            )}
-          </div>
+          {canEdit && (
+            <button
+              onClick={() => setEditOpen(true)}
+              className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition border border-border shadow-sm shrink-0"
+            >
+              Editar Empresa
+            </button>
+          )}
         </div>
       </div>
 
@@ -919,13 +1013,11 @@ export default function EmpresaDetailPage() {
               }`}
             >
               {t.label}
-              {t.count !== undefined && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-                  activeTab === t.key ? 'bg-accent/10 text-accent' : 'bg-gray-200 text-gray-500'
-                }`}>
-                  {t.count}
-                </span>
-              )}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                activeTab === t.key ? 'bg-accent/10 text-accent' : 'bg-gray-200 text-gray-500'
+              }`}>
+                {t.count}
+              </span>
             </button>
           ))}
         </div>
@@ -933,7 +1025,6 @@ export default function EmpresaDetailPage() {
         {/* ── CONDUCTORES TAB ── */}
         {activeTab === 'conductores' && (
           <div>
-            {/* Toolbar */}
             <div className="px-5 py-3 border-b border-border bg-white flex items-center justify-between gap-3 flex-wrap">
               <div className="relative">
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -955,25 +1046,33 @@ export default function EmpresaDetailPage() {
                 {canEdit && (
                   <button
                     onClick={() => setAddDriverOpen(v => !v)}
-                    className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition flex items-center gap-1"
+                    className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
                   >
-                    + Nuevo Conductor
+                    + Conductor
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Add form */}
             {addDriverOpen && (
               <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2">
-                <input placeholder="RUT" value={driverForm.rut}
+                <input
+                  placeholder="RUT"
+                  value={driverForm.rut}
                   onChange={e => setDriverForm(v => ({ ...v, rut: e.target.value }))}
-                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32" />
-                <input placeholder="Nombre completo" value={driverForm.name}
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32"
+                />
+                <input
+                  placeholder="Nombre completo"
+                  value={driverForm.name}
                   onChange={e => setDriverForm(v => ({ ...v, name: e.target.value }))}
-                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1" />
-                <button onClick={handleAddDriver} disabled={submitting || !driverForm.rut || !driverForm.name}
-                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1"
+                />
+                <button
+                  onClick={handleAddDriver}
+                  disabled={submitting || !driverForm.rut || !driverForm.name}
+                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+                >
                   {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
                 </button>
                 <button onClick={() => setAddDriverOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
@@ -982,37 +1081,33 @@ export default function EmpresaDetailPage() {
               </div>
             )}
 
-            {/* Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: 860 }}>
+              <table className="w-full text-sm" style={{ minWidth: 760 }}>
                 <thead>
                   <tr className="bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wide">
-                    <th className="px-4 py-3 text-left">Nombres y Apellidos · RUT</th>
-                    <th className="px-4 py-3 text-left">EETT · RUT EETT</th>
+                    <th className="px-4 py-3 text-left">Conductor</th>
                     <th className="px-4 py-3 text-left">Vencimientos</th>
                     <th className="px-4 py-3 text-left">Documentación</th>
                     <th className="px-4 py-3 text-left">GC Habilitado</th>
-                    <th className="px-4 py-3 text-left w-32">Acción</th>
+                    <th className="px-3 py-3 w-20"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
                   {filteredDrivers.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-300">
-                        {driverQ ? 'Sin resultados para la búsqueda' : 'Sin conductores registrados'}
+                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-300">
+                        {driverQ ? 'Sin resultados' : 'Sin conductores registrados'}
                       </td>
                     </tr>
                   )}
-                  {filteredDrivers.map((d, i) => (
+                  {filteredDrivers.map(d => (
                     <DriverRow
                       key={d.id}
                       driver={d}
-                      companyName={tp.business_name}
-                      companyRut={tp.rut}
                       canEdit={canEdit}
                       expanded={expandedDriver === d.id}
                       onToggleExpand={() => setExpandedDriver(prev => prev === d.id ? null : d.id)}
-                      onPatch={(body) => handlePatchDriver(d.id, body)}
+                      onPatch={body => handlePatchDriver(d.id, body)}
                       onRemove={() => handleRemoveDriver(d.id)}
                       onToggleWmt={() => handleToggleWmt(d)}
                     />
@@ -1026,7 +1121,6 @@ export default function EmpresaDetailPage() {
         {/* ── TRACTOS TAB ── */}
         {activeTab === 'tractos' && (
           <div>
-            {/* Toolbar */}
             <div className="px-5 py-3 border-b border-border bg-white flex items-center justify-between gap-3 flex-wrap">
               <div className="relative">
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -1046,25 +1140,35 @@ export default function EmpresaDetailPage() {
                   </span>
                 )}
                 {canEdit && (
-                  <button onClick={() => setAddVehicleOpen(v => !v)}
-                    className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition">
-                    + Nuevo Tracto
+                  <button
+                    onClick={() => setAddVehicleOpen(v => !v)}
+                    className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
+                  >
+                    + Tracto
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Add form */}
             {addVehicleOpen && (
               <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2">
-                <input placeholder="Tipo (ej: Semi)" value={vehicleForm.type}
+                <input
+                  placeholder="Tipo"
+                  value={vehicleForm.type}
                   onChange={e => setVehicleForm(v => ({ ...v, type: e.target.value }))}
-                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-28" />
-                <input placeholder="Patente" value={vehicleForm.plate}
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-28"
+                />
+                <input
+                  placeholder="Patente"
+                  value={vehicleForm.plate}
                   onChange={e => setVehicleForm(v => ({ ...v, plate: e.target.value }))}
-                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-24 font-mono uppercase" />
-                <button onClick={handleAddVehicle} disabled={submitting || !vehicleForm.plate}
-                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-24 font-mono uppercase"
+                />
+                <button
+                  onClick={handleAddVehicle}
+                  disabled={submitting || !vehicleForm.plate}
+                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+                >
                   {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
                 </button>
                 <button onClick={() => setAddVehicleOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
@@ -1073,15 +1177,14 @@ export default function EmpresaDetailPage() {
               </div>
             )}
 
-            {/* Vehicles table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: 700 }}>
+              <table className="w-full text-sm" style={{ minWidth: 620 }}>
                 <thead>
                   <tr className="bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wide">
-                    <th className="px-4 py-3 text-left">Patente · Tipo</th>
+                    <th className="px-4 py-3 text-left">Tracto</th>
                     <th className="px-4 py-3 text-left">Vencimientos</th>
                     <th className="px-4 py-3 text-left">Documentación</th>
-                    <th className="px-4 py-3 text-left w-28">Acción</th>
+                    <th className="px-3 py-3 w-20"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -1092,14 +1195,14 @@ export default function EmpresaDetailPage() {
                       </td>
                     </tr>
                   )}
-                  {filteredVehicles.map((v) => (
+                  {filteredVehicles.map(v => (
                     <VehicleRow
                       key={v.id}
                       vehicle={v}
                       canEdit={canEdit}
                       expanded={expandedVehicle === v.id}
                       onToggleExpand={() => setExpandedVehicle(prev => prev === v.id ? null : v.id)}
-                      onPatch={(body) => handlePatchVehicle(v.id, body)}
+                      onPatch={body => handlePatchVehicle(v.id, body)}
                       onRemove={() => handleRemoveVehicle(v.id)}
                     />
                   ))}
@@ -1107,112 +1210,63 @@ export default function EmpresaDetailPage() {
               </table>
             </div>
 
-            {/* Ramplas (simple list) */}
-            {tp.trailers.length > 0 && (
-              <div className="border-t border-border p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                    Remolques / Ramplas ({tp.trailers.length})
-                  </p>
-                  {canEdit && (
-                    <button onClick={() => setAddTrailerOpen(v => !v)}
-                      className="text-xs bg-white hover:bg-gray-50 text-gray-700 font-bold px-3 py-1.5 rounded-lg shadow-sm transition border border-border">
-                      + Rampla
-                    </button>
-                  )}
-                </div>
-                {addTrailerOpen && (
-                  <div className="flex items-center gap-2 mb-3">
-                    <input placeholder="Patente" value={trailerForm.plate}
-                      onChange={e => setTrailerForm({ plate: e.target.value })}
-                      className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32 font-mono uppercase" />
-                    <button onClick={handleAddTrailer} disabled={submitting || !trailerForm.plate}
-                      className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
-                      {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-                    </button>
-                    <button onClick={() => setAddTrailerOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                      <X size={14} />
-                    </button>
-                  </div>
+            {/* Ramplas */}
+            <div className="border-t border-border px-5 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                  Remolques / Ramplas ({tp.trailers.length})
+                </p>
+                {canEdit && (
+                  <button
+                    onClick={() => setAddTrailerOpen(v => !v)}
+                    className="text-xs text-gray-600 font-bold px-3 py-1.5 rounded-lg border border-border hover:bg-gray-50 transition"
+                  >
+                    + Rampla
+                  </button>
                 )}
+              </div>
+              {addTrailerOpen && (
+                <div className="flex items-center gap-2 mb-3">
+                  <input
+                    placeholder="Patente"
+                    value={trailerForm.plate}
+                    onChange={e => setTrailerForm({ plate: e.target.value })}
+                    className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32 font-mono uppercase"
+                  />
+                  <button
+                    onClick={handleAddTrailer}
+                    disabled={submitting || !trailerForm.plate}
+                    className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+                  >
+                    {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
+                  </button>
+                  <button onClick={() => setAddTrailerOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+              {tp.trailers.length === 0 ? (
+                <p className="text-xs text-gray-300">Sin ramplas registradas</p>
+              ) : (
                 <div className="flex flex-wrap gap-2">
                   {tp.trailers.map(t => (
-                    <div key={t.id} className="flex items-center gap-2 bg-gray-50 border border-border rounded-xl px-3 py-2">
+                    <div key={t.id} className="flex items-center gap-2 bg-gray-50 border border-border rounded-xl px-3 py-1.5">
                       <span className="text-sm font-bold font-mono text-gray-700">{t.plate}</span>
                       {canEdit && (
-                        <button onClick={() => handleRemoveTrailer(t.id)}
-                          className="text-gray-300 hover:text-red-400 transition-colors">
+                        <button onClick={() => handleRemoveTrailer(t.id)} className="text-gray-300 hover:text-red-400 transition-colors">
                           <Trash2 size={12} />
                         </button>
                       )}
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-            {tp.trailers.length === 0 && canEdit && (
-              <div className="border-t border-border px-5 py-3 flex items-center justify-between">
-                <span className="text-xs text-gray-300">Sin ramplas registradas</span>
-                <button onClick={() => setAddTrailerOpen(v => !v)}
-                  className="text-xs bg-white hover:bg-gray-50 text-gray-700 font-bold px-3 py-1.5 rounded-lg shadow-sm transition border border-border">
-                  + Rampla
-                </button>
-              </div>
-            )}
-            {addTrailerOpen && tp.trailers.length === 0 && (
-              <div className="px-5 pb-3 flex items-center gap-2">
-                <input placeholder="Patente" value={trailerForm.plate}
-                  onChange={e => setTrailerForm({ plate: e.target.value })}
-                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32 font-mono uppercase" />
-                <button onClick={handleAddTrailer} disabled={submitting || !trailerForm.plate}
-                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
-                  {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-                </button>
-                <button onClick={() => setAddTrailerOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                  <X size={14} />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── GOBERNANZA TAB ── */}
-        {activeTab === 'gobernanza' && (
-          <div className="p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-bold text-slate-800">Gobernanza Empresa</h4>
-              {tp.company_governance?.avance_total != null && (
-                <span className="text-xs text-gray-500 font-mono">
-                  Avance: <span className="font-bold text-slate-700">{tp.company_governance.avance_total.toFixed(0)}%</span>
-                </span>
               )}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-              {GOVERNANCE_DOC_LABELS.map(({ key, label }) => (
-                <div key={key} className="bg-gray-50 border border-border rounded-xl p-3 text-center">
-                  <p className="text-[9px] text-gray-400 uppercase font-bold mb-2">{label}</p>
-                  {canEdit ? (
-                    <GovernanceSelect
-                      value={tp.company_governance?.[key] as ComplianceStatus | null ?? null}
-                      onChange={async (val) => {
-                        const newGov = { ...(tp.company_governance ?? {}), [key]: val } as CompanyGovernance
-                        setTp(await transportersApi.patch(id, { company_governance: newGov }))
-                      }}
-                    />
-                  ) : (
-                    <GovernanceStatusBadge status={tp.company_governance?.[key] as ComplianceStatus | null ?? null} />
-                  )}
-                </div>
-              ))}
-            </div>
-            {!tp.company_governance && (
-              <p className="text-xs text-gray-300 text-center py-4">Sin datos de gobernanza registrados</p>
-            )}
           </div>
         )}
       </div>
 
-      {/* ── Info / Edit Slide-Over ── */}
+      {/* ── Edit Slide-Over ── */}
       <div
         className={`
           fixed md:absolute inset-y-0 right-0 z-50
@@ -1280,12 +1334,6 @@ export default function EmpresaDetailPage() {
               </div>
             </div>
           </div>
-
-          {tp.edited_at && (
-            <p className="text-[10px] text-gray-300 pt-2">
-              Última edición: {new Date(tp.edited_at).toLocaleString('es-CL')}
-            </p>
-          )}
         </div>
       </div>
     </div>
