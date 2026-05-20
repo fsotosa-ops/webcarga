@@ -200,6 +200,27 @@ async def patch_trip(
                 new_link_id, trip_id,
             )
 
+    # driver_phone goes to trip_fleet_links
+    if "driver_phone" in data:
+        new_phone = data.pop("driver_phone")
+        link_id = await pool.fetchval("SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id)
+        if link_id:
+            await pool.execute(
+                "UPDATE app.trip_fleet_links SET driver_phone = $1, updated_at = NOW() WHERE id = $2",
+                new_phone, link_id,
+            )
+        else:
+            new_link_id = await pool.fetchval(
+                """INSERT INTO app.trip_fleet_links
+                   (trip_id, driver_phone, link_source, created_by)
+                   VALUES ($1, $2, 'manual', $3) RETURNING id""",
+                trip_id, new_phone, user["sub"],
+            )
+            await pool.execute(
+                "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
+                new_link_id, trip_id,
+            )
+
     # Remaining fields go to app.trips
     bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
     str_fields  = ("estado_manual", "observaciones", "comentarios")

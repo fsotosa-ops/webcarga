@@ -45,6 +45,7 @@ export type TripPatch = {
   observaciones?:  string
   comentarios?:    string
   driver_name?:    string
+  driver_phone?:   string
 }
 
 export type FleetLinkPayload = {

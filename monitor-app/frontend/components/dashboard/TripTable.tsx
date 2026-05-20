@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Check, Loader2, PenLine, X } from 'lucide-react'
 import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
@@ -189,6 +189,112 @@ function ConductorCell({
   )
 }
 
+// Phones stored as JSON array string in driver_phone column
+function parsePhones(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const p = JSON.parse(raw)
+    if (Array.isArray(p)) return p.filter(Boolean)
+  } catch { /* plain string */ }
+  return [raw]
+}
+
+function PhoneTagCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }) {
+  const [editing, setEditing]   = useState(false)
+  const [draft, setDraft]       = useState<string[]>(() => parsePhones(trip.driver_phone))
+  const [input, setInput]       = useState('')
+  const [saving, setSaving]     = useState(false)
+
+  useEffect(() => { setDraft(parsePhones(trip.driver_phone)) }, [trip.driver_phone])
+
+  const addPhone = () => {
+    const v = input.trim().replace(/,/g, '').replace(/\s/g, '')
+    if (v && !draft.includes(v)) setDraft(p => [...p, v])
+    setInput('')
+  }
+
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSaving(true)
+    try {
+      const updated = await tripsApi.patch(trip.id, { driver_phone: JSON.stringify(draft) })
+      onSaved(updated)
+      setEditing(false)
+    } catch { /* ignore */ } finally { setSaving(false) }
+  }
+
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDraft(parsePhones(trip.driver_phone))
+    setInput('')
+    setEditing(false)
+  }
+
+  const phones = parsePhones(trip.driver_phone)
+
+  if (editing) {
+    return (
+      <div className="space-y-1 min-w-[130px]" onClick={e => e.stopPropagation()}>
+        {draft.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {draft.map(p => (
+              <span key={p} className="flex items-center gap-0.5 text-[9px] font-mono bg-accent/10 text-accent px-1.5 py-0.5 rounded-full">
+                {p}
+                <button type="button" onClick={() => setDraft(d => d.filter(x => x !== p))}
+                  className="hover:text-red-400 ml-0.5 leading-none">
+                  <X size={8} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <input
+          autoFocus
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addPhone() }
+            if (e.key === 'Escape') handleCancel(e as unknown as React.MouseEvent)
+          }}
+          placeholder="+56912345678"
+          className="text-[11px] font-mono border border-border rounded px-2 py-1 w-full focus:outline-none focus:ring-1 focus:ring-accent/30"
+        />
+        <div className="flex items-center gap-1">
+          {input.trim() && (
+            <button type="button" onClick={addPhone}
+              className="text-[10px] text-accent hover:underline">+ agregar</button>
+          )}
+          <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent shrink-0">
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+          </button>
+          <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="group cursor-pointer"
+      onClick={e => { e.stopPropagation(); setDraft(parsePhones(trip.driver_phone)); setEditing(true) }}>
+      {phones.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {phones.map(p => (
+            <a key={p} href={`tel:${p}`} onClick={e => e.stopPropagation()}
+              className="text-[10px] font-mono text-accent hover:underline block">
+              {p}
+            </a>
+          ))}
+        </div>
+      ) : (
+        <span className="text-[10px] text-gray-300 group-hover:text-accent/50 transition-colors">—</span>
+      )}
+      <PenLine size={9} className="text-gray-200 group-hover:text-accent/60 mt-0.5 transition-colors" />
+    </div>
+  )
+}
+
 interface Props {
   trips:         Trip[]
   selectedId:    string | null
@@ -302,17 +408,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
 
                 {/* TELÉFONO */}
                 <td className="px-3 py-2.5">
-                  {trip.driver_phone ? (
-                    <a
-                      href={`tel:${trip.driver_phone}`}
-                      onClick={e => e.stopPropagation()}
-                      className="text-[11px] font-mono text-accent hover:underline"
-                    >
-                      {trip.driver_phone}
-                    </a>
-                  ) : (
-                    <span className="text-[10px] text-gray-300">—</span>
-                  )}
+                  <PhoneTagCell trip={trip} onSaved={onSaved} />
                 </td>
 
                 {/* EETT — solo empresa vinculada */}
