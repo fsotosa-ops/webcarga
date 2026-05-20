@@ -1,14 +1,32 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 const BACKEND = process.env.FASTAPI_URL ?? 'http://localhost:8001'
+
+async function getServerToken(): Promise<string> {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll() {},
+      },
+    }
+  )
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ?? ''
+}
 
 async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {
   const { path } = await params
   const url = `${BACKEND}/api/v1/${path.join('/')}${req.nextUrl.search}`
 
+  const token = await getServerToken()
   const headers: Record<string, string> = {}
-  const auth = req.headers.get('authorization')
-  if (auth) headers['Authorization'] = auth
+  if (token) headers['Authorization'] = `Bearer ${token}`
   const ct = req.headers.get('content-type')
   if (ct) headers['Content-Type'] = ct
 
