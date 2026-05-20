@@ -1,7 +1,7 @@
 import type { Trip } from '@/lib/types'
 import { createBrowserClient } from '@supabase/ssr'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? ''
+const BASE = ''
 
 async function getToken(): Promise<string> {
   const sb = createBrowserClient(

@@ -36,20 +36,6 @@ const TMS_LABELS: Record<string, string> = {
   sodimac:    'SDM',
 }
 
-function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] text-gray-500 font-bold uppercase">{label}</span>
-      <button
-        type="button"
-        onClick={() => onChange(!value)}
-        className={`w-10 h-6 rounded-full relative transition-colors ${value ? 'bg-accent' : 'bg-gray-200'}`}
-      >
-        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${value ? 'left-5' : 'left-1'}`} />
-      </button>
-    </div>
-  )
-}
 
 function TransporterAssignSection({
   tripId,
@@ -62,14 +48,23 @@ function TransporterAssignSection({
 }) {
   const [query, setQuery]     = useState('')
   const [results, setResults] = useState<TransporterListItem[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchErr, setSearchErr] = useState<string | null>(null)
   const [saving, setSaving]   = useState(false)
 
   const search = useCallback(async (q: string) => {
-    if (q.length < 2) { setResults([]); return }
+    if (q.length < 2) { setResults([]); setSearchErr(null); return }
+    setSearching(true)
+    setSearchErr(null)
     try {
       const res = await transportersApi.list({ q, page: 1, limit: 8 })
       setResults(res.data)
-    } catch { /* ignore */ }
+    } catch (e) {
+      setSearchErr(e instanceof Error ? e.message : 'Error al buscar')
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
   }, [])
 
   const assign = async (profileId: string) => {
@@ -92,13 +87,21 @@ function TransporterAssignSection({
           TMS reporta: <span className="font-medium text-gray-600">{currentTransporter}</span>
         </p>
       )}
-      <input
-        type="text"
-        placeholder="Buscar y vincular empresa…"
-        value={query}
-        onChange={e => { setQuery(e.target.value); search(e.target.value) }}
-        className="w-full text-xs border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30"
-      />
+      <div className="relative">
+        <input
+          type="text"
+          placeholder="Buscar empresa por nombre o RUT…"
+          value={query}
+          onChange={e => { setQuery(e.target.value); search(e.target.value) }}
+          className="w-full text-xs border border-border rounded-lg px-3 py-2 pr-7 focus:outline-none focus:ring-2 focus:ring-accent/30"
+        />
+        {searching && (
+          <Loader2 size={12} className="animate-spin text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
+        )}
+      </div>
+      {searchErr && (
+        <p className="text-[10px] text-red-500 px-1">{searchErr}</p>
+      )}
       {results.length > 0 && (
         <ul className="border border-border rounded-lg divide-y divide-border overflow-hidden bg-white shadow-sm">
           {results.map(tp => (
@@ -119,6 +122,9 @@ function TransporterAssignSection({
           ))}
         </ul>
       )}
+      {query.length >= 2 && !searching && results.length === 0 && !searchErr && (
+        <p className="text-[10px] text-gray-400 px-1">Sin resultados para "{query}"</p>
+      )}
     </div>
   )
 }
@@ -137,10 +143,6 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
   useEffect(() => {
     if (!trip) return
     setForm({
-      activo:         trip.activo         ?? false,
-      trabajando:     trip.trabajando     ?? false,
-      asignado:       trip.asignado       ?? false,
-      primera_vuelta: trip.primera_vuelta ?? false,
       estado_manual:  trip.estado_manual  ?? '',
       observaciones:  trip.observaciones  ?? '',
       comentarios:    trip.comentarios    ?? '',
@@ -154,13 +156,9 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
     setErr(null)
     try {
       const payload: TripPatch = {
-        activo:         form.activo,
-        trabajando:     form.trabajando,
-        asignado:       form.asignado,
-        primera_vuelta: form.primera_vuelta,
-        estado_manual:  form.estado_manual  || undefined,
-        observaciones:  form.observaciones  || undefined,
-        comentarios:    form.comentarios    || undefined,
+        estado_manual: form.estado_manual || undefined,
+        observaciones: form.observaciones || undefined,
+        comentarios:   form.comentarios   || undefined,
       }
       const updated = await tripsApi.patch(trip.id, payload)
       onSaved(updated)
@@ -176,233 +174,227 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
   const currentStatus = trip?.estado_manual ?? trip?.current_status
   const statusColor = currentStatus ? STATUS_COLOR[currentStatus] : null
 
+  if (!isOpen || !trip) return null
+
   return (
     <>
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/20 z-40 md:hidden"
-          onClick={onClose}
-        />
-      )}
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
 
-      <div
-        className={`
-          fixed md:relative inset-y-0 right-0 z-50
-          w-full sm:w-[480px] md:w-[420px] lg:w-[460px]
-          bg-white border-l border-border flex flex-col shrink-0
-          transition-transform duration-300
-          ${isOpen ? 'translate-x-0' : 'translate-x-full md:hidden'}
-        `}
-      >
-        {trip && (
-          <>
-            {/* Header */}
-            <div className="px-5 py-4 bg-slate-900 flex items-start justify-between gap-3 shrink-0">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-base font-bold text-white truncate">
-                    {trip.tractor_plate ?? 'Sin patente'}
-                  </h3>
-                  {statusColor && (
-                    <span
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
-                      style={{ backgroundColor: statusColor.bg, color: statusColor.text }}
-                    >
-                      {currentStatus}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-[11px] text-white/50 truncate">
-                    {trip.driver_name ?? '—'}
-                    {trip.driver_rut && <span className="font-mono ml-1 opacity-70">· {trip.driver_rut}</span>}
-                  </p>
-                  {tmsLabel && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/60 shrink-0">
-                      {tmsLabel}
-                    </span>
-                  )}
-                  {trip.client_name && (
-                    <span className="text-[10px] text-white/40 truncate">{trip.client_name}</span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                className="text-white/50 hover:text-white transition-colors shrink-0 mt-0.5"
-              >
-                <X size={18} />
-              </button>
+      {/* Full-screen modal */}
+      <div className="fixed inset-0 z-50 flex flex-col bg-white md:inset-6 md:rounded-2xl md:shadow-2xl overflow-hidden">
+
+        {/* ── Header ──────────────────────────────────────────────── */}
+        <div className="bg-slate-900 px-6 py-4 flex items-start justify-between gap-4 shrink-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3 mb-1.5 flex-wrap">
+              <h2 className="text-lg font-bold text-white font-mono tracking-wide">
+                {trip.tractor_plate ?? 'Sin patente'}
+              </h2>
+              {statusColor && (
+                <span
+                  className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full shrink-0"
+                  style={{ backgroundColor: statusColor.bg, color: statusColor.text }}
+                >
+                  {currentStatus}
+                </span>
+              )}
+              {tmsLabel && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/60">
+                  {tmsLabel}
+                </span>
+              )}
             </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="text-sm text-white/70">
+                {trip.driver_name ?? '—'}
+                {trip.driver_rut && (
+                  <span className="font-mono ml-1.5 text-white/40 text-[11px]">{trip.driver_rut}</span>
+                )}
+              </p>
+              {trip.driver_phone && (
+                <a
+                  href={`tel:${trip.driver_phone}`}
+                  className="text-[11px] font-mono text-accent/80 hover:text-accent"
+                  onClick={e => e.stopPropagation()}
+                >
+                  {trip.driver_phone}
+                </a>
+              )}
+              {trip.client_name && (
+                <span className="text-[11px] text-white/35">{trip.client_name}</span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/50 hover:text-white transition-colors shrink-0 mt-1 p-1"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-            {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        {/* ── Body — 2-column on md+ ──────────────────────────────── */}
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row min-h-0">
 
-              {/* Stops timeline */}
-              {(trip.stops?.length ?? 0) > 0 && (
-                <section>
-                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-                    Paradas ({trip.stops.length})
-                  </h4>
-                  <div className="space-y-2">
-                    {trip.stops.map((stop, i) => (
-                      <div key={stop.stop_id ?? i} className="flex items-start gap-3">
-                        <div className={`w-1.5 h-1.5 rounded-full mt-2 shrink-0 ${
-                          stop.on_time_status === 'ON TIME' ? 'bg-green-400' : 'bg-amber-400'
-                        }`} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-slate-700 truncate">
-                            {stop.local ?? stop.destination_city ?? '—'}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            {stop.on_time_status && (
-                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                                stop.on_time_status === 'ON TIME'
-                                  ? 'bg-green-50 text-green-600'
-                                  : 'bg-amber-50 text-amber-600'
-                              }`}>
-                                {stop.on_time_status}
-                              </span>
-                            )}
-                            {stop.gps_arrival_date && (
-                              <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                                <Clock size={9} />
-                                {new Date(stop.gps_arrival_date).toLocaleString('es-CL', {
-                                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                                })}
-                              </span>
-                            )}
-                          </div>
+          {/* LEFT — info + stops + empresa */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 border-b md:border-b-0 md:border-r border-border/60">
+
+            {/* Trip metadata */}
+            <section className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'Fecha',  value: trip.planning_date
+                    ? new Date(trip.planning_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                    : '—' },
+                { label: 'Origen', value: trip.origin ?? '—' },
+                { label: 'Tipo carga', value: trip.cargo_type ?? '—' },
+                { label: 'EETT TMS',   value: trip.transporter_tms ?? '—' },
+              ].map(({ label, value }) => (
+                <div key={label}>
+                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
+                  <p className="text-sm text-slate-700">{value}</p>
+                </div>
+              ))}
+            </section>
+
+            {/* Paradas */}
+            {(trip.stops?.length ?? 0) > 0 && (
+              <section>
+                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+                  Paradas ({trip.stops.length})
+                </h4>
+                <div className="space-y-2.5">
+                  {trip.stops.map((stop, i) => (
+                    <div key={stop.stop_id ?? i} className="flex items-start gap-3">
+                      <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                        stop.on_time_status === 'ON TIME' ? 'bg-green-400' : 'bg-amber-400'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700">
+                          {stop.local ?? stop.destination_city ?? '—'}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {stop.on_time_status && (
+                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                              stop.on_time_status === 'ON TIME'
+                                ? 'bg-green-50 text-green-600'
+                                : 'bg-amber-50 text-amber-600'
+                            }`}>
+                              {stop.on_time_status}
+                            </span>
+                          )}
+                          {stop.gps_arrival_date && (
+                            <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                              <Clock size={9} />
+                              {new Date(stop.gps_arrival_date).toLocaleString('es-CL', {
+                                day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                              })}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    ))}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Empresa de Transporte */}
+            <section>
+              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <Building2 size={10} /> Empresa de Transporte
+              </h4>
+              {trip.transporter_profile_id ? (
+                <div className="flex items-center justify-between bg-accent/5 rounded-xl px-4 py-3 border border-accent/15">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{trip.transporter ?? '—'}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{trip.tractor_plate ?? ''}</p>
                   </div>
-                </section>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await tripsApi.removeFleetLink(trip.id)
+                      onSaved({ ...trip, transporter_profile_id: null, fleet_link_id: null })
+                    }}
+                    className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                  >
+                    Desvincular
+                  </button>
+                </div>
+              ) : (
+                <TransporterAssignSection
+                  tripId={trip.id}
+                  currentTransporter={trip.transporter}
+                  onAssigned={onSaved}
+                />
+              )}
+            </section>
+          </div>
+
+          {/* RIGHT — bitácora */}
+          <div className="w-full md:w-[380px] shrink-0 overflow-y-auto p-6">
+            <div className="space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-border/60">
+                <h4 className="text-xs font-bold text-accent uppercase tracking-wider">
+                  Bitácora Operativa
+                </h4>
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent/60 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent" />
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Estado</label>
+                <select
+                  value={form.estado_manual ?? ''}
+                  onChange={e => setForm(f => ({ ...f, estado_manual: e.target.value }))}
+                  className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                >
+                  {ESTADO_OPTIONS.map(s => (
+                    <option key={s} value={s}>{s || 'Usar estado del TMS'}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Observaciones</label>
+                <textarea
+                  rows={3}
+                  value={form.observaciones ?? ''}
+                  onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
+                  placeholder="Novedad operativa…"
+                  className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Comentarios</label>
+                <textarea
+                  rows={3}
+                  value={form.comentarios ?? ''}
+                  onChange={e => setForm(f => ({ ...f, comentarios: e.target.value }))}
+                  placeholder="Comentario adicional…"
+                  className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
+                />
+              </div>
+
+              {err && (
+                <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>
               )}
 
-              {/* Empresa de Transporte */}
-              <section>
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                  <Building2 size={10} /> Empresa de Transporte
-                </h4>
-                {trip.transporter_profile_id ? (
-                  <div className="flex items-center justify-between bg-accent/5 rounded-lg px-3 py-2.5 border border-accent/15">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{trip.transporter ?? '—'}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{trip.tractor_plate ?? ''}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await tripsApi.removeFleetLink(trip.id)
-                        onSaved({ ...trip, transporter_profile_id: null, fleet_link_id: null })
-                      }}
-                      className="text-[10px] text-gray-400 hover:text-red-400 transition-colors"
-                    >
-                      Desvincular
-                    </button>
-                  </div>
-                ) : (
-                  <TransporterAssignSection
-                    tripId={trip.id}
-                    currentTransporter={trip.transporter}
-                    onAssigned={onSaved}
-                  />
-                )}
-              </section>
-
-              {/* Bitácora Operativa */}
-              <section className="bg-accent/5 rounded-xl border border-accent/15 p-4 space-y-5">
-                <div className="flex items-center justify-between border-b border-accent/15 pb-3">
-                  <h4 className="text-xs font-bold text-accent uppercase tracking-wider">
-                    Bitácora Operativa
-                  </h4>
-                  <span className="flex h-2.5 w-2.5 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent/60 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent" />
-                  </span>
-                </div>
-
-                {/* Toggles */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white rounded-lg border border-border/60 p-3">
-                  <Toggle
-                    label="Activo"
-                    value={form.activo ?? false}
-                    onChange={v => setForm(f => ({ ...f, activo: v }))}
-                  />
-                  <Toggle
-                    label="Trabajando"
-                    value={form.trabajando ?? false}
-                    onChange={v => setForm(f => ({ ...f, trabajando: v }))}
-                  />
-                  <Toggle
-                    label="Asignado"
-                    value={form.asignado ?? false}
-                    onChange={v => setForm(f => ({ ...f, asignado: v }))}
-                  />
-                  <Toggle
-                    label="1ra Vuelta"
-                    value={form.primera_vuelta ?? false}
-                    onChange={v => setForm(f => ({ ...f, primera_vuelta: v }))}
-                  />
-                </div>
-
-                {/* Estado */}
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Estado Override</label>
-                  <select
-                    value={form.estado_manual ?? ''}
-                    onChange={e => setForm(f => ({ ...f, estado_manual: e.target.value }))}
-                    className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
-                  >
-                    {ESTADO_OPTIONS.map(s => (
-                      <option key={s} value={s}>{s || 'Sin override (usa estado TMS)'}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Observaciones */}
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Observaciones</label>
-                  <textarea
-                    rows={2}
-                    value={form.observaciones ?? ''}
-                    onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
-                    placeholder="Novedad operativa…"
-                    className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
-                  />
-                </div>
-
-                {/* Comentarios */}
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600 uppercase mb-1.5">Comentarios</label>
-                  <textarea
-                    rows={2}
-                    value={form.comentarios ?? ''}
-                    onChange={e => setForm(f => ({ ...f, comentarios: e.target.value }))}
-                    placeholder="Comentario adicional…"
-                    className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
-                  />
-                </div>
-
-                {err && (
-                  <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>
-                )}
-
-                {/* Save */}
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="w-full flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-60 transition-colors"
-                >
-                  {saving && <Loader2 size={14} className="animate-spin" />}
-                  Guardar Bitácora
-                </button>
-              </section>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="w-full flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-60 transition-colors"
+              >
+                {saving && <Loader2 size={14} className="animate-spin" />}
+                Guardar Bitácora
+              </button>
             </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
     </>
   )

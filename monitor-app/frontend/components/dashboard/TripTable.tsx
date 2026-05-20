@@ -177,9 +177,6 @@ function ConductorCell({
         <ComplianceBadge status={alertStatus ?? null} compact />
         <PenLine size={10} className="text-gray-200 group-hover:text-accent/60 transition-colors shrink-0" />
       </div>
-      {trip.driver_rut && (
-        <div className="text-[9px] text-gray-400 font-mono mt-0.5">{trip.driver_rut}</div>
-      )}
       <div className="mt-1">
         <FlagDots
           activo={trip.activo}
@@ -211,16 +208,18 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
 
   return (
     <div className="bg-white rounded-xl border border-border overflow-hidden overflow-x-auto">
-      <table className="w-full text-sm" style={{ minWidth: 980 }}>
+      <table className="w-full text-sm" style={{ minWidth: 1120 }}>
         <thead>
           <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
             <th className="px-3 py-2.5 text-left w-[72px]">Fecha</th>
             <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
             <th className="px-3 py-2.5 text-left w-[110px]">Patente</th>
-            <th className="px-3 py-2.5 text-left w-[160px]">Conductor · Flags</th>
+            <th className="px-3 py-2.5 text-left w-[150px]">Conductor</th>
+            <th className="px-3 py-2.5 text-left w-[100px]">RUT</th>
+            <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
             <th className="px-3 py-2.5 text-left w-[130px]">EETT</th>
-            <th className="px-3 py-2.5 text-left w-[110px]">Cliente</th>
-            <th className="px-3 py-2.5 text-left w-[120px]">Origen · Carga</th>
+            <th className="px-3 py-2.5 text-left w-[100px]">Cliente</th>
+            <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
             <th className="px-3 py-2.5 text-left">Destinos</th>
             <th className="px-3 py-2.5 text-left w-[110px]">Estado</th>
             <th className="px-2 py-2.5 w-6"></th>
@@ -287,6 +286,28 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
                     alertStatus={driverAlert}
                     onSaved={onSaved}
                   />
+                </td>
+
+                {/* RUT */}
+                <td className="px-3 py-2.5">
+                  <span className="text-[11px] font-mono text-gray-500">
+                    {trip.driver_rut ?? '—'}
+                  </span>
+                </td>
+
+                {/* TELÉFONO */}
+                <td className="px-3 py-2.5">
+                  {trip.driver_phone ? (
+                    <a
+                      href={`tel:${trip.driver_phone}`}
+                      onClick={e => e.stopPropagation()}
+                      className="text-[11px] font-mono text-accent hover:underline"
+                    >
+                      {trip.driver_phone}
+                    </a>
+                  ) : (
+                    <span className="text-[10px] text-gray-300">—</span>
+                  )}
                 </td>
 
                 {/* EETT — solo empresa vinculada */}

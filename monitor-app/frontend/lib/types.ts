@@ -217,6 +217,7 @@ export type Trip = {
   trailer_plate:          string | null
   driver_name:            string | null
   driver_rut:             string | null
+  driver_phone:           string | null
   transporter:            string | null   // linked company (tp.business_name) only
   transporter_tms:        string | null   // TMS-reported name (fleet->>'transporter_name_tms')
   origin:                 string | null

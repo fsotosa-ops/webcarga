@@ -39,6 +39,7 @@ _TRIP_SELECT = """
     COALESCE(fl.driver_name_raw,
              t.fleet->>'driver_name_tms')         AS driver_name,
     t.fleet->>'driver_rut_tms'                    AS driver_rut,
+    fl.driver_phone                               AS driver_phone,
     tp.business_name                              AS transporter,
     t.fleet->>'transporter_name_tms'              AS transporter_tms,
     t.origin,

@@ -24,6 +24,15 @@ type Tab = 'conductores' | 'equipos'
 const ACCOUNT_STAGES = ['Lead', 'Operational']
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 
+const VEHICLE_TYPES = [
+  'Tractocamión',
+  'Camión Rígido',
+  'Camión Furgón',
+  'Camión Refrigerado',
+  'Plataforma',
+  'Cisterna',
+]
+
 const INITIAL_COLORS = [
   '#0A66C2', '#10b981', '#8b5cf6', '#f59e0b',
   '#ef4444', '#06b6d4', '#64748b', '#e11d48',
@@ -553,12 +562,14 @@ function VehicleRow({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Tipo</label>
-                    <input
+                    <select
                       value={draft.type}
                       onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
-                      placeholder="Tractocamión, etc."
                       className="w-full text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
-                    />
+                    >
+                      <option value="">—</option>
+                      {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Patente</label>
@@ -891,7 +902,12 @@ export default function EmpresaDetailPage() {
   }
 
   const handleRemoveVehicle = async (vid: string) => {
-    await transportersApi.removeVehicle(id, vid); await load()
+    try {
+      await transportersApi.removeVehicle(id, vid)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al eliminar equipo')
+    }
   }
 
   if (loading) return (
@@ -1152,12 +1168,14 @@ export default function EmpresaDetailPage() {
 
             {addVehicleOpen && (
               <div className="px-5 py-3 border-b border-border bg-gray-50/80 flex items-center gap-2">
-                <input
-                  placeholder="Tipo"
+                <select
                   value={vehicleForm.type}
                   onChange={e => setVehicleForm(v => ({ ...v, type: e.target.value }))}
-                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-28"
-                />
+                  className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-36 bg-white"
+                >
+                  <option value="">Tipo…</option>
+                  {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
                 <input
                   placeholder="Patente"
                   value={vehicleForm.plate}
