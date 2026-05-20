@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-const BACKEND = process.env.FASTAPI_URL ?? 'http://localhost:8001'
+const BACKEND = (process.env.FASTAPI_URL ?? 'http://localhost:8001').trim()
 
 async function getServerToken(): Promise<string> {
   const cookieStore = await cookies()
@@ -16,6 +16,8 @@ async function getServerToken(): Promise<string> {
       },
     }
   )
+  // getUser() refreshes the access token if expired before reading session
+  await supabase.auth.getUser()
   const { data: { session } } = await supabase.auth.getSession()
   return session?.access_token ?? ''
 }
