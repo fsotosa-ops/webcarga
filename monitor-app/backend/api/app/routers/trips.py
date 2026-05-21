@@ -66,7 +66,7 @@ _TRIP_FROM = """
 """
 
 
-@router.get("/")
+@router.get("")
 async def list_trips(
     fecha: str = Query(""),
     view: str = Query("en_curso"),      # en_curso | historial

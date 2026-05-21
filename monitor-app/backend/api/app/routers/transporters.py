@@ -39,7 +39,7 @@ def _row_to_dict(row) -> dict:
 
 # ── LIST ──────────────────────────────────────────────────────────
 
-@router.get("/", response_model=PaginatedResponse)
+@router.get("", response_model=PaginatedResponse)
 async def list_transporters(
     q: str = Query("", description="Buscar por nombre o RUT"),
     stage: str = Query("", description="Filtrar por account_stage exacto"),

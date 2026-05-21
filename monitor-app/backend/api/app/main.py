@@ -23,6 +23,7 @@ app = FastAPI(
     version="1.0.0",
     description="API operacional de master data — transportistas",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 settings = get_settings()
