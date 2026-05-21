@@ -11,7 +11,7 @@ import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 type Tab = 'en_curso' | 'historial'
 
 function todayISO() {
-  return new Date().toISOString().split('T')[0]
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
 }
 
 function fmtDate(iso: string) {
