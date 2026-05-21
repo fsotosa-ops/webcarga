@@ -142,12 +142,14 @@ interface Props {
 }
 
 export function TripSlideOver({ trip, onClose, onSaved }: Props) {
-  const [form, setForm]     = useState<TripPatch>({})
-  const [saving, setSaving] = useState(false)
-  const [err, setErr]       = useState<string | null>(null)
+  const [form, setForm]         = useState<TripPatch>({})
+  const [saving, setSaving]     = useState(false)
+  const [err, setErr]           = useState<string | null>(null)
+  const [mobileTab, setMobileTab] = useState<'viaje' | 'bitacora'>('viaje')
 
   useEffect(() => {
     if (!trip) return
+    setMobileTab('viaje')
     setForm({
       estado_manual:  trip.estado_manual  ?? '',
       observaciones:  trip.observaciones  ?? '',
@@ -191,15 +193,15 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
       <div className="fixed inset-0 z-50 flex flex-col bg-white md:inset-6 md:rounded-2xl md:shadow-2xl overflow-hidden">
 
         {/* ── Header ──────────────────────────────────────────────── */}
-        <div className="bg-slate-900 px-6 py-4 flex items-start justify-between gap-4 shrink-0">
+        <div className="bg-slate-900 px-4 py-3 md:px-6 md:py-4 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3 mb-1.5 flex-wrap">
-              <h2 className="text-lg font-bold text-white font-mono tracking-wide">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <h2 className="text-base md:text-lg font-bold text-white font-mono tracking-wide">
                 {trip.tractor_plate ?? 'Sin patente'}
               </h2>
               {statusColor && (
                 <span
-                  className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full shrink-0"
+                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0"
                   style={{ backgroundColor: statusColor.bg, color: statusColor.text }}
                 >
                   {currentStatus}
@@ -211,8 +213,8 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <p className="text-sm text-white/70">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs md:text-sm text-white/70">
                 {trip.driver_name ?? '—'}
                 {trip.driver_rut && (
                   <span className="font-mono ml-1.5 text-white/40 text-[11px]">{trip.driver_rut}</span>
@@ -228,37 +230,59 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
                 </a>
               )}
               {trip.client_name && (
-                <span className="text-[11px] text-white/35">{trip.client_name}</span>
+                <span className="text-[11px] text-white/35 hidden md:inline">{trip.client_name}</span>
               )}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-white/50 hover:text-white transition-colors shrink-0 mt-1 p-1"
+            className="text-white/50 hover:text-white transition-colors shrink-0 p-1"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* ── Body — 2-column on md+ ──────────────────────────────── */}
+        {/* ── Mobile tab switcher ──────────────────────────────────── */}
+        <div className="flex md:hidden shrink-0 bg-white border-b border-border">
+          <button
+            onClick={() => setMobileTab('viaje')}
+            className={`flex-1 text-xs font-semibold py-2.5 transition-colors border-b-2 ${
+              mobileTab === 'viaje' ? 'text-accent border-accent' : 'text-gray-400 border-transparent'
+            }`}
+          >
+            Viaje
+          </button>
+          <button
+            onClick={() => setMobileTab('bitacora')}
+            className={`flex-1 text-xs font-semibold py-2.5 transition-colors border-b-2 ${
+              mobileTab === 'bitacora' ? 'text-accent border-accent' : 'text-gray-400 border-transparent'
+            }`}
+          >
+            Bitácora
+          </button>
+        </div>
+
+        {/* ── Body — tabs en mobile, 2-column en desktop ───────────── */}
         <div className="flex-1 overflow-hidden flex flex-col md:flex-row min-h-0">
 
           {/* LEFT — info + stops + empresa */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 border-b md:border-b-0 md:border-r border-border/60">
+          <div className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6 md:border-r border-border/60 ${
+            mobileTab === 'bitacora' ? 'hidden md:block' : 'block'
+          }`}>
 
-            {/* Trip metadata */}
-            <section className="grid grid-cols-2 gap-3">
+            {/* Metadata compacta */}
+            <section className="grid grid-cols-2 gap-x-4 gap-y-3">
               {[
-                { label: 'Fecha',  value: trip.planning_date
+                { label: 'Fecha', value: trip.planning_date
                     ? new Date(trip.planning_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
                     : '—' },
-                { label: 'Origen', value: trip.origin ?? '—' },
+                { label: 'Origen',     value: trip.origin ?? '—' },
                 { label: 'Tipo carga', value: trip.cargo_type ?? '—' },
-                { label: 'EETT TMS',   value: trip.transporter_tms ?? '—' },
+                { label: 'EETT TMS',  value: trip.transporter_tms ?? '—' },
               ].map(({ label, value }) => (
                 <div key={label}>
                   <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
-                  <p className="text-sm text-slate-700">{value}</p>
+                  <p className="text-xs md:text-sm text-slate-700 leading-snug">{value}</p>
                 </div>
               ))}
             </section>
@@ -266,17 +290,17 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
             {/* Paradas */}
             {(trip.stops?.length ?? 0) > 0 && (
               <section>
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">
                   Paradas ({trip.stops.length})
                 </h4>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   {trip.stops.map((stop, i) => (
-                    <div key={stop.stop_id ?? i} className="flex items-start gap-3">
-                      <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                    <div key={stop.stop_id ?? i} className="flex items-start gap-2.5">
+                      <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${
                         stop.on_time_status === 'ON TIME' ? 'bg-green-400' : 'bg-amber-400'
                       }`} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700">
+                        <p className="text-xs font-medium text-slate-700">
                           {stop.local ?? stop.destination_city ?? '—'}
                         </p>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -311,7 +335,7 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
                 <Building2 size={10} /> Empresa de Transporte
               </h4>
               {trip.transporter_profile_id ? (
-                <div className="flex items-center justify-between bg-accent/5 rounded-xl px-4 py-3 border border-accent/15">
+                <div className="flex items-center justify-between bg-accent/5 rounded-xl px-3 py-2.5 border border-accent/15">
                   <div>
                     <p className="text-sm font-semibold text-slate-800">{trip.transporter ?? '—'}</p>
                     <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{trip.tractor_plate ?? ''}</p>
@@ -338,9 +362,11 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
           </div>
 
           {/* RIGHT — bitácora */}
-          <div className="w-full md:w-[380px] shrink-0 overflow-y-auto p-6">
-            <div className="space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-border/60">
+          <div className={`w-full md:w-[360px] shrink-0 overflow-y-auto p-4 md:p-6 ${
+            mobileTab === 'viaje' ? 'hidden md:block' : 'block'
+          }`}>
+            <div className="space-y-4">
+              <div className="hidden md:flex items-center justify-between pb-3 border-b border-border/60">
                 <h4 className="text-xs font-bold text-accent uppercase tracking-wider">
                   Bitácora Operativa
                 </h4>
