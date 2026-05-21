@@ -370,6 +370,198 @@ function DriverRow({
   )
 }
 
+// ── Mobile driver card ───────────────────────────────────────────
+function MobileDriverCard({
+  driver, canEdit, expanded, onToggleExpand, onPatch, onRemove,
+}: {
+  driver: TransporterDriver
+  canEdit: boolean
+  expanded: boolean
+  onToggleExpand: () => void
+  onPatch: (body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
+  onRemove: () => Promise<void>
+}) {
+  const [draft, setDraft]       = useState({ rut: driver.rut, name: driver.name })
+  const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
+    id_expiry:         driver.governance?.id_expiry         ?? null,
+    license_expiry:    driver.governance?.license_expiry    ?? null,
+    anexo_3_walmart:   driver.governance?.anexo_3_walmart   ?? null,
+    epp:               driver.governance?.epp               ?? null,
+    das_odi:           driver.governance?.das_odi           ?? null,
+    hoja_de_vida:      driver.governance?.hoja_de_vida      ?? null,
+    cert_antecedentes: driver.governance?.cert_antecedentes ?? null,
+    validado_walmart:  driver.governance?.validado_walmart  ?? null,
+    contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
+    creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState<string | null>(null)
+
+  useEffect(() => {
+    setDraft({ rut: driver.rut, name: driver.name })
+    setDraftGov({
+      id_expiry:         driver.governance?.id_expiry         ?? null,
+      license_expiry:    driver.governance?.license_expiry    ?? null,
+      anexo_3_walmart:   driver.governance?.anexo_3_walmart   ?? null,
+      epp:               driver.governance?.epp               ?? null,
+      das_odi:           driver.governance?.das_odi           ?? null,
+      hoja_de_vida:      driver.governance?.hoja_de_vida      ?? null,
+      cert_antecedentes: driver.governance?.cert_antecedentes ?? null,
+      validado_walmart:  driver.governance?.validado_walmart  ?? null,
+      contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
+      creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
+    })
+  }, [driver])
+
+  const dAlert = getDriverAlertStatus(driver)
+
+  const handleSave = async () => {
+    setSaving(true); setErr(null)
+    try {
+      await onPatch({
+        rut:        draft.rut,
+        name:       draft.name,
+        governance: { ...(driver.governance ?? {}), ...draftGov } as DriverGovernance,
+      })
+      onToggleExpand()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-start gap-3 px-4 py-3 hover:bg-blue-50/20 transition-colors">
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 ${
+            dAlert === 'expired'       ? 'ring-2 ring-red-400' :
+            dAlert === 'expiring_soon' ? 'ring-2 ring-amber-300' : ''
+          }`}
+          style={{ backgroundColor: getInitialColor(driver.name) }}
+        >
+          {getInitials(driver.name)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm text-text-primary leading-tight">{driver.name}</p>
+          <p className="text-[11px] font-mono text-gray-400 mt-0.5">{driver.rut}</p>
+          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+            {driver.governance?.id_expiry && (
+              <span className="flex items-center gap-1 text-[10px]">
+                <span className="text-gray-400">C.I.</span>
+                <span className="font-mono text-gray-600">{formatExpiry(driver.governance.id_expiry)}</span>
+                <ComplianceBadge status={getAlertStatus(driver.governance.id_expiry)} compact />
+              </span>
+            )}
+            {driver.governance?.license_expiry && (
+              <span className="flex items-center gap-1 text-[10px]">
+                <span className="text-gray-400">Lic.</span>
+                <span className="font-mono text-gray-600">{formatExpiry(driver.governance.license_expiry)}</span>
+                <ComplianceBadge status={getAlertStatus(driver.governance.license_expiry)} compact />
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {DRIVER_DOC_LABELS.map(({ key, label }) => {
+              const val = driver.governance?.[key as keyof DriverGovernance] as ComplianceStatus | null
+              if (!val || val === 'n_a') return null
+              const { cls } = COMPLIANCE_CFG[val]
+              return <span key={key} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>{label}</span>
+            })}
+          </div>
+        </div>
+        {canEdit && (
+          <div className="flex items-center gap-1 shrink-0 mt-0.5">
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className={`p-1.5 rounded-lg border transition-all ${
+                expanded
+                  ? 'border-accent bg-accent/5 text-accent'
+                  : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent'
+              }`}
+            >
+              <PenLine size={13} />
+            </button>
+            <button type="button" onClick={onRemove} className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+      {expanded && (
+        <div className="bg-slate-50 px-4 py-4 border-t border-border/40 space-y-3">
+          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Datos Conductor</p>
+          <input
+            value={draft.name}
+            onChange={e => setDraft(v => ({ ...v, name: e.target.value }))}
+            placeholder="Nombre completo"
+            className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+          />
+          <input
+            value={draft.rut}
+            onChange={e => setDraft(v => ({ ...v, rut: e.target.value }))}
+            placeholder="RUT"
+            className="w-full text-sm font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[9px] text-gray-400 block mb-0.5">Venc. C.I.</label>
+              <input
+                type="date"
+                value={draftGov.id_expiry ?? ''}
+                onChange={e => setDraftGov(v => ({ ...v, id_expiry: e.target.value || null }))}
+                className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] text-gray-400 block mb-0.5">Venc. Licencia</label>
+              <input
+                type="date"
+                value={draftGov.license_expiry ?? ''}
+                onChange={e => setDraftGov(v => ({ ...v, license_expiry: e.target.value || null }))}
+                className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+              />
+            </div>
+          </div>
+          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest pt-1">Documentación</p>
+          <div className="space-y-1.5">
+            {DRIVER_DOC_LABELS.map(({ key, label }) => (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-[10px] text-gray-500 w-36 shrink-0">{label}</span>
+                <GovernanceSelect
+                  value={draftGov[key as keyof typeof draftGov] as ComplianceStatus | null}
+                  onChange={v => setDraftGov(prev => ({ ...prev, [key]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+          {err && <p className="text-xs text-red-500">{err}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Guardar
+            </button>
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Vehicle row ───────────────────────────────────────────────────
 function VehicleRow({
   vehicle, canEdit, expanded, onToggleExpand, onPatch, onRemove,
@@ -645,6 +837,211 @@ function VehicleRow({
         </tr>
       )}
     </>
+  )
+}
+
+// ── Mobile vehicle card ──────────────────────────────────────────
+function MobileVehicleCard({
+  vehicle, canEdit, expanded, onToggleExpand, onPatch, onRemove,
+}: {
+  vehicle: TransporterVehicle
+  canEdit: boolean
+  expanded: boolean
+  onToggleExpand: () => void
+  onPatch: (body: { type?: string; plate?: string; governance?: VehicleGovernance }) => Promise<void>
+  onRemove: () => Promise<void>
+}) {
+  const [draft, setDraft]       = useState({ type: vehicle.type, plate: vehicle.plate })
+  const [draftGov, setDraftGov] = useState<Partial<VehicleGovernance>>({
+    year:                   vehicle.governance?.year                   ?? null,
+    circ_permit_expiry:     vehicle.governance?.circ_permit_expiry     ?? null,
+    tech_inspection_expiry: vehicle.governance?.tech_inspection_expiry ?? null,
+    gas_emissions_expiry:   vehicle.governance?.gas_emissions_expiry   ?? null,
+    soap_insurance_expiry:  vehicle.governance?.soap_insurance_expiry  ?? null,
+    padron:                 vehicle.governance?.padron                 ?? null,
+    poliza_rc:              vehicle.governance?.poliza_rc              ?? null,
+    gps:                    vehicle.governance?.gps                    ?? null,
+    seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
+    mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
+    creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState<string | null>(null)
+
+  useEffect(() => {
+    setDraft({ type: vehicle.type, plate: vehicle.plate })
+    setDraftGov({
+      year:                   vehicle.governance?.year                   ?? null,
+      circ_permit_expiry:     vehicle.governance?.circ_permit_expiry     ?? null,
+      tech_inspection_expiry: vehicle.governance?.tech_inspection_expiry ?? null,
+      gas_emissions_expiry:   vehicle.governance?.gas_emissions_expiry   ?? null,
+      soap_insurance_expiry:  vehicle.governance?.soap_insurance_expiry  ?? null,
+      padron:                 vehicle.governance?.padron                 ?? null,
+      poliza_rc:              vehicle.governance?.poliza_rc              ?? null,
+      gps:                    vehicle.governance?.gps                    ?? null,
+      seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
+      mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
+      creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
+    })
+  }, [vehicle])
+
+  const vAlert = getVehicleAlertStatus(vehicle)
+
+  const handleSave = async () => {
+    setSaving(true); setErr(null)
+    try {
+      await onPatch({
+        type:       draft.type,
+        plate:      draft.plate,
+        governance: { ...(vehicle.governance ?? {}), ...draftGov } as VehicleGovernance,
+      })
+      onToggleExpand()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-start gap-3 px-4 py-3 hover:bg-blue-50/20 transition-colors">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-black bg-slate-800 text-white px-2.5 py-0.5 rounded-lg font-mono shadow-sm">
+              {vehicle.plate}
+            </span>
+            {vehicle.type && <span className="text-xs text-gray-500">{vehicle.type}</span>}
+            {vAlert !== 'ok' && <ComplianceBadge status={vAlert} compact />}
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
+            {VEHICLE_EXPIRY_LABELS.map(({ key, label }) => {
+              const expiry = vehicle.governance?.[key]
+              if (!expiry) return null
+              return (
+                <div key={key} className="flex items-center gap-1 text-[10px]">
+                  <span className="text-gray-400 w-14 shrink-0">{label}</span>
+                  <span className="font-mono text-gray-600">{formatExpiry(expiry)}</span>
+                  <ComplianceBadge status={getAlertStatus(expiry)} compact />
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {VEHICLE_DOC_LABELS.map(({ key, label }) => {
+              const val = vehicle.governance?.[key as keyof VehicleGovernance] as ComplianceStatus | null
+              if (!val || val === 'n_a') return null
+              const { cls } = COMPLIANCE_CFG[val]
+              return <span key={key} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${cls}`}>{label}</span>
+            })}
+            {vehicle.governance?.year && (
+              <span className="text-[9px] font-mono text-gray-400 px-1.5 py-0.5 border border-border/60 rounded-full">
+                {vehicle.governance.year}
+              </span>
+            )}
+          </div>
+        </div>
+        {canEdit && (
+          <div className="flex items-center gap-1 shrink-0 mt-0.5">
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className={`p-1.5 rounded-lg border transition-all ${
+                expanded
+                  ? 'border-accent bg-accent/5 text-accent'
+                  : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent'
+              }`}
+            >
+              <PenLine size={13} />
+            </button>
+            <button type="button" onClick={onRemove} className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+      {expanded && (
+        <div className="bg-slate-50 px-4 py-4 border-t border-border/40 space-y-3">
+          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Datos Tracto</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Tipo</label>
+              <select
+                value={draft.type}
+                onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
+                className="w-full text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+              >
+                <option value="">—</option>
+                {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Patente</label>
+              <input
+                value={draft.plate}
+                onChange={e => setDraft(v => ({ ...v, plate: e.target.value.toUpperCase() }))}
+                className="w-full text-sm font-mono border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white uppercase"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[9px] text-gray-400 uppercase block mb-0.5">Año</label>
+            <input
+              type="number"
+              min={1990} max={2030}
+              value={draftGov.year ?? ''}
+              onChange={e => setDraftGov(v => ({ ...v, year: e.target.value ? parseInt(e.target.value) : null }))}
+              placeholder="2020"
+              className="w-full text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {VEHICLE_EXPIRY_LABELS.map(({ key, label }) => (
+              <div key={key}>
+                <label className="text-[9px] text-gray-400 block mb-0.5">{label}</label>
+                <input
+                  type="date"
+                  value={draftGov[key] ?? ''}
+                  onChange={e => setDraftGov(v => ({ ...v, [key]: e.target.value || null }))}
+                  className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest pt-1">Documentación</p>
+          <div className="space-y-1.5">
+            {VEHICLE_DOC_LABELS.map(({ key, label }) => (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-[10px] text-gray-500 w-36 shrink-0">{label}</span>
+                <GovernanceSelect
+                  value={draftGov[key as keyof typeof draftGov] as ComplianceStatus | null}
+                  onChange={v => setDraftGov(prev => ({ ...prev, [key]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+          {err && <p className="text-xs text-red-500">{err}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Guardar
+            </button>
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="px-3 py-1.5 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1099,7 +1496,28 @@ export default function EmpresaDetailPage() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
+            {/* ── Mobile: driver cards ─────────────────────────────── */}
+            <div className="md:hidden divide-y divide-border/60">
+              {filteredDrivers.length === 0 && (
+                <p className="px-4 py-10 text-center text-sm text-gray-300">
+                  {driverQ ? 'Sin resultados' : 'Sin conductores registrados'}
+                </p>
+              )}
+              {filteredDrivers.map(d => (
+                <MobileDriverCard
+                  key={d.id}
+                  driver={d}
+                  canEdit={canEdit}
+                  expanded={expandedDriver === d.id}
+                  onToggleExpand={() => setExpandedDriver(prev => prev === d.id ? null : d.id)}
+                  onPatch={body => handlePatchDriver(d.id, body)}
+                  onRemove={() => handleRemoveDriver(d.id)}
+                />
+              ))}
+            </div>
+
+            {/* ── Desktop: table ───────────────────────────────────── */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: 680 }}>
                 <thead>
                   <tr className="bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wide">
@@ -1195,7 +1613,28 @@ export default function EmpresaDetailPage() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
+            {/* ── Mobile: vehicle cards ─────────────────────────────── */}
+            <div className="md:hidden divide-y divide-border/60">
+              {filteredVehicles.length === 0 && (
+                <p className="px-4 py-10 text-center text-sm text-gray-300">
+                  {vehicleQ ? 'Sin resultados' : 'Sin equipos registrados'}
+                </p>
+              )}
+              {filteredVehicles.map(v => (
+                <MobileVehicleCard
+                  key={v.id}
+                  vehicle={v}
+                  canEdit={canEdit}
+                  expanded={expandedVehicle === v.id}
+                  onToggleExpand={() => setExpandedVehicle(prev => prev === v.id ? null : v.id)}
+                  onPatch={body => handlePatchVehicle(v.id, body)}
+                  onRemove={() => handleRemoveVehicle(v.id)}
+                />
+              ))}
+            </div>
+
+            {/* ── Desktop: table ───────────────────────────────────── */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: 1080 }}>
                 <thead>
                   <tr className="bg-slate-800 text-[9px] font-semibold text-white uppercase tracking-wide">

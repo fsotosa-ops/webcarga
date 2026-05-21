@@ -54,6 +54,194 @@
 - [x] Build verde, 0 errores TypeScript
 - [x] Push a GitHub → Vercel deploy triggered
 
+### 2026-05-19 (continuación) — Tabla Diario rediseño completo (trigésima iteración)
+
+**Problema:** El usuario revisó `EETT-mal-configurado.png` y detectó que la columna EETT mostraba "WEBCARGA SPA" (nombre TMS, no empresa vinculada real), faltaban columnas clave (TMS, Cliente, Origen, cargo_type, status_reported_at), los flags booleanos no eran visibles/filtrables por fila, los destinos múltiples no se visualizaban, y el conductor no era editable.
+
+**Cambios implementados:**
+
+**Backend** (`trips.py`, `schemas/trip.py`):
+- `transporter` ahora es SOLO `tp.business_name` (null si no vinculado) — no COALESCE con TMS
+- `transporter_tms` = `fleet->>'transporter_name_tms'` como campo separado (para slide-over)
+- `driver_name` resuelto con `COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')`
+- `status_reported_at` añadido al SELECT
+- Filtros booleanos añadidos a `list_trips`: `activo`, `trabajando`, `asignado`, `primera_vuelta`
+- `TripPatch` recibe `driver_name: Optional[str]` → ruta a `trip_fleet_links.driver_name_raw`
+- `patch_trip` maneja `driver_name` aparte: `UPDATE trip_fleet_links SET driver_name_raw = ...` (o crea link mínimo si no existe)
+
+**Frontend** (`TripTable.tsx`, `lib/types.ts`, `lib/api/trips.ts`, `diario/page.tsx`):
+- `TripTable` completamente rediseñado:
+  - Columnas: FECHA | TMS | PATENTE | CONDUCTOR·FLAGS | EETT | CLIENTE | ORIGEN·CARGA | DESTINOS | ESTADO | →
+  - `TmsChip`: chip coloreado QA(azul)/WS(púrpura)/SDM(naranja)
+  - `FlagDots`: 4 dots A/T/As/1V coloreados — visibles inline por fila bajo el conductor
+  - `StopPills`: pills ON TIME(verde)/OFF TIME(ámbar) por parada, max 2 + "+N"
+  - `ConductorCell`: edición inline — click → input+botón✓/✗, guarda vía `PATCH driver_name`, Escape cancela
+  - EETT: muestra empresa vinculada SOLO cuando `transporter_profile_id` != null; sin eso → "sin vincular" italic
+  - Prop `onSaved` añadida para actualizar trips al guardar conductor
+- `types.ts`: `Trip` con `status_reported_at` y `transporter_tms`; `TripPatch` con `driver_name`
+- `diario/page.tsx`: chips de filtro booleano (Activo/Trabajando/Asignado/1ra Vuelta) con toggle 3-estado (null→true→null), botón "limpiar", pasa `onSaved` a TripTable
+
+**Resultado:** TypeScript 0 errores, build verde (13 rutas). Push `3233507` → Vercel deploy en curso.
+
+**Checklist (trigésima):**
+- [x] transporter separado de transporter_tms en SQL
+- [x] TripTable con 9 columnas + minWidth 980
+- [x] FlagDots inline por fila
+- [x] StopPills por destino
+- [x] ConductorCell editable (inline PATCH)
+- [x] Filtros booleanos chip en diario/page.tsx
+- [x] onSaved prop en TripTable
+- [x] 0 TypeScript errors, build verde
+- [x] Push main → Vercel deploy triggered
+
+### 2026-05-19 (continuación) — Certificación UX empresa + rampla removida (trigésimo-primera iteración)
+
+**Objetivos:** (1) Rediseñar `empresa/[id]` de grid de tarjetas a tabla de certificación según diseño Figma ("GC Habilitado"). (2) Remover patente rampla de TripTable.
+
+**Figma URL:** `https://www.figma.com/proto/NW7aAqbiCxML2HLd8uMTzf/WebCarga?node-id=16-9949`
+- Layout: tabs Conductores/Tractos/Gobernanza, tabla con header oscuro (`bg-slate-800`)
+- "GC Habilitado" = columna por cada generador de carga → mapeado a `validado_walmart` (dok `ComplianceStatus`)
+
+**Cambios implementados:**
+
+**`monitor-app/frontend/app/dashboard/transportistas/empresa/[id]/page.tsx`** — reescritura completa:
+- 3 tabs: Conductores | Tractos | Gobernanza Empresa
+- `DriverRow`: tabla row + inline form expandible (Eye/EyeOff toggle); columnas: Nombres/RUT · EETT/RUT · Vencimientos (C.I./Licencia) · Documentación · GC Habilitado · Acción
+- "GC Habilitado" → chip verde "Walmart" cuando `validado_walmart === 'ok'`
+- WMT toggle button: cicla `validado_walmart` entre `'ok'` y `'pendiente'` via `patchDriver`
+- Filtro client-side por nombre/rut en cada tab
+- `VehicleRow`: tabla row + inline form expandible con 4 expiry dates + 5 doc dropdowns
+- Gobernanza tab: grid 2-6 col de `GovernanceSelect` dropdowns por cada doc de empresa
+- Header oscuro `bg-slate-800` en todas las tablas (matching Figma)
+- useEffect en DriverRow/VehicleRow para sincronizar draft state al actualizar prop
+- Mantiene company header (business_name, RUT, stage, compliance chips)
+
+**`monitor-app/frontend/components/dashboard/TripTable.tsx`**:
+- Removida visualización de trailer_plate (rampla) del cell PATENTE
+
+**Resultado:** TypeScript 0 errores, build verde (13 rutas). Push `9e7a12e` → Vercel deploy en curso.
+
+**Checklist (trigésimo-primera):**
+- [x] Empresa page rediseñada con tab-based certification tables
+- [x] DriverRow con WMT toggle + inline edit expandible
+- [x] VehicleRow con inline edit expandible
+- [x] Gobernanza tab con dropdowns editables
+- [x] Dark header (bg-slate-800) en tablas
+- [x] Rampla removida de TripTable
+- [x] 0 TypeScript errors, build verde
+- [x] Push main → Vercel deploy triggered
+
+### 2026-05-20 (continuación) — Equipos tab + Sidebar collapse + Edit panel fix (trigésimo-tercera iteración)
+
+**Objetivos:** (1) Reestructurar tab Tractos→Equipos con columnas individuales por campo del spreadsheet. (2) Hacer el Sidebar colapsable. (3) Arreglar panel "Editar Datos Empresa" que quedaba pegado en desktop.
+
+**Cambios implementados:**
+
+**`empresa/[id]/page.tsx`:**
+- Tab renombrado "Tractos" → "Equipos" (`type Tab = 'conductores' | 'equipos'`)
+- Sección Ramplas eliminada completamente
+- Columna "GC Habilitado" eliminada de Conductores (`DriverRow` sin `onToggleWmt`)
+- VehicleRow read-only: 13 columnas individuales matching spreadsheet (Equipo | Padrón | P. Circ. | Re. Téc. | Gases | SOAP | Póliza RC | Año | GPS | Seg. Carga | Cám. Frío | Creación WMT | edit)
+- Conductores: 4 columnas (Conductor | Vencimientos | Documentación | edit), `colSpan={4}`
+- Equipos: `colSpan={13}`, `minWidth: 1080`
+- **Fix edit panel stuck**: `fixed md:absolute` → `fixed`; backdrop `md:hidden` removido
+
+**`Sidebar.tsx` — reescrito con collapse:**
+- `useState(false)` + `useEffect` lee `localStorage.getItem('sidebar-collapsed')`
+- Collapsed: `w-16`, header = botón full-width ChevronRight
+- Expanded: `w-56`, header = logo + "WebCarga" + botón ChevronLeft
+- `transition-[width] duration-200` sin `overflow-hidden` (evita clipping del botón)
+- Nav collapsed: `justify-center px-2.5` (solo icono); expanded: `gap-3 px-3` (icono + label)
+
+**Resultado:** 0 errores TypeScript, build verde (13 rutas). Push `8e82a74` → Vercel deploy en curso.
+
+**Checklist (trigésimo-tercera):**
+- [x] Tab Tractos → Equipos
+- [x] Ramplas section eliminada
+- [x] GC Habilitado column eliminada de Conductores
+- [x] VehicleRow con 13 columnas individuales según spreadsheet
+- [x] Sidebar collapse/expand con localStorage
+- [x] Edit panel fix: `fixed` + backdrop sin `md:hidden`
+- [x] 0 TypeScript errors, build verde
+- [x] Push main → Vercel deploy triggered
+
+---
+
+### 2026-05-20 — Mobile responsiveness: Diario + Transportistas (trigésimo-cuarta iteración)
+
+**Objetivo:** Hacer todas las secciones responsive para mobile: Diario (tabla y modal), Transportistas (lista y detalle con Conductores/Equipos).
+
+**Problema de timezone:** `new Date().toISOString().split('T')[0]` devolvía fecha UTC → mostraba 21/05 después de las ~20:00 hora chilena.
+- Fix: `new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())` (en-CA devuelve YYYY-MM-DD)
+
+**Auth fixes (deployados en esta sesión):**
+- `proxy.ts` → EN Next.js 16 este es el middleware (no `middleware.ts`)
+- Backend: `redirect_slashes=False` + `@router.get("")` (sin slash) + `--proxy-headers` en uvicorn
+- Vercel: `FASTAPI_URL=https://webcarga-monitor-api-793003153880.us-central1.run.app` configurado
+- Callback: `next` default cambiado de `/dashboard/operaciones` → `/dashboard/diario`
+
+**TripTable.tsx mobile:** `md:hidden` card list con patente+estado+TMS chip, conductor+flags, EETT+origen. Desktop table en `hidden md:block`.
+
+**TripSlideOver.tsx mobile:** Tab switcher `md:hidden` ("Viaje" / "Bitácora"). Left panel y right panel condicionados por `mobileTab` state.
+
+**transportistas/page.tsx mobile:** `md:hidden` card list (Building2 icon + nombre + RUT + counts + badge cumplimiento + chevron). Desktop table en `hidden md:table`.
+
+**empresa/[id]/page.tsx mobile (esta iteración):**
+- Añadido `MobileDriverCard` — componente autónomo con draft state propio; card con avatar+anillo alerta+nombre+RUT+expiry dates C.I./Licencia+doc badges; expand → form inline (nombre, RUT, 2 dates, 8 doc dropdowns); botones Guardar/Cancelar
+- Añadido `MobileVehicleCard` — análogo; card con placa dark badge+tipo+alert badge+4 expiry dates (grid 2 col)+doc badges+año pill; expand → form inline (tipo, patente, año, 4 dates, 6 doc dropdowns)
+- Conductores tab: `md:hidden` section con MobileDriverCard list + `hidden md:block overflow-x-auto` desktop table
+- Equipos tab: `md:hidden` section con MobileVehicleCard list + `hidden md:block overflow-x-auto` desktop table
+
+**Resultado:** 0 errores TypeScript, build verde.
+
+**Checklist (trigésimo-cuarta):**
+- [x] Timezone fix (Santiago) en diario/page.tsx
+- [x] Auth fixes deployados (proxy.ts, redirect_slashes, FASTAPI_URL)
+- [x] TripTable mobile cards
+- [x] TripSlideOver mobile tabs
+- [x] transportistas/page.tsx mobile cards
+- [x] MobileDriverCard con state propio + edit form
+- [x] MobileVehicleCard con state propio + edit form
+- [x] Conductores tab mobile/desktop split
+- [x] Equipos tab mobile/desktop split
+- [x] 0 TypeScript errors
+
+---
+
+### 2026-05-20 — Governance fields alignment + factible status (trigésimo-segunda iteración)
+
+**Objetivo:** Cerrar brechas entre el Excel de gobernanza (Drive spreadsheet `1DtBJfpHDf3zN1J9CbZ90bRZl9j7dYrOT_3m-JtNHXNo`) y el código. (1) Empresa detail page — rediseño UX completo. (2) Añadir campo `padron` faltante en VehicleGovernance. (3) Añadir `'factible'` al enum ComplianceStatus.
+
+**Audit resultado:**
+- Empresas: ✅ 14 campos completos
+- Conductores: ✅ completo; "FACTIBLE" existe en DB real para `validado_walmart`
+- Vehiculos: ⚠ `padron` ausente; `año` no expuesto en UI
+
+**Rediseño UX empresa (`empresa/[id]/page.tsx`):**
+- Tab "Gobernanza Empresa" eliminado — docs de empresa movidos a sección colapsable en el header de la empresa (`CompanyDocsPanel` con conteo OK/pendiente + progreso)
+- Tab "Acción" columna eliminada — reemplazada por iconos PenLine/Trash2 sin header
+- WMT toggle movido dentro de la columna "GC Habilitado" (acción + resultado colocados)
+- Columna "EETT · RUT EETT" eliminada de tabla conductores (redundante en página de empresa)
+- Empresas list page (`transportistas/page.tsx`): grid view eliminado → tabla limpia con columna Cumplimiento (chip "Con alertas"/"Al día")
+
+**Cambios de código (trigésimo-segunda):**
+- `transporter.py`: `ComplianceStatus` + `'factible'`; `VehicleGovernance.padron: Optional[ComplianceStatus] = None` (antes de `poliza_rc`)
+- `types.ts`: `ComplianceStatus` + `'factible'`; `VehicleGovernance.padron: ComplianceStatus | null`
+- `empresa/[id]/page.tsx`: `COMPLIANCE_CFG` + `factible`; `GovernanceSelect` + option Factible; `VEHICLE_DOC_LABELS` + `padron` (antes poliza_rc); `VehicleRow.draftGov` + `padron` y `year`; read-only `año` en fila; input `año` en form expandible
+
+**Resultado:** 0 errores TypeScript, build verde (13 rutas). Push `664f559` → Vercel deploy en curso.
+
+**Checklist (trigésimo-segunda):**
+- [x] `padron` añadido a VehicleGovernance (backend + frontend types)
+- [x] `factible` añadido a ComplianceStatus (backend + frontend)
+- [x] COMPLIANCE_CFG + GovernanceSelect actualizados con factible (teal)
+- [x] VEHICLE_DOC_LABELS con padron (antes poliza_rc)
+- [x] VehicleRow draftGov con padron + year
+- [x] Año visible read-only en fila de tracto
+- [x] Input año en form expandible de tracto
+- [x] 0 TypeScript errors, build verde
+- [x] Push main → Vercel deploy triggered
+
 ### 2026-05-19 (continuación) — UX fixes post-review (vigésimo-novena iteración)
 
 **Problema:** Revisión de 5 capturas de pantalla del usuario reveló:

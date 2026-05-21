@@ -84,7 +84,50 @@ export default function EmpresasTransportePage() {
       ) : (
         <>
           <div className="bg-white rounded-xl border border-border overflow-hidden">
-            <table className="w-full text-sm">
+
+            {/* ── Mobile: card list ─────────────────────────────── */}
+            <div className="md:hidden divide-y divide-border/60">
+              {items.length === 0 && (
+                <p className="px-4 py-10 text-center text-sm text-gray-400">
+                  {q ? `Sin resultados para "${q}"` : 'Sin empresas operacionales'}
+                </p>
+              )}
+              {items.map(item => (
+                <Link
+                  key={item.id}
+                  href={`/dashboard/transportistas/empresa/${item.id}`}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/70 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                    <Building2 size={15} className="text-gray-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-text-primary truncate leading-tight">
+                      {item.business_name ?? <span className="italic text-gray-400">Sin nombre</span>}
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{item.rut ?? '—'}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {item.driver_count} cond. · {item.vehicle_count} tractos
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {item.has_active_alerts ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
+                        <AlertTriangle size={9} /> Alertas
+                      </span>
+                    ) : (item.driver_count > 0 || item.vehicle_count > 0) ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">
+                        <ShieldCheck size={9} /> Al día
+                      </span>
+                    ) : null}
+                    <ChevronRight size={14} className="text-gray-300" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+
+            {/* ── Desktop: table ────────────────────────────────── */}
+            <table className="hidden md:table w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">
                   <th className="px-5 py-3 text-left">Empresa</th>
@@ -104,10 +147,7 @@ export default function EmpresasTransportePage() {
                     }`}
                   >
                     <td className="px-5 py-3">
-                      <Link
-                        href={`/dashboard/transportistas/empresa/${item.id}`}
-                        className="flex items-center gap-3 group"
-                      >
+                      <Link href={`/dashboard/transportistas/empresa/${item.id}`} className="flex items-center gap-3 group">
                         <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-accent/10 transition-colors">
                           <Building2 size={14} className="text-gray-400 group-hover:text-accent transition-colors" />
                         </div>
@@ -115,21 +155,13 @@ export default function EmpresasTransportePage() {
                           <p className="font-semibold text-text-primary group-hover:text-accent transition-colors truncate leading-tight">
                             {item.business_name ?? <span className="italic text-gray-400">Sin nombre</span>}
                           </p>
-                          {item.admin_id && (
-                            <p className="text-[10px] text-gray-300 font-mono">#{item.admin_id}</p>
-                          )}
+                          {item.admin_id && <p className="text-[10px] text-gray-300 font-mono">#{item.admin_id}</p>}
                         </div>
                       </Link>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                      {item.rut ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="font-bold text-sm text-slate-700">{item.driver_count}</span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="font-bold text-sm text-slate-700">{item.vehicle_count}</span>
-                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{item.rut ?? '—'}</td>
+                    <td className="px-4 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.driver_count}</span></td>
+                    <td className="px-4 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.vehicle_count}</span></td>
                     <td className="px-4 py-3">
                       {item.has_active_alerts ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
@@ -139,26 +171,19 @@ export default function EmpresasTransportePage() {
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">
                           <ShieldCheck size={9} /> Al día
                         </span>
-                      ) : (
-                        <span className="text-[10px] text-gray-300">—</span>
-                      )}
+                      ) : <span className="text-[10px] text-gray-300">—</span>}
                     </td>
                     <td className="px-3 py-3 text-center">
-                      <Link
-                        href={`/dashboard/transportistas/empresa/${item.id}`}
-                        className="text-gray-300 hover:text-accent transition-colors"
-                      >
+                      <Link href={`/dashboard/transportistas/empresa/${item.id}`} className="text-gray-300 hover:text-accent transition-colors">
                         <ChevronRight size={15} />
                       </Link>
                     </td>
                   </tr>
                 ))}
                 {items.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-14 text-center text-sm text-gray-400">
-                      {q ? `Sin resultados para "${q}"` : 'Sin empresas operacionales'}
-                    </td>
-                  </tr>
+                  <tr><td colSpan={6} className="px-5 py-14 text-center text-sm text-gray-400">
+                    {q ? `Sin resultados para "${q}"` : 'Sin empresas operacionales'}
+                  </td></tr>
                 )}
               </tbody>
             </table>
