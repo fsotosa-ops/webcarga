@@ -15,15 +15,6 @@ def _parse_date(s: str) -> _date | None:
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
-CLOSED_STATUSES = (
-    "CERRADO FINALIZADO",
-    "CERRADO INCOMPLETO",
-    "CERRADO MANUAL",
-    "CERRADO SIN GPS",
-    "CERRADO POR OTRO VIAJE",
-    "CANCELADO",
-)
-
 # SQL fragment that maps actual DB columns to the expected API response shape.
 # fleet JSONB holds tractor/driver info; trip_fleet_links holds the resolved
 # transporter_profile link.
@@ -100,9 +91,6 @@ async def list_trips(
 
     if d := _parse_date(fecha):
         add("t.planning_date = ?", d)
-    if view == "en_curso":
-        closed_sql = ", ".join(f"'{s}'" for s in CLOSED_STATUSES)
-        filters.append(f"t.current_status_tms NOT IN ({closed_sql})")
     if d := _parse_date(fecha_desde):
         add("t.planning_date >= ?", d)
     if d := _parse_date(fecha_hasta):
