@@ -235,6 +235,7 @@ export type Trip = {
   manually_edited_fields: string[]
   edited_at:              string | null
   updated_at:             string | null
+  source_trip_id:         string | null
 }
 
 // ── Compliance & Governance ─────────────────────────────────────────

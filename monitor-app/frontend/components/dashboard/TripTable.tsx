@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Check, Loader2, PenLine, X } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { tripsApi } from '@/lib/api/trips'
@@ -295,6 +295,14 @@ function PhoneTagCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => voi
   )
 }
 
+type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'transporter' | 'client_name' | 'current_status' | 'source_trip_id'
+
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: 'asc' | 'desc' }) {
+  if (sortKey !== col) return <ArrowUpDown size={10} className="inline ml-0.5 text-gray-300" />
+  if (sortDir === 'asc') return <ArrowUp size={10} className="inline ml-0.5 text-accent" />
+  return <ArrowDown size={10} className="inline ml-0.5 text-accent" />
+}
+
 interface Props {
   trips:         Trip[]
   selectedId:    string | null
@@ -304,6 +312,25 @@ interface Props {
 }
 
 export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }: Props) {
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  function handleSort(col: SortKey) {
+    if (sortKey !== col) { setSortKey(col); setSortDir('asc') }
+    else if (sortDir === 'asc') setSortDir('desc')
+    else { setSortKey(null); setSortDir('asc') }
+  }
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return trips
+    return [...trips].sort((a, b) => {
+      const av = (a[sortKey] ?? '') as string
+      const bv = (b[sortKey] ?? '') as string
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [trips, sortKey, sortDir])
+
   if (trips.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-border p-12 text-center text-sm text-gray-400">
@@ -379,24 +406,25 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
 
       {/* ── Desktop: table ────────────────────────────────────────── */}
       <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: 980 }}>
+        <table className="w-full text-sm" style={{ minWidth: 1080 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-              <th className="px-3 py-2.5 text-left w-[72px]">Fecha</th>
+              <th onClick={() => handleSort('planning_date')} className="px-3 py-2.5 text-left w-[72px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
-              <th className="px-3 py-2.5 text-left w-[110px]">Patente</th>
-              <th className="px-3 py-2.5 text-left w-[150px]">Conductor</th>
+              <th onClick={() => handleSort('source_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
+              <th onClick={() => handleSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
+              <th onClick={() => handleSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
-              <th className="px-3 py-2.5 text-left w-[130px]">EETT</th>
-              <th className="px-3 py-2.5 text-left w-[100px]">Cliente</th>
+              <th onClick={() => handleSort('transporter')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="transporter" sortKey={sortKey} sortDir={sortDir} /></th>
+              <th onClick={() => handleSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<SortIcon col="client_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
               <th className="px-3 py-2.5 text-left">Destinos</th>
-              <th className="px-3 py-2.5 text-left w-[110px]">Estado</th>
+              <th onClick={() => handleSort('current_status')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-2 py-2.5 w-6"></th>
             </tr>
           </thead>
           <tbody>
-            {trips.map((trip, i) => {
+            {sorted.map((trip, i) => {
               const isActive    = trip.id === selectedId
               const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
               const driverAlert = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
@@ -436,6 +464,13 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
                   {/* TMS */}
                   <td className="px-2 py-2.5">
                     <TmsChip tms={trip.tms_name ?? ''} />
+                  </td>
+
+                  {/* ID VIAJE */}
+                  <td className="px-3 py-2.5">
+                    <span className="font-mono text-[11px] text-gray-500">
+                      {trip.source_trip_id ?? '—'}
+                    </span>
                   </td>
 
                   {/* PATENTE */}

@@ -56,7 +56,8 @@ _TRIP_SELECT = """
     t.fleet_link_id,
     fl.transporter_id                             AS transporter_profile_id,
     t.edited_at,
-    t.updated_at
+    t.updated_at,
+    t.source_trip_id
 """
 
 _TRIP_FROM = """
