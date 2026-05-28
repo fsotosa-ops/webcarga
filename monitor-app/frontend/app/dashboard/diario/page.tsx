@@ -1,65 +1,44 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Search, Loader2, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
+import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import type { Trip, ComplianceAlertSummary } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
+import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 
 type Tab        = 'en_curso' | 'historial'
 type BoolFilter = boolean | null
 
 const HISTORIAL_LIMIT = 100
 
-// ── Status categories ─────────────────────────────────────────────────────────
-// Each category maps to one or more raw status values from current_status_tms.
-// The backend receives a comma-joined string and uses = ANY($N::text[]).
+// ── Default status categories ─────────────────────────────────────────────────
 const STATUS_GROUPS = [
-  {
-    id:       'en_ruta',
-    label:    'En Ruta',
-    statuses: ['ASIGNADO', 'ORIGEN', 'RUTA'],
-    on:  'bg-blue-500  border-blue-500  text-white',
-    off: 'text-blue-600  border-blue-200  bg-blue-50/70  hover:border-blue-300',
-  },
-  {
-    id:       'en_local',
-    label:    'En Local',
-    statuses: ['EN LOCAL', 'VIAJE EN PREDIO'],
-    on:  'bg-orange-500 border-orange-500 text-white',
-    off: 'text-orange-600 border-orange-200 bg-orange-50/70 hover:border-orange-300',
-  },
-  {
-    id:       'retornando',
-    label:    'Retornando',
-    statuses: ['RETORNANDO', 'RETORNADO CD'],
-    on:  'bg-cyan-500   border-cyan-500   text-white',
-    off: 'text-cyan-700   border-cyan-200   bg-cyan-50/70   hover:border-cyan-300',
-  },
-  {
-    id:       'cerrado',
-    label:    'Cerrados',
-    statuses: [
-      'CERRADO FINALIZADO', 'CERRADO INCOMPLETO', 'CERRADO MANUAL',
-      'CERRADO SIN GPS', 'CERRADO POR OTRO VIAJE', 'CERRADO FINALIZADO CC',
-    ],
-    on:  'bg-slate-500  border-slate-500  text-white',
-    off: 'text-slate-600  border-slate-200  bg-slate-50/70  hover:border-slate-300',
-  },
-  {
-    id:       'problema',
-    label:    'Problema',
-    statuses: ['CANCELADO', 'EN PANA', 'DEVUELTO'],
-    on:  'bg-red-500    border-red-500    text-white',
-    off: 'text-red-600    border-red-200    bg-red-50/70    hover:border-red-300',
-  },
+  { id: 'en_ruta',    label: 'En Ruta',    statuses: ['ASIGNADO', 'ORIGEN', 'RUTA'],              on: 'bg-blue-500  border-blue-500  text-white', off: 'text-blue-600  border-blue-200  bg-blue-50/70  hover:border-blue-300'   },
+  { id: 'en_local',   label: 'En Local',   statuses: ['EN LOCAL', 'VIAJE EN PREDIO'],              on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-600 border-orange-200 bg-orange-50/70 hover:border-orange-300' },
+  { id: 'retornando', label: 'Retornando', statuses: ['RETORNANDO', 'RETORNADO CD'],               on: 'bg-cyan-500   border-cyan-500   text-white', off: 'text-cyan-700   border-cyan-200   bg-cyan-50/70   hover:border-cyan-300'   },
+  { id: 'cerrado',    label: 'Cerrados',   statuses: ['CERRADO FINALIZADO', 'CERRADO INCOMPLETO', 'CERRADO MANUAL', 'CERRADO SIN GPS', 'CERRADO POR OTRO VIAJE', 'CERRADO FINALIZADO CC'], on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-600  border-slate-200  bg-slate-50/70  hover:border-slate-300' },
+  { id: 'problema',   label: 'Problema',   statuses: ['CANCELADO', 'EN PANA', 'DEVUELTO'],         on: 'bg-red-500    border-red-500    text-white', off: 'text-red-600    border-red-200    bg-red-50/70    hover:border-red-300'     },
 ] as const
 
-type StatusGroupId = (typeof STATUS_GROUPS)[number]['id']
+type DefaultGroupId = (typeof STATUS_GROUPS)[number]['id']
 
-// ── Boolean flag chips ────────────────────────────────────────────────────────
+// ── Custom group color classes ─────────────────────────────────────────────────
+const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
+  blue:   { on: 'bg-blue-500   border-blue-500   text-white', off: 'text-blue-700   border-blue-300   bg-blue-50   hover:border-blue-400'   },
+  green:  { on: 'bg-green-500  border-green-500  text-white', off: 'text-green-700  border-green-300  bg-green-50  hover:border-green-400'  },
+  orange: { on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-700 border-orange-300 bg-orange-50 hover:border-orange-400' },
+  purple: { on: 'bg-purple-500 border-purple-500 text-white', off: 'text-purple-700 border-purple-300 bg-purple-50 hover:border-purple-400' },
+  red:    { on: 'bg-red-500    border-red-500    text-white', off: 'text-red-700    border-red-300    bg-red-50    hover:border-red-400'    },
+  teal:   { on: 'bg-teal-500   border-teal-500   text-white', off: 'text-teal-700   border-teal-300   bg-teal-50   hover:border-teal-400'   },
+  amber:  { on: 'bg-amber-500  border-amber-500  text-white', off: 'text-amber-700  border-amber-300  bg-amber-50  hover:border-amber-400'  },
+  pink:   { on: 'bg-pink-500   border-pink-500   text-white', off: 'text-pink-700   border-pink-300   bg-pink-50   hover:border-pink-400'   },
+  slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
+}
+
 const FLAG_CHIPS = [
   { label: 'Activo',     on: 'bg-blue-500   border-blue-500   text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-blue-200   hover:text-blue-600'   },
   { label: 'Trabajando', on: 'bg-green-500  border-green-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-green-200  hover:text-green-600'  },
@@ -67,7 +46,6 @@ const FLAG_CHIPS = [
   { label: '1ra Vuelta', on: 'bg-amber-500  border-amber-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-amber-200  hover:text-amber-600'  },
 ] as const
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
 }
@@ -91,43 +69,62 @@ export default function DiarioPage() {
   const [q,              setQ]              = useState('')
   const [fechaDesde,     setFechaDesde]     = useState('')
   const [fechaHasta,     setFechaHasta]     = useState('')
-  const [statusGroup,    setStatusGroup]    = useState<StatusGroupId | null>(null)
+  // Active group: 'default:id' or 'custom:id'
+  const [activeGroup,    setActiveGroup]    = useState<string | null>(null)
   const [fActivo,        setFActivo]        = useState<BoolFilter>(null)
   const [fTrabajando,    setFTrabajando]    = useState<BoolFilter>(null)
   const [fAsignado,      setFAsignado]      = useState<BoolFilter>(null)
   const [fPrimeraVuelta, setFPrimeraVuelta] = useState<BoolFilter>(null)
   const [page,           setPage]           = useState(1)
 
-  const [trips,        setTrips]        = useState<Trip[]>([])
-  const [total,        setTotal]        = useState(0)
-  const [loading,      setLoading]      = useState(true)
-  const [error,        setError]        = useState<string | null>(null)
-  const [selected,     setSelected]     = useState<Trip | null>(null)
-  const [alertSummary, setAlertSummary] = useState<ComplianceAlertSummary | null>(null)
+  const [trips,          setTrips]          = useState<Trip[]>([])
+  const [total,          setTotal]          = useState(0)
+  const [loading,        setLoading]        = useState(true)
+  const [error,          setError]          = useState<string | null>(null)
+  const [selected,       setSelected]       = useState<Trip | null>(null)
+  const [alertSummary,   setAlertSummary]   = useState<ComplianceAlertSummary | null>(null)
+
+  // Custom groups
+  const [customGroups,   setCustomGroups]   = useState<FilterGroup[]>([])
+  const [showBuilder,    setShowBuilder]    = useState(false)
+  const [editingGroup,   setEditingGroup]   = useState<FilterGroup | undefined>(undefined)
 
   const today   = todayISO()
   const isToday = fecha === today
 
-  // Status param: comma-joined list of statuses for the selected group
-  const statusParam = statusGroup
-    ? STATUS_GROUPS.find(g => g.id === statusGroup)!.statuses.join(',')
-    : ''
+  // Resolve active group statuses
+  const statusParam = (() => {
+    if (!activeGroup) return ''
+    if (activeGroup.startsWith('default:')) {
+      const id = activeGroup.slice(8) as DefaultGroupId
+      return STATUS_GROUPS.find(g => g.id === id)?.statuses.join(',') ?? ''
+    }
+    // custom:uuid
+    const id = activeGroup.slice(7)
+    return customGroups.find(g => g.id === id)?.statuses.join(',') ?? ''
+  })()
 
-  // Count active filters for the clear badge
   const activeCount = [
-    q, fechaDesde, fechaHasta, statusGroup,
+    q, fechaDesde, fechaHasta, activeGroup,
     fActivo, fTrabajando, fAsignado, fPrimeraVuelta,
   ].filter(v => v !== '' && v !== null).length
 
   function clearFilters() {
     setQ(''); setFechaDesde(''); setFechaHasta('')
-    setStatusGroup(null)
+    setActiveGroup(null)
     setFActivo(null); setFTrabajando(null); setFAsignado(null); setFPrimeraVuelta(null)
     setPage(1)
   }
 
-  function toggleStatusGroup(id: StatusGroupId) {
-    setStatusGroup(prev => (prev === id ? null : id))
+  function toggleDefaultGroup(id: string) {
+    const key = `default:${id}`
+    setActiveGroup(prev => (prev === key ? null : key))
+    setPage(1)
+  }
+
+  function toggleCustomGroup(id: string) {
+    const key = `custom:${id}`
+    setActiveGroup(prev => (prev === key ? null : key))
     setPage(1)
   }
 
@@ -159,8 +156,8 @@ export default function DiarioPage() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    transportersApi.getComplianceAlertSummary()
-      .then(setAlertSummary).catch(console.error)
+    transportersApi.getComplianceAlertSummary().then(setAlertSummary).catch(console.error)
+    filterGroupsApi.list().then(setCustomGroups).catch(console.error)
   }, [])
 
   function handleSaved(updated: Trip) {
@@ -168,10 +165,30 @@ export default function DiarioPage() {
     setTrips(prev => prev.map(t => (t.id === updated.id ? updated : t)))
   }
 
+  function handleGroupSaved(group: FilterGroup) {
+    setCustomGroups(prev => {
+      const exists = prev.find(g => g.id === group.id)
+      return exists ? prev.map(g => g.id === group.id ? group : g) : [...prev, group]
+    })
+  }
+
+  function handleGroupDeleted(id: string) {
+    setCustomGroups(prev => prev.filter(g => g.id !== id))
+    if (activeGroup === `custom:${id}`) setActiveGroup(null)
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / HISTORIAL_LIMIT))
 
   return (
     <div className="flex h-full overflow-hidden relative">
+      {showBuilder && (
+        <GroupBuilder
+          editing={editingGroup}
+          onSaved={handleGroupSaved}
+          onDeleted={handleGroupDeleted}
+          onClose={() => { setShowBuilder(false); setEditingGroup(undefined) }}
+        />
+      )}
 
       {/* ── Main ───────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -188,20 +205,13 @@ export default function DiarioPage() {
               </p>
             </div>
 
-            {/* Date navigator */}
             {tab === 'en_curso' && (
               <div className="flex items-center bg-white border border-border rounded-lg p-0.5 shrink-0">
-                <button
-                  onClick={() => setFecha(shiftDay(fecha, -1))}
-                  className="p-1.5 rounded-md hover:bg-gray-100 transition-colors text-gray-500"
-                >
+                <button onClick={() => setFecha(shiftDay(fecha, -1))} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors text-gray-500">
                   <ChevronLeft size={16} />
                 </button>
                 {!isToday && (
-                  <button
-                    onClick={() => setFecha(today)}
-                    className="px-2.5 py-1 text-xs font-semibold text-accent hover:bg-accent/5 rounded-md transition-colors"
-                  >
+                  <button onClick={() => setFecha(today)} className="px-2.5 py-1 text-xs font-semibold text-accent hover:bg-accent/5 rounded-md transition-colors">
                     Hoy
                   </button>
                 )}
@@ -227,9 +237,7 @@ export default function DiarioPage() {
                 key={t.key}
                 onClick={() => { setTab(t.key); setPage(1) }}
                 className={`pb-2.5 px-1 mr-6 text-sm font-medium border-b-2 transition-colors ${
-                  tab === t.key
-                    ? 'border-accent text-accent'
-                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                  tab === t.key ? 'border-accent text-accent' : 'border-transparent text-gray-400 hover:text-gray-600'
                 }`}
               >
                 {t.label}
@@ -240,7 +248,7 @@ export default function DiarioPage() {
           {/* ── Filter bar ───────────────────────────────────────────── */}
           <div className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-3">
 
-            {/* Row 1 — search + date range (historial) + clear */}
+            {/* Row 1 — search + date range + clear */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative">
                 <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -255,55 +263,88 @@ export default function DiarioPage() {
               {tab === 'historial' && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Desde</span>
-                  <input
-                    type="date"
-                    value={fechaDesde}
-                    onChange={e => { setFechaDesde(e.target.value); setPage(1) }}
-                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all"
-                  />
+                  <input type="date" value={fechaDesde} onChange={e => { setFechaDesde(e.target.value); setPage(1) }}
+                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all" />
                   <span className="text-gray-300 text-xs">—</span>
-                  <input
-                    type="date"
-                    value={fechaHasta}
-                    onChange={e => { setFechaHasta(e.target.value); setPage(1) }}
-                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all"
-                  />
+                  <input type="date" value={fechaHasta} onChange={e => { setFechaHasta(e.target.value); setPage(1) }}
+                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all" />
                 </div>
               )}
 
               {activeCount > 0 && (
-                <button
-                  onClick={clearFilters}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors ml-auto"
-                >
+                <button onClick={clearFilters}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors ml-auto">
                   <X size={11} />
                   Limpiar
-                  <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-gray-100 rounded-full text-gray-600">
-                    {activeCount}
-                  </span>
+                  <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-gray-100 rounded-full text-gray-600">{activeCount}</span>
                 </button>
               )}
             </div>
 
-            {/* Row 2 — status category chips */}
+            {/* Row 2 — status groups (default + custom) */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Estado</span>
-              {STATUS_GROUPS.map(g => (
-                <button
-                  key={g.id}
-                  onClick={() => toggleStatusGroup(g.id)}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                    statusGroup === g.id ? g.on : g.off
-                  }`}
-                >
-                  {g.label}
-                  {statusGroup === g.id && (
-                    <span className="ml-1 opacity-70 text-[9px]">
-                      {g.statuses.length > 1 ? `·${g.statuses.length}` : ''}
-                    </span>
-                  )}
-                </button>
-              ))}
+
+              {/* Default groups */}
+              {STATUS_GROUPS.map(g => {
+                const key = `default:${g.id}`
+                const active = activeGroup === key
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => toggleDefaultGroup(g.id)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${active ? g.on : g.off}`}
+                  >
+                    {g.label}
+                    {active && g.statuses.length > 1 && (
+                      <span className="ml-1 opacity-70 text-[9px]">·{g.statuses.length}</span>
+                    )}
+                  </button>
+                )
+              })}
+
+              {/* Divider between default and custom */}
+              {customGroups.length > 0 && (
+                <span className="text-gray-200 text-sm mx-0.5">·</span>
+              )}
+
+              {/* Custom groups */}
+              {customGroups.map(g => {
+                const key = `custom:${g.id}`
+                const active = activeGroup === key
+                const cls = COLOR_CLS[g.color] ?? COLOR_CLS.blue
+                return (
+                  <div key={g.id} className="relative group/chip flex items-center">
+                    <button
+                      onClick={() => toggleCustomGroup(g.id)}
+                      className={`text-[11px] font-semibold pl-2.5 pr-1.5 py-1 rounded-full border transition-all flex items-center gap-1 ${active ? cls.on : cls.off}`}
+                    >
+                      {g.name}
+                      {active && g.statuses.length > 1 && (
+                        <span className="opacity-70 text-[9px]">·{g.statuses.length}</span>
+                      )}
+                    </button>
+                    {/* Edit button — appears on hover */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setEditingGroup(g); setShowBuilder(true) }}
+                      className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center opacity-0 group-hover/chip:opacity-100 transition-opacity hover:bg-gray-50"
+                      title="Editar grupo"
+                    >
+                      <PenLine size={8} className="text-gray-500" />
+                    </button>
+                  </div>
+                )
+              })}
+
+              {/* Create group button */}
+              <button
+                onClick={() => { setEditingGroup(undefined); setShowBuilder(true) }}
+                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-accent hover:text-accent transition-all"
+                title="Crear grupo personalizado"
+              >
+                <Plus size={11} />
+                Grupo
+              </button>
             </div>
 
             {/* Row 3 — boolean flag chips */}
@@ -318,9 +359,7 @@ export default function DiarioPage() {
                 <button
                   key={chip.label}
                   onClick={() => toggleFlag(val, setter)}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                    val === true ? chip.on : chip.off
-                  }`}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${val === true ? chip.on : chip.off}`}
                 >
                   {chip.label}
                 </button>
@@ -358,21 +397,13 @@ export default function DiarioPage() {
               >
                 <ChevronLeft size={13} /> Anterior
               </button>
-
               <p className="text-xs text-gray-500">
                 {total > HISTORIAL_LIMIT ? (
-                  <>
-                    Página{' '}
-                    <span className="font-semibold text-gray-700">{page}</span>
-                    {' '}de{' '}
-                    <span className="font-semibold text-gray-700">{totalPages}</span>
-                    <span className="text-gray-400 ml-2">· {total.toLocaleString('es-CL')} viajes</span>
-                  </>
+                  <>Página <span className="font-semibold text-gray-700">{page}</span> de <span className="font-semibold text-gray-700">{totalPages}</span><span className="text-gray-400 ml-2">· {total.toLocaleString('es-CL')} viajes</span></>
                 ) : (
                   <span className="text-gray-400">{total.toLocaleString('es-CL')} viaje{total !== 1 ? 's' : ''}</span>
                 )}
               </p>
-
               <button
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
@@ -386,7 +417,6 @@ export default function DiarioPage() {
         </div>
       </div>
 
-      {/* Slide-over */}
       <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} />
     </div>
   )
