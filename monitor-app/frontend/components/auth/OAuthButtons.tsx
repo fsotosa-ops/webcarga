@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 
 export default function OAuthButtons() {
   const supabase = createClient()
-  const [error, setError] = useState<string | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
   const [loading, setLoading] = useState<'google' | 'azure' | null>(null)
 
   async function signInWith(provider: 'google' | 'azure') {
@@ -27,44 +27,44 @@ export default function OAuthButtons() {
     }
   }
 
+  const Spinner = () => (
+    <span className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+  )
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="space-y-3">
       {error && (
         <p className="text-xs text-red-500 text-center bg-red-50 rounded-lg px-3 py-2">{error}</p>
       )}
 
-      <button
-        onClick={() => signInWith('google')}
-        disabled={loading !== null}
-        className="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg border border-border text-sm font-medium text-text-primary hover:bg-gray-50 disabled:opacity-60 transition-colors"
-      >
-        {loading === 'google' ? (
-          <span className="w-[18px] h-[18px] border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-        ) : (
-          <GoogleIcon />
-        )}
-        Continuar con Google
-      </button>
+      <div className="flex gap-3">
+        {/* Google */}
+        <button
+          onClick={() => signInWith('google')}
+          disabled={loading !== null}
+          title="Continuar con Google"
+          className="flex-1 flex items-center justify-center h-11 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 active:scale-[0.97] disabled:opacity-50 transition-all duration-150 shadow-sm"
+        >
+          {loading === 'google' ? <Spinner /> : <GoogleIcon />}
+        </button>
 
-      <button
-        onClick={() => signInWith('azure')}
-        disabled={loading !== null}
-        className="flex items-center justify-center gap-3 w-full py-2.5 rounded-lg border border-border text-sm font-medium text-text-primary hover:bg-gray-50 disabled:opacity-60 transition-colors"
-      >
-        {loading === 'azure' ? (
-          <span className="w-[18px] h-[18px] border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-        ) : (
-          <MicrosoftIcon />
-        )}
-        Continuar con Microsoft
-      </button>
+        {/* Microsoft */}
+        <button
+          onClick={() => signInWith('azure')}
+          disabled={loading !== null}
+          title="Continuar con Microsoft"
+          className="flex-1 flex items-center justify-center h-11 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 active:scale-[0.97] disabled:opacity-50 transition-all duration-150 shadow-sm"
+        >
+          {loading === 'azure' ? <Spinner /> : <MicrosoftIcon />}
+        </button>
+      </div>
     </div>
   )
 }
 
 function GoogleIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18">
+    <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
       <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
       <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"/>
       <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
@@ -75,11 +75,11 @@ function GoogleIcon() {
 
 function MicrosoftIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18">
-      <rect x="0" y="0" width="8.5" height="8.5" fill="#F25022"/>
-      <rect x="9.5" y="0" width="8.5" height="8.5" fill="#7FBA00"/>
-      <rect x="0" y="9.5" width="8.5" height="8.5" fill="#00A4EF"/>
-      <rect x="9.5" y="9.5" width="8.5" height="8.5" fill="#FFB900"/>
+    <svg width="20" height="20" viewBox="0 0 21 21" fill="none">
+      <rect x="1"  y="1"  width="9" height="9" fill="#F25022"/>
+      <rect x="11" y="1"  width="9" height="9" fill="#7FBA00"/>
+      <rect x="1"  y="11" width="9" height="9" fill="#00A4EF"/>
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
     </svg>
   )
 }
