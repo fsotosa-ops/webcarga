@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
 import type { Trip, ComplianceAlertSummary } from '@/lib/types'
@@ -9,6 +9,47 @@ import { TripTable } from '@/components/dashboard/TripTable'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 
 type Tab = 'en_curso' | 'historial'
+type BoolFilter = boolean | null
+
+const HISTORIAL_LIMIT = 100
+
+const STATUS_OPTIONS = [
+  { value: '',                    label: 'Todos los estados' },
+  { value: 'ASIGNADO',            label: 'Asignado' },
+  { value: 'ORIGEN',              label: 'Origen' },
+  { value: 'RUTA',                label: 'Ruta' },
+  { value: 'EN LOCAL',            label: 'En Local' },
+  { value: 'RETORNANDO',          label: 'Retornando' },
+  { value: 'RETORNADO CD',        label: 'Retornado CD' },
+  { value: 'CANCELADO',           label: 'Cancelado' },
+  { value: 'CERRADO FINALIZADO',  label: 'Cerrado Finalizado' },
+  { value: 'CERRADO INCOMPLETO',  label: 'Cerrado Incompleto' },
+  { value: 'CERRADO MANUAL',      label: 'Cerrado Manual' },
+  { value: 'CERRADO SIN GPS',     label: 'Cerrado Sin GPS' },
+]
+
+const FLAG_CHIPS = [
+  {
+    label: 'Activo',
+    on:  'bg-blue-500 border-blue-500 text-white',
+    off: 'bg-white text-gray-500 border-gray-200 hover:border-blue-200 hover:text-blue-600',
+  },
+  {
+    label: 'Trabajando',
+    on:  'bg-green-500 border-green-500 text-white',
+    off: 'bg-white text-gray-500 border-gray-200 hover:border-green-200 hover:text-green-600',
+  },
+  {
+    label: 'Asignado',
+    on:  'bg-violet-500 border-violet-500 text-white',
+    off: 'bg-white text-gray-500 border-gray-200 hover:border-violet-200 hover:text-violet-600',
+  },
+  {
+    label: '1ra Vuelta',
+    on:  'bg-amber-500 border-amber-500 text-white',
+    off: 'bg-white text-gray-500 border-gray-200 hover:border-amber-200 hover:text-amber-600',
+  },
+] as const
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
@@ -20,37 +61,58 @@ function fmtDate(iso: string) {
   })
 }
 
-function prevDay(iso: string) {
+function shiftDay(iso: string, delta: number) {
   const d = new Date(iso + 'T12:00:00')
-  d.setDate(d.getDate() - 1)
+  d.setDate(d.getDate() + delta)
   return d.toISOString().split('T')[0]
 }
-
-function nextDay(iso: string) {
-  const d = new Date(iso + 'T12:00:00')
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().split('T')[0]
-}
-
-type BoolFilter = boolean | null
 
 export default function DiarioPage() {
-  const [tab, setTab]               = useState<Tab>('en_curso')
-  const [fecha, setFecha]           = useState(todayISO)
-  const [q, setQ]                   = useState('')
-  const [fechaDesde, setFechaDesde] = useState('')
-  const [fechaHasta, setFechaHasta] = useState('')
-  const [statusFilter, setStatus]   = useState('')
-  const [fActivo, setFActivo]             = useState<BoolFilter>(null)
-  const [fTrabajando, setFTrabajando]     = useState<BoolFilter>(null)
-  const [fAsignado, setFAsignado]         = useState<BoolFilter>(null)
-  const [fPrimeraVuelta, setFPrimeraVuelta] = useState<BoolFilter>(null)
-  const [trips, setTrips]           = useState<Trip[]>([])
-  const [total, setTotal]           = useState(0)
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState<string | null>(null)
-  const [selected, setSelected]     = useState<Trip | null>(null)
+  const [tab,           setTab]           = useState<Tab>('en_curso')
+  const [fecha,         setFecha]         = useState(todayISO)
+  const [q,             setQ]             = useState('')
+  const [fechaDesde,    setFechaDesde]    = useState('')
+  const [fechaHasta,    setFechaHasta]    = useState('')
+  const [statusFilter,  setStatus]        = useState('')
+  const [fActivo,       setFActivo]       = useState<BoolFilter>(null)
+  const [fTrabajando,   setFTrabajando]   = useState<BoolFilter>(null)
+  const [fAsignado,     setFAsignado]     = useState<BoolFilter>(null)
+  const [fPrimeraVuelta,setFPrimeraVuelta]= useState<BoolFilter>(null)
+  const [page,          setPage]          = useState(1)
+
+  const [trips,        setTrips]        = useState<Trip[]>([])
+  const [total,        setTotal]        = useState(0)
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState<string | null>(null)
+  const [selected,     setSelected]     = useState<Trip | null>(null)
   const [alertSummary, setAlertSummary] = useState<ComplianceAlertSummary | null>(null)
+
+  const today   = todayISO()
+  const isToday = fecha === today
+
+  // Count active filters for the clear badge
+  const activeCount = [q, fechaDesde, fechaHasta, statusFilter, fActivo, fTrabajando, fAsignado, fPrimeraVuelta]
+    .filter(v => v !== '' && v !== null).length
+
+  function clearFilters() {
+    setQ('')
+    setFechaDesde('')
+    setFechaHasta('')
+    setStatus('')
+    setFActivo(null)
+    setFTrabajando(null)
+    setFAsignado(null)
+    setFPrimeraVuelta(null)
+    setPage(1)
+  }
+
+  function toggleFlag(
+    val: BoolFilter,
+    setter: React.Dispatch<React.SetStateAction<BoolFilter>>,
+  ) {
+    setter(prev => prev === true ? null : true)
+    setPage(1)
+  }
 
   const load = useCallback(() => {
     setLoading(true)
@@ -64,13 +126,22 @@ export default function DiarioPage() {
     const params =
       tab === 'en_curso'
         ? { fecha, view: 'en_curso' as const, q, limit: 200, ...boolParams }
-        : { view: 'historial' as const, q, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, status: statusFilter, limit: 200, ...boolParams }
+        : {
+            view: 'historial' as const,
+            q,
+            fecha_desde:  fechaDesde,
+            fecha_hasta:  fechaHasta,
+            status:       statusFilter,
+            limit:        HISTORIAL_LIMIT,
+            page,
+            ...boolParams,
+          }
 
     tripsApi.list(params)
       .then(res => { setTrips(res.data); setTotal(res.count) })
       .catch(e => setError(e instanceof Error ? e.message : 'Error cargando viajes'))
       .finally(() => setLoading(false))
-  }, [tab, fecha, q, fechaDesde, fechaHasta, statusFilter, fActivo, fTrabajando, fAsignado, fPrimeraVuelta])
+  }, [tab, fecha, q, fechaDesde, fechaHasta, statusFilter, fActivo, fTrabajando, fAsignado, fPrimeraVuelta, page])
 
   useEffect(() => { load() }, [load])
 
@@ -85,11 +156,12 @@ export default function DiarioPage() {
     setTrips(prev => prev.map(t => (t.id === updated.id ? updated : t)))
   }
 
-  const isToday = fecha === todayISO()
+  const totalPages = Math.max(1, Math.ceil(total / HISTORIAL_LIMIT))
 
   return (
     <div className="flex h-full overflow-hidden relative">
-      {/* Main content */}
+
+      {/* ── Main content ───────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto">
 
@@ -104,135 +176,155 @@ export default function DiarioPage() {
               </p>
             </div>
 
+            {/* Date navigator (en_curso only) */}
             {tab === 'en_curso' && (
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center bg-white border border-border rounded-lg p-0.5 shrink-0">
                 <button
-                  onClick={() => setFecha(prevDay(fecha))}
-                  className="px-2.5 py-1.5 text-xs border border-border rounded-lg hover:bg-white hover:border-accent transition-colors text-gray-500"
+                  onClick={() => setFecha(shiftDay(fecha, -1))}
+                  className="p-1.5 rounded-md hover:bg-gray-100 transition-colors text-gray-500"
+                  title="Día anterior"
                 >
-                  <ChevronLeft size={14} className="inline -mt-0.5" /> Anterior
+                  <ChevronLeft size={16} />
                 </button>
                 {!isToday && (
                   <button
-                    onClick={() => setFecha(todayISO())}
-                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg text-accent font-medium hover:bg-white hover:border-accent transition-colors"
+                    onClick={() => setFecha(today)}
+                    className="px-2.5 py-1 text-xs font-semibold text-accent hover:bg-accent/5 rounded-md transition-colors"
                   >
                     Hoy
                   </button>
                 )}
                 <button
-                  onClick={() => setFecha(nextDay(fecha))}
-                  className="px-2.5 py-1.5 text-xs border border-border rounded-lg hover:bg-white hover:border-accent transition-colors text-gray-500"
+                  onClick={() => { if (!isToday) setFecha(shiftDay(fecha, 1)) }}
+                  disabled={isToday}
+                  className="p-1.5 rounded-md transition-colors text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed hover:enabled:bg-gray-100"
+                  title={isToday ? 'No hay datos de días futuros' : 'Día siguiente'}
                 >
-                  Siguiente <ChevronRight size={14} className="inline -mt-0.5" />
+                  <ChevronRight size={16} />
                 </button>
               </div>
             )}
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-0 border-b border-border">
-            <button
-              onClick={() => setTab('en_curso')}
-              className={`pb-2.5 px-1 mr-6 text-sm font-medium border-b-2 transition-colors ${
-                tab === 'en_curso'
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              En Curso (Hoy)
-            </button>
-            <button
-              onClick={() => setTab('historial')}
-              className={`pb-2.5 px-1 text-sm font-medium border-b-2 transition-colors ${
-                tab === 'historial'
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              Base Histórica y Filtros
-            </button>
+          <div className="flex border-b border-border">
+            {([
+              { key: 'en_curso',  label: 'En Curso'  },
+              { key: 'historial', label: 'Historial' },
+            ] as const).map(t => (
+              <button
+                key={t.key}
+                onClick={() => { setTab(t.key); setPage(1) }}
+                className={`pb-2.5 px-1 mr-6 text-sm font-medium border-b-2 transition-colors ${
+                  tab === t.key
+                    ? 'border-accent text-accent'
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          {/* Filters */}
-          <div className="space-y-2">
+          {/* ── Filter bar ──────────────────────────────────────────── */}
+          <div className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-2.5">
+
+            {/* Row 1: search + historial date range + status + clear */}
             <div className="flex items-center gap-2 flex-wrap">
+
+              {/* Search */}
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
                   value={q}
-                  onChange={e => setQ(e.target.value)}
+                  onChange={e => { setQ(e.target.value); setPage(1) }}
                   placeholder="Tracto, conductor, EETT…"
-                  className="pl-9 pr-4 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
+                  className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-52 bg-white placeholder:text-gray-400 transition-all"
                 />
               </div>
 
+              {/* Historial: date range */}
               {tab === 'historial' && (
-                <>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Desde</span>
                   <input
                     type="date"
                     value={fechaDesde}
-                    onChange={e => setFechaDesde(e.target.value)}
-                    className="px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    onChange={e => { setFechaDesde(e.target.value); setPage(1) }}
+                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all"
                   />
-                  <span className="text-xs text-gray-400">→</span>
+                  <span className="text-gray-300 text-xs">—</span>
                   <input
                     type="date"
                     value={fechaHasta}
-                    onChange={e => setFechaHasta(e.target.value)}
-                    className="px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    onChange={e => { setFechaHasta(e.target.value); setPage(1) }}
+                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all"
                   />
+                </div>
+              )}
+
+              {/* Historial: status */}
+              {tab === 'historial' && (
+                <div className="relative">
                   <select
                     value={statusFilter}
-                    onChange={e => setStatus(e.target.value)}
-                    className="px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    onChange={e => { setStatus(e.target.value); setPage(1) }}
+                    className={`appearance-none pl-2.5 pr-7 py-1.5 text-xs border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all cursor-pointer ${
+                      statusFilter
+                        ? 'border-accent/40 text-accent font-medium'
+                        : 'border-border text-gray-500'
+                    }`}
                   >
-                    <option value="">Todos los estados</option>
-                    <option value="ASIGNADO">ASIGNADO</option>
-                    <option value="RUTA">RUTA</option>
-                    <option value="EN LOCAL">EN LOCAL</option>
-                    <option value="RETORNANDO">RETORNANDO</option>
-                    <option value="RETORNADO CD">RETORNADO CD</option>
-                    <option value="CANCELADO">CANCELADO</option>
-                    <option value="CERRADO FINALIZADO">CERRADO FINALIZADO</option>
-                    <option value="CERRADO INCOMPLETO">CERRADO INCOMPLETO</option>
+                    {STATUS_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
-                </>
+                  <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              )}
+
+              {/* Clear button with active count */}
+              {activeCount > 0 && (
+                <button
+                  onClick={clearFilters}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors"
+                >
+                  <X size={11} />
+                  Limpiar
+                  <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-gray-100 rounded-full text-gray-600">
+                    {activeCount}
+                  </span>
+                </button>
               )}
             </div>
 
-            {/* Boolean flag filters */}
+            {/* Row 2: boolean flag chips */}
             <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mr-0.5">Mostrar</span>
               {([
-                { key: 'activo',         label: 'Activo',      val: fActivo,        set: setFActivo,        on: 'bg-blue-500 text-white border-blue-500',    off: 'bg-blue-50 text-blue-600 border-blue-200' },
-                { key: 'trabajando',     label: 'Trabajando',  val: fTrabajando,    set: setFTrabajando,    on: 'bg-green-500 text-white border-green-500',  off: 'bg-green-50 text-green-600 border-green-200' },
-                { key: 'asignado',       label: 'Asignado',    val: fAsignado,      set: setFAsignado,      on: 'bg-violet-500 text-white border-violet-500', off: 'bg-violet-50 text-violet-600 border-violet-200' },
-                { key: '1ra_vuelta',     label: '1ra Vuelta',  val: fPrimeraVuelta, set: setFPrimeraVuelta, on: 'bg-amber-500 text-white border-amber-500',  off: 'bg-amber-50 text-amber-600 border-amber-200' },
-              ] as const).map(f => (
+                { chip: FLAG_CHIPS[0], val: fActivo,        setter: setFActivo        },
+                { chip: FLAG_CHIPS[1], val: fTrabajando,    setter: setFTrabajando    },
+                { chip: FLAG_CHIPS[2], val: fAsignado,      setter: setFAsignado      },
+                { chip: FLAG_CHIPS[3], val: fPrimeraVuelta, setter: setFPrimeraVuelta },
+              ]).map(({ chip, val, setter }) => (
                 <button
-                  key={f.key}
-                  onClick={() => f.set(prev => prev === true ? null : true)}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
-                    f.val === true ? f.on : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                  key={chip.label}
+                  onClick={() => toggleFlag(val, setter)}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                    val === true ? chip.on : chip.off
                   }`}
                 >
-                  {f.label}
+                  {chip.label}
                 </button>
               ))}
-              {(fActivo != null || fTrabajando != null || fAsignado != null || fPrimeraVuelta != null) && (
-                <button
-                  onClick={() => { setFActivo(null); setFTrabajando(null); setFAsignado(null); setFPrimeraVuelta(null) }}
-                  className="text-[11px] text-gray-400 hover:text-gray-600 px-1.5 py-1 transition-colors"
-                >
-                  ✕ limpiar
-                </button>
-              )}
             </div>
           </div>
 
-          {/* Error */}
+          {/* Error state */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
+            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
+              {error}
+            </div>
           )}
 
           {/* Table */}
@@ -249,6 +341,44 @@ export default function DiarioPage() {
               alertSummary={alertSummary}
             />
           )}
+
+          {/* ── Historial pagination ────────────────────────────────── */}
+          {tab === 'historial' && !loading && total > 0 && (
+            <div className="flex items-center justify-between pt-2 pb-1">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+              >
+                <ChevronLeft size={13} /> Anterior
+              </button>
+
+              <div className="text-xs text-gray-500 text-center">
+                {total > HISTORIAL_LIMIT ? (
+                  <>
+                    Página{' '}
+                    <span className="font-semibold text-gray-700">{page}</span>
+                    {' '}de{' '}
+                    <span className="font-semibold text-gray-700">{totalPages}</span>
+                    <span className="text-gray-400 ml-2">
+                      · {total.toLocaleString('es-CL')} viajes
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-gray-400">{total.toLocaleString('es-CL')} viaje{total !== 1 ? 's' : ''}</span>
+                )}
+              </div>
+
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+              >
+                Siguiente <ChevronRight size={13} />
+              </button>
+            </div>
+          )}
+
         </div>
       </div>
 
