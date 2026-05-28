@@ -208,6 +208,42 @@
 
 ---
 
+### 2026-05-28 — Fix login y registrarse (trigésimo-séptima iteración)
+
+**Diagnóstico vía logs Supabase Auth:**
+
+**Bug 1 (crítico) — Registro/OAuth bloqueados por constraint DB:**
+- Error real: `profiles_role_check constraint violation` → `500: Database error saving new user`
+- Causa: trigger `handle_new_user` asignaba `role = 'operador'` a usuarios no-whitelisted, pero el constraint solo acepta `['viewer','writer','editor','admin','owner']`
+- Fix: migración SQL `20260528000001_fix_handle_new_user_trigger.sql` — cambia `'operador'` → `'viewer'`
+- **PENDIENTE APLICAR EN SUPABASE** (archivo creado, falta `apply_migration`)
+
+**Bug 2 (moderado) — Login falla para usuarios creados sin contraseña:**
+- Error real: `400: Invalid login credentials` (× 3 intentos)
+- Causa: admin panel crea usuarios sin contraseña → no pueden hacer login email/password
+- Fix: `lib/actions/users.ts` — si no hay password, envía `resetPasswordForEmail()` automáticamente para que el usuario setee la suya
+
+**Fix 3 (menor) — LoginForm redirect:**
+- `LoginForm.tsx` redirigía a `/dashboard/operaciones` (doble redirect) → cambiado a `/dashboard/diario`
+
+**Archivos modificados:**
+- `monitor-app/backend/supabase/migrations/20260528000001_fix_handle_new_user_trigger.sql` (nuevo)
+- `monitor-app/frontend/lib/actions/users.ts` (envío recovery email)
+- `monitor-app/frontend/components/auth/LoginForm.tsx` (redirect directo)
+
+**Checklist (trigésimo-séptima):**
+- [x] Migración SQL creada (`'operador'` → `'viewer'`)
+- [ ] **Aplicar migración en Supabase** (crítico — bloquea todo registro)
+- [x] `users.ts` envía recovery email cuando sin contraseña
+- [x] `LoginForm.tsx` redirect a `/dashboard/diario`
+- [ ] Deploy a Vercel (código frontend)
+- [ ] Verificar: registro nuevo usuario → dashboard
+- [ ] Verificar: admin crea usuario sin password → usuario recibe email de reset
+
+**Próximo paso exacto:** Confirmar aplicación de migración → luego deploy Vercel.
+
+---
+
 ### 2026-05-27 — Manual plate assignment + plate normalization (trigésimo-sexta iteración)
 
 **Objetivo:** Permitir asignación manual de patente (tracto/rampla) en viajes Sodimac (y cualquier TMS sin flota). Normalizar la UI de patentes para que una sola patente tenga la misma relevancia visual que la patente principal de QAnalytics.

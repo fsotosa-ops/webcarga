@@ -44,6 +44,14 @@ export async function createUser(formData: FormData) {
 
   if (data.user) {
     await supabase.from('profiles').update({ role }).eq('id', data.user.id)
+
+    // If no password was set, send a recovery email so the user can set their own
+    if (!password) {
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+      await supabase.auth.resetPasswordForEmail(email, {
+        ...(siteUrl && { redirectTo: `${siteUrl}/auth/reset-password` }),
+      })
+    }
   }
 
   return { success: true }
