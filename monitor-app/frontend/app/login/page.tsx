@@ -104,7 +104,20 @@ export default function LoginPage() {
                 </p>
               </>
             ) : (
-              <RegisterForm onSwitchToLogin={() => setTab('login')} />
+              <>
+                <OAuthButtons />
+                <div className="relative my-5">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-100" />
+                  </div>
+                  <div className="relative flex justify-center">
+                    <span className="bg-white px-3 text-[10px] font-semibold text-gray-300 uppercase tracking-[0.15em]">
+                      o con email
+                    </span>
+                  </div>
+                </div>
+                <RegisterForm onSwitchToLogin={() => setTab('login')} />
+              </>
             )}
           </div>
         </div>
