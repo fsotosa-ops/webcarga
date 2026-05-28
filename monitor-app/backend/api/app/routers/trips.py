@@ -99,7 +99,8 @@ async def list_trips(
     if d := _parse_date(fecha_hasta):
         add("t.planning_date <= ?", d)
     if status:
-        add("t.current_status_tms = ?", status)
+        statuses = [s.strip() for s in status.split(',') if s.strip()]
+        add("t.current_status_tms = ANY(?)", statuses)
     if activo == "true":
         filters.append("t.activo = true")
     elif activo == "false":
