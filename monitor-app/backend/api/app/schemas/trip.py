@@ -12,6 +12,8 @@ class TripPatch(BaseModel):
     comentarios:            Optional[str]  = None
     driver_name:            Optional[str]  = None
     driver_phone:           Optional[str]  = None
+    tractor_plate:          Optional[str]  = None
+    trailer_plate:          Optional[str]  = None
 
     def sent_fields(self) -> list[str]:
         return list(self.model_dump(exclude_none=True).keys())

@@ -295,6 +295,86 @@ function PhoneTagCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => voi
   )
 }
 
+function PlateCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }) {
+  const primaryPlate   = trip.tractor_plate ?? trip.trailer_plate ?? null
+  const secondaryPlate = trip.tractor_plate && trip.trailer_plate ? trip.trailer_plate : null
+
+  const [editing, setEditing] = useState<'primary' | 'secondary' | null>(null)
+  const [draft, setDraft]     = useState('')
+  const [saving, setSaving]   = useState(false)
+
+  const startEdit = (which: 'primary' | 'secondary', e: React.MouseEvent) => {
+    e.stopPropagation()
+    const current = which === 'primary'
+      ? (trip.tractor_plate ?? trip.trailer_plate ?? '')
+      : (trip.trailer_plate ?? '')
+    setDraft(current)
+    setEditing(which)
+  }
+
+  const handleSave = async (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation()
+    setSaving(true)
+    try {
+      const field = editing === 'secondary' ? 'trailer_plate' : 'tractor_plate'
+      const updated = await tripsApi.patch(trip.id, { [field]: draft.trim().toUpperCase() })
+      onSaved(updated)
+      setEditing(null)
+    } catch { /* ignore */ } finally { setSaving(false) }
+  }
+
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditing(null)
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 min-w-[110px]" onClick={e => e.stopPropagation()}>
+        <input
+          autoFocus
+          value={draft}
+          onChange={e => setDraft(e.target.value.toUpperCase())}
+          onKeyDown={e => {
+            if (e.key === 'Enter') handleSave(e)
+            if (e.key === 'Escape') { setEditing(null) }
+          }}
+          placeholder="XXNN00"
+          className="font-mono text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30 uppercase"
+        />
+        <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
+          {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+        </button>
+        <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
+          <X size={11} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div
+        className="group flex items-center gap-1.5 cursor-text"
+        onClick={e => startEdit('primary', e)}
+      >
+        <span className={`font-mono text-xs font-bold ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal'}`}>
+          {primaryPlate ?? 'sin patente'}
+        </span>
+        <PenLine size={10} className="text-gray-200 group-hover:text-accent/60 transition-colors shrink-0" />
+      </div>
+      {secondaryPlate && (
+        <span
+          className="font-mono text-[10px] text-gray-400 mt-0.5 block cursor-text hover:text-gray-600 transition-colors"
+          onClick={e => startEdit('secondary', e)}
+        >
+          {secondaryPlate}
+        </span>
+      )}
+    </div>
+  )
+}
+
 type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'transporter' | 'client_name' | 'current_status' | 'source_trip_id'
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: 'asc' | 'desc' }) {
@@ -346,7 +426,8 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
       <div className="md:hidden divide-y divide-border/60">
         {trips.map(trip => {
           const isActive      = trip.id === selectedId
-          const plateAlert    = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
+          const primaryPlate  = trip.tractor_plate ?? trip.trailer_plate ?? null
+          const plateAlert    = alertSummary?.plates[primaryPlate ?? ''] as AlertStatus | undefined
           const driverAlert   = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
           const currentStatus = trip.estado_manual ?? trip.current_status
           const statusColor   = currentStatus ? STATUS_COLOR[currentStatus] : null
@@ -362,8 +443,8 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
               {/* fila 1: patente + estado */}
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="font-mono text-sm font-bold text-slate-800 shrink-0">
-                    {trip.tractor_plate ?? '—'}
+                  <span className={`font-mono text-sm font-bold shrink-0 ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal text-xs'}`}>
+                    {primaryPlate ?? 'sin patente'}
                   </span>
                   <ComplianceBadge status={plateAlert ?? null} compact />
                   <TmsChip tms={trip.tms_name ?? ''} />
@@ -475,18 +556,11 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
 
                   {/* PATENTE */}
                   <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-xs font-bold text-slate-800">
-                        {trip.tractor_plate ?? '—'}
-                      </span>
+                    <div className="flex items-start gap-1.5">
+                      <PlateCell trip={trip} onSaved={onSaved} />
                       <ComplianceBadge status={plateAlert ?? null} compact
                         tooltip={plateAlert === 'expired' ? 'Vehículo vencido' : 'Vence pronto'} />
                     </div>
-                    {trip.trailer_plate && (
-                      <span className="font-mono text-[10px] text-gray-400 mt-0.5 block">
-                        {trip.trailer_plate}
-                      </span>
-                    )}
                   </td>
 
                   {/* CONDUCTOR + FLAGS */}

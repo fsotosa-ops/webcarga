@@ -25,8 +25,10 @@ _TRIP_SELECT = """
     t.planning_date,
     t.status_reported_at,
     t.current_status_tms                          AS current_status,
-    t.fleet->>'tractor_plate'                     AS tractor_plate,
-    t.fleet->>'trailer_plate'                     AS trailer_plate,
+    COALESCE(fl.tractor_plate,
+             t.fleet->>'tractor_plate')           AS tractor_plate,
+    COALESCE(fl.trailer_plate,
+             t.fleet->>'trailer_plate')           AS trailer_plate,
     COALESCE(fl.driver_name_raw,
              t.fleet->>'driver_name_tms')         AS driver_name,
     t.fleet->>'driver_rut_tms'                    AS driver_rut,
@@ -77,6 +79,7 @@ async def list_trips(
 ):
     filters: list[str] = [
         "($1 = '' OR t.fleet->>'tractor_plate' ILIKE '%'||$1||'%' "
+        "OR fl.tractor_plate ILIKE '%'||$1||'%' "
         "OR t.fleet->>'driver_name_tms' ILIKE '%'||$1||'%' "
         "OR COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms') ILIKE '%'||$1||'%' "
         "OR t.fleet->>'driver_rut_tms' ILIKE '%'||$1||'%' "
@@ -204,6 +207,30 @@ async def patch_trip(
                    (trip_id, driver_phone, link_source, created_by)
                    VALUES ($1, $2, 'manual', $3) RETURNING id""",
                 trip_id, new_phone, user["sub"],
+            )
+            await pool.execute(
+                "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
+                new_link_id, trip_id,
+            )
+
+    # tractor_plate / trailer_plate go to trip_fleet_links
+    plate_updates = {k: data.pop(k) for k in ("tractor_plate", "trailer_plate") if k in data}
+    if plate_updates:
+        link_id = await pool.fetchval("SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id)
+        if link_id:
+            for col, val in plate_updates.items():
+                await pool.execute(
+                    f"UPDATE app.trip_fleet_links SET {col} = $1, updated_at = NOW() WHERE id = $2",
+                    val, link_id,
+                )
+        else:
+            cols = ", ".join(plate_updates.keys())
+            phs  = ", ".join(f"${i + 2}" for i in range(len(plate_updates)))
+            new_link_id = await pool.fetchval(
+                f"""INSERT INTO app.trip_fleet_links
+                   (trip_id, {cols}, link_source, created_by)
+                   VALUES ($1, {phs}, 'manual', ${len(plate_updates) + 2}) RETURNING id""",
+                trip_id, *plate_updates.values(), user["sub"],
             )
             await pool.execute(
                 "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",

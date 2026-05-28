@@ -46,6 +46,8 @@ export type TripPatch = {
   comentarios?:    string
   driver_name?:    string
   driver_phone?:   string
+  tractor_plate?:  string
+  trailer_plate?:  string
 }
 
 export type FleetLinkPayload = {

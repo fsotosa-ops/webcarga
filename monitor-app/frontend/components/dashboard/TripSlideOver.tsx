@@ -197,7 +197,7 @@ export function TripSlideOver({ trip, onClose, onSaved }: Props) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h2 className="text-base md:text-lg font-bold text-white font-mono tracking-wide">
-                {trip.tractor_plate ?? 'Sin patente'}
+                {trip.tractor_plate ?? trip.trailer_plate ?? 'Sin patente'}
               </h2>
               {statusColor && (
                 <span

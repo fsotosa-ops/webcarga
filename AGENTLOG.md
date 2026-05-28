@@ -208,6 +208,100 @@
 
 ---
 
+### 2026-05-27 — Manual plate assignment + plate normalization (trigésimo-sexta iteración)
+
+**Objetivo:** Permitir asignación manual de patente (tracto/rampla) en viajes Sodimac (y cualquier TMS sin flota). Normalizar la UI de patentes para que una sola patente tenga la misma relevancia visual que la patente principal de QAnalytics.
+
+**Backend (`monitor-app/backend/api/app/routers/trips.py`):**
+- `_TRIP_SELECT`: `tractor_plate` y `trailer_plate` ahora `COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')` — el override manual tiene prioridad sobre el TMS
+- Filtro de búsqueda: añadido `fl.tractor_plate ILIKE '%'||$1||'%'` para buscar por patente manual
+- `patch_trip`: nuevo bloque para `tractor_plate` / `trailer_plate` → escribe a `trip_fleet_links` (crea link si no existe, igual que driver_name/driver_phone)
+
+**Backend (`monitor-app/backend/api/app/schemas/trip.py`):**
+- `TripPatch`: añadidos `tractor_plate: Optional[str]` y `trailer_plate: Optional[str]`
+
+**Frontend (`monitor-app/frontend/lib/api/trips.ts`):**
+- `TripPatch`: añadidos `tractor_plate?: string` y `trailer_plate?: string`
+
+**Frontend (`monitor-app/frontend/components/dashboard/TripTable.tsx`):**
+- Nuevo componente `PlateCell`: edición inline de patentes (similar a ConductorCell)
+  - `primaryPlate = tractor_plate ?? trailer_plate ?? null` — una sola patente se muestra con mismo peso visual que QA
+  - `secondaryPlate = tractor_plate && trailer_plate ? trailer_plate : null` — si hay dos, el tracto va arriba en bold y la rampla abajo en pequeño
+  - Click en primaria → edita `tractor_plate`; click en secundaria → edita `trailer_plate`
+  - Guarda via `PATCH /{id}` con `tractor_plate` o `trailer_plate`
+  - Input en mayúsculas automáticas
+- Columna PATENTE en desktop: reemplazada por `<PlateCell>` + `<ComplianceBadge>`
+- Mobile cards: `primaryPlate = tractor_plate ?? trailer_plate` para normalizar display (antes mostraba `tractor_plate ?? '—'`)
+
+**Frontend (`monitor-app/frontend/components/dashboard/TripSlideOver.tsx`):**
+- Header: `trip.tractor_plate ?? trip.trailer_plate ?? 'Sin patente'` (normalizado)
+
+**Resultado:** TypeScript 0 errores. Sodimac trips pueden recibir patente manual; todos los trips con una sola patente la muestran con el mismo peso visual.
+
+**Checklist (trigésimo-sexta):**
+- [x] COALESCE plates en _TRIP_SELECT (override manual > TMS)
+- [x] fl.tractor_plate en filtro de búsqueda
+- [x] patch_trip handler para tractor_plate / trailer_plate → trip_fleet_links
+- [x] TripPatch schema actualizado (backend + frontend)
+- [x] PlateCell con inline edit + normalización primary/secondary
+- [x] Mobile cards normalizados
+- [x] TripSlideOver header normalizado
+- [x] 0 TypeScript errors
+
+**Próximo paso:** Deploy. Correr `dbt run --select slv_milestone_trips+ int_tms_trips_conformed+ app_trips` en Mage para activar los fixes de estado CERRADO y origin nulo.
+
+---
+
+### 2026-05-27 — Auditoría Supabase + PKs + índices + dbt MERGE fix (trigésimo-quinta iteración)
+
+**Objetivos:** (1) Agregar `source_trip_id` como "ID Viaje" en TripTable + ordenamiento de columnas. (2) Mostrar viajes cerrados/finalizados en el diario. (3) Fix bug MERGE en dbt pipeline. (4) Auditoría Supabase performance & seguridad. (5) Aplicar migración PKs + índices funcionales.
+
+**TripTable.tsx (monitor-app/frontend/components/dashboard/TripTable.tsx):**
+- Añadida columna "ID Viaje" (`source_trip_id`) en `font-mono text-[11px]`
+- Ordenamiento ascendente/descendente en todas las columnas (useMemo sort, ciclo null→asc→desc→null)
+- `SortKey` type, `SortIcon` component (ArrowUpDown gris / ArrowUp / ArrowDown en accent)
+- `minWidth` aumentado de 980 a 1080
+
+**trips.py (monitor-app/backend/api/app/routers/trips.py):**
+- `source_trip_id` añadido a `_TRIP_SELECT`
+- Eliminado filtro `en_curso` que bloqueaba viajes cerrados/finalizados → ahora el filtro es solo por fecha
+
+**dbt — fix MERGE bug (`raw_snapshot.sql` + `slv_milestone_trips.sql`):**
+- Root cause: `DISTINCT ON (source_trip_id)` sin `source_client` → acumulación de duplicados en snapshot cuando dos clientes tienen el mismo trip ID
+- `raw_snapshot.sql`: cambiado a `DISTINCT ON (source_client, source_trip_id)`, ORDER BY actualizado
+- `slv_milestone_trips.sql`: surrogate key incluye `source_client` → `generate_surrogate_key(['source_client', 'source_trip_id', 'stop_location_name'])`
+- Requiere `dbt snapshot --full-refresh` + `dbt run --select slv_milestone_trips --full-refresh` en Mage
+
+**Supabase auditoría & migración `20260527000003_pk_and_indexes` (aplicada):**
+- `ALTER TABLE app.trips ADD PRIMARY KEY (id)` ✅
+- `ALTER TABLE app.transporter_profiles ADD PRIMARY KEY (id)` ✅
+- Índices funcionales: `(fleet->>'tractor_plate')`, `(fleet->>'driver_rut_tms')`, `(fleet->>'driver_name_tms')` ✅
+- Índices estándar: `planning_date`, `current_status_tms`, `fleet_link_id` en `app.trips` ✅
+- FK: `app.trip_fleet_links.trip_id → app.trips(id)` ✅
+- Índice: `app.transporter_profiles(edited_by)` ✅
+
+**Pendiente (seguridad — requiere aprobación explícita):**
+- `20260527000002_performance_and_security_hardening.sql` — existe localmente, NO aplicada aún:
+  - RLS en `app.trips`, `app.trip_fleet_links`, `app.trip_events`
+  - `REVOKE EXECUTE ON FUNCTION app.safe_update_transporter FROM anon`
+  - Fix `auth.uid()` → `(select auth.uid())` en `public.profiles`
+  - DROP 11 índices no usados
+  - `ALTER VIEW app.v_compliance_alerts SET (security_invoker = true)`
+
+**Checklist (trigésimo-quinta):**
+- [x] ID Viaje column en TripTable + sort en todas las columnas
+- [x] Viajes cerrados/finalizados visibles en diario
+- [x] dbt MERGE fix (raw_snapshot + slv_milestone_trips)
+- [x] PK en app.trips y app.transporter_profiles
+- [x] Índices funcionales JSONB fleet
+- [x] FK trip_fleet_links → trips
+- [x] Migración `20260527000003_pk_and_indexes` aplicada en producción
+- [x] Aplicar `20260527000002_performance_and_security_hardening` (aplicada)
+- [ ] Correr dbt full-refresh en Mage para fix MERGE
+- [ ] Commit dbt files (raw_snapshot.sql, slv_milestone_trips.sql)
+
+---
+
 ### 2026-05-20 — Governance fields alignment + factible status (trigésimo-segunda iteración)
 
 **Objetivo:** Cerrar brechas entre el Excel de gobernanza (Drive spreadsheet `1DtBJfpHDf3zN1J9CbZ90bRZl9j7dYrOT_3m-JtNHXNo`) y el código. (1) Empresa detail page — rediseño UX completo. (2) Añadir campo `padron` faltante en VehicleGovernance. (3) Añadir `'factible'` al enum ComplianceStatus.
