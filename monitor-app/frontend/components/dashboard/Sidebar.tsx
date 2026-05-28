@@ -5,12 +5,23 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Truck, Building2, Users, LogOut, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  Truck, Building2, Users, LogOut,
+  ChevronLeft, ChevronRight, Shield,
+} from 'lucide-react'
 
-const navItems = [
+const NAV_ITEMS = [
   { href: '/dashboard/diario',         label: 'Diario',   icon: Truck },
   { href: '/dashboard/transportistas', label: 'Empresas', icon: Building2 },
 ]
+
+const ROLE_BADGE: Record<string, string> = {
+  owner:  'bg-amber-500/20 text-amber-300',
+  admin:  'bg-purple-500/20 text-purple-300',
+  editor: 'bg-teal-500/20 text-teal-300',
+  writer: 'bg-blue-500/20 text-blue-300',
+  viewer: 'bg-white/10 text-white/50',
+}
 
 interface SidebarProps {
   role?: string
@@ -38,136 +49,156 @@ export default function Sidebar({ role }: SidebarProps) {
     router.refresh()
   }
 
-  const isAdmin = pathname.startsWith('/dashboard/admin')
+  const isAdmin   = pathname.startsWith('/dashboard/admin')
+  const canAdmin  = role === 'admin' || role === 'owner'
+  const roleBadge = ROLE_BADGE[role ?? 'viewer'] ?? ROLE_BADGE.viewer
 
   return (
     <>
       {/* ── Desktop sidebar (md+) ─────────────────────────────── */}
-      <aside className={`hidden md:flex ${collapsed ? 'w-16' : 'w-56'} bg-sidebar min-h-screen flex-col shrink-0 transition-[width] duration-200`}>
+      <aside className={`hidden md:flex ${collapsed ? 'w-[60px]' : 'w-[220px]'} bg-sidebar min-h-screen flex-col shrink-0 transition-[width] duration-200 ease-out`}>
 
-        {/* Logo / collapse header */}
-        {collapsed ? (
-          /* Collapsed: full-width expand button */
-          <div className="h-14 border-b border-white/10 shrink-0">
+        {/* ── Header ── */}
+        <div className={`h-14 border-b border-white/8 flex items-center shrink-0 ${collapsed ? 'justify-center px-0' : 'px-4 gap-3'}`}>
+          {collapsed ? (
             <button
               onClick={toggle}
-              title="Expandir menú"
-              className="w-full h-full flex items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/5 transition-colors"
+              className="w-full h-full flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/5 transition-colors"
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={15} />
             </button>
-          </div>
-        ) : (
-          /* Expanded: logo + name + collapse button */
-          <div className="h-14 px-4 border-b border-white/10 flex items-center gap-2.5 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shrink-0 shadow-lg">
-              <span className="text-white font-mulish font-bold text-sm">W</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-white font-mulish font-bold text-sm leading-tight">WebCarga</p>
-              <p className="text-white/40 text-[11px]">Diario 2.0</p>
-            </div>
-            <button
-              onClick={toggle}
-              title="Colapsar menú"
-              className="shrink-0 p-1.5 rounded text-white/35 hover:text-white/80 hover:bg-white/5 transition-colors"
-            >
-              <ChevronLeft size={14} />
-            </button>
-          </div>
-        )}
+          ) : (
+            <>
+              <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shrink-0 shadow-lg shadow-accent/30">
+                <span className="text-white font-mulish font-bold text-sm">W</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-mulish font-bold text-[13px] leading-tight tracking-tight">WebCarga</p>
+                <p className="text-white/35 text-[10px] tracking-wide">Monitor · Diario 2.0</p>
+              </div>
+              <button
+                onClick={toggle}
+                className="shrink-0 p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/5 transition-colors"
+              >
+                <ChevronLeft size={14} />
+              </button>
+            </>
+          )}
+        </div>
 
-        {/* Nav */}
-        <nav className="flex-1 px-2 py-3 space-y-0.5">
-          {navItems.map(({ href, label, icon: Icon }) => {
+        {/* ── Main nav ── */}
+        <nav className="flex-1 flex flex-col px-2.5 py-3 gap-0.5 overflow-hidden">
+          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
             return (
               <Link
-                key={href} href={href}
+                key={href}
+                href={href}
                 title={collapsed ? label : undefined}
-                className={`flex items-center py-2.5 rounded-lg text-sm transition-all ${
-                  collapsed ? 'justify-center px-2.5' : 'gap-3 px-3'
+                className={`group relative flex items-center rounded-xl text-[13px] transition-all duration-150 ${
+                  collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
                 } ${active
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-white/55 hover:bg-white/5 hover:text-white/80'
+                  ? 'bg-white/12 text-white'
+                  : 'text-white/45 hover:bg-white/6 hover:text-white/80'
                 }`}
               >
-                <Icon size={16} className={active ? 'text-accent' : ''} />
-                {!collapsed && <span className="truncate">{label}</span>}
-                {!collapsed && active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
+                {active && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
+                )}
+                <Icon size={16} className={`shrink-0 ${active ? 'text-accent' : 'group-hover:text-white/70'}`} />
+                {!collapsed && (
+                  <span className={`font-medium truncate ${active ? 'text-white' : ''}`}>{label}</span>
+                )}
               </Link>
             )
           })}
 
-          {role === 'admin' && (
-            <div className="pt-3 mt-3 border-t border-white/10">
+          {/* ── Admin section ── */}
+          {canAdmin && (
+            <div className={`mt-auto pt-3 ${!collapsed ? 'border-t border-white/8' : ''}`}>
               {!collapsed && (
-                <p className="px-3 text-[10px] font-semibold text-white/25 uppercase tracking-widest mb-1.5">Admin</p>
+                <p className="px-3 text-[9px] font-bold text-white/20 uppercase tracking-[0.12em] mb-1.5">
+                  Administración
+                </p>
               )}
               <Link
                 href="/dashboard/admin/usuarios"
-                title={collapsed ? 'Admin' : undefined}
-                className={`flex items-center py-2.5 rounded-lg text-sm transition-all ${
-                  collapsed ? 'justify-center px-2.5' : 'gap-3 px-3'
+                title={collapsed ? 'Usuarios' : undefined}
+                className={`group relative flex items-center rounded-xl text-[13px] transition-all duration-150 ${
+                  collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
                 } ${isAdmin
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-white/55 hover:bg-white/5 hover:text-white/80'
+                  ? 'bg-white/12 text-white'
+                  : 'text-white/40 hover:bg-white/6 hover:text-white/75'
                 }`}
               >
-                <Users size={16} className={isAdmin ? 'text-accent' : ''} />
-                {!collapsed && <span className="truncate">Usuarios</span>}
-                {!collapsed && isAdmin && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
+                {isAdmin && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
+                )}
+                <Users size={16} className={`shrink-0 ${isAdmin ? 'text-accent' : 'group-hover:text-white/65'}`} />
+                {!collapsed && (
+                  <span className={`font-medium truncate ${isAdmin ? 'text-white' : ''}`}>Usuarios</span>
+                )}
+                {!collapsed && role === 'owner' && (
+                  <Shield size={11} className="ml-auto shrink-0 text-amber-400/60" />
+                )}
               </Link>
             </div>
           )}
         </nav>
 
-        {/* Sign out */}
-        <div className="px-2 py-3 border-t border-white/10">
+        {/* ── Footer: sign out ── */}
+        <div className="px-2.5 pb-3 border-t border-white/8 pt-2">
           <button
             onClick={signOut}
             title={collapsed ? 'Cerrar sesión' : undefined}
-            className={`w-full flex items-center py-2.5 rounded-lg text-sm text-white/55 hover:bg-white/5 hover:text-white/80 transition-all ${
-              collapsed ? 'justify-center px-2.5' : 'gap-3 px-3'
+            className={`w-full group flex items-center rounded-xl text-[13px] text-white/35 hover:bg-white/6 hover:text-white/65 transition-all duration-150 ${
+              collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
             }`}
           >
-            <LogOut size={16} />
+            <LogOut size={15} className="shrink-0" />
             {!collapsed && <span>Cerrar sesión</span>}
           </button>
         </div>
       </aside>
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/10 flex items-stretch">
-        {navItems.map(({ href, label, icon: Icon }) => {
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
+        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           return (
-            <Link key={href} href={href}
+            <Link
+              key={href}
+              href={href}
               className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
-                active ? 'text-white' : 'text-white/45 hover:text-white/80'
-              }`}>
-              <Icon size={21} className={active ? 'text-accent' : ''} />
-              <span className="text-[10px] font-medium">{label}</span>
-              {active && <div className="w-1 h-1 rounded-full bg-accent" />}
+                active ? 'text-white' : 'text-white/40 hover:text-white/70'
+              }`}
+            >
+              <Icon size={20} className={active ? 'text-accent' : ''} />
+              <span className="text-[9px] font-semibold tracking-wide uppercase">{label}</span>
+              {active && <span className="w-1 h-1 rounded-full bg-accent" />}
             </Link>
           )
         })}
 
-        {role === 'admin' && (
-          <Link href="/dashboard/admin/usuarios"
+        {canAdmin && (
+          <Link
+            href="/dashboard/admin/usuarios"
             className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
-              isAdmin ? 'text-white' : 'text-white/45 hover:text-white/80'
-            }`}>
-            <Users size={21} className={isAdmin ? 'text-accent' : ''} />
-            <span className="text-[10px] font-medium">Admin</span>
-            {isAdmin && <div className="w-1 h-1 rounded-full bg-accent" />}
+              isAdmin ? 'text-white' : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            <Users size={20} className={isAdmin ? 'text-accent' : ''} />
+            <span className="text-[9px] font-semibold tracking-wide uppercase">Admin</span>
+            {isAdmin && <span className="w-1 h-1 rounded-full bg-accent" />}
           </Link>
         )}
 
-        <button onClick={signOut}
-          className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-white/45 hover:text-white/80 transition-colors">
-          <LogOut size={21} />
-          <span className="text-[10px] font-medium">Salir</span>
+        <button
+          onClick={signOut}
+          className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-white/35 hover:text-white/65 transition-colors"
+        >
+          <LogOut size={20} />
+          <span className="text-[9px] font-semibold tracking-wide uppercase">Salir</span>
         </button>
       </nav>
     </>
