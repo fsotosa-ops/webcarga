@@ -12,13 +12,15 @@ import {
 } from 'lucide-react'
 
 // ── Role styling ──────────────────────────────────────────────────────────────
-const ROLE_BADGE: Record<UserRole, { pill: string; avatar: string; dot: string }> = {
+const ROLE_BADGE_MAP: Record<string, { pill: string; avatar: string; dot: string }> = {
   viewer: { pill: 'bg-gray-100 text-gray-600 border-gray-200',     avatar: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400'   },
   writer: { pill: 'bg-blue-50 text-blue-700 border-blue-200',      avatar: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500'   },
   editor: { pill: 'bg-teal-50 text-teal-700 border-teal-200',      avatar: 'bg-teal-100 text-teal-700',     dot: 'bg-teal-500'   },
   admin:  { pill: 'bg-purple-50 text-purple-700 border-purple-200', avatar: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
   owner:  { pill: 'bg-amber-50 text-amber-700 border-amber-200',   avatar: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500'  },
 }
+const FALLBACK_BADGE = { pill: 'bg-gray-100 text-gray-600 border-gray-200', avatar: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' }
+function getRoleBadge(role: string) { return ROLE_BADGE_MAP[role] ?? FALLBACK_BADGE }
 
 const ALL_ROLES: UserRole[] = ['viewer', 'writer', 'editor', 'admin', 'owner']
 
@@ -190,7 +192,7 @@ export default function UsersTable({ users: initial, currentUserId, actorRole }:
             <tbody className="divide-y divide-border/60">
               {filtered.map(user => {
                 const userRole  = (user.role as UserRole) ?? 'viewer'
-                const badge     = ROLE_BADGE[userRole]
+                const badge     = getRoleBadge(userRole)
                 const manageable = user.id !== currentUserId && canManage(actorRole, userRole)
                 const isMe       = user.id === currentUserId
                 const initStr    = initials(user.full_name, user.email)
@@ -234,7 +236,7 @@ export default function UsersTable({ users: initial, currentUserId, actorRole }:
                             <div className="absolute left-0 top-full mt-1.5 z-20 bg-white border border-border rounded-xl shadow-xl p-1.5 w-56">
                               <p className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Cambiar rol</p>
                               {assignableRoles.map(role => {
-                                const rb = ROLE_BADGE[role]
+                                const rb = getRoleBadge(role)
                                 return (
                                   <button
                                     key={role}
