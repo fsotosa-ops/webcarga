@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
@@ -16,16 +16,17 @@ type BoolFilter = boolean | null
 
 const HISTORIAL_LIMIT = 100
 
-// ── Default status categories ─────────────────────────────────────────────────
-const STATUS_GROUPS = [
-  { id: 'en_ruta',    label: 'En Ruta',    statuses: ['ASIGNADO', 'ORIGEN', 'RUTA'],              on: 'bg-blue-500  border-blue-500  text-white', off: 'text-blue-600  border-blue-200  bg-blue-50/70  hover:border-blue-300'   },
-  { id: 'en_local',   label: 'En Local',   statuses: ['EN LOCAL', 'VIAJE EN PREDIO'],              on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-600 border-orange-200 bg-orange-50/70 hover:border-orange-300' },
-  { id: 'retornando', label: 'Retornando', statuses: ['RETORNANDO', 'RETORNADO CD'],               on: 'bg-cyan-500   border-cyan-500   text-white', off: 'text-cyan-700   border-cyan-200   bg-cyan-50/70   hover:border-cyan-300'   },
-  { id: 'cerrado',    label: 'Cerrados',   statuses: ['CERRADO FINALIZADO', 'CERRADO INCOMPLETO', 'CERRADO MANUAL', 'CERRADO SIN GPS', 'CERRADO POR OTRO VIAJE', 'CERRADO FINALIZADO CC'], on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-600  border-slate-200  bg-slate-50/70  hover:border-slate-300' },
-  { id: 'problema',   label: 'Problema',   statuses: ['CANCELADO', 'EN PANA', 'DEVUELTO'],         on: 'bg-red-500    border-red-500    text-white', off: 'text-red-600    border-red-200    bg-red-50/70    hover:border-red-300'     },
-] as const
+// ── Group display config (labels + chip colors only — membership comes from meta.statuses) ──
+const GROUP_DISPLAY: Record<string, { label: string; on: string; off: string }> = {
+  en_ruta:    { label: 'En Ruta',    on: 'bg-blue-500   border-blue-500   text-white', off: 'text-blue-600   border-blue-200   bg-blue-50/70   hover:border-blue-300'   },
+  en_local:   { label: 'En Local',   on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-600 border-orange-200 bg-orange-50/70 hover:border-orange-300' },
+  retornando: { label: 'Retornando', on: 'bg-cyan-500   border-cyan-500   text-white', off: 'text-cyan-700   border-cyan-200   bg-cyan-50/70   hover:border-cyan-300'   },
+  cerrado:    { label: 'Cerrados',   on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-600  border-slate-200  bg-slate-50/70  hover:border-slate-300'  },
+  problema:   { label: 'Problema',   on: 'bg-red-500    border-red-500    text-white', off: 'text-red-600    border-red-200    bg-red-50/70    hover:border-red-300'     },
+  otro:       { label: 'Otro',       on: 'bg-gray-500   border-gray-500   text-white', off: 'text-gray-600   border-gray-200   bg-gray-50/70   hover:border-gray-300'    },
+}
 
-type DefaultGroupId = (typeof STATUS_GROUPS)[number]['id']
+const GROUP_ORDER = ['en_ruta', 'en_local', 'retornando', 'cerrado', 'problema', 'otro']
 
 // ── Custom group color classes ─────────────────────────────────────────────────
 const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
@@ -94,12 +95,30 @@ export default function DiarioPage() {
   const today   = todayISO()
   const isToday = fecha === today
 
+  // Derive default filter groups from meta.statuses (group membership comes from DB)
+  const defaultGroups = useMemo(() => {
+    if (!tripsMeta?.statuses?.length) return []
+    const grouped: Record<string, string[]> = {}
+    for (const s of tripsMeta.statuses) {
+      const g = s.group ?? 'otro'
+      if (!grouped[g]) grouped[g] = []
+      grouped[g].push(s.id)
+    }
+    return GROUP_ORDER
+      .filter(g => grouped[g]?.length > 0)
+      .map(g => ({
+        id:       g,
+        statuses: grouped[g],
+        ...(GROUP_DISPLAY[g] ?? { label: g, on: GROUP_DISPLAY.otro.on, off: GROUP_DISPLAY.otro.off }),
+      }))
+  }, [tripsMeta?.statuses])
+
   // Resolve active group statuses
   const statusParam = (() => {
     if (!activeGroup) return ''
     if (activeGroup.startsWith('default:')) {
-      const id = activeGroup.slice(8) as DefaultGroupId
-      return STATUS_GROUPS.find(g => g.id === id)?.statuses.join(',') ?? ''
+      const id = activeGroup.slice(8)
+      return defaultGroups.find(g => g.id === id)?.statuses.join(',') ?? ''
     }
     // custom:uuid
     const id = activeGroup.slice(7)
@@ -289,8 +308,8 @@ export default function DiarioPage() {
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Estado</span>
 
-              {/* Default groups */}
-              {STATUS_GROUPS.map(g => {
+              {/* Default groups — derived from meta.statuses (group membership from DB) */}
+              {defaultGroups.map(g => {
                 const key = `default:${g.id}`
                 const active = activeGroup === key
                 return (
