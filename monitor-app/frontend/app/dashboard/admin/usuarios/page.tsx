@@ -92,7 +92,7 @@ export default async function AdminUsuariosPage() {
       </div>
 
       {/* ── Role legend ───────────────────────────────────────────── */}
-      <div data-tour="admin-users" className="max-w-5xl mx-auto px-6 mt-4">
+      <div className="max-w-5xl mx-auto px-6 mt-4">
         <div className="bg-white rounded-xl border border-border px-5 py-4">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
             Jerarquía de permisos
@@ -117,7 +117,7 @@ export default async function AdminUsuariosPage() {
       </div>
 
       {/* ── Users table ───────────────────────────────────────────── */}
-      <div className="max-w-5xl mx-auto px-6 py-4 pb-8">
+      <div data-tour="admin-users" className="max-w-5xl mx-auto px-6 py-4 pb-8">
         <UsersTable
           users={profiles}
           currentUserId={user?.id ?? ''}
