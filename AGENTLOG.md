@@ -1,6 +1,30 @@
 # CLAUDE CONTEXT MEMORY
 > Proyecto: webcarga
 
+### 2026-05-29 — Product tour feature (Tasks 1-2 completed)
+
+**Objetivo:** Instalar react-joyride + crear hook base para estado del tour (12 tasks totales).
+
+**Cambios implementados:**
+
+**Task 1 (Completado):**
+- `npm install react-joyride` — 14 paquetes instalados exitosamente
+- TypeScript: 0 errores
+- Commit: `682a493` "chore(frontend): install react-joyride"
+
+**Task 2 (Completado):**
+- Creado `monitor-app/frontend/hooks/useTour.ts` — hook base con localStorage persistence
+- Estado: `activeModule`, `completedModules`, `showCompletionPrompt`, `nextModule`, `wasShown`, `allCompleted`
+- Funciones: `markShown()`, `startTour(module)`, `stopTour()`, `completeTour(module)`, `dismissCompletionPrompt()`, `resetAll()`
+- localStorage keys: `wc_tour_shown_first_time`, `wc_tour_completed_modules`
+- TOUR_SEQUENCE: `['diario', 'transportistas', 'admin']`
+- TypeScript: 0 errores
+- Commit: `35ccd7b` "feat(tour): add useTour hook with localStorage persistence"
+
+**Próximo paso (Task 3):** Crear step definitions para react-joyride
+
+---
+
 ### 2026-05-29 — TripSlideOver world-class + metadatos desde backend (cuadragésima iteración)
 
 **Objetivo:** Rediseñar el modal de detalle del viaje para ser world-class — más intuitivo, información completa, sin hardcodes en el frontend.
