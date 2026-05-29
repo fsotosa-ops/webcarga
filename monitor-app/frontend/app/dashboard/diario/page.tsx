@@ -5,7 +5,8 @@ import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine } from 'lu
 import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
-import type { Trip, ComplianceAlertSummary } from '@/lib/types'
+import { fetchTripsMeta } from '@/lib/api/tripsMeta'
+import type { Trip, ComplianceAlertSummary, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
@@ -83,6 +84,7 @@ export default function DiarioPage() {
   const [error,          setError]          = useState<string | null>(null)
   const [selected,       setSelected]       = useState<Trip | null>(null)
   const [alertSummary,   setAlertSummary]   = useState<ComplianceAlertSummary | null>(null)
+  const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
 
   // Custom groups
   const [customGroups,   setCustomGroups]   = useState<FilterGroup[]>([])
@@ -158,6 +160,7 @@ export default function DiarioPage() {
   useEffect(() => {
     transportersApi.getComplianceAlertSummary().then(setAlertSummary).catch(console.error)
     filterGroupsApi.list().then(setCustomGroups).catch(console.error)
+    fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en TripTable/TripSlideOver */ })
   }, [])
 
   function handleSaved(updated: Trip) {
@@ -384,6 +387,7 @@ export default function DiarioPage() {
               onSelect={setSelected}
               onSaved={handleSaved}
               alertSummary={alertSummary}
+              meta={tripsMeta}
             />
           )}
 
@@ -417,7 +421,7 @@ export default function DiarioPage() {
         </div>
       </div>
 
-      <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} />
+      <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} meta={tripsMeta} />
     </div>
   )
 }

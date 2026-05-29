@@ -2,56 +2,22 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
-import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop } from '@/lib/types'
+import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop, TripsMeta } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { tripsApi } from '@/lib/api/trips'
 
-const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
-  'ASIGNADO':              { bg: '#e8eeff', text: '#053bfa' },
-  'ORIGEN':                { bg: '#f3e8ff', text: '#8a00dd' },
-  'RUTA':                  { bg: '#eef6e6', text: '#62a420' },
-  'EN LOCAL':              { bg: '#fef0e6', text: '#ea6b25' },
-  'RETORNANDO':            { bg: '#e6f8fd', text: '#0e8db5' },
-  'RETORNADO CD':          { bg: '#f3f4f6', text: '#6b7280' },
-  'VIAJE EN PREDIO':       { bg: '#f3f4f6', text: '#6b7280' },
-  'CANCELADO':             { bg: '#fee2e2', text: '#b00020' },
-  'CERRADO FINALIZADO':    { bg: '#f3f4f6', text: '#9ca3af' },
-  'CERRADO INCOMPLETO':    { bg: '#fef3c7', text: '#d97706' },
-  'CERRADO MANUAL':        { bg: '#f3f4f6', text: '#9ca3af' },
-  'CERRADO SIN GPS':       { bg: '#f3f4f6', text: '#9ca3af' },
-  'CERRADO POR OTRO VIAJE': { bg: '#f3f4f6', text: '#9ca3af' },
-  'CERRADO FINALIZADO CC':  { bg: '#f3f4f6', text: '#9ca3af' },
-  'DEVUELTO':               { bg: '#fee2e2', text: '#b00020' },
-  'EN PANA':                { bg: '#fee2e2', text: '#b00020' },
-}
 
-const TMS_CHIP: Record<string, { label: string; cls: string }> = {
-  qanalytics: { label: 'QA',  cls: 'bg-blue-50 text-blue-600 border-blue-100' },
-  wingsuite:  { label: 'WS',  cls: 'bg-purple-50 text-purple-600 border-purple-100' },
-  sodimac:    { label: 'SDM', cls: 'bg-orange-50 text-orange-600 border-orange-100' },
-}
-
-function StatusBadge({ status }: { status: string | null }) {
-  const s = status ?? ''
-  const colors = STATUS_COLOR[s]
+function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
+  const tm = meta?.tms_sources.find(x => x.id === tms.toLowerCase())
+  const label = tm?.label ?? tms.toUpperCase().slice(0, 3)
   return (
     <span
-      className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-      style={colors
-        ? { backgroundColor: colors.bg, color: colors.text }
-        : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
+      className="text-[9px] font-bold px-1.5 py-0.5 rounded border"
+      style={tm
+        ? { backgroundColor: tm.bg_color, color: tm.text_color, borderColor: `${tm.bg_color}80` }
+        : { backgroundColor: '#f3f4f6', color: '#6b7280', borderColor: '#e5e7eb' }}
     >
-      {s || '—'}
-    </span>
-  )
-}
-
-function TmsChip({ tms }: { tms: string }) {
-  const cfg = TMS_CHIP[tms.toLowerCase()]
-  if (!cfg) return <span className="text-[9px] text-gray-400 font-mono">{tms}</span>
-  return (
-    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${cfg.cls}`}>
-      {cfg.label}
+      {label}
     </span>
   )
 }
@@ -389,9 +355,10 @@ interface Props {
   onSelect:      (trip: Trip) => void
   onSaved:       (trip: Trip) => void
   alertSummary?: ComplianceAlertSummary | null
+  meta?:         TripsMeta | null
 }
 
-export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }: Props) {
+export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, meta }: Props) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
@@ -430,7 +397,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
           const plateAlert    = alertSummary?.plates[primaryPlate ?? ''] as AlertStatus | undefined
           const driverAlert   = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
           const currentStatus = trip.estado_manual ?? trip.current_status
-          const statusColor   = currentStatus ? STATUS_COLOR[currentStatus] : null
+          const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
 
           return (
             <div
@@ -447,16 +414,16 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
                     {primaryPlate ?? 'sin patente'}
                   </span>
                   <ComplianceBadge status={plateAlert ?? null} compact />
-                  <TmsChip tms={trip.tms_name ?? ''} />
+                  <TmsChip tms={trip.tms_name ?? ''} meta={meta} />
                 </div>
-                {statusColor ? (
-                  <span
-                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
-                    style={{ backgroundColor: statusColor.bg, color: statusColor.text }}
-                  >
-                    {currentStatus}
-                  </span>
-                ) : <StatusBadge status={currentStatus} />}
+                <span
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
+                  style={statusMeta
+                    ? { backgroundColor: statusMeta.bg_color, color: statusMeta.text_color }
+                    : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
+                >
+                  {currentStatus ?? '—'}
+                </span>
               </div>
 
               {/* fila 2: conductor + flags */}
@@ -510,7 +477,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
               const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
               const driverAlert = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
               const currentStatus = trip.estado_manual ?? trip.current_status
-              const statusColor   = currentStatus ? STATUS_COLOR[currentStatus] : null
+              const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
 
               return (
                 <tr
@@ -544,7 +511,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
 
                   {/* TMS */}
                   <td className="px-2 py-2.5">
-                    <TmsChip tms={trip.tms_name ?? ''} />
+                    <TmsChip tms={trip.tms_name ?? ''} meta={meta} />
                   </td>
 
                   {/* ID VIAJE */}
@@ -610,16 +577,14 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary }
 
                   {/* ESTADO */}
                   <td className="px-3 py-2.5">
-                    {statusColor ? (
-                      <span
-                        className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-                        style={{ backgroundColor: statusColor.bg, color: statusColor.text }}
-                      >
-                        {currentStatus}
-                      </span>
-                    ) : (
-                      <StatusBadge status={currentStatus} />
-                    )}
+                    <span
+                      className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={statusMeta
+                        ? { backgroundColor: statusMeta.bg_color, color: statusMeta.text_color }
+                        : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
+                    >
+                      {currentStatus ?? '—'}
+                    </span>
                     {trip.estado_manual && (
                       <span className="text-[8px] text-accent block mt-0.5">override</span>
                     )}

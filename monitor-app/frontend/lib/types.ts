@@ -171,6 +171,27 @@ export function hasRole(userRole: string | undefined, required: UserRole): boole
   return userIdx >= reqIdx
 }
 
+// ── Trips metadata (from GET /api/v1/trips/meta) ───────────────────
+
+export type StatusMeta = {
+  id:         string
+  bg_color:   string
+  text_color: string
+  group:      string
+}
+
+export type TmsSourceMeta = {
+  id:         string
+  label:      string
+  bg_color:   string
+  text_color: string
+}
+
+export type TripsMeta = {
+  statuses:    StatusMeta[]
+  tms_sources: TmsSourceMeta[]
+}
+
 // ── Trips (app.trips via FastAPI) ──────────────────────────────────
 
 export type TripStop = {
@@ -188,6 +209,7 @@ export type TripStop = {
   destination_region: string | null
   s2s:                string | null
   temperature:        number | null
+  milestone_status:   string | null
 }
 
 export type Trip = {
@@ -220,6 +242,8 @@ export type Trip = {
   edited_at:              string | null
   updated_at:             string | null
   source_trip_id:         string | null
+  milestone_status_sap:   string | null
+  pipeline_updated_at:    string | null
 }
 
 // ── Compliance & Governance ─────────────────────────────────────────

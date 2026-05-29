@@ -1,6 +1,7 @@
 import json
 from datetime import date as _date
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from ..auth import get_current_user, require_editor
 from ..db import get_pool
 from ..schemas.trip import TripPatch
@@ -50,7 +51,9 @@ _TRIP_SELECT = """
     fl.transporter_id                             AS transporter_profile_id,
     t.edited_at,
     t.updated_at,
-    t.source_trip_id
+    t.source_trip_id,
+    t.milestone_status_sap,
+    t.pipeline_updated_at
 """
 
 _TRIP_FROM = """
@@ -137,6 +140,61 @@ async def list_trips(
             d["stops"] = json.loads(d["stops"])
         data.append(d)
     return {"data": data, "count": count, "page": page, "limit": limit}
+
+
+# ── Metadatos de presentación (sin auth — igual que /roles) ──────────────────
+
+_STATUS_META = [
+    {"id": "ASIGNADO",               "bg_color": "#e8eeff", "text_color": "#053bfa", "group": "en_ruta"},
+    {"id": "ORIGEN",                 "bg_color": "#f3e8ff", "text_color": "#8a00dd", "group": "en_ruta"},
+    {"id": "RUTA",                   "bg_color": "#eef6e6", "text_color": "#62a420", "group": "en_ruta"},
+    {"id": "EN LOCAL",               "bg_color": "#fef0e6", "text_color": "#ea6b25", "group": "en_local"},
+    {"id": "VIAJE EN PREDIO",        "bg_color": "#fef0e6", "text_color": "#ea6b25", "group": "en_local"},
+    {"id": "RETORNANDO",             "bg_color": "#e6f8fd", "text_color": "#0e8db5", "group": "retornando"},
+    {"id": "RETORNADO CD",           "bg_color": "#f3f4f6", "text_color": "#6b7280", "group": "retornando"},
+    {"id": "CERRADO FINALIZADO",     "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
+    {"id": "CERRADO INCOMPLETO",     "bg_color": "#fef3c7", "text_color": "#d97706", "group": "cerrado"},
+    {"id": "CERRADO MANUAL",         "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
+    {"id": "CERRADO SIN GPS",        "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
+    {"id": "CERRADO POR OTRO VIAJE", "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
+    {"id": "CERRADO FINALIZADO CC",  "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
+    {"id": "CANCELADO",              "bg_color": "#fee2e2", "text_color": "#b00020", "group": "problema"},
+    {"id": "EN PANA",                "bg_color": "#fee2e2", "text_color": "#b00020", "group": "problema"},
+    {"id": "DEVUELTO",               "bg_color": "#fee2e2", "text_color": "#b00020", "group": "problema"},
+]
+
+_TMS_META = [
+    {"id": "qanalytics", "label": "QA",  "bg_color": "#dbeafe", "text_color": "#2563eb"},
+    {"id": "wingsuite",  "label": "WS",  "bg_color": "#f3e8ff", "text_color": "#9333ea"},
+    {"id": "sodimac",    "label": "SDM", "bg_color": "#ffedd5", "text_color": "#ea580c"},
+]
+
+
+class StatusMeta(BaseModel):
+    id:         str
+    bg_color:   str
+    text_color: str
+    group:      str
+
+
+class TmsSourceMeta(BaseModel):
+    id:         str
+    label:      str
+    bg_color:   str
+    text_color: str
+
+
+class TripsMeta(BaseModel):
+    statuses:    list[StatusMeta]
+    tms_sources: list[TmsSourceMeta]
+
+
+@router.get("/meta", response_model=TripsMeta)
+def get_trips_meta():
+    return TripsMeta(
+        statuses=[StatusMeta(**s) for s in _STATUS_META],
+        tms_sources=[TmsSourceMeta(**t) for t in _TMS_META],
+    )
 
 
 @router.get("/{trip_id}")

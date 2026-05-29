@@ -1,6 +1,78 @@
 # CLAUDE CONTEXT MEMORY
 > Proyecto: webcarga
 
+### 2026-05-29 — TripSlideOver world-class + metadatos desde backend (cuadragésima iteración)
+
+**Objetivo:** Rediseñar el modal de detalle del viaje para ser world-class — más intuitivo, información completa, sin hardcodes en el frontend.
+
+**Cambios implementados:**
+
+**Backend (`monitor-app/backend/api/app/routers/trips.py`):**
+- `_TRIP_SELECT` + `t.milestone_status_sap`, `t.pipeline_updated_at`
+- Nuevo endpoint `GET /api/v1/trips/meta` (sin auth): devuelve `statuses` (id, bg_color, text_color, group) y `tms_sources` (id, label, bg_color, text_color). Sigue el patrón exacto de `routers/roles.py`.
+
+**Frontend tipos (`lib/types.ts`):**
+- Nuevos tipos: `StatusMeta`, `TmsSourceMeta`, `TripsMeta`
+- `TripStop` + `milestone_status: string | null`
+- `Trip` + `milestone_status_sap: string | null`, `pipeline_updated_at: string | null`
+
+**Frontend API (`lib/api/tripsMeta.ts`)** (nuevo):
+- `fetchTripsMeta()` → `GET /api/v1/trips/meta`
+
+**Frontend `diario/page.tsx`:**
+- `useEffect` fetch de meta al montar
+- `meta={tripsMeta}` pasado a `TripTable` y `TripSlideOver`
+
+**Frontend `TripTable.tsx`:**
+- Eliminados `STATUS_COLOR` y `TMS_CHIP` hardcodeados
+- `meta?: TripsMeta | null` en Props
+- `TmsChip` y `StatusBadge` reescritos con lookup desde meta + inline styles
+- Fallback gracioso cuando meta es null
+
+**Frontend `TripSlideOver.tsx` — reescritura completa:**
+- Header dark (bg-slate-900): TMS chip + ID viaje con copy button + patente + estado badge + flags readonly + conductor + RUT + teléfono + cliente
+- 3 tabs: Viaje / Empresa / Bitácora (antes 2 tabs mobile only)
+- Tab Viaje: grid resumen (fecha, origen, cargo_type, EETT TMS, último reporte, milestone_status_sap, pipeline_updated_at) + indicadores readonly chips + tabla de paradas (12 columnas, overflow-x-auto, sticky primera col)
+- Tabla de paradas: Local | Plan. | Llegada | Salida | GPS↓ | GPS↑ | Desc.inicio | Desc.fin | S2S | Temp°C | On Time | Estado SAP
+- Tab Empresa: igual que antes (TransporterAssignSection)
+- Tab Bitácora: checkboxes flags editables + select estado (desde meta) + textareas + guardar
+- Sin hardcodes de colores: todo via `meta?.statuses.find(s => s.id === status)` con fallback
+
+**Resultado:** TypeScript 0 errores, build verde (13 rutas).
+
+**Checklist (cuadragésima):**
+- [x] `trips.py`: +2 campos en `_TRIP_SELECT`
+- [x] `trips.py`: endpoint `GET /trips/meta`
+- [x] `lib/types.ts`: nuevos tipos meta + campos en `Trip`/`TripStop`
+- [x] `lib/api/tripsMeta.ts`: `fetchTripsMeta()` creado
+- [x] `diario/page.tsx`: fetch meta + props a TripTable y TripSlideOver
+- [x] `TripTable.tsx`: sin hardcodes, usa meta
+- [x] `TripSlideOver.tsx`: reescritura completa con 3 tabs y tabla de paradas
+- [x] `npx tsc --noEmit` — 0 errores
+- [x] `npm run build` — verde
+- [ ] Deploy a Vercel (push → CI/CD)
+
+---
+
+### 2026-05-29 — Fix duplicados silver.tms_milestone_trips (trigésimo-novena iteración)
+
+**Problema:** Usuario reportó duplicados en `silver.tms_milestones_trips`.
+
+**Diagnóstico:**
+- Tabla real: `silver.tms_milestone_trips` (1577 filas, 1 duplicado)
+- Root cause: race condition — dos runs de dbt corrieron el 2026-05-28 con 18 segundos de diferencia (`04:19:31` y `04:19:49`). Ambos computaron el mismo `MAX(file_generated_at)` en el incremental filter, y como dbt en Postgres hace `DELETE + INSERT` (no MERGE nativo), ambos INSERT entraron antes del DELETE del otro.
+- Fila duplicada: `trip_stop_sk=e828a03657b70d5abd73354d93d52581`, viaje `1974747`, stop `BIO BIO - 89`, cliente `walmart`.
+
+**Fix aplicado en Supabase:**
+1. `DELETE FROM silver.tms_milestone_trips WHERE trip_stop_sk = 'e828a03657b70d5abd73354d93d52581' AND dbt_valid_from = '2026-05-28 04:19:49.729927'` → 0 duplicados ✅
+2. `CREATE UNIQUE INDEX uix_tms_milestone_trips_sk ON silver.tms_milestone_trips (trip_stop_sk)` → previene futuros duplicados silenciosos ✅
+
+**Resultado:** 1576 filas, 0 duplicados. Si vuelven a correr dos jobs dbt simultáneos, el segundo fallará con error visible en lugar de corromper datos.
+
+**Nota dbt/Mage:** Si el error `duplicate key value violates unique constraint` aparece en Mage, re-corre el job. Si es frecuente, agregar lock de nivel job en Mage para `slv_milestone_trips`.
+
+---
+
 ### 2026-05-29 — Roles backend-driven + pablo como owner (trigésimo-octava iteración)
 
 **Objetivos:** (1) Eliminar roles hardcodeados del frontend; el backend es la fuente de verdad. (2) Preset pablo.abumohor@webcarga.com como owner.
