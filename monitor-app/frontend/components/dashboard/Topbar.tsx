@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { Bell } from 'lucide-react'
+import { TourProgressButton } from '@/components/tour/TourProgressButton'
 
 export default async function Topbar() {
   const supabase = await createClient()
@@ -27,6 +28,7 @@ export default async function Topbar() {
       <div className="hidden md:block flex-1" />
 
       <div className="flex items-center gap-2.5 ml-auto">
+        <TourProgressButton />
         <button className="relative p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Notificaciones">
           <Bell size={17} className="text-gray-500" />
         </button>
