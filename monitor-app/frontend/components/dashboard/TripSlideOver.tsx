@@ -16,7 +16,15 @@ import { transportersApi } from '@/lib/api/transporters'
 function fmtDT(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (isNaN(d.getTime())) return '—'
+  const parts = new Intl.DateTimeFormat('es-CL', {
+    timeZone: 'America/Santiago',
+    day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const p = Object.fromEntries(parts.filter(x => x.type !== 'literal').map(x => [x.type, x.value]))
+  return `${p.day}/${p.month} ${p.hour}:${p.minute}`
 }
 
 function fmtDate(iso: string | null | undefined): string {

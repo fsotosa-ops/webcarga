@@ -510,9 +510,11 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     </p>
                     {trip.status_reported_at && (
                       <p className="text-[9px] text-gray-300 whitespace-nowrap mt-0.5">
-                        {new Date(trip.status_reported_at).toLocaleTimeString('es-CL', {
+                        {new Intl.DateTimeFormat('es-CL', {
+                          timeZone: 'America/Santiago',
                           hour: '2-digit', minute: '2-digit',
-                        })}
+                          hour12: false,
+                        }).format(new Date(trip.status_reported_at))}
                       </p>
                     )}
                   </td>
