@@ -1,4 +1,4 @@
-import type { Trip } from '@/lib/types'
+import type { Trip, TripCreatePayload } from '@/lib/types'
 import { createBrowserClient } from '@supabase/ssr'
 
 const BASE = ''
@@ -88,6 +88,18 @@ export const tripsApi = {
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<TripListResponse>(`/api/v1/trips/${suffix}`)
   },
+
+  create: (body: TripCreatePayload) =>
+    apiFetch<Trip>('/api/v1/trips', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  bulkCreate: (rows: TripCreatePayload[]) =>
+    apiFetch<{ created: number; ids: string[] }>('/api/v1/trips/bulk', {
+      method: 'POST',
+      body: JSON.stringify(rows),
+    }),
 
   get: (id: string) =>
     apiFetch<Trip>(`/api/v1/trips/${id}`),

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ChevronDown, Upload } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
@@ -10,6 +10,8 @@ import type { Trip, ComplianceAlertSummary, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
+import { TripCreateSlideOver } from '@/components/dashboard/TripCreateSlideOver'
+import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 
 type Tab        = 'en_curso' | 'historial'
 type BoolFilter = boolean | null
@@ -83,9 +85,12 @@ export default function DiarioPage() {
   const [total,          setTotal]          = useState(0)
   const [loading,        setLoading]        = useState(true)
   const [error,          setError]          = useState<string | null>(null)
-  const [selected,       setSelected]       = useState<Trip | null>(null)
-  const [alertSummary,   setAlertSummary]   = useState<ComplianceAlertSummary | null>(null)
-  const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
+  const [selected,            setSelected]            = useState<Trip | null>(null)
+  const [alertSummary,        setAlertSummary]        = useState<ComplianceAlertSummary | null>(null)
+  const [tripsMeta,           setTripsMeta]           = useState<TripsMeta | null>(null)
+  const [showCreate,          setShowCreate]          = useState(false)
+  const [showBulkUpload,      setShowBulkUpload]      = useState(false)
+  const [showAddMenu,         setShowAddMenu]         = useState(false)
 
   // Custom groups
   const [customGroups,   setCustomGroups]   = useState<FilterGroup[]>([])
@@ -187,6 +192,15 @@ export default function DiarioPage() {
     setTrips(prev => prev.map(t => (t.id === updated.id ? updated : t)))
   }
 
+  function handleCreated(newTrip: Trip) {
+    setTrips(prev => [newTrip, ...prev])
+    setSelected(newTrip)
+  }
+
+  function handleBulkImported(count: number) {
+    if (count > 0) load()  // reload para traer los nuevos viajes
+  }
+
   function handleGroupSaved(group: FilterGroup) {
     setCustomGroups(prev => {
       const exists = prev.find(g => g.id === group.id)
@@ -226,6 +240,37 @@ export default function DiarioPage() {
               <p className="text-xs text-gray-400 mt-0.5">
                 {loading ? '…' : `${total.toLocaleString('es-CL')} viaje${total !== 1 ? 's' : ''}`}
               </p>
+            </div>
+
+            {/* Botón agregar viaje */}
+            <div className="relative shrink-0">
+              <button
+                onClick={() => setShowAddMenu(v => !v)}
+                onBlur={() => setTimeout(() => setShowAddMenu(false), 150)}
+                className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-3.5 py-2 rounded-lg hover:bg-accent/90 transition-colors shadow-sm shadow-accent/30"
+              >
+                <Plus size={14} />
+                Agregar viaje
+                <ChevronDown size={12} className={`transition-transform ${showAddMenu ? 'rotate-180' : ''}`} />
+              </button>
+              {showAddMenu && (
+                <div className="absolute right-0 top-full mt-1.5 bg-white border border-border rounded-xl shadow-lg z-20 w-44 overflow-hidden">
+                  <button
+                    onClick={() => { setShowCreate(true); setShowAddMenu(false) }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-slate-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Plus size={13} className="text-accent shrink-0" />
+                    Agregar uno
+                  </button>
+                  <button
+                    onClick={() => { setShowBulkUpload(true); setShowAddMenu(false) }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-slate-700 hover:bg-gray-50 transition-colors border-t border-border/50"
+                  >
+                    <Upload size={13} className="text-accent shrink-0" />
+                    Carga masiva (CSV)
+                  </button>
+                </div>
+              )}
             </div>
 
             {tab === 'en_curso' && (
@@ -442,6 +487,18 @@ export default function DiarioPage() {
       </div>
 
       <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} meta={tripsMeta} />
+      <TripCreateSlideOver
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={handleCreated}
+        meta={tripsMeta}
+      />
+      <TripBulkUpload
+        open={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        onImported={handleBulkImported}
+        meta={tripsMeta}
+      />
     </div>
   )
 }
