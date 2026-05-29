@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Compass } from 'lucide-react'
 import { useTourContext, type TourModule } from './tourContext'
 
 const MODULE_LABELS: Record<TourModule, string> = {
@@ -18,38 +19,22 @@ export function TourProgressButton() {
 
   return (
     <div className="relative">
-      {/* Trigger button */}
+      {/* Trigger button — same style as Bell */}
       <button
         onClick={() => setOpen(v => !v)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        title={allCompleted ? 'Repetir tour' : `Tour: ${completedCount}/${totalCount} módulos`}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all"
-        style={{
-          background: allCompleted
-            ? 'rgba(28,185,236,0.06)'
-            : 'rgba(28,185,236,0.08)',
-          border: '1px solid rgba(28,185,236,0.2)',
-        }}
+        title={allCompleted ? 'Repetir tour' : `Tour guiado · ${completedCount}/${totalCount} módulos`}
+        className="relative p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
       >
-        <span style={{ color: '#1cb9ec', fontSize: '12px', lineHeight: 1 }}>◈</span>
-        <span className="text-[11px] font-semibold" style={{ color: '#38bdf8' }}>Tour</span>
-        {/* Progress dots */}
-        <div className="flex items-center gap-0.5 ml-0.5">
-          {TOUR_SEQUENCE.map((m) => (
-            <div
-              key={m}
-              className="rounded-full"
-              style={{
-                width: '5px',
-                height: '5px',
-                background: completedModules.includes(m)
-                  ? '#1cb9ec'
-                  : 'rgba(255,255,255,0.15)',
-                transition: 'background 0.2s',
-              }}
-            />
-          ))}
-        </div>
+        <Compass size={17} className="text-gray-500" />
+        {!allCompleted && completedCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-accent text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none">
+            {completedCount}
+          </span>
+        )}
+        {!allCompleted && completedCount === 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-accent rounded-full" />
+        )}
       </button>
 
       {/* Dropdown */}

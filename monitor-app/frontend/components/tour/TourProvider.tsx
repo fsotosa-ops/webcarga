@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Joyride, type ButtonType, type EventData, type Step, STATUS } from 'react-joyride'
+import { useRouter } from 'next/navigation'
+import { Joyride, type ButtonType, type EventData, type Step, STATUS, EVENTS } from 'react-joyride'
 import { TourContext, type TourModule } from './tourContext'
 import { useTour } from '@/hooks/useTour'
 import { ModuleCompletionPrompt } from './ModuleCompletionPrompt'
@@ -38,6 +39,7 @@ interface TourProviderProps {
 
 export function TourProvider({ children }: TourProviderProps) {
   const tour = useTour()
+  const router = useRouter()
 
   // Auto-start on first visit
   useEffect(() => {
@@ -50,7 +52,13 @@ export function TourProvider({ children }: TourProviderProps) {
   }, [])
 
   function handleJoyrideCallback(data: EventData) {
-    const { status } = data
+    const { status, type, index } = data
+
+    // Admin module: navigate to configuracion before showing step 2
+    if (type === EVENTS.STEP_AFTER && tour.activeModule === 'admin' && index === 0) {
+      router.push('/dashboard/admin/configuracion')
+    }
+
     const finished = ([STATUS.FINISHED, STATUS.SKIPPED] as string[]).includes(status)
     if (finished && tour.activeModule) {
       if (status === STATUS.FINISHED) {

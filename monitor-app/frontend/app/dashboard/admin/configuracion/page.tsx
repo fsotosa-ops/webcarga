@@ -463,7 +463,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border border-border rounded-2xl overflow-hidden">
+      <div data-tour="admin-config" className="bg-white border border-border rounded-2xl overflow-hidden">
         <div className="flex border-b border-border">
           {TABS.map(t => (
             <button
