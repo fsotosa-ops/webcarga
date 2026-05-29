@@ -15,16 +15,18 @@ import { transportersApi } from '@/lib/api/transporters'
 
 function fmtDT(iso: string | null | undefined): string {
   if (!iso) return '—'
-  const d = new Date(iso)
+  // Timestamps sin offset (ej. pipeline_updated_at: "2026-05-28 20:07:03") son UTC — agregar Z
+  const normalized = /[Z+\-]\d{2}:?\d{2}$/.test(iso) || iso.endsWith('Z') ? iso : iso.replace(' ', 'T') + 'Z'
+  const d = new Date(normalized)
   if (isNaN(d.getTime())) return '—'
   const parts = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
     day: '2-digit', month: '2-digit',
-    hour: '2-digit', minute: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false,
   }).formatToParts(d)
   const p = Object.fromEntries(parts.filter(x => x.type !== 'literal').map(x => [x.type, x.value]))
-  return `${p.day}/${p.month} ${p.hour}:${p.minute}`
+  return `${p.day}/${p.month} ${p.hour}:${p.minute}:${p.second}`
 }
 
 function fmtDate(iso: string | null | undefined): string {

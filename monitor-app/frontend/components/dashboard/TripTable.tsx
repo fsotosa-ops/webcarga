@@ -512,9 +512,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                       <p className="text-[9px] text-gray-300 whitespace-nowrap mt-0.5">
                         {new Intl.DateTimeFormat('es-CL', {
                           timeZone: 'America/Santiago',
-                          hour: '2-digit', minute: '2-digit',
+                          hour: '2-digit', minute: '2-digit', second: '2-digit',
                           hour12: false,
-                        }).format(new Date(trip.status_reported_at))}
+                        }).format(new Date(trip.status_reported_at + 'Z'))}
                       </p>
                     )}
                   </td>
