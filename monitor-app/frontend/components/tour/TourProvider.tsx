@@ -5,6 +5,7 @@ import { Joyride, type ButtonType, type EventData, type Step, STATUS } from 'rea
 import { TourContext, type TourModule } from './tourContext'
 import { useTour } from '@/hooks/useTour'
 import { ModuleCompletionPrompt } from './ModuleCompletionPrompt'
+import { TourTooltip } from './TourTooltip'
 import { diarioSteps } from './steps/diario'
 import { transportistasSteps } from './steps/transportistas'
 import { adminSteps } from './steps/admin'
@@ -71,6 +72,7 @@ export function TourProvider({ children }: TourProviderProps) {
         options={JOYRIDE_OPTIONS}
         locale={JOYRIDE_LOCALE}
         onEvent={handleJoyrideCallback}
+        tooltipComponent={TourTooltip}
       />
       <ModuleCompletionPrompt />
       {children}
