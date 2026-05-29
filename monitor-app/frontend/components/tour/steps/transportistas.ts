@@ -6,5 +6,6 @@ export const transportistasSteps: Step[] = [
     title: '🏢 Empresas transportistas',
     content: 'Gestiona aquí todas las empresas transportistas. Puedes buscar, ver el perfil de cada empresa y asignarlas a viajes desde el detalle del viaje.',
     placement: 'top',
+    skipBeacon: true,
   },
 ]

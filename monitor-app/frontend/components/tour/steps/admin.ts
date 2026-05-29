@@ -6,5 +6,6 @@ export const adminSteps: Step[] = [
     title: '⚙️ Gestión de usuarios',
     content: 'Administra usuarios, roles y permisos. Solo visible para administradores y owners. Los roles definen qué puede ver y editar cada persona.',
     placement: 'top',
+    skipBeacon: true,
   },
 ]

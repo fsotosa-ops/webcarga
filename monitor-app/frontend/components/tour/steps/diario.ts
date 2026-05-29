@@ -6,6 +6,7 @@ export const diarioSteps: Step[] = [
     title: '🗺️ Navegación principal',
     content: 'Desde aquí navegas entre Diario, Empresas y Administración. El sidebar se puede colapsar para más espacio.',
     placement: 'right',
+    skipBeacon: true,
   },
   {
     target: '[data-tour="trip-table"]',
