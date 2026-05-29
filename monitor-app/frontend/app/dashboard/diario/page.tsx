@@ -286,6 +286,7 @@ export default function DiarioPage() {
           <div className="flex items-center justify-end">
             <div className="relative">
               <button
+                data-tour="trip-create-btn"
                 onClick={() => setShowAddMenu(v => !v)}
                 onBlur={() => setTimeout(() => setShowAddMenu(false), 150)}
                 className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
@@ -316,7 +317,7 @@ export default function DiarioPage() {
           </div>
 
           {/* ── Filter bar ───────────────────────────────────────────── */}
-          <div className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-3">
+          <div data-tour="trip-filters" className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-3">
 
             {/* Row 1 — search + date range + clear */}
             <div className="flex items-center gap-2 flex-wrap">

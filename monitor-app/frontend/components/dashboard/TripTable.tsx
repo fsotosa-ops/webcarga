@@ -461,7 +461,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
       </div>
 
       {/* ── Desktop: table ────────────────────────────────────────── */}
-      <div className="hidden md:block overflow-x-auto">
+      <div data-tour="trip-table" className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm" style={{ minWidth: 1080 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
@@ -491,6 +491,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                 <tr
                   key={trip.id}
                   onClick={() => onSelect(trip)}
+                  {...(i === 0 ? { 'data-tour': 'trip-slideover-btn' } : {})}
                   className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
                     isActive
                       ? 'bg-accent/5 border-l-2 border-l-accent'
