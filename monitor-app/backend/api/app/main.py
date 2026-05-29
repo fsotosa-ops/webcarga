@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import close_pool, init_pool
+from .routers.config import router as config_router
 from .routers.filter_groups import router as filter_groups_router
 from .routers.roles import router as roles_router
 from .routers.transporters import router as transporters_router
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(roles_router,         prefix="/api/v1")
+app.include_router(config_router,        prefix="/api/v1")
 app.include_router(transporters_router,  prefix="/api/v1")
 app.include_router(trips_router,         prefix="/api/v1")
 app.include_router(users_router,         prefix="/api/v1")

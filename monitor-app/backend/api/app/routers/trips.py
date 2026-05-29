@@ -172,9 +172,10 @@ _TMS_META = [
 
 class StatusMeta(BaseModel):
     id:         str
+    label:      str
     bg_color:   str
     text_color: str
-    group:      str
+    group:      str  # group_id aliased for frontend compat
 
 
 class TmsSourceMeta(BaseModel):
@@ -184,16 +185,46 @@ class TmsSourceMeta(BaseModel):
     text_color: str
 
 
+class OperationalStateMeta(BaseModel):
+    id:         str
+    label:      str
+    bg_color:   str
+    text_color: str
+
+
+class AlertThresholdMeta(BaseModel):
+    doc_type:     str
+    label:        str
+    warning_days: int
+    error_days:   int
+
+
 class TripsMeta(BaseModel):
-    statuses:    list[StatusMeta]
-    tms_sources: list[TmsSourceMeta]
+    statuses:           list[StatusMeta]
+    tms_sources:        list[TmsSourceMeta]
+    operational_states: list[OperationalStateMeta]
+    alert_thresholds:   list[AlertThresholdMeta]
 
 
 @router.get("/meta", response_model=TripsMeta)
-def get_trips_meta():
+async def get_trips_meta(pool=Depends(get_pool)):
+    status_rows = await pool.fetch(
+        "SELECT id, label, bg_color, text_color, group_id AS group "
+        "FROM app.trip_statuses WHERE active = true ORDER BY sort_order"
+    )
+    op_rows = await pool.fetch(
+        "SELECT id::text, label, bg_color, text_color "
+        "FROM app.operational_states WHERE active = true ORDER BY sort_order"
+    )
+    thresh_rows = await pool.fetch(
+        "SELECT doc_type, label, warning_days, error_days "
+        "FROM app.alert_thresholds ORDER BY doc_type"
+    )
     return TripsMeta(
-        statuses=[StatusMeta(**s) for s in _STATUS_META],
+        statuses=[StatusMeta(**dict(r)) for r in status_rows],
         tms_sources=[TmsSourceMeta(**t) for t in _TMS_META],
+        operational_states=[OperationalStateMeta(**dict(r)) for r in op_rows],
+        alert_thresholds=[AlertThresholdMeta(**dict(r)) for r in thresh_rows],
     )
 
 

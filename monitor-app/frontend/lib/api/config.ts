@@ -1,0 +1,76 @@
+import { createBrowserClient } from '@supabase/ssr'
+import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta } from '@/lib/types'
+
+const BASE = ''
+
+async function getToken(): Promise<string> {
+  const sb = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
+  const { data } = await sb.auth.getSession()
+  return data.session?.access_token ?? ''
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getToken()
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...init?.headers,
+    },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { detail?: string }).detail ?? `Error ${res.status}`)
+  }
+  return res.json() as Promise<T>
+}
+
+export type TripStatusRow = StatusMeta & { sort_order: number }
+export type OperationalStateRow = OperationalStateMeta & { sort_order: number; active: boolean }
+
+export const configApi = {
+  // ── TMS Statuses (edit only — IDs are fixed by TMS) ──────────────────────
+  getStatuses: () =>
+    apiFetch<TripStatusRow[]>('/api/v1/config/statuses'),
+
+  patchStatus: (id: string, body: Partial<Pick<StatusMeta, 'label' | 'bg_color' | 'text_color' | 'group'>>) =>
+    apiFetch<TripStatusRow>(`/api/v1/config/statuses/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...body, group_id: body.group }),
+    }),
+
+  // ── Operational states (CRUD) ─────────────────────────────────────────────
+  getOperationalStates: () =>
+    apiFetch<OperationalStateRow[]>('/api/v1/config/operational-states'),
+
+  createOperationalState: (body: { label: string; bg_color: string; text_color: string; sort_order?: number }) =>
+    apiFetch<OperationalStateRow>('/api/v1/config/operational-states', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  patchOperationalState: (id: string, body: Partial<{ label: string; bg_color: string; text_color: string; sort_order: number; active: boolean }>) =>
+    apiFetch<OperationalStateRow>(`/api/v1/config/operational-states/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  deleteOperationalState: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/config/operational-states/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // ── Alert thresholds ──────────────────────────────────────────────────────
+  getAlertThresholds: () =>
+    apiFetch<AlertThresholdMeta[]>('/api/v1/config/alert-thresholds'),
+
+  patchAlertThreshold: (doc_type: string, body: { warning_days?: number; error_days?: number }) =>
+    apiFetch<AlertThresholdMeta>(`/api/v1/config/alert-thresholds/${doc_type}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+}

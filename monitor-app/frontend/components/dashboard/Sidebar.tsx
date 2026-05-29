@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Building2, Users, LogOut,
-  ChevronLeft, ChevronRight, Shield,
+  ChevronLeft, ChevronRight, Shield, Settings,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -49,8 +49,10 @@ export default function Sidebar({ role }: SidebarProps) {
     router.refresh()
   }
 
-  const isAdmin   = pathname.startsWith('/dashboard/admin')
-  const canAdmin  = role === 'admin' || role === 'owner'
+  const isAdmin       = pathname.startsWith('/dashboard/admin')
+  const isConfig      = pathname.startsWith('/dashboard/admin/configuracion')
+  const isAdminUsers  = pathname.startsWith('/dashboard/admin/usuarios')
+  const canAdmin      = role === 'admin' || role === 'owner'
   const roleBadge = ROLE_BADGE[role ?? 'viewer'] ?? ROLE_BADGE.viewer
 
   return (
@@ -126,20 +128,38 @@ export default function Sidebar({ role }: SidebarProps) {
                 title={collapsed ? 'Usuarios' : undefined}
                 className={`group relative flex items-center rounded-xl text-[13px] transition-all duration-150 ${
                   collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
-                } ${isAdmin
+                } ${isAdminUsers
                   ? 'bg-white/12 text-white'
                   : 'text-white/40 hover:bg-white/6 hover:text-white/75'
                 }`}
               >
-                {isAdmin && (
+                {isAdminUsers && (
                   <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
                 )}
-                <Users size={16} className={`shrink-0 ${isAdmin ? 'text-accent' : 'group-hover:text-white/65'}`} />
+                <Users size={16} className={`shrink-0 ${isAdminUsers ? 'text-accent' : 'group-hover:text-white/65'}`} />
                 {!collapsed && (
-                  <span className={`font-medium truncate ${isAdmin ? 'text-white' : ''}`}>Usuarios</span>
+                  <span className={`font-medium truncate ${isAdminUsers ? 'text-white' : ''}`}>Usuarios</span>
                 )}
                 {!collapsed && role === 'owner' && (
                   <Shield size={11} className="ml-auto shrink-0 text-amber-400/60" />
+                )}
+              </Link>
+              <Link
+                href="/dashboard/admin/configuracion"
+                title={collapsed ? 'Configuración' : undefined}
+                className={`group relative flex items-center rounded-xl text-[13px] transition-all duration-150 ${
+                  collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
+                } ${isConfig
+                  ? 'bg-white/12 text-white'
+                  : 'text-white/40 hover:bg-white/6 hover:text-white/75'
+                }`}
+              >
+                {isConfig && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
+                )}
+                <Settings size={16} className={`shrink-0 ${isConfig ? 'text-accent' : 'group-hover:text-white/65'}`} />
+                {!collapsed && (
+                  <span className={`font-medium truncate ${isConfig ? 'text-white' : ''}`}>Configuración</span>
                 )}
               </Link>
             </div>

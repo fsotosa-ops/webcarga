@@ -175,6 +175,7 @@ export function hasRole(userRole: string | undefined, required: UserRole): boole
 
 export type StatusMeta = {
   id:         string
+  label:      string
   bg_color:   string
   text_color: string
   group:      string
@@ -187,9 +188,25 @@ export type TmsSourceMeta = {
   text_color: string
 }
 
+export type OperationalStateMeta = {
+  id:         string
+  label:      string
+  bg_color:   string
+  text_color: string
+}
+
+export type AlertThresholdMeta = {
+  doc_type:     string
+  label:        string
+  warning_days: number
+  error_days:   number
+}
+
 export type TripsMeta = {
-  statuses:    StatusMeta[]
-  tms_sources: TmsSourceMeta[]
+  statuses:           StatusMeta[]
+  tms_sources:        TmsSourceMeta[]
+  operational_states: OperationalStateMeta[]
+  alert_thresholds:   AlertThresholdMeta[]
 }
 
 // ── Trips (app.trips via FastAPI) ──────────────────────────────────

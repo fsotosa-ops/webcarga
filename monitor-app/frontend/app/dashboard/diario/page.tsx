@@ -190,6 +190,7 @@ export default function DiarioPage() {
           onSaved={handleGroupSaved}
           onDeleted={handleGroupDeleted}
           onClose={() => { setShowBuilder(false); setEditingGroup(undefined) }}
+          statuses={tripsMeta?.statuses}
         />
       )}
 

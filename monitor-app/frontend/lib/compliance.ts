@@ -1,16 +1,30 @@
-import type { AlertStatus, TransporterDriver, TransporterVehicle } from './types'
+import type { AlertStatus, AlertThresholdMeta, TransporterDriver, TransporterVehicle } from './types'
 
-const ALERT_DAYS = 30
+const DEFAULT_WARNING_DAYS = 30
 
-export function getAlertStatus(dateStr: string | null | undefined): AlertStatus {
+export function getAlertStatus(
+  dateStr: string | null | undefined,
+  warningDays = DEFAULT_WARNING_DAYS,
+  errorDays = 0,
+): AlertStatus {
   if (!dateStr) return 'ok'
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const expiry = new Date(dateStr + 'T12:00:00')
   const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / 86_400_000)
-  if (daysLeft < 0) return 'expired'
-  if (daysLeft <= ALERT_DAYS) return 'expiring_soon'
+  if (daysLeft <= errorDays) return 'expired'
+  if (daysLeft <= warningDays) return 'expiring_soon'
   return 'ok'
+}
+
+// Convenience: looks up threshold for a doc_type from the meta array
+export function getAlertStatusFor(
+  dateStr: string | null | undefined,
+  docType: string,
+  thresholds: AlertThresholdMeta[] | undefined,
+): AlertStatus {
+  const t = thresholds?.find(x => x.doc_type === docType)
+  return getAlertStatus(dateStr, t?.warning_days ?? DEFAULT_WARNING_DAYS, t?.error_days ?? 0)
 }
 
 export function getDriverAlertStatus(driver: TransporterDriver): AlertStatus {

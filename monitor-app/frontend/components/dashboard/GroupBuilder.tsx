@@ -4,33 +4,34 @@ import { useState } from 'react'
 import { X, Check, Loader2 } from 'lucide-react'
 import type { FilterGroup, GroupColor } from '@/lib/api/filterGroups'
 import { filterGroupsApi } from '@/lib/api/filterGroups'
+import type { StatusMeta } from '@/lib/types'
 
-// All raw status values organized by section
-const STATUS_SECTIONS = [
-  {
-    label: 'En Ruta',
-    statuses: ['ASIGNADO', 'ORIGEN', 'RUTA'],
-  },
-  {
-    label: 'En Local',
-    statuses: ['EN LOCAL', 'VIAJE EN PREDIO'],
-  },
-  {
-    label: 'Retornando',
-    statuses: ['RETORNANDO', 'RETORNADO CD'],
-  },
-  {
-    label: 'Cerrados',
-    statuses: [
-      'CERRADO FINALIZADO', 'CERRADO INCOMPLETO', 'CERRADO MANUAL',
-      'CERRADO SIN GPS', 'CERRADO POR OTRO VIAJE', 'CERRADO FINALIZADO CC',
-    ],
-  },
-  {
-    label: 'Problema',
-    statuses: ['CANCELADO', 'EN PANA', 'DEVUELTO'],
-  },
+// Fallback when meta hasn't loaded
+const STATUS_SECTIONS_FALLBACK = [
+  { label: 'En Ruta',    statuses: ['ASIGNADO', 'ORIGEN', 'RUTA'] },
+  { label: 'En Local',   statuses: ['EN LOCAL', 'VIAJE EN PREDIO'] },
+  { label: 'Retornando', statuses: ['RETORNANDO', 'RETORNADO CD'] },
+  { label: 'Cerrados',   statuses: ['CERRADO FINALIZADO', 'CERRADO INCOMPLETO', 'CERRADO MANUAL', 'CERRADO SIN GPS', 'CERRADO POR OTRO VIAJE', 'CERRADO FINALIZADO CC'] },
+  { label: 'Problema',   statuses: ['CANCELADO', 'EN PANA', 'DEVUELTO'] },
 ]
+
+const GROUP_LABELS: Record<string, string> = {
+  en_ruta: 'En Ruta', en_local: 'En Local', retornando: 'Retornando',
+  cerrado: 'Cerrado', problema: 'Problema', otro: 'Otro',
+}
+
+function buildSections(statuses?: StatusMeta[]) {
+  if (!statuses?.length) return STATUS_SECTIONS_FALLBACK
+  const grouped: Record<string, string[]> = {}
+  for (const s of statuses) {
+    if (!grouped[s.group]) grouped[s.group] = []
+    grouped[s.group].push(s.id)
+  }
+  return Object.entries(grouped).map(([group, ids]) => ({
+    label: GROUP_LABELS[group] ?? group,
+    statuses: ids,
+  }))
+}
 
 const COLORS: { id: GroupColor; bg: string; ring: string }[] = [
   { id: 'blue',   bg: 'bg-blue-500',   ring: 'ring-blue-500'   },
@@ -44,14 +45,15 @@ const COLORS: { id: GroupColor; bg: string; ring: string }[] = [
 ]
 
 interface Props {
-  /** Pass an existing group to edit it; undefined to create a new one. */
-  editing?:  FilterGroup
-  onSaved:   (group: FilterGroup) => void
+  editing?:   FilterGroup
+  onSaved:    (group: FilterGroup) => void
   onDeleted?: (id: string) => void
-  onClose:   () => void
+  onClose:    () => void
+  statuses?:  StatusMeta[]   // from meta — replaces hardcoded STATUS_SECTIONS
 }
 
-export function GroupBuilder({ editing, onSaved, onDeleted, onClose }: Props) {
+export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses }: Props) {
+  const STATUS_SECTIONS = buildSections(statuses)
   const [name,      setName]      = useState(editing?.name ?? '')
   const [selected,  setSelected]  = useState<Set<string>>(new Set(editing?.statuses ?? []))
   const [color,     setColor]     = useState<GroupColor>(editing?.color ?? 'blue')

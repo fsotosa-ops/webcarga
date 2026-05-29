@@ -641,15 +641,16 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   /* Override activo — mostrar badge + quitar */
                   <div className="flex items-center gap-2 flex-wrap">
                     {(() => {
-                      const sm = meta?.statuses.find(s => s.id === trip.estado_manual)
+                      const opState = meta?.operational_states.find(s => s.id === trip.estado_manual)
+                      const label = opState?.label ?? trip.estado_manual
                       return (
                         <span
                           className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                          style={sm
-                            ? { backgroundColor: sm.bg_color, color: sm.text_color }
+                          style={opState
+                            ? { backgroundColor: opState.bg_color, color: opState.text_color }
                             : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
                         >
-                          {trip.estado_manual}
+                          {label}
                         </span>
                       )
                     })()}
@@ -675,8 +676,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                       className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
                     >
                       <option value="">— Seleccionar estado…</option>
-                      {(meta?.statuses ?? []).map(s => (
-                        <option key={s.id} value={s.id}>{s.id}</option>
+                      {(meta?.operational_states ?? []).map(s => (
+                        <option key={s.id} value={s.id}>{s.label}</option>
                       ))}
                     </select>
                     <button
