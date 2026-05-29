@@ -51,29 +51,37 @@ function FlagDots({ activo, trabajando, asignado, primera_vuelta }: {
 }
 
 function StopPills({ stops }: { stops: TripStop[] }) {
-  if (!stops || stops.length === 0) return <span className="text-gray-200 text-xs">—</span>
-  const MAX_VISIBLE = 2
-  const visible = stops.slice(0, MAX_VISIBLE)
-  const extra = stops.length - MAX_VISIBLE
+  if (!stops?.length) return <span className="text-gray-200 text-xs">—</span>
+
+  const isCompleted = (s: TripStop) =>
+    !!(s.arrival_date || s.gps_arrival_date || s.on_time_status)
+
+  const currentIdx   = stops.findIndex(s => !isCompleted(s))
+  const isInProgress = currentIdx >= 0
+  const current      = isInProgress ? stops[currentIdx] : stops[stops.length - 1]
+  const completedCnt = stops.filter(isCompleted).length
+  const total        = stops.length
+  const name         = current.local ?? current.destination_city ?? '—'
+
+  const pillCls = isInProgress
+    ? 'bg-accent/10 text-accent border border-accent/20'
+    : current.on_time_status === 'ON TIME'
+    ? 'bg-green-50 text-green-600 border border-green-100'
+    : current.on_time_status === 'OFF TIME'
+    ? 'bg-amber-50 text-amber-600 border border-amber-100'
+    : 'bg-gray-50 text-gray-400 border border-gray-100'
+
   return (
-    <div className="flex flex-wrap gap-1">
-      {visible.map((s, i) => (
-        <span
-          key={s.stop_id ?? i}
-          title={`${s.local ?? s.destination_city ?? '—'} · ${s.on_time_status ?? 'sin estado'}`}
-          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full max-w-[90px] truncate ${
-            s.on_time_status === 'ON TIME'
-              ? 'bg-green-50 text-green-600 border border-green-100'
-              : s.on_time_status === 'OFF TIME'
-              ? 'bg-amber-50 text-amber-600 border border-amber-100'
-              : 'bg-gray-50 text-gray-400 border border-gray-100'
-          }`}
-        >
-          {s.local ?? s.destination_city ?? '—'}
-        </span>
-      ))}
-      {extra > 0 && (
-        <span className="text-[9px] text-gray-400 font-semibold px-1 py-0.5">+{extra}</span>
+    <div className="space-y-0.5">
+      <span
+        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full max-w-[110px] truncate flex items-center gap-1 w-fit ${pillCls}`}
+        title={name}
+      >
+        {isInProgress && <span className="shrink-0">→</span>}
+        <span className="truncate">{name}</span>
+      </span>
+      {total > 1 && (
+        <p className="text-[9px] text-gray-400 pl-0.5">{completedCnt} / {total}</p>
       )}
     </div>
   )
