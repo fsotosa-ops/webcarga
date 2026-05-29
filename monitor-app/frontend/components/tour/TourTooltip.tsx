@@ -16,6 +16,8 @@ export function TourTooltip({
     <div
       {...tooltipProps}
       style={{
+        // Preserve floating-ui positioning styles from tooltipProps
+        ...((tooltipProps as { style?: React.CSSProperties }).style ?? {}),
         background: 'rgba(15,23,42,0.92)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',

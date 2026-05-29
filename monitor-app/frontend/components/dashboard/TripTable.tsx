@@ -479,7 +479,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               <th className="px-2 py-2.5 w-6"></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody data-tour="trip-slideover-btn">
             {sorted.map((trip, i) => {
               const isActive    = trip.id === selectedId
               const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
@@ -491,7 +491,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                 <tr
                   key={trip.id}
                   onClick={() => onSelect(trip)}
-                  {...(i === 0 ? { 'data-tour': 'trip-slideover-btn' } : {})}
                   className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
                     isActive
                       ? 'bg-accent/5 border-l-2 border-l-accent'
