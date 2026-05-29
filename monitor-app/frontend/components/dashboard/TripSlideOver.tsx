@@ -10,11 +10,6 @@ import type { Trip, TransporterListItem, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
 
-// Fallback for select when meta hasn't loaded yet
-const ESTADO_FALLBACK = [
-  'ASIGNADO', 'ORIGEN', 'RUTA', 'EN LOCAL', 'RETORNANDO',
-  'RETORNADO CD', 'EN PANA', 'CANCELADO', 'CERRADO FINALIZADO',
-]
 
 // ── Date formatters ───────────────────────────────────────────────────────────
 
@@ -164,11 +159,13 @@ interface Props {
 }
 
 export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('viaje')
-  const [form, setForm]           = useState<TripPatch>({})
-  const [saving, setSaving]       = useState(false)
-  const [err, setErr]             = useState<string | null>(null)
-  const [copied, setCopied]       = useState(false)
+  const [activeTab, setActiveTab]           = useState<ActiveTab>('viaje')
+  const [form, setForm]                     = useState<TripPatch>({})
+  const [saving, setSaving]                 = useState(false)
+  const [err, setErr]                       = useState<string | null>(null)
+  const [copied, setCopied]                 = useState(false)
+  const [showEstadoSelect, setShowEstadoSelect] = useState(false)
+  const [clearingOverride, setClearingOverride] = useState(false)
 
   useEffect(() => {
     if (!trip) return
@@ -184,6 +181,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     })
     setErr(null)
     setCopied(false)
+    setShowEstadoSelect(false)
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSave() {
@@ -192,7 +190,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     setErr(null)
     try {
       const payload: TripPatch = {
-        estado_manual:  form.estado_manual  || undefined,
+        // Only send estado_manual when a new override was actively selected
+        ...(showEstadoSelect && form.estado_manual
+          ? { estado_manual: form.estado_manual }
+          : {}),
         observaciones:  form.observaciones  || undefined,
         comentarios:    form.comentarios    || undefined,
         activo:         form.activo,
@@ -206,6 +207,19 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleClearOverride() {
+    if (!trip) return
+    setClearingOverride(true)
+    try {
+      await tripsApi.resetField(trip.id, 'estado_manual')
+      onSaved({ ...trip, estado_manual: null })
+      setForm(f => ({ ...f, estado_manual: '' }))
+      setShowEstadoSelect(false)
+    } finally {
+      setClearingOverride(false)
     }
   }
 
@@ -223,8 +237,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
   const tmsMeta       = trip.tms_name ? meta?.tms_sources.find(t => t.id === trip.tms_name.toLowerCase()) : null
   const tmsLabel      = tmsMeta?.label ?? trip.tms_name?.toUpperCase().slice(0, 3) ?? '?'
-
-  const estadoOptions = ['', ...(meta?.statuses.map(s => s.id) ?? ESTADO_FALLBACK)]
 
   const TABS: { key: ActiveTab; label: string }[] = [
     { key: 'viaje',    label: 'Viaje'    },
@@ -444,8 +456,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                             <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
                             <th className="px-3 py-2 text-left min-w-[82px]">Llegada</th>
                             <th className="px-3 py-2 text-left min-w-[82px]">Salida</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">GPS ↓</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">GPS ↑</th>
+                            <th className="px-3 py-2 text-left min-w-[82px]">GPS Arr.</th>
+                            <th className="px-3 py-2 text-left min-w-[82px]">GPS Sal.</th>
                             <th className="px-3 py-2 text-left min-w-[82px]">Desc. inicio</th>
                             <th className="px-3 py-2 text-left min-w-[82px]">Desc. fin</th>
                             <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
@@ -603,18 +615,88 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 </div>
               </div>
 
-              {/* Estado */}
+              {/* Estado TMS (readonly) */}
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Estado</label>
-                <select
-                  value={form.estado_manual ?? ''}
-                  onChange={e => setForm(f => ({ ...f, estado_manual: e.target.value }))}
-                  className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
-                >
-                  {estadoOptions.map(s => (
-                    <option key={s} value={s}>{s || 'Usar estado del TMS'}</option>
-                  ))}
-                </select>
+                <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Estado TMS</p>
+                {(() => {
+                  const sm = trip.current_status ? meta?.statuses.find(s => s.id === trip.current_status) : null
+                  return (
+                    <span
+                      className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                      style={sm
+                        ? { backgroundColor: sm.bg_color, color: sm.text_color }
+                        : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
+                    >
+                      {trip.current_status ?? '—'}
+                    </span>
+                  )
+                })()}
+              </div>
+
+              {/* Override manual */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Override manual</p>
+
+                {trip.estado_manual ? (
+                  /* Override activo — mostrar badge + quitar */
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {(() => {
+                      const sm = meta?.statuses.find(s => s.id === trip.estado_manual)
+                      return (
+                        <span
+                          className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                          style={sm
+                            ? { backgroundColor: sm.bg_color, color: sm.text_color }
+                            : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
+                        >
+                          {trip.estado_manual}
+                        </span>
+                      )
+                    })()}
+                    <button
+                      type="button"
+                      onClick={handleClearOverride}
+                      disabled={clearingOverride}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50"
+                    >
+                      {clearingOverride
+                        ? <Loader2 size={11} className="animate-spin" />
+                        : <X size={11} />}
+                      Quitar override
+                    </button>
+                  </div>
+                ) : showEstadoSelect ? (
+                  /* Seleccionando nuevo override */
+                  <div className="space-y-1.5">
+                    <select
+                      autoFocus
+                      value={form.estado_manual ?? ''}
+                      onChange={e => setForm(f => ({ ...f, estado_manual: e.target.value }))}
+                      className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    >
+                      <option value="">— Seleccionar estado…</option>
+                      {(meta?.statuses ?? []).map(s => (
+                        <option key={s.id} value={s.id}>{s.id}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setShowEstadoSelect(false); setForm(f => ({ ...f, estado_manual: '' })) }}
+                      className="text-[10px] text-gray-400 hover:text-gray-600"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  /* Sin override */
+                  <button
+                    type="button"
+                    onClick={() => setShowEstadoSelect(true)}
+                    className="text-xs text-accent hover:text-accent/80 transition-colors flex items-center gap-1"
+                  >
+                    + Establecer override
+                  </button>
+                )}
               </div>
 
               {/* Observaciones */}
