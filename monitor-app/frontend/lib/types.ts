@@ -163,22 +163,6 @@ export type NormalizedStatus =
 // Role hierarchy (ascending permissions)
 export type UserRole = 'viewer' | 'writer' | 'editor' | 'admin' | 'owner'
 
-export const ROLE_LABELS: Record<UserRole, string> = {
-  viewer: 'Viewer',
-  writer: 'Writer',
-  editor: 'Editor',
-  admin: 'Admin',
-  owner: 'Owner',
-}
-
-export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
-  viewer:  'Solo lectura — ve Diario, EETT y conductores',
-  writer:  'Edita campos básicos del Diario (toggles, observaciones, teléfono)',
-  editor:  'Edita todos los campos del Diario incluyendo los sensibles',
-  admin:   'Editor + gestión de usuarios',
-  owner:   'Acceso total — protegido, no puede ser degradado por admins',
-}
-
 // Returns true if role has at least the required permission level
 export function hasRole(userRole: string | undefined, required: UserRole): boolean {
   const order: UserRole[] = ['viewer', 'writer', 'editor', 'admin', 'owner']

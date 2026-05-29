@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .db import close_pool, init_pool
 from .routers.filter_groups import router as filter_groups_router
+from .routers.roles import router as roles_router
 from .routers.transporters import router as transporters_router
 from .routers.trips import router as trips_router
 from .routers.users import router as users_router
@@ -37,6 +38,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+app.include_router(roles_router,         prefix="/api/v1")
 app.include_router(transporters_router,  prefix="/api/v1")
 app.include_router(trips_router,         prefix="/api/v1")
 app.include_router(users_router,         prefix="/api/v1")

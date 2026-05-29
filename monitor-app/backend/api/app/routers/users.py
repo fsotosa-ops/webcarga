@@ -3,10 +3,9 @@ from pydantic import BaseModel
 from typing import Optional
 from ..auth import get_current_user, require_admin
 from ..db import get_pool
+from .roles import ROLE_ORDER
 
 router = APIRouter(prefix="/users", tags=["users"])
-
-ROLE_ORDER = ["viewer", "writer", "editor", "admin", "owner"]
 
 
 def _can_manage(actor_role: str, target_role: str) -> bool:

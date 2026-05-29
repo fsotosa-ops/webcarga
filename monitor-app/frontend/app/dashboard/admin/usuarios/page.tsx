@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import UsersTable from '@/components/admin/UsersTable'
 import type { Profile, UserRole } from '@/lib/types'
+import { fetchRolesServer, type RoleInfo } from '@/lib/api/roles'
 import { Users, ShieldAlert, CircleCheck, CircleOff } from 'lucide-react'
 
-const ROLE_BADGE: Record<UserRole, { bg: string; text: string }> = {
+const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
   viewer: { bg: 'bg-gray-100',   text: 'text-gray-600'   },
   writer: { bg: 'bg-blue-50',    text: 'text-blue-700'   },
   editor: { bg: 'bg-teal-50',    text: 'text-teal-700'   },
@@ -15,9 +16,10 @@ export default async function AdminUsuariosPage() {
   const supabase    = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: users }, { data: actorProfile }] = await Promise.all([
+  const [{ data: users }, { data: actorProfile }, roles] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('profiles').select('role').eq('id', user?.id ?? '').single(),
+    fetchRolesServer().catch(() => [] as RoleInfo[]),
   ])
 
   const profiles   = (users ?? []) as Profile[]
@@ -28,8 +30,8 @@ export default async function AdminUsuariosPage() {
   const priv     = profiles.filter(u => u.role === 'admin' || u.role === 'owner').length
   const inactivos = total - activos
 
-  // Role distribution
-  const byRole = ['owner', 'admin', 'editor', 'writer', 'viewer'] as UserRole[]
+  // Role distribution (desc: highest privilege first)
+  const byRole = [...roles].reverse()
 
   return (
     <div className="min-h-full bg-gray-50/40">
@@ -52,13 +54,13 @@ export default async function AdminUsuariosPage() {
 
             {/* Role distribution pills */}
             <div className="flex flex-wrap gap-1.5">
-              {byRole.map(role => {
-                const count = profiles.filter(u => u.role === role).length
+              {byRole.map(r => {
+                const count = profiles.filter(u => u.role === r.id).length
                 if (!count) return null
-                const { bg, text } = ROLE_BADGE[role]
+                const badge = ROLE_BADGE[r.id] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
                 return (
-                  <span key={role} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${bg} ${text}`}>
-                    {count} {role}
+                  <span key={r.id} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${badge.bg} ${badge.text}`}>
+                    {count} {r.label}
                   </span>
                 )
               })}
@@ -96,23 +98,20 @@ export default async function AdminUsuariosPage() {
             Jerarquía de permisos
           </p>
           <div className="flex items-start gap-2 flex-wrap">
-            {([
-              { role: 'viewer', pill: 'bg-gray-100 text-gray-600',     desc: 'Solo lectura'          },
-              { role: 'writer', pill: 'bg-blue-50 text-blue-700',       desc: 'Edita campos básicos'  },
-              { role: 'editor', pill: 'bg-teal-50 text-teal-700',       desc: 'Edita todo el Diario'  },
-              { role: 'admin',  pill: 'bg-purple-50 text-purple-700',   desc: 'Gestión de usuarios'   },
-              { role: 'owner',  pill: 'bg-amber-50 text-amber-700',     desc: 'Acceso total protegido' },
-            ] as const).map(({ role, pill, desc }, i, arr) => (
-              <div key={role} className="flex items-center gap-1.5">
-                <div className="text-center">
-                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${pill}`}>{role}</span>
-                  <p className="text-[10px] text-gray-400 mt-0.5 max-w-[80px] text-center leading-tight">{desc}</p>
+            {roles.map((r, i) => {
+              const badge = ROLE_BADGE[r.id] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+              return (
+                <div key={r.id} className="flex items-center gap-1.5">
+                  <div className="text-center">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${badge.bg} ${badge.text}`}>{r.label}</span>
+                    <p className="text-[10px] text-gray-400 mt-0.5 max-w-[80px] text-center leading-tight">{r.description}</p>
+                  </div>
+                  {i < roles.length - 1 && (
+                    <span className="text-gray-200 text-sm mb-4">→</span>
+                  )}
                 </div>
-                {i < arr.length - 1 && (
-                  <span className="text-gray-200 text-sm mb-4">→</span>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
@@ -123,6 +122,7 @@ export default async function AdminUsuariosPage() {
           users={profiles}
           currentUserId={user?.id ?? ''}
           actorRole={actorRole}
+          roles={roles}
         />
       </div>
     </div>

@@ -4,27 +4,26 @@ import { useState, useTransition } from 'react'
 import { createUser } from '@/lib/actions/users'
 import { X, UserPlus, Eye, EyeOff } from 'lucide-react'
 import PasswordStrength, { isPasswordValid } from '@/components/auth/PasswordStrength'
-import { ROLE_LABELS, ROLE_DESCRIPTIONS, type UserRole } from '@/lib/types'
-
-const ASSIGNABLE_ROLES: UserRole[] = ['viewer', 'writer', 'editor', 'admin']
+import type { UserRole } from '@/lib/types'
+import type { RoleInfo } from '@/lib/api/roles'
 
 interface Props {
   actorRole: UserRole
+  roles:     RoleInfo[]
   onCreated: () => void
-  onClose: () => void
+  onClose:   () => void
 }
 
-export default function CreateUserForm({ actorRole, onCreated, onClose }: Props) {
+export default function CreateUserForm({ actorRole, roles, onCreated, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [selectedRole, setSelectedRole] = useState<UserRole>('viewer')
+  const [selectedRole, setSelectedRole] = useState<string>(roles[0]?.id ?? 'viewer')
   const [oauthOnly, setOauthOnly] = useState(true)
   const [isPending, startTransition] = useTransition()
 
-  const availableRoles = actorRole === 'owner'
-    ? [...ASSIGNABLE_ROLES, 'owner' as UserRole]
-    : ASSIGNABLE_ROLES.filter(r => r !== 'admin')
+  const actorLevel = roles.find(r => r.id === actorRole)?.level ?? 0
+  const availableRoles = roles.filter(r => r.level < actorLevel)
 
   const canSubmit = oauthOnly || isPasswordValid(password)
 
@@ -146,11 +145,11 @@ export default function CreateUserForm({ actorRole, onCreated, onClose }: Props)
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1.5">Rol</label>
             <div className="space-y-2">
-              {availableRoles.map(role => (
+              {availableRoles.map(r => (
                 <label
-                  key={role}
+                  key={r.id}
                   className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                    selectedRole === role
+                    selectedRole === r.id
                       ? 'border-accent bg-accent/5'
                       : 'border-border hover:border-gray-300'
                   }`}
@@ -158,14 +157,14 @@ export default function CreateUserForm({ actorRole, onCreated, onClose }: Props)
                   <input
                     type="radio"
                     name="role_radio"
-                    value={role}
-                    checked={selectedRole === role}
-                    onChange={() => setSelectedRole(role)}
+                    value={r.id}
+                    checked={selectedRole === r.id}
+                    onChange={() => setSelectedRole(r.id)}
                     className="mt-0.5 accent-accent"
                   />
                   <div>
-                    <span className="text-sm font-medium text-text-primary">{ROLE_LABELS[role]}</span>
-                    <p className="text-xs text-gray-400 mt-0.5">{ROLE_DESCRIPTIONS[role]}</p>
+                    <span className="text-sm font-medium text-text-primary">{r.label}</span>
+                    <p className="text-xs text-gray-400 mt-0.5">{r.description}</p>
                   </div>
                 </label>
               ))}

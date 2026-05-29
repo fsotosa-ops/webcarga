@@ -1,6 +1,56 @@
 # CLAUDE CONTEXT MEMORY
 > Proyecto: webcarga
 
+### 2026-05-29 — Roles backend-driven + pablo como owner (trigésimo-octava iteración)
+
+**Objetivos:** (1) Eliminar roles hardcodeados del frontend; el backend es la fuente de verdad. (2) Preset pablo.abumohor@webcarga.com como owner.
+
+**Problema raíz:**
+- `ROLE_LABELS`, `ROLE_DESCRIPTIONS`, `ALL_ROLES`, `ASSIGNABLE_ROLES`, `byRole` duplicados en 5 archivos del frontend Y en `backend/routers/users.py`.
+- Trigger `handle_new_user()` asignaba `'admin'` a todos los whitelisted, sin soporte de rol específico por email.
+
+**Cambios implementados:**
+
+**Backend:**
+- `routers/roles.py` (nuevo) — `ROLE_ORDER` + `ROLE_META` + endpoint `GET /api/v1/roles` (sin auth). Devuelve lista ordenada con `id`, `label`, `description`, `level`.
+- `routers/users.py` — elimina `ROLE_ORDER` local; importa desde `roles.py`.
+- `main.py` — registra `roles_router` con `prefix="/api/v1"`.
+
+**DB (migración `20260529000001_admin_whitelist_role_column` — aplicada):**
+- `ADD COLUMN role TEXT DEFAULT 'admin'` a `admin_whitelist`.
+- INSERT `pablo.abumohor@webcarga.com` → `owner` en whitelist.
+- Trigger `handle_new_user()` reescrito: usa `COALESCE((SELECT role FROM admin_whitelist WHERE email = NEW.email), 'viewer')` en lugar de hardcodear `'admin'`.
+- `UPDATE profiles SET role = 'owner' WHERE email = 'pablo.abumohor@webcarga.com'` — aplicado ✅.
+
+**Frontend:**
+- `lib/api/roles.ts` (nuevo) — `RoleInfo` type, `fetchRoles()` (cliente), `fetchRolesServer()` (server component).
+- `lib/types.ts` — eliminados `ROLE_LABELS` y `ROLE_DESCRIPTIONS`. Conservados: `UserRole` type, `hasRole()`, `canManage()`.
+- `app/dashboard/admin/usuarios/page.tsx` — fetch `fetchRolesServer()` en `Promise.all`; `byRole` calculado como `[...roles].reverse()`; jerarquía de permisos y pills de distribución usan `r.label` / `r.description`.
+- `components/admin/UsersTable.tsx` — elimina `ALL_ROLES`; nueva prop `roles: RoleInfo[]`; `assignableRoles` calculado por `level`; dropdown usa `r.label` / `r.description`; pasa `roles` a `CreateUserForm`.
+- `components/admin/CreateUserForm.tsx` — elimina `ASSIGNABLE_ROLES`; nueva prop `roles: RoleInfo[]`; `availableRoles` calculado por `level`; radio buttons usan `r.label` / `r.description`.
+
+**Resultado:** TypeScript 0 errores, build verde (13 rutas). pablo.abumohor@webcarga.com → `owner` en profiles ✅.
+
+**Checklist (trigésimo-octava):**
+- [x] `routers/roles.py` creado con endpoint `GET /api/v1/roles`
+- [x] `users.py` importa `ROLE_ORDER` desde `roles.py`
+- [x] `main.py` registra `roles_router`
+- [x] Migración `admin_whitelist_role_column` aplicada en Supabase
+- [x] pablo → owner en whitelist + profiles
+- [x] Trigger actualizado para usar rol de la whitelist
+- [x] `lib/api/roles.ts` creado
+- [x] `ROLE_LABELS`/`ROLE_DESCRIPTIONS` eliminados de `lib/types.ts`
+- [x] `page.tsx` consume roles desde API
+- [x] `UsersTable.tsx` sin `ALL_ROLES` hardcodeado
+- [x] `CreateUserForm.tsx` sin `ASSIGNABLE_ROLES` hardcodeado
+- [x] Build verde, 0 errores TypeScript
+- [ ] Deploy a Vercel (push → CI/CD)
+- [ ] Aplicar migración pendiente de login: `20260528000001_fix_handle_new_user_trigger` (si no está aplicada aún)
+
+**Próximo paso:** Push main → Vercel deploy.
+
+---
+
 ## 1. Meta Actual
 - **FastAPI Monitor API** (`monitor-app/backend/api/`) — API operacional de master data de transportistas, pendiente deploy Cloud Run
 - Deploy de extraction_service en Cloud Run con CI/CD via GitHub Actions

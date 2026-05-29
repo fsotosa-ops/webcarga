@@ -4,7 +4,8 @@ import { useState, useTransition } from 'react'
 import { deleteUser } from '@/lib/actions/users'
 import CreateUserForm from './CreateUserForm'
 import type { Profile, UserRole } from '@/lib/types'
-import { ROLE_LABELS, ROLE_DESCRIPTIONS, canManage } from '@/lib/types'
+import { canManage } from '@/lib/types'
+import type { RoleInfo } from '@/lib/api/roles'
 import { usersApi } from '@/lib/api/users'
 import {
   UserPlus, Trash2, Search, ChevronDown,
@@ -22,8 +23,6 @@ const ROLE_BADGE_MAP: Record<string, { pill: string; avatar: string; dot: string
 const FALLBACK_BADGE = { pill: 'bg-gray-100 text-gray-600 border-gray-200', avatar: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' }
 function getRoleBadge(role: string) { return ROLE_BADGE_MAP[role] ?? FALLBACK_BADGE }
 
-const ALL_ROLES: UserRole[] = ['viewer', 'writer', 'editor', 'admin', 'owner']
-
 type FilterTab = 'all' | 'privileged' | 'active' | 'inactive'
 
 function initials(name: string | null | undefined, email: string | null | undefined): string {
@@ -39,9 +38,10 @@ interface Props {
   users:         Profile[]
   currentUserId: string
   actorRole:     UserRole
+  roles:         RoleInfo[]
 }
 
-export default function UsersTable({ users: initial, currentUserId, actorRole }: Props) {
+export default function UsersTable({ users: initial, currentUserId, actorRole, roles }: Props) {
   const [users,         setUsers]         = useState(initial)
   const [showCreate,    setShowCreate]    = useState(false)
   const [deletingId,    setDeletingId]    = useState<string | null>(null)
@@ -83,10 +83,9 @@ export default function UsersTable({ users: initial, currentUserId, actorRole }:
     else setUsers(prev => prev.filter(u => u.id !== user.id))
   }
 
-  // Roles actorRole can assign to others
-  const assignableRoles: UserRole[] = actorRole === 'owner'
-    ? ALL_ROLES
-    : ALL_ROLES.filter(r => r !== 'admin' && r !== 'owner')
+  // Roles actorRole can assign to others (strictly below actor's level)
+  const actorLevel = roles.find(r => r.id === actorRole)?.level ?? 0
+  const assignableRoles = roles.filter(r => r.level < actorLevel)
 
   // Filtering
   const byTab = users.filter(u => {
@@ -118,6 +117,7 @@ export default function UsersTable({ users: initial, currentUserId, actorRole }:
       {showCreate && (
         <CreateUserForm
           actorRole={actorRole}
+          roles={roles}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); window.location.reload() }}
         />
@@ -220,54 +220,59 @@ export default function UsersTable({ users: initial, currentUserId, actorRole }:
 
                     {/* Role badge (clickable if manageable) */}
                     <td className="px-5 py-3.5">
-                      {manageable ? (
-                        <div className="relative inline-block">
-                          <button
-                            onClick={() => setRoleDropId(roleDropId === user.id ? null : user.id)}
-                            className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-full text-xs font-semibold border transition-opacity hover:opacity-80 ${badge.pill}`}
-                            title={ROLE_DESCRIPTIONS[userRole]}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                            {ROLE_LABELS[userRole]}
-                            <ChevronDown size={10} />
-                          </button>
+                      {(() => {
+                        const roleInfo = roles.find(r => r.id === userRole)
+                        const roleLabel = roleInfo?.label ?? userRole
+                        const roleDesc  = roleInfo?.description ?? ''
+                        return manageable ? (
+                          <div className="relative inline-block">
+                            <button
+                              onClick={() => setRoleDropId(roleDropId === user.id ? null : user.id)}
+                              className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-full text-xs font-semibold border transition-opacity hover:opacity-80 ${badge.pill}`}
+                              title={roleDesc}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                              {roleLabel}
+                              <ChevronDown size={10} />
+                            </button>
 
-                          {roleDropId === user.id && (
-                            <div className="absolute left-0 top-full mt-1.5 z-20 bg-white border border-border rounded-xl shadow-xl p-1.5 w-56">
-                              <p className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Cambiar rol</p>
-                              {assignableRoles.map(role => {
-                                const rb = getRoleBadge(role)
-                                return (
-                                  <button
-                                    key={role}
-                                    onClick={() => changeRole(user, role)}
-                                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs hover:bg-gray-50 transition-colors ${userRole === role ? 'bg-accent/5' : ''}`}
-                                  >
-                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${rb.avatar}`}>
-                                      {ROLE_LABELS[role][0]}
-                                    </span>
-                                    <div>
-                                      <p className="font-semibold text-text-primary">{ROLE_LABELS[role]}</p>
-                                      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{ROLE_DESCRIPTIONS[role]}</p>
-                                    </div>
-                                    {userRole === role && (
-                                      <span className="ml-auto w-4 h-4 rounded-full bg-accent flex items-center justify-center">
-                                        <span className="text-white text-[8px] font-bold">✓</span>
+                            {roleDropId === user.id && (
+                              <div className="absolute left-0 top-full mt-1.5 z-20 bg-white border border-border rounded-xl shadow-xl p-1.5 w-56">
+                                <p className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Cambiar rol</p>
+                                {assignableRoles.map(r => {
+                                  const rb = getRoleBadge(r.id)
+                                  return (
+                                    <button
+                                      key={r.id}
+                                      onClick={() => changeRole(user, r.id as UserRole)}
+                                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs hover:bg-gray-50 transition-colors ${userRole === r.id ? 'bg-accent/5' : ''}`}
+                                    >
+                                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${rb.avatar}`}>
+                                        {r.label[0]}
                                       </span>
-                                    )}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className={`inline-flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-full text-xs font-semibold border ${badge.pill}`}
-                          title={ROLE_DESCRIPTIONS[userRole]}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                          {ROLE_LABELS[userRole]}
-                        </span>
-                      )}
+                                      <div>
+                                        <p className="font-semibold text-text-primary">{r.label}</p>
+                                        <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{r.description}</p>
+                                      </div>
+                                      {userRole === r.id && (
+                                        <span className="ml-auto w-4 h-4 rounded-full bg-accent flex items-center justify-center">
+                                          <span className="text-white text-[8px] font-bold">✓</span>
+                                        </span>
+                                      )}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className={`inline-flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-full text-xs font-semibold border ${badge.pill}`}
+                            title={roleDesc}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                            {roleLabel}
+                          </span>
+                        )
+                      })()}
                     </td>
 
                     {/* Estado */}
