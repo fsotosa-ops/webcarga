@@ -220,19 +220,20 @@ export type TripsMeta = {
 }
 
 export type TripCreatePayload = {
-  planning_date:     string
-  tms_name?:         string
-  source_trip_id?:   string | null
-  client_name?:      string | null
-  origin?:           string | null
-  cargo_type?:       string | null
-  current_status?:   string | null
-  tractor_plate?:    string | null
-  trailer_plate?:    string | null
-  driver_name?:      string | null
-  driver_rut?:       string | null
-  driver_phone?:     string | null
-  transporter_name?: string | null
+  planning_date:          string
+  tms_name?:              string
+  source_trip_id?:        string | null
+  client_name?:           string | null
+  origin?:                string | null
+  cargo_type?:            string | null
+  current_status?:        string | null
+  tractor_plate?:         string | null
+  trailer_plate?:         string | null
+  driver_name?:           string | null
+  driver_rut?:            string | null
+  driver_phone?:          string | null
+  transporter_name?:      string | null
+  transporter_profile_id?:string | null
 }
 
 // ── Trips (app.trips via FastAPI) ──────────────────────────────────

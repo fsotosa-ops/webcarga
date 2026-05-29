@@ -232,7 +232,7 @@ export default function DiarioPage() {
         <div className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto">
 
           {/* Header */}
-          <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="font-mulish font-bold text-xl text-text-primary capitalize">
                 {tab === 'en_curso' ? fmtDate(fecha) : 'Base Histórica'}
@@ -240,37 +240,6 @@ export default function DiarioPage() {
               <p className="text-xs text-gray-400 mt-0.5">
                 {loading ? '…' : `${total.toLocaleString('es-CL')} viaje${total !== 1 ? 's' : ''}`}
               </p>
-            </div>
-
-            {/* Botón agregar viaje */}
-            <div className="relative shrink-0">
-              <button
-                onClick={() => setShowAddMenu(v => !v)}
-                onBlur={() => setTimeout(() => setShowAddMenu(false), 150)}
-                className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-3.5 py-2 rounded-lg hover:bg-accent/90 transition-colors shadow-sm shadow-accent/30"
-              >
-                <Plus size={14} />
-                Agregar viaje
-                <ChevronDown size={12} className={`transition-transform ${showAddMenu ? 'rotate-180' : ''}`} />
-              </button>
-              {showAddMenu && (
-                <div className="absolute right-0 top-full mt-1.5 bg-white border border-border rounded-xl shadow-lg z-20 w-44 overflow-hidden">
-                  <button
-                    onClick={() => { setShowCreate(true); setShowAddMenu(false) }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-slate-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <Plus size={13} className="text-accent shrink-0" />
-                    Agregar uno
-                  </button>
-                  <button
-                    onClick={() => { setShowBulkUpload(true); setShowAddMenu(false) }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-slate-700 hover:bg-gray-50 transition-colors border-t border-border/50"
-                  >
-                    <Upload size={13} className="text-accent shrink-0" />
-                    Carga masiva (CSV)
-                  </button>
-                </div>
-              )}
             </div>
 
             {tab === 'en_curso' && (
@@ -311,6 +280,39 @@ export default function DiarioPage() {
                 {t.label}
               </button>
             ))}
+          </div>
+
+          {/* Barra de acciones — agregar viaje */}
+          <div className="flex items-center justify-end">
+            <div className="relative">
+              <button
+                onClick={() => setShowAddMenu(v => !v)}
+                onBlur={() => setTimeout(() => setShowAddMenu(false), 150)}
+                className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
+              >
+                <Plus size={13} />
+                Agregar viaje
+                <ChevronDown size={11} className={`transition-transform ${showAddMenu ? 'rotate-180' : ''}`} />
+              </button>
+              {showAddMenu && (
+                <div className="absolute right-0 top-full mt-1.5 bg-white border border-border rounded-xl shadow-lg z-20 w-46 overflow-hidden">
+                  <button
+                    onClick={() => { setShowCreate(true); setShowAddMenu(false) }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Plus size={13} className="text-accent shrink-0" />
+                    Agregar uno
+                  </button>
+                  <button
+                    onClick={() => { setShowBulkUpload(true); setShowAddMenu(false) }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-gray-50 transition-colors border-t border-border/50"
+                  >
+                    <Upload size={13} className="text-accent shrink-0" />
+                    Carga masiva (CSV)
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ── Filter bar ───────────────────────────────────────────── */}

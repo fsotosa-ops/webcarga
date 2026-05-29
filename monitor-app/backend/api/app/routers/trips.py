@@ -260,19 +260,20 @@ async def get_trips_meta(pool=Depends(get_pool)):
 # ── Trip creation (manual entry + bulk) ──────────────────────────────────────
 
 class TripCreateBody(BaseModel):
-    planning_date:    _date
-    source_trip_id:   Optional[str] = None
-    tms_name:         str           = 'manual'
-    client_name:      Optional[str] = None
-    origin:           Optional[str] = None
-    cargo_type:       Optional[str] = None
-    current_status:   Optional[str] = None
-    tractor_plate:    Optional[str] = None
-    trailer_plate:    Optional[str] = None
-    driver_name:      Optional[str] = None
-    driver_rut:       Optional[str] = None
-    driver_phone:     Optional[str] = None
-    transporter_name: Optional[str] = None
+    planning_date:          _date
+    source_trip_id:         Optional[str] = None
+    tms_name:               str           = 'manual'
+    client_name:            Optional[str] = None
+    origin:                 Optional[str] = None
+    cargo_type:             Optional[str] = None
+    current_status:         Optional[str] = None
+    tractor_plate:          Optional[str] = None
+    trailer_plate:          Optional[str] = None
+    driver_name:            Optional[str] = None
+    driver_rut:             Optional[str] = None
+    driver_phone:           Optional[str] = None
+    transporter_name:       Optional[str] = None
+    transporter_profile_id: Optional[str] = None  # si se selecciona desde Empresas
 
 
 async def _insert_trip(conn, body: TripCreateBody) -> str:
@@ -305,7 +306,31 @@ async def _insert_trip(conn, body: TripCreateBody) -> str:
         ['tractor_plate', 'trailer_plate', 'driver_name',
          'origin', 'cargo_type', 'current_status_tms'],
     )
-    return row["id"]
+    trip_id = row["id"]
+
+    # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
+    if body.transporter_profile_id:
+        link_id = await conn.fetchval(
+            """
+            INSERT INTO app.trip_fleet_links
+              (trip_id, transporter_id, tractor_plate, trailer_plate,
+               driver_name_raw, driver_phone, link_source, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,'manual',NULL)
+            RETURNING id
+            """,
+            trip_id,
+            body.transporter_profile_id,
+            body.tractor_plate,
+            body.trailer_plate,
+            body.driver_name,
+            body.driver_phone,
+        )
+        await conn.execute(
+            "UPDATE app.trips SET fleet_link_id = $1 WHERE id = $2",
+            link_id, trip_id,
+        )
+
+    return trip_id
 
 
 @router.post("")
