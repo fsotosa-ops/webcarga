@@ -79,6 +79,8 @@ export default function DiarioPage() {
   const [fTrabajando,    setFTrabajando]    = useState<BoolFilter>(null)
   const [fAsignado,      setFAsignado]      = useState<BoolFilter>(null)
   const [fPrimeraVuelta, setFPrimeraVuelta] = useState<BoolFilter>(null)
+  const [fTms,           setFTms]           = useState<string[]>([])
+  const [fClient,        setFClient]        = useState('')
   const [page,           setPage]           = useState(1)
 
   const [trips,          setTrips]          = useState<Trip[]>([])
@@ -133,12 +135,14 @@ export default function DiarioPage() {
   const activeCount = [
     q, fechaDesde, fechaHasta, activeGroup,
     fActivo, fTrabajando, fAsignado, fPrimeraVuelta,
-  ].filter(v => v !== '' && v !== null).length
+    fClient,
+  ].filter(v => v !== '' && v !== null).length + fTms.length
 
   function clearFilters() {
     setQ(''); setFechaDesde(''); setFechaHasta('')
     setActiveGroup(null)
     setFActivo(null); setFTrabajando(null); setFAsignado(null); setFPrimeraVuelta(null)
+    setFTms([]); setFClient('')
     setPage(1)
   }
 
@@ -167,17 +171,18 @@ export default function DiarioPage() {
       ...(fAsignado      != null ? { asignado:       fAsignado }      : {}),
       ...(fPrimeraVuelta != null ? { primera_vuelta: fPrimeraVuelta } : {}),
     }
+    const tmsParam    = fTms.join(',')
     const params =
       tab === 'en_curso'
-        ? { fecha, view: 'en_curso' as const, q, status: statusParam, limit: 200, ...boolParams }
+        ? { fecha, view: 'en_curso' as const, q, status: statusParam, tms: tmsParam, client: fClient, limit: 200, ...boolParams }
         : { view: 'historial' as const, q, fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
-            status: statusParam, limit: HISTORIAL_LIMIT, page, ...boolParams }
+            status: statusParam, tms: tmsParam, client: fClient, limit: HISTORIAL_LIMIT, page, ...boolParams }
 
     tripsApi.list(params)
       .then(res => { setTrips(res.data); setTotal(res.count) })
       .catch(e => setError(e instanceof Error ? e.message : 'Error cargando viajes'))
       .finally(() => setLoading(false))
-  }, [tab, fecha, q, fechaDesde, fechaHasta, statusParam, fActivo, fTrabajando, fAsignado, fPrimeraVuelta, page])
+  }, [tab, fecha, q, fechaDesde, fechaHasta, statusParam, fActivo, fTrabajando, fAsignado, fPrimeraVuelta, fTms, fClient, page])
 
   useEffect(() => { load() }, [load])
 
@@ -435,6 +440,36 @@ export default function DiarioPage() {
                   {chip.label}
                 </button>
               ))}
+            </div>
+
+            {/* Row 4 — Fuente (TMS) + cliente */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Fuente</span>
+              {(tripsMeta?.tms_sources ?? []).map(src => {
+                const active = fTms.includes(src.id)
+                return (
+                  <button
+                    key={src.id}
+                    onClick={() => {
+                      setFTms(prev => prev.includes(src.id) ? prev.filter(t => t !== src.id) : [...prev, src.id])
+                      setPage(1)
+                    }}
+                    style={active ? { backgroundColor: src.bg_color, color: src.text_color, borderColor: src.bg_color } : undefined}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                      active ? '' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    {src.label}
+                  </button>
+                )
+              })}
+              <span className="text-gray-200 text-sm mx-0.5">·</span>
+              <input
+                value={fClient}
+                onChange={e => { setFClient(e.target.value); setPage(1) }}
+                placeholder="Cliente…"
+                className="px-2.5 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-32 bg-white placeholder:text-gray-400 transition-all"
+              />
             </div>
           </div>
 

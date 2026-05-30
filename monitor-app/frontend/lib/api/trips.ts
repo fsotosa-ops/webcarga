@@ -69,6 +69,8 @@ export const tripsApi = {
     trabajando?:     boolean
     asignado?:       boolean
     primera_vuelta?: boolean
+    tms?:            string
+    client?:         string
     page?:           number
     limit?:          number
   }) => {
@@ -79,6 +81,8 @@ export const tripsApi = {
     if (params?.fecha_desde)     qs.set('fecha_desde',     params.fecha_desde)
     if (params?.fecha_hasta)     qs.set('fecha_hasta',     params.fecha_hasta)
     if (params?.status)          qs.set('status',          params.status)
+    if (params?.tms)             qs.set('tms',             params.tms)
+    if (params?.client)          qs.set('client',          params.client)
     if (params?.activo         != null) qs.set('activo',         String(params.activo))
     if (params?.trabajando     != null) qs.set('trabajando',     String(params.trabajando))
     if (params?.asignado       != null) qs.set('asignado',       String(params.asignado))

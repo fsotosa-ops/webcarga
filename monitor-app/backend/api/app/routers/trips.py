@@ -76,6 +76,8 @@ async def list_trips(
     trabajando: str = Query(""),
     asignado: str = Query(""),
     primera_vuelta: str = Query(""),
+    tms: str = Query(""),
+    client: str = Query(""),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
     pool=Depends(get_pool),
@@ -121,6 +123,11 @@ async def list_trips(
         filters.append("t.primera_vuelta = true")
     elif primera_vuelta == "false":
         filters.append("t.primera_vuelta = false")
+    if tms:
+        tms_list = [t.strip() for t in tms.split(',') if t.strip()]
+        add("t.tms_name = ANY(?)", tms_list)
+    if client:
+        add("t.client_name ILIKE '%'||?||'%'", client)
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit
