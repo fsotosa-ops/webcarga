@@ -4,9 +4,11 @@ from playwright.async_api import Page
 
 from app.tms.qanalytics.scraper import DATE_FORMAT_APP, QAnalyticsExtractor
 
-# URL del "Reporte Cumplimiento Citas" bajo Módulo Backhauls.
-# Confirmado inspeccionando el DOM post-login (2026-05-08).
-HREF_CUMPLIMIENTO_CITAS = "gestion_reporte_cumplimiento_citas_back_transporte_walmart.aspx"
+# Plantilla de URL del "Reporte Cumplimiento Citas" bajo Módulo Backhauls.
+# Se formatea con client_name.lower() en tiempo de ejecución.
+HREF_CUMPLIMIENTO_CITAS_TMPL = (
+    "gestion_reporte_cumplimiento_citas_back_transporte_{client}.aspx"
+)
 
 # Selector de fecha fin — esta página usa #txtFechaFin (camelCase), distinto
 # de Monitor de Viajes (#txt_fecfin) y Cumplimiento SAP (#txt_fin).
@@ -23,9 +25,12 @@ class QAnalyticsCumplimientoCitasExtractor(QAnalyticsExtractor):
 
     PRODUCT_NAME = "cumplimiento-citas"
 
-    async def _navigate_to_distribucion(self, page: Page, timeout_ms: int) -> None:
+    async def _navigate_to_distribucion(
+        self, page: Page, client_name: str, timeout_ms: int
+    ) -> None:
+        href = HREF_CUMPLIMIENTO_CITAS_TMPL.format(client=client_name)
         await page.click('a.dropdown-toggle.NavQA >> text="Módulo Backhauls"')
-        await page.click(f'a[href="{HREF_CUMPLIMIENTO_CITAS}"]')
+        await page.click(f'a[href="{href}"]')
         await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
 
     async def _set_date_range(self, page: Page, date_from: date, date_to: date) -> None:

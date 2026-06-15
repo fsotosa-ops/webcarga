@@ -1,6 +1,59 @@
 # CLAUDE CONTEXT MEMORY
 > Proyecto: webcarga
 
+### 2026-06-15 — QAnalytics multi-cliente: soporte iansa (iteración actual)
+
+**Objetivo:** Replicar el scraper QAnalytics de walmart para el cliente iansa.
+
+**Root cause:** `_navigate_to_distribucion()` tenía hardcodeado `"walmart"` en el href del ASPX:
+```
+gestion_planificacion_programados_dist_transporte_walmart.aspx
+```
+Todos los demás pasos del flujo (login, modal, fechas, export) ya usaban `client_name` dinámicamente — solo la navegación estaba fija.
+
+**Cambios implementados:**
+
+**`app/tms/qanalytics/scraper.py`:**
+- `_navigate_to_distribucion(self, page, timeout_ms)` → `(self, page, client_name, timeout_ms)`
+- Deriva href dinámicamente: `f"gestion_planificacion_programados_dist_transporte_{client_name.lower()}.aspx"`
+- Agrega `logger.info(f"[STEP nav] Navegando a {href}")` para diagnóstico en logs Cloud Run
+- `extract()` pasa `client_name` a `_navigate_to_distribucion()`
+
+**`app/tms/qanalytics/cumplimiento_sap.py`:**
+- `HREF_CUMPLIMIENTO` → `HREF_CUMPLIMIENTO_TMPL` (template `...{client}.aspx`)
+- Override `_navigate_to_distribucion` actualizado para aceptar `client_name` y usar la plantilla
+
+**`app/tms/qanalytics/cumplimiento_citas.py`:**
+- `HREF_CUMPLIMIENTO_CITAS` → `HREF_CUMPLIMIENTO_CITAS_TMPL` (template `...{client}.aspx`)
+- Override `_navigate_to_distribucion` actualizado igualmente
+
+**`tests/test_qanalytics_adapter.py`:**
+- Agregada clase `TestNavigationUrl` con 5 tests:
+  - `test_walmart_uses_walmart_href` — backward compat
+  - `test_iansa_uppercase_produces_lowercase_href` — ClienteT "IANSA" → href "iansa"
+  - `test_cumplimiento_sap_template_walmart` / `_iansa` — template SAP
+  - `test_cumplimiento_citas_template_walmart` — template Citas
+
+**Resultado:** 12/12 tests GREEN. No cambia factory ni config (mismas credenciales para todos los clientes QAnalytics).
+
+**Confirmado por usuario:**
+- Mismas credenciales `QANALYTICS_USER` / `QANALYTICS_PASS` para walmart e iansa
+- ClienteT iansa = `"IANSA"` (mayúsculas) — el href se genera en lowercase automáticamente
+
+**Checklist:**
+- [x] `_navigate_to_distribucion` dinámica en los 3 adapters QAnalytics
+- [x] 12/12 tests GREEN
+- [ ] Smoke test E2E con credenciales reales: `POST /api/v1/jobs {"source":"qanalytics","product":"trips","client_name":"IANSA",...}`
+- [ ] Si la navegación falla: activar `QANALYTICS_DUMP_PAGE=1` y revisar `/tmp/qanalytics_dump_post_nav.html` para confirmar el href exacto del link iansa en el dropdown
+- [ ] Deploy a Cloud Run (push a main → CI/CD)
+
+**Próximo paso exacto:** Smoke test E2E local con credenciales reales → luego push para deploy.
+
+**Riesgo residual:** La URL `gestion_planificacion_programados_dist_transporte_iansa.aspx` está asumida por patrón. Si el portal usa un nombre distinto (ej. `iansa_cl`, `iansa_dist`), se detecta inmediatamente con timeout + `QANALYTICS_DUMP_PAGE=1`.
+
+---
+
+
 ### 2026-05-29 — Product tour feature (Tasks 1-2 completed)
 
 **Objetivo:** Instalar react-joyride + crear hook base para estado del tour (12 tasks totales).

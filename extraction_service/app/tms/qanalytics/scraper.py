@@ -53,6 +53,10 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 f"{self.SOURCE_NAME} requiere date_from y date_to."
             )
 
+        # Normalizar a minúsculas para que "IANSA" e "iansa" sean equivalentes.
+        # Afecta: ClienteT en login, href de navegación y path en GCS.
+        client_name = client_name.lower()
+
         # Timestamp Unix fijado UNA SOLA VEZ al inicio — todos los paths
         # derivados (local + GCS) lo comparten para que coincidan.
         ts = int(time.time())
@@ -112,7 +116,7 @@ class QAnalyticsExtractor(BaseTMSExtractor):
                 logger.info(f"[TIMING] login: {time.time()-t0:.1f}s")
 
                 t0 = time.time()
-                await self._navigate_to_distribucion(page, timeout_ms)
+                await self._navigate_to_distribucion(page, client_name, timeout_ms)
                 await self._maybe_dump_page(page, "post_nav")
                 logger.info(f"[TIMING] navigate: {time.time()-t0:.1f}s")
 
@@ -170,11 +174,13 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         await page.click("#BtnTransporte")
         await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
 
-    async def _navigate_to_distribucion(self, page: Page, timeout_ms: int) -> None:
+    async def _navigate_to_distribucion(
+        self, page: Page, client_name: str, timeout_ms: int
+    ) -> None:
+        href = f"gestion_planificacion_programados_dist_transporte_{client_name}.aspx"
+        logger.info(f"[STEP nav] Navegando a {href}")
         await page.click('a.dropdown-toggle.NavQA >> text="Módulo Distribución"')
-        await page.click(
-            'a[href="gestion_planificacion_programados_dist_transporte_walmart.aspx"]'
-        )
+        await page.click(f'a[href="{href}"]')
         await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
 
     async def _set_date_range(

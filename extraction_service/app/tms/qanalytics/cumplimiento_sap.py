@@ -4,9 +4,9 @@ from playwright.async_api import Page
 
 from app.tms.qanalytics.scraper import DATE_FORMAT_APP, QAnalyticsExtractor
 
-# URL del "Reporte Cumplimiento SAP" bajo Módulo Distribución.
-# Confirmado inspeccionando el DOM post-login (2026-05-08).
-HREF_CUMPLIMIENTO = "gestion_reporte_cumplimiento_sap_dist_transporte_walmart.aspx"
+# Plantilla de URL del "Reporte Cumplimiento SAP" bajo Módulo Distribución.
+# Se formatea con client_name.lower() en tiempo de ejecución.
+HREF_CUMPLIMIENTO_TMPL = "gestion_reporte_cumplimiento_sap_dist_transporte_{client}.aspx"
 
 # Selector de fecha fin en esta página — difiere del Monitor de Viajes
 # que usa #txt_fecfin. Confirmado en HTML dump /tmp/qanalytics_fatal.html.
@@ -22,9 +22,12 @@ class QAnalyticsCumplimientoExtractor(QAnalyticsExtractor):
 
     PRODUCT_NAME = "cumplimiento-sap"
 
-    async def _navigate_to_distribucion(self, page: Page, timeout_ms: int) -> None:
+    async def _navigate_to_distribucion(
+        self, page: Page, client_name: str, timeout_ms: int
+    ) -> None:
+        href = HREF_CUMPLIMIENTO_TMPL.format(client=client_name)
         await page.click('a.dropdown-toggle.NavQA >> text="Módulo Distribución"')
-        await page.click(f'a[href="{HREF_CUMPLIMIENTO}"]')
+        await page.click(f'a[href="{href}"]')
         await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
 
     async def _set_date_range(self, page: Page, date_from: date, date_to: date) -> None:

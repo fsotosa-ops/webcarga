@@ -25,6 +25,8 @@ from app.tms.qanalytics.scraper import (
     SEL_MODAL_CHECKBOXES,
     SEL_MODAL_PENDIENTES,
 )
+from app.tms.qanalytics.cumplimiento_sap import HREF_CUMPLIMIENTO_TMPL
+from app.tms.qanalytics.cumplimiento_citas import HREF_CUMPLIMIENTO_CITAS_TMPL
 
 
 # ---------------------------------------------------------------------------
@@ -229,3 +231,74 @@ class TestSubmitSearchWaitsForResponse:
             f"El click debe ocurrir DENTRO del expect_response. "
             f"Orden actual: {call_order}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Navegación dinámica por client_name
+# ---------------------------------------------------------------------------
+
+class TestNavigationUrl:
+    """
+    Verifica que _navigate_to_distribucion construye el href desde client_name.
+
+    Backward compat: walmart sigue funcionando.
+    Multi-cliente: IANSA (ClienteT en mayúsculas) → href en minúsculas.
+    """
+
+    def _make_nav_page(self, *, clicked_hrefs: list):
+        """Page mock que registra qué hrefs se clickearon."""
+        page = MagicMock()
+        page.wait_for_load_state = AsyncMock(return_value=None)
+
+        async def _click(selector, **kwargs):
+            clicked_hrefs.append(selector)
+
+        page.click = _click
+        return page
+
+    def test_walmart_uses_walmart_href(self):
+        """client_name='walmart' → href con 'walmart' (backward compat)."""
+        hrefs = []
+        page = self._make_nav_page(clicked_hrefs=hrefs)
+
+        asyncio.run(
+            QAnalyticsExtractor()._navigate_to_distribucion(page, "walmart", 30_000)
+        )
+
+        assert any("walmart" in h for h in hrefs), (
+            f"Se esperaba href con 'walmart'. Hrefs clickeados: {hrefs}"
+        )
+
+    def test_iansa_lowercase_produces_lowercase_href(self):
+        """client_name normalizado a 'iansa' → href con 'iansa'.
+
+        La normalización a minúsculas ocurre en extract() antes de llamar a
+        _navigate_to_distribucion, por lo que este método siempre recibe
+        client_name ya en lowercase.
+        """
+        hrefs = []
+        page = self._make_nav_page(clicked_hrefs=hrefs)
+
+        asyncio.run(
+            QAnalyticsExtractor()._navigate_to_distribucion(page, "iansa", 30_000)
+        )
+
+        assert any("iansa" in h for h in hrefs), (
+            f"Se esperaba href con 'iansa'. Hrefs clickeados: {hrefs}"
+        )
+
+    def test_cumplimiento_sap_template_walmart(self):
+        """Template de cumplimiento-sap genera href correcto para walmart."""
+        href = HREF_CUMPLIMIENTO_TMPL.format(client="walmart")
+        assert href == "gestion_reporte_cumplimiento_sap_dist_transporte_walmart.aspx"
+
+    def test_cumplimiento_sap_template_iansa(self):
+        """Template de cumplimiento-sap genera href correcto para iansa."""
+        href = HREF_CUMPLIMIENTO_TMPL.format(client="iansa")
+        assert "iansa" in href
+        assert href.endswith(".aspx")
+
+    def test_cumplimiento_citas_template_walmart(self):
+        """Template de cumplimiento-citas genera href correcto para walmart."""
+        href = HREF_CUMPLIMIENTO_CITAS_TMPL.format(client="walmart")
+        assert href == "gestion_reporte_cumplimiento_citas_back_transporte_walmart.aspx"
