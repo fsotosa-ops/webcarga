@@ -3,9 +3,17 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/dashboard/diario'
+
+  // Cloud Run proxies requests — request.url contains the internal 0.0.0.0 address.
+  // Use x-forwarded-host to reconstruct the real public origin.
+  const forwardedHost = request.headers.get('x-forwarded-host')
+  const forwardedProto = request.headers.get('x-forwarded-proto') ?? 'https'
+  const origin = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : new URL(request.url).origin
 
   if (code) {
     const cookieStore = await cookies()
