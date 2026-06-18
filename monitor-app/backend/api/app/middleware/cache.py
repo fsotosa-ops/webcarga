@@ -1,31 +1,22 @@
 import hashlib
 
-from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 
 from ..cache import cache_get, cache_set
 
-# Rutas con TTL largo (datos de configuración, cambian raramente)
+# Only public (no-auth) endpoints are cached at middleware level.
+# Auth-protected routes must not be cached here — the middleware executes
+# before FastAPI's Depends(get_current_user), so early returns skip auth entirely.
 _STATIC_ROUTES: dict[str, int] = {
     "/api/v1/roles": 300,
     "/api/v1/trips/meta": 300,
 }
 
-# Prefijos con TTL corto (datos operativos, cambian cada ~15 min)
-_DYNAMIC_PREFIXES: list[tuple[str, int]] = [
-    ("/api/v1/trips", 30),
-    ("/api/v1/transporters", 30),
-]
-
 
 def _get_ttl(path: str) -> int | None:
-    if path in _STATIC_ROUTES:
-        return _STATIC_ROUTES[path]
-    for prefix, ttl in _DYNAMIC_PREFIXES:
-        if path.startswith(prefix):
-            return ttl
-    return None
+    return _STATIC_ROUTES.get(path)
 
 
 class CacheMiddleware(BaseHTTPMiddleware):
