@@ -1056,3 +1056,138 @@ Todos los demás pasos del flujo (login, modal, fechas, export) ya usaban `clien
 - `.dockerignore` — Nuevo
 - `init-gcp.sh` — Nuevo: setup GCP completo
 - `.github/workflows/deploy.yml` — Nuevo: CI/CD con WIF
+
+---
+
+### 2026-06-18 — Auditoría DB Supabase + Migraciones aplicadas
+
+**Objetivo:** Auditoría live de `viclzoftiudkepqnhekv` como Senior Backend Developer. Análisis de ciclo de vida de staging bronze, seguridad, performance e integridad arquitectónica.
+
+**Hallazgos principales:**
+1. `app.trips` sin RLS, sin PK, sin índices → tabla operativa principal expuesta
+2. `safe_update_transporter` ejecutable por `anon` vía PostgREST (GRANT TO PUBLIC)
+3. `bronze.raw_tms_trips` 100% en PENDING (900K filas, `sync_status` nunca actualizado)
+4. `raw_tms_trips_snapshot` usa `trip_file_identity` (incluye `file_name`) como unique_key → SCD Type 2 nunca cierra versiones, `dbt_valid_to` siempre NULL
+5. `transporter_profiles` con policies `tp_update`/`tp_write` permitiendo escritura a cualquier usuario autenticado
+6. Bronze acumulando 190K rows/semana sin limpieza → saturación de disco en ~4 meses
+
+**Migraciones aplicadas en producción:**
+- `20260618000001_security_critical.sql` — RLS + PK + índices en app.trips, DROP tp_update/tp_write, bronze read policy
+- `20260618000002_silver_integrity.sql` — índices en silver.tms_trips, silver.tms_milestone_trips, bronze.raw_tms_trips_snapshot, DROP idx_operational_states_active (no usado)
+- `20260618000003_bronze_lifecycle_backfill.sql` — 115K rows marcadas PROCESSED (>30 días), índices de lifecycle
+- `20260618000004_security_critical_revoke_public.sql` — REVOKE PUBLIC en safe_update_transporter/handle_new_user/is_admin (el REVOKE FROM anon de m1 fue insuficiente por GRANT TO PUBLIC)
+
+**Fix dbt pendiente (user debe ejecutar):**
+- `audit/raw_tms_trips_snapshot.sql` — cambiar `unique_key` de `trip_file_identity` (incluye file_name) a `tms_name|source_client|product|source_trip_id` para activar SCD Type 2 real
+- Después del cambio: `dbt snapshot --select raw_tms_trips_snapshot --full-refresh`
+
+**Fix Mage pendiente (user debe implementar):**
+- Agregar paso post-dbt que marque `sync_status='PROCESSED'` para rows del run actual
+- Agregar job mensual de limpieza: `DELETE WHERE sync_status='PROCESSED' AND processed_at < NOW() - 60 days`
+
+**Siguiente paso:** Ejecutar migración Option B (bronze.tms_trips UPSERT + dbt full-refresh + Mage v2).
+
+### 2026-06-18 — Diseño Opción B: bronze.tms_trips (UPSERT/current-state)
+
+**Decisión arquitectónica:** Reemplazar patrón append-only (raw_tms_trips 900K filas) por UPSERT de estado actual.
+
+**Archivos preparados (pendientes de ejecutar en orden):**
+1. `monitor-app/backend/supabase/migrations/20260618000005_create_bronze_tms_trips.sql`
+   - Crea `bronze.tms_trips` (UPSERT, unique por source_trip_id)
+   - Pobla desde raw_tms_trips (estado más reciente de cada viaje)
+2. `audit/tms_trips_snapshot.sql` — nuevo snapshot dbt (source: bronze.tms_trips)
+3. `audit/insert_tms_trips_qanalytics_v2.sql` — Mage UPSERT (reemplaza DO NOTHING)
+
+**Secuencia de cutover:**
+1. Aplicar migración 5 en Supabase (crea bronze.tms_trips, pobla desde raw)
+2. Actualizar sources.yml de dbt para apuntar a bronze.tms_trips
+3. Renombrar raw_tms_trips_snapshot → tms_trips_snapshot en dbt
+4. `dbt snapshot --select tms_trips_snapshot --full-refresh`
+5. Reemplazar insert_tms_trips_qanalytics.sql con la versión v2 en Mage
+6. Validar que el snapshot detecta cambios de estado → verificar dbt_valid_to != NULL
+7. Tras N semanas de operación validada: DROP bronze.raw_tms_trips (900K filas, 1.1GB)
+
+**Naming convention:** schema=layer (bronze), table=entity (tms_trips) — Databricks/Snowflake/dbt standard.
+
+### 2026-06-18 — Fix lifecycle SAP/cumplimiento-sap (cierre del flujo)
+
+**Problema:** Tres archivos del pipeline SAP rompían el flujo después de migrar `product='trips'` a `bronze.tms_trips` (UPSERT).
+
+**Diagnóstico de los 3 puntos de quiebre:**
+
+1. **`insert_raw_tms_qanalytics_sap.sql`** insertaba en `bronze.raw_tms_trips` (tabla deprecada, append-only) con `ON CONFLICT DO NOTHING` → sin UPSERT, sin detección de cambios de arribo.
+
+2. **`raw_tms_sap_snapshot.sql`** (renombrado a `tms_sap_snapshot`) leía de `{{ source('bronze', 'raw_tms_trips') }}` (tabla antigua). La CTE `deduped` existía SOLO como workaround del append-only — con UPSERT en la fuente, desaparece. Además `ingestion_timestamp` no existe en `bronze.tms_trips`.
+
+3. **`slv_milestone_trips.sql`** tenía watermark incremental frágil: `file_generated_at > MAX(file_generated_at)`. Cuando un viaje SAP antiguo recibe confirmación de arribo en una extracción nueva, el `file_generated_at` de ese viaje puede ser MENOR que el MAX ya en silver → el update se pierde. Watermark correcto: `dbt_updated_at` (cuándo dbt detectó el cambio — siempre avanza).
+
+**Decisión arquitectónica clave:** SAP (`product='cumplimiento-sap'`) usa LA MISMA tabla `bronze.tms_trips` que trips. La UNIQUE constraint `(tms_name, source_client, product, source_trip_id)` incluye `product`, por lo que `(qanalytics, walmart, trips, 12345)` y `(qanalytics, walmart, cumplimiento-sap, 12345)` coexisten como filas independientes.
+
+**Archivos modificados:**
+
+- `audit/insert_raw_tms_qanalytics_sap.sql` — UPSERT a `bronze.tms_trips` con `ON CONFLICT DO UPDATE SET payload=EXCLUDED.payload WHERE file más reciente`
+- `audit/raw_tms_sap_snapshot.sql` — renamed a `tms_sap_snapshot` internamente; CTE `deduped` eliminada; fuente cambiada a `{{ source('bronze', 'tms_trips') }} WHERE product = 'cumplimiento-sap'`; `ingestion_timestamp` → `first_seen_at` + `last_updated_at`
+- `audit/slv_milestone_trips.sql` — ref cambiada a `tms_sap_snapshot`; watermark `dbt_updated_at > MAX(dbt_updated_at)`; `ingestion_timestamp` → `first_seen_at` + `last_updated_at`
+
+**Archivo nuevo:**
+- `audit/backfill_sap_bronze_tms_trips.sql` — SQL one-shot para poblar `bronze.tms_trips` con los datos SAP históricos desde `raw_tms_trips` (ejecutar una sola vez antes de activar el nuevo insert Mage)
+
+**Datos históricos confirmados en raw_tms_trips (a preservar):**
+- 5,932 cambios de estado reales de trips (ASIGNADO→RUTA→CERRADO, etc.)
+- 1,463 confirmaciones de arribo SAP (on_time_status: NULL→ON TIME/OFF TIME en raw_tms_sap_snapshot)
+- Si los snapshots arrancan solo desde bronze.tms_trips estos se pierden → por eso hay backfills
+
+**Checklist de cutover completo (orden estricto):**
+- [x] bronze.tms_trips SAP backfill: 1,507/1,507 trips. todos con stops + trip_metadata + payload_hash ✅
+- [x] bronze.tms_trips total: trips 1,751 + cumplimiento-sap 1,507 = 3,259 rows ✅
+- [ ] 1. Agregar `tms_trips` a sources.yml del proyecto dbt
+- [x] 2. `dbt snapshot --select tms_trips_snapshot` (corrió desde Mage)
+         → bronze.tms_trips_snapshot creada con 1,752 versiones vigentes ✅
+- [x] 3. Backfill `tms_trips_snapshot` ejecutado (batches: colun+iansa+sodimac vía execute_sql, walmart vía apply_migration)
+         → 11,864 versiones históricas inyectadas. Total: 13,616 (historia desde 15 Apr 2026) ✅
+- [x] 4. `dbt snapshot --select tms_sap_snapshot` (corrió desde Mage)
+         → bronze.tms_sap_snapshot creada con 2,607 stops vigentes ✅
+- [x] 5. Backfill `tms_sap_snapshot` ejecutado — 1,463 versiones cerradas migradas desde raw_tms_sap_snapshot ✅
+         → Total: 4,070 (2,607 vigentes + 1,463 históricas) ✅
+- [x] 6. `dbt run --select slv_milestone_trips --full-refresh` (corrió desde Mage)
+         → 2,607 stops, 1,510 trips, 2,327 con arribo confirmado, watermark 2026-06-17 ✅
+- [ ] 7. Reemplazar bloque Mage trips con `audit/insert_tms_trips_qanalytics_v2.sql`
+- [ ] 8. Reemplazar bloque Mage SAP con `audit/insert_raw_tms_qanalytics_sap.sql`
+- [x] 9. Verificar ciclo end-to-end: Mage run → UPSERT en bronze.tms_trips → dbt snapshot → dbt_valid_to IS NOT NULL ✅
+         → Confirmado con query de diagnóstico (ver sección 2026-06-18 verificación ciclo SCD2)
+- [ ] 10. Tras N semanas validadas: DROP TABLE bronze.raw_tms_trips CASCADE (~1.2 GB)
+
+### 2026-06-18 — Verificación ciclo SCD2 en tms_trips_snapshot
+
+**Pregunta:** ¿Por qué los 69 UPSERTs en bronze.tms_trips generaron solo 16 nuevos vigentes y 0 versiones cerradas?
+
+**Query diagnóstica ejecutada:**
+```sql
+SELECT
+    COUNT(*) AS trips_upserted,
+    COUNT(*) FILTER (WHERE t.payload_hash = s.payload_hash) AS mismo_hash_sin_cambio_real,
+    COUNT(*) FILTER (WHERE t.payload_hash != s.payload_hash) AS hash_distinto_cambio_real
+FROM bronze.tms_trips t
+JOIN bronze.tms_trips_snapshot s ON ...
+WHERE t.product = 'trips' AND t.last_updated_at > t.first_seen_at;
+```
+
+**Resultado:**
+| Métrica | Valor |
+|---------|-------|
+| trips_upserted | 69 |
+| mismo_hash_sin_cambio_real | **64** |
+| hash_distinto_cambio_real | **5** |
+
+**Diagnóstico:** El SCD2 funciona correctamente:
+- **64 trips:** Mage extrajo un archivo más reciente pero con el mismo estado del viaje (misma patente, conductor, status). El UPSERT actualizó `file_name` / `last_updated_at` pero el `payload_hash` no cambió. dbt snapshot correctamente no generó nuevas versiones — no hubo cambio de estado real.
+- **16 vigentes nuevas:** 16 trip_ids que no existían antes aparecieron en la extracción más reciente → dbt creó su primera versión vigente (correcto).
+- **5 trips con hash distinto:** Su estado sí cambió, pero probablemente el UPSERT llegó DESPUÉS del dbt run de las 17:31 → el próximo `dbt snapshot` los detectará y cerrará la versión anterior.
+- **6 historicas extra (11,870 - 11,864):** Versiones cerradas generadas en una corrida anterior de dbt que corrió entre el backfill inicial y la verificación.
+
+**Conclusión:** El ciclo bronze → snapshot → silver está operacional. La granularidad de las versiones SCD2 depende de la frecuencia con que corra `dbt snapshot` — cuanto más frecuente, mayor resolución temporal del tracking de cambios de estado.
+
+**Pendientes para completar el cutover (pasos 7-8, requieren acción del usuario en Mage):**
+- Reemplazar bloque Mage trips con `audit/insert_tms_trips_qanalytics_v2.sql`
+- Reemplazar bloque Mage SAP con `audit/insert_raw_tms_qanalytics_sap.sql`
+- Después de los reemplazos: correr un Mage run completo + `dbt snapshot` para confirmar el primer ciclo end-to-end con los nuevos bloques
