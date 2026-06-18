@@ -86,4 +86,31 @@
 
 ## Estado del branch
 
-`main` branch — 7 commits sobre `eb2af2a`. Review final: **Ready to merge** (no hay findings pendientes).
+`dev` branch — deployado y funcionando en Cloud Run.
+
+| Servicio | URL | Estado |
+|----------|-----|--------|
+| monitor-api-dev | `https://webcarga-monitor-api-dev-zcdyyci7ta-uc.a.run.app` | ✓ `/api/v1/roles` responde 5 roles |
+| frontend-dev | `https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app` | ✓ 307 → Supabase auth (esperado) |
+| extraction-dev | no deployado (sin cambios en `extraction_service/**`) | — |
+
+## Fixes adicionales post-CI (en `dev`)
+
+| Commit | Fix |
+|--------|-----|
+| `e1f93ec` | `Dockerfile` monitor-api: `upstash-redis` faltaba en pip install |
+| `2418546` | `cache.py`: `cache_get/set` sin `try/except` → 500 en Redis NOPERM |
+
+### Por qué NOPERM en Redis
+
+El token en `.env.local` (`UPSTASH_REDIS_REST_TOKEN`) es read-only (el `REDIS_URL` usa `default_ro` como usuario). Con el `try/except` la cache falla silenciosamente — la app funciona, pero no cachea. Para habilitar el cache real se necesita el token read-write de Upstash.
+
+## Próximos pasos
+
+### Pendientes técnicos
+1. **Upstash token RW** — obtener el token read-write desde Upstash Dashboard y actualizar el secret `monitor-api-upstash-token` en GCP Secret Manager
+2. **Supabase Redirect URLs** — agregar las URLs de Cloud Run del frontend en Supabase → Auth → URL Configuration → Redirect URLs (manual)
+3. **Merge `dev` → `main`** — cuando dev esté estable, push a `main` dispara deploys prod
+
+### Opcional
+- Probar el flujo completo del frontend (login → dashboard) usando la URL de `webcarga-frontend-dev`
