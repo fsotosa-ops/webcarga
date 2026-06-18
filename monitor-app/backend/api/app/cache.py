@@ -16,11 +16,17 @@ async def cache_get(key: str) -> str | None:
     redis = get_redis()
     if redis is None:
         return None
-    return await redis.get(key)
+    try:
+        return await redis.get(key)
+    except Exception:
+        return None
 
 
 async def cache_set(key: str, value: str, ex: int) -> None:
     redis = get_redis()
     if redis is None:
         return
-    await redis.set(key, value, ex=ex)
+    try:
+        await redis.set(key, value, ex=ex)
+    except Exception:
+        return
