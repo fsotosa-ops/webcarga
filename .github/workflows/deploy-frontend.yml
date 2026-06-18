@@ -1,31 +1,78 @@
-name: Deploy Frontend to Vercel
+name: Deploy Frontend
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
+    paths:
+      - "monitor-app/frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
 
 env:
-  VERCEL_ORG_ID: team_IpYkwx3MS6QuAe0C6yH951Mn
-  VERCEL_PROJECT_ID: prj_RRjc1P6RPf7qyUxlQRKH7OJIZCZp
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  REPOSITORY: webcarga
+  IMAGE_NAME: frontend
+  CLOUD_RUN_SA: ${{ secrets.FRONTEND_CLOUD_RUN_SA }}
+  ENV_SUFFIX: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@latest
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SA_EMAIL }}
 
-      - name: Pull Vercel environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        working-directory: monitor-app/frontend
+      - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-        working-directory: monitor-app/frontend
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Deploy to production
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-        working-directory: monitor-app/frontend
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}-${{ env.ENV_SUFFIX }}:latest \
+            ./monitor-app/frontend
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}-${{ env.ENV_SUFFIX }}:latest
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: webcarga-frontend-${{ env.ENV_SUFFIX }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          flags: >-
+            --memory=512Mi
+            --cpu=1
+            --timeout=60
+            --concurrency=80
+            --min-instances=0
+            --max-instances=5
+            --service-account=${{ env.CLOUD_RUN_SA }}
+            --allow-unauthenticated
+            --set-env-vars=ENVIRONMENT=${{ env.ENV_SUFFIX }}
+            --set-secrets=FASTAPI_URL=frontend-fastapi-url-${{ env.ENV_SUFFIX }}:latest,UPSTASH_REDIS_REST_URL=frontend-upstash-url:latest,UPSTASH_REDIS_REST_TOKEN=frontend-upstash-token:latest
+
+      - name: Show service URL
+        run: |
+          URL=$(gcloud run services describe webcarga-frontend-${{ env.ENV_SUFFIX }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)")
+          echo "Frontend deployed at: ${URL}"
+          echo "IMPORTANTE: Si es el primer deploy, agregar esta URL en Supabase → Auth → Redirect URLs"
