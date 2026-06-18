@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import close_pool, init_pool
+from .middleware.cache import CacheMiddleware
 from .routers.config import router as config_router
 from .routers.filter_groups import router as filter_groups_router
 from .routers.roles import router as roles_router
@@ -31,6 +32,10 @@ app = FastAPI(
 )
 
 settings = get_settings()
+
+# Orden de middlewares (Starlette: último agregado = más externo para requests)
+# CacheMiddleware primero → queda interno a CORS (CORS agrega headers incluso en hits)
+app.add_middleware(CacheMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
