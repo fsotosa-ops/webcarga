@@ -9,7 +9,7 @@ import {
 import type { Trip, TransporterListItem, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
-import { getLatestTemp, getActiveStop } from '@/lib/utils/temperature'
+import { getLatestTemp, getActiveStop, stopWasVisited } from '@/lib/utils/temperature'
 
 
 // ── Date formatters ───────────────────────────────────────────────────────────
@@ -553,7 +553,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                                     : <span className="text-gray-200">—</span>}
                                 </td>
                                 <td className="px-3 py-2 text-center">
-                                  {stop.temperature != null
+                                  {stopWasVisited(stop) && stop.temperature != null
                                     ? <span className="text-sm font-mono text-blue-600 font-semibold">{stop.temperature}°C</span>
                                     : <span className="text-gray-200">—</span>}
                                 </td>
