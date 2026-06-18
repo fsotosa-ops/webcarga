@@ -148,6 +148,25 @@ for env in dev prod; do
     fi
 done
 
+hdr "GCP IAM — acceso de runtime SAs a secrets nuevos"
+MONITOR_SA="webcarga-monitor-api-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+FRONTEND_SA_EMAIL="webcarga-frontend-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+
+for secret in monitor-api-upstash-url monitor-api-upstash-token; do
+    gcloud secrets add-iam-policy-binding "$secret" \
+        --member="serviceAccount:${MONITOR_SA}" \
+        --role="roles/secretmanager.secretAccessor" \
+        --project="$PROJECT_ID" --quiet >/dev/null 2>&1 || true
+    ok "IAM: $secret → $MONITOR_SA"
+done
+for secret in frontend-upstash-url frontend-upstash-token frontend-fastapi-url-dev frontend-fastapi-url-prod; do
+    gcloud secrets add-iam-policy-binding "$secret" \
+        --member="serviceAccount:${FRONTEND_SA_EMAIL}" \
+        --role="roles/secretmanager.secretAccessor" \
+        --project="$PROJECT_ID" --quiet >/dev/null 2>&1 || true
+    ok "IAM: $secret → $FRONTEND_SA_EMAIL"
+done
+
 # =============================================================================
 # FASE 2 — GitHub Secrets
 # =============================================================================
