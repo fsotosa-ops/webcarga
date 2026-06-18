@@ -9,6 +9,7 @@ import {
 import type { Trip, TransporterListItem, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
+import { getLatestTemp, getActiveStop } from '@/lib/utils/temperature'
 
 
 // ── Date formatters ───────────────────────────────────────────────────────────
@@ -261,8 +262,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
 
       {/* Panel */}
       <div className="fixed inset-0 z-50 flex flex-col bg-white
-                      md:inset-y-3 md:right-3 md:left-auto
-                      md:w-full md:max-w-5xl
+                      md:inset-4
                       md:rounded-2xl md:shadow-2xl overflow-hidden">
 
         {/* ── Header ────────────────────────────────────────────────── */}
@@ -372,6 +372,48 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             )}
           </div>
         </div>
+
+        {/* ── KPI strip ─────────────────────────────────────────────── */}
+        {(trip.stops?.length ?? 0) > 0 && (() => {
+          const temp       = getLatestTemp(trip.stops)
+          const activeStop = getActiveStop(trip.stops)
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border/60 border-b border-border/80 bg-gradient-to-r from-slate-50 to-blue-50/30 shrink-0">
+              <div className="px-4 py-3 flex flex-col justify-center">
+                <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1">Temperatura</p>
+                {temp != null
+                  ? <p className="text-2xl font-black text-blue-600 leading-none">{temp}°C</p>
+                  : <p className="text-sm text-gray-300">—</p>}
+              </div>
+              <div className="px-4 py-3 flex flex-col justify-center">
+                <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1">Parada activa</p>
+                <p className="text-sm font-bold text-accent leading-tight truncate">{activeStop?.local ?? '—'}</p>
+                {activeStop?.arrival_date && (
+                  <p className="text-[10px] text-gray-400 font-mono mt-0.5">{fmtDT(activeStop.arrival_date)}</p>
+                )}
+              </div>
+              <div className="px-4 py-3 flex flex-col justify-center">
+                <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1">Planificación</p>
+                <p className="text-sm font-semibold text-slate-700">{fmtDate(trip.planning_date)}</p>
+                {trip.status_reported_at && (
+                  <p className="text-[10px] text-gray-400 font-mono mt-0.5">Rep. {fmtDT(trip.status_reported_at)}</p>
+                )}
+              </div>
+              <div className="px-4 py-3 flex flex-col justify-center">
+                <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1">Teléfono</p>
+                {trip.driver_phone
+                  ? <a
+                      href={`tel:${trip.driver_phone}`}
+                      className="text-sm font-mono text-green-600 hover:text-green-500 leading-tight"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      {trip.driver_phone}
+                    </a>
+                  : <p className="text-sm text-gray-300">—</p>}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── Tab bar ───────────────────────────────────────────────── */}
         <div className="flex shrink-0 bg-white border-b border-border">
@@ -512,7 +554,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   {stop.temperature != null
-                                    ? <span className="text-[10px] font-mono text-blue-600">{stop.temperature}°C</span>
+                                    ? <span className="text-sm font-mono text-blue-600 font-semibold">{stop.temperature}°C</span>
                                     : <span className="text-gray-200">—</span>}
                                 </td>
                                 <td className="px-3 py-2 text-center">

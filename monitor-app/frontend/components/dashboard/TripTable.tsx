@@ -5,6 +5,7 @@ import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'luc
 import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop, TripsMeta } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { tripsApi } from '@/lib/api/trips'
+import { getLatestTemp } from '@/lib/utils/temperature'
 
 
 function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
@@ -55,34 +56,33 @@ function StopPills({ stops }: { stops: TripStop[] }) {
 
   const isCompleted = (s: TripStop) =>
     !!(s.arrival_date || s.gps_arrival_date || s.on_time_status)
-
-  const currentIdx   = stops.findIndex(s => !isCompleted(s))
-  const isInProgress = currentIdx >= 0
-  const current      = isInProgress ? stops[currentIdx] : stops[stops.length - 1]
-  const completedCnt = stops.filter(isCompleted).length
-  const total        = stops.length
-  const name         = current.local ?? current.destination_city ?? '—'
-
-  const pillCls = isInProgress
-    ? 'bg-accent/10 text-accent border border-accent/20'
-    : current.on_time_status === 'ON TIME'
-    ? 'bg-green-50 text-green-600 border border-green-100'
-    : current.on_time_status === 'OFF TIME'
-    ? 'bg-amber-50 text-amber-600 border border-amber-100'
-    : 'bg-gray-50 text-gray-400 border border-gray-100'
+  const currentIdx = stops.findIndex(s => !isCompleted(s))
+  const activeIdx  = currentIdx >= 0 ? currentIdx : stops.length - 1
 
   return (
-    <div className="space-y-0.5">
-      <span
-        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full max-w-[110px] truncate flex items-center gap-1 w-fit ${pillCls}`}
-        title={name}
-      >
-        {isInProgress && <span className="shrink-0">→</span>}
-        <span className="truncate">{name}</span>
-      </span>
-      {total > 1 && (
-        <p className="text-[9px] text-gray-400 pl-0.5">{completedCnt} / {total}</p>
-      )}
+    <div className="flex flex-col gap-0.5">
+      {stops.map((stop, i) => {
+        const name     = stop.local ?? stop.destination_city ?? '—'
+        const isActive = i === activeIdx
+        const isDone   = currentIdx < 0 ? isCompleted(stop) : i < activeIdx
+        return (
+          <span
+            key={stop.stop_id ?? i}
+            title={name}
+            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit max-w-[120px] truncate flex items-center gap-0.5 ${
+              isActive
+                ? 'bg-accent/10 text-accent border border-accent/20'
+                : isDone
+                ? 'text-gray-300 bg-gray-50'
+                : 'text-gray-200'
+            }`}
+          >
+            {isActive && <span className="shrink-0 text-[8px]">→</span>}
+            {isDone && !isActive && <span className="shrink-0 text-[8px]">✓</span>}
+            <span className="truncate">{name}</span>
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -415,7 +415,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                 isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-gray-50/60'
               }`}
             >
-              {/* fila 1: patente + estado */}
+              {/* fila 1: patente + temp + estado */}
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className={`font-mono text-sm font-bold shrink-0 ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal text-xs'}`}>
@@ -424,14 +424,22 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   <ComplianceBadge status={plateAlert ?? null} compact />
                   <TmsChip tms={trip.tms_name ?? ''} meta={meta} />
                 </div>
-                <span
-                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
-                  style={statusMeta
-                    ? { backgroundColor: statusMeta.bg_color, color: statusMeta.text_color }
-                    : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
-                >
-                  {currentStatus ?? '—'}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {(() => {
+                    const temp = getLatestTemp(trip.stops ?? [])
+                    return temp != null
+                      ? <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700">{temp}°C</span>
+                      : null
+                  })()}
+                  <span
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+                    style={statusMeta
+                      ? { backgroundColor: statusMeta.bg_color, color: statusMeta.text_color }
+                      : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
+                  >
+                    {currentStatus ?? '—'}
+                  </span>
+                </div>
               </div>
 
               {/* fila 2: conductor + flags */}
@@ -476,6 +484,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
               <th className="px-3 py-2.5 text-left">Destinos</th>
               <th onClick={() => handleSort('current_status')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} /></th>
+              <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
               <th className="px-2 py-2.5 w-6"></th>
             </tr>
           </thead>
@@ -598,6 +607,16 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     {trip.estado_manual && (
                       <span className="text-[8px] text-accent block mt-0.5">override</span>
                     )}
+                  </td>
+
+                  {/* TEMP */}
+                  <td className="px-3 py-2.5 text-center">
+                    {(() => {
+                      const temp = getLatestTemp(trip.stops ?? [])
+                      return temp != null
+                        ? <span className="rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">{temp}°C</span>
+                        : <span className="text-gray-300 text-xs">—</span>
+                    })()}
                   </td>
 
                   {/* Chevron */}

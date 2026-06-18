@@ -108,9 +108,20 @@ El token en `.env.local` (`UPSTASH_REDIS_REST_TOKEN`) es read-only (el `REDIS_UR
 ## Próximos pasos
 
 ### Pendientes técnicos
-1. **Upstash token RW** — obtener el token read-write desde Upstash Dashboard y actualizar el secret `monitor-api-upstash-token` en GCP Secret Manager
+1. **Upstash token RW** — obtener el token read-write desde Upstash Dashboard y actualizar el secret `monitor-api-upstash-token` en GCP Secret Manager *(ya completado en sesión anterior con token AaKC…)*
 2. **Supabase Redirect URLs** — agregar las URLs de Cloud Run del frontend en Supabase → Auth → URL Configuration → Redirect URLs (manual)
 3. **Merge `dev` → `main`** — cuando dev esté estable, push a `main` dispara deploys prod
 
-### Opcional
-- Probar el flujo completo del frontend (login → dashboard) usando la URL de `webcarga-frontend-dev`
+---
+
+### 2026-06-18 — Diario UX: temperatura + destinos + modal inmersivo
+
+**Cambios realizados** (build limpio, sin errores TypeScript):
+
+| Archivo | Cambio |
+|---------|--------|
+| `lib/utils/temperature.ts` | CREADO — `getLatestTemp`, `getActiveStop` |
+| `components/dashboard/TripTable.tsx` | Columna Temp nueva (desktop + mobile) · StopPills rediseñado: muestra todas las paradas (activa en azul, completadas en gris, pendientes en gris claro) |
+| `components/dashboard/TripSlideOver.tsx` | Modal full-screen (`md:inset-4` en lugar de side-panel) · Franja KPI siempre visible (Temperatura 2xl, Parada activa, Planificación, Teléfono) · Temp más grande en tabla de paradas |
+
+**Pendiente de deploy:** hacer commit y push a `dev` para probar en Cloud Run.
