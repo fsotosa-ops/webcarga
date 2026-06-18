@@ -60,9 +60,10 @@ gcp_secret_upsert() {
 }
 
 # Establece un GitHub secret via gh CLI
+# IMPORTANTE: usar --body "$value" NO --body - (stdin piping no funciona con gh secret set)
 gh_secret_set() {
     local name="$1" value="$2"
-    printf '%s' "$value" | gh secret set "$name" --repo="${GITHUB_ORG}/${GITHUB_REPO}" --body -
+    gh secret set "$name" --repo="${GITHUB_ORG}/${GITHUB_REPO}" --body "$value"
     ok "GitHub secret: $name"
 }
 

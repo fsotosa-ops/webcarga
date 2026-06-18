@@ -26,15 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug WIF inputs
-        run: |
-          echo "WIF_PROVIDER length: ${#WIF_PROVIDER}"
-          echo "WIF_PROVIDER (hex): $(echo -n "$WIF_PROVIDER" | xxd | head -3)"
-          echo "WIF_SA_EMAIL: $WIF_SA_EMAIL"
-        env:
-          WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
-          WIF_SA_EMAIL: ${{ secrets.WIF_SA_EMAIL }}
-
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
