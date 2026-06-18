@@ -10,7 +10,8 @@ RUN pip install --no-cache-dir \
     "asyncpg>=0.30" \
     "pydantic>=2.7" \
     "pydantic-settings>=2.3" \
-    "supabase==2.10.0"
+    "supabase==2.10.0" \
+    "upstash-redis>=1.1.0"
 
 # Copy app code
 COPY app/ ./app/
