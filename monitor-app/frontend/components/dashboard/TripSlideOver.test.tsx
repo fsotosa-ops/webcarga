@@ -71,4 +71,16 @@ describe('TripSlideOver — sin tabs', () => {
     fireEvent.click(screen.getByTitle('Revertir a valor del TMS'))
     expect(await screen.findByText('network down')).toBeInTheDocument()
   })
+
+  it('shows created_at in Resumen', () => {
+    const tripWithCreated = { ...baseTrip, created_at: '2026-06-30 08:00:00' }
+    render(<TripSlideOver trip={tripWithCreated} onClose={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    expect(screen.getByText('Ingresó al sistema')).toBeInTheDocument()
+  })
+
+  it('shows the editor name in the override attribution when estado_manual is set', () => {
+    const tripWithOverride = { ...baseTrip, estado_manual: 'en_seguimiento', edited_at: '2026-07-02 10:15:00', edited_by: 'Felipe Sumadots' }
+    render(<TripSlideOver trip={tripWithOverride} onClose={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    expect(screen.getByText(/Felipe Sumadots/)).toBeInTheDocument()
+  })
 })

@@ -424,6 +424,9 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   icon={<RefreshCw size={9} className="text-gray-400 shrink-0" />}
                 />
               )}
+              {trip.created_at && (
+                <MetaField label="Ingresó al sistema" value={fmtDT(trip.created_at)} />
+              )}
             </div>
           </section>
 
@@ -466,7 +469,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   )
                 })()}
                 <span className="text-[10px] text-gray-400">
-                  confirmado manualmente el {fmtDT(trip.edited_at)}
+                  confirmado manualmente {trip.edited_by ? `por ${trip.edited_by} ` : ''}el {fmtDT(trip.edited_at)}
                 </span>
                 <button
                   type="button"
