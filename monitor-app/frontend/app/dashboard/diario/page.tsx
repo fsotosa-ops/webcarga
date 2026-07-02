@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ChevronDown, Upload } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, Upload } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
@@ -92,7 +92,6 @@ export default function DiarioPage() {
   const [tripsMeta,           setTripsMeta]           = useState<TripsMeta | null>(null)
   const [showCreate,          setShowCreate]          = useState(false)
   const [showBulkUpload,      setShowBulkUpload]      = useState(false)
-  const [showAddMenu,         setShowAddMenu]         = useState(false)
 
   // Custom groups
   const [customGroups,   setCustomGroups]   = useState<FilterGroup[]>([])
@@ -289,37 +288,22 @@ export default function DiarioPage() {
           </div>
 
           {/* Barra de acciones — agregar viaje */}
-          <div className="flex items-center justify-end">
-            <div className="relative">
-              <button
-                data-tour="trip-create-btn"
-                onClick={() => setShowAddMenu(v => !v)}
-                onBlur={() => setTimeout(() => setShowAddMenu(false), 150)}
-                className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
-              >
-                <Plus size={13} />
-                Agregar viaje
-                <ChevronDown size={11} className={`transition-transform ${showAddMenu ? 'rotate-180' : ''}`} />
-              </button>
-              {showAddMenu && (
-                <div className="absolute right-0 top-full mt-1.5 bg-white border border-border rounded-xl shadow-lg z-20 w-46 overflow-hidden">
-                  <button
-                    onClick={() => { setShowCreate(true); setShowAddMenu(false) }}
-                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <Plus size={13} className="text-accent shrink-0" />
-                    Agregar uno
-                  </button>
-                  <button
-                    onClick={() => { setShowBulkUpload(true); setShowAddMenu(false) }}
-                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-medium text-slate-700 hover:bg-gray-50 transition-colors border-t border-border/50"
-                  >
-                    <Upload size={13} className="text-accent shrink-0" />
-                    Carga masiva (CSV)
-                  </button>
-                </div>
-              )}
-            </div>
+          <div className="flex items-center justify-end gap-3">
+            <button
+              onClick={() => setShowBulkUpload(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-accent transition-colors"
+            >
+              <Upload size={12} />
+              Carga masiva (CSV)
+            </button>
+            <button
+              data-tour="trip-create-btn"
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
+            >
+              <Plus size={13} />
+              Agregar viaje
+            </button>
           </div>
 
           {/* ── Filter bar ───────────────────────────────────────────── */}
