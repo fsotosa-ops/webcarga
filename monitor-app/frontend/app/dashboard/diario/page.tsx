@@ -97,6 +97,7 @@ export default function DiarioPage() {
   const [customGroups,   setCustomGroups]   = useState<FilterGroup[]>([])
   const [showBuilder,    setShowBuilder]    = useState(false)
   const [editingGroup,   setEditingGroup]   = useState<FilterGroup | undefined>(undefined)
+  const [prefillFromFilter, setPrefillFromFilter] = useState(false)
 
   const today   = todayISO()
   const isToday = fecha === today
@@ -226,9 +227,9 @@ export default function DiarioPage() {
           editing={editingGroup}
           onSaved={handleGroupSaved}
           onDeleted={handleGroupDeleted}
-          onClose={() => { setShowBuilder(false); setEditingGroup(undefined) }}
+          onClose={() => { setShowBuilder(false); setEditingGroup(undefined); setPrefillFromFilter(false) }}
           statuses={tripsMeta?.statuses}
-          initialStatuses={statusParam ? statusParam.split(',') : undefined}
+          initialStatuses={prefillFromFilter && statusParam ? statusParam.split(',') : undefined}
         />
       )}
 
@@ -399,7 +400,7 @@ export default function DiarioPage() {
 
               {/* Create group button */}
               <button
-                onClick={() => { setEditingGroup(undefined); setShowBuilder(true) }}
+                onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(false); setShowBuilder(true) }}
                 className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-accent hover:text-accent transition-all"
                 title="Crear grupo personalizado"
               >
@@ -410,7 +411,7 @@ export default function DiarioPage() {
               {/* Save current filter as a group — prefills GroupBuilder with the active statuses */}
               {statusParam && (
                 <button
-                  onClick={() => { setEditingGroup(undefined); setShowBuilder(true) }}
+                  onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(true); setShowBuilder(true) }}
                   className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-accent/40 text-accent hover:border-accent hover:bg-accent/5 transition-all"
                   title="Guardar el filtro de estado actual como grupo"
                 >
