@@ -292,7 +292,9 @@ export type Trip = {
   transporter_profile_id: string | null
   manually_edited_fields: string[]
   edited_at:              string | null
+  edited_by:              string | null  // nombre/email ya resueltos por el backend, nunca un uuid
   updated_at:             string | null
+  created_at:             string | null
   source_system_trip_id:  string | null
   milestone_status:       string | null  // trip-level, distinct from TripStop.milestone_status
   pipeline_updated_at:    string | null

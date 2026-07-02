@@ -22,6 +22,7 @@ const baseTrip: Trip = {
   origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], activo: true, trabajando: false, asignado: true,
   primera_vuelta: false, estado_manual: null, observaciones: null, comentarios: null,
   fleet_link_id: null, transporter_profile_id: null, manually_edited_fields: [], edited_at: null,
+  edited_by: null, created_at: null,
   updated_at: null, source_system_trip_id: '2000711', milestone_status: null, pipeline_updated_at: null,
 }
 

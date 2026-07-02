@@ -52,6 +52,8 @@ _TRIP_SELECT = """
     fl.transporter_id                             AS transporter_profile_id,
     t.edited_at,
     t.updated_at,
+    t.created_at,
+    COALESCE(p.full_name, p.email)                 AS edited_by,
     t.source_system_trip_id,
     t.milestone_status,
     t.pipeline_updated_at
@@ -61,6 +63,7 @@ _TRIP_FROM = """
     FROM app.trips t
     LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
     LEFT JOIN app.transporter_profiles tp ON tp.id = fl.transporter_id
+    LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 
 # Allow-listed ORDER BY clauses — never build ORDER BY from raw user input.
