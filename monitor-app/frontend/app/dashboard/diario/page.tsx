@@ -229,6 +229,7 @@ export default function DiarioPage() {
           onDeleted={handleGroupDeleted}
           onClose={() => { setShowBuilder(false); setEditingGroup(undefined) }}
           statuses={tripsMeta?.statuses}
+          initialStatuses={statusParam ? statusParam.split(',') : undefined}
         />
       )}
 
@@ -421,6 +422,18 @@ export default function DiarioPage() {
                 <Plus size={11} />
                 Grupo
               </button>
+
+              {/* Save current filter as a group — prefills GroupBuilder with the active statuses */}
+              {statusParam && (
+                <button
+                  onClick={() => { setEditingGroup(undefined); setShowBuilder(true) }}
+                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-accent/40 text-accent hover:border-accent hover:bg-accent/5 transition-all"
+                  title="Guardar el filtro de estado actual como grupo"
+                >
+                  <Plus size={11} />
+                  Guardar como grupo
+                </button>
+              )}
             </div>
 
             {/* Row 3 — boolean flag chips */}
