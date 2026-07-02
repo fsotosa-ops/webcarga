@@ -45,17 +45,18 @@ const COLORS: { id: GroupColor; bg: string; ring: string }[] = [
 ]
 
 interface Props {
-  editing?:   FilterGroup
-  onSaved:    (group: FilterGroup) => void
-  onDeleted?: (id: string) => void
-  onClose:    () => void
-  statuses?:  StatusMeta[]   // from meta — replaces hardcoded STATUS_SECTIONS
+  editing?:          FilterGroup
+  onSaved:           (group: FilterGroup) => void
+  onDeleted?:        (id: string) => void
+  onClose:           () => void
+  statuses?:         StatusMeta[]   // from meta — replaces hardcoded STATUS_SECTIONS
+  initialStatuses?:  string[]       // prefill al crear desde el filtro activo (page.tsx "Guardar como grupo")
 }
 
-export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses }: Props) {
+export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, initialStatuses }: Props) {
   const STATUS_SECTIONS = buildSections(statuses)
   const [name,      setName]      = useState(editing?.name ?? '')
-  const [selected,  setSelected]  = useState<Set<string>>(new Set(editing?.statuses ?? []))
+  const [selected,  setSelected]  = useState<Set<string>>(new Set(editing?.statuses ?? initialStatuses ?? []))
   const [color,     setColor]     = useState<GroupColor>(editing?.color ?? 'blue')
   const [saving,    setSaving]    = useState(false)
   const [deleting,  setDeleting]  = useState(false)
