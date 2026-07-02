@@ -74,4 +74,27 @@ describe('IndicatorDots', () => {
 
     expect(parentClick).not.toHaveBeenCalled()
   })
+
+  it('rolls back optimistic state when PATCH fails, computing correct toggle on second click', async () => {
+    // First call rejects, second call succeeds
+    vi.mocked(tripsApi.patch).mockRejectedValueOnce(new Error('network error'))
+    vi.mocked(tripsApi.patch).mockResolvedValueOnce({ ...baseTrip, activo: true })
+    const onSaved = vi.fn()
+    render(<IndicatorDots trip={baseTrip} onSaved={onSaved} />)
+
+    // First click: since trip.activo is false, next = !(false) = true
+    fireEvent.click(screen.getByTitle('Activo'))
+    expect(tripsApi.patch).toHaveBeenNthCalledWith(1, 't1', { activo: true })
+
+    // Wait for error message to appear (proves catch was executed and optimistic state rolled back)
+    await waitFor(() => expect(screen.getByText('network error')).toBeInTheDocument())
+
+    // Second click: if rollback worked, optimistic state was cleared, so next should again be !(false) = true
+    // If rollback had NOT worked, optimistic.activo would still be true, and next would be !(true) = false
+    fireEvent.click(screen.getByTitle('Activo'))
+
+    // Verify the second call computed the correct toggle from the original state
+    expect(tripsApi.patch).toHaveBeenNthCalledWith(2, 't1', { activo: true })
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ activo: true })))
+  })
 })
