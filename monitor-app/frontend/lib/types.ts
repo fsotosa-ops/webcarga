@@ -211,12 +211,20 @@ export type CSVColumnDef = {
   example:  string
 }
 
+export type TemperatureRangeMeta = {
+  cargo_type: string
+  label:      string
+  min_c:      number
+  max_c:      number
+}
+
 export type TripsMeta = {
   statuses:           StatusMeta[]
   tms_sources:        TmsSourceMeta[]
   operational_states: OperationalStateMeta[]
   alert_thresholds:   AlertThresholdMeta[]
   csv_columns:        CSVColumnDef[]
+  temperature_ranges: TemperatureRangeMeta[]
 }
 
 export type TripCreatePayload = {

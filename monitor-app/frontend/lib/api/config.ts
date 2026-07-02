@@ -1,5 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
-import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta } from '@/lib/types'
+import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta, TemperatureRangeMeta } from '@/lib/types'
 
 const BASE = ''
 
@@ -72,5 +72,26 @@ export const configApi = {
     apiFetch<AlertThresholdMeta>(`/api/v1/config/alert-thresholds/${doc_type}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
+    }),
+
+  // ── Temperature ranges (CRUD — cargo_type is free text, not a fixed enum) ──
+  getTemperatureRanges: () =>
+    apiFetch<TemperatureRangeMeta[]>('/api/v1/config/temperature-ranges'),
+
+  createTemperatureRange: (body: TemperatureRangeMeta) =>
+    apiFetch<TemperatureRangeMeta>('/api/v1/config/temperature-ranges', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  patchTemperatureRange: (cargo_type: string, body: Partial<Pick<TemperatureRangeMeta, 'label' | 'min_c' | 'max_c'>>) =>
+    apiFetch<TemperatureRangeMeta>(`/api/v1/config/temperature-ranges/${encodeURIComponent(cargo_type)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  deleteTemperatureRange: (cargo_type: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/config/temperature-ranges/${encodeURIComponent(cargo_type)}`, {
+      method: 'DELETE',
     }),
 }

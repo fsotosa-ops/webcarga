@@ -9,7 +9,7 @@ import {
 import type { Trip, TransporterListItem, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
-import { getLatestTemp, getActiveStop, stopWasVisited } from '@/lib/utils/temperature'
+import { getLatestTemp, getActiveStop, stopWasVisited, classifyTemperature } from '@/lib/utils/temperature'
 
 
 // ── Date formatters ───────────────────────────────────────────────────────────
@@ -377,12 +377,13 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
         {(trip.stops?.length ?? 0) > 0 && (() => {
           const temp       = getLatestTemp(trip.stops)
           const activeStop = getActiveStop(trip.stops)
+          const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
           return (
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border/60 border-b border-border/80 bg-gradient-to-r from-slate-50 to-blue-50/30 shrink-0">
               <div className="px-4 py-3 flex flex-col justify-center">
                 <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1">Temperatura</p>
                 {temp != null
-                  ? <p className="text-2xl font-black text-blue-600 leading-none">{temp}°C</p>
+                  ? <p className={`text-2xl font-black leading-none ${tempStatus === 'out_of_range' ? 'text-red-600' : 'text-blue-600'}`}>{temp}°C</p>
                   : <p className="text-sm text-gray-300">—</p>}
               </div>
               <div className="px-4 py-3 flex flex-col justify-center">

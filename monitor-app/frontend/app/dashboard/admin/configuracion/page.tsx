@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import { Check, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { configApi, type TripStatusRow, type OperationalStateRow } from '@/lib/api/config'
-import type { AlertThresholdMeta } from '@/lib/types'
+import type { AlertThresholdMeta, TemperatureRangeMeta } from '@/lib/types'
 
-type Tab = 'estados_tms' | 'estados_op' | 'alertas'
+type Tab = 'estados_tms' | 'estados_op' | 'alertas' | 'rangos_temperatura'
 
 const GROUP_OPTIONS = [
   { id: 'en_ruta',    label: 'En Ruta'    },
@@ -445,14 +445,238 @@ function AlertasTab() {
   )
 }
 
+// ── Tab: Rangos de Temperatura ────────────────────────────────────────────────
+function RangosTemperaturaTab() {
+  const [ranges, setRanges]         = useState<TemperatureRangeMeta[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [saving, setSaving]         = useState<string | null>(null)
+  const [deleting, setDeleting]     = useState<string | null>(null)
+  const [drafts, setDrafts]         = useState<Record<string, Partial<TemperatureRangeMeta>>>({})
+  const [showNew, setShowNew]       = useState(false)
+  const [newCargoType, setNewCargoType] = useState('')
+  const [newLabel, setNewLabel]     = useState('')
+  const [newMin, setNewMin]         = useState('')
+  const [newMax, setNewMax]         = useState('')
+  const [creating, setCreating]     = useState(false)
+  const [err, setErr]               = useState<string | null>(null)
+
+  useEffect(() => {
+    configApi.getTemperatureRanges()
+      .then(data => { setRanges(data); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  function setDraft(cargo_type: string, field: 'label' | 'min_c' | 'max_c', value: string) {
+    if (field === 'label') {
+      setDrafts(d => ({ ...d, [cargo_type]: { ...d[cargo_type], label: value } }))
+      return
+    }
+    const num = parseFloat(value)
+    if (!isNaN(num)) setDrafts(d => ({ ...d, [cargo_type]: { ...d[cargo_type], [field]: num } }))
+  }
+
+  async function saveDraft(r: TemperatureRangeMeta) {
+    const draft = drafts[r.cargo_type]
+    if (!draft) return
+    setSaving(r.cargo_type); setErr(null)
+    try {
+      const updated = await configApi.patchTemperatureRange(r.cargo_type, draft)
+      setRanges(prev => prev.map(x => x.cargo_type === r.cargo_type ? updated : x))
+      setDrafts(d => { const n = { ...d }; delete n[r.cargo_type]; return n })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function handleDelete(cargo_type: string) {
+    if (!confirm(`¿Eliminar el rango de "${cargo_type}"?`)) return
+    setDeleting(cargo_type)
+    try {
+      await configApi.deleteTemperatureRange(cargo_type)
+      setRanges(prev => prev.filter(r => r.cargo_type !== cargo_type))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al eliminar')
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  async function handleCreate() {
+    const cargoType = newCargoType.trim()
+    const label = newLabel.trim()
+    const min = parseFloat(newMin)
+    const max = parseFloat(newMax)
+    if (!cargoType || !label) { setErr('Tipo de carga y label son requeridos'); return }
+    if (isNaN(min) || isNaN(max)) { setErr('Mín/Máx deben ser números'); return }
+    if (min > max) { setErr('El mínimo no puede ser mayor al máximo'); return }
+    if (ranges.some(r => r.cargo_type === cargoType)) { setErr('Ya existe un rango para ese tipo de carga'); return }
+    setCreating(true); setErr(null)
+    try {
+      const created = await configApi.createTemperatureRange({ cargo_type: cargoType, label, min_c: min, max_c: max })
+      setRanges(prev => [...prev, created].sort((a, b) => a.cargo_type.localeCompare(b.cargo_type)))
+      setNewCargoType(''); setNewLabel(''); setNewMin(''); setNewMax(''); setShowNew(false)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al crear')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (loading) return <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500">
+        Rango de temperatura válido por tipo de carga (<code className="text-[11px]">cargo_type</code> tal como lo reporta cada TMS —
+        no hay catálogo cerrado). Viajes cuyo tipo de carga no tenga rango configurado aquí no muestran clasificación en el Diario.
+      </p>
+      {err && <p className="text-xs text-red-500">{err}</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[600px]">
+          <thead>
+            <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border">
+              <th className="px-4 py-2.5 text-left">Tipo de carga</th>
+              <th className="px-4 py-2.5 text-left">Label</th>
+              <th className="px-4 py-2.5 text-center w-28">Mín (°C)</th>
+              <th className="px-4 py-2.5 text-center w-28">Máx (°C)</th>
+              <th className="px-3 py-2.5 w-20"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {ranges.map(r => {
+              const draft = drafts[r.cargo_type] ?? {}
+              const isDirty = Object.keys(draft).length > 0
+              return (
+                <tr key={r.cargo_type} className={isDirty ? 'bg-accent/3' : ''}>
+                  <td className="px-4 py-2.5">
+                    <span className="font-mono text-xs text-slate-600">{r.cargo_type}</span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      value={draft.label ?? r.label}
+                      onChange={e => setDraft(r.cargo_type, 'label', e.target.value)}
+                      className="text-xs border border-border rounded-lg px-2.5 py-1.5 w-40 focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={draft.min_c ?? r.min_c}
+                      onChange={e => setDraft(r.cargo_type, 'min_c', e.target.value)}
+                      className="w-20 text-center text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={draft.max_c ?? r.max_c}
+                      onChange={e => setDraft(r.cargo_type, 'max_c', e.target.value)}
+                      className="w-20 text-center text-sm border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    />
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1">
+                      {isDirty && (
+                        <button
+                          onClick={() => saveDraft(r)}
+                          disabled={saving === r.cargo_type}
+                          className="p-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors disabled:opacity-50"
+                        >
+                          {saving === r.cargo_type ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDelete(r.cargo_type)}
+                        disabled={deleting === r.cargo_type}
+                        className="p-1.5 text-gray-300 hover:text-red-400 transition-colors disabled:opacity-50"
+                      >
+                        {deleting === r.cargo_type ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {showNew ? (
+        <div className="border border-accent/20 rounded-xl p-4 bg-accent/3 space-y-3">
+          <p className="text-xs font-semibold text-gray-600">Nuevo rango de temperatura</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <input
+              autoFocus
+              value={newCargoType}
+              onChange={e => setNewCargoType(e.target.value)}
+              placeholder="cargo_type (ej: REFRIGERADO)"
+              maxLength={60}
+              className="text-xs border border-border rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+            <input
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              placeholder="Label (ej: Frío)"
+              maxLength={60}
+              className="text-xs border border-border rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+            <input
+              type="number"
+              step="0.1"
+              value={newMin}
+              onChange={e => setNewMin(e.target.value)}
+              placeholder="Mín °C"
+              className="text-xs border border-border rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+            <input
+              type="number"
+              step="0.1"
+              value={newMax}
+              onChange={e => setNewMax(e.target.value)}
+              placeholder="Máx °C"
+              className="text-xs border border-border rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCreate}
+              disabled={creating}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-40 transition-colors"
+            >
+              {creating ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Crear
+            </button>
+            <button onClick={() => { setShowNew(false); setErr(null) }}
+              className="px-3 py-2 text-xs text-gray-500 border border-border rounded-lg hover:bg-gray-50 transition-colors">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowNew(true)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent/80 transition-colors"
+        >
+          <Plus size={14} /> Nuevo rango de temperatura
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ConfiguracionPage() {
   const [tab, setTab] = useState<Tab>('estados_tms')
 
   const TABS: { key: Tab; label: string; desc: string }[] = [
-    { key: 'estados_tms', label: 'Estados TMS',          desc: 'Colores y agrupación' },
-    { key: 'estados_op',  label: 'Estados Operacionales', desc: 'Vocabulario del equipo' },
-    { key: 'alertas',     label: 'Alertas de Vencimiento', desc: 'Umbrales en días' },
+    { key: 'estados_tms',         label: 'Estados TMS',           desc: 'Colores y agrupación' },
+    { key: 'estados_op',          label: 'Estados Operacionales', desc: 'Vocabulario del equipo' },
+    { key: 'alertas',             label: 'Alertas de Vencimiento', desc: 'Umbrales en días' },
+    { key: 'rangos_temperatura',  label: 'Rangos de Temperatura', desc: 'Por tipo de carga' },
   ]
 
   return (
@@ -482,9 +706,10 @@ export default function ConfiguracionPage() {
         </div>
 
         <div className="p-5">
-          {tab === 'estados_tms' && <EstadosTMSTab />}
-          {tab === 'estados_op'  && <EstadosOperacionalesTab />}
-          {tab === 'alertas'     && <AlertasTab />}
+          {tab === 'estados_tms'        && <EstadosTMSTab />}
+          {tab === 'estados_op'         && <EstadosOperacionalesTab />}
+          {tab === 'alertas'            && <AlertasTab />}
+          {tab === 'rangos_temperatura' && <RangosTemperaturaTab />}
         </div>
       </div>
     </div>

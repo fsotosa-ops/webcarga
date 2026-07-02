@@ -63,6 +63,15 @@ _TRIP_FROM = """
     LEFT JOIN app.transporter_profiles tp ON tp.id = fl.transporter_id
 """
 
+# Allow-listed ORDER BY clauses — never build ORDER BY from raw user input.
+# status_reported_at_asc: viajes con más tiempo en su estado actual primero
+# (la fecha más antigua de reporte = el que lleva más tiempo sin cambiar).
+_SORT_OPTIONS = {
+    "default":                 "t.planning_date DESC, t.updated_at DESC",
+    "status_reported_at_asc":  "t.status_reported_at ASC NULLS LAST",
+    "status_reported_at_desc": "t.status_reported_at DESC NULLS LAST",
+}
+
 
 @router.get("")
 async def list_trips(
@@ -78,6 +87,7 @@ async def list_trips(
     primera_vuelta: str = Query(""),
     tms: str = Query(""),
     client: str = Query(""),
+    sort: str = Query("default"),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
     pool=Depends(get_pool),
@@ -131,10 +141,11 @@ async def list_trips(
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit
+    order_clause = _SORT_OPTIONS.get(sort, _SORT_OPTIONS["default"])
 
     rows = await pool.fetch(
         f"SELECT {_TRIP_SELECT} {_TRIP_FROM} {where} "
-        f"ORDER BY t.planning_date DESC, t.updated_at DESC "
+        f"ORDER BY {order_clause} "
         f"LIMIT {limit} OFFSET {offset}",
         *params,
     )
@@ -233,12 +244,20 @@ class CSVColumnDef(BaseModel):
     example:  str
 
 
+class TemperatureRangeMeta(BaseModel):
+    cargo_type: str
+    label:      str
+    min_c:      float
+    max_c:      float
+
+
 class TripsMeta(BaseModel):
     statuses:           list[StatusMeta]
     tms_sources:        list[TmsSourceMeta]
     operational_states: list[OperationalStateMeta]
     alert_thresholds:   list[AlertThresholdMeta]
     csv_columns:        list[CSVColumnDef]
+    temperature_ranges: list[TemperatureRangeMeta]
 
 
 @router.get("/meta", response_model=TripsMeta)
@@ -255,12 +274,17 @@ async def get_trips_meta(pool=Depends(get_pool)):
         "SELECT doc_type, label, warning_days, error_days "
         "FROM app.alert_thresholds ORDER BY doc_type"
     )
+    temp_range_rows = await pool.fetch(
+        "SELECT cargo_type, label, min_c, max_c "
+        "FROM app.temperature_ranges ORDER BY cargo_type"
+    )
     return TripsMeta(
         statuses=[StatusMeta(**dict(r)) for r in status_rows],
         tms_sources=[TmsSourceMeta(**t) for t in _TMS_META],
         operational_states=[OperationalStateMeta(**dict(r)) for r in op_rows],
         alert_thresholds=[AlertThresholdMeta(**dict(r)) for r in thresh_rows],
         csv_columns=[CSVColumnDef(**c) for c in _CSV_COLUMNS],
+        temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
     )
 
 

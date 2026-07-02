@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from ..auth import require_admin
 from ..db import get_pool
@@ -66,6 +66,43 @@ class AlertThresholdPatch(BaseModel):
     def error_non_negative(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
             raise ValueError("error_days no puede ser negativo")
+        return v
+
+
+class TemperatureRangeBody(BaseModel):
+    cargo_type: str
+    label:      str
+    min_c:      float
+    max_c:      float
+
+    @field_validator("cargo_type", "label")
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) > 60:
+            raise ValueError("debe tener entre 1 y 60 caracteres")
+        return v
+
+    @model_validator(mode="after")
+    def range_valid(self) -> "TemperatureRangeBody":
+        if self.min_c > self.max_c:
+            raise ValueError("min_c no puede ser mayor a max_c")
+        return self
+
+
+class TemperatureRangePatch(BaseModel):
+    label: Optional[str]   = None
+    min_c: Optional[float] = None
+    max_c: Optional[float] = None
+
+    @field_validator("label")
+    @classmethod
+    def label_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v or len(v) > 60:
+            raise ValueError("label debe tener entre 1 y 60 caracteres")
         return v
 
 
@@ -230,3 +267,88 @@ async def patch_alert_threshold(
         doc_type,
     )
     return dict(row)
+
+
+# ── Temperature ranges (full CRUD — cargo_type is free text, not a fixed enum) ─
+
+@router.get("/temperature-ranges")
+async def list_temperature_ranges(pool=Depends(get_pool)):
+    rows = await pool.fetch(
+        "SELECT cargo_type, label, min_c, max_c "
+        "FROM app.temperature_ranges ORDER BY cargo_type"
+    )
+    return [dict(r) for r in rows]
+
+
+@router.post("/temperature-ranges")
+async def create_temperature_range(
+    body: TemperatureRangeBody,
+    pool=Depends(get_pool),
+    _=Depends(require_admin),
+):
+    existing = await pool.fetchrow(
+        "SELECT cargo_type FROM app.temperature_ranges WHERE cargo_type = $1",
+        body.cargo_type,
+    )
+    if existing:
+        raise HTTPException(409, "Ya existe un rango para ese tipo de carga")
+
+    row = await pool.fetchrow(
+        """INSERT INTO app.temperature_ranges (cargo_type, label, min_c, max_c)
+           VALUES ($1, $2, $3, $4)
+           RETURNING cargo_type, label, min_c, max_c""",
+        body.cargo_type, body.label, body.min_c, body.max_c,
+    )
+    return dict(row)
+
+
+@router.patch("/temperature-ranges/{cargo_type}")
+async def patch_temperature_range(
+    cargo_type: str,
+    body: TemperatureRangePatch,
+    pool=Depends(get_pool),
+    _=Depends(require_admin),
+):
+    existing = await pool.fetchrow(
+        "SELECT cargo_type, label, min_c, max_c FROM app.temperature_ranges WHERE cargo_type = $1",
+        cargo_type,
+    )
+    if not existing:
+        raise HTTPException(404, "Rango de temperatura no encontrado")
+
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(422, "Ningún campo enviado")
+
+    new_min = data.get("min_c", existing["min_c"])
+    new_max = data.get("max_c", existing["max_c"])
+    if float(new_min) > float(new_max):
+        raise HTTPException(422, "min_c no puede ser mayor a max_c")
+
+    sets, vals = [], [cargo_type]
+    for field, value in data.items():
+        vals.append(value)
+        sets.append(f"{field} = ${len(vals)}")
+
+    await pool.execute(
+        f"UPDATE app.temperature_ranges SET {', '.join(sets)} WHERE cargo_type = $1", *vals
+    )
+    row = await pool.fetchrow(
+        "SELECT cargo_type, label, min_c, max_c FROM app.temperature_ranges WHERE cargo_type = $1",
+        cargo_type,
+    )
+    return dict(row)
+
+
+@router.delete("/temperature-ranges/{cargo_type}")
+async def delete_temperature_range(
+    cargo_type: str,
+    pool=Depends(get_pool),
+    _=Depends(require_admin),
+):
+    result = await pool.execute(
+        "DELETE FROM app.temperature_ranges WHERE cargo_type = $1", cargo_type
+    )
+    if result == "DELETE 0":
+        raise HTTPException(404, "Rango de temperatura no encontrado")
+    return {"ok": True}
