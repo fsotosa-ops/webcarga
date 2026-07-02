@@ -235,8 +235,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   }
 
   function handleCopyId() {
-    if (!trip?.source_trip_id) return
-    navigator.clipboard.writeText(trip.source_trip_id).then(() => {
+    if (!trip?.source_system_trip_id) return
+    navigator.clipboard.writeText(trip.source_system_trip_id).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -246,8 +246,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
 
   const currentStatus = trip.estado_manual ?? trip.current_status
   const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
-  const tmsMeta       = trip.tms_name ? meta?.tms_sources.find(t => t.id === trip.tms_name.toLowerCase()) : null
-  const tmsLabel      = tmsMeta?.label ?? trip.tms_name?.toUpperCase().slice(0, 3) ?? '?'
+  const tmsMeta       = trip.source_system ? meta?.tms_sources.find(t => t.id === trip.source_system.toLowerCase()) : null
+  const tmsLabel      = tmsMeta?.label ?? trip.source_system?.toUpperCase().slice(0, 3) ?? '?'
 
   const TABS: { key: ActiveTab; label: string }[] = [
     { key: 'viaje',    label: 'Viaje'    },
@@ -271,7 +271,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
           {/* Row 1: TMS + ID + cerrar */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
-              {tmsMeta || trip.tms_name ? (
+              {tmsMeta || trip.source_system ? (
                 <span
                   className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
                   style={tmsMeta
@@ -281,11 +281,11 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   {tmsLabel}
                 </span>
               ) : null}
-              {trip.source_trip_id && (
+              {trip.source_system_trip_id && (
                 <div className="flex items-center gap-1.5 min-w-0">
                   <Hash size={11} className="text-white/40 shrink-0" />
                   <span className="font-mono text-xs text-white/60 truncate">
-                    {trip.source_trip_id}
+                    {trip.source_system_trip_id}
                   </span>
                   <button
                     type="button"
@@ -454,10 +454,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     value={fmtDT(trip.status_reported_at)}
                     icon={<RefreshCw size={9} className="text-gray-400 shrink-0" />}
                   />
-                  {trip.milestone_status_sap && (
+                  {trip.milestone_status && (
                     <MetaField
-                      label="Estado SAP cierre"
-                      value={trip.milestone_status_sap}
+                      label="Estado cumplimiento"
+                      value={trip.milestone_status}
                       highlight
                     />
                   )}

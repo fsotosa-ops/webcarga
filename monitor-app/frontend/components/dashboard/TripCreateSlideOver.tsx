@@ -139,14 +139,14 @@ function EmpresaSelector({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function TripCreateSlideOver({ open, onClose, onCreated, meta }: Props) {
-  const [form, setForm]                   = useState<Partial<TripCreatePayload>>({ tms_name: 'manual' })
+  const [form, setForm]                   = useState<Partial<TripCreatePayload>>({ source_system: 'manual' })
   const [empresa, setEmpresa]             = useState<TransporterProfile | null>(null)
   const [saving, setSaving]               = useState(false)
   const [err, setErr]                     = useState<string | null>(null)
 
   useEffect(() => {
     if (open) {
-      setForm({ tms_name: 'manual' })
+      setForm({ source_system: 'manual' })
       setEmpresa(null)
       setErr(null)
     }
@@ -245,7 +245,7 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta }: Props) {
                   <input type="date" value={form.planning_date ?? ''} onChange={e => set('planning_date', e.target.value)} className={INPUT} />
                 </Field>
                 <Field label="Fuente">
-                  <select value={form.tms_name ?? 'manual'} onChange={e => set('tms_name', e.target.value)} className={INPUT}>
+                  <select value={form.source_system ?? 'manual'} onChange={e => set('source_system', e.target.value)} className={INPUT}>
                     {(meta?.tms_sources ?? []).map(t => (
                       <option key={t.id} value={t.id}>{t.label} — {t.id}</option>
                     ))}
@@ -254,7 +254,7 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta }: Props) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="ID viaje en origen">
-                  <input type="text" value={form.source_trip_id ?? ''} onChange={e => set('source_trip_id', e.target.value)} placeholder="VJE-001" className={INPUT} />
+                  <input type="text" value={form.source_system_trip_id ?? ''} onChange={e => set('source_system_trip_id', e.target.value)} placeholder="VJE-001" className={INPUT} />
                 </Field>
                 <Field label="Cliente">
                   <input type="text" value={form.client_name ?? ''} onChange={e => set('client_name', e.target.value)} placeholder="Walmart, Sodimac…" className={INPUT} />

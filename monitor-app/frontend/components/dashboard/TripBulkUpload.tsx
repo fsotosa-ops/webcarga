@@ -69,7 +69,7 @@ function buildPayload(
   }
 
   if (!payload.planning_date) errors.push('Fecha de planificación requerida')
-  if (!payload.tms_name) payload.tms_name = 'manual'
+  if (!payload.source_system) payload.source_system = 'manual'
 
   return {
     payload: errors.length === 0 ? payload as TripCreatePayload : null,
@@ -284,8 +284,8 @@ export function TripBulkUpload({ open, onClose, onImported, meta }: Props) {
                         {validRows.slice(0, 5).map(r => (
                           <tr key={r.index} className="hover:bg-gray-50/40">
                             <td className="px-3 py-2 text-slate-700">{r.payload!.planning_date}</td>
-                            <td className="px-3 py-2 text-gray-500">{r.payload!.tms_name ?? 'manual'}</td>
-                            <td className="px-3 py-2 font-mono text-[10px] text-gray-400">{r.payload!.source_trip_id ?? '—'}</td>
+                            <td className="px-3 py-2 text-gray-500">{r.payload!.source_system ?? 'manual'}</td>
+                            <td className="px-3 py-2 font-mono text-[10px] text-gray-400">{r.payload!.source_system_trip_id ?? '—'}</td>
                             <td className="px-3 py-2 font-mono font-semibold text-slate-700">{r.payload!.tractor_plate ?? '—'}</td>
                             <td className="px-3 py-2 text-slate-700">{r.payload!.driver_name ?? '—'}</td>
                             <td className="px-3 py-2 text-gray-500">{r.payload!.client_name ?? '—'}</td>

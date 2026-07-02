@@ -22,11 +22,11 @@ router = APIRouter(prefix="/trips", tags=["trips"])
 # transporter_profile link.
 _TRIP_SELECT = """
     t.id,
-    t.tms_name,
+    t.source_system,
     t.client_name,
     t.planning_date,
     t.status_reported_at,
-    t.current_status_tms                          AS current_status,
+    t.trip_status                                  AS current_status,
     COALESCE(fl.tractor_plate,
              t.fleet->>'tractor_plate')           AS tractor_plate,
     COALESCE(fl.trailer_plate,
@@ -52,8 +52,8 @@ _TRIP_SELECT = """
     fl.transporter_id                             AS transporter_profile_id,
     t.edited_at,
     t.updated_at,
-    t.source_trip_id,
-    t.milestone_status_sap,
+    t.source_system_trip_id,
+    t.milestone_status,
     t.pipeline_updated_at
 """
 
@@ -106,7 +106,7 @@ async def list_trips(
         add("t.planning_date <= ?", d)
     if status:
         statuses = [s.strip() for s in status.split(',') if s.strip()]
-        add("t.current_status_tms = ANY(?)", statuses)
+        add("t.trip_status = ANY(?)", statuses)
     if activo == "true":
         filters.append("t.activo = true")
     elif activo == "false":
@@ -125,7 +125,7 @@ async def list_trips(
         filters.append("t.primera_vuelta = false")
     if tms:
         tms_list = [t.strip() for t in tms.split(',') if t.strip()]
-        add("t.tms_name = ANY(?)", tms_list)
+        add("t.source_system = ANY(?)", tms_list)
     if client:
         add("t.client_name ILIKE '%'||?||'%'", client)
 
@@ -180,8 +180,8 @@ _TMS_META = [
 
 _CSV_COLUMNS = [
     {"field": "planning_date",    "csv_key": "fecha_planificacion", "label": "Fecha planificación", "required": True,  "type": "date",       "example": "2026-05-29"},
-    {"field": "source_trip_id",   "csv_key": "id_origen",           "label": "ID origen",           "required": False, "type": "text",       "example": "VJE-001"},
-    {"field": "tms_name",         "csv_key": "fuente",              "label": "Fuente",              "required": False, "type": "tms_source", "example": "manual"},
+    {"field": "source_system_trip_id", "csv_key": "id_origen",     "label": "ID origen",           "required": False, "type": "text",       "example": "VJE-001"},
+    {"field": "source_system",   "csv_key": "fuente",              "label": "Fuente",              "required": False, "type": "tms_source", "example": "manual"},
     {"field": "client_name",      "csv_key": "cliente",             "label": "Cliente",             "required": False, "type": "text",       "example": "Walmart"},
     {"field": "tractor_plate",    "csv_key": "patente_tracto",      "label": "Patente tracto",      "required": False, "type": "text",       "example": "BGVS12"},
     {"field": "trailer_plate",    "csv_key": "patente_rampla",      "label": "Patente rampla",      "required": False, "type": "text",       "example": ""},
@@ -268,8 +268,8 @@ async def get_trips_meta(pool=Depends(get_pool)):
 
 class TripCreateBody(BaseModel):
     planning_date:          _date
-    source_trip_id:         Optional[str] = None
-    tms_name:               str           = 'manual'
+    source_system_trip_id:  Optional[str] = None
+    source_system:          str           = 'manual'
     client_name:            Optional[str] = None
     origin:                 Optional[str] = None
     cargo_type:             Optional[str] = None
@@ -294,16 +294,16 @@ async def _insert_trip(conn, body: TripCreateBody) -> str:
     row = await conn.fetchrow(
         """
         INSERT INTO app.trips (
-            tms_name, source_trip_id, client_name, planning_date,
-            origin, cargo_type, current_status_tms,
+            source_system, source_system_trip_id, client_name, planning_date,
+            origin, cargo_type, trip_status,
             fleet, stops,
             status_reported_at, pipeline_updated_at,
             manually_edited_fields
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'[]'::jsonb,NOW(),NOW(),$9)
         RETURNING id::text
         """,
-        body.tms_name,
-        body.source_trip_id,
+        body.source_system,
+        body.source_system_trip_id,
         body.client_name,
         body.planning_date,
         body.origin,
@@ -311,7 +311,7 @@ async def _insert_trip(conn, body: TripCreateBody) -> str:
         body.current_status,
         json.dumps(fleet),
         ['tractor_plate', 'trailer_plate', 'driver_name',
-         'origin', 'cargo_type', 'current_status_tms'],
+         'origin', 'cargo_type', 'trip_status'],
     )
     trip_id = row["id"]
 

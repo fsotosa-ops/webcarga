@@ -349,7 +349,7 @@ function PlateCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }
   )
 }
 
-type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'transporter' | 'client_name' | 'current_status' | 'source_trip_id'
+type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'transporter' | 'client_name' | 'current_status' | 'source_system_trip_id'
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: 'asc' | 'desc' }) {
   if (sortKey !== col) return <ArrowUpDown size={10} className="inline ml-0.5 text-gray-300" />
@@ -422,7 +422,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     {primaryPlate ?? 'sin patente'}
                   </span>
                   <ComplianceBadge status={plateAlert ?? null} compact />
-                  <TmsChip tms={trip.tms_name ?? ''} meta={meta} />
+                  <TmsChip tms={trip.source_system ?? ''} meta={meta} />
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {(() => {
@@ -475,7 +475,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
             <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
               <th onClick={() => handleSort('planning_date')} className="px-3 py-2.5 text-left w-[72px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
-              <th onClick={() => handleSort('source_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
+              <th onClick={() => handleSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
               <th onClick={() => handleSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
               <th onClick={() => handleSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
@@ -530,13 +530,13 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
 
                   {/* TMS */}
                   <td className="px-2 py-2.5">
-                    <TmsChip tms={trip.tms_name ?? ''} meta={meta} />
+                    <TmsChip tms={trip.source_system ?? ''} meta={meta} />
                   </td>
 
                   {/* ID VIAJE */}
                   <td className="px-3 py-2.5">
                     <span className="font-mono text-[11px] text-gray-500">
-                      {trip.source_trip_id ?? '—'}
+                      {trip.source_system_trip_id ?? '—'}
                     </span>
                   </td>
 

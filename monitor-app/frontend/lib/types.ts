@@ -221,8 +221,8 @@ export type TripsMeta = {
 
 export type TripCreatePayload = {
   planning_date:          string
-  tms_name?:              string
-  source_trip_id?:        string | null
+  source_system?:         string
+  source_system_trip_id?: string | null
   client_name?:           string | null
   origin?:                string | null
   cargo_type?:            string | null
@@ -253,12 +253,12 @@ export type TripStop = {
   destination_region: string | null
   s2s:                string | null
   temperature:        number | null
-  milestone_status:   string | null
+  milestone_status:   string | null  // per-stop, distinct from Trip.milestone_status (trip-level)
 }
 
 export type Trip = {
   id:                     string
-  tms_name:               string
+  source_system:          string
   client_name:            string | null
   planning_date:          string | null
   status_reported_at:     string | null
@@ -285,8 +285,8 @@ export type Trip = {
   manually_edited_fields: string[]
   edited_at:              string | null
   updated_at:             string | null
-  source_trip_id:         string | null
-  milestone_status_sap:   string | null
+  source_system_trip_id:  string | null
+  milestone_status:       string | null  // trip-level, distinct from TripStop.milestone_status
   pipeline_updated_at:    string | null
 }
 
