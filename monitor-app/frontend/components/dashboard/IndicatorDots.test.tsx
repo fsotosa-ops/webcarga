@@ -98,4 +98,17 @@ describe('IndicatorDots', () => {
     expect(tripsApi.patch).toHaveBeenNthCalledWith(2, 't1', { activo: true })
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ activo: true })))
   })
+
+  it('shows a lock icon with attribution tooltip when a field is in manually_edited_fields', () => {
+    const trip = { ...baseTrip, manually_edited_fields: ['asignado'], edited_by: 'Felipe Sumadots', edited_at: '2026-07-02 10:15:00' }
+    render(<IndicatorDots trip={trip} onSaved={vi.fn()} />)
+    expect(screen.getByTitle(/Felipe Sumadots/)).toBeInTheDocument()
+  })
+
+  it('does not show a lock icon for a field not in manually_edited_fields', () => {
+    const trip = { ...baseTrip, manually_edited_fields: ['asignado'], edited_by: 'Felipe Sumadots', edited_at: '2026-07-02 10:15:00' }
+    render(<IndicatorDots trip={trip} onSaved={vi.fn()} />)
+    // Trabajando no está congelado — su title queda exactamente "Trabajando", sin sufijo "congelado por..."
+    expect(screen.getByTitle('Trabajando')).toBeInTheDocument()
+  })
 })

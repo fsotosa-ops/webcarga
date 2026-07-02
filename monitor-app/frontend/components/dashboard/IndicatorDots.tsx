@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { Trip } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
+import { fmtDT } from '@/lib/utils/datetime'
 
 type IndicatorField = 'activo' | 'trabajando' | 'asignado' | 'primera_vuelta'
 
@@ -49,17 +50,24 @@ export function IndicatorDots({ trip, onSaved, size = 'sm' }: Props) {
       <div className="flex gap-1 items-center">
         {INDICATORS.map(ind => {
           const active = optimistic[ind.field] ?? trip[ind.field]
+          const frozen = trip.manually_edited_fields?.includes(ind.field) ?? false
           return (
-            <button
-              key={ind.field}
-              type="button"
-              title={ind.title}
-              disabled={!!pending[ind.field]}
-              onClick={e => toggle(ind.field, e)}
-              className={`${dotSize} rounded-full transition-all hover:scale-110 disabled:opacity-50 ${
-                active ? ind.color : 'bg-gray-200'
-              }`}
-            />
+            <span key={ind.field} className="relative inline-flex">
+              <button
+                type="button"
+                title={frozen
+                  ? `${ind.title} — congelado por ${trip.edited_by ?? 'alguien'} el ${fmtDT(trip.edited_at)}`
+                  : ind.title}
+                disabled={!!pending[ind.field]}
+                onClick={e => toggle(ind.field, e)}
+                className={`${dotSize} rounded-full transition-all hover:scale-110 disabled:opacity-50 ${
+                  active ? ind.color : 'bg-gray-200'
+                }`}
+              />
+              {frozen && (
+                <span className="absolute -top-1 -right-1 text-[7px] leading-none pointer-events-none">🔒</span>
+              )}
+            </span>
           )
         })}
       </div>
