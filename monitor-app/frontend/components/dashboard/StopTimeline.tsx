@@ -18,11 +18,10 @@ function stateFor(i: number, currentIdx: number, stop: TripStop): StopState {
 }
 
 interface Props {
-  stops:    TripStop[]
-  compact?: boolean
+  stops: TripStop[]
 }
 
-export function StopTimeline({ stops, compact = false }: Props) {
+export function StopTimeline({ stops }: Props) {
   if (!stops?.length) return null
 
   const currentIdx = stops.findIndex(s => !isCompleted(s))
@@ -43,17 +42,25 @@ export function StopTimeline({ stops, compact = false }: Props) {
                 state === 'done' ? 'bg-green-500' : state === 'active' ? 'bg-blue-500 ring-4 ring-blue-100' : 'bg-gray-200'
               }`}
             />
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-slate-700 truncate">{name}</p>
-              {!compact && (
-                <p className="text-[10px] text-gray-400">
-                  {state === 'done' && `✓ llegó ${fmtShort(stop.arrival_date)} · salió ${fmtShort(stop.departure_date)}`}
-                  {state === 'active' && 'en camino'}
-                  {state === 'pending' && 'pendiente'}
-                  {stopWasVisited(stop) && stop.temperature != null && ` · ${stop.temperature}°C`}
-                </p>
-              )}
-              {compact && state === 'active' && <p className="text-[10px] text-gray-400">en camino</p>}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-xs font-semibold text-slate-700 truncate">{name}</p>
+                {stop.on_time_status === 'ON TIME' && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
+                )}
+                {stop.on_time_status === 'OFF TIME' && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">OFF TIME</span>
+                )}
+                {stop.milestone_status && (
+                  <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{stop.milestone_status}</span>
+                )}
+              </div>
+              <p className="text-[10px] text-gray-400">
+                {state === 'done' && `✓ llegó ${fmtShort(stop.arrival_date)} · salió ${fmtShort(stop.departure_date)}`}
+                {state === 'active' && 'en camino'}
+                {state === 'pending' && 'pendiente'}
+                {stopWasVisited(stop) && stop.temperature != null && ` · ${stop.temperature}°C`}
+              </p>
             </div>
           </div>
         )

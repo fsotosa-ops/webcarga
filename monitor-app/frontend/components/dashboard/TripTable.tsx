@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo, Fragment } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop, TripsMeta } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, classifyTemperature } from '@/lib/utils/temperature'
+import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { IndicatorDots } from './IndicatorDots'
-import { TripRowExpanded } from './TripRowExpanded'
 
 
 function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
@@ -43,7 +43,7 @@ function StopPills({ stops }: { stops: TripStop[] }) {
           <span
             key={stop.stop_id ?? i}
             title={name}
-            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit max-w-[120px] truncate flex items-center gap-0.5 ${
+            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit max-w-[120px] truncate flex items-center gap-1 ${
               isActive
                 ? 'bg-accent/10 text-accent border border-accent/20'
                 : isDone
@@ -51,6 +51,9 @@ function StopPills({ stops }: { stops: TripStop[] }) {
                 : 'text-gray-200'
             }`}
           >
+            {stop.on_time_status && (
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stop.on_time_status === 'ON TIME' ? 'bg-green-500' : 'bg-red-500'}`} />
+            )}
             {isActive && <span className="shrink-0 text-[8px]">→</span>}
             {isDone && !isActive && <span className="shrink-0 text-[8px]">✓</span>}
             <span className="truncate">{name}</span>
@@ -335,11 +338,6 @@ interface Props {
 export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, meta }: Props) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-
-  function toggleExpand(id: string) {
-    setExpandedId(prev => (prev === id ? null : id))
-  }
 
   function handleSort(col: SortKey) {
     if (sortKey !== col) { setSortKey(col); setSortDir('asc') }
@@ -381,7 +379,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
           return (
             <div
               key={trip.id}
-              onClick={() => toggleExpand(trip.id)}
+              onClick={() => onSelect(trip)}
               className={`px-4 py-3 cursor-pointer transition-colors ${
                 isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-gray-50/60'
               }`}
@@ -411,6 +409,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   >
                     {currentStatus ?? '—'}
                   </span>
+                  {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
+                    <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full whitespace-nowrap">OFF TIME</span>
+                  )}
                 </div>
               </div>
 
@@ -430,17 +431,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   : <span className="italic">sin EETT</span>}
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
-
-              {expandedId === trip.id && (
-                <div className="mt-2 -mx-4 border-t border-border/60">
-                  <TripRowExpanded
-                    trip={trip}
-                    meta={meta}
-                    onSaved={onSaved}
-                    onOpenFull={() => onSelect(trip)}
-                  />
-                </div>
-              )}
             </div>
           )
         })}
@@ -476,9 +466,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
 
               return (
-                <Fragment key={trip.id}>
                 <tr
-                  onClick={() => toggleExpand(trip.id)}
+                  key={trip.id}
+                  onClick={() => onSelect(trip)}
                   className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
                     isActive
                       ? 'bg-accent/5 border-l-2 border-l-accent'
@@ -586,6 +576,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     {trip.estado_manual && (
                       <span className="text-[8px] text-accent block mt-0.5">override</span>
                     )}
+                    {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
+                      <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full block mt-0.5 w-fit">OFF TIME</span>
+                    )}
                   </td>
 
                   {/* TEMP */}
@@ -609,19 +602,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     <span className={`text-xs ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
                   </td>
                 </tr>
-                {expandedId === trip.id && (
-                  <tr className="border-b border-border/60">
-                    <td colSpan={14} className="p-0">
-                      <TripRowExpanded
-                        trip={trip}
-                        meta={meta}
-                        onSaved={onSaved}
-                        onOpenFull={() => onSelect(trip)}
-                      />
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
               )
             })}
           </tbody>

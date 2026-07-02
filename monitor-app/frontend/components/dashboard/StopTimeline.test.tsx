@@ -42,13 +42,21 @@ describe('StopTimeline', () => {
     expect(screen.getByText('pendiente')).toBeInTheDocument()
   })
 
-  it('in compact mode, only shows "en camino" for the active stop and no extra detail for the rest', () => {
-    const stops = [
-      makeStop({ stop_id: 'a', local: 'Hecha', arrival_date: '2026-07-02 10:00:00' }),
-      makeStop({ stop_id: 'b', local: 'Activa' }),
-    ]
-    render(<StopTimeline stops={stops} compact />)
-    expect(screen.getByText('en camino')).toBeInTheDocument()
-    expect(screen.queryByText(/✓ llegó/)).not.toBeInTheDocument()
+  it('shows an ON TIME badge for a stop with on_time_status ON TIME', () => {
+    const stops = [makeStop({ stop_id: 'a', local: 'Parada A', on_time_status: 'ON TIME' })]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText('ON TIME')).toBeInTheDocument()
+  })
+
+  it('shows an OFF TIME badge for a stop with on_time_status OFF TIME', () => {
+    const stops = [makeStop({ stop_id: 'a', local: 'Parada A', on_time_status: 'OFF TIME' })]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText('OFF TIME')).toBeInTheDocument()
+  })
+
+  it('shows the milestone_status badge when present', () => {
+    const stops = [makeStop({ stop_id: 'a', local: 'Parada A', milestone_status: 'CERRADO SAP' })]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText('CERRADO SAP')).toBeInTheDocument()
   })
 })
