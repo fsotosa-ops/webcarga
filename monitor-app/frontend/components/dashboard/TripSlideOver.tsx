@@ -4,38 +4,15 @@ import { useState, useEffect } from 'react'
 import {
   X, Loader2, Building2, Copy, Check,
   Truck, User, Phone, Hash, RefreshCw,
-  Thermometer, MapPin,
+  MapPin, ChevronDown, RotateCcw,
 } from 'lucide-react'
 import type { Trip, TransporterListItem, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
 import { getLatestTemp, getActiveStop, stopWasVisited, classifyTemperature } from '@/lib/utils/temperature'
-
-
-// ── Date formatters ───────────────────────────────────────────────────────────
-
-function fmtDT(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  // Timestamps sin offset (ej. pipeline_updated_at: "2026-05-28 20:07:03") son UTC — agregar Z
-  const normalized = /[Z+\-]\d{2}:?\d{2}$/.test(iso) || iso.endsWith('Z') ? iso : iso.replace(' ', 'T') + 'Z'
-  const d = new Date(normalized)
-  if (isNaN(d.getTime())) return '—'
-  const parts = new Intl.DateTimeFormat('es-CL', {
-    timeZone: 'America/Santiago',
-    day: '2-digit', month: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).formatToParts(d)
-  const p = Object.fromEntries(parts.filter(x => x.type !== 'literal').map(x => [x.type, x.value]))
-  return `${p.day}/${p.month} ${p.hour}:${p.minute}:${p.second}`
-}
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso + 'T12:00:00').toLocaleDateString('es-CL', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-  })
-}
+import { fmtDT, fmtDate } from '@/lib/utils/datetime'
+import { StopTimeline } from './StopTimeline'
+import { IndicatorDots } from './IndicatorDots'
 
 // ── TransporterAssignSection ──────────────────────────────────────────────────
 
@@ -160,8 +137,6 @@ function MetaField({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-type ActiveTab = 'viaje' | 'empresa' | 'bitacora'
-
 interface Props {
   trip:    Trip | null
   onClose: () => void
@@ -170,29 +145,31 @@ interface Props {
 }
 
 export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
-  const [activeTab, setActiveTab]           = useState<ActiveTab>('viaje')
-  const [form, setForm]                     = useState<TripPatch>({})
-  const [saving, setSaving]                 = useState(false)
-  const [err, setErr]                       = useState<string | null>(null)
-  const [copied, setCopied]                 = useState(false)
+  const [form, setForm]                         = useState<TripPatch>({})
+  const [saving, setSaving]                     = useState(false)
+  const [err, setErr]                           = useState<string | null>(null)
+  const [copied, setCopied]                     = useState(false)
   const [showEstadoSelect, setShowEstadoSelect] = useState(false)
   const [clearingOverride, setClearingOverride] = useState(false)
+  const [empresaOpen, setEmpresaOpen]           = useState(false)
+  const [bitacoraOpen, setBitacoraOpen]         = useState(false)
+  const [techDetailOpen, setTechDetailOpen]     = useState(false)
+  const [unlinkErr, setUnlinkErr]               = useState<string | null>(null)
+  const [unlinking, setUnlinking]               = useState(false)
 
   useEffect(() => {
     if (!trip) return
-    setActiveTab('viaje')
     setForm({
-      estado_manual:  trip.estado_manual  ?? '',
-      observaciones:  trip.observaciones  ?? '',
-      comentarios:    trip.comentarios    ?? '',
-      activo:         trip.activo,
-      trabajando:     trip.trabajando,
-      asignado:       trip.asignado,
-      primera_vuelta: trip.primera_vuelta,
+      observaciones: trip.observaciones ?? '',
+      comentarios:   trip.comentarios   ?? '',
     })
     setErr(null)
     setCopied(false)
     setShowEstadoSelect(false)
+    setEmpresaOpen(false)
+    setBitacoraOpen(false)
+    setTechDetailOpen(false)
+    setUnlinkErr(null)
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSave() {
@@ -201,19 +178,26 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     setErr(null)
     try {
       const payload: TripPatch = {
-        // Only send estado_manual when a new override was actively selected
-        ...(showEstadoSelect && form.estado_manual
-          ? { estado_manual: form.estado_manual }
-          : {}),
-        observaciones:  form.observaciones  || undefined,
-        comentarios:    form.comentarios    || undefined,
-        activo:         form.activo,
-        trabajando:     form.trabajando,
-        asignado:       form.asignado,
-        primera_vuelta: form.primera_vuelta,
+        observaciones: form.observaciones || undefined,
+        comentarios:   form.comentarios   || undefined,
       }
       const updated = await tripsApi.patch(trip.id, payload)
       onSaved(updated)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleSetOverride() {
+    if (!trip || !form.estado_manual) return
+    setSaving(true)
+    setErr(null)
+    try {
+      const updated = await tripsApi.patch(trip.id, { estado_manual: form.estado_manual })
+      onSaved(updated)
+      setShowEstadoSelect(false)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
@@ -248,12 +232,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
   const tmsMeta       = trip.source_system ? meta?.tms_sources.find(t => t.id === trip.source_system.toLowerCase()) : null
   const tmsLabel      = tmsMeta?.label ?? trip.source_system?.toUpperCase().slice(0, 3) ?? '?'
-
-  const TABS: { key: ActiveTab; label: string }[] = [
-    { key: 'viaje',    label: 'Viaje'    },
-    { key: 'empresa',  label: 'Empresa'  },
-    { key: 'bitacora', label: 'Bitácora' },
-  ]
 
   return (
     <>
@@ -416,181 +394,232 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
           )
         })()}
 
-        {/* ── Tab bar ───────────────────────────────────────────────── */}
-        <div className="flex shrink-0 bg-white border-b border-border">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={`flex-1 text-xs font-semibold py-2.5 transition-colors border-b-2 ${
-                activeTab === t.key
-                  ? 'text-accent border-accent'
-                  : 'text-gray-400 border-transparent hover:text-gray-600'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {/* ── Body — una sola vista, sin tabs ──────────────────────── */}
+        <div className="flex-1 overflow-y-auto min-h-0 p-4 md:p-6 space-y-6">
 
-        {/* ── Tab body ──────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto min-h-0">
-
-          {/* ── TAB: VIAJE ──────────────────────────────────────────── */}
-          {activeTab === 'viaje' && (
-            <div className="p-4 md:p-6 space-y-6">
-
-              {/* Resumen */}
-              <section>
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-                  Resumen
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
-                  <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
-                  <MetaField label="Origen" value={trip.origin ?? '—'} />
-                  <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
-                  <MetaField label="EETT TMS" value={trip.transporter_tms ?? '—'} />
-                  <MetaField
-                    label="Último reporte TMS"
-                    value={fmtDT(trip.status_reported_at)}
-                    icon={<RefreshCw size={9} className="text-gray-400 shrink-0" />}
-                  />
-                  {trip.milestone_status && (
-                    <MetaField
-                      label="Estado cumplimiento"
-                      value={trip.milestone_status}
-                      highlight
-                    />
-                  )}
-                  {trip.pipeline_updated_at && (
-                    <MetaField
-                      label="Sincronización pipeline"
-                      value={fmtDT(trip.pipeline_updated_at)}
-                      icon={<RefreshCw size={9} className="text-gray-400 shrink-0" />}
-                    />
-                  )}
-                </div>
-              </section>
-
-              {/* Indicadores (flags readonly) */}
-              <section>
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                  Indicadores
-                </h4>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { label: 'Activo',     val: trip.activo,         on: 'bg-blue-50   text-blue-700   border-blue-200',   off: 'bg-gray-50 text-gray-300 border-gray-100' },
-                    { label: 'Trabajando', val: trip.trabajando,     on: 'bg-green-50  text-green-700  border-green-200',  off: 'bg-gray-50 text-gray-300 border-gray-100' },
-                    { label: 'Asignado',   val: trip.asignado,       on: 'bg-violet-50 text-violet-700 border-violet-200', off: 'bg-gray-50 text-gray-300 border-gray-100' },
-                    { label: '1ra Vuelta', val: trip.primera_vuelta, on: 'bg-amber-50  text-amber-700  border-amber-200',  off: 'bg-gray-50 text-gray-300 border-gray-100' },
-                  ].map(f => (
-                    <span
-                      key={f.label}
-                      className={`text-[11px] font-semibold px-3 py-1 rounded-full border ${f.val ? f.on : f.off}`}
-                    >
-                      {f.label}
-                    </span>
-                  ))}
-                </div>
-              </section>
-
-              {/* Paradas */}
-              {(trip.stops?.length ?? 0) > 0 && (
-                <section>
-                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                    <MapPin size={11} /> Paradas ({trip.stops.length})
-                  </h4>
-                  <div className="overflow-x-auto -mx-4 md:-mx-6">
-                    <div className="min-w-[860px] px-4 md:px-6">
-                      <table className="w-full text-xs border border-border/80 rounded-lg overflow-hidden">
-                        <thead>
-                          <tr className="bg-slate-800 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
-                            <th className="px-3 py-2 text-left sticky left-0 bg-slate-800 z-10 min-w-[120px]">Local</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Llegada</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Salida</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">GPS Arr.</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">GPS Sal.</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Desc. inicio</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Desc. fin</th>
-                            <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
-                            <th className="px-3 py-2 text-center min-w-[52px]">
-                              <Thermometer size={10} className="inline" />
-                            </th>
-                            <th className="px-3 py-2 text-center min-w-[68px]">On Time</th>
-                            <th className="px-3 py-2 text-left min-w-[100px]">Estado SAP</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/50">
-                          {trip.stops.map((stop, i) => {
-                            const rowBg =
-                              stop.on_time_status === 'ON TIME'  ? 'bg-green-50/40' :
-                              stop.on_time_status === 'OFF TIME' ? 'bg-amber-50/40' :
-                              i % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
-
-                            return (
-                              <tr key={stop.stop_id ?? i} className={rowBg}>
-                                <td className={`px-3 py-2 sticky left-0 z-10 ${rowBg}`}>
-                                  <p className="font-medium text-slate-700 leading-snug">
-                                    {stop.local ?? '—'}
-                                  </p>
-                                  {stop.destination_city && (
-                                    <p className="text-[9px] text-gray-400 mt-0.5">
-                                      {stop.destination_city}
-                                      {stop.destination_region ? `, ${stop.destination_region}` : ''}
-                                    </p>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.unload_start)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.unload_end)}</td>
-                                <td className="px-3 py-2 text-center">
-                                  {stop.s2s
-                                    ? <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{stop.s2s}</span>
-                                    : <span className="text-gray-200">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {stopWasVisited(stop) && stop.temperature != null
-                                    ? <span className="text-sm font-mono text-blue-600 font-semibold">{stop.temperature}°C</span>
-                                    : <span className="text-gray-200">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {stop.on_time_status === 'ON TIME' ? (
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
-                                  ) : stop.on_time_status === 'OFF TIME' ? (
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">OFF TIME</span>
-                                  ) : (
-                                    <span className="text-gray-200">—</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2">
-                                  {stop.milestone_status
-                                    ? <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded leading-snug block">{stop.milestone_status}</span>
-                                    : <span className="text-gray-200">—</span>}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </section>
+          {/* Resumen */}
+          <section>
+            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+              Resumen
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
+              <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
+              <MetaField label="Origen" value={trip.origin ?? '—'} />
+              <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
+              <MetaField label="EETT TMS" value={trip.transporter_tms ?? '—'} />
+              <MetaField
+                label="Último reporte TMS"
+                value={fmtDT(trip.status_reported_at)}
+                icon={<RefreshCw size={9} className="text-gray-400 shrink-0" />}
+              />
+              {trip.milestone_status && (
+                <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
+              )}
+              {trip.pipeline_updated_at && (
+                <MetaField
+                  label="Sincronización pipeline"
+                  value={fmtDT(trip.pipeline_updated_at)}
+                  icon={<RefreshCw size={9} className="text-gray-400 shrink-0" />}
+                />
               )}
             </div>
+          </section>
+
+          {/* Estado operativo — estado TMS readonly + override manual inline */}
+          <section>
+            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+              Estado operativo
+            </h4>
+            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+              <span className="text-[9px] text-gray-400">TMS reporta:</span>
+              {(() => {
+                const sm = trip.current_status ? meta?.statuses.find(s => s.id === trip.current_status) : null
+                return (
+                  <span
+                    className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                    style={sm
+                      ? { backgroundColor: sm.bg_color, color: sm.text_color }
+                      : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
+                  >
+                    {trip.current_status ?? '—'}
+                  </span>
+                )
+              })()}
+            </div>
+
+            {trip.estado_manual ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                {(() => {
+                  const opState = meta?.operational_states.find(s => s.id === trip.estado_manual)
+                  const label = opState?.label ?? trip.estado_manual
+                  return (
+                    <span
+                      className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                      style={opState
+                        ? { backgroundColor: opState.bg_color, color: opState.text_color }
+                        : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
+                    >
+                      {label}
+                    </span>
+                  )
+                })()}
+                <span className="text-[10px] text-gray-400">
+                  confirmado manualmente el {fmtDT(trip.edited_at)}
+                </span>
+                <button
+                  type="button"
+                  title="Revertir a valor del TMS"
+                  onClick={handleClearOverride}
+                  disabled={clearingOverride}
+                  className="text-gray-400 hover:text-accent transition-colors disabled:opacity-50"
+                >
+                  {clearingOverride ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                </button>
+              </div>
+            ) : showEstadoSelect ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <select
+                  autoFocus
+                  value={form.estado_manual ?? ''}
+                  onChange={e => setForm(f => ({ ...f, estado_manual: e.target.value }))}
+                  className="text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                >
+                  <option value="">— Seleccionar estado…</option>
+                  {(meta?.operational_states ?? []).map(s => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={handleSetOverride} disabled={saving || !form.estado_manual}
+                  className="p-1.5 text-accent disabled:opacity-40">
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                </button>
+                <button type="button" onClick={() => { setShowEstadoSelect(false); setForm(f => ({ ...f, estado_manual: '' })) }}
+                  className="text-[10px] text-gray-400 hover:text-gray-600">
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowEstadoSelect(true)}
+                className="text-xs text-accent hover:text-accent/80 transition-colors"
+              >
+                + Establecer estado operativo manual
+              </button>
+            )}
+          </section>
+
+          {/* Indicadores */}
+          <section>
+            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+              Indicadores
+            </h4>
+            <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
+          </section>
+
+          {/* Paradas */}
+          {(trip.stops?.length ?? 0) > 0 && (
+            <section>
+              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <MapPin size={11} /> Paradas ({trip.stops.length})
+              </h4>
+              <StopTimeline stops={trip.stops} />
+
+              <button
+                type="button"
+                onClick={() => setTechDetailOpen(v => !v)}
+                className="mt-3 flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <ChevronDown size={11} className={`transition-transform ${techDetailOpen ? 'rotate-180' : ''}`} />
+                Ver detalle técnico (GPS, SAP)
+              </button>
+
+              {techDetailOpen && (
+                <div className="overflow-x-auto mt-2 -mx-4 md:-mx-6">
+                  <div className="min-w-[860px] px-4 md:px-6">
+                    <table className="w-full text-xs border border-border/80 rounded-lg overflow-hidden">
+                      <thead>
+                        <tr className="bg-slate-800 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
+                          <th className="px-3 py-2 text-left sticky left-0 bg-slate-800 z-10 min-w-[120px]">Local</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Llegada</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Salida</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Arr.</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Sal.</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Desc. inicio</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Desc. fin</th>
+                          <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
+                          <th className="px-3 py-2 text-center min-w-[52px]">°C</th>
+                          <th className="px-3 py-2 text-center min-w-[68px]">On Time</th>
+                          <th className="px-3 py-2 text-left min-w-[100px]">Estado SAP</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {trip.stops.map((stop, i) => {
+                          const rowBg =
+                            stop.on_time_status === 'ON TIME'  ? 'bg-green-50/40' :
+                            stop.on_time_status === 'OFF TIME' ? 'bg-amber-50/40' :
+                            i % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
+                          return (
+                            <tr key={stop.stop_id ?? i} className={rowBg}>
+                              <td className={`px-3 py-2 sticky left-0 z-10 ${rowBg}`}>
+                                <p className="font-medium text-slate-700 leading-snug">{stop.local ?? '—'}</p>
+                                {stop.destination_city && (
+                                  <p className="text-[9px] text-gray-400 mt-0.5">
+                                    {stop.destination_city}{stop.destination_region ? `, ${stop.destination_region}` : ''}
+                                  </p>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.unload_start)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.unload_end)}</td>
+                              <td className="px-3 py-2 text-center">
+                                {stop.s2s ? <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{stop.s2s}</span> : <span className="text-gray-200">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {stopWasVisited(stop) && stop.temperature != null ? <span className="text-sm font-mono text-blue-600 font-semibold">{stop.temperature}°C</span> : <span className="text-gray-200">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {stop.on_time_status === 'ON TIME' ? (
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
+                                ) : stop.on_time_status === 'OFF TIME' ? (
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">OFF TIME</span>
+                                ) : (
+                                  <span className="text-gray-200">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                {stop.milestone_status ? <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded leading-snug block">{stop.milestone_status}</span> : <span className="text-gray-200">—</span>}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </section>
           )}
 
-          {/* ── TAB: EMPRESA ────────────────────────────────────────── */}
-          {activeTab === 'empresa' && (
-            <div className="p-4 md:p-6 space-y-5">
-              <section>
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                  <Building2 size={11} /> Empresa de Transporte
-                </h4>
+          {/* Acordeón: Empresa */}
+          <section className="border border-border rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setEmpresaOpen(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50/60 transition-colors"
+            >
+              <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <Building2 size={12} /> Empresa transportista
+              </span>
+              <ChevronDown size={13} className={`text-gray-400 transition-transform ${empresaOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {empresaOpen && (
+              <div className="px-4 pb-4 space-y-4 border-t border-border/60 pt-3">
                 {trip.transporter_profile_id ? (
                   <div className="flex items-center justify-between bg-accent/5 rounded-xl px-4 py-3 border border-accent/15">
                     <div>
@@ -599,13 +628,21 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     </div>
                     <button
                       type="button"
+                      disabled={unlinking}
                       onClick={async () => {
-                        await tripsApi.removeFleetLink(trip.id)
-                        onSaved({ ...trip, transporter_profile_id: null, fleet_link_id: null })
+                        setUnlinking(true); setUnlinkErr(null)
+                        try {
+                          await tripsApi.removeFleetLink(trip.id)
+                          onSaved({ ...trip, transporter_profile_id: null, fleet_link_id: null })
+                        } catch (e) {
+                          setUnlinkErr(e instanceof Error ? e.message : 'Error al desvincular')
+                        } finally {
+                          setUnlinking(false)
+                        }
                       }}
-                      className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                      className="text-xs text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50"
                     >
-                      Desvincular
+                      {unlinking ? <Loader2 size={12} className="animate-spin" /> : 'Desvincular'}
                     </button>
                   </div>
                 ) : (
@@ -615,183 +652,64 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     onAssigned={onSaved}
                   />
                 )}
-              </section>
-
-              {trip.transporter_tms && (
-                <section>
-                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                    Empresa reportada por TMS
-                  </h4>
-                  <p className="text-sm text-slate-600">{trip.transporter_tms}</p>
-                </section>
-              )}
-            </div>
-          )}
-
-          {/* ── TAB: BITÁCORA ───────────────────────────────────────── */}
-          {activeTab === 'bitacora' && (
-            <div className="p-4 md:p-6 space-y-4">
-
-              <div className="flex items-center justify-between pb-3 border-b border-border/60">
-                <h4 className="text-xs font-bold text-accent uppercase tracking-wider">
-                  Bitácora Operativa
-                </h4>
-                <span className="flex h-2.5 w-2.5 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent/60 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent" />
-                </span>
-              </div>
-
-              {/* Flags editables */}
-              <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Indicadores</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { field: 'activo'         as const, label: 'Activo'     },
-                    { field: 'trabajando'     as const, label: 'Trabajando' },
-                    { field: 'asignado'       as const, label: 'Asignado'   },
-                    { field: 'primera_vuelta' as const, label: '1ra Vuelta' },
-                  ]).map(({ field, label }) => (
-                    <label
-                      key={field}
-                      className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!form[field]}
-                        onChange={e => setForm(f => ({ ...f, [field]: e.target.checked }))}
-                        className="w-3.5 h-3.5 rounded border-border text-accent focus:ring-accent/30 accent-[var(--accent)]"
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Estado TMS (readonly) */}
-              <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Estado TMS</p>
-                {(() => {
-                  const sm = trip.current_status ? meta?.statuses.find(s => s.id === trip.current_status) : null
-                  return (
-                    <span
-                      className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                      style={sm
-                        ? { backgroundColor: sm.bg_color, color: sm.text_color }
-                        : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
-                    >
-                      {trip.current_status ?? '—'}
-                    </span>
-                  )
-                })()}
-              </div>
-
-              {/* Override manual */}
-              <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Override manual</p>
-
-                {trip.estado_manual ? (
-                  /* Override activo — mostrar badge + quitar */
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {(() => {
-                      const opState = meta?.operational_states.find(s => s.id === trip.estado_manual)
-                      const label = opState?.label ?? trip.estado_manual
-                      return (
-                        <span
-                          className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                          style={opState
-                            ? { backgroundColor: opState.bg_color, color: opState.text_color }
-                            : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
-                        >
-                          {label}
-                        </span>
-                      )
-                    })()}
-                    <button
-                      type="button"
-                      onClick={handleClearOverride}
-                      disabled={clearingOverride}
-                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50"
-                    >
-                      {clearingOverride
-                        ? <Loader2 size={11} className="animate-spin" />
-                        : <X size={11} />}
-                      Quitar override
-                    </button>
+                {unlinkErr && <p className="text-xs text-red-500">{unlinkErr}</p>}
+                {trip.transporter_tms && (
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Empresa reportada por TMS</p>
+                    <p className="text-sm text-slate-600">{trip.transporter_tms}</p>
                   </div>
-                ) : showEstadoSelect ? (
-                  /* Seleccionando nuevo override */
-                  <div className="space-y-1.5">
-                    <select
-                      autoFocus
-                      value={form.estado_manual ?? ''}
-                      onChange={e => setForm(f => ({ ...f, estado_manual: e.target.value }))}
-                      className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
-                    >
-                      <option value="">— Seleccionar estado…</option>
-                      {(meta?.operational_states ?? []).map(s => (
-                        <option key={s.id} value={s.id}>{s.label}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => { setShowEstadoSelect(false); setForm(f => ({ ...f, estado_manual: '' })) }}
-                      className="text-[10px] text-gray-400 hover:text-gray-600"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                ) : (
-                  /* Sin override */
-                  <button
-                    type="button"
-                    onClick={() => setShowEstadoSelect(true)}
-                    className="text-xs text-accent hover:text-accent/80 transition-colors flex items-center gap-1"
-                  >
-                    + Establecer override
-                  </button>
                 )}
               </div>
+            )}
+          </section>
 
-              {/* Observaciones */}
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Observaciones</label>
-                <textarea
-                  rows={3}
-                  value={form.observaciones ?? ''}
-                  onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
-                  placeholder="Novedad operativa…"
-                  className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
-                />
+          {/* Acordeón: Bitácora (solo notas — indicadores y estado ya se editan arriba) */}
+          <section className="border border-border rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setBitacoraOpen(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50/60 transition-colors"
+            >
+              <span className="text-xs font-semibold text-slate-700">Bitácora — Observaciones y comentarios</span>
+              <ChevronDown size={13} className={`text-gray-400 transition-transform ${bitacoraOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {bitacoraOpen && (
+              <div className="px-4 pb-4 space-y-4 border-t border-border/60 pt-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Observaciones</label>
+                  <textarea
+                    rows={3}
+                    value={form.observaciones ?? ''}
+                    onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
+                    placeholder="Novedad operativa…"
+                    className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Comentarios</label>
+                  <textarea
+                    rows={3}
+                    value={form.comentarios ?? ''}
+                    onChange={e => setForm(f => ({ ...f, comentarios: e.target.value }))}
+                    placeholder="Comentario adicional…"
+                    className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
+                  />
+                </div>
+                {err && (
+                  <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-60 transition-colors"
+                >
+                  {saving && <Loader2 size={14} className="animate-spin" />}
+                  Guardar notas
+                </button>
               </div>
-
-              {/* Comentarios */}
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Comentarios</label>
-                <textarea
-                  rows={3}
-                  value={form.comentarios ?? ''}
-                  onChange={e => setForm(f => ({ ...f, comentarios: e.target.value }))}
-                  placeholder="Comentario adicional…"
-                  className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
-                />
-              </div>
-
-              {err && (
-                <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="w-full flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-60 transition-colors"
-              >
-                {saving && <Loader2 size={14} className="animate-spin" />}
-                Guardar Bitácora
-              </button>
-            </div>
-          )}
+            )}
+          </section>
         </div>
       </div>
     </>
