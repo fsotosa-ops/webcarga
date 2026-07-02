@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop, TripsMeta } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { tripsApi } from '@/lib/api/trips'
-import { getLatestTemp } from '@/lib/utils/temperature'
+import { getLatestTemp, classifyTemperature } from '@/lib/utils/temperature'
+import { IndicatorDots } from './IndicatorDots'
+import { TripRowExpanded } from './TripRowExpanded'
 
 
 function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
@@ -20,34 +22,6 @@ function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
     >
       {label}
     </span>
-  )
-}
-
-function FlagDots({ activo, trabajando, asignado, primera_vuelta }: {
-  activo: boolean; trabajando: boolean; asignado: boolean; primera_vuelta: boolean
-}) {
-  const flags = [
-    { label: 'A',  title: 'Activo',      active: activo,        color: 'bg-blue-400' },
-    { label: 'T',  title: 'Trabajando',  active: trabajando,    color: 'bg-green-400' },
-    { label: 'As', title: 'Asignado',    active: asignado,      color: 'bg-violet-400' },
-    { label: '1V', title: '1ra Vuelta',  active: primera_vuelta, color: 'bg-amber-400' },
-  ]
-  return (
-    <div className="flex gap-0.5 items-center">
-      {flags.map(f => (
-        <span
-          key={f.label}
-          title={f.title}
-          className={`text-[8px] font-bold px-1 py-0.5 rounded ${
-            f.active
-              ? `${f.color} text-white`
-              : 'bg-gray-100 text-gray-300'
-          }`}
-        >
-          {f.label}
-        </span>
-      ))}
-    </div>
   )
 }
 
@@ -150,14 +124,6 @@ function ConductorCell({
         </span>
         <ComplianceBadge status={alertStatus ?? null} compact />
         <PenLine size={10} className="text-gray-200 group-hover:text-accent/60 transition-colors shrink-0" />
-      </div>
-      <div className="mt-1">
-        <FlagDots
-          activo={trip.activo}
-          trabajando={trip.trabajando}
-          asignado={trip.asignado}
-          primera_vuelta={trip.primera_vuelta}
-        />
       </div>
     </div>
   )
@@ -369,6 +335,11 @@ interface Props {
 export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, meta }: Props) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  function toggleExpand(id: string) {
+    setExpandedId(prev => (prev === id ? null : id))
+  }
 
   function handleSort(col: SortKey) {
     if (sortKey !== col) { setSortKey(col); setSortDir('asc') }
@@ -410,7 +381,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
           return (
             <div
               key={trip.id}
-              onClick={() => onSelect(trip)}
+              onClick={() => toggleExpand(trip.id)}
               className={`px-4 py-3 cursor-pointer transition-colors ${
                 isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-gray-50/60'
               }`}
@@ -427,8 +398,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                 <div className="flex items-center gap-1.5 shrink-0">
                   {(() => {
                     const temp = getLatestTemp(trip.stops ?? [])
+                    const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
                     return temp != null
-                      ? <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700">{temp}°C</span>
+                      ? <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                       : null
                   })()}
                   <span
@@ -448,12 +420,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   {trip.driver_name ?? <span className="text-gray-300 italic text-[11px]">sin conductor</span>}
                 </span>
                 <ComplianceBadge status={driverAlert ?? null} compact />
-                <FlagDots
-                  activo={trip.activo}
-                  trabajando={trip.trabajando}
-                  asignado={trip.asignado}
-                  primera_vuelta={trip.primera_vuelta}
-                />
+                <IndicatorDots trip={trip} onSaved={onSaved} />
               </div>
 
               {/* fila 3: EETT + origen */}
@@ -463,6 +430,17 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   : <span className="italic">sin EETT</span>}
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
+
+              {expandedId === trip.id && (
+                <div className="mt-2 -mx-4 border-t border-border/60">
+                  <TripRowExpanded
+                    trip={trip}
+                    meta={meta}
+                    onSaved={onSaved}
+                    onOpenFull={() => onSelect(trip)}
+                  />
+                </div>
+              )}
             </div>
           )
         })}
@@ -485,6 +463,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               <th className="px-3 py-2.5 text-left">Destinos</th>
               <th onClick={() => handleSort('current_status')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
+              <th className="px-3 py-2.5 text-left w-[90px]">Indicadores</th>
               <th className="px-2 py-2.5 w-6"></th>
             </tr>
           </thead>
@@ -497,9 +476,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
 
               return (
+                <Fragment key={trip.id}>
                 <tr
-                  key={trip.id}
-                  onClick={() => onSelect(trip)}
+                  onClick={() => toggleExpand(trip.id)}
                   className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
                     isActive
                       ? 'bg-accent/5 border-l-2 border-l-accent'
@@ -613,10 +592,16 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   <td className="px-3 py-2.5 text-center">
                     {(() => {
                       const temp = getLatestTemp(trip.stops ?? [])
+                      const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
                       return temp != null
-                        ? <span className="rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">{temp}°C</span>
+                        ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                         : <span className="text-gray-300 text-xs">—</span>
                     })()}
+                  </td>
+
+                  {/* INDICADORES */}
+                  <td className="px-3 py-2.5">
+                    <IndicatorDots trip={trip} onSaved={onSaved} />
                   </td>
 
                   {/* Chevron */}
@@ -624,6 +609,19 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     <span className={`text-xs ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
                   </td>
                 </tr>
+                {expandedId === trip.id && (
+                  <tr className="border-b border-border/60">
+                    <td colSpan={14} className="p-0">
+                      <TripRowExpanded
+                        trip={trip}
+                        meta={meta}
+                        onSaved={onSaved}
+                        onOpenFull={() => onSelect(trip)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
           </tbody>
