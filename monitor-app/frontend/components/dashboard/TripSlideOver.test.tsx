@@ -62,4 +62,12 @@ describe('TripSlideOver — sin tabs', () => {
     fireEvent.click(screen.getByTitle('Revertir a valor del TMS'))
     await waitFor(() => expect(tripsApi.resetField).toHaveBeenCalledWith('t1', 'estado_manual'))
   })
+
+  it('shows a visible error when reverting the override fails', async () => {
+    vi.mocked(tripsApi.resetField).mockRejectedValue(new Error('network down'))
+    const tripWithOverride = { ...baseTrip, estado_manual: 'en_seguimiento' }
+    render(<TripSlideOver trip={tripWithOverride} onClose={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    fireEvent.click(screen.getByTitle('Revertir a valor del TMS'))
+    expect(await screen.findByText('network down')).toBeInTheDocument()
+  })
 })

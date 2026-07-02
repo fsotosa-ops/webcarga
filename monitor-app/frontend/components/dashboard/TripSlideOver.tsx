@@ -213,6 +213,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
       onSaved({ ...trip, estado_manual: null })
       setForm(f => ({ ...f, estado_manual: '' }))
       setShowEstadoSelect(false)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al revertir')
     } finally {
       setClearingOverride(false)
     }
@@ -506,6 +508,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               >
                 + Establecer estado operativo manual
               </button>
+            )}
+
+            {err && (
+              <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{err}</p>
             )}
           </section>
 
