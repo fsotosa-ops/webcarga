@@ -421,7 +421,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   {trip.driver_name ?? <span className="text-gray-300 italic text-[11px]">sin conductor</span>}
                 </span>
                 <ComplianceBadge status={driverAlert ?? null} compact />
-                <IndicatorDots trip={trip} onSaved={onSaved} />
+                {trip.source_system === 'manual' && <IndicatorDots trip={trip} onSaved={onSaved} />}
               </div>
 
               {/* fila 3: EETT + origen */}
@@ -594,7 +594,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
 
                   {/* INDICADORES */}
                   <td className="px-3 py-2.5">
-                    <IndicatorDots trip={trip} onSaved={onSaved} />
+                    {trip.source_system === 'manual' && <IndicatorDots trip={trip} onSaved={onSaved} />}
                   </td>
 
                   {/* Chevron */}

@@ -22,9 +22,14 @@ function makeTrip(id: string, overrides: Partial<Trip> = {}): Trip {
 }
 
 describe('TripTable', () => {
-  it('renders an "Indicadores" column with clickable dots for each trip row', () => {
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+  it('renders an "Indicadores" column with clickable dots for a manual trip', () => {
+    render(<TripTable trips={[makeTrip('t1', { source_system: 'manual' })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
     expect(screen.getAllByTitle('Activo').length).toBeGreaterThan(0)
+  })
+
+  it('does not render Indicadores for a TMS-sourced trip', () => {
+    render(<TripTable trips={[makeTrip('t1', { source_system: 'qanalytics' })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    expect(screen.queryByTitle('Activo')).not.toBeInTheDocument()
   })
 
   it('calls onSelect directly when a row is clicked (no intermediate expand step)', () => {
@@ -36,7 +41,7 @@ describe('TripTable', () => {
 
   it('clicking an indicator dot does not call onSelect', () => {
     const onSelect = vi.fn()
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSaved={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { source_system: 'manual' })]} selectedId={null} onSelect={onSelect} onSaved={vi.fn()} meta={null} />)
     fireEvent.click(screen.getAllByTitle('Activo')[0])
     expect(onSelect).not.toHaveBeenCalled()
   })
