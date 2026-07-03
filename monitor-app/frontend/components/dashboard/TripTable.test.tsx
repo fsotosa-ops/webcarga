@@ -61,4 +61,21 @@ describe('TripTable', () => {
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
     expect(screen.queryByText(/OFF TIME/)).not.toBeInTheDocument()
   })
+
+  it('shows the ETA of the active stop next to the status', () => {
+    const stops: Trip['stops'] = [{
+      stop_id: 's1', local: 'Parada 1', planning_date: '2026-07-02 09:00:00', arrival_date: null, departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null,
+    }]
+    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    expect(screen.getAllByText(/llega ~\d{2}:\d{2}/).length).toBeGreaterThan(0)
+  })
+
+  it('shows time since the last TMS report next to the status', () => {
+    const trip = makeTrip('t1', { status_reported_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() })
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    expect(screen.getAllByText(/hace 5 min/).length).toBeGreaterThan(0)
+  })
 })

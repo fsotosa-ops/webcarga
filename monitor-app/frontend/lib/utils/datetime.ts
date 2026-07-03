@@ -1,5 +1,5 @@
 // Timestamps sin offset (ej. "2026-05-28 20:07:03") vienen del pipeline como UTC — agregar Z.
-function normalizeUTC(iso: string): string {
+export function normalizeUTC(iso: string): string {
   return /[Z+\-]\d{2}:?\d{2}$/.test(iso) || iso.endsWith('Z') ? iso : iso.replace(' ', 'T') + 'Z'
 }
 

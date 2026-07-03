@@ -5,8 +5,9 @@ import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'luc
 import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop, TripsMeta } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { tripsApi } from '@/lib/api/trips'
-import { getLatestTemp, classifyTemperature } from '@/lib/utils/temperature'
+import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
+import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
 import { IndicatorDots } from './IndicatorDots'
 
 
@@ -431,6 +432,21 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   : <span className="italic">sin EETT</span>}
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
+
+              {/* fila 4: ETA de la parada activa + tiempo desde el último reporte TMS */}
+              {(() => {
+                const activeStop = getActiveStop(trip.stops ?? [])
+                const eta = activeStop ? describeStopTiming(activeStop) : null
+                const since = formatRelativeTime(trip.status_reported_at)
+                if (!eta && since === '—') return null
+                return (
+                  <div className="flex items-center gap-1.5 mt-1 text-[10px] text-gray-400 min-w-0">
+                    {eta && <span className="truncate">{eta}</span>}
+                    {eta && since !== '—' && <span>·</span>}
+                    {since !== '—' && <span className="whitespace-nowrap">{since}</span>}
+                  </div>
+                )
+              })()}
             </div>
           )
         })}
@@ -492,7 +508,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                           timeZone: 'America/Santiago',
                           hour: '2-digit', minute: '2-digit', second: '2-digit',
                           hour12: false,
-                        }).format(new Date(trip.status_reported_at + 'Z'))}
+                        }).format(new Date(normalizeUTC(trip.status_reported_at)))}
                       </p>
                     )}
                   </td>
@@ -579,6 +595,15 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
                       <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full block mt-0.5 w-fit">OFF TIME</span>
                     )}
+                    {(() => {
+                      const activeStop = getActiveStop(trip.stops ?? [])
+                      const eta = activeStop ? describeStopTiming(activeStop) : null
+                      return eta ? <span className="text-[9px] text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
+                    })()}
+                    {(() => {
+                      const since = formatRelativeTime(trip.status_reported_at)
+                      return since !== '—' ? <span className="text-[9px] text-gray-300 block mt-0.5 whitespace-nowrap">{since}</span> : null
+                    })()}
                   </td>
 
                   {/* TEMP */}
