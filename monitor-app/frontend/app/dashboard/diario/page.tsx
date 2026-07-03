@@ -8,10 +8,14 @@ import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/fi
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import type { Trip, ComplianceAlertSummary, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
+import { TripBoard } from '@/components/dashboard/TripBoard'
+import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { TripCreateSlideOver } from '@/components/dashboard/TripCreateSlideOver'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
+
+const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
 type Tab        = 'en_curso' | 'historial'
 type BoolFilter = boolean | null
@@ -92,6 +96,7 @@ export default function DiarioPage() {
   const [tripsMeta,           setTripsMeta]           = useState<TripsMeta | null>(null)
   const [showCreate,          setShowCreate]          = useState(false)
   const [showBulkUpload,      setShowBulkUpload]      = useState(false)
+  const [viewMode,            setViewMode]            = useState<ViewMode>('tabla')
 
   // Custom groups
   const [customGroups,   setCustomGroups]   = useState<FilterGroup[]>([])
@@ -192,6 +197,16 @@ export default function DiarioPage() {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en TripTable/TripSlideOver */ })
   }, [])
 
+  useEffect(() => {
+    const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+    if (saved === 'tabla' || saved === 'tablero') setViewMode(saved)
+  }, [])
+
+  function handleViewModeChange(v: ViewMode) {
+    setViewMode(v)
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, v)
+  }
+
   function handleSaved(updated: Trip) {
     setSelected(updated)
     setTrips(prev => prev.map(t => (t.id === updated.id ? updated : t)))
@@ -288,23 +303,28 @@ export default function DiarioPage() {
             ))}
           </div>
 
-          {/* Barra de acciones — agregar viaje */}
-          <div className="flex items-center justify-end gap-3">
-            <button
-              onClick={() => setShowBulkUpload(true)}
-              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-accent transition-colors"
-            >
-              <Upload size={12} />
-              Carga masiva (CSV)
-            </button>
-            <button
-              data-tour="trip-create-btn"
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
-            >
-              <Plus size={13} />
-              Agregar viaje
-            </button>
+          {/* Barra de acciones — vista + agregar viaje */}
+          <div className="flex items-center justify-between gap-3">
+            {tab === 'en_curso' ? (
+              <ViewToggle value={viewMode} onChange={handleViewModeChange} />
+            ) : <div />}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowBulkUpload(true)}
+                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-accent transition-colors"
+              >
+                <Upload size={12} />
+                Carga masiva (CSV)
+              </button>
+              <button
+                data-tour="trip-create-btn"
+                onClick={() => setShowCreate(true)}
+                className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
+              >
+                <Plus size={13} />
+                Agregar viaje
+              </button>
+            </div>
           </div>
 
           {/* ── Filter bar ───────────────────────────────────────────── */}
@@ -476,11 +496,19 @@ export default function DiarioPage() {
             <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
           )}
 
-          {/* Table */}
+          {/* Table / Board */}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
               <Loader2 size={16} className="animate-spin" /> Cargando…
             </div>
+          ) : tab === 'en_curso' && viewMode === 'tablero' ? (
+            <TripBoard
+              trips={trips}
+              groups={defaultGroups}
+              meta={tripsMeta}
+              onSaved={handleSaved}
+              onSelect={setSelected}
+            />
           ) : (
             <TripTable
               trips={trips}
