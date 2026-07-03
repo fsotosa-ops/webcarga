@@ -1,4 +1,5 @@
 import type { TripStop, TemperatureRangeMeta } from '@/lib/types'
+import { fmtShort } from './datetime'
 
 export function getActiveStop(stops: TripStop[]): TripStop | null {
   const inProgress = stops.find(s => s.arrival_date && !s.departure_date)
@@ -39,4 +40,24 @@ export function classifyTemperature(
   const range = ranges.find(r => r.cargo_type === cargoType)
   if (!range) return null
   return temp < range.min_c || temp > range.max_c ? 'out_of_range' : 'ok'
+}
+
+// Describe la llegada/salida de una parada con una sola fórmula, agnóstica
+// de TMS y de estado (done/active/pending): prefiere el dato real, cae a lo
+// planificado cuando no hay real todavía, y no muestra nada si ninguno existe.
+export function describeStopTiming(stop: TripStop): string | null {
+  const arrival = stop.arrival_date
+    ? `llegó ${fmtShort(stop.arrival_date)}`
+    : stop.planning_date
+    ? `llega ~${fmtShort(stop.planning_date)}`
+    : null
+
+  const departure = stop.departure_date
+    ? `salió ${fmtShort(stop.departure_date)}`
+    : stop.departure_date_prog
+    ? `sale ~${fmtShort(stop.departure_date_prog)}`
+    : null
+
+  const parts = [arrival, departure].filter((p): p is string => p != null)
+  return parts.length > 0 ? parts.join(' · ') : null
 }
