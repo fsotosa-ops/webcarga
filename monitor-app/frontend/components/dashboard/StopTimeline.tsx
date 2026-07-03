@@ -57,7 +57,7 @@ export function StopTimeline({ stops }: Props) {
               </div>
               <p className="text-[10px] text-gray-400">
                 {state === 'done' && '✓ '}
-                {timing ?? (state === 'active' ? 'en camino' : 'pendiente')}
+                {timing ?? (state === 'done' ? 'completada' : state === 'active' ? 'en camino' : 'pendiente')}
                 {stopWasVisited(stop) && stop.temperature != null && ` · ${stop.temperature}°C`}
               </p>
             </div>

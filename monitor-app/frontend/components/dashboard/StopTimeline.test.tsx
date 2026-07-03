@@ -92,4 +92,13 @@ describe('StopTimeline', () => {
     render(<StopTimeline stops={stops} />)
     expect(screen.getByText('pendiente')).toBeInTheDocument()
   })
+
+  it('shows "completada" instead of the contradictory "pendiente" for a done stop with no timing data', () => {
+    const stops = [
+      makeStop({ stop_id: 'a', local: 'Sin fechas', on_time_status: 'ON TIME', arrival_date: null, planning_date: null }),
+    ]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText(/completada/)).toBeInTheDocument()
+    expect(screen.queryByText('pendiente')).not.toBeInTheDocument()
+  })
 })
