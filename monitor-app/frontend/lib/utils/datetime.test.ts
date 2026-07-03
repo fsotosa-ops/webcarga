@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fmtDT, fmtShort, fmtDate } from './datetime'
+import { fmtDT, fmtShort, fmtDate, formatRelativeTime } from './datetime'
 
 describe('fmtDT', () => {
   it('returns em dash for null/undefined/empty', () => {
@@ -38,5 +38,36 @@ describe('fmtDate', () => {
 
   it('returns em dash for null', () => {
     expect(fmtDate(null)).toBe('—')
+  })
+})
+
+describe('formatRelativeTime', () => {
+  it('returns em dash for null/undefined', () => {
+    expect(formatRelativeTime(null)).toBe('—')
+    expect(formatRelativeTime(undefined)).toBe('—')
+  })
+
+  it('returns em dash for an invalid date string', () => {
+    expect(formatRelativeTime('not-a-date')).toBe('—')
+  })
+
+  it('returns "hace unos segundos" for timestamps under a minute old', () => {
+    const iso = new Date(Date.now() - 30 * 1000).toISOString()
+    expect(formatRelativeTime(iso)).toBe('hace unos segundos')
+  })
+
+  it('formats minutes for timestamps under an hour old', () => {
+    const iso = new Date(Date.now() - 12 * 60 * 1000).toISOString()
+    expect(formatRelativeTime(iso)).toBe('hace 12 min')
+  })
+
+  it('formats hours for timestamps under a day old', () => {
+    const iso = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+    expect(formatRelativeTime(iso)).toBe('hace 3 h')
+  })
+
+  it('formats days for timestamps a day or more old', () => {
+    const iso = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+    expect(formatRelativeTime(iso)).toBe('hace 2 d')
   })
 })

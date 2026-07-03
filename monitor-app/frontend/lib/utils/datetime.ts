@@ -32,3 +32,17 @@ export function fmtDate(iso: string | null | undefined): string {
     day: '2-digit', month: '2-digit', year: 'numeric',
   })
 }
+
+export function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(normalizeUTC(iso))
+  if (isNaN(d.getTime())) return '—'
+  const diffSec = Math.floor((Date.now() - d.getTime()) / 1000)
+  if (diffSec < 60) return 'hace unos segundos'
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `hace ${diffMin} min`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `hace ${diffHour} h`
+  const diffDay = Math.floor(diffHour / 24)
+  return `hace ${diffDay} d`
+}
