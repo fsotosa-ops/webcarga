@@ -1,8 +1,7 @@
 'use client'
 
 import type { TripStop } from '@/lib/types'
-import { stopWasVisited } from '@/lib/utils/temperature'
-import { fmtShort } from '@/lib/utils/datetime'
+import { stopWasVisited, describeStopTiming } from '@/lib/utils/temperature'
 
 type StopState = 'done' | 'active' | 'pending'
 
@@ -32,6 +31,7 @@ export function StopTimeline({ stops }: Props) {
         const state = stateFor(i, currentIdx, stop)
         const name = stop.local ?? stop.destination_city ?? '—'
         const isLast = i === stops.length - 1
+        const timing = describeStopTiming(stop)
         return (
           <div key={stop.stop_id ?? i} className="flex items-start gap-2 relative pb-2.5 last:pb-0">
             {!isLast && (
@@ -56,9 +56,8 @@ export function StopTimeline({ stops }: Props) {
                 )}
               </div>
               <p className="text-[10px] text-gray-400">
-                {state === 'done' && `✓ llegó ${fmtShort(stop.arrival_date)} · salió ${fmtShort(stop.departure_date)}`}
-                {state === 'active' && 'en camino'}
-                {state === 'pending' && 'pendiente'}
+                {state === 'done' && '✓ '}
+                {timing ?? (state === 'active' ? 'en camino' : 'pendiente')}
                 {stopWasVisited(stop) && stop.temperature != null && ` · ${stop.temperature}°C`}
               </p>
             </div>

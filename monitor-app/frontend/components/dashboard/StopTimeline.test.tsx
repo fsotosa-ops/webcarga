@@ -60,4 +60,36 @@ describe('StopTimeline', () => {
     render(<StopTimeline stops={stops} />)
     expect(screen.getByText('CERRADO SAP')).toBeInTheDocument()
   })
+
+  it('shows the planned arrival (ETA) for a pending stop when planning_date is present', () => {
+    const stops = [
+      makeStop({ stop_id: 'a', local: 'Hecha', arrival_date: '2026-07-02 10:00:00' }),
+      makeStop({ stop_id: 'b', local: 'Con ETA', planning_date: '2026-07-02 14:00:00' }),
+    ]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText(/llega ~\d{2}:\d{2}/)).toBeInTheDocument()
+  })
+
+  it('shows the planned arrival (ETA) for the active stop when planning_date is present', () => {
+    const stops = [makeStop({ stop_id: 'a', local: 'Activa', planning_date: '2026-07-02 09:00:00' })]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText(/llega ~\d{2}:\d{2}/)).toBeInTheDocument()
+    expect(screen.queryByText('en camino')).not.toBeInTheDocument()
+  })
+
+  it('shows the planned departure for a completed stop when there is no real departure yet', () => {
+    const stops = [makeStop({ stop_id: 'a', local: 'Parada', arrival_date: '2026-07-02 10:00:00', departure_date_prog: '2026-07-02 12:00:00' })]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText(/sale ~\d{2}:\d{2}/)).toBeInTheDocument()
+  })
+
+  it('still falls back to "pendiente" when a pending stop has no timing data at all', () => {
+    const stops = [
+      makeStop({ stop_id: 'a', local: 'Hecha', arrival_date: '2026-07-02 10:00:00' }),
+      makeStop({ stop_id: 'b', local: 'Activa' }),
+      makeStop({ stop_id: 'c', local: 'Sin datos' }),
+    ]
+    render(<StopTimeline stops={stops} />)
+    expect(screen.getByText('pendiente')).toBeInTheDocument()
+  })
 })
