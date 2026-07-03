@@ -35,11 +35,16 @@ describe('TripCard', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
   })
 
-  it('clicking an indicator dot does not call onSelect', () => {
+  it('renders Indicadores for a manual trip and clicking a dot does not call onSelect', () => {
     const onSelect = vi.fn()
-    render(<TripCard trip={makeTrip()} meta={null} onSaved={vi.fn()} onSelect={onSelect} />)
+    render(<TripCard trip={makeTrip({ source_system: 'manual' })} meta={null} onSaved={vi.fn()} onSelect={onSelect} />)
     fireEvent.click(screen.getAllByTitle('Activo')[0])
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('does not render Indicadores for a TMS-sourced trip', () => {
+    render(<TripCard trip={makeTrip({ source_system: 'qanalytics' })} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    expect(screen.queryByTitle('Activo')).not.toBeInTheDocument()
   })
 
   it('shows an OFF TIME badge when the trip has a compliance problem', () => {
