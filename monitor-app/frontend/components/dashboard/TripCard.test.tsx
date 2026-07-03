@@ -50,7 +50,7 @@ describe('TripCard', () => {
   it('shows an OFF TIME badge when the trip has a compliance problem', () => {
     const stops: Trip['stops'] = [{
       stop_id: 's1', local: 'Parada 1', planning_date: null, arrival_date: null, departure_date: null,
-      unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
       on_time_status: 'OFF TIME', destination_city: null, destination_region: null, s2s: null,
       temperature: null, milestone_status: null,
     }]

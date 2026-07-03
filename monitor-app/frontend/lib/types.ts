@@ -247,21 +247,22 @@ export type TripCreatePayload = {
 // ── Trips (app.trips via FastAPI) ──────────────────────────────────
 
 export type TripStop = {
-  stop_id:            string
-  local:              string | null
-  planning_date:      string | null
-  arrival_date:       string | null
-  departure_date:     string | null
-  unload_start:       string | null
-  unload_end:         string | null
-  gps_arrival_date:   string | null
-  gps_departure_date: string | null
-  on_time_status:     'ON TIME' | 'OFF TIME' | null
-  destination_city:   string | null
-  destination_region: string | null
-  s2s:                string | null
-  temperature:        number | null
-  milestone_status:   string | null  // per-stop, distinct from Trip.milestone_status (trip-level)
+  stop_id:             string
+  local:               string | null
+  planning_date:       string | null
+  arrival_date:        string | null
+  departure_date:      string | null
+  departure_date_prog: string | null  // salida planificada — hoy solo la puebla Wingsuite (pendiente de un cambio en Mage), null para el resto
+  unload_start:        string | null
+  unload_end:          string | null
+  gps_arrival_date:    string | null
+  gps_departure_date:  string | null
+  on_time_status:      'ON TIME' | 'OFF TIME' | null
+  destination_city:    string | null
+  destination_region:  string | null
+  s2s:                 string | null
+  temperature:         number | null
+  milestone_status:    string | null  // per-stop, distinct from Trip.milestone_status (trip-level)
 }
 
 export type Trip = {

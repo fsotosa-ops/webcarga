@@ -5,7 +5,8 @@ import type { TripStop } from '@/lib/types'
 function makeStop(overrides: Partial<TripStop>): TripStop {
   return {
     stop_id: 's1', local: 'Parada', planning_date: null,
-    arrival_date: null, departure_date: null, unload_start: null, unload_end: null,
+    arrival_date: null, departure_date: null, departure_date_prog: null,
+    unload_start: null, unload_end: null,
     gps_arrival_date: null, gps_departure_date: null, on_time_status: null,
     destination_city: null, destination_region: null, s2s: null,
     temperature: null, milestone_status: null,

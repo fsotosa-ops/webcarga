@@ -111,7 +111,7 @@ describe('TripSlideOver — reordenado (Enfoque A)', () => {
   it('promotes Ruta above Datos operativos in the DOM order', () => {
     const stops: Trip['stops'] = [{
       stop_id: 's1', local: 'Parada 1', planning_date: null, arrival_date: null, departure_date: null,
-      unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
       on_time_status: null, destination_city: null, destination_region: null, s2s: null,
       temperature: null, milestone_status: null,
     }]
@@ -135,7 +135,7 @@ describe('TripSlideOver — reordenado (Enfoque A)', () => {
   it('shows a temperature badge in the header when a reading exists', () => {
     const stops: Trip['stops'] = [{
       stop_id: 's1', local: 'Parada 1', planning_date: null, arrival_date: '2026-07-02 10:00:00', departure_date: null,
-      unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
       on_time_status: null, destination_city: null, destination_region: null, s2s: null,
       temperature: 4, milestone_status: null,
     }]
