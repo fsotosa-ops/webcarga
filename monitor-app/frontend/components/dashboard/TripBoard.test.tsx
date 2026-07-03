@@ -46,4 +46,15 @@ describe('TripBoard', () => {
     expect(screen.getByText('Otro')).toBeInTheDocument()
     expect(screen.getByText('A')).toBeInTheDocument()
   })
+
+  it('folds unmatched trips into an existing "otro" group instead of rendering a duplicate column', () => {
+    const groupsWithOtro = [
+      { id: 'en_ruta', label: 'En Ruta', statuses: ['ORIGEN', 'RUTA'] },
+      { id: 'otro', label: 'Otro', statuses: ['SIN_INFO'] },
+    ]
+    const trips = [makeTrip('a', 'ESTADO_DESCONOCIDO')]
+    render(<TripBoard trips={trips} groups={groupsWithOtro} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    expect(screen.getAllByText('Otro').length).toBe(1)
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
 })

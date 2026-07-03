@@ -22,11 +22,15 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect }: Props) {
     return trip.estado_manual ?? trip.current_status ?? ''
   }
 
+  const ungrouped = trips.filter(t => !groups.some(g => g.statuses.includes(statusOf(t))))
+  const hasOtroGroup = groups.some(g => g.id === 'otro')
+
   const grouped = groups.map(g => ({
     ...g,
-    trips: trips.filter(t => g.statuses.includes(statusOf(t))),
+    trips: g.id === 'otro'
+      ? [...trips.filter(t => g.statuses.includes(statusOf(t))), ...ungrouped]
+      : trips.filter(t => g.statuses.includes(statusOf(t))),
   }))
-  const ungrouped = trips.filter(t => !groups.some(g => g.statuses.includes(statusOf(t))))
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
@@ -44,7 +48,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect }: Props) {
           )}
         </div>
       ))}
-      {ungrouped.length > 0 && (
+      {!hasOtroGroup && ungrouped.length > 0 && (
         <div className="flex-none w-[220px] bg-gray-50 rounded-xl p-2">
           <div className="flex items-center justify-between px-1 pb-2">
             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Otro</span>
