@@ -274,15 +274,38 @@ Se restauró RLS (política de solo lectura para `authenticated`) + `PRIMARY KEY
 
 **Nota de proceso:** la aplicación inicial de esta migración (vía `apply_migration`, antes de la confirmación explícita del usuario) fue bloqueada correctamente por el clasificador de seguridad del sistema — se había interpretado "tomá el RLS como ajuste aparte" como autorización suficiente sin haberlo confirmado explícitamente antes de ejecutar. Se corrigió preguntando al usuario qué hacer con el cambio ya aplicado; confirmó "dejarlo, verificar y commitear". **Lección**: un "trátalo aparte" durante brainstorming no equivale a autorización de ejecución sobre una base de datos compartida — confirmar explícitamente antes de aplicar, no después.
 
+Pusheado a `dev` (`788f0f6..7f325e1`, 14 commits) tras confirmación explícita del usuario.
+
+---
+
+### 2026-07-03 — Rediseño del modal de detalle de viaje (TripSlideOver)
+
+**Objetivo:** el usuario probó el rediseño de tabla/tablero (sesión anterior) y dio feedback nuevo sobre el modal de detalle, que ese rediseño no había tocado: **"es poco intuitivo el modal del detalle de viaje... los indicadores no son útiles, dado que la data viene de app.trips y uno sabe en que están... lo que es la bitacora debe ser mas robusta... lo de asignado, trabajando activo, eventualmente es aplicable siempre y cuando son viajes manuales."**
+
+**Spec:** `specs/2026-07-02-diario-detalle-rediseno-design.md`. **Plan:** `plans/2026-07-02-diario-detalle-rediseno-plan.md` (4 tareas TDD, subagent-driven).
+
+**Priorización del usuario:** de los 3 puntos del feedback, eligió reordenar el modal completo primero (indicadores se resuelven en el mismo diseño, ya que viven adentro del modal; adjuntos de bitácora quedan para una spec aparte — requieren infraestructura de Storage que no existe hoy).
+
+**Hallazgo de datos que informó el diseño**: los indicadores (Activo/Trabajando/Asignado/1ra Vuelta) SÍ vienen poblados por el pipeline TMS (no son un toggle manual vacío) — `asignado` es 99.9% constante en qanalytics (poco informativo), `primera_vuelta` nunca es `true` en ningún viaje real, y **cero** viajes tienen `manually_edited_fields` no vacío en toda la tabla. Estos campos solo son plenamente relevantes para viajes `source_system = 'manual'` (sin TMS reportando nada).
+
+**Diseño aprobado (Enfoque A, elegido vía companion visual)**: sincronización consolidada en una línea con tiempo relativo (`formatRelativeTime`, reemplaza 4 timestamps sueltos y duplicados entre KPIs y Resumen); Ruta promovida al primer bloque del cuerpo; separación visual clara entre "Datos operativos" (solo lectura, fondo gris) y "Gestión" (editable, fondo con acento); Indicadores condicionales a `source_system === 'manual'`, aplicado consistentemente en `TripSlideOver`, `TripTable` y `TripCard`; Bitácora reubicada dentro de Gestión, deja de ser acordeón independiente; badge de temperatura en el header (decisión tomada durante la escritura del plan, confirmada con el usuario: siempre visible cuando hay lectura, rojo si está fuera de rango).
+
+**Incidente durante la ejecución**: el plan mismo tenía un bug — su código prescrito renderizaba un `err` compartido en dos lugares (Estado operativo y Bitácora), inofensivo mientras Bitácora era un acordeón colapsado, pero un problema real una vez que Bitácora pasó a estar siempre visible (ambos bloques montados simultáneamente rompían un test). El implementador de la Tarea 2 lo resolvió eliminando el render de Bitácora en vez de separar el estado — el revisor de tarea detectó que esto dejaba los errores de "Guardar notas" sin mostrarse cerca del botón, violando en espíritu la restricción de "ningún error se silencia". Se corrigió con un estado `saveErr` independiente, verificado directamente por el controlador y luego por el revisor final.
+
+**Verificación final:** 72/72 tests frontend, `tsc --noEmit` limpio, `npm run build` exitoso, 12/12 tests backend sin cambios (0% backend tocado en este plan), smoke test manual con Playwright contra datos reales (columna Indicadores vacía para viajes QAnalytics, línea de sincronización con tiempos relativos reales, Ruta antes de Datos operativos, footer con `created_at` + uuid interno, badge de temperatura visible junto al Estado — cero errores de consola).
+
+**Revisión final del branch** (be52345..3659686, 5 commits): aprobada sin necesidad de fixes — el revisor final re-verificó independientemente el split `err`/`saveErr` contra el código real (correcto y completo) y confirmó que la condición de Indicadores es idéntica en los 4 call-sites. 3 hallazgos menores documentados, no bloqueantes: test de fallo de Bitácora no escopea su aserción al contenedor de Bitácora (atrapa el bug de forma incidental, no por diseño); `transporter_tms` sigue apareciendo dos veces (uno detrás de un acordeón, heredado del plan); guard del footer `(trip.created_at || trip.id)` es efectivamente siempre verdadero (cosmético, `trip.id` nunca es null).
+
 ---
 
 ## Próximo paso exacto
 
-**Falta pushear a `dev`:** todo el rango de esta sesión (`dc76b88..0f6fb2c`, incluye el rediseño completo del Diario + el fix de RLS/PK/índices) está en local, no pusheado — confirmar con el usuario antes de pushear, siguiendo el patrón ya establecido en esta sesión.
+**Falta pushear a `dev`:** el rango de esta sesión (`be52345..3659686`, el rediseño del modal de detalle) está en local, no pusheado — confirmar con el usuario antes de pushear, siguiendo el patrón ya establecido.
 
-**Del rediseño de Diario, quedan fuera de esta ronda (documentado como "fuera de alcance" en la spec del rediseño completo):**
-- Rediseño de Configuración (segunda ronda — el usuario decidió explícitamente "Diario primero", sigue sin retomar).
-- Auto-refresh (polling) en `diario/page.tsx` — mencionado en la Fase C original, no se retomó en ninguna de las dos rondas.
+**Del rediseño de Diario, quedan fuera de esta ronda (documentado como "fuera de alcance" en ambas specs de rediseño):**
+- Adjuntos en Bitácora (PDF, screenshots) — requiere bucket de Supabase Storage + tabla nueva, spec aparte, decisión explícita del usuario.
+- Rediseño de Configuración (el usuario decidió explícitamente "Diario primero", sigue sin retomar).
+- Auto-refresh (polling) en `diario/page.tsx` — mencionado en la Fase C original, no se retomó en ninguna ronda.
 
 **Del plan más viejo (Fase C original / Fase D), siguen pendientes:**
 - Columna "tiempo en estado" ordenable con display live-ticking — backend ya soporta `sort=status_reported_at_asc`, falta frontend + `stale_after_hours` en `app.trip_statuses`.
