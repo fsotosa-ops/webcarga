@@ -148,6 +148,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const [form, setForm]                         = useState<TripPatch>({})
   const [saving, setSaving]                     = useState(false)
   const [err, setErr]                           = useState<string | null>(null)
+  const [saveErr, setSaveErr]                   = useState<string | null>(null)
   const [copied, setCopied]                     = useState(false)
   const [showEstadoSelect, setShowEstadoSelect] = useState(false)
   const [clearingOverride, setClearingOverride] = useState(false)
@@ -163,6 +164,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
       comentarios:   trip.comentarios   ?? '',
     })
     setErr(null)
+    setSaveErr(null)
     setCopied(false)
     setShowEstadoSelect(false)
     setEmpresaOpen(false)
@@ -173,7 +175,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   async function handleSave() {
     if (!trip) return
     setSaving(true)
-    setErr(null)
+    setSaveErr(null)
     try {
       const payload: TripPatch = {
         observaciones: form.observaciones || undefined,
@@ -182,7 +184,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
       const updated = await tripsApi.patch(trip.id, payload)
       onSaved(updated)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al guardar')
+      setSaveErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
       setSaving(false)
     }
@@ -639,6 +641,9 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
                   />
                 </div>
+                {saveErr && (
+                  <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveErr}</p>
+                )}
                 <button
                   type="button"
                   onClick={handleSave}

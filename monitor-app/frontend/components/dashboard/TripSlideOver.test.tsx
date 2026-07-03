@@ -77,6 +77,13 @@ describe('TripSlideOver — reordenado (Enfoque A)', () => {
     expect(await screen.findByText('network down')).toBeInTheDocument()
   })
 
+  it('shows a visible error next to Guardar notas when saving Bitácora notes fails', async () => {
+    vi.mocked(tripsApi.patch).mockRejectedValue(new Error('network down'))
+    render(<TripSlideOver trip={baseTrip} onClose={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    fireEvent.click(screen.getByText('Guardar notas'))
+    expect(await screen.findByText('network down')).toBeInTheDocument()
+  })
+
   it('shows created_at in the footer', () => {
     const tripWithCreated = { ...baseTrip, created_at: '2026-06-30 08:00:00' }
     render(<TripSlideOver trip={tripWithCreated} onClose={vi.fn()} onSaved={vi.fn()} meta={null} />)
