@@ -11,7 +11,7 @@ import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
 import { IndicatorDots } from './IndicatorDots'
 
 
-function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
+export function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
   const tm = meta?.tms_sources.find(x => x.id === tms.toLowerCase())
   const label = tm?.label ?? tms.toUpperCase().slice(0, 3)
   return (

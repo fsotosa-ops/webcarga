@@ -62,4 +62,27 @@ describe('TripCard', () => {
     render(<TripCard trip={makeTrip()} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
     expect(screen.queryByText('OFF TIME')).not.toBeInTheDocument()
   })
+
+  it('shows a TMS chip and the client name', () => {
+    render(<TripCard trip={makeTrip()} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    expect(screen.getByText('QAN')).toBeInTheDocument()
+    expect(screen.getByText(/walmart/)).toBeInTheDocument()
+  })
+
+  it('shows the ETA of the active stop', () => {
+    const stops: Trip['stops'] = [{
+      stop_id: 's1', local: 'Parada 1', planning_date: '2026-07-02 09:00:00', arrival_date: null, departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null,
+    }]
+    render(<TripCard trip={makeTrip({ stops })} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    expect(screen.getByText(/llega ~\d{2}:\d{2}/)).toBeInTheDocument()
+  })
+
+  it('shows time since the last TMS report', () => {
+    const trip = makeTrip({ status_reported_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() })
+    render(<TripCard trip={trip} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    expect(screen.getByText(/hace 5 min/)).toBeInTheDocument()
+  })
 })
