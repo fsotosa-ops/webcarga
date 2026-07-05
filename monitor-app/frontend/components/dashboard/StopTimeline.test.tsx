@@ -38,7 +38,8 @@ describe('StopTimeline', () => {
       makeStop({ stop_id: 'c', local: 'Pendiente' }),
     ]
     render(<StopTimeline stops={stops} />)
-    expect(screen.getByText(/✓ llegó/)).toBeInTheDocument()
+    // el estado "done" se señala con el ícono Check (lucide), no con el carácter ✓
+    expect(screen.getByText(/llegó/)).toBeInTheDocument()
     expect(screen.getByText('en camino')).toBeInTheDocument()
     expect(screen.getByText('pendiente')).toBeInTheDocument()
   })

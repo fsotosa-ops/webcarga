@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Lock } from 'lucide-react'
 import type { Trip } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { fmtDT } from '@/lib/utils/datetime'
@@ -65,7 +66,7 @@ export function IndicatorDots({ trip, onSaved, size = 'sm' }: Props) {
                 }`}
               />
               {frozen && (
-                <span className="absolute -top-1 -right-1 text-[7px] leading-none pointer-events-none">🔒</span>
+                <Lock size={7} className="absolute -top-1 -right-1 text-slate-500 pointer-events-none" aria-label="congelado" />
               )}
             </span>
           )

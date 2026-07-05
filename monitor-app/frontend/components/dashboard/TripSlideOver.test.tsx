@@ -94,7 +94,8 @@ describe('TripSlideOver — hero (la historia del viaje)', () => {
   it('shows a temperature badge when a reading exists', () => {
     const stops = [makeStop({ arrival_date: '2026-07-02 10:00:00', temperature: 4 })]
     renderSlideOver({ ...baseTrip, stops })
-    expect(screen.getByText('4°C')).toBeInTheDocument()
+    // aparece en el hero y en la parada del timeline
+    expect(screen.getAllByText('4°C').length).toBeGreaterThan(0)
   })
 })
 

@@ -13,7 +13,7 @@ import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, desc
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { fmtDT, fmtDate, formatRelativeTime } from '@/lib/utils/datetime'
 import { StopTimeline } from './StopTimeline'
-import { StopProgressDots } from './StopProgressDots'
+import { RouteProgress } from './RouteProgress'
 import { IndicatorDots } from './IndicatorDots'
 import { TripNotesFeed } from './TripNotesFeed'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -257,7 +257,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} aria-hidden="true" />
+      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
 
       {/* Panel */}
       <div
@@ -268,7 +268,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
         tabIndex={-1}
         className="fixed inset-0 z-50 flex flex-col bg-white
                       md:inset-4
-                      md:rounded-2xl md:shadow-2xl overflow-hidden focus:outline-none"
+                      md:rounded-2xl md:shadow-2xl overflow-hidden focus:outline-none animate-modal-in"
       >
 
         {/* ── Header — 1 fila compacta: identidad del viaje ─────────── */}
@@ -355,12 +355,16 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             )}
           </div>
 
+          {/* Barra de progreso de ruta con nombres */}
+          {stops.length > 0 && (
+            <div className="pt-1 pb-0.5">
+              <RouteProgress stops={stops} />
+            </div>
+          )}
+
           <div className="flex items-center gap-2.5 flex-wrap text-[11px] text-gray-500">
             {stops.length > 0 && (
-              <>
-                <StopProgressDots stops={stops} />
-                <span>{doneCount}/{stops.length} paradas</span>
-              </>
+              <span>{doneCount}/{stops.length} paradas</span>
             )}
             {compliance === 'warn' && (
               <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-[10px]">OFF TIME</span>
@@ -464,18 +468,18 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             {/* Indicadores — solo para viajes manuales */}
             {isManualTrip && (
               <div>
-                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
                 <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
               </div>
             )}
 
             {/* Empresa transportista — card compacta, sin acordeón */}
             <div>
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
                 <Building2 size={10} /> Empresa transportista
               </p>
               {trip.transporter_profile_id ? (
-                <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80">
+                <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-800 truncate">{trip.transporter ?? '—'}</p>
                     {trip.transporter_tms && (
@@ -513,7 +517,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
 
             {/* Bitácora — feed cronológico con historial */}
             <div>
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Bitácora</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Bitácora</p>
               <TripNotesFeed trip={trip} />
             </div>
           </aside>

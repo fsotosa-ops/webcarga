@@ -1,7 +1,9 @@
 'use client'
 
+import { Check, Thermometer, Timer } from 'lucide-react'
 import type { TripStop } from '@/lib/types'
 import { stopWasVisited, describeStopTiming } from '@/lib/utils/temperature'
+import { stopDwellTime, transitTime } from '@/lib/utils/stopStats'
 
 type StopState = 'done' | 'active' | 'pending'
 
@@ -32,35 +34,60 @@ export function StopTimeline({ stops }: Props) {
         const name = stop.local ?? stop.destination_city ?? '—'
         const isLast = i === stops.length - 1
         const timing = describeStopTiming(stop)
+        const dwell = stopDwellTime(stop)
+        const transit = isLast ? null : transitTime(stop, stops[i + 1])
         return (
-          <div key={stop.stop_id ?? i} className="flex items-start gap-2 relative pb-2.5 last:pb-0">
+          <div key={stop.stop_id ?? i} className="relative">
+            <div className="flex items-start gap-2.5">
+              <span
+                className={`w-[18px] h-[18px] rounded-full mt-0.5 shrink-0 z-10 flex items-center justify-center ${
+                  state === 'done'
+                    ? 'bg-green-500 text-white'
+                    : state === 'active'
+                    ? 'bg-white border-2 border-accent ring-4 ring-accent/10'
+                    : 'bg-white border-2 border-gray-200'
+                }`}
+              >
+                {state === 'done' && <Check size={10} strokeWidth={3} />}
+                {state === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
+              </span>
+              <div className="min-w-0 flex-1 pb-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className={`text-xs truncate ${state === 'active' ? 'font-bold text-slate-800' : 'font-semibold text-slate-700'}`}>{name}</p>
+                  {stop.on_time_status === 'ON TIME' && (
+                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
+                  )}
+                  {stop.on_time_status === 'OFF TIME' && (
+                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">OFF TIME</span>
+                  )}
+                  {stop.milestone_status && (
+                    <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{stop.milestone_status}</span>
+                  )}
+                  {stopWasVisited(stop) && stop.temperature != null && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                      <Thermometer size={9} />
+                      {stop.temperature}°C
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {timing ?? (state === 'done' ? 'completada' : state === 'active' ? 'en camino' : 'pendiente')}
+                  {dwell && <span className="text-gray-500"> · {dwell} en parada</span>}
+                </p>
+              </div>
+            </div>
+            {/* Conector + tránsito entre paradas */}
             {!isLast && (
-              <span className="absolute left-[4px] top-3 bottom-0 w-px bg-gray-200" />
-            )}
-            <span
-              className={`w-2.5 h-2.5 rounded-full mt-0.5 shrink-0 z-10 ${
-                state === 'done' ? 'bg-green-500' : state === 'active' ? 'bg-blue-500 ring-4 ring-blue-100' : 'bg-gray-200'
-              }`}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <p className="text-xs font-semibold text-slate-700 truncate">{name}</p>
-                {stop.on_time_status === 'ON TIME' && (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
-                )}
-                {stop.on_time_status === 'OFF TIME' && (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">OFF TIME</span>
-                )}
-                {stop.milestone_status && (
-                  <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{stop.milestone_status}</span>
+              <div className="flex items-center gap-2.5 pl-[8px] py-0.5">
+                <span className="w-px self-stretch min-h-[14px] bg-gray-200 ml-[0.5px]" />
+                {transit && (
+                  <span className="inline-flex items-center gap-1 text-[9px] text-gray-400">
+                    <Timer size={9} />
+                    {transit} de tránsito
+                  </span>
                 )}
               </div>
-              <p className="text-[10px] text-gray-400">
-                {state === 'done' && '✓ '}
-                {timing ?? (state === 'done' ? 'completada' : state === 'active' ? 'en camino' : 'pendiente')}
-                {stopWasVisited(stop) && stop.temperature != null && ` · ${stop.temperature}°C`}
-              </p>
-            </div>
+            )}
           </div>
         )
       })}

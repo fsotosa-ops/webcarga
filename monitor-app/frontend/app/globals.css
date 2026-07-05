@@ -32,3 +32,22 @@ body {
   background-color: var(--bg-main);
   color: var(--text-primary);
 }
+
+/* ── Entrada del modal de detalle ─────────────────────────────── */
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-modal-in    { animation: modal-in 0.18s ease-out; }
+.animate-backdrop-in { animation: backdrop-in 0.15s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-modal-in,
+  .animate-backdrop-in { animation: none; }
+}
