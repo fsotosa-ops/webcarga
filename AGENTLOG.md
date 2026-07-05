@@ -380,9 +380,9 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 **Verificación:** 113/113 tests frontend (suite del slideover reescrita: hero, acordeón de datos, feed de notas con mock, errores visibles, a11y conservada), 17/17 backend, `tsc` limpio, `npm run build` OK. **Sin smoke de navegador** (sesión de auth sigue expirada — 3ra ronda).
 
-#### ⚠️ PENDIENTE CRÍTICO
-1. **La migración `20260705000001_trip_notes.sql` NO está aplicada a Supabase** — los endpoints de notas van a fallar (tabla inexistente) hasta aplicarla. Requiere confirmación explícita del usuario (regla establecida para la base compartida). Aplicar vía MCP o `supabase db push` antes de probar la bitácora.
-2. Los commits de esta sección están en local, **sin pushear** a `dev`.
+#### Cierre (2026-07-05, autorizado por el usuario)
+1. **Migración aplicada a Supabase** (`viclzoftiudkepqnhekv`) vía MCP `apply_migration` — verificado post-aplicación: tabla `app.trip_notes` con RLS habilitada, 1 política de lectura, 2 índices (PK + trip_id/created_at), 0 filas.
+2. **Pusheado a `dev`** (`066142c..7244864`) — CI/CD desplegará frontend + monitor-api a Cloud Run dev.
 
 ---
 
