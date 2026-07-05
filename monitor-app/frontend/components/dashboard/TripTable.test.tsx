@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TripTable } from './TripTable'
+import { tripsApi } from '@/lib/api/trips'
 import type { Trip } from '@/lib/types'
 
 vi.mock('@/lib/api/trips', () => ({
@@ -77,5 +78,55 @@ describe('TripTable', () => {
     const trip = makeTrip('t1', { status_reported_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() })
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
     expect(screen.getAllByText(/hace 5 min/).length).toBeGreaterThan(0)
+  })
+})
+
+describe('TripTable — errores de edición inline visibles', () => {
+  it('shows an inline error and stays in edit mode when saving a driver edit fails', async () => {
+    vi.mocked(tripsApi.patch).mockRejectedValueOnce(new Error('fallo de red'))
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    // [0] es la card mobile (abre detalle); [1] es la celda desktop editable
+    fireEvent.click(screen.getAllByText('Juan Perez')[1])
+    const input = screen.getByDisplayValue('Juan Perez')
+    fireEvent.change(input, { target: { value: 'Pedro Soto' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByText('fallo de red')).toBeInTheDocument()
+    // sigue en modo edición para poder reintentar
+    expect(screen.getByDisplayValue('Pedro Soto')).toBeInTheDocument()
+  })
+})
+
+describe('TripTable — orden tipado', () => {
+  it('sorts ID Viaje numerically, not lexicographically', () => {
+    const trips = [
+      makeTrip('a', { source_system_trip_id: '10' }),
+      makeTrip('b', { source_system_trip_id: '9' }),
+    ]
+    render(<TripTable trips={trips} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    fireEvent.click(screen.getByText('ID Viaje'))
+    const ids = screen.getAllByText(/^(9|10)$/).map(el => el.textContent)
+    expect(ids).toEqual(['9', '10'])
+  })
+
+  it('sorts null values last regardless of direction', () => {
+    const trips = [
+      makeTrip('a', { driver_name: null }),
+      makeTrip('b', { driver_name: 'Ana' }),
+    ]
+    render(<TripTable trips={trips} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    fireEvent.click(screen.getByText('Conductor'))
+    const rows = document.querySelectorAll('tbody tr')
+    expect(rows[0].textContent).toContain('Ana')
+  })
+})
+
+describe('TripTable — accesibilidad por teclado', () => {
+  it('opens the detail with Enter on a focused row', () => {
+    const onSelect = vi.fn()
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSaved={vi.fn()} meta={null} />)
+    const row = screen.getAllByText('ABCD12')[1].closest('tr')!
+    expect(row).toHaveAttribute('tabindex', '0')
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
   })
 })

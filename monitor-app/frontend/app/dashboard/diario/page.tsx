@@ -14,6 +14,7 @@ import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { TripCreateSlideOver } from '@/components/dashboard/TripCreateSlideOver'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -104,6 +105,10 @@ export default function DiarioPage() {
   const [editingGroup,   setEditingGroup]   = useState<FilterGroup | undefined>(undefined)
   const [prefillFromFilter, setPrefillFromFilter] = useState(false)
 
+  // Debounce de inputs de texto: no disparar un fetch por cada tecla
+  const qDebounced       = useDebouncedValue(q, 300)
+  const clientDebounced  = useDebouncedValue(fClient, 300)
+
   const today   = todayISO()
   const isToday = fecha === today
 
@@ -179,15 +184,15 @@ export default function DiarioPage() {
     const tmsParam    = fTms.join(',')
     const params =
       tab === 'en_curso'
-        ? { fecha, view: 'en_curso' as const, q, status: statusParam, tms: tmsParam, client: fClient, limit: 200, ...boolParams }
-        : { view: 'historial' as const, q, fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
-            status: statusParam, tms: tmsParam, client: fClient, limit: HISTORIAL_LIMIT, page, ...boolParams }
+        ? { fecha, view: 'en_curso' as const, q: qDebounced, status: statusParam, tms: tmsParam, client: clientDebounced, limit: 200, ...boolParams }
+        : { view: 'historial' as const, q: qDebounced, fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
+            status: statusParam, tms: tmsParam, client: clientDebounced, limit: HISTORIAL_LIMIT, page, ...boolParams }
 
     tripsApi.list(params)
       .then(res => { setTrips(res.data); setTotal(res.count) })
       .catch(e => setError(e instanceof Error ? e.message : 'Error cargando viajes'))
       .finally(() => setLoading(false))
-  }, [tab, fecha, q, fechaDesde, fechaHasta, statusParam, fActivo, fTrabajando, fAsignado, fPrimeraVuelta, fTms, fClient, page])
+  }, [tab, fecha, qDebounced, fechaDesde, fechaHasta, statusParam, fActivo, fTrabajando, fAsignado, fPrimeraVuelta, fTms, clientDebounced, page])
 
   useEffect(() => { load() }, [load])
 
@@ -317,7 +322,7 @@ export default function DiarioPage() {
                 Carga masiva (CSV)
               </button>
               <button
-                data-tour="trip-create-btn"
+               
                 onClick={() => setShowCreate(true)}
                 className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
               >
@@ -328,7 +333,7 @@ export default function DiarioPage() {
           </div>
 
           {/* ── Filter bar ───────────────────────────────────────────── */}
-          <div data-tour="trip-filters" className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-3">
+          <div className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-3">
 
             {/* Row 1 — search + date range + clear */}
             <div className="flex items-center gap-2 flex-wrap">
@@ -496,28 +501,32 @@ export default function DiarioPage() {
             <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
           )}
 
-          {/* Table / Board */}
-          {loading ? (
+          {/* Table / Board — en refetch la data anterior queda visible, atenuada (sin flash de spinner) */}
+          {loading && trips.length === 0 ? (
             <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
               <Loader2 size={16} className="animate-spin" /> Cargando…
             </div>
-          ) : tab === 'en_curso' && viewMode === 'tablero' ? (
-            <TripBoard
-              trips={trips}
-              groups={defaultGroups}
-              meta={tripsMeta}
-              onSaved={handleSaved}
-              onSelect={setSelected}
-            />
           ) : (
-            <TripTable
-              trips={trips}
-              selectedId={selected?.id ?? null}
-              onSelect={setSelected}
-              onSaved={handleSaved}
-              alertSummary={alertSummary}
-              meta={tripsMeta}
-            />
+            <div className={`transition-opacity duration-150 ${loading ? 'opacity-50' : ''}`} aria-busy={loading}>
+              {tab === 'en_curso' && viewMode === 'tablero' ? (
+                <TripBoard
+                  trips={trips}
+                  groups={defaultGroups}
+                  meta={tripsMeta}
+                  onSaved={handleSaved}
+                  onSelect={setSelected}
+                />
+              ) : (
+                <TripTable
+                  trips={trips}
+                  selectedId={selected?.id ?? null}
+                  onSelect={setSelected}
+                  onSaved={handleSaved}
+                  alertSummary={alertSummary}
+                  meta={tripsMeta}
+                />
+              )}
+            </div>
           )}
 
           {/* Historial pagination */}

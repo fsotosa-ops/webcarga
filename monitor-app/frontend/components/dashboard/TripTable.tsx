@@ -77,16 +77,20 @@ function ConductorCell({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft]     = useState(trip.driver_name ?? '')
   const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState<string | null>(null)
 
   const handleSave = async (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation()
     if (!draft.trim() || draft === trip.driver_name) { setEditing(false); return }
     setSaving(true)
+    setError(null)
     try {
       const updated = await tripsApi.patch(trip.id, { driver_name: draft.trim() })
       onSaved(updated)
       setEditing(false)
-    } catch { /* ignore */ } finally {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar')
+    } finally {
       setSaving(false)
     }
   }
@@ -94,25 +98,29 @@ function ConductorCell({
   const handleCancel = (e: React.MouseEvent) => {
     e.stopPropagation()
     setDraft(trip.driver_name ?? '')
+    setError(null)
     setEditing(false)
   }
 
   if (editing) {
     return (
-      <div className="flex items-center gap-1 min-w-[140px]" onClick={e => e.stopPropagation()}>
-        <input
-          autoFocus
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') handleSave(e); if (e.key === 'Escape') { setDraft(trip.driver_name ?? ''); setEditing(false) } }}
-          className="text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30"
-        />
-        <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
-          {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-        </button>
-        <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
-          <X size={11} />
-        </button>
+      <div className="min-w-[140px]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-1">
+          <input
+            autoFocus
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSave(e); if (e.key === 'Escape') { setDraft(trip.driver_name ?? ''); setError(null); setEditing(false) } }}
+            className="text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30"
+          />
+          <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+          </button>
+          <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
+            <X size={11} />
+          </button>
+        </div>
+        {error && <p className="text-[9px] text-red-500 mt-0.5 max-w-[160px]">{error}</p>}
       </div>
     )
   }
@@ -148,6 +156,7 @@ function PhoneTagCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => voi
   const [draft, setDraft]       = useState<string[]>(() => parsePhones(trip.driver_phone))
   const [input, setInput]       = useState('')
   const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState<string | null>(null)
 
   useEffect(() => { setDraft(parsePhones(trip.driver_phone)) }, [trip.driver_phone])
 
@@ -160,17 +169,21 @@ function PhoneTagCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => voi
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation()
     setSaving(true)
+    setError(null)
     try {
       const updated = await tripsApi.patch(trip.id, { driver_phone: JSON.stringify(draft) })
       onSaved(updated)
       setEditing(false)
-    } catch { /* ignore */ } finally { setSaving(false) }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar')
+    } finally { setSaving(false) }
   }
 
   const handleCancel = (e: React.MouseEvent) => {
     e.stopPropagation()
     setDraft(parsePhones(trip.driver_phone))
     setInput('')
+    setError(null)
     setEditing(false)
   }
 
@@ -215,6 +228,7 @@ function PhoneTagCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => voi
             <X size={11} />
           </button>
         </div>
+        {error && <p className="text-[9px] text-red-500 max-w-[160px]">{error}</p>}
       </div>
     )
   }
@@ -246,6 +260,7 @@ function PlateCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }
   const [editing, setEditing] = useState<'primary' | 'secondary' | null>(null)
   const [draft, setDraft]     = useState('')
   const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState<string | null>(null)
 
   const startEdit = (which: 'primary' | 'secondary', e: React.MouseEvent) => {
     e.stopPropagation()
@@ -259,39 +274,46 @@ function PlateCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }
   const handleSave = async (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation()
     setSaving(true)
+    setError(null)
     try {
       const field = editing === 'secondary' ? 'trailer_plate' : 'tractor_plate'
       const updated = await tripsApi.patch(trip.id, { [field]: draft.trim().toUpperCase() })
       onSaved(updated)
       setEditing(null)
-    } catch { /* ignore */ } finally { setSaving(false) }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar')
+    } finally { setSaving(false) }
   }
 
   const handleCancel = (e: React.MouseEvent) => {
     e.stopPropagation()
+    setError(null)
     setEditing(null)
   }
 
   if (editing) {
     return (
-      <div className="flex items-center gap-1 min-w-[110px]" onClick={e => e.stopPropagation()}>
-        <input
-          autoFocus
-          value={draft}
-          onChange={e => setDraft(e.target.value.toUpperCase())}
-          onKeyDown={e => {
-            if (e.key === 'Enter') handleSave(e)
-            if (e.key === 'Escape') { setEditing(null) }
-          }}
-          placeholder="XXNN00"
-          className="font-mono text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30 uppercase"
-        />
-        <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
-          {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-        </button>
-        <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
-          <X size={11} />
-        </button>
+      <div className="min-w-[110px]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-1">
+          <input
+            autoFocus
+            value={draft}
+            onChange={e => setDraft(e.target.value.toUpperCase())}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleSave(e)
+              if (e.key === 'Escape') { setError(null); setEditing(null) }
+            }}
+            placeholder="XXNN00"
+            className="font-mono text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30 uppercase"
+          />
+          <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+          </button>
+          <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
+            <X size={11} />
+          </button>
+        </div>
+        {error && <p className="text-[9px] text-red-500 mt-0.5 max-w-[160px]">{error}</p>}
       </div>
     )
   }
@@ -348,10 +370,15 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
 
   const sorted = useMemo(() => {
     if (!sortKey) return trips
+    // Orden natural: '9' < '10', fechas ISO ordenan bien, acentos ignorados. Nulls siempre al final.
+    const collator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' })
     return [...trips].sort((a, b) => {
-      const av = (a[sortKey] ?? '') as string
-      const bv = (b[sortKey] ?? '') as string
-      const cmp = av < bv ? -1 : av > bv ? 1 : 0
+      const av = a[sortKey]
+      const bv = b[sortKey]
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      const cmp = collator.compare(String(av), String(bv))
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [trips, sortKey, sortDir])
@@ -380,8 +407,11 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
           return (
             <div
               key={trip.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(trip)}
-              className={`px-4 py-3 cursor-pointer transition-colors ${
+              onKeyDown={e => { if (e.key === 'Enter') onSelect(trip) }}
+              className={`px-4 py-3 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
                 isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-gray-50/60'
               }`}
             >
@@ -453,7 +483,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
       </div>
 
       {/* ── Desktop: table ────────────────────────────────────────── */}
-      <div data-tour="trip-table" className="hidden md:block overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm" style={{ minWidth: 1080 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
@@ -473,7 +503,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               <th className="px-2 py-2.5 w-6"></th>
             </tr>
           </thead>
-          <tbody data-tour="trip-slideover-btn">
+          <tbody>
             {sorted.map((trip, i) => {
               const isActive    = trip.id === selectedId
               const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
@@ -484,8 +514,14 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               return (
                 <tr
                   key={trip.id}
+                  tabIndex={0}
+                  aria-selected={isActive}
                   onClick={() => onSelect(trip)}
-                  className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
+                  onKeyDown={e => {
+                    // Enter abre el detalle solo si el foco está en la fila misma (no en un input de edición inline)
+                    if (e.key === 'Enter' && e.target === e.currentTarget) onSelect(trip)
+                  }}
+                  className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
                     isActive
                       ? 'bg-accent/5 border-l-2 border-l-accent'
                       : i % 2 === 1

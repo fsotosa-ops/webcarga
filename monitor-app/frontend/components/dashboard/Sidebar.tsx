@@ -58,7 +58,7 @@ export default function Sidebar({ role }: SidebarProps) {
   return (
     <>
       {/* ── Desktop sidebar (md+) ─────────────────────────────── */}
-      <aside data-tour="sidebar" className={`hidden md:flex ${collapsed ? 'w-[60px]' : 'w-[220px]'} bg-sidebar min-h-screen flex-col shrink-0 transition-[width] duration-200 ease-out`}>
+      <aside className={`hidden md:flex ${collapsed ? 'w-[60px]' : 'w-[220px]'} bg-sidebar min-h-screen flex-col shrink-0 transition-[width] duration-200 ease-out`}>
 
         {/* ── Header ── */}
         <div className={`h-14 border-b border-white/8 flex items-center shrink-0 ${collapsed ? 'justify-center px-0' : 'px-4 gap-3'}`}>

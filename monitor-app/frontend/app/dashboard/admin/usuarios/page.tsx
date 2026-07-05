@@ -117,7 +117,7 @@ export default async function AdminUsuariosPage() {
       </div>
 
       {/* ── Users table ───────────────────────────────────────────── */}
-      <div data-tour="admin-users" className="max-w-5xl mx-auto px-6 py-4 pb-8">
+      <div className="max-w-5xl mx-auto px-6 py-4 pb-8">
         <UsersTable
           users={profiles}
           currentUserId={user?.id ?? ''}

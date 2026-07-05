@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   X, Loader2, Building2, Copy, Check,
   Truck, User, Phone, Hash,
@@ -156,6 +156,37 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const [techDetailOpen, setTechDetailOpen]     = useState(false)
   const [unlinkErr, setUnlinkErr]               = useState<string | null>(null)
   const [unlinking, setUnlinking]               = useState(false)
+  const panelRef                                = useRef<HTMLDivElement>(null)
+
+  // Semántica de diálogo: Escape cierra, Tab queda atrapado en el panel, el foco vuelve al origen al cerrar
+  useEffect(() => {
+    if (!trip) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    panelRef.current?.focus()
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        if (!focusables.length) return
+        const first = focusables[0]
+        const last  = focusables[focusables.length - 1]
+        const active = document.activeElement
+        if (e.shiftKey && (active === first || active === panelRef.current)) {
+          e.preventDefault(); last.focus()
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault(); first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      previouslyFocused?.focus?.()
+    }
+  }, [trip?.id, onClose]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!trip) return
@@ -241,12 +272,18 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} aria-hidden="true" />
 
       {/* Panel */}
-      <div className="fixed inset-0 z-50 flex flex-col bg-white
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Detalle de viaje ${trip.source_system_trip_id ?? trip.tractor_plate ?? ''}`}
+        tabIndex={-1}
+        className="fixed inset-0 z-50 flex flex-col bg-white
                       md:inset-4
-                      md:rounded-2xl md:shadow-2xl overflow-hidden">
+                      md:rounded-2xl md:shadow-2xl overflow-hidden focus:outline-none">
 
         {/* ── Header ────────────────────────────────────────────────── */}
         <div className="bg-slate-900 px-4 py-3 md:px-6 md:py-4 shrink-0 space-y-2.5">

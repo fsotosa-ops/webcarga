@@ -50,6 +50,19 @@ describe('TripSlideOver — reordenado (Enfoque A)', () => {
     expect(screen.getByPlaceholderText('Novedad operativa…')).toBeInTheDocument()
   })
 
+  it('has dialog semantics (role, aria-modal)', () => {
+    render(<TripSlideOver trip={baseTrip} onClose={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+  })
+
+  it('closes when Escape is pressed', () => {
+    const onClose = vi.fn()
+    render(<TripSlideOver trip={baseTrip} onClose={onClose} onSaved={vi.fn()} meta={null} />)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('shows an inline "set manual override" affordance next to the status, not inside a hidden tab', () => {
     render(<TripSlideOver trip={baseTrip} onClose={vi.fn()} onSaved={vi.fn()} meta={null} />)
     expect(screen.getByText(/Establecer estado operativo/)).toBeInTheDocument()
