@@ -1,7 +1,8 @@
+import hashlib
 import json
 from datetime import date as _date
 from typing import Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
@@ -35,7 +36,9 @@ _TRIP_SELECT = """
     COALESCE(fl.driver_name_raw,
              t.fleet->>'driver_name_tms')         AS driver_name,
     t.fleet->>'driver_rut_tms'                    AS driver_rut,
-    fl.driver_phone                               AS driver_phone,
+    COALESCE(fl.driver_phone,
+             t.fleet->>'driver_phone')            AS driver_phone,
+    t.origin_tms,
     tp.business_name                              AS transporter,
     t.fleet->>'transporter_name_tms'              AS transporter_tms,
     t.origin,
@@ -195,8 +198,8 @@ _TMS_META = [
 
 _CSV_COLUMNS = [
     {"field": "planning_date",    "csv_key": "fecha_planificacion", "label": "Fecha planificación", "required": True,  "type": "date",       "example": "2026-05-29"},
-    {"field": "source_system_trip_id", "csv_key": "id_origen",     "label": "ID origen",           "required": False, "type": "text",       "example": "VJE-001"},
-    {"field": "source_system",   "csv_key": "fuente",              "label": "Fuente",              "required": False, "type": "tms_source", "example": "manual"},
+    {"field": "source_system_trip_id", "csv_key": "id_origen",     "label": "ID en sistema origen", "required": False, "type": "text",       "example": "VJE-001"},
+    {"field": "origin_tms",       "csv_key": "tms_origen",          "label": "TMS de origen",       "required": False, "type": "tms_source", "example": "qanalytics"},
     {"field": "client_name",      "csv_key": "cliente",             "label": "Cliente",             "required": False, "type": "text",       "example": "Walmart"},
     {"field": "tractor_plate",    "csv_key": "patente_tracto",      "label": "Patente tracto",      "required": False, "type": "text",       "example": "BGVS12"},
     {"field": "trailer_plate",    "csv_key": "patente_rampla",      "label": "Patente rampla",      "required": False, "type": "text",       "example": ""},
@@ -207,6 +210,7 @@ _CSV_COLUMNS = [
     {"field": "origin",           "csv_key": "origen",              "label": "Origen",              "required": False, "type": "text",       "example": "Santiago CD"},
     {"field": "cargo_type",       "csv_key": "tipo_carga",          "label": "Tipo carga",          "required": False, "type": "text",       "example": "Refrigerado"},
     {"field": "current_status",   "csv_key": "estado",              "label": "Estado",              "required": False, "type": "status",     "example": "ASIGNADO"},
+    {"field": "stops",            "csv_key": "destinos",            "label": "Destinos (separados por |)", "required": False, "type": "stops", "example": "Local Maipú@2026-05-29 09:00|Local Puente Alto"},
 ]
 
 
@@ -294,14 +298,25 @@ async def get_trips_meta(pool=Depends(get_pool)):
 
 # ── Trip creation (manual entry + bulk) ──────────────────────────────────────
 
+class TripStopCreate(BaseModel):
+    local:         str
+    planning_date: Optional[str] = None  # 'YYYY-MM-DD HH:mm' o ISO
+
+
 class TripCreateBody(BaseModel):
     planning_date:          _date
+    # Sistema de ORIGEN del viaje (no el canal de ingreso, que siempre es 'manual'):
+    # un TMS mapeado (permite reconciliación automática), un TMS no integrado
+    # (texto libre) o None (operador/generador sin TMS).
+    origin_tms:             Optional[str] = None
     source_system_trip_id:  Optional[str] = None
+    # Compat: clientes viejos mandan source_system — se IGNORA (siempre 'manual')
     source_system:          str           = 'manual'
     client_name:            Optional[str] = None
     origin:                 Optional[str] = None
     cargo_type:             Optional[str] = None
     current_status:         Optional[str] = None
+    stops:                  list[TripStopCreate] = []
     tractor_plate:          Optional[str] = None
     trailer_plate:          Optional[str] = None
     driver_name:            Optional[str] = None
@@ -311,37 +326,130 @@ class TripCreateBody(BaseModel):
     transporter_profile_id: Optional[str] = None  # si se selecciona desde Empresas
 
 
-async def _insert_trip(conn, body: TripCreateBody) -> str:
+MAPPED_TMS_IDS = {t["id"] for t in _TMS_META if t["id"] != "manual"}
+
+# Keys del TripStop del pipeline (app_trips.sql) — las paradas manuales llevan
+# el mismo shape con null en lo que no aplica
+_STOP_NULL_KEYS = [
+    "destination_city", "destination_region", "on_time_status", "milestone_status",
+    "s2s", "temperature", "arrival_date", "departure_date", "departure_date_prog",
+    "gps_arrival_date", "gps_departure_date", "unload_start", "unload_end",
+]
+
+
+def _manual_trip_id(body: TripCreateBody) -> str:
+    """Id del viaje manual. Si el origen es un TMS mapeado y hay id externo +
+    cliente, usa la MISMA fórmula canónica del pipeline
+    (md5(tms|cliente|trip_id) como uuid, ver stg_*_trips) — así, cuando el TMS
+    reporte ese viaje, el merge de dbt matchea el id y lo reconcilia
+    automáticamente. En cualquier otro caso, uuid aleatorio."""
+    if (
+        body.origin_tms in MAPPED_TMS_IDS
+        and body.source_system_trip_id
+        and body.client_name
+    ):
+        digest = hashlib.md5(
+            f"{body.origin_tms}|{body.client_name.strip().lower()}|{body.source_system_trip_id.strip()}".encode()
+        ).hexdigest()
+        return str(UUID(digest))
+    return str(uuid4())
+
+
+def _build_manual_stops(stops: list[TripStopCreate], trip_id: str) -> str:
+    out = []
+    for i, s in enumerate(stops):
+        stop = {
+            "stop_id":       hashlib.md5(f"{trip_id}{s.local}{i}".encode()).hexdigest(),
+            "local":         s.local,
+            "planning_date": s.planning_date,
+            **{k: None for k in _STOP_NULL_KEYS},
+        }
+        out.append(stop)
+    return json.dumps(out)
+
+
+async def _valid_status_ids(conn) -> set[str]:
+    rows = await conn.fetch("SELECT id FROM app.trip_statuses WHERE active = true")
+    return {r["id"] for r in rows}
+
+
+def _validate_create_body(body: TripCreateBody, valid_statuses: set[str]) -> None:
+    if body.current_status and body.current_status not in valid_statuses:
+        raise HTTPException(
+            422,
+            f"Estado inválido: '{body.current_status}'. Válidos: {', '.join(sorted(valid_statuses))}",
+        )
+    stops_sin_nombre = [s for s in body.stops if not s.local.strip()]
+    if stops_sin_nombre:
+        raise HTTPException(422, "Cada destino debe tener un nombre")
+
+
+async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: set[str]) -> str:
+    """Crea un viaje manual: fuente de verdad en app.trips_manual (sobrevive al
+    full-refresh de dbt vía la rama UNION del modelo) + espejo inmediato en
+    app.trips (visibilidad sin esperar al pipeline). Mismo id en ambas."""
+    _validate_create_body(body, valid_statuses)
+
+    trip_id = _manual_trip_id(body)
+
+    # Si el id canónico ya existe, el viaje ya está en el sistema
+    existing_source = await conn.fetchval(
+        "SELECT source_system FROM app.trips WHERE id = $1", trip_id
+    )
+    if existing_source:
+        raise HTTPException(
+            409,
+            f"El viaje {body.source_system_trip_id} de {body.client_name} ya existe "
+            f"(ingresado por {existing_source})",
+        )
+
     fleet = {k: v for k, v in {
         "driver_name_tms":      body.driver_name,
         "driver_rut_tms":       body.driver_rut,
         "transporter_name_tms": body.transporter_name,
         "tractor_plate":        body.tractor_plate,
         "trailer_plate":        body.trailer_plate,
+        "driver_phone":         body.driver_phone,
     }.items() if v}
-    row = await conn.fetchrow(
+    fleet_json = json.dumps(fleet)
+    stops_json = _build_manual_stops(body.stops, trip_id)
+
+    try:
+        await conn.execute(
+            """
+            INSERT INTO app.trips_manual (
+                id, origin_tms, source_system_trip_id, client_name, planning_date,
+                origin, cargo_type, trip_status, fleet, stops, created_by
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::uuid)
+            """,
+            trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
+            body.planning_date, body.origin, body.cargo_type, body.current_status,
+            fleet_json, stops_json, user["sub"],
+        )
+    except Exception as e:
+        if "trips_manual_dedup_idx" in str(e):
+            raise HTTPException(
+                409,
+                f"Ya registraste el viaje {body.source_system_trip_id} de "
+                f"{body.client_name or 'este cliente'}",
+            )
+        raise
+
+    await conn.execute(
         """
         INSERT INTO app.trips (
-            source_system, source_system_trip_id, client_name, planning_date,
-            origin, cargo_type, trip_status,
-            fleet, stops,
-            status_reported_at, pipeline_updated_at,
+            id, source_system, origin_tms, source_system_trip_id, client_name,
+            planning_date, origin, cargo_type, trip_status, fleet, stops,
+            activo, trabajando, asignado, primera_vuelta,
+            status_reported_at, pipeline_updated_at, created_at, updated_at,
             manually_edited_fields
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'[]'::jsonb,NOW(),NOW(),$9)
-        RETURNING id::text
+        ) VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,
+                  true,false,false,false,NOW(),NOW(),NOW(),NOW(),'{}')
         """,
-        body.source_system,
-        body.source_system_trip_id,
-        body.client_name,
-        body.planning_date,
-        body.origin,
-        body.cargo_type,
-        body.current_status,
-        json.dumps(fleet),
-        ['tractor_plate', 'trailer_plate', 'driver_name',
-         'origin', 'cargo_type', 'trip_status'],
+        trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
+        body.planning_date, body.origin, body.cargo_type, body.current_status,
+        fleet_json, stops_json,
     )
-    trip_id = row["id"]
 
     # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
     if body.transporter_profile_id:
@@ -350,7 +458,7 @@ async def _insert_trip(conn, body: TripCreateBody) -> str:
             INSERT INTO app.trip_fleet_links
               (trip_id, transporter_id, tractor_plate, trailer_plate,
                driver_name_raw, driver_phone, link_source, created_by)
-            VALUES ($1,$2,$3,$4,$5,$6,'manual',NULL)
+            VALUES ($1,$2,$3,$4,$5,$6,'manual',$7::uuid)
             RETURNING id
             """,
             trip_id,
@@ -359,13 +467,46 @@ async def _insert_trip(conn, body: TripCreateBody) -> str:
             body.trailer_plate,
             body.driver_name,
             body.driver_phone,
+            user["sub"],
         )
         await conn.execute(
             "UPDATE app.trips SET fleet_link_id = $1 WHERE id = $2",
             link_id, trip_id,
         )
+        await conn.execute(
+            "UPDATE app.trips_manual SET fleet_link_id = $1 WHERE id = $2",
+            link_id, trip_id,
+        )
 
     return trip_id
+
+
+async def _mirror_manual_trip(pool, trip_id: str) -> None:
+    """Espeja los campos editables de un viaje manual desde app.trips hacia
+    app.trips_manual, para que el rebuild de dbt conserve las ediciones del
+    operador. No-op para viajes TMS (sin fila en trips_manual)."""
+    try:
+        await pool.execute(
+            """
+            UPDATE app.trips_manual m SET
+                trip_status            = t.trip_status,
+                estado_manual          = t.estado_manual,
+                activo                 = COALESCE(t.activo, m.activo),
+                trabajando             = COALESCE(t.trabajando, m.trabajando),
+                asignado               = COALESCE(t.asignado, m.asignado),
+                primera_vuelta         = COALESCE(t.primera_vuelta, m.primera_vuelta),
+                observaciones          = t.observaciones,
+                comentarios            = t.comentarios,
+                fleet_link_id          = t.fleet_link_id,
+                manually_edited_fields = COALESCE(t.manually_edited_fields, '{}'),
+                updated_at             = NOW()
+            FROM app.trips t
+            WHERE m.id = t.id AND m.id = $1
+            """,
+            trip_id,
+        )
+    except Exception:
+        pass  # best-effort: nunca romper la operación principal
 
 
 @router.post("")
@@ -374,7 +515,8 @@ async def create_trip(
     pool=Depends(get_pool),
     user=Depends(require_editor),
 ):
-    trip_id = await _insert_trip(pool, body)
+    valid_statuses = await _valid_status_ids(pool)
+    trip_id = await _insert_trip(pool, body, user, valid_statuses)
     await _log_system_note(pool, trip_id, user, "Creó el viaje manualmente")
     return await get_trip(trip_id, pool, user)
 
@@ -390,13 +532,48 @@ async def bulk_create_trips(
     if len(body) > 500:
         raise HTTPException(422, "Máximo 500 viajes por carga")
 
+    valid_statuses = await _valid_status_ids(pool)
+
+    # Validar TODAS las filas antes de tocar la base — errores con índice de fila
+    errors: list[dict] = []
+    seen_ids: dict[str, int] = {}
+    for i, trip in enumerate(body):
+        try:
+            _validate_create_body(trip, valid_statuses)
+        except HTTPException as e:
+            errors.append({"row": i + 1, "error": str(e.detail)})
+            continue
+        tid = _manual_trip_id(trip)
+        if tid in seen_ids:
+            errors.append({
+                "row": i + 1,
+                "error": f"Duplicado dentro del archivo (misma fila que la #{seen_ids[tid]})",
+            })
+        else:
+            seen_ids[tid] = i + 1
+    if errors:
+        raise HTTPException(422, {"message": "Filas con errores — no se importó nada", "errors": errors})
+
     ids: list[str] = []
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            for trip in body:
-                trip_id = await _insert_trip(conn, trip)
-                ids.append(trip_id)
-    return {"created": len(ids), "ids": ids}
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for i, trip in enumerate(body):
+                    try:
+                        trip_id = await _insert_trip(conn, trip, user, valid_statuses)
+                    except HTTPException as e:
+                        # 409 de duplicado contra la base → reportar la fila culpable
+                        raise HTTPException(
+                            e.status_code,
+                            {"message": "No se importó nada", "errors": [{"row": i + 1, "error": str(e.detail)}]},
+                        )
+                    ids.append(trip_id)
+    except HTTPException:
+        raise
+
+    for trip_id in ids:
+        await _log_system_note(pool, trip_id, user, "Creó el viaje vía carga masiva (CSV)")
+    return {"created": len(ids), "ids": ids, "errors": []}
 
 
 @router.get("/{trip_id}")
@@ -538,6 +715,7 @@ async def patch_trip(
             f"Estableció estado operativo manual: {data['estado_manual']}",
         )
 
+    await _mirror_manual_trip(pool, trip_id)
     return await get_trip(trip_id, pool, user)
 
 
@@ -592,6 +770,7 @@ async def assign_fleet_link(
         f"Vinculó empresa transportista: {transporter_name or transporter_id}",
     )
 
+    await _mirror_manual_trip(pool, trip_id)
     return await get_trip(trip_id, pool, user)
 
 
@@ -612,6 +791,7 @@ async def remove_fleet_link(
             trip_id,
         )
         await _log_system_note(pool, trip_id, user, "Desvinculó la empresa transportista")
+        await _mirror_manual_trip(pool, trip_id)
     return {"ok": True}
 
 
@@ -639,6 +819,7 @@ async def reset_field(
         await _log_system_note(
             pool, trip_id, user, "Revirtió el estado manual al valor del TMS"
         )
+    await _mirror_manual_trip(pool, trip_id)
     return {"ok": True, "field": field}
 
 
