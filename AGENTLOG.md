@@ -336,11 +336,39 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 ---
 
+### 2026-07-05 — UX/UI world-class del Diario: análisis corregido de Gemini + 5 fases implementadas
+
+**Objetivo:** el usuario pidió llevar la UX/UI de monitor-app a nivel world-class usando `analisis-gemini-frontend.md` como base, reconsiderado contra el código real. Durante la planificación pidió además inventariar inconsistencias transversales y **eliminar el tour de onboarding** (react-joyride).
+
+**Plan aprobado (análisis completo + roadmap):** `/Users/usuario/.claude/plans/necesito-que-analices-la-twinkly-prism.md`
+
+**Hallazgo central del análisis:** el documento de Gemini auditó en gran parte **código muerto** — `DiarioTable.tsx` (único uso de TanStack Table), `MapaViajes`, `KPIGrid`/`KPICard` y `ManualFieldCell` no estaban montados en ninguna ruta (restos legacy de `gold.v_diario_trips`). Varias de sus recomendaciones ya estaban implementadas (smart views = chips + grupos custom; edición inline; slideover sin tabs) y una ya se había probado y rechazado en producción (master-detail row = `TripRowExpanded`). Omitió los problemas reales: errores silenciados en celdas inline, 0 ARIA, sin debounce, sort lexicográfico, sin auto-refresh, ~28 useState en page.tsx.
+
+#### Qué se implementó (5 commits en `dev`, local, NO pusheados)
+
+| Commit | Fase |
+|--------|------|
+| `9a74480` | **F0**: borra 6 componentes huérfanos + `lib/geocoding.ts` + tour completo (`components/tour/`, `hooks/useTour.ts`, `TourProvider` en layout, `TourProgressButton`, 8 anclas `data-tour`); `npm uninstall leaflet react-leaflet @types/leaflet recharts @tanstack/react-table react-joyride`. Tipos `DiarioTrip`/`DiarioManualFields` se conservan (los usan las rutas legacy rotas de conductores/transportistas, iniciativa aparte) |
+| `0f9d0ab` | **F1**: errores inline visibles en `ConductorCell`/`PhoneTagCell`/`PlateCell` (antes `catch {}` silencioso; ahora patrón IndicatorDots, edición persiste para reintentar); debounce 300ms (`hooks/useDebouncedValue`) en búsqueda y cliente; refetch atenúa la tabla en vez de spinner-borra-todo; sort con `Intl.Collator numeric` (nulls al final); `TripSlideOver` con `role=dialog`/`aria-modal`/Escape/focus trap/retorno de foco; filas focuseables con Enter |
+| `be4466f` | **F2**: TanStack Query — `app/dashboard/providers.tsx`, `hooks/useTrips` (polling 60s SOLO "En Curso", `keepPreviousData`, refetch on focus), `hooks/useDiarioFilters` (reducer, reemplaza ~15 useState), indicador "Actualizado hace X", mutaciones vía `setQueriesData`/`invalidateQueries`, glow ámbar en filas cuyo `status_reported_at` cambió. **Cero cambios en DB/backend** (decisión: NO Supabase Realtime — frágil ante `dbt --full-refresh` que recrea `app.trips`) |
+| `2c4daaf` | **F3**: Patente sticky izquierda, Estado+Indicadores sticky derecha (zebra sólida + `bg-inherit`, chevron integrado en Indicadores, columnas reordenadas: Patente primero, Temp→Estado→Indicadores al final); KPIs accionables en "En Curso" (`lib/utils/kpis`: OFF TIME / sin reporte >2h / temp fuera de rango — cada tarjeta filtra con un clic, client-side sobre data cargada); ↑/↓ mueven foco entre filas |
+| `cfed838` | **F4**: `components/ui/StatusBadge` (pill de estado único, 3 sitios migrados); `lib/api/client.ts` (apiFetch/getToken compartido + Supabase singleton, elimina 5x copy-paste en trips/config/filterGroups/transporters/users); campana decorativa del Topbar eliminada; fuente Poppins eliminada |
+
+**Verificación:** 111/111 tests frontend (23 nuevos: debounce, sort, error inline, teclado, sticky, reducer de filtros, useTrips con keepPreviousData, KPIs), `tsc --noEmit` limpio, `npm run build` exitoso en cada fase. **Smoke visual en navegador NO realizado**: la sesión de auth del dev server sigue expirada (redirige a /login) y no hay credenciales — mismo bloqueo que la ronda anterior.
+
+**Decisiones de arquitectura:**
+- Polling 60s en vez de Supabase Realtime: el patrón recurrente de `dbt --full-refresh` (ya borró RLS/PK/índices 4 veces) también rompería la publicación realtime; polling da frescura equivalente al batch del pipeline sin tocar la DB (restricción explícita del usuario: "que no rompa nada" de la DB/triggers).
+- Virtualización descartada (200 filas máx no la justifica); master-detail row descartada (ya rechazada por el usuario en producción).
+- Rutas legacy rotas `transportistas/[slug]` y `conductores/[id]` (dependen de `gold.v_diario_trips` inexistente) NO tocadas — pertenecen a la iniciativa conductores/transportistas.
+- Se quitó la inyección de token client-side **NO** — se mantuvo (el BFF re-inyecta, redundante pero funcional; cambiarlo requiere smoke test que no se pudo hacer).
+
+---
+
 ## Próximo paso exacto
 
-**Falta pushear a `dev`:** el rango de esta sesión (`ce3cc48..6a28f3e`, manejo de fechas por TMS) está en local, no pusheado — confirmar con el usuario antes de pushear.
+**Pusheado a `dev` (2026-07-05, autorizado por el usuario):** incluye el rango pendiente anterior (fechas por TMS) + las 5 fases del rediseño UX/UI world-class.
 
-**Recomendado, no bloqueante:** smoke test visual manual de las señales ETA/"hace X"/tag TMS en `TripTable`/`TripCard` la próxima vez que haya una sesión de auth disponible (esta ronda no tuvo verificación de navegador).
+**Recomendado, no bloqueante:** smoke test visual manual la próxima vez que haya una sesión de auth disponible (dos rondas seguidas sin verificación de navegador): señales ETA/"hace X"/tag TMS, y de esta ronda: sticky columns al scrollear horizontal, KPIs accionables filtrando, polling actualizando "Actualizado hace X", glow ámbar, Escape cerrando el detalle, error visible al fallar una edición inline.
 
 **Del rediseño de Diario, quedan fuera de esta ronda (documentado como "fuera de alcance" en las specs de rediseño):**
 - El cambio en Mage que puebla `TripStop.departure_date_prog` desde `stg_wingsuite_trips` — fuera de este repo, responsabilidad del usuario. Hoy el campo existe en el tipo pero siempre es `null` en producción.
