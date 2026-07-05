@@ -10,14 +10,15 @@ interface Group {
 }
 
 interface Props {
-  trips:    Trip[]
-  groups:   Group[]
-  meta?:    TripsMeta | null
-  onSaved:  (t: Trip) => void
-  onSelect: (t: Trip) => void
+  trips:       Trip[]
+  groups:      Group[]
+  meta?:       TripsMeta | null
+  onSaved:     (t: Trip) => void
+  onSelect:    (t: Trip) => void
+  updatedIds?: Set<string>
 }
 
-export function TripBoard({ trips, groups, meta, onSaved, onSelect }: Props) {
+export function TripBoard({ trips, groups, meta, onSaved, onSelect, updatedIds }: Props) {
   function statusOf(trip: Trip): string {
     return trip.estado_manual ?? trip.current_status ?? ''
   }
@@ -41,7 +42,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect }: Props) {
             <span className="text-[10px] text-gray-400">{g.trips.length}</span>
           </div>
           {g.trips.map(trip => (
-            <TripCard key={trip.id} trip={trip} meta={meta} onSaved={onSaved} onSelect={onSelect} />
+            <TripCard key={trip.id} trip={trip} meta={meta} onSaved={onSaved} onSelect={onSelect} updated={updatedIds?.has(trip.id)} />
           ))}
           {g.trips.length === 0 && (
             <p className="text-[10px] text-gray-300 text-center py-4">Sin viajes</p>
@@ -55,7 +56,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect }: Props) {
             <span className="text-[10px] text-gray-400">{ungrouped.length}</span>
           </div>
           {ungrouped.map(trip => (
-            <TripCard key={trip.id} trip={trip} meta={meta} onSaved={onSaved} onSelect={onSelect} />
+            <TripCard key={trip.id} trip={trip} meta={meta} onSaved={onSaved} onSelect={onSelect} updated={updatedIds?.has(trip.id)} />
           ))}
         </div>
       )}

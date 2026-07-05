@@ -71,6 +71,7 @@ export const tripsApi = {
     primera_vuelta?: boolean
     tms?:            string
     client?:         string
+    sort?:           'default' | 'status_reported_at_asc' | 'status_reported_at_desc'
     page?:           number
     limit?:          number
   }) => {
@@ -83,6 +84,7 @@ export const tripsApi = {
     if (params?.status)          qs.set('status',          params.status)
     if (params?.tms)             qs.set('tms',             params.tms)
     if (params?.client)          qs.set('client',          params.client)
+    if (params?.sort)            qs.set('sort',            params.sort)
     if (params?.activo         != null) qs.set('activo',         String(params.activo))
     if (params?.trabajando     != null) qs.set('trabajando',     String(params.trabajando))
     if (params?.asignado       != null) qs.set('asignado',       String(params.asignado))

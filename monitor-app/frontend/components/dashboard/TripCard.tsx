@@ -13,9 +13,11 @@ interface Props {
   meta?:    TripsMeta | null
   onSaved:  (t: Trip) => void
   onSelect: (t: Trip) => void
+  /** true si el último reporte TMS de este viaje cambió en el refetch más reciente */
+  updated?: boolean
 }
 
-export function TripCard({ trip, meta, onSaved, onSelect }: Props) {
+export function TripCard({ trip, meta, onSaved, onSelect, updated }: Props) {
   const temp       = getLatestTemp(trip.stops ?? [])
   const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
   const compliance = stopComplianceSummary(trip.stops ?? [])
@@ -27,7 +29,9 @@ export function TripCard({ trip, meta, onSaved, onSelect }: Props) {
   return (
     <div
       onClick={() => onSelect(trip)}
-      className={`bg-white border rounded-lg p-2.5 mb-2 cursor-pointer hover:shadow-sm transition-shadow ${
+      className={`border rounded-lg p-2.5 mb-2 cursor-pointer hover:shadow-sm transition-all ${
+        updated ? 'bg-amber-50' : 'bg-white'
+      } ${
         compliance === 'warn' ? 'border-l-[3px] border-l-red-500 border-y-border border-r-border' : 'border-border'
       }`}
     >

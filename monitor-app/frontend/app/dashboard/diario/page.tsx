@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, Upload } from 'lucide-react'
-import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
+import type { TripListResponse } from '@/lib/api/trips'
 import type { Trip, ComplianceAlertSummary, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripBoard } from '@/components/dashboard/TripBoard'
@@ -15,11 +16,11 @@ import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { TripCreateSlideOver } from '@/components/dashboard/TripCreateSlideOver'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useTrips, type TripListParams } from '@/hooks/useTrips'
+import { useDiarioFilters, countActiveFilters, type FlagField } from '@/hooks/useDiarioFilters'
+import { formatRelativeTime } from '@/lib/utils/datetime'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
-
-type Tab        = 'en_curso' | 'historial'
-type BoolFilter = boolean | null
 
 const HISTORIAL_LIMIT = 100
 
@@ -48,12 +49,12 @@ const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
   slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
 }
 
-const FLAG_CHIPS = [
-  { label: 'Activo',     on: 'bg-blue-500   border-blue-500   text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-blue-200   hover:text-blue-600'   },
-  { label: 'Trabajando', on: 'bg-green-500  border-green-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-green-200  hover:text-green-600'  },
-  { label: 'Asignado',   on: 'bg-violet-500 border-violet-500 text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-violet-200 hover:text-violet-600' },
-  { label: '1ra Vuelta', on: 'bg-amber-500  border-amber-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-amber-200  hover:text-amber-600'  },
-] as const
+const FLAG_CHIPS: { label: string; field: FlagField; on: string; off: string }[] = [
+  { label: 'Activo',     field: 'fActivo',        on: 'bg-blue-500   border-blue-500   text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-blue-200   hover:text-blue-600'   },
+  { label: 'Trabajando', field: 'fTrabajando',    on: 'bg-green-500  border-green-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-green-200  hover:text-green-600'  },
+  { label: 'Asignado',   field: 'fAsignado',      on: 'bg-violet-500 border-violet-500 text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-violet-200 hover:text-violet-600' },
+  { label: '1ra Vuelta', field: 'fPrimeraVuelta', on: 'bg-amber-500  border-amber-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-amber-200  hover:text-amber-600'  },
+]
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
@@ -71,46 +72,46 @@ function shiftDay(iso: string, delta: number) {
   return d.toISOString().split('T')[0]
 }
 
+// Se re-renderiza solo (tick) para que "hace X" no quede congelado entre polls
+function LastUpdated({ updatedAt, fetching }: { updatedAt: number; fetching: boolean }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick(x => x + 1), 15_000)
+    return () => clearInterval(t)
+  }, [])
+  if (!updatedAt) return null
+  return (
+    <span className="text-[10px] text-gray-300 whitespace-nowrap">
+      {fetching
+        ? 'Actualizando…'
+        : `Actualizado ${formatRelativeTime(new Date(updatedAt).toISOString())}`}
+    </span>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DiarioPage() {
-  const [tab,            setTab]            = useState<Tab>('en_curso')
-  const [fecha,          setFecha]          = useState(todayISO)
-  const [q,              setQ]              = useState('')
-  const [fechaDesde,     setFechaDesde]     = useState('')
-  const [fechaHasta,     setFechaHasta]     = useState('')
-  // Active group: 'default:id' or 'custom:id'
-  const [activeGroup,    setActiveGroup]    = useState<string | null>(null)
-  const [fActivo,        setFActivo]        = useState<BoolFilter>(null)
-  const [fTrabajando,    setFTrabajando]    = useState<BoolFilter>(null)
-  const [fAsignado,      setFAsignado]      = useState<BoolFilter>(null)
-  const [fPrimeraVuelta, setFPrimeraVuelta] = useState<BoolFilter>(null)
-  const [fTms,           setFTms]           = useState<string[]>([])
-  const [fClient,        setFClient]        = useState('')
-  const [page,           setPage]           = useState(1)
+  const [f, dispatch] = useDiarioFilters(todayISO())
 
-  const [trips,          setTrips]          = useState<Trip[]>([])
-  const [total,          setTotal]          = useState(0)
-  const [loading,        setLoading]        = useState(true)
-  const [error,          setError]          = useState<string | null>(null)
-  const [selected,            setSelected]            = useState<Trip | null>(null)
-  const [alertSummary,        setAlertSummary]        = useState<ComplianceAlertSummary | null>(null)
-  const [tripsMeta,           setTripsMeta]           = useState<TripsMeta | null>(null)
-  const [showCreate,          setShowCreate]          = useState(false)
-  const [showBulkUpload,      setShowBulkUpload]      = useState(false)
-  const [viewMode,            setViewMode]            = useState<ViewMode>('tabla')
+  const [selected,       setSelected]       = useState<Trip | null>(null)
+  const [alertSummary,   setAlertSummary]   = useState<ComplianceAlertSummary | null>(null)
+  const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
+  const [showCreate,     setShowCreate]     = useState(false)
+  const [showBulkUpload, setShowBulkUpload] = useState(false)
+  const [viewMode,       setViewMode]       = useState<ViewMode>('tabla')
 
   // Custom groups
-  const [customGroups,   setCustomGroups]   = useState<FilterGroup[]>([])
-  const [showBuilder,    setShowBuilder]    = useState(false)
-  const [editingGroup,   setEditingGroup]   = useState<FilterGroup | undefined>(undefined)
+  const [customGroups,      setCustomGroups]      = useState<FilterGroup[]>([])
+  const [showBuilder,       setShowBuilder]       = useState(false)
+  const [editingGroup,      setEditingGroup]      = useState<FilterGroup | undefined>(undefined)
   const [prefillFromFilter, setPrefillFromFilter] = useState(false)
 
   // Debounce de inputs de texto: no disparar un fetch por cada tecla
-  const qDebounced       = useDebouncedValue(q, 300)
-  const clientDebounced  = useDebouncedValue(fClient, 300)
+  const qDebounced      = useDebouncedValue(f.q, 300)
+  const clientDebounced = useDebouncedValue(f.fClient, 300)
 
   const today   = todayISO()
-  const isToday = fecha === today
+  const isToday = f.fecha === today
 
   // Derive default filter groups from meta.statuses (group membership comes from DB)
   const defaultGroups = useMemo(() => {
@@ -132,69 +133,58 @@ export default function DiarioPage() {
 
   // Resolve active group statuses
   const statusParam = (() => {
-    if (!activeGroup) return ''
-    if (activeGroup.startsWith('default:')) {
-      const id = activeGroup.slice(8)
+    if (!f.activeGroup) return ''
+    if (f.activeGroup.startsWith('default:')) {
+      const id = f.activeGroup.slice(8)
       return defaultGroups.find(g => g.id === id)?.statuses.join(',') ?? ''
     }
     // custom:uuid
-    const id = activeGroup.slice(7)
+    const id = f.activeGroup.slice(7)
     return customGroups.find(g => g.id === id)?.statuses.join(',') ?? ''
   })()
 
-  const activeCount = [
-    q, fechaDesde, fechaHasta, activeGroup,
-    fActivo, fTrabajando, fAsignado, fPrimeraVuelta,
-    fClient,
-  ].filter(v => v !== '' && v !== null).length + fTms.length
+  const activeCount = countActiveFilters(f)
 
-  function clearFilters() {
-    setQ(''); setFechaDesde(''); setFechaHasta('')
-    setActiveGroup(null)
-    setFActivo(null); setFTrabajando(null); setFAsignado(null); setFPrimeraVuelta(null)
-    setFTms([]); setFClient('')
-    setPage(1)
+  // ── Data: TanStack Query + polling (60s, solo En Curso) ─────────────────────
+  const boolParams = {
+    ...(f.fActivo        != null ? { activo:         f.fActivo }        : {}),
+    ...(f.fTrabajando    != null ? { trabajando:     f.fTrabajando }    : {}),
+    ...(f.fAsignado      != null ? { asignado:       f.fAsignado }      : {}),
+    ...(f.fPrimeraVuelta != null ? { primera_vuelta: f.fPrimeraVuelta } : {}),
   }
+  const params: TripListParams =
+    f.tab === 'en_curso'
+      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), client: clientDebounced, limit: 200, ...boolParams }
+      : { view: 'historial', q: qDebounced, fecha_desde: f.fechaDesde, fecha_hasta: f.fechaHasta,
+          status: statusParam, tms: f.fTms.join(','), client: clientDebounced, limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
 
-  function toggleDefaultGroup(id: string) {
-    const key = `default:${id}`
-    setActiveGroup(prev => (prev === key ? null : key))
-    setPage(1)
-  }
+  const queryClient = useQueryClient()
+  const tripsQuery  = useTrips(params, { poll: f.tab === 'en_curso' })
 
-  function toggleCustomGroup(id: string) {
-    const key = `custom:${id}`
-    setActiveGroup(prev => (prev === key ? null : key))
-    setPage(1)
-  }
+  const trips    = tripsQuery.data?.data ?? []
+  const total    = tripsQuery.data?.count ?? 0
+  const loading  = tripsQuery.isPending
+  const fetching = tripsQuery.isFetching
+  const error    = tripsQuery.error ? (tripsQuery.error instanceof Error ? tripsQuery.error.message : 'Error cargando viajes') : null
 
-  function toggleFlag(val: BoolFilter, setter: React.Dispatch<React.SetStateAction<BoolFilter>>) {
-    setter(prev => (prev === true ? null : true))
-    setPage(1)
-  }
-
-  const load = useCallback(() => {
-    setLoading(true); setError(null)
-    const boolParams = {
-      ...(fActivo        != null ? { activo:         fActivo }        : {}),
-      ...(fTrabajando    != null ? { trabajando:     fTrabajando }    : {}),
-      ...(fAsignado      != null ? { asignado:       fAsignado }      : {}),
-      ...(fPrimeraVuelta != null ? { primera_vuelta: fPrimeraVuelta } : {}),
+  // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
+  const prevReportedRef = useRef<Map<string, string | null>>(new Map())
+  const [updatedIds, setUpdatedIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!trips.length) return
+    const prev = prevReportedRef.current
+    const changed = new Set<string>()
+    for (const t of trips) {
+      const before = prev.get(t.id)
+      if (before !== undefined && before !== t.status_reported_at) changed.add(t.id)
     }
-    const tmsParam    = fTms.join(',')
-    const params =
-      tab === 'en_curso'
-        ? { fecha, view: 'en_curso' as const, q: qDebounced, status: statusParam, tms: tmsParam, client: clientDebounced, limit: 200, ...boolParams }
-        : { view: 'historial' as const, q: qDebounced, fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
-            status: statusParam, tms: tmsParam, client: clientDebounced, limit: HISTORIAL_LIMIT, page, ...boolParams }
-
-    tripsApi.list(params)
-      .then(res => { setTrips(res.data); setTotal(res.count) })
-      .catch(e => setError(e instanceof Error ? e.message : 'Error cargando viajes'))
-      .finally(() => setLoading(false))
-  }, [tab, fecha, qDebounced, fechaDesde, fechaHasta, statusParam, fActivo, fTrabajando, fAsignado, fPrimeraVuelta, fTms, clientDebounced, page])
-
-  useEffect(() => { load() }, [load])
+    prevReportedRef.current = new Map(trips.map(t => [t.id, t.status_reported_at]))
+    if (changed.size) {
+      setUpdatedIds(changed)
+      const timer = setTimeout(() => setUpdatedIds(new Set()), 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [trips])
 
   useEffect(() => {
     transportersApi.getComplianceAlertSummary().then(setAlertSummary).catch(console.error)
@@ -214,16 +204,18 @@ export default function DiarioPage() {
 
   function handleSaved(updated: Trip) {
     setSelected(updated)
-    setTrips(prev => prev.map(t => (t.id === updated.id ? updated : t)))
+    // Actualiza el viaje en todas las listas cacheadas — sin refetch
+    queryClient.setQueriesData<TripListResponse>({ queryKey: ['trips'] }, old =>
+      old ? { ...old, data: old.data.map(t => (t.id === updated.id ? updated : t)) } : old)
   }
 
   function handleCreated(newTrip: Trip) {
-    setTrips(prev => [newTrip, ...prev])
     setSelected(newTrip)
+    queryClient.invalidateQueries({ queryKey: ['trips'] })
   }
 
   function handleBulkImported(count: number) {
-    if (count > 0) load()  // reload para traer los nuevos viajes
+    if (count > 0) queryClient.invalidateQueries({ queryKey: ['trips'] })
   }
 
   function handleGroupSaved(group: FilterGroup) {
@@ -235,7 +227,7 @@ export default function DiarioPage() {
 
   function handleGroupDeleted(id: string) {
     setCustomGroups(prev => prev.filter(g => g.id !== id))
-    if (activeGroup === `custom:${id}`) setActiveGroup(null)
+    if (f.activeGroup === `custom:${id}`) dispatch({ type: 'patch', patch: { activeGroup: null } })
   }
 
   const totalPages = Math.max(1, Math.ceil(total / HISTORIAL_LIMIT))
@@ -261,25 +253,28 @@ export default function DiarioPage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="font-mulish font-bold text-xl text-text-primary capitalize">
-                {tab === 'en_curso' ? fmtDate(fecha) : 'Base Histórica'}
+                {f.tab === 'en_curso' ? fmtDate(f.fecha) : 'Base Histórica'}
               </h1>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {loading ? '…' : `${total.toLocaleString('es-CL')} viaje${total !== 1 ? 's' : ''}`}
+              <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                <span>{loading ? '…' : `${total.toLocaleString('es-CL')} viaje${total !== 1 ? 's' : ''}`}</span>
+                {f.tab === 'en_curso' && (
+                  <LastUpdated updatedAt={tripsQuery.dataUpdatedAt} fetching={fetching && !loading} />
+                )}
               </p>
             </div>
 
-            {tab === 'en_curso' && (
+            {f.tab === 'en_curso' && (
               <div className="flex items-center bg-white border border-border rounded-lg p-0.5 shrink-0">
-                <button onClick={() => setFecha(shiftDay(fecha, -1))} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors text-gray-500">
+                <button onClick={() => dispatch({ type: 'patch', patch: { fecha: shiftDay(f.fecha, -1) } })} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors text-gray-500">
                   <ChevronLeft size={16} />
                 </button>
                 {!isToday && (
-                  <button onClick={() => setFecha(today)} className="px-2.5 py-1 text-xs font-semibold text-accent hover:bg-accent/5 rounded-md transition-colors">
+                  <button onClick={() => dispatch({ type: 'patch', patch: { fecha: today } })} className="px-2.5 py-1 text-xs font-semibold text-accent hover:bg-accent/5 rounded-md transition-colors">
                     Hoy
                   </button>
                 )}
                 <button
-                  onClick={() => { if (!isToday) setFecha(shiftDay(fecha, 1)) }}
+                  onClick={() => { if (!isToday) dispatch({ type: 'patch', patch: { fecha: shiftDay(f.fecha, 1) } }) }}
                   disabled={isToday}
                   className="p-1.5 rounded-md transition-colors text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed hover:enabled:bg-gray-100"
                   title={isToday ? 'No hay datos de días futuros' : 'Día siguiente'}
@@ -298,9 +293,9 @@ export default function DiarioPage() {
             ] as const).map(t => (
               <button
                 key={t.key}
-                onClick={() => { setTab(t.key); setPage(1) }}
+                onClick={() => dispatch({ type: 'patch', patch: { tab: t.key } })}
                 className={`pb-2.5 px-1 mr-6 text-sm font-medium border-b-2 transition-colors ${
-                  tab === t.key ? 'border-accent text-accent' : 'border-transparent text-gray-400 hover:text-gray-600'
+                  f.tab === t.key ? 'border-accent text-accent' : 'border-transparent text-gray-400 hover:text-gray-600'
                 }`}
               >
                 {t.label}
@@ -310,7 +305,7 @@ export default function DiarioPage() {
 
           {/* Barra de acciones — vista + agregar viaje */}
           <div className="flex items-center justify-between gap-3">
-            {tab === 'en_curso' ? (
+            {f.tab === 'en_curso' ? (
               <ViewToggle value={viewMode} onChange={handleViewModeChange} />
             ) : <div />}
             <div className="flex items-center gap-3">
@@ -322,7 +317,6 @@ export default function DiarioPage() {
                 Carga masiva (CSV)
               </button>
               <button
-               
                 onClick={() => setShowCreate(true)}
                 className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
               >
@@ -340,26 +334,26 @@ export default function DiarioPage() {
               <div className="relative">
                 <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
-                  value={q}
-                  onChange={e => { setQ(e.target.value); setPage(1) }}
+                  value={f.q}
+                  onChange={e => dispatch({ type: 'patch', patch: { q: e.target.value } })}
                   placeholder="Tracto, conductor, EETT…"
                   className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-52 bg-white placeholder:text-gray-400 transition-all"
                 />
               </div>
 
-              {tab === 'historial' && (
+              {f.tab === 'historial' && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Desde</span>
-                  <input type="date" value={fechaDesde} onChange={e => { setFechaDesde(e.target.value); setPage(1) }}
+                  <input type="date" value={f.fechaDesde} onChange={e => dispatch({ type: 'patch', patch: { fechaDesde: e.target.value } })}
                     className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all" />
                   <span className="text-gray-300 text-xs">—</span>
-                  <input type="date" value={fechaHasta} onChange={e => { setFechaHasta(e.target.value); setPage(1) }}
+                  <input type="date" value={f.fechaHasta} onChange={e => dispatch({ type: 'patch', patch: { fechaHasta: e.target.value } })}
                     className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all" />
                 </div>
               )}
 
               {activeCount > 0 && (
-                <button onClick={clearFilters}
+                <button onClick={() => dispatch({ type: 'clear' })}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors ml-auto">
                   <X size={11} />
                   Limpiar
@@ -375,11 +369,11 @@ export default function DiarioPage() {
               {/* Default groups — derived from meta.statuses (group membership from DB) */}
               {defaultGroups.map(g => {
                 const key = `default:${g.id}`
-                const active = activeGroup === key
+                const active = f.activeGroup === key
                 return (
                   <button
                     key={g.id}
-                    onClick={() => toggleDefaultGroup(g.id)}
+                    onClick={() => dispatch({ type: 'toggleGroup', key })}
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${active ? g.on : g.off}`}
                   >
                     {g.label}
@@ -398,12 +392,12 @@ export default function DiarioPage() {
               {/* Custom groups */}
               {customGroups.map(g => {
                 const key = `custom:${g.id}`
-                const active = activeGroup === key
+                const active = f.activeGroup === key
                 const cls = COLOR_CLS[g.color] ?? COLOR_CLS.blue
                 return (
                   <div key={g.id} className="relative group/chip flex items-center">
                     <button
-                      onClick={() => toggleCustomGroup(g.id)}
+                      onClick={() => dispatch({ type: 'toggleGroup', key })}
                       className={`text-[11px] font-semibold pl-2.5 pr-1.5 py-1 rounded-full border transition-all flex items-center gap-1 ${active ? cls.on : cls.off}`}
                     >
                       {g.name}
@@ -449,16 +443,11 @@ export default function DiarioPage() {
             {/* Row 3 — boolean flag chips */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Mostrar</span>
-              {([
-                { chip: FLAG_CHIPS[0], val: fActivo,        setter: setFActivo        },
-                { chip: FLAG_CHIPS[1], val: fTrabajando,    setter: setFTrabajando    },
-                { chip: FLAG_CHIPS[2], val: fAsignado,      setter: setFAsignado      },
-                { chip: FLAG_CHIPS[3], val: fPrimeraVuelta, setter: setFPrimeraVuelta },
-              ]).map(({ chip, val, setter }) => (
+              {FLAG_CHIPS.map(chip => (
                 <button
                   key={chip.label}
-                  onClick={() => toggleFlag(val, setter)}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${val === true ? chip.on : chip.off}`}
+                  onClick={() => dispatch({ type: 'toggleFlag', field: chip.field })}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${f[chip.field] === true ? chip.on : chip.off}`}
                 >
                   {chip.label}
                 </button>
@@ -469,14 +458,11 @@ export default function DiarioPage() {
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Fuente</span>
               {(tripsMeta?.tms_sources ?? []).map(src => {
-                const active = fTms.includes(src.id)
+                const active = f.fTms.includes(src.id)
                 return (
                   <button
                     key={src.id}
-                    onClick={() => {
-                      setFTms(prev => prev.includes(src.id) ? prev.filter(t => t !== src.id) : [...prev, src.id])
-                      setPage(1)
-                    }}
+                    onClick={() => dispatch({ type: 'toggleTms', id: src.id })}
                     style={active ? { backgroundColor: src.bg_color, color: src.text_color, borderColor: src.bg_color } : undefined}
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
                       active ? '' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
@@ -488,8 +474,8 @@ export default function DiarioPage() {
               })}
               <span className="text-gray-200 text-sm mx-0.5">·</span>
               <input
-                value={fClient}
-                onChange={e => { setFClient(e.target.value); setPage(1) }}
+                value={f.fClient}
+                onChange={e => dispatch({ type: 'patch', patch: { fClient: e.target.value } })}
                 placeholder="Cliente…"
                 className="px-2.5 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-32 bg-white placeholder:text-gray-400 transition-all"
               />
@@ -502,19 +488,20 @@ export default function DiarioPage() {
           )}
 
           {/* Table / Board — en refetch la data anterior queda visible, atenuada (sin flash de spinner) */}
-          {loading && trips.length === 0 ? (
+          {loading ? (
             <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
               <Loader2 size={16} className="animate-spin" /> Cargando…
             </div>
           ) : (
-            <div className={`transition-opacity duration-150 ${loading ? 'opacity-50' : ''}`} aria-busy={loading}>
-              {tab === 'en_curso' && viewMode === 'tablero' ? (
+            <div className={`transition-opacity duration-150 ${fetching ? 'opacity-50' : ''}`} aria-busy={fetching}>
+              {f.tab === 'en_curso' && viewMode === 'tablero' ? (
                 <TripBoard
                   trips={trips}
                   groups={defaultGroups}
                   meta={tripsMeta}
                   onSaved={handleSaved}
                   onSelect={setSelected}
+                  updatedIds={updatedIds}
                 />
               ) : (
                 <TripTable
@@ -524,31 +511,32 @@ export default function DiarioPage() {
                   onSaved={handleSaved}
                   alertSummary={alertSummary}
                   meta={tripsMeta}
+                  updatedIds={updatedIds}
                 />
               )}
             </div>
           )}
 
           {/* Historial pagination */}
-          {tab === 'historial' && !loading && total > 0 && (
+          {f.tab === 'historial' && !loading && total > 0 && (
             <div className="flex items-center justify-between pt-2 pb-1">
               <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
+                onClick={() => dispatch({ type: 'patch', patch: { page: Math.max(1, f.page - 1) } })}
+                disabled={f.page === 1}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
               >
                 <ChevronLeft size={13} /> Anterior
               </button>
               <p className="text-xs text-gray-500">
                 {total > HISTORIAL_LIMIT ? (
-                  <>Página <span className="font-semibold text-gray-700">{page}</span> de <span className="font-semibold text-gray-700">{totalPages}</span><span className="text-gray-400 ml-2">· {total.toLocaleString('es-CL')} viajes</span></>
+                  <>Página <span className="font-semibold text-gray-700">{f.page}</span> de <span className="font-semibold text-gray-700">{totalPages}</span><span className="text-gray-400 ml-2">· {total.toLocaleString('es-CL')} viajes</span></>
                 ) : (
                   <span className="text-gray-400">{total.toLocaleString('es-CL')} viaje{total !== 1 ? 's' : ''}</span>
                 )}
               </p>
               <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
+                onClick={() => dispatch({ type: 'patch', patch: { page: Math.min(totalPages, f.page + 1) } })}
+                disabled={f.page >= totalPages}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
               >
                 Siguiente <ChevronRight size={13} />

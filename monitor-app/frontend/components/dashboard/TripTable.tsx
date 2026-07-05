@@ -356,9 +356,11 @@ interface Props {
   onSaved:       (trip: Trip) => void
   alertSummary?: ComplianceAlertSummary | null
   meta?:         TripsMeta | null
+  /** Viajes cuyo último reporte TMS cambió en el refetch más reciente — glow sutil */
+  updatedIds?:   Set<string>
 }
 
-export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, meta }: Props) {
+export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, meta, updatedIds }: Props) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
@@ -412,6 +414,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               onClick={() => onSelect(trip)}
               onKeyDown={e => { if (e.key === 'Enter') onSelect(trip) }}
               className={`px-4 py-3 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
+                updatedIds?.has(trip.id) ? 'bg-amber-50' :
                 isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-gray-50/60'
               }`}
             >
@@ -522,7 +525,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     if (e.key === 'Enter' && e.target === e.currentTarget) onSelect(trip)
                   }}
                   className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
-                    isActive
+                    updatedIds?.has(trip.id)
+                      ? 'bg-amber-50'
+                      : isActive
                       ? 'bg-accent/5 border-l-2 border-l-accent'
                       : i % 2 === 1
                       ? 'bg-gray-50/40 hover:bg-gray-50'

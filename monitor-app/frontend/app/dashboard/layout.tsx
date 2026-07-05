@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/dashboard/Sidebar'
 import Topbar from '@/components/dashboard/Topbar'
+import { Providers } from './providers'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -18,15 +19,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (profile?.active === false) redirect('/login?error=cuenta_desactivada')
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar role={profile?.role} />
-      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
-        <Topbar />
-        {/* pb-16 md:pb-0: space for mobile bottom nav */}
-        <main className="flex-1 overflow-y-auto bg-bg-main pb-16 md:pb-0">
-          {children}
-        </main>
+    <Providers>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar role={profile?.role} />
+        <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+          <Topbar />
+          {/* pb-16 md:pb-0: space for mobile bottom nav */}
+          <main className="flex-1 overflow-y-auto bg-bg-main pb-16 md:pb-0">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </Providers>
   )
 }
