@@ -430,10 +430,13 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 **Verificación:** 152/152 frontend, 35/35 backend, tsc/build limpios. Sin smoke de navegador (sin sesión auth, 5ta ronda).
 
-#### ⚠️ PENDIENTES que requieren acción del usuario
-1. **Aplicar `20260707000001_trips_manual.sql` a Supabase** (con confirmación) — crea trips_manual, re-protege app.trips (PK/RLS/índices — hoy PERDIDOS en vivo), agrega origin_tms. Sin esto, crear viajes sigue roto (id NULL).
-2. **Push a `dev`** (5 commits locales).
-3. **Copiar `app_trips.sql` a Mage** — CRÍTICO: sin esto, el próximo `--full-refresh` sigue borrando los viajes manuales (y fallaría por la columna origin_tms nueva si la migración ya se aplicó — aplicar migración y copiar el modelo JUNTOS).
+#### Cierre (2026-07-06, autorizado por el usuario)
+1. **Migración `trips_manual` aplicada a Supabase** — verificado en vivo: PK+RLS+7 índices restaurados en app.trips, columna origin_tms creada, trips_manual con id DEFAULT y 3 índices. Sanity SQL de la rama manual del modelo dbt ejecutado sin errores de tipos.
+2. **Pusheado a `dev`** (`8c6b319..c26b5ff`).
+3. **Post-hooks agregados a `app_trips.sql`** (commit `c26b5ff`): re-aplican PK/RLS/política/índices después de CADA corrida dbt — fix definitivo del patrón de pérdidas recurrentes (causa raíz: `--full-refresh` hace DROP+CTAS y la tabla nace sin protecciones; el comando normal `--select +trips` incremental NO las rompe — revisar si el bloque de Mage tiene el toggle full_refresh activado).
+
+#### ⚠️ PENDIENTE del usuario (fuera de este repo)
+**Copiar `app_trips.sql` (raíz) al proyecto dbt en Mage** — sin esto: (a) el próximo full-refresh sigue borrando los viajes manuales, (b) el modelo viejo no emite la columna origin_tms nueva. Decisión de diseño documentada: `app.trips_manual` vive en el schema `app` (no silver) porque es estado ORIGINAL creado por usuarios vía API — dbt la lee como fuente, nunca la gestiona; silver/gold es solo para datos derivados/reconstruibles del pipeline.
 
 ---
 
