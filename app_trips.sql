@@ -161,9 +161,12 @@ mapped AS (
         -- (actual_arrival_at); si falta, cae al arribo confirmado por SAP
         -- (milestone_actual_arrival_at, solo existe en paradas de qanalytics
         -- con match de milestone).
-        -- departure_date: prioriza la salida real (actual_departure_at); si
-        -- falta, cae a la salida planificada (planned_departure_at, solo
-        -- existe en paradas de wingsuite).
+        -- departure_date: SOLO salida real (actual_departure_at) — nunca cae
+        -- a la planificada. departure_date_prog (nuevo, 2026-07-03) guarda la
+        -- salida planificada (planned_departure_at, solo existe en paradas de
+        -- wingsuite) por separado, para que el frontend pueda distinguir "ya
+        -- salió" de "todavía no sale, pero está planificado" — antes se
+        -- coalesceaban en un solo campo ambiguo (bug reportado en Wingsuite).
         (
             SELECT jsonb_agg(
                 jsonb_build_object(
@@ -182,10 +185,18 @@ mapped AS (
                                                  NULLIF(elem->>'actual_arrival_at', '')::timestamptz,
                                                  NULLIF(elem->>'milestone_actual_arrival_at', '')::timestamptz
                                              ),
-                    'departure_date',       COALESCE(
-                                                 NULLIF(elem->>'actual_departure_at', '')::timestamptz,
-                                                 NULLIF(elem->>'planned_departure_at', '')::timestamptz
-                                             ),
+                    -- departure_date: SOLO salida real (actual_departure_at) — ya no cae a
+                    -- la planificada. Antes ese fallback dejaba departure_date ambiguo (no se
+                    -- podía distinguir "ya salió" de "todavía no sale, pero está planificado"),
+                    -- lo que el frontend no podía comunicar bien (bug reportado 2026-07-03 en
+                    -- Wingsuite). La planificada ahora vive en su propio campo, ver abajo.
+                    'departure_date',       NULLIF(elem->>'actual_departure_at', '')::timestamptz,
+                    -- departure_date_prog: salida PLANIFICADA — solo existe en paradas de
+                    -- Wingsuite (único TMS que reporta esto por separado). NULL para
+                    -- qanalytics/sodimac, igual que cualquier otro campo específico de una TMS.
+                    -- Consumido por describeStopTiming() en el frontend (lib/utils/temperature.ts)
+                    -- para mostrar "sale ~HH:MM" cuando todavía no hay salida real.
+                    'departure_date_prog',  NULLIF(elem->>'planned_departure_at', '')::timestamptz,
                     'gps_arrival_date',     NULLIF(elem->>'custom_gps_arrival_at', '')::timestamptz,
                     'gps_departure_date',   NULLIF(elem->>'custom_gps_departure_at', '')::timestamptz,
                     'unload_start',         NULLIF(elem->>'custom_unload_start_at', '')::timestamptz,
@@ -207,6 +218,9 @@ SELECT
     source_client_id,
     source_system,
     client_name,
+    -- origin_tms: solo aplica a viajes manuales (sistema de origen declarado
+    -- al registrarlos) — NULL para todo lo que viene de una TMS integrada.
+    NULL::text          AS origin_tms,
 
     -- ── Estado (pipeline, inmutable) ─────────────────────────────────────────
     trip_status,
@@ -283,4 +297,60 @@ OR (
           AND trip_status != 'CANCELADO'
     )
 )
+{% endif %}
+
+UNION ALL
+
+-- ── Viajes manuales (app.trips_manual, escrita por la API del Monitor) ───────
+-- Fuente de verdad de los viajes registrados a mano (registro único + carga
+-- masiva CSV). Esta rama los RECONSTRUYE en cada corrida — antes de existir,
+-- un --full-refresh los borraba definitivamente (vivían solo en app.trips).
+--
+-- Anti-join por id: si el viaje manual usó id canónico
+-- md5(origin_tms|cliente|trip_id) (mismo que stg_*_trips) y la TMS ya lo
+-- reportó, gana la rama TMS — reconciliación automática, sin duplicados.
+SELECT
+    m.id,
+    m.source_system_trip_id::varchar                    AS source_system_trip_id,
+    NULL::uuid                                          AS source_system_id,
+    NULL::uuid                                          AS source_client_id,
+    'manual'::varchar                                   AS source_system,
+    m.client_name::varchar                              AS client_name,
+    m.origin_tms                                        AS origin_tms,
+
+    m.trip_status                                       AS trip_status,
+    NULL::text                                          AS milestone_status,
+    m.cargo_type::varchar                               AS cargo_type,
+    m.planning_date                                     AS planning_date,
+    m.origin                                            AS origin,
+    m.updated_at::timestamp                             AS status_reported_at,
+    now()::timestamp                                    AS pipeline_updated_at,
+
+    m.fleet                                             AS fleet,
+    m.stops                                             AS stops,
+
+    m.activo                                            AS activo,
+    m.trabajando                                        AS trabajando,
+    m.asignado                                          AS asignado,
+    m.primera_vuelta                                    AS primera_vuelta,
+    m.estado_manual::varchar                            AS estado_manual,
+
+    m.observaciones                                     AS observaciones,
+    m.comentarios                                       AS comentarios,
+    m.manually_edited_fields                            AS manually_edited_fields,
+    m.fleet_link_id                                     AS fleet_link_id,
+    NULL::uuid                                          AS edited_by,
+    NULL::timestamptz                                   AS edited_at,
+
+    m.created_at                                        AS created_at,
+    m.updated_at                                        AS updated_at
+
+FROM app.trips_manual m
+WHERE NOT EXISTS (SELECT 1 FROM mapped c WHERE c.id = m.id)
+{% if is_incremental() %}
+  -- Ya reconciliado en corridas anteriores: existe en app.trips como viaje TMS
+  AND NOT EXISTS (
+      SELECT 1 FROM {{ this }} t
+      WHERE t.id = m.id AND t.source_system != 'manual'
+  )
 {% endif %}
