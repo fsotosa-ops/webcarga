@@ -409,6 +409,34 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 ---
 
+### 2026-07-06 — Auditoría + reconstrucción de la creación manual de viajes (único + CSV)
+
+**Objetivo:** el usuario pidió auditar si "agregar viajes" (registro único + carga masiva) está sincronizado con el backend y conversa con la lógica del resto de los viajes.
+
+**Hallazgo central de la auditoría (2 agentes + verificación contra la base viva): la funcionalidad estaba estructuralmente rota.**
+- `dbt --full-refresh` (comando real del pipeline) **destruye todos los viajes manuales** — hoy la base tiene 0.
+- `app.trips.id` sin DEFAULT y **nullable en vivo** (PK/RLS/índices perdidos de nuevo, 6ta vez) — crear un viaje insertaba `id=NULL`.
+- Sin dedup ni reconciliación; `source_system`/`current_status` sin validar; flags operativos NULL (los filtros los excluían); `manually_edited_fields` con metadata muerta; `driver_phone` perdido sin empresa; bulk atómico con error opaco; parser CSV solo-coma (Excel es-CL falla silenciosa); modales sin a11y; ícono verde de éxito con 0 importados; 0 tests.
+
+**Decisiones del usuario:** tabla fuente + UNION en dbt; separar canal de ingreso (`source_system='manual'` siempre) del **sistema de origen** (`origin_tms`: TMS mapeado / no mapeado / sin TMS — 3 casos reales de la operación); paradas simples en formulario y CSV.
+
+#### Arquitectura implementada (5 commits en `dev`, local, NO pusheados)
+
+| Commit | Contenido |
+|--------|-----------|
+| `47057bc` | **Backend**: migración `20260707000001_trips_manual.sql` (tabla fuente con defaults correctos + índice único anti-duplicado + `origin_tms` en app.trips + re-protecciones PK/RLS/índices idempotentes). `_insert_trip`: **id canónico `md5(origin_tms\|cliente\|trip_id)::uuid`** cuando el origen es TMS mapeado (fórmula verificada contra datos reales — reconciliación automática vía merge de dbt cuando el TMS reporte el viaje), uuid si no; source_system forzado; stops desde payload con shape del pipeline; dual-write trips_manual+app.trips; 409 dedup; 422 estado inválido; phone en fleet; `_mirror_manual_trip` en PATCH/fleet-link/reset (el rebuild conserva ediciones); bulk valida todo ANTES con errores por fila. 35/35 pytest |
+| `596055b` | **dbt** `app_trips.sql` (raíz): rama `UNION ALL` desde `app.trips_manual` con anti-join por id contra conformed + `origin_tms` en ambas ramas (29 columnas alineadas) |
+| `b6e2793` | **Frontend**: TripCreateSlideOver reescrito (a11y dialog completa, Enter submit, fecha=hoy, selector "¿De dónde viene?" Sin TMS/TMS integrado/Otro, microcopy de reconciliación, destinos editables, campos libres siempre, post-create salta a la fecha del viaje); TripBulkUpload con parser RFC-4180 (`lib/utils/csv`: autodetección `;`/`,`, comillas, BOM, Latin-1 fallback), validación de estado contra meta, columna destinos, template `;`, errores por fila del backend, resultado honesto; `ApiError` con detail estructurado. 152/152 tests (27 nuevos) |
+
+**Verificación:** 152/152 frontend, 35/35 backend, tsc/build limpios. Sin smoke de navegador (sin sesión auth, 5ta ronda).
+
+#### ⚠️ PENDIENTES que requieren acción del usuario
+1. **Aplicar `20260707000001_trips_manual.sql` a Supabase** (con confirmación) — crea trips_manual, re-protege app.trips (PK/RLS/índices — hoy PERDIDOS en vivo), agrega origin_tms. Sin esto, crear viajes sigue roto (id NULL).
+2. **Push a `dev`** (5 commits locales).
+3. **Copiar `app_trips.sql` a Mage** — CRÍTICO: sin esto, el próximo `--full-refresh` sigue borrando los viajes manuales (y fallaría por la columna origin_tms nueva si la migración ya se aplicó — aplicar migración y copiar el modelo JUNTOS).
+
+---
+
 ## Próximo paso exacto
 
 **Pusheado a `dev` (2026-07-05, autorizado por el usuario):** incluye el rango pendiente anterior (fechas por TMS) + las 5 fases del rediseño UX/UI world-class.
