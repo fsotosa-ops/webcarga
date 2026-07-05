@@ -364,6 +364,28 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 ---
 
+### 2026-07-05 (cont.) — Rediseño del modal de detalle: hero + 2 columnas + bitácora con historial
+
+**Objetivo:** el usuario probó el rediseño de las 5 fases y dijo que **el modal de detalle sigue sin convencerle**. Diagnóstico confirmado con él (multiselección): (1) mucho scroll para actuar, (2) no hay resumen de un vistazo, (3) jerarquía visual confusa. Eligió layout **hero + 2 columnas** y evolucionar la Bitácora a **feed cronológico con historial** (única parte que toca backend/DB, 100% aditiva). Es la 3ra iteración del modal.
+
+**Plan aprobado:** `/Users/usuario/.claude/plans/necesito-que-analices-la-twinkly-prism.md` (sobrescrito con este rediseño).
+
+#### Qué se implementó (3 commits en `dev`, local)
+
+| Commit | Contenido |
+|--------|-----------|
+| `485071e` | **Backend**: migración `20260705000001_trip_notes.sql` (`app.trip_notes`: feed inmutable, author FK a profiles, **SIN FK a app.trips** porque dbt --full-refresh recrea esa tabla — integridad garantizada en el endpoint con check de existencia). Endpoints `GET/POST /trips/{id}/notes` (author_name via join a profiles, POST require_editor, 422 vacío, 404 viaje inexistente). 5 tests nuevos — 17/17 pytest |
+| `(data layer)` | `TripNote` en types, `tripsApi.listNotes/addNote`, `hooks/useTripNotes.ts` (Query + Mutation con cache update) |
+| `5dbdca6` | **TripSlideOver reescrito**: header 1 fila (TMS+ID+patente+conductor+tel+cliente) · hero con la historia del viaje (StatusBadge grande + próxima parada con ETA + StopProgressDots "N/M paradas" + ON/OFF TIME + temp + línea de sync consolidada) · desktop 2 columnas (izq: Ruta/detalle técnico/Datos operativos ahora acordeón/footer auditoría; der 360px fija: Gestión — estado+override, indicadores solo manual, empresa como card sin acordeón, TripNotesFeed) · mobile apilado con Gestión ANTES que Ruta. `TripNotesFeed.tsx` nuevo (feed + composer ⌘↵, errores visibles, entrada legacy de observaciones/comentarios en solo lectura, sin migrar datos) |
+
+**Verificación:** 113/113 tests frontend (suite del slideover reescrita: hero, acordeón de datos, feed de notas con mock, errores visibles, a11y conservada), 17/17 backend, `tsc` limpio, `npm run build` OK. **Sin smoke de navegador** (sesión de auth sigue expirada — 3ra ronda).
+
+#### ⚠️ PENDIENTE CRÍTICO
+1. **La migración `20260705000001_trip_notes.sql` NO está aplicada a Supabase** — los endpoints de notas van a fallar (tabla inexistente) hasta aplicarla. Requiere confirmación explícita del usuario (regla establecida para la base compartida). Aplicar vía MCP o `supabase db push` antes de probar la bitácora.
+2. Los commits de esta sección están en local, **sin pushear** a `dev`.
+
+---
+
 ## Próximo paso exacto
 
 **Pusheado a `dev` (2026-07-05, autorizado por el usuario):** incluye el rango pendiente anterior (fechas por TMS) + las 5 fases del rediseño UX/UI world-class.
