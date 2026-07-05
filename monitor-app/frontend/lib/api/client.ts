@@ -32,7 +32,25 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as { detail?: string }).detail ?? `Error ${res.status}`)
+    const detail = (err as { detail?: unknown }).detail
+    // detail puede ser string o un objeto estructurado (ej: errores por fila del bulk)
+    const message =
+      typeof detail === 'string' ? detail
+      : detail && typeof detail === 'object' && 'message' in detail ? String((detail as { message: unknown }).message)
+      : `Error ${res.status}`
+    const e = new ApiError(message, res.status, detail)
+    throw e
   }
   return res.json() as Promise<T>
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public detail: unknown,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
 }

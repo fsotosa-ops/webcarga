@@ -229,6 +229,11 @@ export default function DiarioPage() {
 
   function handleCreated(newTrip: Trip) {
     setSelected(newTrip)
+    // El viaje recién creado debe quedar visible: si su fecha no coincide con el
+    // filtro actual, saltamos a esa fecha (si no, la lista lo escondería)
+    if (newTrip.planning_date && (f.tab !== 'en_curso' || newTrip.planning_date !== f.fecha)) {
+      dispatch({ type: 'patch', patch: { tab: 'en_curso', fecha: newTrip.planning_date } })
+    }
     queryClient.invalidateQueries({ queryKey: ['trips'] })
   }
 

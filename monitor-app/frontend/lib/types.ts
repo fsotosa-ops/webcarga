@@ -207,7 +207,7 @@ export type CSVColumnDef = {
   csv_key:  string
   label:    string
   required: boolean
-  type:     'date' | 'text' | 'status' | 'tms_source'
+  type:     'date' | 'text' | 'status' | 'tms_source' | 'stops'
   example:  string
 }
 
@@ -252,14 +252,22 @@ export type TripNote = {
   attachments: TripNoteAttachment[]
 }
 
+export type TripStopCreatePayload = {
+  local:          string
+  planning_date?: string | null
+}
+
 export type TripCreatePayload = {
   planning_date:          string
-  source_system?:         string
+  /** Sistema de ORIGEN del viaje (TMS mapeado, texto libre o null) — el canal
+   *  de ingreso es siempre 'manual' (lo fuerza el backend) */
+  origin_tms?:            string | null
   source_system_trip_id?: string | null
   client_name?:           string | null
   origin?:                string | null
   cargo_type?:            string | null
   current_status?:        string | null
+  stops?:                 TripStopCreatePayload[]
   tractor_plate?:         string | null
   trailer_plate?:         string | null
   driver_name?:           string | null
@@ -293,6 +301,8 @@ export type TripStop = {
 export type Trip = {
   id:                     string
   source_system:          string
+  /** Solo viajes manuales: TMS de origen declarado al registrarlo (null si no aplica) */
+  origin_tms?:            string | null
   client_name:            string | null
   planning_date:          string | null
   status_reported_at:     string | null
