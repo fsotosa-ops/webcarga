@@ -619,3 +619,57 @@ async def reset_field(
         trip_id, field,
     )
     return {"ok": True, "field": field}
+
+
+# ── Bitácora: feed cronológico inmutable de notas por viaje ──────────────────
+
+class TripNoteCreate(BaseModel):
+    body: str
+
+_NOTE_SELECT = """
+    n.id, n.trip_id, n.author_id,
+    COALESCE(p.full_name, p.email) AS author_name,
+    n.body, n.created_at
+    FROM app.trip_notes n
+    LEFT JOIN public.profiles p ON p.id = n.author_id
+"""
+
+
+@router.get("/{trip_id}/notes")
+async def list_trip_notes(
+    trip_id: str,
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    rows = await pool.fetch(
+        f"SELECT {_NOTE_SELECT} WHERE n.trip_id = $1 ORDER BY n.created_at ASC",
+        trip_id,
+    )
+    return [dict(r) for r in rows]
+
+
+@router.post("/{trip_id}/notes", status_code=201)
+async def add_trip_note(
+    trip_id: str,
+    note: TripNoteCreate,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    body = note.body.strip()
+    if not body:
+        raise HTTPException(422, "La nota no puede estar vacía")
+    # app.trip_notes no tiene FK a app.trips (dbt --full-refresh recrea la tabla);
+    # la integridad se garantiza acá
+    exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
+    if not exists:
+        raise HTTPException(404, "Viaje no encontrado")
+    note_id = await pool.fetchval(
+        """
+        INSERT INTO app.trip_notes (trip_id, author_id, body)
+        VALUES ($1, $2::uuid, $3)
+        RETURNING id
+        """,
+        trip_id, user["sub"], body,
+    )
+    row = await pool.fetchrow(f"SELECT {_NOTE_SELECT} WHERE n.id = $1", note_id)
+    return dict(row)
