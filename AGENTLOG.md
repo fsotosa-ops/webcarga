@@ -386,6 +386,29 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 ---
 
+### 2026-07-05 (cont. 2) — Detalle PRO: bitácora completa (adjuntos, tipos, sistema, pin) + pulido visual
+
+**Objetivo:** el usuario pidió (1) robustecer el detalle ("aún no se ve pro"), (2) adjuntos en la bitácora (PDF/imágenes), (3) elementos para que la bitácora sea "sumamente funcional". Alcance confirmado por AskUserQuestion: tipos de nota + eventos del sistema + pin (sin editar/borrar), adjuntos "ambos modos" (por nota + vista Documentos), pulido completo (hero visual, tipografía, transiciones, timeline enriquecido). **Regla nueva permanente del usuario: iconografía solo lucide-react, CERO emojis** (guardada en memoria `feedback_no_emojis_ui`).
+
+**Plan:** `/Users/usuario/.claude/plans/necesito-que-analices-la-twinkly-prism.md` (sobrescrito).
+
+#### Qué se implementó (4 commits en `dev`, local, NO pusheados)
+
+| Commit | Contenido |
+|--------|-----------|
+| `f893836` | **Backend v2**: migración `20260706000001_trip_notes_v2.sql` (note_type CHECK obs/llamada/whatsapp/incidente/sistema + pinned en trip_notes; tabla `trip_note_attachments` FK CASCADE + RLS lectura; bucket privado `trip-attachments`). POST /notes → multipart (valida mime pdf/png/jpeg/webp y 10MB ANTES de insertar; body opcional si hay archivos; 403 para note_type=sistema desde cliente). GET /notes con signed URLs (1h). PATCH /notes/{id}/pin. `_log_system_note` best-effort en override set/revert, vinculación/desvinculación de empresa, creación manual. `python-multipart` en pyproject **y Dockerfile** (misma trampa del incidente upstash). 24/24 pytest |
+| `81a5c09` | **Frontend bitácora v2**: apiFetch soporta FormData; TripNote+note_type/pinned/attachments; addNote multipart, pinNote, usePinTripNote optimista; TripNotesFeed v2 — composer con selector de tipo + Paperclip con preview/validación, Destacadas arriba, eventos sistema como línea compacta, filtro por tipo, adjuntos con miniatura, toggle Feed\|Documentos, skeleton de carga |
+| `06bd2a8` | **Pulido visual**: `RouteProgress` (barra horizontal de ruta en el hero, check verde/rojo por on-time, nodo pulsante activo, nombres en desktop); StopTimeline con duración en parada + tránsito entre paradas + temperatura prominente (`lib/utils/stopStats` con tests); animación de entrada modal/backdrop con prefers-reduced-motion; emoji 🔒 de IndicatorDots → ícono Lock; labels unificados |
+| *(pendiente)* | AGENTLOG (este commit) |
+
+**Verificación:** 125/125 tests frontend, 24/24 backend, `tsc` limpio, `npm run build` OK. Sin smoke de navegador (4ta ronda sin sesión de auth).
+
+#### ⚠️ PENDIENTES que requieren confirmación del usuario
+1. **Aplicar `20260706000001_trip_notes_v2.sql` a Supabase** (ALTER trip_notes + tabla attachments + bucket) — sin esto, los tipos/pin/adjuntos fallan en runtime.
+2. **Push a `dev`** (4 commits locales).
+
+---
+
 ## Próximo paso exacto
 
 **Pusheado a `dev` (2026-07-05, autorizado por el usuario):** incluye el rango pendiente anterior (fechas por TMS) + las 5 fases del rediseño UX/UI world-class.
