@@ -1,9 +1,10 @@
 import json
 from datetime import date as _date
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from uuid import uuid4
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from ..auth import get_current_user, require_editor
+from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.trip import TripPatch
 
@@ -374,6 +375,7 @@ async def create_trip(
     user=Depends(require_editor),
 ):
     trip_id = await _insert_trip(pool, body)
+    await _log_system_note(pool, trip_id, user, "Creó el viaje manualmente")
     return await get_trip(trip_id, pool, user)
 
 
@@ -530,6 +532,12 @@ async def patch_trip(
             *vals,
         )
 
+    if "estado_manual" in data:
+        await _log_system_note(
+            pool, trip_id, user,
+            f"Estableció estado operativo manual: {data['estado_manual']}",
+        )
+
     return await get_trip(trip_id, pool, user)
 
 
@@ -576,6 +584,14 @@ async def assign_fleet_link(
         link_id, trip_id,
     )
 
+    transporter_name = await pool.fetchval(
+        "SELECT business_name FROM app.transporter_profiles WHERE id = $1", transporter_id
+    )
+    await _log_system_note(
+        pool, trip_id, user,
+        f"Vinculó empresa transportista: {transporter_name or transporter_id}",
+    )
+
     return await get_trip(trip_id, pool, user)
 
 
@@ -595,6 +611,7 @@ async def remove_fleet_link(
             "UPDATE app.trips SET fleet_link_id = NULL, updated_at = NOW() WHERE id = $1",
             trip_id,
         )
+        await _log_system_note(pool, trip_id, user, "Desvinculó la empresa transportista")
     return {"ok": True}
 
 
@@ -618,58 +635,184 @@ async def reset_field(
         """,
         trip_id, field,
     )
+    if field == "estado_manual":
+        await _log_system_note(
+            pool, trip_id, user, "Revirtió el estado manual al valor del TMS"
+        )
     return {"ok": True, "field": field}
 
 
 # ── Bitácora: feed cronológico inmutable de notas por viaje ──────────────────
 
-class TripNoteCreate(BaseModel):
-    body: str
+# 'sistema' es exclusivo de eventos generados por la API (ver _log_system_note)
+CLIENT_NOTE_TYPES = {"observacion", "llamada", "whatsapp", "incidente"}
+
+ATTACHMENT_BUCKET = "trip-attachments"
+ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+ALLOWED_ATTACHMENT_MIMES = {
+    "application/pdf", "image/png", "image/jpeg", "image/webp",
+}
+SIGNED_URL_TTL_SECONDS = 3600
 
 _NOTE_SELECT = """
     n.id, n.trip_id, n.author_id,
     COALESCE(p.full_name, p.email) AS author_name,
-    n.body, n.created_at
+    n.body, n.note_type, n.pinned, n.created_at
     FROM app.trip_notes n
     LEFT JOIN public.profiles p ON p.id = n.author_id
 """
+
+
+class TripNotePin(BaseModel):
+    pinned: bool
+
+
+async def _log_system_note(pool, trip_id: str, user: dict, body: str) -> None:
+    """Registra un evento del sistema en la bitácora. Best-effort: un fallo acá
+    nunca debe romper la operación principal que lo origina."""
+    try:
+        await pool.execute(
+            """
+            INSERT INTO app.trip_notes (trip_id, author_id, body, note_type)
+            VALUES ($1, $2::uuid, $3, 'sistema')
+            """,
+            trip_id, user["sub"], body,
+        )
+    except Exception:
+        pass
+
+
+async def _attachments_by_note(pool, supabase, note_ids: list) -> dict:
+    """Adjuntos por nota, con signed URL de 1h para cada archivo."""
+    if not note_ids:
+        return {}
+    rows = await pool.fetch(
+        """
+        SELECT id, note_id, storage_path, file_name, mime_type, size_bytes
+        FROM app.trip_note_attachments
+        WHERE note_id = ANY($1::uuid[])
+        ORDER BY created_at ASC
+        """,
+        note_ids,
+    )
+    out: dict = {}
+    for r in rows:
+        d = dict(r)
+        try:
+            signed = supabase.storage.from_(ATTACHMENT_BUCKET).create_signed_url(
+                d["storage_path"], SIGNED_URL_TTL_SECONDS
+            )
+            d["url"] = signed.get("signedURL") or signed.get("signedUrl")
+        except Exception:
+            d["url"] = None
+        d.pop("storage_path", None)
+        note_id = d.pop("note_id")
+        out.setdefault(str(note_id), []).append(d)
+    return out
 
 
 @router.get("/{trip_id}/notes")
 async def list_trip_notes(
     trip_id: str,
     pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
     _=Depends(get_current_user),
 ):
     rows = await pool.fetch(
         f"SELECT {_NOTE_SELECT} WHERE n.trip_id = $1 ORDER BY n.created_at ASC",
         trip_id,
     )
-    return [dict(r) for r in rows]
+    notes = [dict(r) for r in rows]
+    attachments = await _attachments_by_note(pool, supabase, [n["id"] for n in notes])
+    for n in notes:
+        n["attachments"] = attachments.get(str(n["id"]), [])
+    return notes
 
 
 @router.post("/{trip_id}/notes", status_code=201)
 async def add_trip_note(
     trip_id: str,
-    note: TripNoteCreate,
+    body: str = Form(""),
+    note_type: str = Form("observacion"),
+    files: list[UploadFile] = File(default=[]),
     pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
     user=Depends(require_editor),
 ):
-    body = note.body.strip()
-    if not body:
+    body = body.strip()
+    if not body and not files:
         raise HTTPException(422, "La nota no puede estar vacía")
+    if note_type == "sistema":
+        raise HTTPException(403, "El tipo 'sistema' está reservado para eventos automáticos")
+    if note_type not in CLIENT_NOTE_TYPES:
+        raise HTTPException(422, f"Tipo de nota inválido: {note_type}")
+
+    # Validar todos los archivos ANTES de insertar nada
+    payloads: list[tuple[str, str, bytes]] = []  # (file_name, mime, data)
+    for f in files:
+        mime = f.content_type or ""
+        if mime not in ALLOWED_ATTACHMENT_MIMES:
+            raise HTTPException(422, f"Tipo de archivo no permitido: {f.filename} ({mime})")
+        data = await f.read()
+        if len(data) > ATTACHMENT_MAX_BYTES:
+            raise HTTPException(422, f"Archivo supera 10MB: {f.filename}")
+        payloads.append((f.filename or "archivo", mime, data))
+
     # app.trip_notes no tiene FK a app.trips (dbt --full-refresh recrea la tabla);
     # la integridad se garantiza acá
     exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
     if not exists:
         raise HTTPException(404, "Viaje no encontrado")
+
     note_id = await pool.fetchval(
         """
-        INSERT INTO app.trip_notes (trip_id, author_id, body)
-        VALUES ($1, $2::uuid, $3)
+        INSERT INTO app.trip_notes (trip_id, author_id, body, note_type)
+        VALUES ($1, $2::uuid, $3, $4)
         RETURNING id
         """,
-        trip_id, user["sub"], body,
+        trip_id, user["sub"], body, note_type,
     )
+
+    for file_name, mime, data in payloads:
+        storage_path = f"{trip_id}/{note_id}/{uuid4().hex}_{file_name}"
+        try:
+            supabase.storage.from_(ATTACHMENT_BUCKET).upload(
+                storage_path, data, {"content-type": mime}
+            )
+        except Exception as e:
+            raise HTTPException(502, f"Error subiendo {file_name}: {e}")
+        await pool.execute(
+            """
+            INSERT INTO app.trip_note_attachments
+              (note_id, storage_path, file_name, mime_type, size_bytes)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            note_id, storage_path, file_name, mime, len(data),
+        )
+
     row = await pool.fetchrow(f"SELECT {_NOTE_SELECT} WHERE n.id = $1", note_id)
-    return dict(row)
+    note = dict(row)
+    attachments = await _attachments_by_note(pool, supabase, [note_id])
+    note["attachments"] = attachments.get(str(note_id), [])
+    return note
+
+
+@router.patch("/{trip_id}/notes/{note_id}/pin")
+async def pin_trip_note(
+    trip_id: str,
+    note_id: str,
+    payload: TripNotePin,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    updated = await pool.fetchval(
+        """
+        UPDATE app.trip_notes SET pinned = $3
+        WHERE id = $1 AND trip_id = $2
+        RETURNING id
+        """,
+        note_id, trip_id, payload.pinned,
+    )
+    if not updated:
+        raise HTTPException(404, "Nota no encontrada")
+    return {"ok": True, "pinned": payload.pinned}
