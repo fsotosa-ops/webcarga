@@ -227,6 +227,16 @@ export type TripsMeta = {
   temperature_ranges: TemperatureRangeMeta[]
 }
 
+// Entrada inmutable de la bitácora de un viaje (app.trip_notes)
+export type TripNote = {
+  id:          string
+  trip_id:     string
+  author_id:   string
+  author_name: string | null
+  body:        string
+  created_at:  string
+}
+
 export type TripCreatePayload = {
   planning_date:          string
   source_system?:         string

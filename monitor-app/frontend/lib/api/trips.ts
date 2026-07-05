@@ -1,4 +1,4 @@
-import type { Trip, TripCreatePayload } from '@/lib/types'
+import type { Trip, TripCreatePayload, TripNote } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type TripListResponse = {
@@ -102,5 +102,14 @@ export const tripsApi = {
   removeFleetLink: (id: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/trips/${id}/fleet-link`, {
       method: 'DELETE',
+    }),
+
+  listNotes: (id: string) =>
+    apiFetch<TripNote[]>(`/api/v1/trips/${id}/notes`),
+
+  addNote: (id: string, body: string) =>
+    apiFetch<TripNote>(`/api/v1/trips/${id}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
     }),
 }
