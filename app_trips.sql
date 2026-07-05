@@ -9,9 +9,31 @@
             'manually_edited_fields', 'edited_by', 'edited_at', 'created_at'
         ],
         schema='app',
-        alias='trips'
+        alias='trips',
+        post_hook=[
+            "ALTER TABLE {{ this }} ENABLE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS trips_read ON {{ this }}",
+            "CREATE POLICY trips_read ON {{ this }} FOR SELECT TO authenticated USING (true)",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE table_schema = 'app' AND table_name = 'trips' AND constraint_type = 'PRIMARY KEY') THEN ALTER TABLE app.trips ADD PRIMARY KEY (id); END IF; END $$",
+            "CREATE INDEX IF NOT EXISTS idx_trips_planning_date ON {{ this }} (planning_date)",
+            "CREATE INDEX IF NOT EXISTS idx_trips_status ON {{ this }} (trip_status)",
+            "CREATE INDEX IF NOT EXISTS idx_trips_fleet_link ON {{ this }} (fleet_link_id)",
+            "CREATE INDEX IF NOT EXISTS idx_trips_fleet_plate ON {{ this }} ((fleet->>'tractor_plate'))",
+            "CREATE INDEX IF NOT EXISTS idx_trips_fleet_driver ON {{ this }} ((fleet->>'driver_name_tms'))",
+            "CREATE INDEX IF NOT EXISTS idx_trips_fleet_rut ON {{ this }} ((fleet->>'driver_rut_tms'))"
+        ]
     )
 }}
+
+/*
+  POST-HOOKS (PK / RLS / índices) — FIX DEFINITIVO del patrón recurrente:
+  un --full-refresh hace DROP + CREATE TABLE AS SELECT, y la tabla nueva nace
+  sin PK, sin RLS, sin políticas y sin índices (se perdieron 6 veces entre
+  2026-05 y 2026-07, restauradas a mano cada vez: 20260618000001,
+  20260702000005, 20260707000001). Los post-hooks re-aplican todo después de
+  CADA corrida (idempotentes: IF NOT EXISTS / DROP POLICY IF EXISTS), así el
+  full-refresh deja de ser destructivo para las protecciones.
+*/
 
 /*
   app_trips → app.trips
