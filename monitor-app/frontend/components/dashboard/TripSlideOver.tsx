@@ -13,6 +13,7 @@ import { getLatestTemp, stopWasVisited, classifyTemperature } from '@/lib/utils/
 import { fmtDT, fmtDate, formatRelativeTime } from '@/lib/utils/datetime'
 import { StopTimeline } from './StopTimeline'
 import { IndicatorDots } from './IndicatorDots'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 
 // ── TransporterAssignSection ──────────────────────────────────────────────────
 
@@ -262,7 +263,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   if (!trip) return null
 
   const currentStatus = trip.estado_manual ?? trip.current_status
-  const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
   const tmsMeta       = trip.source_system ? meta?.tms_sources.find(t => t.id === trip.source_system.toLowerCase()) : null
   const tmsLabel      = tmsMeta?.label ?? trip.source_system?.toUpperCase().slice(0, 3) ?? '?'
   const temp          = getLatestTemp(trip.stops ?? [])
@@ -339,14 +339,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 <span className="font-mono text-xs text-white/40">/ {trip.trailer_plate}</span>
               )}
             </div>
-            <span
-              className="text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0"
-              style={statusMeta
-                ? { backgroundColor: statusMeta.bg_color, color: statusMeta.text_color }
-                : { backgroundColor: '#334155', color: '#94a3b8' }}
-            >
-              {currentStatus ?? 'Sin estado'}
-            </span>
+            <StatusBadge status={currentStatus} meta={meta} size="md" onDark fallbackLabel="Sin estado" />
             {temp != null && (
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${tempStatus === 'out_of_range' ? 'bg-red-500/20 text-red-300' : 'bg-blue-500/20 text-blue-300'}`}>
                 {temp}°C

@@ -26,7 +26,6 @@
   --color-border: var(--border-color);
   --font-sans: var(--font-roboto), system-ui, sans-serif;
   --font-mulish: var(--font-mulish), system-ui, sans-serif;
-  --font-poppins: var(--font-poppins), system-ui, sans-serif;
 }
 
 body {

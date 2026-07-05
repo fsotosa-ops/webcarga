@@ -9,6 +9,7 @@ import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming }
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
 import { IndicatorDots } from './IndicatorDots'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 
 
 export function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
@@ -404,7 +405,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
           const plateAlert    = alertSummary?.plates[primaryPlate ?? ''] as AlertStatus | undefined
           const driverAlert   = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
           const currentStatus = trip.estado_manual ?? trip.current_status
-          const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
 
           return (
             <div
@@ -444,14 +444,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                       ? <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                       : null
                   })()}
-                  <span
-                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-                    style={statusMeta
-                      ? { backgroundColor: statusMeta.bg_color, color: statusMeta.text_color }
-                      : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
-                  >
-                    {currentStatus ?? '—'}
-                  </span>
+                  <StatusBadge status={currentStatus} meta={meta} />
                   {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
                     <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full whitespace-nowrap">OFF TIME</span>
                   )}
@@ -520,7 +513,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
               const driverAlert = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
               const currentStatus = trip.estado_manual ?? trip.current_status
-              const statusMeta    = currentStatus ? meta?.statuses.find(s => s.id === currentStatus) : null
 
               return (
                 <tr
@@ -648,14 +640,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
 
                   {/* ESTADO — sticky derecha */}
                   <td className="sticky right-[90px] z-10 bg-inherit border-l border-border/60 px-3 py-2.5">
-                    <span
-                      className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-                      style={statusMeta
-                        ? { backgroundColor: statusMeta.bg_color, color: statusMeta.text_color }
-                        : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
-                    >
-                      {currentStatus ?? '—'}
-                    </span>
+                    <StatusBadge status={currentStatus} meta={meta} />
                     {trip.estado_manual && (
                       <span className="text-[8px] text-accent block mt-0.5">override</span>
                     )}

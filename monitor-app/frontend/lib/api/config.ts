@@ -1,33 +1,6 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { apiFetch } from './client'
 import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta, TemperatureRangeMeta } from '@/lib/types'
 
-const BASE = ''
-
-async function getToken(): Promise<string> {
-  const sb = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
-  const { data } = await sb.auth.getSession()
-  return data.session?.access_token ?? ''
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = await getToken()
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...init?.headers,
-    },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error((err as { detail?: string }).detail ?? `Error ${res.status}`)
-  }
-  return res.json() as Promise<T>
-}
 
 export type TripStatusRow = StatusMeta & { sort_order: number }
 export type OperationalStateRow = OperationalStateMeta & { sort_order: number; active: boolean }
