@@ -107,7 +107,9 @@ async def list_trips(
         "OR COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms') ILIKE '%'||$1||'%' "
         "OR t.fleet->>'driver_rut_tms' ILIKE '%'||$1||'%' "
         "OR tp.business_name ILIKE '%'||$1||'%' "
-        "OR t.fleet->>'transporter_name_tms' ILIKE '%'||$1||'%')"
+        "OR t.fleet->>'transporter_name_tms' ILIKE '%'||$1||'%' "
+        "OR t.client_name ILIKE '%'||$1||'%' "
+        "OR t.source_system_trip_id ILIKE '%'||$1||'%')"
     ]
     params: list = [q]
 
@@ -234,6 +236,16 @@ class OperationalStateMeta(BaseModel):
     label:      str
     bg_color:   str
     text_color: str
+    # Grupo del tablero (misma taxonomía que StatusMeta.group) — permite que un
+    # override manual (estado_manual) bucketee a su columna en vez de caer a "Otro"
+    group:      str = "otro"
+
+
+class MonitorAlertRulesMeta(BaseModel):
+    stale_report_hours:     float
+    dwell_hours:            float
+    late_arrival_grace_min: int
+    unassigned_enabled:     bool
 
 
 class AlertThresholdMeta(BaseModel):
@@ -260,12 +272,13 @@ class TemperatureRangeMeta(BaseModel):
 
 
 class TripsMeta(BaseModel):
-    statuses:           list[StatusMeta]
-    tms_sources:        list[TmsSourceMeta]
-    operational_states: list[OperationalStateMeta]
-    alert_thresholds:   list[AlertThresholdMeta]
-    csv_columns:        list[CSVColumnDef]
-    temperature_ranges: list[TemperatureRangeMeta]
+    statuses:            list[StatusMeta]
+    tms_sources:         list[TmsSourceMeta]
+    operational_states:  list[OperationalStateMeta]
+    alert_thresholds:    list[AlertThresholdMeta]
+    csv_columns:         list[CSVColumnDef]
+    temperature_ranges:  list[TemperatureRangeMeta]
+    monitor_alert_rules: Optional[MonitorAlertRulesMeta] = None
 
 
 @router.get("/meta", response_model=TripsMeta)
@@ -275,9 +288,18 @@ async def get_trips_meta(pool=Depends(get_pool)):
         "FROM app.trip_statuses WHERE active = true ORDER BY sort_order"
     )
     op_rows = await pool.fetch(
-        "SELECT id::text, label, bg_color, text_color "
+        'SELECT id::text, label, bg_color, text_color, group_id AS "group" '
         "FROM app.operational_states WHERE active = true ORDER BY sort_order"
     )
+    # Resiliente al orden de deploy: si la tabla aún no existe (migración
+    # pendiente), /meta sigue funcionando y el frontend usa sus defaults
+    try:
+        alert_rules_row = await pool.fetchrow(
+            "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled "
+            "FROM app.monitor_alert_rules WHERE id = 1"
+        )
+    except Exception:
+        alert_rules_row = None
     thresh_rows = await pool.fetch(
         "SELECT doc_type, label, warning_days, error_days "
         "FROM app.alert_thresholds ORDER BY doc_type"
@@ -293,7 +315,60 @@ async def get_trips_meta(pool=Depends(get_pool)):
         alert_thresholds=[AlertThresholdMeta(**dict(r)) for r in thresh_rows],
         csv_columns=[CSVColumnDef(**c) for c in _CSV_COLUMNS],
         temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
+        monitor_alert_rules=MonitorAlertRulesMeta(**dict(alert_rules_row)) if alert_rules_row else None,
     )
+
+
+# ── Conductores liberados: terminaron sus viajes del día, reasignables ────────
+# Declarado ANTES de /{trip_id} para que FastAPI no matchee "available-drivers"
+# como un id de viaje. Sodimac excluido: nunca reporta patente ni conductor.
+
+@router.get("/available-drivers")
+async def available_drivers(
+    fecha: str = Query(""),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    day = _parse_date(fecha)
+    if day is None:
+        raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
+
+    rows = await pool.fetch(
+        """
+        WITH day_trips AS (
+            SELECT
+                COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms') AS driver_name,
+                t.fleet->>'driver_rut_tms'                                AS driver_rut,
+                COALESCE(fl.driver_phone, t.fleet->>'driver_phone')       AS driver_phone,
+                COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')     AS tractor_plate,
+                tp.business_name                                          AS transporter,
+                t.status_reported_at,
+                -- mismo criterio de "terminal" que la derivación de activo en dbt
+                (t.trip_status LIKE 'CERRADO%'
+                 OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')) AS closed
+            FROM app.trips t
+            LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
+            LEFT JOIN app.transporter_profiles tp ON tp.id = fl.transporter_id
+            WHERE t.planning_date = $1
+              AND t.source_system != 'sodimac'
+        )
+        SELECT
+            driver_name,
+            max(driver_rut)          AS driver_rut,
+            max(driver_phone)        AS driver_phone,
+            max(tractor_plate)       AS tractor_plate,
+            max(transporter)         AS transporter,
+            count(*)                 AS trips_total,
+            max(status_reported_at)  AS last_report_at
+        FROM day_trips
+        WHERE driver_name IS NOT NULL AND driver_name != ''
+        GROUP BY driver_name
+        HAVING count(*) = count(*) FILTER (WHERE closed)
+        ORDER BY max(status_reported_at) DESC NULLS LAST
+        """,
+        day,
+    )
+    return [dict(r) for r in rows]
 
 
 # ── Trip creation (manual entry + bulk) ──────────────────────────────────────

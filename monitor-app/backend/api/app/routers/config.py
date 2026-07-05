@@ -8,6 +8,9 @@ from ..db import get_pool
 
 router = APIRouter(prefix="/config", tags=["config"])
 
+# Taxonomía de grupos del tablero — compartida entre estados TMS y operacionales
+VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
+
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class TripStatusPatch(BaseModel):
@@ -15,15 +18,13 @@ class TripStatusPatch(BaseModel):
     bg_color:   Optional[str] = None
     text_color: Optional[str] = None
     group_id:   Optional[str] = None
+    sort_order: Optional[int] = None
 
     @field_validator("group_id")
     @classmethod
     def group_valid(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        allowed = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
-        if v not in allowed:
-            raise ValueError(f"group_id debe ser uno de {allowed}")
+        if v is not None and v not in VALID_GROUP_IDS:
+            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
         return v
 
 
@@ -32,6 +33,7 @@ class OperationalStateBody(BaseModel):
     bg_color:   str = "#f3f4f6"
     text_color: str = "#374151"
     sort_order: int = 99
+    group_id:   str = "otro"
 
     @field_validator("label")
     @classmethod
@@ -41,6 +43,13 @@ class OperationalStateBody(BaseModel):
             raise ValueError("label debe tener entre 1 y 60 caracteres")
         return v
 
+    @field_validator("group_id")
+    @classmethod
+    def group_valid(cls, v: str) -> str:
+        if v not in VALID_GROUP_IDS:
+            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
+        return v
+
 
 class OperationalStatePatch(BaseModel):
     label:      Optional[str] = None
@@ -48,6 +57,35 @@ class OperationalStatePatch(BaseModel):
     text_color: Optional[str] = None
     sort_order: Optional[int] = None
     active:     Optional[bool] = None
+    group_id:   Optional[str] = None
+
+    @field_validator("group_id")
+    @classmethod
+    def group_valid(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in VALID_GROUP_IDS:
+            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
+        return v
+
+
+class MonitorAlertRulesPatch(BaseModel):
+    stale_report_hours:     Optional[float] = None
+    dwell_hours:            Optional[float] = None
+    late_arrival_grace_min: Optional[int]   = None
+    unassigned_enabled:     Optional[bool]  = None
+
+    @field_validator("stale_report_hours", "dwell_hours")
+    @classmethod
+    def hours_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("las horas deben ser mayores a 0")
+        return v
+
+    @field_validator("late_arrival_grace_min")
+    @classmethod
+    def grace_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("los minutos de gracia no pueden ser negativos")
+        return v
 
 
 class AlertThresholdPatch(BaseModel):
@@ -110,8 +148,11 @@ class TemperatureRangePatch(BaseModel):
 
 @router.get("/statuses")
 async def list_statuses(pool=Depends(get_pool)):
+    # group_id AS "group": el frontend (StatusMeta) usa la key `group` — antes
+    # este endpoint devolvía group_id crudo y el select de Grupo en Configuración
+    # nunca mostraba el valor guardado (bug de auditoría 2026-07-06)
     rows = await pool.fetch(
-        "SELECT id, label, bg_color, text_color, group_id, sort_order "
+        'SELECT id, label, bg_color, text_color, group_id AS "group", sort_order '
         "FROM app.trip_statuses WHERE active = true ORDER BY sort_order"
     )
     return [dict(r) for r in rows]
@@ -143,7 +184,7 @@ async def patch_status(
         f"UPDATE app.trip_statuses SET {', '.join(sets)} WHERE id = $1", *vals
     )
     row = await pool.fetchrow(
-        "SELECT id, label, bg_color, text_color, group_id, sort_order "
+        'SELECT id, label, bg_color, text_color, group_id AS "group", sort_order '
         "FROM app.trip_statuses WHERE id = $1",
         status_id,
     )
@@ -155,7 +196,7 @@ async def patch_status(
 @router.get("/operational-states")
 async def list_operational_states(pool=Depends(get_pool)):
     rows = await pool.fetch(
-        "SELECT id::text, label, bg_color, text_color, sort_order, active "
+        'SELECT id::text, label, bg_color, text_color, sort_order, active, group_id AS "group" '
         "FROM app.operational_states ORDER BY sort_order, created_at"
     )
     return [dict(r) for r in rows]
@@ -168,10 +209,10 @@ async def create_operational_state(
     _=Depends(require_admin),
 ):
     row = await pool.fetchrow(
-        """INSERT INTO app.operational_states (label, bg_color, text_color, sort_order)
-           VALUES ($1, $2, $3, $4)
-           RETURNING id::text, label, bg_color, text_color, sort_order, active""",
-        body.label, body.bg_color, body.text_color, body.sort_order,
+        """INSERT INTO app.operational_states (label, bg_color, text_color, sort_order, group_id)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id::text, label, bg_color, text_color, sort_order, active, group_id AS "group\"""",
+        body.label, body.bg_color, body.text_color, body.sort_order, body.group_id,
     )
     return dict(row)
 
@@ -203,7 +244,7 @@ async def patch_operational_state(
         f"UPDATE app.operational_states SET {', '.join(sets)} WHERE id = $1", *vals
     )
     row = await pool.fetchrow(
-        "SELECT id::text, label, bg_color, text_color, sort_order, active "
+        'SELECT id::text, label, bg_color, text_color, sort_order, active, group_id AS "group" '
         "FROM app.operational_states WHERE id = $1",
         state_id,
     )
@@ -352,3 +393,42 @@ async def delete_temperature_range(
     if result == "DELETE 0":
         raise HTTPException(404, "Rango de temperatura no encontrado")
     return {"ok": True}
+
+
+# ── Reglas de alerta del monitor (fila única) ─────────────────────────────────
+
+_ALERT_RULES_SELECT = (
+    "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled "
+    "FROM app.monitor_alert_rules WHERE id = 1"
+)
+
+
+@router.get("/monitor-alert-rules")
+async def get_monitor_alert_rules(pool=Depends(get_pool)):
+    row = await pool.fetchrow(_ALERT_RULES_SELECT)
+    if not row:
+        raise HTTPException(404, "Reglas de alerta no configuradas")
+    return dict(row)
+
+
+@router.patch("/monitor-alert-rules")
+async def patch_monitor_alert_rules(
+    body: MonitorAlertRulesPatch,
+    pool=Depends(get_pool),
+    _=Depends(require_admin),
+):
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(422, "Ningún campo enviado")
+
+    sets, vals = [], []
+    for field, value in data.items():
+        vals.append(value)
+        sets.append(f"{field} = ${len(vals)}")
+    sets.append("updated_at = NOW()")
+
+    await pool.execute(
+        f"UPDATE app.monitor_alert_rules SET {', '.join(sets)} WHERE id = 1", *vals
+    )
+    row = await pool.fetchrow(_ALERT_RULES_SELECT)
+    return dict(row)
