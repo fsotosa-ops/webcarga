@@ -412,7 +412,16 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               role="button"
               tabIndex={0}
               onClick={() => onSelect(trip)}
-              onKeyDown={e => { if (e.key === 'Enter') onSelect(trip) }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') onSelect(trip)
+                else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  const sibling = e.key === 'ArrowDown'
+                    ? e.currentTarget.nextElementSibling
+                    : e.currentTarget.previousElementSibling
+                  ;(sibling as HTMLElement | null)?.focus?.()
+                }
+              }}
               className={`px-4 py-3 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
                 updatedIds?.has(trip.id) ? 'bg-amber-50' :
                 isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-gray-50/60'
@@ -490,20 +499,19 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
         <table className="w-full text-sm" style={{ minWidth: 1080 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+              <th onClick={() => handleSort('tractor_plate')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
               <th onClick={() => handleSort('planning_date')} className="px-3 py-2.5 text-left w-[72px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
               <th onClick={() => handleSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
-              <th onClick={() => handleSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
               <th onClick={() => handleSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
               <th onClick={() => handleSort('transporter')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="transporter" sortKey={sortKey} sortDir={sortDir} /></th>
               <th onClick={() => handleSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<SortIcon col="client_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
               <th className="px-3 py-2.5 text-left">Destinos</th>
-              <th onClick={() => handleSort('current_status')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
-              <th className="px-3 py-2.5 text-left w-[90px]">Indicadores</th>
-              <th className="px-2 py-2.5 w-6"></th>
+              <th onClick={() => handleSort('current_status')} className="sticky right-[90px] z-10 bg-inherit border-l border-border/60 px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} /></th>
+              <th className="sticky right-0 z-10 bg-inherit px-3 py-2.5 text-left w-[90px]">Indicadores</th>
             </tr>
           </thead>
           <tbody>
@@ -523,17 +531,33 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   onKeyDown={e => {
                     // Enter abre el detalle solo si el foco está en la fila misma (no en un input de edición inline)
                     if (e.key === 'Enter' && e.target === e.currentTarget) onSelect(trip)
+                    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      const sibling = e.key === 'ArrowDown'
+                        ? e.currentTarget.nextElementSibling
+                        : e.currentTarget.previousElementSibling
+                      ;(sibling as HTMLElement | null)?.focus?.()
+                    }
                   }}
                   className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
                     updatedIds?.has(trip.id)
                       ? 'bg-amber-50'
                       : isActive
-                      ? 'bg-accent/5 border-l-2 border-l-accent'
+                      ? 'bg-sky-50 border-l-2 border-l-accent'
                       : i % 2 === 1
-                      ? 'bg-gray-50/40 hover:bg-gray-50'
-                      : 'hover:bg-gray-50/70'
+                      ? 'bg-gray-50 hover:bg-gray-100'
+                      : 'bg-white hover:bg-gray-50'
                   }`}
                 >
+                  {/* PATENTE — sticky: siempre visible al scrollear horizontal */}
+                  <td className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5">
+                    <div className="flex items-start gap-1.5">
+                      <PlateCell trip={trip} onSaved={onSaved} />
+                      <ComplianceBadge status={plateAlert ?? null} compact
+                        tooltip={plateAlert === 'expired' ? 'Vehículo vencido' : 'Vence pronto'} />
+                    </div>
+                  </td>
+
                   {/* FECHA */}
                   <td className="px-3 py-2.5">
                     <p className="text-[11px] text-gray-700 font-medium whitespace-nowrap">
@@ -564,15 +588,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     <span className="font-mono text-[11px] text-gray-500">
                       {trip.source_system_trip_id ?? '—'}
                     </span>
-                  </td>
-
-                  {/* PATENTE */}
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-start gap-1.5">
-                      <PlateCell trip={trip} onSaved={onSaved} />
-                      <ComplianceBadge status={plateAlert ?? null} compact
-                        tooltip={plateAlert === 'expired' ? 'Vehículo vencido' : 'Vence pronto'} />
-                    </div>
                   </td>
 
                   {/* CONDUCTOR + FLAGS */}
@@ -620,8 +635,19 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     <StopPills stops={trip.stops} />
                   </td>
 
-                  {/* ESTADO */}
-                  <td className="px-3 py-2.5">
+                  {/* TEMP */}
+                  <td className="px-3 py-2.5 text-center">
+                    {(() => {
+                      const temp = getLatestTemp(trip.stops ?? [])
+                      const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
+                      return temp != null
+                        ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
+                        : <span className="text-gray-300 text-xs">—</span>
+                    })()}
+                  </td>
+
+                  {/* ESTADO — sticky derecha */}
+                  <td className="sticky right-[90px] z-10 bg-inherit border-l border-border/60 px-3 py-2.5">
                     <span
                       className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
                       style={statusMeta
@@ -647,25 +673,14 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     })()}
                   </td>
 
-                  {/* TEMP */}
-                  <td className="px-3 py-2.5 text-center">
-                    {(() => {
-                      const temp = getLatestTemp(trip.stops ?? [])
-                      const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
-                      return temp != null
-                        ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
-                        : <span className="text-gray-300 text-xs">—</span>
-                    })()}
-                  </td>
-
-                  {/* INDICADORES */}
-                  <td className="px-3 py-2.5">
-                    {trip.source_system === 'manual' && <IndicatorDots trip={trip} onSaved={onSaved} />}
-                  </td>
-
-                  {/* Chevron */}
-                  <td className="px-2 py-2.5 text-center">
-                    <span className={`text-xs ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
+                  {/* INDICADORES — sticky derecha, incluye el chevron de apertura */}
+                  <td className="sticky right-0 z-10 bg-inherit px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-1.5">
+                      {trip.source_system === 'manual'
+                        ? <IndicatorDots trip={trip} onSaved={onSaved} />
+                        : <span />}
+                      <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
+                    </div>
                   </td>
                 </tr>
               )

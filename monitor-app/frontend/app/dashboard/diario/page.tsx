@@ -19,6 +19,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
 import { useDiarioFilters, countActiveFilters, type FlagField } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
+import { deriveKpis, matchesKpi, STALE_HOURS, type KpiId } from '@/lib/utils/kpis'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -54,6 +55,12 @@ const FLAG_CHIPS: { label: string; field: FlagField; on: string; off: string }[]
   { label: 'Trabajando', field: 'fTrabajando',    on: 'bg-green-500  border-green-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-green-200  hover:text-green-600'  },
   { label: 'Asignado',   field: 'fAsignado',      on: 'bg-violet-500 border-violet-500 text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-violet-200 hover:text-violet-600' },
   { label: '1ra Vuelta', field: 'fPrimeraVuelta', on: 'bg-amber-500  border-amber-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-amber-200  hover:text-amber-600'  },
+]
+
+const KPI_CARDS: { id: KpiId; label: string; activeCls: string; countCls: string }[] = [
+  { id: 'off_time', label: 'OFF TIME',                       activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50',     countCls: 'text-red-600'   },
+  { id: 'stale',    label: `Sin reporte > ${STALE_HOURS}h`,  activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50', countCls: 'text-amber-600' },
+  { id: 'temp_out', label: 'Temp fuera de rango',            activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50',   countCls: 'text-blue-600'  },
 ]
 
 function todayISO() {
@@ -166,6 +173,17 @@ export default function DiarioPage() {
   const loading  = tripsQuery.isPending
   const fetching = tripsQuery.isFetching
   const error    = tripsQuery.error ? (tripsQuery.error instanceof Error ? tripsQuery.error.message : 'Error cargando viajes') : null
+
+  // ── KPIs accionables: excepciones derivadas de la data ya cargada (un clic = filtro) ──
+  const [kpiFilter, setKpiFilter] = useState<KpiId | null>(null)
+  const kpis = useMemo(
+    () => deriveKpis(trips, tripsMeta?.temperature_ranges ?? []),
+    [trips, tripsMeta?.temperature_ranges],
+  )
+  const visibleTrips = useMemo(() => {
+    if (f.tab !== 'en_curso' || !kpiFilter) return trips
+    return trips.filter(t => matchesKpi(t, kpiFilter, tripsMeta?.temperature_ranges ?? []))
+  }, [trips, f.tab, kpiFilter, tripsMeta?.temperature_ranges])
 
   // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
   const prevReportedRef = useRef<Map<string, string | null>>(new Map())
@@ -325,6 +343,33 @@ export default function DiarioPage() {
               </button>
             </div>
           </div>
+
+          {/* ── KPIs accionables — cada tarjeta es un filtro de un clic ─ */}
+          {f.tab === 'en_curso' && !loading && (
+            <div className="flex gap-2 flex-wrap">
+              {KPI_CARDS.map(card => {
+                const count  = kpis[card.id]
+                const active = kpiFilter === card.id
+                return (
+                  <button
+                    key={card.id}
+                    onClick={() => setKpiFilter(prev => (prev === card.id ? null : card.id))}
+                    disabled={count === 0 && !active}
+                    aria-pressed={active}
+                    className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
+                      active ? card.activeCls : 'border-border hover:border-gray-300'
+                    }`}
+                  >
+                    <span className={`text-lg font-bold leading-none ${count > 0 ? card.countCls : 'text-gray-300'}`}>
+                      {count}
+                    </span>
+                    <span className="text-[11px] font-medium text-gray-500">{card.label}</span>
+                    {active && <X size={11} className="text-gray-400" />}
+                  </button>
+                )
+              })}
+            </div>
+          )}
 
           {/* ── Filter bar ───────────────────────────────────────────── */}
           <div className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-3">
@@ -496,7 +541,7 @@ export default function DiarioPage() {
             <div className={`transition-opacity duration-150 ${fetching ? 'opacity-50' : ''}`} aria-busy={fetching}>
               {f.tab === 'en_curso' && viewMode === 'tablero' ? (
                 <TripBoard
-                  trips={trips}
+                  trips={visibleTrips}
                   groups={defaultGroups}
                   meta={tripsMeta}
                   onSaved={handleSaved}
@@ -505,7 +550,7 @@ export default function DiarioPage() {
                 />
               ) : (
                 <TripTable
-                  trips={trips}
+                  trips={visibleTrips}
                   selectedId={selected?.id ?? null}
                   onSelect={setSelected}
                   onSaved={handleSaved}

@@ -129,4 +129,31 @@ describe('TripTable — accesibilidad por teclado', () => {
     fireEvent.keyDown(row, { key: 'Enter' })
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
   })
+
+  it('moves focus to the next/previous row with arrow keys', () => {
+    render(
+      <TripTable
+        trips={[makeTrip('t1'), makeTrip('t2', { tractor_plate: 'WXYZ99' })]}
+        selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null}
+      />,
+    )
+    const rows = document.querySelectorAll('tbody tr')
+    ;(rows[0] as HTMLElement).focus()
+    fireEvent.keyDown(rows[0], { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(rows[1])
+    fireEvent.keyDown(rows[1], { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(rows[0])
+  })
+})
+
+describe('TripTable — columnas fijas (sticky)', () => {
+  it('Patente queda fija a la izquierda y Estado/Indicadores a la derecha', () => {
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    const patenteTh = screen.getByText('Patente').closest('th')!
+    const estadoTh  = screen.getByText('Estado').closest('th')!
+    const indTh     = screen.getByText('Indicadores').closest('th')!
+    expect(patenteTh.className).toContain('sticky left-0')
+    expect(estadoTh.className).toContain('sticky right-')
+    expect(indTh.className).toContain('sticky right-0')
+  })
 })
