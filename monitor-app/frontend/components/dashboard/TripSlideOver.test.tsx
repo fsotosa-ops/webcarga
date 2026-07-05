@@ -12,6 +12,7 @@ vi.mock('@/lib/api/trips', () => ({
     removeFleetLink: vi.fn(),
     listNotes: vi.fn(),
     addNote: vi.fn(),
+    pinNote: vi.fn(),
   },
 }))
 vi.mock('@/lib/api/transporters', () => ({
@@ -173,22 +174,26 @@ describe('TripSlideOver — indicadores', () => {
 describe('TripSlideOver — Bitácora (feed con historial)', () => {
   const note: TripNote = {
     id: 'n1', trip_id: 't1', author_id: 'u1', author_name: 'Operador Uno',
-    body: 'Conductor confirmó por teléfono', created_at: '2026-07-05 12:00:00',
+    body: 'Conductor confirmó por teléfono', note_type: 'llamada', pinned: false,
+    created_at: '2026-07-05 12:00:00', attachments: [],
   }
 
-  it('renders existing notes with author', async () => {
+  it('renders existing notes with author and type chip', async () => {
     vi.mocked(tripsApi.listNotes).mockResolvedValue([note])
     renderSlideOver(baseTrip)
     expect(await screen.findByText('Conductor confirmó por teléfono')).toBeInTheDocument()
     expect(screen.getByText('Operador Uno')).toBeInTheDocument()
+    expect(screen.getAllByText('Llamada').length).toBeGreaterThan(0)
   })
 
-  it('adds a note through the composer', async () => {
-    vi.mocked(tripsApi.addNote).mockResolvedValue({ ...note, id: 'n2', body: 'nueva nota' })
+  it('adds a note through the composer with the selected type', async () => {
+    vi.mocked(tripsApi.addNote).mockResolvedValue({ ...note, id: 'n2', body: 'nueva nota', note_type: 'incidente' })
     renderSlideOver(baseTrip)
+    fireEvent.click(screen.getByTitle('Incidente'))
     fireEvent.change(screen.getByPlaceholderText(/Registrar novedad/), { target: { value: 'nueva nota' } })
     fireEvent.click(screen.getByText('Agregar nota'))
-    await waitFor(() => expect(tripsApi.addNote).toHaveBeenCalledWith('t1', 'nueva nota'))
+    await waitFor(() =>
+      expect(tripsApi.addNote).toHaveBeenCalledWith('t1', { body: 'nueva nota', note_type: 'incidente', files: [] }))
     expect(await screen.findByText('nueva nota')).toBeInTheDocument()
   })
 
@@ -205,5 +210,78 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
     expect(screen.getByText(/Nota anterior/)).toBeInTheDocument()
     expect(screen.getByText(/obs vieja/)).toBeInTheDocument()
     expect(screen.getByText(/comentario viejo/)).toBeInTheDocument()
+  })
+
+  it('renders pinned notes in a Destacadas section above the feed', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n1', body: 'nota normal' },
+      { ...note, id: 'n2', body: 'nota fijada', pinned: true },
+    ])
+    renderSlideOver(baseTrip)
+    expect(await screen.findByText('Destacadas')).toBeInTheDocument()
+    const destacadas = screen.getByText('Destacadas')
+    const fijada = screen.getByText('nota fijada')
+    const normal = screen.getByText('nota normal')
+    expect(destacadas.compareDocumentPosition(fijada) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(fijada.compareDocumentPosition(normal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('pinning a note calls tripsApi.pinNote', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([note])
+    vi.mocked(tripsApi.pinNote).mockResolvedValue({ ok: true, pinned: true })
+    renderSlideOver(baseTrip)
+    await screen.findByText('Conductor confirmó por teléfono')
+    fireEvent.click(screen.getByTitle('Destacar nota'))
+    await waitFor(() => expect(tripsApi.pinNote).toHaveBeenCalledWith('t1', 'n1', true))
+  })
+
+  it('renders system events as compact one-line entries without a pin control', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n3', note_type: 'sistema', body: 'Estableció estado operativo manual: en_seguimiento' },
+    ])
+    renderSlideOver(baseTrip)
+    expect(await screen.findByText(/estableció estado operativo manual/)).toBeInTheDocument()
+    expect(screen.queryByTitle('Destacar nota')).not.toBeInTheDocument()
+  })
+
+  it('filters the feed by note type', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n1', note_type: 'llamada', body: 'nota de llamada' },
+      { ...note, id: 'n2', note_type: 'incidente', body: 'nota de incidente' },
+    ])
+    renderSlideOver(baseTrip)
+    await screen.findByText('nota de llamada')
+    // el primer botón "Incidente" es el chip de filtro (el composer usa title)
+    fireEvent.click(screen.getAllByText('Incidente')[0])
+    expect(screen.queryByText('nota de llamada')).not.toBeInTheDocument()
+    expect(screen.getByText('nota de incidente')).toBeInTheDocument()
+  })
+
+  it('renders attachments and lists them in the Documentos view', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      {
+        ...note,
+        attachments: [{ id: 'a1', file_name: 'guia.pdf', mime_type: 'application/pdf', size_bytes: 2048, url: 'https://signed/x' }],
+      },
+    ])
+    renderSlideOver(baseTrip)
+    expect(await screen.findByText('guia.pdf')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Documentos'))
+    expect(screen.getByText('guia.pdf')).toBeInTheDocument()
+    expect(screen.getByText(/2 KB/)).toBeInTheDocument()
+  })
+
+  it('attaching a file enables sending a note without body', async () => {
+    vi.mocked(tripsApi.addNote).mockResolvedValue({
+      ...note, id: 'n9', body: '',
+      attachments: [{ id: 'a2', file_name: 'foto.png', mime_type: 'image/png', size_bytes: 10, url: 'https://signed/y' }],
+    })
+    renderSlideOver(baseTrip)
+    const file = new File(['x'], 'foto.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('Adjuntar archivos'), { target: { files: [file] } })
+    expect(await screen.findByText('foto.png')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Agregar nota'))
+    await waitFor(() =>
+      expect(tripsApi.addNote).toHaveBeenCalledWith('t1', { body: '', note_type: 'observacion', files: [file] }))
   })
 })

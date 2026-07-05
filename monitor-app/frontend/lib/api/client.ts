@@ -20,10 +20,12 @@ export async function getToken(): Promise<string> {
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getToken()
+  // Con FormData el browser setea el Content-Type (incluye el boundary del multipart)
+  const isFormData = init?.body instanceof FormData
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       Authorization: `Bearer ${token}`,
       ...init?.headers,
     },

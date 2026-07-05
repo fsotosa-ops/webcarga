@@ -107,9 +107,20 @@ export const tripsApi = {
   listNotes: (id: string) =>
     apiFetch<TripNote[]>(`/api/v1/trips/${id}/notes`),
 
-  addNote: (id: string, body: string) =>
-    apiFetch<TripNote>(`/api/v1/trips/${id}/notes`, {
+  addNote: (id: string, payload: { body: string; note_type?: string; files?: File[] }) => {
+    const form = new FormData()
+    form.set('body', payload.body)
+    if (payload.note_type) form.set('note_type', payload.note_type)
+    for (const f of payload.files ?? []) form.append('files', f)
+    return apiFetch<TripNote>(`/api/v1/trips/${id}/notes`, {
       method: 'POST',
-      body: JSON.stringify({ body }),
+      body: form,
+    })
+  },
+
+  pinNote: (id: string, noteId: string, pinned: boolean) =>
+    apiFetch<{ ok: boolean; pinned: boolean }>(`/api/v1/trips/${id}/notes/${noteId}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned }),
     }),
 }

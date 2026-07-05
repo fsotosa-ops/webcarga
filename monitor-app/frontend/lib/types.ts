@@ -228,13 +228,28 @@ export type TripsMeta = {
 }
 
 // Entrada inmutable de la bitácora de un viaje (app.trip_notes)
+// 'sistema' lo genera solo la API (auditoría de acciones); el resto los crea el operador
+export type TripNoteType = 'observacion' | 'llamada' | 'whatsapp' | 'incidente' | 'sistema'
+
+export type TripNoteAttachment = {
+  id:         string
+  file_name:  string
+  mime_type:  string
+  size_bytes: number
+  /** Signed URL (1h) — null si la firma falló */
+  url:        string | null
+}
+
 export type TripNote = {
   id:          string
   trip_id:     string
   author_id:   string
   author_name: string | null
   body:        string
+  note_type:   TripNoteType
+  pinned:      boolean
   created_at:  string
+  attachments: TripNoteAttachment[]
 }
 
 export type TripCreatePayload = {
