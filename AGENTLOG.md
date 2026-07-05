@@ -403,9 +403,9 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 **Verificación:** 125/125 tests frontend, 24/24 backend, `tsc` limpio, `npm run build` OK. Sin smoke de navegador (4ta ronda sin sesión de auth).
 
-#### ⚠️ PENDIENTES que requieren confirmación del usuario
-1. **Aplicar `20260706000001_trip_notes_v2.sql` a Supabase** (ALTER trip_notes + tabla attachments + bucket) — sin esto, los tipos/pin/adjuntos fallan en runtime.
-2. **Push a `dev`** (4 commits locales).
+#### Cierre (2026-07-05, autorizado por el usuario)
+1. **Migración `trip_notes_v2` aplicada a Supabase** vía MCP — verificado: note_type+pinned en trip_notes, tabla trip_note_attachments con RLS y política de lectura, bucket `trip-attachments` privado (public=false).
+2. **Pusheado a `dev`** (`cf04dca..174207f`) — CI/CD despliega frontend + monitor-api (el Dockerfile ya incluye python-multipart).
 
 ---
 
