@@ -476,6 +476,45 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 ---
 
+### 2026-07-06 (cont. 3) — Ajustes UAT (form manual + fix 400 adjuntos) + región/ciudad Chile
+
+**Objetivo (UAT con Fabián, notas granola/gemini):** (1) formulario de viaje manual roto en Destinos + Cliente/Tipo de carga como dropdowns, (2) Sin TMS con ID de seguimiento, (3) error 400 al adjuntar en bitácora. Durante la sesión el usuario agregó: (4) dropdown región/ciudad de Chile (librería country-state-city) para creación, detalle y filtro del monitor, como **columnas complementarias** nuevas.
+
+**Plan:** `/Users/usuario/.claude/plans/necesito-que-analices-las-vivid-planet.md`
+
+#### Diagnósticos clave
+
+- **Error 400 adjuntos NO era permisos de Storage** (hipótesis del UAT descartada): el proxy BFF (`app/api/v1/[...path]/route.ts`) hacía `init.body = await req.text()`, que decodifica los bytes binarios de PDF/imágenes como UTF-8 (→ U+FFFD), corrompiendo el multipart; Starlette no podía parsearlo → 400. El backend sube con service role (bypassa RLS) y un fallo de Storage daría 502. Los tests no lo veían porque `TestClient` no pasa por el proxy.
+- **Destinos inutilizables**: `INPUT + ' w-[190px]'` — `INPUT` ya trae `w-full`; dos utilidades de ancho en conflicto (gana la del stylesheet, `w-full`) dejaban el datetime a ancho completo, el nombre aplastado y el trash fuera de columna.
+- **"Yanza" de las notas = Iansa** (verificado contra la base: walmart 2017, sodimac 348, iansa 41, colun 12 — valores en minúscula).
+
+#### Qué se hizo (4 commits en `dev`, local, NO pusheados)
+
+| Commit | Contenido |
+|--------|-----------|
+| `cbfed7d` | **Fix proxy BFF**: reenvío binario (`Buffer.from(await req.arrayBuffer())`) + test que verifica byte-identidad (probado que falla con `req.text()`) |
+| `1d9cb29` | **Form manual**: fila destino en grid (fix ancho), Cliente dropdown (walmart/sodimac/colun/iansa + Otro cliente spot con texto libre opcional → fallback `otro`), Tipo de carga dropdown (SECO/FRIO/CONGELADO + rangos de temperatura configurados), Sin TMS con "ID de seguimiento (opcional)" → `source_system_trip_id` (backend ya lo persistía; el ID interno uuid se genera igual) |
+| `37153b5` | **Backend + DB + dbt**: migración `20260709000001_trip_origin_location.sql` (origin_region/origin_city en app.trips y trips_manual, **NO aplicada aún**); `app_trips.sql` raíz con las columnas en ambas ramas + merge_exclude_columns; API: creación (origen + destination_region/city por stop — claves ya existentes en el jsonb), PATCH (manually_edited_fields + mirror a trips_manual, '' → NULL), filtros exactos `origin_region`/`origin_city` en GET /trips. 46/46 pytest |
+| `f2f6aa8` | **Frontend**: `lib/data/chile-locations.json` (16 regiones/346 comunas, generado desde country-state-city devDep vía `scripts/generate-chile-locations.mjs`); `RegionCityPicker` (región→ciudad dependientes, conserva valores desconocidos); creación (origen + por destino), detalle Gestión ("Ubicación de origen" con guardar/cancelar y error visible), FilterPopover + reducer (`fRegion`/`fCity`) + params. 172/172 vitest |
+
+**Verificación:** 172/172 frontend, 46/46 backend, tsc/build limpios. Sin smoke de navegador (sesión auth sigue expirada — 7ma ronda). El fix de adjuntos se valida en dev desplegado (adjuntar un screenshot en la bitácora).
+
+#### Decisiones
+
+| Decisión | Elección | Razón |
+|----------|----------|-------|
+| Fuente de la lista de clientes | Constante frontend (`MANUAL_CLIENTS`), valores en minúscula | Coinciden con `app.trips.client_name` real y con la fórmula md5 de reconciliación; migrable al patrón Configuración si piden administrarla |
+| Ubicación región/ciudad | Columnas complementarias `origin_region`/`origin_city` (pedido explícito del usuario), destinos en claves `destination_*` del jsonb | No pisan `origin` del TMS; en merge_exclude_columns el pipeline no las toca; en manuales sobreviven al full-refresh vía trips_manual |
+| Dataset Chile | JSON generado y commiteado (no import directo de country-state-city) | El paquete embarca ~11MB de datos mundiales; el JSON de Chile son ~15KB |
+
+#### ⚠️ Pendientes al cierre
+1. **Aplicar migración `20260709000001` a Supabase ANTES de pushear** — `_TRIP_SELECT` referencia las columnas nuevas; el deploy sin migración rompe TODOS los GET de trips (la migración es aditiva, segura de aplicar antes).
+2. **Push a `dev`** (4 commits) + verificar en `gh run list` que Deploy Frontend Y Monitor API se disparan (lección del incidente del filtro de paths).
+3. **Copiar `app_trips.sql` (raíz) al proyecto dbt en Mage** — ahora también por las columnas origin_region/origin_city (además del pendiente anterior de trips_manual).
+4. Validar en dev desplegado: adjuntar screenshot en bitácora (fix 400), form manual completo, asignar/filtrar ubicación.
+
+---
+
 ## Próximo paso exacto
 
 **Pusheado a `dev` (2026-07-05, autorizado por el usuario):** incluye el rango pendiente anterior (fechas por TMS) + las 5 fases del rediseño UX/UI world-class.
