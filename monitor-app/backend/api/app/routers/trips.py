@@ -42,6 +42,8 @@ _TRIP_SELECT = """
     tp.business_name                              AS transporter,
     t.fleet->>'transporter_name_tms'              AS transporter_tms,
     t.origin,
+    t.origin_region,
+    t.origin_city,
     t.cargo_type,
     t.stops,
     t.activo,
@@ -94,6 +96,8 @@ async def list_trips(
     primera_vuelta: str = Query(""),
     tms: str = Query(""),
     client: str = Query(""),
+    origin_region: str = Query(""),
+    origin_city: str = Query(""),
     sort: str = Query("default"),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
@@ -147,6 +151,10 @@ async def list_trips(
         add("t.source_system = ANY(?)", tms_list)
     if client:
         add("t.client_name ILIKE '%'||?||'%'", client)
+    if origin_region:
+        add("t.origin_region = ?", origin_region)
+    if origin_city:
+        add("t.origin_city = ?", origin_city)
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit
@@ -374,8 +382,13 @@ async def available_drivers(
 # ── Trip creation (manual entry + bulk) ──────────────────────────────────────
 
 class TripStopCreate(BaseModel):
-    local:         str
-    planning_date: Optional[str] = None  # 'YYYY-MM-DD HH:mm' o ISO
+    local:              str
+    planning_date:      Optional[str] = None  # 'YYYY-MM-DD HH:mm' o ISO
+    # Ubicación del destino (dropdown región/ciudad de Chile) — van a las
+    # claves destination_region/destination_city que ya existen en el jsonb
+    # stops del pipeline (hoy solo qanalytics las trae)
+    destination_region: Optional[str] = None
+    destination_city:   Optional[str] = None
 
 
 class TripCreateBody(BaseModel):
@@ -389,6 +402,8 @@ class TripCreateBody(BaseModel):
     source_system:          str           = 'manual'
     client_name:            Optional[str] = None
     origin:                 Optional[str] = None
+    origin_region:          Optional[str] = None
+    origin_city:            Optional[str] = None
     cargo_type:             Optional[str] = None
     current_status:         Optional[str] = None
     stops:                  list[TripStopCreate] = []
@@ -438,6 +453,8 @@ def _build_manual_stops(stops: list[TripStopCreate], trip_id: str) -> str:
             "local":         s.local,
             "planning_date": s.planning_date,
             **{k: None for k in _STOP_NULL_KEYS},
+            "destination_region": s.destination_region,
+            "destination_city":   s.destination_city,
         }
         out.append(stop)
     return json.dumps(out)
@@ -494,11 +511,13 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             """
             INSERT INTO app.trips_manual (
                 id, origin_tms, source_system_trip_id, client_name, planning_date,
-                origin, cargo_type, trip_status, fleet, stops, created_by
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::uuid)
+                origin, origin_region, origin_city, cargo_type, trip_status,
+                fleet, stops, created_by
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::uuid)
             """,
             trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
-            body.planning_date, body.origin, body.cargo_type, body.current_status,
+            body.planning_date, body.origin, body.origin_region, body.origin_city,
+            body.cargo_type, body.current_status,
             fleet_json, stops_json, user["sub"],
         )
     except Exception as e:
@@ -514,15 +533,17 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
         """
         INSERT INTO app.trips (
             id, source_system, origin_tms, source_system_trip_id, client_name,
-            planning_date, origin, cargo_type, trip_status, fleet, stops,
+            planning_date, origin, origin_region, origin_city, cargo_type,
+            trip_status, fleet, stops,
             activo, trabajando, asignado, primera_vuelta,
             status_reported_at, pipeline_updated_at, created_at, updated_at,
             manually_edited_fields
-        ) VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,
+        ) VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,
                   true,false,false,false,NOW(),NOW(),NOW(),NOW(),'{}')
         """,
         trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
-        body.planning_date, body.origin, body.cargo_type, body.current_status,
+        body.planning_date, body.origin, body.origin_region, body.origin_city,
+        body.cargo_type, body.current_status,
         fleet_json, stops_json,
     )
 
@@ -566,6 +587,8 @@ async def _mirror_manual_trip(pool, trip_id: str) -> None:
             UPDATE app.trips_manual m SET
                 trip_status            = t.trip_status,
                 estado_manual          = t.estado_manual,
+                origin_region          = t.origin_region,
+                origin_city            = t.origin_city,
                 activo                 = COALESCE(t.activo, m.activo),
                 trabajando             = COALESCE(t.trabajando, m.trabajando),
                 asignado               = COALESCE(t.asignado, m.asignado),
@@ -752,7 +775,8 @@ async def patch_trip(
 
     # Remaining fields go to app.trips
     bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
-    str_fields  = ("estado_manual", "observaciones", "comentarios")
+    str_fields  = ("estado_manual", "observaciones", "comentarios",
+                   "origin_region", "origin_city")
     trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields)}
 
     if trip_fields:

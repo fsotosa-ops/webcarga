@@ -6,7 +6,8 @@
         on_schema_change='sync_all_columns',
         merge_exclude_columns=[
             'observaciones', 'comentarios', 'fleet_link_id',
-            'manually_edited_fields', 'edited_by', 'edited_at', 'created_at'
+            'manually_edited_fields', 'edited_by', 'edited_at', 'created_at',
+            'origin_region', 'origin_city'
         ],
         schema='app',
         alias='trips',
@@ -250,6 +251,12 @@ SELECT
     cargo_type,
     planning_date,
     origin,
+    -- origin_region / origin_city: ubicación complementaria asignada desde el
+    -- Monitor (API) — el pipeline NUNCA las escribe (merge_exclude_columns
+    -- arriba, mismo patrón que observaciones/comentarios). Solo el INSERT
+    -- inicial las deja NULL; migración 20260709000001.
+    NULL::text          AS origin_region,
+    NULL::text          AS origin_city,
     status_reported_at,
     pipeline_updated_at,
 
@@ -345,6 +352,8 @@ SELECT
     m.cargo_type::varchar                               AS cargo_type,
     m.planning_date                                     AS planning_date,
     m.origin                                            AS origin,
+    m.origin_region                                     AS origin_region,
+    m.origin_city                                       AS origin_city,
     m.updated_at::timestamp                             AS status_reported_at,
     now()::timestamp                                    AS pipeline_updated_at,
 

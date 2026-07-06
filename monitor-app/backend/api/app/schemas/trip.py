@@ -10,6 +10,8 @@ class TripPatch(BaseModel):
     estado_manual:          Optional[str]  = None
     observaciones:          Optional[str]  = None
     comentarios:            Optional[str]  = None
+    origin_region:          Optional[str]  = None
+    origin_city:            Optional[str]  = None
     driver_name:            Optional[str]  = None
     driver_phone:           Optional[str]  = None
     tractor_plate:          Optional[str]  = None

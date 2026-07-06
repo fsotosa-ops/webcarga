@@ -197,3 +197,46 @@ def test_bulk_success_returns_ids_and_empty_errors():
     assert data["created"] == 2
     assert data["errors"] == []
     assert len(data["ids"]) == 2
+
+
+# ── Ubicación complementaria (región/ciudad) ─────────────────────────────────
+
+def test_create_persists_origin_location_and_stop_destination():
+    pool = make_pool()
+    client = make_client(pool)
+    res = client.post("/api/v1/trips", json={
+        "planning_date": "2026-07-06",
+        "origin_region": "Región Metropolitana de Santiago",
+        "origin_city": "Pudahuel",
+        "stops": [{"local": "CD El Peñón",
+                   "destination_region": "Región Metropolitana de Santiago",
+                   "destination_city": "San Bernardo"}],
+    })
+    assert res.status_code == 200
+    manual_call = next(c for c in pool.execute.call_args_list if "app.trips_manual" in c.args[0])
+    trips_call  = next(c for c in pool.execute.call_args_list if "INSERT INTO app.trips " in c.args[0])
+    for call in (manual_call, trips_call):
+        assert "Región Metropolitana de Santiago" in call.args
+        assert "Pudahuel" in call.args
+        stops_arg = next(a for a in call.args if isinstance(a, str) and a.startswith("["))
+        stops = json.loads(stops_arg)
+        assert stops[0]["destination_city"] == "San Bernardo"
+        assert stops[0]["destination_region"] == "Región Metropolitana de Santiago"
+
+
+def test_patch_origin_location_updates_and_marks_manual_edit():
+    pool = make_pool()
+    client = make_client(pool)
+    res = client.patch("/api/v1/trips/trip-1", json={
+        "origin_region": "Biobío", "origin_city": "Concepción",
+    })
+    assert res.status_code == 200
+    update = next(c for c in pool.execute.call_args_list
+                  if c.args[0].startswith("UPDATE app.trips SET"))
+    assert "origin_region" in update.args[0]
+    assert "origin_city" in update.args[0]
+    assert "manually_edited_fields" in update.args[0]
+    assert "Biobío" in update.args and "Concepción" in update.args
+    # el mirror a trips_manual conserva la asignación tras un rebuild de dbt
+    mirror = [c for c in pool.execute.call_args_list if "UPDATE app.trips_manual m SET" in c.args[0]]
+    assert mirror and "origin_region" in mirror[0].args[0]
