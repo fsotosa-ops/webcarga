@@ -440,6 +440,30 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 ---
 
+### 2026-07-06 (cont.) — Configuración + Filtros + Tablero DnD + Alertas + Conductores liberados
+
+**Objetivo:** el usuario pidió (1) rediseñar el módulo de configuración y los filtros del monitor ("mucha carga cognitiva"), (2) potenciar el tablero con drag & drop (operaciones mueve las tarjetas, sobre todo en viajes manuales), (3) alertas nuevas según la data real de las TMS, (4) mapear conductores que terminaron sus viajes para reasignarlos.
+
+**Decisiones clave:** unificación de vocabularios a nivel de GRUPOS (estados operacionales ganan `group_id` de la misma taxonomía de 6 columnas) **conservando la nomenclatura TMS verbatim en las tarjetas** (adopción); barra compacta + popover para filtros; alertas fundadas en cobertura verificada en la base (98 viajes detenidos >2h, 10 con atraso de llegada).
+
+#### Qué se implementó (6 commits en `dev`, local, NO pusheados)
+
+| Commit | Contenido |
+|--------|-----------|
+| `58bc708` | **Backend**: migración `20260708000001` (operational_states.group_id + backfill por label; tabla monitor_alert_rules fila única). config.py: alias `group_id AS group` (fix del bug del select Grupo), CRUD op-states con grupo, sort_order editable, GET/PATCH monitor-alert-rules. trips.py: meta con group+alert_rules (resiliente a migración pendiente), `GET /trips/available-drivers`, q amplía a cliente+trip_id. 44/44 pytest |
+| `3ef7c86` | **Configuración rediseñada**: patrón único fila-dirty en 5 tabs, feedback Guardado/error SIEMPRE visible, swatches único, sort_order con flechas, labels humanos de grupo, tab nueva Alertas del Monitor, a11y tabs, dividido en shared/estados-tabs/umbrales-tabs |
+| `db293dd` | **Filtros compactos**: barra única (búsqueda global incluye cliente/ID) + chips Estado + FilterPopover (Fuente/Indicadores/fechas) con badge; kpiFilter en el reducer (cuenta en activeCount, Limpiar lo resetea); GroupBuilder con dialog a11y, checkboxes reales y labels configurados |
+| `e5904a2` | **Tablero DnD** (@dnd-kit/core): drag con umbral (click sigue abriendo detalle) + touch + teclado; groupOfTrip resuelve ambos vocabularios (overrides ya no caen a "Otro"); drop → estado_manual optimista con rollback, diálogo si el grupo tiene varios estados, columna deshabilitada si no tiene; StatusBadge resuelve estados operacionales (mismo render Tabla/Tablero/detalle) |
+| `e188b92` | **Alertas + conductores**: kpis.ts con umbrales de meta (dwell/late_arrival/unassigned nuevos; isOpenTrip excluye cerrados también en stale); franja de 6 KPIs con labels dinámicos; AvailableDriversPanel (teléfono, patente, hora libre, "Asignar a viaje nuevo" → TripCreateSlideOver prefilled) |
+
+**Verificación:** 160/160 tests frontend, 44/44 backend, tsc/build limpios. Sin smoke de navegador (6ta ronda sin sesión de auth).
+
+#### ⚠️ PENDIENTES que requieren confirmación del usuario
+1. **Aplicar migración `20260708000001_op_states_groups_alert_rules.sql`** a Supabase — sin ella: el select de grupo en op-states falla, /config/monitor-alert-rules da 404 (los KPIs usan defaults), el drop del tablero no encuentra estados por grupo (todos en 'otro' hasta reasignar en Configuración).
+2. **Push a `dev`** (6 commits locales).
+
+---
+
 ## Próximo paso exacto
 
 **Pusheado a `dev` (2026-07-05, autorizado por el usuario):** incluye el rango pendiente anterior (fechas por TMS) + las 5 fases del rediseño UX/UI world-class.
