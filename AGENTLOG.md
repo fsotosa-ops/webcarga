@@ -507,11 +507,15 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 | Ubicación región/ciudad | Columnas complementarias `origin_region`/`origin_city` (pedido explícito del usuario), destinos en claves `destination_*` del jsonb | No pisan `origin` del TMS; en merge_exclude_columns el pipeline no las toca; en manuales sobreviven al full-refresh vía trips_manual |
 | Dataset Chile | JSON generado y commiteado (no import directo de country-state-city) | El paquete embarca ~11MB de datos mundiales; el JSON de Chile son ~15KB |
 
-#### ⚠️ Pendientes al cierre
-1. **Aplicar migración `20260709000001` a Supabase ANTES de pushear** — `_TRIP_SELECT` referencia las columnas nuevas; el deploy sin migración rompe TODOS los GET de trips (la migración es aditiva, segura de aplicar antes).
-2. **Push a `dev`** (4 commits) + verificar en `gh run list` que Deploy Frontend Y Monitor API se disparan (lección del incidente del filtro de paths).
-3. **Copiar `app_trips.sql` (raíz) al proyecto dbt en Mage** — ahora también por las columnas origin_region/origin_city (además del pendiente anterior de trips_manual).
-4. Validar en dev desplegado: adjuntar screenshot en bitácora (fix 400), form manual completo, asignar/filtrar ubicación.
+#### Cierre (2026-07-06, autorizado por el usuario)
+1. **Migración `20260709000001` aplicada a Supabase** vía MCP y verificada (4 columnas en vivo) ANTES del push.
+2. **Pusheado a `dev`** (`2f93939..dca900c`) — ambos workflows verificados verdes en `gh run list`.
+3. **Segundo fix post-deploy** (`edfcf89`, deploy verde): al probar el usuario la subida real, Storage rechazó la key con `InvalidKey` — los nombres de capturas de macOS traen espacio angosto U+202F y paréntesis. `_safe_storage_name()` normaliza la key a `[A-Za-z0-9._-]` (NFKD + strip diacríticos); `file_name` original intacto en DB para la UI. 47/47 pytest. **El fix del proxy multipart quedó confirmado en producción por este mismo error: el archivo ya llega al backend y a Storage.**
+
+#### ⚠️ Pendientes
+1. **Copiar `app_trips.sql` (raíz) al proyecto dbt en Mage** — ahora también por las columnas origin_region/origin_city (además del pendiente anterior de trips_manual).
+2. Validar en dev: adjuntar screenshot (debería funcionar tras `edfcf89`), form manual completo, asignar/filtrar ubicación.
+3. Tipos de adjunto permitidos hoy: PDF/PNG/JPEG/WebP, 10MB (`ALLOWED_ATTACHMENT_MIMES`) — si operaciones necesita HEIC (fotos iPhone) u Office, es ampliar esa whitelist.
 
 ---
 
