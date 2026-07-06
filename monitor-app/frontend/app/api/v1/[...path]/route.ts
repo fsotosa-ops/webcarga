@@ -34,7 +34,9 @@ async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {
 
   const init: RequestInit = { method: req.method, headers }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    init.body = await req.text()
+    // Reenvío binario: req.text() decodifica como UTF-8 y corrompe cuerpos
+    // multipart (PDF/imágenes) — el backend respondía 400 al no poder parsearlos
+    init.body = Buffer.from(await req.arrayBuffer())
   }
 
   try {
