@@ -1,5 +1,7 @@
 import hashlib
 import json
+import re
+import unicodedata
 from datetime import date as _date
 from typing import Optional
 from uuid import UUID, uuid4
@@ -778,6 +780,11 @@ async def patch_trip(
     str_fields  = ("estado_manual", "observaciones", "comentarios",
                    "origin_region", "origin_city")
     trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields)}
+    # Ubicación: string vacío = limpiar (NULL) — evita mezclar '' y NULL en los
+    # filtros exactos de region/ciudad
+    for k in ("origin_region", "origin_city"):
+        if trip_fields.get(k) == "":
+            trip_fields[k] = None
 
     if trip_fields:
         sent = list(trip_fields.keys())
@@ -934,6 +941,18 @@ ALLOWED_ATTACHMENT_MIMES = {
 }
 SIGNED_URL_TTL_SECONDS = 3600
 
+
+def _safe_storage_name(file_name: str) -> str:
+    """Nombre seguro para la key de Supabase Storage. Los nombres reales traen
+    caracteres que Storage rechaza con InvalidKey — caso real: capturas de
+    macOS ("Captura de pantalla 2026-07-06 a la(s) 11.14.57 a.m..png",
+    con espacio angosto U+202F y paréntesis). El nombre original se conserva
+    intacto en trip_note_attachments.file_name para mostrarlo en la UI."""
+    normalized = unicodedata.normalize("NFKD", file_name)
+    ascii_name = normalized.encode("ascii", "ignore").decode()
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", ascii_name).strip("._")
+    return safe or "archivo"
+
 _NOTE_SELECT = """
     n.id, n.trip_id, n.author_id,
     COALESCE(p.full_name, p.email) AS author_name,
@@ -1054,7 +1073,7 @@ async def add_trip_note(
     )
 
     for file_name, mime, data in payloads:
-        storage_path = f"{trip_id}/{note_id}/{uuid4().hex}_{file_name}"
+        storage_path = f"{trip_id}/{note_id}/{uuid4().hex}_{_safe_storage_name(file_name)}"
         try:
             supabase.storage.from_(ATTACHMENT_BUCKET).upload(
                 storage_path, data, {"content-type": mime}

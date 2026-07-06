@@ -203,3 +203,37 @@ def test_notes_require_auth():
     assert res.status_code in (401, 403)
     res = client.post(f"/api/v1/trips/{NOTE_ROW['trip_id']}/notes", data={"body": "x"})
     assert res.status_code in (401, 403)
+
+
+def test_attachment_storage_key_is_sanitized_but_original_name_kept():
+    """Caso real: capturas de macOS traen U+202F y paréntesis — Storage
+    respondía InvalidKey. La key se sanitiza; file_name en DB queda intacto."""
+    import re as _re
+    from app.routers.trips import _safe_storage_name
+
+    # \u202f = espacio angosto (narrow no-break space) — el del error real
+    ugly = "Captura de pantalla 2026-07-06 a la(s) 11.14.57\u202fa.m..png"
+    safe = _safe_storage_name(ugly)
+    assert safe == "Captura_de_pantalla_2026-07-06_a_la_s_11.14.57_a.m..png"
+    # solo caracteres válidos para una key de Storage
+    assert _re.fullmatch(r"[A-Za-z0-9._-]+", safe)
+    assert _safe_storage_name("ñandú (final).pdf") == "nandu_final_.pdf"
+
+    pool = AsyncMock()
+    pool.fetchval.side_effect = [NOTE_ROW["trip_id"], NOTE_ROW["id"]]
+    pool.fetchrow.return_value = NOTE_ROW
+    pool.fetch.return_value = []
+    sb = make_supabase()
+    client = make_client(pool, supabase=sb)
+    res = client.post(
+        f"/api/v1/trips/{NOTE_ROW['trip_id']}/notes",
+        data={"body": "screenshot"},
+        files={"files": (ugly, b"\x89PNG", "image/png")},
+    )
+    assert res.status_code == 201
+    upload_key = sb.storage.from_.return_value.upload.call_args.args[0]
+    # key = {trip_id}/{note_id}/{hex}_{nombre_sanitizado} — todo válido para Storage
+    assert _re.fullmatch(r"[A-Za-z0-9._/-]+", upload_key)
+    # la fila del adjunto conserva el nombre original para la UI
+    attach_insert = next(c for c in pool.execute.call_args_list if "trip_note_attachments" in c.args[0])
+    assert ugly in attach_insert.args
