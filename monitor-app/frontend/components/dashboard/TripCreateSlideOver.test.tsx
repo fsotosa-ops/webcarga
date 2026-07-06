@@ -122,6 +122,30 @@ describe('TripCreateSlideOver', () => {
     expect(await screen.findByText(/Ya registraste el viaje/)).toBeInTheDocument()
   })
 
+  it('envía región/ciudad de origen y de cada destino en el payload', async () => {
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+    render(<TripCreateSlideOver open onClose={vi.fn()} onCreated={vi.fn()} meta={meta} />)
+
+    fireEvent.change(screen.getByLabelText('Región de origen'), { target: { value: 'Biobío' } })
+    fireEvent.change(screen.getByLabelText('Ciudad de origen'), { target: { value: 'Concepción' } })
+
+    fireEvent.click(screen.getByText('Agregar destino'))
+    fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'CD El Peñón' } })
+    fireEvent.change(screen.getByLabelText('Región destino 1'), { target: { value: 'Región Metropolitana de Santiago' } })
+    fireEvent.change(screen.getByLabelText('Ciudad destino 1'), { target: { value: 'San Bernardo' } })
+
+    fireEvent.click(screen.getByText('Crear viaje'))
+    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
+    const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
+    expect(payload.origin_region).toBe('Biobío')
+    expect(payload.origin_city).toBe('Concepción')
+    expect(payload.stops?.[0]).toMatchObject({
+      local: 'CD El Peñón',
+      destination_region: 'Región Metropolitana de Santiago',
+      destination_city: 'San Bernardo',
+    })
+  })
+
   it('destinos can be removed', () => {
     render(<TripCreateSlideOver open onClose={vi.fn()} onCreated={vi.fn()} meta={meta} />)
     fireEvent.click(screen.getByText('Agregar destino'))

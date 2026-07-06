@@ -50,6 +50,16 @@ describe('useDiarioFilters', () => {
     expect(f.tab).toBe('en_curso')
   })
 
+  it('fRegion/fCity cuentan como filtros activos y clear los resetea', () => {
+    const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
+    act(() => result.current[1]({ type: 'patch', patch: { fRegion: 'Biobío', fCity: 'Concepción' } }))
+    expect(countActiveFilters(result.current[0])).toBe(2)
+    act(() => result.current[1]({ type: 'clear' }))
+    expect(result.current[0].fRegion).toBe('')
+    expect(result.current[0].fCity).toBe('')
+    expect(countActiveFilters(result.current[0])).toBe(0)
+  })
+
   it('kpiFilter cuenta en activeCount y togglea', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
     act(() => result.current[1]({ type: 'toggleKpi', kpi: 'stale' }))

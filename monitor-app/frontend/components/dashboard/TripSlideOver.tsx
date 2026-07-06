@@ -17,6 +17,7 @@ import { RouteProgress } from './RouteProgress'
 import { IndicatorDots } from './IndicatorDots'
 import { TripNotesFeed } from './TripNotesFeed'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 // ── TransporterAssignSection ──────────────────────────────────────────────────
 
@@ -155,6 +156,11 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const [datosOpen, setDatosOpen]               = useState(false)
   const [unlinkErr, setUnlinkErr]               = useState<string | null>(null)
   const [unlinking, setUnlinking]               = useState(false)
+  // Ubicación de origen (región/ciudad) — draft local, se guarda vía PATCH
+  const [locRegion, setLocRegion]               = useState<string | null>(null)
+  const [locCity, setLocCity]                   = useState<string | null>(null)
+  const [locSaving, setLocSaving]               = useState(false)
+  const [locErr, setLocErr]                     = useState<string | null>(null)
   const panelRef                                = useRef<HTMLDivElement>(null)
 
   // Semántica de diálogo: Escape cierra, Tab queda atrapado en el panel, el foco vuelve al origen al cerrar
@@ -196,7 +202,30 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     setTechDetailOpen(false)
     setDatosOpen(false)
     setUnlinkErr(null)
+    setLocRegion(trip.origin_region ?? null)
+    setLocCity(trip.origin_city ?? null)
+    setLocErr(null)
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const locDirty =
+    !!trip && ((locRegion ?? null) !== (trip.origin_region ?? null) || (locCity ?? null) !== (trip.origin_city ?? null))
+
+  async function handleSaveLocation() {
+    if (!trip) return
+    setLocSaving(true)
+    setLocErr(null)
+    try {
+      const updated = await tripsApi.patch(trip.id, {
+        origin_region: locRegion ?? '',
+        origin_city:   locCity ?? '',
+      })
+      onSaved(updated)
+    } catch (e) {
+      setLocErr(e instanceof Error ? e.message : 'Error al guardar la ubicación')
+    } finally {
+      setLocSaving(false)
+    }
+  }
 
   async function handleSetOverride() {
     if (!trip || !estadoDraft) return
@@ -471,6 +500,43 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
               </div>
             )}
+
+            {/* Ubicación de origen — región/ciudad asignable desde el Monitor */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                <MapPin size={10} /> Ubicación de origen
+              </p>
+              <RegionCityPicker
+                size="sm"
+                region={locRegion}
+                city={locCity}
+                onChange={(region, city) => { setLocRegion(region); setLocCity(city) }}
+                labelSuffix="de origen"
+              />
+              {locDirty && (
+                <div className="flex items-center gap-2 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={handleSaveLocation}
+                    disabled={locSaving}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent hover:bg-accent/90 rounded-lg px-2.5 py-1 transition-colors disabled:opacity-50"
+                  >
+                    {locSaving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                    Guardar ubicación
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLocRegion(trip.origin_region ?? null); setLocCity(trip.origin_city ?? null); setLocErr(null) }}
+                    className="text-[10px] text-gray-400 hover:text-gray-600"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+              {locErr && (
+                <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{locErr}</p>
+              )}
+            </div>
 
             {/* Empresa transportista — card compacta, sin acordeón */}
             <div>

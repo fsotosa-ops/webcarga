@@ -162,11 +162,15 @@ export default function DiarioPage() {
     ...(f.fAsignado      != null ? { asignado:       f.fAsignado }      : {}),
     ...(f.fPrimeraVuelta != null ? { primera_vuelta: f.fPrimeraVuelta } : {}),
   }
+  const locParams = {
+    ...(f.fRegion ? { origin_region: f.fRegion } : {}),
+    ...(f.fCity   ? { origin_city:   f.fCity }   : {}),
+  }
   const params: TripListParams =
     f.tab === 'en_curso'
-      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), limit: 200, ...boolParams }
+      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), limit: 200, ...boolParams, ...locParams }
       : { view: 'historial', q: qDebounced, fecha_desde: f.fechaDesde, fecha_hasta: f.fechaHasta,
-          status: statusParam, tms: f.fTms.join(','), limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
+          status: statusParam, tms: f.fTms.join(','), limit: HISTORIAL_LIMIT, page: f.page, ...boolParams, ...locParams }
 
   const queryClient = useQueryClient()
   const tripsQuery  = useTrips(params, { poll: f.tab === 'en_curso' })

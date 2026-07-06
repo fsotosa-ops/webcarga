@@ -5,6 +5,7 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import type { TripsMeta } from '@/lib/types'
 import type { DiarioFilters, DiarioFiltersAction, FlagField } from '@/hooks/useDiarioFilters'
 import { countPopoverFilters } from '@/hooks/useDiarioFilters'
+import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 const FLAGS: { label: string; field: FlagField }[] = [
   { label: 'Activo',     field: 'fActivo'        },
@@ -131,6 +132,18 @@ export function FilterPopover({ filters: f, dispatch, meta }: Props) {
                 )
               })}
             </div>
+          </div>
+
+          {/* Ubicación de origen (región/ciudad asignada desde el Monitor) */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Ubicación de origen</p>
+            <RegionCityPicker
+              size="sm"
+              region={f.fRegion || null}
+              city={f.fCity || null}
+              onChange={(region, city) => dispatch({ type: 'patch', patch: { fRegion: region ?? '', fCity: city ?? '' } })}
+              labelSuffix="(filtro)"
+            />
           </div>
 
           {/* Rango de fechas — solo historial */}

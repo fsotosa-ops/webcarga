@@ -20,6 +20,9 @@ export interface DiarioFilters {
   fAsignado:      BoolFilter
   fPrimeraVuelta: BoolFilter
   fTms:           string[]
+  /** Ubicación de origen (dropdown región/ciudad de Chile) */
+  fRegion:        string
+  fCity:          string
   /** Filtro de excepción activo (KPI cards) — client-side sobre la data cargada */
   kpiFilter:      KpiId | null
   page:           number
@@ -57,7 +60,7 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
         ...state,
         q: '', fechaDesde: '', fechaHasta: '', activeGroup: null,
         fActivo: null, fTrabajando: null, fAsignado: null, fPrimeraVuelta: null,
-        fTms: [], kpiFilter: null, page: 1,
+        fTms: [], fRegion: '', fCity: '', kpiFilter: null, page: 1,
       }
   }
 }
@@ -66,7 +69,7 @@ export function countActiveFilters(f: DiarioFilters): number {
   return [
     f.q, f.fechaDesde, f.fechaHasta, f.activeGroup,
     f.fActivo, f.fTrabajando, f.fAsignado, f.fPrimeraVuelta,
-    f.kpiFilter,
+    f.fRegion, f.fCity, f.kpiFilter,
   ].filter(v => v !== '' && v !== null).length + f.fTms.length
 }
 
@@ -75,6 +78,7 @@ export function countPopoverFilters(f: DiarioFilters): number {
   return [
     f.fechaDesde, f.fechaHasta,
     f.fActivo, f.fTrabajando, f.fAsignado, f.fPrimeraVuelta,
+    f.fRegion, f.fCity,
   ].filter(v => v !== '' && v !== null).length + f.fTms.length
 }
 
@@ -82,6 +86,6 @@ export function useDiarioFilters(initialFecha: string) {
   return useReducer(reducer, {
     tab: 'en_curso', fecha: initialFecha, q: '', fechaDesde: '', fechaHasta: '',
     activeGroup: null, fActivo: null, fTrabajando: null, fAsignado: null,
-    fPrimeraVuelta: null, fTms: [], kpiFilter: null, page: 1,
+    fPrimeraVuelta: null, fTms: [], fRegion: '', fCity: '', kpiFilter: null, page: 1,
   } satisfies DiarioFilters)
 }

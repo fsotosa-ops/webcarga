@@ -274,8 +274,11 @@ export type TripNote = {
 }
 
 export type TripStopCreatePayload = {
-  local:          string
-  planning_date?: string | null
+  local:               string
+  planning_date?:      string | null
+  /** Dropdown región/ciudad de Chile — van a las claves destination_* del jsonb stops */
+  destination_region?: string | null
+  destination_city?:   string | null
 }
 
 export type TripCreatePayload = {
@@ -286,6 +289,8 @@ export type TripCreatePayload = {
   source_system_trip_id?: string | null
   client_name?:           string | null
   origin?:                string | null
+  origin_region?:         string | null
+  origin_city?:           string | null
   cargo_type?:            string | null
   current_status?:        string | null
   stops?:                 TripStopCreatePayload[]
@@ -336,6 +341,10 @@ export type Trip = {
   transporter:            string | null   // linked company (tp.business_name) only
   transporter_tms:        string | null   // TMS-reported name (fleet->>'transporter_name_tms')
   origin:                 string | null
+  /** Ubicación complementaria asignada desde el Monitor (dropdown Chile) —
+   *  el pipeline nunca la escribe */
+  origin_region?:         string | null
+  origin_city?:           string | null
   cargo_type:             string | null
   stops:                  TripStop[]
   activo:                 boolean

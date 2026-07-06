@@ -11,6 +11,7 @@ import type {
 } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
 import { transportersApi } from '@/lib/api/transporters'
+import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 interface Props {
   open:      boolean
@@ -385,6 +386,14 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
                   </select>
                 </Field>
               </div>
+              <Field label="Región / ciudad de origen">
+                <RegionCityPicker
+                  region={form.origin_region ?? null}
+                  city={form.origin_city ?? null}
+                  onChange={(region, city) => setForm(f => ({ ...f, origin_region: region, origin_city: city }))}
+                  labelSuffix="de origen"
+                />
+              </Field>
               <Field label="Estado inicial">
                 <select value={form.current_status ?? ''} onChange={e => set('current_status', e.target.value)} className={INPUT}>
                   <option value="">— Sin estado</option>
@@ -471,30 +480,40 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
                 <SectionTitle icon={<MapPin size={14} />}>Destinos</SectionTitle>
                 <div className="space-y-2">
                   {stops.map((s, i) => (
-                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
-                      <input
-                        type="text"
-                        value={s.local}
-                        onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, local: e.target.value } : x))}
-                        placeholder={`Destino ${i + 1}`}
-                        className={INPUT}
-                        aria-label={`Nombre destino ${i + 1}`}
+                    <div key={i} className="space-y-1.5 border border-border/60 rounded-lg p-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+                        <input
+                          type="text"
+                          value={s.local}
+                          onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, local: e.target.value } : x))}
+                          placeholder={`Destino ${i + 1} — nombre del local`}
+                          className={INPUT}
+                          aria-label={`Nombre destino ${i + 1}`}
+                        />
+                        <input
+                          type="datetime-local"
+                          value={s.planning_date ?? ''}
+                          onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, planning_date: e.target.value || null } : x))}
+                          className={INPUT_DATE}
+                          aria-label={`Fecha planificada destino ${i + 1}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setStops(prev => prev.filter((_, j) => j !== i))}
+                          aria-label={`Quitar destino ${i + 1}`}
+                          className="p-2 rounded-lg border border-transparent text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <RegionCityPicker
+                        size="sm"
+                        region={s.destination_region ?? null}
+                        city={s.destination_city ?? null}
+                        onChange={(region, city) => setStops(prev => prev.map((x, j) =>
+                          j === i ? { ...x, destination_region: region, destination_city: city } : x))}
+                        labelSuffix={`destino ${i + 1}`}
                       />
-                      <input
-                        type="datetime-local"
-                        value={s.planning_date ?? ''}
-                        onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, planning_date: e.target.value || null } : x))}
-                        className={INPUT_DATE}
-                        aria-label={`Fecha planificada destino ${i + 1}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setStops(prev => prev.filter((_, j) => j !== i))}
-                        aria-label={`Quitar destino ${i + 1}`}
-                        className="p-2 rounded-lg border border-transparent text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
                     </div>
                   ))}
                   <button
