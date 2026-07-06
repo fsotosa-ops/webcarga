@@ -220,6 +220,17 @@ export type TemperatureRangeMeta = {
   max_c:      number
 }
 
+/** Conductor que terminó todos sus viajes del día — reasignable */
+export type AvailableDriver = {
+  driver_name:    string
+  driver_rut:     string | null
+  driver_phone:   string | null
+  tractor_plate:  string | null
+  transporter:    string | null
+  trips_total:    number
+  last_report_at: string | null
+}
+
 export type MonitorAlertRules = {
   stale_report_hours:     number
   dwell_hours:            number

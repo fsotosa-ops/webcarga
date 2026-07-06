@@ -17,6 +17,8 @@ interface Props {
   onClose:   () => void
   onCreated: (trip: Trip) => void
   meta?:     TripsMeta | null
+  /** Pre-llenado (ej: asignar un conductor liberado a un viaje nuevo) */
+  prefill?:  Partial<TripCreatePayload> | null
 }
 
 const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
@@ -150,7 +152,7 @@ function EmpresaSelector({
 
 type OriginMode = 'none' | 'mapped' | 'other'
 
-export function TripCreateSlideOver({ open, onClose, onCreated, meta }: Props) {
+export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }: Props) {
   const [form, setForm]             = useState<Partial<TripCreatePayload>>({})
   const [originMode, setOriginMode] = useState<OriginMode>('none')
   const [originTms, setOriginTms]   = useState('')
@@ -163,14 +165,14 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta }: Props) {
 
   useEffect(() => {
     if (open) {
-      setForm({ planning_date: todayISO() })
+      setForm({ planning_date: todayISO(), ...(prefill ?? {}) })
       setOriginMode('none')
       setOriginTms('')
       setStops([])
       setEmpresa(null)
       setErr(null)
     }
-  }, [open])
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Semántica de diálogo: Escape cierra, Tab atrapado, foco inicial y retorno
   useEffect(() => {

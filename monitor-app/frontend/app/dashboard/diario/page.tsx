@@ -20,7 +20,10 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
 import { useDiarioFilters, countActiveFilters, type FlagField } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
-import { deriveKpis, matchesKpi, STALE_HOURS, type KpiId } from '@/lib/utils/kpis'
+import { deriveKpis, matchesKpi, DEFAULT_ALERT_RULES, type KpiId } from '@/lib/utils/kpis'
+import { AvailableDriversPanel, useAvailableDrivers } from '@/components/dashboard/AvailableDriversPanel'
+import type { AvailableDriver, TripCreatePayload } from '@/lib/types'
+import { UserCheck } from 'lucide-react'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -51,11 +54,18 @@ const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
   slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
 }
 
-const KPI_CARDS: { id: KpiId; label: string; activeCls: string; countCls: string }[] = [
-  { id: 'off_time', label: 'OFF TIME',                       activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50',     countCls: 'text-red-600'   },
-  { id: 'stale',    label: `Sin reporte > ${STALE_HOURS}h`,  activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50', countCls: 'text-amber-600' },
-  { id: 'temp_out', label: 'Temp fuera de rango',            activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50',   countCls: 'text-blue-600'  },
-]
+function kpiCards(rules: typeof DEFAULT_ALERT_RULES): { id: KpiId; label: string; activeCls: string; countCls: string }[] {
+  return [
+    { id: 'off_time',     label: 'OFF TIME',                                   activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50',        countCls: 'text-red-600'    },
+    { id: 'late_arrival', label: 'Atraso de llegada',                          activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50',        countCls: 'text-red-600'    },
+    { id: 'dwell',        label: `Detenido en local > ${rules.dwell_hours}h`,  activeCls: 'border-orange-400 ring-2 ring-orange-100 bg-orange-50', countCls: 'text-orange-600' },
+    { id: 'stale',        label: `Sin reporte > ${rules.stale_report_hours}h`, activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50',  countCls: 'text-amber-600'  },
+    { id: 'temp_out',     label: 'Temp fuera de rango',                        activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50',     countCls: 'text-blue-600'   },
+    ...(rules.unassigned_enabled
+      ? [{ id: 'unassigned' as KpiId, label: 'Sin asignación', activeCls: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50', countCls: 'text-violet-600' }]
+      : []),
+  ]
+}
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
@@ -168,14 +178,33 @@ export default function DiarioPage() {
   const error    = tripsQuery.error ? (tripsQuery.error instanceof Error ? tripsQuery.error.message : 'Error cargando viajes') : null
 
   // ── KPIs accionables: excepciones derivadas de la data ya cargada (un clic = filtro) ──
+  const alertRules = tripsMeta?.monitor_alert_rules ?? DEFAULT_ALERT_RULES
+  const KPI_CARDS = useMemo(() => kpiCards(alertRules), [alertRules])
   const kpis = useMemo(
-    () => deriveKpis(trips, tripsMeta?.temperature_ranges ?? []),
-    [trips, tripsMeta?.temperature_ranges],
+    () => deriveKpis(trips, tripsMeta?.temperature_ranges ?? [], alertRules),
+    [trips, tripsMeta?.temperature_ranges, alertRules],
   )
   const visibleTrips = useMemo(() => {
     if (f.tab !== 'en_curso' || !f.kpiFilter) return trips
-    return trips.filter(t => matchesKpi(t, f.kpiFilter!, tripsMeta?.temperature_ranges ?? []))
-  }, [trips, f.tab, f.kpiFilter, tripsMeta?.temperature_ranges])
+    return trips.filter(t => matchesKpi(t, f.kpiFilter!, tripsMeta?.temperature_ranges ?? [], alertRules))
+  }, [trips, f.tab, f.kpiFilter, tripsMeta?.temperature_ranges, alertRules])
+
+  // ── Conductores liberados (terminaron sus viajes del día) ──────────────────
+  const [showDrivers, setShowDrivers]   = useState(false)
+  const [createPrefill, setCreatePrefill] = useState<Partial<TripCreatePayload> | null>(null)
+  const driversQuery = useAvailableDrivers(f.fecha, f.tab === 'en_curso')
+  const availableCount = driversQuery.data?.length ?? 0
+
+  function handleAssignDriver(d: AvailableDriver) {
+    setCreatePrefill({
+      driver_name:   d.driver_name,
+      driver_rut:    d.driver_rut ?? undefined,
+      driver_phone:  d.driver_phone ?? undefined,
+      tractor_plate: d.tractor_plate ?? undefined,
+    })
+    setShowDrivers(false)
+    setShowCreate(true)
+  }
 
   // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
   const prevReportedRef = useRef<Map<string, string | null>>(new Map())
@@ -365,6 +394,20 @@ export default function DiarioPage() {
                   </button>
                 )
               })}
+
+              {/* Conductores liberados — reasignables a viajes nuevos */}
+              {availableCount > 0 && (
+                <button
+                  onClick={() => setShowDrivers(true)}
+                  className="flex items-center gap-2 bg-white border border-green-200 rounded-xl px-3.5 py-2 transition-all hover:border-green-400 ml-auto"
+                >
+                  <UserCheck size={14} className="text-green-600" />
+                  <span className="text-lg font-bold leading-none text-green-600">{availableCount}</span>
+                  <span className="text-[11px] font-medium text-gray-500">
+                    conductor{availableCount !== 1 ? 'es' : ''} disponible{availableCount !== 1 ? 's' : ''}
+                  </span>
+                </button>
+              )}
             </div>
           )}
 
@@ -531,9 +574,16 @@ export default function DiarioPage() {
       <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} meta={tripsMeta} />
       <TripCreateSlideOver
         open={showCreate}
-        onClose={() => setShowCreate(false)}
+        onClose={() => { setShowCreate(false); setCreatePrefill(null) }}
         onCreated={handleCreated}
         meta={tripsMeta}
+        prefill={createPrefill}
+      />
+      <AvailableDriversPanel
+        open={showDrivers}
+        fecha={f.fecha}
+        onClose={() => setShowDrivers(false)}
+        onAssign={handleAssignDriver}
       />
       <TripBulkUpload
         open={showBulkUpload}

@@ -1,4 +1,4 @@
-import type { Trip, TripCreatePayload, TripNote } from '@/lib/types'
+import type { Trip, TripCreatePayload, TripNote, AvailableDriver } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type TripListResponse = {
@@ -103,6 +103,9 @@ export const tripsApi = {
     apiFetch<{ ok: boolean }>(`/api/v1/trips/${id}/fleet-link`, {
       method: 'DELETE',
     }),
+
+  availableDrivers: (fecha: string) =>
+    apiFetch<AvailableDriver[]>(`/api/v1/trips/available-drivers?fecha=${encodeURIComponent(fecha)}`),
 
   listNotes: (id: string) =>
     apiFetch<TripNote[]>(`/api/v1/trips/${id}/notes`),
