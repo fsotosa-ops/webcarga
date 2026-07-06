@@ -65,14 +65,21 @@ describe('TripSlideOver — hero (la historia del viaje)', () => {
     expect(screen.getAllByText(/llega ~/).length).toBeGreaterThan(0)
   })
 
-  it('shows stop progress (N/M paradas) and compliance badge in the hero', () => {
+  it('shows stop progress (N/M paradas) and badges only exceptions (no ON TIME badge)', () => {
     const stops = [
       makeStop({ stop_id: 's1', local: 'Local 1', arrival_date: '2026-07-02 10:00:00', on_time_status: 'ON TIME' }),
       makeStop({ stop_id: 's2', local: 'Local 2' }),
     ]
     renderSlideOver({ ...baseTrip, stops })
     expect(screen.getByText('1/2 paradas')).toBeInTheDocument()
-    expect(screen.getAllByText('ON TIME').length).toBeGreaterThan(0)
+    // gestión por excepción: ON TIME no se badgea (el check verde ya lo comunica)
+    expect(screen.queryByText('ON TIME')).not.toBeInTheDocument()
+  })
+
+  it('shows the OFF TIME badge in the hero when a stop is off time', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1', on_time_status: 'OFF TIME' })]
+    renderSlideOver({ ...baseTrip, stops })
+    expect(screen.getAllByText('OFF TIME').length).toBeGreaterThan(0)
   })
 
   it('degrades gracefully for a trip without stops', () => {

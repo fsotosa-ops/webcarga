@@ -143,28 +143,30 @@ export function TripNotesFeed({ trip }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Toggle Feed | Documentos */}
-      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
-        {([
-          { id: 'feed',       label: 'Feed',       Icon: ListOrdered },
-          { id: 'documentos', label: 'Documentos', Icon: FolderOpen  },
-        ] as const).map(t => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setView(t.id)}
-            className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-md transition-colors ${
-              view === t.id ? 'bg-white text-slate-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <t.Icon size={10} />
-            {t.label}
-            {t.id === 'documentos' && allAttachments.length > 0 && (
-              <span className="text-[9px] text-gray-400">({allAttachments.length})</span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Toggle Feed | Documentos — solo cuando hay adjuntos (si no, es ruido) */}
+      {allAttachments.length > 0 && (
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
+          {([
+            { id: 'feed',       label: 'Feed',       Icon: ListOrdered },
+            { id: 'documentos', label: 'Documentos', Icon: FolderOpen  },
+          ] as const).map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setView(t.id)}
+              className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-md transition-colors ${
+                view === t.id ? 'bg-white text-slate-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <t.Icon size={10} />
+              {t.label}
+              {t.id === 'documentos' && (
+                <span className="text-[9px] text-gray-400">({allAttachments.length})</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {view === 'documentos' ? (
         /* ── Vista Documentos: todos los adjuntos del viaje ── */
@@ -282,7 +284,7 @@ export function TripNotesFeed({ trip }: Props) {
 
           {/* Composer */}
           <div className="space-y-1.5">
-            {/* Selector de tipo */}
+            {/* Selector de tipo — solo el activo muestra su label (menos ruido) */}
             <div className="flex items-center gap-1">
               {NOTE_TYPES.map(t => (
                 <button
@@ -290,12 +292,13 @@ export function TripNotesFeed({ trip }: Props) {
                   type="button"
                   onClick={() => setDraftType(t.id)}
                   title={t.label}
+                  aria-pressed={draftType === t.id}
                   className={`flex items-center gap-1 text-[9px] font-semibold px-1.5 py-1 rounded-md border transition-all ${
                     draftType === t.id ? `${t.cls} border-current` : 'text-gray-400 border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
                   <t.Icon size={10} />
-                  <span className="hidden lg:inline">{t.label}</span>
+                  {draftType === t.id && <span>{t.label}</span>}
                 </button>
               ))}
             </div>

@@ -44,10 +44,10 @@ describe('StopTimeline', () => {
     expect(screen.getByText('pendiente')).toBeInTheDocument()
   })
 
-  it('shows an ON TIME badge for a stop with on_time_status ON TIME', () => {
+  it('does NOT badge ON TIME stops (gestión por excepción: el check verde ya lo comunica)', () => {
     const stops = [makeStop({ stop_id: 'a', local: 'Parada A', on_time_status: 'ON TIME' })]
     render(<StopTimeline stops={stops} />)
-    expect(screen.getByText('ON TIME')).toBeInTheDocument()
+    expect(screen.queryByText('ON TIME')).not.toBeInTheDocument()
   })
 
   it('shows an OFF TIME badge for a stop with on_time_status OFF TIME', () => {

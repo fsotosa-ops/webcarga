@@ -13,8 +13,11 @@ function isCompleted(s: TripStop): boolean {
  * Barra horizontal de progreso de ruta para el hero del detalle:
  * nodos por parada (check verde = completada, acento pulsante = activa,
  * gris = pendiente) unidos por conectores que se llenan con el avance.
+ * showLabels=false por defecto: los nombres viven en el timeline de Ruta
+ * (mostrarlos acá también saturaba el hero — feedback 2026-07-06); el
+ * nombre queda como tooltip del nodo.
  */
-export function RouteProgress({ stops }: { stops: TripStop[] }) {
+export function RouteProgress({ stops, showLabels = false }: { stops: TripStop[]; showLabels?: boolean }) {
   if (!stops?.length) return null
 
   const currentIdx = stops.findIndex(s => !isCompleted(s))
@@ -58,15 +61,17 @@ export function RouteProgress({ stops }: { stops: TripStop[] }) {
                 ? <Check size={10} strokeWidth={3} />
                 : <span className={`w-1.5 h-1.5 rounded-full ${state === 'active' ? 'bg-accent' : 'bg-gray-200'}`} />}
             </span>
-            {/* Nombre — solo desktop, truncado */}
-            <span
-              className={`hidden md:block text-[9px] mt-1 max-w-full truncate px-0.5 ${
-                state === 'active' ? 'font-semibold text-accent' : state === 'done' ? 'text-gray-500' : 'text-gray-300'
-              }`}
-              title={name}
-            >
-              {name}
-            </span>
+            {/* Nombre — opcional (por defecto solo tooltip del nodo) */}
+            {showLabels && (
+              <span
+                className={`hidden md:block text-[9px] mt-1 max-w-full truncate px-0.5 ${
+                  state === 'active' ? 'font-semibold text-accent' : state === 'done' ? 'text-gray-500' : 'text-gray-300'
+                }`}
+                title={name}
+              >
+                {name}
+              </span>
+            )}
           </div>
         )
       })}

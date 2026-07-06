@@ -355,13 +355,15 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             )}
           </div>
 
-          {/* Barra de progreso de ruta con nombres */}
+          {/* Barra de progreso de ruta — sin nombres (viven en el timeline; tooltip en el nodo) */}
           {stops.length > 0 && (
             <div className="pt-1 pb-0.5">
               <RouteProgress stops={stops} />
             </div>
           )}
 
+          {/* Gestión por excepción: solo se badgea lo que está mal (OFF TIME,
+              temp fuera de rango) — lo demás es texto plano discreto */}
           <div className="flex items-center gap-2.5 flex-wrap text-[11px] text-gray-500">
             {stops.length > 0 && (
               <span>{doneCount}/{stops.length} paradas</span>
@@ -369,13 +371,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             {compliance === 'warn' && (
               <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-[10px]">OFF TIME</span>
             )}
-            {compliance === 'ok' && (
-              <span className="font-semibold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full text-[10px]">ON TIME</span>
-            )}
             {temp != null && (
-              <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
-                {temp}°C
-              </span>
+              tempStatus === 'out_of_range'
+                ? <span className="font-semibold px-1.5 py-0.5 rounded-full text-[10px] bg-red-50 text-red-700">{temp}°C</span>
+                : <span>{temp}°C</span>
             )}
             <span className="text-gray-400">
               TMS reportó {tmsSince}{syncSince !== '—' ? ` · sync ${syncSince}` : ''}

@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Thermometer, Timer } from 'lucide-react'
+import { Check, Timer } from 'lucide-react'
 import type { TripStop } from '@/lib/types'
 import { stopWasVisited, describeStopTiming } from '@/lib/utils/temperature'
 import { stopDwellTime, transitTime } from '@/lib/utils/stopStats'
@@ -54,25 +54,19 @@ export function StopTimeline({ stops }: Props) {
               <div className="min-w-0 flex-1 pb-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className={`text-xs truncate ${state === 'active' ? 'font-bold text-slate-800' : 'font-semibold text-slate-700'}`}>{name}</p>
-                  {stop.on_time_status === 'ON TIME' && (
-                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
-                  )}
+                  {/* Gestión por excepción: solo se badgea lo que está MAL —
+                      ON TIME ya lo comunica el check verde (feedback 2026-07-06: saturación) */}
                   {stop.on_time_status === 'OFF TIME' && (
                     <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">OFF TIME</span>
                   )}
                   {stop.milestone_status && (
                     <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{stop.milestone_status}</span>
                   )}
-                  {stopWasVisited(stop) && stop.temperature != null && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                      <Thermometer size={9} />
-                      {stop.temperature}°C
-                    </span>
-                  )}
                 </div>
                 <p className="text-[10px] text-gray-400 mt-0.5">
                   {timing ?? (state === 'done' ? 'completada' : state === 'active' ? 'en camino' : 'pendiente')}
                   {dwell && <span className="text-gray-500"> · {dwell} en parada</span>}
+                  {stopWasVisited(stop) && stop.temperature != null && ` · ${stop.temperature}°C`}
                 </p>
               </div>
             </div>
