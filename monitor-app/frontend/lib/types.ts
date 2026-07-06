@@ -193,6 +193,8 @@ export type OperationalStateMeta = {
   label:      string
   bg_color:   string
   text_color: string
+  /** Grupo del tablero (misma taxonomía que StatusMeta.group) */
+  group?:     string
 }
 
 export type AlertThresholdMeta = {
@@ -218,13 +220,21 @@ export type TemperatureRangeMeta = {
   max_c:      number
 }
 
+export type MonitorAlertRules = {
+  stale_report_hours:     number
+  dwell_hours:            number
+  late_arrival_grace_min: number
+  unassigned_enabled:     boolean
+}
+
 export type TripsMeta = {
-  statuses:           StatusMeta[]
-  tms_sources:        TmsSourceMeta[]
-  operational_states: OperationalStateMeta[]
-  alert_thresholds:   AlertThresholdMeta[]
-  csv_columns:        CSVColumnDef[]
-  temperature_ranges: TemperatureRangeMeta[]
+  statuses:            StatusMeta[]
+  tms_sources:         TmsSourceMeta[]
+  operational_states:  OperationalStateMeta[]
+  alert_thresholds:    AlertThresholdMeta[]
+  csv_columns:         CSVColumnDef[]
+  temperature_ranges:  TemperatureRangeMeta[]
+  monitor_alert_rules?: MonitorAlertRules | null
 }
 
 // Entrada inmutable de la bitácora de un viaje (app.trip_notes)

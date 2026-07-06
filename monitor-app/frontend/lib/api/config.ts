@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta, TemperatureRangeMeta } from '@/lib/types'
+import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta, TemperatureRangeMeta, MonitorAlertRules } from '@/lib/types'
 
 
 export type TripStatusRow = StatusMeta & { sort_order: number }
@@ -10,26 +10,26 @@ export const configApi = {
   getStatuses: () =>
     apiFetch<TripStatusRow[]>('/api/v1/config/statuses'),
 
-  patchStatus: (id: string, body: Partial<Pick<StatusMeta, 'label' | 'bg_color' | 'text_color' | 'group'>>) =>
+  patchStatus: (id: string, body: Partial<Pick<StatusMeta, 'label' | 'bg_color' | 'text_color' | 'group'>> & { sort_order?: number }) =>
     apiFetch<TripStatusRow>(`/api/v1/config/statuses/${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      body: JSON.stringify({ ...body, group_id: body.group }),
+      body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
     }),
 
   // ── Operational states (CRUD) ─────────────────────────────────────────────
   getOperationalStates: () =>
     apiFetch<OperationalStateRow[]>('/api/v1/config/operational-states'),
 
-  createOperationalState: (body: { label: string; bg_color: string; text_color: string; sort_order?: number }) =>
+  createOperationalState: (body: { label: string; bg_color: string; text_color: string; sort_order?: number; group?: string }) =>
     apiFetch<OperationalStateRow>('/api/v1/config/operational-states', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
     }),
 
-  patchOperationalState: (id: string, body: Partial<{ label: string; bg_color: string; text_color: string; sort_order: number; active: boolean }>) =>
+  patchOperationalState: (id: string, body: Partial<{ label: string; bg_color: string; text_color: string; sort_order: number; active: boolean; group: string }>) =>
     apiFetch<OperationalStateRow>(`/api/v1/config/operational-states/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
     }),
 
   deleteOperationalState: (id: string) =>
@@ -66,5 +66,15 @@ export const configApi = {
   deleteTemperatureRange: (cargo_type: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/config/temperature-ranges/${encodeURIComponent(cargo_type)}`, {
       method: 'DELETE',
+    }),
+
+  // ── Reglas de alerta del monitor ──────────────────────────────────────────
+  getMonitorAlertRules: () =>
+    apiFetch<MonitorAlertRules>('/api/v1/config/monitor-alert-rules'),
+
+  patchMonitorAlertRules: (body: Partial<MonitorAlertRules>) =>
+    apiFetch<MonitorAlertRules>('/api/v1/config/monitor-alert-rules', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     }),
 }
