@@ -464,6 +464,18 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 ---
 
+### 2026-07-06 (cont. 2) — Incidente de deploy + des-saturación del modal
+
+**Feedback del usuario con capturas**: no veía los cambios de filtros/configuración en dev, y el modal de detalle estaba "super saturado" de alertas.
+
+**Causa raíz de lo primero (no era el código)**: el push `8b3a9a6..aa19d7e` (22 archivos de frontend) **no disparó el workflow Deploy Frontend** — GitHub no evaluó el filtro de paths para ese push (solo corrió Monitor API). El usuario estaba viendo el frontend del deploy anterior. Fix: `gh workflow run deploy-frontend.yml --ref dev` (workflow_dispatch) → deploy exitoso. **Lección**: tras cada push, verificar en `gh run list` que TODOS los workflows esperados se dispararon — un filtro de paths puede fallar silenciosamente.
+
+**Des-saturación del modal** (commit `7fb74e8`, "gestión por excepción"): la captura mostraba la temperatura 6+ veces y ON TIME repetido en hero + cada parada + tabla técnica. Ahora: RouteProgress sin nombres bajo la barra (tooltip en nodo), solo se badgea lo que está MAL (OFF TIME, temp fuera de rango), ON TIME desaparece (el check verde lo comunica), temp por parada como texto plano, bitácora con toggle Documentos solo si hay adjuntos y selector de tipo con label solo en el activo. 161/161 tests.
+
+**Nota**: el juicio del usuario sobre Configuración ("cero intuitiva") fue sobre la versión VIEJA (pre-deploy). Revalidar con él una vez que vea la nueva (patrón único, swatches, orden editable, tab Alertas del Monitor).
+
+---
+
 ## Próximo paso exacto
 
 **Pusheado a `dev` (2026-07-05, autorizado por el usuario):** incluye el rango pendiente anterior (fechas por TMS) + las 5 fases del rediseño UX/UI world-class.
