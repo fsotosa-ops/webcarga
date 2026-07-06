@@ -96,6 +96,20 @@ describe('TripTable — errores de edición inline visibles', () => {
   })
 })
 
+describe('TripTable — estado manual resuelto contra estados operacionales', () => {
+  it('muestra el label del estado operacional (no el uuid) cuando hay override', () => {
+    const meta = {
+      statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
+      operational_states: [{ id: 'op-uuid-1', label: 'Confirmado en panne', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
+      tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [],
+    }
+    const trip = makeTrip('t1', { estado_manual: 'op-uuid-1' })
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={meta} />)
+    expect(screen.getAllByText('Confirmado en panne').length).toBeGreaterThan(0)
+    expect(screen.queryByText('op-uuid-1')).not.toBeInTheDocument()
+  })
+})
+
 describe('TripTable — orden tipado', () => {
   it('sorts ID Viaje numerically, not lexicographically', () => {
     const trips = [

@@ -57,4 +57,17 @@ describe('TripBoard', () => {
     expect(screen.getAllByText('Otro').length).toBe(1)
     expect(screen.getByText('A')).toBeInTheDocument()
   })
+
+  it('buckets a manual override (estado operacional) into its group instead of Otro', () => {
+    const meta = {
+      statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
+      operational_states: [{ id: 'op-uuid-1', label: 'En panne confirmada', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
+      tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [],
+    }
+    const trip = { ...makeTrip('a', 'ORIGEN'), estado_manual: 'op-uuid-1' }
+    render(<TripBoard trips={[trip]} groups={groups} meta={meta} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    // cae en Problema (grupo del estado operacional), no en la columna sintética Otro
+    expect(screen.queryByText('Otro')).not.toBeInTheDocument()
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
 })
