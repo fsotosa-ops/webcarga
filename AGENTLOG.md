@@ -515,7 +515,7 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 #### ⚠️ Pendientes
 1. **Copiar `app_trips.sql` (raíz) al proyecto dbt en Mage** — ahora también por las columnas origin_region/origin_city (además del pendiente anterior de trips_manual).
 2. Validar en dev: adjuntar screenshot (debería funcionar tras `edfcf89`), form manual completo, asignar/filtrar ubicación.
-3. Tipos de adjunto permitidos hoy: PDF/PNG/JPEG/WebP, 10MB (`ALLOWED_ATTACHMENT_MIMES`) — si operaciones necesita HEIC (fotos iPhone) u Office, es ampliar esa whitelist.
+3. ~~Tipos de adjunto~~ **RESUELTO** (`1259c08`, deploys verdes): whitelist ampliada a HEIC/HEIF + Word/Excel (doc/docx/xls/xlsx), espejo en el `accept` del composer; HEIC se muestra como archivo sin miniatura (no renderiza en `<img>` fuera de Safari). Sigue rechazado todo lo demás (zip → 422). Lista vigente: PDF, PNG, JPEG, WebP, HEIC/HEIF, Word, Excel — 10MB por archivo.
 
 ---
 
