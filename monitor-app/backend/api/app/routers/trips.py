@@ -938,6 +938,13 @@ ATTACHMENT_BUCKET = "trip-attachments"
 ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
 ALLOWED_ATTACHMENT_MIMES = {
     "application/pdf", "image/png", "image/jpeg", "image/webp",
+    # Fotos de iPhone transferidas directo (WhatsApp las convierte a JPEG)
+    "image/heic", "image/heif",
+    # Office: planillas y guías digitalizadas
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 SIGNED_URL_TTL_SECONDS = 3600
 

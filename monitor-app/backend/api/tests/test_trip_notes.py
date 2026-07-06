@@ -237,3 +237,31 @@ def test_attachment_storage_key_is_sanitized_but_original_name_kept():
     # la fila del adjunto conserva el nombre original para la UI
     attach_insert = next(c for c in pool.execute.call_args_list if "trip_note_attachments" in c.args[0])
     assert ugly in attach_insert.args
+
+
+def test_new_attachment_types_heic_and_office_are_accepted():
+    for fname, mime in [
+        ("foto_iphone.heic", "image/heic"),
+        ("guia.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ("informe.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    ]:
+        pool = AsyncMock()
+        pool.fetchval.side_effect = [NOTE_ROW["trip_id"], NOTE_ROW["id"]]
+        pool.fetchrow.return_value = NOTE_ROW
+        pool.fetch.return_value = []
+        client = make_client(pool, supabase=make_supabase())
+        res = client.post(
+            f"/api/v1/trips/{NOTE_ROW['trip_id']}/notes",
+            data={"body": "adjunto"},
+            files={"files": (fname, b"data", mime)},
+        )
+        assert res.status_code == 201, f"{mime}: {res.text}"
+    # un tipo fuera de la whitelist sigue rechazado
+    pool = AsyncMock()
+    client = make_client(pool, supabase=make_supabase())
+    res = client.post(
+        f"/api/v1/trips/{NOTE_ROW['trip_id']}/notes",
+        data={"body": "x"},
+        files={"files": ("virus.zip", b"PK", "application/zip")},
+    )
+    assert res.status_code == 422

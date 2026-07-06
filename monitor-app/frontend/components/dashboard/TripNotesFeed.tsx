@@ -17,7 +17,8 @@ const NOTE_TYPES: { id: Exclude<TripNoteType, 'sistema'>; label: string; Icon: t
   { id: 'incidente',   label: 'Incidente',   Icon: AlertTriangle, cls: 'text-red-600 bg-red-50'       },
 ]
 
-const ACCEPTED_FILES = '.pdf,image/png,image/jpeg,image/webp'
+// Espejo de ALLOWED_ATTACHMENT_MIMES del backend (routers/trips.py)
+const ACCEPTED_FILES = '.pdf,image/png,image/jpeg,image/webp,image/heic,image/heif,.doc,.docx,.xls,.xlsx'
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 function fmtBytes(n: number): string {
@@ -31,7 +32,8 @@ function typeMeta(t: TripNoteType) {
 }
 
 function AttachmentCard({ att }: { att: TripNoteAttachment }) {
-  const isImage = att.mime_type.startsWith('image/')
+  // HEIC/HEIF no renderizan en <img> fuera de Safari — se muestran como archivo
+  const isImage = att.mime_type.startsWith('image/') && !/hei[cf]/.test(att.mime_type)
   const inner = isImage && att.url ? (
     <img src={att.url} alt={att.file_name} className="w-full h-20 object-cover rounded-t-md" />
   ) : null
@@ -317,7 +319,7 @@ export function TripNotesFeed({ trip }: Props) {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                title="Adjuntar archivo (PDF o imagen, máx 10MB)"
+                title="Adjuntar archivo (PDF, imagen, Word o Excel, máx 10MB)"
                 className="absolute right-2 top-2 text-gray-300 hover:text-accent transition-colors"
               >
                 <Paperclip size={14} />
