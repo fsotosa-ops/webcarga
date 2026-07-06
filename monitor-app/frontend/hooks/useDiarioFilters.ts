@@ -1,6 +1,7 @@
 'use client'
 
 import { useReducer } from 'react'
+import type { KpiId } from '@/lib/utils/kpis'
 
 export type Tab        = 'en_curso' | 'historial'
 export type BoolFilter = boolean | null
@@ -19,7 +20,8 @@ export interface DiarioFilters {
   fAsignado:      BoolFilter
   fPrimeraVuelta: BoolFilter
   fTms:           string[]
-  fClient:        string
+  /** Filtro de excepción activo (KPI cards) — client-side sobre la data cargada */
+  kpiFilter:      KpiId | null
   page:           number
 }
 
@@ -29,6 +31,7 @@ export type DiarioFiltersAction =
   | { type: 'toggleGroup'; key: string }
   | { type: 'toggleFlag'; field: FlagField }
   | { type: 'toggleTms'; id: string }
+  | { type: 'toggleKpi'; kpi: KpiId }
   | { type: 'clear' }
 
 function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilters {
@@ -47,12 +50,14 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
           ? state.fTms.filter(t => t !== action.id)
           : [...state.fTms, action.id],
       }
+    case 'toggleKpi':
+      return { ...state, page: 1, kpiFilter: state.kpiFilter === action.kpi ? null : action.kpi }
     case 'clear':
       return {
         ...state,
         q: '', fechaDesde: '', fechaHasta: '', activeGroup: null,
         fActivo: null, fTrabajando: null, fAsignado: null, fPrimeraVuelta: null,
-        fTms: [], fClient: '', page: 1,
+        fTms: [], kpiFilter: null, page: 1,
       }
   }
 }
@@ -61,7 +66,15 @@ export function countActiveFilters(f: DiarioFilters): number {
   return [
     f.q, f.fechaDesde, f.fechaHasta, f.activeGroup,
     f.fActivo, f.fTrabajando, f.fAsignado, f.fPrimeraVuelta,
-    f.fClient,
+    f.kpiFilter,
+  ].filter(v => v !== '' && v !== null).length + f.fTms.length
+}
+
+/** Filtros que viven dentro del popover "Filtros" (para su badge contador) */
+export function countPopoverFilters(f: DiarioFilters): number {
+  return [
+    f.fechaDesde, f.fechaHasta,
+    f.fActivo, f.fTrabajando, f.fAsignado, f.fPrimeraVuelta,
   ].filter(v => v !== '' && v !== null).length + f.fTms.length
 }
 
@@ -69,6 +82,6 @@ export function useDiarioFilters(initialFecha: string) {
   return useReducer(reducer, {
     tab: 'en_curso', fecha: initialFecha, q: '', fechaDesde: '', fechaHasta: '',
     activeGroup: null, fActivo: null, fTrabajando: null, fAsignado: null,
-    fPrimeraVuelta: null, fTms: [], fClient: '', page: 1,
+    fPrimeraVuelta: null, fTms: [], kpiFilter: null, page: 1,
   } satisfies DiarioFilters)
 }

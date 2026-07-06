@@ -13,6 +13,7 @@ import { TripBoard } from '@/components/dashboard/TripBoard'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
+import { FilterPopover } from '@/components/dashboard/FilterPopover'
 import { TripCreateSlideOver } from '@/components/dashboard/TripCreateSlideOver'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -49,13 +50,6 @@ const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
   pink:   { on: 'bg-pink-500   border-pink-500   text-white', off: 'text-pink-700   border-pink-300   bg-pink-50   hover:border-pink-400'   },
   slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
 }
-
-const FLAG_CHIPS: { label: string; field: FlagField; on: string; off: string }[] = [
-  { label: 'Activo',     field: 'fActivo',        on: 'bg-blue-500   border-blue-500   text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-blue-200   hover:text-blue-600'   },
-  { label: 'Trabajando', field: 'fTrabajando',    on: 'bg-green-500  border-green-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-green-200  hover:text-green-600'  },
-  { label: 'Asignado',   field: 'fAsignado',      on: 'bg-violet-500 border-violet-500 text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-violet-200 hover:text-violet-600' },
-  { label: '1ra Vuelta', field: 'fPrimeraVuelta', on: 'bg-amber-500  border-amber-500  text-white', off: 'text-gray-500 border-gray-200 bg-white hover:border-amber-200  hover:text-amber-600'  },
-]
 
 const KPI_CARDS: { id: KpiId; label: string; activeCls: string; countCls: string }[] = [
   { id: 'off_time', label: 'OFF TIME',                       activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50',     countCls: 'text-red-600'   },
@@ -113,9 +107,8 @@ export default function DiarioPage() {
   const [editingGroup,      setEditingGroup]      = useState<FilterGroup | undefined>(undefined)
   const [prefillFromFilter, setPrefillFromFilter] = useState(false)
 
-  // Debounce de inputs de texto: no disparar un fetch por cada tecla
-  const qDebounced      = useDebouncedValue(f.q, 300)
-  const clientDebounced = useDebouncedValue(f.fClient, 300)
+  // Debounce de la búsqueda: no disparar un fetch por cada tecla
+  const qDebounced = useDebouncedValue(f.q, 300)
 
   const today   = todayISO()
   const isToday = f.fecha === today
@@ -161,9 +154,9 @@ export default function DiarioPage() {
   }
   const params: TripListParams =
     f.tab === 'en_curso'
-      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), client: clientDebounced, limit: 200, ...boolParams }
+      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), limit: 200, ...boolParams }
       : { view: 'historial', q: qDebounced, fecha_desde: f.fechaDesde, fecha_hasta: f.fechaHasta,
-          status: statusParam, tms: f.fTms.join(','), client: clientDebounced, limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
+          status: statusParam, tms: f.fTms.join(','), limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
 
   const queryClient = useQueryClient()
   const tripsQuery  = useTrips(params, { poll: f.tab === 'en_curso' })
@@ -175,15 +168,14 @@ export default function DiarioPage() {
   const error    = tripsQuery.error ? (tripsQuery.error instanceof Error ? tripsQuery.error.message : 'Error cargando viajes') : null
 
   // ── KPIs accionables: excepciones derivadas de la data ya cargada (un clic = filtro) ──
-  const [kpiFilter, setKpiFilter] = useState<KpiId | null>(null)
   const kpis = useMemo(
     () => deriveKpis(trips, tripsMeta?.temperature_ranges ?? []),
     [trips, tripsMeta?.temperature_ranges],
   )
   const visibleTrips = useMemo(() => {
-    if (f.tab !== 'en_curso' || !kpiFilter) return trips
-    return trips.filter(t => matchesKpi(t, kpiFilter, tripsMeta?.temperature_ranges ?? []))
-  }, [trips, f.tab, kpiFilter, tripsMeta?.temperature_ranges])
+    if (f.tab !== 'en_curso' || !f.kpiFilter) return trips
+    return trips.filter(t => matchesKpi(t, f.kpiFilter!, tripsMeta?.temperature_ranges ?? []))
+  }, [trips, f.tab, f.kpiFilter, tripsMeta?.temperature_ranges])
 
   // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
   const prevReportedRef = useRef<Map<string, string | null>>(new Map())
@@ -354,11 +346,11 @@ export default function DiarioPage() {
             <div className="flex gap-2 flex-wrap">
               {KPI_CARDS.map(card => {
                 const count  = kpis[card.id]
-                const active = kpiFilter === card.id
+                const active = f.kpiFilter === card.id
                 return (
                   <button
                     key={card.id}
-                    onClick={() => setKpiFilter(prev => (prev === card.id ? null : card.id))}
+                    onClick={() => dispatch({ type: 'toggleKpi', kpi: card.id })}
                     disabled={count === 0 && !active}
                     aria-pressed={active}
                     className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
@@ -376,159 +368,98 @@ export default function DiarioPage() {
             </div>
           )}
 
-          {/* ── Filter bar ───────────────────────────────────────────── */}
-          <div className="bg-white border border-border rounded-xl px-3.5 py-3 space-y-3">
+          {/* ── Barra de filtros compacta: búsqueda + Estado + popover ── */}
+          <div className="bg-white border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
+            <div className="relative shrink-0">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                value={f.q}
+                onChange={e => dispatch({ type: 'patch', patch: { q: e.target.value } })}
+                placeholder="Tracto, conductor, EETT, cliente, ID…"
+                className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 bg-white placeholder:text-gray-400 transition-all"
+              />
+            </div>
 
-            {/* Row 1 — search + date range + clear */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="relative">
-                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <input
-                  value={f.q}
-                  onChange={e => dispatch({ type: 'patch', patch: { q: e.target.value } })}
-                  placeholder="Tracto, conductor, EETT…"
-                  className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-52 bg-white placeholder:text-gray-400 transition-all"
-                />
-              </div>
+            {/* Estado: grupos default + custom */}
+            {defaultGroups.map(g => {
+              const key = `default:${g.id}`
+              const active = f.activeGroup === key
+              return (
+                <button
+                  key={g.id}
+                  onClick={() => dispatch({ type: 'toggleGroup', key })}
+                  aria-pressed={active}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${active ? g.on : g.off}`}
+                >
+                  {g.label}
+                  {active && g.statuses.length > 1 && (
+                    <span className="ml-1 opacity-70 text-[9px]">·{g.statuses.length}</span>
+                  )}
+                </button>
+              )
+            })}
 
-              {f.tab === 'historial' && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Desde</span>
-                  <input type="date" value={f.fechaDesde} onChange={e => dispatch({ type: 'patch', patch: { fechaDesde: e.target.value } })}
-                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all" />
-                  <span className="text-gray-300 text-xs">—</span>
-                  <input type="date" value={f.fechaHasta} onChange={e => dispatch({ type: 'patch', patch: { fechaHasta: e.target.value } })}
-                    className="px-2.5 py-1.5 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 transition-all" />
-                </div>
-              )}
+            {customGroups.length > 0 && <span className="text-gray-200 text-sm">·</span>}
 
+            {customGroups.map(g => {
+              const key = `custom:${g.id}`
+              const active = f.activeGroup === key
+              const cls = COLOR_CLS[g.color] ?? COLOR_CLS.blue
+              return (
+                <span key={g.id} className={`inline-flex items-center rounded-full border transition-all ${active ? cls.on : cls.off}`}>
+                  <button
+                    onClick={() => dispatch({ type: 'toggleGroup', key })}
+                    aria-pressed={active}
+                    className="text-[11px] font-semibold pl-2.5 pr-1 py-1"
+                  >
+                    {g.name}
+                    {active && g.statuses.length > 1 && (
+                      <span className="opacity-70 text-[9px] ml-1">·{g.statuses.length}</span>
+                    )}
+                  </button>
+                  {/* Edición siempre visible (antes solo-hover: invisible en touch) */}
+                  <button
+                    onClick={e => { e.stopPropagation(); setEditingGroup(g); setShowBuilder(true) }}
+                    aria-label={`Editar grupo ${g.name}`}
+                    className="pr-2 pl-0.5 py-1 opacity-60 hover:opacity-100 transition-opacity"
+                  >
+                    <PenLine size={9} />
+                  </button>
+                </span>
+              )
+            })}
+
+            <button
+              onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(false); setShowBuilder(true) }}
+              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-accent hover:text-accent transition-all"
+              title="Crear grupo personalizado"
+            >
+              <Plus size={11} />
+              Grupo
+            </button>
+
+            {statusParam && (
+              <button
+                onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(true); setShowBuilder(true) }}
+                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-accent/40 text-accent hover:border-accent hover:bg-accent/5 transition-all"
+                title="Guardar el filtro de estado actual como grupo"
+              >
+                <Plus size={11} />
+                Guardar como grupo
+              </button>
+            )}
+
+            {/* Filtros ocasionales (Fuente, Indicadores, fechas) + Limpiar */}
+            <div className="flex items-center gap-2 ml-auto">
+              <FilterPopover filters={f} dispatch={dispatch} meta={tripsMeta} />
               {activeCount > 0 && (
                 <button onClick={() => dispatch({ type: 'clear' })}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors ml-auto">
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors">
                   <X size={11} />
                   Limpiar
                   <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-gray-100 rounded-full text-gray-600">{activeCount}</span>
                 </button>
               )}
-            </div>
-
-            {/* Row 2 — status groups (default + custom) */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Estado</span>
-
-              {/* Default groups — derived from meta.statuses (group membership from DB) */}
-              {defaultGroups.map(g => {
-                const key = `default:${g.id}`
-                const active = f.activeGroup === key
-                return (
-                  <button
-                    key={g.id}
-                    onClick={() => dispatch({ type: 'toggleGroup', key })}
-                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${active ? g.on : g.off}`}
-                  >
-                    {g.label}
-                    {active && g.statuses.length > 1 && (
-                      <span className="ml-1 opacity-70 text-[9px]">·{g.statuses.length}</span>
-                    )}
-                  </button>
-                )
-              })}
-
-              {/* Divider between default and custom */}
-              {customGroups.length > 0 && (
-                <span className="text-gray-200 text-sm mx-0.5">·</span>
-              )}
-
-              {/* Custom groups */}
-              {customGroups.map(g => {
-                const key = `custom:${g.id}`
-                const active = f.activeGroup === key
-                const cls = COLOR_CLS[g.color] ?? COLOR_CLS.blue
-                return (
-                  <div key={g.id} className="relative group/chip flex items-center">
-                    <button
-                      onClick={() => dispatch({ type: 'toggleGroup', key })}
-                      className={`text-[11px] font-semibold pl-2.5 pr-1.5 py-1 rounded-full border transition-all flex items-center gap-1 ${active ? cls.on : cls.off}`}
-                    >
-                      {g.name}
-                      {active && g.statuses.length > 1 && (
-                        <span className="opacity-70 text-[9px]">·{g.statuses.length}</span>
-                      )}
-                    </button>
-                    {/* Edit button — appears on hover */}
-                    <button
-                      onClick={e => { e.stopPropagation(); setEditingGroup(g); setShowBuilder(true) }}
-                      className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center opacity-0 group-hover/chip:opacity-100 transition-opacity hover:bg-gray-50"
-                      title="Editar grupo"
-                    >
-                      <PenLine size={8} className="text-gray-500" />
-                    </button>
-                  </div>
-                )
-              })}
-
-              {/* Create group button */}
-              <button
-                onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(false); setShowBuilder(true) }}
-                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-accent hover:text-accent transition-all"
-                title="Crear grupo personalizado"
-              >
-                <Plus size={11} />
-                Grupo
-              </button>
-
-              {/* Save current filter as a group — prefills GroupBuilder with the active statuses */}
-              {statusParam && (
-                <button
-                  onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(true); setShowBuilder(true) }}
-                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-accent/40 text-accent hover:border-accent hover:bg-accent/5 transition-all"
-                  title="Guardar el filtro de estado actual como grupo"
-                >
-                  <Plus size={11} />
-                  Guardar como grupo
-                </button>
-              )}
-            </div>
-
-            {/* Row 3 — boolean flag chips */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Mostrar</span>
-              {FLAG_CHIPS.map(chip => (
-                <button
-                  key={chip.label}
-                  onClick={() => dispatch({ type: 'toggleFlag', field: chip.field })}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${f[chip.field] === true ? chip.on : chip.off}`}
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Row 4 — Fuente (TMS) + cliente */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-12 shrink-0">Fuente</span>
-              {(tripsMeta?.tms_sources ?? []).map(src => {
-                const active = f.fTms.includes(src.id)
-                return (
-                  <button
-                    key={src.id}
-                    onClick={() => dispatch({ type: 'toggleTms', id: src.id })}
-                    style={active ? { backgroundColor: src.bg_color, color: src.text_color, borderColor: src.bg_color } : undefined}
-                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                      active ? '' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    {src.label}
-                  </button>
-                )
-              })}
-              <span className="text-gray-200 text-sm mx-0.5">·</span>
-              <input
-                value={f.fClient}
-                onChange={e => dispatch({ type: 'patch', patch: { fClient: e.target.value } })}
-                placeholder="Cliente…"
-                className="px-2.5 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-32 bg-white placeholder:text-gray-400 transition-all"
-              />
             </div>
           </div>
 

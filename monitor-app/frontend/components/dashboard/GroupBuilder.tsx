@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Check, Loader2 } from 'lucide-react'
 import type { FilterGroup, GroupColor } from '@/lib/api/filterGroups'
 import { filterGroupsApi } from '@/lib/api/filterGroups'
@@ -21,15 +21,21 @@ const GROUP_LABELS: Record<string, string> = {
 }
 
 function buildSections(statuses?: StatusMeta[]) {
-  if (!statuses?.length) return STATUS_SECTIONS_FALLBACK
-  const grouped: Record<string, string[]> = {}
+  if (!statuses?.length) {
+    return STATUS_SECTIONS_FALLBACK.map(s => ({
+      ...s,
+      statuses: s.statuses.map(id => ({ id, label: id })),
+    }))
+  }
+  const grouped: Record<string, { id: string; label: string }[]> = {}
   for (const s of statuses) {
     if (!grouped[s.group]) grouped[s.group] = []
-    grouped[s.group].push(s.id)
+    // label configurado en vez del id crudo (los ids TMS son jerga interna)
+    grouped[s.group].push({ id: s.id, label: s.label || s.id })
   }
-  return Object.entries(grouped).map(([group, ids]) => ({
+  return Object.entries(grouped).map(([group, items]) => ({
     label: GROUP_LABELS[group] ?? group,
-    statuses: ids,
+    statuses: items,
   }))
 }
 
@@ -55,6 +61,13 @@ interface Props {
 
 export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, initialStatuses }: Props) {
   const STATUS_SECTIONS = buildSections(statuses)
+
+  // Semántica de diálogo: Escape cierra
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
   const [name,      setName]      = useState(editing?.name ?? '')
   const [selected,  setSelected]  = useState<Set<string>>(new Set(editing?.statuses ?? initialStatuses ?? []))
   const [color,     setColor]     = useState<GroupColor>(editing?.color ?? 'blue')
@@ -114,15 +127,20 @@ export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, i
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-backdrop-in">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={editing ? `Editar grupo ${editing.name}` : 'Nuevo grupo de estados'}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-modal-in"
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="font-semibold text-sm text-text-primary">
             {editing ? 'Editar grupo' : 'Nuevo grupo de estados'}
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400">
+          <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400">
             <X size={15} />
           </button>
         </div>
@@ -151,6 +169,9 @@ export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, i
                 <button
                   key={c.id}
                   type="button"
+                  role="radio"
+                  aria-checked={color === c.id}
+                  aria-label={c.id}
                   onClick={() => setColor(c.id)}
                   className={`w-6 h-6 rounded-full ${c.bg} transition-all ${
                     color === c.id ? `ring-2 ring-offset-2 ${c.ring} scale-110` : 'hover:scale-105'
@@ -167,13 +188,15 @@ export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, i
             </label>
             <div className="space-y-3">
               {STATUS_SECTIONS.map(section => {
-                const allOn = section.statuses.every(s => selected.has(s))
-                const someOn = section.statuses.some(s => selected.has(s))
+                const ids = section.statuses.map(s => s.id)
+                const allOn = ids.every(s => selected.has(s))
+                const someOn = ids.some(s => selected.has(s))
                 return (
                   <div key={section.label}>
                     <button
                       type="button"
-                      onClick={() => toggleSection(section.statuses)}
+                      onClick={() => toggleSection(ids)}
+                      aria-pressed={allOn}
                       className="flex items-center gap-2 w-full text-left mb-1.5 group"
                     >
                       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
@@ -185,20 +208,21 @@ export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, i
                     </button>
                     <div className="pl-6 space-y-1">
                       {section.statuses.map(status => (
-                        <label key={status} className="flex items-center gap-2 cursor-pointer group">
-                          <div
-                            onClick={() => toggle(status)}
-                            className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
-                              selected.has(status) ? 'border-accent bg-accent' : 'border-gray-300 group-hover:border-gray-400'
-                            }`}
-                          >
-                            {selected.has(status) && <Check size={8} className="text-white" />}
-                          </div>
-                          <span
-                            onClick={() => toggle(status)}
-                            className="text-[11px] text-gray-500 group-hover:text-gray-700 transition-colors"
-                          >
-                            {status}
+                        // checkbox real (focuseable/operable por teclado), visual custom
+                        <label key={status.id} className="flex items-center gap-2 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(status.id)}
+                            onChange={() => toggle(status.id)}
+                            className="sr-only peer"
+                          />
+                          <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 ${
+                            selected.has(status.id) ? 'border-accent bg-accent' : 'border-gray-300 group-hover:border-gray-400'
+                          }`}>
+                            {selected.has(status.id) && <Check size={8} className="text-white" />}
+                          </span>
+                          <span className="text-[11px] text-gray-500 group-hover:text-gray-700 transition-colors">
+                            {status.label}
                           </span>
                         </label>
                       ))}

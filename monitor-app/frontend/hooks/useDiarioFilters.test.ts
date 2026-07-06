@@ -37,14 +37,25 @@ describe('useDiarioFilters', () => {
     expect(result.current[0].fTms).toEqual(['sodimac'])
   })
 
-  it('clear wipes filters but keeps tab and fecha', () => {
+  it('clear wipes filters (incluyendo el filtro KPI) but keeps tab and fecha', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
-    act(() => result.current[1]({ type: 'patch', patch: { q: 'x', fClient: 'walmart' } }))
+    act(() => result.current[1]({ type: 'patch', patch: { q: 'x' } }))
     act(() => result.current[1]({ type: 'toggleFlag', field: 'fActivo' }))
+    act(() => result.current[1]({ type: 'toggleKpi', kpi: 'off_time' }))
     act(() => result.current[1]({ type: 'clear' }))
     const [f] = result.current
     expect(countActiveFilters(f)).toBe(0)
+    expect(f.kpiFilter).toBeNull()
     expect(f.fecha).toBe('2026-07-04')
     expect(f.tab).toBe('en_curso')
+  })
+
+  it('kpiFilter cuenta en activeCount y togglea', () => {
+    const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
+    act(() => result.current[1]({ type: 'toggleKpi', kpi: 'stale' }))
+    expect(result.current[0].kpiFilter).toBe('stale')
+    expect(countActiveFilters(result.current[0])).toBe(1)
+    act(() => result.current[1]({ type: 'toggleKpi', kpi: 'stale' }))
+    expect(result.current[0].kpiFilter).toBeNull()
   })
 })
