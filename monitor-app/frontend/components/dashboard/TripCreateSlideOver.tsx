@@ -23,6 +23,23 @@ interface Props {
 
 const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
 
+// Sin w-full: convive en la fila de destino con el input de nombre (INPUT trae
+// w-full y dos utilidades de ancho en conflicto dejan el ancho al azar del stylesheet)
+const INPUT_DATE = "text-sm border border-border rounded-lg px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all w-[150px] sm:w-[185px]"
+
+// Valores canónicos en minúscula: coinciden con app.trips.client_name real y con
+// la fórmula md5 de reconciliación (que lowercasea el cliente)
+const MANUAL_CLIENTS = [
+  { value: 'walmart', label: 'Walmart' },
+  { value: 'sodimac', label: 'Sodimac' },
+  { value: 'colun',   label: 'Colún'   },
+  { value: 'iansa',   label: 'Iansa'   },
+] as const
+
+const OTHER_CLIENT = 'otro'
+
+const BASE_CARGO_TYPES = ['SECO', 'FRIO', 'CONGELADO']
+
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
 }
@@ -154,6 +171,8 @@ type OriginMode = 'none' | 'mapped' | 'other'
 
 export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }: Props) {
   const [form, setForm]             = useState<Partial<TripCreatePayload>>({})
+  const [clientChoice, setClientChoice] = useState('')
+  const [clientOther, setClientOther]   = useState('')
   const [originMode, setOriginMode] = useState<OriginMode>('none')
   const [originTms, setOriginTms]   = useState('')
   const [stops, setStops]           = useState<TripStopCreatePayload[]>([])
@@ -166,6 +185,12 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
   useEffect(() => {
     if (open) {
       setForm({ planning_date: todayISO(), ...(prefill ?? {}) })
+      const preClient = prefill?.client_name ?? ''
+      if (MANUAL_CLIENTS.some(c => c.value === preClient)) {
+        setClientChoice(preClient); setClientOther('')
+      } else {
+        setClientChoice(preClient ? OTHER_CLIENT : ''); setClientOther(preClient)
+      }
       setOriginMode('none')
       setOriginTms('')
       setStops([])
@@ -232,8 +257,20 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
   }
 
   const mappedTms = (meta?.tms_sources ?? []).filter(t => t.id !== 'manual')
+
+  // Cliente derivado del dropdown: "Otro cliente" usa el texto libre o el genérico 'otro'
+  const clientName =
+    clientChoice === OTHER_CLIENT ? (clientOther.trim() || OTHER_CLIENT) : clientChoice || undefined
+
+  // Tipos de carga: base + los configurados en Rangos de Temperatura (dedup)
+  const cargoTypes = Array.from(new Set([
+    ...BASE_CARGO_TYPES,
+    ...(meta?.temperature_ranges ?? []).map(r => r.cargo_type),
+    ...(form.cargo_type ? [form.cargo_type] : []),
+  ]))
+
   const canReconcile =
-    originMode === 'mapped' && !!originTms && !!form.source_system_trip_id && !!form.client_name
+    originMode === 'mapped' && !!originTms && !!form.source_system_trip_id && !!clientName
 
   async function handleCreate() {
     if (!form.planning_date) { setErr('La fecha de planificación es requerida'); return }
@@ -242,6 +279,7 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
     try {
       const payload: TripCreatePayload = {
         ...(form as TripCreatePayload),
+        client_name: clientName,
         origin_tms: originMode === 'none' ? undefined : originTms || undefined,
         stops: stops.filter(s => s.local.trim()),
       }
@@ -303,15 +341,48 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
                   <input ref={firstFieldRef} type="date" value={form.planning_date ?? ''} onChange={e => set('planning_date', e.target.value)} className={INPUT} />
                 </Field>
                 <Field label="Cliente">
-                  <input type="text" value={form.client_name ?? ''} onChange={e => set('client_name', e.target.value)} placeholder="Walmart, Colun…" className={INPUT} />
+                  <select
+                    value={clientChoice}
+                    onChange={e => { setClientChoice(e.target.value); if (e.target.value !== OTHER_CLIENT) setClientOther('') }}
+                    aria-label="Cliente"
+                    className={INPUT}
+                  >
+                    <option value="">— Seleccionar…</option>
+                    {MANUAL_CLIENTS.map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                    <option value={OTHER_CLIENT}>Otro cliente (spot)</option>
+                  </select>
                 </Field>
               </div>
+              {clientChoice === OTHER_CLIENT && (
+                <Field label="Nombre del cliente (opcional)">
+                  <input
+                    type="text"
+                    value={clientOther}
+                    onChange={e => setClientOther(e.target.value)}
+                    placeholder="Si aún no se sabe, queda como “otro”"
+                    aria-label="Nombre del cliente"
+                    className={INPUT}
+                  />
+                </Field>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Origen">
                   <input type="text" value={form.origin ?? ''} onChange={e => set('origin', e.target.value)} placeholder="Santiago CD" className={INPUT} />
                 </Field>
                 <Field label="Tipo de carga">
-                  <input type="text" value={form.cargo_type ?? ''} onChange={e => set('cargo_type', e.target.value)} placeholder="SECO, FRIO…" className={INPUT} />
+                  <select
+                    value={form.cargo_type ?? ''}
+                    onChange={e => set('cargo_type', e.target.value)}
+                    aria-label="Tipo de carga"
+                    className={INPUT}
+                  >
+                    <option value="">— Sin especificar</option>
+                    {cargoTypes.map(ct => (
+                      <option key={ct} value={ct}>{ct}</option>
+                    ))}
+                  </select>
                 </Field>
               </div>
               <Field label="Estado inicial">
@@ -347,6 +418,22 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
                     </button>
                   ))}
                 </div>
+                {originMode === 'none' && (
+                  <div>
+                    <Field label="ID de seguimiento (opcional)">
+                      <input
+                        type="text"
+                        value={form.source_system_trip_id ?? ''}
+                        onChange={e => set('source_system_trip_id', e.target.value)}
+                        placeholder="Guía, hoja de ruta, factura…"
+                        className={INPUT}
+                      />
+                    </Field>
+                    <p className="mt-2 text-[10px] text-gray-400">
+                      El viaje queda igual con un ID interno de Webcarga para trazabilidad y facturación.
+                    </p>
+                  </div>
+                )}
                 {originMode === 'mapped' && (
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="TMS">
@@ -384,29 +471,29 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
                 <SectionTitle icon={<MapPin size={14} />}>Destinos</SectionTitle>
                 <div className="space-y-2">
                   {stops.map((s, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
                       <input
                         type="text"
                         value={s.local}
                         onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, local: e.target.value } : x))}
                         placeholder={`Destino ${i + 1}`}
-                        className={INPUT + ' flex-1'}
+                        className={INPUT}
                         aria-label={`Nombre destino ${i + 1}`}
                       />
                       <input
                         type="datetime-local"
                         value={s.planning_date ?? ''}
                         onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, planning_date: e.target.value || null } : x))}
-                        className={INPUT + ' w-[190px] shrink-0'}
+                        className={INPUT_DATE}
                         aria-label={`Fecha planificada destino ${i + 1}`}
                       />
                       <button
                         type="button"
                         onClick={() => setStops(prev => prev.filter((_, j) => j !== i))}
                         aria-label={`Quitar destino ${i + 1}`}
-                        className="p-2 text-gray-300 hover:text-red-400 transition-colors shrink-0"
+                        className="p-2 rounded-lg border border-transparent text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   ))}

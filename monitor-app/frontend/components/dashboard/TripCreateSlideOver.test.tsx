@@ -62,8 +62,48 @@ describe('TripCreateSlideOver', () => {
     fireEvent.click(screen.getByText('TMS integrado'))
     fireEvent.change(screen.getByLabelText('TMS de origen'), { target: { value: 'qanalytics' } })
     fireEvent.change(screen.getByPlaceholderText('1994062'), { target: { value: '555' } })
-    fireEvent.change(screen.getByPlaceholderText('Walmart, Colun…'), { target: { value: 'Walmart' } })
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'walmart' } })
     expect(screen.getByText(/Se vinculará automáticamente/)).toBeInTheDocument()
+  })
+
+  it('cliente es dropdown con canónicos y "Otro cliente" revela texto libre', async () => {
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+    render(<TripCreateSlideOver open onClose={vi.fn()} onCreated={vi.fn()} meta={meta} />)
+    const select = screen.getByLabelText('Cliente') as HTMLSelectElement
+    const values = Array.from(select.options).map(o => o.value)
+    expect(values).toEqual(expect.arrayContaining(['walmart', 'sodimac', 'colun', 'iansa', 'otro']))
+
+    // Sin nombre → se envía el genérico 'otro'
+    fireEvent.change(select, { target: { value: 'otro' } })
+    expect(screen.getByLabelText(/Nombre del cliente/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Crear viaje'))
+    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
+    expect(vi.mocked(tripsApi.create).mock.calls[0][0].client_name).toBe('otro')
+
+    // Con nombre → se envía el texto
+    vi.mocked(tripsApi.create).mockClear()
+    fireEvent.change(screen.getByLabelText(/Nombre del cliente/i), { target: { value: 'Agrosuper' } })
+    fireEvent.click(screen.getByText('Crear viaje'))
+    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
+    expect(vi.mocked(tripsApi.create).mock.calls[0][0].client_name).toBe('Agrosuper')
+  })
+
+  it('tipo de carga es dropdown con SECO/FRIO/CONGELADO', () => {
+    render(<TripCreateSlideOver open onClose={vi.fn()} onCreated={vi.fn()} meta={meta} />)
+    const select = screen.getByLabelText('Tipo de carga') as HTMLSelectElement
+    const values = Array.from(select.options).map(o => o.value)
+    expect(values).toEqual(expect.arrayContaining(['SECO', 'FRIO', 'CONGELADO']))
+  })
+
+  it('modo Sin TMS permite anotar un ID de seguimiento y lo envía sin origin_tms', async () => {
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+    render(<TripCreateSlideOver open onClose={vi.fn()} onCreated={vi.fn()} meta={meta} />)
+    fireEvent.change(screen.getByPlaceholderText(/Guía, hoja de ruta/), { target: { value: 'FAC-50' } })
+    fireEvent.click(screen.getByText('Crear viaje'))
+    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
+    const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
+    expect(payload.source_system_trip_id).toBe('FAC-50')
+    expect(payload.origin_tms).toBeUndefined()
   })
 
   it('el selector de TMS integrado no ofrece "manual" como opción', () => {
