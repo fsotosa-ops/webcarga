@@ -458,9 +458,9 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 
 **Verificación:** 160/160 tests frontend, 44/44 backend, tsc/build limpios. Sin smoke de navegador (6ta ronda sin sesión de auth).
 
-#### ⚠️ PENDIENTES que requieren confirmación del usuario
-1. **Aplicar migración `20260708000001_op_states_groups_alert_rules.sql`** a Supabase — sin ella: el select de grupo en op-states falla, /config/monitor-alert-rules da 404 (los KPIs usan defaults), el drop del tablero no encuentra estados por grupo (todos en 'otro' hasta reasignar en Configuración).
-2. **Push a `dev`** (6 commits locales).
+#### Cierre (2026-07-06, autorizado por el usuario)
+1. **Migración aplicada a Supabase** — verificado: monitor_alert_rules con fila seed; backfill de grupos de estados operacionales: Esperando descarga→en_local, Problema conductor→problema, Coordinando retorno→retornando; "En seguimiento" y "Novedad reportada" quedaron en `otro` (heurística sin match) — el admin puede reasignarlos en Configuración → Estados Operacionales.
+2. **Pusheado a `dev`** (`8b3a9a6..aa19d7e`).
 
 ---
 
