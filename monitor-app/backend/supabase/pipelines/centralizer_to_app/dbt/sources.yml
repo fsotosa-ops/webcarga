@@ -1,0 +1,24 @@
+version: 2
+
+# Source bronze del pipeline centralizer_to_app.
+# Las tablas las carga el proceso "Claudote" (SharePoint → Supabase) de
+# Pablo/Fabián. AÚN sin columnas batch_id/loaded_at (pendiente del loader):
+# cada corrida asume snapshot completo. El contrato de columnas EXACTAS lo
+# valida 00_gate.sql (schema drift gate) antes de correr estos modelos.
+sources:
+  - name: bronze
+    schema: bronze
+    description: >
+      Capa raw del consolidado de EETT (centralizer) + info de contacto admin
+      + detalle de pólizas/cuotas de seguros. Snapshot completo por carga.
+    tables:
+      - name: raw_centralizer_transporter
+        description: Consolidado de empresas de transporte. Grano rut + cliente GC (~42 filas, 38 RUT únicos).
+      - name: raw_centralizer_drivers
+        description: Conductores del consolidado. Grano conductor (~80 filas).
+      - name: raw_centralizer_vehicles
+        description: Vehículos del consolidado. Grano patente (~119 filas).
+      - name: raw_info_contacto
+        description: Empresas del sistema administrativo (grano empresa, ~249 filas). Cruce por RUT normalizado.
+      - name: raw_insurance_vehicles
+        description: Detalle de pólizas de seguro por cuota (~286 filas, 25 RUT). Canónico de seguros.

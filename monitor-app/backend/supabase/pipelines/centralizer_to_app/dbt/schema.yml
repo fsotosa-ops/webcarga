@@ -1,0 +1,85 @@
+version: 2
+
+# Tests de los modelos staging del pipeline centralizer_to_app.
+# Corren con `dbt test` después de `dbt run` (o `dbt build`) — validan el
+# grano/contrato que los bloques de upsert (20-23) asumen.
+models:
+  - name: stg_centralizer_transporters
+    description: 1 fila por rut normalizado (dedupe Walmart-primero, clients agregados).
+    columns:
+      - name: rut
+        description: RUT normalizado sin puntos/guión/DV. Ancla del upsert a app.transporters.
+        tests:
+          - unique
+          - not_null
+
+  - name: stg_centralizer_transporter_docs
+    description: Unpivot de los 14 documentos de empresa (grano rut + doc_code).
+    columns:
+      - name: rut
+        tests:
+          - not_null
+      - name: doc_code
+        tests:
+          - not_null
+
+  - name: stg_centralizer_drivers
+    description: 1 fila por rut_conductor normalizado (sin duplicados ni huérfanos).
+    columns:
+      - name: rut
+        description: RUT del conductor normalizado. Ancla del upsert a app.drivers.
+        tests:
+          - unique
+          - not_null
+      - name: rut_empresa
+        description: RUT de la empresa (siempre presente en stg_centralizer_transporters — el modelo excluye huérfanos).
+        tests:
+          - not_null
+
+  - name: stg_centralizer_driver_docs
+    description: Unpivot de los 14 documentos de conductor (grano driver_rut + doc_code).
+    columns:
+      - name: driver_rut
+        tests:
+          - not_null
+      - name: doc_code
+        tests:
+          - not_null
+
+  - name: stg_centralizer_vehicles
+    description: 1 fila por patente normalizada (sin duplicados ni huérfanos).
+    columns:
+      - name: plate
+        description: Patente normalizada (upper, sin espacios). Ancla del upsert a app.vehicles.
+        tests:
+          - unique
+          - not_null
+      - name: kind
+        description: Clasificación operativa del equipo.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['tracto', 'rampla', 'otro']
+      - name: rut_empresa
+        tests:
+          - not_null
+
+  - name: stg_centralizer_vehicle_docs
+    description: Unpivot de los documentos de vehículo (grano plate + doc_code; creacion_walmart_vehicle condicional).
+    columns:
+      - name: plate
+        tests:
+          - not_null
+      - name: doc_code
+        tests:
+          - not_null
+
+  - name: stg_insurance_vehicles
+    description: Cuotas de pólizas de seguro (grano cuota; excluye filas sin póliza o sin número de cuota).
+    columns:
+      - name: policy_number
+        tests:
+          - not_null
+      - name: installment_number
+        tests:
+          - not_null
