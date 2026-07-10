@@ -604,7 +604,7 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 #### Próximo paso exacto (checklist)
 
 1. [ ] **Smoke visual en navegador** (bloqueado: sesión auth del dev server expirada hace varias rondas) — listado con filtros/KPIs, subir documento, marcar cuota pagada, semáforo reflejado en Empresas, badge en Diario
-2. [ ] **Push a `dev`** (dispara deploys Cloud Run) — SOLO con OK explícito del usuario
+2. [x] **Push a `dev`** hecho 2026-07-10 (720a8e2..820e9d0), ambos workflows verdes; verificado: /api/v1/roles 200, /api/v1/insurance/summary 401 (router nuevo desplegado), /dashboard/seguros 307→login
 3. [ ] **Portar a Mage Pro** (usuario): 7 modelos dbt + sources/schema.yml a `models/staging/centralizer/` del proyecto dbt + bloques SQL como custom blocks según README del pipeline
 4. [ ] Coordinar con Pablo/Fabián: loader del Excel debe setear `batch_id`/`loaded_at` en bronze (gate ya lo contempla)
 5. [ ] Pendientes menores: job de notificaciones (tabla lista, cron no implementado), fila `compliance_min_pct` visible en la tab Alertas de Configuración (filtrarla o etiquetarla), gate no persiste la fila schema_drift si aborta (rollback de la misma transacción — aceptable, el bloque Mage falla visible)
