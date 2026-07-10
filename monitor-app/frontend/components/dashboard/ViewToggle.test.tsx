@@ -16,4 +16,13 @@ describe('ViewToggle', () => {
     fireEvent.click(screen.getByText('Tabla'))
     expect(onChange).toHaveBeenCalledWith('tabla')
   })
+
+  it('renders custom labels when provided (e.g. Empresas: Tarjetas/Tabla) without hardcoding Diario copy', () => {
+    const onChange = vi.fn()
+    render(<ViewToggle value="tabla" onChange={onChange} labels={{ tablero: 'Tarjetas', tabla: 'Tabla' }} />)
+    expect(screen.getByText('Tarjetas')).toBeInTheDocument()
+    expect(screen.queryByText('Tablero')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Tarjetas'))
+    expect(onChange).toHaveBeenCalledWith('tablero')
+  })
 })

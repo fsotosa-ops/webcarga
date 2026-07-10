@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Building2, ChevronRight, Search, Loader2, X } from 'lucide-react'
 import type { TransporterListItem } from '@/lib/types'
@@ -8,11 +8,18 @@ import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { EligibilityDot } from '@/components/dashboard/EligibilityDot'
 import { InsuranceStatusBadge } from '@/components/dashboard/InsuranceStatusBadge'
+import { ClientChips } from '@/components/dashboard/ClientChips'
+import { ComplianceProgressBar } from '@/components/dashboard/ComplianceProgressBar'
+import { TransporterCard } from '@/components/dashboard/TransporterCard'
+import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
+import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import {
   deriveTransporterKpis, matchesTransporterFilter, type TransporterFilterId,
 } from '@/lib/utils/transporterFilters'
 
 const LIMIT = 100
+const VIEW_MODE_STORAGE_KEY = 'empresas:vista'
+const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
 
 const KPI_CARDS: { id: TransporterFilterId; label: string; countCls: string; activeCls: string }[] = [
   { id: 'active',    label: 'Activas',                    countCls: 'text-slate-700', activeCls: 'border-slate-400 ring-2 ring-slate-100 bg-slate-50' },
@@ -29,33 +36,11 @@ const FILTER_CHIPS: { id: TransporterFilterId; label: string }[] = [
   { id: 'alert_insurance', label: 'Alerta seguros' },
 ]
 
-function ProgressBar({ pct }: { pct: number | null }) {
-  if (pct == null) return <span className="text-[10px] text-gray-300">—</span>
-  const cls = pct >= 90 ? 'bg-green-500' : pct >= 60 ? 'bg-amber-400' : 'bg-red-400'
-  return (
-    <div className="flex items-center gap-1.5 w-20">
-      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${cls}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-      </div>
-      <span className="text-[10px] font-mono text-gray-500 shrink-0 w-8 text-right">{pct.toFixed(0)}%</span>
-    </div>
-  )
-}
-
-function ClientChips({ clients }: { clients: string[] }) {
-  if (!clients.length) return <span className="text-[10px] text-gray-300">—</span>
-  return (
-    <div className="flex flex-wrap gap-1">
-      {clients.map(c => (
-        <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">{c}</span>
-      ))}
-    </div>
-  )
-}
-
 export default function EmpresasTransportePage() {
   const [q, setQ]                 = useState('')
   const [activeFilter, setActiveFilter] = useState<TransporterFilterId | null>(null)
+  const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
+  const [selected, setSelected]   = useState<TransporterListItem | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
 
   const query = useTransporters({ q: qDebounced, limit: LIMIT })
@@ -71,9 +56,21 @@ export default function EmpresasTransportePage() {
     [items, activeFilter],
   )
 
+  useEffect(() => {
+    const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+    if (saved === 'tabla' || saved === 'tablero') setViewMode(saved)
+  }, [])
+
+  function handleViewModeChange(v: ViewMode) {
+    setViewMode(v)
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, v)
+  }
+
   function toggleFilter(id: TransporterFilterId) {
     setActiveFilter(prev => prev === id ? null : id)
   }
+
+  const emptyLabel = q || activeFilter ? 'Sin resultados' : 'Sin empresas'
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -85,6 +82,7 @@ export default function EmpresasTransportePage() {
             {loading ? '…' : `${total.toLocaleString('es-CL')} empresa${total !== 1 ? 's' : ''}`}
           </p>
         </div>
+        <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
       </div>
 
       {/* ── KPIs accionables ─────────────────────────────────────── */}
@@ -158,118 +156,98 @@ export default function EmpresasTransportePage() {
         <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
           <Loader2 size={16} className="animate-spin" /> Cargando…
         </div>
+      ) : visibleItems.length === 0 ? (
+        <p className="bg-white rounded-xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
+      ) : viewMode === 'tablero' ? (
+        // ── Vista Tarjetas (default) — grid responsive, funciona igual en mobile ──
+        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
+          {visibleItems.map(item => (
+            <TransporterCard key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
+          ))}
+        </div>
       ) : (
-        <div className={`bg-white rounded-xl border border-border overflow-hidden transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
-
-          {/* ── Mobile: card list ─────────────────────────────── */}
-          <div className="md:hidden divide-y divide-border/60">
-            {visibleItems.length === 0 && (
-              <p className="px-4 py-10 text-center text-sm text-gray-400">
-                {q || activeFilter ? 'Sin resultados' : 'Sin empresas'}
-              </p>
-            )}
+        // ── Vista Tabla — desktop; en mobile la tarjeta sigue siendo el layout natural ──
+        <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
+          <div className="md:hidden grid grid-cols-1 gap-3">
             {visibleItems.map(item => (
-              <MobileCard key={item.id} item={item} />
+              <TransporterCard key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
             ))}
           </div>
 
-          {/* ── Desktop: table ────────────────────────────────── */}
-          <table className="hidden md:table w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">
-                <th className="px-3 py-3 text-center w-8"></th>
-                <th className="px-3 py-3 text-left">Empresa</th>
-                <th className="px-3 py-3 text-left w-28">RUT</th>
-                <th className="px-3 py-3 text-left w-28">Clientes</th>
-                <th className="px-3 py-3 text-center w-20">Conductores</th>
-                <th className="px-3 py-3 text-center w-16">Tractos</th>
-                <th className="px-3 py-3 text-center w-16">Ramplas</th>
-                <th className="px-3 py-3 text-left w-28">Avance 80/20</th>
-                <th className="px-3 py-3 text-left w-20">Avance total</th>
-                <th className="px-3 py-3 text-left w-28">Seguro</th>
-                <th className="px-3 py-3 w-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleItems.map((item, i) => (
-                <tr
-                  key={item.id}
-                  className={`border-b border-border/60 last:border-0 transition-colors ${
-                    i % 2 === 1 ? 'bg-gray-50/40 hover:bg-gray-50' : 'hover:bg-gray-50/70'
-                  }`}
-                >
-                  <td className="px-3 py-3 text-center">
-                    <EligibilityDot eligible={item.eligible} blockingReasons={item.blocking_reasons} compliancePct={item.compliance_pct} />
-                  </td>
-                  <td className="px-3 py-3">
-                    <Link href={`/dashboard/transportistas/empresa/${item.id}`} className="flex items-center gap-3 group">
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-accent/10 transition-colors">
-                        <Building2 size={14} className="text-gray-400 group-hover:text-accent transition-colors" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-text-primary group-hover:text-accent transition-colors truncate leading-tight">
-                          {item.business_name ?? <span className="italic text-gray-400">Sin nombre</span>}
-                        </p>
-                        {item.admin_id && <p className="text-[10px] text-gray-300 font-mono">#{item.admin_id}</p>}
-                      </div>
-                    </Link>
-                  </td>
-                  <td className="px-3 py-3 font-mono text-xs text-gray-500">{item.rut ?? '—'}</td>
-                  <td className="px-3 py-3"><ClientChips clients={item.clients} /></td>
-                  <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.driver_count}</span></td>
-                  <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.tracto_count}</span></td>
-                  <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.trailer_count}</span></td>
-                  <td className="px-3 py-3"><ProgressBar pct={item.avance_80_20} /></td>
-                  <td className="px-3 py-3">
-                    {item.avance_total != null
-                      ? <span className="text-[11px] font-mono text-gray-500">{item.avance_total.toFixed(0)}%</span>
-                      : <span className="text-[10px] text-gray-300">—</span>}
-                  </td>
-                  <td className="px-3 py-3"><InsuranceStatusBadge insuranceOk={item.insurance_ok} policiesCount={item.policies_count} /></td>
-                  <td className="px-3 py-3 text-center">
-                    <Link href={`/dashboard/transportistas/empresa/${item.id}`} className="text-gray-300 hover:text-accent transition-colors">
-                      <ChevronRight size={15} />
-                    </Link>
-                  </td>
+          <div className="hidden md:block bg-white rounded-xl border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">
+                  <th className="px-3 py-3 text-center w-8"></th>
+                  <th className="px-3 py-3 text-left">Empresa</th>
+                  <th className="px-3 py-3 text-left w-28">RUT</th>
+                  <th className="px-3 py-3 text-left w-28">Clientes</th>
+                  <th className="px-3 py-3 text-center w-20">Conductores</th>
+                  <th className="px-3 py-3 text-center w-16">Tractos</th>
+                  <th className="px-3 py-3 text-center w-16">Ramplas</th>
+                  <th className="px-3 py-3 text-left w-32">Avance</th>
+                  <th className="px-3 py-3 text-left w-28">Seguro</th>
+                  <th className="px-3 py-3 w-8"></th>
                 </tr>
-              ))}
-              {visibleItems.length === 0 && (
-                <tr><td colSpan={11} className="px-5 py-14 text-center text-sm text-gray-400">
-                  {q || activeFilter ? 'Sin resultados' : 'Sin empresas'}
-                </td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visibleItems.map((item, i) => (
+                  <tr
+                    key={item.id}
+                    onClick={() => setSelected(item)}
+                    className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
+                      selected?.id === item.id ? 'bg-accent/5' : i % 2 === 1 ? 'bg-gray-50/40 hover:bg-gray-50' : 'hover:bg-gray-50/70'
+                    }`}
+                  >
+                    <td className="px-3 py-3 text-center">
+                      <EligibilityDot eligible={item.eligible} blockingReasons={item.blocking_reasons} compliancePct={item.compliance_pct} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                          <Building2 size={14} className="text-gray-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-text-primary truncate leading-tight">
+                            {item.business_name ?? <span className="italic text-gray-400">Sin nombre</span>}
+                          </p>
+                          {item.admin_id && <p className="text-[10px] text-gray-300 font-mono">#{item.admin_id}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 font-mono text-xs text-gray-500">{item.rut ?? '—'}</td>
+                    <td className="px-3 py-3"><ClientChips clients={item.clients} /></td>
+                    <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.driver_count}</span></td>
+                    <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.tracto_count}</span></td>
+                    <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.trailer_count}</span></td>
+                    <td className="px-3 py-3">
+                      <div className="space-y-1">
+                        <ComplianceProgressBar pct={item.avance_80_20} />
+                        {item.avance_total != null && (
+                          <p className="text-[9px] text-gray-400">Total: <span className="font-mono">{item.avance_total.toFixed(0)}%</span></p>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3"><InsuranceStatusBadge insuranceOk={item.insurance_ok} policiesCount={item.policies_count} /></td>
+                    <td className="px-3 py-3 text-center">
+                      <Link
+                        href={`/dashboard/transportistas/empresa/${item.id}`}
+                        onClick={e => e.stopPropagation()}
+                        title="Ver ficha completa"
+                        className="text-gray-300 hover:text-accent transition-colors"
+                      >
+                        <ChevronRight size={15} />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
-    </div>
-  )
-}
 
-function MobileCard({ item }: { item: TransporterListItem }) {
-  return (
-    <Link
-      href={`/dashboard/transportistas/empresa/${item.id}`}
-      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/70 transition-colors"
-    >
-      <EligibilityDot eligible={item.eligible} blockingReasons={item.blocking_reasons} compliancePct={item.compliance_pct} />
-      <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-        <Building2 size={15} className="text-gray-400" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm text-text-primary truncate leading-tight">
-          {item.business_name ?? <span className="italic text-gray-400">Sin nombre</span>}
-        </p>
-        <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{item.rut ?? '—'}</p>
-        <p className="text-[10px] text-gray-400 mt-0.5">
-          {item.driver_count} cond. · {item.tracto_count} tractos · {item.trailer_count} ramplas
-        </p>
-        <div className="mt-1 flex items-center gap-1.5">
-          <ClientChips clients={item.clients} />
-          <InsuranceStatusBadge insuranceOk={item.insurance_ok} policiesCount={item.policies_count} />
-        </div>
-      </div>
-      <ChevronRight size={14} className="text-gray-300 shrink-0" />
-    </Link>
+      <TransporterSlideOver item={selected} onClose={() => setSelected(null)} />
+    </div>
   )
 }

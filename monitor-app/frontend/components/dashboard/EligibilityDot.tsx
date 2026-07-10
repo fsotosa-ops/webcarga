@@ -7,7 +7,7 @@ interface Props {
   eligible:         boolean | null
   blockingReasons?: BlockingReason[]
   compliancePct?:   number | null
-  size?:            'sm' | 'md'
+  size?:            'sm' | 'md' | 'lg'
 }
 
 const COLOR_CLS: Record<string, string> = {
@@ -21,7 +21,7 @@ const COLOR_CLS: Record<string, string> = {
 export function EligibilityDot({ eligible, blockingReasons = [], compliancePct, size = 'md' }: Props) {
   const color = eligibilityColor(eligible, blockingReasons)
   const tooltip = describeEligibility(eligible, blockingReasons, compliancePct)
-  const dim = size === 'sm' ? 'w-2 h-2' : 'w-2.5 h-2.5'
+  const dim = size === 'sm' ? 'w-2 h-2' : size === 'lg' ? 'w-3.5 h-3.5' : 'w-2.5 h-2.5'
   return (
     <span
       role="img"

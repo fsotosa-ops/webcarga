@@ -1,18 +1,16 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Search, Loader2, X } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
 import { createClient } from '@/lib/supabase/client'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { InsuranceSummaryTable } from '@/components/dashboard/InsuranceSummaryTable'
-import { InsurancePolicySlideOver } from '@/components/dashboard/InsurancePolicySlideOver'
+import { InsuranceCompanyCard } from '@/components/dashboard/InsuranceCompanyCard'
 import {
   deriveInsuranceKpis, matchesInsuranceFilter, type InsuranceFilterId,
 } from '@/lib/utils/insuranceFilters'
-import type { InsuranceSummaryRow } from '@/lib/types'
 
 const ADMIN_ROLES = new Set(['admin', 'owner'])
 
@@ -42,9 +40,11 @@ function SegurosPageInner() {
 
   const [q, setQ]                       = useState(rutParam ?? '')
   const [activeFilter, setActiveFilter] = useState<InsuranceFilterId | null>(null)
-  const [selectedRow, setSelectedRow]   = useState<InsuranceSummaryRow | null>(null)
+  const [expanded, setExpanded]         = useState<Set<string>>(new Set())
   const [canAdmin, setCanAdmin]         = useState(false)
   const qDebounced = useDebouncedValue(q, 300)
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const scrolledToParam = useRef(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -64,11 +64,15 @@ function SegurosPageInner() {
   const loading = query.isPending
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando seguros') : null
 
-  // Prefiltra + abre el detalle cuando llega ?rut= desde la ficha de empresa
+  // Prefiltra + expande + hace scroll a la card cuando llega ?rut= desde la ficha de empresa
   useEffect(() => {
-    if (!rutParam || rows.length === 0) return
+    if (!rutParam || rows.length === 0 || scrolledToParam.current) return
     const match = rows.find(r => r.rut === rutParam)
-    if (match) setSelectedRow(match)
+    if (match) {
+      setExpanded(prev => new Set(prev).add(match.rut))
+      scrolledToParam.current = true
+      setTimeout(() => cardRefs.current.get(match.rut)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    }
   }, [rutParam, rows])
 
   const kpis = useMemo(() => deriveInsuranceKpis(rows), [rows])
@@ -80,6 +84,17 @@ function SegurosPageInner() {
   function toggleFilter(id: InsuranceFilterId) {
     setActiveFilter(prev => prev === id ? null : id)
   }
+
+  function toggleExpanded(rut: string) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(rut)) next.delete(rut)
+      else next.add(rut)
+      return next
+    })
+  }
+
+  const emptyLabel = q || activeFilter ? 'Sin resultados' : 'Sin empresas con pólizas registradas'
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -161,16 +176,22 @@ function SegurosPageInner() {
         <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
           <Loader2 size={16} className="animate-spin" /> Cargando…
         </div>
+      ) : visibleRows.length === 0 ? (
+        <p className="bg-white rounded-xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
       ) : (
-        <InsuranceSummaryTable
-          rows={visibleRows}
-          selectedRut={selectedRow?.rut ?? null}
-          onSelect={setSelectedRow}
-          emptyLabel={q || activeFilter ? 'Sin resultados' : 'Sin empresas con pólizas registradas'}
-        />
+        <div className="space-y-2">
+          {visibleRows.map(row => (
+            <InsuranceCompanyCard
+              key={row.rut}
+              row={row}
+              expanded={expanded.has(row.rut)}
+              onToggle={() => toggleExpanded(row.rut)}
+              canAdmin={canAdmin}
+              ref={el => { if (el) cardRefs.current.set(row.rut, el); else cardRefs.current.delete(row.rut) }}
+            />
+          ))}
+        </div>
       )}
-
-      <InsurancePolicySlideOver row={selectedRow} canAdmin={canAdmin} onClose={() => setSelectedRow(null)} />
     </div>
   )
 }
