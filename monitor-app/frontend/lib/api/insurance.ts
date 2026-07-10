@@ -1,0 +1,62 @@
+import type {
+  InsuranceSummaryRow,
+  InsuranceTransporterResponse,
+  InsurancePolicy,
+  InsuranceInstallment,
+  InstallmentStatus,
+  PolicyType,
+  StoredFile,
+} from '@/lib/types'
+import { apiFetch } from './client'
+
+export type InstallmentPatch = {
+  status?:              InstallmentStatus
+  paid_at?:              string
+  payment_url?:           string
+  expected_updated_at?:   string
+}
+
+export type PolicyPatch = {
+  payment_url?: string
+  file_url?:    string
+  policy_type?: PolicyType
+}
+
+export const insuranceApi = {
+  summary: (params?: { q?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set('q', params.q)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return apiFetch<{ data: InsuranceSummaryRow[] }>(`/api/v1/insurance/summary${suffix}`)
+  },
+
+  getForTransporter: (transporterId: string) =>
+    apiFetch<InsuranceTransporterResponse>(`/api/v1/insurance/transporters/${transporterId}`),
+
+  getPolicy: (pid: string) =>
+    apiFetch<InsurancePolicy & { installments: InsuranceInstallment[] }>(`/api/v1/insurance/policies/${pid}`),
+
+  patchInstallment: (iid: string, body: InstallmentPatch) =>
+    apiFetch<InsuranceInstallment>(`/api/v1/insurance/installments/${iid}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  patchPolicy: (pid: string, body: PolicyPatch) =>
+    apiFetch<InsurancePolicy>(`/api/v1/insurance/policies/${pid}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  uploadPolicyFile: (pid: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiFetch<StoredFile>(`/api/v1/insurance/policies/${pid}/file`, {
+      method: 'POST',
+      body: form,
+    })
+  },
+
+  listPolicyFiles: (pid: string) =>
+    apiFetch<StoredFile[]>(`/api/v1/insurance/policies/${pid}/files`),
+}

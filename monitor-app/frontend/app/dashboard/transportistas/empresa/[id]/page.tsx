@@ -6,23 +6,49 @@ import Link from 'next/link'
 import {
   ChevronRight, PenLine, Check, X, RotateCcw,
   Trash2, Loader2, AlertTriangle, ShieldCheck,
-  Search, ChevronDown,
+  Search, ArrowRightLeft, Phone, Mail,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { transportersApi } from '@/lib/api/transporters'
 import type {
-  TransporterProfile, TransporterDriver, TransporterVehicle,
-  CompanyGovernance, ComplianceStatus, DriverGovernance, VehicleGovernance,
+  TransporterProfile, TransporterDriver, TransporterVehicle, TransporterContact,
+  ComplianceStatus, DriverGovernance, VehicleGovernance,
 } from '@/lib/types'
 import { ComplianceBadge } from '@/components/dashboard/ComplianceBadge'
+import { EligibilityDot } from '@/components/dashboard/EligibilityDot'
+import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCard'
+import { TransporterDocumentsPanel } from '@/components/dashboard/TransporterDocumentsPanel'
+import { TransferModal } from '@/components/dashboard/TransferModal'
+import { describeEligibility } from '@/lib/utils/eligibility'
 import {
-  getAlertStatus, getDriverAlertStatus, getVehicleAlertStatus, formatExpiry,
+  getAlertStatus, getDriverAlertStatus, getVehicleAlertStatus, formatExpiry, COMPLIANCE_STATUS_CONFIG,
 } from '@/lib/compliance'
 
 type Tab = 'conductores' | 'equipos'
 
 const ACCOUNT_STAGES = ['Lead', 'Operational']
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
+const ADMIN_ROLES  = new Set(['admin', 'owner'])
+
+// Categoría de equipo derivada de `type`/`kind` para el filtro de la tab
+// Equipos (plan §4.2: "filtro por tipo (tracto/rampla/camion/furgon)"). El
+// contrato de TransporterVehicle solo trae `type` (texto libre), así que se
+// clasifica por heurística sobre ese texto; los trailers (TransporterTrailer)
+// no traen `type` y se categorizan siempre como 'rampla'.
+type VehicleCategory = 'tracto' | 'rampla' | 'camion' | 'furgon' | 'otro'
+
+function vehicleCategory(type: string | null | undefined): VehicleCategory {
+  const t = (type ?? '').toLowerCase()
+  if (t.includes('rampla') || t.includes('remolque')) return 'rampla'
+  if (t.includes('tracto')) return 'tracto'
+  if (t.includes('furg')) return 'furgon'
+  if (t.includes('cami')) return 'camion'
+  return 'otro'
+}
+
+const VEHICLE_CATEGORY_LABELS: Record<VehicleCategory, string> = {
+  tracto: 'Tracto', rampla: 'Rampla', camion: 'Camión', furgon: 'Furgón', otro: 'Otro',
+}
 
 const VEHICLE_TYPES = [
   'Tractocamión',
@@ -53,13 +79,7 @@ function getInitials(name: string | null) {
 
 // ── Governance helpers ────────────────────────────────────────────
 
-const COMPLIANCE_CFG = {
-  ok:         { cls: 'bg-green-100 text-green-700',  label: 'OK' },
-  pendiente:  { cls: 'bg-amber-50 text-amber-600',   label: 'Pendiente' },
-  actualizar: { cls: 'bg-blue-50 text-blue-600',     label: 'Actualizar' },
-  n_a:        { cls: 'bg-gray-100 text-gray-500',    label: 'N/A' },
-  factible:   { cls: 'bg-teal-50 text-teal-700',     label: 'Factible' },
-} as const
+const COMPLIANCE_CFG = COMPLIANCE_STATUS_CONFIG
 
 function GovernanceStatusBadge({ status }: { status: ComplianceStatus | null }) {
   if (!status) return <span className="text-[10px] text-gray-300">—</span>
@@ -94,22 +114,6 @@ function GovernanceSelect({
   )
 }
 
-// Empresa-level docs (Excel sheet "Empresas")
-const COMPANY_DOC_LABELS: { key: keyof CompanyGovernance; label: string }[] = [
-  { key: 'rol_sii',            label: 'ROL SII' },
-  { key: 'copia_ci_rep_legal', label: 'C.I. Rep. Legal' },
-  { key: 'anexo_2_walmart',   label: 'ANEXO 2 WMT' },
-  { key: 'contrato_webcarga', label: 'Contrato WC' },
-  { key: 'f30_multas',        label: 'F30 Multas' },
-  { key: 'f43',               label: 'F43' },
-  { key: 'politica_seguridad', label: 'Política Seg.' },
-  { key: 'cert_mutual',       label: 'Cert. Mutual' },
-  { key: 'riohs_timbrado',    label: 'RIOHS' },
-  { key: 'creacion_walmart',  label: 'Creación WMT' },
-  { key: 'carpeta_tributaria', label: 'Carpeta Trib.' },
-  { key: 'cuenta_empresa',    label: 'Cuenta Empresa' },
-]
-
 // Driver docs (Excel sheet "Conductores", no-expiry columns)
 const DRIVER_DOC_LABELS: { key: keyof DriverGovernance; label: string }[] = [
   { key: 'anexo_3_walmart',   label: 'ANEXO 3 WMT' },
@@ -141,14 +145,16 @@ const VEHICLE_EXPIRY_LABELS = [
 
 // ── Driver row ────────────────────────────────────────────────────
 function DriverRow({
-  driver, canEdit, expanded, onToggleExpand, onPatch, onRemove,
+  driver, canEdit, canAdmin, expanded, onToggleExpand, onPatch, onRemove, onTransferClick,
 }: {
   driver: TransporterDriver
   canEdit: boolean
+  canAdmin: boolean
   expanded: boolean
   onToggleExpand: () => void
   onPatch: (body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
   onRemove: () => Promise<void>
+  onTransferClick: () => void
 }) {
   const [draft, setDraft]       = useState({ rut: driver.rut, name: driver.name })
   const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
@@ -261,27 +267,41 @@ function DriverRow({
 
         {/* Edit */}
         <td className="px-3 py-3">
-          {canEdit && (
+          {(canEdit || canAdmin) && (
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={onToggleExpand}
-                title="Editar conductor"
-                className={`p-1.5 rounded-lg border transition-all ${
-                  expanded
-                    ? 'border-accent bg-accent/5 text-accent'
-                    : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
-                }`}
-              >
-                <PenLine size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={onRemove}
-                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
-              >
-                <Trash2 size={12} />
-              </button>
+              {canEdit && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onToggleExpand}
+                    title="Editar conductor"
+                    className={`p-1.5 rounded-lg border transition-all ${
+                      expanded
+                        ? 'border-accent bg-accent/5 text-accent'
+                        : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
+                    }`}
+                  >
+                    <PenLine size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRemove}
+                    className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </>
+              )}
+              {canAdmin && (
+                <button
+                  type="button"
+                  onClick={onTransferClick}
+                  title="Transferir a otra empresa"
+                  className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 transition-all"
+                >
+                  <ArrowRightLeft size={12} />
+                </button>
+              )}
             </div>
           )}
         </td>
@@ -372,14 +392,16 @@ function DriverRow({
 
 // ── Mobile driver card ───────────────────────────────────────────
 function MobileDriverCard({
-  driver, canEdit, expanded, onToggleExpand, onPatch, onRemove,
+  driver, canEdit, canAdmin, expanded, onToggleExpand, onPatch, onRemove, onTransferClick,
 }: {
   driver: TransporterDriver
   canEdit: boolean
+  canAdmin: boolean
   expanded: boolean
   onToggleExpand: () => void
   onPatch: (body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
   onRemove: () => Promise<void>
+  onTransferClick: () => void
 }) {
   const [draft, setDraft]       = useState({ rut: driver.rut, name: driver.name })
   const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
@@ -471,22 +493,36 @@ function MobileDriverCard({
             })}
           </div>
         </div>
-        {canEdit && (
+        {(canEdit || canAdmin) && (
           <div className="flex items-center gap-1 shrink-0 mt-0.5">
-            <button
-              type="button"
-              onClick={onToggleExpand}
-              className={`p-1.5 rounded-lg border transition-all ${
-                expanded
-                  ? 'border-accent bg-accent/5 text-accent'
-                  : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent'
-              }`}
-            >
-              <PenLine size={13} />
-            </button>
-            <button type="button" onClick={onRemove} className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
-              <Trash2 size={12} />
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  type="button"
+                  onClick={onToggleExpand}
+                  className={`p-1.5 rounded-lg border transition-all ${
+                    expanded
+                      ? 'border-accent bg-accent/5 text-accent'
+                      : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent'
+                  }`}
+                >
+                  <PenLine size={13} />
+                </button>
+                <button type="button" onClick={onRemove} className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
+                  <Trash2 size={12} />
+                </button>
+              </>
+            )}
+            {canAdmin && (
+              <button
+                type="button"
+                onClick={onTransferClick}
+                title="Transferir a otra empresa"
+                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent transition-all"
+              >
+                <ArrowRightLeft size={13} />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -564,14 +600,17 @@ function MobileDriverCard({
 
 // ── Vehicle row ───────────────────────────────────────────────────
 function VehicleRow({
-  vehicle, canEdit, expanded, onToggleExpand, onPatch, onRemove,
+  vehicle, canEdit, canAdmin, expanded, onToggleExpand, onPatch, onRemove, onTransferClick,
 }: {
   vehicle: TransporterVehicle
   canEdit: boolean
+  canAdmin: boolean
   expanded: boolean
   onToggleExpand: () => void
   onPatch: (body: { type?: string; plate?: string; governance?: VehicleGovernance }) => Promise<void>
   onRemove: () => Promise<void>
+  /** undefined en ramplas: no hay endpoint de transferencia para trailers (plan §4.2, alcance) */
+  onTransferClick?: () => void
 }) {
   const [draft, setDraft]       = useState({ type: vehicle.type, plate: vehicle.plate })
   const [draftGov, setDraftGov] = useState<Partial<VehicleGovernance>>({
@@ -637,6 +676,13 @@ function VehicleRow({
             {vAlert !== 'ok' && <ComplianceBadge status={vAlert} compact />}
           </div>
           {vehicle.type && <span className="text-[10px] text-gray-400 mt-0.5 block truncate max-w-[120px]">{vehicle.type}</span>}
+        </td>
+
+        {/* Tipo — categoría derivada (tracto/rampla/camion/furgon/otro) */}
+        <td className="px-2 py-2.5">
+          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+            {VEHICLE_CATEGORY_LABELS[vehicleCategory(vehicle.type)]}
+          </span>
         </td>
 
         {/* Padrón */}
@@ -718,27 +764,41 @@ function VehicleRow({
 
         {/* Edit */}
         <td className="px-2 py-2.5">
-          {canEdit && (
+          {(canEdit || (canAdmin && onTransferClick)) && (
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={onToggleExpand}
-                title="Editar equipo"
-                className={`p-1.5 rounded-lg border transition-all ${
-                  expanded
-                    ? 'border-accent bg-accent/5 text-accent'
-                    : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
-                }`}
-              >
-                <PenLine size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={onRemove}
-                className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
-              >
-                <Trash2 size={12} />
-              </button>
+              {canEdit && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onToggleExpand}
+                    title="Editar equipo"
+                    className={`p-1.5 rounded-lg border transition-all ${
+                      expanded
+                        ? 'border-accent bg-accent/5 text-accent'
+                        : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5'
+                    }`}
+                  >
+                    <PenLine size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRemove}
+                    className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </>
+              )}
+              {canAdmin && onTransferClick && (
+                <button
+                  type="button"
+                  onClick={onTransferClick}
+                  title="Transferir a otra empresa"
+                  className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 transition-all"
+                >
+                  <ArrowRightLeft size={12} />
+                </button>
+              )}
             </div>
           )}
         </td>
@@ -747,7 +807,7 @@ function VehicleRow({
       {/* Expandable edit form */}
       {expanded && (
         <tr className="bg-slate-50">
-          <td colSpan={13} className="px-4 py-4">
+          <td colSpan={14} className="px-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Datos Tracto</p>
@@ -842,14 +902,16 @@ function VehicleRow({
 
 // ── Mobile vehicle card ──────────────────────────────────────────
 function MobileVehicleCard({
-  vehicle, canEdit, expanded, onToggleExpand, onPatch, onRemove,
+  vehicle, canEdit, canAdmin, expanded, onToggleExpand, onPatch, onRemove, onTransferClick,
 }: {
   vehicle: TransporterVehicle
   canEdit: boolean
+  canAdmin: boolean
   expanded: boolean
   onToggleExpand: () => void
   onPatch: (body: { type?: string; plate?: string; governance?: VehicleGovernance }) => Promise<void>
   onRemove: () => Promise<void>
+  onTransferClick?: () => void
 }) {
   const [draft, setDraft]       = useState({ type: vehicle.type, plate: vehicle.plate })
   const [draftGov, setDraftGov] = useState<Partial<VehicleGovernance>>({
@@ -941,22 +1003,36 @@ function MobileVehicleCard({
             )}
           </div>
         </div>
-        {canEdit && (
+        {(canEdit || (canAdmin && onTransferClick)) && (
           <div className="flex items-center gap-1 shrink-0 mt-0.5">
-            <button
-              type="button"
-              onClick={onToggleExpand}
-              className={`p-1.5 rounded-lg border transition-all ${
-                expanded
-                  ? 'border-accent bg-accent/5 text-accent'
-                  : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent'
-              }`}
-            >
-              <PenLine size={13} />
-            </button>
-            <button type="button" onClick={onRemove} className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
-              <Trash2 size={12} />
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  type="button"
+                  onClick={onToggleExpand}
+                  className={`p-1.5 rounded-lg border transition-all ${
+                    expanded
+                      ? 'border-accent bg-accent/5 text-accent'
+                      : 'border-border/60 text-gray-400 hover:text-accent hover:border-accent'
+                  }`}
+                >
+                  <PenLine size={13} />
+                </button>
+                <button type="button" onClick={onRemove} className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
+                  <Trash2 size={12} />
+                </button>
+              </>
+            )}
+            {canAdmin && onTransferClick && (
+              <button
+                type="button"
+                onClick={onTransferClick}
+                title="Transferir a otra empresa"
+                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent transition-all"
+              >
+                <ArrowRightLeft size={13} />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1133,84 +1209,65 @@ function EditableField({
   )
 }
 
-// ── Company Docs panel (inline in header) ─────────────────────────
-function CompanyDocsPanel({
-  tp, canEdit, onUpdate,
-}: {
-  tp: TransporterProfile
-  canEdit: boolean
-  onUpdate: (updated: TransporterProfile) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const id = tp.id
+// ── Contactos (app.transporter_contacts) ───────────────────────────
+const CONTACT_ROLE_LABELS: Record<TransporterContact['role'], string> = {
+  rep_legal:   'Representante legal',
+  operacional: 'Operacional',
+  finanzas:    'Finanzas',
+  documentos:  'Documentos',
+}
 
-  const hasAnyDoc = COMPANY_DOC_LABELS.some(
-    ({ key }) => tp.company_governance?.[key] != null
-  )
+function ContactsSection({ contacts, tp }: { contacts: TransporterContact[]; tp: TransporterProfile }) {
+  const byRole = new Map(contacts.map(c => [c.role, c]))
+  const roles = Object.keys(CONTACT_ROLE_LABELS) as TransporterContact['role'][]
+  const hasAny = contacts.some(c => c.name || c.phone || c.email)
 
-  const okCount      = COMPANY_DOC_LABELS.filter(({ key }) => tp.company_governance?.[key] === 'ok').length
-  const pendingCount = COMPANY_DOC_LABELS.filter(({ key }) => {
-    const v = tp.company_governance?.[key]
-    return v === 'pendiente' || v === 'actualizar'
-  }).length
+  if (!hasAny) {
+    // Fallback legacy: contactability (emails/phones sueltos) — igual que antes
+    const emails = tp.contactability?.emails ?? []
+    const phones = tp.contactability?.phones ?? []
+    if (emails.length === 0 && phones.length === 0) return null
+    return (
+      <div className="bg-white rounded-xl border border-border p-4">
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Contactabilidad</h3>
+        <div className="flex flex-wrap gap-1.5">
+          {emails.map(e => <span key={e} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{e}</span>)}
+          {phones.map(p => <span key={p} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{p}</span>)}
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="border-t border-border/60 mt-4 pt-3">
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors w-full"
-      >
-        <ChevronDown
-          size={13}
-          className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
-        <span className="font-semibold uppercase tracking-wide text-[10px]">Documentos de la Empresa</span>
-        <span className="flex items-center gap-1.5 ml-1">
-          {okCount > 0 && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">
-              {okCount} OK
-            </span>
-          )}
-          {pendingCount > 0 && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
-              {pendingCount} pendiente{pendingCount > 1 ? 's' : ''}
-            </span>
-          )}
-          {!hasAnyDoc && (
-            <span className="text-[10px] text-gray-300">sin datos</span>
-          )}
-          {tp.company_governance?.avance_total != null && (
-            <span className="text-[10px] text-gray-400 font-mono ml-1">
-              {tp.company_governance.avance_total.toFixed(0)}% avance
-            </span>
-          )}
-        </span>
-      </button>
-
-      {open && (
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-          {COMPANY_DOC_LABELS.map(({ key, label }) => {
-            const val = tp.company_governance?.[key] as ComplianceStatus | null ?? null
-            return (
-              <div key={key} className="bg-gray-50 border border-border/60 rounded-lg p-2 text-center">
-                <p className="text-[9px] text-gray-400 uppercase font-bold mb-1.5 leading-tight">{label}</p>
-                {canEdit ? (
-                  <GovernanceSelect
-                    value={val}
-                    onChange={async (newVal) => {
-                      const newGov = { ...(tp.company_governance ?? {}), [key]: newVal } as CompanyGovernance
-                      onUpdate(await transportersApi.patch(id, { company_governance: newGov }))
-                    }}
-                  />
-                ) : (
-                  <GovernanceStatusBadge status={val} />
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+    <div className="bg-white rounded-xl border border-border p-4">
+      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Contactos</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {roles.map(role => {
+          const c = byRole.get(role)
+          return (
+            <div key={role} className="border border-border/60 rounded-lg p-2.5">
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">{CONTACT_ROLE_LABELS[role]}</p>
+              {c?.name || c?.phone || c?.email ? (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-text-primary truncate">{c.name ?? <span className="text-gray-300 italic">sin nombre</span>}</p>
+                  {c.phone && (
+                    <a href={`tel:${c.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">
+                      <Phone size={10} /> {c.phone}
+                    </a>
+                  )}
+                  {c.email && (
+                    <a href={`mailto:${c.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate">
+                      <Mail size={10} /> <span className="truncate">{c.email}</span>
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <p className="text-[11px] text-gray-300 italic">Sin datos</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -1222,6 +1279,7 @@ export default function EmpresaDetailPage() {
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState<string | null>(null)
   const [canEdit, setCanEdit]     = useState(false)
+  const [canAdmin, setCanAdmin]   = useState(false)
   const [editOpen, setEditOpen]   = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('conductores')
 
@@ -1229,12 +1287,17 @@ export default function EmpresaDetailPage() {
   const [expandedVehicle, setExpandedVehicle] = useState<string | null>(null)
   const [driverQ,         setDriverQ]         = useState('')
   const [vehicleQ,        setVehicleQ]        = useState('')
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<VehicleCategory | 'todos'>('todos')
 
   const [addDriverOpen,  setAddDriverOpen]  = useState(false)
   const [driverForm,     setDriverForm]     = useState({ rut: '', name: '' })
   const [addVehicleOpen, setAddVehicleOpen] = useState(false)
   const [vehicleForm,    setVehicleForm]    = useState({ type: '', plate: '' })
   const [submitting,     setSubmitting]     = useState(false)
+
+  const [transferTarget, setTransferTarget] = useState<
+    { kind: 'driver' | 'vehicle'; id: string; label: string } | null
+  >(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -1243,6 +1306,7 @@ export default function EmpresaDetailPage() {
       const { data: profile } = await supabase
         .from('profiles').select('role').eq('id', session.user.id).single()
       if (profile && EDITOR_ROLES.has(profile.role)) setCanEdit(true)
+      if (profile && ADMIN_ROLES.has(profile.role)) setCanAdmin(true)
     })
   }, [])
 
@@ -1307,6 +1371,31 @@ export default function EmpresaDetailPage() {
     }
   }
 
+  const handleRemoveTrailer = async (trid: string) => {
+    try {
+      await transportersApi.removeTrailer(id, trid)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al eliminar rampla')
+    }
+  }
+
+  const handleConfirmTransfer = async (toTransporterId: string) => {
+    if (!transferTarget) return
+    try {
+      if (transferTarget.kind === 'driver') {
+        await transportersApi.transferDriver(id, transferTarget.id, toTransporterId)
+      } else {
+        await transportersApi.transferVehicle(id, transferTarget.id, toTransporterId)
+      }
+      setTransferTarget(null)
+      await load()
+    } catch (e) {
+      // Se relanza para que TransferModal muestre el error junto a la acción
+      throw e
+    }
+  }
+
   if (loading) return (
     <div className="p-6 flex items-center gap-2 text-sm text-gray-400">
       <Loader2 size={16} className="animate-spin" /> Cargando…
@@ -1331,15 +1420,24 @@ export default function EmpresaDetailPage() {
   const filteredDrivers = tp.drivers.filter(d =>
     !driverQ || d.name.toLowerCase().includes(driverQ.toLowerCase()) || d.rut.includes(driverQ)
   )
-  const filteredVehicles = tp.vehicles.filter(v =>
-    !vehicleQ ||
-    v.plate.toLowerCase().includes(vehicleQ.toLowerCase()) ||
-    (v.type ?? '').toLowerCase().includes(vehicleQ.toLowerCase())
-  )
+
+  // Equipos: tractos/camiones/furgones (con gobernanza completa) + ramplas
+  // (sin gobernanza en el contrato actual) unificados para el filtro de Tipo.
+  const allEquipment: (TransporterVehicle & { isTrailer: boolean })[] = [
+    ...tp.vehicles.map(v => ({ ...v, isTrailer: false })),
+    ...tp.trailers.map(t => ({ id: t.id, type: 'Rampla', plate: t.plate, governance: null, isTrailer: true })),
+  ]
+  const filteredVehicles = allEquipment.filter(v => {
+    const matchesQ = !vehicleQ ||
+      v.plate.toLowerCase().includes(vehicleQ.toLowerCase()) ||
+      (v.type ?? '').toLowerCase().includes(vehicleQ.toLowerCase())
+    const matchesType = vehicleTypeFilter === 'todos' || vehicleCategory(v.type) === vehicleTypeFilter
+    return matchesQ && matchesType
+  })
 
   const TABS: { key: Tab; label: string; count: number }[] = [
     { key: 'conductores', label: 'Conductores', count: tp.drivers.length },
-    { key: 'equipos',     label: 'Equipos',     count: tp.vehicles.length },
+    { key: 'equipos',     label: 'Equipos',     count: tp.vehicles.length + tp.trailers.length },
   ]
 
   return (
@@ -1355,7 +1453,8 @@ export default function EmpresaDetailPage() {
         <span className="text-text-primary font-medium truncate">{tp.business_name ?? id}</span>
       </nav>
 
-      {/* Company Header */}
+      {/* Company Header + Seguros */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div className="flex items-start gap-4 flex-1 min-w-0">
@@ -1366,10 +1465,21 @@ export default function EmpresaDetailPage() {
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">
-                {tp.business_name ?? '—'}
-              </h1>
-              <div className="flex items-center gap-3 mt-1 flex-wrap">
+              <div className="flex items-center gap-2">
+                <EligibilityDot
+                  eligible={tp.eligibility.eligible}
+                  blockingReasons={tp.eligibility.blocking_reasons}
+                  compliancePct={tp.eligibility.compliance_pct}
+                  size="md"
+                />
+                <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">
+                  {tp.business_name ?? '—'}
+                </h1>
+              </div>
+              <p className="text-[11px] text-gray-400 mt-0.5 pl-4">
+                {describeEligibility(tp.eligibility.eligible, tp.eligibility.blocking_reasons, tp.eligibility.compliance_pct)}
+              </p>
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
                 {tp.rut && (
                   <p className="text-xs text-gray-500">
                     RUT: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{tp.rut}</span>
@@ -1380,6 +1490,14 @@ export default function EmpresaDetailPage() {
                     {tp.account_stage}
                   </span>
                 )}
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  tp.in_admin ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {tp.in_admin ? 'En admin' : 'No registrada en admin'}
+                </span>
+                {tp.clients.map(c => (
+                  <span key={c} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{c}</span>
+                ))}
                 {(expiredDrivers > 0 || expiredVehicles > 0) && (
                   <span className="inline-flex items-center gap-1 text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-2 py-0.5">
                     <AlertTriangle size={11} />
@@ -1397,8 +1515,13 @@ export default function EmpresaDetailPage() {
                 )}
               </div>
 
-              {/* Company docs — inline collapsible */}
-              <CompanyDocsPanel tp={tp} canEdit={canEdit} onUpdate={setTp} />
+              {/* Documentos de la empresa — inline collapsible */}
+              <TransporterDocumentsPanel
+                tid={tp.id}
+                documents={tp.documents}
+                canEdit={canEdit}
+                onDocumentsChange={docs => setTp(prev => prev ? { ...prev, documents: docs } : prev)}
+              />
             </div>
           </div>
 
@@ -1412,6 +1535,11 @@ export default function EmpresaDetailPage() {
           )}
         </div>
       </div>
+
+      <InsuranceSummaryCard transporterId={tp.id} rut={tp.rut} />
+      </div>
+
+      <ContactsSection contacts={tp.contacts} tp={tp} />
 
       {/* Tabs */}
       <div className="bg-white rounded-xl border border-border overflow-hidden shadow-sm">
@@ -1508,10 +1636,12 @@ export default function EmpresaDetailPage() {
                   key={d.id}
                   driver={d}
                   canEdit={canEdit}
+                  canAdmin={canAdmin}
                   expanded={expandedDriver === d.id}
                   onToggleExpand={() => setExpandedDriver(prev => prev === d.id ? null : d.id)}
                   onPatch={body => handlePatchDriver(d.id, body)}
                   onRemove={() => handleRemoveDriver(d.id)}
+                  onTransferClick={() => setTransferTarget({ kind: 'driver', id: d.id, label: `conductor ${d.name}` })}
                 />
               ))}
             </div>
@@ -1540,10 +1670,12 @@ export default function EmpresaDetailPage() {
                       key={d.id}
                       driver={d}
                       canEdit={canEdit}
+                      canAdmin={canAdmin}
                       expanded={expandedDriver === d.id}
                       onToggleExpand={() => setExpandedDriver(prev => prev === d.id ? null : d.id)}
                       onPatch={body => handlePatchDriver(d.id, body)}
                       onRemove={() => handleRemoveDriver(d.id)}
+                      onTransferClick={() => setTransferTarget({ kind: 'driver', id: d.id, label: `conductor ${d.name}` })}
                     />
                   ))}
                 </tbody>
@@ -1556,14 +1688,26 @@ export default function EmpresaDetailPage() {
         {activeTab === 'equipos' && (
           <div>
             <div className="px-5 py-3 border-b border-border bg-white flex items-center justify-between gap-3 flex-wrap">
-              <div className="relative">
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <input
-                  value={vehicleQ}
-                  onChange={e => setVehicleQ(e.target.value)}
-                  placeholder="Filtrar por patente o tipo…"
-                  className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <input
+                    value={vehicleQ}
+                    onChange={e => setVehicleQ(e.target.value)}
+                    placeholder="Filtrar por patente o tipo…"
+                    className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
+                  />
+                </div>
+                <select
+                  value={vehicleTypeFilter}
+                  onChange={e => setVehicleTypeFilter(e.target.value as VehicleCategory | 'todos')}
+                  className="text-sm border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                >
+                  <option value="todos">Todos los tipos</option>
+                  {(Object.keys(VEHICLE_CATEGORY_LABELS) as VehicleCategory[]).map(cat => (
+                    <option key={cat} value={cat}>{VEHICLE_CATEGORY_LABELS[cat]}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center gap-2">
                 {vehicleAlerts.length > 0 && (
@@ -1625,10 +1769,12 @@ export default function EmpresaDetailPage() {
                   key={v.id}
                   vehicle={v}
                   canEdit={canEdit}
+                  canAdmin={canAdmin}
                   expanded={expandedVehicle === v.id}
                   onToggleExpand={() => setExpandedVehicle(prev => prev === v.id ? null : v.id)}
                   onPatch={body => handlePatchVehicle(v.id, body)}
-                  onRemove={() => handleRemoveVehicle(v.id)}
+                  onRemove={() => v.isTrailer ? handleRemoveTrailer(v.id) : handleRemoveVehicle(v.id)}
+                  onTransferClick={v.isTrailer ? undefined : () => setTransferTarget({ kind: 'vehicle', id: v.id, label: `equipo ${v.plate}` })}
                 />
               ))}
             </div>
@@ -1638,7 +1784,8 @@ export default function EmpresaDetailPage() {
               <table className="w-full text-sm" style={{ minWidth: 1080 }}>
                 <thead>
                   <tr className="bg-slate-800 text-[9px] font-semibold text-white uppercase tracking-wide">
-                    <th className="px-3 py-2.5 text-left w-36">Equipo</th>
+                    <th className="px-3 py-2.5 text-left w-32">Equipo</th>
+                    <th className="px-2 py-2.5 text-left w-20">Tipo</th>
                     <th className="px-2 py-2.5 text-center w-20">Padrón</th>
                     <th className="px-2 py-2.5 text-left w-24">P. Circ.</th>
                     <th className="px-2 py-2.5 text-left w-24">Re. Téc.</th>
@@ -1656,7 +1803,7 @@ export default function EmpresaDetailPage() {
                 <tbody className="bg-white">
                   {filteredVehicles.length === 0 && (
                     <tr>
-                      <td colSpan={13} className="px-4 py-10 text-center text-sm text-gray-300">
+                      <td colSpan={14} className="px-4 py-10 text-center text-sm text-gray-300">
                         {vehicleQ ? 'Sin resultados' : 'Sin equipos registrados'}
                       </td>
                     </tr>
@@ -1666,10 +1813,12 @@ export default function EmpresaDetailPage() {
                       key={v.id}
                       vehicle={v}
                       canEdit={canEdit}
+                      canAdmin={canAdmin}
                       expanded={expandedVehicle === v.id}
                       onToggleExpand={() => setExpandedVehicle(prev => prev === v.id ? null : v.id)}
                       onPatch={body => handlePatchVehicle(v.id, body)}
-                      onRemove={() => handleRemoveVehicle(v.id)}
+                      onRemove={() => v.isTrailer ? handleRemoveTrailer(v.id) : handleRemoveVehicle(v.id)}
+                      onTransferClick={v.isTrailer ? undefined : () => setTransferTarget({ kind: 'vehicle', id: v.id, label: `equipo ${v.plate}` })}
                     />
                   ))}
                 </tbody>
@@ -1750,6 +1899,14 @@ export default function EmpresaDetailPage() {
           </div>
         </div>
       </div>
+
+      <TransferModal
+        open={!!transferTarget}
+        title={transferTarget ? `Transferir ${transferTarget.label}` : 'Transferir'}
+        currentTransporterId={id}
+        onClose={() => setTransferTarget(null)}
+        onTransfer={handleConfirmTransfer}
+      />
     </div>
   )
 }

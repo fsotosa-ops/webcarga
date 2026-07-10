@@ -1,6 +1,17 @@
-import type { AlertStatus, AlertThresholdMeta, TransporterDriver, TransporterVehicle } from './types'
+import type { AlertStatus, AlertThresholdMeta, ComplianceStatus, TransporterDriver, TransporterVehicle } from './types'
 
 const DEFAULT_WARNING_DAYS = 30
+
+/** Estilo compartido para el estado de un documento de gobernanza/compliance
+ *  (ok/pendiente/actualizar/n_a/factible) — usado en la ficha de empresa
+ *  (governance selects) y en el panel de Documentos de la Empresa. */
+export const COMPLIANCE_STATUS_CONFIG: Record<ComplianceStatus, { cls: string; label: string }> = {
+  ok:         { cls: 'bg-green-100 text-green-700',  label: 'OK' },
+  pendiente:  { cls: 'bg-amber-50 text-amber-600',   label: 'Pendiente' },
+  actualizar: { cls: 'bg-blue-50 text-blue-600',     label: 'Actualizar' },
+  n_a:        { cls: 'bg-gray-100 text-gray-500',    label: 'N/A' },
+  factible:   { cls: 'bg-teal-50 text-teal-700',     label: 'Factible' },
+}
 
 export function getAlertStatus(
   dateStr: string | null | undefined,

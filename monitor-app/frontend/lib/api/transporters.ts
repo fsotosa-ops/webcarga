@@ -1,6 +1,7 @@
 import type {
   ComplianceAlertSummary,
   CompanyGovernance,
+  ComplianceStatus,
   DriverGovernance,
   TransporterListResponse,
   TransporterProfile,
@@ -8,6 +9,8 @@ import type {
   TransporterVehicle,
   TransporterTrailer,
   TransporterContactability,
+  TransporterDocumentPatchResult,
+  StoredFile,
 } from '@/lib/types'
 import { apiFetch } from './client'
 
@@ -23,13 +26,35 @@ export type TransporterPatch = {
   company_governance?: CompanyGovernance
 }
 
+export type TransporterListParams = {
+  q?:       string
+  stage?:   string
+  active?:  boolean
+  eligible?: boolean
+  /** 'docs' | 'insurance' */
+  alert?:   string
+  page?:    number
+  limit?:   number
+}
+
+export type DocumentPatch = {
+  status?:          ComplianceStatus
+  expiry_date?:     string
+  file_url?:        string
+  notes?:           string
+  manual_override?: boolean
+}
+
 export const transportersApi = {
-  list: (params?: { q?: string; stage?: string; page?: number; limit?: number }) => {
+  list: (params?: TransporterListParams) => {
     const qs = new URLSearchParams()
-    if (params?.q)     qs.set('q',     params.q)
-    if (params?.stage) qs.set('stage', params.stage)
-    if (params?.page)  qs.set('page',  String(params.page))
-    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.q)               qs.set('q',        params.q)
+    if (params?.stage)            qs.set('stage',    params.stage)
+    if (params?.active != null)   qs.set('active',   String(params.active))
+    if (params?.eligible != null) qs.set('eligible', String(params.eligible))
+    if (params?.alert)            qs.set('alert',    params.alert)
+    if (params?.page)             qs.set('page',     String(params.page))
+    if (params?.limit)            qs.set('limit',    String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<TransporterListResponse>(`/api/v1/transporters/${suffix}`)
   },
@@ -95,4 +120,38 @@ export const transportersApi = {
 
   getComplianceAlertSummary: () =>
     apiFetch<ComplianceAlertSummary>(`/api/v1/transporters/compliance-alerts/summary`),
+
+  // ── Documentos de la empresa (app.compliance_documents, entity_type='transporter') ──
+
+  patchDocument: (id: string, docCode: string, body: DocumentPatch) =>
+    apiFetch<TransporterDocumentPatchResult>(`/api/v1/transporters/${id}/documents/${docCode}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  uploadDocumentFile: (id: string, docCode: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiFetch<StoredFile>(`/api/v1/transporters/${id}/documents/${docCode}/file`, {
+      method: 'POST',
+      body: form,
+    })
+  },
+
+  listDocumentFiles: (id: string, docCode: string) =>
+    apiFetch<StoredFile[]>(`/api/v1/transporters/${id}/documents/${docCode}/files`),
+
+  // ── Transferencias (rol admin) ──────────────────────────────────────
+
+  transferDriver: (id: string, did: string, toTransporterId: string) =>
+    apiFetch<{ ok: boolean; driver_id: string; from_transporter_id: string; to_transporter_id: string }>(
+      `/api/v1/transporters/${id}/drivers/${did}/transfer`,
+      { method: 'POST', body: JSON.stringify({ to_transporter_id: toTransporterId }) },
+    ),
+
+  transferVehicle: (id: string, vid: string, toTransporterId: string) =>
+    apiFetch<{ ok: boolean; vehicle_id: string; from_transporter_id: string; to_transporter_id: string }>(
+      `/api/v1/transporters/${id}/vehicles/${vid}/transfer`,
+      { method: 'POST', body: JSON.stringify({ to_transporter_id: toTransporterId }) },
+    ),
 }

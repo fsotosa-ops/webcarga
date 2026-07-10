@@ -449,6 +449,68 @@ export type TransporterContactability = {
   phones: string[]
 }
 
+// ── Empresas EETT — modelo relacional (plan-modulo-empresas-seguros.md §4) ──
+
+/** Motivo por el que una empresa/conductor/vehículo no está habilitado —
+ *  ver app.v_transporter_eligibility (plan §1.7). Valores conocidos:
+ *  'docs_below_threshold' | 'insurance_overdue' | 'inactive' (string abierto
+ *  por si el backend agrega motivos nuevos sin requerir deploy de frontend). */
+export type BlockingReason = string
+
+export type TransporterContact = {
+  role:  'rep_legal' | 'operacional' | 'finanzas' | 'documentos'
+  name:  string | null
+  phone: string | null
+  email: string | null
+}
+
+/** Documento dentro de TransporterProfile.documents (GET /transporters/{id}) */
+export type TransporterDocument = {
+  doc_code:        string
+  label:           string
+  status:          ComplianceStatus | null
+  expiry_date:     string | null
+  file_url:        string | null
+  storage_path:    string | null
+  manual_override: boolean
+  updated_at:      string | null
+}
+
+/** Resultado de PATCH/POST sobre un documento — shape distinto (incluye id/entity_*) */
+export type TransporterDocumentPatchResult = {
+  id:              string
+  entity_type:     string
+  entity_id:       string
+  doc_code:        string
+  status:          ComplianceStatus | null
+  expiry_date:     string | null
+  file_url:        string | null
+  storage_path:    string | null
+  notes:           string | null
+  manual_override: boolean
+  updated_at:      string | null
+}
+
+export type TransporterEligibility = {
+  eligible:         boolean
+  compliance_pct:   number | null
+  insurance_ok:     boolean
+  blocking_reasons: BlockingReason[]
+}
+
+export type StoredFile = {
+  id:            string
+  storage_path:  string
+  file_name:     string
+  mime_type:     string | null
+  size_bytes:    number | null
+  version:       number
+  uploaded_by:   string | null
+  uploaded_at:   string
+  /** Solo presente en GET .../files (URL firmada, null si la firma falló) */
+  url?:          string | null
+}
+
 export type TransporterProfile = {
   id: string
   admin_id: string | null
@@ -456,12 +518,18 @@ export type TransporterProfile = {
   rut: string | null
   account_stage: string | null
   contactability: TransporterContactability | null
+  contacts: TransporterContact[]
   drivers: TransporterDriver[]
   vehicles: TransporterVehicle[]
   trailers: TransporterTrailer[]
   company_governance: CompanyGovernance | null
   manually_edited_fields: string[]
   edited_at: string | null
+  updated_at?: string | null
+  in_admin: boolean
+  clients: string[]
+  eligibility: TransporterEligibility
+  documents: TransporterDocument[]
 }
 
 export type TransporterListItem = {
@@ -473,8 +541,17 @@ export type TransporterListItem = {
   driver_count: number
   vehicle_count: number
   trailer_count: number
+  tracto_count: number
   has_manual_edits: boolean
   has_active_alerts: boolean
+  in_admin: boolean
+  clients: string[]
+  avance_80_20: number | null
+  avance_total: number | null
+  compliance_pct: number | null
+  eligible: boolean | null
+  insurance_ok: boolean | null
+  blocking_reasons: BlockingReason[]
 }
 
 export type TransporterListResponse = {
@@ -482,6 +559,63 @@ export type TransporterListResponse = {
   count: number
   page: number
   limit: number
+}
+
+// ── Seguros (app.insurance_policies / app.insurance_installments) ──────────
+
+export type InstallmentStatus = 'pagada' | 'pendiente' | 'vencida'
+export type PolicyType = 'rc_vehicular' | 'rc_eett' | 'carga' | 'otro'
+
+export type InsuranceInstallment = {
+  id:                  string
+  policy_id:           string
+  installment_number:  number
+  total_installments:  number | null
+  amount_uf:           number | null
+  due_date:            string | null
+  status:              InstallmentStatus
+  paid_at:             string | null
+  payment_url:         string | null
+  manual_override:     boolean
+  updated_at:          string | null
+}
+
+export type InsurancePolicy = {
+  id:               string
+  transporter_id:   string | null
+  rut:              string
+  contractor_name:  string | null
+  client_group:     string | null
+  company:          string
+  policy_number:    string
+  endorsement:      string | null
+  coverage:         string | null
+  plate:            string | null
+  policy_type:      PolicyType | null
+  valid_from:       string | null
+  valid_to:         string | null
+  payment_url:      string | null
+  file_url:         string | null
+  storage_path:     string | null
+  updated_at:       string | null
+  installments?:    InsuranceInstallment[]
+}
+
+export type InsuranceSummaryRow = {
+  rut:             string
+  business_name:   string | null
+  transporter_id:  string | null
+  policies_count:  number
+  next_due:        { date: string; amount_uf: number | null } | null
+  overdue_count:   number
+  paid_pct:        number | null
+  insurance_ok:    boolean
+}
+
+export type InsuranceTransporterResponse = {
+  rut:            string
+  transporter_id: string
+  policies:       InsurancePolicy[]
 }
 
 // Can an admin manage (change role / deactivate) a target user?
