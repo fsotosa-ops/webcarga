@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:3000"]
     upstash_redis_rest_url: str = ""
     upstash_redis_rest_token: str = ""
+    # Módulo Empresas EETT — plan §3: 'relational' (default, modelo nuevo) o
+    # 'jsonb' (legacy sobre app.transporter_profiles, fallback para rollback).
+    transporters_backend: str = "relational"
 
     class Config:
         env_file = ".env"
