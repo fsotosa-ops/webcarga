@@ -551,6 +551,7 @@ export type TransporterListItem = {
   compliance_pct: number | null
   eligible: boolean | null
   insurance_ok: boolean | null
+  policies_count: number
   blocking_reasons: BlockingReason[]
 }
 

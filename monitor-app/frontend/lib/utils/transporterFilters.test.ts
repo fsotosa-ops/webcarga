@@ -11,7 +11,8 @@ function makeItem(overrides: Partial<TransporterListItem> = {}): TransporterList
     account_stage: 'Operational', driver_count: 2, vehicle_count: 1, trailer_count: 0,
     tracto_count: 1, has_manual_edits: false, has_active_alerts: false,
     in_admin: true, clients: ['Walmart'], avance_80_20: 90, avance_total: 90,
-    compliance_pct: 95, eligible: true, insurance_ok: true, blocking_reasons: [],
+    compliance_pct: 95, eligible: true, insurance_ok: true, policies_count: 1,
+    blocking_reasons: [],
     ...overrides,
   }
 }

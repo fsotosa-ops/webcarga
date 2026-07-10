@@ -225,7 +225,7 @@ export default function EmpresasTransportePage() {
                       ? <span className="text-[11px] font-mono text-gray-500">{item.avance_total.toFixed(0)}%</span>
                       : <span className="text-[10px] text-gray-300">—</span>}
                   </td>
-                  <td className="px-3 py-3"><InsuranceStatusBadge insuranceOk={item.insurance_ok} /></td>
+                  <td className="px-3 py-3"><InsuranceStatusBadge insuranceOk={item.insurance_ok} policiesCount={item.policies_count} /></td>
                   <td className="px-3 py-3 text-center">
                     <Link href={`/dashboard/transportistas/empresa/${item.id}`} className="text-gray-300 hover:text-accent transition-colors">
                       <ChevronRight size={15} />
@@ -266,7 +266,7 @@ function MobileCard({ item }: { item: TransporterListItem }) {
         </p>
         <div className="mt-1 flex items-center gap-1.5">
           <ClientChips clients={item.clients} />
-          <InsuranceStatusBadge insuranceOk={item.insurance_ok} />
+          <InsuranceStatusBadge insuranceOk={item.insurance_ok} policiesCount={item.policies_count} />
         </div>
       </div>
       <ChevronRight size={14} className="text-gray-300 shrink-0" />

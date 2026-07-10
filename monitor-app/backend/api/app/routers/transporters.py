@@ -290,6 +290,8 @@ async def list_transporters(
             el.compliance_pct,
             el.eligible,
             el.insurance_ok,
+            (SELECT count(*)::int FROM app.insurance_policies ip
+             WHERE ip.transporter_id = t.id)                              AS policies_count,
             COALESCE(el.blocking_reasons, '{{}}')                         AS blocking_reasons
         {_LIST_FROM}
         {where}
