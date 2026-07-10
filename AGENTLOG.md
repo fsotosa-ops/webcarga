@@ -535,3 +535,77 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 - Columna "tiempo en estado" ordenable con display live-ticking — backend ya soporta `sort=status_reported_at_asc`, falta frontend + `stale_after_hours` en `app.trip_statuses`.
 - Diccionario de datos (`dbt docs generate`) — pendiente en el proyecto dbt de Mage, fuera de este repo.
 - Fase D: investigar "problemas de capacidad desde el 8 de junio" — `GET /trips` sigue con `COUNT(*)` duplicado + `OFFSET` (no keyset), no se tocó en ninguna ronda de esta sesión.
+
+---
+
+### 2026-07-09 — Plan aprobado: Módulo Empresas (EETT) + Módulo Seguros (análisis + diseño, SIN implementación aún)
+
+**Objetivo:** analizar `bronze.raw_centralizer_*` + `bronze.raw_insurance_vehicles` vs el modelo de objetos del módulo transportistas del frontend, y diseñar el modelo de datos productivo (schema `app`), el pipeline Mage y el rediseño UI. Contexto de negocio en `contexto-modulo-empresas.md` (reunión 2026-07-08 Felipe + Fabián).
+
+**Plan aprobado y guardado en:** `monitor-app/docs/plan-modulo-empresas-seguros.md` (copia de `/Users/usuario/.claude/plans/analiza-las-tablas-bronze-raw-centralize-parallel-whisper.md`). Contiene el detalle completo: DDL, bloques Mage, endpoints, layout.
+
+#### Hallazgos clave del análisis (verificados contra Supabase)
+
+- Cruce solicitado centralizer↔info_contacto por RUT: normalización `split_part(regexp_replace(rut,'[.\s]','','g'),'-',1)` sobre `raw_info_contacto.rut` (viene con puntos/guión/DV) → **37/38 match**; único no-match `78241236` CRIBAS (es dato, no bug).
+- `app.transporter_profiles.admin_id` == `id_interno_admin` del admin, pero hay discrepancias de RUT admin↔app (caso Lumiliz) → ancla de upsert: `admin_internal_id`, fallback RUT.
+- `raw_centralizer_transporter` tiene grano rut+cliente GC (42 filas / 38 RUT: Walmart/Colun) → se consolida a 1 fila por RUT con `clients[]`.
+- Doble fuente de seguros: bloques en centralizer (transporter + vehicles) vs `raw_insurance_vehicles` (286 cuotas / 25 RUT) → **canónico: raw_insurance_vehicles**; los bloques del centralizer quedan referenciales.
+- `tipo_de_equipo` solo `TRACTOCAMION` (81) / `RAMPLA` (38); estados de docs `OK/Pendiente/Factible/null` mapean al enum existente del frontend.
+
+#### Decisiones de arquitectura (aprobadas por el usuario)
+
+| Decisión | Elección |
+|----------|----------|
+| Serving | Modelo **relacional nuevo** en `app` (transporters, transporter_contacts, drivers/vehicles globales + assignments con vigencia, compliance_doc_catalog + compliance_documents, insurance_policies + installments, audit_log, sync_config, ops.pipeline_runs/rejects) — reemplaza el jsonb de `transporter_profiles` con feature flag y fallback |
+| Principio rector | La app será fuente de verdad a futuro: IDs nativos, CRUD completo, sync desconectable por dominio (`app.sync_config`), auditoría append-only |
+| Conductores/vehículos | Entidades globales + tablas de asignación con `valid_from/valid_to` → transferencias entre EETT auditadas, sin duplicar |
+| Ingesta | Gate de contrato en bronze: `batch_id/loaded_at`, schema drift check que falla ruidoso, regla N=2 batches ausentes antes de desactivar (protege de lotes parciales del prompt de Pablo) |
+| Cumplimiento | Catálogo dirigido por datos (`required_for_clients`), % calculado contra catálogo, umbral en `alert_thresholds` (90) |
+| Seguros | Módulo independiente en sidebar, sincronizado con Empresas y Diario vía vistas de elegibilidad; marcar cuota pagada = `manual_override` + audit |
+| Robustez agregada tras challenge del usuario | RLS + matriz de roles, optimistic locking (409), advisory lock pipeline, reconciliación de divergencias visible, notificaciones proactivas (cron+Redis), versionado de archivos en Storage |
+
+#### Próximo paso exacto (checklist de implementación — Fases del plan §5)
+
+1. [ ] Fase 1 — Migraciones (enums, tablas, catálogo seed, sync_config, ops.*, triggers audit, vistas, RLS, bucket `compliance-docs`)
+2. [ ] Fase 2 — Backfill jsonb → relacional (242 Operational + 2588 Lead, preservar 2 filas con ediciones manuales)
+3. [ ] Fase 3 — Pipeline Mage `centralizer_to_app` (gate → stg → upserts → runs/rejects → divergencias; correr 2x para idempotencia)
+4. [ ] Fase 4 — API (refactor transporters con flag `TRANSPORTERS_BACKEND`, router insurance, documentos/upload, transferencias, notifications job, pytest)
+5. [ ] Fase 5 — Frontend (listado rediseñado → ficha → módulo Seguros → campana Topbar)
+6. [ ] Fase 6 — Cutover (paralelo, flag relational default, congelar transporter_profiles)
+
+**No tocar:** extraction_service ni pipeline de trips (congelado). Coordinar con Fabián/Pablo que el loader del Excel setee `batch_id/loaded_at` en bronze.
+
+---
+
+### 2026-07-09/10 — IMPLEMENTACIÓN módulo Empresas EETT + Seguros (Fases 1-5 completas, en `dev` local SIN push)
+
+**Ejecución del plan** `monitor-app/docs/plan-modulo-empresas-seguros.md` orquestada con subagentes Sonnet (pedido del usuario) + revisión/ejecución del orquestador. 4 commits:
+
+| Commit | Fase |
+|--------|------|
+| `4d301f7` | **F1 Migraciones** (7 archivos `20260709100001..07`, aplicadas a Supabase): schema ops, enums, `normalize_rut`/`rut_dv`, transporters/contacts/drivers/vehicles globales + assignments con vigencia, catálogo docs (39+1 seed) + compliance_documents + stored_files versionado, insurance policies/installments, audit_log con triggers, notifications, sync_config, vistas compliance/elegibilidad, RLS, bucket privado `compliance-docs`. Ajustes del orquestador: `vehicles.kind` ampliado (tracto/rampla/camion/furgon/otro — el legacy tenía 9 tipos) + `type_label` + `transporters.contactability` jsonb legacy |
+| `d3d0d19` | **F2 Backfill** jsonb→relacional ejecutado: 2789 empresas (242 Operational), 304 drivers, 2347 vehicles con asignaciones vigentes; 9 docs con manual_override preservados; 65 rechazos a `ops.pipeline_rejects` batch 0; 12 RUTs con DV inválido detectados. Script: `backend/supabase/scripts/backfill_transporters_relational.sql` (one-shot, NO re-ejecutable) |
+| `e2856fe` | **F4 API**: transporters relacional (contrato preservado + eligibility/in_admin/clients), flag `TRANSPORTERS_BACKEND` (default relational, legacy jsonb como fallback), DELETE→is_active=false, transferencias require_admin, endpoints documentos con upload versionado a Storage, `routers/insurance.py` (summary/pólizas/marcar pagada con optimistic locking 409), compliance-alerts con `ineligible_transporters` y umbrales desde alert_thresholds. 70/70 pytest verificados por el orquestador |
+| `f700993` | **F5 Frontend**: listado Empresas rediseñado (KPIs accionables, chips, semáforo con motivo, clientes GC, tractos/ramplas, avances, badge seguro; TanStack Query), ficha (contactos por rol, panel docs con upload/versiones, transferencias admin, card seguros), módulo `/dashboard/seguros` nuevo. 204/204 vitest (el agente reportó 204 pero la verificación del orquestador encontró 1 flaky de timeout — corregido), tsc/build limpios |
+| `657edff` | **F3 Pipeline `centralizer_to_app`** HÍBRIDO (decisión del usuario tras challenge: dbt para staging, SQL para upserts): 7 modelos dbt (view/silver + sources/schema.yml con tests) + bloques 00_gate/15_rejects/20-23 upserts/30_finalize. **Ejecutado 2 veces contra Supabase: idempotencia verificada byte-idéntica** (9 overrides y 79 cuotas pagadas intactos, 0 transferencias espurias) |
+
+#### Decisiones/incidentes clave de la ejecución
+
+| Qué | Detalle |
+|-----|---------|
+| Formato pipeline | El usuario rechazó SQL plano ("mi pipeline es Mage Pro con dbt") → híbrido: staging dbt (lineage/tests), upserts como bloques SQL para NO exponer las tablas OLTP de `app` a `dbt --full-refresh` (incidente recurrente de app.trips). Memoria guardada |
+| Bug de performance real | Las vistas de unpivot de docs colgaban >30s (~1.100 filas): EXPLAIN mostró nested loops re-ejecutando la cadena de vistas anidadas (rows=1 misestimado). Fix: `AS MATERIALIZED` en las CTEs que envuelven refs a otras vistas → 1.5s. Aplicado en modelos dbt + local_apply_views.sql |
+| CRIBAS resuelto | `78241236` ahora SÍ cruza (38/38): Fabián actualizó `raw_info_contacto` (249→250 filas) entre el análisis y la corrida — el bool `in_admin` funciona como se diseñó |
+| Migración 100008 | (validado_gc + v_sync_divergence) debe aplicarse ANTES del primer upsert (FK del catálogo) aunque la vista requiera silver — aplicada vía psql, registrada en schema_migrations |
+| Ejecución local del pipeline | Con `psql` + `DATABASE_URL` del `.env` del backend + `local_apply_views.sql` (helper que materializa los modelos dbt como vistas, solo validación — NO portar a Mage) |
+| DQ corrida 1 | rejects batch 1: 67 rut_dv_invalido, 10 fecha_invalida, 9 valor_no_mapeado, 4 duplicado → revisar con Fabián (consulta: `select reason, raw_row from ops.pipeline_rejects where batch_id>=1`) |
+| Datos productivos | 33 pólizas / 284 cuotas (79 pagadas, 68 vencidas, 137 pendientes), 2 transferencias de vehículo legítimas auditadas (DTBY52→Charlotte, FWKL67→C&M) |
+
+#### Próximo paso exacto (checklist)
+
+1. [ ] **Smoke visual en navegador** (bloqueado: sesión auth del dev server expirada hace varias rondas) — listado con filtros/KPIs, subir documento, marcar cuota pagada, semáforo reflejado en Empresas, badge en Diario
+2. [ ] **Push a `dev`** (dispara deploys Cloud Run) — SOLO con OK explícito del usuario
+3. [ ] **Portar a Mage Pro** (usuario): 7 modelos dbt + sources/schema.yml a `models/staging/centralizer/` del proyecto dbt + bloques SQL como custom blocks según README del pipeline
+4. [ ] Coordinar con Pablo/Fabián: loader del Excel debe setear `batch_id`/`loaded_at` en bronze (gate ya lo contempla)
+5. [ ] Pendientes menores: job de notificaciones (tabla lista, cron no implementado), fila `compliance_min_pct` visible en la tab Alertas de Configuración (filtrarla o etiquetarla), gate no persiste la fila schema_drift si aborta (rollback de la misma transacción — aceptable, el bloque Mage falla visible)
+6. [ ] Cutover final: cuando el usuario valide en dev, congelar `app.transporter_profiles` (flag ya en relational por default)
