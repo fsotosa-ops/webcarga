@@ -9,8 +9,8 @@ vi.mock('@/lib/api/insurance', () => ({
   insuranceApi: {
     getForTransporter: vi.fn(),
     patchInstallment: vi.fn(),
-    listPolicyFiles: vi.fn(),
-    uploadPolicyFile: vi.fn(),
+    listPolicyDocuments: vi.fn(),
+    uploadDocumentFile: vi.fn(),
   },
 }))
 
@@ -57,6 +57,14 @@ function renderCard(row: InsuranceSummaryRow, opts: { expanded?: boolean; canAdm
 beforeEach(() => {
   vi.mocked(insuranceApi.getForTransporter).mockReset().mockResolvedValue(response)
   vi.mocked(insuranceApi.patchInstallment).mockReset()
+  vi.mocked(insuranceApi.listPolicyDocuments).mockReset().mockResolvedValue([
+    {
+      doc_code: 'poliza_firmada', label: 'Póliza firmada', has_expiry: false, id: 'd1',
+      status: 'ok', expiry_date: null, file_url: null, storage_path: null,
+      notes: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z',
+    },
+  ])
+  vi.mocked(insuranceApi.uploadDocumentFile).mockReset()
 })
 
 describe('InsuranceCompanyCard', () => {
@@ -91,6 +99,22 @@ describe('InsuranceCompanyCard', () => {
     expect(screen.getByText('#2')).toBeInTheDocument()
     // Vencida installment renders a "Pagar" action (disabled — not admin)
     expect(screen.getAllByRole('button', { name: /Pagar/i }).length).toBe(2)
+  })
+
+  it('fetches and renders the document checklist for a policy when expanded', async () => {
+    renderCard(rowOverdue, { expanded: true })
+    expect(await screen.findByText('Póliza firmada')).toBeInTheDocument()
+    expect(insuranceApi.listPolicyDocuments).toHaveBeenCalledWith('p1')
+  })
+
+  it('uploads a document file and invalidates the checklist query for an admin', async () => {
+    renderCard(rowOverdue, { expanded: true, canAdmin: true })
+    await screen.findByText('Póliza firmada')
+    const input = screen.getByLabelText('Subir Póliza firmada')
+    const file = new File(['contenido'], 'poliza.pdf', { type: 'application/pdf' })
+    fireEvent.change(input, { target: { files: [file] } })
+    await waitFor(() => expect(insuranceApi.uploadDocumentFile).toHaveBeenCalledWith('p1', 'poliza_firmada', file))
+    await waitFor(() => expect(insuranceApi.listPolicyDocuments).toHaveBeenCalledTimes(2))
   })
 
   it('disables "Pagar" for a non-admin user', async () => {

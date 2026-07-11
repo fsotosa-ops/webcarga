@@ -4,12 +4,13 @@ import { forwardRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Building2, ChevronDown, Check, Circle, AlertTriangle, Loader2,
-  FileText, Upload, ExternalLink, ShieldQuestion, ShieldCheck, ShieldAlert,
+  ExternalLink, ShieldQuestion, ShieldCheck, ShieldAlert,
 } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
-import type { InsuranceInstallment, InsurancePolicy, InsuranceSummaryRow, StoredFile } from '@/lib/types'
+import type { InsuranceInstallment, InsurancePolicy, InsuranceSummaryRow } from '@/lib/types'
 import { formatExpiry } from '@/lib/compliance'
 import { ComplianceProgressBar } from './ComplianceProgressBar'
+import { DocumentChecklist } from './DocumentChecklist'
 
 const TODAY = () => new Date().toISOString().slice(0, 10)
 
@@ -94,33 +95,15 @@ function PolicySection({
   canAdmin:  boolean
   onChanged: (updated: InsurancePolicy) => void
 }) {
-  const [uploadErr, setUploadErr] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [files, setFiles]         = useState<StoredFile[] | null>(null)
-  const [filesOpen, setFilesOpen] = useState(false)
-  const [filesLoading, setFilesLoading] = useState(false)
+  const queryClient = useQueryClient()
+  const docsQuery = useQuery({
+    queryKey: ['insurance', 'policy-documents', policy.id],
+    queryFn: () => insuranceApi.listPolicyDocuments(policy.id),
+  })
 
-  async function toggleFiles() {
-    const next = !filesOpen
-    setFilesOpen(next)
-    if (next && files === null) {
-      setFilesLoading(true)
-      try { setFiles(await insuranceApi.listPolicyFiles(policy.id)) }
-      catch { setFiles([]) }
-      finally { setFilesLoading(false) }
-    }
-  }
-
-  async function handleUpload(file: File) {
-    setUploading(true); setUploadErr(null)
-    try {
-      await insuranceApi.uploadPolicyFile(policy.id, file)
-      if (filesOpen) { setFiles(await insuranceApi.listPolicyFiles(policy.id)) }
-    } catch (e) {
-      setUploadErr(e instanceof Error ? e.message : 'Error al subir el archivo')
-    } finally {
-      setUploading(false)
-    }
+  async function handleDocUpload(docCode: string, file: File) {
+    await insuranceApi.uploadDocumentFile(policy.id, docCode, file)
+    queryClient.invalidateQueries({ queryKey: ['insurance', 'policy-documents', policy.id] })
   }
 
   const installments = policy.installments ?? []
@@ -164,43 +147,23 @@ function PolicySection({
         </div>
       )}
 
-      {/* Acciones de póliza */}
-      <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-border/60">
-        {policy.payment_url && (
-          <a href={policy.payment_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] text-accent hover:underline">
-            <ExternalLink size={10} /> Link de pago
-          </a>
-        )}
-        <button type="button" onClick={toggleFiles} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">
-          <FileText size={11} /> Archivo{files ? ` (${files.length})` : ''}
-        </button>
-        <label className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent cursor-pointer">
-          {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-          Subir
-          <input
-            type="file"
-            className="hidden"
-            disabled={uploading}
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }}
+      <div className="pt-2 border-t border-border/60">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Documentos</p>
+        {docsQuery.isPending ? (
+          <p className="text-[11px] text-gray-400">Cargando documentos…</p>
+        ) : (
+          <DocumentChecklist
+            items={docsQuery.data ?? []}
+            canEdit={canAdmin}
+            onUpload={handleDocUpload}
           />
-        </label>
+        )}
       </div>
-      {uploadErr && <p className="text-[10px] text-red-500">{uploadErr}</p>}
-      {filesOpen && (
-        <div className="pt-1 border-t border-border/60 space-y-1">
-          {filesLoading ? (
-            <p className="text-[10px] text-gray-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Cargando…</p>
-          ) : (files?.length ?? 0) === 0 ? (
-            <p className="text-[10px] text-gray-300 italic">Sin archivos</p>
-          ) : (
-            files!.map(f => (
-              <a key={f.id} href={f.url ?? undefined} target="_blank" rel="noreferrer"
-                className={`block text-[10px] ${f.url ? 'text-accent hover:underline' : 'text-gray-400'}`}>
-                v{f.version} · {f.file_name}
-              </a>
-            ))
-          )}
-        </div>
+
+      {policy.payment_url && (
+        <a href={policy.payment_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] text-accent hover:underline">
+          <ExternalLink size={10} /> Link de pago
+        </a>
       )}
     </div>
   )
