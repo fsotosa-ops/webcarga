@@ -2,6 +2,24 @@ import type { InsuranceInstallmentFlat } from '@/lib/types'
 
 export type GroupBy = 'week' | 'month' | 'quarter' | 'transporter' | 'company' | 'client_group' | 'none'
 
+export type AgingBand = '0-30' | '31-60' | '61-90' | '90+'
+
+/** Banda de antigüedad de una cuota vencida, en días desde su vencimiento.
+ *  Devuelve null si la cuota no está vencida — la antigüedad no aplica. */
+export function agingBucket(
+  row: Pick<InsuranceInstallmentFlat, 'due_date' | 'is_overdue'>,
+  today: string = new Date().toISOString().slice(0, 10),
+): AgingBand | null {
+  if (!row.is_overdue || !row.due_date) return null
+  const diffDays = Math.round(
+    (new Date(today + 'T00:00:00').getTime() - new Date(row.due_date + 'T00:00:00').getTime()) / 86400000,
+  )
+  if (diffDays <= 30) return '0-30'
+  if (diffDays <= 60) return '31-60'
+  if (diffDays <= 90) return '61-90'
+  return '90+'
+}
+
 export type InstallmentGroup = {
   key:      string
   label:    string

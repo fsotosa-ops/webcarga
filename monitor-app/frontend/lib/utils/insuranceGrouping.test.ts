@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupInstallments } from './insuranceGrouping'
+import { groupInstallments, agingBucket } from './insuranceGrouping'
 import type { InsuranceInstallmentFlat } from '@/lib/types'
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -60,5 +60,35 @@ describe('groupInstallments', () => {
     const rows = [row({ installment_id: 'a', amount_uf: null })]
     const groups = groupInstallments(rows, 'none')
     expect(groups[0].totalUf).toBe(0)
+  })
+})
+
+describe('agingBucket', () => {
+  it('returns null for a row that is not overdue', () => {
+    expect(agingBucket(row({ is_overdue: false, due_date: '2026-07-01' }), '2026-07-10')).toBeNull()
+  })
+
+  it('returns null when due_date is missing', () => {
+    expect(agingBucket(row({ is_overdue: true, due_date: null }), '2026-07-10')).toBeNull()
+  })
+
+  it('buckets 0-30 days overdue', () => {
+    expect(agingBucket(row({ is_overdue: true, due_date: '2026-06-20' }), '2026-07-10')).toBe('0-30')
+  })
+
+  it('buckets exactly 30 days as 0-30 (boundary)', () => {
+    expect(agingBucket(row({ is_overdue: true, due_date: '2026-06-10' }), '2026-07-10')).toBe('0-30')
+  })
+
+  it('buckets 31-60 days overdue', () => {
+    expect(agingBucket(row({ is_overdue: true, due_date: '2026-05-20' }), '2026-07-10')).toBe('31-60')
+  })
+
+  it('buckets 61-90 days overdue', () => {
+    expect(agingBucket(row({ is_overdue: true, due_date: '2026-04-20' }), '2026-07-10')).toBe('61-90')
+  })
+
+  it('buckets more than 90 days overdue as 90+', () => {
+    expect(agingBucket(row({ is_overdue: true, due_date: '2026-01-01' }), '2026-07-10')).toBe('90+')
   })
 })
