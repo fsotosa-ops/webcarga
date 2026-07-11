@@ -6,6 +6,10 @@ import type {
   InstallmentStatus,
   PolicyType,
   StoredFile,
+  InsuranceDocument,
+  InsuranceDocumentPatchResult,
+  InsuranceInstallmentFlat,
+  InsuranceKpis,
 } from '@/lib/types'
 import { apiFetch } from './client'
 
@@ -59,4 +63,33 @@ export const insuranceApi = {
 
   listPolicyFiles: (pid: string) =>
     apiFetch<StoredFile[]>(`/api/v1/insurance/policies/${pid}/files`),
+
+  listPolicyDocuments: (pid: string) =>
+    apiFetch<InsuranceDocument[]>(`/api/v1/insurance/policies/${pid}/documents`),
+
+  patchDocument: (pid: string, docCode: string, body: {
+    status?: string; expiry_date?: string; file_url?: string; notes?: string; manual_override?: boolean
+  }) =>
+    apiFetch<InsuranceDocumentPatchResult>(`/api/v1/insurance/policies/${pid}/documents/${docCode}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  uploadDocumentFile: (pid: string, docCode: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiFetch<StoredFile>(`/api/v1/insurance/policies/${pid}/documents/${docCode}/file`, {
+      method: 'POST',
+      body: form,
+    })
+  },
+
+  listDocumentFiles: (pid: string, docCode: string) =>
+    apiFetch<StoredFile[]>(`/api/v1/insurance/policies/${pid}/documents/${docCode}/files`),
+
+  installmentsFlat: () =>
+    apiFetch<InsuranceInstallmentFlat[]>('/api/v1/insurance/installments'),
+
+  kpis: () =>
+    apiFetch<InsuranceKpis>('/api/v1/insurance/kpis'),
 }

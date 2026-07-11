@@ -601,6 +601,53 @@ export type InsuranceTransporterResponse = {
   policies:       InsurancePolicy[]
 }
 
+export type InsuranceDocument = {
+  doc_code:        string
+  label:           string
+  has_expiry:      boolean
+  id:              string | null
+  status:          ComplianceStatus | null
+  expiry_date:     string | null
+  file_url:        string | null
+  storage_path:    string | null
+  notes:           string | null
+  manual_override: boolean | null
+  updated_at:      string | null
+}
+
+export type InsuranceDocumentPatchResult = {
+  doc_code:        string
+  status:          ComplianceStatus | null
+  expiry_date:     string | null
+  file_url:        string | null
+  storage_path:    string | null
+  notes:           string | null
+  manual_override: boolean | null
+  updated_at:      string | null
+}
+
+export type InsuranceInstallmentFlat = {
+  installment_id:      string
+  policy_id:           string
+  transporter_id:      string | null
+  rut:                 string
+  business_name:       string | null
+  company:             string
+  policy_number:       string
+  client_group:        string | null
+  installment_number:  number
+  amount_uf:           number | null
+  due_date:            string | null
+  status:              InstallmentStatus
+  is_overdue:          boolean
+}
+
+export type InsuranceKpis = {
+  expiring_30d:      number
+  without_policies:  number
+  incomplete_docs:   number
+}
+
 // Can an admin manage (change role / deactivate) a target user?
 export function canManage(actorRole: UserRole, targetRole: UserRole): boolean {
   if (actorRole === 'owner') return true
