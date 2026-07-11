@@ -233,3 +233,80 @@ def test_insurance_kpis_shape():
     assert res.status_code == 200
     body = res.json()
     assert body == {"expiring_30d": 3, "without_policies": 7, "incomplete_docs": 5}
+
+
+# ── Revertir cuota pagada ────────────────────────────────────────────
+
+def test_revert_installment_marks_pendiente_when_due_date_in_future():
+    pool = AsyncMock()
+    pool.fetchrow.side_effect = [
+        {"status": "pagada", "due_date": date(2026, 12, 1), "updated_at": None},
+        {
+            "id": "i1", "policy_id": "p1", "installment_number": 1, "total_installments": 2,
+            "amount_uf": 3.5, "due_date": date(2026, 12, 1), "status": "pendiente",
+            "paid_at": None, "payment_url": None, "manual_override": True,
+            "updated_by": USER_ID, "updated_at": datetime.now(timezone.utc),
+        },
+    ]
+    client = make_client(pool)
+    res = client.post("/api/v1/insurance/installments/i1/revert", json={})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "pendiente"
+    assert data["paid_at"] is None
+    update_sql = pool.fetchrow.call_args_list[1].args[0]
+    assert "paid_at         = NULL" in update_sql
+
+
+def test_revert_installment_marks_vencida_when_due_date_past():
+    pool = AsyncMock()
+    pool.fetchrow.side_effect = [
+        {"status": "pagada", "due_date": date(2020, 1, 1), "updated_at": None},
+        {
+            "id": "i1", "policy_id": "p1", "installment_number": 1, "total_installments": 2,
+            "amount_uf": 3.5, "due_date": date(2020, 1, 1), "status": "vencida",
+            "paid_at": None, "payment_url": None, "manual_override": True,
+            "updated_by": USER_ID, "updated_at": datetime.now(timezone.utc),
+        },
+    ]
+    client = make_client(pool)
+    res = client.post("/api/v1/insurance/installments/i1/revert", json={})
+    assert res.status_code == 200
+    assert res.json()["status"] == "vencida"
+
+
+def test_revert_installment_requires_status_pagada():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "pendiente", "due_date": date(2026, 12, 1), "updated_at": None}
+    client = make_client(pool)
+    res = client.post("/api/v1/insurance/installments/i1/revert", json={})
+    assert res.status_code == 422
+
+
+def test_revert_installment_missing_is_404():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+    res = client.post("/api/v1/insurance/installments/i1/revert", json={})
+    assert res.status_code == 404
+
+
+def test_revert_installment_requires_admin():
+    pool = AsyncMock()
+    client = make_client(pool, role="editor", enforce_roles=True)
+    res = client.post("/api/v1/insurance/installments/i1/revert", json={})
+    assert res.status_code == 403
+    pool.fetchrow.assert_not_called()
+
+
+def test_revert_installment_stale_expected_updated_at_is_409():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "status": "pagada", "due_date": date(2026, 12, 1),
+        "updated_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+    }
+    client = make_client(pool)
+    res = client.post("/api/v1/insurance/installments/i1/revert", json={
+        "expected_updated_at": "2026-06-01T00:00:00Z",
+    })
+    assert res.status_code == 409

@@ -26,3 +26,7 @@ class InsuranceDocumentPatchBody(BaseModel):
     file_url:        Optional[str] = None
     notes:           Optional[str] = None
     manual_override: Optional[bool] = None
+
+
+class RevertInstallmentBody(BaseModel):
+    expected_updated_at: Optional[datetime] = None

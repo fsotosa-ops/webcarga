@@ -3,11 +3,13 @@ por RUT. Canónico para pólizas/cuotas/pagos: app.insurance_policies /
 app.insurance_installments (poblados desde bronze.raw_insurance_vehicles por
 el pipeline Mage — fuera de alcance de esta fase). Plan §3 / §1.5.
 """
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_admin, require_editor
 from ..db import get_pool
-from ..schemas.insurance import InsuranceDocumentPatchBody, InstallmentPatchBody, PolicyPatchBody
+from ..schemas.insurance import InsuranceDocumentPatchBody, InstallmentPatchBody, PolicyPatchBody, RevertInstallmentBody
 from ..utils.stored_files import list_owner_files, upload_owner_file
 
 router = APIRouter(prefix="/insurance", tags=["insurance"])
@@ -262,6 +264,41 @@ async def patch_installment(
         RETURNING *
         """,
         iid, data.get("status"), data.get("paid_at"), data.get("payment_url"), user["sub"],
+    )
+    return _serialize_installment(dict(row))
+
+
+@router.post("/installments/{iid}/revert")
+async def revert_installment_payment(
+    iid: str, body: RevertInstallmentBody,
+    pool=Depends(get_pool), user=Depends(require_admin),
+):
+    current = await pool.fetchrow(
+        "SELECT status, due_date, updated_at FROM app.insurance_installments WHERE id = $1", iid,
+    )
+    if not current:
+        raise HTTPException(404, "Cuota no encontrada")
+
+    if current["status"] != "pagada":
+        raise HTTPException(422, "Solo se puede revertir una cuota marcada como pagada")
+
+    if body.expected_updated_at is not None and current["updated_at"] != body.expected_updated_at:
+        raise HTTPException(409, "La cuota fue modificada por otro usuario; recargue e intente de nuevo")
+
+    new_status = "vencida" if current["due_date"] and current["due_date"] < date.today() else "pendiente"
+
+    row = await pool.fetchrow(
+        """
+        UPDATE app.insurance_installments SET
+            status          = $2,
+            paid_at         = NULL,
+            manual_override = true,
+            updated_by      = $3::uuid,
+            updated_at      = NOW()
+        WHERE id = $1
+        RETURNING *
+        """,
+        iid, new_status, user["sub"],
     )
     return _serialize_installment(dict(row))
 
