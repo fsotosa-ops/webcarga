@@ -4,8 +4,10 @@ import { useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Check, ChevronRight, AlertTriangle, Receipt } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
-import { groupInstallments, type GroupBy, type InstallmentGroup } from '@/lib/utils/insuranceGrouping'
+import { groupInstallments, agingBucket, type GroupBy, type AgingBand } from '@/lib/utils/insuranceGrouping'
+import { dueRelative } from '@/lib/utils/installments'
 import { formatExpiry } from '@/lib/compliance'
+import type { InsuranceInstallmentFlat } from '@/lib/types'
 
 const GROUP_OPTIONS: { id: GroupBy; label: string }[] = [
   { id: 'week',         label: 'Semana' },
@@ -16,18 +18,12 @@ const GROUP_OPTIONS: { id: GroupBy; label: string }[] = [
   { id: 'client_group', label: 'Cliente GC' },
 ]
 
-const TODAY = () => new Date().toISOString().slice(0, 10)
-
-/** "vence en 3 días" / "vencida hace 4 días" / "vence hoy" — a diferencia de
- *  formatRelativeTime (lib/utils/datetime.ts), este opera sobre fechas
- *  YYYY-MM-DD sin hora, y es bidireccional (pasado y futuro). */
-function dueRelative(dueDate: string | null, isOverdue: boolean): string | null {
-  if (!dueDate) return null
-  const diffDays = Math.round((new Date(dueDate + 'T00:00:00').getTime() - new Date(TODAY() + 'T00:00:00').getTime()) / 86400000)
-  if (diffDays === 0) return 'vence hoy'
-  if (diffDays > 0) return `vence en ${diffDays} día${diffDays === 1 ? '' : 's'}`
-  return isOverdue ? `vencida hace ${Math.abs(diffDays)} día${Math.abs(diffDays) === 1 ? '' : 's'}` : null
-}
+const AGING_BANDS: { id: AgingBand; label: string; color: string }[] = [
+  { id: '0-30',  label: '0–30 días',  color: '#fbbf24' },
+  { id: '31-60', label: '31–60 días', color: '#f97316' },
+  { id: '61-90', label: '61–90 días', color: '#ef4444' },
+  { id: '90+',   label: '+90 días',   color: '#991b1b' },
+]
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -35,57 +31,68 @@ function initialsOf(name: string): string {
   return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase()
 }
 
-// ── Barra horizontal por grupo: da la vista rápida antes del detalle ───────
-//
-// Con datos reales el agrupamiento por semana puede producir 50+ buckets —
-// un gráfico con una barra por cada uno deja de ser "de un vistazo". Se
-// muestran como máximo MAX_BARS, priorizando "Vencidas" (si existe) y luego
-// los de mayor monto; el resto sigue disponible en la lista de abajo.
-const MAX_BARS = 8
+type AgingFilter = AgingBand | 'not_overdue' | null
 
-function GroupBarChart({
-  groups, onSelect,
+// ── Antigüedad de mora: 4 mini-barras verticales + "no vencidas aún" ───────
+
+function AgingBars({
+  rows, activeFilter, onSelect,
 }: {
-  groups:   InstallmentGroup[]
-  onSelect: (key: string) => void
+  rows:         InsuranceInstallmentFlat[]
+  activeFilter: AgingFilter
+  onSelect:     (band: AgingBand | 'not_overdue') => void
 }) {
-  const overdue = groups.find(g => g.key === 'overdue')
-  const rest = groups.filter(g => g.key !== 'overdue').slice().sort((a, b) => b.totalUf - a.totalUf)
-  const shown = [...(overdue ? [overdue] : []), ...rest.slice(0, MAX_BARS - (overdue ? 1 : 0))]
-  const hiddenCount = groups.length - shown.length
-  const max = Math.max(1, ...shown.map(g => g.totalUf))
+  const totals = useMemo(() => {
+    const t: Record<AgingBand, { uf: number; count: number }> = {
+      '0-30': { uf: 0, count: 0 }, '31-60': { uf: 0, count: 0 }, '61-90': { uf: 0, count: 0 }, '90+': { uf: 0, count: 0 },
+    }
+    let notOverdueUf = 0, notOverdueCount = 0
+    for (const row of rows) {
+      const band = agingBucket(row)
+      if (band) {
+        t[band].uf += row.amount_uf ?? 0
+        t[band].count += 1
+      } else {
+        notOverdueUf += row.amount_uf ?? 0
+        notOverdueCount += 1
+      }
+    }
+    return { bands: t, notOverdueUf, notOverdueCount }
+  }, [rows])
+
+  const max = Math.max(1, ...AGING_BANDS.map(b => totals.bands[b.id].uf))
 
   return (
-    <div className="bg-white border border-border rounded-2xl px-5 py-4 space-y-2.5">
-      {shown.map(g => {
-        const isOverdue = g.key === 'overdue'
-        const pct = Math.max(3, (g.totalUf / max) * 100)
-        return (
-          <button
-            key={g.key}
-            onClick={() => onSelect(g.key)}
-            className="w-full flex items-center gap-3 group text-left"
-          >
-            <span className={`text-xs font-semibold w-44 shrink-0 truncate ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
-              {g.label}
-            </span>
-            <div className="flex-1 h-5 bg-gray-50 rounded-md overflow-hidden">
-              <div
-                className={`h-full rounded-md transition-all group-hover:opacity-80 ${isOverdue ? 'bg-red-400' : 'bg-accent/70'}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className={`text-xs font-bold tabular-nums w-16 shrink-0 text-right ${isOverdue ? 'text-red-600' : 'text-text-primary'}`}>
-              {g.totalUf.toFixed(1)} UF
-            </span>
-          </button>
-        )
-      })}
-      {hiddenCount > 0 && (
-        <p className="text-[11px] text-gray-400 pt-1">
-          Mostrando los {shown.length} grupos de mayor monto · {hiddenCount} más en la lista de abajo
-        </p>
-      )}
+    <div className="bg-white border border-border rounded-2xl px-5 py-4">
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Antigüedad de lo vencido</span>
+        <button
+          onClick={() => onSelect('not_overdue')}
+          className={`text-xs transition-colors ${activeFilter === 'not_overdue' ? 'font-bold text-accent' : 'text-gray-400 hover:text-gray-600'}`}
+        >
+          {totals.notOverdueUf.toFixed(1)} UF no vencidas aún · {totals.notOverdueCount} cuota{totals.notOverdueCount === 1 ? '' : 's'}
+        </button>
+      </div>
+      <div className="flex items-end gap-4 h-24">
+        {AGING_BANDS.map(band => {
+          const { uf } = totals.bands[band.id]
+          const heightPct = Math.max(4, (uf / max) * 100)
+          const active = activeFilter === band.id
+          return (
+            <button
+              key={band.id}
+              onClick={() => onSelect(band.id)}
+              className={`flex-1 flex flex-col items-center justify-end gap-1.5 h-full transition-opacity ${
+                activeFilter && !active ? 'opacity-40' : ''
+              }`}
+            >
+              <span className="text-[11px] font-bold text-text-primary tabular-nums">{uf.toFixed(1)}</span>
+              <div className="w-full rounded" style={{ height: `${heightPct}%`, backgroundColor: band.color }} />
+              <span className="text-[10px] text-gray-400">{band.label}</span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -96,6 +103,7 @@ interface Props {
 
 export function CobranzaTab({ canAdmin }: Props) {
   const [groupBy, setGroupBy] = useState<GroupBy>('week')
+  const [agingFilter, setAgingFilter] = useState<AgingFilter>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const groupRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -104,7 +112,14 @@ export function CobranzaTab({ canAdmin }: Props) {
     queryFn: () => insuranceApi.installmentsFlat(),
   })
 
-  const groups = useMemo(() => groupInstallments(query.data ?? [], groupBy), [query.data, groupBy])
+  const allRows = query.data ?? []
+  const filteredRows = useMemo(() => {
+    if (!agingFilter) return allRows
+    if (agingFilter === 'not_overdue') return allRows.filter(r => !agingBucket(r))
+    return allRows.filter(r => agingBucket(r) === agingFilter)
+  }, [allRows, agingFilter])
+
+  const groups = useMemo(() => groupInstallments(filteredRows, groupBy), [filteredRows, groupBy])
 
   function toggleCollapsed(key: string) {
     setCollapsed(prev => {
@@ -115,13 +130,8 @@ export function CobranzaTab({ canAdmin }: Props) {
     })
   }
 
-  function focusGroup(key: string) {
-    setCollapsed(prev => {
-      const next = new Set(prev)
-      next.delete(key)
-      return next
-    })
-    setTimeout(() => groupRefs.current.get(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  function selectAging(band: AgingBand | 'not_overdue') {
+    setAgingFilter(prev => prev === band ? null : band)
   }
 
   if (query.isPending) {
@@ -149,7 +159,9 @@ export function CobranzaTab({ canAdmin }: Props) {
         ))}
       </div>
 
-      {groups.length > 0 && <GroupBarChart groups={groups} onSelect={focusGroup} />}
+      {allRows.length > 0 && (
+        <AgingBars rows={allRows} activeFilter={agingFilter} onSelect={selectAging} />
+      )}
 
       <div className="space-y-5">
         {groups.map(group => {

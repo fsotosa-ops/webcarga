@@ -43,3 +43,39 @@ describe('CobranzaTab', () => {
     await waitFor(() => expect(screen.getAllByText(/Walmart/).length).toBeGreaterThan(0))
   })
 })
+
+describe('CobranzaTab — antigüedad de mora', () => {
+  it('shows the aging bars for overdue amounts, not the old bar-by-group chart', async () => {
+    renderWithClient(<CobranzaTab canAdmin={false} />)
+    await waitFor(() => expect(screen.getByText('Antigüedad de lo vencido')).toBeInTheDocument())
+    expect(screen.getByText('0–30 días')).toBeInTheDocument()
+    expect(screen.getByText('+90 días')).toBeInTheDocument()
+    expect(screen.queryByText(/grupos de mayor monto/)).not.toBeInTheDocument()
+  })
+
+  it('filters the list to only the selected aging band', async () => {
+    renderWithClient(<CobranzaTab canAdmin={false} />)
+    await waitFor(() => expect(screen.getByText('Empresa A')).toBeInTheDocument())
+    expect(screen.getByText('Empresa B')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('+90 días'))
+    await waitFor(() => expect(screen.queryByText('Empresa B')).not.toBeInTheDocument())
+    expect(screen.getByText('Empresa A')).toBeInTheDocument()
+  })
+
+  it('clicking the same band again clears the filter', async () => {
+    renderWithClient(<CobranzaTab canAdmin={false} />)
+    await waitFor(() => expect(screen.getByText('Empresa A')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('+90 días'))
+    await waitFor(() => expect(screen.queryByText('Empresa B')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByText('+90 días'))
+    await waitFor(() => expect(screen.getByText('Empresa B')).toBeInTheDocument())
+  })
+
+  it('filters to only non-overdue rows when clicking the "no vencidas aún" stat', async () => {
+    renderWithClient(<CobranzaTab canAdmin={false} />)
+    await waitFor(() => expect(screen.getByText('Empresa A')).toBeInTheDocument())
+    fireEvent.click(screen.getByText(/no vencidas aún/))
+    await waitFor(() => expect(screen.queryByText('Empresa A')).not.toBeInTheDocument())
+    expect(screen.getByText('Empresa B')).toBeInTheDocument()
+  })
+})
