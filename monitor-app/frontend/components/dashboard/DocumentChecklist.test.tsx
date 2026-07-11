@@ -40,4 +40,9 @@ describe('DocumentChecklist', () => {
     render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
     expect(screen.queryByLabelText('Subir Endoso')).not.toBeInTheDocument()
   })
+
+  it('shows a completion count', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
+    expect(screen.getByText('1 de 3 completos')).toBeInTheDocument()
+  })
 })
