@@ -96,14 +96,20 @@ function PolicySection({
   onChanged: (updated: InsurancePolicy) => void
 }) {
   const queryClient = useQueryClient()
+  const [docUploadErr, setDocUploadErr] = useState<string | null>(null)
   const docsQuery = useQuery({
     queryKey: ['insurance', 'policy-documents', policy.id],
     queryFn: () => insuranceApi.listPolicyDocuments(policy.id),
   })
 
   async function handleDocUpload(docCode: string, file: File) {
-    await insuranceApi.uploadDocumentFile(policy.id, docCode, file)
-    queryClient.invalidateQueries({ queryKey: ['insurance', 'policy-documents', policy.id] })
+    try {
+      await insuranceApi.uploadDocumentFile(policy.id, docCode, file)
+      setDocUploadErr(null)
+      queryClient.invalidateQueries({ queryKey: ['insurance', 'policy-documents', policy.id] })
+    } catch (e) {
+      setDocUploadErr(e instanceof Error ? e.message : 'Error al subir el documento')
+    }
   }
 
   const installments = policy.installments ?? []
@@ -158,6 +164,7 @@ function PolicySection({
             onUpload={handleDocUpload}
           />
         )}
+        {docUploadErr && <p className="text-[9px] text-red-500 mt-1">{docUploadErr}</p>}
       </div>
 
       {policy.payment_url && (

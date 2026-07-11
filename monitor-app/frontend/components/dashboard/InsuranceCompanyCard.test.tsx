@@ -117,6 +117,16 @@ describe('InsuranceCompanyCard', () => {
     await waitFor(() => expect(insuranceApi.listPolicyDocuments).toHaveBeenCalledTimes(2))
   })
 
+  it('shows a visible error below the checklist when the document upload fails', async () => {
+    vi.mocked(insuranceApi.uploadDocumentFile).mockRejectedValue(new Error('Formato de archivo no permitido'))
+    renderCard(rowOverdue, { expanded: true, canAdmin: true })
+    await screen.findByText('Póliza firmada')
+    const input = screen.getByLabelText('Subir Póliza firmada')
+    const file = new File(['contenido'], 'poliza.exe', { type: 'application/octet-stream' })
+    fireEvent.change(input, { target: { files: [file] } })
+    expect(await screen.findByText('Formato de archivo no permitido')).toBeInTheDocument()
+  })
+
   it('disables "Pagar" for a non-admin user', async () => {
     renderCard(rowOverdue, { expanded: true, canAdmin: false })
     const btns = await screen.findAllByRole('button', { name: /Pagar/i })
