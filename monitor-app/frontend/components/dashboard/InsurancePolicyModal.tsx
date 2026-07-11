@@ -59,6 +59,13 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
     }
   }, [policies, selectedPolicyId])
 
+  // Única fuente de verdad para colapsar "ver todas las cuotas": se dispara
+  // ante CUALQUIER cambio de póliza seleccionada, ya sea por click directo
+  // en el switcher o por el auto-select de arriba al abrir/reabrir el modal.
+  useEffect(() => {
+    setShowAll(false)
+  }, [selectedPolicyId])
+
   const docsQuery = useQuery({
     queryKey: ['insurance', 'policy-documents', selectedPolicyId],
     queryFn: () => insuranceApi.listPolicyDocuments(selectedPolicyId!),
@@ -148,7 +155,7 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
                   return (
                     <button
                       key={p.id}
-                      onClick={() => { setSelectedPolicyId(p.id); setShowAll(false) }}
+                      onClick={() => setSelectedPolicyId(p.id)}
                       className={`text-left px-3 py-2 rounded-lg shrink-0 transition-colors ${
                         active ? 'bg-white shadow-sm border-l-2 border-accent' : 'hover:bg-white/60'
                       }`}
