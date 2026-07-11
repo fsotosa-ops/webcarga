@@ -85,12 +85,9 @@ export function PolizasTab({ canAdmin }: Props) {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div>
-        <h1 className="font-mulish font-bold text-xl text-text-primary">Seguros</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {loading ? '…' : `${rows.length.toLocaleString('es-CL')} empresa${rows.length !== 1 ? 's' : ''} con pólizas`}
-        </p>
-      </div>
+      <p className="text-xs text-gray-400">
+        {loading ? '…' : `${rows.length.toLocaleString('es-CL')} empresa${rows.length !== 1 ? 's' : ''} con pólizas`}
+      </p>
 
       {/* ── KPIs globales de pólizas ─────────────────────────────── */}
       {kpisQuery.data && (
