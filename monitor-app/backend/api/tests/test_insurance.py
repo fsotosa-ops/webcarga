@@ -189,6 +189,19 @@ def test_patch_policy_document_invalid_doc_code_is_422():
     assert res.status_code == 422
 
 
+def test_upload_policy_document_file_invalid_doc_code_is_422():
+    # Mismo orden de validación que patch_policy_document: catálogo (422)
+    # antes que existencia de la póliza (404), incluso si ambas son inválidas.
+    pool = AsyncMock()
+    pool.fetchval.return_value = None  # no existe en el catálogo
+    client = make_client(pool)
+    res = client.post(
+        "/api/v1/insurance/policies/p1/documents/no_existe/file",
+        files={"file": ("doc.pdf", b"%PDF", "application/pdf")},
+    )
+    assert res.status_code == 422
+
+
 # ── Cuotas planas (Cobranza) ─────────────────────────────────────
 
 def test_list_installments_flat_shape():

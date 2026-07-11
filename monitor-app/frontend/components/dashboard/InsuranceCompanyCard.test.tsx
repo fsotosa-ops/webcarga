@@ -40,7 +40,7 @@ const response: InsuranceTransporterResponse = {
   }],
 }
 
-function renderCard(row: InsuranceSummaryRow, opts: { expanded?: boolean; canAdmin?: boolean; onToggle?: () => void } = {}) {
+function renderCard(row: InsuranceSummaryRow, opts: { expanded?: boolean; canAdmin?: boolean; canEdit?: boolean; onToggle?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -49,6 +49,7 @@ function renderCard(row: InsuranceSummaryRow, opts: { expanded?: boolean; canAdm
         expanded={opts.expanded ?? false}
         onToggle={opts.onToggle ?? vi.fn()}
         canAdmin={opts.canAdmin ?? false}
+        canEdit={opts.canEdit ?? false}
       />
     </QueryClientProvider>,
   )
@@ -107,8 +108,8 @@ describe('InsuranceCompanyCard', () => {
     expect(insuranceApi.listPolicyDocuments).toHaveBeenCalledWith('p1')
   })
 
-  it('uploads a document file and invalidates the checklist query for an admin', async () => {
-    renderCard(rowOverdue, { expanded: true, canAdmin: true })
+  it('uploads a document file and invalidates the checklist query for an editor', async () => {
+    renderCard(rowOverdue, { expanded: true, canEdit: true })
     await screen.findByText('Póliza firmada')
     const input = screen.getByLabelText('Subir Póliza firmada')
     const file = new File(['contenido'], 'poliza.pdf', { type: 'application/pdf' })
@@ -119,7 +120,7 @@ describe('InsuranceCompanyCard', () => {
 
   it('shows a visible error below the checklist when the document upload fails', async () => {
     vi.mocked(insuranceApi.uploadDocumentFile).mockRejectedValue(new Error('Formato de archivo no permitido'))
-    renderCard(rowOverdue, { expanded: true, canAdmin: true })
+    renderCard(rowOverdue, { expanded: true, canEdit: true })
     await screen.findByText('Póliza firmada')
     const input = screen.getByLabelText('Subir Póliza firmada')
     const file = new File(['contenido'], 'poliza.exe', { type: 'application/octet-stream' })

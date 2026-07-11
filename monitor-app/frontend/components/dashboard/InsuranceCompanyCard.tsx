@@ -89,10 +89,11 @@ function TimelineNode({
 // ── Sección de una póliza: header + timeline + acciones ────────────────────
 
 function PolicySection({
-  policy, canAdmin, onChanged,
+  policy, canAdmin, canEdit, onChanged,
 }: {
   policy:    InsurancePolicy
   canAdmin:  boolean
+  canEdit:   boolean
   onChanged: (updated: InsurancePolicy) => void
 }) {
   const queryClient = useQueryClient()
@@ -160,7 +161,7 @@ function PolicySection({
         ) : (
           <DocumentChecklist
             items={docsQuery.data ?? []}
-            canEdit={canAdmin}
+            canEdit={canEdit}
             onUpload={handleDocUpload}
           />
         )}
@@ -183,10 +184,11 @@ interface Props {
   expanded:  boolean
   onToggle:  () => void
   canAdmin:  boolean
+  canEdit:   boolean
 }
 
 export const InsuranceCompanyCard = forwardRef<HTMLDivElement, Props>(function InsuranceCompanyCard(
-  { row, expanded, onToggle, canAdmin }, ref,
+  { row, expanded, onToggle, canAdmin, canEdit }, ref,
 ) {
   const queryClient = useQueryClient()
 
@@ -260,7 +262,7 @@ export const InsuranceCompanyCard = forwardRef<HTMLDivElement, Props>(function I
             <p className="text-sm text-gray-400 italic">Sin pólizas registradas</p>
           ) : (
             query.data!.policies.map(p => (
-              <PolicySection key={p.id} policy={p} canAdmin={canAdmin} onChanged={handlePolicyChanged} />
+              <PolicySection key={p.id} policy={p} canAdmin={canAdmin} canEdit={canEdit} onChanged={handlePolicyChanged} />
             ))
           )}
         </div>

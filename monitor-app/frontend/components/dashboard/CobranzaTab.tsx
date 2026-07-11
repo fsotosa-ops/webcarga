@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Check } from 'lucide-react'
+import { Loader2, Check, ChevronRight } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
 import { groupInstallments, type GroupBy } from '@/lib/utils/insuranceGrouping'
 import { formatExpiry } from '@/lib/compliance'
@@ -53,7 +53,6 @@ export function CobranzaTab({ canAdmin }: Props) {
         {GROUP_OPTIONS.map(opt => (
           <button
             key={opt.id}
-            role="button"
             aria-pressed={groupBy === opt.id}
             onClick={() => setGroupBy(opt.id)}
             className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
@@ -74,8 +73,9 @@ export function CobranzaTab({ canAdmin }: Props) {
               onClick={() => toggleCollapsed(group.key)}
               className="w-full flex items-center justify-between px-1"
             >
-              <span className={`text-[11px] font-bold uppercase tracking-wide ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
-                {isCollapsed ? '▸' : ''} {group.label} · {group.rows.length}
+              <span className={`flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
+                <ChevronRight size={12} className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
+                {group.label} · {group.rows.length}
               </span>
               <span className={`text-xs font-semibold ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
                 {group.totalUf.toFixed(1)} UF
@@ -96,9 +96,15 @@ export function CobranzaTab({ canAdmin }: Props) {
                     <span className="text-gray-400">{row.company}</span>
                     <span className="text-gray-400 font-mono">{row.policy_number}</span>
                     <span className="text-gray-400">{row.installment_number}</span>
-                    <span className="font-semibold text-right">{row.amount_uf ?? '—'}</span>
+                    <span className="font-semibold text-right">
+                      {row.amount_uf != null ? `${row.amount_uf.toFixed(1)} UF` : '—'}
+                    </span>
                     {row.status !== 'pagada' && canAdmin && (
-                      <button className="justify-self-end flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full border border-border/60 text-gray-500 hover:text-accent hover:border-accent">
+                      <button
+                        disabled
+                        title="Marcar como pagada desde Cobranza — próximamente"
+                        className="justify-self-end flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full border border-border/60 text-gray-500 hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-500 disabled:hover:border-border/60"
+                      >
                         <Check size={9} /> Pagar
                       </button>
                     )}

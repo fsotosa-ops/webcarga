@@ -25,9 +25,10 @@ const FILTER_CHIPS: { id: InsuranceFilterId; label: string }[] = [
 
 interface Props {
   canAdmin: boolean
+  canEdit:  boolean
 }
 
-export function PolizasTab({ canAdmin }: Props) {
+export function PolizasTab({ canAdmin, canEdit }: Props) {
   const searchParams = useSearchParams()
   const rutParam = searchParams.get('rut')
 
@@ -189,6 +190,7 @@ export function PolizasTab({ canAdmin }: Props) {
               expanded={expanded.has(row.rut)}
               onToggle={() => toggleExpanded(row.rut)}
               canAdmin={canAdmin}
+              canEdit={canEdit}
               ref={el => { if (el) cardRefs.current.set(row.rut, el); else cardRefs.current.delete(row.rut) }}
             />
           ))}

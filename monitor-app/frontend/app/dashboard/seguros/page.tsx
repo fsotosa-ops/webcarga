@@ -4,6 +4,7 @@ import { Suspense, useState } from 'react'
 import { PolizasTab } from '@/components/dashboard/PolizasTab'
 import { CobranzaTab } from '@/components/dashboard/CobranzaTab'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
+import { useCanEdit } from '@/hooks/useCanEdit'
 
 type Tab = 'polizas' | 'cobranza'
 
@@ -18,6 +19,7 @@ export default function SegurosPage() {
 function SegurosPageInner() {
   const [tab, setTab] = useState<Tab>('polizas')
   const canAdmin = useCanAdmin()
+  const canEdit = useCanEdit()
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -47,7 +49,7 @@ function SegurosPageInner() {
         </button>
       </div>
       <div role="tabpanel" className="flex-1 overflow-y-auto">
-        {tab === 'polizas'  && <PolizasTab canAdmin={canAdmin} />}
+        {tab === 'polizas'  && <PolizasTab canAdmin={canAdmin} canEdit={canEdit} />}
         {tab === 'cobranza' && <CobranzaTab canAdmin={canAdmin} />}
       </div>
     </div>

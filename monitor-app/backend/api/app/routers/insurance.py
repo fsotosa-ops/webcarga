@@ -378,6 +378,14 @@ async def upload_policy_document_file(
     pid: str, doc_code: str, file: UploadFile = File(...),
     pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
 ):
+    # El catálogo se valida primero: doc_code inválido es un error de forma
+    # de la request (422) independiente de si la póliza existe (404).
+    catalog = await pool.fetchval(
+        "SELECT doc_code FROM app.insurance_doc_catalog WHERE doc_code = $1", doc_code,
+    )
+    if not catalog:
+        raise HTTPException(422, f"doc_code inválido: {doc_code}")
+
     exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
     if not exists:
         raise HTTPException(404, "Póliza no encontrada")
