@@ -22,6 +22,8 @@ DECLARE
 BEGIN
   FOREACH v_name IN ARRAY ARRAY[
     'stg_centralizer_transporter_docs',
+    'stg_centralizer_transporter_contacts',
+    'stg_centralizer_transporter_client_accounts',
     'stg_centralizer_driver_docs',
     'stg_centralizer_vehicle_docs',
     'stg_centralizer_drivers',
@@ -83,20 +85,52 @@ SELECT
     NULLIF(TRIM(ic.id_cuenta_eett::text), '')::numeric::int                   AS admin_account_id,
     NULLIF(TRIM(ic.representante_legal), '')                                  AS rep_legal_name,
     NULLIF(TRIM(ic."teléfono_rl"), '')                                        AS rep_legal_phone,
-    NULLIF(TRIM(ic.correo_rl), '')                                            AS rep_legal_email,
-    NULLIF(TRIM(ic.contacto_operacional), '')                                 AS operacional_name,
-    NULLIF(TRIM(ic."tel__contacto_ops"), '')                                  AS operacional_phone,
-    NULLIF(TRIM(ic.correo_contacto_operacional), '')                          AS operacional_email,
-    NULLIF(TRIM(ic.contacto_finanzas), '')                                    AS finanzas_name,
-    NULLIF(TRIM(ic.tel_finanzas), '')                                         AS finanzas_phone,
-    NULLIF(TRIM(ic.correo_finanzas), '')                                      AS finanzas_email,
-    NULLIF(TRIM(ic.contacto_documentos), '')                                  AS documentos_name,
-    NULLIF(TRIM(ic.telefono_documentos), '')                                  AS documentos_phone,
-    NULLIF(TRIM(ic.correo_documentos), '')                                    AS documentos_email
+    NULLIF(TRIM(ic.correo_rl), '')                                            AS rep_legal_email
 FROM transporter_ranked w
 LEFT JOIN transporter_clients ca ON ca.rut_norm = w.rut_norm
 LEFT JOIN info_contacto_ranked ic ON ic.rut_norm = w.rut_norm AND ic.rn = 1
 WHERE w.rn = 1;
+
+-- ── 1b. silver.stg_centralizer_transporter_contacts ──────────────────────────
+CREATE OR REPLACE VIEW silver.stg_centralizer_transporter_contacts AS
+WITH info_contacto_ranked AS (
+    SELECT
+        ic.*,
+        app.normalize_rut(ic.rut) AS rut_norm,
+        ROW_NUMBER() OVER (PARTITION BY app.normalize_rut(ic.rut) ORDER BY ic.ctid) AS rn
+    FROM bronze.raw_info_contacto ic
+    WHERE NULLIF(TRIM(ic.rut), '') IS NOT NULL
+)
+SELECT
+    w.rut_norm AS rut,
+    m.role,
+    m.name,
+    m.phone,
+    m.email
+FROM info_contacto_ranked w
+CROSS JOIN LATERAL (VALUES
+    ('operacional', NULLIF(TRIM(w.contacto_operacional), ''), NULLIF(TRIM(w."tel__contacto_ops"), ''), NULLIF(TRIM(w.correo_contacto_operacional), '')),
+    ('finanzas',    NULLIF(TRIM(w.contacto_finanzas), ''),    NULLIF(TRIM(w.tel_finanzas), ''),         NULLIF(TRIM(w.correo_finanzas), '')),
+    ('documentos',  NULLIF(TRIM(w.contacto_documentos), ''),  NULLIF(TRIM(w.telefono_documentos), ''),  NULLIF(TRIM(w.correo_documentos), ''))
+) AS m(role, name, phone, email)
+WHERE w.rn = 1
+  AND (m.name IS NOT NULL OR m.phone IS NOT NULL OR m.email IS NOT NULL)
+  AND EXISTS (
+      SELECT 1
+      FROM silver.stg_centralizer_transporters s
+      WHERE s.rut = w.rut_norm
+  );
+
+-- ── 1c. silver.stg_centralizer_transporter_client_accounts ───────────────────
+CREATE OR REPLACE VIEW silver.stg_centralizer_transporter_client_accounts AS
+SELECT
+    app.normalize_rut(rut)                                                     AS rut,
+    gc                                                                         AS client_name,
+    NULLIF(NULLIF(TRIM(REPLACE(avance_80_20, '%', '')), ''), '-')::numeric     AS avance_80_20,
+    NULLIF(NULLIF(TRIM(REPLACE(avance_total, '%', '')), ''), '-')::numeric     AS avance_total
+FROM bronze.raw_centralizer_transporter
+WHERE NULLIF(TRIM(rut), '') IS NOT NULL
+  AND NULLIF(TRIM(gc), '') IS NOT NULL;
 
 -- ── 2. silver.stg_centralizer_transporter_docs ───────────────────────────────
 CREATE OR REPLACE VIEW silver.stg_centralizer_transporter_docs AS
@@ -119,7 +153,7 @@ FROM transporter_ranked w
 CROSS JOIN LATERAL (VALUES
     ('rol_sii',            w.rol_sii),
     ('copia_ci_rep_legal', w.copia_c_i_rep__legal),
-    ('anexo_2_walmart',    w.anexo_repleg__gc_),
+    ('anexo_2_gc',         w.anexo_repleg__gc_),
     ('validado_gc',        w.validado_por_gc),
     ('contrato_webcarga',  w.contrato_webcarga),
     ('f30_multas',         w.f30__multas_),
@@ -130,7 +164,7 @@ CROSS JOIN LATERAL (VALUES
     ('carpeta_tributaria', w.carpeta_tributaria),
     ('cuenta_empresa',     w.cuenta_banco_empresa),
     ('pts_contratista',    w.procedimiento_de_trabajo_seguro_del_contratista),
-    ('creacion_walmart',   w."creación__en_gc")
+    ('creacion_gc',        w."creación__en_gc")
 ) AS m(doc_code, raw_value)
 WHERE w.rn = 1
   AND EXISTS (
@@ -158,10 +192,10 @@ empresas AS MATERIALIZED (
 )
 SELECT
     dr.rut_norm                                                                 AS rut,
-    UPPER(TRIM(dr.dv_conductor))                                                AS dv_conductor,
+    UPPER(TRIM(dr.dv_conductor))                                                AS dv,
     (app.rut_dv(dr.rut_norm) = UPPER(TRIM(dr.dv_conductor)))                    AS rut_dv_valid,
     dr.nombre_completo                                                          AS full_name,
-    dr.rut_empresa_norm                                                         AS rut_empresa,
+    dr.rut_empresa_norm                                                         AS transporter_rut,
     silver.parse_centralizer_date(dr."copia_c_i__vencimiento_")                 AS id_expiry,
     silver.parse_centralizer_date(dr."licencia__vencimiento_")                  AS license_expiry,
     NULLIF(NULLIF(TRIM(REPLACE(dr.avance_total, '%', '')), ''), '-')::numeric   AS avance_total
@@ -213,17 +247,17 @@ status_docs AS (
         NULL::date AS expiry_date
     FROM winners w
     CROSS JOIN LATERAL (VALUES
-        ('anexo_3_walmart',            w.anexo_gc_para_conductor),
+        ('anexo_3_gc',                 w.anexo_gc_para_conductor),
         ('epp',                        w.epp),
         ('das_odi',                    w.das___odi),
         ('hoja_de_vida',               w.hoja_de_vida),
         ('cert_antecedentes',          w."cert__antecedentes"),
-        ('validado_walmart',           w.validado_por_gc),
+        ('validado_gc_driver',         w.validado_por_gc),
         ('contrato_trabajo',           w.contrato_de_trabajo),
         ('toma_conoc_plan_emergencia', w.toma_conoc__trab__plan_de_emergencia_del_mandante),
         ('toma_conoc_pts',             w.toma_conoc__trab__procedimiento_de_trabajo_seguro),
         ('capacitacion_epp',           w."capacitación_uso_y_mantención_de_epp"),
-        ('creacion_walmart_driver',    w."creación_en_gc"),
+        ('creacion_gc_driver',         w."creación_en_gc"),
         ('f30_1',                      w.f30_1)
     ) AS m(doc_code, raw_value)
 )
@@ -258,7 +292,7 @@ SELECT
     vr.kind                                                       AS kind,
     vr.tipo_de_equipo                                             AS type_label,
     NULLIF(SPLIT_PART(vr."año", '.', 1), '')::int                 AS year,
-    vr.rut_empresa_norm                                           AS rut_empresa,
+    vr.rut_empresa_norm                                           AS transporter_rut,
     silver.parse_centralizer_date(vr."p__circulación")            AS circ_permit_expiry,
     silver.parse_centralizer_date(vr."re__técnica")               AS tech_inspection_expiry,
     silver.parse_centralizer_date(vr.gases_contaminantes)         AS gas_emissions_expiry,
@@ -321,10 +355,10 @@ status_docs AS (
         ('seguro_carga',           w.seguro_de_carga)
     ) AS m(doc_code, raw_value)
 ),
-creacion_walmart AS (
+creacion_gc AS (
     SELECT
         w.plate_norm AS plate,
-        'creacion_walmart_vehicle'::text AS doc_code,
+        'creacion_gc_vehicle'::text AS doc_code,
         silver.map_doc_status(w."creación_en_gc") AS status,
         NULL::date AS expiry_date
     FROM winners w
@@ -334,7 +368,7 @@ SELECT plate, doc_code, status, expiry_date FROM date_docs
 UNION ALL
 SELECT plate, doc_code, status, expiry_date FROM status_docs
 UNION ALL
-SELECT plate, doc_code, status, expiry_date FROM creacion_walmart;
+SELECT plate, doc_code, status, expiry_date FROM creacion_gc;
 
 -- ── 7. silver.stg_insurance_vehicles ─────────────────────────────────────────
 CREATE OR REPLACE VIEW silver.stg_insurance_vehicles AS

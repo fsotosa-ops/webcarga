@@ -48,9 +48,9 @@ SELECT
   (SELECT max(batch_id) FROM ops.pipeline_runs WHERE pipeline = 'centralizer_to_app'),
   'raw_centralizer_drivers',
   'rut_dv_invalido',
-  jsonb_build_object('rut', rut, 'dv', dv_conductor, 'dv_esperado', app.rut_dv(rut))
+  jsonb_build_object('rut', rut, 'dv', dv, 'dv_esperado', app.rut_dv(rut))
 FROM silver.stg_centralizer_drivers
-WHERE dv_conductor IS NOT NULL AND rut_dv_valid IS FALSE;
+WHERE dv IS NOT NULL AND rut_dv_valid IS FALSE;
 
 -- ── duplicado: drivers (mismo ranking que dbt/stg_centralizer_drivers.sql) ──
 INSERT INTO ops.pipeline_rejects (batch_id, source_table, reason, raw_row)
@@ -218,7 +218,7 @@ FROM (
 CROSS JOIN LATERAL (VALUES
   ('rol_sii',            r.rol_sii),
   ('copia_ci_rep_legal', r.copia_c_i_rep__legal),
-  ('anexo_2_walmart',    r.anexo_repleg__gc_),
+  ('anexo_2_gc',         r.anexo_repleg__gc_),
   ('validado_gc',        r.validado_por_gc),
   ('contrato_webcarga',  r.contrato_webcarga),
   ('f30_multas',         r.f30__multas_),
@@ -229,7 +229,7 @@ CROSS JOIN LATERAL (VALUES
   ('carpeta_tributaria', r.carpeta_tributaria),
   ('cuenta_empresa',     r.cuenta_banco_empresa),
   ('pts_contratista',    r.procedimiento_de_trabajo_seguro_del_contratista),
-  ('creacion_walmart',   r."creación__en_gc")
+  ('creacion_gc',        r."creación__en_gc")
 ) AS c(doc_code, raw_value)
 WHERE r.rn = 1
   AND nullif(trim(c.raw_value), '') IS NOT NULL
@@ -252,17 +252,17 @@ FROM (
 ) r
 JOIN silver.stg_centralizer_drivers s ON s.rut = r.rut_norm
 CROSS JOIN LATERAL (VALUES
-  ('anexo_3_walmart',            r.anexo_gc_para_conductor),
+  ('anexo_3_gc',                 r.anexo_gc_para_conductor),
   ('epp',                        r.epp),
   ('das_odi',                    r.das___odi),
   ('hoja_de_vida',               r.hoja_de_vida),
   ('cert_antecedentes',          r."cert__antecedentes"),
-  ('validado_walmart',           r.validado_por_gc),
+  ('validado_gc_driver',         r.validado_por_gc),
   ('contrato_trabajo',           r.contrato_de_trabajo),
   ('toma_conoc_plan_emergencia', r.toma_conoc__trab__plan_de_emergencia_del_mandante),
   ('toma_conoc_pts',             r.toma_conoc__trab__procedimiento_de_trabajo_seguro),
   ('capacitacion_epp',           r."capacitación_uso_y_mantención_de_epp"),
-  ('creacion_walmart_driver',    r."creación_en_gc"),
+  ('creacion_gc_driver',         r."creación_en_gc"),
   ('f30_1',                      r.f30_1)
 ) AS c(doc_code, raw_value)
 WHERE r.rn = 1

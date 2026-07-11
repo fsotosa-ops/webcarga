@@ -45,7 +45,7 @@ BEGIN
       SELECT v.id AS vehicle_id, t.id AS transporter_id
       FROM silver.stg_centralizer_vehicles s
       JOIN app.vehicles v ON v.plate = s.plate
-      JOIN app.transporters t ON t.rut = s.rut_empresa
+      JOIN app.transporters t ON t.rut = s.transporter_rut
     ),
     ca AS (
       SELECT va.id AS assignment_id, va.vehicle_id, va.transporter_id AS old_transporter_id, vt.transporter_id AS new_transporter_id
@@ -74,7 +74,7 @@ BEGIN
       SELECT v.id AS vehicle_id, t.id AS transporter_id
       FROM silver.stg_centralizer_vehicles s
       JOIN app.vehicles v ON v.plate = s.plate
-      JOIN app.transporters t ON t.rut = s.rut_empresa
+      JOIN app.transporters t ON t.rut = s.transporter_rut
     ) vt
     WHERE NOT EXISTS (
       SELECT 1 FROM app.vehicle_assignments va

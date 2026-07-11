@@ -28,7 +28,7 @@ BEGIN
 
     -- (a) Upsert app.drivers por rut
     INSERT INTO app.drivers (rut, dv, rut_dv_valid, full_name, id_expiry, license_expiry, avance_total, source, last_seen_batch)
-    SELECT s.rut, s.dv_conductor, s.rut_dv_valid, s.full_name, s.id_expiry, s.license_expiry, s.avance_total, 'centralizer', v_batch
+    SELECT s.rut, s.dv, s.rut_dv_valid, s.full_name, s.id_expiry, s.license_expiry, s.avance_total, 'centralizer', v_batch
     FROM silver.stg_centralizer_drivers s
     ON CONFLICT (rut) DO UPDATE SET
       dv             = CASE WHEN 'dv' = ANY (app.drivers.manually_edited_fields) THEN app.drivers.dv ELSE excluded.dv END,
@@ -46,7 +46,7 @@ BEGIN
       SELECT d.id AS driver_id, t.id AS transporter_id
       FROM silver.stg_centralizer_drivers s
       JOIN app.drivers d ON d.rut = s.rut
-      JOIN app.transporters t ON t.rut = s.rut_empresa
+      JOIN app.transporters t ON t.rut = s.transporter_rut
     ),
     ca AS (
       SELECT da.id AS assignment_id, da.driver_id, da.transporter_id AS old_transporter_id, dt.transporter_id AS new_transporter_id
@@ -77,7 +77,7 @@ BEGIN
       SELECT d.id AS driver_id, t.id AS transporter_id
       FROM silver.stg_centralizer_drivers s
       JOIN app.drivers d ON d.rut = s.rut
-      JOIN app.transporters t ON t.rut = s.rut_empresa
+      JOIN app.transporters t ON t.rut = s.transporter_rut
     ) dt
     WHERE NOT EXISTS (
       SELECT 1 FROM app.driver_assignments da

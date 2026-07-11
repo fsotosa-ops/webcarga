@@ -39,10 +39,10 @@ empresas AS MATERIALIZED (
 
 SELECT
     dr.rut_norm                                                                 AS rut,
-    UPPER(TRIM(dr.dv_conductor))                                                AS dv_conductor,
+    UPPER(TRIM(dr.dv_conductor))                                                AS dv,
     (app.rut_dv(dr.rut_norm) = UPPER(TRIM(dr.dv_conductor)))                    AS rut_dv_valid,
     dr.nombre_completo                                                          AS full_name,
-    dr.rut_empresa_norm                                                         AS rut_empresa,
+    dr.rut_empresa_norm                                                         AS transporter_rut,
     silver.parse_centralizer_date(dr."copia_c_i__vencimiento_")                 AS id_expiry,
     silver.parse_centralizer_date(dr."licencia__vencimiento_")                  AS license_expiry,
     NULLIF(NULLIF(TRIM(REPLACE(dr.avance_total, '%', '')), ''), '-')::numeric   AS avance_total

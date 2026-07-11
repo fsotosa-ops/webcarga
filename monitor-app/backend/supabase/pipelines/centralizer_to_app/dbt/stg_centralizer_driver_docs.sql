@@ -66,17 +66,17 @@ status_docs AS (
         NULL::date AS expiry_date
     FROM winners w
     CROSS JOIN LATERAL (VALUES
-        ('anexo_3_walmart',            w.anexo_gc_para_conductor),
+        ('anexo_3_gc',                 w.anexo_gc_para_conductor),
         ('epp',                        w.epp),
         ('das_odi',                    w.das___odi),
         ('hoja_de_vida',               w.hoja_de_vida),
         ('cert_antecedentes',          w."cert__antecedentes"),
-        ('validado_walmart',           w.validado_por_gc),
+        ('validado_gc_driver',         w.validado_por_gc),
         ('contrato_trabajo',           w.contrato_de_trabajo),
         ('toma_conoc_plan_emergencia', w.toma_conoc__trab__plan_de_emergencia_del_mandante),
         ('toma_conoc_pts',             w.toma_conoc__trab__procedimiento_de_trabajo_seguro),
         ('capacitacion_epp',           w."capacitación_uso_y_mantención_de_epp"),
-        ('creacion_walmart_driver',    w."creación_en_gc"),
+        ('creacion_gc_driver',         w."creación_en_gc"),
         ('f30_1',                      w.f30_1)
     ) AS m(doc_code, raw_value)
 )

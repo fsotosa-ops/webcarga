@@ -1,9 +1,10 @@
 -- ==============================================================================
 -- PIPELINE: centralizer_to_app — 20_upsert_transporters.sql
 -- Plan §2.5. Requiere los modelos dbt silver.stg_centralizer_transporters /
--- silver.stg_centralizer_transporter_docs (VISTAS materializadas por dbt en
--- Mage) y 15_rejects.sql ejecutados antes. Este bloque solo LEE de
--- silver.stg_* — funciona igual sobre vista que sobre tabla física.
+-- silver.stg_centralizer_transporter_contacts / silver.stg_centralizer_transporter_docs /
+-- silver.stg_centralizer_transporter_client_accounts (VISTAS materializadas
+-- por dbt en Mage) y 15_rejects.sql ejecutados antes. Este bloque solo LEE
+-- de silver.stg_* — funciona igual sobre vista que sobre tabla física.
 --
 -- Dominio de sync: 'transporters' (tabla + contactos + regla N=2) y
 -- 'compliance_docs' (upsert de documentos de transporter) — cada uno con su
@@ -79,29 +80,26 @@ BEGIN
     ON CONFLICT (transporter_id, role) DO UPDATE SET
       name = excluded.name, phone = excluded.phone, email = excluded.email;
 
+    -- operacional/finanzas/documentos vienen del modelo unpivotado
+    -- (stg_centralizer_transporter_contacts) en vez de columnas anchas.
     INSERT INTO app.transporter_contacts (transporter_id, role, name, phone, email)
-    SELECT t.id, 'operacional', s.operacional_name, s.operacional_phone, s.operacional_email
-    FROM silver.stg_centralizer_transporters s
-    JOIN app.transporters t ON t.rut = s.rut
-    WHERE s.operacional_name IS NOT NULL OR s.operacional_phone IS NOT NULL OR s.operacional_email IS NOT NULL
+    SELECT t.id, c.role, c.name, c.phone, c.email
+    FROM silver.stg_centralizer_transporter_contacts c
+    JOIN app.transporters t ON t.rut = c.rut
     ON CONFLICT (transporter_id, role) DO UPDATE SET
       name = excluded.name, phone = excluded.phone, email = excluded.email;
 
-    INSERT INTO app.transporter_contacts (transporter_id, role, name, phone, email)
-    SELECT t.id, 'finanzas', s.finanzas_name, s.finanzas_phone, s.finanzas_email
-    FROM silver.stg_centralizer_transporters s
+    -- (b2) Cuenta por (transporter, client_name) — grano fino sin dedupe,
+    -- reemplaza el colapso a 1 fila/rut para avance/estado multi-cliente
+    -- (auditoría 2026-07-10, ver app.transporter_client_accounts).
+    INSERT INTO app.transporter_client_accounts (transporter_id, client_name, avance_80_20, avance_total, source, last_seen_batch)
+    SELECT t.id, s.client_name, s.avance_80_20, s.avance_total, 'centralizer', v_batch
+    FROM silver.stg_centralizer_transporter_client_accounts s
     JOIN app.transporters t ON t.rut = s.rut
-    WHERE s.finanzas_name IS NOT NULL OR s.finanzas_phone IS NOT NULL OR s.finanzas_email IS NOT NULL
-    ON CONFLICT (transporter_id, role) DO UPDATE SET
-      name = excluded.name, phone = excluded.phone, email = excluded.email;
-
-    INSERT INTO app.transporter_contacts (transporter_id, role, name, phone, email)
-    SELECT t.id, 'documentos', s.documentos_name, s.documentos_phone, s.documentos_email
-    FROM silver.stg_centralizer_transporters s
-    JOIN app.transporters t ON t.rut = s.rut
-    WHERE s.documentos_name IS NOT NULL OR s.documentos_phone IS NOT NULL OR s.documentos_email IS NOT NULL
-    ON CONFLICT (transporter_id, role) DO UPDATE SET
-      name = excluded.name, phone = excluded.phone, email = excluded.email;
+    ON CONFLICT (transporter_id, client_name) DO UPDATE SET
+      avance_80_20    = excluded.avance_80_20,
+      avance_total    = excluded.avance_total,
+      last_seen_batch = v_batch;
 
     -- (c) Regla N=2: desactivar ausentes >= 2 batches consecutivos, auditado.
     WITH deactivated AS (

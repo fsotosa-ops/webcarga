@@ -95,7 +95,7 @@ DRIVER_ROWS = [{
 }]
 DRIVER_DOCS_RAW = [
     {"entity_id": "d1", "doc_code": "epp", "status": "ok"},
-    {"entity_id": "d1", "doc_code": "creacion_walmart_driver", "status": "pendiente"},
+    {"entity_id": "d1", "doc_code": "creacion_gc_driver", "status": "pendiente"},
 ]
 VEHICLE_ROWS = [{
     "id": "v1", "plate": "ABCD12", "kind": "tracto", "type_label": None, "year": 2020,
@@ -127,11 +127,11 @@ def test_get_profile_assembles_governance_from_documents():
     assert data["rut"] == "12345678-9"
     assert data["in_admin"] is True
     assert data["drivers"][0]["governance"]["epp"] == "ok"
-    # creacion_walmart (clave de gobernanza) viene del doc creacion_walmart_driver
-    assert data["drivers"][0]["governance"]["creacion_walmart"] == "pendiente"
+    # creacion_gc_driver (clave de gobernanza == doc_code, auditoría 2026-07-10)
+    assert data["drivers"][0]["governance"]["creacion_gc_driver"] == "pendiente"
     assert data["vehicles"][0]["governance"]["padron"] == "ok"
     assert data["trailers"][0]["plate"] == "RAMP01"
-    assert data["company_governance"]["rol_sii"] == "ok"
+    assert any(d["doc_code"] == "rol_sii" and d["status"] == "ok" for d in data["documents"])
     assert data["eligibility"]["eligible"] is True
     assert data["eligibility"]["compliance_pct"] == 92.5
     assert data["documents"][0]["doc_code"] == "rol_sii"

@@ -5,12 +5,34 @@ version: 2
 # grano/contrato que los bloques de upsert (20-23) asumen.
 models:
   - name: stg_centralizer_transporters
-    description: 1 fila por rut normalizado (dedupe Walmart-primero, clients agregados).
+    description: 1 fila por rut normalizado (dedupe Walmart-primero, clients agregados). Llega hasta rep_legal_email — ver stg_centralizer_transporter_contacts para el resto de contactos.
     columns:
       - name: rut
         description: RUT normalizado sin puntos/guión/DV. Ancla del upsert a app.transporters.
         tests:
           - unique
+          - not_null
+
+  - name: stg_centralizer_transporter_contacts
+    description: Unpivot de contactos operacional/finanzas/documentos (grano rut + role; rep_legal se queda en stg_centralizer_transporters).
+    columns:
+      - name: rut
+        tests:
+          - not_null
+      - name: role
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['operacional', 'finanzas', 'documentos']
+
+  - name: stg_centralizer_transporter_client_accounts
+    description: 1 fila por (rut, client_name) SIN dedupe — preserva avance/estado por cliente para transportistas multi-cliente (auditoría 2026-07-10).
+    columns:
+      - name: rut
+        tests:
+          - not_null
+      - name: client_name
+        tests:
           - not_null
 
   - name: stg_centralizer_transporter_docs
@@ -31,7 +53,7 @@ models:
         tests:
           - unique
           - not_null
-      - name: rut_empresa
+      - name: transporter_rut
         description: RUT de la empresa (siempre presente en stg_centralizer_transporters — el modelo excluye huérfanos).
         tests:
           - not_null
@@ -60,12 +82,12 @@ models:
           - not_null
           - accepted_values:
               values: ['tracto', 'rampla', 'otro']
-      - name: rut_empresa
+      - name: transporter_rut
         tests:
           - not_null
 
   - name: stg_centralizer_vehicle_docs
-    description: Unpivot de los documentos de vehículo (grano plate + doc_code; creacion_walmart_vehicle condicional).
+    description: Unpivot de los documentos de vehículo (grano plate + doc_code; creacion_gc_vehicle condicional).
     columns:
       - name: plate
         tests:

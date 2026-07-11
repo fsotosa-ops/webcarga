@@ -1,6 +1,5 @@
 import type {
   ComplianceAlertSummary,
-  CompanyGovernance,
   ComplianceStatus,
   DriverGovernance,
   TransporterListResponse,
@@ -23,7 +22,6 @@ export type TransporterPatch = {
   drivers?:            TransporterDriver[]
   vehicles?:           TransporterVehicle[]
   trailers?:           TransporterTrailer[]
-  company_governance?: CompanyGovernance
 }
 
 export type TransporterListParams = {

@@ -32,25 +32,16 @@ router = APIRouter(prefix="/transporters", tags=["transporters"])
 
 VALID_OVERRIDE_FIELDS = {"business_name", "rut", "account_stage", "contactability"}
 
-# doc_code (catálogo) difiere de la clave de gobernanza del frontend solo acá
-# (ambos entity_type tienen un doc "Creación en Walmart" con el mismo nombre
-# de clave `creacion_walmart` en el contrato, pero doc_code distinto por tabla
-# de catálogo — ver 20260709100003_compliance_documents.sql)
-DRIVER_GOV_DOC_MAP = {"creacion_walmart": "creacion_walmart_driver"}
-VEHICLE_GOV_DOC_MAP = {"creacion_walmart": "creacion_walmart_vehicle"}
-
+# Claves de gobernanza == doc_code del catálogo (auditoría 2026-07-10: el
+# rename de doc_code a vocabulario genérico "gc" eliminó la necesidad del
+# mapa de indirección que existía cuando la clave de gobernanza no coincidía
+# con el doc_code real — ver 20260709100003_compliance_documents.sql).
 DRIVER_GOV_KEYS = [
-    "anexo_3_walmart", "epp", "das_odi", "hoja_de_vida", "cert_antecedentes",
-    "validado_walmart", "contrato_trabajo", "creacion_walmart",
+    "anexo_3_gc", "epp", "das_odi", "hoja_de_vida", "cert_antecedentes",
+    "validado_gc_driver", "contrato_trabajo", "creacion_gc_driver",
 ]
 VEHICLE_GOV_KEYS = [
-    "padron", "poliza_rc", "gps", "seguro_carga", "mantencion_camara_frio", "creacion_walmart",
-]
-# Para transporter, doc_code == clave de gobernanza (sin remapeo) — ver catálogo
-COMPANY_GOV_KEYS = [
-    "rol_sii", "copia_ci_rep_legal", "anexo_2_walmart", "contrato_webcarga",
-    "f30_multas", "f43", "politica_seguridad", "cert_mutual", "riohs_timbrado",
-    "creacion_walmart", "carpeta_tributaria", "cuenta_empresa",
+    "padron", "poliza_rc", "gps", "seguro_carga", "mantencion_camara_frio", "creacion_gc_vehicle",
 ]
 
 # doc_type de app.alert_thresholds usado para cada fecha de vencimiento nativa
@@ -65,10 +56,6 @@ _VEHICLE_EXPIRY_DOC_TYPES = [
 
 
 # ── Helpers ───────────────────────────────────────────────────────
-
-def _gov_key_to_doc_code(gov_key: str, mapping: dict) -> str:
-    return mapping.get(gov_key, gov_key)
-
 
 def _format_rut(rut: Optional[str], dv: Optional[str]) -> Optional[str]:
     if not rut:
@@ -438,7 +425,6 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         """,
         tid,
     )
-    company_doc_status = {r["doc_code"]: r["status"] for r in company_doc_rows}
 
     eligibility = await pool.fetchrow(
         "SELECT eligible, compliance_pct, insurance_ok, blocking_reasons "
@@ -455,7 +441,7 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
             "avance_total": _num(r["avance_total"]),
         }
         for key in DRIVER_GOV_KEYS:
-            gov[key] = docs.get(_gov_key_to_doc_code(key, DRIVER_GOV_DOC_MAP))
+            gov[key] = docs.get(key)
         drivers.append({
             "id": str(r["id"]), "rut": _format_rut(r["rut"], r["dv"]), "name": r["full_name"],
             "governance": gov,
@@ -472,17 +458,13 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
             "soap_insurance_expiry": _iso(r["soap_insurance_expiry"]),
         }
         for key in VEHICLE_GOV_KEYS:
-            gov[key] = docs.get(_gov_key_to_doc_code(key, VEHICLE_GOV_DOC_MAP))
+            gov[key] = docs.get(key)
         vehicles.append({
             "id": str(r["id"]), "type": r["type_label"] or r["kind"], "plate": r["plate"],
             "governance": gov,
         })
 
     trailers = [{"id": str(r["id"]), "plate": r["plate"]} for r in trailer_rows]
-
-    company_governance = {key: company_doc_status.get(key) for key in COMPANY_GOV_KEYS}
-    company_governance["avance_8020"] = _num(t["avance_80_20"])
-    company_governance["avance_total"] = _num(t["avance_total"])
 
     documents = [
         {
@@ -509,7 +491,6 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         "drivers": drivers,
         "vehicles": vehicles,
         "trailers": trailers,
-        "company_governance": company_governance,
         "manually_edited_fields": list(t["manually_edited_fields"] or []),
         "edited_at": _iso(t["edited_at"]),
         "updated_at": _iso(t["updated_at"]),
@@ -544,7 +525,7 @@ async def patch_transporter(
         raise HTTPException(409, "El registro fue modificado por otro usuario; recargue e intente de nuevo")
 
     touched = body.sent_top_level_fields()
-    if not touched and not body.company_governance:
+    if not touched:
         raise HTTPException(422, "Ningún campo enviado")
 
     if touched:
@@ -574,10 +555,6 @@ async def patch_transporter(
             json.dumps(body.contactability.model_dump()) if body.contactability is not None else None,
             touched, user["sub"],
         )
-
-    if body.company_governance:
-        for doc_code, status in body.company_governance.items():
-            await _upsert_document(pool, "transporter", tid, doc_code, {"status": status}, user["sub"])
 
     return await get_transporter(tid, pool, user)
 
@@ -793,8 +770,7 @@ async def patch_driver(
         sets.append("updated_at = NOW()")
         await pool.execute(f"UPDATE app.drivers SET {', '.join(sets)} WHERE id = $1", *vals)
 
-    for key, status in doc_updates.items():
-        doc_code = _gov_key_to_doc_code(key, DRIVER_GOV_DOC_MAP)
+    for doc_code, status in doc_updates.items():
         await _upsert_document(pool, "driver", did, doc_code, {"status": status}, user["sub"])
 
     row = await pool.fetchrow("SELECT id, rut, dv, full_name FROM app.drivers WHERE id = $1", did)
@@ -944,8 +920,7 @@ async def patch_vehicle(
         sets.append("updated_at = NOW()")
         await pool.execute(f"UPDATE app.vehicles SET {', '.join(sets)} WHERE id = $1", *vals)
 
-    for key, status in doc_updates.items():
-        doc_code = _gov_key_to_doc_code(key, VEHICLE_GOV_DOC_MAP)
+    for doc_code, status in doc_updates.items():
         await _upsert_document(pool, "vehicle", vid, doc_code, {"status": status}, user["sub"])
 
     row = await pool.fetchrow("SELECT id, plate, kind, type_label FROM app.vehicles WHERE id = $1", vid)

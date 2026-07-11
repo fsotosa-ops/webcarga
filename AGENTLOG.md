@@ -613,3 +613,42 @@ Pusheado a `dev` (`7f325e1..77f0cc3`) tras confirmación del usuario.
 #### Iteración post-feedback (2026-07-10 tarde)
 
 Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Diario" → **no es la app**: última carga bronze = 2026-07-09 (la ingesta está VIVA, no congelada — memoria corregida); es latencia intradía de la extracción. (2) Bug real: badge "Al día" en seguros era **verdad vacía** (solo 22/2792 empresas tienen pólizas) → fix `a8aff03` (policies_count en el listado + badge "Sin información"), pusheado y verde. (3) "Layouts toscos/densos, tablas rígidas, tienen que ser más interactivos" → rediseño `9ed2c03` con modelos elegidos por el usuario vía mockups: Empresas = toggle Tarjetas/Tabla + TransporterSlideOver al click; Seguros = InsuranceCompanyCard con timeline horizontal de cuotas expandible y Pagar inline (reemplaza tabla+drawer, componentes viejos eliminados). 216/216 vitest, tsc/build limpios, verificado por el orquestador. **Pendiente: push de 9ed2c03 (requiere OK del usuario) + smoke visual autenticado.**
+
+---
+
+### 2026-07-10 (cont. 2) — Auditoría de arquitectura: modelo de datos Empresas EETT + Seguros (robustez/escalabilidad/integridad)
+
+**Objetivo:** el usuario pidió corregir naming no estándar en `silver.stg_centralizer_*` (campos `_walmart` hardcodeados aplicables a cualquier cliente) y luego, tras la primera propuesta, pidió ampliar a una auditoría completa del modelo de datos de Empresas+Seguros para que sea "robusto, escalable, optimizado y top-tier world-class". Plan en `/Users/usuario/.claude/plans/necesito-que-evalues-el-eager-dove.md`.
+
+**Hallazgos verificados en vivo (Supabase MCP: índices, FKs, RLS, contenido real de audit_log) más allá del naming:**
+1. 6 `doc_code` con "walmart" literal (`anexo_2_walmart`, `creacion_walmart`, `anexo_3_walmart`, `validado_walmart`, `creacion_walmart_driver`, `creacion_walmart_vehicle`) + `required_for_clients` default `{Walmart}` en las 39 filas del catálogo.
+2. **Sin políticas RLS de escritura** — todas las tablas del módulo solo tenían SELECT; autorización 100% en código Python (bypass total si el backend usa service-role, sin defensa en profundidad).
+3. **Auditoría estructuralmente incompleta** — `audit_log` solo tenía 3 filas pese a actividad real; el trigger de `compliance_documents` grababa `entity_type='compliance_document'`/`entity_id=id-del-documento` en vez del dueño real (empresa/conductor/vehículo), rompiendo el índice para "todo lo que le pasó a la empresa X"; `sync_skip` nunca se registraba en ningún lado (contradice "nunca silencioso").
+4. **Asociación polimórfica sin integridad referencial** — `compliance_documents.entity_id`/`notifications.entity_id` eran uuid sueltos sin FK a la fila real.
+5. **`clients text[]` colapsaba multi-cliente** — un transportista con Walmart+Colun perdía el avance/estado del segundo cliente en el dedupe del staging (confirmado: 3 rut Colun+Walmart, 1 rut Iansa+Sodimac en datos reales).
+6. `GET /transporters` con el mismo anti-patrón `COUNT(*)` + `OFFSET` ya señalado en trips — documentado como deuda diferida, no corregido esta ronda.
+
+**Ejecución (6 fases, todas verificadas en vivo contra Supabase, sin push):**
+
+| Fase | Qué se hizo |
+|------|-------------|
+| 1 | Rename doc_code (`*_walmart`→`*_gc`/`*_gc_driver`/`*_gc_vehicle`) vía `ON UPDATE CASCADE` (preserva id/manual_override/historial); eliminado `gc_driver` huérfano. `stg_centralizer_transporters` cortado en `rep_legal_email`; nuevo modelo `stg_centralizer_transporter_contacts` (unpivot operacional/finanzas/documentos). Renombrado `dv_conductor`→`dv`, `rut_empresa`→`transporter_rut` en drivers/vehicles. |
+| 2 | Nuevo `app.transporter_client_accounts` (1 fila por transportista×cliente, ya no colapsa avance/estado) + `app.client_document_requirements` (reemplaza el array `required_for_clients` como mecanismo data-driven; poblado replicando el estado actual — mapeo real por cliente sigue pendiente de negocio/Fabián). Vistas de elegibilidad reescritas contra las tablas nuevas. |
+| 3 | Retirado el rename mecánico + código muerto en el path relacional activo (`schemas/transporter_relational.py`, `routers/transporters.py` — eliminado `*_GOV_DOC_MAP`/`_gov_key_to_doc_code`/`COMPANY_GOV_KEYS` y `company_governance`, confirmados muertos; `lib/types.ts`, `empresa/[id]/page.tsx` con relabeling de copy "WMT"→"GC"). **Deliberadamente NO se generalizó `TransporterDocumentsPanel` a driver/vehicle** (~15 call sites en un archivo de 1900 líneas sin browser disponible — riesgo de regresión real sin forma de detectarlo; queda como follow-up con alcance claro). `schemas/transporter.py`/`routers/transporters_legacy.py` (fallback jsonb, `TRANSPORTERS_BACKEND=jsonb`) **NO se tocó** — es la red de seguridad deliberada del cutover reciente, sus campos `_walmart` no corresponden a ningún doc_code renombrado. |
+| 4 | Trigger de `compliance_documents` corregido para grabar el dueño real (`entity_type`/`entity_id`) + columna `doc_code` nueva en `audit_log`. `ops.pipeline_runs.domains_skipped` hace visible qué dominios estaban desactivados en cada corrida (en vez de forzar `sync_skip` dentro de `audit_log`, que tiene vocabulario de entidad heterogéneo). |
+| 5 | `app.entities` (supertype liviano transporter/driver/vehicle) + trigger `AFTER INSERT` + FK compuesta `(entity_type, entity_id)` en `compliance_documents`/`notifications`. Probado: insert con `entity_id` inexistente falla por FK. Fuera de alcance deliberado: `audit_log` (vocabulario mixto incl. `insurance_installment`) y `stored_files` (discriminador distinto). |
+| 6 | Políticas RLS `INSERT`/`UPDATE`/`DELETE` calcadas de la matriz real ya en código (`auth.py`: `EDITOR_ROLES`/`ADMIN_ROLES`) — no afectan al backend (conecta con rol que bypassea RLS), cierran el hueco para cualquier otra vía de acceso. |
+
+**Incidente propio detectado y corregido en la misma sesión:** el `DROP VIEW ... CASCADE` de la Fase 1 (necesario para poder achicar columnas de `stg_centralizer_transporters`) eliminó silenciosamente `app.v_sync_divergence` (dependía de esa vista) — no estaba en el plan de verificación original. Detectado al revisar qué vistas existían antes vs. después, recreada idéntica (migración `20260710120003`).
+
+**Verificación:** pipeline `centralizer_to_app` corrido 3 veces completas (00_gate→15_rejects→20/21/22/23→30_finalize) tras todas las fases — resultados byte-idénticos en las 3 corridas (38 transporters, 79 drivers, 115 vehicles, 33 pólizas, 284 cuotas, mismos 4 tipos de reject con mismos conteos, 9 `manual_override` preservados, 0 filas nuevas en `audit_log`). Backend: 70/70 pytest. Frontend: 216/216 vitest, tsc/build limpios. `grep -ri walmart` confirma cero identificadores de código sobrevivientes (solo strings de datos legítimos: el cliente real "Walmart" en fixtures/comentarios).
+
+**Decisiones del usuario en esta sesión:** required_for_clients no se mapea con datos inventados (queda pendiente de Fabián); tipos legacy de gobernanza se eliminan por completo del path activo (no coexistencia) — ejecutado con el matiz de preservar el fallback jsonb intacto tras encontrarlo y confirmarlo con el usuario.
+
+#### Próximo paso exacto
+
+1. [ ] Revisar el diff completo de esta sesión (6 migraciones nuevas + ediciones a pipeline SQL/dbt + backend/frontend) antes de commit/push — nada se ha commiteado aún.
+2. [ ] Generalizar `TransporterDocumentsPanel` a driver/vehicle (Fase 3 diferida) — requiere endpoint de listado de documentos por driver/vehicle en el backend, y smoke visual en navegador (sesión auth necesaria).
+3. [ ] Portar a Mage Pro los modelos dbt actualizados (incl. `stg_centralizer_transporter_contacts`/`_client_accounts` nuevos) — el pipeline sigue sin portarse, este seguía siendo el pendiente de antes de esta sesión.
+4. [ ] Mapeo real `doc_code`↔cliente (Walmart/Colun/Sodimac/Iansa) para poblar `app.client_document_requirements` con datos reales — requiere insumo de Fabián.
+5. [ ] Deuda documentada, no corregida esta ronda: paginación `COUNT(*)`+`OFFSET` en `GET /transporters` (mismo patrón pendiente en trips); rename de `avance_80_20`/`avance_total` con prefijo de procedencia (alto acoplamiento con `manually_edited_fields`, se difirió).

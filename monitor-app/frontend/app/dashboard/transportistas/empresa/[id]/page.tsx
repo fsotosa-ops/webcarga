@@ -116,14 +116,14 @@ function GovernanceSelect({
 
 // Driver docs (Excel sheet "Conductores", no-expiry columns)
 const DRIVER_DOC_LABELS: { key: keyof DriverGovernance; label: string }[] = [
-  { key: 'anexo_3_walmart',   label: 'ANEXO 3 WMT' },
+  { key: 'anexo_3_gc',        label: 'Anexo 3 GC' },
   { key: 'epp',               label: 'EPP' },
   { key: 'das_odi',           label: 'DAS / ODI' },
   { key: 'hoja_de_vida',      label: 'Hoja de Vida' },
   { key: 'cert_antecedentes', label: 'Cert. Antecedentes' },
-  { key: 'validado_walmart',  label: 'Validado WMT' },
+  { key: 'validado_gc_driver', label: 'Validado GC' },
   { key: 'contrato_trabajo',  label: 'Contrato Trabajo' },
-  { key: 'creacion_walmart',  label: 'Creación WMT' },
+  { key: 'creacion_gc_driver', label: 'Creación GC' },
 ]
 
 // Vehicle docs (Excel sheet "Vehiculos_Equipos", no-expiry columns)
@@ -133,7 +133,7 @@ const VEHICLE_DOC_LABELS: { key: keyof VehicleGovernance; label: string }[] = [
   { key: 'gps',                    label: 'GPS' },
   { key: 'seguro_carga',           label: 'Seguro Carga' },
   { key: 'mantencion_camara_frio', label: 'Cámara Frío' },
-  { key: 'creacion_walmart',       label: 'Creación WMT' },
+  { key: 'creacion_gc_vehicle',    label: 'Creación GC' },
 ]
 
 const VEHICLE_EXPIRY_LABELS = [
@@ -160,14 +160,14 @@ function DriverRow({
   const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
     id_expiry:         driver.governance?.id_expiry         ?? null,
     license_expiry:    driver.governance?.license_expiry    ?? null,
-    anexo_3_walmart:   driver.governance?.anexo_3_walmart   ?? null,
+    anexo_3_gc:   driver.governance?.anexo_3_gc   ?? null,
     epp:               driver.governance?.epp               ?? null,
     das_odi:           driver.governance?.das_odi           ?? null,
     hoja_de_vida:      driver.governance?.hoja_de_vida      ?? null,
     cert_antecedentes: driver.governance?.cert_antecedentes ?? null,
-    validado_walmart:  driver.governance?.validado_walmart  ?? null,
+    validado_gc_driver:  driver.governance?.validado_gc_driver  ?? null,
     contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
-    creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
+    creacion_gc_driver:  driver.governance?.creacion_gc_driver  ?? null,
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState<string | null>(null)
@@ -177,14 +177,14 @@ function DriverRow({
     setDraftGov({
       id_expiry:         driver.governance?.id_expiry         ?? null,
       license_expiry:    driver.governance?.license_expiry    ?? null,
-      anexo_3_walmart:   driver.governance?.anexo_3_walmart   ?? null,
+      anexo_3_gc:   driver.governance?.anexo_3_gc   ?? null,
       epp:               driver.governance?.epp               ?? null,
       das_odi:           driver.governance?.das_odi           ?? null,
       hoja_de_vida:      driver.governance?.hoja_de_vida      ?? null,
       cert_antecedentes: driver.governance?.cert_antecedentes ?? null,
-      validado_walmart:  driver.governance?.validado_walmart  ?? null,
+      validado_gc_driver:  driver.governance?.validado_gc_driver  ?? null,
       contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
-      creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
+      creacion_gc_driver:  driver.governance?.creacion_gc_driver  ?? null,
     })
   }, [driver])
 
@@ -407,14 +407,14 @@ function MobileDriverCard({
   const [draftGov, setDraftGov] = useState<Partial<DriverGovernance>>({
     id_expiry:         driver.governance?.id_expiry         ?? null,
     license_expiry:    driver.governance?.license_expiry    ?? null,
-    anexo_3_walmart:   driver.governance?.anexo_3_walmart   ?? null,
+    anexo_3_gc:   driver.governance?.anexo_3_gc   ?? null,
     epp:               driver.governance?.epp               ?? null,
     das_odi:           driver.governance?.das_odi           ?? null,
     hoja_de_vida:      driver.governance?.hoja_de_vida      ?? null,
     cert_antecedentes: driver.governance?.cert_antecedentes ?? null,
-    validado_walmart:  driver.governance?.validado_walmart  ?? null,
+    validado_gc_driver:  driver.governance?.validado_gc_driver  ?? null,
     contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
-    creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
+    creacion_gc_driver:  driver.governance?.creacion_gc_driver  ?? null,
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState<string | null>(null)
@@ -424,14 +424,14 @@ function MobileDriverCard({
     setDraftGov({
       id_expiry:         driver.governance?.id_expiry         ?? null,
       license_expiry:    driver.governance?.license_expiry    ?? null,
-      anexo_3_walmart:   driver.governance?.anexo_3_walmart   ?? null,
+      anexo_3_gc:   driver.governance?.anexo_3_gc   ?? null,
       epp:               driver.governance?.epp               ?? null,
       das_odi:           driver.governance?.das_odi           ?? null,
       hoja_de_vida:      driver.governance?.hoja_de_vida      ?? null,
       cert_antecedentes: driver.governance?.cert_antecedentes ?? null,
-      validado_walmart:  driver.governance?.validado_walmart  ?? null,
+      validado_gc_driver:  driver.governance?.validado_gc_driver  ?? null,
       contrato_trabajo:  driver.governance?.contrato_trabajo  ?? null,
-      creacion_walmart:  driver.governance?.creacion_walmart  ?? null,
+      creacion_gc_driver:  driver.governance?.creacion_gc_driver  ?? null,
     })
   }, [driver])
 
@@ -624,7 +624,7 @@ function VehicleRow({
     gps:                    vehicle.governance?.gps                    ?? null,
     seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
     mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
-    creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
+    creacion_gc_vehicle:       vehicle.governance?.creacion_gc_vehicle       ?? null,
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState<string | null>(null)
@@ -642,7 +642,7 @@ function VehicleRow({
       gps:                    vehicle.governance?.gps                    ?? null,
       seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
       mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
-      creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
+      creacion_gc_vehicle:       vehicle.governance?.creacion_gc_vehicle       ?? null,
     })
   }, [vehicle])
 
@@ -757,9 +757,9 @@ function VehicleRow({
           <GovernanceStatusBadge status={vehicle.governance?.mantencion_camara_frio ?? null} />
         </td>
 
-        {/* Creación WMT */}
+        {/* Creación GC */}
         <td className="px-2 py-2.5 text-center">
-          <GovernanceStatusBadge status={vehicle.governance?.creacion_walmart ?? null} />
+          <GovernanceStatusBadge status={vehicle.governance?.creacion_gc_vehicle ?? null} />
         </td>
 
         {/* Edit */}
@@ -925,7 +925,7 @@ function MobileVehicleCard({
     gps:                    vehicle.governance?.gps                    ?? null,
     seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
     mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
-    creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
+    creacion_gc_vehicle:       vehicle.governance?.creacion_gc_vehicle       ?? null,
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState<string | null>(null)
@@ -943,7 +943,7 @@ function MobileVehicleCard({
       gps:                    vehicle.governance?.gps                    ?? null,
       seguro_carga:           vehicle.governance?.seguro_carga           ?? null,
       mantencion_camara_frio: vehicle.governance?.mantencion_camara_frio ?? null,
-      creacion_walmart:       vehicle.governance?.creacion_walmart       ?? null,
+      creacion_gc_vehicle:       vehicle.governance?.creacion_gc_vehicle       ?? null,
     })
   }, [vehicle])
 
@@ -1796,7 +1796,7 @@ export default function EmpresaDetailPage() {
                     <th className="px-2 py-2.5 text-center w-20">GPS</th>
                     <th className="px-2 py-2.5 text-center w-20">Seg. Carga</th>
                     <th className="px-2 py-2.5 text-center w-20">Cám. Frío</th>
-                    <th className="px-2 py-2.5 text-center w-24">Creación WMT</th>
+                    <th className="px-2 py-2.5 text-center w-24">Creación GC</th>
                     <th className="px-2 py-2.5 w-16"></th>
                   </tr>
                 </thead>

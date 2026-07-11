@@ -47,7 +47,7 @@ SELECT
     vr.kind                                                       AS kind,
     vr.tipo_de_equipo                                             AS type_label,
     NULLIF(SPLIT_PART(vr."año", '.', 1), '')::int                 AS year,
-    vr.rut_empresa_norm                                           AS rut_empresa,
+    vr.rut_empresa_norm                                           AS transporter_rut,
     silver.parse_centralizer_date(vr."p__circulación")            AS circ_permit_expiry,
     silver.parse_centralizer_date(vr."re__técnica")               AS tech_inspection_expiry,
     silver.parse_centralizer_date(vr.gases_contaminantes)         AS gas_emissions_expiry,

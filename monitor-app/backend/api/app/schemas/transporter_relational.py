@@ -36,7 +36,6 @@ class TransporterPatchBody(BaseModel):
     rut:                 Optional[str] = None
     account_stage:       Optional[str] = None
     contactability:      Optional[ContactabilityBody] = None
-    company_governance:  Optional[dict[str, ComplianceStatus]] = None  # doc_code -> status
     expected_updated_at: Optional[datetime] = None
 
     @field_validator("business_name", mode="before")
@@ -67,16 +66,16 @@ class ContactPatchBody(BaseModel):
 # ── Drivers ──────────────────────────────────────────────────────────────────
 
 class DriverGovernancePatch(BaseModel):
-    id_expiry:         Optional[date] = None
-    license_expiry:    Optional[date] = None
-    anexo_3_walmart:   Optional[ComplianceStatus] = None
-    epp:               Optional[ComplianceStatus] = None
-    das_odi:           Optional[ComplianceStatus] = None
-    hoja_de_vida:      Optional[ComplianceStatus] = None
-    cert_antecedentes: Optional[ComplianceStatus] = None
-    validado_walmart:  Optional[ComplianceStatus] = None
-    contrato_trabajo:  Optional[ComplianceStatus] = None
-    creacion_walmart:  Optional[ComplianceStatus] = None
+    id_expiry:          Optional[date] = None
+    license_expiry:     Optional[date] = None
+    anexo_3_gc:         Optional[ComplianceStatus] = None
+    epp:                Optional[ComplianceStatus] = None
+    das_odi:            Optional[ComplianceStatus] = None
+    hoja_de_vida:       Optional[ComplianceStatus] = None
+    cert_antecedentes:  Optional[ComplianceStatus] = None
+    validado_gc_driver: Optional[ComplianceStatus] = None
+    contrato_trabajo:   Optional[ComplianceStatus] = None
+    creacion_gc_driver: Optional[ComplianceStatus] = None
 
 
 class AddDriverBody(BaseModel):
@@ -107,7 +106,7 @@ class VehicleGovernancePatch(BaseModel):
     gps:                    Optional[ComplianceStatus] = None
     seguro_carga:           Optional[ComplianceStatus] = None
     mantencion_camara_frio: Optional[ComplianceStatus] = None
-    creacion_walmart:       Optional[ComplianceStatus] = None
+    creacion_gc_vehicle:    Optional[ComplianceStatus] = None
 
 
 class AddVehicleBody(BaseModel):

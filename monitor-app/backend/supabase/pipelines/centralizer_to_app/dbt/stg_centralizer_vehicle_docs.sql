@@ -8,7 +8,7 @@
   Granularidad : 1 fila por (plate, doc_code) — hasta 11 doc_codes por vehículo
                  (4 derivados de fecha + 6 de status + creacion_walmart_vehicle
                  condicional).
-  Excepción    : creacion_walmart_vehicle ("creación_en_gc") trae 'Sodimac'
+  Excepción    : creacion_gc_vehicle ("creación_en_gc") trae 'Sodimac'
                  (nombre de cliente) en datos reales — si map_doc_status no
                  mapea, NO se emite fila (y 15_rejects.sql tampoco lo reporta;
                  única excepción a la regla valor_no_mapeado).
@@ -74,10 +74,10 @@ status_docs AS (
     ) AS m(doc_code, raw_value)
 ),
 
-creacion_walmart AS (
+creacion_gc AS (
     SELECT
         w.plate_norm AS plate,
-        'creacion_walmart_vehicle'::text AS doc_code,
+        'creacion_gc_vehicle'::text AS doc_code,
         silver.map_doc_status(w."creación_en_gc") AS status,
         NULL::date AS expiry_date
     FROM winners w
@@ -88,4 +88,4 @@ SELECT plate, doc_code, status, expiry_date FROM date_docs
 UNION ALL
 SELECT plate, doc_code, status, expiry_date FROM status_docs
 UNION ALL
-SELECT plate, doc_code, status, expiry_date FROM creacion_walmart
+SELECT plate, doc_code, status, expiry_date FROM creacion_gc

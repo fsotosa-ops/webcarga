@@ -36,7 +36,7 @@ FROM transporter_ranked w
 CROSS JOIN LATERAL (VALUES
     ('rol_sii',            w.rol_sii),
     ('copia_ci_rep_legal', w.copia_c_i_rep__legal),
-    ('anexo_2_walmart',    w.anexo_repleg__gc_),
+    ('anexo_2_gc',         w.anexo_repleg__gc_),
     ('validado_gc',        w.validado_por_gc),
     ('contrato_webcarga',  w.contrato_webcarga),
     ('f30_multas',         w.f30__multas_),
@@ -47,7 +47,7 @@ CROSS JOIN LATERAL (VALUES
     ('carpeta_tributaria', w.carpeta_tributaria),
     ('cuenta_empresa',     w.cuenta_banco_empresa),
     ('pts_contratista',    w.procedimiento_de_trabajo_seguro_del_contratista),
-    ('creacion_walmart',   w."creación__en_gc")
+    ('creacion_gc',        w."creación__en_gc")
 ) AS m(doc_code, raw_value)
 WHERE w.rn = 1
   AND EXISTS (

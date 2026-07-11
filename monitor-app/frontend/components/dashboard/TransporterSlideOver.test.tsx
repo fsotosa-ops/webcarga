@@ -26,7 +26,7 @@ const PROFILE: TransporterProfile = {
   account_stage: null, contactability: null,
   contacts: [{ role: 'operacional', name: 'Juan Pérez', phone: '+56911112222', email: 'juan@test.cl' }],
   drivers: [], vehicles: [], trailers: [],
-  company_governance: null, manually_edited_fields: [], edited_at: null, in_admin: true,
+  manually_edited_fields: [], edited_at: null, in_admin: true,
   clients: ['Walmart'],
   eligibility: { eligible: false, compliance_pct: 85, insurance_ok: true, blocking_reasons: ['docs_below_threshold'] },
   documents: [

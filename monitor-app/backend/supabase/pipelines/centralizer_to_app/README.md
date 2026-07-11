@@ -199,7 +199,7 @@ Grano: 1 fila por rut (dedupe: gana la fila `gc = 'Walmart'` primero;
 | `seguro_eett__rc__en_uf`, `cobertura_rc`, `cuotas`, `vencimiento_cuota`, `estado` | **excluidos** | referenciales; canónico = `raw_insurance_vehicles` |
 | `rol_sii` | doc `rol_sii` | |
 | `copia_c_i_rep__legal` | doc `copia_ci_rep_legal` | |
-| `anexo_repleg__gc_` | doc `anexo_2_walmart` | |
+| `anexo_repleg__gc_` | doc `anexo_2_gc` | renombrado desde `anexo_2_walmart` (naming genérico, no atado a cliente) |
 | `validado_por_gc` | doc `validado_gc` | doc_code **nuevo** (migración `20260709100008`) |
 | `contrato_webcarga` | doc `contrato_webcarga` | |
 | `f30__multas_` | doc `f30_multas` | |
@@ -210,7 +210,12 @@ Grano: 1 fila por rut (dedupe: gana la fila `gc = 'Walmart'` primero;
 | `carpeta_tributaria` | doc `carpeta_tributaria` | |
 | `cuenta_banco_empresa` | doc `cuenta_empresa` | |
 | `procedimiento_de_trabajo_seguro_del_contratista` | doc `pts_contratista` | |
-| `creación__en_gc` | doc `creacion_walmart` | |
+| `creación__en_gc` | doc `creacion_gc` | renombrado desde `creacion_walmart` |
+
+Modelo llega hasta `rep_legal_email` — los contactos de las columnas de más
+abajo (operacional/finanzas/documentos) los emite el modelo separado
+`silver.stg_centralizer_transporter_contacts` (unpivot, grano `rut + role`,
+mismo patrón que los docs), no columnas anchas de `stg_centralizer_transporters`.
 
 Cruce con `bronze.raw_info_contacto` (por `app.normalize_rut(rut)`, dedupe 1
 fila por rut, primera por orden físico):
@@ -220,10 +225,10 @@ fila por rut, primera por orden físico):
 | — (match encontrado) | `in_admin = true` |
 | `id_interno_admin` | `admin_internal_id` (cast `::text::numeric::int`, tolera `"12345.0"`) |
 | `id_cuenta_eett` | `admin_account_id` (ídem) |
-| `representante_legal`, `teléfono_rl`, `correo_rl` | contacto rol `rep_legal` |
-| `contacto_operacional`, `tel__contacto_ops`, `correo_contacto_operacional` | contacto rol `operacional` |
-| `contacto_finanzas`, `tel_finanzas`, `correo_finanzas` | contacto rol `finanzas` |
-| `contacto_documentos`, `telefono_documentos`, `correo_documentos` | contacto rol `documentos` |
+| `representante_legal`, `teléfono_rl`, `correo_rl` | contacto rol `rep_legal` (single-sourced en `stg_centralizer_transporters`) |
+| `contacto_operacional`, `tel__contacto_ops`, `correo_contacto_operacional` | contacto rol `operacional` (vía `stg_centralizer_transporter_contacts`) |
+| `contacto_finanzas`, `tel_finanzas`, `correo_finanzas` | contacto rol `finanzas` (ídem) |
+| `contacto_documentos`, `telefono_documentos`, `correo_documentos` | contacto rol `documentos` (ídem) |
 
 Resto de columnas de `raw_info_contacto` (`validador`, `nombre_empresa`,
 `razon_social`, flota, destinos, tipos de camión, `unnamed__31`) — **no
@@ -240,31 +245,32 @@ Grano: 1 fila por `rut_conductor` normalizado. Duplicados (mismo conductor,
 | Columna bronze | Destino | Nota |
 |---|---|---|
 | `rut_conductor` | `rut` | normalizado |
-| `dv_conductor` | `dv_conductor` | + `rut_dv_valid` |
+| `dv_conductor` | `dv` | + `rut_dv_valid` (columna renombrada desde `dv_conductor`, consistente con `transporters.dv`/`vehicles`) |
 | `nombre_completo` | `full_name` | |
-| `rut_empresa` | `rut_empresa` | normalizado; ancla de asignación |
+| `rut_empresa` | `transporter_rut` | normalizado; ancla de asignación (columna renombrada desde `rut_empresa`) |
 | `copia_c_i__vencimiento_` | `id_expiry` + doc `copia_ci` | doc: `ok` si fecha ≥ hoy, `actualizar` si <, NULL si no parsea |
 | `licencia__vencimiento_` | `license_expiry` + doc `licencia` | ídem |
 | `avance_total` | `avance_total` | |
 | `dv_empresa` | — | no usado (DV de la empresa se valida en el bloque de transporters) |
 | `gc` | — | nombre de cliente (Iansa/Walmart), NO es doc, se ignora |
-| `anexo_gc_para_conductor` | doc `anexo_3_walmart` | |
+| `anexo_gc_para_conductor` | doc `anexo_3_gc` | renombrado desde `anexo_3_walmart` |
 | `epp` | doc `epp` | |
 | `das___odi` | doc `das_odi` | |
 | `hoja_de_vida` | doc `hoja_de_vida` | |
 | `cert__antecedentes` | doc `cert_antecedentes` | |
-| `validado_por_gc` | doc `validado_walmart` | |
+| `validado_por_gc` | doc `validado_gc_driver` | renombrado desde `validado_walmart`; conceptualmente igual al `validado_gc` de transporter pero con sufijo `_driver` (doc_code es PK global, no puede repetirse) |
 | `contrato_de_trabajo` | doc `contrato_trabajo` | |
 | `toma_conoc__trab__plan_de_emergencia_del_mandante` | doc `toma_conoc_plan_emergencia` | |
 | `toma_conoc__trab__procedimiento_de_trabajo_seguro` | doc `toma_conoc_pts` | |
 | `capacitación_uso_y_mantención_de_epp` | doc `capacitacion_epp` | |
-| `creación_en_gc` | doc `creacion_walmart_driver` | |
+| `creación_en_gc` | doc `creacion_gc_driver` | renombrado desde `creacion_walmart_driver` |
 | `f30_1` | doc `f30_1` | |
 
-**Catálogo-sin-fuente**: `app.compliance_doc_catalog` tiene un doc_code
-`gc_driver` ("Gran cuenta (conductor)") sin columna origen en bronze. No es
-un error — es una brecha conocida entre el catálogo y el bronze actual.
-Documentado, no bloquea el pipeline.
+**Catálogo-sin-fuente (RESUELTO)**: el doc_code `gc_driver` ("Gran cuenta
+(conductor)") no tenía columna origen en bronze y solapaba conceptualmente
+con `validado_gc_driver` (que sí tiene fuente: `validado_por_gc`) — se
+eliminó del catálogo en la migración de rename (§ Fase 1 de la auditoría
+2026-07-10), en vez de mantener un doc_code huérfano permanente.
 
 ### `bronze.raw_centralizer_vehicles` → `silver.stg_centralizer_vehicles` (+ `_vehicle_docs`)
 
@@ -276,7 +282,7 @@ Duplicados → reject `duplicado`. Huérfanos → reject `huerfano`, quedan fuer
 | `patente` | `plate` | normalizada |
 | `tipo_de_equipo` | `kind` + `type_label` | `TRACTOCAMION→tracto`, `RAMPLA→rampla`, otro valor → `kind='otro'` + reject `valor_no_mapeado`; `type_label` conserva el crudo |
 | `año` | `year` | `split_part(...,'.',1)::int` (tolera `"2019.0"`) |
-| `rut_empresa` | `rut_empresa` | normalizado; ancla de asignación |
+| `rut_empresa` | `transporter_rut` | normalizado; ancla de asignación (columna renombrada desde `rut_empresa`) |
 | `p__circulación` | `circ_permit_expiry` + doc `permiso_circulacion` | doc: `ok`/`actualizar` por fecha |
 | `re__técnica` | `tech_inspection_expiry` + doc `revision_tecnica` | ídem |
 | `gases_contaminantes` | `gas_emissions_expiry` + doc `gases` | ídem |
@@ -287,7 +293,7 @@ Duplicados → reject `duplicado`. Huérfanos → reject `huerfano`, quedan fuer
 | `resolucion_sanitaria` | doc `resolucion_sanitaria` | |
 | `póliza_vehicular_con_rc` | doc `poliza_rc` | |
 | `seguro_de_carga` | doc `seguro_carga` | |
-| `creación_en_gc` | doc `creacion_walmart_vehicle` | **excepción**: en datos reales trae `'Sodimac'` (nombre de cliente); si `map_doc_status` no matchea, NO se emite fila de doc y NO se genera reject (única excepción a la regla general) |
+| `creación_en_gc` | doc `creacion_gc_vehicle` | renombrado desde `creacion_walmart_vehicle`. **excepción**: en datos reales trae `'Sodimac'` (nombre de cliente); si `map_doc_status` no matchea, NO se emite fila de doc y NO se genera reject (única excepción a la regla general) |
 | `dv_empresa` | — | no usado |
 | `cobertura_rc`, `cuotas`, `vencimiento_cuota`, `estado`, `link_de_pago_rc_vehicular`, `cobertura_sc`, `cuotas_1`, `vencimiento_cuota_1`, `estado_1`, `link_de_pago_seguro_de_carga` | **excluidos** | referenciales; canónico = `raw_insurance_vehicles` |
 

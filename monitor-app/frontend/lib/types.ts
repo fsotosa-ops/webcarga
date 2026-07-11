@@ -374,14 +374,14 @@ export type AlertStatus = 'expired' | 'expiring_soon' | 'ok'
 export type DriverGovernance = {
   id_expiry:          string | null
   license_expiry:     string | null
-  anexo_3_walmart:    ComplianceStatus | null
+  anexo_3_gc:         ComplianceStatus | null
   epp:                ComplianceStatus | null
   das_odi:            ComplianceStatus | null
   hoja_de_vida:       ComplianceStatus | null
   cert_antecedentes:  ComplianceStatus | null
-  validado_walmart:   ComplianceStatus | null
+  validado_gc_driver: ComplianceStatus | null
   contrato_trabajo:   ComplianceStatus | null
-  creacion_walmart:   ComplianceStatus | null
+  creacion_gc_driver: ComplianceStatus | null
   avance_total:       number | null
 }
 
@@ -396,24 +396,7 @@ export type VehicleGovernance = {
   gps:                    ComplianceStatus | null
   seguro_carga:           ComplianceStatus | null
   mantencion_camara_frio: ComplianceStatus | null
-  creacion_walmart:       ComplianceStatus | null
-}
-
-export type CompanyGovernance = {
-  rol_sii:            ComplianceStatus | null
-  copia_ci_rep_legal: ComplianceStatus | null
-  anexo_2_walmart:    ComplianceStatus | null
-  contrato_webcarga:  ComplianceStatus | null
-  f30_multas:         ComplianceStatus | null
-  f43:                ComplianceStatus | null
-  politica_seguridad: ComplianceStatus | null
-  cert_mutual:        ComplianceStatus | null
-  riohs_timbrado:     ComplianceStatus | null
-  creacion_walmart:   ComplianceStatus | null
-  carpeta_tributaria: ComplianceStatus | null
-  cuenta_empresa:     ComplianceStatus | null
-  avance_8020:        number | null
-  avance_total:       number | null
+  creacion_gc_vehicle:    ComplianceStatus | null
 }
 
 export type ComplianceAlertSummary = {
@@ -522,7 +505,6 @@ export type TransporterProfile = {
   drivers: TransporterDriver[]
   vehicles: TransporterVehicle[]
   trailers: TransporterTrailer[]
-  company_governance: CompanyGovernance | null
   manually_edited_fields: string[]
   edited_at: string | null
   updated_at?: string | null

@@ -11,6 +11,7 @@ DECLARE
   v_rows_in        jsonb;
   v_rows_upserted  jsonb;
   v_rows_rejected  jsonb;
+  v_domains_off    text[];
 BEGIN
   v_batch := (SELECT max(batch_id) FROM ops.pipeline_runs WHERE pipeline = 'centralizer_to_app');
 
@@ -48,12 +49,20 @@ BEGIN
     GROUP BY reason
   ) r;
 
+  -- Principio #4 ("nunca silencioso"): deja explícito qué dominios estaban
+  -- desactivados en app.sync_config durante esta corrida, en vez de que el
+  -- pipeline simplemente los salte sin dejar rastro consultable.
+  SELECT coalesce(array_agg(domain ORDER BY domain), '{}') INTO v_domains_off
+  FROM app.sync_config
+  WHERE NOT sync_enabled;
+
   UPDATE ops.pipeline_runs
   SET
-    finished_at   = now(),
-    status        = 'ok',
-    rows_in       = v_rows_in,
-    rows_upserted = v_rows_upserted,
-    rows_rejected = v_rows_rejected
+    finished_at     = now(),
+    status          = 'ok',
+    rows_in         = v_rows_in,
+    rows_upserted   = v_rows_upserted,
+    rows_rejected   = v_rows_rejected,
+    domains_skipped = v_domains_off
   WHERE id = v_run_id;
 END $$;

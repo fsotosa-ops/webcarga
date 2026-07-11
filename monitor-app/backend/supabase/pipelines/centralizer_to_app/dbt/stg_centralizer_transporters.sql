@@ -11,6 +11,10 @@
   Exclusiones  : bloque de seguro EETT del centralizer (seguro_eett__rc__en_uf,
                  cobertura_rc, cuotas, vencimiento_cuota, estado) = REFERENCIAL,
                  canónico de seguros: raw_insurance_vehicles (stg_insurance_vehicles).
+  Alcance      : este modelo llega hasta rep_legal_email — los contactos
+                 operacional/finanzas/documentos viven en el modelo unpivotado
+                 stg_centralizer_transporter_contacts (mismo patrón que los
+                 docs), no como columnas anchas acá.
   Rejects      : NO se escriben acá (dbt es declarativo) — 15_rejects.sql
                  re-detecta rut_dv_invalido después de correr los modelos.
 */
@@ -60,16 +64,7 @@ SELECT
     NULLIF(TRIM(ic.id_cuenta_eett::text), '')::numeric::int                   AS admin_account_id,
     NULLIF(TRIM(ic.representante_legal), '')                                  AS rep_legal_name,
     NULLIF(TRIM(ic."teléfono_rl"), '')                                        AS rep_legal_phone,
-    NULLIF(TRIM(ic.correo_rl), '')                                            AS rep_legal_email,
-    NULLIF(TRIM(ic.contacto_operacional), '')                                 AS operacional_name,
-    NULLIF(TRIM(ic."tel__contacto_ops"), '')                                  AS operacional_phone,
-    NULLIF(TRIM(ic.correo_contacto_operacional), '')                          AS operacional_email,
-    NULLIF(TRIM(ic.contacto_finanzas), '')                                    AS finanzas_name,
-    NULLIF(TRIM(ic.tel_finanzas), '')                                         AS finanzas_phone,
-    NULLIF(TRIM(ic.correo_finanzas), '')                                      AS finanzas_email,
-    NULLIF(TRIM(ic.contacto_documentos), '')                                  AS documentos_name,
-    NULLIF(TRIM(ic.telefono_documentos), '')                                  AS documentos_phone,
-    NULLIF(TRIM(ic.correo_documentos), '')                                    AS documentos_email
+    NULLIF(TRIM(ic.correo_rl), '')                                            AS rep_legal_email
 FROM transporter_ranked w
 LEFT JOIN transporter_clients ca ON ca.rut_norm = w.rut_norm
 LEFT JOIN info_contacto_ranked ic ON ic.rut_norm = w.rut_norm AND ic.rn = 1
