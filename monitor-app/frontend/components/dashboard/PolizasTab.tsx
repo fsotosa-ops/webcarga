@@ -7,7 +7,7 @@ import { Search, Loader2, X, CalendarClock, ShieldOff, FileWarning } from 'lucid
 import { insuranceApi } from '@/lib/api/insurance'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { InsuranceCompanyCard } from '@/components/dashboard/InsuranceCompanyCard'
-import { InsurancePolicySlideOver } from '@/components/dashboard/InsurancePolicySlideOver'
+import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
 import type { InsuranceSummaryRow } from '@/lib/types'
 import {
   deriveInsuranceKpis, matchesInsuranceFilter, type InsuranceFilterId,
@@ -40,7 +40,7 @@ function StatusDonut({ rows }: { rows: InsuranceSummaryRow[] }) {
   const gradient = `conic-gradient(#22c55e 0% ${okPct}%, #ef4444 ${okPct}% ${okPct + overduePct}%, #d1d5db ${okPct + overduePct}% 100%)`
 
   return (
-    <div className="flex items-center gap-4 bg-white border border-border rounded-2xl px-5 py-4">
+    <div className="flex items-center gap-4 shrink-0">
       <div className="relative w-16 h-16 shrink-0 rounded-full" style={{ background: gradient }}>
         <div className="absolute inset-[5px] bg-white rounded-full flex items-center justify-center">
           <span className="text-sm font-bold text-text-primary tabular-nums">{total}</span>
@@ -101,88 +101,88 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
         {loading ? '…' : `${rows.length.toLocaleString('es-CL')} empresa${rows.length !== 1 ? 's' : ''} con pólizas`}
       </p>
 
-      {/* ── Vista rápida: donut + KPIs accionables (filtran la lista) ── */}
-      {!loading && (
-        <div className="flex gap-3 flex-wrap items-stretch">
-          <StatusDonut rows={rows} />
-          <div className="flex gap-2.5 flex-wrap content-center">
-            {KPI_CARDS.map(card => {
-              const count  = kpis[card.id]
-              const active = activeFilter === card.id
-              return (
-                <button
-                  key={card.id}
-                  onClick={() => toggleFilter(card.id)}
-                  disabled={count === 0 && !active}
-                  aria-pressed={active}
-                  className={`flex items-center gap-2.5 bg-white border rounded-2xl px-4 py-2.5 transition-all disabled:opacity-40 disabled:cursor-default hover:shadow-sm ${
-                    active ? card.activeCls : 'border-border hover:border-gray-300'
-                  }`}
-                >
-                  <span className={`text-xl font-bold leading-none tabular-nums ${count > 0 ? card.countCls : 'text-gray-300'}`}>{count}</span>
-                  <span className="text-xs font-semibold text-gray-500 text-left leading-tight">{card.label}</span>
-                  {active && <X size={12} className="text-gray-400" />}
-                </button>
-              )
-            })}
+      {/* ── Panel único: donut + KPIs accionables + estadísticas + búsqueda ── */}
+      <div className="border border-border rounded-2xl overflow-hidden bg-white">
+        {!loading && (
+          <div className="flex items-center gap-6 flex-wrap p-4 border-b border-border">
+            <StatusDonut rows={rows} />
+            <div className="flex gap-2.5 flex-wrap">
+              {KPI_CARDS.map(card => {
+                const count  = kpis[card.id]
+                const active = activeFilter === card.id
+                return (
+                  <button
+                    key={card.id}
+                    onClick={() => toggleFilter(card.id)}
+                    disabled={count === 0 && !active}
+                    aria-pressed={active}
+                    className={`flex items-center gap-2.5 bg-white border rounded-2xl px-4 py-2.5 transition-all disabled:opacity-40 disabled:cursor-default hover:shadow-sm ${
+                      active ? card.activeCls : 'border-border hover:border-gray-300'
+                    }`}
+                  >
+                    <span className={`text-xl font-bold leading-none tabular-nums ${count > 0 ? card.countCls : 'text-gray-300'}`}>{count}</span>
+                    <span className="text-xs font-semibold text-gray-500 text-left leading-tight">{card.label}</span>
+                    {active && <X size={12} className="text-gray-400" />}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Estadísticas globales: no filtran esta lista (otro alcance de datos) ── */}
-      {kpisQuery.data && (
-        <div className="flex items-center gap-5 flex-wrap px-1 text-xs text-gray-500">
-          <span className="flex items-center gap-1.5">
-            <CalendarClock size={13} className="text-amber-500 shrink-0" />
-            <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.expiring_30d}</strong> pólizas vencen en 30 días
-          </span>
-          <span className="flex items-center gap-1.5">
-            <ShieldOff size={13} className="text-gray-400 shrink-0" />
-            <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.without_policies}</strong> empresas activas sin pólizas
-          </span>
-          <span className="flex items-center gap-1.5">
-            <FileWarning size={13} className="text-red-400 shrink-0" />
-            <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.incomplete_docs}</strong> pólizas con documentos incompletos
-          </span>
-        </div>
-      )}
-
-      {/* ── Búsqueda + chips ─────────────────────────────────────── */}
-      <div className="bg-white border border-border rounded-2xl px-4 py-3 flex items-center gap-2 flex-wrap">
-        <div className="relative shrink-0">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          <input
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Nombre o RUT…"
-            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 bg-white placeholder:text-gray-400 transition-all"
-          />
-        </div>
-
-        {FILTER_CHIPS.map(chip => {
-          const active = activeFilter === chip.id
-          return (
-            <button
-              key={chip.id}
-              onClick={() => toggleFilter(chip.id)}
-              aria-pressed={active}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              {chip.label}
-            </button>
-          )
-        })}
-
-        {activeFilter && (
-          <button
-            onClick={() => setActiveFilter(null)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors ml-auto"
-          >
-            <X size={11} /> Limpiar
-          </button>
         )}
+
+        {kpisQuery.data && (
+          <div className="flex items-center gap-5 flex-wrap px-4 py-3 bg-gray-50/70 border-b border-border text-xs text-gray-500">
+            <span className="flex items-center gap-1.5">
+              <CalendarClock size={13} className="text-amber-500 shrink-0" />
+              <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.expiring_30d}</strong> pólizas vencen en 30 días
+            </span>
+            <span className="flex items-center gap-1.5">
+              <ShieldOff size={13} className="text-gray-400 shrink-0" />
+              <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.without_policies}</strong> empresas activas sin pólizas
+            </span>
+            <span className="flex items-center gap-1.5">
+              <FileWarning size={13} className="text-red-400 shrink-0" />
+              <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.incomplete_docs}</strong> pólizas con documentos incompletos
+            </span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap p-4">
+          <div className="relative shrink-0">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Nombre o RUT…"
+              className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 bg-white placeholder:text-gray-400 transition-all"
+            />
+          </div>
+
+          {FILTER_CHIPS.map(chip => {
+            const active = activeFilter === chip.id
+            return (
+              <button
+                key={chip.id}
+                onClick={() => toggleFilter(chip.id)}
+                aria-pressed={active}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                  active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                {chip.label}
+              </button>
+            )
+          })}
+
+          {activeFilter && (
+            <button
+              onClick={() => setActiveFilter(null)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors ml-auto"
+            >
+              <X size={11} /> Limpiar
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -208,7 +208,7 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
         </div>
       )}
 
-      <InsurancePolicySlideOver
+      <InsurancePolicyModal
         row={selectedRow}
         onClose={() => setSelectedRut(null)}
         canAdmin={canAdmin}
