@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_admin, require_editor
 from ..db import get_pool
-from ..schemas.insurance import InstallmentPatchBody, PolicyPatchBody
+from ..schemas.insurance import InsuranceDocumentPatchBody, InstallmentPatchBody, PolicyPatchBody
 from ..utils.stored_files import list_owner_files, upload_owner_file
 
 router = APIRouter(prefix="/insurance", tags=["insurance"])
@@ -61,6 +61,51 @@ def _serialize_policy(row: dict) -> dict:
         "storage_path": row["storage_path"],
         "updated_at": _iso(row["updated_at"]),
     }
+
+
+def _serialize_insurance_document(row: dict) -> dict:
+    return {
+        "doc_code":        row["doc_code"],
+        "label":           row.get("label"),
+        "has_expiry":      row.get("has_expiry"),
+        "id":              str(row["id"]) if row.get("id") else None,
+        "status":          row.get("status"),
+        "expiry_date":     _iso(row.get("expiry_date")),
+        "file_url":        row.get("file_url"),
+        "storage_path":    row.get("storage_path"),
+        "notes":           row.get("notes"),
+        "manual_override": row.get("manual_override"),
+        "updated_at":      _iso(row.get("updated_at")),
+    }
+
+
+async def _upsert_insurance_document(pool, policy_id: str, doc_code: str, data: dict, updated_by: str) -> dict:
+    catalog = await pool.fetchval(
+        "SELECT doc_code FROM app.insurance_doc_catalog WHERE doc_code = $1", doc_code,
+    )
+    if not catalog:
+        raise HTTPException(422, f"doc_code inválido: {doc_code}")
+
+    manual_override = data.get("manual_override", True)
+    row = await pool.fetchrow(
+        """
+        INSERT INTO app.insurance_documents
+          (policy_id, doc_code, status, expiry_date, file_url, notes, source, manual_override, updated_by, updated_at)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, 'manual', $7, $8::uuid, NOW())
+        ON CONFLICT (policy_id, doc_code) DO UPDATE SET
+            status          = COALESCE($3, app.insurance_documents.status),
+            expiry_date     = COALESCE($4, app.insurance_documents.expiry_date),
+            file_url        = COALESCE($5, app.insurance_documents.file_url),
+            notes           = COALESCE($6, app.insurance_documents.notes),
+            manual_override = $7,
+            updated_by      = $8::uuid,
+            updated_at      = NOW()
+        RETURNING *
+        """,
+        policy_id, doc_code, data.get("status"), data.get("expiry_date"),
+        data.get("file_url"), data.get("notes"), manual_override, updated_by,
+    )
+    return dict(row)
 
 
 # ── SUMMARY ───────────────────────────────────────────────────────
@@ -277,3 +322,85 @@ async def list_policy_files(
     if not exists:
         raise HTTPException(404, "Póliza no encontrada")
     return await list_owner_files(pool, supabase, owner_type="insurance_policy", owner_id=pid)
+
+
+# ── DOCUMENTOS DE PÓLIZA (app.insurance_documents) ──────────────────
+
+@router.get("/policies/{pid}/documents")
+async def list_policy_documents(
+    pid: str, pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
+    if not exists:
+        raise HTTPException(404, "Póliza no encontrada")
+
+    rows = await pool.fetch(
+        """
+        SELECT c.doc_code, c.label, c.has_expiry,
+               d.id, d.status, d.expiry_date, d.file_url, d.storage_path,
+               d.notes, d.manual_override, d.updated_at
+        FROM app.insurance_doc_catalog c
+        LEFT JOIN app.insurance_documents d ON d.doc_code = c.doc_code AND d.policy_id = $1
+        ORDER BY c.sort_order
+        """,
+        pid,
+    )
+    return [_serialize_insurance_document(dict(r)) for r in rows]
+
+
+@router.patch("/policies/{pid}/documents/{doc_code}")
+async def patch_policy_document(
+    pid: str, doc_code: str, body: InsuranceDocumentPatchBody,
+    pool=Depends(get_pool), user=Depends(require_editor),
+):
+    # El catálogo se valida primero: doc_code inválido es un error de forma
+    # de la request (422) independiente de si la póliza existe (404).
+    catalog = await pool.fetchval(
+        "SELECT doc_code FROM app.insurance_doc_catalog WHERE doc_code = $1", doc_code,
+    )
+    if not catalog:
+        raise HTTPException(422, f"doc_code inválido: {doc_code}")
+
+    exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
+    if not exists:
+        raise HTTPException(404, "Póliza no encontrada")
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(422, "Ningún campo enviado")
+    row = await _upsert_insurance_document(pool, pid, doc_code, data, user["sub"])
+    row["label"] = None
+    row["has_expiry"] = None
+    return _serialize_insurance_document(row)
+
+
+@router.post("/policies/{pid}/documents/{doc_code}/file")
+async def upload_policy_document_file(
+    pid: str, doc_code: str, file: UploadFile = File(...),
+    pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
+):
+    exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
+    if not exists:
+        raise HTTPException(404, "Póliza no encontrada")
+    doc = await _upsert_insurance_document(pool, pid, doc_code, {}, user["sub"])
+    stored = await upload_owner_file(
+        pool, supabase, owner_type="insurance_document", owner_id=doc["id"],
+        key_prefix=f"insurance/{pid}/{doc_code}", file=file, uploaded_by=user["sub"],
+    )
+    await pool.execute(
+        "UPDATE app.insurance_documents SET storage_path = $1, updated_by = $2::uuid, updated_at = NOW() WHERE id = $3",
+        stored["storage_path"], user["sub"], doc["id"],
+    )
+    return stored
+
+
+@router.get("/policies/{pid}/documents/{doc_code}/files")
+async def list_policy_document_files(
+    pid: str, doc_code: str,
+    pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+):
+    doc_id = await pool.fetchval(
+        "SELECT id FROM app.insurance_documents WHERE policy_id = $1 AND doc_code = $2", pid, doc_code,
+    )
+    if not doc_id:
+        return []
+    return await list_owner_files(pool, supabase, owner_type="insurance_document", owner_id=doc_id)

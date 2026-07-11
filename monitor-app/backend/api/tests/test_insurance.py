@@ -127,3 +127,63 @@ def test_insurance_requires_auth():
     client = TestClient(app)
     res = client.get("/api/v1/insurance/summary")
     assert res.status_code in (401, 403)
+
+
+# ── Documentos de póliza ─────────────────────────────────────────
+
+def test_list_policy_documents_merges_catalog_with_existing():
+    pool = AsyncMock()
+    pool.fetchval.return_value = "p1"  # policy exists
+    pool.fetch.return_value = [
+        {"doc_code": "poliza_firmada", "label": "Póliza firmada", "has_expiry": False, "sort_order": 10,
+         "id": "d1", "status": "ok", "expiry_date": None, "file_url": None, "storage_path": "x",
+         "notes": None, "manual_override": True, "updated_at": datetime(2026, 7, 1, tzinfo=timezone.utc)},
+        {"doc_code": "endoso", "label": "Endoso", "has_expiry": False, "sort_order": 30,
+         "id": None, "status": None, "expiry_date": None, "file_url": None, "storage_path": None,
+         "notes": None, "manual_override": None, "updated_at": None},
+    ]
+    client = make_client(pool)
+    res = client.get("/api/v1/insurance/policies/p1/documents")
+    assert res.status_code == 200
+    docs = res.json()
+    assert docs[0]["doc_code"] == "poliza_firmada"
+    assert docs[0]["status"] == "ok"
+    assert docs[1]["doc_code"] == "endoso"
+    assert docs[1]["status"] is None
+
+
+def test_list_policy_documents_missing_policy_is_404():
+    pool = AsyncMock()
+    pool.fetchval.return_value = None
+    client = make_client(pool)
+    res = client.get("/api/v1/insurance/policies/p1/documents")
+    assert res.status_code == 404
+
+
+def test_patch_policy_document_upserts_and_requires_editor():
+    pool = AsyncMock()
+    pool.fetchval.return_value = "poliza_firmada"  # catálogo válido
+    pool.fetchrow.return_value = {
+        "id": "d1", "policy_id": "p1", "doc_code": "poliza_firmada", "status": "ok",
+        "expiry_date": None, "file_url": None, "storage_path": None, "notes": None,
+        "manual_override": True, "updated_by": USER_ID, "updated_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+    }
+    client = make_client(pool)
+    res = client.patch("/api/v1/insurance/policies/p1/documents/poliza_firmada", json={"status": "ok"})
+    assert res.status_code == 200
+    assert res.json()["status"] == "ok"
+
+
+def test_patch_policy_document_requires_editor():
+    pool = AsyncMock()
+    client = make_client(pool, role="viewer", enforce_roles=True)
+    res = client.patch("/api/v1/insurance/policies/p1/documents/poliza_firmada", json={"status": "ok"})
+    assert res.status_code == 403
+
+
+def test_patch_policy_document_invalid_doc_code_is_422():
+    pool = AsyncMock()
+    pool.fetchval.return_value = None  # no existe en el catálogo
+    client = make_client(pool)
+    res = client.patch("/api/v1/insurance/policies/p1/documents/no_existe", json={"status": "ok"})
+    assert res.status_code == 422

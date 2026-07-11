@@ -18,3 +18,11 @@ class PolicyPatchBody(BaseModel):
     payment_url: Optional[str] = None
     file_url:    Optional[str] = None
     policy_type: Optional[PolicyType] = None
+
+
+class InsuranceDocumentPatchBody(BaseModel):
+    status:          Optional[Literal['ok', 'pendiente', 'actualizar', 'n_a', 'factible']] = None
+    expiry_date:     Optional[date] = None
+    file_url:        Optional[str] = None
+    notes:           Optional[str] = None
+    manual_override: Optional[bool] = None
