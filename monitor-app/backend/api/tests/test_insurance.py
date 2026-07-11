@@ -187,3 +187,36 @@ def test_patch_policy_document_invalid_doc_code_is_422():
     client = make_client(pool)
     res = client.patch("/api/v1/insurance/policies/p1/documents/no_existe", json={"status": "ok"})
     assert res.status_code == 422
+
+
+# ── Cuotas planas (Cobranza) ─────────────────────────────────────
+
+def test_list_installments_flat_shape():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "installment_id": "i1", "policy_id": "p1", "transporter_id": "t1", "rut": "12345678-9",
+        "business_name": "Transportes Test", "company": "HDI", "policy_number": "4821-A",
+        "client_group": "Walmart", "installment_number": 2, "amount_uf": 4.2,
+        "due_date": date(2026, 7, 3), "status": "vencida", "is_overdue": True,
+    }]
+    client = make_client(pool)
+    res = client.get("/api/v1/insurance/installments")
+    assert res.status_code == 200
+    row = res.json()[0]
+    assert row["business_name"] == "Transportes Test"
+    assert row["is_overdue"] is True
+    assert row["amount_uf"] == 4.2
+
+
+# ── KPIs de Pólizas ───────────────────────────────────────────────
+
+def test_insurance_kpis_shape():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "expiring_30d": 3, "without_policies": 7, "incomplete_docs": 5,
+    }
+    client = make_client(pool)
+    res = client.get("/api/v1/insurance/kpis")
+    assert res.status_code == 200
+    body = res.json()
+    assert body == {"expiring_30d": 3, "without_policies": 7, "incomplete_docs": 5}

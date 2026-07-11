@@ -404,3 +404,63 @@ async def list_policy_document_files(
     if not doc_id:
         return []
     return await list_owner_files(pool, supabase, owner_type="insurance_document", owner_id=doc_id)
+
+
+# ── COBRANZA (cuotas planas) ─────────────────────────────────────
+
+@router.get("/installments")
+async def list_installments_flat(pool=Depends(get_pool), _=Depends(get_current_user)):
+    rows = await pool.fetch(
+        "SELECT * FROM app.v_insurance_installments_flat ORDER BY due_date ASC NULLS LAST"
+    )
+    return [
+        {
+            "installment_id":     str(r["installment_id"]),
+            "policy_id":          str(r["policy_id"]),
+            "transporter_id":     str(r["transporter_id"]) if r["transporter_id"] else None,
+            "rut":                r["rut"],
+            "business_name":      r["business_name"],
+            "company":            r["company"],
+            "policy_number":      r["policy_number"],
+            "client_group":       r["client_group"],
+            "installment_number": r["installment_number"],
+            "amount_uf":          _num(r["amount_uf"]),
+            "due_date":           _iso(r["due_date"]),
+            "status":             r["status"],
+            "is_overdue":         r["is_overdue"],
+        }
+        for r in rows
+    ]
+
+
+# ── KPIs (tab Pólizas) ────────────────────────────────────────────
+
+@router.get("/kpis")
+async def insurance_kpis(pool=Depends(get_pool), _=Depends(get_current_user)):
+    row = await pool.fetchrow(
+        """
+        WITH expiring AS (
+            SELECT count(*) AS n FROM app.insurance_policies
+            WHERE valid_to IS NOT NULL
+              AND valid_to BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days'
+        ),
+        without_policies AS (
+            SELECT count(*) AS n FROM app.transporters t
+            WHERE t.is_active AND NOT EXISTS (
+                SELECT 1 FROM app.insurance_policies ip WHERE ip.rut = t.rut
+            )
+        ),
+        incomplete AS (
+            SELECT count(DISTINCT ip.id) AS n
+            FROM app.insurance_policies ip
+            CROSS JOIN app.insurance_doc_catalog c
+            LEFT JOIN app.insurance_documents d ON d.policy_id = ip.id AND d.doc_code = c.doc_code
+            WHERE COALESCE(d.status, 'pendiente') != 'ok'
+        )
+        SELECT
+            (SELECT n FROM expiring)         AS expiring_30d,
+            (SELECT n FROM without_policies)  AS without_policies,
+            (SELECT n FROM incomplete)        AS incomplete_docs
+        """
+    )
+    return dict(row)
