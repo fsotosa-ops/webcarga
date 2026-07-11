@@ -26,6 +26,10 @@ export type PolicyPatch = {
   policy_type?: PolicyType
 }
 
+export type RevertInstallmentPatch = {
+  expected_updated_at?: string
+}
+
 export const insuranceApi = {
   summary: (params?: { q?: string }) => {
     const qs = new URLSearchParams()
@@ -43,6 +47,12 @@ export const insuranceApi = {
   patchInstallment: (iid: string, body: InstallmentPatch) =>
     apiFetch<InsuranceInstallment>(`/api/v1/insurance/installments/${iid}`, {
       method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  revertInstallment: (iid: string, body: RevertInstallmentPatch) =>
+    apiFetch<InsuranceInstallment>(`/api/v1/insurance/installments/${iid}/revert`, {
+      method: 'POST',
       body: JSON.stringify(body),
     }),
 
