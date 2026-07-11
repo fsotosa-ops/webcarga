@@ -690,3 +690,24 @@ Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Dia
 7. [ ] Portar a Mage Pro los modelos dbt actualizados de `centralizer_to_app` (incl. `stg_centralizer_transporter_contacts`/`_client_accounts` nuevos) — sigue pendiente de antes de esta sesión.
 8. [ ] Mapeo real `doc_code`↔cliente (Walmart/Colun/Sodimac/Iansa) para `app.client_document_requirements` — requiere insumo de Fabián.
 5. [ ] Deuda documentada, no corregida esta ronda: paginación `COUNT(*)`+`OFFSET` en `GET /transporters` (mismo patrón pendiente en trips); rename de `avance_80_20`/`avance_total` con prefijo de procedencia (alto acoplamiento con `manually_edited_fields`, se difirió).
+
+---
+
+### 2026-07-11 (cont.) — Fix de 7 hallazgos de code review final (rediseño Seguros)
+
+**Objetivo:** corregir en una sola pasada los 7 findings de la revisión final whole-branch del rediseño de Seguros (arriba). Commit único `f42ab56` en `dev` (sin push).
+
+**Qué se corrigió:**
+1. **`insurance.py`** — `upload_policy_document_file` no validaba el catálogo de `doc_code` antes del 404 de póliza (sí lo hacía `patch_policy_document`), dando contratos inconsistentes (422 vs 404) para el mismo tipo de error. Ahora ambos endpoints validan catálogo → póliza, mismo orden. Test nuevo: `test_upload_policy_document_file_invalid_doc_code_is_422`.
+2. **`CobranzaTab.tsx`** — botón "Pagar" visible y habilitado para admins pero sin `onClick` (deuda ya documentada, cableado real sigue fuera de alcance). Ahora `disabled` + `title` explicando "próximamente", mismo tratamiento visual (`disabled:opacity-40`) que `TimelineNode`.
+3. **`CobranzaTab.tsx`** — glyph `▸` crudo reemplazado por `ChevronRight` de lucide-react, rotado vía CSS (mismo patrón que el `ChevronDown` de `InsuranceCompanyCard`); de paso corrige el salto horizontal del label al expandir/colapsar (antes se renderizaba `''` en vez del glyph).
+4. **Desalineación de permisos (UI admin-only vs backend/RLS editor+)** — `DocumentChecklist` recibía `canEdit={canAdmin}` en `InsuranceCompanyCard`, pero el backend usa `require_editor` en los endpoints de documentos y la RLS también permite editor+. Nuevo hook `useCanEdit.ts` (mirror exacto de `useCanAdmin.ts`, pero con `EDITOR_ROLES`), enhebrado `page.tsx` → `PolizasTab` → `InsuranceCompanyCard` → `PolicySection` → `DocumentChecklist`. El botón "Pagar" de cuota (`TimelineNode`) sigue en `canAdmin` (correcto: `PATCH /installments/{iid}` es `require_admin`).
+5. **`CobranzaTab.tsx`** — `amount_uf` de fila se mostraba sin formato (`{row.amount_uf ?? '—'}`) mientras el subtotal del grupo sí usaba `.toFixed(1)} UF`; unificado. De paso, se quitó `role="button"` redundante de los chips de agrupación (ya es el rol implícito de `<button>`).
+
+**Tests adaptados** (no debilitados, solo re-alineados a la semántica corregida): en `InsuranceCompanyCard.test.tsx`, `renderCard` ahora acepta `canEdit` además de `canAdmin`; los dos tests que ejercitan la subida de documentos pasan `canEdit: true` en vez de `canAdmin: true` (uno renombrado de "for an admin" a "for an editor").
+
+**Verificación:** backend 78/78 pytest (16/16 en `test_insurance.py`), frontend 231/231 vitest (31 archivos), `tsc --noEmit` limpio, `npm run build` exitoso (15 rutas generadas). Reporte completo en `.superpowers/sdd/final-review-fix-report.md` (gitignored).
+
+#### Próximo paso exacto
+1. [ ] Los pendientes de la sesión anterior (arriba) siguen vigentes: smoke visual manual, cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, rediseño de Empresas, Mage Pro dbt, mapeo `doc_code`↔cliente.
+2. [ ] Revisar el diff acumulado (implementación + esta ronda de fixes) antes de decidir push a remoto — nada se ha pusheado aún.
