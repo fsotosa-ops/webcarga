@@ -645,10 +645,48 @@ Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Dia
 
 **Decisiones del usuario en esta sesión:** required_for_clients no se mapea con datos inventados (queda pendiente de Fabián); tipos legacy de gobernanza se eliminan por completo del path activo (no coexistencia) — ejecutado con el matiz de preservar el fallback jsonb intacto tras encontrarlo y confirmarlo con el usuario.
 
+#### Cierre (2026-07-11, autorizado por el usuario)
+1. **Commiteado y pusheado a `dev`** (`2b1539c`, workflows Deploy Monitor API + Deploy Frontend verificados verdes en `gh run list`).
+
+---
+
+### 2026-07-11 — Rediseño del módulo Seguros: Pólizas + Cobranza + checklist de documentos (subagent-driven development)
+
+**Objetivo:** a raíz de la auditoría de arquitectura de Empresas (sesión anterior), el usuario preguntó cómo gestionar en la app que un transportista/conductor preste servicio a varios clientes GC simultáneamente con documentación propia por cliente, con visibilidad en tiempo real, y pidió rediseñar el módulo Seguros (pólizas + pagos) para que reemplace los Excel que usa hoy el equipo — pensado como "el sistema propio de una aseguradora".
+
+**Proceso:** brainstorming con companion visual (mockups en navegador) → spec (`docs/superpowers/specs/2026-07-11-seguros-redesign-design.md`, no commiteado por `.gitignore` de `docs/`) → plan de implementación (`docs/superpowers/plans/2026-07-11-seguros-redesign.md`) → ejecución con subagent-driven-development (implementador + revisor por tarea, 10 tareas).
+
+**Decisiones de diseño (validadas con el usuario vía mockups):**
+- Dos tabs — **Pólizas** (registro por empresa, KPIs: vencen en 30 días / sin pólizas / docs incompletos) y **Cobranza** (todas las cuotas, agrupable por semana/mes/trimestre/empresa/aseguradora/cliente GC, "Vencidas" siempre fija arriba con su propio subtotal).
+- Checklist de documentos por póliza con **nodos circulares** (mismo lenguaje visual que el timeline de cuotas) — componente genérico (`DocumentChecklist.tsx`) diseñado para reusarse tal cual en un futuro rediseño de Empresas.
+- Modelo de datos nuevo: `app.insurance_doc_catalog` + `app.insurance_documents` (una póliza ya no tiene un archivo único, sino varios tipos de documento versionados por separado — mismo patrón que `compliance_documents`).
+- Rediseño de Empresas quedó fuera de esta ronda (sesión de brainstorm separada), reusando el componente de nodos.
+
+**Ejecución (10 tareas, cada una implementador+revisor, 3 rondas de fix+re-review):**
+
+| Tarea | Contenido | Nota |
+|-------|-----------|------|
+| 1 | Migración: catálogo + `insurance_documents` + `v_insurance_installments_flat` + backfill del archivo único legacy + RLS | Review clean |
+| 2 | Endpoints backend de documentos por póliza (GET/PATCH/upload/list) | Review clean — reordenamiento de validación (catálogo antes que 404 de póliza) necesario para reconciliar una autocontradicción del propio plan (código vs. test), verificado por el revisor |
+| 3 | Endpoints `GET /insurance/installments` (plano) + `GET /insurance/kpis` | Primer intento falló por límite de sesión de API antes de tocar nada, reintentado limpio; review clean |
+| 4 | Tipos TS + cliente API frontend | Review clean |
+| 5 | Componente `DocumentChecklist` genérico (nodos circulares) | Review clean — reusabilidad para Empresas verificada explícitamente (tipo `ChecklistItem` standalone, sin imports de Seguros) |
+| 6 | Integración en `InsuranceCompanyCard` (reemplaza archivo único) | **Fix**: subida de documento fallida no mostraba error visible (regresión silenciosa vs. el botón anterior) — corregido reusando el patrón de `TimelineNode.markPaid`, re-review clean |
+| 7 | Agrupamiento de cuotas para Cobranza | Review clean — revisor verificó a mano+empíricamente la fórmula de "lunes de la semana" para los 7 días, sin off-by-one |
+| 8 | Componente `CobranzaTab` | Review clean — una corrección de test (`getByText` exacto → regex) verificada como fix de una autocontradicción del plan, no del componente |
+| 9 | `PolizasTab` extraído + shell de tabs + KPIs | **Fix**: `<h1>Seguros</h1>` duplicado (shell + tab) visible en la carga por defecto — corregido, re-review clean |
+| 10 | Verificación final | 77/77 pytest, 231/231 vitest, tsc/build limpios, 3 verificaciones SQL en vivo correctas. **Smoke visual manual NO completado** — sigue sin sesión de navegador autenticada disponible (limitación recurrente en este proyecto) |
+
+**Verificación final:** backend 77/77, frontend 231/231 + tsc/build limpios, `owner_type='insurance_policy'` en 0 filas (migración de archivos legacy completa), catálogo con 4 filas seed, vista de cobranza con el mismo conteo que la tabla base (284).
+
 #### Próximo paso exacto
 
-1. [ ] Revisar el diff completo de esta sesión (6 migraciones nuevas + ediciones a pipeline SQL/dbt + backend/frontend) antes de commit/push — nada se ha commiteado aún.
-2. [ ] Generalizar `TransporterDocumentsPanel` a driver/vehicle (Fase 3 diferida) — requiere endpoint de listado de documentos por driver/vehicle en el backend, y smoke visual en navegador (sesión auth necesaria).
-3. [ ] Portar a Mage Pro los modelos dbt actualizados (incl. `stg_centralizer_transporter_contacts`/`_client_accounts` nuevos) — el pipeline sigue sin portarse, este seguía siendo el pendiente de antes de esta sesión.
-4. [ ] Mapeo real `doc_code`↔cliente (Walmart/Colun/Sodimac/Iansa) para poblar `app.client_document_requirements` con datos reales — requiere insumo de Fabián.
+1. [ ] Revisar el diff completo de esta sesión (10 commits de implementación + 3 fixes) antes de push — nada se ha pusheado aún de este rediseño.
+2. [ ] Smoke visual manual en navegador (checklist detallado en el plan, Task 10 Step 4) — pendiente de sesión de auth.
+3. [ ] Rediseño de Empresas reusando `DocumentChecklist` — sesión de brainstorm separada.
+4. [ ] Conectar el botón "Pagar" de `CobranzaTab` a `insuranceApi.patchInstallment` (quedó visual en esta ronda, deuda documentada en el plan).
+5. [ ] Cruces "Ver en Cobranza"/"Ver en Pólizas" entre tabs — no implementados, deuda documentada en el plan (requiere levantar estado de tab/expansión a `page.tsx`, probablemente vía `?tab=&policy=`).
+6. [ ] Generalizar `TransporterDocumentsPanel` a driver/vehicle (Fase 3 de la auditoría de Empresas, diferida).
+7. [ ] Portar a Mage Pro los modelos dbt actualizados de `centralizer_to_app` (incl. `stg_centralizer_transporter_contacts`/`_client_accounts` nuevos) — sigue pendiente de antes de esta sesión.
+8. [ ] Mapeo real `doc_code`↔cliente (Walmart/Colun/Sodimac/Iansa) para `app.client_document_requirements` — requiere insumo de Fabián.
 5. [ ] Deuda documentada, no corregida esta ronda: paginación `COUNT(*)`+`OFFSET` en `GET /transporters` (mismo patrón pendiente en trips); rename de `avance_80_20`/`avance_total` con prefijo de procedencia (alto acoplamiento con `manually_edited_fields`, se difirió).
