@@ -1,10 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Check, ChevronRight, AlertTriangle, Receipt } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
-import { groupInstallments, type GroupBy } from '@/lib/utils/insuranceGrouping'
+import { groupInstallments, type GroupBy, type InstallmentGroup } from '@/lib/utils/insuranceGrouping'
 import { formatExpiry } from '@/lib/compliance'
 
 const GROUP_OPTIONS: { id: GroupBy; label: string }[] = [
@@ -35,6 +35,61 @@ function initialsOf(name: string): string {
   return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase()
 }
 
+// ── Barra horizontal por grupo: da la vista rápida antes del detalle ───────
+//
+// Con datos reales el agrupamiento por semana puede producir 50+ buckets —
+// un gráfico con una barra por cada uno deja de ser "de un vistazo". Se
+// muestran como máximo MAX_BARS, priorizando "Vencidas" (si existe) y luego
+// los de mayor monto; el resto sigue disponible en la lista de abajo.
+const MAX_BARS = 8
+
+function GroupBarChart({
+  groups, onSelect,
+}: {
+  groups:   InstallmentGroup[]
+  onSelect: (key: string) => void
+}) {
+  const overdue = groups.find(g => g.key === 'overdue')
+  const rest = groups.filter(g => g.key !== 'overdue').slice().sort((a, b) => b.totalUf - a.totalUf)
+  const shown = [...(overdue ? [overdue] : []), ...rest.slice(0, MAX_BARS - (overdue ? 1 : 0))]
+  const hiddenCount = groups.length - shown.length
+  const max = Math.max(1, ...shown.map(g => g.totalUf))
+
+  return (
+    <div className="bg-white border border-border rounded-2xl px-5 py-4 space-y-2.5">
+      {shown.map(g => {
+        const isOverdue = g.key === 'overdue'
+        const pct = Math.max(3, (g.totalUf / max) * 100)
+        return (
+          <button
+            key={g.key}
+            onClick={() => onSelect(g.key)}
+            className="w-full flex items-center gap-3 group text-left"
+          >
+            <span className={`text-xs font-semibold w-44 shrink-0 truncate ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
+              {g.label}
+            </span>
+            <div className="flex-1 h-5 bg-gray-50 rounded-md overflow-hidden">
+              <div
+                className={`h-full rounded-md transition-all group-hover:opacity-80 ${isOverdue ? 'bg-red-400' : 'bg-accent/70'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className={`text-xs font-bold tabular-nums w-16 shrink-0 text-right ${isOverdue ? 'text-red-600' : 'text-text-primary'}`}>
+              {g.totalUf.toFixed(1)} UF
+            </span>
+          </button>
+        )
+      })}
+      {hiddenCount > 0 && (
+        <p className="text-[11px] text-gray-400 pt-1">
+          Mostrando los {shown.length} grupos de mayor monto · {hiddenCount} más en la lista de abajo
+        </p>
+      )}
+    </div>
+  )
+}
+
 interface Props {
   canAdmin: boolean
 }
@@ -42,6 +97,7 @@ interface Props {
 export function CobranzaTab({ canAdmin }: Props) {
   const [groupBy, setGroupBy] = useState<GroupBy>('week')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const groupRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const query = useQuery({
     queryKey: ['insurance', 'installments-flat'],
@@ -59,6 +115,15 @@ export function CobranzaTab({ canAdmin }: Props) {
     })
   }
 
+  function focusGroup(key: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+    setTimeout(() => groupRefs.current.get(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
   if (query.isPending) {
     return <div className="flex items-center justify-center py-24 text-gray-400 gap-2 text-sm">
       <Loader2 size={18} className="animate-spin" /> Cargando cuotas…
@@ -66,7 +131,7 @@ export function CobranzaTab({ canAdmin }: Props) {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-5xl">
+    <div className="p-4 md:p-6 space-y-6">
       <div className="inline-flex items-center gap-1 bg-gray-100/80 rounded-xl p-1">
         {GROUP_OPTIONS.map(opt => (
           <button
@@ -84,6 +149,8 @@ export function CobranzaTab({ canAdmin }: Props) {
         ))}
       </div>
 
+      {groups.length > 0 && <GroupBarChart groups={groups} onSelect={focusGroup} />}
+
       <div className="space-y-5">
         {groups.map(group => {
           const isOverdue = group.key === 'overdue'
@@ -91,6 +158,7 @@ export function CobranzaTab({ canAdmin }: Props) {
           return (
             <div
               key={group.key}
+              ref={el => { if (el) groupRefs.current.set(group.key, el); else groupRefs.current.delete(group.key) }}
               className={`rounded-2xl overflow-hidden border transition-shadow ${
                 isOverdue ? 'border-red-200 bg-red-50/40 shadow-sm shadow-red-100' : 'border-border bg-white'
               }`}

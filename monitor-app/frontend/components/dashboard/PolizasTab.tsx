@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Search, Loader2, X, CalendarClock, ShieldOff, FileWarning } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { InsuranceCompanyCard } from '@/components/dashboard/InsuranceCompanyCard'
+import { InsurancePolicySlideOver } from '@/components/dashboard/InsurancePolicySlideOver'
+import type { InsuranceSummaryRow } from '@/lib/types'
 import {
   deriveInsuranceKpis, matchesInsuranceFilter, type InsuranceFilterId,
 } from '@/lib/utils/insuranceFilters'
@@ -23,6 +25,36 @@ const FILTER_CHIPS: { id: InsuranceFilterId; label: string }[] = [
   { id: 'ok',              label: 'Al día' },
 ]
 
+// ── Donut de estado (CSS conic-gradient, sin dependencia de gráficos) ───────
+
+function StatusDonut({ rows }: { rows: InsuranceSummaryRow[] }) {
+  const total = rows.length
+  const overdue = rows.filter(r => r.overdue_count > 0).length
+  const noInfo  = rows.filter(r => r.overdue_count === 0 && r.policies_count === 0).length
+  const ok      = total - overdue - noInfo
+
+  if (total === 0) return null
+
+  const okPct      = (ok / total) * 100
+  const overduePct = (overdue / total) * 100
+  const gradient = `conic-gradient(#22c55e 0% ${okPct}%, #ef4444 ${okPct}% ${okPct + overduePct}%, #d1d5db ${okPct + overduePct}% 100%)`
+
+  return (
+    <div className="flex items-center gap-4 bg-white border border-border rounded-2xl px-5 py-4">
+      <div className="relative w-16 h-16 shrink-0 rounded-full" style={{ background: gradient }}>
+        <div className="absolute inset-[5px] bg-white rounded-full flex items-center justify-center">
+          <span className="text-sm font-bold text-text-primary tabular-nums">{total}</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 shrink-0" /> <strong className="tabular-nums">{ok}</strong> al día</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 shrink-0" /> <strong className="tabular-nums">{overdue}</strong> con cuotas vencidas</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-300 shrink-0" /> <strong className="tabular-nums">{noInfo}</strong> sin información</span>
+      </div>
+    </div>
+  )
+}
+
 interface Props {
   canAdmin: boolean
   canEdit:  boolean
@@ -34,10 +66,8 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
 
   const [q, setQ]                       = useState(rutParam ?? '')
   const [activeFilter, setActiveFilter] = useState<InsuranceFilterId | null>(null)
-  const [expanded, setExpanded]         = useState<Set<string>>(new Set())
+  const [selectedRut, setSelectedRut]   = useState<string | null>(rutParam)
   const qDebounced = useDebouncedValue(q, 300)
-  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const scrolledToParam = useRef(false)
 
   const kpisQuery = useQuery({
     queryKey: ['insurance', 'kpis'],
@@ -52,85 +82,68 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
   const loading = query.isPending
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando seguros') : null
 
-  // Prefiltra + expande + hace scroll a la card cuando llega ?rut= desde la ficha de empresa
-  useEffect(() => {
-    if (!rutParam || rows.length === 0 || scrolledToParam.current) return
-    const match = rows.find(r => r.rut === rutParam)
-    if (match) {
-      setExpanded(prev => new Set(prev).add(match.rut))
-      scrolledToParam.current = true
-      setTimeout(() => cardRefs.current.get(match.rut)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
-    }
-  }, [rutParam, rows])
-
   const kpis = useMemo(() => deriveInsuranceKpis(rows), [rows])
   const visibleRows = useMemo(
     () => activeFilter ? rows.filter(r => matchesInsuranceFilter(r, activeFilter)) : rows,
     [rows, activeFilter],
   )
+  const selectedRow = useMemo(() => rows.find(r => r.rut === selectedRut) ?? null, [rows, selectedRut])
 
   function toggleFilter(id: InsuranceFilterId) {
     setActiveFilter(prev => prev === id ? null : id)
   }
 
-  function toggleExpanded(rut: string) {
-    setExpanded(prev => {
-      const next = new Set(prev)
-      if (next.has(rut)) next.delete(rut)
-      else next.add(rut)
-      return next
-    })
-  }
-
   const emptyLabel = q || activeFilter ? 'Sin resultados' : 'Sin empresas con pólizas registradas'
 
   return (
-    <div className="p-4 md:p-6 space-y-5 max-w-5xl">
+    <div className="p-4 md:p-6 space-y-5">
       <p className="text-xs text-gray-400">
         {loading ? '…' : `${rows.length.toLocaleString('es-CL')} empresa${rows.length !== 1 ? 's' : ''} con pólizas`}
       </p>
 
-      {/* ── Una sola franja de KPIs: accionables (filtran la lista) + informativos ── */}
+      {/* ── Vista rápida: donut + KPIs accionables (filtran la lista) ── */}
       {!loading && (
-        <div className="flex gap-2.5 flex-wrap">
-          {KPI_CARDS.map(card => {
-            const count  = kpis[card.id]
-            const active = activeFilter === card.id
-            return (
-              <button
-                key={card.id}
-                onClick={() => toggleFilter(card.id)}
-                disabled={count === 0 && !active}
-                aria-pressed={active}
-                className={`flex items-center gap-2.5 bg-white border rounded-2xl px-4 py-2.5 transition-all disabled:opacity-40 disabled:cursor-default hover:shadow-sm ${
-                  active ? card.activeCls : 'border-border hover:border-gray-300'
-                }`}
-              >
-                <span className={`text-xl font-bold leading-none tabular-nums ${count > 0 ? card.countCls : 'text-gray-300'}`}>{count}</span>
-                <span className="text-xs font-semibold text-gray-500 text-left leading-tight">{card.label}</span>
-                {active && <X size={12} className="text-gray-400" />}
-              </button>
-            )
-          })}
-          {kpisQuery.data && (
-            <>
-              <div className="flex items-center gap-2.5 bg-white border border-border rounded-2xl px-4 py-2.5">
-                <CalendarClock size={15} className="text-amber-500 shrink-0" />
-                <span className="text-xl font-bold text-amber-600 tabular-nums leading-none">{kpisQuery.data.expiring_30d}</span>
-                <span className="text-xs font-semibold text-gray-500 leading-tight whitespace-nowrap">Vencen en 30 días</span>
-              </div>
-              <div className="flex items-center gap-2.5 bg-white border border-border rounded-2xl px-4 py-2.5">
-                <ShieldOff size={15} className="text-gray-400 shrink-0" />
-                <span className="text-xl font-bold text-gray-500 tabular-nums leading-none">{kpisQuery.data.without_policies}</span>
-                <span className="text-xs font-semibold text-gray-500 leading-tight whitespace-nowrap">Sin pólizas</span>
-              </div>
-              <div className="flex items-center gap-2.5 bg-white border border-border rounded-2xl px-4 py-2.5">
-                <FileWarning size={15} className="text-red-500 shrink-0" />
-                <span className="text-xl font-bold text-red-600 tabular-nums leading-none">{kpisQuery.data.incomplete_docs}</span>
-                <span className="text-xs font-semibold text-gray-500 leading-tight whitespace-nowrap">Docs incompletos</span>
-              </div>
-            </>
-          )}
+        <div className="flex gap-3 flex-wrap items-stretch">
+          <StatusDonut rows={rows} />
+          <div className="flex gap-2.5 flex-wrap content-center">
+            {KPI_CARDS.map(card => {
+              const count  = kpis[card.id]
+              const active = activeFilter === card.id
+              return (
+                <button
+                  key={card.id}
+                  onClick={() => toggleFilter(card.id)}
+                  disabled={count === 0 && !active}
+                  aria-pressed={active}
+                  className={`flex items-center gap-2.5 bg-white border rounded-2xl px-4 py-2.5 transition-all disabled:opacity-40 disabled:cursor-default hover:shadow-sm ${
+                    active ? card.activeCls : 'border-border hover:border-gray-300'
+                  }`}
+                >
+                  <span className={`text-xl font-bold leading-none tabular-nums ${count > 0 ? card.countCls : 'text-gray-300'}`}>{count}</span>
+                  <span className="text-xs font-semibold text-gray-500 text-left leading-tight">{card.label}</span>
+                  {active && <X size={12} className="text-gray-400" />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Estadísticas globales: no filtran esta lista (otro alcance de datos) ── */}
+      {kpisQuery.data && (
+        <div className="flex items-center gap-5 flex-wrap px-1 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5">
+            <CalendarClock size={13} className="text-amber-500 shrink-0" />
+            <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.expiring_30d}</strong> pólizas vencen en 30 días
+          </span>
+          <span className="flex items-center gap-1.5">
+            <ShieldOff size={13} className="text-gray-400 shrink-0" />
+            <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.without_policies}</strong> empresas activas sin pólizas
+          </span>
+          <span className="flex items-center gap-1.5">
+            <FileWarning size={13} className="text-red-400 shrink-0" />
+            <strong className="font-bold text-gray-700 tabular-nums">{kpisQuery.data.incomplete_docs}</strong> pólizas con documentos incompletos
+          </span>
         </div>
       )}
 
@@ -188,15 +201,19 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
             <InsuranceCompanyCard
               key={row.rut}
               row={row}
-              expanded={expanded.has(row.rut)}
-              onToggle={() => toggleExpanded(row.rut)}
-              canAdmin={canAdmin}
-              canEdit={canEdit}
-              ref={el => { if (el) cardRefs.current.set(row.rut, el); else cardRefs.current.delete(row.rut) }}
+              active={selectedRut === row.rut}
+              onOpen={() => setSelectedRut(row.rut)}
             />
           ))}
         </div>
       )}
+
+      <InsurancePolicySlideOver
+        row={selectedRow}
+        onClose={() => setSelectedRut(null)}
+        canAdmin={canAdmin}
+        canEdit={canEdit}
+      />
     </div>
   )
 }

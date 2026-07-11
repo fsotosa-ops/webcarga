@@ -21,7 +21,7 @@ function bucketLabel(dueDate: string | null, groupBy: GroupBy): string {
   if (groupBy === 'week') {
     const monday = new Date(d)
     monday.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-    return `Semana del ${monday.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}`
+    return `Semana del ${monday.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })}`
   }
   if (groupBy === 'month') {
     return d.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })

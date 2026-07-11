@@ -709,5 +709,37 @@ Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Dia
 **Verificación:** backend 78/78 pytest (16/16 en `test_insurance.py`), frontend 231/231 vitest (31 archivos), `tsc --noEmit` limpio, `npm run build` exitoso (15 rutas generadas). Reporte completo en `.superpowers/sdd/final-review-fix-report.md` (gitignored).
 
 #### Próximo paso exacto
-1. [ ] Los pendientes de la sesión anterior (arriba) siguen vigentes: smoke visual manual, cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, rediseño de Empresas, Mage Pro dbt, mapeo `doc_code`↔cliente.
+1. [ ] Los pendientes de la sesión anterior (arriba) siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, rediseño de Empresas, Mage Pro dbt, mapeo `doc_code`↔cliente.
 2. [ ] Revisar el diff acumulado (implementación + esta ronda de fixes) antes de decidir push a remoto — nada se ha pusheado aún.
+
+---
+
+### 2026-07-11 (cont. 2) — Smoke visual real (Playwright) + 2 rondas de feedback duro del usuario sobre Seguros
+
+**Objetivo:** el pendiente #1 de la sesión anterior ("smoke visual manual NO completado") se resolvió esta vez sí con navegador real (Playwright MCP, sesión ya autenticada). El resultado expuso que el rediseño aprobado por revisión de código NO era world-class en la práctica — lección central de esta sesión: **aprobación de tests/review no valida calidad visual/UX real**.
+
+**Ronda 1 — feedback:** *"se ve saturado y sucio... sigue la misma UX/UI que había previamente... nada world-class"* (Cobranza tabla tipo Excel, Pólizas con 6 pills de KPI compitiendo + barras de progreso casi invisibles).
+
+**Fix (commit `fc07224`, pusheado, CI verde):** rediseño visual completo manteniendo la lógica de datos intacta — `CobranzaTab.tsx` reescrito a tarjetas por grupo (ícono + avatar circular por fila + `dueRelative()` humanizado), `InsuranceCompanyCard.tsx` con `PaidProgressBar` gruesa y avatares por estado, `PolizasTab.tsx` con KPIs unificados en una fila.
+
+**Ronda 2 — feedback (5 puntos concretos):**
+1. Componentes cargados a la izquierda con espacio vacío amplio a la derecha.
+2. Agrupación por semana/mes en Cobranza no indica a qué año corresponde.
+3. Sugerencia arquitectónica: ¿widgets/gráficos en vez de tablas+KPI-pills, para que el usuario visualice rápido qué pasa?
+4. Botones de KPI en Pólizas que no responden (ej. "Docs incompletos").
+5. El "dropdown" (acordeón inline) de empresa en Pólizas sigue con mucha carga cognitiva y poco aire.
+
+**Decisión con el usuario (AskUserQuestion):** franja de gráficos livianos arriba de la lista (no dashboard de widgets configurable — mucho mayor esfuerzo para el volumen de uso actual) + slide-over lateral para el detalle de empresa (mismo patrón que `TransporterSlideOver`, ya validado en Empresas) en vez de acordeón inline.
+
+**Fixes aplicados (sin commitear aún):**
+1. `max-w-5xl` (causa real del espacio vacío) removido de `CobranzaTab.tsx`/`PolizasTab.tsx` — ningún otro listado del dashboard (ej. Empresas) tiene max-width; era un one-off de esta ronda.
+2. `insuranceGrouping.ts`: `bucketLabel()` para `'week'` ahora incluye el año (mes/trimestre ya lo tenían). La *key* de agrupamiento ya incluía el año — era solo un bug de display, ninguna cuota estuvo mal agrupada.
+3. Las 3 tarjetas de KPI "informativas" (`expiring_30d`/`without_policies`/`incomplete_docs`) nunca tuvieron `onClick`. Al revisar el backend, `without_policies` cuenta transportistas que por definición **nunca aparecen en esta lista** (son transportistas sin pólizas, la lista es de transportistas CON pólizas) — no puede honestamente convertirse en un filtro de esta lista. Se resolvió diferenciándolas visualmente como estadísticas globales (texto plano, sin borde/hover) en vez de simular botones que no filtran nada.
+4. **Slide-over nuevo** `InsurancePolicySlideOver.tsx` — extrae `TimelineNode`/`PolicySection` (antes embebidos en `InsuranceCompanyCard.tsx`) a un panel lateral (mismo patrón `role="dialog"`/focus-trap/Escape que `TransporterSlideOver`). `InsuranceCompanyCard.tsx` se simplificó a una fila plana clickeable (sin estado `expanded`); `PolizasTab.tsx` pasó de `Set<string> expanded` a `selectedRut: string | null`. Tests movidos/adaptados: `InsuranceCompanyCard.test.tsx` (solo fila) + `InsurancePolicySlideOver.test.tsx` (detalle, nuevo).
+5. **`GroupBarChart` nuevo en `CobranzaTab.tsx`** — franja de barras horizontales sobre la lista de grupos, click en una barra hace scroll+expand al grupo correspondiente. **Hallazgo importante detectado en el smoke visual**: con datos reales, agrupar por semana produce 60+ buckets — un gráfico con una barra por bucket es *peor* que la tabla anterior (barras casi idénticas, labels truncados antes de mostrar el año, exactamente el problema del punto 2 reintroducido a nivel visual). Corregido: el gráfico limita a `MAX_BARS = 8` (pineando "Vencidas" primero si existe, luego los de mayor monto), con nota "+N más en la lista de abajo"; columna de label ensanchada para que el año no se corte. Sin librería de gráficos nueva (CSS/flex puro) — donut de estado en Pólizas (`StatusDonut`) también es CSS `conic-gradient` puro, sin dependencia.
+
+**Verificación:** 232/232 vitest, `tsc --noEmit` limpio, `npm run build` exitoso (15 rutas). Smoke visual real en navegador (Playwright, sesión autenticada, viewport 1600×1000): layout full-width confirmado, donut+KPIs en Pólizas, slide-over abre con datos correctos y buen espaciado, gráfico de barras en Cobranza cap a 8 + año visible en labels, click en barra hace scroll al grupo correcto.
+
+#### Próximo paso exacto
+1. [ ] Revisar y decidir commit/push de esta ronda de fixes (layout, año, KPIs no-clicables, slide-over, gráficos) — nada de esto está commiteado aún.
+2. [ ] Pendientes de sesiones anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, rediseño de Empresas (reusando `DocumentChecklist` y evaluando el mismo patrón de slide-over), Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).

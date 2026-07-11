@@ -32,7 +32,7 @@ describe('CobranzaTab', () => {
 
   it('shows the overdue group first with its subtotal', async () => {
     renderWithClient(<CobranzaTab canAdmin={false} />)
-    await waitFor(() => expect(screen.getByText(/Vencidas/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText(/Vencidas/).length).toBeGreaterThan(0))
     expect(screen.getByText('Empresa A')).toBeInTheDocument()
   })
 
@@ -40,6 +40,6 @@ describe('CobranzaTab', () => {
     renderWithClient(<CobranzaTab canAdmin={false} />)
     await waitFor(() => expect(screen.getByText('Empresa A')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Cliente GC' }))
-    await waitFor(() => expect(screen.getByText(/Walmart/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText(/Walmart/).length).toBeGreaterThan(0))
   })
 })
