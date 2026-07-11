@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Search, Loader2, X } from 'lucide-react'
+import { Search, Loader2, X, CalendarClock, ShieldOff, FileWarning } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { InsuranceCompanyCard } from '@/components/dashboard/InsuranceCompanyCard'
@@ -85,32 +85,14 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
   const emptyLabel = q || activeFilter ? 'Sin resultados' : 'Sin empresas con pólizas registradas'
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-5 max-w-5xl">
       <p className="text-xs text-gray-400">
         {loading ? '…' : `${rows.length.toLocaleString('es-CL')} empresa${rows.length !== 1 ? 's' : ''} con pólizas`}
       </p>
 
-      {/* ── KPIs globales de pólizas ─────────────────────────────── */}
-      {kpisQuery.data && (
-        <div className="flex gap-2 flex-wrap">
-          <div className="bg-white border border-border rounded-xl px-3.5 py-2">
-            <span className="text-lg font-bold text-amber-600">{kpisQuery.data.expiring_30d}</span>
-            <span className="text-[11px] font-medium text-gray-500 ml-2">Pólizas vencen en 30 días</span>
-          </div>
-          <div className="bg-white border border-border rounded-xl px-3.5 py-2">
-            <span className="text-lg font-bold text-gray-500">{kpisQuery.data.without_policies}</span>
-            <span className="text-[11px] font-medium text-gray-500 ml-2">Empresas sin pólizas</span>
-          </div>
-          <div className="bg-white border border-border rounded-xl px-3.5 py-2">
-            <span className="text-lg font-bold text-red-600">{kpisQuery.data.incomplete_docs}</span>
-            <span className="text-[11px] font-medium text-gray-500 ml-2">Pólizas con documentos incompletos</span>
-          </div>
-        </div>
-      )}
-
-      {/* ── KPIs accionables ─────────────────────────────────────── */}
+      {/* ── Una sola franja de KPIs: accionables (filtran la lista) + informativos ── */}
       {!loading && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2.5 flex-wrap">
           {KPI_CARDS.map(card => {
             const count  = kpis[card.id]
             const active = activeFilter === card.id
@@ -120,21 +102,40 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
                 onClick={() => toggleFilter(card.id)}
                 disabled={count === 0 && !active}
                 aria-pressed={active}
-                className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
+                className={`flex items-center gap-2.5 bg-white border rounded-2xl px-4 py-2.5 transition-all disabled:opacity-40 disabled:cursor-default hover:shadow-sm ${
                   active ? card.activeCls : 'border-border hover:border-gray-300'
                 }`}
               >
-                <span className={`text-lg font-bold leading-none ${count > 0 ? card.countCls : 'text-gray-300'}`}>{count}</span>
-                <span className="text-[11px] font-medium text-gray-500">{card.label}</span>
-                {active && <X size={11} className="text-gray-400" />}
+                <span className={`text-xl font-bold leading-none tabular-nums ${count > 0 ? card.countCls : 'text-gray-300'}`}>{count}</span>
+                <span className="text-xs font-semibold text-gray-500 text-left leading-tight">{card.label}</span>
+                {active && <X size={12} className="text-gray-400" />}
               </button>
             )
           })}
+          {kpisQuery.data && (
+            <>
+              <div className="flex items-center gap-2.5 bg-white border border-border rounded-2xl px-4 py-2.5">
+                <CalendarClock size={15} className="text-amber-500 shrink-0" />
+                <span className="text-xl font-bold text-amber-600 tabular-nums leading-none">{kpisQuery.data.expiring_30d}</span>
+                <span className="text-xs font-semibold text-gray-500 leading-tight whitespace-nowrap">Vencen en 30 días</span>
+              </div>
+              <div className="flex items-center gap-2.5 bg-white border border-border rounded-2xl px-4 py-2.5">
+                <ShieldOff size={15} className="text-gray-400 shrink-0" />
+                <span className="text-xl font-bold text-gray-500 tabular-nums leading-none">{kpisQuery.data.without_policies}</span>
+                <span className="text-xs font-semibold text-gray-500 leading-tight whitespace-nowrap">Sin pólizas</span>
+              </div>
+              <div className="flex items-center gap-2.5 bg-white border border-border rounded-2xl px-4 py-2.5">
+                <FileWarning size={15} className="text-red-500 shrink-0" />
+                <span className="text-xl font-bold text-red-600 tabular-nums leading-none">{kpisQuery.data.incomplete_docs}</span>
+                <span className="text-xs font-semibold text-gray-500 leading-tight whitespace-nowrap">Docs incompletos</span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {/* ── Búsqueda + chips ─────────────────────────────────────── */}
-      <div className="bg-white border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
+      <div className="bg-white border border-border rounded-2xl px-4 py-3 flex items-center gap-2 flex-wrap">
         <div className="relative shrink-0">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
@@ -152,7 +153,7 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
               key={chip.id}
               onClick={() => toggleFilter(chip.id)}
               aria-pressed={active}
-              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
                 active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
@@ -180,9 +181,9 @@ export function PolizasTab({ canAdmin, canEdit }: Props) {
           <Loader2 size={16} className="animate-spin" /> Cargando…
         </div>
       ) : visibleRows.length === 0 ? (
-        <p className="bg-white rounded-xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
+        <p className="bg-white rounded-2xl border border-border px-4 py-16 text-center text-sm text-gray-400">{emptyLabel}</p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {visibleRows.map(row => (
             <InsuranceCompanyCard
               key={row.rut}
