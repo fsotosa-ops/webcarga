@@ -743,3 +743,21 @@ Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Dia
 #### Próximo paso exacto
 1. [ ] Revisar y decidir commit/push de esta ronda de fixes (layout, año, KPIs no-clicables, slide-over, gráficos) — nada de esto está commiteado aún.
 2. [ ] Pendientes de sesiones anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, rediseño de Empresas (reusando `DocumentChecklist` y evaluando el mismo patrón de slide-over), Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
+
+---
+
+### 2026-07-11 (cont. 3) — Fixes de la revisión final de todo el branch (foco atrapado + aria-pressed + cleanup cosmético)
+
+**Objetivo:** el `InsurancePolicySlideOver.tsx` de la sección anterior fue reemplazado en el camino por `InsurancePolicyModal.tsx` (detalle inmersivo de 2 columnas, commit `c01e5d8`, con un fix posterior `e7fe7c6`) — una revisión final de todo el branch sobre ese estado encontró 3 hallazgos, corregidos en esta ronda (commit `9879b81`, todavía sin push).
+
+**Hallazgo 1 (Important) — `InsurancePolicyModal.tsx` sin foco atrapado ni foco inicial.** El modal tenía Escape-to-close y retorno de foco al desmontar, pero nunca movía el foco AL dialog al abrirse y no atrapaba Tab — regresión real respecto al slide-over que reemplazó (que sí tenía la implementación completa) y respecto al patrón vigente en `TransporterSlideOver.tsx` (mismo directorio). Corregido extendiendo el `useEffect` existente (no se agregó uno nuevo): `panelRef.current?.focus()` al abrir + handler de `Tab` que atrapa el foco entre el primer/último elemento focuseable — código mirror exacto de `TransporterSlideOver.tsx` (mismo query selector, misma lógica shift+Tab/Tab). Test nuevo: `moves focus into the dialog when it opens` en `InsurancePolicyModal.test.tsx`.
+
+**Hallazgo 2 (Minor) — Botones de `AgingBars` (Cobranza) sin `aria-pressed`.** Los 4 botones de banda de antigüedad + el botón "no vencidas aún" son toggles con estado pero no lo exponían, a diferencia de los chips `GROUP_OPTIONS` del mismo archivo. Agregado `aria-pressed={active}` (banda) y `aria-pressed={activeFilter === 'not_overdue'}` (botón "no vencidas aún").
+
+**Hallazgo 3 (Minor) — Tipo inline cosmético en `InsurancePolicyModal.tsx`.** El callback de `queryClient.setQueryData` en `handleInstallmentChanged` casteaba `old` a un tipo estructural inline en vez de reusar `InsuranceTransporterResponse` de `@/lib/types` (shape idéntico). Reemplazado, sin cambio de comportamiento.
+
+**Verificación:** `npx vitest run components/dashboard/InsurancePolicyModal.test.tsx components/dashboard/CobranzaTab.test.tsx` → 15/15 (incluye el test nuevo de foco). `npx tsc --noEmit` limpio. Chequeo adicional (no pedido, corrido igual por seguridad): `npx vitest run` completo → 264/264, 35 archivos. Reporte completo en `.superpowers/sdd/final-review-fix-report.md` (gitignored, sobrescribe el reporte de la ronda de 7 hallazgos previa — ese reporte ya está resumido arriba en el AGENTLOG y no se pierde información).
+
+#### Próximo paso exacto
+1. [ ] Decidir push a remoto de todo el rango acumulado sin pushear (`9ed2c03`..`9879b81`, incluye rediseño interactivo Empresas/Seguros + esta ronda de fixes de revisión final) — nada se ha pusheado desde `ad6afa8`.
+2. [ ] Pendientes de rondas anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, rediseño de Empresas, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
