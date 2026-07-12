@@ -123,3 +123,44 @@ describe('driverRosterStatus', () => {
     expect(status.label).toMatch(/pendiente/)
   })
 })
+
+import { vehicleRosterStatus, vehicleCategory, VEHICLE_CATEGORY_LABELS } from './transporterDocs'
+
+describe('vehicleCategory', () => {
+  it('classifies by keyword in the free-text type', () => {
+    expect(vehicleCategory('Tractocamión')).toBe('tracto')
+    expect(vehicleCategory('Rampla Semirremolque')).toBe('rampla')
+    expect(vehicleCategory('Camión Furgón')).toBe('furgon')
+    expect(vehicleCategory('Camión Rígido')).toBe('camion')
+    expect(vehicleCategory(null)).toBe('otro')
+  })
+})
+
+describe('VEHICLE_CATEGORY_LABELS', () => {
+  it('has a label for every category', () => {
+    expect(VEHICLE_CATEGORY_LABELS.tracto).toBe('Tracto')
+    expect(VEHICLE_CATEGORY_LABELS.rampla).toBe('Rampla')
+  })
+})
+
+describe('vehicleRosterStatus', () => {
+  it('reports the expiry alert first when a date is expired', () => {
+    const vehicle = { ...VEHICLE, governance: { ...VEHICLE.governance!, circ_permit_expiry: '2020-01-01' } }
+    const status = vehicleRosterStatus(vehicle)
+    expect(status.tone).toBe('danger')
+  })
+
+  it('reports "Docs OK" when nothing is pending and dates are fine', () => {
+    const vehicle = {
+      ...VEHICLE,
+      governance: {
+        ...VEHICLE.governance!,
+        circ_permit_expiry: '2099-01-01', tech_inspection_expiry: '2099-01-01',
+        gas_emissions_expiry: '2099-01-01', soap_insurance_expiry: '2099-01-01',
+        poliza_rc: 'ok' as const, seguro_carga: 'ok' as const,
+      },
+    }
+    const status = vehicleRosterStatus(vehicle)
+    expect(status).toEqual({ label: 'Docs OK', tone: 'ok' })
+  })
+})

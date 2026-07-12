@@ -1,6 +1,6 @@
 // lib/utils/transporterDocs.ts
 import type { ChecklistItem } from '@/components/dashboard/DocumentChecklist'
-import { getDriverAlertStatus } from '@/lib/compliance'
+import { getDriverAlertStatus, getVehicleAlertStatus } from '@/lib/compliance'
 import type {
   ComplianceStatus, DriverGovernance, TransporterDriver, TransporterVehicle, VehicleGovernance,
 } from '@/lib/types'
@@ -65,6 +65,33 @@ export function driverRosterStatus(driver: TransporterDriver): { label: string; 
   if (alert === 'expired') return { label: 'Vencimiento vencido', tone: 'danger' }
   if (alert === 'expiring_soon') return { label: 'Vencimiento próximo', tone: 'warn' }
   const pending = driverGovernanceToChecklistItems(driver)
+    .filter(i => i.status === null || i.status === 'pendiente' || i.status === 'actualizar').length
+  if (pending === 0) return { label: 'Docs OK', tone: 'ok' }
+  return { label: `${pending} pendiente${pending > 1 ? 's' : ''}`, tone: 'warn' }
+}
+
+export type VehicleCategory = 'tracto' | 'rampla' | 'camion' | 'furgon' | 'otro'
+
+export const VEHICLE_CATEGORY_LABELS: Record<VehicleCategory, string> = {
+  tracto: 'Tracto', rampla: 'Rampla', camion: 'Camión', furgon: 'Furgón', otro: 'Otro',
+}
+
+/** Clasificación heurística de equipo por texto libre — el contrato de
+ *  TransporterVehicle solo trae `type` como texto, sin un enum. */
+export function vehicleCategory(type: string | null | undefined): VehicleCategory {
+  const t = (type ?? '').toLowerCase()
+  if (t.includes('rampla') || t.includes('remolque')) return 'rampla'
+  if (t.includes('tracto')) return 'tracto'
+  if (t.includes('furg')) return 'furgon'
+  if (t.includes('cami')) return 'camion'
+  return 'otro'
+}
+
+export function vehicleRosterStatus(vehicle: TransporterVehicle): { label: string; tone: 'ok' | 'warn' | 'danger' } {
+  const alert = getVehicleAlertStatus(vehicle)
+  if (alert === 'expired') return { label: 'Vencimiento vencido', tone: 'danger' }
+  if (alert === 'expiring_soon') return { label: 'Vencimiento próximo', tone: 'warn' }
+  const pending = vehicleGovernanceToChecklistItems(vehicle)
     .filter(i => i.status === null || i.status === 'pendiente' || i.status === 'actualizar').length
   if (pending === 0) return { label: 'Docs OK', tone: 'ok' }
   return { label: `${pending} pendiente${pending > 1 ? 's' : ''}`, tone: 'warn' }
