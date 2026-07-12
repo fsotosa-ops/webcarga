@@ -150,7 +150,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
                         {issues.map(d => {
                           const cfg = d.status ? COMPLIANCE_STATUS_CONFIG[d.status] : null
                           return (
-                            <li key={d.doc_code} className="flex items-center justify-between gap-2 text-[11px] bg-gray-50 rounded-lg px-2.5 py-1.5">
+                            <li key={d.doc_code} className="flex items-center justify-between gap-2 text-[11px] bg-gray-50 rounded-xl px-2.5 py-1.5">
                               <span className="text-gray-600 truncate">{d.label}</span>
                               <span className="flex items-center gap-2 shrink-0">
                                 {d.expiry_date && <span className="font-mono text-gray-400">{formatExpiry(d.expiry_date)}</span>}
@@ -179,7 +179,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
                     {contacts.filter(c => c.name || c.phone || c.email).map(c => (
-                      <div key={c.role} className="border border-border/60 rounded-lg p-2">
+                      <div key={c.role} className="border border-border/60 rounded-xl p-2">
                         <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">{CONTACT_ROLE_LABELS[c.role]}</p>
                         <p className="text-xs font-semibold text-text-primary truncate">{c.name ?? <span className="text-gray-300 italic">sin nombre</span>}</p>
                         {c.phone && (
@@ -205,7 +205,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
 
               <Link
                 href={`/dashboard/transportistas/empresa/${item.id}`}
-                className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-white bg-accent hover:bg-accent/90 rounded-lg px-4 py-2.5 transition-colors"
+                className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-white bg-accent hover:bg-accent/90 rounded-xl px-4 py-2.5 transition-colors"
               >
                 Ver ficha completa <ArrowRight size={14} />
               </Link>
