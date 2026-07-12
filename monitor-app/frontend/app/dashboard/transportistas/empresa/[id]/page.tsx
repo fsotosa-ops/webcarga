@@ -234,7 +234,16 @@ export default function EmpresaDetailPage() {
 
   const handlePatchDriver = async (did: string, body: { rut?: string; name?: string; governance?: DriverGovernance }) => {
     const res = await transportersApi.patchDriver(id, did, body)
-    setTp(prev => prev ? { ...prev, drivers: prev.drivers.map(d => d.id === did ? res.data : d) } : prev)
+    // El endpoint no devuelve `governance` en la respuesta (solo id/rut/name),
+    // así que se mergea localmente con lo que se envió para no perder el
+    // estado optimista de la ficha (ver AGENTLOG.md).
+    setTp(prev => prev ? {
+      ...prev,
+      drivers: prev.drivers.map(d => d.id === did ? {
+        ...d, ...res.data,
+        governance: body.governance ? { ...d.governance, ...body.governance } : d.governance,
+      } : d),
+    } : prev)
   }
 
   // Sin try/catch propio (a diferencia del page original, donde
@@ -261,7 +270,14 @@ export default function EmpresaDetailPage() {
 
   const handlePatchVehicle = async (vid: string, body: { type?: string; plate?: string; governance?: VehicleGovernance }) => {
     const res = await transportersApi.patchVehicle(id, vid, body)
-    setTp(prev => prev ? { ...prev, vehicles: prev.vehicles.map(v => v.id === vid ? res.data : v) } : prev)
+    // Mismo motivo que handlePatchDriver: el endpoint no devuelve `governance`.
+    setTp(prev => prev ? {
+      ...prev,
+      vehicles: prev.vehicles.map(v => v.id === vid ? {
+        ...v, ...res.data,
+        governance: body.governance ? { ...v.governance, ...body.governance } : v.governance,
+      } : v),
+    } : prev)
   }
 
   const handleRemoveVehicle = async (vid: string) => {
