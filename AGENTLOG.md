@@ -746,7 +746,46 @@ Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Dia
 
 ---
 
-### 2026-07-11 (cont. 3) — Fixes de la revisión final de todo el branch (foco atrapado + aria-pressed + cleanup cosmético)
+### 2026-07-11 (cont. 3) — Brainstorm con companion visual + plan + ejecución: detalle inmersivo, antigüedad de mora, panel único
+
+**Objetivo:** tras la ronda 2 de feedback (arriba), el usuario revisó en vivo el resultado y lo rechazó por tercera vez — "el gráfico de barras en Cobranza es poco práctico y útil", "las cards y botones de Pólizas tampoco tienen experiencia limpia", "el slide-over tiene scroll, se ve sucio, poco inmersivo, no interactivo". Lección explícita del usuario: *"no chequeaste la versión que quedó, dado los comentarios que di"* — antes de proponer nada nuevo había que ir al navegador a diagnosticar de verdad, no adivinar en texto por tercera vez.
+
+**Diagnóstico propio en navegador (Playwright, sin preguntar primero):** el slide-over tenía cuotas y documentos en tiras `overflow-x-auto` que se cortaban a la mitad en el borde de un panel de 560px, sin fade/flecha/scrollbar — bug real, no solo percepción. El gráfico de Cobranza rankeaba 8 grupos por monto pero todos caían en un rango estrecho (26-74 UF): no revelaba ningún patrón, era decorativo.
+
+**Brainstorm con companion visual** (segunda vez que se usa en este proyecto — la primera falló dos rondas seguidas adivinando en texto, así que esta vez se ofreció el companion de entrada): 5 pantallas de mockups iteradas con el usuario en `http://localhost:58266`:
+1. 3 opciones para el scroll horizontal de cuotas/documentos (lista vertical / grilla que envuelve / scroll con fade) — el usuario pidió no limitarse a variaciones del mismo diseño.
+2. 2 direcciones estructurales nuevas: slide-over mejorado (tabs por póliza) vs. **vista inmersiva de 2 columnas** (modal centrado, ancho, lista de pólizas + detalle) — elegida la segunda.
+3. 3 iteraciones sobre esa opción B (timeline conectado / tabla densa tipo dashboard / **"foco en qué hacer ahora"**) — el usuario pidió recomendación explícita por "menos carga cognitiva"; se recomendó y aprobó la tercera (próxima cuota destacada, resto colapsado detrás de "Ver todas").
+4. Mecanismo para revertir un pago marcado por error (pedido nuevo del usuario): 2 rondas de refinamiento — de un popover invasivo con "Cuota #1" (tosco) a un popover pequeño anclado al botón + etiqueta "Cuota 1 de 5" sin símbolos.
+5. Cobranza (gráfico "poco práctico") + Pólizas (piezas sueltas): decisión de fusionar Pólizas en un solo panel con borde, y para Cobranza — 2 rondas más: primero categorías de urgencia (rechazadas por "resto pendiente" sin sentido), luego **antigüedad de mora real** (0-30/31-60/61-90/+90 días, el enfoque estándar de cobranzas) combinado con 3 estilos visuales (donut / barra apilada / **mini-barras verticales**) — elegidas las mini-barras por ser el tipo de gráfico que la percepción humana compara mejor (Cleveland & McGill: posición sobre línea base común > ángulo > longitud sin línea base).
+
+**Spec + plan:** `docs/superpowers/specs/2026-07-11-seguros-detalle-inmersivo-design.md` (gitignored) → `docs/superpowers/plans/2026-07-11-seguros-detalle-inmersivo.md` (9 tareas, gitignored). Ejecutado con subagent-driven-development (implementador + revisor por tarea, modelo sonnet excepto tareas mecánicas en haiku y la revisión final en opus).
+
+**Ejecución (9 tareas, commits `9f381cb`..`6b7ae5f`):**
+
+| Tarea | Contenido | Nota |
+|-------|-----------|------|
+| 1 | `POST /insurance/installments/{iid}/revert` (backend) | Review clean — 2 Minor heredados del propio diseño (date.today() vs SQL CURRENT_DATE; TOCTOU compartido con patch_installment ya existente) |
+| 2 | `lib/utils/installments.ts` (`dueRelative`/`cuotaLabel` compartidos) | Review clean, verbatim |
+| 3 | `agingBucket`/`AgingBand` en `insuranceGrouping.ts` | Review clean — boundary math (30/60/90 inclusive) verificado a mano por el revisor |
+| 4 | `DocumentChecklist.tsx`: nodos circulares → lista vertical + contador "X de N completos" | Review clean — contrato público sin cambios, 5 tests previos intactos |
+| 5 | `InstallmentRow.tsx` (nuevo): Pagar / revertir con popover | Review clean — 1 typo aritmético propio en el plan ("11/11" vs 10 tests reales), correctamente no tratado como defecto |
+| 6 | `InsurancePolicyModal.tsx` (nuevo, reemplaza `InsurancePolicySlideOver.tsx`) | **Fix intra-tarea**: el implementador encontró una carrera real `act()`/`findByText` en un test y la esquivó moviendo el reset de `showAll` a un `onClick` en vez de un `useEffect` — dejaba sin cubrir el path de auto-selección (cerrar/reabrir para otra empresa). Revisor lo detectó revirtiendo el código a la versión literal del plan y reproduciéndolo 4/4 veces; fix real: restaurar el `useEffect` como única fuente de verdad + corregir el test (no el componente) para esperar el flush de efectos. Re-revisión trazó la lógica de auto-selección en `PolizasTab.tsx` y confirmó cobertura completa. |
+| 7 | `PolizasTab.tsx`: usa el modal nuevo + fusiona donut/KPIs/stats/búsqueda en un panel único | Review clean — repo desbloqueado (tsc limpio), 259/259 |
+| 8 | `CobranzaTab.tsx`: elimina `GroupBarChart`, agrega `AgingBars` (4 barras + "no vencidas aún", compone con el selector de agrupamiento existente) | Primer intento falló por límite de sesión de API antes de tocar archivos, reintentado limpio. Review clean — mismo tipo de typo aritmético del plan ("8/8" vs 6 tests reales) |
+| 9 | Verificación final: 84 pytest + 263 vitest + tsc + build limpios, smoke visual manual real (Playwright, modal 2 columnas, expandir cuotas, hover+revertir+cancelar confirmado sin mutar datos, filtro de antigüedad confirmado) | — |
+
+**Revisión final de todo el branch (`78d86c6`..`6b7ae5f`, modelo opus):** ready to merge con 1 hallazgo Important — `InsurancePolicyModal.tsx` no atrapaba el foco ni lo movía al abrir (regresión real respecto al slide-over que reemplazó y respecto a `TransporterSlideOver.tsx`, y contradice la promesa explícita del spec de "mismo contrato de accesibilidad"). + 3 Minor (aging-bars sin `aria-pressed`, click en banda vacía es cosmético, tipo inline en vez de `InsuranceTransporterResponse`). Fix aplicado en commit `9879b81` (ver sección siguiente).
+
+**Decisiones de arquitectura:**
+- Slide-over angosto → modal centrado de 2 columnas: la anchura era la causa raíz del bug de scroll cortado, no solo un problema de estilo.
+- Antigüedad de mora en vez de bucket temporal: un dashboard de cobranza necesita mostrar dónde se concentra el riesgo de mora, no un ranking de montos por semana — el gráfico anterior no fallaba por estilo sino por elegir la pregunta equivocada.
+- Sin librería de gráficos: donut (Pólizas) y mini-barras (Cobranza) son CSS puro (`conic-gradient`/flexbox con `height` proporcional), consistente con la decisión previa de esta sesión.
+- Revertir un pago es un endpoint dedicado, no una extensión de PATCH: el PATCH existente usa `COALESCE` para todos sus campos, que no puede expresar "limpiar a NULL" — necesitaba una ruta separada con `UPDATE ... SET paid_at = NULL` literal.
+
+---
+
+### 2026-07-11 (cont. 4) — Fixes de la revisión final de todo el branch (foco atrapado + aria-pressed + cleanup cosmético)
 
 **Objetivo:** el `InsurancePolicySlideOver.tsx` de la sección anterior fue reemplazado en el camino por `InsurancePolicyModal.tsx` (detalle inmersivo de 2 columnas, commit `c01e5d8`, con un fix posterior `e7fe7c6`) — una revisión final de todo el branch sobre ese estado encontró 3 hallazgos, corregidos en esta ronda (commit `9879b81`, todavía sin push).
 
