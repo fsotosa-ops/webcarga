@@ -88,3 +88,38 @@ describe('withVehicleGovernanceField', () => {
     expect(updated.circ_permit_expiry).toBe('2026-01-01')
   })
 })
+
+import { driverRosterStatus } from './transporterDocs'
+
+describe('driverRosterStatus', () => {
+  it('reports the expiry alert first when a date is expired', () => {
+    const driver = { ...DRIVER, governance: { ...DRIVER.governance!, id_expiry: '2020-01-01' } }
+    const status = driverRosterStatus(driver)
+    expect(status.tone).toBe('danger')
+  })
+
+  it('reports "Docs OK" when nothing is pending and dates are fine', () => {
+    const driver = {
+      ...DRIVER,
+      governance: {
+        ...DRIVER.governance!, id_expiry: '2099-01-01', license_expiry: '2099-01-01',
+        epp: 'ok' as const, das_odi: 'ok' as const,
+      },
+    }
+    const status = driverRosterStatus(driver)
+    expect(status).toEqual({ label: 'Docs OK', tone: 'ok' })
+  })
+
+  it('counts pending/null/actualizar documentation fields when dates are fine', () => {
+    const driver = {
+      ...DRIVER,
+      governance: {
+        ...DRIVER.governance!, id_expiry: '2099-01-01', license_expiry: '2099-01-01',
+        epp: null, das_odi: 'pendiente' as const,
+      },
+    }
+    const status = driverRosterStatus(driver)
+    expect(status.tone).toBe('warn')
+    expect(status.label).toMatch(/pendiente/)
+  })
+})

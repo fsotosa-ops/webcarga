@@ -1,5 +1,6 @@
 // lib/utils/transporterDocs.ts
 import type { ChecklistItem } from '@/components/dashboard/DocumentChecklist'
+import { getDriverAlertStatus } from '@/lib/compliance'
 import type {
   ComplianceStatus, DriverGovernance, TransporterDriver, TransporterVehicle, VehicleGovernance,
 } from '@/lib/types'
@@ -57,4 +58,14 @@ export function withVehicleGovernanceField(
   current: VehicleGovernance | null, docCode: string, status: ComplianceStatus,
 ): VehicleGovernance {
   return { ...(current ?? {}), [docCode]: status } as VehicleGovernance
+}
+
+export function driverRosterStatus(driver: TransporterDriver): { label: string; tone: 'ok' | 'warn' | 'danger' } {
+  const alert = getDriverAlertStatus(driver)
+  if (alert === 'expired') return { label: 'Vencimiento vencido', tone: 'danger' }
+  if (alert === 'expiring_soon') return { label: 'Vencimiento próximo', tone: 'warn' }
+  const pending = driverGovernanceToChecklistItems(driver)
+    .filter(i => i.status === null || i.status === 'pendiente' || i.status === 'actualizar').length
+  if (pending === 0) return { label: 'Docs OK', tone: 'ok' }
+  return { label: `${pending} pendiente${pending > 1 ? 's' : ''}`, tone: 'warn' }
 }
