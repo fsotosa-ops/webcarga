@@ -16,6 +16,7 @@ interface Props {
   canEdit:         boolean
   onUpload?:       (docCode: string, file: File) => void
   onStatusChange?: (docCode: string, status: ComplianceStatus) => void
+  hideCounter?:    boolean
 }
 
 const STATUS_OPTIONS: { value: ComplianceStatus; label: string }[] = [
@@ -42,18 +43,25 @@ function stateLabel(state: 'ok' | 'overdue' | 'pending'): string {
   return state === 'ok' ? 'al día' : state === 'overdue' ? 'vencido' : 'pendiente'
 }
 
+/** Cuenta cuántos documentos están "al día" — compartido con quien
+ *  necesite mostrar el mismo porcentaje fuera de esta lista (ej. un
+ *  anillo de progreso en el panel de detalle). */
+export function checklistCompletion(items: ChecklistItem[]): { ok: number; total: number } {
+  return { ok: items.filter(item => nodeState(item) === 'ok').length, total: items.length }
+}
+
 /** Checklist de documentos — lista vertical de filas (icono + nombre +
  *  acción). Genérico: no importa nada específico de un módulo. La acción
  *  por fila es una de dos (mutuamente excluyentes en la práctica, cada
  *  llamador pasa una sola): subir archivo (Seguros, documentos con
  *  respaldo de archivo) o cambiar estado (Empresas, campos `governance`
  *  sin archivo — un `<select>` en vez del control de subir). */
-export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange }: Props) {
-  const okCount = items.filter(item => nodeState(item) === 'ok').length
+export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, hideCounter }: Props) {
+  const { ok: okCount } = checklistCompletion(items)
 
   return (
     <div>
-      {items.length > 0 && (
+      {items.length > 0 && !hideCounter && (
         <p className="text-xs text-gray-400 mb-2">{okCount} de {items.length} completos</p>
       )}
       <div className="flex flex-col gap-1.5">

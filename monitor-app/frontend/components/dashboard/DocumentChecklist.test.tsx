@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { DocumentChecklist } from './DocumentChecklist'
+import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 
 const ITEMS = [
   { doc_code: 'poliza_firmada', label: 'Póliza firmada', status: 'ok' as const, expiry_date: null, has_expiry: false },
@@ -62,5 +62,14 @@ describe('DocumentChecklist', () => {
   it('does not show a status select when canEdit is false, even with onStatusChange provided', () => {
     render(<DocumentChecklist items={ITEMS} canEdit={false} onStatusChange={vi.fn()} />)
     expect(screen.queryByLabelText('Estado de Endoso')).not.toBeInTheDocument()
+  })
+
+  it('hides the completion count when hideCounter is true', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} hideCounter />)
+    expect(screen.queryByText('1 de 3 completos')).not.toBeInTheDocument()
+  })
+
+  it('checklistCompletion counts ok documents against the total', () => {
+    expect(checklistCompletion(ITEMS)).toEqual({ ok: 1, total: 3 })
   })
 })

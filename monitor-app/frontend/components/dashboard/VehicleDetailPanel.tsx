@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2 } from 'lucide-react'
 import type { VehicleGovernance, TransporterVehicle, ComplianceStatus } from '@/lib/types'
-import { DocumentChecklist } from './DocumentChecklist'
+import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
+import { CompletionRing } from './CompletionRing'
 import { vehicleGovernanceToChecklistItems, withVehicleGovernanceField } from '@/lib/utils/transporterDocs'
 
 interface Props {
@@ -23,8 +24,9 @@ const EXPIRY_FIELDS = [
   { key: 'soap_insurance_expiry' as const,  label: 'Vencimiento SOAP' },
 ]
 
-/** Panel de detalle de un equipo — mismo contrato de accesibilidad que
- *  DriverDetailPanel/TransporterSlideOver. */
+/** Modal de detalle de un equipo — mismo lenguaje inmersivo que
+ *  DriverDetailPanel/InsurancePolicyModal: modal centrado de 2 columnas,
+ *  mismo contrato de accesibilidad. */
 export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!vehicle
   const panelRef = useRef<HTMLDivElement>(null)
@@ -119,96 +121,86 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
     }
   }
 
+  if (!open) return null
+
+  const items = vehicleGovernanceToChecklistItems(vehicle)
+  const { ok, total } = checklistCompletion(items)
+
   return (
     <>
-      {open && (
-        <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
-      )}
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={vehicle ? `Detalle de ${vehicle.plate}` : 'Detalle de equipo'}
-        tabIndex={-1}
-        className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] bg-white border-l border-border shadow-2xl flex flex-col transition-transform duration-300 focus:outline-none ${
-          open ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {vehicle && (
-          <>
-            <div className="px-5 py-4 bg-slate-900 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white shrink-0">
-                  <Truck size={16} />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-base font-bold text-white font-mono truncate">{vehicle.plate}</h3>
-                  <p className="text-[11px] text-white/50 truncate">{vehicle.type}</p>
-                </div>
+      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Detalle de ${vehicle.plate}`}
+          tabIndex={-1}
+          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none"
+        >
+          <button onClick={onClose} aria-label="Cerrar detalle" className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+
+          <div className="sm:w-[34%] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-4">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-9 h-9 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center shrink-0">
+                <Truck size={16} />
               </div>
-              <button onClick={onClose} aria-label="Cerrar detalle" className="text-white/50 hover:text-white transition-colors shrink-0">
-                <X size={18} />
-              </button>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-text-primary font-mono truncate">{vehicle.plate}</p>
+                <p className="text-[10px] text-gray-400 truncate">{vehicle.type}</p>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              <section>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Datos y vencimientos</p>
-                <div className="space-y-2">
+            <div className="flex items-center gap-3 mb-4">
+              <CompletionRing ok={ok} total={total} />
+              <p className="text-[11px] text-gray-500">{ok} de {total}<br />documentos al día</p>
+            </div>
+
+            <div className="space-y-2">
+              <input
+                aria-label="Tipo de equipo"
+                value={draft.type}
+                disabled={!canEdit}
+                onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
+                className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+              />
+              <input
+                aria-label="Patente"
+                value={draft.plate}
+                disabled={!canEdit}
+                onChange={e => setDraft(v => ({ ...v, plate: e.target.value }))}
+                className="w-full text-xs font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+              />
+              {EXPIRY_FIELDS.map(({ key, label }) => (
+                <div key={key}>
+                  <label className="text-[10px] text-gray-400 block mb-0.5">{label.replace('Vencimiento ', '')}</label>
                   <input
-                    aria-label="Tipo de equipo"
-                    value={draft.type}
+                    aria-label={label}
+                    type="date"
+                    value={draft[key]}
                     disabled={!canEdit}
-                    onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
-                    className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+                    onChange={e => setDraft(v => ({ ...v, [key]: e.target.value }))}
+                    className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
                   />
-                  <input
-                    aria-label="Patente"
-                    value={draft.plate}
-                    disabled={!canEdit}
-                    onChange={e => setDraft(v => ({ ...v, plate: e.target.value }))}
-                    className="w-full text-sm font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    {EXPIRY_FIELDS.map(({ key, label }) => (
-                      <div key={key}>
-                        <label className="text-[10px] text-gray-400 block mb-0.5">{label.replace('Vencimiento ', '')}</label>
-                        <input
-                          aria-label={label}
-                          type="date"
-                          value={draft[key]}
-                          disabled={!canEdit}
-                          onChange={e => setDraft(v => ({ ...v, [key]: e.target.value }))}
-                          className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={handleSaveDatos}
-                      disabled={saving}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
-                    >
-                      {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                      Guardar
-                    </button>
-                  )}
-                  {err && <p className="text-xs text-red-500">{err}</p>}
                 </div>
-              </section>
+              ))}
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={handleSaveDatos}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
+                >
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                  Guardar
+                </button>
+              )}
+              {err && <p className="text-xs text-red-500">{err}</p>}
+            </div>
 
-              <section>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Documentación</p>
-                <DocumentChecklist
-                  items={vehicleGovernanceToChecklistItems(vehicle)}
-                  canEdit={canEdit}
-                  onStatusChange={handleStatusChange}
-                />
-                {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
-              </section>
-
+            <div className="mt-5 space-y-2">
               {canAdmin && onTransferClick && (
                 <button
                   type="button"
@@ -218,7 +210,6 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
                   <ArrowRightLeft size={14} /> Transferir a otra empresa
                 </button>
               )}
-
               {canEdit && (
                 <button
                   type="button"
@@ -231,8 +222,19 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
                 </button>
               )}
             </div>
-          </>
-        )}
+          </div>
+
+          <div className="flex-1 min-w-0 overflow-y-auto p-5 sm:p-6">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Documentación</p>
+            <DocumentChecklist
+              items={items}
+              canEdit={canEdit}
+              onStatusChange={handleStatusChange}
+              hideCounter
+            />
+            {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
+          </div>
+        </div>
       </div>
     </>
   )

@@ -180,9 +180,13 @@ export default function EmpresaDetailPage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
   const [driverQ,         setDriverQ]         = useState('')
   const [driverAlertOnly, setDriverAlertOnly] = useState(false)
+  const [driverShowAll,   setDriverShowAll]   = useState(false)
   const [vehicleQ,        setVehicleQ]        = useState('')
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState<VehicleCategory | 'todos'>('todos')
   const [vehicleAlertOnly, setVehicleAlertOnly] = useState(false)
+  const [vehicleShowAll,   setVehicleShowAll]  = useState(false)
+
+  const ROSTER_PAGE_SIZE = 9
 
   const [addDriverOpen,  setAddDriverOpen]  = useState(false)
   const [driverForm,     setDriverForm]     = useState({ rut: '', name: '' })
@@ -332,6 +336,16 @@ export default function EmpresaDetailPage() {
     const matchesAlert = !vehicleAlertOnly || v.isTrailer || getVehicleAlertStatus(v) !== 'ok'
     return matchesQ && matchesType && matchesAlert
   }), [allEquipment, vehicleQ, vehicleTypeFilter, vehicleAlertOnly])
+
+  // El roster corta en 9 tarjetas por defecto (evita el scroll largo en
+  // empresas con decenas de conductores/equipos); "Mostrar los N
+  // restantes" expande el resto. Se resetea si cambia el filtro/búsqueda
+  // para no dejar un botón con un conteo que ya no corresponde.
+  useEffect(() => { setDriverShowAll(false) }, [driverQ, driverAlertOnly])
+  useEffect(() => { setVehicleShowAll(false) }, [vehicleQ, vehicleTypeFilter, vehicleAlertOnly])
+
+  const visibleDrivers  = driverShowAll  ? filteredDrivers  : filteredDrivers.slice(0, ROSTER_PAGE_SIZE)
+  const visibleVehicles = vehicleShowAll ? filteredVehicles : filteredVehicles.slice(0, ROSTER_PAGE_SIZE)
 
   const selectedDriver  = tp?.drivers.find(d => d.id === selectedDriverId) ?? null
   const selectedVehicle = allEquipment.find(v => v.id === selectedVehicleId) ?? null
@@ -498,11 +512,21 @@ export default function EmpresaDetailPage() {
             {driverQ || driverAlertOnly ? 'Sin resultados' : 'Sin conductores registrados'}
           </p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {filteredDrivers.map(d => (
-              <DriverRosterCard key={d.id} driver={d} onOpen={() => setSelectedDriverId(d.id)} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {visibleDrivers.map(d => (
+                <DriverRosterCard key={d.id} driver={d} onOpen={() => setSelectedDriverId(d.id)} />
+              ))}
+            </div>
+            {!driverShowAll && filteredDrivers.length > ROSTER_PAGE_SIZE && (
+              <button
+                onClick={() => setDriverShowAll(true)}
+                className="mt-3 w-full text-xs font-semibold text-accent border border-dashed border-accent/40 hover:bg-accent/5 rounded-lg py-2.5 transition-colors"
+              >
+                Mostrar los {filteredDrivers.length - ROSTER_PAGE_SIZE} restantes
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -596,11 +620,21 @@ export default function EmpresaDetailPage() {
             {vehicleQ || vehicleAlertOnly ? 'Sin resultados' : 'Sin equipos registrados'}
           </p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {filteredVehicles.map(v => (
-              <VehicleRosterCard key={v.id} vehicle={v} onOpen={() => setSelectedVehicleId(v.id)} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {visibleVehicles.map(v => (
+                <VehicleRosterCard key={v.id} vehicle={v} onOpen={() => setSelectedVehicleId(v.id)} />
+              ))}
+            </div>
+            {!vehicleShowAll && filteredVehicles.length > ROSTER_PAGE_SIZE && (
+              <button
+                onClick={() => setVehicleShowAll(true)}
+                className="mt-3 w-full text-xs font-semibold text-accent border border-dashed border-accent/40 hover:bg-accent/5 rounded-lg py-2.5 transition-colors"
+              >
+                Mostrar los {filteredVehicles.length - ROSTER_PAGE_SIZE} restantes
+              </button>
+            )}
+          </>
         )}
       </div>
 

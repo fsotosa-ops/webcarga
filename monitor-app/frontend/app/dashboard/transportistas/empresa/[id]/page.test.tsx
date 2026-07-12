@@ -102,4 +102,20 @@ describe('EmpresaDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rampla' }))
     await waitFor(() => expect(screen.queryByText('ABCD12')).not.toBeInTheDocument())
   })
+
+  it('shows only the first 9 drivers with a "Mostrar los N restantes" button for larger rosters', async () => {
+    const manyDrivers = Array.from({ length: 12 }, (_, i) => ({
+      id: `d${i}`, rut: `${i}-1`, name: `Conductor ${i}`,
+      governance: PROFILE.drivers[0].governance,
+    }))
+    vi.mocked(transportersApi.get).mockResolvedValue({ ...PROFILE, drivers: manyDrivers } as never)
+    renderPage()
+    await screen.findByText('Conductor 0')
+    expect(screen.queryByText('Conductor 9')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mostrar los 3 restantes' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar los 3 restantes' }))
+    expect(screen.getByText('Conductor 11')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Mostrar los/ })).not.toBeInTheDocument()
+  })
 })
