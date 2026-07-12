@@ -104,6 +104,12 @@ describe('InsurancePolicyModal', () => {
     expect(screen.queryByText('Chubb Generales')).not.toBeInTheDocument()
   })
 
+  it('moves focus into the dialog when it opens', async () => {
+    renderModal(ROW)
+    await screen.findByText('Chubb Generales')
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('dialog')))
+  })
+
   it('shows a policy switcher when the company has more than one policy', async () => {
     renderModal(ROW)
     expect(await screen.findByText('Chubb Generales')).toBeInTheDocument()

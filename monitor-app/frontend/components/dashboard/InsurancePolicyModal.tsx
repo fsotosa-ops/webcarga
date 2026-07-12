@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Loader2, ShieldQuestion, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
-import type { InsuranceInstallment, InsurancePolicy, InsuranceSummaryRow } from '@/lib/types'
+import type { InsuranceInstallment, InsurancePolicy, InsuranceSummaryRow, InsuranceTransporterResponse } from '@/lib/types'
 import { formatExpiry } from '@/lib/compliance'
 import { DocumentChecklist } from './DocumentChecklist'
 import { InstallmentRow } from './InstallmentRow'
@@ -40,6 +40,7 @@ interface Props {
 export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props) {
   const open = !!row
   const queryClient = useQueryClient()
+  const panelRef = useRef<HTMLDivElement>(null)
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [docUploadErr, setDocUploadErr] = useState<string | null>(null)
@@ -72,10 +73,29 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
     enabled: open && !!selectedPolicyId,
   })
 
+  // Semántica de diálogo: Escape cierra, Tab atrapado, foco inicial y retorno
   useEffect(() => {
     if (!open) return
     const previouslyFocused = document.activeElement as HTMLElement | null
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    panelRef.current?.focus()
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        if (!focusables.length) return
+        const first = focusables[0]
+        const last  = focusables[focusables.length - 1]
+        const active = document.activeElement
+        if (e.shiftKey && (active === first || active === panelRef.current)) {
+          e.preventDefault(); last.focus()
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault(); first.focus()
+        }
+      }
+    }
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('keydown', onKey)
@@ -86,7 +106,7 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
   function handleInstallmentChanged(policyId: string, updated: InsuranceInstallment) {
     queryClient.setQueryData(
       ['insurance', 'transporter', row?.transporter_id],
-      (old: { rut: string; transporter_id: string; policies: InsurancePolicy[] } | undefined) =>
+      (old: InsuranceTransporterResponse | undefined) =>
         old ? {
           ...old,
           policies: old.policies.map(p => p.id === policyId
@@ -126,6 +146,7 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} aria-hidden="true" />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
+          ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-label={`Pólizas de ${displayName}`}

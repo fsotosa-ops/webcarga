@@ -68,6 +68,7 @@ function AgingBars({
         <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Antigüedad de lo vencido</span>
         <button
           onClick={() => onSelect('not_overdue')}
+          aria-pressed={activeFilter === 'not_overdue'}
           className={`text-xs transition-colors ${activeFilter === 'not_overdue' ? 'font-bold text-accent' : 'text-gray-400 hover:text-gray-600'}`}
         >
           {totals.notOverdueUf.toFixed(1)} UF no vencidas aún · {totals.notOverdueCount} cuota{totals.notOverdueCount === 1 ? '' : 's'}
@@ -82,6 +83,7 @@ function AgingBars({
             <button
               key={band.id}
               onClick={() => onSelect(band.id)}
+              aria-pressed={active}
               className={`flex-1 flex flex-col items-center justify-end gap-1.5 h-full transition-opacity ${
                 activeFilter && !active ? 'opacity-40' : ''
               }`}
