@@ -1,3 +1,5 @@
+> **DEPRECADO 2026-07-12** — reemplazado por upload directo a `app` con preview/diff y aprobación (ver `docs/superpowers/plans/2026-07-12-empresas-seguros-checkpoint-a-schema.md`). Este pipeline queda congelado (`sync_config.sync_enabled=false`), no se borra — es la referencia de la lógica de parseo que se portó a `centralizer_parser.py`.
+
 # Pipeline `centralizer_to_app` (HÍBRIDO: dbt staging + bloques SQL)
 
 Bronze (`bronze.raw_centralizer_*`, `bronze.raw_info_contacto`, `bronze.raw_insurance_vehicles`)
