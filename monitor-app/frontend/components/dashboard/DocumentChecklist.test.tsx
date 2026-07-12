@@ -45,4 +45,22 @@ describe('DocumentChecklist', () => {
     render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
     expect(screen.getByText('1 de 3 completos')).toBeInTheDocument()
   })
+
+  it('shows a status select instead of an upload control when onStatusChange is provided', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={true} onStatusChange={vi.fn()} />)
+    expect(screen.queryByLabelText('Subir Endoso')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Estado de Endoso')).toBeInTheDocument()
+  })
+
+  it('calls onStatusChange with the doc_code and the new status', () => {
+    const onStatusChange = vi.fn()
+    render(<DocumentChecklist items={ITEMS} canEdit={true} onStatusChange={onStatusChange} />)
+    fireEvent.change(screen.getByLabelText('Estado de Endoso'), { target: { value: 'ok' } })
+    expect(onStatusChange).toHaveBeenCalledWith('endoso', 'ok')
+  })
+
+  it('does not show a status select when canEdit is false, even with onStatusChange provided', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onStatusChange={vi.fn()} />)
+    expect(screen.queryByLabelText('Estado de Endoso')).not.toBeInTheDocument()
+  })
 })

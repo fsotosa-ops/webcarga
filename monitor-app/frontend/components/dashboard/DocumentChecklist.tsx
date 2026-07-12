@@ -1,20 +1,30 @@
 'use client'
 
 import { Check, Circle, AlertTriangle, Upload } from 'lucide-react'
+import type { ComplianceStatus } from '@/lib/types'
 
 export type ChecklistItem = {
   doc_code:     string
   label:        string
-  status:       'ok' | 'pendiente' | 'actualizar' | 'n_a' | 'factible' | null
+  status:       ComplianceStatus | null
   expiry_date:  string | null
   has_expiry:   boolean
 }
 
 interface Props {
-  items:     ChecklistItem[]
-  canEdit:   boolean
-  onUpload:  (docCode: string, file: File) => void
+  items:           ChecklistItem[]
+  canEdit:         boolean
+  onUpload?:       (docCode: string, file: File) => void
+  onStatusChange?: (docCode: string, status: ComplianceStatus) => void
 }
+
+const STATUS_OPTIONS: { value: ComplianceStatus; label: string }[] = [
+  { value: 'ok',         label: 'OK' },
+  { value: 'pendiente',  label: 'Pendiente' },
+  { value: 'actualizar', label: 'Actualizar' },
+  { value: 'n_a',        label: 'N/A' },
+  { value: 'factible',   label: 'Factible' },
+]
 
 const TODAY = () => new Date().toISOString().slice(0, 10)
 
@@ -32,10 +42,13 @@ function stateLabel(state: 'ok' | 'overdue' | 'pending'): string {
   return state === 'ok' ? 'al día' : state === 'overdue' ? 'vencido' : 'pendiente'
 }
 
-/** Checklist de documentos de una póliza — lista vertical de filas (icono +
- *  nombre + acción). Genérico: no importa nada específico de Seguros, así
- *  que se puede reusar tal cual en un futuro rediseño de Empresas. */
-export function DocumentChecklist({ items, canEdit, onUpload }: Props) {
+/** Checklist de documentos — lista vertical de filas (icono + nombre +
+ *  acción). Genérico: no importa nada específico de un módulo. La acción
+ *  por fila es una de dos (mutuamente excluyentes en la práctica, cada
+ *  llamador pasa una sola): subir archivo (Seguros, documentos con
+ *  respaldo de archivo) o cambiar estado (Empresas, campos `governance`
+ *  sin archivo — un `<select>` en vez del control de subir). */
+export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange }: Props) {
   const okCount = items.filter(item => nodeState(item) === 'ok').length
 
   return (
@@ -61,7 +74,18 @@ export function DocumentChecklist({ items, canEdit, onUpload }: Props) {
                 {state === 'ok' ? <Check size={11} /> : state === 'overdue' ? <AlertTriangle size={10} /> : <Circle size={10} />}
               </span>
               <span className="text-xs font-semibold text-text-primary flex-1 truncate">{item.label}</span>
-              {canEdit && (
+              {canEdit && onStatusChange && (
+                <select
+                  aria-label={`Estado de ${item.label}`}
+                  value={item.status ?? ''}
+                  onChange={e => onStatusChange(item.doc_code, e.target.value as ComplianceStatus)}
+                  className="text-[11px] font-semibold border border-border rounded-md px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white shrink-0"
+                >
+                  <option value="">—</option>
+                  {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              )}
+              {canEdit && !onStatusChange && onUpload && (
                 <label className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline cursor-pointer shrink-0">
                   <Upload size={11} /> Subir
                   <input
