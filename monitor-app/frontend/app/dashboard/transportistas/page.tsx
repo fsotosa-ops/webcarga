@@ -97,7 +97,7 @@ export default function EmpresasTransportePage() {
                 onClick={() => toggleFilter(card.id)}
                 disabled={count === 0 && !active}
                 aria-pressed={active}
-                className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
+                className={`flex items-center gap-2 bg-white border rounded-2xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
                   active ? card.activeCls : 'border-border hover:border-gray-300'
                 }`}
               >
@@ -111,7 +111,7 @@ export default function EmpresasTransportePage() {
       )}
 
       {/* ── Barra de filtros: búsqueda + chips ──────────────────────── */}
-      <div className="bg-white border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
+      <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
         <div className="relative shrink-0">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
@@ -157,7 +157,7 @@ export default function EmpresasTransportePage() {
           <Loader2 size={16} className="animate-spin" /> Cargando…
         </div>
       ) : visibleItems.length === 0 ? (
-        <p className="bg-white rounded-xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
+        <p className="bg-white rounded-2xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
       ) : viewMode === 'tablero' ? (
         // ── Vista Tarjetas (default) — grid responsive, funciona igual en mobile ──
         <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
@@ -174,7 +174,7 @@ export default function EmpresasTransportePage() {
             ))}
           </div>
 
-          <div className="hidden md:block bg-white rounded-xl border border-border overflow-hidden">
+          <div className="hidden md:block bg-white rounded-2xl border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">

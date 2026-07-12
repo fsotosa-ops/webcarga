@@ -25,7 +25,7 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
       tabIndex={0}
       onClick={() => onOpen(item)}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(item) } }}
-      className={`text-left bg-white border rounded-xl p-4 space-y-3 cursor-pointer transition-all hover:shadow-md hover:border-gray-300 ${
+      className={`text-left bg-white border rounded-2xl p-4 space-y-3 cursor-pointer transition-all hover:shadow-md hover:border-gray-300 ${
         selected ? 'border-accent ring-2 ring-accent/10' : 'border-border'
       }`}
     >
