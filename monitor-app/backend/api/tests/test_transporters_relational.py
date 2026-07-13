@@ -678,3 +678,40 @@ def test_delete_contact_not_found():
     client = make_client(pool)
     res = client.delete(f"/api/v1/transporters/{TID}/contacts/rep_legal")
     assert res.status_code == 404
+
+
+# ── Alta/baja manual (Task 8) ───────────────────────────────────────
+
+def test_deactivate_transporter_requires_admin():
+    pool = AsyncMock()
+    client = make_client(pool, role="editor", enforce_roles=True)
+    res = client.post(f"/api/v1/transporters/{TID}/deactivate", json={"reason": "documentacion_vencida"})
+    assert res.status_code == 403
+
+
+def test_deactivate_transporter_sets_baja_override():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": TID}
+    client = make_client(pool)
+    res = client.post(f"/api/v1/transporters/{TID}/deactivate", json={
+        "reason": "termino_mutuo_acuerdo", "notes": "Fin de contrato",
+    })
+    assert res.status_code == 200
+    update_call = [c for c in pool.execute.call_args_list if "baja_override" in c[0][0]]
+    assert len(update_call) == 1
+
+
+def test_reactivate_transporter_clears_baja_fields():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": TID}
+    client = make_client(pool)
+    res = client.post(f"/api/v1/transporters/{TID}/reactivate")
+    assert res.status_code == 200
+
+
+def test_deactivate_driver_and_vehicle():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": "driver-1"}
+    client = make_client(pool)
+    res = client.post(f"/api/v1/transporters/{TID}/drivers/driver-1/deactivate", json={"reason": "otro"})
+    assert res.status_code == 200

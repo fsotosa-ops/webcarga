@@ -18,6 +18,7 @@ from ..schemas.transporter_relational import (
     AddDriverBody,
     AddTrailerBody,
     AddVehicleBody,
+    BajaBody,
     ContactPatchBody,
     DocumentPatchBody,
     PaginatedResponse,
@@ -1072,6 +1073,78 @@ async def delete_contact(
         user["sub"], tid, role,
     )
     return {"ok": True}
+
+
+# ── ALTA/BAJA MANUAL (baja_override) ───────────────────────────────
+# Desactivación/reactivación manual de transporter/driver/vehicle vía
+# columnas baja_override/baja_reason/baja_notes/baja_by/baja_at (Checkpoint
+# A Task 1). app.v_transporter_operational_status debe reflejar
+# baja_override=true como 'no_operativa' independiente del status previo.
+
+async def _set_baja(pool, table: str, entity_id: str, override: bool, body: Optional[BajaBody], user) -> dict:
+    if override:
+        row = await pool.fetchrow(
+            f"""
+            UPDATE app.{table} SET
+                baja_override = true, baja_reason = $2, baja_notes = $3,
+                baja_by = $4::uuid, baja_at = NOW(), updated_at = NOW()
+            WHERE id = $1 RETURNING id
+            """,
+            entity_id, body.reason, body.notes, user["sub"],
+        )
+    else:
+        row = await pool.fetchrow(
+            f"""
+            UPDATE app.{table} SET
+                baja_override = false, baja_reason = NULL, baja_notes = NULL,
+                baja_by = NULL, baja_at = NULL, updated_at = NOW()
+            WHERE id = $1 RETURNING id
+            """,
+            entity_id,
+        )
+    if not row:
+        raise HTTPException(404, "No encontrado")
+    action = "deactivate" if override else "reactivate"
+    await pool.execute(
+        "INSERT INTO app.audit_log (actor, entity_type, entity_id, action, field, source) "
+        "VALUES ($1::uuid, $2, $3::uuid, $4, 'baja_override', 'api')",
+        user["sub"], table.rstrip("s") if table != "vehicles" else "vehicle", entity_id, action,
+    )
+    return {"ok": True, "id": entity_id, "action": action}
+
+
+@router.post("/{tid}/deactivate")
+async def deactivate_transporter(tid: str, body: BajaBody, pool=Depends(get_pool), user=Depends(require_admin)):
+    return await _set_baja(pool, "transporters", tid, True, body, user)
+
+
+@router.post("/{tid}/reactivate")
+async def reactivate_transporter(tid: str, pool=Depends(get_pool), user=Depends(require_admin)):
+    return await _set_baja(pool, "transporters", tid, False, None, user)
+
+
+@router.post("/{tid}/drivers/{did}/deactivate")
+async def deactivate_driver(tid: str, did: str, body: BajaBody, pool=Depends(get_pool), user=Depends(require_admin)):
+    await _resolve_entity(pool, tid, "driver", did)
+    return await _set_baja(pool, "drivers", did, True, body, user)
+
+
+@router.post("/{tid}/drivers/{did}/reactivate")
+async def reactivate_driver(tid: str, did: str, pool=Depends(get_pool), user=Depends(require_admin)):
+    await _resolve_entity(pool, tid, "driver", did)
+    return await _set_baja(pool, "drivers", did, False, None, user)
+
+
+@router.post("/{tid}/vehicles/{vid}/deactivate")
+async def deactivate_vehicle(tid: str, vid: str, body: BajaBody, pool=Depends(get_pool), user=Depends(require_admin)):
+    await _resolve_entity(pool, tid, "vehicle", vid)
+    return await _set_baja(pool, "vehicles", vid, True, body, user)
+
+
+@router.post("/{tid}/vehicles/{vid}/reactivate")
+async def reactivate_vehicle(tid: str, vid: str, pool=Depends(get_pool), user=Depends(require_admin)):
+    await _resolve_entity(pool, tid, "vehicle", vid)
+    return await _set_baja(pool, "vehicles", vid, False, None, user)
 
 
 # ── DELETE (admin) — desactivación lógica, preserva historial relacional ──

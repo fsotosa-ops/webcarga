@@ -141,3 +141,10 @@ class PaginatedResponse(BaseModel):
     count: int
     page: int
     limit: int
+
+
+# ── Alta/baja manual (transporter/driver/vehicle) ─────────────────────────────
+
+class BajaBody(BaseModel):
+    reason: Literal['documentacion_vencida', 'termino_mutuo_acuerdo', 'termino_penalizacion', 'otro']
+    notes: Optional[str] = None
