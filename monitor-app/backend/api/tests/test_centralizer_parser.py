@@ -133,3 +133,41 @@ def test_parse_centralizer_workbook_rejects_unmapped_column():
 
     with pytest.raises(ValueError, match='[Cc]olumna'):
         parse_centralizer_workbook(buf.getvalue())
+
+
+def test_parse_centralizer_workbook_rejects_empty_business_name_and_full_name():
+    # Regresión: una fila con RUT válido pero 'Nombre / Razón Social' (o
+    # 'Nombre Completo') vacío pasaba el parseo y llegaba al INSERT, donde
+    # la columna NOT NULL de destino levantaba un 500 sin capturar en vez de
+    # un parse_error limpio. Confirma que ahora se descarta a parse_errors,
+    # igual que RUT/Patente vacíos, sin bloquear las demás filas válidas.
+    from openpyxl import Workbook
+    from io import BytesIO
+
+    wb = Workbook()
+    ws_empresas = wb.active
+    ws_empresas.title = 'Empresas'
+    ws_empresas.append(['Nombre / Razón Social', 'RUT', 'DV'])
+    ws_empresas.append(['', '99999005', '3'])  # business_name vacío -> parse_error
+    ws_empresas.append(['Transportes Válida SPA', '99999006', '4'])  # válida
+
+    ws_conductores = wb.create_sheet('Conductores')
+    ws_conductores.append(['RUT Empresa', 'DV Empresa', 'Nombre Completo', 'RUT Conductor', 'DV Conductor'])
+    ws_conductores.append(['99999006', '4', '', '99999201', '2'])  # full_name vacío -> parse_error
+    ws_conductores.append(['99999006', '4', 'Conductor Válido', '99999202', '3'])  # válido
+
+    wb.create_sheet('Vehiculos_Equipos')
+
+    buf = BytesIO()
+    wb.save(buf)
+
+    result = parse_centralizer_workbook(buf.getvalue())
+
+    assert len(result['transporters']) == 1
+    assert result['transporters'][0]['business_name'] == 'Transportes Válida SPA'
+    assert len(result['drivers']) == 1
+    assert result['drivers'][0]['full_name'] == 'Conductor Válido'
+
+    reasons = {(e['sheet'], e['reason']) for e in result['parse_errors']}
+    assert ('Empresas', "'business_name' vacío, fila omitida") in reasons
+    assert ('Conductores', "'full_name' vacío, fila omitida") in reasons

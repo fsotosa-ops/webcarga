@@ -233,10 +233,20 @@ class ParsedUpload(TypedDict):
 # ---------------------------------------------------------------------------
 
 def _parse_sheet_rows(
-    ws, sheet_name: str, column_map: dict[str, tuple[str, Any]], identity_kind: str
+    ws,
+    sheet_name: str,
+    column_map: dict[str, tuple[str, Any]],
+    identity_kind: str,
+    required_field: str | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """identity_kind: 'rut' (Empresas/Conductores) o 'plate' (Vehiculos_Equipos)
-    — determina qué campo se exige no-vacío para aceptar la fila."""
+    — determina qué campo se exige no-vacío para aceptar la fila.
+
+    required_field: nombre de campo nativo NOT NULL en la tabla destino
+    (p.ej. 'business_name'/'full_name') que, si viene vacío, debe rechazar
+    la fila hacia parse_errors en vez de dejarla pasar hacia el INSERT — la
+    columna destino es NOT NULL, así que dejarla pasar produce un 500 sin
+    capturar en vez de un error de parseo limpio."""
     header_row = next(ws.iter_rows(min_row=1, max_row=1))
     headers = [c.value for c in header_row]
 
@@ -310,6 +320,13 @@ def _parse_sheet_rows(
                 })
                 continue
 
+        if required_field and not str(entity.get(required_field) or "").strip():
+            errors.append({
+                "sheet": sheet_name, "row": row_idx,
+                "reason": f"'{required_field}' vacío, fila omitida",
+            })
+            continue
+
         entity["_row"] = row_idx
         rows_out.append(entity)
 
@@ -362,10 +379,12 @@ def parse_centralizer_workbook(file_bytes: bytes) -> ParsedUpload:
     wb = load_workbook(BytesIO(file_bytes), data_only=True)
 
     empresas_rows, empresas_errors = _parse_sheet_rows(
-        _get_sheet(wb, "Empresas"), "Empresas", EMPRESAS_COLUMNS, identity_kind="rut"
+        _get_sheet(wb, "Empresas"), "Empresas", EMPRESAS_COLUMNS, identity_kind="rut",
+        required_field="business_name",
     )
     conductores_rows, conductores_errors = _parse_sheet_rows(
-        _get_sheet(wb, "Conductores"), "Conductores", CONDUCTORES_COLUMNS, identity_kind="rut"
+        _get_sheet(wb, "Conductores"), "Conductores", CONDUCTORES_COLUMNS, identity_kind="rut",
+        required_field="full_name",
     )
     vehiculos_rows, vehiculos_errors = _parse_sheet_rows(
         _get_sheet(wb, "Vehiculos_Equipos"), "Vehiculos_Equipos", VEHICULOS_COLUMNS, identity_kind="plate"
