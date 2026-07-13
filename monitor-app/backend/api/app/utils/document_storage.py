@@ -5,17 +5,32 @@ app.audit_log en vez de una tabla de versiones dedicada. Decisión de
 Checkpoint A §2.2/decisión 4.
 """
 import json
+import re
+import unicodedata
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, UploadFile
 
-from .stored_files import (
-    ALLOWED_STORED_FILE_MIMES,
-    COMPLIANCE_BUCKET,
-    SIGNED_URL_TTL_SECONDS,
-    STORED_FILE_MAX_BYTES,
-    safe_storage_name,
-)
+COMPLIANCE_BUCKET = "compliance-docs"
+STORED_FILE_MAX_BYTES = 10 * 1024 * 1024
+ALLOWED_STORED_FILE_MIMES = {
+    "application/pdf", "image/png", "image/jpeg", "image/webp",
+    "image/heic", "image/heif",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+SIGNED_URL_TTL_SECONDS = 3600
+
+
+def safe_storage_name(file_name: str) -> str:
+    """Nombre seguro para la key de Supabase Storage (mismo patrón que
+    trips._safe_storage_name — ver test_attachment_storage_key_is_sanitized)."""
+    normalized = unicodedata.normalize("NFKD", file_name)
+    ascii_name = normalized.encode("ascii", "ignore").decode()
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", ascii_name).strip("._")
+    return safe or "archivo"
 
 
 async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile) -> dict:
