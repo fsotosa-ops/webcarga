@@ -181,11 +181,17 @@ function ContactCard({ tid, role, contact, canEdit, onSaved }: {
           {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">{contact.phone}</a>}
           {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
           {canEdit && (
-            <button onClick={() => setEditing(true)} className="text-[10px] text-gray-400 hover:text-accent mt-1">Editar</button>
+            <button
+              onClick={() => { setDraft({ name: contact?.name ?? '', phone: contact?.phone ?? '', email: contact?.email ?? '' }); setEditing(true) }}
+              className="text-[10px] text-gray-400 hover:text-accent mt-1"
+            >Editar</button>
           )}
         </div>
       ) : canEdit ? (
-        <button onClick={() => setEditing(true)} className="text-[11px] text-accent hover:underline">+ Agregar {CONTACT_ROLE_LABELS[role].toLowerCase()}</button>
+        <button
+          onClick={() => { setDraft({ name: contact?.name ?? '', phone: contact?.phone ?? '', email: contact?.email ?? '' }); setEditing(true) }}
+          className="text-[11px] text-accent hover:underline"
+        >+ Agregar {CONTACT_ROLE_LABELS[role].toLowerCase()}</button>
       ) : (
         <p className="text-[11px] text-gray-300 italic">Sin datos</p>
       )}

@@ -24,6 +24,7 @@ vi.mock('@/lib/api/transporters', () => ({
     addVehicle: vi.fn(), patchVehicle: vi.fn(), removeVehicle: vi.fn(),
     addTrailer: vi.fn(), removeTrailer: vi.fn(),
     transferDriver: vi.fn(), transferVehicle: vi.fn(),
+    listContacts: vi.fn(), upsertContact: vi.fn(), deleteContact: vi.fn(),
   },
 }))
 vi.mock('@/components/dashboard/InsuranceSummaryCard', () => ({ InsuranceSummaryCard: () => null }))
@@ -117,5 +118,32 @@ describe('EmpresaDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar los 3 restantes' }))
     expect(screen.getByText('Conductor 11')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Mostrar los/ })).not.toBeInTheDocument()
+  })
+
+  it('does not poison the contact draft after Cancelar: reopening Editar shows the real current values, not a leftover cleared field', async () => {
+    const contact = { role: 'rep_legal', name: 'Contacto Original', phone: '111111111', email: 'orig@example.com' }
+    vi.mocked(transportersApi.get).mockResolvedValue({ ...PROFILE, contacts: [contact] } as never)
+    renderPage()
+    await screen.findByText('Contacto Original')
+
+    // Abrir edición, vaciar el teléfono, cancelar sin guardar.
+    fireEvent.click(screen.getByText('Editar'))
+    const phoneInput = screen.getByPlaceholderText('Teléfono')
+    expect(phoneInput).toHaveValue('111111111')
+    fireEvent.change(phoneInput, { target: { value: '' } })
+    fireEvent.click(screen.getByText('Cancelar'))
+
+    // La vista de lectura debe seguir mostrando el teléfono real (no se guardó nada).
+    expect(screen.getByText('111111111')).toBeInTheDocument()
+
+    // Reabrir edición: el draft debe resincronizarse desde `contact`, no arrastrar
+    // el valor vaciado en memoria de la edición cancelada anterior.
+    fireEvent.click(screen.getByText('Editar'))
+    expect(screen.getByPlaceholderText('Teléfono')).toHaveValue('111111111')
+    expect(screen.getByPlaceholderText('Nombre')).toHaveValue('Contacto Original')
+    expect(screen.getByPlaceholderText('Email')).toHaveValue('orig@example.com')
+
+    // No se llamó a upsertContact en ningún momento de este flujo (solo Cancelar, nunca Guardar).
+    expect(transportersApi.upsertContact).not.toHaveBeenCalled()
   })
 })
