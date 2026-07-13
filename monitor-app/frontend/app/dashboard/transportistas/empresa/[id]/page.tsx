@@ -22,6 +22,7 @@ import { VehicleRosterCard } from '@/components/dashboard/VehicleRosterCard'
 import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
 import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
+import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { describeEligibility } from '@/lib/utils/eligibility'
 import { getDriverAlertStatus, getVehicleAlertStatus } from '@/lib/compliance'
 import { vehicleCategory, VEHICLE_CATEGORY_LABELS, type VehicleCategory } from '@/lib/utils/transporterDocs'
@@ -198,6 +199,8 @@ export default function EmpresaDetailPage() {
     { kind: 'driver' | 'vehicle'; id: string; label: string } | null
   >(null)
 
+  const [bajaModalOpen, setBajaModalOpen] = useState(false)
+
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -312,6 +315,11 @@ export default function EmpresaDetailPage() {
     }
   }
 
+  const handleReactivate = async () => {
+    await transportersApi.reactivate(id)
+    await load()
+  }
+
   const filteredDrivers = useMemo(() => {
     if (!tp) return []
     return tp.drivers.filter(d => {
@@ -325,7 +333,11 @@ export default function EmpresaDetailPage() {
   // (sin gobernanza en el contrato actual) unificados para el filtro de Tipo.
   const allEquipment = useMemo((): (TransporterVehicle & { isTrailer: boolean })[] => tp ? [
     ...tp.vehicles.map(v => ({ ...v, isTrailer: false })),
-    ...tp.trailers.map(t => ({ id: t.id, type: 'Rampla', plate: t.plate, governance: null, isTrailer: true })),
+    ...tp.trailers.map(t => ({
+      id: t.id, type: 'Rampla', plate: t.plate, governance: null, isTrailer: true,
+      // Ramplas no soportan baja manual: no existe .../trailers/{id}/deactivate en el backend.
+      baja_override: false, baja_reason: null,
+    })),
   ] : [], [tp])
 
   const filteredVehicles = useMemo(() => allEquipment.filter(v => {
@@ -423,14 +435,28 @@ export default function EmpresaDetailPage() {
               </div>
             </div>
 
-            {canEdit && (
-              <button
-                onClick={() => setEditOpen(true)}
-                className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition border border-border shadow-sm shrink-0"
-              >
-                Editar Empresa
-              </button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {canEdit && (
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition border border-border shadow-sm shrink-0"
+                >
+                  Editar Empresa
+                </button>
+              )}
+              {canAdmin && (
+                <button
+                  onClick={() => tp.baja_override ? handleReactivate() : setBajaModalOpen(true)}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition border shadow-sm shrink-0 ${
+                    tp.baja_override
+                      ? 'bg-white hover:bg-gray-50 text-gray-700 border-border'
+                      : 'bg-white hover:bg-red-50 text-red-500 border-red-200'
+                  }`}
+                >
+                  {tp.baja_override ? 'Reactivar' : 'Dar de baja'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -657,6 +683,8 @@ export default function EmpresaDetailPage() {
         onPatch={handlePatchDriver}
         onRemove={() => handleRemoveDriver(selectedDriver!.id)}
         onTransferClick={() => selectedDriver && setTransferTarget({ kind: 'driver', id: selectedDriver.id, label: `conductor ${selectedDriver.name}` })}
+        onDeactivate={body => transportersApi.deactivateDriver(id, selectedDriver!.id, body).then(load)}
+        onReactivate={() => transportersApi.reactivateDriver(id, selectedDriver!.id).then(load)}
       />
 
       <VehicleDetailPanel
@@ -668,6 +696,12 @@ export default function EmpresaDetailPage() {
         onRemove={() => selectedVehicle!.isTrailer ? handleRemoveTrailer(selectedVehicle!.id) : handleRemoveVehicle(selectedVehicle!.id)}
         onTransferClick={selectedVehicle && !selectedVehicle.isTrailer
           ? () => setTransferTarget({ kind: 'vehicle', id: selectedVehicle.id, label: `equipo ${selectedVehicle.plate}` })
+          : undefined}
+        onDeactivate={selectedVehicle && !selectedVehicle.isTrailer
+          ? body => transportersApi.deactivateVehicle(id, selectedVehicle.id, body).then(load)
+          : undefined}
+        onReactivate={selectedVehicle && !selectedVehicle.isTrailer
+          ? () => transportersApi.reactivateVehicle(id, selectedVehicle.id).then(load)
           : undefined}
       />
 
@@ -745,6 +779,14 @@ export default function EmpresaDetailPage() {
         onClose={() => setTransferTarget(null)}
         onTransfer={handleConfirmTransfer}
       />
+
+      {bajaModalOpen && (
+        <BajaReasonModal
+          label={tp.business_name ?? 'esta empresa'}
+          onClose={() => setBajaModalOpen(false)}
+          onConfirm={async body => { await transportersApi.deactivate(id, body); await load() }}
+        />
+      )}
     </div>
   )
 }

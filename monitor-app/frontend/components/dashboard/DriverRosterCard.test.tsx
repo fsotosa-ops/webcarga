@@ -12,6 +12,7 @@ const DRIVER: TransporterDriver = {
     cert_antecedentes: 'ok', validado_gc_driver: 'ok', contrato_trabajo: 'ok',
     creacion_gc_driver: 'ok', avance_total: 100,
   },
+  baja_override: false, baja_reason: null,
 }
 
 describe('DriverRosterCard', () => {

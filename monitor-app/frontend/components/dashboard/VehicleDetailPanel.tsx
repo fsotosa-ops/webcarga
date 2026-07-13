@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2 } from 'lucide-react'
 import type { VehicleGovernance, TransporterVehicle, ComplianceStatus } from '@/lib/types'
+import type { BajaBody } from '@/lib/api/transporters'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
+import { BajaReasonModal } from './BajaReasonModal'
 import { vehicleGovernanceToChecklistItems, withVehicleGovernanceField } from '@/lib/utils/transporterDocs'
 
 interface Props {
@@ -15,6 +17,9 @@ interface Props {
   onPatch:         (vid: string, body: { type?: string; plate?: string; governance?: VehicleGovernance }) => Promise<void>
   onRemove:        () => Promise<void>
   onTransferClick?: () => void
+  /** undefined para ramplas: no existe endpoint .../trailers/{id}/deactivate en el backend */
+  onDeactivate?:   (body: BajaBody) => Promise<void>
+  onReactivate?:   () => Promise<void>
 }
 
 const EXPIRY_FIELDS = [
@@ -27,10 +32,11 @@ const EXPIRY_FIELDS = [
 /** Modal de detalle de un equipo — mismo lenguaje inmersivo que
  *  DriverDetailPanel/InsurancePolicyModal: modal centrado de 2 columnas,
  *  mismo contrato de accesibilidad. */
-export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
+export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, onDeactivate, onReactivate }: Props) {
   const open = !!vehicle
   const panelRef = useRef<HTMLDivElement>(null)
   const [removing, setRemoving] = useState(false)
+  const [bajaModalOpen, setBajaModalOpen] = useState(false)
   const [draft, setDraft] = useState({
     type: '', plate: '',
     circ_permit_expiry: '', tech_inspection_expiry: '', gas_emissions_expiry: '', soap_insurance_expiry: '',
@@ -210,6 +216,25 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
                   <ArrowRightLeft size={14} /> Transferir a otra empresa
                 </button>
               )}
+              {canAdmin && onDeactivate && onReactivate && (
+                vehicle.baja_override ? (
+                  <button
+                    type="button"
+                    onClick={onReactivate}
+                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
+                  >
+                    Reactivar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setBajaModalOpen(true)}
+                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
+                  >
+                    Dar de baja
+                  </button>
+                )
+              )}
               {canEdit && (
                 <button
                   type="button"
@@ -236,6 +261,13 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
           </div>
         </div>
       </div>
+      {bajaModalOpen && onDeactivate && (
+        <BajaReasonModal
+          label={`equipo ${vehicle.plate}`}
+          onClose={() => setBajaModalOpen(false)}
+          onConfirm={onDeactivate}
+        />
+      )}
     </>
   )
 }

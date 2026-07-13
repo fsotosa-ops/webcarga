@@ -11,12 +11,15 @@ const VEHICLE: TransporterVehicle = {
     padron: 'ok', poliza_rc: null, gps: 'ok', seguro_carga: 'ok',
     mantencion_camara_frio: 'n_a', creacion_gc_vehicle: 'ok',
   },
+  baja_override: false, baja_reason: null,
 }
 
 function renderPanel(vehicle: TransporterVehicle | null, opts: {
   canEdit?: boolean; canAdmin?: boolean
   onPatch?: (vid: string, body: unknown) => Promise<void>
   onRemove?: () => Promise<void>
+  onDeactivate?: (body: unknown) => Promise<void>
+  onReactivate?: () => Promise<void>
 } = {}) {
   return render(
     <VehicleDetailPanel
@@ -27,6 +30,8 @@ function renderPanel(vehicle: TransporterVehicle | null, opts: {
       onPatch={opts.onPatch ?? vi.fn().mockResolvedValue(undefined)}
       onRemove={opts.onRemove ?? vi.fn().mockResolvedValue(undefined)}
       onTransferClick={vi.fn()}
+      onDeactivate={opts.onDeactivate ?? vi.fn().mockResolvedValue(undefined)}
+      onReactivate={opts.onReactivate ?? vi.fn().mockResolvedValue(undefined)}
     />,
   )
 }
@@ -87,5 +92,37 @@ describe('VehicleDetailPanel', () => {
     renderPanel(VEHICLE, { onRemove, canEdit: true })
     fireEvent.click(screen.getByRole('button', { name: /Eliminar equipo/ }))
     await waitFor(() => expect(onRemove).toHaveBeenCalled())
+  })
+
+  it('shows "Dar de baja" for an active vehicle, opens the reason modal, and calls onDeactivate on confirm', async () => {
+    const onDeactivate = vi.fn().mockResolvedValue(undefined)
+    renderPanel(VEHICLE, { onDeactivate })
+    expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Dar de baja' }))
+    expect(screen.getByText(/Dar de baja: equipo/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }))
+    await waitFor(() => expect(onDeactivate).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'documentacion_vencida' }),
+    ))
+  })
+
+  it('shows "Reactivar" for a vehicle with baja_override, and calls onReactivate when clicked', () => {
+    const onReactivate = vi.fn().mockResolvedValue(undefined)
+    renderPanel({ ...VEHICLE, baja_override: true, baja_reason: 'otro' }, { onReactivate })
+    expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivar' }))
+    expect(onReactivate).toHaveBeenCalled()
+  })
+
+  it('does not show baja/reactivar buttons when onDeactivate/onReactivate are not provided (trailers)', () => {
+    render(
+      <VehicleDetailPanel
+        vehicle={VEHICLE} canEdit={true} canAdmin={true}
+        onClose={vi.fn()} onPatch={vi.fn().mockResolvedValue(undefined)}
+        onRemove={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
   })
 })

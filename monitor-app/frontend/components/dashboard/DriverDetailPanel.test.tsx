@@ -11,12 +11,15 @@ const DRIVER: TransporterDriver = {
     cert_antecedentes: 'ok', validado_gc_driver: 'ok', contrato_trabajo: 'ok',
     creacion_gc_driver: 'ok', avance_total: 90,
   },
+  baja_override: false, baja_reason: null,
 }
 
 function renderPanel(driver: TransporterDriver | null, opts: {
   canEdit?: boolean; canAdmin?: boolean
   onPatch?: (did: string, body: unknown) => Promise<void>
   onRemove?: () => Promise<void>
+  onDeactivate?: (body: unknown) => Promise<void>
+  onReactivate?: () => Promise<void>
 } = {}) {
   return render(
     <DriverDetailPanel
@@ -27,6 +30,8 @@ function renderPanel(driver: TransporterDriver | null, opts: {
       onPatch={opts.onPatch ?? vi.fn().mockResolvedValue(undefined)}
       onRemove={opts.onRemove ?? vi.fn().mockResolvedValue(undefined)}
       onTransferClick={vi.fn()}
+      onDeactivate={opts.onDeactivate ?? vi.fn().mockResolvedValue(undefined)}
+      onReactivate={opts.onReactivate ?? vi.fn().mockResolvedValue(undefined)}
     />,
   )
 }
@@ -82,6 +87,8 @@ describe('DriverDetailPanel', () => {
         onClose={vi.fn()} onPatch={vi.fn().mockResolvedValue(undefined)}
         onRemove={vi.fn().mockResolvedValue(undefined)}
         onTransferClick={onTransferClick}
+        onDeactivate={vi.fn().mockResolvedValue(undefined)}
+        onReactivate={vi.fn().mockResolvedValue(undefined)}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /Transferir/ }))
@@ -96,5 +103,31 @@ describe('DriverDetailPanel', () => {
     renderPanel(DRIVER, { onRemove, canEdit: true })
     fireEvent.click(screen.getByRole('button', { name: /Eliminar conductor/ }))
     await waitFor(() => expect(onRemove).toHaveBeenCalled())
+  })
+
+  it('shows "Dar de baja" for an active driver, opens the reason modal, and calls onDeactivate on confirm', async () => {
+    const onDeactivate = vi.fn().mockResolvedValue(undefined)
+    renderPanel(DRIVER, { onDeactivate })
+    expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Dar de baja' }))
+    expect(screen.getByText(/Dar de baja: conductor/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }))
+    await waitFor(() => expect(onDeactivate).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'documentacion_vencida' }),
+    ))
+  })
+
+  it('shows "Reactivar" for a driver with baja_override, and calls onReactivate when clicked', () => {
+    const onReactivate = vi.fn().mockResolvedValue(undefined)
+    renderPanel({ ...DRIVER, baja_override: true, baja_reason: 'documentacion_vencida' }, { onReactivate })
+    expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivar' }))
+    expect(onReactivate).toHaveBeenCalled()
+  })
+
+  it('does not show baja/reactivar buttons when canAdmin is false', () => {
+    renderPanel(DRIVER, { canAdmin: false })
+    expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
   })
 })

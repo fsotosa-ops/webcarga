@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, X, ArrowRightLeft, Trash2 } from 'lucide-react'
 import type { DriverGovernance, TransporterDriver, ComplianceStatus } from '@/lib/types'
+import type { BajaBody } from '@/lib/api/transporters'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
+import { BajaReasonModal } from './BajaReasonModal'
 import { driverGovernanceToChecklistItems, withDriverGovernanceField } from '@/lib/utils/transporterDocs'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 
@@ -16,6 +18,8 @@ interface Props {
   onPatch:         (did: string, body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
   onRemove:        () => Promise<void>
   onTransferClick: () => void
+  onDeactivate:    (body: BajaBody) => Promise<void>
+  onReactivate:    () => Promise<void>
 }
 
 /** Modal de detalle de un conductor — se abre al hacer click en su tarjeta
@@ -23,7 +27,7 @@ interface Props {
  *  centrado de 2 columnas (identidad + progreso a la izquierda,
  *  documentación a la derecha), mismo contrato de accesibilidad: Escape
  *  cierra, Tab atrapado, foco inicial y retorno al cerrar. */
-export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
+export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, onDeactivate, onReactivate }: Props) {
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
   const [draft, setDraft] = useState({ rut: '', name: '', id_expiry: '', license_expiry: '' })
@@ -31,6 +35,7 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
   const [removing, setRemoving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [statusErr, setStatusErr] = useState<string | null>(null)
+  const [bajaModalOpen, setBajaModalOpen] = useState(false)
 
   useEffect(() => {
     if (!driver) return
@@ -211,6 +216,25 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
                   <ArrowRightLeft size={14} /> Transferir a otra empresa
                 </button>
               )}
+              {canAdmin && (
+                driver.baja_override ? (
+                  <button
+                    type="button"
+                    onClick={onReactivate}
+                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
+                  >
+                    Reactivar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setBajaModalOpen(true)}
+                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
+                  >
+                    Dar de baja
+                  </button>
+                )
+              )}
               {canEdit && (
                 <button
                   type="button"
@@ -237,6 +261,13 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
           </div>
         </div>
       </div>
+      {bajaModalOpen && (
+        <BajaReasonModal
+          label={`conductor ${driver.name}`}
+          onClose={() => setBajaModalOpen(false)}
+          onConfirm={onDeactivate}
+        />
+      )}
     </>
   )
 }

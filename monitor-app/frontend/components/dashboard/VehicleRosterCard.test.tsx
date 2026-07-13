@@ -11,6 +11,7 @@ const VEHICLE: TransporterVehicle = {
     padron: 'ok', poliza_rc: 'ok', gps: 'ok', seguro_carga: 'ok',
     mantencion_camara_frio: 'n_a', creacion_gc_vehicle: 'ok',
   },
+  baja_override: false, baja_reason: null,
 }
 
 describe('VehicleRosterCard', () => {

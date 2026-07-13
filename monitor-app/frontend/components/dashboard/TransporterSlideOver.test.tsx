@@ -35,6 +35,7 @@ const PROFILE: TransporterProfile = {
     { doc_code: 'd2', label: 'Doc 2', status: 'pendiente', expiry_date: '2026-01-01', file_url: null, storage_path: null, manual_override: false, updated_at: null },
   ],
   operational_status: 'operativa', matched_by_upload: false, admin_account_id: null,
+  baja_override: false, baja_reason: null,
 }
 
 function renderSlideOver(item: TransporterListItem | null) {

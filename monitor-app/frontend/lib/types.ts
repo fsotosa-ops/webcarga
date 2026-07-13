@@ -413,6 +413,8 @@ export type TransporterDriver = {
   rut: string
   name: string
   governance: DriverGovernance | null
+  baja_override: boolean
+  baja_reason: string | null
 }
 
 export type TransporterVehicle = {
@@ -420,6 +422,8 @@ export type TransporterVehicle = {
   type: string
   plate: string
   governance: VehicleGovernance | null
+  baja_override: boolean
+  baja_reason: string | null
 }
 
 export type TransporterTrailer = {
@@ -512,6 +516,8 @@ export type TransporterProfile = {
   operational_status: 'operativa' | 'no_operativa'
   matched_by_upload: boolean
   admin_account_id: string | null
+  baja_override: boolean
+  baja_reason: string | null
 }
 
 export type TransporterListItem = {

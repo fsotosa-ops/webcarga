@@ -14,6 +14,7 @@ const DRIVER: TransporterDriver = {
     cert_antecedentes: 'ok', validado_gc_driver: 'ok', contrato_trabajo: 'ok',
     creacion_gc_driver: 'ok', avance_total: 90,
   },
+  baja_override: false, baja_reason: null,
 }
 
 const VEHICLE: TransporterVehicle = {
@@ -24,6 +25,7 @@ const VEHICLE: TransporterVehicle = {
     padron: 'ok', poliza_rc: null, gps: 'ok', seguro_carga: 'pendiente',
     mantencion_camara_frio: 'n_a', creacion_gc_vehicle: 'ok',
   },
+  baja_override: false, baja_reason: null,
 }
 
 describe('driverGovernanceToChecklistItems', () => {

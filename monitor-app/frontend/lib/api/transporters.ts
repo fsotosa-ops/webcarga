@@ -43,6 +43,11 @@ export type DocumentPatch = {
   manual_override?: boolean
 }
 
+export type BajaBody = {
+  reason: 'documentacion_vencida' | 'termino_mutuo_acuerdo' | 'termino_penalizacion' | 'otro'
+  notes?: string
+}
+
 export const transportersApi = {
   list: (params?: TransporterListParams) => {
     const qs = new URLSearchParams()
@@ -152,4 +157,36 @@ export const transportersApi = {
       `/api/v1/transporters/${id}/vehicles/${vid}/transfer`,
       { method: 'POST', body: JSON.stringify({ to_transporter_id: toTransporterId }) },
     ),
+
+  // ── Alta/baja manual (baja_override, rol admin) ──────────────────────
+
+  deactivate: (id: string, body: BajaBody) =>
+    apiFetch<{ ok: boolean; id: string; action: string }>(`/api/v1/transporters/${id}/deactivate`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+
+  reactivate: (id: string) =>
+    apiFetch<{ ok: boolean; id: string; action: string }>(`/api/v1/transporters/${id}/reactivate`, {
+      method: 'POST',
+    }),
+
+  deactivateDriver: (id: string, did: string, body: BajaBody) =>
+    apiFetch<{ ok: boolean; id: string; action: string }>(`/api/v1/transporters/${id}/drivers/${did}/deactivate`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+
+  reactivateDriver: (id: string, did: string) =>
+    apiFetch<{ ok: boolean; id: string; action: string }>(`/api/v1/transporters/${id}/drivers/${did}/reactivate`, {
+      method: 'POST',
+    }),
+
+  deactivateVehicle: (id: string, vid: string, body: BajaBody) =>
+    apiFetch<{ ok: boolean; id: string; action: string }>(`/api/v1/transporters/${id}/vehicles/${vid}/deactivate`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+
+  reactivateVehicle: (id: string, vid: string) =>
+    apiFetch<{ ok: boolean; id: string; action: string }>(`/api/v1/transporters/${id}/vehicles/${vid}/reactivate`, {
+      method: 'POST',
+    }),
 }
