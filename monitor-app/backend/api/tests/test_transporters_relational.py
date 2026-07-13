@@ -226,6 +226,210 @@ def test_transfer_vehicle_requires_admin():
     assert res.status_code == 403
 
 
+# ── Asignación driver/vehicle: repunte a transporter_id directo (Checkpoint
+# B Task 4) ──────────────────────────────────────────────────────────────
+# app.driver_assignments/app.vehicle_assignments fueron dropeadas en
+# Checkpoint A; app.drivers.transporter_id/app.vehicles.transporter_id son
+# FKs directas. Estos tests fijan el nombre de columna/tabla en la query
+# ejecutada para detectar en CI un futuro desfase de schema como el que
+# motivó este task.
+
+def test_add_driver_new_sets_transporter_id_on_insert():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = [TID, "d-new"]  # exists check, INSERT RETURNING id
+    pool.fetchrow.return_value = None  # driver lookup by rut: no match -> insert path
+    client = make_client(pool)
+    res = client.post(
+        f"/api/v1/transporters/{TID}/drivers",
+        json={"rut": "11.111.111-1", "name": "Juan Pérez"},
+    )
+    assert res.status_code == 200
+    insert_call = pool.fetchval.call_args_list[-1]
+    assert "app.drivers" in insert_call.args[0]
+    assert "transporter_id" in insert_call.args[0]
+    assert "app.driver_assignments" not in insert_call.args[0]
+    assert insert_call.args[-1] == TID
+
+
+def test_add_driver_already_assigned_elsewhere_checks_drivers_table():
+    pool = AsyncMock()
+    other_tid = "bbbbbbbb-0000-0000-0000-000000000002"
+    pool.fetchval.return_value = TID  # exists check (reused below)
+    pool.fetchrow.side_effect = [
+        {"id": "d1"},  # driver lookup by rut
+        {"transporter_id": other_tid},  # current assignment check
+    ]
+    client = make_client(pool)
+    res = client.post(
+        f"/api/v1/transporters/{TID}/drivers",
+        json={"rut": "11.111.111-1", "name": "Juan Pérez"},
+    )
+    assert res.status_code == 409
+    assignment_check_sql = pool.fetchrow.call_args_list[-1].args[0]
+    assert "app.drivers" in assignment_check_sql
+    assert "app.driver_assignments" not in assignment_check_sql
+
+
+def test_remove_driver_nulls_transporter_id_column():
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 1"
+    client = make_client(pool)
+    res = client.delete(f"/api/v1/transporters/{TID}/drivers/d1")
+    assert res.status_code == 200
+    update_sql = pool.execute.call_args.args[0]
+    assert "app.drivers" in update_sql
+    assert "transporter_id = NULL" in update_sql
+    assert "app.driver_assignments" not in update_sql
+
+
+def test_remove_driver_not_assigned_is_404():
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 0"
+    client = make_client(pool)
+    res = client.delete(f"/api/v1/transporters/{TID}/drivers/d1")
+    assert res.status_code == 404
+
+
+def test_transfer_driver_uses_single_update_on_drivers_table():
+    pool = AsyncMock()
+    dest_id = "bbbbbbbb-0000-0000-0000-000000000002"
+    pool.fetchval.return_value = dest_id  # dest transporter exists check
+    pool.execute.return_value = "UPDATE 1"
+    client = make_client(pool, role="admin", enforce_roles=True)
+    res = client.post(
+        f"/api/v1/transporters/{TID}/drivers/d1/transfer",
+        json={"to_transporter_id": dest_id},
+    )
+    assert res.status_code == 200
+    update_calls = [c for c in pool.execute.call_args_list if "app.drivers" in c.args[0]]
+    assert len(update_calls) == 1
+    assert "SET transporter_id" in update_calls[0].args[0]
+    assert "app.driver_assignments" not in update_calls[0].args[0]
+
+
+def test_transfer_driver_not_currently_assigned_is_404():
+    pool = AsyncMock()
+    dest_id = "bbbbbbbb-0000-0000-0000-000000000002"
+    pool.fetchval.return_value = dest_id
+    pool.execute.return_value = "UPDATE 0"
+    client = make_client(pool, role="admin", enforce_roles=True)
+    res = client.post(
+        f"/api/v1/transporters/{TID}/drivers/d1/transfer",
+        json={"to_transporter_id": dest_id},
+    )
+    assert res.status_code == 404
+
+
+def test_add_vehicle_new_sets_transporter_id_on_insert():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = [TID, "v-new"]  # exists check, INSERT RETURNING id
+    pool.fetchrow.return_value = None  # vehicle lookup by plate: no match -> insert path
+    client = make_client(pool)
+    res = client.post(
+        f"/api/v1/transporters/{TID}/vehicles",
+        json={"plate": "abcd12", "kind": "tracto"},
+    )
+    assert res.status_code == 200
+    insert_call = pool.fetchval.call_args_list[-1]
+    assert "app.vehicles" in insert_call.args[0]
+    assert "transporter_id" in insert_call.args[0]
+    assert "app.vehicle_assignments" not in insert_call.args[0]
+
+
+def test_remove_vehicle_nulls_transporter_id_column():
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 1"
+    client = make_client(pool)
+    res = client.delete(f"/api/v1/transporters/{TID}/vehicles/v1")
+    assert res.status_code == 200
+    update_sql = pool.execute.call_args.args[0]
+    assert "app.vehicles" in update_sql
+    assert "transporter_id = NULL" in update_sql
+    assert "app.vehicle_assignments" not in update_sql
+
+
+def test_transfer_vehicle_uses_single_update_on_vehicles_table():
+    pool = AsyncMock()
+    dest_id = "bbbbbbbb-0000-0000-0000-000000000002"
+    pool.fetchval.return_value = dest_id
+    pool.execute.return_value = "UPDATE 1"
+    client = make_client(pool, role="admin", enforce_roles=True)
+    res = client.post(
+        f"/api/v1/transporters/{TID}/vehicles/v1/transfer",
+        json={"to_transporter_id": dest_id},
+    )
+    assert res.status_code == 200
+    update_calls = [c for c in pool.execute.call_args_list if "app.vehicles" in c.args[0]]
+    assert len(update_calls) == 1
+    assert "SET transporter_id" in update_calls[0].args[0]
+    assert "app.vehicle_assignments" not in update_calls[0].args[0]
+
+
+def test_add_trailer_new_sets_transporter_id_on_insert():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = [TID, "t-new"]  # exists check, INSERT RETURNING id
+    pool.fetchrow.return_value = None  # vehicle lookup by plate: no match -> insert path
+    client = make_client(pool)
+    res = client.post(
+        f"/api/v1/transporters/{TID}/trailers",
+        json={"plate": "ramp01"},
+    )
+    assert res.status_code == 200
+    insert_call = pool.fetchval.call_args_list[-1]
+    assert "app.vehicles" in insert_call.args[0]
+    assert "transporter_id" in insert_call.args[0]
+    assert "app.vehicle_assignments" not in insert_call.args[0]
+
+
+def test_remove_trailer_nulls_transporter_id_column():
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 1"
+    client = make_client(pool)
+    res = client.delete(f"/api/v1/transporters/{TID}/trailers/t1")
+    assert res.status_code == 200
+    update_sql = pool.execute.call_args.args[0]
+    assert "app.vehicles" in update_sql
+    assert "transporter_id = NULL" in update_sql
+    assert "app.vehicle_assignments" not in update_sql
+
+
+def test_list_from_uses_drivers_and_vehicles_transporter_id_no_assignment_tables():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    client = make_client(pool)
+    res = client.get("/api/v1/transporters")
+    assert res.status_code == 200
+    fetch_sql = pool.fetch.call_args.args[0]
+    assert "app.drivers" in fetch_sql
+    assert "app.vehicles" in fetch_sql
+    assert "app.driver_assignments" not in fetch_sql
+    assert "app.vehicle_assignments" not in fetch_sql
+
+
+def test_get_profile_driver_vehicle_trailer_queries_use_transporter_id_column():
+    pool = AsyncMock()
+    pool.fetchrow.side_effect = [T_ROW, ELIGIBILITY_ROW]
+    pool.fetch.side_effect = [
+        CONTACTS, DRIVER_ROWS, VEHICLE_ROWS, TRAILER_ROWS,
+        DRIVER_DOCS_RAW, VEHICLE_DOCS_RAW, COMPANY_DOC_ROWS,
+    ]
+    client = make_client(pool)
+    res = client.get(f"/api/v1/transporters/{TID}")
+    assert res.status_code == 200
+    driver_sql, vehicle_sql, trailer_sql = (
+        pool.fetch.call_args_list[1].args[0],
+        pool.fetch.call_args_list[2].args[0],
+        pool.fetch.call_args_list[3].args[0],
+    )
+    for sql in (driver_sql, vehicle_sql, trailer_sql):
+        assert "app.driver_assignments" not in sql
+        assert "app.vehicle_assignments" not in sql
+    assert "FROM app.drivers" in driver_sql
+    assert "FROM app.vehicles" in vehicle_sql
+    assert "FROM app.vehicles" in trailer_sql
+
+
 # ── Documentos: upload rechaza mime no permitido ────────────────────
 
 def test_upload_document_file_rejects_bad_mime():

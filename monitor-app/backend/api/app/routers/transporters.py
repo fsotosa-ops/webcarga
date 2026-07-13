@@ -204,18 +204,16 @@ _LIST_FROM = """
     FROM app.transporters t
     LEFT JOIN (
         SELECT transporter_id, count(*) AS driver_count
-        FROM app.driver_assignments WHERE valid_to IS NULL
+        FROM app.drivers WHERE transporter_id IS NOT NULL
         GROUP BY transporter_id
     ) dc ON dc.transporter_id = t.id
     LEFT JOIN (
-        SELECT va.transporter_id,
-               count(*) FILTER (WHERE v.kind <> 'rampla') AS vehicle_count,
-               count(*) FILTER (WHERE v.kind = 'rampla')  AS trailer_count,
-               count(*) FILTER (WHERE v.kind = 'tracto')  AS tracto_count
-        FROM app.vehicle_assignments va
-        JOIN app.vehicles v ON v.id = va.vehicle_id
-        WHERE va.valid_to IS NULL
-        GROUP BY va.transporter_id
+        SELECT transporter_id,
+               count(*) FILTER (WHERE kind <> 'rampla') AS vehicle_count,
+               count(*) FILTER (WHERE kind = 'rampla')  AS trailer_count,
+               count(*) FILTER (WHERE kind = 'tracto')  AS tracto_count
+        FROM app.vehicles WHERE transporter_id IS NOT NULL
+        GROUP BY transporter_id
     ) vc ON vc.transporter_id = t.id
     LEFT JOIN app.v_transporter_eligibility el ON el.transporter_id = t.id
 """
@@ -377,11 +375,10 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
 
     driver_rows = await pool.fetch(
         """
-        SELECT d.id, d.rut, d.dv, d.full_name, d.id_expiry, d.license_expiry, d.avance_total
-        FROM app.driver_assignments da
-        JOIN app.drivers d ON d.id = da.driver_id
-        WHERE da.transporter_id = $1 AND da.valid_to IS NULL
-        ORDER BY d.full_name
+        SELECT id, rut, dv, full_name, id_expiry, license_expiry, avance_total
+        FROM app.drivers
+        WHERE transporter_id = $1
+        ORDER BY full_name
         """,
         tid,
     )
@@ -389,13 +386,12 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
 
     vehicle_rows = await pool.fetch(
         """
-        SELECT v.id, v.plate, v.kind, v.type_label, v.year,
-               v.circ_permit_expiry, v.tech_inspection_expiry,
-               v.gas_emissions_expiry, v.soap_insurance_expiry
-        FROM app.vehicle_assignments va
-        JOIN app.vehicles v ON v.id = va.vehicle_id
-        WHERE va.transporter_id = $1 AND va.valid_to IS NULL AND v.kind <> 'rampla'
-        ORDER BY v.plate
+        SELECT id, plate, kind, type_label, year,
+               circ_permit_expiry, tech_inspection_expiry,
+               gas_emissions_expiry, soap_insurance_expiry
+        FROM app.vehicles
+        WHERE transporter_id = $1 AND kind <> 'rampla'
+        ORDER BY plate
         """,
         tid,
     )
@@ -403,11 +399,10 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
 
     trailer_rows = await pool.fetch(
         """
-        SELECT v.id, v.plate
-        FROM app.vehicle_assignments va
-        JOIN app.vehicles v ON v.id = va.vehicle_id
-        WHERE va.transporter_id = $1 AND va.valid_to IS NULL AND v.kind = 'rampla'
-        ORDER BY v.plate
+        SELECT id, plate
+        FROM app.vehicles
+        WHERE transporter_id = $1 AND kind = 'rampla'
+        ORDER BY plate
         """,
         tid,
     )
@@ -695,36 +690,32 @@ async def add_driver(
     if driver:
         driver_id = driver["id"]
         active = await pool.fetchrow(
-            "SELECT transporter_id FROM app.driver_assignments WHERE driver_id = $1 AND valid_to IS NULL",
-            driver_id,
+            "SELECT transporter_id FROM app.drivers WHERE id = $1", driver_id,
         )
-        if active and str(active["transporter_id"]) == tid:
+        current_transporter_id = active["transporter_id"] if active else None
+        if current_transporter_id and str(current_transporter_id) == tid:
             raise HTTPException(409, f"El conductor {body.rut} ya está asignado a esta empresa")
-        if active:
+        if current_transporter_id:
             raise HTTPException(
                 409,
                 f"El conductor {body.rut} ya está asignado a otra empresa "
-                f"({active['transporter_id']}). Use POST "
-                f"/transporters/{active['transporter_id']}/drivers/{driver_id}/transfer para transferirlo.",
+                f"({current_transporter_id}). Use POST "
+                f"/transporters/{current_transporter_id}/drivers/{driver_id}/transfer para transferirlo.",
             )
         await pool.execute(
-            "UPDATE app.drivers SET full_name = $2, updated_at = NOW() WHERE id = $1",
-            driver_id, body.name,
+            "UPDATE app.drivers SET full_name = $2, transporter_id = $3, updated_at = NOW() WHERE id = $1",
+            driver_id, body.name, tid,
         )
     else:
         driver_id = await pool.fetchval(
             """
-            INSERT INTO app.drivers (rut, dv, rut_dv_valid, full_name, source)
-            VALUES ($1, $2, (app.rut_dv($1) = upper($2)), $3, 'manual')
+            INSERT INTO app.drivers (rut, dv, rut_dv_valid, full_name, source, transporter_id)
+            VALUES ($1, $2, (app.rut_dv($1) = upper($2)), $3, 'manual', $4)
             RETURNING id
             """,
-            rut_body, dv, body.name,
+            rut_body, dv, body.name, tid,
         )
 
-    await pool.execute(
-        "INSERT INTO app.driver_assignments (driver_id, transporter_id, created_by) VALUES ($1, $2, $3::uuid)",
-        driver_id, tid, user["sub"],
-    )
     return {"data": {"id": str(driver_id), "rut": _format_rut(rut_body, dv), "name": body.name}}
 
 
@@ -787,8 +778,7 @@ async def remove_driver(
     pool=Depends(get_pool), user=Depends(require_editor),
 ):
     result = await pool.execute(
-        "UPDATE app.driver_assignments SET valid_to = CURRENT_DATE "
-        "WHERE driver_id = $1 AND transporter_id = $2 AND valid_to IS NULL",
+        "UPDATE app.drivers SET transporter_id = NULL WHERE id = $1 AND transporter_id = $2",
         did, tid,
     )
     if result == "UPDATE 0":
@@ -804,22 +794,17 @@ async def transfer_driver(
     if body.to_transporter_id == tid:
         raise HTTPException(422, "La empresa destino debe ser distinta de la actual")
 
-    active = await pool.fetchrow(
-        "SELECT id FROM app.driver_assignments WHERE driver_id = $1 AND transporter_id = $2 AND valid_to IS NULL",
-        did, tid,
-    )
-    if not active:
-        raise HTTPException(404, "El conductor no está asignado actualmente a esta empresa")
-
     dest = await pool.fetchval("SELECT id FROM app.transporters WHERE id = $1", body.to_transporter_id)
     if not dest:
         raise HTTPException(404, "Empresa destino no encontrada")
 
-    await pool.execute("UPDATE app.driver_assignments SET valid_to = CURRENT_DATE WHERE id = $1", active["id"])
-    await pool.execute(
-        "INSERT INTO app.driver_assignments (driver_id, transporter_id, created_by) VALUES ($1, $2, $3::uuid)",
-        did, body.to_transporter_id, user["sub"],
+    result = await pool.execute(
+        "UPDATE app.drivers SET transporter_id = $1 WHERE id = $2 AND transporter_id = $3",
+        body.to_transporter_id, did, tid,
     )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "El conductor no está asignado actualmente a esta empresa")
+
     await pool.execute(
         """
         INSERT INTO app.audit_log (actor, entity_type, entity_id, action, field, old_value, new_value, source)
@@ -850,31 +835,29 @@ async def add_vehicle(
     if vehicle:
         vehicle_id = vehicle["id"]
         active = await pool.fetchrow(
-            "SELECT transporter_id FROM app.vehicle_assignments WHERE vehicle_id = $1 AND valid_to IS NULL",
-            vehicle_id,
+            "SELECT transporter_id FROM app.vehicles WHERE id = $1", vehicle_id,
         )
-        if active and str(active["transporter_id"]) == tid:
+        current_transporter_id = active["transporter_id"] if active else None
+        if current_transporter_id and str(current_transporter_id) == tid:
             raise HTTPException(409, f"El vehículo {plate} ya está asignado a esta empresa")
-        if active:
+        if current_transporter_id:
             raise HTTPException(
                 409,
-                f"El vehículo {plate} ya está asignado a otra empresa ({active['transporter_id']}). "
-                f"Use POST /transporters/{active['transporter_id']}/vehicles/{vehicle_id}/transfer para transferirlo.",
+                f"El vehículo {plate} ya está asignado a otra empresa ({current_transporter_id}). "
+                f"Use POST /transporters/{current_transporter_id}/vehicles/{vehicle_id}/transfer para transferirlo.",
             )
         await pool.execute(
-            "UPDATE app.vehicles SET kind = $2, type_label = COALESCE($3, type_label), updated_at = NOW() WHERE id = $1",
-            vehicle_id, body.kind, body.type_label,
+            "UPDATE app.vehicles SET kind = $2, type_label = COALESCE($3, type_label), "
+            "transporter_id = $4, updated_at = NOW() WHERE id = $1",
+            vehicle_id, body.kind, body.type_label, tid,
         )
     else:
         vehicle_id = await pool.fetchval(
-            "INSERT INTO app.vehicles (plate, kind, type_label, source) VALUES ($1, $2, $3, 'manual') RETURNING id",
-            plate, body.kind, body.type_label,
+            "INSERT INTO app.vehicles (plate, kind, type_label, source, transporter_id) "
+            "VALUES ($1, $2, $3, 'manual', $4) RETURNING id",
+            plate, body.kind, body.type_label, tid,
         )
 
-    await pool.execute(
-        "INSERT INTO app.vehicle_assignments (vehicle_id, transporter_id, created_by) VALUES ($1, $2, $3::uuid)",
-        vehicle_id, tid, user["sub"],
-    )
     return {"data": {"id": str(vehicle_id), "type": body.type_label or body.kind, "plate": plate}}
 
 
@@ -937,8 +920,7 @@ async def remove_vehicle(
     pool=Depends(get_pool), user=Depends(require_editor),
 ):
     result = await pool.execute(
-        "UPDATE app.vehicle_assignments SET valid_to = CURRENT_DATE "
-        "WHERE vehicle_id = $1 AND transporter_id = $2 AND valid_to IS NULL",
+        "UPDATE app.vehicles SET transporter_id = NULL WHERE id = $1 AND transporter_id = $2",
         vid, tid,
     )
     if result == "UPDATE 0":
@@ -954,22 +936,17 @@ async def transfer_vehicle(
     if body.to_transporter_id == tid:
         raise HTTPException(422, "La empresa destino debe ser distinta de la actual")
 
-    active = await pool.fetchrow(
-        "SELECT id FROM app.vehicle_assignments WHERE vehicle_id = $1 AND transporter_id = $2 AND valid_to IS NULL",
-        vid, tid,
-    )
-    if not active:
-        raise HTTPException(404, "El vehículo no está asignado actualmente a esta empresa")
-
     dest = await pool.fetchval("SELECT id FROM app.transporters WHERE id = $1", body.to_transporter_id)
     if not dest:
         raise HTTPException(404, "Empresa destino no encontrada")
 
-    await pool.execute("UPDATE app.vehicle_assignments SET valid_to = CURRENT_DATE WHERE id = $1", active["id"])
-    await pool.execute(
-        "INSERT INTO app.vehicle_assignments (vehicle_id, transporter_id, created_by) VALUES ($1, $2, $3::uuid)",
-        vid, body.to_transporter_id, user["sub"],
+    result = await pool.execute(
+        "UPDATE app.vehicles SET transporter_id = $1 WHERE id = $2 AND transporter_id = $3",
+        body.to_transporter_id, vid, tid,
     )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "El vehículo no está asignado actualmente a esta empresa")
+
     await pool.execute(
         """
         INSERT INTO app.audit_log (actor, entity_type, entity_id, action, field, old_value, new_value, source)
@@ -997,23 +974,24 @@ async def add_trailer(
     if vehicle:
         vehicle_id = vehicle["id"]
         active = await pool.fetchrow(
-            "SELECT transporter_id FROM app.vehicle_assignments WHERE vehicle_id = $1 AND valid_to IS NULL",
-            vehicle_id,
+            "SELECT transporter_id FROM app.vehicles WHERE id = $1", vehicle_id,
         )
-        if active and str(active["transporter_id"]) == tid:
+        current_transporter_id = active["transporter_id"] if active else None
+        if current_transporter_id and str(current_transporter_id) == tid:
             raise HTTPException(409, f"La rampla {plate} ya está asignada a esta empresa")
-        if active:
-            raise HTTPException(409, f"La rampla {plate} ya está asignada a otra empresa ({active['transporter_id']})")
+        if current_transporter_id:
+            raise HTTPException(409, f"La rampla {plate} ya está asignada a otra empresa ({current_transporter_id})")
+        await pool.execute(
+            "UPDATE app.vehicles SET transporter_id = $2, updated_at = NOW() WHERE id = $1",
+            vehicle_id, tid,
+        )
     else:
         vehicle_id = await pool.fetchval(
-            "INSERT INTO app.vehicles (plate, kind, type_label, source) VALUES ($1, 'rampla', $2, 'manual') RETURNING id",
-            plate, body.type_label,
+            "INSERT INTO app.vehicles (plate, kind, type_label, source, transporter_id) "
+            "VALUES ($1, 'rampla', $2, 'manual', $3) RETURNING id",
+            plate, body.type_label, tid,
         )
 
-    await pool.execute(
-        "INSERT INTO app.vehicle_assignments (vehicle_id, transporter_id, created_by) VALUES ($1, $2, $3::uuid)",
-        vehicle_id, tid, user["sub"],
-    )
     return {"data": {"id": str(vehicle_id), "plate": plate}}
 
 
@@ -1023,8 +1001,7 @@ async def remove_trailer(
     pool=Depends(get_pool), user=Depends(require_editor),
 ):
     result = await pool.execute(
-        "UPDATE app.vehicle_assignments SET valid_to = CURRENT_DATE "
-        "WHERE vehicle_id = $1 AND transporter_id = $2 AND valid_to IS NULL",
+        "UPDATE app.vehicles SET transporter_id = NULL WHERE id = $1 AND transporter_id = $2",
         trid, tid,
     )
     if result == "UPDATE 0":
