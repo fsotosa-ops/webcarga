@@ -7,6 +7,7 @@ import type {
   TransporterDriver,
   TransporterVehicle,
   TransporterTrailer,
+  TransporterContact,
   TransporterContactability,
   TransporterDocumentPatchResult,
   DocumentVersion,
@@ -189,4 +190,17 @@ export const transportersApi = {
     apiFetch<{ ok: boolean; id: string; action: string }>(`/api/v1/transporters/${id}/vehicles/${vid}/reactivate`, {
       method: 'POST',
     }),
+
+  // ── Contactos (app.transporter_contacts) ─────────────────────────────
+
+  listContacts: (id: string) =>
+    apiFetch<{ data: TransporterContact[] }>(`/api/v1/transporters/${id}/contacts`),
+
+  upsertContact: (id: string, body: { role: TransporterContact['role']; name?: string; phone?: string; email?: string }) =>
+    apiFetch<{ data: TransporterContact }>(`/api/v1/transporters/${id}/contacts`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+
+  deleteContact: (id: string, role: TransporterContact['role']) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/transporters/${id}/contacts/${role}`, { method: 'DELETE' }),
 }

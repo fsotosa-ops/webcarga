@@ -123,7 +123,7 @@ function EditableField({
   )
 }
 
-// ── Contactos (app.transporter_contacts) — sin cambios ─────────────
+// ── Contactos (app.transporter_contacts) — edición inline por rol ──
 const CONTACT_ROLE_LABELS: Record<TransporterContact['role'], string> = {
   rep_legal:   'Representante legal',
   operacional: 'Operacional',
@@ -131,37 +131,86 @@ const CONTACT_ROLE_LABELS: Record<TransporterContact['role'], string> = {
   documentos:  'Documentos',
 }
 
-function ContactsSection({ contacts, tp }: { contacts: TransporterContact[]; tp: TransporterProfile }) {
+function ContactCard({ tid, role, contact, canEdit, onSaved }: {
+  tid: string; role: TransporterContact['role']; contact: TransporterContact | undefined
+  canEdit: boolean; onSaved: (c: TransporterContact) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ name: contact?.name ?? '', phone: contact?.phone ?? '', email: contact?.email ?? '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    setBusy(true); setErr(null)
+    try {
+      const res = await transportersApi.upsertContact(tid, { role, ...draft })
+      onSaved(res.data)
+      setEditing(false)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally { setBusy(false) }
+  }
+
+  if (editing) {
+    return (
+      <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">{CONTACT_ROLE_LABELS[role]}</p>
+        <input value={draft.name} onChange={e => setDraft(v => ({ ...v, name: e.target.value }))} placeholder="Nombre"
+          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+        <input value={draft.phone} onChange={e => setDraft(v => ({ ...v, phone: e.target.value }))} placeholder="Teléfono"
+          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+        <input value={draft.email} onChange={e => setDraft(v => ({ ...v, email: e.target.value }))} placeholder="Email"
+          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+        {err && <p className="text-[10px] text-red-500">{err}</p>}
+        <div className="flex gap-1.5 pt-1">
+          <button onClick={save} disabled={busy} className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent rounded px-2 py-1 disabled:opacity-50">
+            {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Guardar
+          </button>
+          <button onClick={() => setEditing(false)} className="text-[11px] text-gray-400 hover:text-gray-600 px-2 py-1">Cancelar</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="border border-border/60 rounded-lg p-3 group relative">
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{CONTACT_ROLE_LABELS[role]}</p>
+      {contact?.name || contact?.phone || contact?.email ? (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-text-primary truncate">{contact.name ?? <span className="text-gray-300 italic">sin nombre</span>}</p>
+          {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">{contact.phone}</a>}
+          {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
+          {canEdit && (
+            <button onClick={() => setEditing(true)} className="text-[10px] text-gray-400 hover:text-accent mt-1">Editar</button>
+          )}
+        </div>
+      ) : canEdit ? (
+        <button onClick={() => setEditing(true)} className="text-[11px] text-accent hover:underline">+ Agregar {CONTACT_ROLE_LABELS[role].toLowerCase()}</button>
+      ) : (
+        <p className="text-[11px] text-gray-300 italic">Sin datos</p>
+      )}
+    </div>
+  )
+}
+
+function ContactsSection({ tid, contacts, canEdit, onContactsChange }: {
+  tid: string; contacts: TransporterContact[]; canEdit: boolean
+  onContactsChange: (contacts: TransporterContact[]) => void
+}) {
   const byRole = new Map(contacts.map(c => [c.role, c]))
+  function handleSaved(role: TransporterContact['role'], updated: TransporterContact) {
+    const next = contacts.filter(c => c.role !== role)
+    next.push(updated)
+    onContactsChange(next)
+  }
   return (
     <div className="bg-white rounded-xl border border-border p-4 md:p-5">
       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Contactos</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {(Object.keys(CONTACT_ROLE_LABELS) as TransporterContact['role'][]).map(role => {
-          const c = byRole.get(role)
-          return (
-            <div key={role} className="border border-border/60 rounded-lg p-3">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{CONTACT_ROLE_LABELS[role]}</p>
-              {c?.name || c?.phone || c?.email ? (
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-text-primary truncate">{c.name ?? <span className="text-gray-300 italic">sin nombre</span>}</p>
-                  {c.phone && (
-                    <a href={`tel:${c.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">
-                      {c.phone}
-                    </a>
-                  )}
-                  {c.email && (
-                    <a href={`mailto:${c.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate">
-                      <span className="truncate">{c.email}</span>
-                    </a>
-                  )}
-                </div>
-              ) : (
-                <p className="text-[11px] text-gray-300 italic">Sin datos</p>
-              )}
-            </div>
-          )
-        })}
+        {(Object.keys(CONTACT_ROLE_LABELS) as TransporterContact['role'][]).map(role => (
+          <ContactCard key={role} tid={tid} role={role} contact={byRole.get(role)} canEdit={canEdit}
+            onSaved={updated => handleSaved(role, updated)} />
+        ))}
       </div>
     </div>
   )
@@ -469,7 +518,12 @@ export default function EmpresaDetailPage() {
         compliancePct={tp.eligibility.compliance_pct}
       />
 
-      <ContactsSection contacts={tp.contacts} tp={tp} />
+      <ContactsSection
+        tid={tp.id}
+        contacts={tp.contacts}
+        canEdit={canEdit}
+        onContactsChange={contacts => setTp(prev => prev ? { ...prev, contacts } : prev)}
+      />
 
       {/* ── Conductores ── */}
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
