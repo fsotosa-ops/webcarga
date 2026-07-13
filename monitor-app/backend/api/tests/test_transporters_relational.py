@@ -78,12 +78,28 @@ def test_list_active_filter_adds_is_active_clause():
     assert "t.is_active" in fetch_sql
 
 
+def test_list_includes_operational_status():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": TID, "admin_id": "100", "business_name": "Transportes Test", "rut": "12345678-9",
+        "account_stage": "Operational", "driver_count": 0, "vehicle_count": 0, "trailer_count": 0,
+        "tracto_count": 0, "has_manual_edits": False, "has_active_alerts": True, "in_admin": True,
+        "clients": [], "avance_80_20": None, "avance_total": None, "compliance_pct": 0.0,
+        "eligible": False, "insurance_ok": True, "policies_count": 0, "blocking_reasons": [],
+        "operational_status": "no_operativa", "matched_by_upload": False,
+    }]
+    pool.fetchval.return_value = 1
+    client = make_client(pool)
+    res = client.get("/api/v1/transporters")
+    assert res.json()["data"][0]["operational_status"] == "no_operativa"
+
+
 # ── GET detalle: ensambla governance desde documentos ──────────────
 
 T_ROW = {
     "id": TID, "rut": "12345678", "dv": "9", "business_name": "Transportes Test",
     "account_stage": "Operational", "contactability": None,
-    "admin_internal_id": 100, "in_admin": True, "clients": ["Walmart"],
+    "admin_internal_id": 100, "admin_account_id": 5001, "in_admin": True, "clients": ["Walmart"],
     "avance_80_20": 80.0, "avance_total": 75.0,
     "manually_edited_fields": [], "edited_at": None,
     "updated_at": datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc),
@@ -109,11 +125,12 @@ COMPANY_DOC_ROWS = [
      "file_url": None, "storage_path": None, "manual_override": True, "updated_at": None},
 ]
 ELIGIBILITY_ROW = {"eligible": True, "compliance_pct": 92.5, "insurance_ok": True, "blocking_reasons": []}
+OPERATIONAL_STATUS_ROW = {"operational_status": "no_operativa", "matched_by_upload": False}
 
 
 def test_get_profile_assembles_governance_from_documents():
     pool = AsyncMock()
-    pool.fetchrow.side_effect = [T_ROW, ELIGIBILITY_ROW]
+    pool.fetchrow.side_effect = [T_ROW, ELIGIBILITY_ROW, OPERATIONAL_STATUS_ROW]
     pool.fetch.side_effect = [
         CONTACTS, DRIVER_ROWS, VEHICLE_ROWS, TRAILER_ROWS,
         DRIVER_DOCS_RAW, VEHICLE_DOCS_RAW, COMPANY_DOC_ROWS,
@@ -138,6 +155,9 @@ def test_get_profile_assembles_governance_from_documents():
     # Task 3b: file_url/manual_override deben repuntar en cada documento de la ficha
     assert data["documents"][0]["file_url"] is None
     assert data["documents"][0]["manual_override"] is True
+    assert data["operational_status"] == "no_operativa"
+    assert data["matched_by_upload"] is False
+    assert data["admin_account_id"] == "5001"
 
 
 def test_get_profile_missing_is_404():
@@ -166,7 +186,7 @@ def test_patch_stale_expected_updated_at_is_409():
 def test_patch_matching_expected_updated_at_succeeds():
     pool = AsyncMock()
     updated_at = datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc)
-    pool.fetchrow.side_effect = [{"updated_at": updated_at}, T_ROW, ELIGIBILITY_ROW]
+    pool.fetchrow.side_effect = [{"updated_at": updated_at}, T_ROW, ELIGIBILITY_ROW, OPERATIONAL_STATUS_ROW]
     pool.fetch.side_effect = [
         CONTACTS, DRIVER_ROWS, VEHICLE_ROWS, TRAILER_ROWS,
         DRIVER_DOCS_RAW, VEHICLE_DOCS_RAW, COMPANY_DOC_ROWS,
@@ -409,7 +429,7 @@ def test_list_from_uses_drivers_and_vehicles_transporter_id_no_assignment_tables
 
 def test_get_profile_driver_vehicle_trailer_queries_use_transporter_id_column():
     pool = AsyncMock()
-    pool.fetchrow.side_effect = [T_ROW, ELIGIBILITY_ROW]
+    pool.fetchrow.side_effect = [T_ROW, ELIGIBILITY_ROW, OPERATIONAL_STATUS_ROW]
     pool.fetch.side_effect = [
         CONTACTS, DRIVER_ROWS, VEHICLE_ROWS, TRAILER_ROWS,
         DRIVER_DOCS_RAW, VEHICLE_DOCS_RAW, COMPANY_DOC_ROWS,

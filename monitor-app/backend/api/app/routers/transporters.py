@@ -218,6 +218,7 @@ _LIST_FROM = """
         GROUP BY transporter_id
     ) vc ON vc.transporter_id = t.id
     LEFT JOIN app.v_transporter_eligibility el ON el.transporter_id = t.id
+    LEFT JOIN app.v_transporter_operational_status os ON os.transporter_id = t.id
 """
 
 
@@ -281,7 +282,8 @@ async def list_transporters(
             el.insurance_ok,
             (SELECT count(*)::int FROM app.insurance_policies ip
              WHERE ip.transporter_id = t.id)                              AS policies_count,
-            COALESCE(el.blocking_reasons, '{{}}')                         AS blocking_reasons
+            COALESCE(el.blocking_reasons, '{{}}')                         AS blocking_reasons,
+            os.operational_status, os.matched_by_upload
         {_LIST_FROM}
         {where}
         ORDER BY t.business_name ASC NULLS LAST
@@ -431,6 +433,12 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         tid,
     )
 
+    operational = await pool.fetchrow(
+        "SELECT operational_status, matched_by_upload "
+        "FROM app.v_transporter_operational_status WHERE transporter_id = $1",
+        tid,
+    )
+
     drivers = []
     for r in driver_rows:
         docs = driver_docs.get(r["id"], {})
@@ -503,6 +511,9 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
             "insurance_ok": eligibility["insurance_ok"] if eligibility else True,
             "blocking_reasons": list(eligibility["blocking_reasons"] or []) if eligibility else [],
         },
+        "operational_status": operational["operational_status"] if operational else "no_operativa",
+        "matched_by_upload": operational["matched_by_upload"] if operational else False,
+        "admin_account_id": str(t["admin_account_id"]) if t["admin_account_id"] is not None else None,
         "documents": documents,
     }
 
