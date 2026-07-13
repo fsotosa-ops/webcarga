@@ -103,11 +103,13 @@ T_ROW = {
     "avance_80_20": 80.0, "avance_total": 75.0,
     "manually_edited_fields": [], "edited_at": None,
     "updated_at": datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc),
+    "baja_override": False, "baja_reason": None,
 }
 CONTACTS = [{"role": "rep_legal", "name": "Ana", "phone": "+56911112222", "email": "ana@x.cl"}]
 DRIVER_ROWS = [{
     "id": "d1", "rut": "11111111", "dv": "1", "full_name": "Juan Pérez",
     "id_expiry": None, "license_expiry": None, "avance_total": None,
+    "baja_override": False, "baja_reason": None,
 }]
 DRIVER_DOCS_RAW = [
     {"entity_id": "d1", "doc_name": "epp", "status": "ok"},
@@ -117,6 +119,7 @@ VEHICLE_ROWS = [{
     "id": "v1", "plate": "ABCD12", "kind": "tracto", "type_label": None, "year": 2020,
     "circ_permit_expiry": None, "tech_inspection_expiry": None,
     "gas_emissions_expiry": None, "soap_insurance_expiry": None,
+    "baja_override": False, "baja_reason": None,
 }]
 VEHICLE_DOCS_RAW = [{"entity_id": "v1", "doc_name": "padron", "status": "ok"}]
 TRAILER_ROWS = [{"id": "t1", "plate": "RAMP01"}]
@@ -158,6 +161,39 @@ def test_get_profile_assembles_governance_from_documents():
     assert data["operational_status"] == "no_operativa"
     assert data["matched_by_upload"] is False
     assert data["admin_account_id"] == "5001"
+    assert data["baja_override"] is False
+    assert data["baja_reason"] is None
+    assert data["drivers"][0]["baja_override"] is False
+    assert data["vehicles"][0]["baja_override"] is False
+
+
+def test_get_profile_exposes_baja_override_at_all_3_levels():
+    """Task 1 (frontend alta/baja plan): baja_override/baja_reason deben
+    repuntar en la ficha completa — empresa (raíz), cada driver y cada
+    vehicle — para que el frontend sepa si mostrar 'Dar de baja' o
+    'Reactivar' en cada nivel."""
+    t_row = {**T_ROW, "baja_override": True, "baja_reason": "documentacion_vencida"}
+    driver_rows = [{**DRIVER_ROWS[0], "baja_override": True, "baja_reason": "documentacion_vencida"}]
+    vehicle_rows = [{**VEHICLE_ROWS[0], "baja_override": True, "baja_reason": "documentacion_vencida"}]
+
+    pool = AsyncMock()
+    pool.fetchrow.side_effect = [t_row, ELIGIBILITY_ROW, OPERATIONAL_STATUS_ROW]
+    pool.fetch.side_effect = [
+        CONTACTS, driver_rows, vehicle_rows, TRAILER_ROWS,
+        DRIVER_DOCS_RAW, VEHICLE_DOCS_RAW, COMPANY_DOC_ROWS,
+    ]
+
+    client = make_client(pool)
+    res = client.get(f"/api/v1/transporters/{TID}")
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["baja_override"] is True
+    assert data["baja_reason"] == "documentacion_vencida"
+    assert data["drivers"][0]["baja_override"] is True
+    assert data["drivers"][0]["baja_reason"] == "documentacion_vencida"
+    assert data["vehicles"][0]["baja_override"] is True
+    assert data["vehicles"][0]["baja_reason"] == "documentacion_vencida"
 
 
 def test_get_profile_missing_is_404():

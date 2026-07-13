@@ -379,7 +379,8 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
 
     driver_rows = await pool.fetch(
         """
-        SELECT id, rut, dv, full_name, id_expiry, license_expiry, avance_total
+        SELECT id, rut, dv, full_name, id_expiry, license_expiry, avance_total,
+               baja_override, baja_reason
         FROM app.drivers
         WHERE transporter_id = $1
         ORDER BY full_name
@@ -392,7 +393,8 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         """
         SELECT id, plate, kind, type_label, year,
                circ_permit_expiry, tech_inspection_expiry,
-               gas_emissions_expiry, soap_insurance_expiry
+               gas_emissions_expiry, soap_insurance_expiry,
+               baja_override, baja_reason
         FROM app.vehicles
         WHERE transporter_id = $1 AND kind <> 'rampla'
         ORDER BY plate
@@ -452,6 +454,7 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         drivers.append({
             "id": str(r["id"]), "rut": _format_rut(r["rut"], r["dv"]), "name": r["full_name"],
             "governance": gov,
+            "baja_override": r["baja_override"], "baja_reason": r["baja_reason"],
         })
 
     vehicles = []
@@ -469,6 +472,7 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         vehicles.append({
             "id": str(r["id"]), "type": r["type_label"] or r["kind"], "plate": r["plate"],
             "governance": gov,
+            "baja_override": r["baja_override"], "baja_reason": r["baja_reason"],
         })
 
     trailers = [{"id": str(r["id"]), "plate": r["plate"]} for r in trailer_rows]
@@ -515,6 +519,7 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         "matched_by_upload": operational["matched_by_upload"] if operational else False,
         "admin_account_id": str(t["admin_account_id"]) if t["admin_account_id"] is not None else None,
         "documents": documents,
+        "baja_override": t["baja_override"], "baja_reason": t["baja_reason"],
     }
 
 
