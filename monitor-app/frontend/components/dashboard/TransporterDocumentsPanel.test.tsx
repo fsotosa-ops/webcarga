@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { TransporterDocumentsPanel } from './TransporterDocumentsPanel'
 import { transportersApi } from '@/lib/api/transporters'
 import type { TransporterDocument } from '@/lib/types'
@@ -95,5 +95,26 @@ describe('TransporterDocumentsPanel', () => {
   it('shows a revert control only for documents with manual_override', () => {
     render(<TransporterDocumentsPanel tid="t1" documents={DOCS} canEdit={true} onDocumentsChange={vi.fn()} />)
     expect(screen.getAllByTitle('Revertir a valor del pipeline')).toHaveLength(1)
+  })
+
+  it('does not poison linkDraft after Cancelar: reopening "Pegar link" shows the real file_url, not a leftover cleared draft', () => {
+    const withLink = [{ ...DOCS[0], file_url: 'https://real.example.com/rol-sii.pdf' }]
+    render(<TransporterDocumentsPanel tid="t1" documents={withLink} canEdit={true} onDocumentsChange={vi.fn()} />)
+
+    // Abrir "Pegar link", vaciar el campo, cancelar sin guardar.
+    fireEvent.click(screen.getByTitle('Pegar link'))
+    const input = screen.getByPlaceholderText('https://…')
+    expect(input).toHaveValue('https://real.example.com/rol-sii.pdf')
+    fireEvent.change(input, { target: { value: '' } })
+    const buttons = within(input.parentElement as HTMLElement).getAllByRole('button')
+    fireEvent.click(buttons[buttons.length - 1]) // Cancelar (X)
+
+    // Reabrir "Pegar link": el draft debe resincronizarse desde doc.file_url real,
+    // no arrastrar el valor vaciado en memoria de la edición cancelada anterior.
+    fireEvent.click(screen.getByTitle('Pegar link'))
+    expect(screen.getByPlaceholderText('https://…')).toHaveValue('https://real.example.com/rol-sii.pdf')
+
+    // No se llamó a patchDocument en ningún momento de este flujo (solo Cancelar, nunca Guardar).
+    expect(transportersApi.patchDocument).not.toHaveBeenCalled()
   })
 })

@@ -91,6 +91,11 @@ function DocumentRow({
     if (next && versions === null) await loadVersions()
   }
 
+  function openLink() {
+    setLinkDraft(doc.file_url ?? '')
+    setLinkOpen(true)
+  }
+
   async function revertOverride() {
     setBusy(true); setErr(null)
     try {
@@ -152,7 +157,7 @@ function DocumentRow({
 
         {canEdit && (
           <div className="flex items-center gap-1 shrink-0">
-            <button type="button" onClick={() => setLinkOpen(v => !v)} title="Pegar link"
+            <button type="button" onClick={() => (linkOpen ? setLinkOpen(false) : openLink())} title="Pegar link"
               className="p-1 rounded border border-border/60 text-gray-400 hover:text-accent hover:border-accent transition-colors">
               <Link2 size={11} />
             </button>
