@@ -1,7 +1,9 @@
 AGENTLOG.md
+AGENTLOG_ARCHIVE.md
 CLAUDE.md
 logextraction.txt
 docs/
 credenciales.txt
 .vercel
 .superpowers/
+.playwright-mcp/

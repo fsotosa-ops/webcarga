@@ -1,10 +1,11 @@
 # Instrucciones de Claude Code
 1. Eres un asistente trabajando en este directorio local. Tienes permitido leer y analizar todos los archivos de esta carpeta.
-2. Al iniciar, SIEMPRE lee silenciosamente `AGENTLOG.md` para entender el contexto y el plan en curso.
+2. Al iniciar, SIEMPRE lee silenciosamente solo la sección activa de `AGENTLOG.md` (el archivo se mantiene acotado a los checkpoints vigentes — no es el histórico completo). Consulta `AGENTLOG_ARCHIVE.md` únicamente si necesitas contexto de checkpoints ya cerrados; no lo leas por defecto.
 3. REGLA ESTRICTA: ANTES de terminar cualquier tarea, de que te despidas, o si te pido que guardes, DEBES sobrescribir y actualizar el archivo `AGENTLOG.md` reflejando:
    - Qué hicimos.
    - Cuál es el siguiente paso exacto del plan (Checklist).
    - Decisiones de arquitectura tomadas.
+   Si al actualizar `AGENTLOG.md` un checkpoint queda completamente cerrado (sin pasos pendientes), mové esa sección a `AGENTLOG_ARCHIVE.md` en vez de dejarla acumulándose en `AGENTLOG.md` — el archivo activo debe quedar con el checkpoint vigente más reciente, no con todo el historial.
 
 ---
 
