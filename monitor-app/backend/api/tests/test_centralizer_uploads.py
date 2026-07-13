@@ -56,6 +56,49 @@ def _fixture_bytes() -> bytes:
         return f.read()
 
 
+# ── _download_and_parse: helper compartido por apply y GET /{id} ─────────
+
+def test_download_and_parse_returns_parsed_workbook():
+    from app.routers.centralizer_uploads import _download_and_parse
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = _fixture_bytes()
+
+    parsed = _download_and_parse(supabase, "centralizer-uploads/x.xlsx")
+
+    assert parsed["sheet_summary"] == {"Empresas": 2, "Conductores": 3, "Vehiculos_Equipos": 3}
+    supabase.storage.from_.assert_called_with("compliance-docs")
+
+
+def test_download_and_parse_storage_error_raises_502():
+    from fastapi import HTTPException
+    from app.routers.centralizer_uploads import _download_and_parse
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.side_effect = Exception("boom")
+
+    with pytest.raises(HTTPException) as exc:
+        _download_and_parse(supabase, "x.xlsx")
+    assert exc.value.status_code == 502
+
+
+def test_download_and_parse_missing_sheet_raises_422():
+    from io import BytesIO
+    from openpyxl import Workbook
+    from fastapi import HTTPException
+    from app.routers.centralizer_uploads import _download_and_parse
+
+    wb = Workbook()
+    wb.active.title = "Empresas"  # falta Conductores/Vehiculos_Equipos
+    buf = BytesIO()
+    wb.save(buf)
+
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = buf.getvalue()
+
+    with pytest.raises(HTTPException) as exc:
+        _download_and_parse(supabase, "x.xlsx")
+    assert exc.value.status_code == 422
+
+
 # ── FakeConn: conexión de transacción con estado mínimo para apply ────────
 
 class _NullCtx:

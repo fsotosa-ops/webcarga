@@ -63,6 +63,20 @@ ADVISORY_LOCK_KEY = zlib.crc32(b"centralizer_upload")
 _ENTITY_TABLE = {"transporter": "transporters", "driver": "drivers", "vehicle": "vehicles"}
 
 
+def _download_and_parse(supabase, storage_path: str):
+    """Descarga el archivo desde Storage y lo parsea — reusado por `apply`
+    (que nunca confía en el diff del preview) y por `GET /{upload_id}` (que
+    nunca persiste el diff, lo recalcula en cada lectura)."""
+    try:
+        raw = supabase.storage.from_(COMPLIANCE_BUCKET).download(storage_path)
+    except Exception as e:
+        raise HTTPException(502, f"Error descargando el archivo desde Storage: {e}")
+    try:
+        return parse_centralizer_workbook(raw)
+    except ValueError as e:
+        raise HTTPException(422, f"Error re-parseando el archivo: {e}")
+
+
 # ── Helpers de apply ─────────────────────────────────────────────────────
 
 def _iso(v):
@@ -196,7 +210,12 @@ async def _apply_driver_or_vehicle(
 
 async def _apply_diff(conn, diff: DiffResult, upload_id: str, user: dict) -> set[str]:
     matched_transporter_ids: set[str] = set()
-    rut_to_transporter_id: dict[str, str] = {}
+    # Sembrado con empresas ya existentes que Conductores/Vehiculos_Equipos
+    # referencian pero que la hoja Empresas de ESTE upload no trae (upload
+    # parcial, ver `centralizer_diff.compute_diff`) — no entran a
+    # `matched_transporter_ids` (no "aparecieron" en este upload), solo
+    # resuelven el FK.
+    rut_to_transporter_id: dict[str, str] = dict(diff.get("transporter_id_by_rut", {}))
 
     for ed in diff["transporters"]:
         tid = await _apply_transporter(conn, ed, user)
@@ -344,15 +363,7 @@ async def apply_upload(
     if row["status"] != "approved":
         raise HTTPException(409, f"El upload está en estado '{row['status']}', se requiere 'approved' para aplicar")
 
-    try:
-        raw = supabase.storage.from_(COMPLIANCE_BUCKET).download(row["storage_path"])
-    except Exception as e:
-        raise HTTPException(502, f"Error descargando el archivo desde Storage: {e}")
-
-    try:
-        parsed = parse_centralizer_workbook(raw)
-    except ValueError as e:
-        raise HTTPException(422, f"Error re-parseando el archivo al aplicar: {e}")
+    parsed = _download_and_parse(supabase, row["storage_path"])
 
     async with pool.acquire() as conn:
         async with conn.transaction():
