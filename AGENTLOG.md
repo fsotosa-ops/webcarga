@@ -927,3 +927,29 @@ Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Dia
 2. [ ] Checkpoint D/E: parser real del Excel EETT (reemplaza Mage) + UI de upload/diff/aprobación.
 3. [ ] Checkpoint F: parser de Seguros.
 4. [ ] Pendientes de sesiones anteriores siguen vigentes: decidir push a remoto de todo el historial acumulado (nada se ha pusheado desde `ad6afa8`), cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
+
+---
+
+### 2026-07-13 (cont.) — Checkpoint C (frontend Empresas/Seguros) COMPLETO: adapta al backend reparado + features nuevas
+
+**Objetivo:** frontend sobre el backend de Checkpoint B (recién pusheado). La investigación previa encontró un hueco de backend (`GET /transporters/{tid}` no exponía `baja_override`/`baja_reason`) y **un bug ya activo hoy**: la UI de "ver versiones" de documentos renderizaba literalmente `undefined` porque Checkpoint B cambió la forma de esa respuesta sin que nadie actualizara el frontend.
+
+**Plan granular:** `docs/superpowers/plans/2026-07-13-empresas-seguros-checkpoint-c-frontend.md`, ejecutado con `subagent-driven-development` (implementador + revisor por task, uno en opus por el tamaño/riesgo). 8 commits `f3b844c..96f4e92`.
+
+1. Backend: expone `baja_override`/`baja_reason` en los 3 niveles (empresa/conductor/vehículo) de `GET /transporters/{tid}`.
+2. Fix del bug activo: `StoredFile` → `DocumentVersion` (nueva forma de respuesta), reescribe la lista de versiones en `TransporterDocumentsPanel.tsx`. El implementador encontró de paso que `formatExpiry` tampoco manejaba timestamps completos (hubiera cambiado "undefined" por "Invalid Date" en vez de arreglarlo) — corregido, verificado backward-compatible contra los 9 call sites reales (no 8, como decía el reporte original — el revisor final recontó).
+3. Tabs Operativa/No operativa en el listado, reemplaza el filtro Activas/No activas roto (nunca se poblaba `is_active` de verdad).
+4. Alta/baja manual — botones en la ficha de empresa + `DriverDetailPanel`/`VehicleDetailPanel`, `BajaReasonModal` nuevo. Se encontró y corrigió un caso borde: `VehicleDetailPanel` se comparte con ramplas, que no tienen endpoint de baja en el backend — props opcionales, mismo patrón que `onTransferClick` ya usaba.
+5. Contactos editables. **Bug Critical real encontrado en revisión**: `ContactCard` no resincronizaba su estado `draft` al reabrir "Editar" tras cancelar — un campo vaciado por accidente y luego cancelado podía sobrescribir en silencio un contacto real al guardar de nuevo (el `COALESCE` del backend protege contra `NULL`, no contra string vacío). Corregido y re-revisado con test de regresión real (probado fail-sin-fix/pass-con-fix). Quedó además una fila de contacto vacía de prueba en la empresa de test tras un intento de cleanup que el propio implementador correctamente rechazó completar (hubiera requerido extraer un JWT de sesión) — la borré yo directamente con acceso a Supabase.
+6. `registry_url` + formulario de edición inline de los 3 enlaces de póliza (no existía ningún formulario de edición ahí antes). El implementador aplicó preventivamente el fix del punto 5 (mismo patrón, sin repetir el bug).
+
+**Revisión final de todo el rango** encontró una **tercera instancia** del mismo bug de draft sin resincronizar — esta vez preexistente (no introducida en este checkpoint), en el botón "Pegar link" de `TransporterDocumentsPanel.tsx`. Ningún task individual tenía motivo para auditar ese componente; solo una revisión de todo el branch lo encontró. Corregido con el mismo patrón, verificado empíricamente (revertir el fix → el test falla; restaurar → pasa).
+
+**Verificación final:** `npx tsc --noEmit` limpio, `npx vitest run` 345/345, `npm run build` exitoso (nunca corrido por task individual, solo en el cierre), backend `pytest` 128/128. Cero datos de prueba huérfanos en Supabase, cero PII real en los reportes de esta sesión (un caso de PII real copiada por un subagente en Checkpoint B ya había sido redactado y quedó como lección en memoria — no se repitió en ningún reporte de este checkpoint).
+
+#### Próximo paso exacto
+1. [ ] Decidir push a remoto de Checkpoint C (Checkpoint A y B ya están en `origin/dev`).
+2. [ ] Checkpoint D/E: parser real del Excel EETT (reemplaza Mage) + UI de upload/diff/aprobación — la pieza más grande, requiere brainstorm con companion visual antes de codear el frontend.
+3. [ ] Checkpoint F: parser de Seguros, usando `bronze.raw_insurance_vehicles` como contrato ya confirmado por el usuario.
+4. [ ] Exercitar manualmente "Ver archivo / versiones" contra un documento con reemplazos reales cuando exista ese dato en producción (hoy 0 `document_replace` en `audit_log` — el fix del punto 2 nunca se vio contra datos reales, solo contra tests).
+5. [ ] Pendientes de sesiones anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
