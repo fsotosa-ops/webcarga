@@ -76,6 +76,7 @@ def _serialize_policy(row: dict) -> dict:
         "payment_url": row["payment_url"],
         "file_url": row["file_url"],
         "storage_path": row["storage_path"],
+        "registry_url": row["registry_url"],
         "updated_at": _iso(row["updated_at"]),
     }
 
@@ -339,11 +340,12 @@ async def patch_policy(
             payment_url = COALESCE($2, payment_url),
             file_url    = COALESCE($3, file_url),
             policy_type = COALESCE($4, policy_type),
+            registry_url = COALESCE($5, registry_url),
             updated_at  = NOW()
         WHERE id = $1
         RETURNING *
         """,
-        pid, data.get("payment_url"), data.get("file_url"), data.get("policy_type"),
+        pid, data.get("payment_url"), data.get("file_url"), data.get("policy_type"), data.get("registry_url"),
     )
     if not row:
         raise HTTPException(404, "Póliza no encontrada")

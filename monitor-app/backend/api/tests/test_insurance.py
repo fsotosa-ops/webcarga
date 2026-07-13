@@ -453,3 +453,20 @@ def test_revert_installment_stale_expected_updated_at_is_409():
         "expected_updated_at": "2026-06-01T00:00:00Z",
     })
     assert res.status_code == 409
+
+
+# ── PATCH policy: registry_url ────────────────────────────────────
+
+def test_patch_policy_registry_url():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "id": "policy-1", "transporter_id": None, "rut": "12345678-9", "contractor_name": None,
+        "client_group": None, "company": "Aseguradora X", "policy_number": "P-1", "endorsement": None,
+        "coverage": None, "plate": None, "policy_type": None, "valid_from": None, "valid_to": None,
+        "payment_url": None, "file_url": None, "storage_path": None, "registry_url": "https://aseguradora.cl/poliza/1",
+        "updated_at": None,
+    }
+    client = make_client(pool)
+    res = client.patch("/api/v1/insurance/policies/policy-1", json={"registry_url": "https://aseguradora.cl/poliza/1"})
+    assert res.status_code == 200
+    assert res.json()["registry_url"] == "https://aseguradora.cl/poliza/1"

@@ -18,6 +18,7 @@ class PolicyPatchBody(BaseModel):
     payment_url: Optional[str] = None
     file_url:    Optional[str] = None
     policy_type: Optional[PolicyType] = None
+    registry_url: Optional[str] = None
 
 
 class InsuranceDocumentPatchBody(BaseModel):
