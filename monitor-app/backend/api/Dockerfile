@@ -12,7 +12,8 @@ RUN pip install --no-cache-dir \
     "pydantic-settings>=2.3" \
     "supabase==2.10.0" \
     "upstash-redis>=1.1.0" \
-    "python-multipart>=0.0.9"
+    "python-multipart>=0.0.9" \
+    "openpyxl>=3.1"
 
 # Copy app code
 COPY app/ ./app/
