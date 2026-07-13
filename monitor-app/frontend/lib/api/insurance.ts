@@ -21,9 +21,10 @@ export type InstallmentPatch = {
 }
 
 export type PolicyPatch = {
-  payment_url?: string
-  file_url?:    string
-  policy_type?: PolicyType
+  payment_url?:  string
+  file_url?:     string
+  registry_url?: string
+  policy_type?:  PolicyType
 }
 
 export type RevertInstallmentPatch = {

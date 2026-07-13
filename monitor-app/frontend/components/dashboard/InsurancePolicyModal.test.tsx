@@ -12,6 +12,7 @@ vi.mock('@/lib/api/insurance', () => ({
     revertInstallment:  vi.fn(),
     listPolicyDocuments: vi.fn(),
     uploadDocumentFile:  vi.fn(),
+    patchPolicy:         vi.fn(),
   },
 }))
 
@@ -27,7 +28,7 @@ const TWO_POLICIES: InsuranceTransporterResponse = {
       id: 'p1', transporter_id: 't2', rut: '22222222-2', contractor_name: null, client_group: null,
       company: 'Chubb Generales', policy_number: '5663040', endorsement: null, coverage: 'RC vehicular',
       plate: null, policy_type: 'otro', valid_from: '2026-03-23', valid_to: '2027-03-23',
-      payment_url: null, file_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
+      payment_url: null, file_url: null, registry_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
       installments: [
         { id: 'i1', policy_id: 'p1', installment_number: 1, total_installments: 2, amount_uf: 4, due_date: '2020-01-01', status: 'vencida', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
         { id: 'i2', policy_id: 'p1', installment_number: 2, total_installments: 2, amount_uf: 4, due_date: '2099-09-01', status: 'pendiente', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
@@ -37,7 +38,7 @@ const TWO_POLICIES: InsuranceTransporterResponse = {
       id: 'p2', transporter_id: 't2', rut: '22222222-2', contractor_name: null, client_group: null,
       company: 'HDI', policy_number: '89632', endorsement: null, coverage: 'RC vehicular',
       plate: null, policy_type: 'otro', valid_from: null, valid_to: null,
-      payment_url: null, file_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
+      payment_url: null, file_url: null, registry_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
       installments: [
         { id: 'i3', policy_id: 'p2', installment_number: 1, total_installments: 1, amount_uf: 2.5, due_date: '2026-05-01', status: 'pagada', paid_at: '2026-05-01', payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
       ],
@@ -57,7 +58,7 @@ const ONE_POLICY_B: InsuranceTransporterResponse = {
       id: 'p3', transporter_id: 't3', rut: '33333333-3', contractor_name: null, client_group: null,
       company: 'Mapfre', policy_number: '1000', endorsement: null, coverage: 'RC vehicular',
       plate: null, policy_type: 'otro', valid_from: '2026-01-01', valid_to: '2027-01-01',
-      payment_url: null, file_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
+      payment_url: null, file_url: null, registry_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
       installments: [
         { id: 'i4', policy_id: 'p3', installment_number: 1, total_installments: 2, amount_uf: 3, due_date: '2026-08-01', status: 'pendiente', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
         { id: 'i5', policy_id: 'p3', installment_number: 2, total_installments: 2, amount_uf: 3, due_date: '2026-09-01', status: 'pendiente', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
@@ -96,6 +97,7 @@ beforeEach(() => {
   vi.mocked(insuranceApi.uploadDocumentFile).mockReset()
   vi.mocked(insuranceApi.patchInstallment).mockReset()
   vi.mocked(insuranceApi.revertInstallment).mockReset()
+  vi.mocked(insuranceApi.patchPolicy).mockReset()
 })
 
 describe('InsurancePolicyModal', () => {
@@ -191,5 +193,69 @@ describe('InsurancePolicyModal', () => {
     await screen.findByText('Mapfre')
     expect(screen.getByText(/Ver todas las cuotas \(2\)/)).toBeInTheDocument()
     expect(screen.queryByText(/Cuota 2 de 2/)).not.toBeInTheDocument()
+  })
+
+  it('shows the Enlaces section with the three policy link rows', async () => {
+    renderModal(ROW)
+    await screen.findByText('Chubb Generales')
+    expect(screen.getByText('Enlaces')).toBeInTheDocument()
+    expect(screen.getByText('Pago')).toBeInTheDocument()
+    expect(screen.getByText('Documento')).toBeInTheDocument()
+    expect(screen.getByText('Registro')).toBeInTheDocument()
+    // Las 3 pólizas del fixture no tienen ningún link cargado.
+    expect(screen.getAllByText('Sin datos')).toHaveLength(3)
+  })
+
+  it('saves an edited policy link and reflects it immediately without a refetch', async () => {
+    vi.mocked(insuranceApi.patchPolicy).mockResolvedValue({
+      id: 'p1', transporter_id: 't2', rut: '22222222-2', contractor_name: null, client_group: null,
+      company: 'Chubb Generales', policy_number: '5663040', endorsement: null, coverage: 'RC vehicular',
+      plate: null, policy_type: 'otro', valid_from: '2026-03-23', valid_to: '2027-03-23',
+      payment_url: null, file_url: null, registry_url: 'https://registro.example.com/p1', storage_path: null,
+      updated_at: '2026-07-05T00:00:00Z',
+    } as never)
+    renderModal(ROW)
+    await screen.findByText('Chubb Generales')
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Registro' }))
+    })
+    const input = screen.getByLabelText('Enlace de Registro')
+    fireEvent.change(input, { target: { value: 'https://registro.example.com/p1' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar enlace de Registro' }))
+    })
+
+    expect(insuranceApi.patchPolicy).toHaveBeenCalledWith('p1', { registry_url: 'https://registro.example.com/p1' })
+    expect(await screen.findByRole('link', { name: 'https://registro.example.com/p1' })).toBeInTheDocument()
+    // Solo se guardó ese link — no se hizo un refetch de todo el detalle de pólizas.
+    expect(insuranceApi.getForTransporter).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not poison the link draft after Cancelar: reopening Editar shows the real current value, not a leftover typed value', async () => {
+    renderModal(ROW)
+    await screen.findByText('Chubb Generales')
+
+    // Abrir edición del link "Pago", tipear un valor, cancelar sin guardar.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Pago' }))
+    })
+    const input = screen.getByLabelText('Enlace de Pago')
+    expect(input).toHaveValue('')
+    fireEvent.change(input, { target: { value: 'https://tentativo.example.com/no-deberia-guardarse' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar edición de Pago' }))
+
+    // La vista de lectura debe seguir mostrando "Sin datos" — no se guardó nada.
+    expect(screen.getAllByText('Sin datos').length).toBeGreaterThan(0)
+
+    // Reabrir edición: el draft debe resincronizarse desde el valor real (vacío),
+    // no arrastrar el valor tipeado en la edición cancelada anterior.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Pago' }))
+    })
+    expect(screen.getByLabelText('Enlace de Pago')).toHaveValue('')
+
+    // No se llamó a patchPolicy en ningún momento de este flujo (solo Cancelar, nunca Guardar).
+    expect(insuranceApi.patchPolicy).not.toHaveBeenCalled()
   })
 })

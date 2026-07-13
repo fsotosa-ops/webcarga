@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Loader2, ShieldQuestion, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Check, Loader2, ShieldQuestion, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react'
 import { insuranceApi } from '@/lib/api/insurance'
 import type { InsuranceInstallment, InsurancePolicy, InsuranceSummaryRow, InsuranceTransporterResponse } from '@/lib/types'
 import { formatExpiry } from '@/lib/compliance'
@@ -112,6 +112,17 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
           policies: old.policies.map(p => p.id === policyId
             ? { ...p, installments: (p.installments ?? []).map(i => i.id === updated.id ? updated : i) }
             : p),
+        } : old,
+    )
+  }
+
+  function handlePolicyLinkSaved(policyId: string, patch: Partial<InsurancePolicy>) {
+    queryClient.setQueryData(
+      ['insurance', 'transporter', row?.transporter_id],
+      (old: InsuranceTransporterResponse | undefined) =>
+        old ? {
+          ...old,
+          policies: old.policies.map(p => p.id === policyId ? { ...p, ...patch } : p),
         } : old,
     )
   }
@@ -239,6 +250,15 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
                   </div>
                 </div>
 
+                {(canEdit || selectedPolicy.payment_url || selectedPolicy.file_url || selectedPolicy.registry_url) && (
+                  <div className="mb-5 space-y-1.5">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Enlaces</p>
+                    <PolicyLinkRow label="Pago" field="payment_url" value={selectedPolicy.payment_url} policyId={selectedPolicy.id} canEdit={canEdit} onSaved={handlePolicyLinkSaved} />
+                    <PolicyLinkRow label="Documento" field="file_url" value={selectedPolicy.file_url} policyId={selectedPolicy.id} canEdit={canEdit} onSaved={handlePolicyLinkSaved} />
+                    <PolicyLinkRow label="Registro" field="registry_url" value={selectedPolicy.registry_url} policyId={selectedPolicy.id} canEdit={canEdit} onSaved={handlePolicyLinkSaved} />
+                  </div>
+                )}
+
                 {spotlight && (
                   <div className="mb-2">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Próxima cuota</p>
@@ -293,5 +313,62 @@ export function InsurancePolicyModal({ row, onClose, canAdmin, canEdit }: Props)
         </div>
       </div>
     </>
+  )
+}
+
+/** Fila de enlace editable inline (pago/documento/registro de una póliza).
+ *  El draft local NUNCA se resincroniza implícitamente al reabrir edición —
+ *  se resetea explícitamente desde `value` en el propio handler del botón
+ *  "Editar" (mismo patrón que ContactCard, ver commit d445c56). Sin esto,
+ *  un Cancelar tras tipear un valor deja el draft envenenado en memoria; un
+ *  Guardar posterior en una reapertura futura escribiría ese draft viejo
+ *  (potencialmente vacío) en vez del valor real — el COALESCE del backend
+ *  protege contra NULL pero no contra un string vacío. */
+function PolicyLinkRow({ label, field, value, policyId, canEdit, onSaved }: {
+  label: string; field: 'payment_url' | 'file_url' | 'registry_url'; value: string | null
+  policyId: string; canEdit: boolean; onSaved: (pid: string, patch: Partial<InsurancePolicy>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value ?? '')
+  const [busy, setBusy] = useState(false)
+
+  function openEdit() {
+    setDraft(value ?? '')
+    setEditing(true)
+  }
+
+  async function save() {
+    setBusy(true)
+    try {
+      const res = await insuranceApi.patchPolicy(policyId, { [field]: draft })
+      onSaved(policyId, { [field]: res[field] })
+      setEditing(false)
+    } finally { setBusy(false) }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-gray-400 w-16 shrink-0">{label}</span>
+        <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="https://…" autoFocus
+          aria-label={`Enlace de ${label}`}
+          className="flex-1 min-w-0 text-[11px] border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+        <button onClick={save} disabled={busy} aria-label={`Guardar enlace de ${label}`} className="p-1 rounded bg-accent text-white disabled:opacity-50">
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+        </button>
+        <button onClick={() => setEditing(false)} aria-label={`Cancelar edición de ${label}`} className="p-1 rounded text-gray-400 hover:text-gray-600"><X size={11} /></button>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-gray-400 w-16 shrink-0">{label}</span>
+      {value ? (
+        <a href={value} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline truncate flex-1 min-w-0">{value}</a>
+      ) : (
+        <span className="text-[11px] text-gray-300 italic flex-1">Sin datos</span>
+      )}
+      {canEdit && <button onClick={openEdit} aria-label={`Editar enlace de ${label}`} className="text-[10px] text-gray-400 hover:text-accent shrink-0">Editar</button>}
+    </div>
   )
 }

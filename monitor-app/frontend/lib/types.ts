@@ -588,6 +588,7 @@ export type InsurancePolicy = {
   valid_to:         string | null
   payment_url:      string | null
   file_url:         string | null
+  registry_url:     string | null
   storage_path:     string | null
   updated_at:       string | null
   installments?:    InsuranceInstallment[]
