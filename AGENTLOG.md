@@ -872,3 +872,58 @@ Feedback del usuario tras probar en dev: (1) "no veo los viajes de hoy en el Dia
 6. [ ] Pendientes de sesiones anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián), decidir push a remoto de todo el historial acumulado (nada se ha pusheado desde `ad6afa8`).
 
 **Cierre de Checkpoint A:** revisión final de todo el rango (opus) — "ready to build on top", sin hallazgos Critical. Confirmó de forma independiente que el estado final coincide con el plan, que los conteos de negocio están intactos, y que "0% elegibles/operativas" hoy es el resultado esperado (máximo de cumplimiento real 78.57% contra el umbral de 90%, cero uploads aplicados aún) — no es un bug de la migración. 1 hallazgo Important (RLS duplicada en las 3 tablas nuevas de documentos, mismo patrón que Task 5 ya había limpiado en otras 4 tablas) + 3 Minor (índice faltante en `last_matched_upload_id`, rol de política de `centralizer_uploads` mal targeteado, nombre cosmético de migración) — los 4 corregidos y reverificados en commit `35652aa`. Checkpoint A cerrado: **11 commits, `ad2726e..35652aa`, todo local en `dev`, nada pusheado**.
+
+---
+
+### 2026-07-13 — Checkpoint B (backend roto post-Checkpoint A): Task 2 + Task 3
+
+**Objetivo:** Checkpoint A dropeó `app.compliance_documents`/`driver_assignments`/`vehicle_assignments`/`stored_files`/`insurance_doc_catalog`/`insurance_documents` sin haber actualizado el backend que las consultaba — casi todos los endpoints de `transporters.py` (y varios de `insurance.py`) fallan hoy contra Supabase real con "relation does not exist"; los 36 tests existentes seguían en verde porque mockean el pool y no detectan desfase de schema. Plan: `docs/superpowers/plans/2026-07-13-empresas-seguros-checkpoint-b-backend.md` (10 tasks).
+
+**Task 2 (previo a esta sesión de reporte, ya commiteado):** `app/utils/document_storage.py` — reemplaza el versionado basado en `app.stored_files` (dropeada) por: cada reemplazo de documento sube a una ruta de Storage NUEVA (nunca sobrescribe el blob anterior) + registra el valor previo en `app.audit_log` (`action='document_replace'`) en vez de una tabla de versiones dedicada. 3 funciones: `upload_document_version`, `log_document_replacement`, `get_document_history`.
+
+**Task 3 (esta sesión) — repuntar helpers de documentos de `transporters.py` a las 3 tablas angostas (`app.transporter_documents`/`driver_documents`/`vehicle_documents`, Checkpoint A Task 3), commit `3fb4f35`:**
+- `_docs_by_entity`/`_resolve_entity`/`_upsert_document`/`_serialize_document`/`_document_patch_impl`/`_document_upload_impl`/`_document_files_impl` reemplazadas — ahora usan `_DOC_TABLE`/`_DOC_FK_COL` para resolver la tabla/FK correcta por tipo de entidad, y `_document_upload_impl`/`_document_files_impl` quedan wireados a `document_storage.py` (Task 2) en vez de `app.stored_files`.
+- `get_transporter`'s `company_doc_rows`: repuntada a `app.transporter_documents`. Encontré (no estaba en el brief) que además de `file_url`, la columna `cd.manual_override` tampoco existe en las tablas angostas — la hubiera tirado "column does not exist" contra Supabase real si no se sacaba también del SELECT.
+- 6 tests nuevos en `test_transporters_relational.py` que asertan el nombre de tabla correcto en `call_args` (para que un desfase de schema como este se detecte en CI sin depender de Supabase real). Fixtures `DRIVER_DOCS_RAW`/`VEHICLE_DOCS_RAW` corregidas (`doc_code`→`doc_name`, la clave real que devuelve la query nueva). Suite completa: 94/94 verde.
+- Verificado a mano contra Supabase real (`viclzoftiudkepqnhekv`, transportista de prueba `Test creación`): INSERT + UPDATE (`ON CONFLICT`) de `_upsert_document`, SELECT de `_docs_by_entity`, y la query completa de `company_doc_rows` — sin errores de columna/sintaxis. Mutación de prueba revertida (confirmado 0 filas al final).
+- **Deliberadamente fuera de este task** (es Task 4 del mismo plan): todo el código que aún usa `driver_assignments`/`vehicle_assignments` (`_LIST_FROM`, driver/vehicle/trailer rows de `get_transporter`, add/patch/remove/transfer de drivers y vehicles) sigue roto contra Supabase real hasta que corra Task 4 — no es una omisión de este task, está explícitamente scopeado a Task 4 en el plan.
+
+**Hallazgo NEEDS_CONTEXT sin resolver (no decidido unilateralmente, ver `.superpowers/sdd/task-3-report.md`):** `file_url` (link pegado, distinto de archivo subido) es una feature real y activa en `TransporterDocumentsPanel.tsx` (botón "Pegar link", ancla "Ver link") sin columna que la respalde en las tablas angostas nuevas. Mismo problema con `manual_override` (badge "manual" + botón "Revertir a valor del pipeline") — tampoco tiene columna, y el botón de revertir ahora devuelve 422 en vez de funcionar. El código quedó implementado tal como lo entregó el brief (ambos campos excluidos de lectura/escritura, sin corromper datos), pero **requiere una decisión de producto** antes de darlo por cerrado: ¿se agregan columnas nuevas a las 3 tablas angostas, o se retira esa UI en el checkpoint C de frontend?
+
+#### Próximo paso exacto
+1. [ ] **Decidir el hallazgo NEEDS_CONTEXT de arriba** (file_url/manual_override) antes de considerar Task 3 100% cerrado — no bloquea Task 4 (el archivo compila y el resto de sus endpoints funcionan), pero sí a cualquier trabajo de frontend que dependa de esas dos features.
+2. [ ] Task 4: repuntar `driver_assignments`/`vehicle_assignments` a `transporter_id` directo en `transporters.py` (`_LIST_FROM`, `get_transporter`, add/patch/remove/transfer de drivers y vehicles) — depende de que Task 3 (este) ya esté aplicado, que lo está.
+3. [ ] Tasks 5-10 del mismo plan siguen pendientes: `insurance.py` (documentos de póliza + KPIs) a `app.insurance_policy_documents`, cleanup de `stored_files.py`, CRUD de contactos, alta/baja manual, `registry_url`, `operational_status` expuesto en listado/ficha.
+4. [ ] Pendientes de sesiones anteriores siguen vigentes: Checkpoint C (frontend de B), Checkpoint D/E (parser real Excel EETT + UI de upload/diff/aprobación), Checkpoint F (parser Seguros), cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián), decidir push a remoto de todo el historial acumulado (nada se ha pusheado desde `ad6afa8`).
+
+---
+
+### 2026-07-13 — Checkpoint B (backend Empresas/Seguros) COMPLETO: repuntar backend roto + features nuevas
+
+**Objetivo:** al empezar Checkpoint B (según el plan aprobado), se descubrió que Checkpoint A había dejado el backend real roto — `transporters.py`/`insurance.py` seguían consultando 6 tablas ya dropeadas (`compliance_documents`, `driver_assignments`, `vehicle_assignments`, `insurance_doc_catalog`, `insurance_documents`, `stored_files`), invisible para los 36 tests de pytest porque están 100% mockeados (`AsyncMock`). Checkpoint B se dividió en dos partes: reparar el backend roto (Tasks 1-6 + 3b) y agregar las features nuevas ya planificadas (Tasks 7-10).
+
+**Plan granular:** `docs/superpowers/plans/2026-07-13-empresas-seguros-checkpoint-b-backend.md`, ejecutado con `subagent-driven-development` (implementador + revisor independiente por task, varios en opus dado el riesgo de tocar SQL dinámico en producción).
+
+**Parte 1 — reparar backend roto (commits `debb23f`..`a62acbc`):**
+1. `app.insurance_policy_documents` (nueva tabla, reemplaza `insurance_doc_catalog`/`insurance_documents` dropeadas sin reemplazo en Checkpoint A).
+2. `app/utils/document_storage.py` (nuevo) — reemplaza el versionado de `app.stored_files` (también dropeada): cada reemplazo de documento sube a una ruta de Storage nueva + registra el valor anterior en `audit_log`, en vez de una tabla de contador de versión.
+3/3b. Repunte de los helpers de documentos en `transporters.py` a las 3 tablas angostas de Checkpoint A. **Hallazgo real en el camino**: `file_url` (botón "Pegar link") y `manual_override` (badge + botón "Revertir") eran funciones activas del frontend que se habían omitido al diseñar las tablas angostas en Checkpoint A — cerrado con un task intermedio (3b) que restauró ambas columnas en las 4 tablas angostas (incluida `insurance_policy_documents`).
+4. Repunte de asignación driver/vehicle a `transporter_id` directo (reemplaza `driver_assignments`/`vehicle_assignments`) — el revisor confirmó que el nuevo `UPDATE` condicional único en `transfer_driver`/`transfer_vehicle` **cierra** una ventana TOCTOU que el código viejo de 2 sentencias tenía, no la introduce.
+5. Repunte de `insurance.py` (documentos de póliza + `insurance_kpis`) a catálogo estático en Python (no hay vista SQL que lo necesite, a diferencia de `compliance_doc_catalog` que sí se mantuvo). Primer intento se colgó a mitad de camino (timeout de sesión) dejando el diff completo sin commitear — un segundo agente lo retomó, lo verificó coherente, y además encontró y arregló `upload_policy_file`/`list_policy_files`, un segundo par de endpoints rotos por `app.stored_files` que no estaba en el alcance original.
+6. Retiro de `app/utils/stored_files.py` (confirmado sin otros consumidores, constantes migradas a `document_storage.py`).
+
+**Parte 2 — features nuevas (commits `5521466`..`4b7117b`):**
+7. CRUD de contactos (`app.transporter_contacts`) — primer endpoint de escritura que existía para esta tabla.
+8. Alta/baja manual (`deactivate`/`reactivate` × transporter/driver/vehicle), admin-only, limpia todos los campos `baja_*` al reactivar.
+9. `registry_url` en pólizas de seguro.
+10. `operational_status`/`matched_by_upload`/`admin_account_id` expuestos en listado y ficha de transportistas.
+
+**Incidente de manejo de datos:** un subagente copió PII real (nombre/teléfono/email de un contacto real) a su reporte de verificación en Task 7 — el clasificador de seguridad del harness lo marcó antes de que se actuara sobre el resultado. Redactado de inmediato por el controller (el archivo vive en `.superpowers/sdd/`, gitignoreado, nunca entró a git). Guardado en memoria (`feedback_pii_in_verification_reports.md`) para instruir explícitamente a futuros subagentes que redacten PII al verificar contra datos reales — el resto de los reportes de esta sesión confirmaron que fue un caso aislado.
+
+**Verificación final:** revisión de todo el rango (`690a832..4b7117b`, 12 commits, opus) — **"ready to build on top", cero hallazgos Critical o Important**. Confirmado independientemente: cero referencias SQL vivas a las 6 tablas rotas en todo `app/`, consistencia de `file_url`/`manual_override` en las 4 tablas, 127/127 tests, matriz RLS con `owner` correcta en las 5 tablas nuevas/tocadas (sin una tercera repetición del bug que ya había aparecido 2 veces antes en esta sesión), higiene de git limpia en los 14 commits, nada pusheado a remoto.
+
+#### Próximo paso exacto
+1. [ ] Checkpoint C: frontend — tabs Operativa/No operativa, botones alta/baja, contactos editables, campo `registry_url`, adaptar UI de documentos a la nueva forma de respuesta (sin `id`, con `file_url`/`manual_override` restaurados, catálogo de seguros fijo de 4 documentos). Ver recomendaciones detalladas de la revisión final en `.superpowers/sdd/progress.md`.
+2. [ ] Checkpoint D/E: parser real del Excel EETT (reemplaza Mage) + UI de upload/diff/aprobación.
+3. [ ] Checkpoint F: parser de Seguros.
+4. [ ] Pendientes de sesiones anteriores siguen vigentes: decidir push a remoto de todo el historial acumulado (nada se ha pusheado desde `ad6afa8`), cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
