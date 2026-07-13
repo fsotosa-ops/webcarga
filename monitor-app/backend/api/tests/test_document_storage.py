@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -80,6 +82,18 @@ async def test_log_document_replacement_inserts_audit_row_with_old_values():
     call_args = pool.execute.call_args
     assert "app.audit_log" in call_args[0][0]
     assert "document_replace" in call_args[0][0]
+
+    actor, entity_type, entity_id, doc_name, old_value_json = call_args[0][1:]
+    assert actor == "user-1"
+    assert entity_type == "driver"
+    assert entity_id == "abc-123"
+    assert doc_name == "licencia"
+    old_value = json.loads(old_value_json)
+    assert old_value == {
+        "status": "ok",
+        "expiry_date": "2026-01-01",
+        "storage_path": "driver/abc-123/licencia/v1_x.pdf",
+    }
 
 
 @pytest.mark.asyncio
