@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  isTransporterActive, hasDocsAlert, hasInsuranceAlert,
+  isTransporterActive, isOperativa, hasDocsAlert, hasInsuranceAlert,
   matchesTransporterFilter, deriveTransporterKpis,
 } from './transporterFilters'
 import type { TransporterListItem } from '@/lib/types'
@@ -13,6 +13,7 @@ function makeItem(overrides: Partial<TransporterListItem> = {}): TransporterList
     in_admin: true, clients: ['Walmart'], avance_80_20: 90, avance_total: 90,
     compliance_pct: 95, eligible: true, insurance_ok: true, policies_count: 1,
     blocking_reasons: [],
+    operational_status: 'operativa', matched_by_upload: false, admin_account_id: null,
     ...overrides,
   }
 }
@@ -23,6 +24,15 @@ describe('isTransporterActive', () => {
   })
   it('is inactive when blocking_reasons includes "inactive"', () => {
     expect(isTransporterActive(makeItem({ blocking_reasons: ['inactive'] }))).toBe(false)
+  })
+})
+
+describe('isOperativa', () => {
+  it('is operativa when operational_status === "operativa"', () => {
+    expect(isOperativa(makeItem({ operational_status: 'operativa' }))).toBe(true)
+  })
+  it('is not operativa when operational_status === "no_operativa"', () => {
+    expect(isOperativa(makeItem({ operational_status: 'no_operativa' }))).toBe(false)
   })
 })
 

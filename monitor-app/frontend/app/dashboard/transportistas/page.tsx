@@ -21,16 +21,18 @@ const LIMIT = 100
 const VIEW_MODE_STORAGE_KEY = 'empresas:vista'
 const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
 
+type OperationalTab = 'operativa' | 'no_operativa'
+const OPERATIONAL_TABS: { id: OperationalTab; label: string }[] = [
+  { id: 'operativa',    label: 'Operativas' },
+  { id: 'no_operativa', label: 'No operativas' },
+]
+
 const KPI_CARDS: { id: TransporterFilterId; label: string; countCls: string; activeCls: string }[] = [
-  { id: 'active',    label: 'Activas',                    countCls: 'text-slate-700', activeCls: 'border-slate-400 ring-2 ring-slate-100 bg-slate-50' },
   { id: 'eligible',  label: 'Habilitadas para asignar',   countCls: 'text-green-600', activeCls: 'border-green-400 ring-2 ring-green-100 bg-green-50' },
   { id: 'alert_any', label: 'Con alertas (docs o seguro)', countCls: 'text-amber-600', activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
-  { id: 'inactive',  label: 'No activas',                 countCls: 'text-gray-500',  activeCls: 'border-gray-400 ring-2 ring-gray-100 bg-gray-50' },
 ]
 
 const FILTER_CHIPS: { id: TransporterFilterId; label: string }[] = [
-  { id: 'active',          label: 'Activas' },
-  { id: 'inactive',        label: 'No activas' },
   { id: 'eligible',        label: 'Habilitadas' },
   { id: 'alert_docs',      label: 'Alerta documentación' },
   { id: 'alert_insurance', label: 'Alerta seguros' },
@@ -38,6 +40,7 @@ const FILTER_CHIPS: { id: TransporterFilterId; label: string }[] = [
 
 export default function EmpresasTransportePage() {
   const [q, setQ]                 = useState('')
+  const [tab, setTab]             = useState<OperationalTab>('operativa')
   const [activeFilter, setActiveFilter] = useState<TransporterFilterId | null>(null)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<TransporterListItem | null>(null)
@@ -50,10 +53,11 @@ export default function EmpresasTransportePage() {
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando empresas') : null
 
-  const kpis = useMemo(() => deriveTransporterKpis(items), [items])
+  const itemsInTab = useMemo(() => items.filter(i => i.operational_status === tab), [items, tab])
+  const kpis = useMemo(() => deriveTransporterKpis(itemsInTab), [itemsInTab])
   const visibleItems = useMemo(
-    () => activeFilter ? items.filter(i => matchesTransporterFilter(i, activeFilter)) : items,
-    [items, activeFilter],
+    () => activeFilter ? itemsInTab.filter(i => matchesTransporterFilter(i, activeFilter)) : itemsInTab,
+    [itemsInTab, activeFilter],
   )
 
   useEffect(() => {
@@ -70,7 +74,9 @@ export default function EmpresasTransportePage() {
     setActiveFilter(prev => prev === id ? null : id)
   }
 
-  const emptyLabel = q || activeFilter ? 'Sin resultados' : 'Sin empresas'
+  const emptyLabel = q || activeFilter
+    ? 'Sin resultados'
+    : `Sin empresas ${tab === 'operativa' ? 'operativas' : 'no operativas'}`
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -84,6 +90,28 @@ export default function EmpresasTransportePage() {
         </div>
         <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
       </div>
+
+      {/* ── Tabs Operativa / No operativa — split principal, viene de operational_status ── */}
+      {!loading && (
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {OPERATIONAL_TABS.map(t => {
+            const count  = items.filter(i => i.operational_status === t.id).length
+            const active = tab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                aria-pressed={active}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label} <span className="ml-1 text-gray-400">{count}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* ── KPIs accionables ─────────────────────────────────────── */}
       {!loading && (

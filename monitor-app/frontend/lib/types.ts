@@ -509,6 +509,9 @@ export type TransporterProfile = {
   clients: string[]
   eligibility: TransporterEligibility
   documents: TransporterDocument[]
+  operational_status: 'operativa' | 'no_operativa'
+  matched_by_upload: boolean
+  admin_account_id: string | null
 }
 
 export type TransporterListItem = {
@@ -532,6 +535,9 @@ export type TransporterListItem = {
   insurance_ok: boolean | null
   policies_count: number
   blocking_reasons: BlockingReason[]
+  operational_status: 'operativa' | 'no_operativa'
+  matched_by_upload: boolean
+  admin_account_id: string | null
 }
 
 export type TransporterListResponse = {

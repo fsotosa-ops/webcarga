@@ -9,6 +9,7 @@ const ITEM: TransporterListItem = {
   has_manual_edits: false, has_active_alerts: false, in_admin: true, clients: ['Walmart'],
   avance_80_20: 85, avance_total: 70, compliance_pct: 85, eligible: true, insurance_ok: true,
   policies_count: 2, blocking_reasons: [],
+  operational_status: 'operativa', matched_by_upload: false, admin_account_id: null,
 }
 
 describe('TransporterCard', () => {

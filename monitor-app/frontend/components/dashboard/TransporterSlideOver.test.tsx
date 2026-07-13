@@ -19,6 +19,7 @@ const ITEM: TransporterListItem = {
   has_manual_edits: false, has_active_alerts: false, in_admin: true, clients: ['Walmart'],
   avance_80_20: 85, avance_total: 70, compliance_pct: 85, eligible: false, insurance_ok: true,
   policies_count: 2, blocking_reasons: ['docs_below_threshold'],
+  operational_status: 'operativa', matched_by_upload: false, admin_account_id: null,
 }
 
 const PROFILE: TransporterProfile = {
@@ -33,6 +34,7 @@ const PROFILE: TransporterProfile = {
     { doc_code: 'd1', label: 'Doc 1', status: 'ok', expiry_date: null, file_url: null, storage_path: null, manual_override: false, updated_at: null },
     { doc_code: 'd2', label: 'Doc 2', status: 'pendiente', expiry_date: '2026-01-01', file_url: null, storage_path: null, manual_override: false, updated_at: null },
   ],
+  operational_status: 'operativa', matched_by_upload: false, admin_account_id: null,
 }
 
 function renderSlideOver(item: TransporterListItem | null) {

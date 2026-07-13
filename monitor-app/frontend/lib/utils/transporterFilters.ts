@@ -22,6 +22,15 @@ export function isTransporterActive(item: Pick<TransporterListItem, 'blocking_re
   return !(item.blocking_reasons ?? []).includes('inactive')
 }
 
+/**
+ * Split principal del listado de Empresas (reemplaza a isTransporterActive
+ * para ese propósito) — `operational_status` viene calculado por el backend,
+ * a diferencia de blocking_reasons.includes('inactive') que nunca se seteaba.
+ */
+export function isOperativa(item: Pick<TransporterListItem, 'operational_status'>): boolean {
+  return item.operational_status === 'operativa'
+}
+
 export function hasDocsAlert(item: Pick<TransporterListItem, 'blocking_reasons'>): boolean {
   return (item.blocking_reasons ?? []).includes('docs_below_threshold')
 }
