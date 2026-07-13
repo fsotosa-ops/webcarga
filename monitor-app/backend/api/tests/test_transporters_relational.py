@@ -94,19 +94,19 @@ DRIVER_ROWS = [{
     "id_expiry": None, "license_expiry": None, "avance_total": None,
 }]
 DRIVER_DOCS_RAW = [
-    {"entity_id": "d1", "doc_code": "epp", "status": "ok"},
-    {"entity_id": "d1", "doc_code": "creacion_gc_driver", "status": "pendiente"},
+    {"entity_id": "d1", "doc_name": "epp", "status": "ok"},
+    {"entity_id": "d1", "doc_name": "creacion_gc_driver", "status": "pendiente"},
 ]
 VEHICLE_ROWS = [{
     "id": "v1", "plate": "ABCD12", "kind": "tracto", "type_label": None, "year": 2020,
     "circ_permit_expiry": None, "tech_inspection_expiry": None,
     "gas_emissions_expiry": None, "soap_insurance_expiry": None,
 }]
-VEHICLE_DOCS_RAW = [{"entity_id": "v1", "doc_code": "padron", "status": "ok"}]
+VEHICLE_DOCS_RAW = [{"entity_id": "v1", "doc_name": "padron", "status": "ok"}]
 TRAILER_ROWS = [{"id": "t1", "plate": "RAMP01"}]
 COMPANY_DOC_ROWS = [
     {"doc_code": "rol_sii", "label": "Rol SII", "status": "ok", "expiry_date": None,
-     "file_url": None, "storage_path": None, "manual_override": False, "updated_at": None},
+     "storage_path": None, "updated_at": None},
 ]
 ELIGIBILITY_ROW = {"eligible": True, "compliance_pct": 92.5, "insurance_ok": True, "blocking_reasons": []}
 
@@ -250,6 +250,102 @@ def test_patch_document_invalid_doc_code_is_422():
         json={"status": "ok"},
     )
     assert res.status_code == 422
+
+
+# ── Documentos: repunte a tablas angostas (Checkpoint B Task 3) ────
+# Estos tests existen para que un futuro desfase de schema como el que
+# motivó este task (helpers apuntando a app.compliance_documents, dropeada
+# en Checkpoint A) se detecte en CI vía el mock, sin depender de Supabase
+# real — verifican explícitamente el nombre de tabla en la query ejecutada.
+
+def test_patch_transporter_document_uses_transporter_documents_table():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = [TID, "rol_sii"]  # _resolve_entity, catalog check
+    pool.fetchrow.return_value = {
+        "transporter_id": TID, "doc_name": "rol_sii", "status": "ok",
+        "expiry_date": None, "storage_path": None, "notes": None, "updated_at": None,
+    }
+    client = make_client(pool)
+    res = client.patch(f"/api/v1/transporters/{TID}/documents/rol_sii", json={"status": "ok"})
+    assert res.status_code == 200
+    assert res.json()["doc_code"] == "rol_sii"
+    insert_sql = pool.fetchrow.call_args.args[0]
+    assert "app.transporter_documents" in insert_sql
+    assert "app.compliance_documents" not in insert_sql
+
+
+def test_patch_driver_document_uses_driver_documents_table():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = ["d1", "epp"]  # _resolve_entity, catalog check
+    pool.fetchrow.return_value = {
+        "driver_id": "d1", "doc_name": "epp", "status": "ok",
+        "expiry_date": None, "storage_path": None, "notes": None, "updated_at": None,
+    }
+    client = make_client(pool)
+    res = client.patch(f"/api/v1/transporters/{TID}/drivers/d1/documents/epp", json={"status": "ok"})
+    assert res.status_code == 200
+    insert_sql = pool.fetchrow.call_args.args[0]
+    assert "app.driver_documents" in insert_sql
+    assert "app.driver_assignments" not in insert_sql
+
+
+def test_patch_vehicle_document_uses_vehicle_documents_table():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = ["v1", "padron"]  # _resolve_entity, catalog check
+    pool.fetchrow.return_value = {
+        "vehicle_id": "v1", "doc_name": "padron", "status": "ok",
+        "expiry_date": None, "storage_path": None, "notes": None, "updated_at": None,
+    }
+    client = make_client(pool)
+    res = client.patch(f"/api/v1/transporters/{TID}/vehicles/v1/documents/padron", json={"status": "ok"})
+    assert res.status_code == 200
+    insert_sql = pool.fetchrow.call_args.args[0]
+    assert "app.vehicle_documents" in insert_sql
+    assert "app.vehicle_assignments" not in insert_sql
+
+
+def test_upload_driver_document_file_uses_driver_documents_table_and_logs_replacement():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = ["d1", "epp"]  # _resolve_entity, catalog check (inside _upsert_document)
+    pool.fetchrow.side_effect = [
+        {"status": "ok", "expiry_date": None, "storage_path": "driver/d1/epp/old_x.pdf"},  # current
+        {"driver_id": "d1", "doc_name": "epp", "status": "ok", "expiry_date": None,
+         "storage_path": "driver/d1/epp/new_x.pdf", "notes": None, "updated_at": None},  # upsert RETURNING
+    ]
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        f"/api/v1/transporters/{TID}/drivers/d1/documents/epp/file",
+        files={"file": ("licencia.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 200
+    current_lookup_sql = pool.fetchrow.call_args_list[0].args[0]
+    upsert_sql = pool.fetchrow.call_args_list[1].args[0]
+    assert "app.driver_documents" in current_lookup_sql
+    assert "app.driver_documents" in upsert_sql
+    # Reemplazo de archivo existente → debe loguear en audit_log (Task 2)
+    audit_calls = [c for c in pool.execute.call_args_list if "app.audit_log" in c.args[0]]
+    assert audit_calls and "document_replace" in audit_calls[0].args[0]
+
+
+def test_list_vehicle_document_files_queries_audit_log_with_correct_entity_type():
+    pool = AsyncMock()
+    pool.fetchval.return_value = "v1"  # _resolve_entity
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get(f"/api/v1/transporters/{TID}/vehicles/v1/documents/padron/files")
+
+    assert res.status_code == 200
+    assert res.json() == []
+    fetch_call = pool.fetch.call_args
+    assert "app.audit_log" in fetch_call.args[0]
+    assert fetch_call.args[1] == "vehicle"
+    assert fetch_call.args[2] == "v1"
+    assert fetch_call.args[3] == "padron"
 
 
 # ── Compliance alerts summary: incluye ineligible_transporters ─────

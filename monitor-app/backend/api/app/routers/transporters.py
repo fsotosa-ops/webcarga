@@ -26,8 +26,6 @@ from ..schemas.transporter_relational import (
     TransporterPatchBody,
     split_rut,
 )
-from ..utils.stored_files import list_owner_files, upload_owner_file
-
 router = APIRouter(prefix="/transporters", tags=["transporters"])
 
 VALID_OVERRIDE_FIELDS = {"business_name", "rut", "account_stage", "contactability"}
@@ -75,50 +73,49 @@ def _num(v):
     return float(v) if v is not None else None
 
 
+_DOC_TABLE = {"transporter": "transporter_documents", "driver": "driver_documents", "vehicle": "vehicle_documents"}
+_DOC_FK_COL = {"transporter": "transporter_id", "driver": "driver_id", "vehicle": "vehicle_id"}
+
+
 async def _docs_by_entity(pool, entity_type: str, entity_ids: list) -> dict:
     if not entity_ids:
         return {}
+    table = _DOC_TABLE[entity_type]
+    fk = _DOC_FK_COL[entity_type]
     rows = await pool.fetch(
-        "SELECT entity_id, doc_code, status FROM app.compliance_documents "
-        "WHERE entity_type = $1 AND entity_id = ANY($2::uuid[])",
-        entity_type, entity_ids,
+        f"SELECT {fk} AS entity_id, doc_name, status FROM app.{table} WHERE {fk} = ANY($1::uuid[])",
+        entity_ids,
     )
     out: dict = {}
     for r in rows:
-        out.setdefault(r["entity_id"], {})[r["doc_code"]] = r["status"]
+        out.setdefault(r["entity_id"], {})[r["doc_name"]] = r["status"]
     return out
 
 
 async def _resolve_entity(pool, tid: str, entity_type: str, entity_id: str) -> None:
-    """Valida que entity_id exista y, para driver/vehicle, esté vigentemente
-    asignado a la empresa tid (evita acceder a un conductor/vehículo de otra
-    empresa usando el tid equivocado en la URL)."""
+    """Valida que entity_id exista y, para driver/vehicle, esté asignado
+    (transporter_id directo, Checkpoint A Task 2 — ya no assignment tables)
+    a la empresa tid."""
     if entity_type == "transporter":
         exists = await pool.fetchval("SELECT id FROM app.transporters WHERE id = $1", entity_id)
     elif entity_type == "driver":
         exists = await pool.fetchval(
-            "SELECT d.id FROM app.drivers d "
-            "JOIN app.driver_assignments da ON da.driver_id = d.id "
-            "WHERE d.id = $1 AND da.transporter_id = $2 AND da.valid_to IS NULL",
-            entity_id, tid,
+            "SELECT id FROM app.drivers WHERE id = $1 AND transporter_id = $2", entity_id, tid,
         )
     else:  # vehicle
         exists = await pool.fetchval(
-            "SELECT v.id FROM app.vehicles v "
-            "JOIN app.vehicle_assignments va ON va.vehicle_id = v.id "
-            "WHERE v.id = $1 AND va.transporter_id = $2 AND va.valid_to IS NULL",
-            entity_id, tid,
+            "SELECT id FROM app.vehicles WHERE id = $1 AND transporter_id = $2", entity_id, tid,
         )
     if not exists:
         raise HTTPException(404, "No encontrado")
 
 
 async def _upsert_document(pool, entity_type: str, entity_id, doc_code: str, data: dict, updated_by: str) -> dict:
-    """Upsert genérico de app.compliance_documents. `data` puede traer status/
-    expiry_date/file_url/notes/manual_override (claves ausentes no se tocan).
-    manual_override por defecto True: cualquier PATCH desde la app es una
-    edición manual — el pipeline no la pisa mientras no se revierta
-    explícitamente (manual_override=false)."""
+    """Upsert en la tabla angosta de documentos correspondiente al tipo de
+    entidad. `doc_code` se valida contra app.compliance_doc_catalog (se
+    mantiene permanentemente tras Checkpoint A — es la fuente de metadata
+    de documentos requeridos, no se retiró). manual_override=True por
+    defecto: cualquier PATCH desde la app es edición manual."""
     catalog = await pool.fetchval(
         "SELECT doc_code FROM app.compliance_doc_catalog WHERE doc_code = $1 AND entity_type = $2",
         doc_code, entity_type,
@@ -126,74 +123,73 @@ async def _upsert_document(pool, entity_type: str, entity_id, doc_code: str, dat
     if not catalog:
         raise HTTPException(422, f"doc_code inválido para {entity_type}: {doc_code}")
 
-    manual_override = data.get("manual_override", True)
+    table = _DOC_TABLE[entity_type]
+    fk = _DOC_FK_COL[entity_type]
     row = await pool.fetchrow(
-        """
-        INSERT INTO app.compliance_documents
-          (entity_type, entity_id, doc_code, status, expiry_date, file_url, notes, source, manual_override, updated_by, updated_at)
-        VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, 'manual', $8, $9::uuid, NOW())
-        ON CONFLICT (entity_type, entity_id, doc_code) DO UPDATE SET
-            status          = COALESCE($4, app.compliance_documents.status),
-            expiry_date     = COALESCE($5, app.compliance_documents.expiry_date),
-            file_url        = COALESCE($6, app.compliance_documents.file_url),
-            notes           = COALESCE($7, app.compliance_documents.notes),
-            manual_override = $8,
-            updated_by      = $9::uuid,
-            updated_at      = NOW()
+        f"""
+        INSERT INTO app.{table} ({fk}, doc_name, status, expiry_date, storage_path, notes, updated_by, updated_at)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, NOW())
+        ON CONFLICT ({fk}, doc_name) DO UPDATE SET
+            status       = COALESCE($3, app.{table}.status),
+            expiry_date  = COALESCE($4, app.{table}.expiry_date),
+            storage_path = COALESCE($5, app.{table}.storage_path),
+            notes        = COALESCE($6, app.{table}.notes),
+            updated_by   = $7::uuid,
+            updated_at   = NOW()
         RETURNING *
         """,
-        entity_type, str(entity_id), doc_code,
-        data.get("status"), data.get("expiry_date"), data.get("file_url"), data.get("notes"),
-        manual_override, updated_by,
+        str(entity_id), doc_code, data.get("status"), data.get("expiry_date"),
+        data.get("storage_path"), data.get("notes"), updated_by,
     )
     return dict(row)
 
 
-def _serialize_document(row: dict) -> dict:
+def _serialize_document(row: dict, entity_type: str, entity_id) -> dict:
     return {
-        "id": str(row["id"]),
-        "entity_type": row["entity_type"],
-        "entity_id": str(row["entity_id"]),
-        "doc_code": row["doc_code"],
+        "entity_type": entity_type,
+        "entity_id": str(entity_id),
+        "doc_code": row["doc_name"],
         "status": row["status"],
         "expiry_date": _iso(row["expiry_date"]),
-        "file_url": row["file_url"],
         "storage_path": row["storage_path"],
         "notes": row["notes"],
-        "manual_override": row["manual_override"],
         "updated_at": _iso(row["updated_at"]),
     }
 
 
 async def _document_patch_impl(pool, entity_type, entity_id, doc_code, body: DocumentPatchBody, user):
-    data = body.model_dump(exclude_none=True)
+    data = body.model_dump(exclude_none=True, exclude={"manual_override", "file_url"})
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
     row = await _upsert_document(pool, entity_type, entity_id, doc_code, data, user["sub"])
-    return _serialize_document(row)
+    return _serialize_document(row, entity_type, entity_id)
 
 
 async def _document_upload_impl(pool, supabase, entity_type, entity_id, doc_code, key_prefix, file, user):
-    doc = await _upsert_document(pool, entity_type, entity_id, doc_code, {}, user["sub"])
-    stored = await upload_owner_file(
-        pool, supabase, owner_type="compliance_document", owner_id=doc["id"],
-        key_prefix=key_prefix, file=file, uploaded_by=user["sub"],
+    from ..utils.document_storage import log_document_replacement, upload_document_version
+
+    current = await pool.fetchrow(
+        f"SELECT status, expiry_date, storage_path FROM app.{_DOC_TABLE[entity_type]} "
+        f"WHERE {_DOC_FK_COL[entity_type]} = $1 AND doc_name = $2",
+        str(entity_id), doc_code,
     )
-    await pool.execute(
-        "UPDATE app.compliance_documents SET storage_path = $1, updated_by = $2::uuid, updated_at = NOW() WHERE id = $3",
-        stored["storage_path"], user["sub"], doc["id"],
+    if current and current["storage_path"]:
+        await log_document_replacement(
+            pool, entity_type=entity_type, entity_id=entity_id, doc_name=doc_code,
+            old_status=current["status"], old_expiry_date=current["expiry_date"],
+            old_storage_path=current["storage_path"], actor=user["sub"],
+        )
+
+    stored = await upload_document_version(supabase, key_prefix=key_prefix, file=file)
+    row = await _upsert_document(
+        pool, entity_type, entity_id, doc_code, {"storage_path": stored["storage_path"]}, user["sub"],
     )
-    return stored
+    return {**stored, **_serialize_document(row, entity_type, entity_id)}
 
 
 async def _document_files_impl(pool, supabase, entity_type, entity_id, doc_code):
-    doc_id = await pool.fetchval(
-        "SELECT id FROM app.compliance_documents WHERE entity_type = $1 AND entity_id = $2::uuid AND doc_code = $3",
-        entity_type, str(entity_id), doc_code,
-    )
-    if not doc_id:
-        return []
-    return await list_owner_files(pool, supabase, owner_type="compliance_document", owner_id=doc_id)
+    from ..utils.document_storage import get_document_history
+    return await get_document_history(pool, supabase, entity_type=entity_type, entity_id=entity_id, doc_name=doc_code)
 
 
 # ── LIST ──────────────────────────────────────────────────────────
@@ -415,11 +411,11 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
 
     company_doc_rows = await pool.fetch(
         """
-        SELECT c.doc_code, c.label, cd.status, cd.expiry_date, cd.file_url,
-               cd.storage_path, cd.manual_override, cd.updated_at
+        SELECT c.doc_code, c.label, cd.status, cd.expiry_date,
+               cd.storage_path, cd.updated_at
         FROM app.compliance_doc_catalog c
-        LEFT JOIN app.compliance_documents cd
-          ON cd.entity_type = 'transporter' AND cd.entity_id = $1 AND cd.doc_code = c.doc_code
+        LEFT JOIN app.transporter_documents cd
+          ON cd.transporter_id = $1 AND cd.doc_name = c.doc_code
         WHERE c.entity_type = 'transporter'
         ORDER BY c.sort_order
         """,
@@ -469,8 +465,8 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
     documents = [
         {
             "doc_code": r["doc_code"], "label": r["label"], "status": r["status"],
-            "expiry_date": _iso(r["expiry_date"]), "file_url": r["file_url"],
-            "storage_path": r["storage_path"], "manual_override": r["manual_override"],
+            "expiry_date": _iso(r["expiry_date"]),
+            "storage_path": r["storage_path"],
             "updated_at": _iso(r["updated_at"]),
         }
         for r in company_doc_rows
