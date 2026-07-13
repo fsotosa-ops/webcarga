@@ -665,3 +665,62 @@ export function canManage(actorRole: UserRole, targetRole: UserRole): boolean {
 }
 
 export type Profile = Database['public']['Tables']['profiles']['Row'] & { active: boolean }
+
+export type CentralizerFieldDiff = {
+  field:    string
+  old:      unknown
+  new:      unknown
+  conflict: boolean
+}
+
+export type CentralizerChangeType = 'new' | 'updated' | 'unchanged' | 'conflict'
+
+export type CentralizerEntityDiff = {
+  entity_key:      string
+  match_method:    'rut' | 'legacy_id' | 'plate' | null
+  existing_id:     string | null
+  change_type:     CentralizerChangeType
+  field_diffs:     CentralizerFieldDiff[]
+  conflict_reason: string | null
+  parsed_row:      Record<string, unknown>
+}
+
+export type CentralizerParseError = {
+  sheet:       string
+  row?:        number
+  identifier?: string
+  reason:      string
+}
+
+export type CentralizerDiff = {
+  transporters: CentralizerEntityDiff[]
+  drivers:      CentralizerEntityDiff[]
+  vehicles:     CentralizerEntityDiff[]
+  parse_errors: CentralizerParseError[]
+}
+
+export type CentralizerUploadStatus = 'parsed' | 'previewed' | 'approved' | 'applied' | 'rejected' | 'failed'
+
+export type CentralizerUploadSummary = {
+  id:                string
+  upload_kind:       'centralizer' | 'insurance'
+  file_name:         string
+  status:            CentralizerUploadStatus
+  uploaded_by:       string
+  uploaded_by_name:  string | null
+  uploaded_at:       string
+  sheet_summary:     Record<string, number> | null
+  approved_by:       string | null
+  approved_by_name:  string | null
+  approved_at:       string | null
+  applied_at:        string | null
+  rejected_by:       string | null
+  rejected_by_name:  string | null
+  rejected_at:       string | null
+  rejection_reason:  string | null
+}
+
+export type CentralizerUploadDetail = CentralizerUploadSummary & {
+  parse_errors: CentralizerParseError[]
+  diff:         CentralizerDiff | null
+}
