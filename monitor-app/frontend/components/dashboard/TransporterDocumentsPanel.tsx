@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { Link2, Upload, FileText, RotateCcw, Loader2, Check, X } from 'lucide-react'
 import { transportersApi } from '@/lib/api/transporters'
-import type { ComplianceStatus, StoredFile, TransporterDocument } from '@/lib/types'
+import type { ComplianceStatus, DocumentVersion, TransporterDocument } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { getAlertStatus, formatExpiry } from '@/lib/compliance'
 
@@ -31,7 +31,7 @@ function DocumentRow({
   const [linkOpen, setLinkOpen]   = useState(false)
   const [linkDraft, setLinkDraft] = useState(doc.file_url ?? '')
   const [versionsOpen, setVersionsOpen] = useState(false)
-  const [versions, setVersions]   = useState<StoredFile[] | null>(null)
+  const [versions, setVersions]   = useState<DocumentVersion[] | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -200,11 +200,13 @@ function DocumentRow({
           ) : (versions?.length ?? 0) === 0 ? (
             <p className="text-[10px] text-gray-300 italic">Sin archivos</p>
           ) : (
-            versions!.map(v => (
-              <a key={v.id} href={v.url ?? undefined} target="_blank" rel="noreferrer"
+            versions!.map((v, i) => (
+              <a key={v.storage_path ?? v.replaced_at ?? i} href={v.url ?? undefined} target="_blank" rel="noreferrer"
                 className={`flex items-center justify-between text-[10px] gap-2 ${v.url ? 'text-accent hover:underline' : 'text-gray-400 pointer-events-none'}`}>
-                <span className="truncate">v{v.version} · {v.file_name}</span>
-                {!v.url && <span className="text-gray-300 shrink-0">(sin URL)</span>}
+                <span className="truncate">
+                  {v.status ?? '—'} · reemplazado {v.replaced_at ? formatExpiry(v.replaced_at) : '—'}
+                </span>
+                {!v.url && <span className="text-gray-300 shrink-0">(sin archivo)</span>}
               </a>
             ))
           )}

@@ -62,7 +62,13 @@ export function getVehicleAlertStatus(vehicle: TransporterVehicle): AlertStatus 
 
 export function formatExpiry(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('es-CL', {
+  // Fechas "solo día" (columnas DATE, ej. expiry_date) llegan sin componente de hora
+  // y necesitan mediodía local para no cruzar el límite de zona horaria. Timestamps
+  // completos (columnas timestamptz, ej. audit_log.occurred_at → replaced_at) ya
+  // traen hora + offset — anexar otro "T12:00:00" los rompería (Invalid Date).
+  const hasTimeComponent = dateStr.includes('T')
+  const parsed = hasTimeComponent ? new Date(dateStr) : new Date(dateStr + 'T12:00:00')
+  return parsed.toLocaleDateString('es-CL', {
     day: '2-digit', month: '2-digit', year: '2-digit',
   })
 }

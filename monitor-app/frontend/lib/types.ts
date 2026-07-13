@@ -459,11 +459,8 @@ export type TransporterDocument = {
   updated_at:      string | null
 }
 
-/** Resultado de PATCH/POST sobre un documento — shape distinto (incluye id/entity_*) */
+/** Resultado de PATCH/POST sobre un documento */
 export type TransporterDocumentPatchResult = {
-  id:              string
-  entity_type:     string
-  entity_id:       string
   doc_code:        string
   status:          ComplianceStatus | null
   expiry_date:     string | null
@@ -481,17 +478,17 @@ export type TransporterEligibility = {
   blocking_reasons: BlockingReason[]
 }
 
-export type StoredFile = {
-  id:            string
-  storage_path:  string
-  file_name:     string
-  mime_type:     string | null
-  size_bytes:    number | null
-  version:       number
-  uploaded_by:   string | null
-  uploaded_at:   string
-  /** Solo presente en GET .../files (URL firmada, null si la firma falló) */
-  url?:          string | null
+/** Entrada del historial de reemplazos de un documento — derivado de
+ *  app.audit_log (Checkpoint B), no de una tabla de versiones dedicada.
+ *  Reemplaza a StoredFile para GET .../documents/{doc_code}/files. */
+export type DocumentVersion = {
+  storage_path:  string | null
+  status:        ComplianceStatus | null
+  expiry_date:   string | null
+  replaced_at:   string | null
+  replaced_by:   string | null
+  /** URL firmada, null si el storage_path es null o si la firma falló */
+  url:           string | null
 }
 
 export type TransporterProfile = {
@@ -605,7 +602,6 @@ export type InsuranceDocument = {
   doc_code:        string
   label:           string
   has_expiry:      boolean
-  id:              string | null
   status:          ComplianceStatus | null
   expiry_date:     string | null
   file_url:        string | null

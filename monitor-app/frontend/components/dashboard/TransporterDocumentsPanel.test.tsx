@@ -43,7 +43,7 @@ describe('TransporterDocumentsPanel', () => {
 
   it('changes status via the select and reports the update', async () => {
     vi.mocked(transportersApi.patchDocument).mockResolvedValue({
-      id: 'x', entity_type: 'transporter', entity_id: 't1', doc_code: 'rol_sii',
+      doc_code: 'rol_sii',
       status: 'pendiente', expiry_date: null, file_url: null, storage_path: null, notes: null,
       manual_override: true, updated_at: '2026-07-10T00:00:00Z',
     })
@@ -65,6 +65,25 @@ describe('TransporterDocumentsPanel', () => {
     const fileInputs = document.querySelectorAll('input[type="file"]')
     fireEvent.change(fileInputs[0], { target: { files: [file] } })
     await waitFor(() => expect(transportersApi.uploadDocumentFile).toHaveBeenCalledWith('t1', 'rol_sii', file))
+  })
+
+  it('renders document version history with status + replaced date, not undefined (Checkpoint B shape)', async () => {
+    vi.mocked(transportersApi.listDocumentFiles).mockResolvedValue([
+      {
+        storage_path: 'transporters/t1/rol_sii/old.pdf',
+        status: 'actualizar',
+        expiry_date: null,
+        replaced_at: '2026-06-01T14:23:11.123456+00:00',
+        replaced_by: 'admin@webcarga.cl',
+        url: 'https://signed.example.com/old.pdf',
+      },
+    ])
+    render(<TransporterDocumentsPanel tid="t1" documents={DOCS} canEdit={true} onDocumentsChange={vi.fn()} />)
+    fireEvent.click(screen.getAllByTitle('Ver archivo / versiones')[0])
+    await waitFor(() => expect(transportersApi.listDocumentFiles).toHaveBeenCalledWith('t1', 'rol_sii'))
+    const entry = await screen.findByText(/actualizar · reemplazado/)
+    expect(entry.textContent).not.toMatch(/undefined/)
+    expect(entry.textContent).toContain('01-06-26')
   })
 
   it('shows a "Ver link" anchor for a non-editor when file_url is set', () => {

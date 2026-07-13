@@ -91,7 +91,7 @@ beforeEach(() => {
     transporterId === 't3' ? ONE_POLICY_B : TWO_POLICIES,
   )
   vi.mocked(insuranceApi.listPolicyDocuments).mockReset().mockResolvedValue([
-    { doc_code: 'poliza_firmada', label: 'Póliza firmada', has_expiry: false, id: 'd1', status: 'ok', expiry_date: null, file_url: null, storage_path: null, notes: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
+    { doc_code: 'poliza_firmada', label: 'Póliza firmada', has_expiry: false, status: 'ok', expiry_date: null, file_url: null, storage_path: null, notes: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
   ])
   vi.mocked(insuranceApi.uploadDocumentFile).mockReset()
   vi.mocked(insuranceApi.patchInstallment).mockReset()

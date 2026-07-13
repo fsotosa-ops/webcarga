@@ -5,7 +5,7 @@ import type {
   InsuranceInstallment,
   InstallmentStatus,
   PolicyType,
-  StoredFile,
+  DocumentVersion,
   InsuranceDocument,
   InsuranceDocumentPatchResult,
   InsuranceInstallmentFlat,
@@ -65,14 +65,14 @@ export const insuranceApi = {
   uploadPolicyFile: (pid: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return apiFetch<StoredFile>(`/api/v1/insurance/policies/${pid}/file`, {
+    return apiFetch<Record<string, unknown>>(`/api/v1/insurance/policies/${pid}/file`, {
       method: 'POST',
       body: form,
     })
   },
 
   listPolicyFiles: (pid: string) =>
-    apiFetch<StoredFile[]>(`/api/v1/insurance/policies/${pid}/files`),
+    apiFetch<DocumentVersion[]>(`/api/v1/insurance/policies/${pid}/files`),
 
   listPolicyDocuments: (pid: string) =>
     apiFetch<InsuranceDocument[]>(`/api/v1/insurance/policies/${pid}/documents`),
@@ -88,14 +88,14 @@ export const insuranceApi = {
   uploadDocumentFile: (pid: string, docCode: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return apiFetch<StoredFile>(`/api/v1/insurance/policies/${pid}/documents/${docCode}/file`, {
+    return apiFetch<Record<string, unknown>>(`/api/v1/insurance/policies/${pid}/documents/${docCode}/file`, {
       method: 'POST',
       body: form,
     })
   },
 
   listDocumentFiles: (pid: string, docCode: string) =>
-    apiFetch<StoredFile[]>(`/api/v1/insurance/policies/${pid}/documents/${docCode}/files`),
+    apiFetch<DocumentVersion[]>(`/api/v1/insurance/policies/${pid}/documents/${docCode}/files`),
 
   installmentsFlat: () =>
     apiFetch<InsuranceInstallmentFlat[]>('/api/v1/insurance/installments'),

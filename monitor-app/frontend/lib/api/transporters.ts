@@ -9,7 +9,7 @@ import type {
   TransporterTrailer,
   TransporterContactability,
   TransporterDocumentPatchResult,
-  StoredFile,
+  DocumentVersion,
 } from '@/lib/types'
 import { apiFetch } from './client'
 
@@ -130,14 +130,14 @@ export const transportersApi = {
   uploadDocumentFile: (id: string, docCode: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return apiFetch<StoredFile>(`/api/v1/transporters/${id}/documents/${docCode}/file`, {
+    return apiFetch<Record<string, unknown> & { storage_path: string }>(`/api/v1/transporters/${id}/documents/${docCode}/file`, {
       method: 'POST',
       body: form,
     })
   },
 
   listDocumentFiles: (id: string, docCode: string) =>
-    apiFetch<StoredFile[]>(`/api/v1/transporters/${id}/documents/${docCode}/files`),
+    apiFetch<DocumentVersion[]>(`/api/v1/transporters/${id}/documents/${docCode}/files`),
 
   // ── Transferencias (rol admin) ──────────────────────────────────────
 
