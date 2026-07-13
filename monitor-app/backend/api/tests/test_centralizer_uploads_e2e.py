@@ -109,10 +109,16 @@ def _fixture_bytes() -> bytes:
         return f.read()
 
 
-async def _upload_approve_apply(pool, supabase, data: bytes) -> dict:
+async def _upload_approve_apply(pool, supabase, data: bytes, upload_ids: list[str], storage_paths: list[str]) -> dict:
     """POST (preview) + approve + apply de un archivo, llamando los
     endpoints directamente. Retorna upload_id, el diff del preview y la
-    respuesta de apply."""
+    respuesta de apply.
+
+    Registra upload_id/storage_path en las listas de cleanup INMEDIATAMENTE
+    tras el preview (antes de approve/apply) — si approve o apply lanzan una
+    excepción, la fila de centralizer_uploads y el archivo de Storage ya
+    creados por el preview igual quedan trackeados para el cleanup del
+    `finally`, en vez de perderse por no haber llegado al `return`."""
     upload_file = UploadFile(
         file=BytesIO(data),
         filename="centralizer_sample.xlsx",
@@ -122,6 +128,12 @@ async def _upload_approve_apply(pool, supabase, data: bytes) -> dict:
     )
     preview = await upload_and_preview(file=upload_file, pool=pool, supabase=supabase, user=FAKE_ADMIN)
     upload_id = preview["upload_id"]
+    upload_ids.append(upload_id)
+    storage_paths.append(
+        await pool.fetchval(
+            "SELECT storage_path FROM app.centralizer_uploads WHERE id = $1", upload_id,
+        )
+    )
 
     approved = await approve_upload(upload_id, pool=pool, user=FAKE_ADMIN)
     assert approved["status"] == "approved"
@@ -170,13 +182,7 @@ async def test_idempotent_reupload_and_real_conflict_against_live_supabase():
         data = _fixture_bytes()
 
         # ── Paso 1: primer upload — base vacía, todo 'new' ─────────────────
-        cycle1 = await _upload_approve_apply(pool, supabase, data)
-        upload_ids.append(cycle1["upload_id"])
-        storage_paths.append(
-            await pool.fetchval(
-                "SELECT storage_path FROM app.centralizer_uploads WHERE id = $1", cycle1["upload_id"],
-            )
-        )
+        cycle1 = await _upload_approve_apply(pool, supabase, data, upload_ids, storage_paths)
 
         diff1 = cycle1["preview"]["diff"]
         assert cycle1["preview"]["parse_errors"] == []
@@ -203,13 +209,7 @@ async def test_idempotent_reupload_and_real_conflict_against_live_supabase():
         assert {r["manual_override"] for r in doc_rows} == {False}
 
         # ── Paso 2 (Step 1 del brief): re-subir EL MISMO archivo ──────────
-        cycle2 = await _upload_approve_apply(pool, supabase, data)
-        upload_ids.append(cycle2["upload_id"])
-        storage_paths.append(
-            await pool.fetchval(
-                "SELECT storage_path FROM app.centralizer_uploads WHERE id = $1", cycle2["upload_id"],
-            )
-        )
+        cycle2 = await _upload_approve_apply(pool, supabase, data, upload_ids, storage_paths)
 
         diff2 = cycle2["preview"]["diff"]
         assert all(d["change_type"] == "unchanged" for d in diff2["transporters"]), diff2["transporters"]
@@ -246,13 +246,7 @@ async def test_idempotent_reupload_and_real_conflict_against_live_supabase():
         assert "business_name" in patched["manually_edited_fields"]
         assert edited_business_name != fixture_business_name
 
-        cycle3 = await _upload_approve_apply(pool, supabase, data)
-        upload_ids.append(cycle3["upload_id"])
-        storage_paths.append(
-            await pool.fetchval(
-                "SELECT storage_path FROM app.centralizer_uploads WHERE id = $1", cycle3["upload_id"],
-            )
-        )
+        cycle3 = await _upload_approve_apply(pool, supabase, data, upload_ids, storage_paths)
 
         diff3 = cycle3["preview"]["diff"]
         target_diff = next(d for d in diff3["transporters"] if d["entity_key"] == "99999001")
