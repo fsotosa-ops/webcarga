@@ -295,10 +295,16 @@ async def list_uploads(
     offset = (page - 1) * limit
     rows = await pool.fetch(
         """
-        SELECT id, upload_kind, file_name, status, uploaded_by, uploaded_at, sheet_summary,
-               approved_by, approved_at, applied_at, rejected_by, rejected_at, rejection_reason
-        FROM app.centralizer_uploads
-        ORDER BY uploaded_at DESC
+        SELECT c.id, c.upload_kind, c.file_name, c.status, c.uploaded_by, c.uploaded_at, c.sheet_summary,
+               c.approved_by, c.approved_at, c.applied_at, c.rejected_by, c.rejected_at, c.rejection_reason,
+               COALESCE(up.full_name, up.email) AS uploaded_by_name,
+               COALESCE(ap.full_name, ap.email) AS approved_by_name,
+               COALESCE(rp.full_name, rp.email) AS rejected_by_name
+        FROM app.centralizer_uploads c
+        LEFT JOIN public.profiles up ON up.id = c.uploaded_by
+        LEFT JOIN public.profiles ap ON ap.id = c.approved_by
+        LEFT JOIN public.profiles rp ON rp.id = c.rejected_by
+        ORDER BY c.uploaded_at DESC
         LIMIT $1 OFFSET $2
         """,
         limit, offset,
@@ -308,11 +314,34 @@ async def list_uploads(
 
 
 @router.get("/{upload_id}")
-async def get_upload(upload_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
-    row = await pool.fetchrow("SELECT * FROM app.centralizer_uploads WHERE id = $1", upload_id)
+async def get_upload(
+    upload_id: str,
+    pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+):
+    row = await pool.fetchrow(
+        """
+        SELECT c.*,
+               COALESCE(up.full_name, up.email) AS uploaded_by_name,
+               COALESCE(ap.full_name, ap.email) AS approved_by_name,
+               COALESCE(rp.full_name, rp.email) AS rejected_by_name
+        FROM app.centralizer_uploads c
+        LEFT JOIN public.profiles up ON up.id = c.uploaded_by
+        LEFT JOIN public.profiles ap ON ap.id = c.approved_by
+        LEFT JOIN public.profiles rp ON rp.id = c.rejected_by
+        WHERE c.id = $1
+        """,
+        upload_id,
+    )
     if not row:
         raise HTTPException(404, "Upload no encontrado")
-    return {"data": dict(row)}
+
+    data = dict(row)
+    if data["status"] == "failed":
+        data["diff"] = None
+    else:
+        parsed = _download_and_parse(supabase, data["storage_path"])
+        data["diff"] = await compute_diff(pool, parsed)
+    return {"data": data}
 
 
 @router.post("/{upload_id}/approve")

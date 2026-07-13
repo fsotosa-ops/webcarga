@@ -99,6 +99,72 @@ def test_download_and_parse_missing_sheet_raises_422():
     assert exc.value.status_code == 422
 
 
+# ── GET /{id} y GET / — diff recalculado + nombres de profiles ───────────
+
+def _upload_row(**overrides):
+    row = {
+        "id": UPLOAD_ID, "upload_kind": "centralizer", "file_name": "centralizador.xlsx",
+        "storage_path": "centralizer-uploads/x.xlsx", "uploaded_by": USER_ID,
+        "uploaded_at": "2026-07-13T00:00:00", "status": "previewed",
+        "sheet_summary": {"Empresas": 2, "Conductores": 3, "Vehiculos_Equipos": 3},
+        "parse_errors": [], "approved_by": None, "approved_at": None, "applied_at": None,
+        "rejected_by": None, "rejected_at": None, "rejection_reason": None,
+        "created_at": "2026-07-13T00:00:00",
+        "uploaded_by_name": "Ana Pérez", "approved_by_name": None, "rejected_by_name": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_get_upload_previewed_includes_recomputed_diff():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _upload_row(status="previewed")
+    pool.fetch.side_effect = [[], [], []]  # compute_diff: sin matches existentes (fixture: todo 'new')
+
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = _fixture_bytes()
+
+    client = make_client(pool, supabase=supabase)
+    res = client.get(f"/api/v1/centralizer-uploads/{UPLOAD_ID}")
+
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert data["uploaded_by_name"] == "Ana Pérez"
+    assert len(data["diff"]["transporters"]) == 2
+    supabase.storage.from_.assert_called_with("compliance-docs")
+
+
+def test_get_upload_failed_status_has_no_diff_and_skips_storage():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _upload_row(status="failed", storage_path=None)
+    supabase = MagicMock()
+
+    client = make_client(pool, supabase=supabase)
+    res = client.get(f"/api/v1/centralizer-uploads/{UPLOAD_ID}")
+
+    assert res.status_code == 200
+    assert res.json()["data"]["diff"] is None
+    supabase.storage.from_.assert_not_called()
+
+
+def test_get_upload_not_found_returns_404():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+    res = client.get(f"/api/v1/centralizer-uploads/{UPLOAD_ID}")
+    assert res.status_code == 404
+
+
+def test_list_uploads_includes_display_names():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_upload_row()]
+    pool.fetchval.return_value = 1
+    client = make_client(pool)
+    res = client.get("/api/v1/centralizer-uploads")
+    assert res.status_code == 200
+    assert res.json()["data"][0]["uploaded_by_name"] == "Ana Pérez"
+
+
 # ── FakeConn: conexión de transacción con estado mínimo para apply ────────
 
 class _NullCtx:
