@@ -99,7 +99,7 @@ def test_insurance_summary_shape():
 
 def test_upload_policy_file_rejects_bad_mime():
     pool = AsyncMock()
-    pool.fetchval.return_value = "p1"  # policy exists
+    pool.fetchrow.return_value = {"storage_path": None}  # policy exists, sin archivo previo
     client = make_client(pool)
     res = client.post(
         "/api/v1/insurance/policies/p1/file",
@@ -110,12 +110,58 @@ def test_upload_policy_file_rejects_bad_mime():
 
 def test_upload_policy_file_missing_policy_is_404():
     pool = AsyncMock()
-    pool.fetchval.return_value = None
+    pool.fetchrow.return_value = None
     client = make_client(pool)
     res = client.post(
         "/api/v1/insurance/policies/p1/file",
         files={"file": ("poliza.pdf", b"%PDF", "application/pdf")},
     )
+    assert res.status_code == 404
+
+
+def test_upload_policy_file_logs_replacement_when_storage_path_exists():
+    # Repunte a document_storage (Task 5 extra scope): archivo previo debe
+    # loguearse en audit_log antes de sobrescribir storage_path, mismo
+    # patrón que upload_policy_document_file y transporters.py.
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"storage_path": "insurance/p1/old_x.pdf"}
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/insurance/policies/p1/file",
+        files={"file": ("poliza.pdf", b"%PDF", "application/pdf")},
+    )
+
+    assert res.status_code == 200
+    audit_calls = [c for c in pool.execute.call_args_list if "app.audit_log" in c.args[0]]
+    assert audit_calls and "document_replace" in audit_calls[0].args[0]
+    update_call = [c for c in pool.execute.call_args_list if "app.insurance_policies" in c.args[0]][0]
+    assert "app.stored_files" not in update_call.args[0]
+
+
+def test_list_policy_files_queries_audit_log_not_stored_files():
+    pool = AsyncMock()
+    pool.fetchval.return_value = "p1"  # policy exists
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/insurance/policies/p1/files")
+
+    assert res.status_code == 200
+    assert res.json() == []
+    fetch_sql = pool.fetch.call_args.args[0]
+    assert "app.audit_log" in fetch_sql
+    assert "app.stored_files" not in fetch_sql
+    assert pool.fetch.call_args.args[3] == "policy_file"
+
+
+def test_list_policy_files_missing_policy_is_404():
+    pool = AsyncMock()
+    pool.fetchval.return_value = None
+    client = make_client(pool)
+    res = client.get("/api/v1/insurance/policies/p1/files")
     assert res.status_code == 404
 
 
@@ -135,21 +181,26 @@ def test_list_policy_documents_merges_catalog_with_existing():
     pool = AsyncMock()
     pool.fetchval.return_value = "p1"  # policy exists
     pool.fetch.return_value = [
-        {"doc_code": "poliza_firmada", "label": "Póliza firmada", "has_expiry": False, "sort_order": 10,
-         "id": "d1", "status": "ok", "expiry_date": None, "file_url": None, "storage_path": "x",
-         "notes": None, "manual_override": True, "updated_at": datetime(2026, 7, 1, tzinfo=timezone.utc)},
-        {"doc_code": "endoso", "label": "Endoso", "has_expiry": False, "sort_order": 30,
-         "id": None, "status": None, "expiry_date": None, "file_url": None, "storage_path": None,
-         "notes": None, "manual_override": None, "updated_at": None},
+        {"policy_id": "p1", "doc_name": "poliza_firmada", "status": "ok",
+         "expiry_date": None, "file_url": None, "storage_path": "x",
+         "notes": None, "manual_override": True, "updated_by": USER_ID,
+         "updated_at": datetime(2026, 7, 1, tzinfo=timezone.utc)},
     ]
     client = make_client(pool)
     res = client.get("/api/v1/insurance/policies/p1/documents")
     assert res.status_code == 200
     docs = res.json()
-    assert docs[0]["doc_code"] == "poliza_firmada"
+    # Catálogo estático (4 doc_code) mergeado con la única fila existente
+    assert [d["doc_code"] for d in docs] == ["poliza_firmada", "certificado_vigencia", "endoso", "comprobante_pago"]
     assert docs[0]["status"] == "ok"
-    assert docs[1]["doc_code"] == "endoso"
-    assert docs[1]["status"] is None
+    assert docs[0]["label"] == "Póliza firmada"
+    assert docs[0]["has_expiry"] is False
+    assert docs[1]["status"] is None  # certificado_vigencia: sin fila -> merge con None
+    assert docs[1]["has_expiry"] is True
+    fetch_sql = pool.fetch.call_args.args[0]
+    assert "app.insurance_policy_documents" in fetch_sql
+    assert "app.insurance_doc_catalog" not in fetch_sql
+    assert "app.insurance_documents" not in fetch_sql
 
 
 def test_list_policy_documents_missing_policy_is_404():
@@ -162,9 +213,9 @@ def test_list_policy_documents_missing_policy_is_404():
 
 def test_patch_policy_document_upserts_and_requires_editor():
     pool = AsyncMock()
-    pool.fetchval.return_value = "poliza_firmada"  # catálogo válido
+    pool.fetchval.return_value = "p1"  # solo se usa para el exists-check de la póliza
     pool.fetchrow.return_value = {
-        "id": "d1", "policy_id": "p1", "doc_code": "poliza_firmada", "status": "ok",
+        "policy_id": "p1", "doc_name": "poliza_firmada", "status": "ok",
         "expiry_date": None, "file_url": None, "storage_path": None, "notes": None,
         "manual_override": True, "updated_by": USER_ID, "updated_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
     }
@@ -172,6 +223,7 @@ def test_patch_policy_document_upserts_and_requires_editor():
     res = client.patch("/api/v1/insurance/policies/p1/documents/poliza_firmada", json={"status": "ok"})
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
+    assert res.json()["doc_code"] == "poliza_firmada"
 
 
 def test_patch_policy_document_requires_editor():
@@ -182,24 +234,94 @@ def test_patch_policy_document_requires_editor():
 
 
 def test_patch_policy_document_invalid_doc_code_is_422():
+    # El catálogo ahora es una lista estática en Python (INSURANCE_DOC_CATALOG):
+    # doc_code inválido se rechaza antes de tocar la base de datos.
     pool = AsyncMock()
-    pool.fetchval.return_value = None  # no existe en el catálogo
     client = make_client(pool)
     res = client.patch("/api/v1/insurance/policies/p1/documents/no_existe", json={"status": "ok"})
     assert res.status_code == 422
+    pool.fetchval.assert_not_called()
+    pool.fetchrow.assert_not_called()
 
 
 def test_upload_policy_document_file_invalid_doc_code_is_422():
     # Mismo orden de validación que patch_policy_document: catálogo (422)
     # antes que existencia de la póliza (404), incluso si ambas son inválidas.
+    # Catálogo estático en Python -> sin llamadas a la base de datos.
     pool = AsyncMock()
-    pool.fetchval.return_value = None  # no existe en el catálogo
     client = make_client(pool)
     res = client.post(
         "/api/v1/insurance/policies/p1/documents/no_existe/file",
         files={"file": ("doc.pdf", b"%PDF", "application/pdf")},
     )
     assert res.status_code == 422
+    pool.fetchval.assert_not_called()
+    pool.fetchrow.assert_not_called()
+
+
+# ── Documentos de póliza: repunte a app.insurance_policy_documents ─
+# Estos tests existen para que un futuro desfase de schema como el que
+# motivó este task (helpers apuntando a app.insurance_documents /
+# app.insurance_doc_catalog, dropeadas en Checkpoint A) se detecte en CI
+# vía el mock, sin depender de Supabase real.
+
+def test_upsert_insurance_document_uses_insurance_policy_documents_table():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "policy_id": "p1", "doc_name": "poliza_firmada", "status": "ok",
+        "expiry_date": None, "file_url": None, "storage_path": None, "notes": None,
+        "manual_override": True, "updated_by": USER_ID, "updated_at": None,
+    }
+    client = make_client(pool)
+    res = client.patch("/api/v1/insurance/policies/p1/documents/poliza_firmada", json={"status": "ok"})
+    assert res.status_code == 200
+    upsert_sql = pool.fetchrow.call_args.args[0]
+    assert "app.insurance_policy_documents" in upsert_sql
+    assert "app.insurance_documents" not in upsert_sql
+    assert "app.insurance_doc_catalog" not in upsert_sql
+
+
+def test_upload_policy_document_file_uses_document_storage_and_logs_replacement():
+    pool = AsyncMock()
+    pool.fetchval.return_value = "p1"  # policy exists
+    pool.fetchrow.side_effect = [
+        {"status": "ok", "expiry_date": None, "storage_path": "insurance/p1/poliza_firmada/old.pdf"},  # current
+        {"policy_id": "p1", "doc_name": "poliza_firmada", "status": "ok", "expiry_date": None,
+         "file_url": None, "storage_path": "insurance/p1/poliza_firmada/new.pdf", "notes": None,
+         "manual_override": True, "updated_by": USER_ID, "updated_at": None},  # upsert RETURNING
+    ]
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/insurance/policies/p1/documents/poliza_firmada/file",
+        files={"file": ("poliza.pdf", b"%PDF", "application/pdf")},
+    )
+
+    assert res.status_code == 200
+    current_lookup_sql = pool.fetchrow.call_args_list[0].args[0]
+    upsert_sql = pool.fetchrow.call_args_list[1].args[0]
+    assert "app.insurance_policy_documents" in current_lookup_sql
+    assert "app.insurance_policy_documents" in upsert_sql
+    audit_calls = [c for c in pool.execute.call_args_list if "app.audit_log" in c.args[0]]
+    assert audit_calls and "document_replace" in audit_calls[0].args[0]
+
+
+def test_list_policy_document_files_queries_audit_log():
+    pool = AsyncMock()
+    pool.fetchval.return_value = "p1"  # policy exists
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/insurance/policies/p1/documents/poliza_firmada/files")
+
+    assert res.status_code == 200
+    assert res.json() == []
+    fetch_sql = pool.fetch.call_args.args[0]
+    assert "app.audit_log" in fetch_sql
+    assert "app.insurance_documents" not in fetch_sql
+    assert pool.fetch.call_args.args[3] == "poliza_firmada"
 
 
 # ── Cuotas planas (Cobranza) ─────────────────────────────────────
@@ -233,6 +355,27 @@ def test_insurance_kpis_shape():
     assert res.status_code == 200
     body = res.json()
     assert body == {"expiring_30d": 3, "without_policies": 7, "incomplete_docs": 5}
+
+
+def test_insurance_kpis_incomplete_cte_uses_static_catalog_not_dropped_table():
+    # La CTE `incomplete` ya no hace CROSS JOIN app.insurance_doc_catalog
+    # (dropeada por Checkpoint A): ahora usa unnest() sobre el catálogo
+    # estático INSURANCE_DOC_CATALOG, pasado como parámetro $1.
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "expiring_30d": 0, "without_policies": 0, "incomplete_docs": 0,
+    }
+    client = make_client(pool)
+    res = client.get("/api/v1/insurance/kpis")
+    assert res.status_code == 200
+    call = pool.fetchrow.call_args
+    kpi_sql = call.args[0]
+    assert "app.insurance_doc_catalog" not in kpi_sql
+    assert "app.insurance_documents" not in kpi_sql
+    assert "app.insurance_policy_documents" in kpi_sql
+    assert "unnest" in kpi_sql
+    doc_codes_param = call.args[1]
+    assert set(doc_codes_param) == {"poliza_firmada", "certificado_vigencia", "endoso", "comprobante_pago"}
 
 
 # ── Revertir cuota pagada ────────────────────────────────────────────

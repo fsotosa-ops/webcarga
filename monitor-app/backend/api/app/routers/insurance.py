@@ -10,9 +10,24 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from ..auth import get_current_user, get_supabase, require_admin, require_editor
 from ..db import get_pool
 from ..schemas.insurance import InsuranceDocumentPatchBody, InstallmentPatchBody, PolicyPatchBody, RevertInstallmentBody
-from ..utils.stored_files import list_owner_files, upload_owner_file
+from ..utils.document_storage import get_document_history, log_document_replacement, upload_document_version
 
 router = APIRouter(prefix="/insurance", tags=["insurance"])
+
+# Catálogo estático de doc_code válidos para documentos de póliza. No hay
+# tabla-catálogo para seguros (a diferencia de app.compliance_doc_catalog,
+# que Checkpoint A mantuvo porque las vistas de elegibilidad la necesitan):
+# acá no hay vista SQL equivalente, así que Python alcanza. Valores
+# recuperados de la migración 20260711000001_insurance_documents.sql:19-23,
+# que sembró app.insurance_doc_catalog antes de que Checkpoint A la dropeara.
+INSURANCE_DOC_CATALOG = [
+    {"doc_code": "poliza_firmada",       "label": "Póliza firmada",          "has_expiry": False},
+    {"doc_code": "certificado_vigencia", "label": "Certificado de vigencia", "has_expiry": True},
+    {"doc_code": "endoso",               "label": "Endoso",                  "has_expiry": False},
+    {"doc_code": "comprobante_pago",     "label": "Comprobante de pago",     "has_expiry": False},
+]
+_INSURANCE_DOC_CODES = {d["doc_code"] for d in INSURANCE_DOC_CATALOG}
+_INSURANCE_DOC_CATALOG_BY_CODE = {d["doc_code"]: d for d in INSURANCE_DOC_CATALOG}
 
 
 def _iso(v):
@@ -65,12 +80,16 @@ def _serialize_policy(row: dict) -> dict:
     }
 
 
-def _serialize_insurance_document(row: dict) -> dict:
+def _serialize_insurance_document(doc_code: str, row: dict | None) -> dict:
+    """Mergea metadata del catálogo estático (label/has_expiry) con la fila
+    de app.insurance_policy_documents (o None si el doc aún no tiene valor
+    para esta póliza)."""
+    meta = _INSURANCE_DOC_CATALOG_BY_CODE.get(doc_code, {})
+    row = row or {}
     return {
-        "doc_code":        row["doc_code"],
-        "label":           row.get("label"),
-        "has_expiry":      row.get("has_expiry"),
-        "id":              str(row["id"]) if row.get("id") else None,
+        "doc_code":        doc_code,
+        "label":           meta.get("label"),
+        "has_expiry":      meta.get("has_expiry"),
         "status":          row.get("status"),
         "expiry_date":     _iso(row.get("expiry_date")),
         "file_url":        row.get("file_url"),
@@ -82,30 +101,32 @@ def _serialize_insurance_document(row: dict) -> dict:
 
 
 async def _upsert_insurance_document(pool, policy_id: str, doc_code: str, data: dict, updated_by: str) -> dict:
-    catalog = await pool.fetchval(
-        "SELECT doc_code FROM app.insurance_doc_catalog WHERE doc_code = $1", doc_code,
-    )
-    if not catalog:
+    """Upsert en app.insurance_policy_documents (Task 1 — reemplaza a
+    app.insurance_documents, dropeada por Checkpoint A). `doc_code` se valida
+    contra el catálogo estático INSURANCE_DOC_CATALOG, no contra una tabla:
+    no existe app.insurance_doc_catalog en producción."""
+    if doc_code not in _INSURANCE_DOC_CODES:
         raise HTTPException(422, f"doc_code inválido: {doc_code}")
 
     manual_override = data.get("manual_override", True)
     row = await pool.fetchrow(
         """
-        INSERT INTO app.insurance_documents
-          (policy_id, doc_code, status, expiry_date, file_url, notes, source, manual_override, updated_by, updated_at)
-        VALUES ($1::uuid, $2, $3, $4, $5, $6, 'manual', $7, $8::uuid, NOW())
-        ON CONFLICT (policy_id, doc_code) DO UPDATE SET
-            status          = COALESCE($3, app.insurance_documents.status),
-            expiry_date     = COALESCE($4, app.insurance_documents.expiry_date),
-            file_url        = COALESCE($5, app.insurance_documents.file_url),
-            notes           = COALESCE($6, app.insurance_documents.notes),
-            manual_override = $7,
-            updated_by      = $8::uuid,
+        INSERT INTO app.insurance_policy_documents
+          (policy_id, doc_name, status, expiry_date, file_url, storage_path, notes, manual_override, updated_by, updated_at)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::uuid, NOW())
+        ON CONFLICT (policy_id, doc_name) DO UPDATE SET
+            status          = COALESCE($3, app.insurance_policy_documents.status),
+            expiry_date     = COALESCE($4, app.insurance_policy_documents.expiry_date),
+            file_url        = COALESCE($5, app.insurance_policy_documents.file_url),
+            storage_path    = COALESCE($6, app.insurance_policy_documents.storage_path),
+            notes           = COALESCE($7, app.insurance_policy_documents.notes),
+            manual_override = $8,
+            updated_by      = $9::uuid,
             updated_at      = NOW()
         RETURNING *
         """,
         policy_id, doc_code, data.get("status"), data.get("expiry_date"),
-        data.get("file_url"), data.get("notes"), manual_override, updated_by,
+        data.get("file_url"), data.get("storage_path"), data.get("notes"), manual_override, updated_by,
     )
     return dict(row)
 
@@ -336,14 +357,25 @@ async def upload_policy_file(
     pid: str, file: UploadFile = File(...),
     pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
 ):
-    exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
-    if not exists:
+    # Archivo genérico adjunto a la póliza (distinto del tracking por
+    # doc_code de más abajo). No hay tabla de versiones para esto — el
+    # storage_path anterior (si existe) se conserva en app.audit_log vía
+    # log_document_replacement antes de sobrescribirlo, mismo patrón que el
+    # resto de este checkpoint (Task 2/Task 3).
+    row = await pool.fetchrow(
+        "SELECT storage_path FROM app.insurance_policies WHERE id = $1", pid,
+    )
+    if not row:
         raise HTTPException(404, "Póliza no encontrada")
 
-    stored = await upload_owner_file(
-        pool, supabase, owner_type="insurance_policy", owner_id=pid,
-        key_prefix=f"insurance/{pid}", file=file, uploaded_by=user["sub"],
-    )
+    if row["storage_path"]:
+        await log_document_replacement(
+            pool, entity_type="insurance_policy", entity_id=pid, doc_name="policy_file",
+            old_status=None, old_expiry_date=None,
+            old_storage_path=row["storage_path"], actor=user["sub"],
+        )
+
+    stored = await upload_document_version(supabase, key_prefix=f"insurance/{pid}", file=file)
     await pool.execute(
         "UPDATE app.insurance_policies SET storage_path = $1, updated_at = NOW() WHERE id = $2",
         stored["storage_path"], pid,
@@ -358,10 +390,12 @@ async def list_policy_files(
     exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
     if not exists:
         raise HTTPException(404, "Póliza no encontrada")
-    return await list_owner_files(pool, supabase, owner_type="insurance_policy", owner_id=pid)
+    return await get_document_history(
+        pool, supabase, entity_type="insurance_policy", entity_id=pid, doc_name="policy_file",
+    )
 
 
-# ── DOCUMENTOS DE PÓLIZA (app.insurance_documents) ──────────────────
+# ── DOCUMENTOS DE PÓLIZA (app.insurance_policy_documents) ───────────
 
 @router.get("/policies/{pid}/documents")
 async def list_policy_documents(
@@ -372,17 +406,13 @@ async def list_policy_documents(
         raise HTTPException(404, "Póliza no encontrada")
 
     rows = await pool.fetch(
-        """
-        SELECT c.doc_code, c.label, c.has_expiry,
-               d.id, d.status, d.expiry_date, d.file_url, d.storage_path,
-               d.notes, d.manual_override, d.updated_at
-        FROM app.insurance_doc_catalog c
-        LEFT JOIN app.insurance_documents d ON d.doc_code = c.doc_code AND d.policy_id = $1
-        ORDER BY c.sort_order
-        """,
-        pid,
+        "SELECT * FROM app.insurance_policy_documents WHERE policy_id = $1", pid,
     )
-    return [_serialize_insurance_document(dict(r)) for r in rows]
+    by_doc = {r["doc_name"]: dict(r) for r in rows}
+    return [
+        _serialize_insurance_document(c["doc_code"], by_doc.get(c["doc_code"]))
+        for c in INSURANCE_DOC_CATALOG
+    ]
 
 
 @router.patch("/policies/{pid}/documents/{doc_code}")
@@ -390,12 +420,10 @@ async def patch_policy_document(
     pid: str, doc_code: str, body: InsuranceDocumentPatchBody,
     pool=Depends(get_pool), user=Depends(require_editor),
 ):
-    # El catálogo se valida primero: doc_code inválido es un error de forma
-    # de la request (422) independiente de si la póliza existe (404).
-    catalog = await pool.fetchval(
-        "SELECT doc_code FROM app.insurance_doc_catalog WHERE doc_code = $1", doc_code,
-    )
-    if not catalog:
+    # El catálogo (estático, en Python) se valida primero: doc_code inválido
+    # es un error de forma de la request (422) independiente de si la
+    # póliza existe (404).
+    if doc_code not in _INSURANCE_DOC_CODES:
         raise HTTPException(422, f"doc_code inválido: {doc_code}")
 
     exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
@@ -405,9 +433,7 @@ async def patch_policy_document(
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
     row = await _upsert_insurance_document(pool, pid, doc_code, data, user["sub"])
-    row["label"] = None
-    row["has_expiry"] = None
-    return _serialize_insurance_document(row)
+    return _serialize_insurance_document(doc_code, row)
 
 
 @router.post("/policies/{pid}/documents/{doc_code}/file")
@@ -415,27 +441,33 @@ async def upload_policy_document_file(
     pid: str, doc_code: str, file: UploadFile = File(...),
     pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
 ):
-    # El catálogo se valida primero: doc_code inválido es un error de forma
-    # de la request (422) independiente de si la póliza existe (404).
-    catalog = await pool.fetchval(
-        "SELECT doc_code FROM app.insurance_doc_catalog WHERE doc_code = $1", doc_code,
-    )
-    if not catalog:
+    # El catálogo (estático, en Python) se valida primero: doc_code inválido
+    # es un error de forma de la request (422) independiente de si la
+    # póliza existe (404).
+    if doc_code not in _INSURANCE_DOC_CODES:
         raise HTTPException(422, f"doc_code inválido: {doc_code}")
 
     exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
     if not exists:
         raise HTTPException(404, "Póliza no encontrada")
-    doc = await _upsert_insurance_document(pool, pid, doc_code, {}, user["sub"])
-    stored = await upload_owner_file(
-        pool, supabase, owner_type="insurance_document", owner_id=doc["id"],
-        key_prefix=f"insurance/{pid}/{doc_code}", file=file, uploaded_by=user["sub"],
+
+    current = await pool.fetchrow(
+        "SELECT status, expiry_date, storage_path FROM app.insurance_policy_documents "
+        "WHERE policy_id = $1 AND doc_name = $2",
+        pid, doc_code,
     )
-    await pool.execute(
-        "UPDATE app.insurance_documents SET storage_path = $1, updated_by = $2::uuid, updated_at = NOW() WHERE id = $3",
-        stored["storage_path"], user["sub"], doc["id"],
+    if current and current["storage_path"]:
+        await log_document_replacement(
+            pool, entity_type="insurance_policy", entity_id=pid, doc_name=doc_code,
+            old_status=current["status"], old_expiry_date=current["expiry_date"],
+            old_storage_path=current["storage_path"], actor=user["sub"],
+        )
+
+    stored = await upload_document_version(supabase, key_prefix=f"insurance/{pid}/{doc_code}", file=file)
+    row = await _upsert_insurance_document(
+        pool, pid, doc_code, {"storage_path": stored["storage_path"]}, user["sub"],
     )
-    return stored
+    return {**stored, **_serialize_insurance_document(doc_code, row)}
 
 
 @router.get("/policies/{pid}/documents/{doc_code}/files")
@@ -443,12 +475,12 @@ async def list_policy_document_files(
     pid: str, doc_code: str,
     pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
 ):
-    doc_id = await pool.fetchval(
-        "SELECT id FROM app.insurance_documents WHERE policy_id = $1 AND doc_code = $2", pid, doc_code,
+    exists = await pool.fetchval("SELECT id FROM app.insurance_policies WHERE id = $1", pid)
+    if not exists:
+        raise HTTPException(404, "Póliza no encontrada")
+    return await get_document_history(
+        pool, supabase, entity_type="insurance_policy", entity_id=pid, doc_name=doc_code,
     )
-    if not doc_id:
-        return []
-    return await list_owner_files(pool, supabase, owner_type="insurance_document", owner_id=doc_id)
 
 
 # ── COBRANZA (cuotas planas) ─────────────────────────────────────
@@ -482,6 +514,13 @@ async def list_installments_flat(pool=Depends(get_pool), _=Depends(get_current_u
 
 @router.get("/kpis")
 async def insurance_kpis(pool=Depends(get_pool), _=Depends(get_current_user)):
+    # No hay tabla-catálogo (app.insurance_doc_catalog, dropeada por
+    # Checkpoint A): el "cruce" catálogo × pólizas antes hecho con CROSS JOIN
+    # se arma acá con unnest() del catálogo estático INSURANCE_DOC_CATALOG,
+    # pasado como parámetro. Una póliza es "incompleta" si al menos uno de
+    # sus doc_code no tiene status='ok' en app.insurance_policy_documents
+    # (incluye el caso de no tener fila para ese doc_code).
+    doc_codes = [d["doc_code"] for d in INSURANCE_DOC_CATALOG]
     row = await pool.fetchrow(
         """
         WITH expiring AS (
@@ -498,14 +537,16 @@ async def insurance_kpis(pool=Depends(get_pool), _=Depends(get_current_user)):
         incomplete AS (
             SELECT count(DISTINCT ip.id) AS n
             FROM app.insurance_policies ip
-            CROSS JOIN app.insurance_doc_catalog c
-            LEFT JOIN app.insurance_documents d ON d.policy_id = ip.id AND d.doc_code = c.doc_code
+            CROSS JOIN unnest($1::text[]) AS c(doc_name)
+            LEFT JOIN app.insurance_policy_documents d
+              ON d.policy_id = ip.id AND d.doc_name = c.doc_name
             WHERE COALESCE(d.status, 'pendiente') != 'ok'
         )
         SELECT
             (SELECT n FROM expiring)         AS expiring_30d,
             (SELECT n FROM without_policies)  AS without_policies,
             (SELECT n FROM incomplete)        AS incomplete_docs
-        """
+        """,
+        doc_codes,
     )
     return dict(row)
