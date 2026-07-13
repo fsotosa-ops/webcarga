@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .db import close_pool, init_pool
 from .middleware.cache import CacheMiddleware
+from .routers.centralizer_uploads import router as centralizer_uploads_router
 from .routers.config import router as config_router
 from .routers.filter_groups import router as filter_groups_router
 from .routers.insurance import router as insurance_router
@@ -53,13 +54,14 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-app.include_router(roles_router,         prefix="/api/v1")
-app.include_router(config_router,        prefix="/api/v1")
-app.include_router(transporters_router,  prefix="/api/v1")
-app.include_router(insurance_router,     prefix="/api/v1")
-app.include_router(trips_router,         prefix="/api/v1")
-app.include_router(users_router,         prefix="/api/v1")
-app.include_router(filter_groups_router, prefix="/api/v1")
+app.include_router(roles_router,               prefix="/api/v1")
+app.include_router(config_router,              prefix="/api/v1")
+app.include_router(transporters_router,        prefix="/api/v1")
+app.include_router(insurance_router,           prefix="/api/v1")
+app.include_router(trips_router,               prefix="/api/v1")
+app.include_router(users_router,               prefix="/api/v1")
+app.include_router(filter_groups_router,       prefix="/api/v1")
+app.include_router(centralizer_uploads_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])
