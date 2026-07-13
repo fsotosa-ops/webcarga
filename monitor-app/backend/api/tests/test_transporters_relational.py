@@ -106,7 +106,7 @@ VEHICLE_DOCS_RAW = [{"entity_id": "v1", "doc_name": "padron", "status": "ok"}]
 TRAILER_ROWS = [{"id": "t1", "plate": "RAMP01"}]
 COMPANY_DOC_ROWS = [
     {"doc_code": "rol_sii", "label": "Rol SII", "status": "ok", "expiry_date": None,
-     "storage_path": None, "updated_at": None},
+     "file_url": None, "storage_path": None, "manual_override": True, "updated_at": None},
 ]
 ELIGIBILITY_ROW = {"eligible": True, "compliance_pct": 92.5, "insurance_ok": True, "blocking_reasons": []}
 
@@ -135,6 +135,9 @@ def test_get_profile_assembles_governance_from_documents():
     assert data["eligibility"]["eligible"] is True
     assert data["eligibility"]["compliance_pct"] == 92.5
     assert data["documents"][0]["doc_code"] == "rol_sii"
+    # Task 3b: file_url/manual_override deben repuntar en cada documento de la ficha
+    assert data["documents"][0]["file_url"] is None
+    assert data["documents"][0]["manual_override"] is True
 
 
 def test_get_profile_missing_is_404():
@@ -263,7 +266,8 @@ def test_patch_transporter_document_uses_transporter_documents_table():
     pool.fetchval.side_effect = [TID, "rol_sii"]  # _resolve_entity, catalog check
     pool.fetchrow.return_value = {
         "transporter_id": TID, "doc_name": "rol_sii", "status": "ok",
-        "expiry_date": None, "storage_path": None, "notes": None, "updated_at": None,
+        "expiry_date": None, "file_url": None, "storage_path": None, "notes": None,
+        "manual_override": True, "updated_at": None,
     }
     client = make_client(pool)
     res = client.patch(f"/api/v1/transporters/{TID}/documents/rol_sii", json={"status": "ok"})
@@ -279,7 +283,8 @@ def test_patch_driver_document_uses_driver_documents_table():
     pool.fetchval.side_effect = ["d1", "epp"]  # _resolve_entity, catalog check
     pool.fetchrow.return_value = {
         "driver_id": "d1", "doc_name": "epp", "status": "ok",
-        "expiry_date": None, "storage_path": None, "notes": None, "updated_at": None,
+        "expiry_date": None, "file_url": None, "storage_path": None, "notes": None,
+        "manual_override": True, "updated_at": None,
     }
     client = make_client(pool)
     res = client.patch(f"/api/v1/transporters/{TID}/drivers/d1/documents/epp", json={"status": "ok"})
@@ -294,7 +299,8 @@ def test_patch_vehicle_document_uses_vehicle_documents_table():
     pool.fetchval.side_effect = ["v1", "padron"]  # _resolve_entity, catalog check
     pool.fetchrow.return_value = {
         "vehicle_id": "v1", "doc_name": "padron", "status": "ok",
-        "expiry_date": None, "storage_path": None, "notes": None, "updated_at": None,
+        "expiry_date": None, "file_url": None, "storage_path": None, "notes": None,
+        "manual_override": True, "updated_at": None,
     }
     client = make_client(pool)
     res = client.patch(f"/api/v1/transporters/{TID}/vehicles/v1/documents/padron", json={"status": "ok"})
@@ -304,13 +310,58 @@ def test_patch_vehicle_document_uses_vehicle_documents_table():
     assert "app.vehicle_assignments" not in insert_sql
 
 
+# ── Documentos: file_url y manual_override (Task 3b) ────────────────
+# Task 3 excluía ambos campos del PATCH (`exclude={"manual_override",
+# "file_url"}` en _document_patch_impl), lo que causaba 422 "Ningún campo
+# enviado" cuando llegaban solos — rompiendo el botón "Pegar link" y el
+# botón "Revertir a valor del pipeline" del frontend.
+
+def test_patch_document_file_url_only_is_not_422():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = [TID, "rol_sii"]  # _resolve_entity, catalog check
+    pool.fetchrow.return_value = {
+        "transporter_id": TID, "doc_name": "rol_sii", "status": None,
+        "expiry_date": None, "file_url": "https://example.com/doc.pdf",
+        "storage_path": None, "notes": None, "manual_override": True, "updated_at": None,
+    }
+    client = make_client(pool)
+    res = client.patch(
+        f"/api/v1/transporters/{TID}/documents/rol_sii",
+        json={"file_url": "https://example.com/doc.pdf"},
+    )
+    assert res.status_code == 200
+    assert res.json()["file_url"] == "https://example.com/doc.pdf"
+
+
+def test_patch_document_manual_override_false_only_is_not_422():
+    pool = AsyncMock()
+    pool.fetchval.side_effect = [TID, "rol_sii"]  # _resolve_entity, catalog check
+    pool.fetchrow.return_value = {
+        "transporter_id": TID, "doc_name": "rol_sii", "status": "ok",
+        "expiry_date": None, "file_url": None, "storage_path": None,
+        "notes": None, "manual_override": False, "updated_at": None,
+    }
+    client = make_client(pool)
+    res = client.patch(
+        f"/api/v1/transporters/{TID}/documents/rol_sii",
+        json={"manual_override": False},
+    )
+    assert res.status_code == 200
+    assert res.json()["manual_override"] is False
+    # el valor explícito False del body debe viajar al upsert, no el default True
+    call_args = pool.fetchrow.call_args.args
+    assert "app.transporter_documents" in call_args[0]
+    assert call_args[8] is False
+
+
 def test_upload_driver_document_file_uses_driver_documents_table_and_logs_replacement():
     pool = AsyncMock()
     pool.fetchval.side_effect = ["d1", "epp"]  # _resolve_entity, catalog check (inside _upsert_document)
     pool.fetchrow.side_effect = [
         {"status": "ok", "expiry_date": None, "storage_path": "driver/d1/epp/old_x.pdf"},  # current
         {"driver_id": "d1", "doc_name": "epp", "status": "ok", "expiry_date": None,
-         "storage_path": "driver/d1/epp/new_x.pdf", "notes": None, "updated_at": None},  # upsert RETURNING
+         "file_url": None, "storage_path": "driver/d1/epp/new_x.pdf", "notes": None,
+         "manual_override": True, "updated_at": None},  # upsert RETURNING
     ]
     supabase = MagicMock()
     supabase.storage.from_.return_value.upload.return_value = None

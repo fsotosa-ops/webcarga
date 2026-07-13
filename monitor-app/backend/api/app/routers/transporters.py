@@ -125,21 +125,25 @@ async def _upsert_document(pool, entity_type: str, entity_id, doc_code: str, dat
 
     table = _DOC_TABLE[entity_type]
     fk = _DOC_FK_COL[entity_type]
+    manual_override = data.get("manual_override", True)
     row = await pool.fetchrow(
         f"""
-        INSERT INTO app.{table} ({fk}, doc_name, status, expiry_date, storage_path, notes, updated_by, updated_at)
-        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, NOW())
+        INSERT INTO app.{table}
+          ({fk}, doc_name, status, expiry_date, file_url, storage_path, notes, manual_override, updated_by, updated_at)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::uuid, NOW())
         ON CONFLICT ({fk}, doc_name) DO UPDATE SET
-            status       = COALESCE($3, app.{table}.status),
-            expiry_date  = COALESCE($4, app.{table}.expiry_date),
-            storage_path = COALESCE($5, app.{table}.storage_path),
-            notes        = COALESCE($6, app.{table}.notes),
-            updated_by   = $7::uuid,
-            updated_at   = NOW()
+            status           = COALESCE($3, app.{table}.status),
+            expiry_date      = COALESCE($4, app.{table}.expiry_date),
+            file_url         = COALESCE($5, app.{table}.file_url),
+            storage_path     = COALESCE($6, app.{table}.storage_path),
+            notes            = COALESCE($7, app.{table}.notes),
+            manual_override  = $8,
+            updated_by       = $9::uuid,
+            updated_at       = NOW()
         RETURNING *
         """,
         str(entity_id), doc_code, data.get("status"), data.get("expiry_date"),
-        data.get("storage_path"), data.get("notes"), updated_by,
+        data.get("file_url"), data.get("storage_path"), data.get("notes"), manual_override, updated_by,
     )
     return dict(row)
 
@@ -151,14 +155,16 @@ def _serialize_document(row: dict, entity_type: str, entity_id) -> dict:
         "doc_code": row["doc_name"],
         "status": row["status"],
         "expiry_date": _iso(row["expiry_date"]),
+        "file_url": row["file_url"],
         "storage_path": row["storage_path"],
         "notes": row["notes"],
+        "manual_override": row["manual_override"],
         "updated_at": _iso(row["updated_at"]),
     }
 
 
 async def _document_patch_impl(pool, entity_type, entity_id, doc_code, body: DocumentPatchBody, user):
-    data = body.model_dump(exclude_none=True, exclude={"manual_override", "file_url"})
+    data = body.model_dump(exclude_none=True)
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
     row = await _upsert_document(pool, entity_type, entity_id, doc_code, data, user["sub"])
@@ -412,7 +418,7 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
     company_doc_rows = await pool.fetch(
         """
         SELECT c.doc_code, c.label, cd.status, cd.expiry_date,
-               cd.storage_path, cd.updated_at
+               cd.file_url, cd.storage_path, cd.manual_override, cd.updated_at
         FROM app.compliance_doc_catalog c
         LEFT JOIN app.transporter_documents cd
           ON cd.transporter_id = $1 AND cd.doc_name = c.doc_code
@@ -466,7 +472,9 @@ async def get_transporter(tid: str, pool=Depends(get_pool), _=Depends(get_curren
         {
             "doc_code": r["doc_code"], "label": r["label"], "status": r["status"],
             "expiry_date": _iso(r["expiry_date"]),
+            "file_url": r["file_url"],
             "storage_path": r["storage_path"],
+            "manual_override": r["manual_override"],
             "updated_at": _iso(r["updated_at"]),
         }
         for r in company_doc_rows
