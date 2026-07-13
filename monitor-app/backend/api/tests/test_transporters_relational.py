@@ -633,3 +633,48 @@ def test_transporters_require_auth():
     client = TestClient(app)
     res = client.get("/api/v1/transporters")
     assert res.status_code in (401, 403)
+
+
+# ── CONTACTS (app.transporter_contacts) ─────────────────────────────
+
+def test_list_contacts_returns_all_roles():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"role": "rep_legal", "name": "Juan Pérez", "phone": "+56911111111", "email": "juan@x.cl"},
+    ]
+    client = make_client(pool)
+    res = client.get(f"/api/v1/transporters/{TID}/contacts")
+    assert res.status_code == 200
+    assert res.json()["data"][0]["role"] == "rep_legal"
+
+
+def test_upsert_contact_requires_editor():
+    pool = AsyncMock()
+    client = make_client(pool, role="viewer", enforce_roles=True)
+    res = client.post(f"/api/v1/transporters/{TID}/contacts", json={"role": "operacional", "name": "Ana"})
+    assert res.status_code == 403
+
+
+def test_upsert_contact_inserts_or_updates():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"role": "operacional", "name": "Ana Soto", "phone": None, "email": None}
+    client = make_client(pool)
+    res = client.post(f"/api/v1/transporters/{TID}/contacts", json={"role": "operacional", "name": "Ana Soto"})
+    assert res.status_code == 200
+    assert res.json()["data"]["name"] == "Ana Soto"
+
+
+def test_delete_contact():
+    pool = AsyncMock()
+    pool.execute.return_value = "DELETE 1"
+    client = make_client(pool)
+    res = client.delete(f"/api/v1/transporters/{TID}/contacts/rep_legal")
+    assert res.status_code == 200
+
+
+def test_delete_contact_not_found():
+    pool = AsyncMock()
+    pool.execute.return_value = "DELETE 0"
+    client = make_client(pool)
+    res = client.delete(f"/api/v1/transporters/{TID}/contacts/rep_legal")
+    assert res.status_code == 404

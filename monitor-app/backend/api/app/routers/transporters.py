@@ -18,6 +18,7 @@ from ..schemas.transporter_relational import (
     AddDriverBody,
     AddTrailerBody,
     AddVehicleBody,
+    ContactPatchBody,
     DocumentPatchBody,
     PaginatedResponse,
     PatchDriverBody,
@@ -1006,6 +1007,70 @@ async def remove_trailer(
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "No encontrado")
+    return {"ok": True}
+
+
+# ── CONTACTS (app.transporter_contacts) ────────────────────────────
+
+@router.get("/{tid}/contacts")
+async def list_contacts(tid: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+    rows = await pool.fetch(
+        "SELECT role, name, phone, email FROM app.transporter_contacts WHERE transporter_id = $1 ORDER BY role",
+        tid,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/{tid}/contacts")
+async def upsert_contact(
+    tid: str, body: ContactPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    exists = await pool.fetchval("SELECT id FROM app.transporters WHERE id = $1", tid)
+    if not exists:
+        raise HTTPException(404, "Empresa no encontrada")
+    row = await pool.fetchrow(
+        """
+        INSERT INTO app.transporter_contacts (transporter_id, role, name, phone, email)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (transporter_id, role) DO UPDATE SET
+            name = COALESCE($3, app.transporter_contacts.name),
+            phone = COALESCE($4, app.transporter_contacts.phone),
+            email = COALESCE($5, app.transporter_contacts.email)
+        RETURNING role, name, phone, email
+        """,
+        tid, body.role, body.name, body.phone, body.email,
+    )
+    await pool.execute(
+        "INSERT INTO app.audit_log (actor, entity_type, entity_id, action, field, source) "
+        "VALUES ($1::uuid, 'transporter_contact', $2::uuid, 'upsert', $3, 'api')",
+        user["sub"], tid, body.role,
+    )
+    return {"data": dict(row)}
+
+
+@router.patch("/{tid}/contacts/{role}")
+async def patch_contact(
+    tid: str, role: str, body: ContactPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    if body.role != role:
+        raise HTTPException(422, "El rol del body debe coincidir con el de la URL")
+    return await upsert_contact(tid, body, pool, user)
+
+
+@router.delete("/{tid}/contacts/{role}")
+async def delete_contact(
+    tid: str, role: str, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    result = await pool.execute(
+        "DELETE FROM app.transporter_contacts WHERE transporter_id = $1 AND role = $2", tid, role,
+    )
+    if result == "DELETE 0":
+        raise HTTPException(404, "Contacto no encontrado")
+    await pool.execute(
+        "INSERT INTO app.audit_log (actor, entity_type, entity_id, action, field, source) "
+        "VALUES ($1::uuid, 'transporter_contact', $2::uuid, 'delete', $3, 'api')",
+        user["sub"], tid, role,
+    )
     return {"ok": True}
 
 
