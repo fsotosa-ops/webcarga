@@ -171,7 +171,10 @@ async def test_transporter_matches_by_admin_internal_id_fallback():
 @pytest.mark.asyncio
 async def test_driver_orphan_transporter_rut_no_match_goes_to_parse_errors():
     from unittest.mock import AsyncMock
-    pool = AsyncMock()  # no debe llamarse pool.fetch en absoluto para esta rama
+    pool = AsyncMock()
+    # rut no está en la hoja Empresas de este upload NI existe ya en la base
+    # (lookup de preexistentes devuelve vacío) -> huérfano real.
+    pool.fetch.return_value = []
 
     parsed = _empty_parsed(
         transporters=[],  # hoja Empresas vacía / sin match
@@ -187,7 +190,35 @@ async def test_driver_orphan_transporter_rut_no_match_goes_to_parse_errors():
     assert len(result["parse_errors"]) == 1
     assert result["parse_errors"][0]["sheet"] == "Conductores"
     assert result["parse_errors"][0]["identifier"] == "11111111"
-    pool.fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_driver_matches_preexisting_transporter_not_in_this_upload():
+    """Upload parcial: el conductor referencia una empresa que ya existe en
+    la base (`app.transporters`) pero que la hoja Empresas de ESTE archivo
+    no trae — no debe quedar huérfano, y `transporter_id_by_rut` debe traer
+    el id resuelto para que el apply pueda fijar el FK del conductor."""
+    from unittest.mock import AsyncMock
+    pool = AsyncMock()
+    pool.fetch.side_effect = [
+        [{"rut": "99999999", "id": TID}],  # lookup de preexistentes por rut
+        [],  # drivers existentes: el conductor es nuevo
+    ]
+
+    parsed = _empty_parsed(
+        transporters=[],  # la empresa NO viene en este archivo
+        drivers=[{
+            "documents": {}, "rut": "11111111", "dv": "1", "rut_dv_valid": True,
+            "transporter_rut": "99999999", "full_name": "Juan Pérez",
+            "id_expiry": None, "license_expiry": None, "avance_total": None,
+        }],
+    )
+    result = await compute_diff(pool, parsed)
+
+    assert result["parse_errors"] == []
+    assert len(result["drivers"]) == 1
+    assert result["drivers"][0]["change_type"] == "new"
+    assert result["transporter_id_by_rut"] == {"99999999": TID}
 
 
 @pytest.mark.asyncio
@@ -288,6 +319,7 @@ async def test_vehicle_matches_by_plate_and_diffs_year():
 async def test_vehicle_orphan_no_transporter_match():
     from unittest.mock import AsyncMock
     pool = AsyncMock()
+    pool.fetch.return_value = []  # lookup de preexistentes: tampoco existe ya
 
     parsed = _empty_parsed(
         transporters=[],

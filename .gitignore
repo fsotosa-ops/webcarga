@@ -7,3 +7,11 @@ credenciales.txt
 .vercel
 .superpowers/
 .playwright-mcp/
+
+# Exports sueltos de producción (RUTs/nombres reales) que suelen caer en la
+# raíz del repo o de monitor-app/ — no afecta fixtures trackeados en subcarpetas
+# como tests/fixtures/*.xlsx.
+/*.xlsx
+/*.csv
+/monitor-app/*.xlsx
+/monitor-app/*.csv

@@ -54,6 +54,23 @@ de una misma fila 'updated'. `entity_key` es el rut normalizado
 para transporters/drivers matcheados por su propio rut, 'legacy_id' para
 transporters matcheados por `admin_internal_id`, y 'plate' para vehicles
 (no hay campo rut propio para vehicles — ver arriba).
+
+Decisión de diseño — upload parcial (Conductores/Vehiculos_Equipos de una
+empresa que NO viene en la hoja Empresas de este archivo):
+El Excel de origen no siempre es una foto completa de todas las empresas —
+puede ser un archivo recortado que solo trae altas/cambios puntuales. Antes
+de este fix, un `transporter_rut` que no apareciera en la hoja Empresas del
+MISMO archivo se rechazaba como huérfano aunque esa empresa ya existiera en
+`app.transporters` por un upload anterior (bug real, encontrado auditando
+Checkpoints E/F). Ahora, además de los RUTs de la hoja Empresas de este
+upload (`batch_ruts`), se consulta `app.transporters` por los
+`transporter_rut` que Conductores/Vehiculos_Equipos referencian y que NO
+están en ese batch — si ya existen en la base, se aceptan (no huérfano).
+Solo queda huérfano un RUT que ni está en este archivo ni existe ya en la
+base. El mapeo resultante se expone en `DiffResult["transporter_id_by_rut"]`
+porque estas empresas no generan `EntityDiff` en `transporters` (no vinieron
+en la hoja Empresas de este upload) — el router de apply (Task 3) lo
+necesita para resolver el FK de esos drivers/vehicles.
 """
 from __future__ import annotations
 
@@ -89,6 +106,14 @@ class DiffResult(TypedDict):
     # EntityDiff, se registran acá en vez de crashear. Mismo shape que
     # ParsedUpload["parse_errors"] (sheet/identifier/reason).
     parse_errors: list[dict]
+    # RUT -> id de transporter, para TODO rut referenciado por Conductores/
+    # Vehiculos_Equipos que ya existe en `app.transporters` — incluye tanto
+    # los de la hoja Empresas de este upload (`transporters` arriba) como los
+    # de empresas ya existentes en la base que esta subida no volvió a traer
+    # (upload parcial, ver decisión de diseño abajo). El router de upload
+    # (Task 3) lo usa para resolver el FK de drivers/vehicles sin depender de
+    # que su empresa haya aparecido en el diff de `transporters`.
+    transporter_id_by_rut: dict[str, str]
 
 
 _TRANSPORTER_NATIVE_FIELDS = ["business_name"]
@@ -281,25 +306,53 @@ async def _diff_driver_or_vehicle(
     return diffs, errors
 
 
+async def _lookup_preexisting_transporters(pool, ruts: set[str]) -> dict[str, str]:
+    if not ruts:
+        return {}
+    rows = await pool.fetch(
+        "SELECT rut, id FROM app.transporters WHERE rut = ANY($1::text[])",
+        list(ruts),
+    )
+    return {r["rut"]: str(r["id"]) for r in rows}
+
+
 async def compute_diff(pool, parsed: ParsedUpload) -> DiffResult:
     transporter_diffs, batch_ruts = await _diff_transporters(pool, parsed["transporters"])
 
+    # RUTs que Conductores/Vehiculos_Equipos referencian pero que la hoja
+    # Empresas de ESTE archivo no trae — pueden ser empresas ya existentes
+    # en la base (upload parcial, ver decisión de diseño arriba) en vez de
+    # huérfanas de verdad.
+    referenced_ruts = {
+        row["transporter_rut"]
+        for row in (*parsed["drivers"], *parsed["vehicles"])
+        if row.get("transporter_rut")
+    }
+    preexisting_by_rut = await _lookup_preexisting_transporters(pool, referenced_ruts - batch_ruts)
+    known_ruts = batch_ruts | preexisting_by_rut.keys()
+
     driver_diffs, driver_errors = await _diff_driver_or_vehicle(
-        pool, parsed["drivers"], batch_ruts,
+        pool, parsed["drivers"], known_ruts,
         sheet_name="Conductores", identity_field="rut",
         entity_table="drivers", fk_column="driver_id",
         documents_table="driver_documents", native_fields=_DRIVER_NATIVE_FIELDS,
     )
     vehicle_diffs, vehicle_errors = await _diff_driver_or_vehicle(
-        pool, parsed["vehicles"], batch_ruts,
+        pool, parsed["vehicles"], known_ruts,
         sheet_name="Vehiculos_Equipos", identity_field="plate",
         entity_table="vehicles", fk_column="vehicle_id",
         documents_table="vehicle_documents", native_fields=_VEHICLE_NATIVE_FIELDS,
     )
+
+    transporter_id_by_rut = {
+        **preexisting_by_rut,
+        **{d["entity_key"]: d["existing_id"] for d in transporter_diffs if d["existing_id"]},
+    }
 
     return {
         "transporters": transporter_diffs,
         "drivers": driver_diffs,
         "vehicles": vehicle_diffs,
         "parse_errors": [*driver_errors, *vehicle_errors],
+        "transporter_id_by_rut": transporter_id_by_rut,
     }
