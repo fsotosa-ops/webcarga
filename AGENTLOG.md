@@ -164,10 +164,29 @@
 
 **Verificación automática**: backend 174/174, frontend 352/352 Vitest + `tsc --noEmit` limpio + `npm run build` exitoso (ambas rutas nuevas aparecen en el build). **Pendiente**: smoke test manual con Playwright en navegador real (subir `centralizer_sample.xlsx` → revisar diff → aprobar → aplicar) — no se hizo esta sesión porque requiere sesión de login real contra `viclzoftiudkepqnhekv` (el mismo proyecto Supabase real usado en todo este workstream, no uno de prueba aislado) y no se contaba con credenciales de browser; la cobertura automática ya ejercita la misma lógica de diff/apply exhaustivamente (incluido el e2e de Checkpoint D contra este mismo proyecto).
 
+#### Próximo paso exacto (superseded, ver sección siguiente)
+
+---
+
+### 2026-07-14 — Mapeo self-service de columnas nuevas del Excel EETT (estilo Brevo)
+
+**Objetivo:** en uso real, el parser bloqueó dos uploads completos por columnas de producción no anticipadas ("ANEXO RepLeg (GC)", "Cuenta Banco Empresa") — cada una requirió un fix de código + migración manual (ver commits `df39cc1`/`f2c8ff1` de la sesión anterior para la primera). El usuario pidió un mecanismo sostenible tipo "mapeo de columnas al importar CSV" (Brevo/Mailchimp): que una columna nueva no bloquee el upload completo, y que se pueda resolver sin depender de un desarrollador.
+
+**Brainstorm** (companion visual): confirmado que la pantalla de mapeo bloquea ANTES del preview (no un preview parcial con columnas ignoradas en silencio); self-service total para crear tipos de documento nuevos (sin migración manual); las decisiones se recuerdan automáticamente (una columna ya vista no vuelve a preguntar); aplica a las 3 hojas; layout de lista/tabla (todas las columnas nuevas juntas, no un wizard de-a-una); resolución admin-only (mismo nivel que aprobar/aplicar, porque crear un doc_code toca el catálogo compartido). Límite de alcance explícito: esto solo cubre columnas de **documento** (estado OK/Pendiente/etc.) — un campo **nativo** genuinamente nuevo sigue requiriendo desarrollador + migración de schema. Spec: `docs/superpowers/specs/2026-07-14-empresas-column-mapping-design.md`.
+
+**Qué se implementó** (`docs/superpowers/plans/2026-07-14-empresas-column-mapping-plan.md`, 11 tasks, ejecución inline — el usuario la eligió pese a que se le recomendó subagent-driven-development dado que esto sí toca lógica nueva sin precedente, ver [[feedback-execution-mode-choice]]):
+- Nueva tabla `app.centralizer_column_mappings` (sheet_name+excel_header → doc_code, o NULL = ignorar permanentemente).
+- `centralizer_parser.py`: `parse_centralizer_workbook`/nuevo `find_unresolved_columns` aceptan `extra_mappings` (combina el dict estático con las filas de la tabla) — una columna sin resolver ya NO lanza excepción, se recolecta.
+- `centralizer_uploads.py`: `upload_and_preview` cae en un nuevo estado `pending_mapping` con la lista de columnas sin resolver en vez de bloquear con 422; `GET /{id}` la recalcula (nunca se persiste, mismo patrón que el diff); nuevo `GET /doc-catalog` (lista el catálogo por entity_type) y `POST /{id}/column-mappings` (admin-only: valida todas las resoluciones antes de aplicar ninguna, crea el doc_code en `compliance_doc_catalog` si corresponde, guarda el mapeo, re-parsea el mismo archivo ya en Storage, y transiciona a `previewed`). `apply` también carga los mapeos guardados — si no, un upload con columnas ya resueltas rompería igual al aplicar.
+- Frontend: tipos nuevos, `centralizerUploadsApi.getDocCatalog`/`resolveColumnMappings`, hooks TanStack Query, `ColumnMappingResolver.tsx` (tabla: dropdown a documento existente / "+ Nuevo tipo de documento" con código+etiqueta / ignorar, por fila), wireado en la página de detalle como una rama nueva para `status === 'pending_mapping'` (solo-lectura si no es admin).
+- **Hallazgo de hygiene detectado al verificar contra Supabase real**: la tabla nueva se había creado sin RLS (a diferencia de `centralizer_uploads`/`compliance_doc_catalog`, que sí la tienen) — corregido con una migración aparte, mismo patrón (`current_user_role()`, lectura abierta a cualquier rol autenticado, escritura solo admin/owner).
+
+**Verificación automática**: backend 188/188, frontend 356/356 Vitest + `tsc --noEmit` limpio + `npm run build` exitoso. Ambas migraciones (`centralizer_column_mappings` + su fix de RLS) aplicadas y verificadas contra `viclzoftiudkepqnhekv`. **Pendiente, mismo motivo que Checkpoint E**: smoke test manual con Playwright (subir archivo con columna nueva → pantalla de mapeo → resolver los 3 caminos map/create/ignore → confirmar que el diff aparece → resubir mismo header → confirmar que ya no pregunta) — requiere sesión de login real, no se hizo esta sesión.
+
 #### Próximo paso exacto
-1. [ ] Smoke test manual con Playwright (login real necesario) antes de dar Checkpoint E por 100% cerrado.
-2. [ ] Decidir push a remoto de Checkpoints A-E (nada se ha pusheado desde `ad6afa8`).
+1. [ ] Smoke test manual con Playwright de Checkpoint E Y de este mapeo de columnas (login real necesario) — se pueden hacer juntos en la misma sesión de navegador.
+2. [ ] Decidir push a remoto de Checkpoints A-E + este mapeo de columnas (nada se ha pusheado desde `ad6afa8`).
 3. [ ] Checkpoint F: antes de codear `insurance_parser.py`, delimitar el rango real de la tabla en la hoja `CONSOLIDADO` (excluir o tratar aparte el bloque de conciliación de cobros) y diseñar clave de upsert + protección de `manual_override` para cuotas — headers ya verificados vía SharePoint MCP.
-4. [ ] Cuerpo de diff para `upload_kind='insurance'` en `UploadDiffView`/página de detalle — el resto (historial, chrome, acciones) ya es genérico por diseño.
+4. [ ] Cuerpo de diff para `upload_kind='insurance'` en `UploadDiffView`/página de detalle — el resto (historial, chrome, acciones, y ahora también el mapeo de columnas) ya es genérico por diseño.
 5. [ ] Tomar una decisión consciente sobre el Minor #1 de Checkpoint D (celda vacía pisa un campo nullable ya poblado).
 6. [ ] Pendientes de sesiones anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
