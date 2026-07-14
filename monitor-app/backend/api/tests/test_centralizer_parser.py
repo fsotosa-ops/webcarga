@@ -85,6 +85,30 @@ def test_parse_centralizer_workbook_reads_all_3_sheets():
     assert 'rut' not in v and 'dv' not in v
 
 
+def test_parse_centralizer_workbook_maps_anexo_repleg_gc_column():
+    # Columna real de producción no mapeada hasta ahora ("ANEXO RepLeg (GC)")
+    # — anexo firmado por el representante legal, pedido por generadores de
+    # carga como Walmart. Confirma que mapea a documents['anexo_repleg_gc']
+    # en vez de levantar "columna no mapeada".
+    from openpyxl import Workbook
+    from io import BytesIO
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Empresas'
+    ws.append(['Nombre / Razón Social', 'RUT', 'DV', 'ANEXO RepLeg (GC)'])
+    ws.append(['Transportes Prueba SPA', '99999007', '5', 'OK'])
+    wb.create_sheet('Conductores')
+    wb.create_sheet('Vehiculos_Equipos')
+    buf = BytesIO()
+    wb.save(buf)
+
+    result = parse_centralizer_workbook(buf.getvalue())
+
+    assert result['parse_errors'] == []
+    assert result['transporters'][0]['documents']['anexo_repleg_gc'] == 'ok'
+
+
 def test_parse_centralizer_workbook_dedupes_multi_cliente_transporter():
     with open('tests/fixtures/centralizer_sample.xlsx', 'rb') as f:
         result = parse_centralizer_workbook(f.read())

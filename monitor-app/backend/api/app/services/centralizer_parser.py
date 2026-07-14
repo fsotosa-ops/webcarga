@@ -161,6 +161,7 @@ EMPRESAS_COLUMNS: dict[str, tuple[str, Any]] = {
     "DV": ("dv", None),
     "ROL SII": ("doc", "rol_sii"),
     "Copia C.I Rep. Legal": ("doc", "copia_ci_rep_legal"),
+    "ANEXO RepLeg (GC)": ("doc", "anexo_repleg_gc"),
     "ANEXO 2 (Walmart)": ("doc", "anexo_2_gc"),
     "Contrato WEBCARGA": ("doc", "contrato_webcarga"),
     "F30 (MULTAS)": ("doc", "f30_multas"),
