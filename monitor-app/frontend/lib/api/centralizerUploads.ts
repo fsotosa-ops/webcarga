@@ -1,6 +1,6 @@
 import type {
   CentralizerUploadDetail, CentralizerUploadSummary, CentralizerDiff, CentralizerParseError,
-  ComplianceDocCatalogEntry, ColumnMappingResolution,
+  ComplianceDocCatalogEntry, ColumnMappingResolution, UnresolvedColumn,
 } from '@/lib/types'
 import { apiFetch } from './client'
 
@@ -11,12 +11,22 @@ export type CentralizerUploadListResponse = {
   limit: number
 }
 
-export type CentralizerUploadPreview = {
+export type CentralizerUploadParsedResult = {
   upload_id:     string
   sheet_summary: Record<string, number>
   parse_errors:  CentralizerParseError[]
   diff:          CentralizerDiff
 }
+
+export type CentralizerUploadPendingMappingResult = {
+  upload_id:          string
+  status:             'pending_mapping'
+  unresolved_columns: UnresolvedColumn[]
+}
+
+// El upload puede volver ya parseado (con diff) O pedir mapeo de columnas
+// primero (sin diff todavía) — ver routers/centralizer_uploads.py::upload_and_preview.
+export type CentralizerUploadPreview = CentralizerUploadParsedResult | CentralizerUploadPendingMappingResult
 
 export const centralizerUploadsApi = {
   upload: (file: File) => {

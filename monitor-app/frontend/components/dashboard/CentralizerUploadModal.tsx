@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { X, Upload, Loader2, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
-import { centralizerUploadsApi, type CentralizerUploadPreview } from '@/lib/api/centralizerUploads'
+import { centralizerUploadsApi, type CentralizerUploadParsedResult } from '@/lib/api/centralizerUploads'
 import { ApiError } from '@/lib/api/client'
 
 interface Props {
@@ -19,7 +19,7 @@ export function CentralizerUploadModal({ open, onClose }: Props) {
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading]   = useState(false)
   const [fileErr, setFileErr]       = useState<string | null>(null)
-  const [result, setResult]         = useState<CentralizerUploadPreview | null>(null)
+  const [result, setResult]         = useState<CentralizerUploadParsedResult | null>(null)
   const fileRef  = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -51,6 +51,13 @@ export function CentralizerUploadModal({ open, onClose }: Props) {
     setUploading(true)
     try {
       const res = await centralizerUploadsApi.upload(file)
+      if ('status' in res) {
+        // Sin diff todavía — un admin tiene que resolver las columnas
+        // nuevas primero, eso vive en la página de detalle, no acá.
+        router.push(`/dashboard/uploads/${res.upload_id}`)
+        handleClose()
+        return
+      }
       setResult(res)
       setStep('summary')
     } catch (e) {

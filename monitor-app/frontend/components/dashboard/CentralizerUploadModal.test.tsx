@@ -61,4 +61,19 @@ describe('CentralizerUploadModal', () => {
     expect(pushMock).toHaveBeenCalledWith('/dashboard/uploads/aaaaaaaa-0000-0000-0000-000000000001')
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('navigates straight to the detail page when the upload needs column mapping (no sheet_summary in the response)', async () => {
+    // Regresión: esta respuesta no trae sheet_summary/parse_errors/diff —
+    // intentar renderizar el paso "summary" con esto rompía la página.
+    const onClose = vi.fn()
+    vi.mocked(centralizerUploadsApi.upload).mockResolvedValue({
+      upload_id: 'bbbbbbbb-0000-0000-0000-000000000002',
+      status: 'pending_mapping',
+      unresolved_columns: [{ sheet: 'Empresas', header: 'Cuenta Banco Empresa' }],
+    })
+    render(<CentralizerUploadModal open onClose={onClose} />)
+    uploadFile()
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/dashboard/uploads/bbbbbbbb-0000-0000-0000-000000000002'))
+    expect(onClose).toHaveBeenCalled()
+  })
 })
