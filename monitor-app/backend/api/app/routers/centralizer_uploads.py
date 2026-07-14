@@ -38,12 +38,14 @@ segundo se bloquea en el advisory lock hasta que el primero commitea
 """
 from __future__ import annotations
 
+import io
 import json
 import re
 import zlib
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from starlette.datastructures import Headers
 
 from ..auth import get_current_user, get_supabase, require_admin, require_editor
 from ..db import get_pool
@@ -51,6 +53,7 @@ from ..schemas.centralizer_upload import ColumnMappingResolutionBody, UploadReje
 from ..services.centralizer_diff import DiffResult, EntityDiff, compute_diff
 from ..services.centralizer_parser import find_unresolved_columns, parse_centralizer_workbook
 from ..utils.document_storage import COMPLIANCE_BUCKET, upload_document_version
+from ..utils.sharepoint_client import fetch_sharepoint_file
 from .transporters import _upsert_document
 
 router = APIRouter(prefix="/centralizer-uploads", tags=["centralizer-uploads"])
@@ -64,6 +67,12 @@ ADVISORY_LOCK_KEY = zlib.crc32(b"centralizer_upload")
 _ENTITY_TABLE = {"transporter": "transporters", "driver": "drivers", "vehicle": "vehicles"}
 _SHEET_ENTITY_TYPE = {"Empresas": "transporter", "Conductores": "driver", "Vehiculos_Equipos": "vehicle"}
 _DOC_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+SHAREPOINT_EETT_SITE = "webcarga0.sharepoint.com:/sites/webcarga.com"
+SHAREPOINT_EETT_PATH = (
+    "General/Documentos Reclutamiento EETT/01 -Status General de EETT/"
+    "Estatus_Cumplimiento_Gobernanza_Dropdowns.xlsx"
+)
 
 
 async def _load_extra_mappings(pool) -> dict[str, dict[str, tuple[str, Any]]]:
@@ -260,11 +269,19 @@ async def _apply_diff(conn, diff: DiffResult, upload_id: str, user: dict) -> set
 
 @router.post("")
 async def upload_and_preview(
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
     pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
 ):
-    raw = await file.read()
-    await file.seek(0)
+    if file is None:
+        raw = await fetch_sharepoint_file(SHAREPOINT_EETT_SITE, SHAREPOINT_EETT_PATH)
+        file = UploadFile(
+            file=io.BytesIO(raw),
+            filename="Estatus_Cumplimiento_Gobernanza_Dropdowns.xlsx",
+            headers=Headers({"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),
+        )
+    else:
+        raw = await file.read()
+        await file.seek(0)
     stored = await upload_document_version(supabase, key_prefix="centralizer-uploads", file=file)
 
     extra_mappings = await _load_extra_mappings(pool)

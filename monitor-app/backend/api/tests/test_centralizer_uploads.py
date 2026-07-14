@@ -295,6 +295,27 @@ def test_upload_and_preview_parses_and_returns_structured_diff():
     assert "'previewed'" in insert_sql
 
 
+def test_upload_without_file_fetches_from_sharepoint():
+    pool = AsyncMock()
+    pool.fetch.side_effect = [[], [], [], []]  # _load_extra_mappings, luego compute_diff x3
+    pool.fetchval.return_value = UPLOAD_ID
+
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    with patch(
+        "app.routers.centralizer_uploads.fetch_sharepoint_file",
+        new=AsyncMock(return_value=_fixture_bytes()),
+    ) as mock_fetch:
+        res = client.post("/api/v1/centralizer-uploads")
+
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["sheet_summary"] == {"Empresas": 2, "Conductores": 3, "Vehiculos_Equipos": 3}
+    mock_fetch.assert_called_once()
+    supabase.storage.from_.assert_called_with("compliance-docs")
+
+
 def test_upload_missing_required_sheet_persists_failed_row():
     # Falta la hoja "Conductores"/"Vehiculos_Equipos" -> sigue siendo un
     # fallo duro (no es un problema de mapeo de columnas resoluble por un
