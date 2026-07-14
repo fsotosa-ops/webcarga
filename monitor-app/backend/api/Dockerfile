@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir \
     "supabase==2.10.0" \
     "upstash-redis>=1.1.0" \
     "python-multipart>=0.0.9" \
-    "openpyxl>=3.1"
+    "openpyxl>=3.1" \
+    "httpx>=0.27"
 
 # Copy app code
 COPY app/ ./app/
