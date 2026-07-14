@@ -220,6 +220,12 @@ VEHICULOS_COLUMNS: dict[str, tuple[str, Any]] = {
 
 _KIND_MAP = {"TRACTOCAMION": "tracto", "RAMPLA": "rampla"}
 
+_SHEET_COLUMNS: dict[str, dict[str, tuple[str, Any]]] = {
+    "Empresas": EMPRESAS_COLUMNS,
+    "Conductores": CONDUCTORES_COLUMNS,
+    "Vehiculos_Equipos": VEHICULOS_COLUMNS,
+}
+
 
 class ParsedUpload(TypedDict):
     transporters: list[dict]
@@ -374,21 +380,55 @@ def _get_sheet(wb, name: str):
     return wb[name]
 
 
-def parse_centralizer_workbook(file_bytes: bytes) -> ParsedUpload:
-    """Orquesta el parseo de las 3 hojas (Empresas, Conductores,
-    Vehiculos_Equipos) del Excel EETT hacia estructuras normalizadas."""
+def find_unresolved_columns(
+    file_bytes: bytes, extra_mappings: dict[str, dict[str, tuple[str, Any]]] | None = None,
+) -> list[dict]:
+    """Escanea los headers de las 3 hojas contra el mapa combinado (estático
+    + extra_mappings, ej. desde app.centralizer_column_mappings) SIN parsear
+    filas ni lanzar excepción — usado por el router para decidir si el
+    upload puede procesarse directo o necesita la pantalla de mapeo."""
     wb = load_workbook(BytesIO(file_bytes), data_only=True)
+    extra_mappings = extra_mappings or {}
+    unresolved: list[dict] = []
+    for sheet_name, column_map in _SHEET_COLUMNS.items():
+        merged = {**column_map, **extra_mappings.get(sheet_name, {})}
+        ws = _get_sheet(wb, sheet_name)
+        header_row = next(ws.iter_rows(min_row=1, max_row=1))
+        for cell in header_row:
+            h = cell.value
+            if h is None or str(h).strip() == "":
+                continue
+            if h not in merged:
+                unresolved.append({"sheet": sheet_name, "header": h})
+    return unresolved
+
+
+def parse_centralizer_workbook(
+    file_bytes: bytes, extra_mappings: dict[str, dict[str, tuple[str, Any]]] | None = None,
+) -> ParsedUpload:
+    """Orquesta el parseo de las 3 hojas (Empresas, Conductores,
+    Vehiculos_Equipos) del Excel EETT hacia estructuras normalizadas.
+    `extra_mappings` (sheet -> {header: (ctype, target)}) se combina con el
+    mapa estático de cada hoja — viene de resoluciones guardadas en
+    app.centralizer_column_mappings, no requiere tocar este archivo para
+    columnas nuevas ya resueltas por un admin."""
+    wb = load_workbook(BytesIO(file_bytes), data_only=True)
+    extra_mappings = extra_mappings or {}
 
     empresas_rows, empresas_errors = _parse_sheet_rows(
-        _get_sheet(wb, "Empresas"), "Empresas", EMPRESAS_COLUMNS, identity_kind="rut",
-        required_field="business_name",
+        _get_sheet(wb, "Empresas"), "Empresas",
+        {**EMPRESAS_COLUMNS, **extra_mappings.get("Empresas", {})},
+        identity_kind="rut", required_field="business_name",
     )
     conductores_rows, conductores_errors = _parse_sheet_rows(
-        _get_sheet(wb, "Conductores"), "Conductores", CONDUCTORES_COLUMNS, identity_kind="rut",
-        required_field="full_name",
+        _get_sheet(wb, "Conductores"), "Conductores",
+        {**CONDUCTORES_COLUMNS, **extra_mappings.get("Conductores", {})},
+        identity_kind="rut", required_field="full_name",
     )
     vehiculos_rows, vehiculos_errors = _parse_sheet_rows(
-        _get_sheet(wb, "Vehiculos_Equipos"), "Vehiculos_Equipos", VEHICULOS_COLUMNS, identity_kind="plate"
+        _get_sheet(wb, "Vehiculos_Equipos"), "Vehiculos_Equipos",
+        {**VEHICULOS_COLUMNS, **extra_mappings.get("Vehiculos_Equipos", {})},
+        identity_kind="plate",
     )
 
     transporters = _dedupe_transporters(empresas_rows)

@@ -56,6 +56,93 @@ def test_map_doc_status_known_values():
     assert map_doc_status('valor-desconocido') is None
 
 
+def test_find_unresolved_columns_empty_when_all_known():
+    with open('tests/fixtures/centralizer_sample.xlsx', 'rb') as f:
+        raw = f.read()
+    from app.services.centralizer_parser import find_unresolved_columns
+    assert find_unresolved_columns(raw) == []
+
+
+def test_find_unresolved_columns_detects_unknown_header():
+    from openpyxl import Workbook
+    from io import BytesIO
+    from app.services.centralizer_parser import find_unresolved_columns
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Empresas'
+    ws.append(['Nombre / Razón Social', 'RUT', 'DV', 'Columna Totalmente Nueva'])
+    ws.append(['Test SPA', '99999008', '6', 'x'])
+    wb.create_sheet('Conductores')
+    wb.create_sheet('Vehiculos_Equipos')
+    buf = BytesIO()
+    wb.save(buf)
+
+    result = find_unresolved_columns(buf.getvalue())
+    assert result == [{'sheet': 'Empresas', 'header': 'Columna Totalmente Nueva'}]
+
+
+def test_find_unresolved_columns_respects_extra_mappings():
+    from openpyxl import Workbook
+    from io import BytesIO
+    from app.services.centralizer_parser import find_unresolved_columns
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Empresas'
+    ws.append(['Nombre / Razón Social', 'RUT', 'DV', 'Cuenta Banco Empresa'])
+    ws.append(['Test SPA', '99999009', '7', 'OK'])
+    wb.create_sheet('Conductores')
+    wb.create_sheet('Vehiculos_Equipos')
+    buf = BytesIO()
+    wb.save(buf)
+
+    extra = {'Empresas': {'Cuenta Banco Empresa': ('doc', 'cuenta_banco_empresa')}}
+    assert find_unresolved_columns(buf.getvalue(), extra) == []
+
+
+def test_parse_centralizer_workbook_uses_extra_mappings():
+    from openpyxl import Workbook
+    from io import BytesIO
+    from app.services.centralizer_parser import parse_centralizer_workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Empresas'
+    ws.append(['Nombre / Razón Social', 'RUT', 'DV', 'Cuenta Banco Empresa'])
+    ws.append(['Test SPA', '99999010', '8', 'OK'])
+    wb.create_sheet('Conductores')
+    wb.create_sheet('Vehiculos_Equipos')
+    buf = BytesIO()
+    wb.save(buf)
+
+    extra = {'Empresas': {'Cuenta Banco Empresa': ('doc', 'cuenta_banco_empresa')}}
+    result = parse_centralizer_workbook(buf.getvalue(), extra)
+    assert result['parse_errors'] == []
+    assert result['transporters'][0]['documents']['cuenta_banco_empresa'] == 'ok'
+
+
+def test_parse_centralizer_workbook_extra_mapping_can_ignore_column():
+    from openpyxl import Workbook
+    from io import BytesIO
+    from app.services.centralizer_parser import parse_centralizer_workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Empresas'
+    ws.append(['Nombre / Razón Social', 'RUT', 'DV', 'Columna Irrelevante'])
+    ws.append(['Test SPA', '99999011', '9', 'algo'])
+    wb.create_sheet('Conductores')
+    wb.create_sheet('Vehiculos_Equipos')
+    buf = BytesIO()
+    wb.save(buf)
+
+    extra = {'Empresas': {'Columna Irrelevante': ('ignore', None)}}
+    result = parse_centralizer_workbook(buf.getvalue(), extra)
+    assert result['parse_errors'] == []
+    assert 'Columna Irrelevante' not in result['transporters'][0]
+
+
 def test_parse_centralizer_workbook_reads_all_3_sheets():
     with open('tests/fixtures/centralizer_sample.xlsx', 'rb') as f:
         result = parse_centralizer_workbook(f.read())
