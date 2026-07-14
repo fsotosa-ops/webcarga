@@ -1,4 +1,7 @@
-import type { CentralizerUploadDetail, CentralizerUploadSummary, CentralizerDiff, CentralizerParseError } from '@/lib/types'
+import type {
+  CentralizerUploadDetail, CentralizerUploadSummary, CentralizerDiff, CentralizerParseError,
+  ComplianceDocCatalogEntry, ColumnMappingResolution,
+} from '@/lib/types'
 import { apiFetch } from './client'
 
 export type CentralizerUploadListResponse = {
@@ -48,5 +51,14 @@ export const centralizerUploadsApi = {
   apply: (id: string) =>
     apiFetch<{ ok: boolean; status: string; matched_transporters: number }>(
       `/api/v1/centralizer-uploads/${id}/apply`, { method: 'POST' },
+    ),
+
+  getDocCatalog: () =>
+    apiFetch<{ data: ComplianceDocCatalogEntry[] }>('/api/v1/centralizer-uploads/doc-catalog'),
+
+  resolveColumnMappings: (id: string, resolutions: ColumnMappingResolution[]) =>
+    apiFetch<{ upload_id: string; status: string; sheet_summary: Record<string, number>; parse_errors: CentralizerParseError[]; diff: CentralizerDiff }>(
+      `/api/v1/centralizer-uploads/${id}/column-mappings`,
+      { method: 'POST', body: JSON.stringify({ resolutions }) },
     ),
 }
