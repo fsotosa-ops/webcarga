@@ -370,9 +370,20 @@ async def get_upload(
     data = dict(row)
     if data["status"] == "failed":
         data["diff"] = None
+        data["unresolved_columns"] = None
+    elif data["status"] == "pending_mapping":
+        extra_mappings = await _load_extra_mappings(pool)
+        try:
+            raw = supabase.storage.from_(COMPLIANCE_BUCKET).download(data["storage_path"])
+        except Exception as e:
+            raise HTTPException(502, f"Error descargando el archivo desde Storage: {e}")
+        data["diff"] = None
+        data["unresolved_columns"] = find_unresolved_columns(raw, extra_mappings)
     else:
-        parsed = _download_and_parse(supabase, data["storage_path"])
+        extra_mappings = await _load_extra_mappings(pool)
+        parsed = _download_and_parse(supabase, data["storage_path"], extra_mappings)
         data["diff"] = await compute_diff(pool, parsed)
+        data["unresolved_columns"] = None
     return {"data": data}
 
 

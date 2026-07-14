@@ -119,7 +119,7 @@ def _upload_row(**overrides):
 def test_get_upload_previewed_includes_recomputed_diff():
     pool = AsyncMock()
     pool.fetchrow.return_value = _upload_row(status="previewed")
-    pool.fetch.side_effect = [[], [], []]  # compute_diff: sin matches existentes (fixture: todo 'new')
+    pool.fetch.side_effect = [[], [], [], []]  # _load_extra_mappings, luego compute_diff: sin matches existentes
 
     supabase = MagicMock()
     supabase.storage.from_.return_value.download.return_value = _fixture_bytes()
@@ -145,6 +145,36 @@ def test_get_upload_failed_status_has_no_diff_and_skips_storage():
     assert res.status_code == 200
     assert res.json()["data"]["diff"] is None
     supabase.storage.from_.assert_not_called()
+
+
+def test_get_upload_pending_mapping_returns_unresolved_columns_not_diff():
+    from io import BytesIO
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Empresas'
+    ws.append(['Nombre / Razón Social', 'RUT', 'DV', 'Otra Columna Nueva'])
+    ws.append(['Test SPA', '99999013', '1', 'x'])
+    wb.create_sheet('Conductores')
+    wb.create_sheet('Vehiculos_Equipos')
+    buf = BytesIO()
+    wb.save(buf)
+
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _upload_row(status="pending_mapping", storage_path="centralizer-uploads/x.xlsx")
+    pool.fetch.return_value = []  # _load_extra_mappings: sin mapeos guardados
+
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = buf.getvalue()
+
+    client = make_client(pool, supabase=supabase)
+    res = client.get(f"/api/v1/centralizer-uploads/{UPLOAD_ID}")
+
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert data["diff"] is None
+    assert data["unresolved_columns"] == [{"sheet": "Empresas", "header": "Otra Columna Nueva"}]
 
 
 def test_get_upload_not_found_returns_404():
