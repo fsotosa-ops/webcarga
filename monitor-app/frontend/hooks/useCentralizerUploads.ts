@@ -41,3 +41,19 @@ export function useApplyCentralizerUpload(id: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['centralizer-upload', id] }),
   })
 }
+
+export function useComplianceDocCatalog() {
+  return useQuery({
+    queryKey: ['compliance-doc-catalog'],
+    queryFn: () => centralizerUploadsApi.getDocCatalog(),
+  })
+}
+
+export function useResolveColumnMappings(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (resolutions: Parameters<typeof centralizerUploadsApi.resolveColumnMappings>[1]) =>
+      centralizerUploadsApi.resolveColumnMappings(id, resolutions),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['centralizer-upload', id] }),
+  })
+}
