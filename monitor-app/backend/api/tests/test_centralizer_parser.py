@@ -196,6 +196,49 @@ def test_parse_centralizer_workbook_maps_anexo_repleg_gc_column():
     assert result['transporters'][0]['documents']['anexo_repleg_gc'] == 'ok'
 
 
+def test_parse_centralizer_workbook_maps_gc_renamed_columns():
+    # El Excel real renombró varias columnas de "(Walmart)" a "GC" (Gran
+    # Cuenta) en 2026-07 — confirma que el nuevo wording mapea al MISMO
+    # doc_code que el header viejo, sin romper el parseo.
+    from openpyxl import Workbook
+    from io import BytesIO
+
+    wb = Workbook()
+    ws_empresas = wb.active
+    ws_empresas.title = 'Empresas'
+    ws_empresas.append(['Nombre / Razón Social', 'RUT', 'DV', 'Creación en GC', 'Cuenta Banco Empresa'])
+    ws_empresas.append(['Test SPA', '99999014', '2', 'OK', 'ok'])
+
+    ws_conductores = wb.create_sheet('Conductores')
+    ws_conductores.append([
+        'RUT Empresa', 'DV Empresa', 'Nombre Completo', 'RUT Conductor', 'DV Conductor',
+        'ANEXO GC para Conductor', 'Validado por GC', 'Creación en GC',
+    ])
+    ws_conductores.append(['99999014', '2', 'Conductor Test', '99999214', '3', 'OK', 'Factible', 'ok'])
+
+    ws_vehiculos = wb.create_sheet('Vehiculos_Equipos')
+    ws_vehiculos.append(['RUT Empresa', 'DV Empresa', 'Tipo de Equipo', 'Patente', 'Creación en GC'])
+    ws_vehiculos.append(['99999014', '2', 'TRACTOCAMION', 'GCTS14', 'OK'])
+
+    buf = BytesIO()
+    wb.save(buf)
+
+    result = parse_centralizer_workbook(buf.getvalue())
+
+    assert result['parse_errors'] == []
+    t = result['transporters'][0]
+    assert t['documents']['creacion_gc'] == 'ok'
+    assert t['documents']['cuenta_empresa'] == 'ok'
+
+    d = result['drivers'][0]
+    assert d['documents']['anexo_3_gc'] == 'ok'
+    assert d['documents']['validado_gc_driver'] == 'factible'
+    assert d['documents']['creacion_gc_driver'] == 'ok'
+
+    v = result['vehicles'][0]
+    assert v['documents']['creacion_gc_vehicle'] == 'ok'
+
+
 def test_parse_centralizer_workbook_dedupes_multi_cliente_transporter():
     with open('tests/fixtures/centralizer_sample.xlsx', 'rb') as f:
         result = parse_centralizer_workbook(f.read())

@@ -170,8 +170,10 @@ EMPRESAS_COLUMNS: dict[str, tuple[str, Any]] = {
     "Cert. Afiliación Mutual": ("doc", "cert_mutual"),
     "RIOHS timbrado": ("doc", "riohs_timbrado"),
     "Creación en Walmart": ("doc", "creacion_gc"),
+    "Creación en GC": ("doc", "creacion_gc"),  # renombrado en el Excel real (2026-07), mismo doc_code
     "Carpeta Tributaria": ("doc", "carpeta_tributaria"),
     "Cuenta Empresa": ("doc", "cuenta_empresa"),
+    "Cuenta Banco Empresa": ("doc", "cuenta_empresa"),  # renombrado en el Excel real (2026-07), mismo doc_code
     "Avance 80/20": ("field", "avance_80_20"),
     "Avance Total": ("field", "avance_total"),
     # Columna opcional — no aparece en el Excel real actual (headers
@@ -190,13 +192,16 @@ CONDUCTORES_COLUMNS: dict[str, tuple[str, Any]] = {
     "Copia C.I (Vencimiento)": ("date_doc", ("id_expiry", "copia_ci")),
     "Licencia (Vencimiento)": ("date_doc", ("license_expiry", "licencia")),
     "ANEXO 3 (Walmart)": ("doc", "anexo_3_gc"),
+    "ANEXO GC para Conductor": ("doc", "anexo_3_gc"),  # renombrado en el Excel real (2026-07), mismo doc_code
     "EPP": ("doc", "epp"),
     "DAS / ODI": ("doc", "das_odi"),
     "Hoja de Vida": ("doc", "hoja_de_vida"),
     "Cert. Antecedentes": ("doc", "cert_antecedentes"),
     "Validado por Walmart": ("doc", "validado_gc_driver"),
+    "Validado por GC": ("doc", "validado_gc_driver"),  # renombrado en el Excel real (2026-07), mismo doc_code
     "Contrato de Trabajo": ("doc", "contrato_trabajo"),
     "Creación en Walmart": ("doc", "creacion_gc_driver"),
+    "Creación en GC": ("doc", "creacion_gc_driver"),  # renombrado en el Excel real (2026-07), mismo doc_code
     "Avance Total": ("field", "avance_total"),
 }
 
@@ -216,6 +221,7 @@ VEHICULOS_COLUMNS: dict[str, tuple[str, Any]] = {
     "Seguro de Carga": ("doc", "seguro_carga"),
     "Mantención Cámara Frío": ("doc", "mantencion_camara_frio"),
     "Creación en Walmart": ("doc", "creacion_gc_vehicle"),
+    "Creación en GC": ("doc", "creacion_gc_vehicle"),  # renombrado en el Excel real (2026-07), mismo doc_code
 }
 
 _KIND_MAP = {"TRACTOCAMION": "tracto", "RAMPLA": "rampla"}
