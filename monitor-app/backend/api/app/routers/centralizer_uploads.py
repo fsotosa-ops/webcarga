@@ -39,16 +39,17 @@ segundo se bloquea en el advisory lock hasta que el primero commitea
 from __future__ import annotations
 
 import json
+import re
 import zlib
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_admin, require_editor
 from ..db import get_pool
-from ..schemas.centralizer_upload import UploadRejectBody
+from ..schemas.centralizer_upload import ColumnMappingResolutionBody, UploadRejectBody
 from ..services.centralizer_diff import DiffResult, EntityDiff, compute_diff
-from ..services.centralizer_parser import parse_centralizer_workbook
+from ..services.centralizer_parser import find_unresolved_columns, parse_centralizer_workbook
 from ..utils.document_storage import COMPLIANCE_BUCKET, upload_document_version
 from .transporters import _upsert_document
 
@@ -61,18 +62,34 @@ router = APIRouter(prefix="/centralizer-uploads", tags=["centralizer-uploads"])
 ADVISORY_LOCK_KEY = zlib.crc32(b"centralizer_upload")
 
 _ENTITY_TABLE = {"transporter": "transporters", "driver": "drivers", "vehicle": "vehicles"}
+_SHEET_ENTITY_TYPE = {"Empresas": "transporter", "Conductores": "driver", "Vehiculos_Equipos": "vehicle"}
+_DOC_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-def _download_and_parse(supabase, storage_path: str):
+async def _load_extra_mappings(pool) -> dict[str, dict[str, tuple[str, Any]]]:
+    """Carga las resoluciones guardadas en app.centralizer_column_mappings y
+    las convierte al mismo shape que los dicts *_COLUMNS del parser
+    ('doc'/'ignore') — para que parse_centralizer_workbook/find_unresolved_columns
+    las combinen sin lógica especial."""
+    rows = await pool.fetch("SELECT sheet_name, excel_header, doc_code FROM app.centralizer_column_mappings")
+    result: dict[str, dict[str, tuple[str, Any]]] = {}
+    for r in rows:
+        sheet_map = result.setdefault(r["sheet_name"], {})
+        sheet_map[r["excel_header"]] = ("ignore", None) if r["doc_code"] is None else ("doc", r["doc_code"])
+    return result
+
+
+def _download_and_parse(supabase, storage_path: str, extra_mappings: dict | None = None):
     """Descarga el archivo desde Storage y lo parsea — reusado por `apply`
-    (que nunca confía en el diff del preview) y por `GET /{upload_id}` (que
-    nunca persiste el diff, lo recalcula en cada lectura)."""
+    (que nunca confía en el diff del preview), por `GET /{upload_id}` (que
+    nunca persiste el diff, lo recalcula en cada lectura), y por
+    `resolve_column_mappings`."""
     try:
         raw = supabase.storage.from_(COMPLIANCE_BUCKET).download(storage_path)
     except Exception as e:
         raise HTTPException(502, f"Error descargando el archivo desde Storage: {e}")
     try:
-        return parse_centralizer_workbook(raw)
+        return parse_centralizer_workbook(raw, extra_mappings)
     except ValueError as e:
         raise HTTPException(422, f"Error re-parseando el archivo: {e}")
 
@@ -250,8 +267,10 @@ async def upload_and_preview(
     await file.seek(0)
     stored = await upload_document_version(supabase, key_prefix="centralizer-uploads", file=file)
 
+    extra_mappings = await _load_extra_mappings(pool)
+
     try:
-        parsed = parse_centralizer_workbook(raw)
+        unresolved = find_unresolved_columns(raw, extra_mappings)
     except ValueError as e:
         upload_id = await pool.fetchval(
             """
@@ -265,6 +284,19 @@ async def upload_and_preview(
         )
         raise HTTPException(422, {"message": str(e), "upload_id": str(upload_id)})
 
+    if unresolved:
+        upload_id = await pool.fetchval(
+            """
+            INSERT INTO app.centralizer_uploads
+              (upload_kind, file_name, storage_path, uploaded_by, status)
+            VALUES ('centralizer', $1, $2, $3::uuid, 'pending_mapping')
+            RETURNING id
+            """,
+            stored["file_name"], stored["storage_path"], user["sub"],
+        )
+        return {"upload_id": str(upload_id), "status": "pending_mapping", "unresolved_columns": unresolved}
+
+    parsed = parse_centralizer_workbook(raw, extra_mappings)
     diff = await compute_diff(pool, parsed)
     all_parse_errors = [*parsed["parse_errors"], *diff["parse_errors"]]
 
@@ -392,7 +424,8 @@ async def apply_upload(
     if row["status"] != "approved":
         raise HTTPException(409, f"El upload está en estado '{row['status']}', se requiere 'approved' para aplicar")
 
-    parsed = _download_and_parse(supabase, row["storage_path"])
+    extra_mappings = await _load_extra_mappings(pool)
+    parsed = _download_and_parse(supabase, row["storage_path"], extra_mappings)
 
     async with pool.acquire() as conn:
         async with conn.transaction():

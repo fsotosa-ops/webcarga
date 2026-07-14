@@ -232,7 +232,7 @@ def _acquire_ctx(conn):
 
 def test_upload_and_preview_parses_and_returns_structured_diff():
     pool = AsyncMock()
-    pool.fetch.side_effect = [[], [], []]  # transporters/drivers/vehicles existentes: ninguno
+    pool.fetch.side_effect = [[], [], [], []]  # _load_extra_mappings, luego transporters/drivers/vehicles existentes: ninguno
     pool.fetchval.return_value = UPLOAD_ID
 
     supabase = MagicMock()
@@ -263,21 +263,23 @@ def test_upload_and_preview_parses_and_returns_structured_diff():
     assert "'previewed'" in insert_sql
 
 
-def test_upload_rejects_unmapped_column_and_persists_failed_row():
+def test_upload_missing_required_sheet_persists_failed_row():
+    # Falta la hoja "Conductores"/"Vehiculos_Equipos" -> sigue siendo un
+    # fallo duro (no es un problema de mapeo de columnas resoluble por un
+    # admin, es una estructura de archivo inválida).
     from io import BytesIO
     from openpyxl import Workbook
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Empresas"
-    ws.append(["Nombre / Razón Social", "RUT", "DV", "Columna Sin Mapeo"])
-    ws.append(["Test SPA", "11111111", "1", "x"])
-    wb.create_sheet("Conductores")
-    wb.create_sheet("Vehiculos_Equipos")
+    ws.append(["Nombre / Razón Social", "RUT", "DV"])
+    ws.append(["Test SPA", "11111111", "1"])
     buf = BytesIO()
     wb.save(buf)
 
     pool = AsyncMock()
+    pool.fetch.return_value = []  # _load_extra_mappings
     pool.fetchval.return_value = "dddddddd-0000-0000-0000-000000000001"
     client = make_client(pool)
 
@@ -293,7 +295,66 @@ def test_upload_rejects_unmapped_column_and_persists_failed_row():
     assert "upload_id" in res.json()["detail"]
     insert_sql = pool.fetchval.call_args.args[0]
     assert "'failed'" in insert_sql
-    pool.fetch.assert_not_called()  # nunca llegó a compute_diff
+
+
+def test_upload_with_unmapped_column_returns_pending_mapping_not_422():
+    # Comportamiento nuevo: una columna sin mapear ya NO bloquea el upload
+    # completo con un 422 — cae en 'pending_mapping' para que un admin la
+    # resuelva (mapear/crear/ignorar), ver routers/centralizer_uploads.py.
+    from io import BytesIO
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Empresas"
+    ws.append(["Nombre / Razón Social", "RUT", "DV", "Columna Sin Mapeo"])
+    ws.append(["Test SPA", "11111111", "1", "x"])
+    wb.create_sheet("Conductores")
+    wb.create_sheet("Vehiculos_Equipos")
+    buf = BytesIO()
+    wb.save(buf)
+
+    pool = AsyncMock()
+    pool.fetch.return_value = []  # _load_extra_mappings: sin mapeos guardados
+    pool.fetchval.return_value = "dddddddd-0000-0000-0000-000000000001"
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/centralizer-uploads",
+        files={"file": (
+            "bad.xlsx", buf.getvalue(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )},
+    )
+
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["status"] == "pending_mapping"
+    assert data["unresolved_columns"] == [{"sheet": "Empresas", "header": "Columna Sin Mapeo"}]
+    insert_sql = pool.fetchval.call_args.args[0]
+    assert "'pending_mapping'" in insert_sql
+
+
+def test_upload_with_saved_mapping_present_still_parses_normally():
+    # Confirma que el flujo normal (sin columnas nuevas del todo) sigue
+    # funcionando cuando YA hay mapeos guardados en la tabla (irrelevantes
+    # para este archivo en particular) — no deben interferir.
+    pool = AsyncMock()
+    saved_mapping = [{"sheet_name": "Empresas", "excel_header": "Cuenta Banco Empresa", "doc_code": "cuenta_banco_empresa"}]
+    pool.fetch.side_effect = [saved_mapping, [], [], []]  # _load_extra_mappings, luego compute_diff x3
+    pool.fetchval.return_value = "eeeeeeee-0000-0000-0000-000000000003"
+
+    client = make_client(pool)
+    res = client.post(
+        "/api/v1/centralizer-uploads",
+        files={"file": (
+            "centralizer_sample.xlsx", _fixture_bytes(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json().get("status") != "pending_mapping"
+    assert "diff" in res.json()
 
 
 # ── approve ──────────────────────────────────────────────────────────────
@@ -379,6 +440,7 @@ def test_apply_not_found_returns_404():
 def test_apply_success_end_to_end_all_new_marks_matched_and_applied():
     pool = AsyncMock()
     pool.fetchrow.return_value = {"id": UPLOAD_ID, "status": "approved", "storage_path": "centralizer-uploads/x.xlsx"}
+    pool.fetch.return_value = []  # _load_extra_mappings: sin mapeos guardados
     conn = FakeConn(upload_status="approved")
     pool.acquire = MagicMock(return_value=_acquire_ctx(conn))
 
@@ -407,6 +469,7 @@ def test_apply_race_second_concurrent_apply_rejected_inside_transaction():
     advisory lock) debe rechazar al que llega después."""
     pool = AsyncMock()
     pool.fetchrow.return_value = {"id": UPLOAD_ID, "status": "approved", "storage_path": "x.xlsx"}
+    pool.fetch.return_value = []  # _load_extra_mappings: sin mapeos guardados
     conn = FakeConn(upload_status="applied")  # otro apply ya commiteó mientras esperábamos el lock
     pool.acquire = MagicMock(return_value=_acquire_ctx(conn))
 

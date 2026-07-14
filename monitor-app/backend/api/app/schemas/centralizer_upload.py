@@ -11,3 +11,15 @@ from pydantic import BaseModel
 
 class UploadRejectBody(BaseModel):
     reason: Optional[str] = None
+
+
+class ColumnMappingResolution(BaseModel):
+    sheet: str
+    header: str
+    action: str  # "map" | "create" | "ignore"
+    doc_code: Optional[str] = None
+    label: Optional[str] = None
+
+
+class ColumnMappingResolutionBody(BaseModel):
+    resolutions: list[ColumnMappingResolution]
