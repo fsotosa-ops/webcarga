@@ -130,9 +130,44 @@
 
 **3 hallazgos Minor quedaron como deuda aceptada, no bloqueantes** (loggeados en `.superpowers/sdd/progress.md`): (1) una celda vacía SÍ puede poner en `NULL` un campo nativo *nullable* ya poblado por un upload anterior (año/fecha de vencimiento) en una fila `updated` — no cubierto por la protección de edición manual, posiblemente intencional bajo el modelo "el Excel manda" pero sin decisión explícita documentada; (2) archivo de Storage sin registro asociado si `compute_diff` falla durante el preview (mismo tipo de fuga que se corrigió en el Task 4, bajo impacto); (3) sin validación de formato UUID en los path params + un par de rutas de error sin test dedicado (coincide con el patrón ya existente en el resto del código base).
 
+#### Próximo paso exacto (superseded, ver sección siguiente)
+
+---
+
+### 2026-07-13 (cont. 3) — Auditoría Checkpoints E/F + fix de bug real de matching + higiene
+
+**Objetivo:** el usuario pidió chequear si los Checkpoints E (frontend upload) y F (parser Seguros) contemplan todo lo necesario para ejecutarse, y entender cómo se gestiona hoy la inserción del Excel EETT de 3 hojas. Se hizo la auditoría en plan mode, se mandó a Ultraplan para refinar, y en paralelo se identificaron y corrigieron gaps reales de Checkpoint D que no requerían esperar el refinamiento.
+
+**Bug real encontrado y corregido en Checkpoint D** (`centralizer_diff.py`/`centralizer_uploads.py`): un conductor/vehículo cuyo `transporter_rut` no aparecía en la hoja Empresas del MISMO archivo subido se rechazaba como huérfano aunque esa empresa ya existiera en `app.transporters` por un upload anterior — el usuario confirmó que el Excel de origen puede ser un snapshot completo o parcial, así que esto era un bug real, no comportamiento esperado. Fix: `compute_diff` ahora consulta `app.transporters` por los `transporter_rut` referenciados que no estén en la hoja Empresas de este archivo, y los acepta si ya existen en la base. Nuevo campo `DiffResult["transporter_id_by_rut"]` expone esos matches para que `_apply_diff` (router) resuelva el FK sin depender de que la empresa haya aparecido en el diff de `transporters` de este upload — sembrado en `rut_to_transporter_id` sin entrar a `matched_transporter_ids` (esas empresas no "aparecieron" en este upload, solo se confirmó que ya existían). 2 tests actualizados + 1 test nuevo (`test_driver_matches_preexisting_transporter_not_in_this_upload`). Suite completa: 167/167 verde.
+
+**Verificación de la fuente real de Seguros (Checkpoint F)** — se habilitó el MCP de Microsoft 365/SharePoint (`WebFetch` no podía leer el link, 403/auth) y se leyó el archivo real que el usuario confirmó: `SEGURO_CARGA_TRACTOREO_CONSOLIDADO.xlsx`, hoja única `CONSOLIDADO`. Headers confirmados 1:1 contra `stg_insurance_vehicles.sql` (`CONTRATANTE/RUT/GRUPO/COMPAÑÍA/Póliza/Endoso/Vigencia (Desde)/Vigencia (Hasta)/Cobertura/Cuota (Número)/Valor Cuota UF/Vencimiento/Estado`, 1 fila por cuota). **Hallazgo nuevo no documentado antes**: la hoja no es una tabla uniforme de principio a fin — a mitad de hoja hay un bloque de conciliación de cobros con columnas distintas (`Compañía/Asegurado/Rut/Póliza/Ramo/...`) + notas de texto libre sueltas, que un parser ingenuo rompería o produciría basura silenciosa ahí. **Nota de manejo de datos**: al leer el archivo se encontró información real de contacto (nombres, teléfonos) en un archivo distinto (`INFORME SEGURO DE CARGA TRACTOREO 2026-2027.xlsx`, no es la fuente real) — no se escribió a ningún archivo/reporte, solo se describió la estructura en abstracto.
+
+**Higiene:** agregado `/*.xlsx`, `/*.csv`, `/monitor-app/*.xlsx`, `/monitor-app/*.csv` a `.gitignore` (no afecta `tests/fixtures/*.xlsx`, que sigue trackeado) — el archivo real de Empresas que vivía suelto en `monitor-app/` (con RUTs/nombres reales) ya no está en el working tree, pero el patrón queda para prevenir que un futuro export similar se cuele en un `git add -A`.
+
+**Actualizado `actua-como-un-experto-parallel-puppy.md` §5**: Checkpoint E ahora trae la agenda explícita de decisiones de datos/negocio para el brainstorm visual (agrupación de diff por change_type, dónde van `unchanged`/`parse_errors`, detalle campo-a-campo, paginación, gating por rol). Checkpoint F ya no dice "reusa D/E sin bloqueo previo" — reemplazado por el alcance real (headers ya confirmados, pero diff/apply es lógica nueva, no genérica; hay que delimitar el rango real de la hoja `CONSOLIDADO` antes de codear).
+
+#### Próximo paso exacto (superseded, ver sección siguiente)
+
+---
+
+### 2026-07-13 (cont. 4) — Checkpoint E (frontend del upload EETT) COMPLETO
+
+**Objetivo:** construir el frontend para Checkpoint D (subir Excel EETT, revisar diff, aprobar/rechazar/aplicar) — hasta ahora solo consumible por `curl`. El usuario pidió explícitamente que esto sea **el estándar** para gestionar/crear/habilitar empresas, y que el mismo patrón sirva para Seguros (Checkpoint F) más adelante — no un parche desechable, aunque para Empresas es un puente razonable durante la migración desde Excel/SharePoint (las protecciones de Checkpoint D — `manually_edited_fields`/`baja_override` — existen justamente para que edición-en-app y reconciliación por Excel convivan).
+
+**Brainstorm** (companion visual, `.superpowers/brainstorm/`, gitignored): confirmado flujo **asíncrono** (editor sube, admin aprueba/aplica después, desde una página de historial — no todo en una sesión); historial top-level compartido `/dashboard/uploads` (no anidado bajo Empresas, para que Seguros lo reuse); filas "sin cambios" ocultas por defecto (solo contador); diff campo-por-campo expandible en **tarjetas** (no filas de tabla); barra de acciones **sticky abajo**. Spec: `docs/superpowers/specs/2026-07-13-empresas-checkpoint-e-upload-frontend-design.md` (gitignored, mismo patrón que specs de Checkpoints A-D).
+
+**Hallazgo de backend que amplió el alcance**: `GET /centralizer-uploads/{id}` solo devolvía la fila cruda — el diff nunca se persiste, así que no había forma de volver a verlo en una revisión asíncrona. Se agregó recompute del diff en el GET (mismo patrón que `apply`: re-descarga+re-parsea+`compute_diff`, sin lock por ser de solo lectura) + `LEFT JOIN public.profiles` para exponer `uploaded_by_name`/`approved_by_name`/`rejected_by_name` (mismo patrón que `edited_by` en `trips.py`).
+
+**Qué se implementó** (`docs/superpowers/plans/2026-07-13-empresas-checkpoint-e-upload-frontend-plan.md`, 10 tasks, ejecución inline sin subagentes — elegido explícitamente por el usuario por eficiencia de tokens, dado que el riesgo es bajo comparado con Checkpoint D al seguir patrones ya probados):
+- Backend: `_download_and_parse` extraído como helper compartido entre `apply` y el nuevo `GET` con diff; profiles join en list+detail.
+- Frontend: tipos (`CentralizerDiff`/`CentralizerEntityDiff`/etc.), `lib/api/centralizerUploads.ts`, `hooks/useCentralizerUploads.ts` (TanStack Query), `CentralizerUploadModal.tsx` (dropzone chico + resumen inmediato, mismo patrón que `TripBulkUpload.tsx`), `UploadDiffView.tsx` (tabs Nuevas/Modificadas/Conflictos/Errores, agrupado por Empresas/Conductores/Vehículos, tarjetas expandibles), página de historial `/dashboard/uploads` + nav en Sidebar, página de detalle `/dashboard/uploads/[id]` (barra sticky con Aprobar/Rechazar/Aplicar, gateado por `useCanAdmin()`, textarea inline para motivo de rechazo).
+
+**Verificación automática**: backend 174/174, frontend 352/352 Vitest + `tsc --noEmit` limpio + `npm run build` exitoso (ambas rutas nuevas aparecen en el build). **Pendiente**: smoke test manual con Playwright en navegador real (subir `centralizer_sample.xlsx` → revisar diff → aprobar → aplicar) — no se hizo esta sesión porque requiere sesión de login real contra `viclzoftiudkepqnhekv` (el mismo proyecto Supabase real usado en todo este workstream, no uno de prueba aislado) y no se contaba con credenciales de browser; la cobertura automática ya ejercita la misma lógica de diff/apply exhaustivamente (incluido el e2e de Checkpoint D contra este mismo proyecto).
+
 #### Próximo paso exacto
-1. [ ] Decidir push a remoto de Checkpoints A-D (nada se ha pusheado desde `ad6afa8` — Checkpoint C mencionaba lo mismo, sigue sin decisión).
-2. [ ] Checkpoint E: frontend del flujo de upload (dropzone + resumen + diff agrupado Nuevas/Modificadas/Conflictos + aprobación admin) — requiere brainstorm con companion visual antes de codear, mismo patrón que rondas anteriores de Empresas/Seguros.
-3. [ ] Checkpoint F: parser de Seguros, usando `bronze.raw_insurance_vehicles` como contrato ya confirmado por el usuario.
-4. [ ] Tomar una decisión consciente sobre el Minor #1 de arriba (celda vacía pisa un campo nullable ya poblado) — documentarlo como intencional o cambiar a "no pisar si viene vacío".
-5. [ ] Pendientes de sesiones anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
+1. [ ] Smoke test manual con Playwright (login real necesario) antes de dar Checkpoint E por 100% cerrado.
+2. [ ] Decidir push a remoto de Checkpoints A-E (nada se ha pusheado desde `ad6afa8`).
+3. [ ] Checkpoint F: antes de codear `insurance_parser.py`, delimitar el rango real de la tabla en la hoja `CONSOLIDADO` (excluir o tratar aparte el bloque de conciliación de cobros) y diseñar clave de upsert + protección de `manual_override` para cuotas — headers ya verificados vía SharePoint MCP.
+4. [ ] Cuerpo de diff para `upload_kind='insurance'` en `UploadDiffView`/página de detalle — el resto (historial, chrome, acciones) ya es genérico por diseño.
+5. [ ] Tomar una decisión consciente sobre el Minor #1 de Checkpoint D (celda vacía pisa un campo nullable ya poblado).
+6. [ ] Pendientes de sesiones anteriores siguen vigentes: cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, Mage Pro dbt, mapeo `doc_code`↔cliente (Fabián).
