@@ -345,6 +345,17 @@ async def list_uploads(
     return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit}
 
 
+@router.get("/doc-catalog")
+async def list_doc_catalog(pool=Depends(get_pool), user=Depends(require_admin)):
+    # NOTA: esta ruta literal debe declararse ANTES de "/{upload_id}" — FastAPI
+    # matchea en orden de declaración y "/{upload_id}" capturaría "doc-catalog"
+    # como si fuera un id si se declarara después.
+    rows = await pool.fetch(
+        "SELECT doc_code, entity_type, label FROM app.compliance_doc_catalog ORDER BY entity_type, sort_order",
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
 @router.get("/{upload_id}")
 async def get_upload(
     upload_id: str,
@@ -463,3 +474,84 @@ async def apply_upload(
             )
 
     return {"ok": True, "status": "applied", "matched_transporters": len(matched_ids)}
+
+
+@router.post("/{upload_id}/column-mappings")
+async def resolve_column_mappings(
+    upload_id: str, body: ColumnMappingResolutionBody,
+    pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_admin),
+):
+    row = await pool.fetchrow(
+        "SELECT id, status, storage_path FROM app.centralizer_uploads WHERE id = $1", upload_id,
+    )
+    if not row:
+        raise HTTPException(404, "Upload no encontrado")
+    if row["status"] != "pending_mapping":
+        raise HTTPException(
+            409, f"El upload está en estado '{row['status']}', se requiere 'pending_mapping'",
+        )
+
+    # Validar TODAS las resoluciones antes de aplicar ninguna
+    for r in body.resolutions:
+        if r.sheet not in _SHEET_ENTITY_TYPE:
+            raise HTTPException(422, f"Hoja inválida: {r.sheet}")
+        entity_type = _SHEET_ENTITY_TYPE[r.sheet]
+        if r.action == "create":
+            if not r.doc_code or not _DOC_CODE_RE.match(r.doc_code):
+                raise HTTPException(422, f"doc_code inválido: {r.doc_code!r} (snake_case, ej. 'licencia_municipal')")
+            if not r.label:
+                raise HTTPException(422, "label requerido para crear un documento nuevo")
+            existing = await pool.fetchval(
+                "SELECT 1 FROM app.compliance_doc_catalog WHERE doc_code = $1 AND entity_type = $2",
+                r.doc_code, entity_type,
+            )
+            if existing:
+                raise HTTPException(422, f"doc_code '{r.doc_code}' ya existe para {entity_type}")
+        elif r.action == "map":
+            if not r.doc_code:
+                raise HTTPException(422, "doc_code requerido para mapear a un documento existente")
+            existing = await pool.fetchval(
+                "SELECT 1 FROM app.compliance_doc_catalog WHERE doc_code = $1 AND entity_type = $2",
+                r.doc_code, entity_type,
+            )
+            if not existing:
+                raise HTTPException(422, f"doc_code '{r.doc_code}' no existe para {entity_type}")
+        elif r.action != "ignore":
+            raise HTTPException(422, f"action inválida: {r.action}")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            for r in body.resolutions:
+                entity_type = _SHEET_ENTITY_TYPE[r.sheet]
+                doc_code = None if r.action == "ignore" else r.doc_code
+                if r.action == "create":
+                    next_sort = await conn.fetchval(
+                        "SELECT COALESCE(MAX(sort_order), 0) + 10 FROM app.compliance_doc_catalog WHERE entity_type = $1",
+                        entity_type,
+                    )
+                    await conn.execute(
+                        "INSERT INTO app.compliance_doc_catalog (doc_code, entity_type, label, sort_order, required_for_clients) "
+                        "VALUES ($1, $2, $3, $4, ARRAY['Walmart'])",
+                        r.doc_code, entity_type, r.label, next_sort,
+                    )
+                await conn.execute(
+                    "INSERT INTO app.centralizer_column_mappings (sheet_name, excel_header, doc_code, created_by) "
+                    "VALUES ($1, $2, $3, $4::uuid) "
+                    "ON CONFLICT (sheet_name, excel_header) DO UPDATE SET doc_code = EXCLUDED.doc_code",
+                    r.sheet, r.header, doc_code, user["sub"],
+                )
+
+    extra_mappings = await _load_extra_mappings(pool)
+    parsed = _download_and_parse(supabase, row["storage_path"], extra_mappings)
+    diff = await compute_diff(pool, parsed)
+    all_parse_errors = [*parsed["parse_errors"], *diff["parse_errors"]]
+
+    await pool.execute(
+        "UPDATE app.centralizer_uploads SET status = 'previewed', sheet_summary = $2, parse_errors = $3 WHERE id = $1",
+        upload_id, json.dumps(parsed["sheet_summary"]), json.dumps(all_parse_errors),
+    )
+
+    return {
+        "upload_id": upload_id, "status": "previewed",
+        "sheet_summary": parsed["sheet_summary"], "parse_errors": all_parse_errors, "diff": diff,
+    }

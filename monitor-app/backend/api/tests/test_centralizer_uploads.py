@@ -237,6 +237,8 @@ class FakeConn:
             return self.upload_status
         if "SELECT doc_code FROM app.compliance_doc_catalog" in sql:
             return args[0]
+        if "COALESCE(MAX(sort_order)" in sql:
+            return 10
         if sql.strip().startswith("INSERT INTO app.transporters"):
             return self._new_id()
         if sql.strip().startswith("INSERT INTO app.drivers"):
@@ -511,6 +513,84 @@ def test_apply_race_second_concurrent_apply_rejected_inside_transaction():
 
     assert res.status_code == 409
     assert not any("SET status = 'applied'" in sql for sql, _ in conn.executed)
+
+
+# ── doc-catalog + column-mappings: mapeo self-service de columnas nuevas ──
+
+def test_list_doc_catalog_returns_entries():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"doc_code": "rol_sii", "entity_type": "transporter", "label": "Rol SII"},
+        {"doc_code": "licencia", "entity_type": "driver", "label": "Licencia"},
+    ]
+    client = make_client(pool)
+    res = client.get("/api/v1/centralizer-uploads/doc-catalog")
+    assert res.status_code == 200
+    assert len(res.json()["data"]) == 2
+
+
+def test_resolve_column_mappings_requires_admin():
+    pool = AsyncMock()
+    client = make_client(pool, role="editor", enforce_roles=True)
+    res = client.post(
+        f"/api/v1/centralizer-uploads/{UPLOAD_ID}/column-mappings",
+        json={"resolutions": [{"sheet": "Empresas", "header": "X", "action": "ignore"}]},
+    )
+    assert res.status_code == 403
+
+
+def test_resolve_column_mappings_rejects_invalid_doc_code_on_create():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _upload_row(status="pending_mapping")
+    client = make_client(pool)
+    res = client.post(
+        f"/api/v1/centralizer-uploads/{UPLOAD_ID}/column-mappings",
+        json={"resolutions": [
+            {"sheet": "Empresas", "header": "X", "action": "create", "doc_code": "Con Mayuscula", "label": "X"},
+        ]},
+    )
+    assert res.status_code == 422
+
+
+def test_resolve_column_mappings_rejects_wrong_status():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _upload_row(status="previewed")
+    client = make_client(pool)
+    res = client.post(
+        f"/api/v1/centralizer-uploads/{UPLOAD_ID}/column-mappings",
+        json={"resolutions": [{"sheet": "Empresas", "header": "X", "action": "ignore"}]},
+    )
+    assert res.status_code == 409
+
+
+def test_resolve_column_mappings_success_reparse_returns_previewed():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _upload_row(status="pending_mapping", storage_path="centralizer-uploads/x.xlsx")
+    # Validación (fuera de tx): doc_code no existe todavía para 'create'
+    pool.fetchval.side_effect = [None]
+    conn = FakeConn()
+    pool.acquire = MagicMock(return_value=_acquire_ctx(conn))
+    # _load_extra_mappings tras la tx, luego compute_diff (transporters/drivers/vehicles)
+    pool.fetch.side_effect = [
+        [{"sheet_name": "Empresas", "excel_header": "Cuenta Banco Empresa", "doc_code": "cuenta_banco_empresa"}],
+        [], [], [],
+    ]
+
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = _fixture_bytes()
+
+    client = make_client(pool, supabase=supabase)
+    res = client.post(
+        f"/api/v1/centralizer-uploads/{UPLOAD_ID}/column-mappings",
+        json={"resolutions": [
+            {"sheet": "Empresas", "header": "Cuenta Banco Empresa", "action": "create",
+             "doc_code": "cuenta_banco_empresa", "label": "Cuenta Banco Empresa"},
+        ]},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "previewed"
+    assert "diff" in res.json()
 
 
 # ── Unit: helpers de apply respetan conflict / manual_override ────────────
