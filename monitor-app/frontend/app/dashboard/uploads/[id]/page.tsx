@@ -7,9 +7,11 @@ import { ArrowLeft, Loader2, XCircle } from 'lucide-react'
 import {
   useCentralizerUpload, useApproveCentralizerUpload,
   useRejectCentralizerUpload, useApplyCentralizerUpload,
+  useComplianceDocCatalog, useResolveColumnMappings,
 } from '@/hooks/useCentralizerUploads'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { UploadDiffView } from '@/components/dashboard/UploadDiffView'
+import { ColumnMappingResolver } from '@/components/dashboard/ColumnMappingResolver'
 
 export default function UploadDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -18,6 +20,8 @@ export default function UploadDetailPage() {
   const approve = useApproveCentralizerUpload(id)
   const reject  = useRejectCentralizerUpload(id)
   const apply   = useApplyCentralizerUpload(id)
+  const docCatalog = useComplianceDocCatalog()
+  const resolveMappings = useResolveColumnMappings(id)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason]       = useState('')
 
@@ -53,6 +57,19 @@ export default function UploadDetailPage() {
           <XCircle size={16} className="shrink-0 mt-0.5" />
           {upload.parse_errors[0]?.reason ?? 'Error al parsear el archivo.'}
         </p>
+      ) : upload.status === 'pending_mapping' ? (
+        canAdmin ? (
+          <ColumnMappingResolver
+            unresolvedColumns={upload.unresolved_columns ?? []}
+            catalog={docCatalog.data?.data ?? []}
+            submitting={resolveMappings.isPending}
+            onSubmit={resolutions => resolveMappings.mutate(resolutions)}
+          />
+        ) : (
+          <p className="text-sm text-gray-500 bg-gray-50 border border-border rounded-lg px-4 py-3">
+            Este archivo tiene columnas nuevas que un admin debe resolver antes de continuar.
+          </p>
+        )
       ) : upload.diff ? (
         <UploadDiffView diff={upload.diff} />
       ) : null}
