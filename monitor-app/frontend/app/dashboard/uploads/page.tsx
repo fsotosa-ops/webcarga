@@ -11,6 +11,7 @@ import type { CentralizerUploadStatus } from '@/lib/types'
 const STATUS_LABELS: Record<CentralizerUploadStatus, string> = {
   parsed: 'Procesando', previewed: 'Pendiente de revisión', approved: 'Aprobado, pendiente de aplicar',
   applied: 'Aplicado', rejected: 'Rechazado', failed: 'Falló el parseo',
+  pending_mapping: 'Columnas nuevas por resolver',
 }
 
 const STATUS_STYLES: Record<CentralizerUploadStatus, string> = {
@@ -20,6 +21,7 @@ const STATUS_STYLES: Record<CentralizerUploadStatus, string> = {
   applied: 'bg-green-50 text-green-700 border-green-100',
   rejected: 'bg-red-50 text-red-700 border-red-100',
   failed: 'bg-red-50 text-red-700 border-red-100',
+  pending_mapping: 'bg-amber-50 text-amber-700 border-amber-100',
 }
 
 export default function UploadsPage() {

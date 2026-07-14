@@ -699,7 +699,7 @@ export type CentralizerDiff = {
   parse_errors: CentralizerParseError[]
 }
 
-export type CentralizerUploadStatus = 'parsed' | 'previewed' | 'approved' | 'applied' | 'rejected' | 'failed'
+export type CentralizerUploadStatus = 'parsed' | 'previewed' | 'approved' | 'applied' | 'rejected' | 'failed' | 'pending_mapping'
 
 export type CentralizerUploadSummary = {
   id:                string
@@ -721,6 +721,26 @@ export type CentralizerUploadSummary = {
 }
 
 export type CentralizerUploadDetail = CentralizerUploadSummary & {
-  parse_errors: CentralizerParseError[]
-  diff:         CentralizerDiff | null
+  parse_errors:       CentralizerParseError[]
+  diff:               CentralizerDiff | null
+  unresolved_columns: UnresolvedColumn[] | null
+}
+
+export type UnresolvedColumn = {
+  sheet:  'Empresas' | 'Conductores' | 'Vehiculos_Equipos'
+  header: string
+}
+
+export type ComplianceDocCatalogEntry = {
+  doc_code:    string
+  entity_type: 'transporter' | 'driver' | 'vehicle'
+  label:       string
+}
+
+export type ColumnMappingResolution = {
+  sheet:     'Empresas' | 'Conductores' | 'Vehiculos_Equipos'
+  header:    string
+  action:    'map' | 'create' | 'ignore'
+  doc_code?: string
+  label?:    string
 }
