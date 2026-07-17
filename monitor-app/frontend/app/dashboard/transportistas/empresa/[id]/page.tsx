@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight, PenLine, Check, X,
-  Loader2, Search,
+  Loader2, Search, Users, Truck, ShieldCheck, FileText,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { carriersApi } from '@/lib/api/carriers'
@@ -23,10 +23,15 @@ import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
+import { CompletionRing } from '@/components/dashboard/CompletionRing'
+import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
+import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 const ADMIN_ROLES  = new Set(['admin', 'owner'])
 const ROSTER_PAGE_SIZE = 9
+
+type Tab = 'resumen' | 'documentos' | 'conductores' | 'equipos' | 'seguros' | 'contactos'
 
 const OPERATIONAL_STATUS_OPTIONS: OperationalStatus[] = ['ACTIVE', 'INACTIVE', 'LEGACY_INACTIVE']
 const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
@@ -235,6 +240,7 @@ export default function EmpresaDetailPage() {
   const [canEdit, setCanEdit]     = useState(false)
   const [canAdmin, setCanAdmin]   = useState(false)
   const [editOpen, setEditOpen]   = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('resumen')
 
   const [selectedDriverId,  setSelectedDriverId]  = useState<string | null>(null)
   const [selectedAssetId,   setSelectedAssetId]   = useState<string | null>(null)
@@ -409,6 +415,17 @@ export default function EmpresaDetailPage() {
   const visibleDrivers = driverShowAll ? filteredDrivers : filteredDrivers.slice(0, ROSTER_PAGE_SIZE)
   const visibleAssets  = assetShowAll  ? filteredAssets  : filteredAssets.slice(0, ROSTER_PAGE_SIZE)
 
+  // Resumen: score de documentación + top de problemas obligatorios (el
+  // detalle completo vive en la tab Documentos, no acá — evita el banner
+  // saturado que listaba los 12+ items de una).
+  const complianceRecords = carrier?.compliance_records ?? []
+  const checklistItems = useMemo(() => complianceRecordsToChecklistItems(complianceRecords), [complianceRecords])
+  const { ok: docsOk, total: docsTotal } = checklistCompletion(checklistItems)
+  const mandatoryProblems = useMemo(() => complianceRecords.filter(r =>
+    r.requirement_level === 'LEGAL_MANDATORY'
+    && (r.is_expired || r.status === 'MISSING' || r.status === 'EXPIRED' || r.status === 'REJECTED'),
+  ), [complianceRecords])
+
   const selectedDriver: Driver | null = selectedDriverId ? selectedDriverQuery.data ?? null : null
   const selectedAsset:  Asset  | null = selectedAssetId  ? selectedAssetQuery.data  ?? null : null
 
@@ -436,9 +453,8 @@ export default function EmpresaDetailPage() {
         <span className="text-text-primary font-medium truncate">{carrier.business_name || id}</span>
       </nav>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
-        <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="flex-1 min-w-0">
               <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">
                 {carrier.business_name || '—'}
@@ -493,15 +509,109 @@ export default function EmpresaDetailPage() {
                 </button>
               )}
             </div>
-          </div>
         </div>
-
-        <InsuranceSummaryCard carrierId={carrier.id} />
       </div>
 
-      <TransporterAlertBanner records={carrier.compliance_records} />
+      {/* ── Tabs — una sección visible a la vez, cero scroll entre ellas ── */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit max-w-full overflow-x-auto">
+        {([
+          { id: 'resumen' as const,     label: 'Resumen',     icon: FileText,    count: null },
+          { id: 'documentos' as const,  label: 'Documentos',  icon: FileText,    count: mandatoryProblems.length || null },
+          { id: 'conductores' as const, label: 'Conductores', icon: Users,       count: drivers.length },
+          { id: 'equipos' as const,     label: 'Equipos',     icon: Truck,       count: assets.length },
+          { id: 'seguros' as const,     label: 'Seguros',     icon: ShieldCheck, count: policies.length },
+          { id: 'contactos' as const,   label: 'Contactos',   icon: Users,       count: carrier.contacts.length },
+        ]).map(t => {
+          const active = activeTab === t.id
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              aria-pressed={active}
+              className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label}
+              {t.count != null && (
+                <span className={`ml-1.5 ${t.id === 'documentos' ? 'text-red-500 font-bold' : 'text-gray-400'}`}>{t.count}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ── Resumen: vista compacta, sin la lista completa de alertas ── */}
+      {activeTab === 'resumen' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border border-border p-4 md:p-5">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Documentación</h3>
+            <div className="flex items-center gap-3">
+              <CompletionRing ok={docsOk} total={docsTotal} />
+              <div>
+                <p className="text-sm font-semibold text-text-primary">{docsOk} de {docsTotal} al día</p>
+                {mandatoryProblems.length > 0 ? (
+                  <p className="text-xs text-red-500 font-semibold">{mandatoryProblems.length} obligatorio{mandatoryProblems.length > 1 ? 's' : ''} pendiente{mandatoryProblems.length > 1 ? 's' : ''}</p>
+                ) : (
+                  <p className="text-xs text-green-600 font-semibold">Sin pendientes obligatorios</p>
+                )}
+              </div>
+            </div>
+            {mandatoryProblems.length > 0 && (
+              <ul className="mt-3 space-y-1">
+                {mandatoryProblems.slice(0, 3).map(r => (
+                  <li key={r.id} className="text-xs text-gray-500 truncate">• {r.name}</li>
+                ))}
+              </ul>
+            )}
+            <button onClick={() => setActiveTab('documentos')} className="mt-3 text-xs font-semibold text-accent hover:underline">
+              Ver documentos →
+            </button>
+          </div>
+
+          <InsuranceSummaryCard carrierId={carrier.id} />
+
+          <button
+            onClick={() => setActiveTab('conductores')}
+            className="bg-white rounded-xl border border-border p-4 md:p-5 flex items-center justify-between text-left hover:border-gray-300 transition-colors"
+          >
+            <div>
+              <p className="text-2xl font-bold text-text-primary leading-none">{drivers.length}</p>
+              <p className="text-xs text-gray-400 mt-1">Conductores</p>
+            </div>
+            <Users size={22} className="text-gray-300" />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('equipos')}
+            className="bg-white rounded-xl border border-border p-4 md:p-5 flex items-center justify-between text-left hover:border-gray-300 transition-colors"
+          >
+            <div>
+              <p className="text-2xl font-bold text-text-primary leading-none">{assets.length}</p>
+              <p className="text-xs text-gray-400 mt-1">Equipos</p>
+            </div>
+            <Truck size={22} className="text-gray-300" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Documentos ── */}
+      {activeTab === 'documentos' && (
+        <>
+          <TransporterAlertBanner records={carrier.compliance_records} />
+          <div className="bg-white rounded-xl border border-border p-4 md:p-5">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Documentos de la Empresa</h3>
+            <TransporterDocumentsPanel
+              records={carrier.compliance_records}
+              canEdit={canEdit}
+              onChanged={invalidateCarrier}
+            />
+          </div>
+        </>
+      )}
 
       {/* ── Contactos ── */}
+      {activeTab === 'contactos' && (
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Contactos</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -520,8 +630,10 @@ export default function EmpresaDetailPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* ── Conductores ── */}
+      {activeTab === 'conductores' && (
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Conductores ({drivers.length})</h3>
@@ -596,8 +708,10 @@ export default function EmpresaDetailPage() {
           </>
         )}
       </div>
+      )}
 
       {/* ── Equipos ── */}
+      {activeTab === 'equipos' && (
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Equipos ({assets.length})</h3>
@@ -694,8 +808,10 @@ export default function EmpresaDetailPage() {
           </>
         )}
       </div>
+      )}
 
       {/* ── Pólizas de seguro ── */}
+      {activeTab === 'seguros' && (
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Pólizas ({policies.length})</h3>
@@ -759,16 +875,7 @@ export default function EmpresaDetailPage() {
           </div>
         )}
       </div>
-
-      {/* ── Documentos de la empresa ── */}
-      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Documentos de la Empresa</h3>
-        <TransporterDocumentsPanel
-          records={carrier.compliance_records}
-          canEdit={canEdit}
-          onChanged={invalidateCarrier}
-        />
-      </div>
+      )}
 
       <DriverDetailPanel
         driver={selectedDriver}

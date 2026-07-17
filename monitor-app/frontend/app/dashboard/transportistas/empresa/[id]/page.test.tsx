@@ -19,6 +19,13 @@ function renderPage() {
   )
 }
 
+/** Clickea el botón de la tab bar (no el stat-card de Resumen que también
+ *  matchea el mismo nombre accesible) — la tab bar siempre renderiza primero. */
+async function clickTab(name: RegExp) {
+  const matches = await screen.findAllByRole('button', { name })
+  fireEvent.click(matches[0])
+}
+
 vi.mock('next/navigation', () => ({ useParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/api/carriers', () => ({
@@ -88,14 +95,18 @@ beforeEach(() => {
 describe('EmpresaDetailPage', () => {
   it('shows the alert banner when there is a mandatory MISSING record', async () => {
     renderPage()
+    await clickTab(/Documentos/)
     expect(await screen.findByText('Documentos obligatorios pendientes o vencidos')).toBeInTheDocument()
     expect(screen.getByText(/F30 Multas — falta/)).toBeInTheDocument()
   })
 
-  it('shows the driver and equipment rosters', async () => {
+  it('shows the driver and equipment rosters in their own tabs', async () => {
     renderPage()
+    await clickTab(/Conductores/)
     expect(await screen.findByText('Juan Pérez')).toBeInTheDocument()
-    expect(screen.getByText('ABCD12')).toBeInTheDocument()
+
+    await clickTab(/Equipos/)
+    expect(await screen.findByText('ABCD12')).toBeInTheDocument()
   })
 
   it('opens the driver detail panel when a roster card is clicked', async () => {
@@ -105,12 +116,14 @@ describe('EmpresaDetailPage', () => {
       total_requirements: 5, last_document_update: null,
     })
     renderPage()
+    await clickTab(/Conductores/)
     fireEvent.click(await screen.findByText('Juan Pérez'))
     await waitFor(() => expect(driversApi.get).toHaveBeenCalledWith('d1'))
   })
 
   it('filters the driver roster by search', async () => {
     renderPage()
+    await clickTab(/Conductores/)
     await screen.findByText('Juan Pérez')
     fireEvent.change(screen.getByPlaceholderText('Filtrar por nombre o tax_id…'), { target: { value: 'nadie' } })
     await waitFor(() => expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument())
@@ -118,6 +131,7 @@ describe('EmpresaDetailPage', () => {
 
   it('filters the equipment roster by asset type', async () => {
     renderPage()
+    await clickTab(/Equipos/)
     await screen.findByText('ABCD12')
     fireEvent.click(screen.getByRole('button', { name: 'Rampla' }))
     await waitFor(() => expect(screen.queryByText('ABCD12')).not.toBeInTheDocument())
@@ -130,6 +144,7 @@ describe('EmpresaDetailPage', () => {
     }))
     vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
     renderPage()
+    await clickTab(/Conductores/)
     await screen.findByText('Conductor 0')
     expect(screen.queryByText('Conductor 9')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mostrar los 3 restantes' })).toBeInTheDocument()
@@ -145,6 +160,7 @@ describe('EmpresaDetailPage', () => {
       contacts: [{ id: 'ct1', contact_role: 'LEGAL_REP', first_name: 'Contacto', last_name: 'Original', job_title: null, phone: '111111111', email: 'orig@example.com', is_primary: true, is_active: true }],
     })
     renderPage()
+    await clickTab(/Contactos/)
     await screen.findByText('Contacto Original')
 
     fireEvent.click(screen.getByText('Editar'))
@@ -188,5 +204,28 @@ describe('EmpresaDetailPage', () => {
   it('shows a placeholder when the carrier has no shipper linked', async () => {
     renderPage()
     expect(await screen.findByText('Sin generador de carga vinculado')).toBeInTheDocument()
+  })
+
+  it('lands on Resumen by default with a compact score, not the full itemized alert list', async () => {
+    renderPage()
+    expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
+    expect(screen.getByText('1 obligatorio pendiente')).toBeInTheDocument()
+    expect(screen.queryByText('Documentos obligatorios pendientes o vencidos')).not.toBeInTheDocument()
+  })
+
+  it('shows a pending-docs badge on the Documentos tab', async () => {
+    renderPage()
+    const tab = await screen.findByRole('button', { name: /Documentos/ })
+    expect(tab).toHaveTextContent('1')
+  })
+
+  it('switches sections without navigating away from the page', async () => {
+    renderPage()
+    await clickTab(/Contactos/)
+    expect(await screen.findByText('+ Agregar contacto')).toBeInTheDocument()
+    expect(screen.queryByText('0 de 1 al día')).not.toBeInTheDocument()
+
+    await clickTab(/Resumen/)
+    expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
   })
 })
