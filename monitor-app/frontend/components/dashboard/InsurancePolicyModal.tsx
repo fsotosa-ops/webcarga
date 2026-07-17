@@ -286,74 +286,82 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                   </div>
                 </div>
 
-                <div className="mb-5 space-y-1.5">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentos</p>
-                  <PolicyFileRow label="Póliza" url={policy.policy_document_url} onUpload={file => handleUploadPolicyFile('document', file)} canEdit={canEdit} />
-                  {policy.has_endorsement && (
-                    <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} canEdit={canEdit} />
-                  )}
-                  {fileErr && <p className="text-xs text-red-500">{fileErr}</p>}
-                </div>
+                {/* Documentos+Enlaces / Coberturas+Activos lado a lado — menos
+                    stack vertical que 4 secciones apiladas una tras otra. */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4 mb-5">
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentos</p>
+                      <PolicyFileRow label="Póliza" url={policy.policy_document_url} onUpload={file => handleUploadPolicyFile('document', file)} canEdit={canEdit} />
+                      {policy.has_endorsement && (
+                        <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} canEdit={canEdit} />
+                      )}
+                      {fileErr && <p className="text-xs text-red-500">{fileErr}</p>}
+                    </div>
 
-                <div className="mb-5 space-y-1.5">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Enlaces</p>
-                  <PolicyLinkRow value={policy.external_portal_url} policyId={policy.id} canEdit={canEdit} onSaved={handlePortalUrlSaved} />
-                </div>
-
-                <div className="mb-5 space-y-2">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Coberturas</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(policy.coverages ?? []).map(c => (
-                      <span key={c.coverage_type_id} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-600">
-                        {c.name}
-                        {canEdit && (
-                          <button aria-label={`Quitar cobertura ${c.name}`} onClick={() => handleUnlinkCoverage(c.coverage_type_id)} className="text-slate-400 hover:text-red-500">
-                            <X size={10} />
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                    {(policy.coverages ?? []).length === 0 && <span className="text-[11px] text-gray-300 italic">Sin coberturas</span>}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Enlaces</p>
+                      <PolicyLinkRow value={policy.external_portal_url} policyId={policy.id} canEdit={canEdit} onSaved={handlePortalUrlSaved} />
+                    </div>
                   </div>
-                  {canEdit && availableCoverages.length > 0 && (
-                    <select
-                      aria-label="Agregar cobertura"
-                      value=""
-                      onChange={e => { if (e.target.value) handleLinkCoverage(e.target.value) }}
-                      className="text-[11px] border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/20"
-                    >
-                      <option value="">+ Agregar cobertura…</option>
-                      {availableCoverages.map((c: CoverageType) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  )}
-                </div>
 
-                <div className="mb-5 space-y-2">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Activos cubiertos</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(policy.assets ?? []).map(a => (
-                      <span key={a.asset_id} className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-600">
-                        {a.license_plate}
-                        {canEdit && (
-                          <button aria-label={`Quitar activo ${a.license_plate}`} onClick={() => handleUnlinkAsset(a.asset_id)} className="text-slate-400 hover:text-red-500">
-                            <X size={10} />
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                    {(policy.assets ?? []).length === 0 && <span className="text-[11px] text-gray-300 italic">Sin activos cubiertos</span>}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Coberturas</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(policy.coverages ?? []).map(c => (
+                          <span key={c.coverage_type_id} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                            {c.name}
+                            {canEdit && (
+                              <button aria-label={`Quitar cobertura ${c.name}`} onClick={() => handleUnlinkCoverage(c.coverage_type_id)} className="text-slate-400 hover:text-red-500">
+                                <X size={10} />
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                        {(policy.coverages ?? []).length === 0 && <span className="text-[11px] text-gray-300 italic">Sin coberturas</span>}
+                      </div>
+                      {canEdit && availableCoverages.length > 0 && (
+                        <select
+                          aria-label="Agregar cobertura"
+                          value=""
+                          onChange={e => { if (e.target.value) handleLinkCoverage(e.target.value) }}
+                          className="text-[11px] border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/20"
+                        >
+                          <option value="">+ Agregar cobertura…</option>
+                          {availableCoverages.map((c: CoverageType) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Activos cubiertos</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(policy.assets ?? []).map(a => (
+                          <span key={a.asset_id} className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                            {a.license_plate}
+                            {canEdit && (
+                              <button aria-label={`Quitar activo ${a.license_plate}`} onClick={() => handleUnlinkAsset(a.asset_id)} className="text-slate-400 hover:text-red-500">
+                                <X size={10} />
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                        {(policy.assets ?? []).length === 0 && <span className="text-[11px] text-gray-300 italic">Sin activos cubiertos</span>}
+                      </div>
+                      {canEdit && availableAssets.length > 0 && (
+                        <select
+                          aria-label="Agregar activo cubierto"
+                          value=""
+                          onChange={e => { if (e.target.value) handleLinkAsset(e.target.value) }}
+                          className="text-[11px] border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/20"
+                        >
+                          <option value="">+ Agregar activo…</option>
+                          {availableAssets.map(a => <option key={a.id} value={a.id}>{a.license_plate}</option>)}
+                        </select>
+                      )}
+                    </div>
                   </div>
-                  {canEdit && availableAssets.length > 0 && (
-                    <select
-                      aria-label="Agregar activo cubierto"
-                      value=""
-                      onChange={e => { if (e.target.value) handleLinkAsset(e.target.value) }}
-                      className="text-[11px] border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/20"
-                    >
-                      <option value="">+ Agregar activo…</option>
-                      {availableAssets.map(a => <option key={a.id} value={a.id}>{a.license_plate}</option>)}
-                    </select>
-                  )}
                 </div>
 
                 {spotlight && (
