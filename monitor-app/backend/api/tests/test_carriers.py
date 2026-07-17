@@ -19,12 +19,20 @@ def make_client(pool, supabase=None):
     return TestClient(app)
 
 
-def test_list_carriers_reads_from_compliance_view():
+def _carrier_facets_row(**overrides):
+    base = {"pending": 0, "ok": 0, "total": 0}
+    base.update(overrides)
+    return base
+
+
+def test_list_carriers_aggregates_pending_mandatory_docs():
     pool = AsyncMock()
     pool.fetch.return_value = [{"id": "c1", "tax_id": "1-9", "country_code": "CL",
                                  "business_name": "Acme", "operational_status": "ACTIVE",
-                                 "total_requirements": 12, "last_document_update": None}]
+                                 "total_requirements": 12, "last_document_update": None,
+                                 "pending_mandatory": 2, "compliance_health": "PENDING"}]
     pool.fetchval.return_value = 1
+    pool.fetchrow.return_value = _carrier_facets_row(pending=1, total=1)
     client = make_client(pool)
 
     res = client.get("/api/v1/carriers")
@@ -33,7 +41,35 @@ def test_list_carriers_reads_from_compliance_view():
     body = res.json()
     assert body["count"] == 1
     assert body["data"][0]["business_name"] == "Acme"
-    assert "FROM app.carrier_compliance_status" in pool.fetch.call_args.args[0]
+    assert body["data"][0]["compliance_health"] == "PENDING"
+    assert body["facets"] == {"pending": 1, "ok": 0, "total": 1}
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "FROM public.carriers c" in fetch_query
+    assert "LEFT JOIN public.compliance_records cr" in fetch_query
+
+
+def test_list_carriers_filters_by_health():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _carrier_facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers?health=PENDING")
+
+    assert res.status_code == 200
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "WHERE compliance_health = $1" in fetch_query
+    assert pool.fetch.call_args.args[1] == "PENDING"
+
+
+def test_list_carriers_rejects_invalid_health():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers?health=BOGUS")
+
+    assert res.status_code == 422
 
 
 def _facets_row(**overrides):

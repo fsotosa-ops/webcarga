@@ -23,7 +23,7 @@ import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
 import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
-import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
+import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/components/dashboard/InsurancePolicyModal'
 import { CompletionRing } from '@/components/dashboard/CompletionRing'
 import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
@@ -257,7 +257,9 @@ export default function EmpresaDetailPage() {
   const [addAssetOpen,   setAddAssetOpen]   = useState(false)
   const [assetForm,      setAssetForm]      = useState<{ asset_type: AssetType; license_plate: string }>({ asset_type: 'TRACTOCAMION', license_plate: '' })
   const [addPolicyOpen,  setAddPolicyOpen]  = useState(false)
-  const [policyForm,     setPolicyForm]     = useState({ insurance_company: '', policy_number: '' })
+  const [policyForm,     setPolicyForm]     = useState<PolicyFormState>({
+    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+  })
   const [submitting,     setSubmitting]     = useState(false)
 
   const [transferTarget, setTransferTarget] = useState<{ kind: 'driver' | 'asset'; id: string; label: string } | null>(null)
@@ -381,8 +383,14 @@ export default function EmpresaDetailPage() {
     if (!policyForm.insurance_company) return
     setSubmitting(true)
     try {
-      await carriersApi.createPolicy(id, policyForm)
-      setPolicyForm({ insurance_company: '', policy_number: '' })
+      await carriersApi.createPolicy(id, {
+        insurance_company: policyForm.insurance_company,
+        policy_number: policyForm.policy_number || undefined,
+        valid_from: policyForm.valid_from || undefined,
+        valid_to: policyForm.valid_to || undefined,
+        expiration_alert_days: policyForm.expiration_alert_days ? Number(policyForm.expiration_alert_days) : undefined,
+      })
+      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30' })
       setAddPolicyOpen(false)
       invalidatePolicies()
     } finally { setSubmitting(false) }
@@ -841,29 +849,15 @@ export default function EmpresaDetailPage() {
         </div>
 
         {addPolicyOpen && (
-          <div className="mb-3 p-3 rounded-lg bg-gray-50/80 flex items-center gap-2 flex-wrap">
-            <input
-              placeholder="Aseguradora"
-              value={policyForm.insurance_company}
-              onChange={e => setPolicyForm(v => ({ ...v, insurance_company: e.target.value }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1"
+          <div className="mb-3 p-3 rounded-lg bg-gray-50/80 max-w-sm">
+            <PolicyCreateForm
+              form={policyForm}
+              onChange={setPolicyForm}
+              onSubmit={handleAddPolicy}
+              onCancel={() => setAddPolicyOpen(false)}
+              submitting={submitting}
+              compact
             />
-            <input
-              placeholder="N° de póliza"
-              value={policyForm.policy_number}
-              onChange={e => setPolicyForm(v => ({ ...v, policy_number: e.target.value }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32"
-            />
-            <button
-              onClick={handleAddPolicy}
-              disabled={submitting || !policyForm.insurance_company}
-              className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
-            >
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-            </button>
-            <button onClick={() => setAddPolicyOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-              <X size={14} />
-            </button>
           </div>
         )}
 

@@ -58,3 +58,21 @@ class CarrierPatchBody(BaseModel):
         if self.operational_status is not None:
             touched.append("operational_status")
         return touched
+
+
+class CarrierListFacets(BaseModel):
+    """Conteos por compliance_health sobre el universo filtrado por `q` +
+    `operational_status` (sin aplicar el filtro `health` activo) — alimenta
+    los tabs de alertas del listado de Empresas sin que cambiar de tab
+    reordene los otros conteos."""
+    pending: int
+    ok: int
+    total: int
+
+
+class CarrierListResponse(BaseModel):
+    data: list
+    count: int
+    page: int
+    limit: int
+    facets: CarrierListFacets

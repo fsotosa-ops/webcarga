@@ -12,6 +12,7 @@ vi.mock('@/lib/api/carriers', () => ({
 const ITEM: CarrierListItem = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
   operational_status: 'ACTIVE', total_requirements: 2, last_document_update: null,
+  pending_mandatory: 0, compliance_health: 'OK',
 }
 
 const CARRIER: Carrier = {

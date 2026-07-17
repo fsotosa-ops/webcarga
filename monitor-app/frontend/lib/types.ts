@@ -449,6 +449,8 @@ export type Contact = {
   is_active:    boolean
 }
 
+export type ComplianceHealth = 'PENDING' | 'OK'
+
 export type CarrierListItem = {
   id:                    string
   tax_id:                string
@@ -457,13 +459,24 @@ export type CarrierListItem = {
   operational_status:    OperationalStatus
   total_requirements:    number
   last_document_update:  string | null
+  /** Requisitos LEGAL_MANDATORY MISSING/EXPIRED/REJECTED o vencidos por fecha —
+   *  mismo criterio que `mandatoryProblems` en la ficha de empresa. */
+  pending_mandatory:     number
+  compliance_health:     ComplianceHealth
+}
+
+export type CarrierListFacets = {
+  pending: number
+  ok:      number
+  total:   number
 }
 
 export type CarrierListResponse = {
-  data:  CarrierListItem[]
-  count: number
-  page:  number
-  limit: number
+  data:   CarrierListItem[]
+  count:  number
+  page:   number
+  limit:  number
+  facets: CarrierListFacets
 }
 
 /** GET /carriers/{id} — payload anidado (context_carriers.md §5 Paso 1) */

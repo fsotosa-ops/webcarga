@@ -222,7 +222,27 @@ describe('InsurancePolicyModal', () => {
     fireEvent.change(screen.getByPlaceholderText('Aseguradora'), { target: { value: 'Mapfre' } })
     fireEvent.click(screen.getByText('Guardar'))
 
-    await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', { insurance_company: 'Mapfre', policy_number: '' }))
+    await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
+      insurance_company: 'Mapfre', policy_number: undefined,
+      valid_from: undefined, valid_to: undefined, expiration_alert_days: 30,
+    }))
+  })
+
+  it('sends vigencia and expiration_alert_days when set on the new-policy form', async () => {
+    renderModal('c2')
+    await screen.findByText(/Sin pólizas registradas todavía/)
+
+    fireEvent.click(screen.getByText('Agregar la primera póliza'))
+    fireEvent.change(screen.getByPlaceholderText('Aseguradora'), { target: { value: 'Mapfre' } })
+    fireEvent.change(screen.getByLabelText('Vigencia desde'), { target: { value: '2026-01-01' } })
+    fireEvent.change(screen.getByLabelText('Vigencia hasta'), { target: { value: '2027-01-01' } })
+    fireEvent.change(screen.getByLabelText('Alerta de vencimiento en días'), { target: { value: '45' } })
+    fireEvent.click(screen.getByText('Guardar'))
+
+    await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
+      insurance_company: 'Mapfre', policy_number: undefined,
+      valid_from: '2026-01-01', valid_to: '2027-01-01', expiration_alert_days: 45,
+    }))
   })
 
   it('does not offer to add a policy for a carrier with none when the user cannot edit', async () => {

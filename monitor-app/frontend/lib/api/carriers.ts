@@ -6,6 +6,7 @@ import type {
   CarrierListResponse,
   CarrierPolicyListItem,
   CarrierShipper,
+  ComplianceHealth,
   Contact,
   OperationalStatus,
   PolicyStatus,
@@ -15,6 +16,7 @@ import { apiFetch } from './client'
 export type CarrierListParams = {
   q?:                  string
   operational_status?: OperationalStatus | ''
+  health?:             ComplianceHealth | ''
   page?:               number
   limit?:              number
 }
@@ -82,6 +84,7 @@ export const carriersApi = {
     const qs = new URLSearchParams()
     if (params?.q)                       qs.set('q', params.q)
     if (params?.operational_status)      qs.set('operational_status', params.operational_status)
+    if (params?.health)                  qs.set('health', params.health)
     if (params?.page)                    qs.set('page', String(params.page))
     if (params?.limit)                   qs.set('limit', String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''

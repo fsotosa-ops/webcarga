@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, ChevronLeft, ChevronRight, Search, Loader2 } from 'lucide-react'
-import type { CarrierListItem, OperationalStatus } from '@/lib/types'
+import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck } from 'lucide-react'
+import type { CarrierListFacets, CarrierListItem, ComplianceHealth, OperationalStatus } from '@/lib/types'
 import { carriersApi } from '@/lib/api/carriers'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -14,6 +14,7 @@ import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { updatedRelative } from '@/lib/compliance'
 
 type TransporterTab = 'active' | 'legacy'
+type HealthTab = '' | ComplianceHealth
 
 const LIMIT = 100
 const VIEW_MODE_STORAGE_KEY = 'empresas:vista'
@@ -29,9 +30,23 @@ const TABS: { id: TransporterTab; label: string; status: OperationalStatus }[] =
   { id: 'legacy', label: 'Legacy', status: 'LEGACY_INACTIVE' },
 ]
 
+/** Segundo eje de filtrado, independiente de Activas/Legacy — agrupa por
+ *  documentación obligatoria pendiente (mismo criterio que la ficha de
+ *  empresa). Los conteos vienen de `facets`, ya acotados a la tab
+ *  operational_status + búsqueda actuales (no cambian al clickear un
+ *  health tab, igual que en /dashboard/seguros). */
+const HEALTH_TABS: { id: HealthTab; label: string; facetKey: keyof CarrierListFacets }[] = [
+  { id: '',        label: 'Todas',       facetKey: 'total' },
+  { id: 'PENDING', label: 'Pendientes',  facetKey: 'pending' },
+  { id: 'OK',      label: 'Al día',      facetKey: 'ok' },
+]
+
+const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0 }
+
 export default function EmpresasTransportePage() {
   const [q, setQ]                 = useState('')
   const [tab, setTab]             = useState<TransporterTab>('active')
+  const [healthTab, setHealthTab] = useState<HealthTab>('')
   const [page, setPage]           = useState(1)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
@@ -39,11 +54,12 @@ export default function EmpresasTransportePage() {
 
   const currentStatus = TABS.find(t => t.id === tab)!.status
 
-  useEffect(() => { setPage(1) }, [tab, qDebounced])
+  useEffect(() => { setPage(1) }, [tab, healthTab, qDebounced])
 
-  const query = useTransporters({ q: qDebounced, operational_status: currentStatus, page, limit: LIMIT })
+  const query = useTransporters({ q: qDebounced, operational_status: currentStatus, health: healthTab, page, limit: LIMIT })
   const items = useMemo(() => query.data?.data ?? [], [query.data])
   const tabTotal = query.data?.count ?? 0
+  const healthFacets = query.data?.facets ?? EMPTY_FACETS
   const loading  = query.isPending
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando empresas') : null
@@ -55,8 +71,11 @@ export default function EmpresasTransportePage() {
     queryKey: ['carriers-count', otherStatus, qDebounced],
     queryFn: () => carriersApi.list({ q: qDebounced, operational_status: otherStatus, limit: 1 }),
   })
+  // healthFacets.total = conteo real de la tab actual sin el filtro de health
+  // (a diferencia de tabTotal, que sí lo aplica) — así el badge de la tab no
+  // cambia al clickear un health tab.
   const tabCounts: Record<TransporterTab, number> = {
-    [tab]: tabTotal,
+    [tab]: healthFacets.total,
     [otherTabId]: otherCountQuery.data?.count ?? 0,
   } as Record<TransporterTab, number>
   const grandTotal = tabCounts.active + tabCounts.legacy
@@ -87,23 +106,44 @@ export default function EmpresasTransportePage() {
         <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
       </div>
 
-      {/* ── Tabs Activas / Legacy — split principal, viene de operational_status ── */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {TABS.map(t => {
-          const active = tab === t.id
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              aria-pressed={active}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label} <span className="ml-1 text-gray-400">{tabCounts[t.id]}</span>
-            </button>
-          )
-        })}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* ── Tabs Activas / Legacy — split principal, viene de operational_status ── */}
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {TABS.map(t => {
+            const active = tab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                aria-pressed={active}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label} <span className="ml-1 text-gray-400">{tabCounts[t.id]}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ── Tabs de alertas — segundo eje, viene de compliance_health ── */}
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {HEALTH_TABS.map(t => {
+            const active = healthTab === t.id
+            return (
+              <button
+                key={t.id || 'all'}
+                onClick={() => setHealthTab(t.id)}
+                aria-pressed={active}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label} <span className="ml-1 text-gray-400">{healthFacets[t.facetKey]}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
@@ -149,7 +189,7 @@ export default function EmpresasTransportePage() {
                   <th className="px-3 py-3 text-left">Empresa</th>
                   <th className="px-3 py-3 text-left w-32">Tax ID</th>
                   <th className="px-3 py-3 text-left w-24">Estado</th>
-                  <th className="px-3 py-3 text-center w-24">Requisitos</th>
+                  <th className="px-3 py-3 text-left w-32">Documentación</th>
                   <th className="px-3 py-3 text-left w-28">Última actualización</th>
                   <th className="px-3 py-3 w-8"></th>
                 </tr>
@@ -179,7 +219,17 @@ export default function EmpresasTransportePage() {
                         {STATUS_LABELS[item.operational_status]}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.total_requirements}</span></td>
+                    <td className="px-3 py-3">
+                      {item.compliance_health === 'PENDING' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
+                          <ShieldAlert size={9} /> {item.pending_mandatory} pendiente{item.pending_mandatory === 1 ? '' : 's'}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700">
+                          <ShieldCheck size={9} /> Al día
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-xs text-gray-500">{updatedRelative(item.last_document_update) ?? '—'}</td>
                     <td className="px-3 py-3 text-center">
                       {/* prefetch=false: mismo motivo que TransporterCard — evita que Next.js

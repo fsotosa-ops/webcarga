@@ -10,6 +10,81 @@ import { formatExpiry } from '@/lib/compliance'
 import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { InstallmentRow } from './InstallmentRow'
 
+export type PolicyFormState = {
+  insurance_company: string; policy_number: string
+  valid_from: string; valid_to: string; expiration_alert_days: string
+}
+
+/** Formulario de alta de póliza — expone los mismos campos que soporta
+ *  InsurancePolicyCreateBody (insurance_company/policy_number/valid_from/
+ *  valid_to/expiration_alert_days), no solo aseguradora+número. Antes el
+ *  formulario dejaba vigencia/alerta de vencimiento sin setear al crear,
+ *  aunque el modelo real de datos (y el resto de la UI, ej. policy_health)
+ *  depende de esos campos — una póliza recién creada quedaba "incompleta"
+ *  respecto al resto. Reusado en el quick-add del sidebar y en el estado
+ *  vacío (sin pólizas todavía). */
+export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submitting, compact = false }: {
+  form: PolicyFormState
+  onChange: (form: PolicyFormState) => void
+  onSubmit: () => void
+  onCancel: () => void
+  submitting: boolean
+  compact?: boolean
+}) {
+  const inputCls = compact
+    ? 'w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30'
+    : 'w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30'
+  const labelCls = compact ? 'text-[9px] text-gray-400 uppercase tracking-wide' : 'text-[10px] text-gray-400 uppercase tracking-wide'
+  return (
+    <div className={compact ? 'space-y-2' : 'space-y-2.5'}>
+      <input
+        placeholder="Aseguradora"
+        value={form.insurance_company}
+        onChange={e => onChange({ ...form, insurance_company: e.target.value })}
+        className={inputCls}
+      />
+      <input
+        placeholder="N° de póliza"
+        value={form.policy_number}
+        onChange={e => onChange({ ...form, policy_number: e.target.value })}
+        className={inputCls}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-0.5">
+          <label className={labelCls}>Vigencia desde</label>
+          <input type="date" aria-label="Vigencia desde" value={form.valid_from}
+            onChange={e => onChange({ ...form, valid_from: e.target.value })} className={inputCls} />
+        </div>
+        <div className="space-y-0.5">
+          <label className={labelCls}>Vigencia hasta</label>
+          <input type="date" aria-label="Vigencia hasta" value={form.valid_to}
+            onChange={e => onChange({ ...form, valid_to: e.target.value })} className={inputCls} />
+        </div>
+      </div>
+      <div className="space-y-0.5">
+        <label className={labelCls}>Alerta de vencimiento (días antes)</label>
+        <input type="number" min={1} aria-label="Alerta de vencimiento en días" value={form.expiration_alert_days}
+          onChange={e => onChange({ ...form, expiration_alert_days: e.target.value })} className={inputCls} />
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={onSubmit}
+          disabled={submitting || !form.insurance_company}
+          className={`flex items-center justify-center gap-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-50 ${
+            compact ? 'flex-1 px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'
+          }`}
+        >
+          {submitting ? <Loader2 size={compact ? 12 : 13} className="animate-spin" /> : <Check size={compact ? 12 : 13} />}
+          Guardar
+        </button>
+        <button onClick={onCancel} className={compact ? 'p-1.5 text-gray-400 hover:text-gray-600' : 'text-sm text-gray-400 hover:text-gray-600 px-2'}>
+          {compact ? <X size={14} /> : 'Cancelar'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -58,7 +133,9 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   const [showAll, setShowAll] = useState(false)
   const [fileErr, setFileErr] = useState<string | null>(null)
   const [addPolicyOpen, setAddPolicyOpen] = useState(false)
-  const [policyForm, setPolicyForm] = useState({ insurance_company: '', policy_number: '' })
+  const [policyForm, setPolicyForm] = useState({
+    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+  })
   const [addingPolicy, setAddingPolicy] = useState(false)
 
   const listQuery = useQuery({
@@ -95,7 +172,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
 
   useEffect(() => {
     setAddPolicyOpen(false)
-    setPolicyForm({ insurance_company: '', policy_number: '' })
+    setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30' })
   }, [carrierId])
 
   const detailQuery = useQuery({
@@ -189,8 +266,14 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     if (!carrierId || !policyForm.insurance_company) return
     setAddingPolicy(true)
     try {
-      await carriersApi.createPolicy(carrierId, policyForm)
-      setPolicyForm({ insurance_company: '', policy_number: '' })
+      await carriersApi.createPolicy(carrierId, {
+        insurance_company: policyForm.insurance_company,
+        policy_number: policyForm.policy_number || undefined,
+        valid_from: policyForm.valid_from || undefined,
+        valid_to: policyForm.valid_to || undefined,
+        expiration_alert_days: policyForm.expiration_alert_days ? Number(policyForm.expiration_alert_days) : undefined,
+      })
+      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30' })
       setAddPolicyOpen(false)
       queryClient.invalidateQueries({ queryKey: ['carrier-policies', carrierId] })
     } finally {
@@ -256,32 +339,15 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
             </div>
 
             {addPolicyOpen && policies.length > 0 && (
-              <div className="mb-3 p-3 rounded-lg bg-white border border-border space-y-2">
-                <input
-                  placeholder="Aseguradora"
-                  value={policyForm.insurance_company}
-                  onChange={e => setPolicyForm(v => ({ ...v, insurance_company: e.target.value }))}
-                  className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+              <div className="mb-3 p-3 rounded-lg bg-white border border-border">
+                <PolicyCreateForm
+                  form={policyForm}
+                  onChange={setPolicyForm}
+                  onSubmit={handleAddPolicy}
+                  onCancel={() => setAddPolicyOpen(false)}
+                  submitting={addingPolicy}
+                  compact
                 />
-                <input
-                  placeholder="N° de póliza"
-                  value={policyForm.policy_number}
-                  onChange={e => setPolicyForm(v => ({ ...v, policy_number: e.target.value }))}
-                  className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleAddPolicy}
-                    disabled={addingPolicy || !policyForm.insurance_company}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
-                  >
-                    {addingPolicy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                    Guardar
-                  </button>
-                  <button onClick={() => setAddPolicyOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-                    <X size={14} />
-                  </button>
-                </div>
               </div>
             )}
 
@@ -317,31 +383,13 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                   addPolicyOpen ? (
                     <>
                       <p className="text-sm font-bold text-text-primary mb-3">Nueva póliza</p>
-                      <div className="space-y-2">
-                        <input
-                          placeholder="Aseguradora"
-                          value={policyForm.insurance_company}
-                          onChange={e => setPolicyForm(v => ({ ...v, insurance_company: e.target.value }))}
-                          className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                        />
-                        <input
-                          placeholder="N° de póliza"
-                          value={policyForm.policy_number}
-                          onChange={e => setPolicyForm(v => ({ ...v, policy_number: e.target.value }))}
-                          className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                        />
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handleAddPolicy}
-                            disabled={addingPolicy || !policyForm.insurance_company}
-                            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-50"
-                          >
-                            {addingPolicy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                            Guardar
-                          </button>
-                          <button onClick={() => setAddPolicyOpen(false)} className="text-sm text-gray-400 hover:text-gray-600 px-2">Cancelar</button>
-                        </div>
-                      </div>
+                      <PolicyCreateForm
+                        form={policyForm}
+                        onChange={setPolicyForm}
+                        onSubmit={handleAddPolicy}
+                        onCancel={() => setAddPolicyOpen(false)}
+                        submitting={addingPolicy}
+                      />
                     </>
                   ) : (
                     <>

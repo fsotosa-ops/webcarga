@@ -1,9 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { CarrierListItem, OperationalStatus } from '@/lib/types'
-import { updatedRelative } from '@/lib/compliance'
 
 export const STATUS_LABELS: Record<OperationalStatus, string> = {
   ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Legacy',
@@ -22,11 +21,11 @@ interface Props {
 
 /** Tarjeta de empresa — vista Tarjetas del listado de Empresas y fallback
  *  mobile de la vista Tabla. Click abre el slide-over de resumen; el botón
- *  "Ver ficha" navega directo a la ficha completa. Solo muestra lo que
- *  app.carrier_compliance_status realmente expone (tax_id, operational_status,
- *  total_requirements, last_document_update) — sin semáforo de elegibilidad
- *  ni chips de clientes/seguro, que no existen en el modelo nuevo a nivel
- *  listado (ver AGENTLOG.md, Checkpoint H3). */
+ *  "Ver ficha" navega directo a la ficha completa. El pill de la derecha
+ *  muestra compliance_health (pendientes de LEGAL_MANDATORY, mismo criterio
+ *  que `mandatoryProblems` en la ficha) — antes mostraba un conteo plano de
+ *  "N requisitos" que era igual para casi todas las empresas y no permitía
+ *  distinguir cuáles necesitaban atención. */
 export function TransporterCard({ item, onOpen, selected = false }: Props) {
   return (
     <div
@@ -62,10 +61,15 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_CLS[item.operational_status]}`}>
           {STATUS_LABELS[item.operational_status]}
         </span>
-        <span className="text-[11px] text-gray-400">
-          {item.total_requirements} requisito{item.total_requirements === 1 ? '' : 's'}
-          {updatedRelative(item.last_document_update) && ` · ${updatedRelative(item.last_document_update)}`}
-        </span>
+        {item.compliance_health === 'PENDING' ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
+            <ShieldAlert size={9} /> {item.pending_mandatory} pendiente{item.pending_mandatory === 1 ? '' : 's'}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700">
+            <ShieldCheck size={9} /> Al día
+          </span>
+        )}
       </div>
     </div>
   )

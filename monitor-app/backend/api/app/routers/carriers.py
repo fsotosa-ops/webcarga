@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
-from ..schemas.carrier import CarrierCreateBody, CarrierPatchBody
+from ..schemas.carrier import CarrierCreateBody, CarrierListResponse, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
@@ -19,40 +19,106 @@ from ..utils.document_storage import resolve_signed_url
 router = APIRouter(prefix="/carriers", tags=["carriers"])
 
 
-@router.get("", response_model=PaginatedResponse)
+_CARRIER_HEALTH_VALUES = {"PENDING", "OK"}
+
+# Mismo criterio de "problema obligatorio" que `mandatoryProblems` en la ficha
+# de empresa (app/dashboard/transportistas/empresa/[id]/page.tsx): requisito
+# LEGAL_MANDATORY con status MISSING/EXPIRED/REJECTED o vencido por fecha
+# (PENDING_REVIEW no cuenta como problema, ya está en revisión).
+_CARRIER_LIST_AGG = """
+    SELECT c.id AS carrier_id, c.tax_id, c.country_code, c.business_name, c.operational_status,
+           COUNT(cr.id) AS total_requirements,
+           MAX(cr.updated_at) AS last_document_update,
+           COUNT(cr.id) FILTER (
+               WHERE req.requirement_level = 'LEGAL_MANDATORY'
+                 AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
+                      OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+           ) AS pending_mandatory,
+           CASE
+               WHEN COUNT(cr.id) FILTER (
+                   WHERE req.requirement_level = 'LEGAL_MANDATORY'
+                     AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
+                          OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+               ) > 0 THEN 'PENDING'
+               ELSE 'OK'
+           END AS compliance_health
+    FROM public.carriers c
+    LEFT JOIN public.compliance_records cr
+        ON cr.entity_id = c.id AND cr.entity_type = 'CARRIER' AND cr.is_current = true
+    LEFT JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+    {where}
+    GROUP BY c.id, c.tax_id, c.country_code, c.business_name, c.operational_status
+"""
+
+
+@router.get("", response_model=CarrierListResponse)
 async def list_carriers(
     q: str = Query("", description="Buscar por nombre o tax_id"),
     operational_status: str = Query(""),
+    health: str = Query("", description="PENDING|OK — filtra por documentación obligatoria pendiente"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
+    if health and health not in _CARRIER_HEALTH_VALUES:
+        raise HTTPException(422, "health inválido")
+
     clauses: list[str] = []
     params: list = []
     if q:
         params.append(q)
-        clauses.append(f"(business_name ILIKE '%' || ${len(params)} || '%' OR tax_id ILIKE '%' || ${len(params)} || '%')")
+        clauses.append(f"(c.business_name ILIKE '%' || ${len(params)} || '%' OR c.tax_id ILIKE '%' || ${len(params)} || '%')")
     if operational_status:
         params.append(operational_status)
-        clauses.append(f"operational_status = ${len(params)}")
+        clauses.append(f"c.operational_status = ${len(params)}")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    agg_cte = f"WITH agg AS ({_CARRIER_LIST_AGG.format(where=where)})"
+
+    health_params = list(params)
+    if health:
+        health_params.append(health)
+        health_where = f"WHERE compliance_health = ${len(health_params)}"
+    else:
+        health_where = ""
+
     offset = (page - 1) * limit
-    lp, op = len(params) + 1, len(params) + 2
+    lp, op = len(health_params) + 1, len(health_params) + 2
 
     rows = await pool.fetch(
         f"""
+        {agg_cte}
         SELECT carrier_id AS id, tax_id, country_code, business_name, operational_status,
-               total_requirements, last_document_update
-        FROM app.carrier_compliance_status
-        {where}
-        ORDER BY business_name ASC
+               total_requirements, last_document_update, pending_mandatory, compliance_health
+        FROM agg
+        {health_where}
+        ORDER BY
+            CASE compliance_health WHEN 'PENDING' THEN 1 ELSE 2 END,
+            pending_mandatory DESC,
+            business_name ASC
         LIMIT ${lp} OFFSET ${op}
         """,
-        *params, limit, offset,
+        *health_params, limit, offset,
     )
-    count = await pool.fetchval(f"SELECT count(*) FROM app.carrier_compliance_status {where}", *params)
-    return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit}
+    count = await pool.fetchval(f"{agg_cte} SELECT count(*) FROM agg {health_where}", *health_params)
+    facets = await pool.fetchrow(
+        f"""
+        {agg_cte}
+        SELECT
+            COUNT(*) FILTER (WHERE compliance_health = 'PENDING') AS pending,
+            COUNT(*) FILTER (WHERE compliance_health = 'OK') AS ok,
+            COUNT(*) AS total
+        FROM agg
+        """,
+        *params,
+    )
+    return {
+        "data": [dict(r) for r in rows],
+        "count": count,
+        "page": page,
+        "limit": limit,
+        "facets": dict(facets),
+    }
 
 
 # ── Landing de Seguros — agregado por carrier, sincronizado con la misma
