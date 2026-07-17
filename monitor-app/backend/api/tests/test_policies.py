@@ -1,20 +1,21 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth import get_current_user, require_editor
+from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
 from app.routers.policies import router
 from tests.conftest import USER, wire_transactional_conn
 
 
-def make_client(pool):
+def make_client(pool, supabase=None):
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_current_user] = lambda: USER
     app.dependency_overrides[require_editor] = lambda: USER
+    app.dependency_overrides[get_supabase] = lambda: supabase or MagicMock()
     return TestClient(app)
 
 
@@ -165,3 +166,108 @@ def test_patch_installment_no_fields_422():
     res = client.patch("/api/v1/policies/installments/i1", json={})
 
     assert res.status_code == 422
+
+
+def test_upload_policy_file_404_when_policy_missing():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/policies/p1/file",
+        files={"file": ("poliza.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 404
+
+
+def test_upload_policy_file_rejects_bad_kind():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"carrier_id": "c1", "current_path": None}
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/policies/p1/file?kind=invalid",
+        files={"file": ("poliza.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 422
+
+
+def test_upload_policy_file_sets_policy_document_url_by_default():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {"carrier_id": "c1", "current_path": None}
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/policies/p1/file",
+        files={"file": ("poliza.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 201
+    assert res.json()["kind"] == "document"
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "policy_document_url = $2" in update_sql
+
+
+def test_upload_policy_file_sets_endorsement_document_url_when_kind_endorsement():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {"carrier_id": "c1", "current_path": None}
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/policies/p1/file?kind=endorsement",
+        files={"file": ("endoso.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 201
+    assert res.json()["kind"] == "endorsement"
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "endorsement_document_url = $2" in update_sql
+
+
+def test_upload_policy_file_logs_replacement_when_previous_file_existed():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {"carrier_id": "c1", "current_path": "policy/p1/document/old.pdf"}
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    client.post(
+        "/api/v1/policies/p1/file",
+        files={"file": ("poliza.pdf", b"contenido", "application/pdf")},
+    )
+
+    audit_sqls = [c.args[0] for c in conn.execute.call_args_list]
+    assert any("document_replace" in s for s in audit_sqls)
+
+
+def test_get_policy_resolves_signed_urls():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": "87974",
+        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
+        "policy_document_url": "policy/p1/document/x.pdf", "has_endorsement": False,
+        "endorsement_document_url": None,
+        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": False,
+        "created_at": None, "updated_at": None,
+    }
+    pool.fetch.side_effect = [[], [], []]
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.create_signed_url.return_value = {"signedURL": "https://signed.example.com/x.pdf"}
+    client = make_client(pool, supabase=supabase)
+
+    res = client.get("/api/v1/policies/p1")
+
+    assert res.status_code == 200
+    assert res.json()["policy_document_url"] == "https://signed.example.com/x.pdf"

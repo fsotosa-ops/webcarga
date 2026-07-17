@@ -2,23 +2,31 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Building2, ChevronRight, Search, Loader2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Building2, ChevronLeft, ChevronRight, Search, Loader2 } from 'lucide-react'
 import type { CarrierListItem, OperationalStatus } from '@/lib/types'
+import { carriersApi } from '@/lib/api/carriers'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransporterCard } from '@/components/dashboard/TransporterCard'
 import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { formatExpiry } from '@/lib/compliance'
-import { matchesTab, countByTab, type TransporterTab } from '@/lib/utils/transporterFilters'
+
+type TransporterTab = 'active' | 'legacy'
 
 const LIMIT = 100
 const VIEW_MODE_STORAGE_KEY = 'empresas:vista'
 const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
 
-const TABS: { id: TransporterTab; label: string }[] = [
-  { id: 'active', label: 'Activas' },
-  { id: 'legacy', label: 'Legacy' },
+/** Cada tab mapea 1:1 a un operational_status real — hoy solo existen
+ *  ACTIVE (38) y LEGACY_INACTIVE (208) en datos reales (INACTIVE es la baja
+ *  manual de una empresa que sí llegó a operar, ver schemas/carrier.py,
+ *  sin filas reales todavía). Filtrar server-side, no sobre una sola
+ *  página — 208 > el límite de 100 por página del backend. */
+const TABS: { id: TransporterTab; label: string; status: OperationalStatus }[] = [
+  { id: 'active', label: 'Activas', status: 'ACTIVE' },
+  { id: 'legacy', label: 'Legacy', status: 'LEGACY_INACTIVE' },
 ]
 
 const STATUS_LABELS: Record<OperationalStatus, string> = {
@@ -28,19 +36,36 @@ const STATUS_LABELS: Record<OperationalStatus, string> = {
 export default function EmpresasTransportePage() {
   const [q, setQ]                 = useState('')
   const [tab, setTab]             = useState<TransporterTab>('active')
+  const [page, setPage]           = useState(1)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
 
-  const query = useTransporters({ q: qDebounced, limit: LIMIT })
+  const currentStatus = TABS.find(t => t.id === tab)!.status
+
+  useEffect(() => { setPage(1) }, [tab, qDebounced])
+
+  const query = useTransporters({ q: qDebounced, operational_status: currentStatus, page, limit: LIMIT })
   const items = useMemo(() => query.data?.data ?? [], [query.data])
-  const total = query.data?.count ?? 0
+  const tabTotal = query.data?.count ?? 0
   const loading  = query.isPending
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando empresas') : null
 
-  const tabCounts = useMemo(() => countByTab(items), [items])
-  const visibleItems = useMemo(() => items.filter(i => matchesTab(i, tab)), [items, tab])
+  // Conteos por tab independientes de la paginación (limit=1: solo interesa `count`).
+  const otherTabId = tab === 'active' ? 'legacy' : 'active'
+  const otherStatus = TABS.find(t => t.id === otherTabId)!.status
+  const otherCountQuery = useQuery({
+    queryKey: ['carriers-count', otherStatus, qDebounced],
+    queryFn: () => carriersApi.list({ q: qDebounced, operational_status: otherStatus, limit: 1 }),
+  })
+  const tabCounts: Record<TransporterTab, number> = {
+    [tab]: tabTotal,
+    [otherTabId]: otherCountQuery.data?.count ?? 0,
+  } as Record<TransporterTab, number>
+  const grandTotal = tabCounts.active + tabCounts.legacy
+
+  const totalPages = Math.max(1, Math.ceil(tabTotal / LIMIT))
 
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
@@ -60,32 +85,30 @@ export default function EmpresasTransportePage() {
         <div>
           <h1 className="font-mulish font-bold text-xl text-text-primary">Empresas de Transporte</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {loading ? '…' : `${total.toLocaleString('es-CL')} empresa${total !== 1 ? 's' : ''}`}
+            {loading ? '…' : `${grandTotal.toLocaleString('es-CL')} empresa${grandTotal !== 1 ? 's' : ''}`}
           </p>
         </div>
         <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
       </div>
 
       {/* ── Tabs Activas / Legacy — split principal, viene de operational_status ── */}
-      {!loading && (
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-          {TABS.map(t => {
-            const active = tab === t.id
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                aria-pressed={active}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {t.label} <span className="ml-1 text-gray-400">{tabCounts[t.id]}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+        {TABS.map(t => {
+          const active = tab === t.id
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              aria-pressed={active}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label} <span className="ml-1 text-gray-400">{tabCounts[t.id]}</span>
+            </button>
+          )
+        })}
+      </div>
 
       <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
         <div className="relative shrink-0">
@@ -107,18 +130,18 @@ export default function EmpresasTransportePage() {
         <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
           <Loader2 size={16} className="animate-spin" /> Cargando…
         </div>
-      ) : visibleItems.length === 0 ? (
+      ) : items.length === 0 ? (
         <p className="bg-white rounded-2xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
       ) : viewMode === 'tablero' ? (
         <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
-          {visibleItems.map(item => (
+          {items.map(item => (
             <TransporterCard key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
           ))}
         </div>
       ) : (
         <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
           <div className="md:hidden grid grid-cols-1 gap-3">
-            {visibleItems.map(item => (
+            {items.map(item => (
               <TransporterCard key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
             ))}
           </div>
@@ -136,7 +159,7 @@ export default function EmpresasTransportePage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleItems.map((item, i) => (
+                {items.map((item, i) => (
                   <tr
                     key={item.id}
                     onClick={() => setSelected(item)}
@@ -173,6 +196,26 @@ export default function EmpresasTransportePage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {!loading && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft size={13} /> Anterior
+          </button>
+          <span className="text-xs text-gray-400">Página {page} de {totalPages}</span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Siguiente <ChevronRight size={13} />
+          </button>
         </div>
       )}
 

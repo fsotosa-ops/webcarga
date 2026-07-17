@@ -13,6 +13,7 @@ vi.mock('@/lib/api/policies', () => ({
   policiesApi: {
     get: vi.fn(), patch: vi.fn(), patchInstallment: vi.fn(),
     linkCoverage: vi.fn(), unlinkCoverage: vi.fn(), linkAsset: vi.fn(), unlinkAsset: vi.fn(),
+    uploadFile: vi.fn(),
   },
   coverageTypesApi: { list: vi.fn() },
 }))
@@ -21,14 +22,14 @@ const LIST: CarrierPolicyListItem[] = [
   {
     id: 'p1', insurance_company: 'Chubb Generales', policy_number: '5663040',
     coverage_names: 'RC vehicular', total_assets_covered: 1, policy_expiration_date: '2027-03-23',
-    policy_health: 'VALID', total_installments: 2, paid_installments: 0, overdue_installments: 1,
-    next_payment_date: '2020-01-01',
+    policy_health: 'VALID', missing_physical_file: true, total_installments: 2, paid_installments: 0,
+    overdue_installments: 1, next_payment_date: '2020-01-01',
   },
   {
     id: 'p2', insurance_company: 'HDI', policy_number: '89632',
     coverage_names: 'RC vehicular', total_assets_covered: 0, policy_expiration_date: null,
-    policy_health: 'VALID', total_installments: 1, paid_installments: 1, overdue_installments: 0,
-    next_payment_date: null,
+    policy_health: 'VALID', missing_physical_file: false, total_installments: 1, paid_installments: 1,
+    overdue_installments: 0, next_payment_date: null,
   },
 ]
 
@@ -87,6 +88,7 @@ beforeEach(() => {
   vi.mocked(policiesApi.unlinkCoverage).mockReset().mockResolvedValue({ ok: true })
   vi.mocked(policiesApi.linkAsset).mockReset().mockResolvedValue({ ok: true })
   vi.mocked(policiesApi.unlinkAsset).mockReset().mockResolvedValue({ ok: true })
+  vi.mocked(policiesApi.uploadFile).mockReset()
   vi.mocked(coverageTypesApi.list).mockReset().mockResolvedValue(COVERAGE_TYPES)
 })
 
@@ -175,5 +177,36 @@ describe('InsurancePolicyModal', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Portal' })) })
     expect(screen.getByLabelText('Enlace de Portal')).toHaveValue('')
     expect(policiesApi.patch).not.toHaveBeenCalled()
+  })
+
+  it('shows "Falta subir" for the policy document when policy_document_url is null, and uploads via the file input', async () => {
+    vi.mocked(policiesApi.uploadFile).mockResolvedValue({
+      kind: 'document', storage_path: 'policy/p1/document/x.pdf', file_name: 'x.pdf', mime_type: 'application/pdf', size_bytes: 10,
+    })
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+    expect(screen.getByText('Falta subir')).toBeInTheDocument()
+
+    const file = new File(['x'], 'poliza.pdf', { type: 'application/pdf' })
+    fireEvent.click(screen.getByLabelText('Subir Póliza'))
+    const input = screen.getByLabelText('Subir Póliza').parentElement!.querySelector('input[type="file"]')!
+    fireEvent.change(input, { target: { files: [file] } })
+    await waitFor(() => expect(policiesApi.uploadFile).toHaveBeenCalledWith('p1', file, 'document'))
+  })
+
+  it('shows a link instead of "Falta subir" once policy_document_url is set', async () => {
+    vi.mocked(policiesApi.get).mockImplementation(async (id: string) =>
+      id === 'p1' ? { ...DETAIL_P1, policy_document_url: 'https://signed.example.com/p1.pdf' } : DETAIL_P2,
+    )
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+    expect(screen.queryByText('Falta subir')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Ver archivo' })[0]).toHaveAttribute('href', 'https://signed.example.com/p1.pdf')
+  })
+
+  it('does not show an endoso upload row when has_endorsement is false', async () => {
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+    expect(screen.queryByLabelText('Subir Endoso')).not.toBeInTheDocument()
   })
 })

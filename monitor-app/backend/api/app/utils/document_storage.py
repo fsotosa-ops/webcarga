@@ -75,6 +75,22 @@ async def log_document_replacement(
     )
 
 
+def resolve_signed_url(supabase, storage_path: str | None) -> str | None:
+    """El valor guardado en columnas *_url (compliance_records.file_url,
+    insurance_policies.policy_document_url/endorsement_document_url) es en
+    realidad un storage_path crudo (ver upload_compliance_file/POST .../file),
+    no una URL usable — el bucket compliance-docs no es público. Hay que
+    firmarla antes de devolverla al frontend, mismo TTL que el historial de
+    versiones en get_document_history."""
+    if not storage_path:
+        return None
+    try:
+        signed = supabase.storage.from_(COMPLIANCE_BUCKET).create_signed_url(storage_path, SIGNED_URL_TTL_SECONDS)
+        return signed.get("signedURL") or signed.get("signedUrl")
+    except Exception:
+        return None
+
+
 async def get_document_history(pool, supabase, *, entity_type: str, entity_id, doc_name: str) -> list[dict]:
     rows = await pool.fetch(
         """
@@ -91,13 +107,7 @@ async def get_document_history(pool, supabase, *, entity_type: str, entity_id, d
         if isinstance(old, str):
             old = json.loads(old)
         storage_path = old.get("storage_path") if old else None
-        url = None
-        if storage_path:
-            try:
-                signed = supabase.storage.from_(COMPLIANCE_BUCKET).create_signed_url(storage_path, SIGNED_URL_TTL_SECONDS)
-                url = signed.get("signedURL") or signed.get("signedUrl")
-            except Exception:
-                url = None
+        url = resolve_signed_url(supabase, storage_path)
         out.append({
             "storage_path": storage_path,
             "status": old.get("status") if old else None,

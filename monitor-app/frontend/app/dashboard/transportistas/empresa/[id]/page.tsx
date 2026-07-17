@@ -271,6 +271,7 @@ export default function EmpresaDetailPage() {
   const driversQuery = useQuery({ queryKey: ['carrier-drivers', id], queryFn: () => carriersApi.listDrivers(id) })
   const assetsQuery  = useQuery({ queryKey: ['carrier-assets-roster', id], queryFn: () => carriersApi.listAssets(id) })
   const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
+  const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
 
   const selectedDriverQuery = useQuery({
     queryKey: ['driver-detail', selectedDriverId],
@@ -446,11 +447,26 @@ export default function EmpresaDetailPage() {
                 <p className="text-xs text-gray-500">
                   Tax ID: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.tax_id}</span>
                 </p>
+                {carrier.legacy_admin_id && (
+                  <p className="text-xs text-gray-500">
+                    ID legacy admin: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.legacy_admin_id}</span>
+                  </p>
+                )}
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                   {carrier.operational_status}
                 </span>
                 {carrier.is_manual_override && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                {shippersQuery.data?.map(s => (
+                  <span key={s.id} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    {s.name}
+                  </span>
+                ))}
+                {shippersQuery.data?.length === 0 && (
+                  <span className="text-[10px] text-gray-300 italic">Sin generador de carga vinculado</span>
                 )}
               </div>
             </div>

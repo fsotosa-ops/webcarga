@@ -4,6 +4,7 @@ import type {
   CarrierDriverRosterItem,
   CarrierListResponse,
   CarrierPolicyListItem,
+  CarrierShipper,
   Contact,
   OperationalStatus,
   PolicyStatus,
@@ -140,4 +141,9 @@ export const carriersApi = {
       method: 'POST',
       body: JSON.stringify({ ...body, carrier_id: id }),
     }),
+
+  // ── Generadores de carga (solo lectura por ahora) ──────────────────────
+
+  listShippers: (id: string) =>
+    apiFetch<CarrierShipper[]>(`/api/v1/carriers/${id}/shippers`),
 }

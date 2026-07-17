@@ -52,17 +52,17 @@ interface Props {
 
 /** Modal inmersivo de 2 columnas: lista de pólizas de la empresa (si hay más
  *  de una) + detalle de la seleccionada (próxima cuota destacada, resto
- *  colapsado, coberturas/activos M:N). A diferencia del modelo viejo, no
- *  hay checklist de "documentos" por póliza — public.insurance_policies no
- *  es parte del motor de compliance polimórfico, solo tiene
- *  policy_document_url/endorsement_document_url de solo lectura (sin
- *  endpoint de escritura en H2.3). */
+ *  colapsado, coberturas/activos M:N). A diferencia del modelo viejo, no hay
+ *  un checklist de "documentos" por póliza (public.insurance_policies no es
+ *  parte del motor de compliance polimórfico) — solo dos archivos posibles
+ *  (documento de la póliza + endoso opcional), subidos vía POST .../file. */
 export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, onClose, canAdmin, canEdit }: Props) {
   const open = !!carrierId
   const queryClient = useQueryClient()
   const panelRef = useRef<HTMLDivElement>(null)
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
+  const [fileErr, setFileErr] = useState<string | null>(null)
 
   const listQuery = useQuery({
     queryKey: ['carrier-policies', carrierId],
@@ -172,6 +172,17 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     )
   }
 
+  async function handleUploadPolicyFile(kind: 'document' | 'endorsement', file: File) {
+    if (!selectedPolicyId) return
+    setFileErr(null)
+    try {
+      await policiesApi.uploadFile(selectedPolicyId, file, kind)
+      invalidateDetail()
+    } catch (e) {
+      setFileErr(e instanceof Error ? e.message : 'Error al subir el archivo')
+    }
+  }
+
   if (!open) return null
 
   const selectedListItem = policies.find(p => p.id === selectedPolicyId) ?? null
@@ -276,6 +287,15 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                 </div>
 
                 <div className="mb-5 space-y-1.5">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentos</p>
+                  <PolicyFileRow label="Póliza" url={policy.policy_document_url} onUpload={file => handleUploadPolicyFile('document', file)} canEdit={canEdit} />
+                  {policy.has_endorsement && (
+                    <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} canEdit={canEdit} />
+                  )}
+                  {fileErr && <p className="text-xs text-red-500">{fileErr}</p>}
+                </div>
+
+                <div className="mb-5 space-y-1.5">
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Enlaces</p>
                   <PolicyLinkRow value={policy.external_portal_url} policyId={policy.id} canEdit={canEdit} onSaved={handlePortalUrlSaved} />
                 </div>
@@ -371,10 +391,47 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   )
 }
 
+/** Fila de archivo (documento de póliza / endoso) — sube vía POST
+ *  .../file?kind=document|endorsement. `url` ya viene firmada por el
+ *  backend (resolve_signed_url), lista para abrir directo. */
+function PolicyFileRow({ label, url, canEdit, onUpload }: {
+  label: string; url: string | null; canEdit: boolean; onUpload: (file: File) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-gray-400 w-16 shrink-0">{label}</span>
+      {url ? (
+        <a href={url} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline truncate flex-1 min-w-0">Ver archivo</a>
+      ) : (
+        <span className="text-[11px] text-gray-300 italic flex-1">Falta subir</span>
+      )}
+      {canEdit && (
+        <>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            aria-label={`Subir ${label}`}
+            className="text-[10px] text-gray-400 hover:text-accent shrink-0"
+          >
+            {url ? 'Reemplazar' : 'Subir'}
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f) }}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
 /** Enlace editable inline (portal externo de la aseguradora) — único campo
  *  de URL con escritura soportada por PATCH /policies/{id} (policy_document_url/
- *  endorsement_document_url son de solo lectura en el backend nuevo, sin
- *  endpoint de escritura todavía). El draft NUNCA se resincroniza
+ *  endorsement_document_url tienen su propio flujo de subida, ver
+ *  PolicyFileRow — no son texto libre). El draft NUNCA se resincroniza
  *  implícitamente al reabrir edición — se resetea explícitamente desde
  *  `value` en el propio handler del botón "Editar" (mismo patrón que
  *  ContactCard, ver commit d445c56). */

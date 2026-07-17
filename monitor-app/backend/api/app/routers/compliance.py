@@ -12,12 +12,14 @@ from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.compliance import ComplianceRecordPatchBody
 from ..services.audit import record_manual_edit
-from ..utils.document_storage import get_document_history, log_document_replacement, upload_document_version
+from ..utils.document_storage import (
+    get_document_history, log_document_replacement, resolve_signed_url, upload_document_version,
+)
 
 router = APIRouter(prefix="/compliance-records", tags=["compliance"])
 
 
-async def _fetch_record(record_id: str, pool) -> dict:
+async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
     row = await pool.fetchrow(
         """
         SELECT cr.id, cr.entity_id, cr.entity_type, cr.requirement_id, req.requirement_code, req.name,
@@ -31,17 +33,25 @@ async def _fetch_record(record_id: str, pool) -> dict:
     )
     if not row:
         raise HTTPException(404, "Registro de cumplimiento no encontrado")
-    return dict(row)
+    record = dict(row)
+    # file_url guarda el storage_path crudo (ver upload_compliance_file) — el
+    # bucket no es público, hay que firmarlo antes de devolverlo al frontend.
+    if supabase is not None:
+        record["file_url"] = resolve_signed_url(supabase, record["file_url"])
+    return record
 
 
 @router.get("/{record_id}")
-async def get_compliance_record(record_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
-    return await _fetch_record(record_id, pool)
+async def get_compliance_record(
+    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+):
+    return await _fetch_record(record_id, pool, supabase)
 
 
 @router.patch("/{record_id}")
 async def patch_compliance_record(
-    record_id: str, body: ComplianceRecordPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    record_id: str, body: ComplianceRecordPatchBody, pool=Depends(get_pool),
+    supabase=Depends(get_supabase), user=Depends(require_editor),
 ):
     """Override manual libre (ej. un admin aprueba a mano sin archivo). Para
     subir evidencia real, usar POST /{record_id}/file — ese fuerza
@@ -80,7 +90,7 @@ async def patch_compliance_record(
                     old_value=old.isoformat() if hasattr(old, "isoformat") else old,
                     new_value=new.isoformat() if hasattr(new, "isoformat") else new,
                 )
-    return await _fetch_record(record_id, pool)
+    return await _fetch_record(record_id, pool, supabase)
 
 
 @router.post("/{record_id}/file", status_code=201)

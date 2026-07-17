@@ -19,6 +19,14 @@ export type InstallmentPatchBody = {
   paid_at?:        string
 }
 
+export type PolicyFileUploadResult = {
+  kind:         'document' | 'endorsement'
+  storage_path: string
+  file_name:    string
+  mime_type:    string
+  size_bytes:   number
+}
+
 export const policiesApi = {
   get: (id: string) =>
     apiFetch<InsurancePolicy>(`/api/v1/policies/${id}`),
@@ -49,6 +57,14 @@ export const policiesApi = {
     apiFetch<InsuranceInstallment>(`/api/v1/policies/installments/${installmentId}`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
+
+  uploadFile: (id: string, file: File, kind: 'document' | 'endorsement' = 'document') => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiFetch<PolicyFileUploadResult>(`/api/v1/policies/${id}/file?kind=${kind}`, {
+      method: 'POST', body: form,
+    })
+  },
 }
 
 export const coverageTypesApi = {

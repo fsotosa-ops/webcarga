@@ -498,6 +498,16 @@ export type CarrierAssetRosterItem = {
   last_document_update:  string | null
 }
 
+/** GET /carriers/{id}/shippers — generadores de carga (public.shippers) con
+ *  los que opera la empresa, vía public.carrier_shippers. */
+export type CarrierShipper = {
+  id:          string
+  name:        string
+  status:      string
+  start_date:  string | null
+  end_date:    string | null
+}
+
 /** Conductor/vehículo como master data — independiente de a qué carrier
  *  esté asignado (GET/POST/PATCH /drivers, /assets). */
 export type Driver = {
@@ -547,6 +557,7 @@ export type CarrierPolicyListItem = {
   total_assets_covered:    number
   policy_expiration_date:  string | null
   policy_health:           PolicyHealth
+  missing_physical_file:   boolean
   total_installments:      number
   paid_installments:       number
   overdue_installments:    number

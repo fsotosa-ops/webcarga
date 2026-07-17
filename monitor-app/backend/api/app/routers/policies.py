@@ -3,19 +3,20 @@ insurance.py de Checkpoint A-E (columnas planas coverage/plate, borrado
 2026-07-16) con el modelo M:N real (policy_coverages/policy_assets). Prefix
 /policies (recurso propio, consistente con /carriers /drivers /assets /contacts).
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from ..auth import get_current_user, require_editor
+from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.insurance import (
     InstallmentPatchBody, InsurancePolicyPatchBody, PolicyAssetLinkBody, PolicyCoverageLinkBody,
 )
 from ..services.audit import log_change, record_manual_edit
+from ..utils.document_storage import log_document_replacement, resolve_signed_url, upload_document_version
 
 router = APIRouter(prefix="/policies", tags=["insurance"])
 
 
-async def _assemble_policy_detail(policy_id: str, pool) -> dict:
+async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
     policy = await pool.fetchrow(
         """
         SELECT id, carrier_id, insurance_company, policy_number, valid_from, valid_to,
@@ -52,22 +53,31 @@ async def _assemble_policy_detail(policy_id: str, pool) -> dict:
         policy_id,
     )
 
-    return {
+    result = {
         **dict(policy),
         "coverages": [dict(c) for c in coverages],
         "assets": [dict(a) for a in assets],
         "installments": [dict(i) for i in installments],
     }
+    # policy_document_url/endorsement_document_url guardan el storage_path
+    # crudo (ver upload_policy_file) — firmarlos antes de devolverlos.
+    if supabase is not None:
+        result["policy_document_url"] = resolve_signed_url(supabase, result["policy_document_url"])
+        result["endorsement_document_url"] = resolve_signed_url(supabase, result["endorsement_document_url"])
+    return result
 
 
 @router.get("/{policy_id}")
-async def get_policy(policy_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
-    return await _assemble_policy_detail(policy_id, pool)
+async def get_policy(
+    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+):
+    return await _assemble_policy_detail(policy_id, pool, supabase)
 
 
 @router.patch("/{policy_id}")
 async def patch_policy(
-    policy_id: str, body: InsurancePolicyPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    policy_id: str, body: InsurancePolicyPatchBody, pool=Depends(get_pool),
+    supabase=Depends(get_supabase), user=Depends(require_editor),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -112,7 +122,7 @@ async def patch_policy(
                     entity_type="CARRIER", entity_id=current["carrier_id"],
                     action="update", field=field, old_value=current[field], new_value=getattr(body, field),
                 )
-    return await _assemble_policy_detail(policy_id, pool)
+    return await _assemble_policy_detail(policy_id, pool, supabase)
 
 
 @router.post("/{policy_id}/coverages", status_code=201)
@@ -247,3 +257,59 @@ async def patch_installment(
         installment_id,
     )
     return dict(row)
+
+
+@router.post("/{policy_id}/file", status_code=201)
+async def upload_policy_file(
+    policy_id: str,
+    file: UploadFile = File(...),
+    kind: str = "document",
+    pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
+    user=Depends(require_editor),
+):
+    """Sube el archivo físico de la póliza (kind='document', policy_document_url)
+    o del endoso (kind='endorsement', endorsement_document_url) — gap real
+    encontrado 2026-07-16: app.carrier_insurance_status ya calculaba
+    missing_physical_file pero no existía forma de subir el archivo."""
+    if kind not in ("document", "endorsement"):
+        raise HTTPException(422, "kind debe ser 'document' o 'endorsement'")
+    column = "policy_document_url" if kind == "document" else "endorsement_document_url"
+
+    current = await pool.fetchrow(
+        f"SELECT carrier_id, {column} AS current_path FROM public.insurance_policies WHERE id = $1",
+        policy_id,
+    )
+    if not current:
+        raise HTTPException(404, "Póliza no encontrada")
+
+    key_prefix = f"policy/{policy_id}/{kind}"
+    uploaded = await upload_document_version(supabase, key_prefix=key_prefix, file=file)
+    old_storage_path = current["current_path"]
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                f"""
+                UPDATE public.insurance_policies SET
+                    {column} = $2,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                policy_id, uploaded["storage_path"],
+            )
+            await record_manual_edit(
+                conn, table="insurance_policies", where={"id": policy_id}, actor=user["sub"],
+                entity_type="CARRIER", entity_id=current["carrier_id"],
+                action="document_upload", field=column,
+                old_value=old_storage_path, new_value=uploaded["storage_path"],
+            )
+            if old_storage_path:
+                await log_document_replacement(
+                    conn, entity_type="CARRIER", entity_id=current["carrier_id"],
+                    doc_name=f"policy:{policy_id}:{kind}",
+                    old_status=None, old_expiry_date=None,
+                    old_storage_path=old_storage_path, actor=user["sub"],
+                )
+
+    return {"kind": kind, **uploaded}

@@ -28,6 +28,7 @@ vi.mock('@/lib/api/carriers', () => ({
     listAssets: vi.fn(), assignAsset: vi.fn(), unassignAsset: vi.fn(),
     listContacts: vi.fn(), createContact: vi.fn(),
     listPolicies: vi.fn(), createPolicy: vi.fn(),
+    listShippers: vi.fn(),
   },
 }))
 vi.mock('@/lib/api/drivers', () => ({
@@ -79,6 +80,7 @@ beforeEach(() => {
   vi.mocked(carriersApi.listDrivers).mockReset().mockResolvedValue(DRIVERS)
   vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue(ASSETS)
   vi.mocked(carriersApi.listPolicies).mockReset().mockResolvedValue([])
+  vi.mocked(carriersApi.listShippers).mockReset().mockResolvedValue([])
   vi.mocked(driversApi.listComplianceRecords).mockReset().mockResolvedValue([])
   vi.mocked(assetsApi.listComplianceRecords).mockReset().mockResolvedValue([])
 })
@@ -159,5 +161,32 @@ describe('EmpresaDetailPage', () => {
     expect(screen.getByPlaceholderText('Email')).toHaveValue('orig@example.com')
 
     expect(contactsApi.patch).not.toHaveBeenCalled()
+  })
+
+  it('shows the legacy admin id when present', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, legacy_admin_id: '4567' })
+    renderPage()
+    expect(await screen.findByText('4567')).toBeInTheDocument()
+  })
+
+  it('does not show a legacy admin id row when absent', async () => {
+    renderPage()
+    await screen.findAllByText('Transportes Test')
+    expect(screen.queryByText('ID legacy admin:')).not.toBeInTheDocument()
+  })
+
+  it('shows the shippers the carrier operates with as chips', async () => {
+    vi.mocked(carriersApi.listShippers).mockResolvedValue([
+      { id: 's1', name: 'Walmart', status: 'ACTIVE', start_date: null, end_date: null },
+      { id: 's2', name: 'Colun', status: 'ACTIVE', start_date: null, end_date: null },
+    ])
+    renderPage()
+    expect(await screen.findByText('Walmart')).toBeInTheDocument()
+    expect(screen.getByText('Colun')).toBeInTheDocument()
+  })
+
+  it('shows a placeholder when the carrier has no shipper linked', async () => {
+    renderPage()
+    expect(await screen.findByText('Sin generador de carga vinculado')).toBeInTheDocument()
   })
 })

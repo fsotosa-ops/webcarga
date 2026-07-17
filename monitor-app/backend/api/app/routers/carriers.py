@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import get_current_user, require_editor
+from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
 from ..schemas.carrier import CarrierCreateBody, CarrierPatchBody
@@ -14,6 +14,7 @@ from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
+from ..utils.document_storage import resolve_signed_url
 
 router = APIRouter(prefix="/carriers", tags=["carriers"])
 
@@ -54,7 +55,7 @@ async def list_carriers(
     return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit}
 
 
-async def _assemble_carrier_detail(carrier_id: str, pool) -> dict:
+async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict:
     carrier = await pool.fetchrow(
         """
         SELECT id, tax_id, country_code, business_name, operational_status,
@@ -93,16 +94,23 @@ async def _assemble_carrier_detail(carrier_id: str, pool) -> dict:
         carrier_id,
     )
 
+    compliance_records = [dict(c) for c in compliance]
+    if supabase is not None:
+        for record in compliance_records:
+            record["file_url"] = resolve_signed_url(supabase, record["file_url"])
+
     return {
         **dict(carrier),
         "contacts": [dict(c) for c in contacts],
-        "compliance_records": [dict(c) for c in compliance],
+        "compliance_records": compliance_records,
     }
 
 
 @router.get("/{carrier_id}")
-async def get_carrier(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
-    return await _assemble_carrier_detail(carrier_id, pool)
+async def get_carrier(
+    carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+):
+    return await _assemble_carrier_detail(carrier_id, pool, supabase)
 
 
 @router.post("", status_code=201)
@@ -137,7 +145,8 @@ async def create_carrier(
 
 @router.patch("/{carrier_id}")
 async def patch_carrier(
-    carrier_id: str, body: CarrierPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    carrier_id: str, body: CarrierPatchBody, pool=Depends(get_pool),
+    supabase=Depends(get_supabase), user=Depends(require_editor),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -171,7 +180,7 @@ async def patch_carrier(
                     old_value=current[field], new_value=getattr(body, field),
                 )
 
-    return await _assemble_carrier_detail(carrier_id, pool)
+    return await _assemble_carrier_detail(carrier_id, pool, supabase)
 
 
 # ── Roster de conductores/vehículos (alta/baja vía driver_assignments/asset_assignments) ──
@@ -360,7 +369,7 @@ async def list_carrier_policies(carrier_id: str, pool=Depends(get_pool), _=Depen
     rows = await pool.fetch(
         """
         SELECT policy_id AS id, insurance_company, policy_number, coverage_names,
-               total_assets_covered, policy_expiration_date, policy_health,
+               total_assets_covered, policy_expiration_date, policy_health, missing_physical_file,
                total_installments, paid_installments, overdue_installments, next_payment_date
         FROM app.carrier_insurance_status WHERE carrier_id = $1
         ORDER BY policy_expiration_date NULLS LAST
@@ -396,3 +405,20 @@ async def create_carrier_policy(
                 action="create", field="insurance_policy", new_value=row["id"], source="api",
             )
     return dict(row)
+
+
+# ── Generadores de carga (public.carrier_shippers M:N, solo lectura por ahora) ──
+
+@router.get("/{carrier_id}/shippers")
+async def list_carrier_shippers(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+    rows = await pool.fetch(
+        """
+        SELECT s.id, s.name, cs.status, cs.start_date, cs.end_date
+        FROM public.carrier_shippers cs
+        JOIN public.shippers s ON s.id = cs.shipper_id
+        WHERE cs.carrier_id = $1
+        ORDER BY s.name
+        """,
+        carrier_id,
+    )
+    return [dict(r) for r in rows]

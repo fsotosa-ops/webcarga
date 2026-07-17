@@ -2,10 +2,11 @@
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import get_current_user, require_editor
+from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.asset import AssetCreateBody, AssetPatchBody
 from ..services.audit import log_change, record_manual_edit
+from ..utils.document_storage import resolve_signed_url
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -90,7 +91,7 @@ async def patch_asset(
 
 @router.get("/{asset_id}/compliance-records")
 async def list_asset_compliance_records(
-    asset_id: str, pool=Depends(get_pool), _=Depends(get_current_user),
+    asset_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
 ):
     """Checklist itemizado del activo — mismo shape que el anidado en
     GET /carriers/{id} (_assemble_carrier_detail), filtrado a ASSET."""
@@ -109,4 +110,7 @@ async def list_asset_compliance_records(
         """,
         asset_id,
     )
-    return [dict(r) for r in rows]
+    records = [dict(r) for r in rows]
+    for record in records:
+        record["file_url"] = resolve_signed_url(supabase, record["file_url"])
+    return records
