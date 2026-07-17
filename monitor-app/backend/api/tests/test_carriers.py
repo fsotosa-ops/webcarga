@@ -481,3 +481,73 @@ def test_list_carrier_shippers():
     assert res.json()[0]["name"] == "Walmart"
     sql = pool.fetch.call_args.args[0]
     assert "FROM public.carrier_shippers" in sql
+
+
+def test_delete_carrier_404_when_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/carriers/c1")
+
+    assert res.status_code == 404
+
+
+def test_delete_carrier_blocked_when_has_drivers():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = [1, 1, None, None, None, None, None]  # carrier existe, tiene driver_assignments
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/carriers/c1")
+
+    assert res.status_code == 409
+    assert "conductores" in res.json()["detail"]
+
+
+def test_delete_carrier_blocked_when_has_uploaded_documents():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    # carrier existe, sin conductores/equipos/pólizas/generadores/contactos, pero con documentos cargados
+    conn.fetchval.side_effect = [1, None, None, None, None, None, 1]
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/carriers/c1")
+
+    assert res.status_code == 409
+    assert "documentos cargados" in res.json()["detail"]
+
+
+def test_delete_carrier_excludes_untouched_missing_compliance_records():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = [1, None, None, None, None, None, None]
+    client = make_client(pool)
+
+    client.delete("/api/v1/carriers/c1")
+
+    compliance_check_sql = conn.fetchval.call_args_list[6].args[0]
+    assert "status != 'MISSING'" in compliance_check_sql
+    assert "file_url IS NOT NULL" in compliance_check_sql
+    assert "expiration_date IS NOT NULL" in compliance_check_sql
+
+
+def test_delete_carrier_succeeds_when_no_associated_data():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = [1, None, None, None, None, None, None]
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/carriers/c1")
+
+    assert res.status_code == 200
+    assert res.json() == {"ok": True}
+    delete_calls = [c.args[0] for c in conn.execute.call_args_list]
+    assert any("DELETE FROM public.compliance_records" in s for s in delete_calls)
+    assert any("DELETE FROM public.carriers" in s for s in delete_calls)

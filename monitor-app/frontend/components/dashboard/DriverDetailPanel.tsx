@@ -6,11 +6,15 @@ import { Check, Loader2, X, ArrowRightLeft, Trash2 } from 'lucide-react'
 import type { Driver } from '@/lib/types'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { complianceApi } from '@/lib/api/compliance'
+import { contactsApi } from '@/lib/api/contacts'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
+import { ContactCard, AddContactForm } from './ContactCard'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
+
+const DRIVER_CONTACT_ROLE_OPTIONS = ['PERSONAL', 'EMERGENCIA', 'OTRO']
 
 interface Props {
   driver:          Driver | null
@@ -39,6 +43,12 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
   const complianceQuery = useQuery({
     queryKey: ['driver-compliance-records', driver?.id],
     queryFn: () => driversApi.listComplianceRecords(driver!.id),
+    enabled: !!driver,
+  })
+
+  const contactsQuery = useQuery({
+    queryKey: ['driver-contacts', driver?.id],
+    queryFn: () => driversApi.listContacts(driver!.id),
     enabled: !!driver,
   })
 
@@ -78,6 +88,23 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
 
   function invalidateCompliance() {
     if (driver) queryClient.invalidateQueries({ queryKey: ['driver-compliance-records', driver.id] })
+  }
+  function invalidateContacts() {
+    if (driver) queryClient.invalidateQueries({ queryKey: ['driver-contacts', driver.id] })
+  }
+
+  async function handleSaveContact(contactId: string, patch: { first_name?: string; last_name?: string; phone?: string; email?: string }) {
+    await contactsApi.patch(contactId, patch)
+    invalidateContacts()
+  }
+  async function handleDeleteContact(contactId: string) {
+    await contactsApi.delete(contactId)
+    invalidateContacts()
+  }
+  async function handleAddContact(body: { contact_role: string; first_name?: string; last_name?: string; phone?: string; email?: string }) {
+    if (!driver) return
+    await driversApi.createContact(driver.id, body)
+    invalidateContacts()
   }
 
   async function handleSaveDatos() {
@@ -262,6 +289,27 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
               />
             )}
             {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
+
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 mt-6">Contactos</p>
+            {contactsQuery.isPending ? (
+              <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {(contactsQuery.data ?? []).map(c => (
+                  <ContactCard
+                    key={c.id}
+                    contact={c}
+                    canEdit={canEdit}
+                    onSaved={patch => handleSaveContact(c.id, patch)}
+                    onDeleted={() => handleDeleteContact(c.id)}
+                  />
+                ))}
+                {canEdit && <AddContactForm roleOptions={DRIVER_CONTACT_ROLE_OPTIONS} onAdd={handleAddContact} />}
+                {(contactsQuery.data ?? []).length === 0 && !canEdit && (
+                  <p className="text-xs text-gray-300 italic">Sin contactos registrados</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

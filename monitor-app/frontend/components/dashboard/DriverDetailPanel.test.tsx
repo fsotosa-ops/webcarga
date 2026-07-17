@@ -4,13 +4,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DriverDetailPanel } from './DriverDetailPanel'
 import { driversApi } from '@/lib/api/drivers'
 import { complianceApi } from '@/lib/api/compliance'
-import type { Driver, ComplianceRecord } from '@/lib/types'
+import { contactsApi } from '@/lib/api/contacts'
+import type { Driver, ComplianceRecord, Contact } from '@/lib/types'
 
 vi.mock('@/lib/api/drivers', () => ({
-  driversApi: { listComplianceRecords: vi.fn() },
+  driversApi: { listComplianceRecords: vi.fn(), listContacts: vi.fn(), createContact: vi.fn() },
 }))
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: { patch: vi.fn(), uploadFile: vi.fn() },
+}))
+vi.mock('@/lib/api/contacts', () => ({
+  contactsApi: { patch: vi.fn(), delete: vi.fn() },
 }))
 
 function renderWithClient(ui: React.ReactElement) {
@@ -49,9 +53,18 @@ function renderPanel(driver: Driver | null, opts: {
   )
 }
 
+const CONTACTS: Contact[] = [{
+  id: 'ct1', contact_role: 'PERSONAL', first_name: 'Juan', last_name: 'Pérez',
+  job_title: null, email: 'juan@example.com', phone: '+56911111111', is_primary: false, is_active: true,
+}]
+
 describe('DriverDetailPanel', () => {
   beforeEach(() => {
     vi.mocked(driversApi.listComplianceRecords).mockResolvedValue(RECORDS)
+    vi.mocked(driversApi.listContacts).mockReset().mockResolvedValue([])
+    vi.mocked(driversApi.createContact).mockReset()
+    vi.mocked(contactsApi.patch).mockReset()
+    vi.mocked(contactsApi.delete).mockReset()
   })
 
   it('renders nothing meaningful when driver is null', () => {
@@ -138,5 +151,49 @@ describe('DriverDetailPanel', () => {
     renderPanel(DRIVER, { canAdmin: false })
     expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
+  })
+
+  it('shows existing contacts with their phone and email', async () => {
+    vi.mocked(driversApi.listContacts).mockResolvedValue(CONTACTS)
+    renderPanel(DRIVER)
+    expect(await screen.findByText('Juan Pérez', { selector: 'p.text-xs' })).toBeInTheDocument()
+    expect(screen.getByText('+56911111111')).toBeInTheDocument()
+    expect(screen.getByText('juan@example.com')).toBeInTheDocument()
+  })
+
+  it('adds a new contact via driversApi.createContact, allowing a second phone/email', async () => {
+    vi.mocked(driversApi.listContacts).mockResolvedValue(CONTACTS)
+    vi.mocked(driversApi.createContact).mockResolvedValue({ ...CONTACTS[0], id: 'ct2' })
+    renderPanel(DRIVER)
+    await screen.findByText('+ Agregar contacto')
+
+    fireEvent.click(screen.getByText('+ Agregar contacto'))
+    fireEvent.change(screen.getByPlaceholderText('Nombre'), { target: { value: 'Maria Soto' } })
+    fireEvent.change(screen.getByPlaceholderText('Teléfono'), { target: { value: '+56922222222' } })
+    fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'maria@example.com' } })
+    const guardarButtons = screen.getAllByRole('button', { name: /Guardar/ })
+    fireEvent.click(guardarButtons[guardarButtons.length - 1])
+
+    await waitFor(() => expect(driversApi.createContact).toHaveBeenCalledWith('d1', {
+      contact_role: 'PERSONAL', first_name: 'Maria', last_name: 'Soto',
+      phone: '+56922222222', email: 'maria@example.com',
+    }))
+  })
+
+  it('deletes a contact via contactsApi.delete', async () => {
+    vi.mocked(driversApi.listContacts).mockResolvedValue(CONTACTS)
+    renderPanel(DRIVER)
+    await screen.findByText('juan@example.com')
+
+    fireEvent.click(screen.getByText('Eliminar'))
+
+    await waitFor(() => expect(contactsApi.delete).toHaveBeenCalledWith('ct1'))
+  })
+
+  it('does not offer to add a contact when canEdit is false', async () => {
+    vi.mocked(driversApi.listContacts).mockResolvedValue([])
+    renderPanel(DRIVER, { canEdit: false })
+    expect(await screen.findByText('Sin contactos registrados')).toBeInTheDocument()
+    expect(screen.queryByText('+ Agregar contacto')).not.toBeInTheDocument()
   })
 })

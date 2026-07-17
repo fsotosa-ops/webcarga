@@ -1,4 +1,5 @@
-import type { ComplianceRecord, Driver, OperationalStatus } from '@/lib/types'
+import type { ComplianceRecord, Contact, Driver, OperationalStatus } from '@/lib/types'
+import type { ContactCreateBody } from './carriers'
 import { apiFetch } from './client'
 
 export type DriverCreateBody = {
@@ -36,4 +37,15 @@ export const driversApi = {
 
   listComplianceRecords: (id: string) =>
     apiFetch<ComplianceRecord[]>(`/api/v1/drivers/${id}/compliance-records`),
+
+  // ── Contactos (alta anidada; PATCH/DELETE en lib/api/contacts.ts) ─────
+
+  listContacts: (id: string) =>
+    apiFetch<Contact[]>(`/api/v1/drivers/${id}/contacts`),
+
+  createContact: (id: string, body: Omit<ContactCreateBody, 'entity_id' | 'entity_type'>) =>
+    apiFetch<Contact>(`/api/v1/drivers/${id}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify({ ...body, entity_id: id, entity_type: 'DRIVER' }),
+    }),
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -15,6 +15,7 @@ import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets
 import { contactsApi } from '@/lib/api/contacts'
 import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
+import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCard'
 import { TransporterDocumentsPanel } from '@/components/dashboard/TransporterDocumentsPanel'
 import { TransporterAlertBanner } from '@/components/dashboard/TransporterAlertBanner'
@@ -24,6 +25,7 @@ import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
 import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
+import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/components/dashboard/InsurancePolicyModal'
 import { CompletionRing } from '@/components/dashboard/CompletionRing'
 import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
@@ -121,124 +123,9 @@ function EditableField({
   )
 }
 
-// ── Contactos (public.contacts, polimórfico, lista abierta) ────────
-function ContactCard({ contact, canEdit, onSaved, onDeleted }: {
-  contact: { id: string; contact_role: string; first_name: string | null; last_name: string | null; email: string | null; phone: string | null }
-  canEdit: boolean
-  onSaved: (patch: { first_name?: string; last_name?: string; email?: string; phone?: string }) => Promise<void>
-  onDeleted: () => Promise<void>
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState({
-    name: [contact.first_name, contact.last_name].filter(Boolean).join(' '),
-    phone: contact.phone ?? '', email: contact.email ?? '',
-  })
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-
-  function openEdit() {
-    setDraft({
-      name: [contact.first_name, contact.last_name].filter(Boolean).join(' '),
-      phone: contact.phone ?? '', email: contact.email ?? '',
-    })
-    setEditing(true)
-  }
-
-  async function save() {
-    setBusy(true); setErr(null)
-    try {
-      const [first_name, ...rest] = draft.name.trim().split(/\s+/)
-      await onSaved({ first_name: first_name || undefined, last_name: rest.join(' ') || undefined, phone: draft.phone, email: draft.email })
-      setEditing(false)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al guardar')
-    } finally { setBusy(false) }
-  }
-
-  const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ')
-
-  if (editing) {
-    return (
-      <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">{contact.contact_role}</p>
-        <input value={draft.name} onChange={e => setDraft(v => ({ ...v, name: e.target.value }))} placeholder="Nombre"
-          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
-        <input value={draft.phone} onChange={e => setDraft(v => ({ ...v, phone: e.target.value }))} placeholder="Teléfono"
-          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
-        <input value={draft.email} onChange={e => setDraft(v => ({ ...v, email: e.target.value }))} placeholder="Email"
-          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
-        {err && <p className="text-[10px] text-red-500">{err}</p>}
-        <div className="flex gap-1.5 pt-1">
-          <button onClick={save} disabled={busy} className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent rounded px-2 py-1 disabled:opacity-50">
-            {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Guardar
-          </button>
-          <button onClick={() => setEditing(false)} className="text-[11px] text-gray-400 hover:text-gray-600 px-2 py-1">Cancelar</button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="border border-border/60 rounded-lg p-3 group relative">
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{contact.contact_role}</p>
-      <p className="text-xs font-semibold text-text-primary truncate">{name || <span className="text-gray-300 italic">sin nombre</span>}</p>
-      {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">{contact.phone}</a>}
-      {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
-      {canEdit && (
-        <div className="flex gap-2 mt-1">
-          <button onClick={openEdit} className="text-[10px] text-gray-400 hover:text-accent">Editar</button>
-          <button onClick={onDeleted} className="text-[10px] text-gray-400 hover:text-red-500">Eliminar</button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function AddContactForm({ onAdd }: { onAdd: (body: { contact_role: string; first_name?: string; last_name?: string; phone?: string; email?: string }) => Promise<void> }) {
-  const [open, setOpen] = useState(false)
-  const [role, setRole] = useState(CONTACT_ROLE_OPTIONS[0])
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="border border-dashed border-border rounded-lg p-3 text-xs text-accent hover:bg-accent/5 text-left">
-        + Agregar contacto
-      </button>
-    )
-  }
-
-  async function submit() {
-    setBusy(true)
-    try {
-      const [first_name, ...rest] = name.trim().split(/\s+/)
-      await onAdd({ contact_role: role, first_name: first_name || undefined, last_name: rest.join(' ') || undefined, phone: phone || undefined, email: email || undefined })
-      setOpen(false); setName(''); setPhone(''); setEmail('')
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
-      <select value={role} onChange={e => setRole(e.target.value)} className="w-full text-xs border border-border rounded px-2 py-1">
-        {CONTACT_ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-      </select>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Nombre" className="w-full text-xs border border-border rounded px-2 py-1" />
-      <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono" className="w-full text-xs border border-border rounded px-2 py-1" />
-      <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className="w-full text-xs border border-border rounded px-2 py-1" />
-      <div className="flex gap-1.5 pt-1">
-        <button onClick={submit} disabled={busy} className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent rounded px-2 py-1 disabled:opacity-50">
-          {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Guardar
-        </button>
-        <button onClick={() => setOpen(false)} className="text-[11px] text-gray-400 hover:text-gray-600 px-2 py-1">Cancelar</button>
-      </div>
-    </div>
-  )
-}
-
 export default function EmpresaDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const router = useRouter()
   const queryClient = useQueryClient()
   const [canEdit, setCanEdit]     = useState(false)
   const [canAdmin, setCanAdmin]   = useState(false)
@@ -268,6 +155,7 @@ export default function EmpresaDetailPage() {
 
   const [transferTarget, setTransferTarget] = useState<{ kind: 'driver' | 'asset'; id: string; label: string } | null>(null)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -323,6 +211,10 @@ export default function EmpresaDetailPage() {
   async function handleReactivateCarrier() {
     await carriersApi.patch(id, { operational_status: 'ACTIVE' })
     invalidateCarrier()
+  }
+  async function handleDeleteCarrier() {
+    await carriersApi.delete(id)
+    router.push('/dashboard/transportistas')
   }
 
   async function handleAddDriver() {
@@ -542,6 +434,14 @@ export default function EmpresaDetailPage() {
                   {carrier.operational_status !== 'ACTIVE' ? 'Reactivar' : 'Dar de baja'}
                 </button>
               )}
+              {canAdmin && (
+                <button
+                  onClick={() => setDeleteModalOpen(true)}
+                  className="bg-white hover:bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold transition border border-red-200 shadow-sm shrink-0"
+                >
+                  Eliminar
+                </button>
+              )}
             </div>
         </div>
       </div>
@@ -663,7 +563,7 @@ export default function EmpresaDetailPage() {
               onDeleted={() => handleDeleteContact(c.id)}
             />
           ))}
-          {canEdit && <AddContactForm onAdd={handleAddContact} />}
+          {canEdit && <AddContactForm roleOptions={CONTACT_ROLE_OPTIONS} onAdd={handleAddContact} />}
           {carrier.contacts.length === 0 && !canEdit && (
             <p className="text-xs text-gray-300 italic">Sin contactos registrados</p>
           )}
@@ -1000,6 +900,14 @@ export default function EmpresaDetailPage() {
           label={carrier.business_name || 'esta empresa'}
           onClose={() => setBajaModalOpen(false)}
           onConfirm={handleDeactivateCarrier}
+        />
+      )}
+
+      {deleteModalOpen && (
+        <DeleteCarrierModal
+          label={carrier.business_name || 'esta empresa'}
+          onClose={() => setDeleteModalOpen(false)}
+          onConfirm={handleDeleteCarrier}
         />
       )}
     </div>

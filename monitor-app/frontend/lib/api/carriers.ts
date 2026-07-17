@@ -104,6 +104,13 @@ export const carriersApi = {
   patch: (id: string, body: CarrierPatchBody) =>
     apiFetch<Carrier>(`/api/v1/carriers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
+  /** Borrado real — a diferencia de patch(operational_status), el backend
+   *  lo rechaza con 409 si la empresa tiene datos asociados (ver
+   *  DELETE /carriers/{id}); el mensaje del error ya viene listo para
+   *  mostrar al usuario. */
+  delete: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/carriers/${id}`, { method: 'DELETE' }),
+
   // ── Roster de conductores/vehículos (alta = crear asignación ACTIVE) ──
 
   listDrivers: (id: string) =>

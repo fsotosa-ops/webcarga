@@ -372,6 +372,67 @@ async def patch_carrier(
     return await _assemble_carrier_detail(carrier_id, pool, supabase)
 
 
+@router.delete("/{carrier_id}")
+async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(require_editor)):
+    """Borrado real (a diferencia de 'Dar de baja', que solo cambia
+    operational_status) — solo permitido si la empresa no tiene datos
+    asociados todavía, para poder limpiar altas por error/duplicadas sin
+    riesgo de perder datos reales. Si tiene cualquier rastro real (roster,
+    pólizas, contactos, generador de carga, o un compliance_record ya
+    tocado por el usuario/con archivo), se bloquea con 409 y se indica qué
+    la bloquea — la vía para esos casos sigue siendo 'Dar de baja'.
+    Los compliance_records MISSING auto-sembrados por trg_reconcile_new_carrier
+    no cuentan como dato real: no tienen FK real (entity_id/entity_type
+    polimórfico), así que se borran acá explícitamente junto con la empresa."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            if not await conn.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
+                raise HTTPException(404, "Empresa no encontrada")
+
+            blockers = []
+            if await conn.fetchval("SELECT 1 FROM public.driver_assignments WHERE carrier_id = $1 LIMIT 1", carrier_id):
+                blockers.append("conductores")
+            if await conn.fetchval("SELECT 1 FROM public.asset_assignments WHERE carrier_id = $1 LIMIT 1", carrier_id):
+                blockers.append("equipos")
+            if await conn.fetchval("SELECT 1 FROM public.insurance_policies WHERE carrier_id = $1 LIMIT 1", carrier_id):
+                blockers.append("pólizas de seguro")
+            if await conn.fetchval("SELECT 1 FROM public.carrier_shippers WHERE carrier_id = $1 LIMIT 1", carrier_id):
+                blockers.append("generadores de carga vinculados")
+            if await conn.fetchval(
+                "SELECT 1 FROM public.contacts WHERE entity_type = 'CARRIER' AND entity_id = $1 LIMIT 1",
+                carrier_id,
+            ):
+                blockers.append("contactos")
+            if await conn.fetchval(
+                """
+                SELECT 1 FROM public.compliance_records
+                WHERE entity_type = 'CARRIER' AND entity_id = $1
+                  AND (status != 'MISSING' OR file_url IS NOT NULL OR expiration_date IS NOT NULL)
+                LIMIT 1
+                """,
+                carrier_id,
+            ):
+                blockers.append("documentos cargados")
+
+            if blockers:
+                raise HTTPException(
+                    409,
+                    f"No se puede eliminar: la empresa tiene {', '.join(blockers)} asociados. "
+                    "Use 'Dar de baja' en su lugar.",
+                )
+
+            await log_change(
+                conn, actor=user["sub"], entity_type="CARRIER", entity_id=carrier_id,
+                action="delete", source="api",
+            )
+            await conn.execute(
+                "DELETE FROM public.compliance_records WHERE entity_type = 'CARRIER' AND entity_id = $1",
+                carrier_id,
+            )
+            await conn.execute("DELETE FROM public.carriers WHERE id = $1", carrier_id)
+    return {"ok": True}
+
+
 # ── Roster de conductores/vehículos (alta/baja vía driver_assignments/asset_assignments) ──
 
 @router.get("/{carrier_id}/drivers")

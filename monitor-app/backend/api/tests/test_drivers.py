@@ -108,3 +108,76 @@ def test_list_driver_compliance_records():
     assert res.json()[0]["requirement_code"] == "LIC_CONDUCIR"
     sql = pool.fetch.call_args.args[0]
     assert "entity_type = 'DRIVER'" in sql
+
+
+def test_list_driver_contacts():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": "ct1", "contact_role": "OPERATIONS", "first_name": "Juan", "last_name": "Perez",
+        "job_title": None, "email": "juan@example.com", "phone": "+56911111111",
+        "is_primary": True, "is_active": True,
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/drivers/d1/contacts")
+
+    assert res.status_code == 200
+    assert res.json()[0]["email"] == "juan@example.com"
+    sql = pool.fetch.call_args.args[0]
+    assert "entity_type = 'DRIVER'" in sql
+
+
+def test_create_driver_contact_rejects_mismatched_entity():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/drivers/d1/contacts",
+        json={"entity_id": "OTHER", "entity_type": "DRIVER", "contact_role": "OPERATIONS"},
+    )
+
+    assert res.status_code == 422
+
+
+def test_create_driver_contact_404_when_driver_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/drivers/d1/contacts",
+        json={"entity_id": "d1", "entity_type": "DRIVER", "contact_role": "OPERATIONS"},
+    )
+
+    assert res.status_code == 404
+
+
+def test_create_driver_contact_persists_multiple_phones_and_emails():
+    """El usuario pidió poder registrar más de un teléfono/email por
+    conductor — se logra con múltiples filas de contacto (mismo patrón que
+    carriers), no con arrays en una sola fila."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = 1
+    conn.fetchrow.return_value = {
+        "id": "ct1", "contact_role": "OPERATIONS", "first_name": "Juan", "last_name": None,
+        "job_title": None, "email": "juan@example.com", "phone": "+56911111111",
+        "is_primary": False, "is_active": True,
+    }
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/drivers/d1/contacts",
+        json={
+            "entity_id": "d1", "entity_type": "DRIVER", "contact_role": "OPERATIONS",
+            "first_name": "Juan", "email": "juan@example.com", "phone": "+56911111111",
+        },
+    )
+
+    assert res.status_code == 201
+    insert_sql = conn.fetchrow.call_args.args[0]
+    assert "'DRIVER'" in insert_sql
+    assert res.json()["email"] == "juan@example.com"

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import EmpresaDetailPage from './page'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi } from '@/lib/api/drivers'
@@ -26,11 +26,11 @@ async function clickTab(name: RegExp) {
   fireEvent.click(matches[0])
 }
 
-vi.mock('next/navigation', () => ({ useParams: vi.fn() }))
+vi.mock('next/navigation', () => ({ useParams: vi.fn(), useRouter: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: {
-    get: vi.fn(), patch: vi.fn(),
+    get: vi.fn(), patch: vi.fn(), delete: vi.fn(),
     listDrivers: vi.fn(), assignDriver: vi.fn(), unassignDriver: vi.fn(),
     listAssets: vi.fn(), assignAsset: vi.fn(), unassignAsset: vi.fn(),
     listContacts: vi.fn(), createContact: vi.fn(),
@@ -39,7 +39,10 @@ vi.mock('@/lib/api/carriers', () => ({
   },
 }))
 vi.mock('@/lib/api/drivers', () => ({
-  driversApi: { get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn() },
+  driversApi: {
+    get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn(),
+    listContacts: vi.fn(), createContact: vi.fn(),
+  },
 }))
 vi.mock('@/lib/api/assets', () => ({
   assetsApi: { get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn() },
@@ -70,8 +73,12 @@ const ASSETS: CarrierAssetRosterItem[] = [
   { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
 ]
 
+const pushMock = vi.fn()
+
 beforeEach(() => {
   vi.mocked(useParams).mockReturnValue({ id: 't1' })
+  pushMock.mockReset()
+  vi.mocked(useRouter).mockReturnValue({ push: pushMock } as unknown as ReturnType<typeof useRouter>)
   vi.mocked(createClient).mockReturnValue({
     auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } }) },
     from: vi.fn().mockReturnValue({
@@ -89,6 +96,7 @@ beforeEach(() => {
   vi.mocked(carriersApi.listPolicies).mockReset().mockResolvedValue([])
   vi.mocked(carriersApi.listShippers).mockReset().mockResolvedValue([])
   vi.mocked(driversApi.listComplianceRecords).mockReset().mockResolvedValue([])
+  vi.mocked(driversApi.listContacts).mockReset().mockResolvedValue([])
   vi.mocked(assetsApi.listComplianceRecords).mockReset().mockResolvedValue([])
 })
 
@@ -228,5 +236,30 @@ describe('EmpresaDetailPage', () => {
 
     await clickTab(/Resumen/)
     expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
+  })
+
+  it('deletes the carrier and redirects to the list on confirm', async () => {
+    vi.mocked(carriersApi.delete).mockResolvedValue({ ok: true })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    expect(screen.getByText(/Eliminar: Transportes Test/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }))
+
+    await waitFor(() => expect(carriersApi.delete).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/dashboard/transportistas'))
+  })
+
+  it('shows the backend blocker message and does not redirect when delete is rejected', async () => {
+    vi.mocked(carriersApi.delete).mockRejectedValue(
+      new Error("No se puede eliminar: la empresa tiene conductores asociados. Use 'Dar de baja' en su lugar."),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }))
+
+    expect(await screen.findByText(/tiene conductores asociados/)).toBeInTheDocument()
+    expect(pushMock).not.toHaveBeenCalled()
   })
 })

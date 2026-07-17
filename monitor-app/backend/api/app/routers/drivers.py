@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
+from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DriverCreateBody, DriverPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..utils.document_storage import resolve_signed_url
@@ -113,3 +114,43 @@ async def list_driver_compliance_records(
     for record in records:
         record["file_url"] = resolve_signed_url(supabase, record["file_url"])
     return records
+
+
+# ── Contactos (polimórfico — alta anidada bajo driver, edición flat en routers/contacts.py) ──
+
+@router.get("/{driver_id}/contacts")
+async def list_driver_contacts(driver_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+    rows = await pool.fetch(
+        "SELECT id, contact_role, first_name, last_name, job_title, email, phone, is_primary, is_active "
+        "FROM public.contacts WHERE entity_type = 'DRIVER' AND entity_id = $1 AND is_active = true "
+        "ORDER BY is_primary DESC, contact_role",
+        driver_id,
+    )
+    return [dict(r) for r in rows]
+
+
+@router.post("/{driver_id}/contacts", status_code=201)
+async def create_driver_contact(
+    driver_id: str, body: ContactCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    if body.entity_type != "DRIVER" or body.entity_id != driver_id:
+        raise HTTPException(422, "entity_type/entity_id del body deben coincidir con la ruta")
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            if not await conn.fetchval("SELECT 1 FROM public.drivers WHERE id = $1", driver_id):
+                raise HTTPException(404, "Conductor no encontrado")
+            row = await conn.fetchrow(
+                """
+                INSERT INTO public.contacts
+                    (entity_id, entity_type, contact_role, first_name, last_name, job_title, email, phone, is_primary)
+                VALUES ($1, 'DRIVER', $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id, contact_role, first_name, last_name, job_title, email, phone, is_primary, is_active
+                """,
+                driver_id, body.contact_role, body.first_name, body.last_name,
+                body.job_title, body.email, body.phone, body.is_primary,
+            )
+            await log_change(
+                conn, actor=user["sub"], entity_type="DRIVER", entity_id=driver_id,
+                action="create", field="contact", new_value=body.contact_role, source="api",
+            )
+    return dict(row)
