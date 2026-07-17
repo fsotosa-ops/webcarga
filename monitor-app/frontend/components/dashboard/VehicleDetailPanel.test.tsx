@@ -20,7 +20,7 @@ function renderWithClient(ui: React.ReactElement) {
 
 const ASSET: Asset = {
   id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION',
-  operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
+  operational_status: 'ACTIVE', manufacture_year: null, is_manual_override: false, created_at: null,
   total_requirements: 1, last_document_update: null,
 }
 
@@ -78,7 +78,20 @@ describe('VehicleDetailPanel', () => {
     renderPanel(ASSET, { onPatch })
     fireEvent.change(screen.getByLabelText('Tipo de equipo'), { target: { value: 'RAMPLA' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('v1', { asset_type: 'RAMPLA' }))
+    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('v1', { asset_type: 'RAMPLA', manufacture_year: undefined }))
+  })
+
+  it('saves the manufacture year when edited', async () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined)
+    renderPanel(ASSET, { onPatch })
+    fireEvent.change(screen.getByLabelText('Año del vehículo'), { target: { value: '2019' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('v1', { asset_type: 'TRACTOCAMION', manufacture_year: 2019 }))
+  })
+
+  it('pre-fills the manufacture year from the asset when reopening', () => {
+    renderPanel({ ...ASSET, manufacture_year: 2015 })
+    expect(screen.getByLabelText('Año del vehículo')).toHaveValue(2015)
   })
 
   it('shows a "Transferir a otra empresa" button only for canAdmin', () => {

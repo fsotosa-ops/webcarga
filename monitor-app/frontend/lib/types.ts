@@ -548,6 +548,7 @@ export type Asset = {
   license_plate:         string
   asset_type:            string
   operational_status:    OperationalStatus
+  manufacture_year:      number | null
   is_manual_override:    boolean
   created_at:            string | null
   total_requirements:    number | null

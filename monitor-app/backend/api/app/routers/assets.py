@@ -15,7 +15,7 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
     row = await pool.fetchrow(
         """
-        SELECT a.id, a.license_plate, a.asset_type, a.operational_status,
+        SELECT a.id, a.license_plate, a.asset_type, a.operational_status, a.manufacture_year,
                a.is_manual_override, a.created_at,
                acs.total_requirements, acs.last_document_update
         FROM public.assets a
@@ -42,11 +42,11 @@ async def create_asset(body: AssetCreateBody, pool=Depends(get_pool), user=Depen
                 raise HTTPException(409, f"Ya existe un activo con patente {body.license_plate}")
             row = await conn.fetchrow(
                 """
-                INSERT INTO public.assets (license_plate, asset_type, operational_status)
-                VALUES ($1, $2, $3)
-                RETURNING id, license_plate, asset_type, operational_status, created_at
+                INSERT INTO public.assets (license_plate, asset_type, operational_status, manufacture_year)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id, license_plate, asset_type, operational_status, manufacture_year, created_at
                 """,
-                body.license_plate, body.asset_type, body.operational_status,
+                body.license_plate, body.asset_type, body.operational_status, body.manufacture_year,
             )
             await log_change(
                 conn, actor=user["sub"], entity_type="ASSET", entity_id=row["id"],
@@ -62,12 +62,12 @@ async def patch_asset(
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
-                "SELECT asset_type, operational_status FROM public.assets WHERE id = $1", asset_id,
+                "SELECT asset_type, operational_status, manufacture_year FROM public.assets WHERE id = $1", asset_id,
             )
             if not current:
                 raise HTTPException(404, "Activo no encontrado")
 
-            touched = [f for f in ("asset_type", "operational_status") if getattr(body, f) is not None]
+            touched = [f for f in ("asset_type", "operational_status", "manufacture_year") if getattr(body, f) is not None]
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
 
@@ -75,10 +75,11 @@ async def patch_asset(
                 """
                 UPDATE public.assets SET
                     asset_type = COALESCE($2, asset_type),
-                    operational_status = COALESCE($3, operational_status)
+                    operational_status = COALESCE($3, operational_status),
+                    manufacture_year = COALESCE($4, manufacture_year)
                 WHERE id = $1
                 """,
-                asset_id, body.asset_type, body.operational_status,
+                asset_id, body.asset_type, body.operational_status, body.manufacture_year,
             )
             for field in touched:
                 await record_manual_edit(

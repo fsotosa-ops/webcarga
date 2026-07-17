@@ -35,7 +35,7 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
   const queryClient = useQueryClient()
   const [removing, setRemoving] = useState(false)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
-  const [draft, setDraft] = useState<{ asset_type: AssetType }>({ asset_type: 'OTRO' })
+  const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string }>({ asset_type: 'OTRO', manufacture_year: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [statusErr, setStatusErr] = useState<string | null>(null)
@@ -48,7 +48,7 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
 
   useEffect(() => {
     if (!asset) return
-    setDraft({ asset_type: asset.asset_type as AssetType })
+    setDraft({ asset_type: asset.asset_type as AssetType, manufacture_year: asset.manufacture_year ? String(asset.manufacture_year) : '' })
     setErr(null); setStatusErr(null)
   }, [asset])
 
@@ -88,7 +88,10 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
     if (!asset) return
     setSaving(true); setErr(null)
     try {
-      await onPatch(asset.id, { asset_type: draft.asset_type })
+      await onPatch(asset.id, {
+        asset_type: draft.asset_type,
+        manufacture_year: draft.manufacture_year ? Number(draft.manufacture_year) : undefined,
+      })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
@@ -181,17 +184,33 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
               <p className="text-[11px] text-gray-500">{ok} de {total}<br />documentos al día</p>
             </div>
 
-            <div className="space-y-1 mb-2">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Tipo de equipo</label>
-              <select
-                aria-label="Tipo de equipo"
-                value={draft.asset_type}
-                disabled={!canEdit}
-                onChange={e => setDraft({ asset_type: e.target.value as AssetType })}
-                className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-              >
-                {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Tipo de equipo</label>
+                <select
+                  aria-label="Tipo de equipo"
+                  value={draft.asset_type}
+                  disabled={!canEdit}
+                  onChange={e => setDraft(d => ({ ...d, asset_type: e.target.value as AssetType }))}
+                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+                >
+                  {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Año</label>
+                <input
+                  type="number"
+                  aria-label="Año del vehículo"
+                  min={1950}
+                  max={2100}
+                  placeholder="—"
+                  value={draft.manufacture_year}
+                  disabled={!canEdit}
+                  onChange={e => setDraft(d => ({ ...d, manufacture_year: e.target.value }))}
+                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+                />
+              </div>
             </div>
             {canEdit && (
               <button

@@ -7,11 +7,13 @@ export type AssetCreateBody = {
   license_plate:       string
   asset_type:          AssetType
   operational_status?: OperationalStatus
+  manufacture_year?:   number
 }
 
 export type AssetPatchBody = {
   asset_type?:          AssetType
   operational_status?:  OperationalStatus
+  manufacture_year?:    number
 }
 
 /** POST /assets RETURNING es más angosto que GET /assets/{id} — sin
@@ -21,6 +23,7 @@ export type AssetCreateResult = {
   license_plate:       string
   asset_type:          string
   operational_status:  OperationalStatus
+  manufacture_year:    number | null
   created_at:          string | null
 }
 

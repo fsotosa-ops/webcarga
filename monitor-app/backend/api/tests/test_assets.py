@@ -48,7 +48,7 @@ def test_create_asset_uppercases_plate_and_succeeds():
     conn.fetchval.return_value = None
     conn.fetchrow.return_value = {
         "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
-        "operational_status": "ACTIVE", "created_at": None,
+        "operational_status": "ACTIVE", "manufacture_year": None, "created_at": None,
     }
     client = make_client(pool)
 
@@ -72,10 +72,39 @@ def test_patch_asset_no_fields_422():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {"asset_type": "TRACTOCAMION", "operational_status": "ACTIVE"}
+    conn.fetchrow.return_value = {"asset_type": "TRACTOCAMION", "operational_status": "ACTIVE", "manufacture_year": None}
     client = make_client(pool)
 
     res = client.patch("/api/v1/assets/a1", json={})
+
+    assert res.status_code == 422
+
+
+def test_patch_asset_updates_manufacture_year():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"asset_type": "TRACTOCAMION", "operational_status": "ACTIVE", "manufacture_year": None}
+    pool.fetchrow.return_value = {
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION", "operational_status": "ACTIVE",
+        "manufacture_year": 2019, "is_manual_override": True, "created_at": None,
+        "total_requirements": 3, "last_document_update": None,
+    }
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/assets/a1", json={"manufacture_year": 2019})
+
+    assert res.status_code == 200
+    assert res.json()["manufacture_year"] == 2019
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "manufacture_year = COALESCE($4, manufacture_year)" in update_sql
+
+
+def test_create_asset_rejects_out_of_range_year():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.post("/api/v1/assets", json={"license_plate": "ABCD12", "asset_type": "TRACTOCAMION", "manufacture_year": 1800})
 
     assert res.status_code == 422
 

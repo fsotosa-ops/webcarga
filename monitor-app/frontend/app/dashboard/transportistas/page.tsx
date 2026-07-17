@@ -11,6 +11,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransporterCard, STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
+import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { updatedRelative } from '@/lib/compliance'
 
 type TransporterTab = 'active' | 'legacy'
@@ -106,45 +107,37 @@ export default function EmpresasTransportePage() {
         <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        {/* ── Tabs Activas / Legacy — split principal, viene de operational_status ── */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-          {TABS.map(t => {
-            const active = tab === t.id
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                aria-pressed={active}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {t.label} <span className="ml-1 text-gray-400">{tabCounts[t.id]}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* ── Tabs de alertas — segundo eje, viene de compliance_health ── */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-          {HEALTH_TABS.map(t => {
-            const active = healthTab === t.id
-            return (
-              <button
-                key={t.id || 'all'}
-                onClick={() => setHealthTab(t.id)}
-                aria-pressed={active}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {t.label} <span className="ml-1 text-gray-400">{healthFacets[t.facetKey]}</span>
-              </button>
-            )
-          })}
-        </div>
+      {/* ── Tabs Activas / Legacy — split principal, membresía mutuamente
+         excluyente real, viene de operational_status ── */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+        {TABS.map(t => {
+          const active = tab === t.id
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              aria-pressed={active}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label} <span className="ml-1 text-gray-400">{tabCounts[t.id]}</span>
+            </button>
+          )
+        })}
       </div>
+
+      {/* ── Tiles de alertas — segundo eje, viene de compliance_health.
+         Clickeables (filtran), no solo informativos: dejan triagear y
+         actuar rápido sin competir por espacio con Activas/Legacy. ── */}
+      <AlertStatTiles
+        tiles={HEALTH_TABS.map(t => ({
+          id: t.id, label: t.label, value: healthFacets[t.facetKey],
+          tone: t.id === 'PENDING' ? 'danger' : t.id === 'OK' ? 'success' : 'neutral',
+        }))}
+        active={healthTab}
+        onSelect={id => setHealthTab(id as HealthTab)}
+      />
 
       <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
         <div className="relative shrink-0">
