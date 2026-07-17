@@ -118,11 +118,12 @@
 
 **Verificado real**: `pytest` 151 passed, `tsc --noEmit` limpio, `vitest` 321 passed (41 archivos), `npm run build` exitoso.
 
+**Verificado en vivo con Playwright contra el deploy real** (`0dfb4b3`/`6db4656` desplegados): tiles de Empresas con datos reales (Activas 38, Pendientes 38, Al día 0 — mismo hallazgo real de antes, no un bug), tiles + pill replicados en la tab Equipos de Dankar Logistic Spa (1 equipo, 7 pendientes), modal de vehículo mostrando el input "Año" junto a "Tipo de equipo" y los 7 documentos (Certificado GPS, Gases Contaminantes, Padrón, Permiso de Circulación, Póliza Vehicular RC, Revisión Técnica, SOAP) todos con input de fecha de vencimiento editable. Consola limpia.
+
 #### Próximo paso exacto
-1. [ ] Verificar en vivo con Playwright el último push (año del vehículo + AlertStatTiles en los 3 niveles) — no hecho todavía en este punto de la sesión.
-2. [ ] Datos estructurados por documento (ej. F30: monto de la multa, fecha) — sigue sin confirmar si el usuario todavía lo quiere más allá de lo ya resuelto. Preguntar antes de construir nada.
-3. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier. **No iniciar sin que el usuario lo pida explícitamente.**
-4. [ ] Cobranza (aging/agrupación cross-empresa, botón "Pagar" real) sigue sin ruta dedicada — fuera de alcance por ahora.
-5. [ ] Pendientes de sesiones anteriores (no bloqueantes): decidir qué hacer con las ~70 migraciones de Checkpoints A-E ya marcadas para borrar (deletion pendiente en el working tree, sin commitear).
+1. [ ] Datos estructurados por documento (ej. F30: monto de la multa, fecha) — sigue sin confirmar si el usuario todavía lo quiere más allá de lo ya resuelto. Preguntar antes de construir nada.
+2. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier. **No iniciar sin que el usuario lo pida explícitamente.**
+3. [ ] Cobranza (aging/agrupación cross-empresa, botón "Pagar" real) sigue sin ruta dedicada — fuera de alcance por ahora.
+4. [ ] Pendientes de sesiones anteriores (no bloqueantes): decidir qué hacer con las ~70 migraciones de Checkpoints A-E ya marcadas para borrar (deletion pendiente en el working tree, sin commitear).
 
 ---
