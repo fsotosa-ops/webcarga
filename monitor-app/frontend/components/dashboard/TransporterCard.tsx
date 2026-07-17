@@ -45,8 +45,11 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
           </p>
           <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{item.tax_id}</p>
         </div>
+        {/* prefetch=false: con 30+ tarjetas visibles, Next.js prefetchea todos los links
+           "Ver ficha" en viewport a la vez y agota el rate limit del proxy (429 real). */}
         <Link
           href={`/dashboard/transportistas/empresa/${item.id}`}
+          prefetch={false}
           onClick={e => e.stopPropagation()}
           title="Ver ficha completa"
           className="text-gray-300 hover:text-accent transition-colors shrink-0 p-1 -m-1 rounded"

@@ -182,8 +182,11 @@ export default function EmpresasTransportePage() {
                     <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.total_requirements}</span></td>
                     <td className="px-3 py-3 text-xs text-gray-500">{formatExpiry(item.last_document_update)}</td>
                     <td className="px-3 py-3 text-center">
+                      {/* prefetch=false: mismo motivo que TransporterCard — evita que Next.js
+                         prefetchee las 100 filas visibles a la vez y agote el rate limit. */}
                       <Link
                         href={`/dashboard/transportistas/empresa/${item.id}`}
+                        prefetch={false}
                         onClick={e => e.stopPropagation()}
                         title="Ver ficha completa"
                         className="text-gray-300 hover:text-accent transition-colors"
