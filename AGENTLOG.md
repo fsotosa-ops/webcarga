@@ -110,16 +110,19 @@
 3. **No existía forma de generar cuotas**: `public.insurance_installments` solo se llenaba por import/migración — había PATCH para marcar una cuota existente como pagada, pero ningún POST para crear el plan. Nuevo `POST /policies/{id}/installments/generate` (mensual, monto fijo, valida que la póliza no tenga cuotas ya) + UI "Generar plan de cuotas" en el estado vacío de la sección Cuotas.
 4. **`compliance_records.expiration_date` nunca era editable en `DocumentChecklist`** (usada en conductores/vehículos) ni en `TransporterDocumentsPanel` (empresa): el backend ya soporta `PATCH .../expiration_date` desde hace tiempo, pero ninguna de las dos UIs mostraba ni un input de fecha — cédula, licencia, revisión técnica, SOAP, permiso de circulación no tenían forma de monitorear vencimiento pese a que el modelo de datos ya lo soporta. Agregado input de fecha + caption de tiempo relativo (`expiryRelative`) en ambos componentes.
 
-**Aún en curso, mismo hallazgo** (ver checklist abajo): alertas de compliance a nivel de roster de Conductores/Equipos (mismo patrón que se aplicó a Empresas), y año del vehículo (`public.assets` no tiene columna `year` en ninguna migración — requiere `ALTER TABLE`, no solo exponer un campo ya existente).
+**Completado, mismo hallazgo**:
+5. **Alertas de compliance a nivel de roster de Conductores/Equipos**: `GET /carriers/{id}/drivers` y `/assets` ganan el mismo join en vivo de severidad que `GET /carriers` (factorizado en `_pending_mandatory_join()`), `DriverRosterCard`/`VehicleRosterCard` reemplazan `total_requirements` plano por el mismo pill rojo/verde.
+6. **Año del vehículo**: `public.assets` no tenía columna `year` en ninguna migración — migración `ALTER TABLE ... ADD COLUMN manufacture_year INT` (aditiva, nullable, aplicada en vivo vía Supabase MCP) + expuesta en `AssetCreateBody`/`AssetPatchBody`/`VehicleDetailPanel` (input numérico junto a Tipo de equipo).
 
-**Verificado real**: `pytest` 147 passed, `tsc --noEmit` limpio, `vitest` 314 passed, `npm run build` exitoso.
+**Rediseño de los tiles de alerta (pregunta del usuario, no pedido directo)**: con dos ejes de tabs compitiendo (Activas/Legacy + Todas/Pendientes/Al día) el usuario preguntó si el patrón visual debería ser distinto dado la complejidad del módulo, y aclaró que quería lo mismo aplicado "a nivel de empresa, conductor y vehiculos... que permita accionar rapido". Nuevo `AlertStatTiles` (tiles clickeables tipo Stripe/Linear en vez de una segunda fila de pills) — Activas/Legacy se queda como tabs (membresía real mutuamente excluyente), el eje de severidad pasa a tiles en los 3 lugares: listado de Empresas y los rosters de Conductores/Equipos dentro de la ficha (filtran client-side, la data del roster ya viene completa por carrier).
+
+**Verificado real**: `pytest` 151 passed, `tsc --noEmit` limpio, `vitest` 321 passed (41 archivos), `npm run build` exitoso.
 
 #### Próximo paso exacto
-1. [ ] **Alertas de compliance a nivel de Conductores/Equipos** (pedido explícito: "las alertas en el caso de las empresas tambien deberian estar a nivel de conductores y vehiculos") — `DriverRosterCard`/`VehicleRosterCard` siguen mostrando `total_requirements` plano, mismo gap que tenía `TransporterCard` antes del fix de esta sesión. Requiere extender `GET /carriers/{id}/drivers` y `GET /carriers/{id}/assets` con el mismo join en vivo de severidad usado en `GET /carriers`.
-2. [ ] **Año del vehículo** (pedido explícito) — `public.assets` no tiene columna `year`/`manufacture_year` en ninguna migración (verificado grep completo). Requiere migración `ALTER TABLE public.assets ADD COLUMN manufacture_year INT` (aditiva, nullable, bajo riesgo) + exponer en `Asset`/`AssetPatchBody`/`VehicleDetailPanel`.
-3. [ ] Datos estructurados por documento (ej. F30: monto de la multa, fecha) — sigue sin confirmar si el usuario todavía lo quiere más allá de lo ya resuelto. Preguntar antes de construir nada.
-4. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier. **No iniciar sin que el usuario lo pida explícitamente.**
-5. [ ] Cobranza (aging/agrupación cross-empresa, botón "Pagar" real) sigue sin ruta dedicada — fuera de alcance por ahora.
-6. [ ] Pendientes de sesiones anteriores (no bloqueantes): decidir qué hacer con las ~70 migraciones de Checkpoints A-E ya marcadas para borrar (deletion pendiente en el working tree, sin commitear).
+1. [ ] Verificar en vivo con Playwright el último push (año del vehículo + AlertStatTiles en los 3 niveles) — no hecho todavía en este punto de la sesión.
+2. [ ] Datos estructurados por documento (ej. F30: monto de la multa, fecha) — sigue sin confirmar si el usuario todavía lo quiere más allá de lo ya resuelto. Preguntar antes de construir nada.
+3. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier. **No iniciar sin que el usuario lo pida explícitamente.**
+4. [ ] Cobranza (aging/agrupación cross-empresa, botón "Pagar" real) sigue sin ruta dedicada — fuera de alcance por ahora.
+5. [ ] Pendientes de sesiones anteriores (no bloqueantes): decidir qué hacer con las ~70 migraciones de Checkpoints A-E ya marcadas para borrar (deletion pendiente en el working tree, sin commitear).
 
 ---
