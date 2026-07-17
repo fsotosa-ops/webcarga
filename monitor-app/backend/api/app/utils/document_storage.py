@@ -1,7 +1,7 @@
 """Reemplaza el versionado basado en app.stored_files (dropeada en
 Checkpoint A) — cada reemplazo de documento sube a una ruta de Storage
 NUEVA (nunca sobrescribe el blob anterior) y registra el valor previo en
-app.audit_log en vez de una tabla de versiones dedicada. Decisión de
+public.audit_log en vez de una tabla de versiones dedicada. Decisión de
 Checkpoint A §2.2/decisión 4.
 """
 import json
@@ -68,7 +68,7 @@ async def log_document_replacement(
     })
     await pool.execute(
         """
-        INSERT INTO app.audit_log (actor, entity_type, entity_id, action, field, old_value, new_value, source)
+        INSERT INTO public.audit_log (actor, entity_type, entity_id, action, field, old_value, new_value, source)
         VALUES ($1::uuid, $2, $3::uuid, 'document_replace', $4, $5::jsonb, NULL, 'api')
         """,
         actor, entity_type, str(entity_id), doc_name, old_value,
@@ -79,7 +79,7 @@ async def get_document_history(pool, supabase, *, entity_type: str, entity_id, d
     rows = await pool.fetch(
         """
         SELECT old_value, occurred_at, actor
-        FROM app.audit_log
+        FROM public.audit_log
         WHERE entity_type = $1 AND entity_id = $2::uuid AND field = $3 AND action = 'document_replace'
         ORDER BY occurred_at DESC
         """,

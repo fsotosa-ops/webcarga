@@ -122,8 +122,8 @@ describe('TripSlideOver — layout y a11y', () => {
 
   it('shows Empresa as a compact card in Gestión, not behind an accordion', () => {
     renderSlideOver(baseTrip)
-    // sin vínculo: el buscador está visible directamente
-    expect(screen.getByPlaceholderText(/Buscar empresa/)).toBeInTheDocument()
+    // sin vínculo: el campo (deshabilitado, TODO H2.6) está visible directamente
+    expect(screen.getByPlaceholderText(/Vinculación con Empresas/)).toBeInTheDocument()
   })
 
   it('shows created_at and the internal trip id in the footer', () => {

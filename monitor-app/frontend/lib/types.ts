@@ -366,125 +366,61 @@ export type Trip = {
   pipeline_updated_at:    string | null
 }
 
-// ── Compliance & Governance ─────────────────────────────────────────
+// ── Empresas (public.carriers/drivers/assets/contacts + vistas de H1) ──────
 
-export type ComplianceStatus = 'ok' | 'pendiente' | 'actualizar' | 'n_a' | 'factible'
-export type AlertStatus = 'expired' | 'expiring_soon' | 'ok'
+export type OperationalStatus = 'ACTIVE' | 'INACTIVE' | 'LEGACY_INACTIVE'
+export type EntityType = 'CARRIER' | 'DRIVER' | 'ASSET'
+export type RequirementLevel = 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
 
-export type DriverGovernance = {
-  id_expiry:          string | null
-  license_expiry:     string | null
-  anexo_3_gc:         ComplianceStatus | null
-  epp:                ComplianceStatus | null
-  das_odi:            ComplianceStatus | null
-  hoja_de_vida:       ComplianceStatus | null
-  cert_antecedentes:  ComplianceStatus | null
-  validado_gc_driver: ComplianceStatus | null
-  contrato_trabajo:   ComplianceStatus | null
-  creacion_gc_driver: ComplianceStatus | null
-  avance_total:       number | null
+/** Valores reales del CHECK constraint de public.compliance_records.status
+ *  (init_compliance_engine.sql) — 7 estados, no los 5 legacy de Checkpoint A-E. */
+export type ComplianceStatus =
+  | 'MISSING' | 'PENDING_REVIEW' | 'APPROVED_MANUAL' | 'APPROVED'
+  | 'REJECTED' | 'EXPIRED' | 'ARCHIVED'
+
+/** Fila anidada en Carrier.compliance_records (GET /carriers/{id}) —
+ *  is_expired/is_expiring_soon vienen calculados por el backend. */
+export type ComplianceRecord = {
+  id:                 string
+  requirement_id:     string
+  requirement_code:   string
+  name:               string
+  requirement_level:  RequirementLevel
+  requires_file:      boolean
+  status:             ComplianceStatus
+  expiration_date:    string | null
+  file_url:           string | null
+  metadata:           Record<string, unknown>
+  is_manual_override: boolean
+  is_expired:         boolean
+  is_expiring_soon:   boolean
 }
 
-export type VehicleGovernance = {
-  year:                   number | null
-  circ_permit_expiry:     string | null
-  tech_inspection_expiry: string | null
-  gas_emissions_expiry:   string | null
-  soap_insurance_expiry:  string | null
-  padron:                 ComplianceStatus | null
-  poliza_rc:              ComplianceStatus | null
-  gps:                    ComplianceStatus | null
-  seguro_carga:           ComplianceStatus | null
-  mantencion_camara_frio: ComplianceStatus | null
-  creacion_gc_vehicle:    ComplianceStatus | null
+/** GET/PATCH /compliance-records/{id} standalone — shape distinto al
+ *  anidado: trae entity_id/entity_type/created_at/updated_at pero NO los
+ *  flags is_expired/is_expiring_soon (esos solo se calculan en el detalle
+ *  del carrier, ver _assemble_carrier_detail en routers/carriers.py). */
+export type ComplianceRecordDetail = {
+  id:                 string
+  entity_id:          string
+  entity_type:        EntityType
+  requirement_id:     string
+  requirement_code:   string
+  name:               string
+  requirement_level:  RequirementLevel
+  requires_file:      boolean
+  status:             ComplianceStatus
+  expiration_date:    string | null
+  file_url:           string | null
+  metadata:           Record<string, unknown>
+  is_manual_override: boolean
+  created_at:         string | null
+  updated_at:         string | null
 }
 
-export type ComplianceAlertSummary = {
-  driver_ruts:         Record<string, AlertStatus>
-  plates:              Record<string, AlertStatus>
-  total_expired:       number
-  total_expiring_soon: number
-}
-
-// ── Transporter Profiles (app.transporter_profiles via FastAPI) ────
-
-export type TransporterDriver = {
-  id: string
-  rut: string
-  name: string
-  governance: DriverGovernance | null
-  baja_override: boolean
-  baja_reason: string | null
-}
-
-export type TransporterVehicle = {
-  id: string
-  type: string
-  plate: string
-  governance: VehicleGovernance | null
-  baja_override: boolean
-  baja_reason: string | null
-}
-
-export type TransporterTrailer = {
-  id: string
-  plate: string
-}
-
-export type TransporterContactability = {
-  emails: string[]
-  phones: string[]
-}
-
-// ── Empresas EETT — modelo relacional (plan-modulo-empresas-seguros.md §4) ──
-
-/** Motivo por el que una empresa/conductor/vehículo no está habilitado —
- *  ver app.v_transporter_eligibility (plan §1.7). Valores conocidos:
- *  'docs_below_threshold' | 'insurance_overdue' | 'inactive' (string abierto
- *  por si el backend agrega motivos nuevos sin requerir deploy de frontend). */
-export type BlockingReason = string
-
-export type TransporterContact = {
-  role:  'rep_legal' | 'operacional' | 'finanzas' | 'documentos'
-  name:  string | null
-  phone: string | null
-  email: string | null
-}
-
-/** Documento dentro de TransporterProfile.documents (GET /transporters/{id}) */
-export type TransporterDocument = {
-  doc_code:        string
-  label:           string
-  status:          ComplianceStatus | null
-  expiry_date:     string | null
-  file_url:        string | null
-  storage_path:    string | null
-  manual_override: boolean
-  updated_at:      string | null
-}
-
-/** Resultado de PATCH/POST sobre un documento */
-export type TransporterDocumentPatchResult = {
-  doc_code:        string
-  status:          ComplianceStatus | null
-  expiry_date:     string | null
-  file_url:        string | null
-  storage_path:    string | null
-  notes:           string | null
-  manual_override: boolean
-  updated_at:      string | null
-}
-
-export type TransporterEligibility = {
-  eligible:         boolean
-  compliance_pct:   number | null
-  insurance_ok:     boolean
-  blocking_reasons: BlockingReason[]
-}
-
-/** Entrada del historial de reemplazos de un documento — derivado de
- *  app.audit_log (Checkpoint B), no de una tabla de versiones dedicada.
- *  Reemplaza a StoredFile para GET .../documents/{doc_code}/files. */
+/** Historial de reemplazos de un documento — derivado de public.audit_log,
+ *  no de una tabla de versiones dedicada. Mismo shape para compliance_records
+ *  y policies (ambos usan document_storage.py). */
 export type DocumentVersion = {
   storage_path:  string | null
   status:        ComplianceStatus | null
@@ -495,166 +431,170 @@ export type DocumentVersion = {
   url:           string | null
 }
 
-export type TransporterProfile = {
-  id: string
-  admin_id: string | null
-  business_name: string | null
-  rut: string | null
-  account_stage: string | null
-  contactability: TransporterContactability | null
-  contacts: TransporterContact[]
-  drivers: TransporterDriver[]
-  vehicles: TransporterVehicle[]
-  trailers: TransporterTrailer[]
-  manually_edited_fields: string[]
-  edited_at: string | null
-  updated_at?: string | null
-  in_admin: boolean
-  clients: string[]
-  eligibility: TransporterEligibility
-  documents: TransporterDocument[]
-  operational_status: 'operativa' | 'no_operativa'
-  matched_by_upload: boolean
-  admin_account_id: string | null
-  baja_override: boolean
-  baja_reason: string | null
+/** contact_role no tiene CHECK constraint en DB — string abierto (valores
+ *  documentados: 'LEGAL_REP', 'OPERATIONS', etc., ver schemas/contact.py). */
+export type Contact = {
+  id:           string
+  contact_role: string
+  first_name:   string | null
+  last_name:    string | null
+  job_title:    string | null
+  email:        string | null
+  phone:        string | null
+  is_primary:   boolean
+  is_active:    boolean
 }
 
-export type TransporterListItem = {
-  id: string
-  admin_id: string | null
-  business_name: string | null
-  rut: string | null
-  account_stage: string | null
-  driver_count: number
-  vehicle_count: number
-  trailer_count: number
-  tracto_count: number
-  has_manual_edits: boolean
-  has_active_alerts: boolean
-  in_admin: boolean
-  clients: string[]
-  avance_80_20: number | null
-  avance_total: number | null
-  compliance_pct: number | null
-  eligible: boolean | null
-  insurance_ok: boolean | null
-  policies_count: number
-  blocking_reasons: BlockingReason[]
-  operational_status: 'operativa' | 'no_operativa'
-  matched_by_upload: boolean
-  admin_account_id: string | null
+export type CarrierListItem = {
+  id:                    string
+  tax_id:                string
+  country_code:          string
+  business_name:         string
+  operational_status:    OperationalStatus
+  total_requirements:    number
+  last_document_update:  string | null
 }
 
-export type TransporterListResponse = {
-  data: TransporterListItem[]
+export type CarrierListResponse = {
+  data:  CarrierListItem[]
   count: number
-  page: number
+  page:  number
   limit: number
 }
 
-// ── Seguros (app.insurance_policies / app.insurance_installments) ──────────
+/** GET /carriers/{id} — payload anidado (context_carriers.md §5 Paso 1) */
+export type Carrier = {
+  id:                  string
+  tax_id:              string
+  country_code:        string
+  business_name:       string
+  operational_status:  OperationalStatus
+  legacy_admin_id:     string | null
+  erp_id:              string | null
+  is_manual_override:  boolean
+  overridden_by:       string | null
+  overridden_at:       string | null
+  created_at:          string | null
+  updated_at:          string | null
+  contacts:            Contact[]
+  compliance_records:  ComplianceRecord[]
+}
 
-export type InstallmentStatus = 'pagada' | 'pendiente' | 'vencida'
-export type PolicyType = 'rc_vehicular' | 'rc_eett' | 'carga' | 'otro'
+export type CarrierDriverRosterItem = {
+  id:                    string
+  tax_id:                string
+  full_name:             string
+  operational_status:    OperationalStatus
+  total_requirements:    number | null
+  last_document_update:  string | null
+}
+
+export type CarrierAssetRosterItem = {
+  id:                    string
+  license_plate:         string
+  asset_type:            string
+  operational_status:    OperationalStatus
+  total_requirements:    number | null
+  last_document_update:  string | null
+}
+
+/** Conductor/vehículo como master data — independiente de a qué carrier
+ *  esté asignado (GET/POST/PATCH /drivers, /assets). */
+export type Driver = {
+  id:                    string
+  tax_id:                string
+  country_code:          string
+  full_name:             string
+  operational_status:    OperationalStatus
+  is_manual_override:    boolean
+  created_at:            string | null
+  total_requirements:    number | null
+  last_document_update:  string | null
+}
+
+export type Asset = {
+  id:                    string
+  license_plate:         string
+  asset_type:            string
+  operational_status:    OperationalStatus
+  is_manual_override:    boolean
+  created_at:            string | null
+  total_requirements:    number | null
+  last_document_update:  string | null
+}
+
+// ── Seguros (public.insurance_* — M:N coberturas/activos) ──────────────────
+
+export type PolicyStatus   = 'ACTIVE' | 'EXPIRED' | 'CANCELLED'
+export type PaymentStatus  = 'PENDING' | 'PAID' | 'OVERDUE'
+/** Calculado por app.carrier_insurance_status, no una columna real. */
+export type PolicyHealth   = 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'CANCELLED'
+
+export type CoverageType = {
+  id:          string
+  code:        string
+  name:        string
+  description: string | null
+}
+
+/** Fila de GET /carriers/{id}/policies (vista app.carrier_insurance_status —
+ *  coverage_names ya viene agregado como string, no la lista de ids). */
+export type CarrierPolicyListItem = {
+  id:                      string
+  insurance_company:       string
+  policy_number:           string | null
+  coverage_names:          string
+  total_assets_covered:    number
+  policy_expiration_date:  string | null
+  policy_health:           PolicyHealth
+  total_installments:      number
+  paid_installments:       number
+  overdue_installments:    number
+  next_payment_date:       string | null
+}
+
+export type PolicyCoverage = {
+  coverage_type_id: string
+  code:             string
+  name:             string
+}
+
+export type PolicyAsset = {
+  asset_id:      string
+  license_plate: string
+  asset_type:    string
+}
 
 export type InsuranceInstallment = {
   id:                  string
-  policy_id:           string
   installment_number:  number
-  total_installments:  number | null
+  total_installments:  number
   amount_uf:           number | null
   due_date:            string | null
-  status:              InstallmentStatus
+  payment_status:      PaymentStatus
   paid_at:             string | null
-  payment_url:         string | null
-  manual_override:     boolean
-  updated_at:          string | null
 }
 
+/** GET /policies/{id} — payload anidado (coverages/assets/installments M:N) */
 export type InsurancePolicy = {
-  id:               string
-  transporter_id:   string | null
-  rut:              string
-  contractor_name:  string | null
-  client_group:     string | null
-  company:          string
-  policy_number:    string
-  endorsement:      string | null
-  coverage:         string | null
-  plate:            string | null
-  policy_type:      PolicyType | null
-  valid_from:       string | null
-  valid_to:         string | null
-  payment_url:      string | null
-  file_url:         string | null
-  registry_url:     string | null
-  storage_path:     string | null
-  updated_at:       string | null
-  installments?:    InsuranceInstallment[]
-}
-
-export type InsuranceSummaryRow = {
-  rut:             string
-  business_name:   string | null
-  transporter_id:  string | null
-  policies_count:  number
-  next_due:        { date: string; amount_uf: number | null } | null
-  overdue_count:   number
-  paid_pct:        number | null
-  insurance_ok:    boolean
-}
-
-export type InsuranceTransporterResponse = {
-  rut:            string
-  transporter_id: string
-  policies:       InsurancePolicy[]
-}
-
-export type InsuranceDocument = {
-  doc_code:        string
-  label:           string
-  has_expiry:      boolean
-  status:          ComplianceStatus | null
-  expiry_date:     string | null
-  file_url:        string | null
-  storage_path:    string | null
-  notes:           string | null
-  manual_override: boolean | null
-  updated_at:      string | null
-}
-
-export type InsuranceDocumentPatchResult = {
-  doc_code:        string
-  status:          ComplianceStatus | null
-  expiry_date:     string | null
-  file_url:        string | null
-  storage_path:    string | null
-  notes:           string | null
-  manual_override: boolean | null
-  updated_at:      string | null
-}
-
-export type InsuranceInstallmentFlat = {
-  installment_id:      string
-  policy_id:           string
-  transporter_id:      string | null
-  rut:                 string
-  business_name:       string | null
-  company:             string
-  policy_number:       string
-  client_group:        string | null
-  installment_number:  number
-  amount_uf:           number | null
-  due_date:            string | null
-  status:              InstallmentStatus
-  is_overdue:          boolean
-}
-
-export type InsuranceKpis = {
-  expiring_30d:      number
-  without_policies:  number
-  incomplete_docs:   number
+  id:                        string
+  carrier_id:                string
+  insurance_company:         string
+  policy_number:             string | null
+  valid_from:                string | null
+  valid_to:                  string | null
+  expiration_alert_days:     number
+  policy_document_url:       string | null
+  has_endorsement:           boolean
+  endorsement_document_url:  string | null
+  external_portal_url:       string | null
+  status:                    PolicyStatus
+  is_manual_override:        boolean
+  created_at:                string | null
+  updated_at:                string | null
+  coverages:                 PolicyCoverage[]
+  assets:                    PolicyAsset[]
+  installments:              InsuranceInstallment[]
 }
 
 // Can an admin manage (change role / deactivate) a target user?
@@ -665,82 +605,3 @@ export function canManage(actorRole: UserRole, targetRole: UserRole): boolean {
 }
 
 export type Profile = Database['public']['Tables']['profiles']['Row'] & { active: boolean }
-
-export type CentralizerFieldDiff = {
-  field:    string
-  old:      unknown
-  new:      unknown
-  conflict: boolean
-}
-
-export type CentralizerChangeType = 'new' | 'updated' | 'unchanged' | 'conflict'
-
-export type CentralizerEntityDiff = {
-  entity_key:      string
-  match_method:    'rut' | 'legacy_id' | 'plate' | null
-  existing_id:     string | null
-  change_type:     CentralizerChangeType
-  field_diffs:     CentralizerFieldDiff[]
-  conflict_reason: string | null
-  parsed_row:      Record<string, unknown>
-}
-
-export type CentralizerParseError = {
-  sheet:       string
-  row?:        number
-  identifier?: string
-  reason:      string
-}
-
-export type CentralizerDiff = {
-  transporters: CentralizerEntityDiff[]
-  drivers:      CentralizerEntityDiff[]
-  vehicles:     CentralizerEntityDiff[]
-  parse_errors: CentralizerParseError[]
-}
-
-export type CentralizerUploadStatus = 'parsed' | 'previewed' | 'approved' | 'applied' | 'rejected' | 'failed' | 'pending_mapping'
-
-export type CentralizerUploadSummary = {
-  id:                string
-  upload_kind:       'centralizer' | 'insurance'
-  file_name:         string
-  status:            CentralizerUploadStatus
-  uploaded_by:       string
-  uploaded_by_name:  string | null
-  uploaded_at:       string
-  sheet_summary:     Record<string, number> | null
-  approved_by:       string | null
-  approved_by_name:  string | null
-  approved_at:       string | null
-  applied_at:        string | null
-  rejected_by:       string | null
-  rejected_by_name:  string | null
-  rejected_at:       string | null
-  rejection_reason:  string | null
-}
-
-export type CentralizerUploadDetail = CentralizerUploadSummary & {
-  parse_errors:       CentralizerParseError[]
-  diff:               CentralizerDiff | null
-  unresolved_columns: UnresolvedColumn[] | null
-}
-
-export type UnresolvedColumn = {
-  sheet:  'Empresas' | 'Conductores' | 'Vehiculos_Equipos'
-  header: string
-}
-
-export type ComplianceDocCatalogEntry = {
-  doc_code:    string
-  entity_type: 'transporter' | 'driver' | 'vehicle'
-  label:       string
-}
-
-export type ColumnMappingResolution = {
-  sheet:     'Empresas' | 'Conductores' | 'Vehiculos_Equipos'
-  header:    string
-  action:    'map' | 'create' | 'ignore'
-  doc_code?: string
-  label?:    string
-}

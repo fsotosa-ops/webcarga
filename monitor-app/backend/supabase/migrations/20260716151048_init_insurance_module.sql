@@ -1,13 +1,14 @@
 -- ==============================================================================
--- MIGRATION: init_insurance_module
--- DESCRIPTION: Inicialización del Módulo de Seguros (Pólizas, Cuotas y Catálogos),
--- alertas dinámicas, y su integración con el Motor de Cumplimiento.
+-- MIGRATION: init_insurance_module (IDEMPOTENT)
+-- DESCRIPTION: Inicialización del Módulo de Seguros (Pólizas, Cuotas, Catálogos),
+-- soporte para coberturas/patentes múltiples (M:N), alertas dinámicas, y su 
+-- integración nativa con el Motor de Cumplimiento y Monitor App.
 -- ==============================================================================
 
 -- ==============================================================
 -- 1. TABLA CATÁLOGO: TIPOS DE COBERTURA
 -- ==============================================================
-CREATE TABLE public.coverage_types (
+CREATE TABLE IF NOT EXISTS public.coverage_types (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     code VARCHAR(50) NOT NULL UNIQUE,          
     name VARCHAR(100) NOT NULL,                
@@ -17,16 +18,16 @@ CREATE TABLE public.coverage_types (
 );
 
 ALTER TABLE public.coverage_types ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Coverage types are viewable by authenticated users" ON public.coverage_types;
 CREATE POLICY "Coverage types are viewable by authenticated users" ON public.coverage_types FOR SELECT TO authenticated USING (true);
 
 
 -- ==============================================================
 -- 2. TABLA PRINCIPAL: PÓLIZAS DE SEGUROS (O1)
 -- ==============================================================
-CREATE TABLE public.insurance_policies (
+CREATE TABLE IF NOT EXISTS public.insurance_policies (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     carrier_id UUID REFERENCES public.carriers(id) ON DELETE CASCADE,
-    coverage_type_id UUID REFERENCES public.coverage_types(id) ON DELETE RESTRICT,
     
     insurance_company VARCHAR(100) NOT NULL,
     policy_number VARCHAR(100),
@@ -48,14 +49,47 @@ CREATE TABLE public.insurance_policies (
 );
 
 ALTER TABLE public.insurance_policies ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Policies are viewable by authenticated users" ON public.insurance_policies;
+DROP POLICY IF EXISTS "Policies can be inserted/updated by authenticated users" ON public.insurance_policies;
 CREATE POLICY "Policies are viewable by authenticated users" ON public.insurance_policies FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Policies can be inserted/updated by authenticated users" ON public.insurance_policies FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 
 -- ==============================================================
--- 3. TABLA SECUNDARIA: COBRANZA Y CUOTAS (O2)
+-- 3. TABLAS PUENTE (JUNCTION TABLES M:N)
 -- ==============================================================
-CREATE TABLE public.insurance_installments (
+
+-- 3A. Múltiples Coberturas por Póliza
+CREATE TABLE IF NOT EXISTS public.policy_coverages (
+    policy_id UUID REFERENCES public.insurance_policies(id) ON DELETE CASCADE,
+    coverage_type_id UUID REFERENCES public.coverage_types(id) ON DELETE CASCADE,
+    PRIMARY KEY (policy_id, coverage_type_id)
+);
+
+ALTER TABLE public.policy_coverages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Policy coverages are viewable by authenticated users" ON public.policy_coverages;
+DROP POLICY IF EXISTS "Policy coverages can be managed by authenticated users" ON public.policy_coverages;
+CREATE POLICY "Policy coverages are viewable by authenticated users" ON public.policy_coverages FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Policy coverages can be managed by authenticated users" ON public.policy_coverages FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 3B. Múltiples Patentes/Vehículos por Póliza
+CREATE TABLE IF NOT EXISTS public.policy_assets (
+    policy_id UUID REFERENCES public.insurance_policies(id) ON DELETE CASCADE,
+    asset_id UUID REFERENCES public.assets(id) ON DELETE CASCADE,
+    PRIMARY KEY (policy_id, asset_id)
+);
+
+ALTER TABLE public.policy_assets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Policy assets are viewable by authenticated users" ON public.policy_assets;
+DROP POLICY IF EXISTS "Policy assets can be managed by authenticated users" ON public.policy_assets;
+CREATE POLICY "Policy assets are viewable by authenticated users" ON public.policy_assets FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Policy assets can be managed by authenticated users" ON public.policy_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+
+-- ==============================================================
+-- 4. TABLA SECUNDARIA: COBRANZA Y CUOTAS (O2)
+-- ==============================================================
+CREATE TABLE IF NOT EXISTS public.insurance_installments (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     policy_id UUID REFERENCES public.insurance_policies(id) ON DELETE CASCADE,
     
@@ -72,24 +106,45 @@ CREATE TABLE public.insurance_installments (
 );
 
 ALTER TABLE public.insurance_installments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Installments are viewable by authenticated users" ON public.insurance_installments;
+DROP POLICY IF EXISTS "Installments can be inserted/updated by authenticated users" ON public.insurance_installments;
 CREATE POLICY "Installments are viewable by authenticated users" ON public.insurance_installments FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Installments can be inserted/updated by authenticated users" ON public.insurance_installments FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 
 -- ==============================================================
--- 4. INTEGRACIÓN CON EL MOTOR DE CUMPLIMIENTO
+-- 5. INTEGRACIÓN CON EL MOTOR DE CUMPLIMIENTO
+-- ==============================================================
+-- ==============================================================
+-- 5. INTEGRACIÓN CON EL MOTOR DE CUMPLIMIENTO
 -- ==============================================================
 INSERT INTO public.compliance_requirements 
     (target_entity, requirement_code, name, requirement_level, requires_file, has_expiration)
-VALUES 
-    ('CARRIER', 'INSURANCE_POLICY', 'Póliza de Seguro Vigente', 'LEGAL_MANDATORY', true, true)
-ON CONFLICT (target_entity, shipper_id, requirement_code) DO NOTHING;
+SELECT 
+    'CARRIER', 'INSURANCE_POLICY', 'Póliza de Seguro Vigente', 'LEGAL_MANDATORY', true, true
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.compliance_requirements 
+    WHERE target_entity = 'CARRIER' AND requirement_code = 'INSURANCE_POLICY'
+);
 
 
 -- ==============================================================
--- 5. VISTA MATERIALIZADA (FRONTEND DASHBOARD)
+-- 6. VISTA MATERIALIZADA (FRONTEND DASHBOARD)
 -- ==============================================================
+DROP MATERIALIZED VIEW IF EXISTS app.carrier_insurance_status;
+
 CREATE MATERIALIZED VIEW app.carrier_insurance_status AS
+WITH policy_covs AS (
+    SELECT pc.policy_id, string_agg(ct.name, ', ') AS coverage_names
+    FROM public.policy_coverages pc
+    JOIN public.coverage_types ct ON pc.coverage_type_id = ct.id
+    GROUP BY pc.policy_id
+),
+policy_ast AS (
+    SELECT pa.policy_id, COUNT(pa.asset_id) AS total_assets
+    FROM public.policy_assets pa
+    GROUP BY pa.policy_id
+)
 SELECT 
     p.id AS policy_id,
     c.id AS carrier_id,
@@ -97,7 +152,8 @@ SELECT
     c.tax_id,
     p.insurance_company,
     p.policy_number,
-    ct.name AS coverage_name,
+    COALESCE(pcov.coverage_names, 'Sin especificar') AS coverage_names,
+    COALESCE(past.total_assets, 0) AS total_assets_covered,
     p.valid_to AS policy_expiration_date,
     p.expiration_alert_days,
     p.has_endorsement,
@@ -122,19 +178,21 @@ SELECT
 
 FROM public.insurance_policies p
 JOIN public.carriers c ON p.carrier_id = c.id
-LEFT JOIN public.coverage_types ct ON p.coverage_type_id = ct.id
+LEFT JOIN policy_covs pcov ON pcov.policy_id = p.id
+LEFT JOIN policy_ast past ON past.policy_id = p.id
 LEFT JOIN public.insurance_installments i ON p.id = i.policy_id
 GROUP BY 
     p.id, c.id, c.business_name, c.tax_id, p.insurance_company, 
-    p.policy_number, ct.name, p.valid_to, p.expiration_alert_days,
-    p.has_endorsement, p.external_portal_url, p.policy_document_url, p.status;
+    p.policy_number, pcov.coverage_names, past.total_assets, p.valid_to, 
+    p.expiration_alert_days, p.has_endorsement, p.external_portal_url, 
+    p.policy_document_url, p.status;
 
 -- Índice único requerido para permitir REFRESH CONCURRENTLY
-CREATE UNIQUE INDEX idx_carrier_insurance_view_policy_id ON app.carrier_insurance_status (policy_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_carrier_insurance_view_policy_id ON app.carrier_insurance_status (policy_id);
 
 
 -- ==============================================================
--- 6. FUNCIONES Y TRIGGERS PARA REFRESH REACTIVO (UI)
+-- 7. FUNCIONES Y TRIGGERS PARA REFRESH REACTIVO (UI)
 -- ==============================================================
 CREATE OR REPLACE FUNCTION public.refresh_insurance_view()
 RETURNS TRIGGER AS $$
@@ -143,6 +201,12 @@ BEGIN
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Limpiar triggers existentes para evitar duplicados en re-ejecuciones
+DROP TRIGGER IF EXISTS trg_refresh_view_on_policy ON public.insurance_policies;
+DROP TRIGGER IF EXISTS trg_refresh_view_on_installment ON public.insurance_installments;
+DROP TRIGGER IF EXISTS trg_refresh_view_on_policy_coverages ON public.policy_coverages;
+DROP TRIGGER IF EXISTS trg_refresh_view_on_policy_assets ON public.policy_assets;
 
 -- Trigger: Cambios en las pólizas
 CREATE TRIGGER trg_refresh_view_on_policy
@@ -154,9 +218,19 @@ CREATE TRIGGER trg_refresh_view_on_installment
 AFTER INSERT OR UPDATE OR DELETE ON public.insurance_installments
 FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_insurance_view();
 
+-- Trigger: Cambios en las coberturas asignadas
+CREATE TRIGGER trg_refresh_view_on_policy_coverages
+AFTER INSERT OR UPDATE OR DELETE ON public.policy_coverages
+FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_insurance_view();
+
+-- Trigger: Cambios en los activos (patentes) asignados
+CREATE TRIGGER trg_refresh_view_on_policy_assets
+AFTER INSERT OR UPDATE OR DELETE ON public.policy_assets
+FOR EACH STATEMENT EXECUTE FUNCTION public.refresh_insurance_view();
+
 
 -- ==============================================================
--- 7. PERMISOS DE SEGURIDAD (MONITOR-APP)
+-- 8. PERMISOS DE SEGURIDAD (MONITOR-APP)
 -- ==============================================================
 GRANT USAGE ON SCHEMA app TO authenticated;
 GRANT SELECT ON app.carrier_insurance_status TO authenticated;

@@ -3,12 +3,11 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, Upload } from 'lucide-react'
-import { transportersApi } from '@/lib/api/transporters'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import type { TripListResponse } from '@/lib/api/trips'
-import type { Trip, ComplianceAlertSummary, TripsMeta } from '@/lib/types'
-import { TripTable } from '@/components/dashboard/TripTable'
+import type { Trip, TripsMeta } from '@/lib/types'
+import { TripTable, type ComplianceAlertSummary } from '@/components/dashboard/TripTable'
 import { TripBoard } from '@/components/dashboard/TripBoard'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
@@ -230,7 +229,7 @@ export default function DiarioPage() {
   }, [trips])
 
   useEffect(() => {
-    transportersApi.getComplianceAlertSummary().then(setAlertSummary).catch(console.error)
+    // TODO(H2.6): sin productor desde que se borró transporters.py — ver TripTable.tsx
     filterGroupsApi.list().then(setCustomGroups).catch(console.error)
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en TripTable/TripSlideOver */ })
   }, [])

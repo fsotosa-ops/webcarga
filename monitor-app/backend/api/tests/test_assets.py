@@ -1,0 +1,79 @@
+from unittest.mock import AsyncMock
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.auth import get_current_user, require_editor
+from app.db import get_pool
+from app.routers.assets import router
+from tests.conftest import USER, wire_transactional_conn
+
+
+def make_client(pool):
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_pool] = lambda: pool
+    app.dependency_overrides[get_current_user] = lambda: USER
+    app.dependency_overrides[require_editor] = lambda: USER
+    return TestClient(app)
+
+
+def test_get_asset_404_when_missing():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/assets/a1")
+
+    assert res.status_code == 404
+
+
+def test_create_asset_rejects_duplicate_plate():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = "existing"
+    client = make_client(pool)
+
+    res = client.post("/api/v1/assets", json={"license_plate": "ABCD12", "asset_type": "TRACTOCAMION"})
+
+    assert res.status_code == 409
+
+
+def test_create_asset_uppercases_plate_and_succeeds():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "operational_status": "ACTIVE", "created_at": None,
+    }
+    client = make_client(pool)
+
+    res = client.post("/api/v1/assets", json={"license_plate": "abcd12", "asset_type": "TRACTOCAMION"})
+
+    assert res.status_code == 201
+    insert_args = conn.fetchrow.call_args.args
+    assert insert_args[1] == "ABCD12"
+
+
+def test_create_asset_rejects_unknown_type():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.post("/api/v1/assets", json={"license_plate": "ABCD12", "asset_type": "BICICLETA"})
+
+    assert res.status_code == 422
+
+
+def test_patch_asset_no_fields_422():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"asset_type": "TRACTOCAMION", "operational_status": "ACTIVE"}
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/assets/a1", json={})
+
+    assert res.status_code == 422

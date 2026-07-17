@@ -80,7 +80,7 @@ async def test_log_document_replacement_inserts_audit_row_with_old_values():
 
     pool.execute.assert_called_once()
     call_args = pool.execute.call_args
-    assert "app.audit_log" in call_args[0][0]
+    assert "public.audit_log" in call_args[0][0]
     assert "document_replace" in call_args[0][0]
 
     actor, entity_type, entity_id, doc_name, old_value_json = call_args[0][1:]

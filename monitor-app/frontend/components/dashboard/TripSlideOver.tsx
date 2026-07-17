@@ -6,9 +6,8 @@ import {
   Truck, User, Phone, Hash,
   MapPin, ChevronDown, RotateCcw, ClipboardList,
 } from 'lucide-react'
-import type { Trip, TransporterListItem, TripsMeta } from '@/lib/types'
-import { tripsApi, type TripPatch, type FleetLinkPayload } from '@/lib/api/trips'
-import { transportersApi } from '@/lib/api/transporters'
+import type { Trip, TripsMeta } from '@/lib/types'
+import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { fmtDT, fmtDate, formatRelativeTime } from '@/lib/utils/datetime'
@@ -20,56 +19,21 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 // ── TransporterAssignSection ──────────────────────────────────────────────────
+//
+// TODO(H2.6): deshabilitado — tripsApi.assignFleetLink() manda transporter_id
+// hacia app.trip_fleet_links, que hace JOIN contra app.transporter_profiles.id
+// (Checkpoint A-E). No es el mismo espacio de UUID que public.carriers.id del
+// modelo nuevo; un swap directo compilaría pero rompería la vinculación en
+// silencio. Vuelve a activarse cuando se resuelva el puente del Diario con
+// Empresas.
 
 function TransporterAssignSection({
-  tripId,
   currentTransporter,
-  onAssigned,
 }: {
   tripId: string
   currentTransporter: string | null
   onAssigned: (t: Trip) => void
 }) {
-  const [query, setQuery]         = useState('')
-  const [results, setResults]     = useState<TransporterListItem[]>([])
-  const [searching, setSearching] = useState(false)
-  const [searchErr, setSearchErr] = useState<string | null>(null)
-  const [saving, setSaving]       = useState(false)
-
-  useEffect(() => {
-    if (query.length < 2) { setResults([]); setSearchErr(null); setSearching(false); return }
-    setSearching(true)
-    setSearchErr(null)
-    const ctrl = new AbortController()
-    const t = setTimeout(async () => {
-      try {
-        const res = await transportersApi.list({ q: query, page: 1, limit: 12 })
-        if (!ctrl.signal.aborted) setResults(res.data)
-      } catch (e) {
-        if (!ctrl.signal.aborted) {
-          setSearchErr(e instanceof Error ? e.message : 'Error al buscar')
-          setResults([])
-        }
-      } finally {
-        if (!ctrl.signal.aborted) setSearching(false)
-      }
-    }, 300)
-    return () => { clearTimeout(t); ctrl.abort() }
-  }, [query])
-
-  const assign = async (profileId: string) => {
-    setSaving(true)
-    try {
-      const payload: FleetLinkPayload = { transporter_id: profileId }
-      const updated = await tripsApi.assignFleetLink(tripId, payload)
-      onAssigned(updated)
-      setResults([])
-      setQuery('')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
     <div className="space-y-2">
       {currentTransporter && (
@@ -77,42 +41,12 @@ function TransporterAssignSection({
           TMS reporta: <span className="font-medium text-gray-600">{currentTransporter}</span>
         </p>
       )}
-      <div className="relative">
-        <input
-          type="text"
-          placeholder="Buscar empresa por nombre o RUT…"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          className="w-full text-xs border border-border rounded-lg px-3 py-2 pr-7 focus:outline-none focus:ring-2 focus:ring-accent/30"
-        />
-        {searching && (
-          <Loader2 size={12} className="animate-spin text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
-        )}
-      </div>
-      {searchErr && <p className="text-[10px] text-red-500 px-1">{searchErr}</p>}
-      {results.length > 0 && (
-        <ul className="border border-border rounded-lg divide-y divide-border overflow-y-auto max-h-52 bg-white shadow-md">
-          {results.map(tp => (
-            <li key={tp.id}>
-              <button
-                type="button"
-                onClick={() => assign(tp.id)}
-                disabled={saving}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between"
-              >
-                <div>
-                  <p className="font-medium text-slate-700">{tp.business_name ?? '—'}</p>
-                  <p className="text-gray-400 font-mono text-[10px]">{tp.rut ?? ''}</p>
-                </div>
-                {saving && <Loader2 size={12} className="animate-spin text-accent" />}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {query.length >= 2 && !searching && results.length === 0 && !searchErr && (
-        <p className="text-[10px] text-gray-400 px-1">Sin resultados para "{query}"</p>
-      )}
+      <input
+        type="text"
+        disabled
+        placeholder="Vinculación con Empresas temporalmente no disponible"
+        className="w-full text-xs border border-border rounded-lg px-3 py-2 opacity-50 cursor-not-allowed"
+      />
     </div>
   )
 }

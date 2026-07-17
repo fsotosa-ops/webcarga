@@ -6,10 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .db import close_pool, init_pool
 from .middleware.cache import CacheMiddleware
-from .routers.centralizer_uploads import router as centralizer_uploads_router
+from .routers.assets import router as assets_router
+from .routers.carriers import router as carriers_router
+from .routers.compliance import router as compliance_router
 from .routers.config import router as config_router
+from .routers.contacts import router as contacts_router
+from .routers.coverage_types import router as coverage_types_router
+from .routers.drivers import router as drivers_router
 from .routers.filter_groups import router as filter_groups_router
-from .routers.insurance import router as insurance_router
+from .routers.policies import router as policies_router
 from .routers.roles import router as roles_router
 from .routers.trips import router as trips_router
 from .routers.users import router as users_router
@@ -34,15 +39,6 @@ app = FastAPI(
 
 settings = get_settings()
 
-# Módulo Empresas EETT (plan §3): flag TRANSPORTERS_BACKEND elige el modelo
-# relacional nuevo (default) o el legacy jsonb (app.transporter_profiles) como
-# fallback de rollback. Mismo prefix/tags en ambos routers — solo uno se
-# registra.
-if settings.transporters_backend == "jsonb":
-    from .routers.transporters_legacy import router as transporters_router
-else:
-    from .routers.transporters import router as transporters_router
-
 # Orden de middlewares (Starlette: último agregado = más externo para requests)
 # CacheMiddleware primero → queda interno a CORS (CORS agrega headers incluso en hits)
 app.add_middleware(CacheMiddleware)
@@ -56,12 +52,19 @@ app.add_middleware(
 
 app.include_router(roles_router,               prefix="/api/v1")
 app.include_router(config_router,              prefix="/api/v1")
-app.include_router(transporters_router,        prefix="/api/v1")
-app.include_router(insurance_router,           prefix="/api/v1")
 app.include_router(trips_router,               prefix="/api/v1")
 app.include_router(users_router,               prefix="/api/v1")
 app.include_router(filter_groups_router,       prefix="/api/v1")
-app.include_router(centralizer_uploads_router, prefix="/api/v1")
+# Módulo Empresas/Seguros (H2) — reemplaza por completo los routers de
+# Checkpoint A-E (transporters.py/transporters_legacy.py/insurance.py,
+# borrados 2026-07-16, ver AGENTLOG.md). Sin flag de coexistencia.
+app.include_router(carriers_router,            prefix="/api/v1")
+app.include_router(drivers_router,             prefix="/api/v1")
+app.include_router(assets_router,              prefix="/api/v1")
+app.include_router(contacts_router,            prefix="/api/v1")
+app.include_router(policies_router,            prefix="/api/v1")
+app.include_router(compliance_router,          prefix="/api/v1")
+app.include_router(coverage_types_router,      prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

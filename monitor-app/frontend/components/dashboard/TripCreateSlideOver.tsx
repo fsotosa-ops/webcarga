@@ -3,15 +3,27 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   X, Loader2, Plus, Search, Building2, User, Truck,
-  ChevronRight, MapPin, Trash2, Link2,
+  MapPin, Trash2, Link2,
 } from 'lucide-react'
 import type {
   Trip, TripsMeta, TripCreatePayload, TripStopCreatePayload,
-  TransporterProfile, TransporterListItem,
 } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
-import { transportersApi } from '@/lib/api/transporters'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
+
+// TODO(H2.6): EmpresaSelector deshabilitado — transporter_profile_id hace
+// JOIN contra app.transporter_profiles.id (Checkpoint A-E), que no es el
+// mismo espacio de UUID que public.carriers.id del modelo nuevo. Un swap
+// directo a carriersApi compilaría pero mandaría un id que nunca matchea
+// (rompe la vinculación en silencio). Vuelve a activarse cuando se resuelva
+// el puente del Diario con Empresas.
+type EmpresaSeleccionada = {
+  id: string
+  business_name: string | null
+  rut: string | null
+  drivers: { id: string; name: string | null; rut: string | null }[]
+  vehicles: { id: string; plate: string | null; type: string | null }[]
+}
 
 interface Props {
   open:      boolean
@@ -69,36 +81,12 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 function EmpresaSelector({
   selected,
-  onSelect,
   onClear,
 }: {
-  selected: TransporterProfile | null
-  onSelect: (t: TransporterProfile) => void
+  selected: EmpresaSeleccionada | null
+  onSelect: (t: EmpresaSeleccionada) => void
   onClear:  () => void
 }) {
-  const [query, setQuery]         = useState('')
-  const [results, setResults]     = useState<TransporterListItem[]>([])
-  const [searching, setSearching] = useState(false)
-  const [open, setOpen]           = useState(false)
-
-  useEffect(() => {
-    if (query.length < 2) { setResults([]); return }
-    setSearching(true)
-    const t = setTimeout(async () => {
-      try {
-        const res = await transportersApi.list({ q: query, limit: 10 })
-        setResults(res.data)
-      } finally { setSearching(false) }
-    }, 250)
-    return () => clearTimeout(t)
-  }, [query])
-
-  async function handleSelect(item: TransporterListItem) {
-    setOpen(false); setQuery('')
-    const full = await transportersApi.get(item.id)
-    onSelect(full)
-  }
-
   if (selected) {
     return (
       <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
@@ -124,44 +112,14 @@ function EmpresaSelector({
         <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input
           type="text"
-          value={query}
-          onChange={e => { setQuery(e.target.value); setOpen(true) }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="Buscar empresa por nombre o RUT…"
-          className={INPUT + ' pl-8'}
+          disabled
+          placeholder="Vinculación con Empresas temporalmente no disponible"
+          className={INPUT + ' pl-8 opacity-50 cursor-not-allowed'}
         />
-        {searching && <Loader2 size={12} className="animate-spin text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />}
       </div>
-      {open && results.length > 0 && (
-        <ul className="absolute z-20 w-full mt-1 bg-white border border-border rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
-          {results.map(r => (
-            <li key={r.id}>
-              <button
-                type="button"
-                onMouseDown={() => handleSelect(r)}
-                className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between gap-2"
-              >
-                <div>
-                  <p className="font-medium text-slate-700">{r.business_name ?? '—'}</p>
-                  <p className="text-[10px] text-gray-400 font-mono">{r.rut ?? ''}</p>
-                </div>
-                <ChevronRight size={13} className="text-gray-300 shrink-0" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {open && query.length >= 2 && !searching && results.length === 0 && (
-        <div className="absolute z-20 w-full mt-1 bg-white border border-border rounded-xl shadow-lg px-4 py-3">
-          <p className="text-xs text-gray-400">Sin resultados para "{query}"</p>
-        </div>
-      )}
-      {query.length < 2 && (
-        <p className="text-[10px] text-gray-400 mt-1.5 pl-1">
-          O deja vacío para ingreso libre de conductor y patente
-        </p>
-      )}
+      <p className="text-[10px] text-gray-400 mt-1.5 pl-1">
+        Ingreso libre de conductor y patente
+      </p>
     </div>
   )
 }
@@ -177,7 +135,7 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
   const [originMode, setOriginMode] = useState<OriginMode>('none')
   const [originTms, setOriginTms]   = useState('')
   const [stops, setStops]           = useState<TripStopCreatePayload[]>([])
-  const [empresa, setEmpresa]       = useState<TransporterProfile | null>(null)
+  const [empresa, setEmpresa]       = useState<EmpresaSeleccionada | null>(null)
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
   const panelRef                    = useRef<HTMLDivElement>(null)
@@ -234,7 +192,7 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
     setForm(f => ({ ...f, [field]: value || undefined }))
   }
 
-  function handleSelectEmpresa(profile: TransporterProfile) {
+  function handleSelectEmpresa(profile: EmpresaSeleccionada) {
     setEmpresa(profile)
     setForm(f => ({
       ...f,

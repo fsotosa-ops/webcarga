@@ -2,8 +2,20 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
-import type { AlertStatus, ComplianceAlertSummary, Trip, TripStop, TripsMeta } from '@/lib/types'
+import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
+
+// TODO(H2.6): venían de GET /transporters/compliance-alerts/summary (Checkpoint
+// A-E, borrado). Sin productor hasta que se resuelva el puente del Diario con
+// el modelo nuevo de Empresas — alertSummary queda siempre null/undefined
+// mientras tanto (degradación limpia, no se muestran alertas de vencimiento).
+export type AlertStatus = 'expired' | 'expiring_soon' | 'ok'
+export type ComplianceAlertSummary = {
+  driver_ruts:         Record<string, AlertStatus>
+  plates:              Record<string, AlertStatus>
+  total_expired:       number
+  total_expiring_soon: number
+}
 import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'

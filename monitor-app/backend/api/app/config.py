@@ -10,9 +10,6 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:3000"]
     upstash_redis_rest_url: str = ""
     upstash_redis_rest_token: str = ""
-    # Módulo Empresas EETT — plan §3: 'relational' (default, modelo nuevo) o
-    # 'jsonb' (legacy sobre app.transporter_profiles, fallback para rollback).
-    transporters_backend: str = "relational"
     # Graph API (SharePoint) — fetch automático del Excel EETT, ver
     # utils/sharepoint_client.py. Vacío en dev/test no rompe nada — solo
     # falla si efectivamente se intenta hacer el fetch sin credenciales.
