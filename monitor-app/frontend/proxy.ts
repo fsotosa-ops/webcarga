@@ -3,10 +3,17 @@ import { createServerClient } from '@supabase/ssr'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 
-// Inicializar fuera del handler para reutilizar entre invocaciones
+// Inicializar fuera del handler para reutilizar entre invocaciones.
+// 20 req/10s (valor original) resultaba en 429 durante navegación normal:
+// cada carga de página bajo /dashboard cuenta contra el mismo budget que
+// las N llamadas paralelas a /api/v1/... que esa página dispara (ficha de
+// empresa: carrier + drivers + assets + policies + shippers = 5 solo al
+// abrir), así que 3-4 clicks rápidos entre módulos ya alcanzaban el límite
+// para un solo usuario legítimo. 60/10s da margen real para eso mientras
+// sigue acotando abuso (cientos de req/s).
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
-  limiter: Ratelimit.slidingWindow(20, '10 s'),
+  limiter: Ratelimit.slidingWindow(60, '10 s'),
   analytics: false,
 })
 
