@@ -21,6 +21,27 @@ router = APIRouter(prefix="/carriers", tags=["carriers"])
 
 _CARRIER_HEALTH_VALUES = {"PENDING", "OK"}
 
+
+def _pending_mandatory_join(entity_type: str, id_column: str) -> str:
+    """Subquery de documentación LEGAL_MANDATORY pendiente/vencida para un
+    entity_type dado — mismo criterio en los 3 niveles (CARRIER/DRIVER/ASSET,
+    ver _CARRIER_LIST_AGG y mandatoryProblems en la ficha de empresa).
+    `entity_type` siempre viene hardcodeado por el caller, nunca de request."""
+    return f"""
+        LEFT JOIN (
+            SELECT cr.entity_id AS {id_column},
+                   COUNT(*) FILTER (
+                       WHERE req.requirement_level = 'LEGAL_MANDATORY'
+                         AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
+                              OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+                   ) AS pending_mandatory
+            FROM public.compliance_records cr
+            JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+            WHERE cr.entity_type = '{entity_type}' AND cr.is_current = true
+            GROUP BY cr.entity_id
+        ) sev ON sev.{id_column} = r.{id_column}
+    """
+
 # Mismo criterio de "problema obligatorio" que `mandatoryProblems` en la ficha
 # de empresa (app/dashboard/transportistas/empresa/[id]/page.tsx): requisito
 # LEGAL_MANDATORY con status MISSING/EXPIRED/REJECTED o vencido por fecha
@@ -356,8 +377,16 @@ async def patch_carrier(
 @router.get("/{carrier_id}/drivers")
 async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
     rows = await pool.fetch(
-        "SELECT driver_id AS id, tax_id, full_name, operational_status, total_requirements, last_document_update "
-        "FROM app.carrier_driver_roster WHERE carrier_id = $1 ORDER BY full_name",
+        f"""
+        SELECT r.driver_id AS id, r.tax_id, r.full_name, r.operational_status,
+               r.total_requirements, r.last_document_update,
+               COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
+               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health
+        FROM app.carrier_driver_roster r
+        {_pending_mandatory_join('DRIVER', 'driver_id')}
+        WHERE r.carrier_id = $1
+        ORDER BY r.full_name
+        """,
         carrier_id,
     )
     return [dict(r) for r in rows]
@@ -426,8 +455,16 @@ async def unassign_driver(
 @router.get("/{carrier_id}/assets")
 async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
     rows = await pool.fetch(
-        "SELECT asset_id AS id, license_plate, asset_type, operational_status, total_requirements, last_document_update "
-        "FROM app.carrier_asset_roster WHERE carrier_id = $1 ORDER BY license_plate",
+        f"""
+        SELECT r.asset_id AS id, r.license_plate, r.asset_type, r.operational_status,
+               r.total_requirements, r.last_document_update,
+               COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
+               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health
+        FROM app.carrier_asset_roster r
+        {_pending_mandatory_join('ASSET', 'asset_id')}
+        WHERE r.carrier_id = $1
+        ORDER BY r.license_plate
+        """,
         carrier_id,
     )
     return [dict(r) for r in rows]

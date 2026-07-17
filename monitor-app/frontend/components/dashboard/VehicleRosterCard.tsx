@@ -1,9 +1,8 @@
 // components/dashboard/VehicleRosterCard.tsx
 'use client'
 
-import { Truck } from 'lucide-react'
+import { Truck, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { CarrierAssetRosterItem } from '@/lib/types'
-import { formatExpiry } from '@/lib/compliance'
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   TRACTOCAMION: 'Tracto', RAMPLA: 'Rampla', CAMION: 'Camión', FURGON: 'Furgón', OTRO: 'Otro',
@@ -14,10 +13,10 @@ interface Props {
   onOpen:  () => void
 }
 
-/** Tarjeta compacta del roster de equipos — patente + tipo + cantidad de
- *  requisitos. app.carrier_asset_roster no desglosa por estado (solo
- *  total_requirements agregado), así que no hay semáforo acá — el detalle
- *  por documento vive en VehicleDetailPanel. */
+/** Tarjeta compacta del roster de equipos — patente + tipo + pill de
+ *  compliance_health (mismo criterio y componente visual que TransporterCard
+ *  en el listado de Empresas) — reemplaza el conteo plano "N requisitos".
+ *  El detalle por documento vive en VehicleDetailPanel. */
 export function VehicleRosterCard({ vehicle, onOpen }: Props) {
   return (
     <button
@@ -35,10 +34,15 @@ export function VehicleRosterCard({ vehicle, onOpen }: Props) {
             {ASSET_TYPE_LABELS[vehicle.asset_type] ?? vehicle.asset_type}
           </span>
         </div>
-        <p className="text-[10px] font-semibold text-gray-400">
-          {vehicle.total_requirements ?? 0} requisito{vehicle.total_requirements === 1 ? '' : 's'}
-          {vehicle.last_document_update && ` · ${formatExpiry(vehicle.last_document_update)}`}
-        </p>
+        {vehicle.compliance_health === 'PENDING' ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 mt-0.5">
+            <ShieldAlert size={9} /> {vehicle.pending_mandatory} pendiente{vehicle.pending_mandatory === 1 ? '' : 's'}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 mt-0.5">
+            <ShieldCheck size={9} /> Al día
+          </span>
+        )}
       </div>
     </button>
   )

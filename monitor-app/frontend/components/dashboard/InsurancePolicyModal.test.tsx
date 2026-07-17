@@ -59,7 +59,7 @@ const COVERAGE_TYPES: CoverageType[] = [
   { id: 'cov2', code: 'CARGA', name: 'Seguro de carga', description: null },
 ]
 const ASSETS: CarrierAssetRosterItem[] = [
-  { id: 'a1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', total_requirements: 6, last_document_update: null },
+  { id: 'a1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', total_requirements: 6, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
 ]
 
 function renderModal(carrierId: string | null, opts: { canAdmin?: boolean; canEdit?: boolean } = {}) {

@@ -289,6 +289,45 @@ def test_patch_carrier_sets_manual_override_and_returns_detail():
     assert "is_manual_override = true" in override_sql
 
 
+def test_list_carrier_drivers_includes_pending_mandatory():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": "d1", "tax_id": "1-9", "full_name": "Juan Pérez", "operational_status": "ACTIVE",
+        "total_requirements": 5, "last_document_update": None,
+        "pending_mandatory": 2, "compliance_health": "PENDING",
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/c1/drivers")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body[0]["compliance_health"] == "PENDING"
+    assert body[0]["pending_mandatory"] == 2
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "FROM app.carrier_driver_roster r" in fetch_query
+    assert "cr.entity_type = 'DRIVER'" in fetch_query
+
+
+def test_list_carrier_assets_includes_pending_mandatory():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION", "operational_status": "ACTIVE",
+        "total_requirements": 3, "last_document_update": None,
+        "pending_mandatory": 0, "compliance_health": "OK",
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/c1/assets")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body[0]["compliance_health"] == "OK"
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "FROM app.carrier_asset_roster r" in fetch_query
+    assert "cr.entity_type = 'ASSET'" in fetch_query
+
+
 def test_assign_driver_deactivates_previous_and_activates_new():
     pool = AsyncMock()
     conn = AsyncMock()

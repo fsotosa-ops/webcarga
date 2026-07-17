@@ -1,20 +1,21 @@
 // components/dashboard/DriverRosterCard.tsx
 'use client'
 
+import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { CarrierDriverRosterItem } from '@/lib/types'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
-import { formatExpiry } from '@/lib/compliance'
 
 interface Props {
   driver: CarrierDriverRosterItem
   onOpen: () => void
 }
 
-/** Tarjeta compacta del roster de conductores — solo lo escaneable
- *  (avatar + nombre + cantidad de requisitos). app.carrier_driver_roster no
- *  desglosa por estado (solo total_requirements agregado), así que no hay
- *  semáforo acá — el detalle por documento vive en DriverDetailPanel,
- *  abierto al hacer click. */
+/** Tarjeta compacta del roster de conductores — avatar + nombre + pill de
+ *  compliance_health (documentación LEGAL_MANDATORY pendiente/vencida,
+ *  mismo criterio y componente visual que TransporterCard en el listado de
+ *  Empresas) — reemplaza el conteo plano "N requisitos" que no distinguía
+ *  cuáles conductores necesitan atención. El detalle por documento vive en
+ *  DriverDetailPanel, abierto al hacer click. */
 export function DriverRosterCard({ driver, onOpen }: Props) {
   return (
     <button
@@ -30,10 +31,15 @@ export function DriverRosterCard({ driver, onOpen }: Props) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-bold text-text-primary truncate">{driver.full_name}</p>
-        <p className="text-[10px] font-semibold text-gray-400">
-          {driver.total_requirements ?? 0} requisito{driver.total_requirements === 1 ? '' : 's'}
-          {driver.last_document_update && ` · ${formatExpiry(driver.last_document_update)}`}
-        </p>
+        {driver.compliance_health === 'PENDING' ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 mt-0.5">
+            <ShieldAlert size={9} /> {driver.pending_mandatory} pendiente{driver.pending_mandatory === 1 ? '' : 's'}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 mt-0.5">
+            <ShieldCheck size={9} /> Al día
+          </span>
+        )}
       </div>
     </button>
   )

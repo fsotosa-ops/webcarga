@@ -504,6 +504,8 @@ export type CarrierDriverRosterItem = {
   operational_status:    OperationalStatus
   total_requirements:    number | null
   last_document_update:  string | null
+  pending_mandatory:     number
+  compliance_health:     ComplianceHealth
 }
 
 export type CarrierAssetRosterItem = {
@@ -513,6 +515,8 @@ export type CarrierAssetRosterItem = {
   operational_status:    OperationalStatus
   total_requirements:    number | null
   last_document_update:  string | null
+  pending_mandatory:     number
+  compliance_health:     ComplianceHealth
 }
 
 /** GET /carriers/{id}/shippers — generadores de carga (public.shippers) con

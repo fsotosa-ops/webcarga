@@ -63,11 +63,11 @@ const CARRIER: Carrier = {
 }
 
 const DRIVERS: CarrierDriverRosterItem[] = [
-  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null },
+  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
 ]
 
 const ASSETS: CarrierAssetRosterItem[] = [
-  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', total_requirements: 3, last_document_update: null },
+  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
 ]
 
 beforeEach(() => {
@@ -141,6 +141,7 @@ describe('EmpresaDetailPage', () => {
     const manyDrivers: CarrierDriverRosterItem[] = Array.from({ length: 12 }, (_, i) => ({
       id: `d${i}`, tax_id: `${i}-1`, full_name: `Conductor ${i}`,
       operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
+      pending_mandatory: 0, compliance_health: 'OK',
     }))
     vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
     renderPage()
