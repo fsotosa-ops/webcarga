@@ -22,8 +22,8 @@ export type TripPatch = {
   driver_phone?:   string
   tractor_plate?:  string
   trailer_plate?:  string
-  cag_inicio?:     string
-  cag_fin?:        string
+  cag_inicio_at?:  string
+  cag_fin_at?:     string
 }
 
 export type TripStopPatch = {

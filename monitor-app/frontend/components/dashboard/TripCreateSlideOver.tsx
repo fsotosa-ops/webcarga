@@ -9,14 +9,14 @@ import type {
   Trip, TripsMeta, TripCreatePayload, TripStopCreatePayload,
 } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
+import { carriersApi } from '@/lib/api/carriers'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useQuery } from '@tanstack/react-query'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
-// TODO(H2.6): EmpresaSelector deshabilitado — transporter_profile_id hace
-// JOIN contra app.transporter_profiles.id (Checkpoint A-E), que no es el
-// mismo espacio de UUID que public.carriers.id del modelo nuevo. Un swap
-// directo a carriersApi compilaría pero mandaría un id que nunca matchea
-// (rompe la vinculación en silencio). Vuelve a activarse cuando se resuelva
-// el puente del Diario con Empresas.
+// Búsqueda debounced de empresa (public.carriers) — mismo patrón que
+// TransferModal.tsx/TransporterAssignSection. Reactivado 2026-07-17: ver
+// migración migrate_trip_fleet_links_to_carriers.
 type EmpresaSeleccionada = {
   id: string
   business_name: string | null
@@ -81,12 +81,47 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 function EmpresaSelector({
   selected,
+  onSelect,
   onClear,
 }: {
   selected: EmpresaSeleccionada | null
   onSelect: (t: EmpresaSeleccionada) => void
   onClear:  () => void
 }) {
+  const [q, setQ]           = useState('')
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [err, setErr]       = useState<string | null>(null)
+  const qDebounced = useDebouncedValue(q, 250)
+
+  const query = useQuery({
+    queryKey: ['carriers', 'trip-create-search', qDebounced],
+    queryFn: () => carriersApi.list({ q: qDebounced, limit: 10 }),
+    enabled: qDebounced.length >= 2,
+  })
+  const results = query.data?.data ?? []
+
+  async function handlePick(carrierId: string, businessName: string, taxId: string) {
+    setLoadingId(carrierId); setErr(null)
+    try {
+      const [drivers, assets] = await Promise.all([
+        carriersApi.listDrivers(carrierId),
+        carriersApi.listAssets(carrierId),
+      ])
+      onSelect({
+        id: carrierId,
+        business_name: businessName,
+        rut: taxId,
+        drivers: drivers.map(d => ({ id: d.id, name: d.full_name, rut: d.tax_id })),
+        vehicles: assets.map(a => ({ id: a.id, plate: a.license_plate, type: a.asset_type })),
+      })
+      setQ('')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al cargar la empresa')
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
   if (selected) {
     return (
       <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
@@ -112,13 +147,44 @@ function EmpresaSelector({
         <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input
           type="text"
-          disabled
-          placeholder="Vinculación con Empresas temporalmente no disponible"
-          className={INPUT + ' pl-8 opacity-50 cursor-not-allowed'}
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Buscar empresa (nombre o RUT)…"
+          aria-label="Buscar empresa transportista"
+          className={INPUT + ' pl-8'}
         />
       </div>
+      {q.length >= 2 && (
+        <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/60 mt-1.5">
+          {query.isFetching && (
+            <p className="px-3 py-2 text-center text-[11px] text-gray-400 flex items-center justify-center gap-1.5">
+              <Loader2 size={11} className="animate-spin" /> Buscando…
+            </p>
+          )}
+          {!query.isFetching && results.length === 0 && (
+            <p className="px-3 py-2 text-center text-[11px] text-gray-400">Sin resultados</p>
+          )}
+          {results.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              disabled={loadingId === c.id}
+              onClick={() => handlePick(c.id, c.business_name, c.tax_id)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              <Building2 size={12} className="text-gray-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold text-text-primary truncate">{c.business_name}</p>
+                <p className="text-[10px] text-gray-400 font-mono">{c.tax_id}</p>
+              </div>
+              {loadingId === c.id && <Loader2 size={11} className="animate-spin shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+      {err && <p className="text-[11px] text-red-500 mt-1">{err}</p>}
       <p className="text-[10px] text-gray-400 mt-1.5 pl-1">
-        Ingreso libre de conductor y patente
+        O ingreso libre de conductor y patente más abajo
       </p>
     </div>
   )

@@ -18,8 +18,8 @@ class TripPatch(BaseModel):
     trailer_plate:          Optional[str]  = None
     # Campos híbridos de origen (Carga Inicio/Fin) — sin equivalente TMS,
     # ver migración 20260717190246_trip_hybrid_date_fields
-    cag_inicio:             Optional[str]  = None
-    cag_fin:                Optional[str]  = None
+    cag_inicio_at:          Optional[str]  = None
+    cag_fin_at:             Optional[str]  = None
 
     def sent_fields(self) -> list[str]:
         return list(self.model_dump(exclude_none=True).keys())

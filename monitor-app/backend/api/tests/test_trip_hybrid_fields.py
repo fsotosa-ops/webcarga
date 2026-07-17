@@ -33,30 +33,30 @@ def make_client(pool):
 
 # ── Carga Inicio/Fin (origen) vía PATCH /trips/{id} ──────────────────────────
 
-def test_patch_cag_inicio_fin_persists_as_timestamptz():
+def test_patch_cag_inicio_at_and_fin_at_persists_as_timestamptz():
     pool = make_pool()
     client = make_client(pool)
     res = client.patch("/api/v1/trips/trip-1", json={
-        "cag_inicio": "2026-07-17T09:00:00", "cag_fin": "2026-07-17T09:30:00",
+        "cag_inicio_at": "2026-07-17T09:00:00", "cag_fin_at": "2026-07-17T09:30:00",
     })
     assert res.status_code == 200
     update = next(c for c in pool.execute.call_args_list
                   if c.args[0].startswith("UPDATE app.trips SET"))
-    assert "cag_inicio = $" in update.args[0]
-    assert "cag_fin = $" in update.args[0]
+    assert "cag_inicio_at = $" in update.args[0]
+    assert "cag_fin_at = $" in update.args[0]
     assert "::timestamptz" in update.args[0]
     assert "2026-07-17T09:00:00" in update.args and "2026-07-17T09:30:00" in update.args
 
 
-def test_patch_cag_inicio_alone_does_not_touch_cag_fin():
+def test_patch_cag_inicio_at_alone_does_not_touch_cag_fin_at():
     pool = make_pool()
     client = make_client(pool)
-    res = client.patch("/api/v1/trips/trip-1", json={"cag_inicio": "2026-07-17T09:00:00"})
+    res = client.patch("/api/v1/trips/trip-1", json={"cag_inicio_at": "2026-07-17T09:00:00"})
     assert res.status_code == 200
     update = next(c for c in pool.execute.call_args_list
                   if c.args[0].startswith("UPDATE app.trips SET"))
-    assert "cag_inicio = $" in update.args[0]
-    assert "cag_fin" not in update.args[0]
+    assert "cag_inicio_at = $" in update.args[0]
+    assert "cag_fin_at" not in update.args[0]
 
 
 # ── Desc. Inicio/Fin por parada vía PATCH /trips/{id}/stops/{stop_id} ────────

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TripSlideOver } from './TripSlideOver'
 import { tripsApi } from '@/lib/api/trips'
+import { carriersApi } from '@/lib/api/carriers'
 import type { Trip, TripNote } from '@/lib/types'
 
 vi.mock('@/lib/api/trips', () => ({
@@ -10,14 +11,15 @@ vi.mock('@/lib/api/trips', () => ({
     patch: vi.fn(),
     patchStop: vi.fn(),
     resetField: vi.fn(),
+    assignFleetLink: vi.fn(),
     removeFleetLink: vi.fn(),
     listNotes: vi.fn(),
     addNote: vi.fn(),
     pinNote: vi.fn(),
   },
 }))
-vi.mock('@/lib/api/transporters', () => ({
-  transportersApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
+vi.mock('@/lib/api/carriers', () => ({
+  carriersApi: { list: vi.fn() },
 }))
 
 const baseTrip: Trip = {
@@ -52,8 +54,10 @@ beforeEach(() => {
   vi.mocked(tripsApi.patch).mockReset()
   vi.mocked(tripsApi.patchStop).mockReset()
   vi.mocked(tripsApi.resetField).mockReset()
+  vi.mocked(tripsApi.assignFleetLink).mockReset()
   vi.mocked(tripsApi.listNotes).mockReset().mockResolvedValue([])
   vi.mocked(tripsApi.addNote).mockReset()
+  vi.mocked(carriersApi.list).mockReset().mockResolvedValue({ data: [], count: 0, page: 1, limit: 10 } as never)
 })
 
 describe('TripSlideOver — hero (la historia del viaje)', () => {
@@ -124,8 +128,8 @@ describe('TripSlideOver — layout y a11y', () => {
 
   it('shows Empresa as a compact card in Gestión, not behind an accordion', () => {
     renderSlideOver(baseTrip)
-    // sin vínculo: el campo (deshabilitado, TODO H2.6) está visible directamente
-    expect(screen.getByPlaceholderText(/Vinculación con Empresas/)).toBeInTheDocument()
+    // sin vínculo: el buscador de empresa está visible directamente, sin acordeón
+    expect(screen.getByLabelText('Buscar empresa transportista')).toBeInTheDocument()
   })
 
   it('shows created_at and the internal trip id in the footer', () => {
@@ -139,6 +143,31 @@ describe('TripSlideOver — layout y a11y', () => {
     expect(screen.queryByText('Fecha planificación')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Datos operativos'))
     expect(screen.getByText('Fecha planificación')).toBeInTheDocument()
+  })
+})
+
+describe('TripSlideOver — vínculo de empresa (public.carriers)', () => {
+  it('searches carriers and calls assignFleetLink with the selected carrier id', async () => {
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Sur Spa', tax_id: '76111222-3' }],
+      count: 1, page: 1, limit: 10,
+    } as never)
+    vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, transporter_profile_id: 'c1', transporter: 'Transportes Sur Spa' })
+    renderSlideOver(baseTrip)
+
+    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Transportes' } })
+    fireEvent.click(await screen.findByText('Transportes Sur Spa'))
+
+    await waitFor(() =>
+      expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', { transporter_id: 'c1' }))
+  })
+
+  it('shows the linked carrier and unlinks via removeFleetLink', async () => {
+    vi.mocked(tripsApi.removeFleetLink).mockResolvedValue({ ok: true })
+    renderSlideOver({ ...baseTrip, transporter_profile_id: 'c1', transporter: 'Transportes Sur Spa' })
+    expect(screen.getByText('Transportes Sur Spa')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Desvincular'))
+    await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalledWith('t1'))
   })
 })
 
@@ -305,7 +334,7 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
     fireEvent.change(input, { target: { value: '2026-07-17T09:00' } })
     fireEvent.blur(input)
     await waitFor(() =>
-      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_inicio: '2026-07-17T09:00' }))
+      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_inicio_at: '2026-07-17T09:00' }))
   })
 
   it('saves Carga fin via tripsApi.patch on blur', async () => {
@@ -316,7 +345,7 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
     fireEvent.change(input, { target: { value: '2026-07-17T09:30' } })
     fireEvent.blur(input)
     await waitFor(() =>
-      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_fin: '2026-07-17T09:30' }))
+      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_fin_at: '2026-07-17T09:30' }))
   })
 
   it('saves Desc. inicio of a stop via tripsApi.patchStop on blur', async () => {

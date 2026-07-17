@@ -352,8 +352,8 @@ export type Trip = {
   origin_city?:           string | null
   /** Carga Inicio/Fin (origen) — campo híbrido editable, sin equivalente
    *  TMS. Ver esquema de fechas 2026-07-17. */
-  cag_inicio?:            string | null
-  cag_fin?:               string | null
+  cag_inicio_at?:         string | null
+  cag_fin_at?:            string | null
   cargo_type:             string | null
   stops:                  TripStop[]
   activo:                 boolean

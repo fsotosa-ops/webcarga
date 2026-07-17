@@ -48,7 +48,9 @@ router = APIRouter(prefix="/trips", tags=["trips"])
 
 # SQL fragment that maps actual DB columns to the expected API response shape.
 # fleet JSONB holds tractor/driver info; trip_fleet_links holds the resolved
-# transporter_profile link.
+# carrier link (public.carriers — repointed from the legacy
+# app.transporter_profiles on 2026-07-17, see migration
+# migrate_trip_fleet_links_to_carriers).
 _TRIP_SELECT = """
     t.id,
     t.source_system,
@@ -66,13 +68,13 @@ _TRIP_SELECT = """
     COALESCE(fl.driver_phone,
              t.fleet->>'driver_phone')            AS driver_phone,
     t.origin_tms,
-    tp.business_name                              AS transporter,
+    c.business_name                               AS transporter,
     t.fleet->>'transporter_name_tms'              AS transporter_tms,
     t.origin,
     t.origin_region,
     t.origin_city,
-    t.cag_inicio,
-    t.cag_fin,
+    t.cag_inicio_at,
+    t.cag_fin_at,
     t.cargo_type,
     t.stops,
     t.stop_manual_fields,
@@ -98,7 +100,7 @@ _TRIP_SELECT = """
 _TRIP_FROM = """
     FROM app.trips t
     LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
-    LEFT JOIN app.transporter_profiles tp ON tp.id = fl.transporter_id
+    LEFT JOIN public.carriers c ON c.id = fl.transporter_id
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 
@@ -140,7 +142,7 @@ async def list_trips(
         "OR t.fleet->>'driver_name_tms' ILIKE '%'||$1||'%' "
         "OR COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms') ILIKE '%'||$1||'%' "
         "OR t.fleet->>'driver_rut_tms' ILIKE '%'||$1||'%' "
-        "OR tp.business_name ILIKE '%'||$1||'%' "
+        "OR c.business_name ILIKE '%'||$1||'%' "
         "OR t.fleet->>'transporter_name_tms' ILIKE '%'||$1||'%' "
         "OR t.client_name ILIKE '%'||$1||'%' "
         "OR t.source_system_trip_id ILIKE '%'||$1||'%')"
@@ -380,14 +382,14 @@ async def available_drivers(
                 t.fleet->>'driver_rut_tms'                                AS driver_rut,
                 COALESCE(fl.driver_phone, t.fleet->>'driver_phone')       AS driver_phone,
                 COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')     AS tractor_plate,
-                tp.business_name                                          AS transporter,
+                c.business_name                                           AS transporter,
                 t.status_reported_at,
                 -- mismo criterio de "terminal" que la derivación de activo en dbt
                 (t.trip_status LIKE 'CERRADO%'
                  OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')) AS closed
             FROM app.trips t
             LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
-            LEFT JOIN app.transporter_profiles tp ON tp.id = fl.transporter_id
+            LEFT JOIN public.carriers c ON c.id = fl.transporter_id
             WHERE t.planning_date = $1
               AND t.source_system != 'sodimac'
         )
@@ -809,11 +811,11 @@ async def patch_trip(
     bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
     str_fields  = ("estado_manual", "observaciones", "comentarios",
                    "origin_region", "origin_city")
-    # cag_inicio/cag_fin (Carga Inicio/Fin, origen): campos híbridos sin
+    # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen): campos híbridos sin
     # equivalente TMS — no compiten con el pipeline, no necesitan pasar por
     # manually_edited_fields/protect_manual_overrides (eso protege campos que
     # el TMS SÍ puede seguir reportando).
-    datetime_fields = ("cag_inicio", "cag_fin")
+    datetime_fields = ("cag_inicio_at", "cag_fin_at")
     trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields, *datetime_fields)}
     # Ubicación: string vacío = limpiar (NULL) — evita mezclar '' y NULL en los
     # filtros exactos de region/ciudad
@@ -926,13 +928,14 @@ async def assign_fleet_link(
     link_id = await pool.fetchval(
         """
         INSERT INTO app.trip_fleet_links
-          (trip_id, transporter_id, tractor_plate, trailer_plate,
+          (trip_id, transporter_id, driver_id, tractor_plate, trailer_plate,
            driver_name_raw, link_source, created_by)
-        VALUES ($1, $2, $3, $4, $5, 'manual', $6)
+        VALUES ($1, $2, $3, $4, $5, $6, 'manual', $7)
         RETURNING id
         """,
         trip_id,
         transporter_id,
+        body.get("driver_id"),
         body.get("tractor_plate"),
         body.get("trailer_plate"),
         body.get("driver_name"),
@@ -945,7 +948,7 @@ async def assign_fleet_link(
     )
 
     transporter_name = await pool.fetchval(
-        "SELECT business_name FROM app.transporter_profiles WHERE id = $1", transporter_id
+        "SELECT business_name FROM public.carriers WHERE id = $1", transporter_id
     )
     await _log_system_note(
         pool, trip_id, user,

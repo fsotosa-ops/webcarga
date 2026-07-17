@@ -3,11 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   X, Loader2, Building2, Copy, Check,
-  Truck, User, Phone, Hash,
+  Truck, User, Phone, Hash, Search,
   MapPin, ChevronDown, RotateCcw, ClipboardList,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
+import { carriersApi } from '@/lib/api/carriers'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useQuery } from '@tanstack/react-query'
 import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { fmtDT, fmtDate, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
@@ -20,20 +23,43 @@ import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 // ── TransporterAssignSection ──────────────────────────────────────────────────
 //
-// TODO(H2.6): deshabilitado — tripsApi.assignFleetLink() manda transporter_id
-// hacia app.trip_fleet_links, que hace JOIN contra app.transporter_profiles.id
-// (Checkpoint A-E). No es el mismo espacio de UUID que public.carriers.id del
-// modelo nuevo; un swap directo compilaría pero rompería la vinculación en
-// silencio. Vuelve a activarse cuando se resuelva el puente del Diario con
-// Empresas.
+// Búsqueda debounced de empresa (public.carriers) — mismo patrón que
+// TransferModal.tsx. Reactivado 2026-07-17: trip_fleet_links.transporter_id
+// ya resuelve contra public.carriers.id (repuntado desde la tabla legacy
+// app.transporter_profiles, ver migración migrate_trip_fleet_links_to_carriers).
 
 function TransporterAssignSection({
-  currentTransporter,
+  tripId, currentTransporter, onAssigned,
 }: {
   tripId: string
   currentTransporter: string | null
   onAssigned: (t: Trip) => void
 }) {
+  const [q, setQ]                   = useState('')
+  const [assigning, setAssigning]   = useState<string | null>(null)
+  const [err, setErr]               = useState<string | null>(null)
+  const qDebounced = useDebouncedValue(q, 250)
+
+  const query = useQuery({
+    queryKey: ['carriers', 'fleet-link-search', qDebounced],
+    queryFn: () => carriersApi.list({ q: qDebounced, limit: 10 }),
+    enabled: qDebounced.length >= 2,
+  })
+  const results = query.data?.data ?? []
+
+  async function handleAssign(carrierId: string) {
+    setAssigning(carrierId); setErr(null)
+    try {
+      const updated = await tripsApi.assignFleetLink(tripId, { transporter_id: carrierId })
+      onAssigned(updated)
+      setQ('')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al vincular')
+    } finally {
+      setAssigning(null)
+    }
+  }
+
   return (
     <div className="space-y-2">
       {currentTransporter && (
@@ -41,12 +67,46 @@ function TransporterAssignSection({
           TMS reporta: <span className="font-medium text-gray-600">{currentTransporter}</span>
         </p>
       )}
-      <input
-        type="text"
-        disabled
-        placeholder="Vinculación con Empresas temporalmente no disponible"
-        className="w-full text-xs border border-border rounded-lg px-3 py-2 opacity-50 cursor-not-allowed"
-      />
+      <div className="relative">
+        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Buscar empresa (nombre o RUT)…"
+          aria-label="Buscar empresa transportista"
+          className="w-full text-xs border border-border rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/20"
+        />
+      </div>
+      {q.length >= 2 && (
+        <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/60">
+          {query.isFetching && (
+            <p className="px-3 py-2 text-center text-[11px] text-gray-400 flex items-center justify-center gap-1.5">
+              <Loader2 size={11} className="animate-spin" /> Buscando…
+            </p>
+          )}
+          {!query.isFetching && results.length === 0 && (
+            <p className="px-3 py-2 text-center text-[11px] text-gray-400">Sin resultados</p>
+          )}
+          {results.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              disabled={assigning === c.id}
+              onClick={() => handleAssign(c.id)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              <Building2 size={12} className="text-gray-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold text-text-primary truncate">{c.business_name}</p>
+                <p className="text-[10px] text-gray-400 font-mono">{c.tax_id}</p>
+              </div>
+              {assigning === c.id && <Loader2 size={11} className="animate-spin shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+      {err && <p className="text-[11px] text-red-500">{err}</p>}
     </div>
   )
 }
@@ -142,8 +202,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     setLocRegion(trip.origin_region ?? null)
     setLocCity(trip.origin_city ?? null)
     setLocErr(null)
-    setCagInicioDraft(toDatetimeLocalValue(trip.cag_inicio))
-    setCagFinDraft(toDatetimeLocalValue(trip.cag_fin))
+    setCagInicioDraft(toDatetimeLocalValue(trip.cag_inicio_at))
+    setCagFinDraft(toDatetimeLocalValue(trip.cag_fin_at))
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const locDirty =
@@ -153,10 +213,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   // sin equivalente TMS) y Desc. Inicio/Fin (por parada, override manual de
   // lo que reporta el TMS). Guardado directo al cambiar, sin botón aparte —
   // mismo patrón que onExpirationChange en DocumentChecklist.
-  const [cagSaving, setCagSaving] = useState<'cag_inicio' | 'cag_fin' | null>(null)
+  const [cagSaving, setCagSaving] = useState<'cag_inicio_at' | 'cag_fin_at' | null>(null)
   const [stopSaving, setStopSaving] = useState<string | null>(null)
 
-  async function handleCagChange(field: 'cag_inicio' | 'cag_fin', value: string) {
+  async function handleCagChange(field: 'cag_inicio_at' | 'cag_fin_at', value: string) {
     if (!trip) return
     setCagSaving(field)
     try {
@@ -691,8 +751,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                       aria-label="Carga inicio"
                       value={cagInicioDraft}
                       onChange={e => setCagInicioDraft(e.target.value)}
-                      onBlur={e => e.target.value && handleCagChange('cag_inicio', e.target.value)}
-                      disabled={cagSaving === 'cag_inicio'}
+                      onBlur={e => e.target.value && handleCagChange('cag_inicio_at', e.target.value)}
+                      disabled={cagSaving === 'cag_inicio_at'}
                       className="text-[11px] text-slate-700 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white w-full disabled:opacity-50"
                     />
                   </div>
@@ -703,8 +763,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                       aria-label="Carga fin"
                       value={cagFinDraft}
                       onChange={e => setCagFinDraft(e.target.value)}
-                      onBlur={e => e.target.value && handleCagChange('cag_fin', e.target.value)}
-                      disabled={cagSaving === 'cag_fin'}
+                      onBlur={e => e.target.value && handleCagChange('cag_fin_at', e.target.value)}
+                      disabled={cagSaving === 'cag_fin_at'}
                       className="text-[11px] text-slate-700 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white w-full disabled:opacity-50"
                     />
                   </div>

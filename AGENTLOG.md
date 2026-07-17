@@ -98,12 +98,38 @@
 
 **No se reanudó el pipeline** — no hay tool de trigger/schedule enable en `mage-agent` para esto, y es simétrico que lo reanude el usuario manualmente en la Mage UI, mismo lugar donde lo pausó. Tampoco se ejecutó `run_pipeline`/`execute_pipeline` para verificar en vivo — dispararía una corrida real contra las 3 APIs de TMS y escribiría en Supabase, fuera de lo pedido.
 
-#### Próximo paso exacto
+#### Próximo paso exacto (histórico — ver ronda siguiente para el estado real de H2.6)
 1. [ ] **Reanudar el pipeline `batch_tms_monitor_trips` en Mage** (acción del usuario, vía la misma UI donde se pausó) — el sync ya está hecho, es seguro reanudar.
 2. [ ] Verificar en vivo (con un viaje real) que los campos híbridos sobreviven a la primera corrida tras reanudar.
-3. [ ] Confirmar con negocio los puntos abiertos de `trips_context.md` §11 antes de tocar código de H2.6.
-4. [ ] H2.6 implementación: sigue sin iniciar, sigue requiriendo pedido explícito.
+3. [ ] Confirmar con negocio los puntos abiertos de `trips_context.md` §14 antes de tocar código de H2.6.
+4. [x] H2.6 implementación: **arrancó esta misma jornada** (Fase 1 de un hardening en 2 fases), ver ronda siguiente.
 5. [ ] Catálogo configurable de "motivo de no asignación" — pendiente, depende de que la feature de "vista no asignados" exista primero.
 6. [ ] F30_MULTAS — sigue sin confirmar.
+
+---
+
+### 2026-07-17 (cont.) — Octava ronda: hardening del modelo de datos del Diario, Fase 1 (normalizar `trip_fleet_links`)
+
+**Motivación** (verbatim, resumen): el usuario preguntó si el modelo actual de `trips` es el estándar de industria en logtech (project44, FourKites, Trimble, Samsara/Motive) para ser escalable/mantenible/robusto. Análisis honesto entregado antes de tocar código: la arquitectura medallion+dbt y el `trip_id` determinístico sí están alineados con el estándar; 3 divergencias reales identificadas — (1) `stops` como JSONB en vez de tabla normalizada (la más grande), (2) sin trail de auditoría a nivel de app, (3) sin capa de resolución de identidad (MDM) reusable. El usuario confirmó alcance: **ambas fases entran en el hardening, pero se ejecuta primero la más chica** (repuntar `trip_fleet_links`, divergencia #3) y **normalizar `stops`** (divergencia #1) queda diseñada a alto nivel pero encolada para una ronda futura, con su propia exploración dedicada dado el mayor riesgo (toca el pipeline dbt, ya identificado como el punto más frágil del proyecto).
+
+**Investigación previa a tocar código** (agente de exploración + verificación directa en vivo por SQL, no asumido): confirmado que `trip_fleet_links.transporter_id`/`driver_id` no tienen FK real en DB (solo PK/UNIQUE/CHECK) — repuntar es cambio de aplicación + migración de datos, no de schema. Verificado que **26 de 27 empresas** ya vinculadas matchean limpio por RUT/tax_id contra `public.carriers` (la única que no, "Agro Mist Spa", simplemente no está onboardeada en Empresas todavía). Confirmado que toda la lógica vive en un único archivo (`routers/trips.py`) y que los dos componentes de UI para este vínculo (`TransporterAssignSection`, `EmpresaSelector`) ya estaban completamente construidos pero deshabilitados con `TODO(H2.6)` desde julio — incluso el tipo `EmpresaSeleccionada` ya tenía la forma de `public.carriers`, evidencia de que el trabajo fue diseñado para este momento. Encontrado además un patrón de búsqueda de empresa ya reusable (`TransferModal.tsx`) y los endpoints backend necesarios (`GET /carriers`, `.../drivers`, `.../assets`) ya existían — no hizo falta construir nada nuevo del lado de búsqueda.
+
+**Implementado, con tests reales (backend 177/177, frontend 337/337, `tsc` limpio, `npm run build` exitoso, verificado en vivo contra un viaje real):**
+- Migración `20260717200108_migrate_trip_fleet_links_to_carriers`: preserva los 26/27 vínculos existentes.
+- Backend: `_TRIP_FROM`/CTE de `available_drivers` repuntados a `public.carriers`; `assign_fleet_link` busca `business_name` ahí; soporte opcional de `driver_id` agregado a `POST /trips/{id}/fleet-link` (columna que existía sin usarse, 0/609 antes). 6 tests nuevos (`test_trip_fleet_links.py`).
+- Frontend: `TransporterAssignSection` (`TripSlideOver.tsx`) y `EmpresaSelector` (`TripCreateSlideOver.tsx`) reactivados con búsqueda debounced real (mismo patrón que `TransferModal.tsx`). Se detectaron y corrigieron 2 tests desactualizados que asumían los inputs deshabilitados, más un mock huérfano (`vi.mock('@/lib/api/transporters', ...)`, módulo ya no existe) en ambos archivos de test.
+
+**Explícitamente fuera de esta fase** (decisión, no olvido): bootstrap de `driver_id` vía `raw_bd_ot`, reconexión de `alertSummary`, y reconciliación manual-vs-TMS para flota (innecesaria — `fleet_link_id` ya estaba protegido del pipeline desde antes). Detalle completo, incluido el diseño de alto nivel de la Fase 2 (normalizar `stops`), en `trips_context.md` §13.5.
+
+`pytest` 177 passed, `tsc --noEmit` limpio, `vitest` 337 passed, `npm run build` exitoso.
+
+#### Próximo paso exacto
+1. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (pendiente de la ronda anterior, sigue vigente) y verificar en vivo que los campos híbridos sobreviven a la primera corrida.
+2. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — diseño de alto nivel ya en `trips_context.md` §13.5, requiere su propia exploración dedicada antes de implementar. No iniciar sin pedido explícito.
+3. [ ] Antes de la Fase 2, reforzar la red de tests dbt (accionable (c) de `trips_context.md`) — reduce el riesgo de repetir el patrón de incidente ya visto 5 veces en este proyecto (error de contrato de schema entre capas sin tests que lo atajen).
+4. [ ] Cargar compliance real de conductores (prerrequisito para cualquier alerta de documentación, sigue en `MISSING` 100%) antes de invertir en el bootstrap de `driver_id` vía `raw_bd_ot`.
+5. [ ] Catálogo configurable de "motivo de no asignación" — sigue pendiente.
+6. [ ] F30_MULTAS — sigue sin confirmar.
+7. [ ] Commit/push de esta ronda — pendiente de confirmación del usuario.
 
 ---
