@@ -522,6 +522,25 @@ def test_delete_carrier_blocked_when_has_uploaded_documents():
     assert "documentos cargados" in res.json()["detail"]
 
 
+def test_delete_carrier_only_blocks_on_active_assignments():
+    """Bug real encontrado en vivo: 'Quitar del roster' deja la fila de
+    driver_assignments en INACTIVE en vez de borrarla — bloquear sobre
+    cualquier fila (sin filtrar status) dejaba una empresa sin forma de
+    borrarse después de deshacer un alta por error."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = [1, None, None, None, None, None, None]
+    client = make_client(pool)
+
+    client.delete("/api/v1/carriers/c1")
+
+    driver_check_sql = conn.fetchval.call_args_list[1].args[0]
+    asset_check_sql = conn.fetchval.call_args_list[2].args[0]
+    assert "status = 'ACTIVE'" in driver_check_sql
+    assert "status = 'ACTIVE'" in asset_check_sql
+
+
 def test_delete_carrier_excludes_untouched_missing_compliance_records():
     pool = AsyncMock()
     conn = AsyncMock()

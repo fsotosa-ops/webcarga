@@ -383,16 +383,26 @@ async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(r
     la bloquea — la vía para esos casos sigue siendo 'Dar de baja'.
     Los compliance_records MISSING auto-sembrados por trg_reconcile_new_carrier
     no cuentan como dato real: no tienen FK real (entity_id/entity_type
-    polimórfico), así que se borran acá explícitamente junto con la empresa."""
+    polimórfico), así que se borran acá explícitamente junto con la empresa.
+    driver_assignments/asset_assignments solo bloquean si status='ACTIVE' —
+    "Quitar del roster" las deja en INACTIVE en vez de borrarlas (historial),
+    y bloquear sobre esas filas dejaría sin forma de borrar una empresa
+    después de deshacer un alta por error (bug real encontrado en vivo)."""
     async with pool.acquire() as conn:
         async with conn.transaction():
             if not await conn.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
                 raise HTTPException(404, "Empresa no encontrada")
 
             blockers = []
-            if await conn.fetchval("SELECT 1 FROM public.driver_assignments WHERE carrier_id = $1 LIMIT 1", carrier_id):
+            if await conn.fetchval(
+                "SELECT 1 FROM public.driver_assignments WHERE carrier_id = $1 AND status = 'ACTIVE' LIMIT 1",
+                carrier_id,
+            ):
                 blockers.append("conductores")
-            if await conn.fetchval("SELECT 1 FROM public.asset_assignments WHERE carrier_id = $1 LIMIT 1", carrier_id):
+            if await conn.fetchval(
+                "SELECT 1 FROM public.asset_assignments WHERE carrier_id = $1 AND status = 'ACTIVE' LIMIT 1",
+                carrier_id,
+            ):
                 blockers.append("equipos")
             if await conn.fetchval("SELECT 1 FROM public.insurance_policies WHERE carrier_id = $1 LIMIT 1", carrier_id):
                 blockers.append("pólizas de seguro")
