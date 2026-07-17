@@ -49,10 +49,27 @@
 
 **Verificado real, no solo tests**: `pytest` 151 passed, `tsc --noEmit` limpio, `vitest` 321 passed (41 archivos), `npm run build` exitoso. **Playwright contra el deploy real** tras cada push: tabs/tiles de alertas con datos reales en los 3 niveles, modal grande centrado con rail+contenido, formulario de póliza con los 5 campos + endoso, deep link `?q=` end-to-end, modal de vehículo con input "Año" + 7 documentos con fecha de vencimiento editable (Certificado GPS, Gases Contaminantes, Padrón, Permiso de Circulación, Póliza Vehicular RC, Revisión Técnica, SOAP). Consola limpia en cada verificación.
 
+---
+
+### 2026-07-17 (cont.) — Cuarta ronda: alta de empresas, limpieza de migraciones legacy, N° de endoso
+
+**Pedido del usuario** (verbatim): *"lo que no veo es que no hay un template que permita crear empresas nuevas y todo lo asociado a ella, vehiculos, conductores. Pues hay que permitirle a los usuarios que puedan crear nuevos registros. Ejecuta el pediente 4 con lo que se elimino las ~70 migraciones"*. Dos pedidos en paralelo, ambos resueltos:
+
+1. **Alta de empresas (gap real, mismo patrón de la ronda anterior: "el backend ya lo soporta, la UI nunca lo expuso")**: `POST /carriers` ya existía y funcionaba (valida `tax_id` único, inserta, loguea el cambio) pero no había ningún punto de entrada en la UI. Agregado botón "+ Nueva empresa" (gated a `canEdit`, roles editor/admin/owner vía `profiles.role`) en `/dashboard/transportistas`, formulario inline (`tax_id` + `business_name`), `POST` real y redirect a la ficha nueva (`9bd2b7c`).
+2. **Pendiente 4 de la ronda anterior — limpieza de migraciones legacy**: las 60 migraciones de Checkpoints A-E (`20260417191106_init_medallion_and_bronze.sql` → `20260714020000_add_pending_mapping_upload_status.sql`) llevaban semanas borradas en el working tree sin commitear. Verificado antes de commitear que `supabase/migrations/` queda solo con los 12 archivos del modelo nuevo (H0-H3, `20260715204925_init_compliance_engine.sql` en adelante). Commit `1ca6177`.
+
+**Verificado en vivo con Playwright** contra el deploy real: click en "+ Nueva empresa" → formulario → `POST /carriers` real → redirect a `/dashboard/transportistas/empresa/{id}` → ficha nueva con 12 documentos obligatorios auto-provistos y tabs Conductores/Equipos/Seguros con sus propios "+ Agregar" listos (confirma "todo lo asociado a ella" del pedido, no solo la empresa sola). Consola limpia. Empresa de prueba (`Transportes Verificacion Qa Spa`, tax_id `99999999-9`) dada de baja al terminar para no dejar basura en datos reales — el modelo actual no tiene borrado físico de carriers, solo `operational_status`.
+
+**Interrupción a mitad de sesión — gap real en Seguros**: *"estoy mirando que el endoso tambien permite traer el numero al igual que la poliza. por lo que tiene que permitir ambas adjuntar archivo y registrar el numero y ya hay algunos seguros que estan reportando el endoso"*. El endoso solo tenía `has_endorsement` (boolean) + archivo adjunto — ningún campo de texto para el número, pese a que algunas pólizas ya tienen esa dato desde origen. Resuelto con paridad completa:
+- Migración aditiva `endorsement_number VARCHAR(100)` en `public.insurance_policies` (aplicada en vivo vía Supabase MCP).
+- Expuesto en `POST /carriers/{id}/policies` y `PATCH /policies/{id}` (mismo patrón COALESCE que el resto de campos).
+- Frontend: nuevo componente genérico `PolicyTextRow` (mismo patrón de edición inline que `PolicyLinkRow`, parametrizado por `field` para reusarse en `policy_number`/`endorsement_number`) — fila "N° endoso" junto al adjunto de archivo del endoso en `InsurancePolicyModal`, y campo condicional ("N° de endoso") en `PolicyCreateForm` cuando el checkbox "Tiene endoso" está marcado. Commit `b9d13b0`.
+
+**Verificado en vivo, no solo tests**: sobre una póliza real (SURA, Transportes Aguilera Spa) con `has_endorsement=true`, se guardó "END-QA-001" en el campo N° endoso vía la UI desplegada, confirmado el round-trip (persistió tras refrescar), y revertido a vacío para no dejar dato de prueba en producción. `pytest` 152 passed, `tsc --noEmit` limpio, `vitest` 322 passed, `npm run build` exitoso.
+
 #### Próximo paso exacto
 1. [ ] Datos estructurados por documento (ej. F30: monto de la multa, fecha) — sigue sin confirmar si el usuario todavía lo quiere más allá de lo ya resuelto (tiempo relativo + vigencia/alerta de pólizas + fecha de vencimiento editable en todos los documentos). Preguntar antes de construir nada.
 2. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier — condiciona reactivar `EmpresaSelector`/`TransporterAssignSection`/las alertas de `TripTable`. **No iniciar sin que el usuario lo pida explícitamente.**
 3. [ ] Cobranza (aging/agrupación cross-empresa, botón "Pagar" real) sigue sin ruta dedicada — la landing de Seguros es un resumen agregado por carrier, no reemplaza una vista de cuotas individuales cross-empresa; requeriría endpoints nuevos (`GET /policies`, `GET /installments` globales), fuera de alcance por ahora.
-4. [ ] Pendientes de sesiones anteriores (no bloqueantes): decidir qué hacer con las ~70 migraciones de Checkpoints A-E ya marcadas para borrar (deletion pendiente en el working tree, sin commitear).
 
 ---
