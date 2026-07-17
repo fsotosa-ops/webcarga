@@ -35,7 +35,34 @@
 
 #### Próximo paso exacto
 1. [ ] Datos estructurados por documento (ej. F30: monto de la multa, fecha) — sigue sin confirmar si el usuario todavía lo quiere más allá de lo ya resuelto. Preguntar antes de construir nada.
-2. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier. **No iniciar sin que el usuario lo pida explícitamente.**
+2. [x] H2.6 — **investigado a fondo esta sesión** (ver ronda siguiente), quedó documentado en `monitor-app/docs/data-model/trips/trips_context.md`. La implementación sigue sin iniciar — es el próximo paso real, ver checklist de la ronda siguiente.
 3. [ ] Cobranza (aging/agrupación cross-empresa, botón "Pagar" real) sigue sin ruta dedicada — requeriría endpoints nuevos (`GET /policies`, `GET /installments` globales), fuera de alcance por ahora.
+
+---
+
+### 2026-07-17 (cont.) — Sexta ronda: auditoría profunda del módulo Diario (H2.6)
+
+**Pedido del usuario** (verbatim, resumen): análisis profundo del módulo Diario en modo plan — modelo lógico/datos real en Supabase, cómo opera el pipeline Mage `batch_tms_monitor_trips`, contraste contra `uat-ux-minuta-modulo-diario.md`, foco en deuda técnica, optimización del modelo lógico/datos, gaps y accionables. Ampliado durante la sesión con tres preguntas de arquitectura (¿se puede sincronizar Empresas/Seguros con el Diario para alertar sobre documentación de conductores?, ¿el modelo dbt está bien configurado/tiene deuda/es sostenible?, ¿trips debería seguir el patrón relacional de Empresas/Seguros?) y una ronda de preguntas de UX. Resultado completo en `monitor-app/docs/data-model/trips/trips_context.md` (antes vacío).
+
+**Investigación con 5 agentes en paralelo + verificación directa en vivo** (código backend/frontend, esquema real Supabase vía SQL, pipeline Mage vía MCP, matching conductor↔flota, estabilidad/mantenibilidad del pipeline dbt) — todos cruzados y consistentes entre sí.
+
+**Hallazgos más importantes** (detalle completo en `trips_context.md`):
+- `gold.v_diario_trips` confirmado inexistente (coincide con memoria previa); `app.trips` es la fuente real.
+- **16 ítems de deuda técnica confirmados con evidencia real** (logs de error reales encontrados en `docs/error-mage.md`, `audit/errors/`), incluidos 2 hallazgos de **seguridad crítica no relacionados al pedido original pero descubiertos en el camino**: 14 tablas de `bronze` con RLS completamente deshabilitado (expuestas a `anon`/`authenticated`, incluye PII real de 1,147 conductores en `raw_bd_ot`), y un `client_secret` de Microsoft Entra hardcodeado en texto plano en `monitor-app/docs/sharepoint_eett.py` (no llegó a git, pero vivo en el working tree — recomendado rotarlo).
+- El pipeline "falla constantemente" (percepción del usuario) **no es por el modelo JSONB de trips** — los 5 errores reales documentados son de contrato de schema entre capas dbt sin tests, y de parsing frágil de Excel en los loaders pandas. Migrar a un modelo 100% relacional no habría evitado ninguno.
+- **Matching conductor↔flota para cruzar compliance con el Diario**: el camino directo (TMS→drivers por RUT/nombre) es débil (RUT 99.5% ausente, nombre 27.6% de acierto), pero se descubrió un puente real vía `bronze.raw_bd_ot` (94% cobertura de patentes, 97.6% `eett_id`↔`carriers`) — con la salvedad, señalada por el usuario y confirmada, de que esa tabla viene de una plataforma legacy vía SharePoint que se va a dar de baja, así que solo debe usarse como bootstrap histórico, no como dependencia permanente. El patrón correcto para sostener esto ya existe en el proyecto (`fleet` vs `fleet_link_id` + `manually_edited_fields`, mismo patrón que `driver_assignments`/`asset_assignments` de Empresas/Seguros) — falta extenderlo a conductor/vehículo con lógica de reconciliación manual↔TMS.
+- Compliance de conductores en el modelo nuevo está **100% en `MISSING`** (0 documentos reales cargados) — aunque se resuelva el matching, hoy no hay nada que alertar todavía.
+- Se incorporó el esquema definitivo de normalización de fechas por TMS (hoja de cálculo aportada por el usuario): solo `fh_desc_inicio/fin` (destino) y `fh_cag_inicio/fin` (origen) son campos híbridos editables — corrige la ambigüedad previa de la minuta UAT que marcaba Llegada TR/Salida TR como híbridos.
+- Decisiones de UX confirmadas por el usuario: SÍ se requiere historial de cambios por campo (auditoría); NO se requiere segregación de acceso por cliente/región (decisión consciente); alertas push/email en tiempo real NO son prioridad, pero se identificó que el módulo de configuración no está a la altura de la calidad SaaS de Empresas/Seguros — el Diario debe alcanzar ese estándar; motivo de no asignación SÍ debe ser catálogo configurable en DB.
+
+**Decisión de arquitectura**: no se toca código en esta sesión — es investigación/documentación pura. H2.6 sigue sin iniciar su implementación; el análisis en sí mismo confirma que no convenía lanzarse sin este mapeo previo (el camino "obvio" de matching directo TMS→drivers era el débil; el camino real pasa por `raw_bd_ot` como bootstrap + una tabla nativa de asignación operativa, no por copiar el modelo relacional de Empresas).
+
+**Seguridad aplicada en el momento (mismo día, a pedido explícito del usuario)**: RLS habilitado en las 14 tablas de `bronze` que estaban completamente expuestas (migración `enable_rls_bronze_exposed_tables`) — `raw_admin_customers`/`raw_admin_companies` (datos de autenticación de una plataforma legacy, 0 referencias en código) quedaron bloqueadas por completo, sin política ni para `authenticated`; las otras 12 (datos de negocio: conductores/vehículos/OTs/transportistas/seguros) quedaron con policy de lectura para `authenticated`, mismo patrón que ya usaba `bronze.tms_trips`. Verificado con el advisor de seguridad: el hallazgo `rls_disabled` para `bronze` ya no aparece. La credencial de `sharepoint_eett.py` **NO se rotó** — decisión explícita del usuario, queda igual que antes (vivo en el working tree, no trackeado en git).
+
+#### Próximo paso exacto
+1. [ ] Confirmar con negocio los puntos abiertos de `trips_context.md` §11 antes de tocar código de H2.6 (regla de precedencia manual-vs-TMS, portal de shipper sí/no, RLS de `public.*` intencional o no, etc.).
+2. [ ] H2.6 implementación: sigue **sin iniciar**, sigue requiriendo pedido explícito del usuario — el plan de accionables está en `trips_context.md` §10, orden recomendado (e).
+3. [ ] Quick wins de bajo riesgo identificados y listos para ejecutar cuando el usuario lo pida: quitar columna "Estado SAP" del detalle de viaje, esquema de 4 campos híbridos de fecha, derivación server-side de "Indicadores", catálogo configurable de motivo de no asignación (`trips_context.md` §10(f)).
+4. [ ] Datos estructurados por documento (F30) y Cobranza siguen pendientes de la ronda anterior, sin cambios.
 
 ---
