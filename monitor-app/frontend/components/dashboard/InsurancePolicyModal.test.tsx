@@ -7,7 +7,7 @@ import { policiesApi, coverageTypesApi } from '@/lib/api/policies'
 import type { CarrierPolicyListItem, InsurancePolicy, CarrierAssetRosterItem, CoverageType } from '@/lib/types'
 
 vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { listPolicies: vi.fn(), listAssets: vi.fn() },
+  carriersApi: { listPolicies: vi.fn(), listAssets: vi.fn(), createPolicy: vi.fn() },
 }))
 vi.mock('@/lib/api/policies', () => ({
   policiesApi: {
@@ -82,6 +82,10 @@ function renderModal(carrierId: string | null, opts: { canAdmin?: boolean; canEd
 beforeEach(() => {
   vi.mocked(carriersApi.listPolicies).mockReset().mockImplementation(async (id: string) => id === 'c1' ? LIST : [])
   vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue(ASSETS)
+  vi.mocked(carriersApi.createPolicy).mockReset().mockResolvedValue({
+    id: 'p-new', carrier_id: 'c2', insurance_company: 'Mapfre', policy_number: null,
+    valid_from: null, valid_to: null, expiration_alert_days: 30, status: 'ACTIVE', created_at: null,
+  })
   vi.mocked(policiesApi.get).mockReset().mockImplementation(async (id: string) => id === 'p1' ? DETAIL_P1 : DETAIL_P2)
   vi.mocked(policiesApi.patch).mockReset()
   vi.mocked(policiesApi.linkCoverage).mockReset().mockResolvedValue({ ok: true })
@@ -208,5 +212,22 @@ describe('InsurancePolicyModal', () => {
     renderModal('c1')
     await screen.findByText('Póliza 5663040')
     expect(screen.queryByLabelText('Subir Endoso')).not.toBeInTheDocument()
+  })
+
+  it('offers to add the first policy for a carrier with none, instead of a dead end', async () => {
+    renderModal('c2')
+    expect(await screen.findByText(/Sin pólizas registradas todavía/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Agregar la primera póliza'))
+    fireEvent.change(screen.getByPlaceholderText('Aseguradora'), { target: { value: 'Mapfre' } })
+    fireEvent.click(screen.getByText('Guardar'))
+
+    await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', { insurance_company: 'Mapfre', policy_number: '' }))
+  })
+
+  it('does not offer to add a policy for a carrier with none when the user cannot edit', async () => {
+    renderModal('c2', { canEdit: false })
+    expect(await screen.findByText('Sin pólizas registradas')).toBeInTheDocument()
+    expect(screen.queryByText('Agregar la primera póliza')).not.toBeInTheDocument()
   })
 })

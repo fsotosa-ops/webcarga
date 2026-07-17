@@ -57,6 +57,9 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [fileErr, setFileErr] = useState<string | null>(null)
+  const [addPolicyOpen, setAddPolicyOpen] = useState(false)
+  const [policyForm, setPolicyForm] = useState({ insurance_company: '', policy_number: '' })
+  const [addingPolicy, setAddingPolicy] = useState(false)
 
   const listQuery = useQuery({
     queryKey: ['carrier-policies', carrierId],
@@ -89,6 +92,11 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   useEffect(() => {
     setShowAll(false)
   }, [selectedPolicyId])
+
+  useEffect(() => {
+    setAddPolicyOpen(false)
+    setPolicyForm({ insurance_company: '', policy_number: '' })
+  }, [carrierId])
 
   const detailQuery = useQuery({
     queryKey: ['policy-detail', selectedPolicyId],
@@ -177,6 +185,19 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     }
   }
 
+  async function handleAddPolicy() {
+    if (!carrierId || !policyForm.insurance_company) return
+    setAddingPolicy(true)
+    try {
+      await carriersApi.createPolicy(carrierId, policyForm)
+      setPolicyForm({ insurance_company: '', policy_number: '' })
+      setAddPolicyOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['carrier-policies', carrierId] })
+    } finally {
+      setAddingPolicy(false)
+    }
+  }
+
   const selectedListItem = policies.find(p => p.id === selectedPolicyId) ?? null
   const policy = detailQuery.data ?? null
   const installments = policy?.installments ?? []
@@ -189,80 +210,159 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   const linkedAssetIds = new Set((policy?.assets ?? []).map(a => a.asset_id))
   const availableAssets = (assetsQuery.data ?? []).filter(a => !linkedAssetIds.has(a.id))
 
+  if (!open) return null
+
   return (
     <>
-      {open && (
-        <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
-      )}
+      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Pólizas de ${displayName}`}
+          tabIndex={-1}
+          className="relative bg-white rounded-2xl shadow-2xl w-[92vw] max-w-6xl h-[85vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none animate-modal-in"
+        >
+          <button onClick={onClose} aria-label="Cerrar detalle de pólizas" className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
 
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Pólizas de ${displayName}`}
-        tabIndex={-1}
-        className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[640px] bg-white border-l border-border shadow-2xl flex flex-col transition-transform duration-300 focus:outline-none ${
-          open ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {open && (
-          <>
-            <div className="flex items-start justify-between gap-3 p-5 border-b border-border shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold shrink-0">
-                  {initialsOf(displayName)}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-text-primary truncate">{displayName}</p>
-                  {selectedListItem && (
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-0.5 ${POLICY_HEALTH_CONFIG[selectedListItem.policy_health].cls}`}>
-                      {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].icon} {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].label}
-                    </span>
-                  )}
-                </div>
+          <div className="sm:w-[320px] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-5">
+            <div className="flex items-center gap-2.5 mb-5">
+              <div className="w-11 h-11 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-sm font-bold shrink-0">
+                {initialsOf(displayName)}
               </div>
-              <button onClick={onClose} aria-label="Cerrar detalle de pólizas" className="text-gray-400 hover:text-gray-600 shrink-0">
-                <X size={18} />
-              </button>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-text-primary truncate">{displayName}</p>
+                {selectedListItem && (
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-0.5 ${POLICY_HEALTH_CONFIG[selectedListItem.policy_health].cls}`}>
+                    {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].icon} {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].label}
+                  </span>
+                )}
+              </div>
             </div>
 
-            {policies.length > 1 && (
-              <div className="px-5 py-3 border-b border-border shrink-0">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Pólizas ({policies.length})</p>
-                <div className="flex gap-2 overflow-x-auto">
-                {policies.map(p => {
-                  const active = p.id === selectedPolicyId
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => setSelectedPolicyId(p.id)}
-                      className={`text-left px-3 py-2 rounded-lg shrink-0 transition-colors ${
-                        active ? 'bg-accent/5 border border-accent/30' : 'border border-border hover:border-gray-300'
-                      }`}
-                    >
-                      <p className={`text-xs font-bold ${active ? 'text-text-primary' : 'text-gray-500'}`}>{p.insurance_company}</p>
-                      <p className={`text-[10px] ${p.overdue_installments > 0 ? 'text-red-500 font-semibold' : 'text-green-600'}`}>
-                        {p.overdue_installments > 0 ? `${p.overdue_installments} vencida${p.overdue_installments > 1 ? 's' : ''}` : 'al día'}
-                      </p>
-                    </button>
-                  )
-                })}
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Pólizas ({policies.length})</p>
+              {canEdit && policies.length > 0 && !addPolicyOpen && (
+                <button
+                  onClick={() => setAddPolicyOpen(true)}
+                  className="text-[11px] font-semibold text-accent hover:underline shrink-0"
+                >
+                  + Nueva
+                </button>
+              )}
+            </div>
+
+            {addPolicyOpen && policies.length > 0 && (
+              <div className="mb-3 p-3 rounded-lg bg-white border border-border space-y-2">
+                <input
+                  placeholder="Aseguradora"
+                  value={policyForm.insurance_company}
+                  onChange={e => setPolicyForm(v => ({ ...v, insurance_company: e.target.value }))}
+                  className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                />
+                <input
+                  placeholder="N° de póliza"
+                  value={policyForm.policy_number}
+                  onChange={e => setPolicyForm(v => ({ ...v, policy_number: e.target.value }))}
+                  className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleAddPolicy}
+                    disabled={addingPolicy || !policyForm.insurance_company}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
+                  >
+                    {addingPolicy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    Guardar
+                  </button>
+                  <button onClick={() => setAddPolicyOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
             )}
 
-            <div className="flex-1 min-w-0 overflow-y-auto p-5 sm:p-6">
-              {listQuery.isPending ? (
-                <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando pólizas…</p>
-              ) : listQuery.error ? (
-                <p className="text-sm text-red-500 pt-2">{listQuery.error instanceof Error ? listQuery.error.message : 'Error cargando pólizas'}</p>
-              ) : policies.length === 0 ? (
-                <p className="text-sm text-gray-400 italic pt-2">Sin pólizas registradas</p>
-              ) : !selectedListItem || detailQuery.isPending || !policy ? (
-                <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando detalle…</p>
-              ) : (
-                <>
-                  <div className="flex items-start justify-between gap-3 mb-5">
+            <div className="flex flex-col gap-2">
+              {policies.map(p => {
+                const active = p.id === selectedPolicyId
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedPolicyId(p.id)}
+                    className={`text-left px-3 py-2 rounded-lg transition-colors ${
+                      active ? 'bg-white shadow-sm border-l-2 border-accent' : 'hover:bg-white/60'
+                    }`}
+                  >
+                    <p className={`text-xs font-bold ${active ? 'text-text-primary' : 'text-gray-500'}`}>{p.insurance_company}</p>
+                    <p className={`text-[10px] ${p.overdue_installments > 0 ? 'text-red-500 font-semibold' : 'text-green-600'}`}>
+                      {p.overdue_installments > 0 ? `${p.overdue_installments} vencida${p.overdue_installments > 1 ? 's' : ''}` : 'al día'}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0 overflow-y-auto p-6">
+            {listQuery.isPending ? (
+              <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando pólizas…</p>
+            ) : listQuery.error ? (
+              <p className="text-sm text-red-500 pt-2">{listQuery.error instanceof Error ? listQuery.error.message : 'Error cargando pólizas'}</p>
+            ) : policies.length === 0 ? (
+              <div className="pt-2 max-w-sm">
+                {canEdit ? (
+                  addPolicyOpen ? (
+                    <>
+                      <p className="text-sm font-bold text-text-primary mb-3">Nueva póliza</p>
+                      <div className="space-y-2">
+                        <input
+                          placeholder="Aseguradora"
+                          value={policyForm.insurance_company}
+                          onChange={e => setPolicyForm(v => ({ ...v, insurance_company: e.target.value }))}
+                          className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                        />
+                        <input
+                          placeholder="N° de póliza"
+                          value={policyForm.policy_number}
+                          onChange={e => setPolicyForm(v => ({ ...v, policy_number: e.target.value }))}
+                          className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleAddPolicy}
+                            disabled={addingPolicy || !policyForm.insurance_company}
+                            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-50"
+                          >
+                            {addingPolicy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                            Guardar
+                          </button>
+                          <button onClick={() => setAddPolicyOpen(false)} className="text-sm text-gray-400 hover:text-gray-600 px-2">Cancelar</button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-400 italic mb-3">Sin pólizas registradas todavía — sin una póliza no hay cuotas que hacer seguimiento.</p>
+                      <button
+                        onClick={() => setAddPolicyOpen(true)}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-white bg-accent hover:bg-accent/90 rounded-lg px-4 py-2 transition-colors"
+                      >
+                        <Plus size={14} /> Agregar la primera póliza
+                      </button>
+                    </>
+                  )
+                ) : (
+                  <p className="text-sm text-gray-400 italic">Sin pólizas registradas</p>
+                )}
+              </div>
+            ) : !selectedListItem || detailQuery.isPending || !policy ? (
+              <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando detalle…</p>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3 mb-5">
                   <div>
                     <p className="text-[15px] font-bold text-text-primary">{policy.insurance_company}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
@@ -376,20 +476,19 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                   </button>
                 )}
 
-                  {showAll && (
-                    <div className="flex flex-col gap-1.5 mb-6">
-                      {sortedInstallments.map(inst => (
-                        <div key={inst.id} className={spotlight?.id === inst.id ? 'ring-2 ring-accent/30 rounded-lg' : ''}>
-                          <InstallmentRow installment={inst} canAdmin={canAdmin} onChanged={handleInstallmentChanged} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
+                {showAll && (
+                  <div className="flex flex-col gap-1.5 mb-6">
+                    {sortedInstallments.map(inst => (
+                      <div key={inst.id} className={spotlight?.id === inst.id ? 'ring-2 ring-accent/30 rounded-lg' : ''}>
+                        <InstallmentRow installment={inst} canAdmin={canAdmin} onChanged={handleInstallmentChanged} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </>
   )
