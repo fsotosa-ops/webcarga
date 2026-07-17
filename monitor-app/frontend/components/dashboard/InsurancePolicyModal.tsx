@@ -177,8 +177,6 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     }
   }
 
-  if (!open) return null
-
   const selectedListItem = policies.find(p => p.id === selectedPolicyId) ?? null
   const policy = detailQuery.data ?? null
   const installments = policy?.installments ?? []
@@ -193,30 +191,45 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} aria-hidden="true" />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Pólizas de ${displayName}`}
-          tabIndex={-1}
-          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none"
-        >
-          <button onClick={onClose} aria-label="Cerrar detalle de pólizas" className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600">
-            <X size={18} />
-          </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
+      )}
 
-          {policies.length > 1 && (
-            <div className="sm:w-[34%] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-4">
-              <div className="flex items-center gap-2.5 mb-4">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Pólizas de ${displayName}`}
+        tabIndex={-1}
+        className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[640px] bg-white border-l border-border shadow-2xl flex flex-col transition-transform duration-300 focus:outline-none ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {open && (
+          <>
+            <div className="flex items-start justify-between gap-3 p-5 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold shrink-0">
                   {initialsOf(displayName)}
                 </div>
-                <p className="text-xs font-bold text-text-primary truncate">{displayName}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-text-primary truncate">{displayName}</p>
+                  {selectedListItem && (
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-0.5 ${POLICY_HEALTH_CONFIG[selectedListItem.policy_health].cls}`}>
+                      {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].icon} {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].label}
+                    </span>
+                  )}
+                </div>
               </div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Pólizas ({policies.length})</p>
-              <div className="flex sm:flex-col gap-2 overflow-x-auto sm:overflow-visible">
+              <button onClick={onClose} aria-label="Cerrar detalle de pólizas" className="text-gray-400 hover:text-gray-600 shrink-0">
+                <X size={18} />
+              </button>
+            </div>
+
+            {policies.length > 1 && (
+              <div className="px-5 py-3 border-b border-border shrink-0">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Pólizas ({policies.length})</p>
+                <div className="flex gap-2 overflow-x-auto">
                 {policies.map(p => {
                   const active = p.id === selectedPolicyId
                   return (
@@ -224,7 +237,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                       key={p.id}
                       onClick={() => setSelectedPolicyId(p.id)}
                       className={`text-left px-3 py-2 rounded-lg shrink-0 transition-colors ${
-                        active ? 'bg-white shadow-sm border-l-2 border-accent' : 'hover:bg-white/60'
+                        active ? 'bg-accent/5 border border-accent/30' : 'border border-border hover:border-gray-300'
                       }`}
                     >
                       <p className={`text-xs font-bold ${active ? 'text-text-primary' : 'text-gray-500'}`}>{p.insurance_company}</p>
@@ -234,34 +247,22 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                     </button>
                   )
                 })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="flex-1 min-w-0 overflow-y-auto p-5 sm:p-6">
-            {listQuery.isPending ? (
-              <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando pólizas…</p>
-            ) : listQuery.error ? (
-              <p className="text-sm text-red-500 pt-2">{listQuery.error instanceof Error ? listQuery.error.message : 'Error cargando pólizas'}</p>
-            ) : policies.length === 0 ? (
-              <p className="text-sm text-gray-400 italic pt-2">Sin pólizas registradas</p>
-            ) : !selectedListItem || detailQuery.isPending || !policy ? (
-              <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando detalle…</p>
-            ) : (
-              <>
-                {policies.length === 1 && (
-                  <div className="flex items-center gap-2.5 mb-4">
-                    <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold shrink-0">
-                      {initialsOf(displayName)}
-                    </div>
-                    <p className="text-xs font-bold text-text-primary truncate">{displayName}</p>
-                    <span className={`ml-auto inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${POLICY_HEALTH_CONFIG[selectedListItem.policy_health].cls}`}>
-                      {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].icon} {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].label}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex items-start justify-between gap-3 mb-5 pr-6">
+            <div className="flex-1 min-w-0 overflow-y-auto p-5 sm:p-6">
+              {listQuery.isPending ? (
+                <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando pólizas…</p>
+              ) : listQuery.error ? (
+                <p className="text-sm text-red-500 pt-2">{listQuery.error instanceof Error ? listQuery.error.message : 'Error cargando pólizas'}</p>
+              ) : policies.length === 0 ? (
+                <p className="text-sm text-gray-400 italic pt-2">Sin pólizas registradas</p>
+              ) : !selectedListItem || detailQuery.isPending || !policy ? (
+                <p className="text-sm text-gray-400 flex items-center gap-2 pt-2"><Loader2 size={14} className="animate-spin" /> Cargando detalle…</p>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between gap-3 mb-5">
                   <div>
                     <p className="text-[15px] font-bold text-text-primary">{policy.insurance_company}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
@@ -375,19 +376,20 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                   </button>
                 )}
 
-                {showAll && (
-                  <div className="flex flex-col gap-1.5 mb-6">
-                    {sortedInstallments.map(inst => (
-                      <div key={inst.id} className={spotlight?.id === inst.id ? 'ring-2 ring-accent/30 rounded-lg' : ''}>
-                        <InstallmentRow installment={inst} canAdmin={canAdmin} onChanged={handleInstallmentChanged} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+                  {showAll && (
+                    <div className="flex flex-col gap-1.5 mb-6">
+                      {sortedInstallments.map(inst => (
+                        <div key={inst.id} className={spotlight?.id === inst.id ? 'ring-2 ring-accent/30 rounded-lg' : ''}>
+                          <InstallmentRow installment={inst} canAdmin={canAdmin} onChanged={handleInstallmentChanged} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </>
   )

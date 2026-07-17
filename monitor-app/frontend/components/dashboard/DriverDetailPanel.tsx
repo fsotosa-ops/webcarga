@@ -131,129 +131,139 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     await onPatch(driver!.id, { operational_status: 'ACTIVE' })
   }
 
-  if (!open) return null
-
   const items = complianceRecordsToChecklistItems(complianceQuery.data ?? [])
   const { ok, total } = checklistCompletion(items)
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Detalle de ${driver.full_name}`}
-          tabIndex={-1}
-          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none"
-        >
-          <button onClick={onClose} aria-label="Cerrar detalle" className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600">
-            <X size={18} />
-          </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
+      )}
 
-          <div className="sm:w-[34%] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-4">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div
-                className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                style={{ backgroundColor: getInitialColor(driver.full_name) }}
-              >
-                {getInitials(driver.full_name)}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-text-primary truncate">{driver.full_name}</p>
-                <p className="text-[10px] text-gray-400 font-mono">{driver.tax_id}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 mb-4">
-              <CompletionRing ok={ok} total={total} />
-              <p className="text-[11px] text-gray-500">{ok} de {total}<br />documentos al día</p>
-            </div>
-
-            <div className="space-y-2">
-              <input
-                aria-label="Nombre"
-                value={draft.full_name}
-                disabled={!canEdit}
-                onChange={e => setDraft({ full_name: e.target.value })}
-                className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-              />
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={handleSaveDatos}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={driver ? `Detalle de ${driver.full_name}` : 'Detalle de conductor'}
+        tabIndex={-1}
+        className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[640px] bg-white border-l border-border shadow-2xl flex flex-col transition-transform duration-300 focus:outline-none ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {driver && (
+          <>
+            <div className="flex items-start justify-between gap-3 p-5 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                  style={{ backgroundColor: getInitialColor(driver.full_name) }}
                 >
-                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                  Guardar
-                </button>
-              )}
+                  {getInitials(driver.full_name)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-text-primary truncate">{driver.full_name}</p>
+                  <p className="text-[11px] text-gray-400 font-mono">{driver.tax_id}</p>
+                </div>
+              </div>
+              <button onClick={onClose} aria-label="Cerrar detalle" className="text-gray-400 hover:text-gray-600 shrink-0">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              <div className="flex items-center gap-3">
+                <CompletionRing ok={ok} total={total} />
+                <p className="text-[11px] text-gray-500">{ok} de {total}<br />documentos al día</p>
+              </div>
+
+              <div className="flex items-end gap-2">
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Nombre</label>
+                  <input
+                    aria-label="Nombre"
+                    value={draft.full_name}
+                    disabled={!canEdit}
+                    onChange={e => setDraft({ full_name: e.target.value })}
+                    className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+                  />
+                </div>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={handleSaveDatos}
+                    disabled={saving}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50 shrink-0"
+                  >
+                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    Guardar
+                  </button>
+                )}
+              </div>
               {err && <p className="text-xs text-red-500">{err}</p>}
-            </div>
 
-            <div className="mt-5 space-y-2">
-              {canAdmin && (
-                <button
-                  type="button"
-                  onClick={onTransferClick}
-                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
-                >
-                  <ArrowRightLeft size={14} /> Transferir a otra empresa
-                </button>
-              )}
-              {canAdmin && (
-                driver.operational_status === 'INACTIVE' ? (
+              <div className="flex flex-wrap gap-2">
+                {canAdmin && (
                   <button
                     type="button"
-                    onClick={handleReactivate}
-                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
+                    onClick={onTransferClick}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-3 py-2 transition-colors"
                   >
-                    Reactivar
+                    <ArrowRightLeft size={13} /> Transferir a otra empresa
                   </button>
+                )}
+                {canAdmin && (
+                  driver.operational_status === 'INACTIVE' ? (
+                    <button
+                      type="button"
+                      onClick={handleReactivate}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-3 py-2 transition-colors"
+                    >
+                      Reactivar
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setBajaModalOpen(true)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-3 py-2 transition-colors"
+                    >
+                      Dar de baja
+                    </button>
+                  )
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={handleRemove}
+                    disabled={removing}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-3 py-2 transition-colors disabled:opacity-50"
+                  >
+                    {removing ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                    Quitar del roster
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Documentación</p>
+                {complianceQuery.isPending ? (
+                  <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => setBajaModalOpen(true)}
-                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
-                  >
-                    Dar de baja
-                  </button>
-                )
-              )}
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={handleRemove}
-                  disabled={removing}
-                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors disabled:opacity-50"
-                >
-                  {removing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  Quitar del roster
-                </button>
-              )}
+                  <DocumentChecklist
+                    items={items}
+                    canEdit={canEdit}
+                    onStatusChange={handleStatusChange}
+                    onUpload={handleUpload}
+                    hideCounter
+                  />
+                )}
+                {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
+              </div>
             </div>
-          </div>
-
-          <div className="flex-1 min-w-0 overflow-y-auto p-5 sm:p-6">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Documentación</p>
-            {complianceQuery.isPending ? (
-              <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
-            ) : (
-              <DocumentChecklist
-                items={items}
-                canEdit={canEdit}
-                onStatusChange={handleStatusChange}
-                onUpload={handleUpload}
-                hideCounter
-              />
-            )}
-            {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
-          </div>
-        </div>
+          </>
+        )}
       </div>
-      {bajaModalOpen && (
+
+      {bajaModalOpen && driver && (
         <BajaReasonModal
           label={`conductor ${driver.full_name}`}
           onClose={() => setBajaModalOpen(false)}

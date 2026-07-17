@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'next/navigation'
 import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import { createClient } from '@/lib/supabase/client'
@@ -35,7 +36,19 @@ const EMPTY_FACETS: InsuranceOverviewFacets = {
 }
 
 export default function SegurosPage() {
-  const [q, setQ]           = useState('')
+  return (
+    <Suspense fallback={null}>
+      <SegurosPageInner />
+    </Suspense>
+  )
+}
+
+/** Lee `?q=` al montar (deep link desde InsuranceSummaryCard en la ficha de
+ *  empresa, con el tax_id de esa empresa) — no se resincroniza si la URL
+ *  cambia después, el usuario puede seguir editando la búsqueda libremente. */
+function SegurosPageInner() {
+  const searchParams = useSearchParams()
+  const [q, setQ]           = useState(() => searchParams.get('q') ?? '')
   const [tab, setTab]       = useState<HealthTab>('')
   const [page, setPage]     = useState(1)
   const [canEdit, setCanEdit]   = useState(false)

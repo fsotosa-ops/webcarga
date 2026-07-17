@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight, PenLine, Check, X,
@@ -575,7 +576,7 @@ export default function EmpresaDetailPage() {
             </button>
           </div>
 
-          <InsuranceSummaryCard carrierId={carrier.id} />
+          <InsuranceSummaryCard carrierId={carrier.id} taxId={carrier.tax_id} />
 
           <button
             onClick={() => setActiveTab('conductores')}
@@ -821,14 +822,22 @@ export default function EmpresaDetailPage() {
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Pólizas ({policies.length})</h3>
-          {canEdit && (
-            <button
-              onClick={() => setAddPolicyOpen(v => !v)}
-              className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/dashboard/seguros?q=${encodeURIComponent(carrier.tax_id)}`}
+              className="text-xs font-semibold text-accent hover:underline"
             >
-              + Póliza
-            </button>
-          )}
+              Ver en Seguros →
+            </Link>
+            {canEdit && (
+              <button
+                onClick={() => setAddPolicyOpen(v => !v)}
+                className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
+              >
+                + Póliza
+              </button>
+            )}
+          </div>
         </div>
 
         {addPolicyOpen && (

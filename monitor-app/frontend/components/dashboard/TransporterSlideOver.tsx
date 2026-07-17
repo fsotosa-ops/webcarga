@@ -181,7 +181,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
               </section>
 
               <section>
-                <InsuranceSummaryCard carrierId={item.id} />
+                <InsuranceSummaryCard carrierId={item.id} taxId={item.tax_id} />
               </section>
 
               <Link

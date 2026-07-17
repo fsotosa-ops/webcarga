@@ -1,19 +1,24 @@
 'use client'
 
+import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Loader2, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import { formatExpiry } from '@/lib/compliance'
 
 interface Props {
   carrierId: string
+  taxId:     string
 }
 
 /** Card compacta de Seguros en la ficha de empresa — plan §4.2. Próxima
  *  cuota + cuotas vencidas + % pagado, agregando app.carrier_insurance_status
- *  (ya viene pre-agregado por póliza, sin date-math client-side). Sin link a
- *  un módulo Seguros separado: Seguros vive anidado en esta misma ficha. */
-export function InsuranceSummaryCard({ carrierId }: Props) {
+ *  (ya viene pre-agregado por póliza, sin date-math client-side). Clickeable:
+ *  navega a la landing /dashboard/seguros pre-filtrada por tax_id (deep link
+ *  vía ?q=), la "landing sincronizada con Empresas" del rediseño H3 —
+ *  reemplaza la nota vieja de "sin link a un módulo Seguros separado" de
+ *  cuando ese módulo todavía no existía. */
+export function InsuranceSummaryCard({ carrierId, taxId }: Props) {
   const { data, isPending, error } = useQuery({
     queryKey: ['carrier-policies', carrierId],
     queryFn: () => carriersApi.listPolicies(carrierId),
@@ -30,8 +35,14 @@ export function InsuranceSummaryCard({ carrierId }: Props) {
     .sort((a, b) => (a < b ? -1 : 1))[0]
 
   return (
-    <div className="bg-white rounded-xl border border-border p-4 space-y-3">
-      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Seguros</h3>
+    <Link
+      href={`/dashboard/seguros?q=${encodeURIComponent(taxId)}`}
+      className="block bg-white rounded-xl border border-border p-4 space-y-3 text-left hover:border-gray-300 hover:shadow-sm transition-all"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Seguros</h3>
+        <ArrowRight size={13} className="text-gray-300" />
+      </div>
 
       {isPending ? (
         <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
@@ -67,6 +78,6 @@ export function InsuranceSummaryCard({ carrierId }: Props) {
           <p className="text-[10px] text-gray-400">{policies.length} póliza{policies.length > 1 ? 's' : ''}</p>
         </div>
       )}
-    </div>
+    </Link>
   )
 }
