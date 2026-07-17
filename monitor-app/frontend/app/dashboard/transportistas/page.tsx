@@ -8,10 +8,10 @@ import type { CarrierListItem, OperationalStatus } from '@/lib/types'
 import { carriersApi } from '@/lib/api/carriers'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { TransporterCard } from '@/components/dashboard/TransporterCard'
+import { TransporterCard, STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
-import { formatExpiry } from '@/lib/compliance'
+import { updatedRelative } from '@/lib/compliance'
 
 type TransporterTab = 'active' | 'legacy'
 
@@ -28,10 +28,6 @@ const TABS: { id: TransporterTab; label: string; status: OperationalStatus }[] =
   { id: 'active', label: 'Activas', status: 'ACTIVE' },
   { id: 'legacy', label: 'Legacy', status: 'LEGACY_INACTIVE' },
 ]
-
-const STATUS_LABELS: Record<OperationalStatus, string> = {
-  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Legacy',
-}
 
 export default function EmpresasTransportePage() {
   const [q, setQ]                 = useState('')
@@ -178,9 +174,13 @@ export default function EmpresasTransportePage() {
                       </div>
                     </td>
                     <td className="px-3 py-3 font-mono text-xs text-gray-500">{item.tax_id}</td>
-                    <td className="px-3 py-3 text-xs text-gray-600">{STATUS_LABELS[item.operational_status]}</td>
+                    <td className="px-3 py-3">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_CLS[item.operational_status]}`}>
+                        {STATUS_LABELS[item.operational_status]}
+                      </span>
+                    </td>
                     <td className="px-3 py-3 text-center"><span className="font-bold text-sm text-slate-700">{item.total_requirements}</span></td>
-                    <td className="px-3 py-3 text-xs text-gray-500">{formatExpiry(item.last_document_update)}</td>
+                    <td className="px-3 py-3 text-xs text-gray-500">{updatedRelative(item.last_document_update) ?? '—'}</td>
                     <td className="px-3 py-3 text-center">
                       {/* prefetch=false: mismo motivo que TransporterCard — evita que Next.js
                          prefetchee las 100 filas visibles a la vez y agote el rate limit. */}

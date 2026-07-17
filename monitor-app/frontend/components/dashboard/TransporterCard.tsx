@@ -3,12 +3,12 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import type { CarrierListItem, OperationalStatus } from '@/lib/types'
-import { formatExpiry } from '@/lib/compliance'
+import { updatedRelative } from '@/lib/compliance'
 
-const STATUS_LABELS: Record<OperationalStatus, string> = {
+export const STATUS_LABELS: Record<OperationalStatus, string> = {
   ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Legacy',
 }
-const STATUS_CLS: Record<OperationalStatus, string> = {
+export const STATUS_CLS: Record<OperationalStatus, string> = {
   ACTIVE: 'bg-green-50 text-green-700 border-green-100',
   INACTIVE: 'bg-gray-100 text-gray-500 border-transparent',
   LEGACY_INACTIVE: 'bg-gray-100 text-gray-500 border-transparent',
@@ -64,7 +64,7 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
         </span>
         <span className="text-[11px] text-gray-400">
           {item.total_requirements} requisito{item.total_requirements === 1 ? '' : 's'}
-          {item.last_document_update && ` · ${formatExpiry(item.last_document_update)}`}
+          {updatedRelative(item.last_document_update) && ` · ${updatedRelative(item.last_document_update)}`}
         </span>
       </div>
     </div>
