@@ -84,4 +84,23 @@ describe('DocumentChecklist', () => {
   it('checklistCompletion counts ok documents against the total', () => {
     expect(checklistCompletion(ITEMS)).toEqual({ ok: 1, total: 3 })
   })
+
+  it('shows a relative expiry caption when expiration_date is set', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
+    expect(screen.getByText(/vencido hace/)).toBeInTheDocument()
+  })
+
+  it('lets an editor set the expiration date even for a document without one yet', () => {
+    const onExpirationChange = vi.fn()
+    render(<DocumentChecklist items={ITEMS} canEdit={true} onUpload={vi.fn()} onExpirationChange={onExpirationChange} />)
+    const input = screen.getByLabelText('Fecha de vencimiento de Póliza firmada') as HTMLInputElement
+    expect(input.value).toBe('')
+    fireEvent.change(input, { target: { value: '2027-06-01' } })
+    expect(onExpirationChange).toHaveBeenCalledWith('cr1', '2027-06-01')
+  })
+
+  it('does not offer to edit the expiration date when canEdit is false', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} onExpirationChange={vi.fn()} />)
+    expect(screen.queryByLabelText('Fecha de vencimiento de Póliza firmada')).not.toBeInTheDocument()
+  })
 })

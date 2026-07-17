@@ -4,7 +4,7 @@ routers/policies.py). Reemplaza el schemas/insurance.py de Checkpoint A-E
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 PolicyStatus = Literal["ACTIVE", "EXPIRED", "CANCELLED"]
 PaymentStatus = Literal["PENDING", "PAID", "OVERDUE"]
@@ -17,6 +17,7 @@ class InsurancePolicyCreateBody(BaseModel):
     valid_from: Optional[date] = None
     valid_to: Optional[date] = None
     expiration_alert_days: int = 30
+    has_endorsement: bool = False
 
 
 class InsurancePolicyPatchBody(BaseModel):
@@ -26,6 +27,7 @@ class InsurancePolicyPatchBody(BaseModel):
     valid_to: Optional[date] = None
     status: Optional[PolicyStatus] = None
     expiration_alert_days: Optional[int] = None
+    has_endorsement: Optional[bool] = None
     external_portal_url: Optional[str] = None
     expected_updated_at: Optional[datetime] = None
 
@@ -41,6 +43,17 @@ class PolicyAssetLinkBody(BaseModel):
 class InstallmentPatchBody(BaseModel):
     payment_status: Optional[PaymentStatus] = None
     paid_at: Optional[datetime] = None
+
+
+class InstallmentScheduleGenerateBody(BaseModel):
+    """Genera el plan de cuotas completo de una póliza de una sola vez
+    (mensual, monto fijo por cuota) — no hay endpoint para crear cuotas
+    sueltas: total_installments es un valor denormalizado por fila
+    (ver public.insurance_installments), generarlas todas juntas evita
+    que quede inconsistente entre filas."""
+    total_installments: int = Field(ge=1, le=60)
+    amount_uf: float = Field(gt=0)
+    first_due_date: date
 
 
 class InsuranceOverviewFacets(BaseModel):

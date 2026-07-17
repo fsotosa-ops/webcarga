@@ -13,6 +13,7 @@ import { InstallmentRow } from './InstallmentRow'
 export type PolicyFormState = {
   insurance_company: string; policy_number: string
   valid_from: string; valid_to: string; expiration_alert_days: string
+  has_endorsement: boolean
 }
 
 /** Formulario de alta de póliza — expone los mismos campos que soporta
@@ -66,6 +67,11 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
         <input type="number" min={1} aria-label="Alerta de vencimiento en días" value={form.expiration_alert_days}
           onChange={e => onChange({ ...form, expiration_alert_days: e.target.value })} className={inputCls} />
       </div>
+      <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+        <input type="checkbox" checked={form.has_endorsement}
+          onChange={e => onChange({ ...form, has_endorsement: e.target.checked })} />
+        Tiene endoso
+      </label>
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={onSubmit}
@@ -134,9 +140,13 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   const [fileErr, setFileErr] = useState<string | null>(null)
   const [addPolicyOpen, setAddPolicyOpen] = useState(false)
   const [policyForm, setPolicyForm] = useState({
-    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false,
   })
   const [addingPolicy, setAddingPolicy] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState({ total_installments: '12', amount_uf: '', first_due_date: '' })
+  const [generatingSchedule, setGeneratingSchedule] = useState(false)
+  const [scheduleErr, setScheduleErr] = useState<string | null>(null)
 
   const listQuery = useQuery({
     queryKey: ['carrier-policies', carrierId],
@@ -168,11 +178,14 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
 
   useEffect(() => {
     setShowAll(false)
+    setScheduleOpen(false)
+    setScheduleForm({ total_installments: '12', amount_uf: '', first_due_date: '' })
+    setScheduleErr(null)
   }, [selectedPolicyId])
 
   useEffect(() => {
     setAddPolicyOpen(false)
-    setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30' })
+    setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false })
   }, [carrierId])
 
   const detailQuery = useQuery({
@@ -251,6 +264,15 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     )
   }
 
+  async function handleToggleEndorsement(current: boolean) {
+    if (!selectedPolicyId) return
+    const updated = await policiesApi.patch(selectedPolicyId, { has_endorsement: !current })
+    queryClient.setQueryData(
+      ['policy-detail', selectedPolicyId],
+      (old: InsurancePolicy | undefined) => old ? { ...old, has_endorsement: updated.has_endorsement } : old,
+    )
+  }
+
   async function handleUploadPolicyFile(kind: 'document' | 'endorsement', file: File) {
     if (!selectedPolicyId) return
     setFileErr(null)
@@ -259,6 +281,25 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
       invalidateDetail()
     } catch (e) {
       setFileErr(e instanceof Error ? e.message : 'Error al subir el archivo')
+    }
+  }
+
+  async function handleGenerateSchedule() {
+    if (!selectedPolicyId || !scheduleForm.amount_uf || !scheduleForm.first_due_date) return
+    setGeneratingSchedule(true)
+    setScheduleErr(null)
+    try {
+      await policiesApi.generateInstallments(selectedPolicyId, {
+        total_installments: Number(scheduleForm.total_installments),
+        amount_uf: Number(scheduleForm.amount_uf),
+        first_due_date: scheduleForm.first_due_date,
+      })
+      setScheduleOpen(false)
+      invalidateDetail()
+    } catch (e) {
+      setScheduleErr(e instanceof Error ? e.message : 'Error al generar las cuotas')
+    } finally {
+      setGeneratingSchedule(false)
     }
   }
 
@@ -272,8 +313,9 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
         valid_from: policyForm.valid_from || undefined,
         valid_to: policyForm.valid_to || undefined,
         expiration_alert_days: policyForm.expiration_alert_days ? Number(policyForm.expiration_alert_days) : undefined,
+        has_endorsement: policyForm.has_endorsement,
       })
-      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30' })
+      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false })
       setAddPolicyOpen(false)
       queryClient.invalidateQueries({ queryKey: ['carrier-policies', carrierId] })
     } finally {
@@ -436,9 +478,16 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentos</p>
                       <PolicyFileRow label="Póliza" url={policy.policy_document_url} onUpload={file => handleUploadPolicyFile('document', file)} canEdit={canEdit} />
-                      {policy.has_endorsement && (
+                      {policy.has_endorsement ? (
                         <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} canEdit={canEdit} />
-                      )}
+                      ) : canEdit ? (
+                        <button
+                          onClick={() => handleToggleEndorsement(false)}
+                          className="text-[11px] text-gray-400 hover:text-accent flex items-center gap-1"
+                        >
+                          <Plus size={10} /> Esta póliza tiene endoso
+                        </button>
+                      ) : null}
                       {fileErr && <p className="text-xs text-red-500">{fileErr}</p>}
                     </div>
 
@@ -506,6 +555,55 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                     </div>
                   </div>
                 </div>
+
+                {installments.length === 0 && canEdit && (
+                  <div className="mb-5">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Cuotas</p>
+                    {scheduleOpen ? (
+                      <div className="max-w-sm space-y-2 p-3 rounded-lg bg-gray-50 border border-border">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-0.5">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wide">N° de cuotas</label>
+                            <input type="number" min={1} max={60} value={scheduleForm.total_installments}
+                              onChange={e => setScheduleForm(v => ({ ...v, total_installments: e.target.value }))}
+                              className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+                          </div>
+                          <div className="space-y-0.5">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wide">Monto UF c/u</label>
+                            <input type="number" min={0} step="0.01" placeholder="0.00" value={scheduleForm.amount_uf}
+                              onChange={e => setScheduleForm(v => ({ ...v, amount_uf: e.target.value }))}
+                              className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+                          </div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wide">Primera fecha de vencimiento</label>
+                          <input type="date" aria-label="Primera fecha de vencimiento" value={scheduleForm.first_due_date}
+                            onChange={e => setScheduleForm(v => ({ ...v, first_due_date: e.target.value }))}
+                            className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+                        </div>
+                        {scheduleErr && <p className="text-xs text-red-500">{scheduleErr}</p>}
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={handleGenerateSchedule}
+                            disabled={generatingSchedule || !scheduleForm.amount_uf || !scheduleForm.first_due_date}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
+                          >
+                            {generatingSchedule ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                            Generar cuotas
+                          </button>
+                          <button onClick={() => setScheduleOpen(false)} className="text-xs text-gray-400 hover:text-gray-600 px-2">Cancelar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setScheduleOpen(true)}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline"
+                      >
+                        <Plus size={12} /> Generar plan de cuotas
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {spotlight && (
                   <div className="mb-2">

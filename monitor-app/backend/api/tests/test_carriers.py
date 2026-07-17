@@ -401,6 +401,29 @@ def test_create_carrier_policy_success():
     )
 
     assert res.status_code == 201
+
+
+def test_create_carrier_policy_persists_has_endorsement():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = 1
+    conn.fetchrow.return_value = {
+        "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": None,
+        "valid_from": None, "valid_to": None, "expiration_alert_days": 30, "has_endorsement": True,
+        "status": "ACTIVE", "created_at": None,
+    }
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/carriers/c1/policies",
+        json={"carrier_id": "c1", "insurance_company": "HDI", "has_endorsement": True},
+    )
+
+    assert res.status_code == 201
+    assert conn.fetchrow.call_args.args[-1] is True
+    insert_sql = conn.fetchrow.call_args.args[0]
+    assert "has_endorsement" in insert_sql
     assert res.json()["insurance_company"] == "HDI"
 
 

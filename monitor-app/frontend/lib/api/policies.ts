@@ -10,6 +10,7 @@ export type PolicyPatchBody = {
   valid_to?:               string
   status?:                 PolicyStatus
   expiration_alert_days?:  number
+  has_endorsement?:        boolean
   external_portal_url?:    string
   expected_updated_at?:    string
 }
@@ -17,6 +18,12 @@ export type PolicyPatchBody = {
 export type InstallmentPatchBody = {
   payment_status?: PaymentStatus
   paid_at?:        string
+}
+
+export type InstallmentScheduleGenerateBody = {
+  total_installments: number
+  amount_uf:           number
+  first_due_date:      string
 }
 
 export type PolicyFileUploadResult = {
@@ -56,6 +63,11 @@ export const policiesApi = {
   patchInstallment: (installmentId: string, body: InstallmentPatchBody) =>
     apiFetch<InsuranceInstallment>(`/api/v1/policies/installments/${installmentId}`, {
       method: 'PATCH', body: JSON.stringify(body),
+    }),
+
+  generateInstallments: (id: string, body: InstallmentScheduleGenerateBody) =>
+    apiFetch<InsuranceInstallment[]>(`/api/v1/policies/${id}/installments/generate`, {
+      method: 'POST', body: JSON.stringify(body),
     }),
 
   uploadFile: (id: string, file: File, kind: 'document' | 'endorsement' = 'document') => {

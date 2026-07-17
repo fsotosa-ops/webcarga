@@ -258,7 +258,7 @@ export default function EmpresaDetailPage() {
   const [assetForm,      setAssetForm]      = useState<{ asset_type: AssetType; license_plate: string }>({ asset_type: 'TRACTOCAMION', license_plate: '' })
   const [addPolicyOpen,  setAddPolicyOpen]  = useState(false)
   const [policyForm,     setPolicyForm]     = useState<PolicyFormState>({
-    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false,
   })
   const [submitting,     setSubmitting]     = useState(false)
 
@@ -389,8 +389,9 @@ export default function EmpresaDetailPage() {
         valid_from: policyForm.valid_from || undefined,
         valid_to: policyForm.valid_to || undefined,
         expiration_alert_days: policyForm.expiration_alert_days ? Number(policyForm.expiration_alert_days) : undefined,
+        has_endorsement: policyForm.has_endorsement,
       })
-      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30' })
+      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false })
       setAddPolicyOpen(false)
       invalidatePolicies()
     } finally { setSubmitting(false) }

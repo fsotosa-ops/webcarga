@@ -560,13 +560,14 @@ async def create_carrier_policy(
             row = await conn.fetchrow(
                 """
                 INSERT INTO public.insurance_policies
-                    (carrier_id, insurance_company, policy_number, valid_from, valid_to, expiration_alert_days)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (carrier_id, insurance_company, policy_number, valid_from, valid_to,
+                     expiration_alert_days, has_endorsement)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id, carrier_id, insurance_company, policy_number, valid_from, valid_to,
-                          expiration_alert_days, status, created_at
+                          expiration_alert_days, has_endorsement, status, created_at
                 """,
                 carrier_id, body.insurance_company, body.policy_number, body.valid_from,
-                body.valid_to, body.expiration_alert_days,
+                body.valid_to, body.expiration_alert_days, body.has_endorsement,
             )
             await log_change(
                 conn, actor=user["sub"], entity_type="CARRIER", entity_id=carrier_id,

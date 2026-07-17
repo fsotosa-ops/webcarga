@@ -54,6 +54,20 @@ describe('TransporterDocumentsPanel', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
   })
 
+  it('lets an editor set the expiration date for a record without one yet', async () => {
+    vi.mocked(complianceApi.patch).mockResolvedValue({ ...RECORDS[0], expiration_date: '2027-01-01' } as never)
+    const onChanged = vi.fn()
+    render(<TransporterDocumentsPanel records={RECORDS} canEdit={true} onChanged={onChanged} />)
+    fireEvent.change(screen.getByLabelText('Fecha de vencimiento de Rol SII'), { target: { value: '2027-01-01' } })
+    await waitFor(() => expect(complianceApi.patch).toHaveBeenCalledWith('cr1', { expiration_date: '2027-01-01' }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
+
+  it('does not offer to edit the expiration date when canEdit is false', () => {
+    render(<TransporterDocumentsPanel records={RECORDS} canEdit={false} onChanged={vi.fn()} />)
+    expect(screen.queryByLabelText('Fecha de vencimiento de Rol SII')).not.toBeInTheDocument()
+  })
+
   it('uploads a file via the upload control for requires_file records', async () => {
     vi.mocked(complianceApi.uploadFile).mockResolvedValue({
       status: 'PENDING_REVIEW', storage_path: 'x/y', file_name: 'f30.pdf',

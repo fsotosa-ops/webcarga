@@ -102,6 +102,16 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     }
   }
 
+  async function handleExpirationChange(recordId: string, expirationDate: string) {
+    setStatusErr(null)
+    try {
+      await complianceApi.patch(recordId, { expiration_date: expirationDate })
+      invalidateCompliance()
+    } catch (e) {
+      setStatusErr(e instanceof Error ? e.message : 'Error al guardar')
+    }
+  }
+
   async function handleUpload(recordId: string, file: File) {
     setStatusErr(null)
     try {
@@ -246,6 +256,7 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
                 items={items}
                 canEdit={canEdit}
                 onStatusChange={handleStatusChange}
+                onExpirationChange={handleExpirationChange}
                 onUpload={handleUpload}
                 hideCounter
               />

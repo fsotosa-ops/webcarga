@@ -1,7 +1,7 @@
 'use client'
 
 import { Check, Circle, AlertTriangle, Upload } from 'lucide-react'
-import { COMPLIANCE_STATUS_CONFIG } from '@/lib/compliance'
+import { COMPLIANCE_STATUS_CONFIG, expiryRelative } from '@/lib/compliance'
 import type { ComplianceStatus } from '@/lib/types'
 
 /** Fila del checklist — mapea 1:1 contra un public.compliance_records real
@@ -18,11 +18,12 @@ export type ChecklistItem = {
 }
 
 interface Props {
-  items:           ChecklistItem[]
-  canEdit:         boolean
-  onUpload?:       (recordId: string, file: File) => void
-  onStatusChange?: (recordId: string, status: ComplianceStatus) => void
-  hideCounter?:    boolean
+  items:               ChecklistItem[]
+  canEdit:             boolean
+  onUpload?:           (recordId: string, file: File) => void
+  onStatusChange?:     (recordId: string, status: ComplianceStatus) => void
+  onExpirationChange?: (recordId: string, expirationDate: string) => void
+  hideCounter?:        boolean
 }
 
 const STATUS_OPTIONS: { value: ComplianceStatus; label: string }[] =
@@ -53,7 +54,7 @@ export function checklistCompletion(items: ChecklistItem[]): { ok: number; total
  *  `item.requires_file` (subir archivo vs. cambiar estado a mano) — no por
  *  cuál callback pasó el llamador, porque un mismo carrier/driver/asset
  *  mezcla requisitos con y sin archivo en el mismo checklist. */
-export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, hideCounter }: Props) {
+export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, onExpirationChange, hideCounter }: Props) {
   const { ok: okCount } = checklistCompletion(items)
 
   return (
@@ -69,6 +70,7 @@ export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, hi
             : state === 'overdue'
               ? 'bg-red-500 border-red-500 text-white'
               : 'bg-white border-amber-400 text-amber-500'
+          const relative = expiryRelative(item.expiration_date, item.is_expired)
           return (
             <div
               key={item.id}
@@ -78,7 +80,27 @@ export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, hi
               <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${iconCls}`}>
                 {state === 'ok' ? <Check size={11} /> : state === 'overdue' ? <AlertTriangle size={10} /> : <Circle size={10} />}
               </span>
-              <span className="text-xs font-semibold text-text-primary flex-1 truncate">{item.label}</span>
+              <div className="flex-1 min-w-0">
+                <span className="text-xs font-semibold text-text-primary truncate block">{item.label}</span>
+                {(item.expiration_date || (canEdit && onExpirationChange)) && (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {relative && (
+                      <span className={`text-[10px] ${item.is_expired ? 'text-red-500 font-semibold' : item.is_expiring_soon ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>
+                        {relative}
+                      </span>
+                    )}
+                    {canEdit && onExpirationChange && (
+                      <input
+                        type="date"
+                        aria-label={`Fecha de vencimiento de ${item.label}`}
+                        value={item.expiration_date ?? ''}
+                        onChange={e => onExpirationChange(item.id, e.target.value)}
+                        className="text-[10px] text-gray-500 border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
               {canEdit && item.requires_file && onUpload && (
                 <label className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline cursor-pointer shrink-0">
                   <Upload size={11} /> Subir

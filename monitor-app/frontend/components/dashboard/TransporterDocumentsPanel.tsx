@@ -44,6 +44,18 @@ function DocumentRow({
     }
   }
 
+  async function changeExpiration(expirationDate: string) {
+    setBusy(true); setErr(null)
+    try {
+      await complianceApi.patch(record.id, { expiration_date: expirationDate })
+      onUpdated()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleUpload(file: File) {
     setBusy(true); setErr(null)
     try {
@@ -91,9 +103,23 @@ function DocumentRow({
         </span>
         <span className="text-xs font-semibold text-text-primary flex-1 truncate">{record.name}</span>
 
-        {record.expiration_date && (
-          <span className="flex items-center gap-1 text-[10px] font-mono text-gray-500 shrink-0">
-            {formatExpiry(record.expiration_date)} <ComplianceBadge status={alert} compact />
+        {(record.expiration_date || canEdit) && (
+          <span className="flex items-center gap-1.5 shrink-0">
+            {record.expiration_date && (
+              <span className="flex items-center gap-1 text-[10px] font-mono text-gray-500">
+                {formatExpiry(record.expiration_date)} <ComplianceBadge status={alert} compact />
+              </span>
+            )}
+            {canEdit && (
+              <input
+                type="date"
+                aria-label={`Fecha de vencimiento de ${record.name}`}
+                value={record.expiration_date ?? ''}
+                disabled={busy}
+                onChange={e => changeExpiration(e.target.value)}
+                className="text-[10px] text-gray-500 border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50"
+              />
+            )}
           </span>
         )}
 

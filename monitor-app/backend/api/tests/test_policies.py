@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
@@ -164,6 +165,92 @@ def test_patch_installment_no_fields_422():
     client = make_client(pool)
 
     res = client.patch("/api/v1/policies/installments/i1", json={})
+
+    assert res.status_code == 422
+
+
+def test_patch_policy_updates_has_endorsement():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "updated_at": None, "carrier_id": "c1", "insurance_company": "HDI",
+        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE",
+        "expiration_alert_days": 30, "has_endorsement": False, "external_portal_url": None,
+    }
+    pool.fetchrow.return_value = {
+        "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": "1",
+        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
+        "policy_document_url": None, "has_endorsement": True, "endorsement_document_url": None,
+        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": True,
+        "created_at": None, "updated_at": None,
+    }
+    pool.fetch.side_effect = [[], [], []]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/policies/p1", json={"has_endorsement": True})
+
+    assert res.status_code == 200
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "has_endorsement = COALESCE($8, has_endorsement)" in update_sql
+    assert conn.execute.call_args_list[0].args[8] is True
+
+
+def test_generate_installment_schedule_creates_monthly_rows():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = ["c1", 0]
+    conn.fetchrow.side_effect = [
+        {"id": "i1", "installment_number": 1, "total_installments": 3, "amount_uf": 2.5,
+         "due_date": "2026-01-15", "payment_status": "PENDING", "paid_at": None},
+        {"id": "i2", "installment_number": 2, "total_installments": 3, "amount_uf": 2.5,
+         "due_date": "2026-02-15", "payment_status": "PENDING", "paid_at": None},
+        {"id": "i3", "installment_number": 3, "total_installments": 3, "amount_uf": 2.5,
+         "due_date": "2026-03-15", "payment_status": "PENDING", "paid_at": None},
+    ]
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/policies/p1/installments/generate",
+        json={"total_installments": 3, "amount_uf": 2.5, "first_due_date": "2026-01-15"},
+    )
+
+    assert res.status_code == 201
+    body = res.json()
+    assert len(body) == 3
+    assert [r["due_date"] for r in body] == ["2026-01-15", "2026-02-15", "2026-03-15"]
+    insert_calls = [c for c in conn.fetchrow.call_args_list]
+    assert len(insert_calls) == 3
+    assert insert_calls[1].args[1:] == ("p1", 2, 3, 2.5, date(2026, 2, 15))
+
+
+def test_generate_installment_schedule_404_when_policy_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/policies/p1/installments/generate",
+        json={"total_installments": 3, "amount_uf": 2.5, "first_due_date": "2026-01-15"},
+    )
+
+    assert res.status_code == 404
+
+
+def test_generate_installment_schedule_rejects_when_already_has_installments():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = ["c1", 2]
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/policies/p1/installments/generate",
+        json={"total_installments": 3, "amount_uf": 2.5, "first_due_date": "2026-01-15"},
+    )
 
     assert res.status_code == 422
 

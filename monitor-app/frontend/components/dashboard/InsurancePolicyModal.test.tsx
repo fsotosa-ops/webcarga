@@ -13,7 +13,7 @@ vi.mock('@/lib/api/policies', () => ({
   policiesApi: {
     get: vi.fn(), patch: vi.fn(), patchInstallment: vi.fn(),
     linkCoverage: vi.fn(), unlinkCoverage: vi.fn(), linkAsset: vi.fn(), unlinkAsset: vi.fn(),
-    uploadFile: vi.fn(),
+    uploadFile: vi.fn(), generateInstallments: vi.fn(),
   },
   coverageTypesApi: { list: vi.fn() },
 }))
@@ -84,7 +84,7 @@ beforeEach(() => {
   vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue(ASSETS)
   vi.mocked(carriersApi.createPolicy).mockReset().mockResolvedValue({
     id: 'p-new', carrier_id: 'c2', insurance_company: 'Mapfre', policy_number: null,
-    valid_from: null, valid_to: null, expiration_alert_days: 30, status: 'ACTIVE', created_at: null,
+    valid_from: null, valid_to: null, expiration_alert_days: 30, has_endorsement: false, status: 'ACTIVE', created_at: null,
   })
   vi.mocked(policiesApi.get).mockReset().mockImplementation(async (id: string) => id === 'p1' ? DETAIL_P1 : DETAIL_P2)
   vi.mocked(policiesApi.patch).mockReset()
@@ -93,6 +93,7 @@ beforeEach(() => {
   vi.mocked(policiesApi.linkAsset).mockReset().mockResolvedValue({ ok: true })
   vi.mocked(policiesApi.unlinkAsset).mockReset().mockResolvedValue({ ok: true })
   vi.mocked(policiesApi.uploadFile).mockReset()
+  vi.mocked(policiesApi.generateInstallments).mockReset().mockResolvedValue([])
   vi.mocked(coverageTypesApi.list).mockReset().mockResolvedValue(COVERAGE_TYPES)
 })
 
@@ -224,11 +225,11 @@ describe('InsurancePolicyModal', () => {
 
     await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
       insurance_company: 'Mapfre', policy_number: undefined,
-      valid_from: undefined, valid_to: undefined, expiration_alert_days: 30,
+      valid_from: undefined, valid_to: undefined, expiration_alert_days: 30, has_endorsement: false,
     }))
   })
 
-  it('sends vigencia and expiration_alert_days when set on the new-policy form', async () => {
+  it('sends vigencia, expiration_alert_days and has_endorsement when set on the new-policy form', async () => {
     renderModal('c2')
     await screen.findByText(/Sin pólizas registradas todavía/)
 
@@ -237,11 +238,12 @@ describe('InsurancePolicyModal', () => {
     fireEvent.change(screen.getByLabelText('Vigencia desde'), { target: { value: '2026-01-01' } })
     fireEvent.change(screen.getByLabelText('Vigencia hasta'), { target: { value: '2027-01-01' } })
     fireEvent.change(screen.getByLabelText('Alerta de vencimiento en días'), { target: { value: '45' } })
+    fireEvent.click(screen.getByText('Tiene endoso'))
     fireEvent.click(screen.getByText('Guardar'))
 
     await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
       insurance_company: 'Mapfre', policy_number: undefined,
-      valid_from: '2026-01-01', valid_to: '2027-01-01', expiration_alert_days: 45,
+      valid_from: '2026-01-01', valid_to: '2027-01-01', expiration_alert_days: 45, has_endorsement: true,
     }))
   })
 
@@ -249,5 +251,33 @@ describe('InsurancePolicyModal', () => {
     renderModal('c2', { canEdit: false })
     expect(await screen.findByText('Sin pólizas registradas')).toBeInTheDocument()
     expect(screen.queryByText('Agregar la primera póliza')).not.toBeInTheDocument()
+  })
+
+  it('offers to generate a cuota schedule for a policy with none, instead of showing nothing', async () => {
+    vi.mocked(policiesApi.get).mockImplementation(async (id: string) =>
+      id === 'p1' ? { ...DETAIL_P1, installments: [] } : DETAIL_P2,
+    )
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+
+    fireEvent.click(screen.getByText('Generar plan de cuotas'))
+    fireEvent.change(screen.getByDisplayValue('12'), { target: { value: '3' } })
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '2.5' } })
+    fireEvent.change(screen.getByLabelText('Primera fecha de vencimiento'), { target: { value: '2026-02-01' } })
+    fireEvent.click(screen.getByText('Generar cuotas'))
+
+    await waitFor(() => expect(policiesApi.generateInstallments).toHaveBeenCalledWith('p1', {
+      total_installments: 3, amount_uf: 2.5, first_due_date: '2026-02-01',
+    }))
+  })
+
+  it('offers to turn on has_endorsement for a policy that does not have one yet', async () => {
+    vi.mocked(policiesApi.patch).mockResolvedValue({ ...DETAIL_P1, has_endorsement: true })
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+
+    fireEvent.click(screen.getByText('Esta póliza tiene endoso'))
+
+    await waitFor(() => expect(policiesApi.patch).toHaveBeenCalledWith('p1', { has_endorsement: true }))
   })
 })
