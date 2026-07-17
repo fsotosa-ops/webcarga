@@ -16,6 +16,7 @@ const RECORD: ComplianceRecord = {
   is_manual_override: false,
   is_expired: false,
   is_expiring_soon: false,
+  updated_at: null,
 }
 
 describe('complianceRecordsToChecklistItems', () => {

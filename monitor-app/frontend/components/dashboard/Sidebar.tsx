@@ -13,6 +13,7 @@ import {
 const NAV_ITEMS = [
   { href: '/dashboard/diario',         label: 'Diario',   icon: Truck },
   { href: '/dashboard/transportistas', label: 'Empresas', icon: Building2 },
+  { href: '/dashboard/seguros',        label: 'Seguros',  icon: Shield },
 ]
 
 const ROLE_BADGE: Record<string, string> = {

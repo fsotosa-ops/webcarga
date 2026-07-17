@@ -12,7 +12,7 @@ from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCrea
 from ..schemas.carrier import CarrierCreateBody, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
-from ..schemas.insurance import InsurancePolicyCreateBody
+from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
 from ..utils.document_storage import resolve_signed_url
 
@@ -55,6 +55,108 @@ async def list_carriers(
     return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit}
 
 
+# ── Landing de Seguros — agregado por carrier, sincronizado con la misma
+#    data real que ya se ve en la tab Seguros de cada empresa (H3 rediseño,
+#    2026-07-16). Ruta declarada ANTES de /{carrier_id} para no colisionar
+#    con el path param (mismo nivel de profundidad). No expone cuotas
+#    individuales cross-empresa — eso quedó descartado explícitamente. ────
+
+_INSURANCE_HEALTH_VALUES = {"EXPIRED", "EXPIRING_SOON", "VALID", "CANCELLED"}
+
+_INSURANCE_OVERVIEW_AGG = """
+    SELECT c.id AS carrier_id, c.business_name, c.tax_id, c.operational_status,
+           COUNT(p.policy_id) AS total_policies,
+           COALESCE(SUM(p.overdue_installments), 0) AS total_overdue_installments,
+           MIN(p.next_payment_date) AS next_payment_date,
+           CASE
+               WHEN COUNT(p.policy_id) = 0 THEN NULL
+               WHEN BOOL_OR(p.policy_health = 'EXPIRED') THEN 'EXPIRED'
+               WHEN BOOL_OR(p.policy_health = 'EXPIRING_SOON') THEN 'EXPIRING_SOON'
+               WHEN BOOL_OR(p.policy_health = 'VALID') THEN 'VALID'
+               ELSE 'CANCELLED'
+           END AS worst_policy_health
+    FROM public.carriers c
+    LEFT JOIN app.carrier_insurance_status p ON p.carrier_id = c.id
+    {q_where}
+    GROUP BY c.id, c.business_name, c.tax_id, c.operational_status
+"""
+
+
+@router.get("/insurance-overview", response_model=CarrierInsuranceOverviewResponse)
+async def list_carriers_insurance_overview(
+    q: str = Query("", description="Buscar por nombre o tax_id"),
+    health: str = Query("", description="EXPIRED|EXPIRING_SOON|VALID|CANCELLED|NONE — filtra por worst_policy_health"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    if health and health != "NONE" and health not in _INSURANCE_HEALTH_VALUES:
+        raise HTTPException(422, "health inválido")
+
+    q_params: list = []
+    if q:
+        q_params.append(q)
+        q_where = f"WHERE (c.business_name ILIKE '%' || ${len(q_params)} || '%' OR c.tax_id ILIKE '%' || ${len(q_params)} || '%')"
+    else:
+        q_where = ""
+    agg_cte = f"WITH agg AS ({_INSURANCE_OVERVIEW_AGG.format(q_where=q_where)})"
+
+    health_params = list(q_params)
+    if health == "NONE":
+        health_where = "WHERE worst_policy_health IS NULL"
+    elif health:
+        health_params.append(health)
+        health_where = f"WHERE worst_policy_health = ${len(health_params)}"
+    else:
+        health_where = ""
+
+    offset = (page - 1) * limit
+    lp, op = len(health_params) + 1, len(health_params) + 2
+
+    rows = await pool.fetch(
+        f"""
+        {agg_cte}
+        SELECT * FROM agg
+        {health_where}
+        ORDER BY
+            CASE worst_policy_health
+                WHEN 'EXPIRED' THEN 1
+                WHEN 'EXPIRING_SOON' THEN 2
+                WHEN 'VALID' THEN 3
+                WHEN 'CANCELLED' THEN 4
+                ELSE 5
+            END,
+            total_overdue_installments DESC,
+            business_name ASC
+        LIMIT ${lp} OFFSET ${op}
+        """,
+        *health_params, limit, offset,
+    )
+    count = await pool.fetchval(f"{agg_cte} SELECT count(*) FROM agg {health_where}", *health_params)
+    facets = await pool.fetchrow(
+        f"""
+        {agg_cte}
+        SELECT
+            COUNT(*) FILTER (WHERE worst_policy_health = 'EXPIRED') AS expired,
+            COUNT(*) FILTER (WHERE worst_policy_health = 'EXPIRING_SOON') AS expiring_soon,
+            COUNT(*) FILTER (WHERE worst_policy_health = 'VALID') AS valid,
+            COUNT(*) FILTER (WHERE worst_policy_health = 'CANCELLED') AS cancelled,
+            COUNT(*) FILTER (WHERE worst_policy_health IS NULL) AS no_policy,
+            COUNT(*) AS total
+        FROM agg
+        """,
+        *q_params,
+    )
+    return {
+        "data": [dict(r) for r in rows],
+        "count": count,
+        "page": page,
+        "limit": limit,
+        "facets": dict(facets),
+    }
+
+
 async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict:
     carrier = await pool.fetchrow(
         """
@@ -82,7 +184,7 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
         """
         SELECT cr.id, cr.requirement_id, req.requirement_code, req.name, req.requirement_level,
                req.requires_file, cr.status, cr.expiration_date, cr.file_url, cr.metadata,
-               cr.is_manual_override,
+               cr.is_manual_override, cr.updated_at,
                (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE) AS is_expired,
                (cr.expiration_date IS NOT NULL AND cr.expiration_date >= CURRENT_DATE
                 AND cr.expiration_date <= CURRENT_DATE + INTERVAL '30 days') AS is_expiring_soon

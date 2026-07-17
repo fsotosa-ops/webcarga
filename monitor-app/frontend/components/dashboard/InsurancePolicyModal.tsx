@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Check, Loader2, ShieldQuestion, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, Plus } from 'lucide-react'
+import { X, Check, Loader2, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import { policiesApi, coverageTypesApi } from '@/lib/api/policies'
-import type { CoverageType, InsuranceInstallment, InsurancePolicy, PolicyHealth } from '@/lib/types'
+import type { CoverageType, InsuranceInstallment, InsurancePolicy } from '@/lib/types'
 import { formatExpiry } from '@/lib/compliance'
+import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { InstallmentRow } from './InstallmentRow'
 
 function initialsOf(name: string): string {
@@ -29,13 +30,6 @@ function nextActionable(installments: InsuranceInstallment[]): InsuranceInstallm
   const overdue = unpaid.filter(isEffectivelyOverdue)
   const pool = overdue.length > 0 ? overdue : unpaid
   return pool.slice().sort((a, b) => (a.due_date ?? '9999-99-99').localeCompare(b.due_date ?? '9999-99-99'))[0]
-}
-
-const HEALTH_BADGE: Record<PolicyHealth, { cls: string; icon: React.ReactNode; label: string }> = {
-  VALID:          { cls: 'bg-green-50 text-green-600', icon: <ShieldCheck size={11} />, label: 'Al día' },
-  EXPIRING_SOON:  { cls: 'bg-amber-50 text-amber-600', icon: <ShieldAlert size={11} />, label: 'Vence pronto' },
-  EXPIRED:        { cls: 'bg-red-50 text-red-600',     icon: <ShieldAlert size={11} />, label: 'Vencida' },
-  CANCELLED:      { cls: 'bg-gray-100 text-gray-500',  icon: <ShieldQuestion size={11} />, label: 'Cancelada' },
 }
 
 interface Props {
@@ -261,8 +255,8 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                       {initialsOf(displayName)}
                     </div>
                     <p className="text-xs font-bold text-text-primary truncate">{displayName}</p>
-                    <span className={`ml-auto inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${HEALTH_BADGE[selectedListItem.policy_health].cls}`}>
-                      {HEALTH_BADGE[selectedListItem.policy_health].icon} {HEALTH_BADGE[selectedListItem.policy_health].label}
+                    <span className={`ml-auto inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${POLICY_HEALTH_CONFIG[selectedListItem.policy_health].cls}`}>
+                      {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].icon} {POLICY_HEALTH_CONFIG[selectedListItem.policy_health].label}
                     </span>
                   </div>
                 )}

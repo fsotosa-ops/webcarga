@@ -36,6 +36,94 @@ def test_list_carriers_reads_from_compliance_view():
     assert "FROM app.carrier_compliance_status" in pool.fetch.call_args.args[0]
 
 
+def _facets_row(**overrides):
+    base = {"expired": 0, "expiring_soon": 0, "valid": 0, "cancelled": 0, "no_policy": 0, "total": 0}
+    base.update(overrides)
+    return base
+
+
+def test_list_carriers_insurance_overview_aggregates_by_carrier():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "carrier_id": "c1", "business_name": "Acme", "tax_id": "1-9", "operational_status": "ACTIVE",
+        "total_policies": 2, "total_overdue_installments": 3, "next_payment_date": None,
+        "worst_policy_health": "EXPIRED",
+    }]
+    pool.fetchval.return_value = 1
+    pool.fetchrow.return_value = _facets_row(expired=1, total=1)
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/insurance-overview")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["count"] == 1
+    assert body["data"][0]["worst_policy_health"] == "EXPIRED"
+    assert body["data"][0]["total_overdue_installments"] == 3
+    assert body["facets"] == {"expired": 1, "expiring_soon": 0, "valid": 0, "cancelled": 0, "no_policy": 0, "total": 1}
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "FROM public.carriers c" in fetch_query
+    assert "LEFT JOIN app.carrier_insurance_status p ON p.carrier_id = c.id" in fetch_query
+    count_query = pool.fetchval.call_args.args[0]
+    assert "count(*)" in count_query
+
+
+def test_list_carriers_insurance_overview_filters_by_search():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/insurance-overview?q=Acme")
+
+    assert res.status_code == 200
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "ILIKE" in fetch_query
+    assert pool.fetch.call_args.args[1] == "Acme"
+
+
+def test_list_carriers_insurance_overview_filters_by_health():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/insurance-overview?health=EXPIRED")
+
+    assert res.status_code == 200
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "WHERE worst_policy_health = $1" in fetch_query
+    assert pool.fetch.call_args.args[1] == "EXPIRED"
+    # el filtro `health` no debe alterar los facets (permite ver los otros conteos) —
+    # sin q, la llamada a fetchrow no debe llevar el param "EXPIRED"
+    assert pool.fetchrow.call_args.args == (pool.fetchrow.call_args.args[0],)
+
+
+def test_list_carriers_insurance_overview_filters_by_no_policy():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/insurance-overview?health=NONE")
+
+    assert res.status_code == 200
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "WHERE worst_policy_health IS NULL" in fetch_query
+
+
+def test_list_carriers_insurance_overview_rejects_invalid_health():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/insurance-overview?health=BOGUS")
+
+    assert res.status_code == 422
+
+
 def test_get_carrier_404_when_missing():
     pool = AsyncMock()
     pool.fetchrow.return_value = None

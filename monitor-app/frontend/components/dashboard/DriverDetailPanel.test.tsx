@@ -28,7 +28,7 @@ const RECORDS: ComplianceRecord[] = [{
   id: 'cr1', requirement_id: 'req1', requirement_code: 'EPP', name: 'EPP',
   requirement_level: 'LEGAL_MANDATORY', requires_file: false, status: 'MISSING',
   expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-  is_expired: false, is_expiring_soon: false,
+  is_expired: false, is_expiring_soon: false, updated_at: null,
 }]
 
 function renderPanel(driver: Driver | null, opts: {

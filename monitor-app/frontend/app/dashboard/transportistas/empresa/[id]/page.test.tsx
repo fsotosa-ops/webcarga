@@ -58,7 +58,7 @@ const CARRIER: Carrier = {
     id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'MISSING',
     expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-    is_expired: false, is_expiring_soon: false,
+    is_expired: false, is_expiring_soon: false, updated_at: null,
   }],
 }
 
@@ -96,8 +96,8 @@ describe('EmpresaDetailPage', () => {
   it('shows the alert banner when there is a mandatory MISSING record', async () => {
     renderPage()
     await clickTab(/Documentos/)
-    expect(await screen.findByText('Documentos obligatorios pendientes o vencidos')).toBeInTheDocument()
-    expect(screen.getByText(/F30 Multas — falta/)).toBeInTheDocument()
+    expect(await screen.findByText('1 documento obligatorio con atención')).toBeInTheDocument()
+    expect(screen.getAllByText('F30 Multas').length).toBeGreaterThan(0)
   })
 
   it('shows the driver and equipment rosters in their own tabs', async () => {

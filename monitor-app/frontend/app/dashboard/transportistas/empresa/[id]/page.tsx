@@ -26,6 +26,7 @@ import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModa
 import { CompletionRing } from '@/components/dashboard/CompletionRing'
 import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
+import { expiryRelative, updatedRelative } from '@/lib/compliance'
 
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 const ADMIN_ROLES  = new Set(['admin', 'owner'])
@@ -559,9 +560,14 @@ export default function EmpresaDetailPage() {
             </div>
             {mandatoryProblems.length > 0 && (
               <ul className="mt-3 space-y-1">
-                {mandatoryProblems.slice(0, 3).map(r => (
-                  <li key={r.id} className="text-xs text-gray-500 truncate">• {r.name}</li>
-                ))}
+                {mandatoryProblems.slice(0, 3).map(r => {
+                  const relative = expiryRelative(r.expiration_date, r.is_expired) ?? updatedRelative(r.updated_at)
+                  return (
+                    <li key={r.id} className="text-xs text-gray-500 truncate">
+                      • {r.name}{relative && <span className="text-gray-400"> · {relative}</span>}
+                    </li>
+                  )
+                })}
               </ul>
             )}
             <button onClick={() => setActiveTab('documentos')} className="mt-3 text-xs font-semibold text-accent hover:underline">

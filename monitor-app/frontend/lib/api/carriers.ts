@@ -2,6 +2,7 @@ import type {
   Carrier,
   CarrierAssetRosterItem,
   CarrierDriverRosterItem,
+  CarrierInsuranceOverviewResponse,
   CarrierListResponse,
   CarrierPolicyListItem,
   CarrierShipper,
@@ -146,4 +147,16 @@ export const carriersApi = {
 
   listShippers: (id: string) =>
     apiFetch<CarrierShipper[]>(`/api/v1/carriers/${id}/shippers`),
+
+  // ── Landing de Seguros — agregado por carrier (GET /carriers/insurance-overview) ──
+
+  listInsuranceOverview: (params?: { q?: string; health?: string; page?: number; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.q)      qs.set('q', params.q)
+    if (params?.health) qs.set('health', params.health)
+    if (params?.page)   qs.set('page', String(params.page))
+    if (params?.limit)  qs.set('limit', String(params.limit))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return apiFetch<CarrierInsuranceOverviewResponse>(`/api/v1/carriers/insurance-overview${suffix}`)
+  },
 }

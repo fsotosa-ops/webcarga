@@ -394,6 +394,10 @@ export type ComplianceRecord = {
   is_manual_override: boolean
   is_expired:         boolean
   is_expiring_soon:   boolean
+  /** Última vez que cambió status/expiration_date — para "sin actualizar
+   *  hace X días" (pedido explícito del usuario 2026-07-16: las alertas
+   *  eran binarias MISSING/vencido sin decir desde cuándo). */
+  updated_at:         string | null
 }
 
 /** GET/PATCH /compliance-records/{id} standalone — shape distinto al
@@ -562,6 +566,38 @@ export type CarrierPolicyListItem = {
   paid_installments:       number
   overdue_installments:    number
   next_payment_date:       string | null
+}
+
+/** Fila de GET /carriers/insurance-overview — un carrier con sus pólizas
+ *  agregadas (peor salud, cuotas vencidas totales, próximo pago), misma
+ *  fuente real (app.carrier_insurance_status) que la tab Seguros de la
+ *  ficha. worst_policy_health es null cuando el carrier no tiene pólizas. */
+export type CarrierInsuranceOverviewItem = {
+  carrier_id:                  string
+  business_name:               string
+  tax_id:                      string
+  operational_status:          OperationalStatus
+  total_policies:              number
+  total_overdue_installments:  number
+  next_payment_date:           string | null
+  worst_policy_health:         PolicyHealth | null
+}
+
+export type InsuranceOverviewFacets = {
+  expired:        number
+  expiring_soon:  number
+  valid:          number
+  cancelled:      number
+  no_policy:      number
+  total:          number
+}
+
+export type CarrierInsuranceOverviewResponse = {
+  data:   CarrierInsuranceOverviewItem[]
+  count:  number
+  page:   number
+  limit:  number
+  facets: InsuranceOverviewFacets
 }
 
 export type PolicyCoverage = {

@@ -27,6 +27,27 @@ export function complianceAlertStatus(isExpired: boolean, isExpiringSoon: boolea
   return 'ok'
 }
 
+/** "vence en 5 días" / "vencido hace 12 días" / "vence hoy" — mismo patrón
+ *  que dueRelative() en lib/utils/installments.ts, pero para documentos
+ *  (masculino) en vez de cuotas. Pedido explícito del usuario: las alertas
+ *  eran binarias (MISSING/vencido) sin decir desde cuándo/hasta cuándo. */
+export function expiryRelative(expirationDate: string | null, isExpired: boolean, today: string = new Date().toISOString().slice(0, 10)): string | null {
+  if (!expirationDate) return null
+  const diffDays = Math.round((new Date(expirationDate + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000)
+  if (diffDays === 0) return 'vence hoy'
+  if (diffDays > 0) return `vence en ${diffDays} día${diffDays === 1 ? '' : 's'}`
+  return isExpired ? `vencido hace ${Math.abs(diffDays)} día${Math.abs(diffDays) === 1 ? '' : 's'}` : null
+}
+
+/** "sin actualizar hace 40 días" — hace visible cuánto tiempo lleva un
+ *  MISSING/PENDING_REVIEW sin moverse, no solo que está pendiente. */
+export function updatedRelative(updatedAt: string | null, now: number = Date.now()): string | null {
+  if (!updatedAt) return null
+  const diffDays = Math.floor((now - new Date(updatedAt).getTime()) / 86400000)
+  if (diffDays <= 0) return 'actualizado hoy'
+  return `sin actualizar hace ${diffDays} día${diffDays === 1 ? '' : 's'}`
+}
+
 export function formatExpiry(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   // Fechas "solo día" (columnas DATE, ej. expiry_date) llegan sin componente de hora

@@ -20,8 +20,8 @@ const CARRIER: Carrier = {
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
   contacts: [{ id: 'ct1', contact_role: 'OPERATIONS', first_name: 'Juan', last_name: 'Pérez', job_title: null, email: 'juan@test.cl', phone: '+56911112222', is_primary: true, is_active: true }],
   compliance_records: [
-    { id: 'd1', requirement_id: 'r1', requirement_code: 'D1', name: 'Doc 1', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED', expiration_date: null, file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false },
-    { id: 'd2', requirement_id: 'r2', requirement_code: 'D2', name: 'Doc 2', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW', expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false },
+    { id: 'd1', requirement_id: 'r1', requirement_code: 'D1', name: 'Doc 1', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED', expiration_date: null, file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, updated_at: null },
+    { id: 'd2', requirement_id: 'r2', requirement_code: 'D2', name: 'Doc 2', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW', expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, updated_at: null },
   ],
 }
 

@@ -99,7 +99,7 @@ async def list_asset_compliance_records(
         """
         SELECT cr.id, cr.requirement_id, req.requirement_code, req.name, req.requirement_level,
                req.requires_file, cr.status, cr.expiration_date, cr.file_url, cr.metadata,
-               cr.is_manual_override,
+               cr.is_manual_override, cr.updated_at,
                (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE) AS is_expired,
                (cr.expiration_date IS NOT NULL AND cr.expiration_date >= CURRENT_DATE
                 AND cr.expiration_date <= CURRENT_DATE + INTERVAL '30 days') AS is_expiring_soon

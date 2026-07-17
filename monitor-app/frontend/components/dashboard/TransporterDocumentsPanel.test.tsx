@@ -17,13 +17,13 @@ const RECORDS: ComplianceRecord[] = [
     id: 'cr1', requirement_id: 'req1', requirement_code: 'ROL_SII', name: 'Rol SII',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED',
     expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-    is_expired: false, is_expiring_soon: false,
+    is_expired: false, is_expiring_soon: false, updated_at: null,
   },
   {
     id: 'cr2', requirement_id: 'req2', requirement_code: 'F30', name: 'F30',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW',
     expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: true,
-    is_expired: true, is_expiring_soon: false,
+    is_expired: true, is_expiring_soon: false, updated_at: null,
   },
 ]
 
