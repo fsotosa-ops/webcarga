@@ -41,10 +41,9 @@ beforeEach(() => {
 })
 
 describe('TransporterSlideOver', () => {
-  it('renders the panel off-screen with no content when item is null', () => {
+  it('renders nothing when item is null', () => {
     renderSlideOver(null)
-    const panel = screen.getByRole('dialog')
-    expect(panel.className).toContain('translate-x-full')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('Transportes Test')).not.toBeInTheDocument()
   })
 
@@ -58,7 +57,7 @@ describe('TransporterSlideOver', () => {
   it('shows the documents summary and lists non-approved documents once loaded', async () => {
     renderSlideOver(ITEM)
     await waitFor(() => expect(screen.getByText('Doc 2')).toBeInTheDocument())
-    expect(screen.getByText(/documentos OK/)).toBeInTheDocument()
+    expect(screen.getByText(/documentos al día/)).toBeInTheDocument()
     expect(screen.getByText('En revisión')).toBeInTheDocument()
     expect(screen.queryByText('Doc 1')).not.toBeInTheDocument()
   })

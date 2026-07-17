@@ -7,7 +7,10 @@ import { X, Phone, Mail, ArrowRight } from 'lucide-react'
 import type { CarrierListItem } from '@/lib/types'
 import { carriersApi } from '@/lib/api/carriers'
 import { InsuranceSummaryCard } from './InsuranceSummaryCard'
+import { CompletionRing } from './CompletionRing'
+import { STATUS_LABELS, STATUS_CLS } from './TransporterCard'
 import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
+import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 
 const CONTACT_ROLE_LABELS: Record<string, string> = {
   LEGAL_REP: 'Representante legal', OPERATIONS: 'Operacional', FINANCE: 'Finanzas', DOCUMENTS: 'Documentos',
@@ -19,10 +22,6 @@ function contactRoleLabel(role: string): string {
 
 function SkeletonLine({ w = 'w-full' }: { w?: string }) {
   return <div className={`h-3 ${w} bg-gray-100 rounded animate-pulse`} />
-}
-
-const STATUS_LABELS: Record<CarrierListItem['operational_status'], string> = {
-  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Legacy',
 }
 
 interface Props {
@@ -74,6 +73,8 @@ export function TransporterSlideOver({ item, onClose }: Props) {
     }
   }, [open, onClose])
 
+  if (!open) return null
+
   const carrier = query.data
   const records = carrier?.compliance_records ?? []
   const okCount = records.filter(r => r.status === 'APPROVED' || r.status === 'APPROVED_MANUAL').length
@@ -82,36 +83,56 @@ export function TransporterSlideOver({ item, onClose }: Props) {
 
   return (
     <>
-      {open && (
-        <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
-      )}
+      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Resumen de ${item.business_name || 'empresa'}`}
+          tabIndex={-1}
+          className="relative bg-white rounded-2xl shadow-2xl w-[92vw] max-w-4xl h-[75vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none animate-modal-in"
+        >
+            <button onClick={onClose} aria-label="Cerrar resumen" className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600">
+              <X size={18} />
+            </button>
 
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={item ? `Resumen de ${item.business_name || 'empresa'}` : 'Resumen de empresa'}
-        tabIndex={-1}
-        className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] bg-white border-l border-border shadow-2xl flex flex-col transition-transform duration-300 focus:outline-none ${
-          open ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {item && (
-          <>
-            <div className="px-5 py-4 bg-slate-900 flex items-start justify-between gap-3 shrink-0">
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-white truncate">
-                  {item.business_name || <span className="italic text-white/50">Sin nombre</span>}
-                </h3>
-                <p className="text-[11px] text-white/50 font-mono">{item.tax_id}</p>
-                <p className="text-[11px] text-white/70 mt-1">{STATUS_LABELS[item.operational_status]}</p>
+            <div className="sm:w-[320px] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-5">
+              <div className="flex items-center gap-3 mb-5">
+                <div
+                  className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                  style={{ backgroundColor: getInitialColor(item.business_name) }}
+                >
+                  {getInitials(item.business_name)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-text-primary truncate">
+                    {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
+                  </p>
+                  <p className="text-[11px] text-gray-400 font-mono">{item.tax_id}</p>
+                </div>
               </div>
-              <button onClick={onClose} aria-label="Cerrar resumen" className="text-white/50 hover:text-white transition-colors shrink-0">
-                <X size={18} />
-              </button>
+
+              <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border mb-5 ${STATUS_CLS[item.operational_status]}`}>
+                {STATUS_LABELS[item.operational_status]}
+              </span>
+
+              {!query.isPending && !query.error && records.length > 0 && (
+                <div className="flex items-center gap-3 mb-5">
+                  <CompletionRing ok={okCount} total={records.length} />
+                  <p className="text-[11px] text-gray-500">{okCount} de {records.length}<br />documentos al día</p>
+                </div>
+              )}
+
+              <Link
+                href={`/dashboard/transportistas/empresa/${item.id}`}
+                className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-white bg-accent hover:bg-accent/90 rounded-xl px-4 py-2.5 transition-colors"
+              >
+                Ver ficha completa <ArrowRight size={14} />
+              </Link>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-5">
               <section>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Documentos</p>
                 {query.isPending ? (
@@ -120,11 +141,10 @@ export function TransporterSlideOver({ item, onClose }: Props) {
                   <p className="text-xs text-red-500">{query.error instanceof Error ? query.error.message : 'Error cargando documentos'}</p>
                 ) : records.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">Sin documentos registrados</p>
+                ) : issues.length === 0 ? (
+                  <p className="text-xs text-green-600 font-semibold">Todos los documentos al día</p>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-xs text-slate-700">
-                      <span className="font-semibold">{okCount}</span> de <span className="font-semibold">{records.length}</span> documentos OK
-                    </p>
                     {issues.length > 0 && (
                       <ul className="space-y-1">
                         {issues.map(r => {
@@ -183,16 +203,8 @@ export function TransporterSlideOver({ item, onClose }: Props) {
               <section>
                 <InsuranceSummaryCard carrierId={item.id} taxId={item.tax_id} />
               </section>
-
-              <Link
-                href={`/dashboard/transportistas/empresa/${item.id}`}
-                className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-white bg-accent hover:bg-accent/90 rounded-xl px-4 py-2.5 transition-colors"
-              >
-                Ver ficha completa <ArrowRight size={14} />
-              </Link>
             </div>
-          </>
-        )}
+        </div>
       </div>
     </>
   )
