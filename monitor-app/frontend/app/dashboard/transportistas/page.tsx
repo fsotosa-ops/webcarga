@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus, Check, X } from 'lucide-react'
 import type { CarrierListFacets, CarrierListItem, ComplianceHealth, OperationalStatus } from '@/lib/types'
 import { carriersApi } from '@/lib/api/carriers'
+import { createClient } from '@/lib/supabase/client'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransporterCard, STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
@@ -13,6 +15,8 @@ import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOve
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { updatedRelative } from '@/lib/compliance'
+
+const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 
 type TransporterTab = 'active' | 'legacy'
 type HealthTab = '' | ComplianceHealth
@@ -45,13 +49,47 @@ const HEALTH_TABS: { id: HealthTab; label: string; facetKey: keyof CarrierListFa
 const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0 }
 
 export default function EmpresasTransportePage() {
+  const router = useRouter()
   const [q, setQ]                 = useState('')
   const [tab, setTab]             = useState<TransporterTab>('active')
   const [healthTab, setHealthTab] = useState<HealthTab>('')
   const [page, setPage]           = useState(1)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
+  const [canEdit, setCanEdit]     = useState(false)
+  const [addCarrierOpen, setAddCarrierOpen] = useState(false)
+  const [carrierForm, setCarrierForm] = useState({ tax_id: '', business_name: '' })
+  const [creatingCarrier, setCreatingCarrier] = useState(false)
+  const [createErr, setCreateErr] = useState<string | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return
+      const { data: profile } = await supabase
+        .from('profiles').select('role').eq('id', session.user.id).single()
+      if (profile && EDITOR_ROLES.has(profile.role)) setCanEdit(true)
+    })
+  }, [])
+
+  /** Alta manual de una empresa (distinta del bulk-load de Mage) — el
+   *  backend siembra los compliance_records MISSING automáticamente al
+   *  insertar. Redirige a la ficha recién creada: ahí ya existen los flujos
+   *  reales de alta de conductores/equipos/contactos/pólizas ("+ Conductor"/
+   *  "+ Equipo"/"+ Póliza"), no hace falta duplicarlos acá. */
+  async function handleAddCarrier() {
+    if (!carrierForm.tax_id || !carrierForm.business_name) return
+    setCreatingCarrier(true); setCreateErr(null)
+    try {
+      const created = await carriersApi.create(carrierForm)
+      router.push(`/dashboard/transportistas/empresa/${created.id}`)
+    } catch (e) {
+      setCreateErr(e instanceof Error ? e.message : 'Error al crear la empresa')
+    } finally {
+      setCreatingCarrier(false)
+    }
+  }
 
   const currentStatus = TABS.find(t => t.id === tab)!.status
 
@@ -104,8 +142,50 @@ export default function EmpresasTransportePage() {
             {loading ? '…' : `${grandTotal.toLocaleString('es-CL')} empresa${grandTotal !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <button
+              onClick={() => setAddCarrierOpen(v => !v)}
+              className="flex items-center gap-1.5 text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
+            >
+              <Plus size={13} /> Nueva empresa
+            </button>
+          )}
+          <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
+        </div>
       </div>
+
+      {addCarrierOpen && (
+        <div className="bg-white border border-border rounded-2xl p-4 max-w-sm space-y-2">
+          <p className="text-xs font-bold text-text-primary mb-1">Nueva empresa</p>
+          <input
+            placeholder="Tax ID"
+            value={carrierForm.tax_id}
+            onChange={e => setCarrierForm(v => ({ ...v, tax_id: e.target.value }))}
+            className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+          />
+          <input
+            placeholder="Razón social"
+            value={carrierForm.business_name}
+            onChange={e => setCarrierForm(v => ({ ...v, business_name: e.target.value }))}
+            className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+          />
+          {createErr && <p className="text-xs text-red-500">{createErr}</p>}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={handleAddCarrier}
+              disabled={creatingCarrier || !carrierForm.tax_id || !carrierForm.business_name}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
+            >
+              {creatingCarrier ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Crear y abrir ficha
+            </button>
+            <button onClick={() => { setAddCarrierOpen(false); setCreateErr(null) }} className="p-1.5 text-gray-400 hover:text-gray-600">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Tabs Activas / Legacy — split principal, membresía mutuamente
          excluyente real, viene de operational_status ── */}
