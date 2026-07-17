@@ -598,13 +598,13 @@ async def create_carrier_policy(
                 """
                 INSERT INTO public.insurance_policies
                     (carrier_id, insurance_company, policy_number, valid_from, valid_to,
-                     expiration_alert_days, has_endorsement)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                     expiration_alert_days, has_endorsement, endorsement_number)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING id, carrier_id, insurance_company, policy_number, valid_from, valid_to,
-                          expiration_alert_days, has_endorsement, status, created_at
+                          expiration_alert_days, has_endorsement, endorsement_number, status, created_at
                 """,
                 carrier_id, body.insurance_company, body.policy_number, body.valid_from,
-                body.valid_to, body.expiration_alert_days, body.has_endorsement,
+                body.valid_to, body.expiration_alert_days, body.has_endorsement, body.endorsement_number,
             )
             await log_change(
                 conn, actor=user["sub"], entity_type="CARRIER", entity_id=carrier_id,

@@ -651,6 +651,7 @@ export type InsurancePolicy = {
   expiration_alert_days:     number
   policy_document_url:       string | null
   has_endorsement:           boolean
+  endorsement_number:        string | null
   endorsement_document_url:  string | null
   external_portal_url:       string | null
   status:                    PolicyStatus

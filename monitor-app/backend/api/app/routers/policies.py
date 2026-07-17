@@ -34,7 +34,8 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
     policy = await pool.fetchrow(
         """
         SELECT id, carrier_id, insurance_company, policy_number, valid_from, valid_to,
-               expiration_alert_days, policy_document_url, has_endorsement, endorsement_document_url,
+               expiration_alert_days, policy_document_url, has_endorsement, endorsement_number,
+               endorsement_document_url,
                external_portal_url, status, is_manual_override, created_at, updated_at
         FROM public.insurance_policies WHERE id = $1
         """,
@@ -98,7 +99,7 @@ async def patch_policy(
             current = await conn.fetchrow(
                 """
                 SELECT updated_at, carrier_id, insurance_company, policy_number, valid_from, valid_to,
-                       status, expiration_alert_days, has_endorsement, external_portal_url
+                       status, expiration_alert_days, has_endorsement, endorsement_number, external_portal_url
                 FROM public.insurance_policies WHERE id = $1
                 """,
                 policy_id,
@@ -109,7 +110,8 @@ async def patch_policy(
                 raise HTTPException(409, "El registro fue modificado por otro usuario; recargue e intente de nuevo")
 
             fields = ("insurance_company", "policy_number", "valid_from", "valid_to",
-                      "status", "expiration_alert_days", "has_endorsement", "external_portal_url")
+                      "status", "expiration_alert_days", "has_endorsement", "endorsement_number",
+                      "external_portal_url")
             touched = [f for f in fields if getattr(body, f) is not None]
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
@@ -124,13 +126,14 @@ async def patch_policy(
                     status = COALESCE($6, status),
                     expiration_alert_days = COALESCE($7, expiration_alert_days),
                     has_endorsement = COALESCE($8, has_endorsement),
-                    external_portal_url = COALESCE($9, external_portal_url),
+                    endorsement_number = COALESCE($9, endorsement_number),
+                    external_portal_url = COALESCE($10, external_portal_url),
                     updated_at = NOW()
                 WHERE id = $1
                 """,
                 policy_id, body.insurance_company, body.policy_number, body.valid_from,
                 body.valid_to, body.status, body.expiration_alert_days, body.has_endorsement,
-                body.external_portal_url,
+                body.endorsement_number, body.external_portal_url,
             )
             for field in touched:
                 await record_manual_edit(

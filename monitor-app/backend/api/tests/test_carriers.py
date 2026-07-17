@@ -450,19 +450,21 @@ def test_create_carrier_policy_persists_has_endorsement():
     conn.fetchrow.return_value = {
         "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": None,
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30, "has_endorsement": True,
-        "status": "ACTIVE", "created_at": None,
+        "endorsement_number": "END-1", "status": "ACTIVE", "created_at": None,
     }
     client = make_client(pool)
 
     res = client.post(
         "/api/v1/carriers/c1/policies",
-        json={"carrier_id": "c1", "insurance_company": "HDI", "has_endorsement": True},
+        json={"carrier_id": "c1", "insurance_company": "HDI", "has_endorsement": True, "endorsement_number": "END-1"},
     )
 
     assert res.status_code == 201
-    assert conn.fetchrow.call_args.args[-1] is True
+    assert conn.fetchrow.call_args.args[-2] is True
+    assert conn.fetchrow.call_args.args[-1] == "END-1"
     insert_sql = conn.fetchrow.call_args.args[0]
     assert "has_endorsement" in insert_sql
+    assert "endorsement_number" in insert_sql
     assert res.json()["insurance_company"] == "HDI"
 
 

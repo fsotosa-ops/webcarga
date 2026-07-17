@@ -54,6 +54,7 @@ export type InsurancePolicyCreateBody = {
   valid_to?:               string
   expiration_alert_days?:  number
   has_endorsement?:        boolean
+  endorsement_number?:     string
 }
 
 /** POST /carriers RETURNING es más angosto que GET /carriers/{id} — sin
@@ -77,6 +78,7 @@ export type InsurancePolicyCreateResult = {
   valid_to:                string | null
   expiration_alert_days:   number
   has_endorsement:         boolean
+  endorsement_number:      string | null
   status:                  PolicyStatus
   created_at:              string | null
 }

@@ -36,7 +36,7 @@ const LIST: CarrierPolicyListItem[] = [
 const DETAIL_P1: InsurancePolicy = {
   id: 'p1', carrier_id: 'c1', insurance_company: 'Chubb Generales', policy_number: '5663040',
   valid_from: '2026-03-23', valid_to: '2027-03-23', expiration_alert_days: 30,
-  policy_document_url: null, has_endorsement: false, endorsement_document_url: null,
+  policy_document_url: null, has_endorsement: false, endorsement_number: null, endorsement_document_url: null,
   external_portal_url: null, status: 'ACTIVE', is_manual_override: false,
   created_at: null, updated_at: null,
   coverages: [{ coverage_type_id: 'cov1', code: 'RC', name: 'RC vehicular' }],
@@ -84,7 +84,8 @@ beforeEach(() => {
   vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue(ASSETS)
   vi.mocked(carriersApi.createPolicy).mockReset().mockResolvedValue({
     id: 'p-new', carrier_id: 'c2', insurance_company: 'Mapfre', policy_number: null,
-    valid_from: null, valid_to: null, expiration_alert_days: 30, has_endorsement: false, status: 'ACTIVE', created_at: null,
+    valid_from: null, valid_to: null, expiration_alert_days: 30, has_endorsement: false,
+    endorsement_number: null, status: 'ACTIVE', created_at: null,
   })
   vi.mocked(policiesApi.get).mockReset().mockImplementation(async (id: string) => id === 'p1' ? DETAIL_P1 : DETAIL_P2)
   vi.mocked(policiesApi.patch).mockReset()
@@ -226,6 +227,7 @@ describe('InsurancePolicyModal', () => {
     await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
       insurance_company: 'Mapfre', policy_number: undefined,
       valid_from: undefined, valid_to: undefined, expiration_alert_days: 30, has_endorsement: false,
+      endorsement_number: undefined,
     }))
   })
 
@@ -239,11 +241,13 @@ describe('InsurancePolicyModal', () => {
     fireEvent.change(screen.getByLabelText('Vigencia hasta'), { target: { value: '2027-01-01' } })
     fireEvent.change(screen.getByLabelText('Alerta de vencimiento en días'), { target: { value: '45' } })
     fireEvent.click(screen.getByText('Tiene endoso'))
+    fireEvent.change(screen.getByPlaceholderText('N° de endoso'), { target: { value: 'END-1' } })
     fireEvent.click(screen.getByText('Guardar'))
 
     await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
       insurance_company: 'Mapfre', policy_number: undefined,
       valid_from: '2026-01-01', valid_to: '2027-01-01', expiration_alert_days: 45, has_endorsement: true,
+      endorsement_number: 'END-1',
     }))
   })
 
@@ -279,5 +283,20 @@ describe('InsurancePolicyModal', () => {
     fireEvent.click(screen.getByText('Esta póliza tiene endoso'))
 
     await waitFor(() => expect(policiesApi.patch).toHaveBeenCalledWith('p1', { has_endorsement: true }))
+  })
+
+  it('lets an editor register the endorsement number for a policy that has one', async () => {
+    vi.mocked(policiesApi.get).mockImplementation(async (id: string) =>
+      id === 'p1' ? { ...DETAIL_P1, has_endorsement: true } : DETAIL_P2,
+    )
+    vi.mocked(policiesApi.patch).mockResolvedValue({ ...DETAIL_P1, has_endorsement: true, endorsement_number: 'END-99' })
+    renderModal('c1')
+    await screen.findByText(/Póliza 5663040/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar N° endoso' }))
+    fireEvent.change(screen.getByLabelText('N° endoso'), { target: { value: 'END-99' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar N° endoso' }))
+
+    await waitFor(() => expect(policiesApi.patch).toHaveBeenCalledWith('p1', { endorsement_number: 'END-99' }))
   })
 })

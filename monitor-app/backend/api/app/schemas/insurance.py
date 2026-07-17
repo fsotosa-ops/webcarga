@@ -18,6 +18,7 @@ class InsurancePolicyCreateBody(BaseModel):
     valid_to: Optional[date] = None
     expiration_alert_days: int = 30
     has_endorsement: bool = False
+    endorsement_number: Optional[str] = None
 
 
 class InsurancePolicyPatchBody(BaseModel):
@@ -28,6 +29,7 @@ class InsurancePolicyPatchBody(BaseModel):
     status: Optional[PolicyStatus] = None
     expiration_alert_days: Optional[int] = None
     has_endorsement: Optional[bool] = None
+    endorsement_number: Optional[str] = None
     external_portal_url: Optional[str] = None
     expected_updated_at: Optional[datetime] = None
 

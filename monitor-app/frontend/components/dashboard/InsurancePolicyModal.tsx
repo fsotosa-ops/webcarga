@@ -13,7 +13,7 @@ import { InstallmentRow } from './InstallmentRow'
 export type PolicyFormState = {
   insurance_company: string; policy_number: string
   valid_from: string; valid_to: string; expiration_alert_days: string
-  has_endorsement: boolean
+  has_endorsement: boolean; endorsement_number: string
 }
 
 /** Formulario de alta de póliza — expone los mismos campos que soporta
@@ -72,6 +72,14 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
           onChange={e => onChange({ ...form, has_endorsement: e.target.checked })} />
         Tiene endoso
       </label>
+      {form.has_endorsement && (
+        <input
+          placeholder="N° de endoso"
+          value={form.endorsement_number}
+          onChange={e => onChange({ ...form, endorsement_number: e.target.value })}
+          className={inputCls}
+        />
+      )}
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={onSubmit}
@@ -140,7 +148,8 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   const [fileErr, setFileErr] = useState<string | null>(null)
   const [addPolicyOpen, setAddPolicyOpen] = useState(false)
   const [policyForm, setPolicyForm] = useState({
-    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false,
+    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+    has_endorsement: false, endorsement_number: '',
   })
   const [addingPolicy, setAddingPolicy] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -185,7 +194,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
 
   useEffect(() => {
     setAddPolicyOpen(false)
-    setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false })
+    setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false, endorsement_number: '' })
   }, [carrierId])
 
   const detailQuery = useQuery({
@@ -257,7 +266,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     invalidateDetail()
   }
 
-  function handlePortalUrlSaved(patch: Partial<InsurancePolicy>) {
+  function handlePolicyFieldSaved(patch: Partial<InsurancePolicy>) {
     queryClient.setQueryData(
       ['policy-detail', selectedPolicyId],
       (old: InsurancePolicy | undefined) => old ? { ...old, ...patch } : old,
@@ -314,8 +323,9 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
         valid_to: policyForm.valid_to || undefined,
         expiration_alert_days: policyForm.expiration_alert_days ? Number(policyForm.expiration_alert_days) : undefined,
         has_endorsement: policyForm.has_endorsement,
+        endorsement_number: policyForm.endorsement_number || undefined,
       })
-      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false })
+      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false, endorsement_number: '' })
       setAddPolicyOpen(false)
       queryClient.invalidateQueries({ queryKey: ['carrier-policies', carrierId] })
     } finally {
@@ -479,7 +489,10 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentos</p>
                       <PolicyFileRow label="Póliza" url={policy.policy_document_url} onUpload={file => handleUploadPolicyFile('document', file)} canEdit={canEdit} />
                       {policy.has_endorsement ? (
-                        <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} canEdit={canEdit} />
+                        <>
+                          <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} canEdit={canEdit} />
+                          <PolicyTextRow label="N° endoso" field="endorsement_number" value={policy.endorsement_number} policyId={policy.id} canEdit={canEdit} onSaved={handlePolicyFieldSaved} />
+                        </>
                       ) : canEdit ? (
                         <button
                           onClick={() => handleToggleEndorsement(false)}
@@ -493,7 +506,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
 
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Enlaces</p>
-                      <PolicyLinkRow value={policy.external_portal_url} policyId={policy.id} canEdit={canEdit} onSaved={handlePortalUrlSaved} />
+                      <PolicyLinkRow value={policy.external_portal_url} policyId={policy.id} canEdit={canEdit} onSaved={handlePolicyFieldSaved} />
                     </div>
                   </div>
 
@@ -673,6 +686,59 @@ function PolicyFileRow({ label, url, canEdit, onUpload }: {
           />
         </>
       )}
+    </div>
+  )
+}
+
+/** Fila de texto libre editable inline (ej. N° de endoso) — mismo patrón que
+ *  PolicyLinkRow (draft resincronizado explícitamente al abrir edición) pero
+ *  para un campo de texto plano en vez de URL, y parametrizado por `field`
+ *  para reusarse con cualquier columna simple de insurance_policies. */
+function PolicyTextRow({ label, field, value, policyId, canEdit, onSaved }: {
+  label: string; field: 'policy_number' | 'endorsement_number'
+  value: string | null; policyId: string; canEdit: boolean; onSaved: (patch: Partial<InsurancePolicy>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value ?? '')
+  const [busy, setBusy] = useState(false)
+
+  function openEdit() {
+    setDraft(value ?? '')
+    setEditing(true)
+  }
+
+  async function save() {
+    setBusy(true)
+    try {
+      const res = await policiesApi.patch(policyId, { [field]: draft })
+      onSaved({ [field]: res[field] })
+      setEditing(false)
+    } finally { setBusy(false) }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-gray-400 w-16 shrink-0">{label}</span>
+        <input value={draft} onChange={e => setDraft(e.target.value)} autoFocus
+          aria-label={label}
+          className="flex-1 min-w-0 text-[11px] border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+        <button onClick={save} disabled={busy} aria-label={`Guardar ${label}`} className="p-1 rounded bg-accent text-white disabled:opacity-50">
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+        </button>
+        <button onClick={() => setEditing(false)} aria-label={`Cancelar edición de ${label}`} className="p-1 rounded text-gray-400 hover:text-gray-600"><X size={11} /></button>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-gray-400 w-16 shrink-0">{label}</span>
+      {value ? (
+        <span className="text-[11px] text-gray-600 truncate flex-1 min-w-0">{value}</span>
+      ) : (
+        <span className="text-[11px] text-gray-300 italic flex-1">Sin datos</span>
+      )}
+      {canEdit && <button onClick={openEdit} aria-label={`Editar ${label}`} className="text-[10px] text-gray-400 hover:text-accent shrink-0"><Plus size={10} className="inline -mt-0.5" /> Editar</button>}
     </div>
   )
 }

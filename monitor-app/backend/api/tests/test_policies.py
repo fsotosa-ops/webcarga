@@ -196,6 +196,35 @@ def test_patch_policy_updates_has_endorsement():
     assert conn.execute.call_args_list[0].args[8] is True
 
 
+def test_patch_policy_updates_endorsement_number():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "updated_at": None, "carrier_id": "c1", "insurance_company": "HDI",
+        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE",
+        "expiration_alert_days": 30, "has_endorsement": True, "endorsement_number": None,
+        "external_portal_url": None,
+    }
+    pool.fetchrow.return_value = {
+        "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": "1",
+        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
+        "policy_document_url": None, "has_endorsement": True, "endorsement_number": "END-99",
+        "endorsement_document_url": None,
+        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": True,
+        "created_at": None, "updated_at": None,
+    }
+    pool.fetch.side_effect = [[], [], []]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/policies/p1", json={"endorsement_number": "END-99"})
+
+    assert res.status_code == 200
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "endorsement_number = COALESCE($9, endorsement_number)" in update_sql
+    assert conn.execute.call_args_list[0].args[9] == "END-99"
+
+
 def test_generate_installment_schedule_creates_monthly_rows():
     pool = AsyncMock()
     conn = AsyncMock()
