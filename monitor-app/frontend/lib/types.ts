@@ -322,6 +322,11 @@ export type TripStop = {
   s2s:                 string | null
   temperature:         number | null
   milestone_status:    string | null  // per-stop, distinct from Trip.milestone_status (trip-level)
+  /** true si unload_start/unload_end vienen de un override manual (Desc.
+   *  Inicio/Fin) en vez de lo reportado por el TMS — campo híbrido, ver
+   *  esquema de fechas 2026-07-17. Ausente (no `false` explícito) cuando el
+   *  viaje no tiene ningún override todavía. */
+  desc_manual?:        boolean
 }
 
 export type Trip = {
@@ -345,6 +350,10 @@ export type Trip = {
    *  el pipeline nunca la escribe */
   origin_region?:         string | null
   origin_city?:           string | null
+  /** Carga Inicio/Fin (origen) — campo híbrido editable, sin equivalente
+   *  TMS. Ver esquema de fechas 2026-07-17. */
+  cag_inicio?:            string | null
+  cag_fin?:               string | null
   cargo_type:             string | null
   stops:                  TripStop[]
   activo:                 boolean

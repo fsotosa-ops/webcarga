@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Circle, AlertTriangle, Upload } from 'lucide-react'
+import { Check, Circle, AlertTriangle, Upload, Eye } from 'lucide-react'
 import { COMPLIANCE_STATUS_CONFIG, expiryRelative } from '@/lib/compliance'
 import type { ComplianceStatus } from '@/lib/types'
 
@@ -15,6 +15,7 @@ export type ChecklistItem = {
   expiration_date:   string | null
   is_expired:        boolean
   is_expiring_soon:  boolean
+  file_url:          string | null
 }
 
 interface Props {
@@ -101,6 +102,18 @@ export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, on
                   </div>
                 )}
               </div>
+              {item.file_url && (
+                <a
+                  href={item.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Ver ${item.label}`}
+                  title="Ver documento"
+                  className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent hover:underline shrink-0"
+                >
+                  <Eye size={12} /> Ver
+                </a>
+              )}
               {canEdit && item.requires_file && onUpload && (
                 <label className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline cursor-pointer shrink-0">
                   <Upload size={11} /> Subir

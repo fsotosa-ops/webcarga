@@ -30,6 +30,7 @@ describe('complianceRecordsToChecklistItems', () => {
       expiration_date: '2027-01-01',
       is_expired: false,
       is_expiring_soon: false,
+      file_url: null,
     }])
   })
 

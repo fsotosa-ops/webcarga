@@ -33,6 +33,21 @@ export function fmtDate(iso: string | null | undefined): string {
   })
 }
 
+/** ISO → valor para <input type="datetime-local"> (YYYY-MM-DDTHH:mm), en hora
+ *  Chile — para editar campos híbridos (Carga/Desc. Inicio-Fin). */
+export function toDatetimeLocalValue(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(normalizeUTC(iso))
+  if (isNaN(d.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d)
+  const p = Object.fromEntries(parts.filter(x => x.type !== 'literal').map(x => [x.type, x.value]))
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`
+}
+
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(normalizeUTC(iso))

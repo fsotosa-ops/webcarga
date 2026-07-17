@@ -16,6 +16,18 @@ class TripPatch(BaseModel):
     driver_phone:           Optional[str]  = None
     tractor_plate:          Optional[str]  = None
     trailer_plate:          Optional[str]  = None
+    # Campos híbridos de origen (Carga Inicio/Fin) — sin equivalente TMS,
+    # ver migración 20260717190246_trip_hybrid_date_fields
+    cag_inicio:             Optional[str]  = None
+    cag_fin:                Optional[str]  = None
 
     def sent_fields(self) -> list[str]:
         return list(self.model_dump(exclude_none=True).keys())
+
+
+class TripStopPatch(BaseModel):
+    """Override manual de Desc. Inicio/Fin por parada — vive en
+    app.trips.stop_manual_fields (keyed por stop_id), nunca en el jsonb
+    `stops` del pipeline (se sobrescribe completo en cada corrida)."""
+    desc_inicio: Optional[str] = None
+    desc_fin:    Optional[str] = None

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
-from ..schemas.trip import TripPatch
+from ..schemas.trip import TripPatch, TripStopPatch
 
 
 def _parse_date(s: str) -> _date | None:
@@ -17,6 +17,31 @@ def _parse_date(s: str) -> _date | None:
         return _date.fromisoformat(s) if s else None
     except ValueError:
         return None
+
+
+def _apply_stop_manual_fields(d: dict) -> None:
+    """Mergea el override manual de Desc. Inicio/Fin (app.trips.stop_manual_fields,
+    keyed por stop_id) sobre unload_start/unload_end de cada parada — campo
+    híbrido: el pipeline reporta unload_start/unload_end, pero si operaciones
+    lo corrigió a mano, ese valor gana. Vive fuera de `stops` (jsonb) porque
+    ese campo se sobrescribe completo en cada corrida del pipeline dbt."""
+    manual = d.pop("stop_manual_fields", None)
+    if isinstance(manual, str):
+        manual = json.loads(manual) if manual else {}
+    manual = manual or {}
+    stops = d.get("stops")
+    if not stops or not manual:
+        return
+    for stop in stops:
+        override = manual.get(stop.get("stop_id"))
+        if not override:
+            stop["desc_manual"] = False
+            continue
+        if override.get("desc_inicio") is not None:
+            stop["unload_start"] = override["desc_inicio"]
+        if override.get("desc_fin") is not None:
+            stop["unload_end"] = override["desc_fin"]
+        stop["desc_manual"] = True
 
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -46,8 +71,11 @@ _TRIP_SELECT = """
     t.origin,
     t.origin_region,
     t.origin_city,
+    t.cag_inicio,
+    t.cag_fin,
     t.cargo_type,
     t.stops,
+    t.stop_manual_fields,
     t.activo,
     t.trabajando,
     t.asignado,
@@ -176,6 +204,7 @@ async def list_trips(
         d = dict(r)
         if d.get("stops") and isinstance(d["stops"], str):
             d["stops"] = json.loads(d["stops"])
+        _apply_stop_manual_fields(d)
         data.append(d)
     return {"data": data, "count": count, "page": page, "limit": limit}
 
@@ -691,6 +720,7 @@ async def get_trip(
     d = dict(row)
     if d.get("stops") and isinstance(d["stops"], str):
         d["stops"] = json.loads(d["stops"])
+    _apply_stop_manual_fields(d)
     return d
 
 
@@ -779,7 +809,12 @@ async def patch_trip(
     bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
     str_fields  = ("estado_manual", "observaciones", "comentarios",
                    "origin_region", "origin_city")
-    trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields)}
+    # cag_inicio/cag_fin (Carga Inicio/Fin, origen): campos híbridos sin
+    # equivalente TMS — no compiten con el pipeline, no necesitan pasar por
+    # manually_edited_fields/protect_manual_overrides (eso protege campos que
+    # el TMS SÍ puede seguir reportando).
+    datetime_fields = ("cag_inicio", "cag_fin")
+    trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields, *datetime_fields)}
     # Ubicación: string vacío = limpiar (NULL) — evita mezclar '' y NULL en los
     # filtros exactos de region/ciudad
     for k in ("origin_region", "origin_city"):
@@ -800,6 +835,11 @@ async def patch_trip(
             if field in trip_fields:
                 vals.append(trip_fields[field])
                 sets.append(f"{field} = ${len(vals)}")
+
+        for field in datetime_fields:
+            if field in trip_fields:
+                vals.append(trip_fields[field] or None)
+                sets.append(f"{field} = ${len(vals)}::timestamptz")
 
         vals.append(sent)
         sets.append(
@@ -822,6 +862,42 @@ async def patch_trip(
         )
 
     await _mirror_manual_trip(pool, trip_id)
+    return await get_trip(trip_id, pool, user)
+
+
+@router.patch("/{trip_id}/stops/{stop_id}")
+async def patch_trip_stop(
+    trip_id: str,
+    stop_id: str,
+    body: TripStopPatch,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Override manual de Desc. Inicio/Fin de una parada — persiste en
+    app.trips.stop_manual_fields (keyed por stop_id), nunca en el jsonb
+    `stops` del pipeline (se sobrescribe completo en cada corrida)."""
+    exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
+    if not exists:
+        raise HTTPException(404, "Viaje no encontrado")
+
+    patch = body.model_dump(exclude_none=True)
+    if not patch:
+        raise HTTPException(422, "Ningún campo enviado")
+
+    await pool.execute(
+        """
+        UPDATE app.trips
+        SET stop_manual_fields = jsonb_set(
+                COALESCE(stop_manual_fields, '{}'::jsonb),
+                ARRAY[$2],
+                COALESCE(stop_manual_fields->$2, '{}'::jsonb) || $3::jsonb,
+                true
+            ),
+            updated_at = NOW()
+        WHERE id = $1
+        """,
+        trip_id, stop_id, json.dumps(patch),
+    )
     return await get_trip(trip_id, pool, user)
 
 

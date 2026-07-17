@@ -16,5 +16,6 @@ export function complianceRecordsToChecklistItems(records: ComplianceRecord[]): 
     expiration_date:   r.expiration_date,
     is_expired:        r.is_expired,
     is_expiring_soon:  r.is_expiring_soon,
+    file_url:          r.file_url,
   }))
 }

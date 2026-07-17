@@ -10,7 +10,7 @@ import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
-import { fmtDT, fmtDate, formatRelativeTime } from '@/lib/utils/datetime'
+import { fmtDT, fmtDate, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
 import { StopTimeline } from './StopTimeline'
 import { RouteProgress } from './RouteProgress'
 import { IndicatorDots } from './IndicatorDots'
@@ -93,6 +93,9 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   // Ubicación de origen (región/ciudad) — draft local, se guarda vía PATCH
   const [locRegion, setLocRegion]               = useState<string | null>(null)
   const [locCity, setLocCity]                   = useState<string | null>(null)
+  // Carga Inicio/Fin (origen) — draft local, mismo motivo que locRegion/locCity
+  const [cagInicioDraft, setCagInicioDraft]     = useState('')
+  const [cagFinDraft, setCagFinDraft]           = useState('')
   const [locSaving, setLocSaving]               = useState(false)
   const [locErr, setLocErr]                     = useState<string | null>(null)
   const panelRef                                = useRef<HTMLDivElement>(null)
@@ -139,10 +142,45 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     setLocRegion(trip.origin_region ?? null)
     setLocCity(trip.origin_city ?? null)
     setLocErr(null)
+    setCagInicioDraft(toDatetimeLocalValue(trip.cag_inicio))
+    setCagFinDraft(toDatetimeLocalValue(trip.cag_fin))
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const locDirty =
     !!trip && ((locRegion ?? null) !== (trip.origin_region ?? null) || (locCity ?? null) !== (trip.origin_city ?? null))
+
+  // Campos híbridos (esquema de fechas 2026-07-17): Carga Inicio/Fin (origen,
+  // sin equivalente TMS) y Desc. Inicio/Fin (por parada, override manual de
+  // lo que reporta el TMS). Guardado directo al cambiar, sin botón aparte —
+  // mismo patrón que onExpirationChange en DocumentChecklist.
+  const [cagSaving, setCagSaving] = useState<'cag_inicio' | 'cag_fin' | null>(null)
+  const [stopSaving, setStopSaving] = useState<string | null>(null)
+
+  async function handleCagChange(field: 'cag_inicio' | 'cag_fin', value: string) {
+    if (!trip) return
+    setCagSaving(field)
+    try {
+      const updated = await tripsApi.patch(trip.id, { [field]: value } as TripPatch)
+      onSaved(updated)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setCagSaving(null)
+    }
+  }
+
+  async function handleStopFieldChange(stopId: string, field: 'desc_inicio' | 'desc_fin', value: string) {
+    if (!trip) return
+    setStopSaving(stopId)
+    try {
+      const updated = await tripsApi.patchStop(trip.id, stopId, { [field]: value })
+      onSaved(updated)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setStopSaving(null)
+    }
+  }
 
   async function handleSaveLocation() {
     if (!trip) return
@@ -556,7 +594,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                             <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
                             <th className="px-3 py-2 text-center min-w-[52px]">°C</th>
                             <th className="px-3 py-2 text-center min-w-[68px]">On Time</th>
-                            <th className="px-3 py-2 text-left min-w-[100px]">Estado SAP</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/50">
@@ -580,8 +617,28 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.unload_start)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.unload_end)}</td>
+                                <td className="px-2 py-1">
+                                  <input
+                                    key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
+                                    type="datetime-local"
+                                    aria-label={`Desc. inicio de ${stop.local ?? 'parada'}`}
+                                    defaultValue={toDatetimeLocalValue(stop.unload_start)}
+                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_inicio', e.target.value)}
+                                    disabled={stopSaving === stop.stop_id}
+                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  />
+                                </td>
+                                <td className="px-2 py-1">
+                                  <input
+                                    key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
+                                    type="datetime-local"
+                                    aria-label={`Desc. fin de ${stop.local ?? 'parada'}`}
+                                    defaultValue={toDatetimeLocalValue(stop.unload_end)}
+                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_fin', e.target.value)}
+                                    disabled={stopSaving === stop.stop_id}
+                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  />
+                                </td>
                                 <td className="px-3 py-2 text-center">
                                   {stop.s2s ? <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{stop.s2s}</span> : <span className="text-gray-200">—</span>}
                                 </td>
@@ -596,9 +653,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                                   ) : (
                                     <span className="text-gray-200">—</span>
                                   )}
-                                </td>
-                                <td className="px-3 py-2">
-                                  {stop.milestone_status ? <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded leading-snug block">{stop.milestone_status}</span> : <span className="text-gray-200">—</span>}
                                 </td>
                               </tr>
                             )
@@ -630,6 +684,30 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   {trip.milestone_status && (
                     <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
                   )}
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Carga inicio</p>
+                    <input
+                      type="datetime-local"
+                      aria-label="Carga inicio"
+                      value={cagInicioDraft}
+                      onChange={e => setCagInicioDraft(e.target.value)}
+                      onBlur={e => e.target.value && handleCagChange('cag_inicio', e.target.value)}
+                      disabled={cagSaving === 'cag_inicio'}
+                      className="text-[11px] text-slate-700 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white w-full disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Carga fin</p>
+                    <input
+                      type="datetime-local"
+                      aria-label="Carga fin"
+                      value={cagFinDraft}
+                      onChange={e => setCagFinDraft(e.target.value)}
+                      onBlur={e => e.target.value && handleCagChange('cag_fin', e.target.value)}
+                      disabled={cagSaving === 'cag_fin'}
+                      className="text-[11px] text-slate-700 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white w-full disabled:opacity-50"
+                    />
+                  </div>
                 </div>
               )}
             </section>

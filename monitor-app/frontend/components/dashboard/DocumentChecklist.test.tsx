@@ -5,15 +5,15 @@ import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 const ITEMS = [
   {
     id: 'cr1', requirement_code: 'POLIZA_FIRMADA', label: 'Póliza firmada', status: 'APPROVED' as const,
-    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false,
+    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, file_url: 'https://storage.example/poliza.pdf',
   },
   {
     id: 'cr2', requirement_code: 'CERT_VIGENCIA', label: 'Certificado de vigencia', status: 'APPROVED' as const,
-    requires_file: true, expiration_date: '2026-01-01', is_expired: true, is_expiring_soon: false,
+    requires_file: true, expiration_date: '2026-01-01', is_expired: true, is_expiring_soon: false, file_url: null,
   },
   {
     id: 'cr3', requirement_code: 'ENDOSO', label: 'Endoso', status: 'MISSING' as const,
-    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false,
+    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, file_url: null,
   },
 ]
 
@@ -102,5 +102,18 @@ describe('DocumentChecklist', () => {
   it('does not offer to edit the expiration date when canEdit is false', () => {
     render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} onExpirationChange={vi.fn()} />)
     expect(screen.queryByLabelText('Fecha de vencimiento de Póliza firmada')).not.toBeInTheDocument()
+  })
+
+  it('shows a "Ver" link to the uploaded file when file_url is set, regardless of canEdit', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
+    const link = screen.getByLabelText('Ver Póliza firmada') as HTMLAnchorElement
+    expect(link).toBeInTheDocument()
+    expect(link.href).toBe('https://storage.example/poliza.pdf')
+    expect(link.target).toBe('_blank')
+  })
+
+  it('does not show a "Ver" link when file_url is null', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
+    expect(screen.queryByLabelText('Ver Endoso')).not.toBeInTheDocument()
   })
 })

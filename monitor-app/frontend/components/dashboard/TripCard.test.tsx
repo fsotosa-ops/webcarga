@@ -42,9 +42,9 @@ describe('TripCard', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
-  it('does not render Indicadores for a TMS-sourced trip', () => {
+  it('also renders Indicadores for a TMS-sourced trip', () => {
     render(<TripCard trip={makeTrip({ source_system: 'qanalytics' })} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
-    expect(screen.queryByTitle('Activo')).not.toBeInTheDocument()
+    expect(screen.getAllByTitle('Activo').length).toBeGreaterThan(0)
   })
 
   it('shows an OFF TIME badge when the trip has a compliance problem', () => {

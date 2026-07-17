@@ -28,9 +28,9 @@ describe('TripTable', () => {
     expect(screen.getAllByTitle('Activo').length).toBeGreaterThan(0)
   })
 
-  it('does not render Indicadores for a TMS-sourced trip', () => {
+  it('also renders Indicadores for a TMS-sourced trip — el pipeline ya los deriva de trip_status, y la excepción de UAT permite override manual para cualquier origen', () => {
     render(<TripTable trips={[makeTrip('t1', { source_system: 'qanalytics' })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
-    expect(screen.queryByTitle('Activo')).not.toBeInTheDocument()
+    expect(screen.getAllByTitle('Activo').length).toBeGreaterThan(0)
   })
 
   it('calls onSelect directly when a row is clicked (no intermediate expand step)', () => {

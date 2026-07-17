@@ -8,6 +8,7 @@ import type { Trip, TripNote } from '@/lib/types'
 vi.mock('@/lib/api/trips', () => ({
   tripsApi: {
     patch: vi.fn(),
+    patchStop: vi.fn(),
     resetField: vi.fn(),
     removeFleetLink: vi.fn(),
     listNotes: vi.fn(),
@@ -49,6 +50,7 @@ function renderSlideOver(trip: Trip, props: Partial<Parameters<typeof TripSlideO
 
 beforeEach(() => {
   vi.mocked(tripsApi.patch).mockReset()
+  vi.mocked(tripsApi.patchStop).mockReset()
   vi.mocked(tripsApi.resetField).mockReset()
   vi.mocked(tripsApi.listNotes).mockReset().mockResolvedValue([])
   vi.mocked(tripsApi.addNote).mockReset()
@@ -291,5 +293,49 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
     fireEvent.click(screen.getByText('Agregar nota'))
     await waitFor(() =>
       expect(tripsApi.addNote).toHaveBeenCalledWith('t1', { body: '', note_type: 'observacion', files: [file] }))
+  })
+})
+
+describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)', () => {
+  it('saves Carga inicio via tripsApi.patch on blur', async () => {
+    vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
+    renderSlideOver(baseTrip)
+    fireEvent.click(screen.getByText('Datos operativos'))
+    const input = screen.getByLabelText('Carga inicio') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '2026-07-17T09:00' } })
+    fireEvent.blur(input)
+    await waitFor(() =>
+      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_inicio: '2026-07-17T09:00' }))
+  })
+
+  it('saves Carga fin via tripsApi.patch on blur', async () => {
+    vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
+    renderSlideOver(baseTrip)
+    fireEvent.click(screen.getByText('Datos operativos'))
+    const input = screen.getByLabelText('Carga fin') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '2026-07-17T09:30' } })
+    fireEvent.blur(input)
+    await waitFor(() =>
+      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_fin: '2026-07-17T09:30' }))
+  })
+
+  it('saves Desc. inicio of a stop via tripsApi.patchStop on blur', async () => {
+    vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
+    renderSlideOver({ ...baseTrip, stops })
+    fireEvent.click(screen.getByText(/Ver detalle técnico/))
+    const input = screen.getByLabelText('Desc. inicio de Local 1') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '2026-07-17T10:00' } })
+    fireEvent.blur(input)
+    await waitFor(() =>
+      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { desc_inicio: '2026-07-17T10:00' }))
+  })
+
+  it('marks a stop\'s Desc. inicio/fin inputs as manual when desc_manual is true', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1', desc_manual: true })]
+    renderSlideOver({ ...baseTrip, stops })
+    fireEvent.click(screen.getByText(/Ver detalle técnico/))
+    const input = screen.getByLabelText('Desc. inicio de Local 1') as HTMLInputElement
+    expect(input.className).toMatch(/text-accent/)
   })
 })

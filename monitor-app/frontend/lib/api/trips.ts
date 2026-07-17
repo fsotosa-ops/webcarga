@@ -22,6 +22,13 @@ export type TripPatch = {
   driver_phone?:   string
   tractor_plate?:  string
   trailer_plate?:  string
+  cag_inicio?:     string
+  cag_fin?:        string
+}
+
+export type TripStopPatch = {
+  desc_inicio?: string
+  desc_fin?:    string
 }
 
 export type FleetLinkPayload = {
@@ -97,6 +104,12 @@ export const tripsApi = {
   resetField: (id: string, field: string) =>
     apiFetch<{ ok: boolean; field: string }>(`/api/v1/trips/${id}/overrides/${field}`, {
       method: 'DELETE',
+    }),
+
+  patchStop: (id: string, stopId: string, body: TripStopPatch) =>
+    apiFetch<Trip>(`/api/v1/trips/${id}/stops/${stopId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     }),
 
   assignFleetLink: (id: string, body: FleetLinkPayload) =>

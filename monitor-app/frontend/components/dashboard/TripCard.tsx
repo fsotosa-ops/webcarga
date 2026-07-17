@@ -65,7 +65,7 @@ export function TripCard({ trip, meta, onSaved, onSelect, updated }: Props) {
         </p>
       )}
       <div className="flex items-center justify-between mt-1.5">
-        {trip.source_system === 'manual' && <IndicatorDots trip={trip} onSaved={onSaved} />}
+        <IndicatorDots trip={trip} onSaved={onSaved} />
         {compliance === 'warn' && (
           <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">OFF TIME</span>
         )}

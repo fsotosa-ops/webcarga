@@ -64,11 +64,42 @@
 - **Alcance de "datos estructurados por documento" acotado a `F30_MULTAS`**: se revisó el catálogo completo de `public.compliance_requirements` (36 requisitos: 9 ASSET + 15 CARRIER + 12 DRIVER) — de los 36, **`F30_MULTAS`** (CARRIER) es el único conceptualmente distinto: documenta eventos cuantificables (multa = monto + fecha de infracción), no una credencial "válida hasta tal fecha" como el resto. Precedente directo: `INSURANCE_POLICY` tenía el mismo problema y se resolvió con tabla relacional propia (`insurance_policies`), no con campos sueltos en `compliance_records` — mismo patrón a seguir para F30 si se confirma que se necesita. Caso aparte marcado, no confirmado: `CONTROL_MENSUAL_COL_T` (DRIVER, "Control Documental Mensual") por nombre sugiere recurrencia/periodicidad, no campos adicionales — distinto tipo de gap, sin investigar a fondo.
 - **Bug nuevo encontrado y confirmado con causa raíz (no solo reportado por el usuario)**: la previsualización de archivos ya cargados **no existe en la UI**, para carrier/driver/asset por igual — mismo componente compartido (`DocumentChecklist.tsx`) para los tres. Causa raíz: el backend ya devuelve `file_url` (URL firmada, vía `resolve_signed_url()`) en cada `compliance_record`, pero `lib/utils/complianceChecklist.ts` lo descarta al mapear a `ChecklistItem` (el type ni siquiera incluye el campo), y `DocumentChecklist.tsx` no tiene ningún link/ícono de previsualización — solo botón "Subir" (reemplaza el archivo) o selector de estado. No se tocó código todavía, solo diagnosticado.
 
-#### Próximo paso exacto
+#### Próximo paso exacto (histórico — ver ronda siguiente para el estado real tras la implementación)
 1. [ ] Confirmar con negocio los puntos abiertos de `trips_context.md` §11 antes de tocar código de H2.6 (regla de precedencia manual-vs-TMS, portal de shipper sí/no, RLS de `public.*` intencional o no, etc.).
 2. [ ] H2.6 implementación: sigue **sin iniciar**, sigue requiriendo pedido explícito del usuario — el plan de accionables está en `trips_context.md` §10, orden recomendado (e).
-3. [ ] Quick wins de bajo riesgo identificados y listos para ejecutar cuando el usuario lo pida: quitar columna "Estado SAP" del detalle de viaje, esquema de 4 campos híbridos de fecha, derivación server-side de "Indicadores", catálogo configurable de motivo de no asignación (`trips_context.md` §10(f)).
-4. [ ] **Bug de previsualización de archivos (carrier/driver/asset)** — fix acotado: agregar `file_url` a `ChecklistItem`/`complianceChecklist.ts` + affordance de preview/link en `DocumentChecklist.tsx`. Listo para ejecutar cuando el usuario lo pida.
-5. [ ] F30_MULTAS (monto + fecha de multa) — confirmar con el usuario si todavía lo quiere antes de construir; si sí, seguir el patrón de `insurance_policies` (tabla relacional propia), no campos sueltos en `compliance_records`.
+3. [x] Quick wins de bajo riesgo — **implementados esta misma jornada, ver ronda siguiente.**
+4. [x] Bug de previsualización de archivos — **implementado esta misma jornada, ver ronda siguiente.**
+5. [ ] F30_MULTAS (monto + fecha de multa) — sigue sin confirmar, no se tocó.
+
+---
+
+### 2026-07-17 (cont.) — Séptima ronda: implementación de 3 frentes en paralelo (preview de archivos + quick wins del Diario)
+
+**Pedido del usuario**: arrancar la implementación de "preview de archivos" y "quick wins del Diario" en paralelo. Todo verificado con tests reales antes de dar por cerrado cada ítem — backend **171/171** (`venv` correcto: `monitor-app/backend/api/venv`, no anaconda), frontend **334/334**, `tsc --noEmit` limpio, `npm run build` exitoso en cada paso.
+
+**1. Bug de preview de archivos** (`DocumentChecklist.tsx`, carrier/driver/asset) — `file_url` agregado a `ChecklistItem`/`complianceChecklist.ts`, link "Ver" (ícono `Eye`, `target="_blank"`) agregado al componente, visible incluso sin permisos de edición. 2 archivos de test actualizados/extendidos.
+
+**2. Columna "Estado SAP"** — quitada de la tabla técnica de paradas en `TripSlideOver.tsx` (header + celda), sin tocar el dato subyacente (`milestone_status` sigue existiendo, solo dejó de mostrarse).
+
+**3. Campos híbridos de fecha** (el más grande de los tres, con un hallazgo de arquitectura real en el camino):
+- Migración `20260717190246_trip_hybrid_date_fields` (aplicada en Supabase y versionada en git por primera vez desde el inicio, sin el patrón "aplicado pero no versionado" que la propia auditoría señaló como deuda): `app.trips.cag_inicio`/`cag_fin` (timestamptz, Carga Inicio/Fin de origen, sin equivalente TMS) + `stop_manual_fields` (jsonb, override de Desc. Inicio/Fin por parada, keyed por `stop_id`).
+- **Hallazgo real durante la implementación**: el modelo dbt (`app_trips.sql`) tiene `on_schema_change='sync_all_columns'` — esto significa que columnas agregadas por `ALTER TABLE` directo que no forman parte del `SELECT` del modelo pueden ser **eliminadas en la próxima corrida normal del pipeline**, no solo en un `--full-refresh` (deuda ya señalada en `trips_context.md` §4 ítem 8, pero esta es la primera vez que se vuelve un riesgo inmediato y no solo teórico). Mitigado localmente: `app_trips.sql` (espejo local en la raíz del repo) actualizado con las 3 columnas nuevas como placeholders `NULL`/`{}'::jsonb` + agregadas a `merge_exclude_columns`, mismo patrón que `origin_region`/`origin_city`.
+- **Sync a Mage real NO ejecutado** — se evaluó `mcp__mage-agent__sync_local_to_remote`, pero compara el repo completo contra el proyecto Mage sin mapeo 1:1 de rutas confiable para este archivo suelto (no es un checkout real del proyecto dbt). Ejecutarlo a ciegas podía arrastrar cambios no relacionados a un pipeline productivo. **Queda como acción pendiente del usuario**: aplicar manualmente en Mage el mismo cambio que ya está en el `app_trips.sql` de este repo (líneas ~7-11 y ~254-262), antes de que el pipeline vuelva a correr. Detalle completo en `trips_context.md` §13.
+- Backend: `TripPatch` + `TripStopPatch` (`schemas/trip.py`), nuevo endpoint `PATCH /trips/{trip_id}/stops/{stop_id}`, helper `_apply_stop_manual_fields()` que mergea el override sobre `unload_start`/`unload_end` en runtime (nunca escribe dentro de `stops`, que el pipeline sobrescribe completo). 9 tests nuevos (`test_trip_hybrid_fields.py`).
+- Frontend: inputs `datetime-local` en "Datos operativos" (Carga Inicio/Fin, con draft resincronizado desde el prop al abrir — mismo patrón ya establecido — resincronizar el draft desde el prop al abrir, no confiar en el estado inicial — para evitar la clase de bug recurrente de drafts desincronizados vista antes en ContactCard/TransporterDocumentsPanel) y en la tabla técnica de paradas (Desc. Inicio/Fin, con borde/color distinto cuando `stop.desc_manual` es `true`). Nuevo helper `toDatetimeLocalValue()` en `lib/utils/datetime.ts`. 4 tests nuevos en `TripSlideOver.test.tsx`.
+
+**4. Indicadores extendidos a viajes TMS** — con una corrección real al propio audit de la ronda anterior: `activo/trabajando/asignado` **ya se derivaban automáticamente** en `app_trips.sql` desde `trip_status` (el hallazgo original decía lo contrario — error de la auditoría, no del código). El gap real era puramente de frontend: `IndicatorDots` estaba gateado a `source_system === 'manual'` en `TripTable.tsx` y `TripCard.tsx`, ocultando valores ya válidos para viajes TMS. Quitado el gate en los 3 call-sites. `primera_vuelta` sigue sin lógica real de derivación (hardcodeada `false` en el pipeline) — anotado como pendiente separado, no resuelto (es una feature más grande: detectar si el conductor ya cerró un viaje antes ese mismo día).
+
+**Migraciones versionadas esta sesión** (corrigiendo la deuda de proceso #1/#2 de `trips_context.md` en el momento, no solo documentándola): `20260717184519_enable_rls_bronze_exposed_tables.sql`, `20260717190246_trip_hybrid_date_fields.sql`.
+
+**Mitigación del riesgo de sync (mismo día)**: el usuario pausó manualmente el pipeline `batch_tms_monitor_trips` en Mage — el riesgo de que una corrida normal borre `cag_inicio`/`cag_fin`/`stop_manual_fields` (por `on_schema_change='sync_all_columns'`) queda contenido mientras el pipeline esté pausado. Sigue pendiente sincronizar el cambio de `app_trips.sql` a Mage antes de reanudarlo.
+
+#### Próximo paso exacto
+1. [ ] **Sincronizar en Mage** el cambio de `app_trips.sql` (columnas `cag_inicio`/`cag_fin`/`stop_manual_fields` + `merge_exclude_columns`, líneas ~7-11 y ~254-262) y **luego reanudar** el pipeline `batch_tms_monitor_trips` — no reanudar antes de sincronizar. Ver `trips_context.md` §13.
+2. [ ] Verificar en vivo (con un viaje real) que los campos híbridos sobreviven a una corrida del pipeline una vez reanudado.
+3. [ ] Confirmar con negocio los puntos abiertos de `trips_context.md` §11 antes de tocar código de H2.6.
+4. [ ] H2.6 implementación: sigue sin iniciar, sigue requiriendo pedido explícito.
+5. [ ] Catálogo configurable de "motivo de no asignación" — pendiente, depende de que la feature de "vista no asignados" exista primero.
+6. [ ] F30_MULTAS — sigue sin confirmar.
 
 ---

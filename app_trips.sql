@@ -7,7 +7,8 @@
         merge_exclude_columns=[
             'observaciones', 'comentarios', 'fleet_link_id',
             'manually_edited_fields', 'edited_by', 'edited_at', 'created_at',
-            'origin_region', 'origin_city'
+            'origin_region', 'origin_city',
+            'cag_inicio', 'cag_fin', 'stop_manual_fields'
         ],
         schema='app',
         alias='trips',
@@ -257,6 +258,14 @@ SELECT
     -- inicial las deja NULL; migración 20260709000001.
     NULL::text          AS origin_region,
     NULL::text          AS origin_city,
+    -- cag_inicio / cag_fin (Carga Inicio/Fin, origen) y stop_manual_fields
+    -- (override manual de Desc. Inicio/Fin por parada): mismo patrón que
+    -- origin_region/origin_city — el pipeline nunca los escribe
+    -- (merge_exclude_columns arriba). Esquema de fechas 2026-07-17,
+    -- migración 20260717190246_trip_hybrid_date_fields.
+    NULL::timestamptz   AS cag_inicio,
+    NULL::timestamptz   AS cag_fin,
+    '{}'::jsonb         AS stop_manual_fields,
     status_reported_at,
     pipeline_updated_at,
 
