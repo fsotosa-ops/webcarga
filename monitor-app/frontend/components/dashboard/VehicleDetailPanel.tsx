@@ -1,61 +1,56 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2 } from 'lucide-react'
-import type { VehicleGovernance, TransporterVehicle, ComplianceStatus } from '@/lib/types'
-import type { BajaBody } from '@/lib/api/transporters'
+import type { Asset } from '@/lib/types'
+import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
+import { complianceApi } from '@/lib/api/compliance'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
-import { vehicleGovernanceToChecklistItems, withVehicleGovernanceField } from '@/lib/utils/transporterDocs'
+import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
+
+const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
+  { value: 'TRACTOCAMION', label: 'Tracto' }, { value: 'RAMPLA', label: 'Rampla' },
+  { value: 'CAMION', label: 'Camión' }, { value: 'FURGON', label: 'Furgón' }, { value: 'OTRO', label: 'Otro' },
+]
 
 interface Props {
-  vehicle:         TransporterVehicle | null
+  asset:           Asset | null
   canEdit:         boolean
   canAdmin:        boolean
   onClose:         () => void
-  onPatch:         (vid: string, body: { type?: string; plate?: string; governance?: VehicleGovernance }) => Promise<void>
+  onPatch:         (id: string, body: AssetPatchBody) => Promise<void>
   onRemove:        () => Promise<void>
-  onTransferClick?: () => void
-  /** undefined para ramplas: no existe endpoint .../trailers/{id}/deactivate en el backend */
-  onDeactivate?:   (body: BajaBody) => Promise<void>
-  onReactivate?:   () => Promise<void>
+  onTransferClick: () => void
 }
 
-const EXPIRY_FIELDS = [
-  { key: 'circ_permit_expiry' as const,     label: 'Vencimiento permiso de circulación' },
-  { key: 'tech_inspection_expiry' as const, label: 'Vencimiento revisión técnica' },
-  { key: 'gas_emissions_expiry' as const,   label: 'Vencimiento gases' },
-  { key: 'soap_insurance_expiry' as const,  label: 'Vencimiento SOAP' },
-]
-
 /** Modal de detalle de un equipo — mismo lenguaje inmersivo que
- *  DriverDetailPanel/InsurancePolicyModal: modal centrado de 2 columnas,
- *  mismo contrato de accesibilidad. */
-export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, onDeactivate, onReactivate }: Props) {
-  const open = !!vehicle
+ *  DriverDetailPanel. La patente es inmutable (no está en AssetPatchBody);
+ *  lo único editable acá es el tipo de equipo + estado operativo. */
+export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
+  const open = !!asset
   const panelRef = useRef<HTMLDivElement>(null)
+  const queryClient = useQueryClient()
   const [removing, setRemoving] = useState(false)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
-  const [draft, setDraft] = useState({
-    type: '', plate: '',
-    circ_permit_expiry: '', tech_inspection_expiry: '', gas_emissions_expiry: '', soap_insurance_expiry: '',
-  })
+  const [draft, setDraft] = useState<{ asset_type: AssetType }>({ asset_type: 'OTRO' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [statusErr, setStatusErr] = useState<string | null>(null)
 
+  const complianceQuery = useQuery({
+    queryKey: ['asset-compliance-records', asset?.id],
+    queryFn: () => assetsApi.listComplianceRecords(asset!.id),
+    enabled: !!asset,
+  })
+
   useEffect(() => {
-    if (!vehicle) return
-    setDraft({
-      type: vehicle.type, plate: vehicle.plate,
-      circ_permit_expiry: vehicle.governance?.circ_permit_expiry ?? '',
-      tech_inspection_expiry: vehicle.governance?.tech_inspection_expiry ?? '',
-      gas_emissions_expiry: vehicle.governance?.gas_emissions_expiry ?? '',
-      soap_insurance_expiry: vehicle.governance?.soap_insurance_expiry ?? '',
-    })
+    if (!asset) return
+    setDraft({ asset_type: asset.asset_type as AssetType })
     setErr(null); setStatusErr(null)
-  }, [vehicle])
+  }, [asset])
 
   useEffect(() => {
     if (!open) return
@@ -85,20 +80,15 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
     }
   }, [open, onClose])
 
+  function invalidateCompliance() {
+    if (asset) queryClient.invalidateQueries({ queryKey: ['asset-compliance-records', asset.id] })
+  }
+
   async function handleSaveDatos() {
-    if (!vehicle) return
+    if (!asset) return
     setSaving(true); setErr(null)
     try {
-      await onPatch(vehicle.id, {
-        type: draft.type, plate: draft.plate,
-        governance: {
-          ...(vehicle.governance ?? {}),
-          circ_permit_expiry: draft.circ_permit_expiry || null,
-          tech_inspection_expiry: draft.tech_inspection_expiry || null,
-          gas_emissions_expiry: draft.gas_emissions_expiry || null,
-          soap_insurance_expiry: draft.soap_insurance_expiry || null,
-        } as VehicleGovernance,
-      })
+      await onPatch(asset.id, { asset_type: draft.asset_type })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
@@ -106,13 +96,23 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
     }
   }
 
-  async function handleStatusChange(docCode: string, status: ComplianceStatus) {
-    if (!vehicle) return
+  async function handleStatusChange(recordId: string, status: Parameters<typeof complianceApi.patch>[1]['status']) {
     setStatusErr(null)
     try {
-      await onPatch(vehicle.id, { governance: withVehicleGovernanceField(vehicle.governance, docCode, status) })
+      await complianceApi.patch(recordId, { status })
+      invalidateCompliance()
     } catch (e) {
       setStatusErr(e instanceof Error ? e.message : 'Error al guardar')
+    }
+  }
+
+  async function handleUpload(recordId: string, file: File) {
+    setStatusErr(null)
+    try {
+      await complianceApi.uploadFile(recordId, file)
+      invalidateCompliance()
+    } catch (e) {
+      setStatusErr(e instanceof Error ? e.message : 'Error al subir el archivo')
     }
   }
 
@@ -121,15 +121,23 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
     try {
       await onRemove()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al eliminar')
+      setErr(e instanceof Error ? e.message : 'Error al quitar')
     } finally {
       setRemoving(false)
     }
   }
 
+  async function handleDeactivate() {
+    await onPatch(asset!.id, { operational_status: 'INACTIVE' })
+  }
+
+  async function handleReactivate() {
+    await onPatch(asset!.id, { operational_status: 'ACTIVE' })
+  }
+
   if (!open) return null
 
-  const items = vehicleGovernanceToChecklistItems(vehicle)
+  const items = complianceRecordsToChecklistItems(complianceQuery.data ?? [])
   const { ok, total } = checklistCompletion(items)
 
   return (
@@ -140,7 +148,7 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
           ref={panelRef}
           role="dialog"
           aria-modal="true"
-          aria-label={`Detalle de ${vehicle.plate}`}
+          aria-label={`Detalle de ${asset.license_plate}`}
           tabIndex={-1}
           className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none"
         >
@@ -154,8 +162,7 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
                 <Truck size={16} />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-bold text-text-primary font-mono truncate">{vehicle.plate}</p>
-                <p className="text-[10px] text-gray-400 truncate">{vehicle.type}</p>
+                <p className="text-xs font-bold text-text-primary font-mono truncate">{asset.license_plate}</p>
               </div>
             </div>
 
@@ -165,33 +172,15 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
             </div>
 
             <div className="space-y-2">
-              <input
+              <select
                 aria-label="Tipo de equipo"
-                value={draft.type}
+                value={draft.asset_type}
                 disabled={!canEdit}
-                onChange={e => setDraft(v => ({ ...v, type: e.target.value }))}
+                onChange={e => setDraft({ asset_type: e.target.value as AssetType })}
                 className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-              />
-              <input
-                aria-label="Patente"
-                value={draft.plate}
-                disabled={!canEdit}
-                onChange={e => setDraft(v => ({ ...v, plate: e.target.value }))}
-                className="w-full text-xs font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-              />
-              {EXPIRY_FIELDS.map(({ key, label }) => (
-                <div key={key}>
-                  <label className="text-[10px] text-gray-400 block mb-0.5">{label.replace('Vencimiento ', '')}</label>
-                  <input
-                    aria-label={label}
-                    type="date"
-                    value={draft[key]}
-                    disabled={!canEdit}
-                    onChange={e => setDraft(v => ({ ...v, [key]: e.target.value }))}
-                    className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-                  />
-                </div>
-              ))}
+              >
+                {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
               {canEdit && (
                 <button
                   type="button"
@@ -207,7 +196,7 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
             </div>
 
             <div className="mt-5 space-y-2">
-              {canAdmin && onTransferClick && (
+              {canAdmin && (
                 <button
                   type="button"
                   onClick={onTransferClick}
@@ -216,11 +205,11 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
                   <ArrowRightLeft size={14} /> Transferir a otra empresa
                 </button>
               )}
-              {canAdmin && onDeactivate && onReactivate && (
-                vehicle.baja_override ? (
+              {canAdmin && (
+                asset.operational_status === 'INACTIVE' ? (
                   <button
                     type="button"
-                    onClick={onReactivate}
+                    onClick={handleReactivate}
                     className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
                   >
                     Reactivar
@@ -243,7 +232,7 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
                   className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors disabled:opacity-50"
                 >
                   {removing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  Eliminar equipo
+                  Quitar del roster
                 </button>
               )}
             </div>
@@ -251,21 +240,26 @@ export function VehicleDetailPanel({ vehicle, canEdit, canAdmin, onClose, onPatc
 
           <div className="flex-1 min-w-0 overflow-y-auto p-5 sm:p-6">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Documentación</p>
-            <DocumentChecklist
-              items={items}
-              canEdit={canEdit}
-              onStatusChange={handleStatusChange}
-              hideCounter
-            />
+            {complianceQuery.isPending ? (
+              <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
+            ) : (
+              <DocumentChecklist
+                items={items}
+                canEdit={canEdit}
+                onStatusChange={handleStatusChange}
+                onUpload={handleUpload}
+                hideCounter
+              />
+            )}
             {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
           </div>
         </div>
       </div>
-      {bajaModalOpen && onDeactivate && (
+      {bajaModalOpen && (
         <BajaReasonModal
-          label={`equipo ${vehicle.plate}`}
+          label={`equipo ${asset.license_plate}`}
           onClose={() => setBajaModalOpen(false)}
-          onConfirm={onDeactivate}
+          onConfirm={handleDeactivate}
         />
       )}
     </>

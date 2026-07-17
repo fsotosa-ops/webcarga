@@ -2,25 +2,23 @@
 'use client'
 
 import { Truck } from 'lucide-react'
-import type { TransporterVehicle } from '@/lib/types'
-import { vehicleRosterStatus, vehicleCategory, VEHICLE_CATEGORY_LABELS } from '@/lib/utils/transporterDocs'
+import type { CarrierAssetRosterItem } from '@/lib/types'
+import { formatExpiry } from '@/lib/compliance'
 
-const TONE_CLS: Record<'ok' | 'warn' | 'danger', string> = {
-  ok:     'text-green-600',
-  warn:   'text-amber-600',
-  danger: 'text-red-600',
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  TRACTOCAMION: 'Tracto', RAMPLA: 'Rampla', CAMION: 'Camión', FURGON: 'Furgón', OTRO: 'Otro',
 }
 
 interface Props {
-  vehicle: TransporterVehicle
+  vehicle: CarrierAssetRosterItem
   onOpen:  () => void
 }
 
-/** Tarjeta compacta del roster de equipos — patente + categoría + estado
- *  resumen. El detalle completo vive en VehicleDetailPanel. */
+/** Tarjeta compacta del roster de equipos — patente + tipo + cantidad de
+ *  requisitos. app.carrier_asset_roster no desglosa por estado (solo
+ *  total_requirements agregado), así que no hay semáforo acá — el detalle
+ *  por documento vive en VehicleDetailPanel. */
 export function VehicleRosterCard({ vehicle, onOpen }: Props) {
-  const status = vehicleRosterStatus(vehicle)
-  const category = vehicleCategory(vehicle.type)
   return (
     <button
       type="button"
@@ -32,12 +30,15 @@ export function VehicleRosterCard({ vehicle, onOpen }: Props) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <p className="text-xs font-bold text-text-primary font-mono truncate">{vehicle.plate}</p>
+          <p className="text-xs font-bold text-text-primary font-mono truncate">{vehicle.license_plate}</p>
           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 shrink-0">
-            {VEHICLE_CATEGORY_LABELS[category]}
+            {ASSET_TYPE_LABELS[vehicle.asset_type] ?? vehicle.asset_type}
           </span>
         </div>
-        <p className={`text-[10px] font-semibold ${TONE_CLS[status.tone]}`}>{status.label}</p>
+        <p className="text-[10px] font-semibold text-gray-400">
+          {vehicle.total_requirements ?? 0} requisito{vehicle.total_requirements === 1 ? '' : 's'}
+          {vehicle.last_document_update && ` · ${formatExpiry(vehicle.last_document_update)}`}
+        </p>
       </div>
     </button>
   )

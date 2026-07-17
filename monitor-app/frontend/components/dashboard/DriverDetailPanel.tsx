@@ -1,49 +1,50 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2, X, ArrowRightLeft, Trash2 } from 'lucide-react'
-import type { DriverGovernance, TransporterDriver, ComplianceStatus } from '@/lib/types'
-import type { BajaBody } from '@/lib/api/transporters'
+import type { Driver } from '@/lib/types'
+import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
+import { complianceApi } from '@/lib/api/compliance'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
-import { driverGovernanceToChecklistItems, withDriverGovernanceField } from '@/lib/utils/transporterDocs'
+import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 
 interface Props {
-  driver:          TransporterDriver | null
+  driver:          Driver | null
   canEdit:         boolean
   canAdmin:        boolean
   onClose:         () => void
-  onPatch:         (did: string, body: { rut?: string; name?: string; governance?: DriverGovernance }) => Promise<void>
+  onPatch:         (id: string, body: DriverPatchBody) => Promise<void>
   onRemove:        () => Promise<void>
   onTransferClick: () => void
-  onDeactivate:    (body: BajaBody) => Promise<void>
-  onReactivate:    () => Promise<void>
 }
 
 /** Modal de detalle de un conductor — se abre al hacer click en su tarjeta
- *  del roster. Mismo lenguaje inmersivo que InsurancePolicyModal: modal
- *  centrado de 2 columnas (identidad + progreso a la izquierda,
- *  documentación a la derecha), mismo contrato de accesibilidad: Escape
- *  cierra, Tab atrapado, foco inicial y retorno al cerrar. */
-export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, onDeactivate, onReactivate }: Props) {
+ *  del roster. El checklist de documentación se carga acá mismo (no lo trae
+ *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records. */
+export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
-  const [draft, setDraft] = useState({ rut: '', name: '', id_expiry: '', license_expiry: '' })
+  const queryClient = useQueryClient()
+  const [draft, setDraft] = useState({ full_name: '' })
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [statusErr, setStatusErr] = useState<string | null>(null)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
 
+  const complianceQuery = useQuery({
+    queryKey: ['driver-compliance-records', driver?.id],
+    queryFn: () => driversApi.listComplianceRecords(driver!.id),
+    enabled: !!driver,
+  })
+
   useEffect(() => {
     if (!driver) return
-    setDraft({
-      rut: driver.rut, name: driver.name,
-      id_expiry: driver.governance?.id_expiry ?? '',
-      license_expiry: driver.governance?.license_expiry ?? '',
-    })
+    setDraft({ full_name: driver.full_name })
     setErr(null); setStatusErr(null)
   }, [driver])
 
@@ -75,18 +76,15 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     }
   }, [open, onClose])
 
+  function invalidateCompliance() {
+    if (driver) queryClient.invalidateQueries({ queryKey: ['driver-compliance-records', driver.id] })
+  }
+
   async function handleSaveDatos() {
     if (!driver) return
     setSaving(true); setErr(null)
     try {
-      await onPatch(driver.id, {
-        rut: draft.rut, name: draft.name,
-        governance: {
-          ...(driver.governance ?? {}),
-          id_expiry: draft.id_expiry || null,
-          license_expiry: draft.license_expiry || null,
-        } as DriverGovernance,
-      })
+      await onPatch(driver.id, { full_name: draft.full_name })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
@@ -94,13 +92,23 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     }
   }
 
-  async function handleStatusChange(docCode: string, status: ComplianceStatus) {
-    if (!driver) return
+  async function handleStatusChange(recordId: string, status: Parameters<typeof complianceApi.patch>[1]['status']) {
     setStatusErr(null)
     try {
-      await onPatch(driver.id, { governance: withDriverGovernanceField(driver.governance, docCode, status) })
+      await complianceApi.patch(recordId, { status })
+      invalidateCompliance()
     } catch (e) {
       setStatusErr(e instanceof Error ? e.message : 'Error al guardar')
+    }
+  }
+
+  async function handleUpload(recordId: string, file: File) {
+    setStatusErr(null)
+    try {
+      await complianceApi.uploadFile(recordId, file)
+      invalidateCompliance()
+    } catch (e) {
+      setStatusErr(e instanceof Error ? e.message : 'Error al subir el archivo')
     }
   }
 
@@ -109,15 +117,23 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     try {
       await onRemove()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al eliminar')
+      setErr(e instanceof Error ? e.message : 'Error al quitar')
     } finally {
       setRemoving(false)
     }
   }
 
+  async function handleDeactivate() {
+    await onPatch(driver!.id, { operational_status: 'INACTIVE' })
+  }
+
+  async function handleReactivate() {
+    await onPatch(driver!.id, { operational_status: 'ACTIVE' })
+  }
+
   if (!open) return null
 
-  const items = driverGovernanceToChecklistItems(driver)
+  const items = complianceRecordsToChecklistItems(complianceQuery.data ?? [])
   const { ok, total } = checklistCompletion(items)
 
   return (
@@ -128,7 +144,7 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
           ref={panelRef}
           role="dialog"
           aria-modal="true"
-          aria-label={`Detalle de ${driver.name}`}
+          aria-label={`Detalle de ${driver.full_name}`}
           tabIndex={-1}
           className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none"
         >
@@ -140,13 +156,13 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
             <div className="flex items-center gap-2.5 mb-4">
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                style={{ backgroundColor: getInitialColor(driver.name) }}
+                style={{ backgroundColor: getInitialColor(driver.full_name) }}
               >
-                {getInitials(driver.name)}
+                {getInitials(driver.full_name)}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-bold text-text-primary truncate">{driver.name}</p>
-                <p className="text-[10px] text-gray-400 font-mono">{driver.rut}</p>
+                <p className="text-xs font-bold text-text-primary truncate">{driver.full_name}</p>
+                <p className="text-[10px] text-gray-400 font-mono">{driver.tax_id}</p>
               </div>
             </div>
 
@@ -158,40 +174,11 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
             <div className="space-y-2">
               <input
                 aria-label="Nombre"
-                value={draft.name}
+                value={draft.full_name}
                 disabled={!canEdit}
-                onChange={e => setDraft(v => ({ ...v, name: e.target.value }))}
+                onChange={e => setDraft({ full_name: e.target.value })}
                 className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
               />
-              <input
-                aria-label="RUT"
-                value={draft.rut}
-                disabled={!canEdit}
-                onChange={e => setDraft(v => ({ ...v, rut: e.target.value }))}
-                className="w-full text-xs font-mono border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-              />
-              <div>
-                <label className="text-[10px] text-gray-400 block mb-0.5">Vencimiento cédula de identidad</label>
-                <input
-                  aria-label="Vencimiento cédula de identidad"
-                  type="date"
-                  value={draft.id_expiry}
-                  disabled={!canEdit}
-                  onChange={e => setDraft(v => ({ ...v, id_expiry: e.target.value }))}
-                  className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400 block mb-0.5">Vencimiento licencia</label>
-                <input
-                  aria-label="Vencimiento licencia"
-                  type="date"
-                  value={draft.license_expiry}
-                  disabled={!canEdit}
-                  onChange={e => setDraft(v => ({ ...v, license_expiry: e.target.value }))}
-                  className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
-                />
-              </div>
               {canEdit && (
                 <button
                   type="button"
@@ -217,10 +204,10 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
                 </button>
               )}
               {canAdmin && (
-                driver.baja_override ? (
+                driver.operational_status === 'INACTIVE' ? (
                   <button
                     type="button"
-                    onClick={onReactivate}
+                    onClick={handleReactivate}
                     className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
                   >
                     Reactivar
@@ -243,7 +230,7 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
                   className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors disabled:opacity-50"
                 >
                   {removing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  Eliminar conductor
+                  Quitar del roster
                 </button>
               )}
             </div>
@@ -251,21 +238,26 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
 
           <div className="flex-1 min-w-0 overflow-y-auto p-5 sm:p-6">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Documentación</p>
-            <DocumentChecklist
-              items={items}
-              canEdit={canEdit}
-              onStatusChange={handleStatusChange}
-              hideCounter
-            />
+            {complianceQuery.isPending ? (
+              <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
+            ) : (
+              <DocumentChecklist
+                items={items}
+                canEdit={canEdit}
+                onStatusChange={handleStatusChange}
+                onUpload={handleUpload}
+                hideCounter
+              />
+            )}
             {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
           </div>
         </div>
       </div>
       {bajaModalOpen && (
         <BajaReasonModal
-          label={`conductor ${driver.name}`}
+          label={`conductor ${driver.full_name}`}
           onClose={() => setBajaModalOpen(false)}
-          onConfirm={onDeactivate}
+          onConfirm={handleDeactivate}
         />
       )}
     </>

@@ -1,27 +1,42 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DriverDetailPanel } from './DriverDetailPanel'
-import type { TransporterDriver } from '@/lib/types'
+import { driversApi } from '@/lib/api/drivers'
+import { complianceApi } from '@/lib/api/compliance'
+import type { Driver, ComplianceRecord } from '@/lib/types'
 
-const DRIVER: TransporterDriver = {
-  id: 'd1', rut: '11111111-1', name: 'Juan Pérez',
-  governance: {
-    id_expiry: '2099-01-01', license_expiry: '2099-01-01',
-    anexo_3_gc: 'ok', epp: null, das_odi: 'ok', hoja_de_vida: 'ok',
-    cert_antecedentes: 'ok', validado_gc_driver: 'ok', contrato_trabajo: 'ok',
-    creacion_gc_driver: 'ok', avance_total: 90,
-  },
-  baja_override: false, baja_reason: null,
+vi.mock('@/lib/api/drivers', () => ({
+  driversApi: { listComplianceRecords: vi.fn() },
+}))
+vi.mock('@/lib/api/compliance', () => ({
+  complianceApi: { patch: vi.fn(), uploadFile: vi.fn() },
+}))
+
+function renderWithClient(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
 }
 
-function renderPanel(driver: TransporterDriver | null, opts: {
+const DRIVER: Driver = {
+  id: 'd1', tax_id: '11111111-1', country_code: 'CL', full_name: 'Juan Pérez',
+  operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
+  total_requirements: 1, last_document_update: null,
+}
+
+const RECORDS: ComplianceRecord[] = [{
+  id: 'cr1', requirement_id: 'req1', requirement_code: 'EPP', name: 'EPP',
+  requirement_level: 'LEGAL_MANDATORY', requires_file: false, status: 'MISSING',
+  expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
+  is_expired: false, is_expiring_soon: false,
+}]
+
+function renderPanel(driver: Driver | null, opts: {
   canEdit?: boolean; canAdmin?: boolean
-  onPatch?: (did: string, body: unknown) => Promise<void>
+  onPatch?: (...args: unknown[]) => Promise<void>
   onRemove?: () => Promise<void>
-  onDeactivate?: (body: unknown) => Promise<void>
-  onReactivate?: () => Promise<void>
 } = {}) {
-  return render(
+  return renderWithClient(
     <DriverDetailPanel
       driver={driver}
       canEdit={opts.canEdit ?? true}
@@ -30,48 +45,46 @@ function renderPanel(driver: TransporterDriver | null, opts: {
       onPatch={opts.onPatch ?? vi.fn().mockResolvedValue(undefined)}
       onRemove={opts.onRemove ?? vi.fn().mockResolvedValue(undefined)}
       onTransferClick={vi.fn()}
-      onDeactivate={opts.onDeactivate ?? vi.fn().mockResolvedValue(undefined)}
-      onReactivate={opts.onReactivate ?? vi.fn().mockResolvedValue(undefined)}
     />,
   )
 }
 
 describe('DriverDetailPanel', () => {
+  beforeEach(() => {
+    vi.mocked(driversApi.listComplianceRecords).mockResolvedValue(RECORDS)
+  })
+
   it('renders nothing meaningful when driver is null', () => {
     renderPanel(null)
     expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
   })
 
-  it('shows the driver name, rut and document checklist', () => {
+  it('shows the driver name, tax_id and document checklist', async () => {
     renderPanel(DRIVER)
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
     expect(screen.getByText('11111111-1')).toBeInTheDocument()
-    expect(screen.getByText('Anexo 3 GC')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('EPP')).toBeInTheDocument())
   })
 
-  it('calls onPatch with the updated governance field when a status select changes', async () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined)
-    renderPanel(DRIVER, { onPatch })
-    fireEvent.change(screen.getByLabelText('Estado de EPP'), { target: { value: 'ok' } })
-    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('d1', {
-      governance: expect.objectContaining({ epp: 'ok', anexo_3_gc: 'ok' }),
-    }))
+  it('calls complianceApi.patch when a status select changes', async () => {
+    renderPanel(DRIVER)
+    await waitFor(() => expect(screen.getByLabelText('Estado de EPP')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Estado de EPP'), { target: { value: 'APPROVED' } })
+    await waitFor(() => expect(complianceApi.patch).toHaveBeenCalledWith('cr1', { status: 'APPROVED' }))
   })
 
-  it('does not show the status select when canEdit is false', () => {
+  it('does not show the status select when canEdit is false', async () => {
     renderPanel(DRIVER, { canEdit: false })
+    await waitFor(() => expect(screen.getByText('EPP')).toBeInTheDocument())
     expect(screen.queryByLabelText('Estado de EPP')).not.toBeInTheDocument()
   })
 
-  it('saves edited expiry dates when "Guardar" is clicked', async () => {
+  it('saves the edited name when "Guardar" is clicked', async () => {
     const onPatch = vi.fn().mockResolvedValue(undefined)
     renderPanel(DRIVER, { onPatch })
-    fireEvent.change(screen.getByLabelText('Vencimiento cédula de identidad'), { target: { value: '2030-05-01' } })
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Juan Pablo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('d1', {
-      rut: '11111111-1', name: 'Juan Pérez',
-      governance: expect.objectContaining({ id_expiry: '2030-05-01', license_expiry: '2099-01-01' }),
-    }))
+    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('d1', { full_name: 'Juan Pablo' }))
   })
 
   it('shows a "Transferir a otra empresa" button only for canAdmin', () => {
@@ -81,48 +94,44 @@ describe('DriverDetailPanel', () => {
 
   it('calls onTransferClick when the transfer button is clicked', () => {
     const onTransferClick = vi.fn()
-    render(
+    renderWithClient(
       <DriverDetailPanel
         driver={DRIVER} canEdit={true} canAdmin={true}
         onClose={vi.fn()} onPatch={vi.fn().mockResolvedValue(undefined)}
         onRemove={vi.fn().mockResolvedValue(undefined)}
         onTransferClick={onTransferClick}
-        onDeactivate={vi.fn().mockResolvedValue(undefined)}
-        onReactivate={vi.fn().mockResolvedValue(undefined)}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /Transferir/ }))
     expect(onTransferClick).toHaveBeenCalled()
   })
 
-  it('shows "Eliminar conductor" only when canEdit, and calls onRemove when clicked', async () => {
+  it('shows "Quitar del roster" only when canEdit, and calls onRemove when clicked', async () => {
     const onRemove = vi.fn().mockResolvedValue(undefined)
     renderPanel(DRIVER, { onRemove, canEdit: false })
-    expect(screen.queryByRole('button', { name: /Eliminar conductor/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Quitar del roster/ })).not.toBeInTheDocument()
 
     renderPanel(DRIVER, { onRemove, canEdit: true })
-    fireEvent.click(screen.getByRole('button', { name: /Eliminar conductor/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Quitar del roster/ }))
     await waitFor(() => expect(onRemove).toHaveBeenCalled())
   })
 
-  it('shows "Dar de baja" for an active driver, opens the reason modal, and calls onDeactivate on confirm', async () => {
-    const onDeactivate = vi.fn().mockResolvedValue(undefined)
-    renderPanel(DRIVER, { onDeactivate })
+  it('shows "Dar de baja" for an active driver, opens the confirm modal, and PATCHes operational_status on confirm', async () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined)
+    renderPanel(DRIVER, { onPatch })
     expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Dar de baja' }))
     expect(screen.getByText(/Dar de baja: conductor/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }))
-    await waitFor(() => expect(onDeactivate).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'documentacion_vencida' }),
-    ))
+    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('d1', { operational_status: 'INACTIVE' }))
   })
 
-  it('shows "Reactivar" for a driver with baja_override, and calls onReactivate when clicked', () => {
-    const onReactivate = vi.fn().mockResolvedValue(undefined)
-    renderPanel({ ...DRIVER, baja_override: true, baja_reason: 'documentacion_vencida' }, { onReactivate })
+  it('shows "Reactivar" for an inactive driver, and PATCHes operational_status when clicked', () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined)
+    renderPanel({ ...DRIVER, operational_status: 'INACTIVE' }, { onPatch })
     expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reactivar' }))
-    expect(onReactivate).toHaveBeenCalled()
+    expect(onPatch).toHaveBeenCalledWith('d1', { operational_status: 'ACTIVE' })
   })
 
   it('does not show baja/reactivar buttons when canAdmin is false', () => {

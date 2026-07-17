@@ -86,3 +86,27 @@ async def patch_asset(
                     old_value=current[field], new_value=getattr(body, field),
                 )
     return await get_asset(asset_id, pool, user)
+
+
+@router.get("/{asset_id}/compliance-records")
+async def list_asset_compliance_records(
+    asset_id: str, pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    """Checklist itemizado del activo — mismo shape que el anidado en
+    GET /carriers/{id} (_assemble_carrier_detail), filtrado a ASSET."""
+    rows = await pool.fetch(
+        """
+        SELECT cr.id, cr.requirement_id, req.requirement_code, req.name, req.requirement_level,
+               req.requires_file, cr.status, cr.expiration_date, cr.file_url, cr.metadata,
+               cr.is_manual_override,
+               (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE) AS is_expired,
+               (cr.expiration_date IS NOT NULL AND cr.expiration_date >= CURRENT_DATE
+                AND cr.expiration_date <= CURRENT_DATE + INTERVAL '30 days') AS is_expiring_soon
+        FROM public.compliance_records cr
+        JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+        WHERE cr.entity_id = $1 AND cr.entity_type = 'ASSET' AND cr.is_current = true
+        ORDER BY req.requirement_level, req.name
+        """,
+        asset_id,
+    )
+    return [dict(r) for r in rows]

@@ -2,43 +2,30 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TransporterSlideOver } from './TransporterSlideOver'
-import { transportersApi } from '@/lib/api/transporters'
-import { insuranceApi } from '@/lib/api/insurance'
-import type { TransporterListItem, TransporterProfile } from '@/lib/types'
+import { carriersApi } from '@/lib/api/carriers'
+import type { CarrierListItem, Carrier } from '@/lib/types'
 
-vi.mock('@/lib/api/transporters', () => ({
-  transportersApi: { get: vi.fn() },
-}))
-vi.mock('@/lib/api/insurance', () => ({
-  insuranceApi: { getForTransporter: vi.fn() },
+vi.mock('@/lib/api/carriers', () => ({
+  carriersApi: { get: vi.fn(), listPolicies: vi.fn() },
 }))
 
-const ITEM: TransporterListItem = {
-  id: 't1', admin_id: null, business_name: 'Transportes Test', rut: '11111111-1',
-  account_stage: null, driver_count: 4, vehicle_count: 6, trailer_count: 2, tracto_count: 4,
-  has_manual_edits: false, has_active_alerts: false, in_admin: true, clients: ['Walmart'],
-  avance_80_20: 85, avance_total: 70, compliance_pct: 85, eligible: false, insurance_ok: true,
-  policies_count: 2, blocking_reasons: ['docs_below_threshold'],
-  operational_status: 'operativa', matched_by_upload: false, admin_account_id: null,
+const ITEM: CarrierListItem = {
+  id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
+  operational_status: 'ACTIVE', total_requirements: 2, last_document_update: null,
 }
 
-const PROFILE: TransporterProfile = {
-  id: 't1', admin_id: null, business_name: 'Transportes Test', rut: '11111111-1',
-  account_stage: null, contactability: null,
-  contacts: [{ role: 'operacional', name: 'Juan Pérez', phone: '+56911112222', email: 'juan@test.cl' }],
-  drivers: [], vehicles: [], trailers: [],
-  manually_edited_fields: [], edited_at: null, in_admin: true,
-  clients: ['Walmart'],
-  eligibility: { eligible: false, compliance_pct: 85, insurance_ok: true, blocking_reasons: ['docs_below_threshold'] },
-  documents: [
-    { doc_code: 'd1', label: 'Doc 1', status: 'ok', expiry_date: null, file_url: null, storage_path: null, manual_override: false, updated_at: null },
-    { doc_code: 'd2', label: 'Doc 2', status: 'pendiente', expiry_date: '2026-01-01', file_url: null, storage_path: null, manual_override: false, updated_at: null },
+const CARRIER: Carrier = {
+  id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
+  operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
+  overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
+  contacts: [{ id: 'ct1', contact_role: 'OPERATIONS', first_name: 'Juan', last_name: 'Pérez', job_title: null, email: 'juan@test.cl', phone: '+56911112222', is_primary: true, is_active: true }],
+  compliance_records: [
+    { id: 'd1', requirement_id: 'r1', requirement_code: 'D1', name: 'Doc 1', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED', expiration_date: null, file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false },
+    { id: 'd2', requirement_id: 'r2', requirement_code: 'D2', name: 'Doc 2', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW', expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false },
   ],
-  operational_status: 'operativa', matched_by_upload: false, admin_account_id: null,
-  baja_override: false, baja_reason: null,
 }
 
-function renderSlideOver(item: TransporterListItem | null) {
+function renderSlideOver(item: CarrierListItem | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -48,10 +35,8 @@ function renderSlideOver(item: TransporterListItem | null) {
 }
 
 beforeEach(() => {
-  vi.mocked(transportersApi.get).mockReset().mockResolvedValue(PROFILE)
-  vi.mocked(insuranceApi.getForTransporter).mockReset().mockResolvedValue({
-    rut: '11111111-1', transporter_id: 't1', policies: [],
-  })
+  vi.mocked(carriersApi.get).mockReset().mockResolvedValue(CARRIER)
+  vi.mocked(carriersApi.listPolicies).mockReset().mockResolvedValue([])
 })
 
 describe('TransporterSlideOver', () => {
@@ -66,15 +51,14 @@ describe('TransporterSlideOver', () => {
     renderSlideOver(ITEM)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText('Transportes Test')).toBeInTheDocument()
-    expect(screen.getByText(/Documentación bajo el umbral/)).toBeInTheDocument()
+    expect(screen.getByText('Activa')).toBeInTheDocument()
   })
 
-  it('shows the documents summary and lists non-ok documents once loaded', async () => {
+  it('shows the documents summary and lists non-approved documents once loaded', async () => {
     renderSlideOver(ITEM)
     await waitFor(() => expect(screen.getByText('Doc 2')).toBeInTheDocument())
     expect(screen.getByText(/documentos OK/)).toBeInTheDocument()
-    expect(screen.getByText('Pendiente')).toBeInTheDocument()
-    // Doc 1 (status ok) is not listed among the issues
+    expect(screen.getByText('En revisión')).toBeInTheDocument()
     expect(screen.queryByText('Doc 1')).not.toBeInTheDocument()
   })
 
@@ -87,7 +71,7 @@ describe('TransporterSlideOver', () => {
   })
 
   it('shows a visible error when the detail fetch fails (no silent failure)', async () => {
-    vi.mocked(transportersApi.get).mockReset().mockRejectedValue(new Error('Error de red'))
+    vi.mocked(carriersApi.get).mockReset().mockRejectedValue(new Error('Error de red'))
     renderSlideOver(ITEM)
     expect(await screen.findAllByText('Error de red')).not.toHaveLength(0)
   })

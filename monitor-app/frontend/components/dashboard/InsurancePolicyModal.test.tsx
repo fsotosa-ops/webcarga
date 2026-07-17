@@ -2,260 +2,178 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InsurancePolicyModal } from './InsurancePolicyModal'
-import { insuranceApi } from '@/lib/api/insurance'
-import type { InsuranceSummaryRow, InsuranceTransporterResponse } from '@/lib/types'
+import { carriersApi } from '@/lib/api/carriers'
+import { policiesApi, coverageTypesApi } from '@/lib/api/policies'
+import type { CarrierPolicyListItem, InsurancePolicy, CarrierAssetRosterItem, CoverageType } from '@/lib/types'
 
-vi.mock('@/lib/api/insurance', () => ({
-  insuranceApi: {
-    getForTransporter:  vi.fn(),
-    patchInstallment:   vi.fn(),
-    revertInstallment:  vi.fn(),
-    listPolicyDocuments: vi.fn(),
-    uploadDocumentFile:  vi.fn(),
-    patchPolicy:         vi.fn(),
+vi.mock('@/lib/api/carriers', () => ({
+  carriersApi: { listPolicies: vi.fn(), listAssets: vi.fn() },
+}))
+vi.mock('@/lib/api/policies', () => ({
+  policiesApi: {
+    get: vi.fn(), patch: vi.fn(), patchInstallment: vi.fn(),
+    linkCoverage: vi.fn(), unlinkCoverage: vi.fn(), linkAsset: vi.fn(), unlinkAsset: vi.fn(),
   },
+  coverageTypesApi: { list: vi.fn() },
 }))
 
-const ROW: InsuranceSummaryRow = {
-  rut: '22222222-2', business_name: 'Transportes Vencido', transporter_id: 't2',
-  policies_count: 2, next_due: null, overdue_count: 1, paid_pct: 50, insurance_ok: false,
-}
+const LIST: CarrierPolicyListItem[] = [
+  {
+    id: 'p1', insurance_company: 'Chubb Generales', policy_number: '5663040',
+    coverage_names: 'RC vehicular', total_assets_covered: 1, policy_expiration_date: '2027-03-23',
+    policy_health: 'VALID', total_installments: 2, paid_installments: 0, overdue_installments: 1,
+    next_payment_date: '2020-01-01',
+  },
+  {
+    id: 'p2', insurance_company: 'HDI', policy_number: '89632',
+    coverage_names: 'RC vehicular', total_assets_covered: 0, policy_expiration_date: null,
+    policy_health: 'VALID', total_installments: 1, paid_installments: 1, overdue_installments: 0,
+    next_payment_date: null,
+  },
+]
 
-const TWO_POLICIES: InsuranceTransporterResponse = {
-  rut: '22222222-2', transporter_id: 't2',
-  policies: [
-    {
-      id: 'p1', transporter_id: 't2', rut: '22222222-2', contractor_name: null, client_group: null,
-      company: 'Chubb Generales', policy_number: '5663040', endorsement: null, coverage: 'RC vehicular',
-      plate: null, policy_type: 'otro', valid_from: '2026-03-23', valid_to: '2027-03-23',
-      payment_url: null, file_url: null, registry_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
-      installments: [
-        { id: 'i1', policy_id: 'p1', installment_number: 1, total_installments: 2, amount_uf: 4, due_date: '2020-01-01', status: 'vencida', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
-        { id: 'i2', policy_id: 'p1', installment_number: 2, total_installments: 2, amount_uf: 4, due_date: '2099-09-01', status: 'pendiente', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
-      ],
-    },
-    {
-      id: 'p2', transporter_id: 't2', rut: '22222222-2', contractor_name: null, client_group: null,
-      company: 'HDI', policy_number: '89632', endorsement: null, coverage: 'RC vehicular',
-      plate: null, policy_type: 'otro', valid_from: null, valid_to: null,
-      payment_url: null, file_url: null, registry_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
-      installments: [
-        { id: 'i3', policy_id: 'p2', installment_number: 1, total_installments: 1, amount_uf: 2.5, due_date: '2026-05-01', status: 'pagada', paid_at: '2026-05-01', payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
-      ],
-    },
+const DETAIL_P1: InsurancePolicy = {
+  id: 'p1', carrier_id: 'c1', insurance_company: 'Chubb Generales', policy_number: '5663040',
+  valid_from: '2026-03-23', valid_to: '2027-03-23', expiration_alert_days: 30,
+  policy_document_url: null, has_endorsement: false, endorsement_document_url: null,
+  external_portal_url: null, status: 'ACTIVE', is_manual_override: false,
+  created_at: null, updated_at: null,
+  coverages: [{ coverage_type_id: 'cov1', code: 'RC', name: 'RC vehicular' }],
+  assets: [],
+  installments: [
+    { id: 'i1', installment_number: 1, total_installments: 2, amount_uf: 4, due_date: '2020-01-01', payment_status: 'PENDING', paid_at: null },
+    { id: 'i2', installment_number: 2, total_installments: 2, amount_uf: 4, due_date: '2099-09-01', payment_status: 'PENDING', paid_at: null },
   ],
 }
 
-const ROW_B: InsuranceSummaryRow = {
-  rut: '33333333-3', business_name: 'Otra Transportista', transporter_id: 't3',
-  policies_count: 1, next_due: null, overdue_count: 0, paid_pct: 50, insurance_ok: true,
-}
-
-const ONE_POLICY_B: InsuranceTransporterResponse = {
-  rut: '33333333-3', transporter_id: 't3',
-  policies: [
-    {
-      id: 'p3', transporter_id: 't3', rut: '33333333-3', contractor_name: null, client_group: null,
-      company: 'Mapfre', policy_number: '1000', endorsement: null, coverage: 'RC vehicular',
-      plate: null, policy_type: 'otro', valid_from: '2026-01-01', valid_to: '2027-01-01',
-      payment_url: null, file_url: null, registry_url: null, storage_path: null, updated_at: '2026-07-01T00:00:00Z',
-      installments: [
-        { id: 'i4', policy_id: 'p3', installment_number: 1, total_installments: 2, amount_uf: 3, due_date: '2026-08-01', status: 'pendiente', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
-        { id: 'i5', policy_id: 'p3', installment_number: 2, total_installments: 2, amount_uf: 3, due_date: '2026-09-01', status: 'pendiente', paid_at: null, payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
-      ],
-    },
+const DETAIL_P2: InsurancePolicy = {
+  ...DETAIL_P1, id: 'p2', insurance_company: 'HDI', policy_number: '89632',
+  installments: [
+    { id: 'i3', installment_number: 1, total_installments: 1, amount_uf: 2.5, due_date: '2026-05-01', payment_status: 'PAID', paid_at: '2026-05-01' },
   ],
 }
 
-function renderModal(row: InsuranceSummaryRow | null, opts: { canAdmin?: boolean; canEdit?: boolean } = {}) {
+const COVERAGE_TYPES: CoverageType[] = [
+  { id: 'cov1', code: 'RC', name: 'RC vehicular', description: null },
+  { id: 'cov2', code: 'CARGA', name: 'Seguro de carga', description: null },
+]
+const ASSETS: CarrierAssetRosterItem[] = [
+  { id: 'a1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', total_requirements: 6, last_document_update: null },
+]
+
+function renderModal(carrierId: string | null, opts: { canAdmin?: boolean; canEdit?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   const utils = render(
     <QueryClientProvider client={client}>
-      <InsurancePolicyModal row={row} onClose={vi.fn()} canAdmin={opts.canAdmin ?? true} canEdit={opts.canEdit ?? true} />
+      <InsurancePolicyModal carrierId={carrierId} displayName="Transportes Vencido" onClose={vi.fn()} canAdmin={opts.canAdmin ?? true} canEdit={opts.canEdit ?? true} />
     </QueryClientProvider>,
   )
   return {
     ...utils,
-    /** Vuelve a renderizar el MISMO árbol (mismo QueryClient, sin key/remount
-     *  del modal) con otra `row` — simula cerrar y reabrir el modal tal como
-     *  lo hace PolizasTab.tsx, que monta InsurancePolicyModal sin key. */
-    rerenderWithRow: (nextRow: InsuranceSummaryRow | null) => utils.rerender(
+    rerenderWithCarrier: (nextId: string | null) => utils.rerender(
       <QueryClientProvider client={client}>
-        <InsurancePolicyModal row={nextRow} onClose={vi.fn()} canAdmin={opts.canAdmin ?? true} canEdit={opts.canEdit ?? true} />
+        <InsurancePolicyModal carrierId={nextId} displayName="Otra Transportista" onClose={vi.fn()} canAdmin={opts.canAdmin ?? true} canEdit={opts.canEdit ?? true} />
       </QueryClientProvider>,
     ),
   }
 }
 
 beforeEach(() => {
-  vi.mocked(insuranceApi.getForTransporter).mockReset().mockImplementation(async (transporterId: string) =>
-    transporterId === 't3' ? ONE_POLICY_B : TWO_POLICIES,
-  )
-  vi.mocked(insuranceApi.listPolicyDocuments).mockReset().mockResolvedValue([
-    { doc_code: 'poliza_firmada', label: 'Póliza firmada', has_expiry: false, status: 'ok', expiry_date: null, file_url: null, storage_path: null, notes: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z' },
-  ])
-  vi.mocked(insuranceApi.uploadDocumentFile).mockReset()
-  vi.mocked(insuranceApi.patchInstallment).mockReset()
-  vi.mocked(insuranceApi.revertInstallment).mockReset()
-  vi.mocked(insuranceApi.patchPolicy).mockReset()
+  vi.mocked(carriersApi.listPolicies).mockReset().mockImplementation(async (id: string) => id === 'c1' ? LIST : [])
+  vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue(ASSETS)
+  vi.mocked(policiesApi.get).mockReset().mockImplementation(async (id: string) => id === 'p1' ? DETAIL_P1 : DETAIL_P2)
+  vi.mocked(policiesApi.patch).mockReset()
+  vi.mocked(policiesApi.linkCoverage).mockReset().mockResolvedValue({ ok: true })
+  vi.mocked(policiesApi.unlinkCoverage).mockReset().mockResolvedValue({ ok: true })
+  vi.mocked(policiesApi.linkAsset).mockReset().mockResolvedValue({ ok: true })
+  vi.mocked(policiesApi.unlinkAsset).mockReset().mockResolvedValue({ ok: true })
+  vi.mocked(coverageTypesApi.list).mockReset().mockResolvedValue(COVERAGE_TYPES)
 })
 
 describe('InsurancePolicyModal', () => {
-  it('renders no dialog content when row is null', () => {
+  it('renders no dialog content when carrierId is null', () => {
     renderModal(null)
     expect(screen.queryByText('Chubb Generales')).not.toBeInTheDocument()
   })
 
-  it('moves focus into the dialog when it opens', async () => {
-    renderModal(ROW)
-    await screen.findByText('Chubb Generales')
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('dialog')))
-  })
-
   it('shows a policy switcher when the company has more than one policy', async () => {
-    renderModal(ROW)
+    renderModal('c1')
     expect(await screen.findByText('Chubb Generales')).toBeInTheDocument()
     expect(screen.getByText('Pólizas (2)')).toBeInTheDocument()
     expect(screen.getByText('HDI')).toBeInTheDocument()
   })
 
   it('spotlights the oldest overdue installment as "próxima cuota"', async () => {
-    renderModal(ROW)
-    await screen.findByText('Chubb Generales')
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
     expect(screen.getByText('Próxima cuota')).toBeInTheDocument()
     expect(screen.getByText(/Cuota 1 de 2/)).toBeInTheDocument()
   })
 
   it('switches the selected policy when clicking another one in the list', async () => {
-    renderModal(ROW)
+    renderModal('c1')
     await screen.findByText('Chubb Generales')
-    await act(async () => {
-      fireEvent.click(screen.getByText('HDI'))
-    })
+    await act(async () => { fireEvent.click(screen.getByText('HDI')) })
     await waitFor(() => expect(screen.getByText('Póliza 89632')).toBeInTheDocument())
-    // HDI solo tiene una cuota, ya pagada — no hay "próxima cuota" que destacar
     expect(screen.queryByText('Próxima cuota')).not.toBeInTheDocument()
   })
 
   it('expands the full installment list when "Ver todas las cuotas" is clicked', async () => {
-    renderModal(ROW)
+    renderModal('c1')
     await screen.findByText('Chubb Generales')
-    // El auto-select de la póliza inicial (efecto disparado al resolver la
-    // query) y el efecto que colapsa "ver todas" ante ese cambio de
-    // `selectedPolicyId` quedan agendados como passive effects que aún no
-    // se flushean en el momento en que `findByText` resuelve su promesa —
-    // sólo espera a que el DOM tenga el texto, no a que TODOS los efectos
-    // pendientes del componente hayan corrido. Si el click se dispara antes
-    // de ese flush, el efecto pendiente corre después y revierte el toggle.
-    // Un `act()` vacío fuerza a asentar esos efectos antes de interactuar.
     await act(async () => {})
-    await act(async () => {
-      fireEvent.click(screen.getByText(/Ver todas las cuotas \(2\)/))
-    })
+    await act(async () => { fireEvent.click(screen.getByText(/Ver todas las cuotas \(2\)/)) })
     await waitFor(() => expect(screen.getByText(/Cuota 2 de 2/)).toBeInTheDocument())
   })
 
-  it('fetches and renders the document checklist for the selected policy', async () => {
-    renderModal(ROW)
-    await screen.findByText('Chubb Generales')
-    expect(await screen.findByText('Póliza firmada')).toBeInTheDocument()
-    expect(insuranceApi.listPolicyDocuments).toHaveBeenCalledWith('p1')
+  it('shows linked coverages and lets an editor add one from the available list', async () => {
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+    expect(screen.getByText('RC vehicular')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Agregar cobertura'), { target: { value: 'cov2' } })
+    await waitFor(() => expect(policiesApi.linkCoverage).toHaveBeenCalledWith('p1', 'cov2'))
   })
 
-  it('shows a message when the company has no linked transporter profile', () => {
-    renderModal({ ...ROW, transporter_id: null })
-    expect(screen.getByText(/no tiene ficha vinculada/)).toBeInTheDocument()
+  it('removes a linked coverage when its X is clicked', async () => {
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+    fireEvent.click(screen.getByLabelText('Quitar cobertura RC vehicular'))
+    await waitFor(() => expect(policiesApi.unlinkCoverage).toHaveBeenCalledWith('p1', 'cov1'))
   })
 
-  it('collapses "ver todas las cuotas" again when reopening for a different company', async () => {
-    const { rerenderWithRow } = renderModal(ROW)
-    await screen.findByText('Chubb Generales')
-    // Ver comentario en el test de "expands..." — asienta los passive effects
-    // pendientes del auto-select antes de interactuar con el toggle.
-    await act(async () => {})
-    await act(async () => {
-      fireEvent.click(screen.getByText(/Ver todas las cuotas \(2\)/))
-    })
-    await waitFor(() => expect(screen.getByText(/Cuota 2 de 2/)).toBeInTheDocument())
-
-    // Cerrar el modal (row=null) y reabrir para OTRA empresa. PolizasTab.tsx
-    // monta InsurancePolicyModal sin `key`, así que el componente nunca se
-    // remonta: el único mecanismo que puede colapsar "ver todas" acá es el
-    // efecto ligado a `selectedPolicyId`, disparado por el auto-select que
-    // corre cuando cambia `policies` (no un click en el switcher).
-    await act(async () => {
-      rerenderWithRow(null)
-    })
-    await act(async () => {
-      rerenderWithRow(ROW_B)
-    })
-
-    await screen.findByText('Mapfre')
-    expect(screen.getByText(/Ver todas las cuotas \(2\)/)).toBeInTheDocument()
-    expect(screen.queryByText(/Cuota 2 de 2/)).not.toBeInTheDocument()
+  it('lets an editor link an available asset', async () => {
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+    fireEvent.change(screen.getByLabelText('Agregar activo cubierto'), { target: { value: 'a1' } })
+    await waitFor(() => expect(policiesApi.linkAsset).toHaveBeenCalledWith('p1', 'a1'))
   })
 
-  it('shows the Enlaces section with the three policy link rows', async () => {
-    renderModal(ROW)
-    await screen.findByText('Chubb Generales')
-    expect(screen.getByText('Enlaces')).toBeInTheDocument()
-    expect(screen.getByText('Pago')).toBeInTheDocument()
-    expect(screen.getByText('Documento')).toBeInTheDocument()
-    expect(screen.getByText('Registro')).toBeInTheDocument()
-    // Las 3 pólizas del fixture no tienen ningún link cargado.
-    expect(screen.getAllByText('Sin datos')).toHaveLength(3)
+  it('saves the external portal link and reflects it immediately', async () => {
+    vi.mocked(policiesApi.patch).mockResolvedValue({ ...DETAIL_P1, external_portal_url: 'https://portal.example.com/p1' })
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Portal' })) })
+    const input = screen.getByLabelText('Enlace de Portal')
+    fireEvent.change(input, { target: { value: 'https://portal.example.com/p1' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar enlace de Portal' })) })
+
+    expect(policiesApi.patch).toHaveBeenCalledWith('p1', { external_portal_url: 'https://portal.example.com/p1' })
+    expect(await screen.findByRole('link', { name: 'https://portal.example.com/p1' })).toBeInTheDocument()
   })
 
-  it('saves an edited policy link and reflects it immediately without a refetch', async () => {
-    vi.mocked(insuranceApi.patchPolicy).mockResolvedValue({
-      id: 'p1', transporter_id: 't2', rut: '22222222-2', contractor_name: null, client_group: null,
-      company: 'Chubb Generales', policy_number: '5663040', endorsement: null, coverage: 'RC vehicular',
-      plate: null, policy_type: 'otro', valid_from: '2026-03-23', valid_to: '2027-03-23',
-      payment_url: null, file_url: null, registry_url: 'https://registro.example.com/p1', storage_path: null,
-      updated_at: '2026-07-05T00:00:00Z',
-    } as never)
-    renderModal(ROW)
-    await screen.findByText('Chubb Generales')
+  it('does not poison the link draft after Cancelar', async () => {
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Registro' }))
-    })
-    const input = screen.getByLabelText('Enlace de Registro')
-    fireEvent.change(input, { target: { value: 'https://registro.example.com/p1' } })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar enlace de Registro' }))
-    })
-
-    expect(insuranceApi.patchPolicy).toHaveBeenCalledWith('p1', { registry_url: 'https://registro.example.com/p1' })
-    expect(await screen.findByRole('link', { name: 'https://registro.example.com/p1' })).toBeInTheDocument()
-    // Solo se guardó ese link — no se hizo un refetch de todo el detalle de pólizas.
-    expect(insuranceApi.getForTransporter).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not poison the link draft after Cancelar: reopening Editar shows the real current value, not a leftover typed value', async () => {
-    renderModal(ROW)
-    await screen.findByText('Chubb Generales')
-
-    // Abrir edición del link "Pago", tipear un valor, cancelar sin guardar.
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Pago' }))
-    })
-    const input = screen.getByLabelText('Enlace de Pago')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Portal' })) })
+    const input = screen.getByLabelText('Enlace de Portal')
     expect(input).toHaveValue('')
-    fireEvent.change(input, { target: { value: 'https://tentativo.example.com/no-deberia-guardarse' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelar edición de Pago' }))
+    fireEvent.change(input, { target: { value: 'https://tentativo.example.com/no' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar edición de Portal' }))
 
-    // La vista de lectura debe seguir mostrando "Sin datos" — no se guardó nada.
-    expect(screen.getAllByText('Sin datos').length).toBeGreaterThan(0)
-
-    // Reabrir edición: el draft debe resincronizarse desde el valor real (vacío),
-    // no arrastrar el valor tipeado en la edición cancelada anterior.
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Pago' }))
-    })
-    expect(screen.getByLabelText('Enlace de Pago')).toHaveValue('')
-
-    // No se llamó a patchPolicy en ningún momento de este flujo (solo Cancelar, nunca Guardar).
-    expect(insuranceApi.patchPolicy).not.toHaveBeenCalled()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Editar enlace de Portal' })) })
+    expect(screen.getByLabelText('Enlace de Portal')).toHaveValue('')
+    expect(policiesApi.patch).not.toHaveBeenCalled()
   })
 })

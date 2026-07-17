@@ -7,13 +7,12 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Building2, Users, LogOut,
-  ChevronLeft, ChevronRight, Shield, ShieldCheck, Settings,
+  ChevronLeft, ChevronRight, Shield, Settings,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/dashboard/diario',         label: 'Diario',   icon: Truck },
   { href: '/dashboard/transportistas', label: 'Empresas', icon: Building2 },
-  { href: '/dashboard/seguros',        label: 'Seguros',  icon: ShieldCheck },
 ]
 
 const ROLE_BADGE: Record<string, string> = {

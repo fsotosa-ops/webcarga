@@ -77,3 +77,21 @@ def test_patch_asset_no_fields_422():
     res = client.patch("/api/v1/assets/a1", json={})
 
     assert res.status_code == 422
+
+
+def test_list_asset_compliance_records():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": "cr1", "requirement_id": "req1", "requirement_code": "PADRON", "name": "Padrón",
+        "requirement_level": "LEGAL_MANDATORY", "requires_file": True, "status": "MISSING",
+        "expiration_date": None, "file_url": None, "metadata": {}, "is_manual_override": False,
+        "is_expired": False, "is_expiring_soon": False,
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/assets/a1/compliance-records")
+
+    assert res.status_code == 200
+    assert res.json()[0]["requirement_code"] == "PADRON"
+    sql = pool.fetch.call_args.args[0]
+    assert "entity_type = 'ASSET'" in sql

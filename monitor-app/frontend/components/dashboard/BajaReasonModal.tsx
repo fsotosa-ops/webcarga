@@ -2,35 +2,26 @@
 
 import { useState } from 'react'
 import { X, Loader2, Ban } from 'lucide-react'
-import type { BajaBody } from '@/lib/api/transporters'
-
-const REASON_LABELS: Record<BajaBody['reason'], string> = {
-  documentacion_vencida: 'Documentación vencida',
-  termino_mutuo_acuerdo: 'Término de contrato — mutuo acuerdo',
-  termino_penalizacion:  'Término de contrato — penalización',
-  otro:                  'Otro',
-}
 
 interface Props {
   label:     string
   onClose:   () => void
-  onConfirm: (body: BajaBody) => Promise<void>
+  onConfirm: () => Promise<void>
 }
 
 /** Mini-modal de confirmación de baja (empresa/conductor/vehículo) — rol
- *  admin. Mismo lenguaje visual y estructura de overlay que TransferModal
- *  (header oscuro + cuerpo + fila de acciones), adaptado a un formulario
- *  de 2 campos: motivo + notas. */
+ *  admin. El modelo nuevo no tiene una columna de "motivo de baja" (solo
+ *  operational_status, ver schemas/{carrier,driver,asset}.py), así que esto
+ *  es una confirmación simple, no un formulario — el cambio de estado ya
+ *  queda en public.audit_log vía record_manual_edit. */
 export function BajaReasonModal({ label, onClose, onConfirm }: Props) {
-  const [reason, setReason]   = useState<BajaBody['reason']>('documentacion_vencida')
-  const [notes, setNotes]     = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [err, setErr]         = useState<string | null>(null)
+  const [err, setErr]               = useState<string | null>(null)
 
   async function handleConfirm() {
     setSubmitting(true); setErr(null)
     try {
-      await onConfirm({ reason, notes: notes || undefined })
+      await onConfirm()
       onClose()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al dar de baja')
@@ -53,27 +44,9 @@ export function BajaReasonModal({ label, onClose, onConfirm }: Props) {
         </div>
 
         <div className="p-4 space-y-3">
-          <div>
-            <label className="text-[10px] text-gray-400 block mb-1">Motivo</label>
-            <select
-              value={reason}
-              onChange={e => setReason(e.target.value as BajaBody['reason'])}
-              className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
-            >
-              {(Object.keys(REASON_LABELS) as BajaBody['reason'][]).map(r => (
-                <option key={r} value={r}>{REASON_LABELS[r]}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] text-gray-400 block mb-1">Notas (opcional)</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={2}
-              className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
-          </div>
+          <p className="text-sm text-gray-500">
+            Esto pasa el estado operativo a inactivo. Se puede reactivar en cualquier momento.
+          </p>
 
           {err && <p className="text-xs text-red-500">{err}</p>}
 

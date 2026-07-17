@@ -1,25 +1,19 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { VehicleRosterCard } from './VehicleRosterCard'
-import type { TransporterVehicle } from '@/lib/types'
+import type { CarrierAssetRosterItem } from '@/lib/types'
 
-const VEHICLE: TransporterVehicle = {
-  id: 'v1', type: 'Tractocamión', plate: 'ABCD12',
-  governance: {
-    year: 2020, circ_permit_expiry: '2099-01-01', tech_inspection_expiry: '2099-01-01',
-    gas_emissions_expiry: '2099-01-01', soap_insurance_expiry: '2099-01-01',
-    padron: 'ok', poliza_rc: 'ok', gps: 'ok', seguro_carga: 'ok',
-    mantencion_camara_frio: 'n_a', creacion_gc_vehicle: 'ok',
-  },
-  baja_override: false, baja_reason: null,
+const VEHICLE: CarrierAssetRosterItem = {
+  id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION',
+  operational_status: 'ACTIVE', total_requirements: 6, last_document_update: '2026-06-01',
 }
 
 describe('VehicleRosterCard', () => {
-  it('renders the plate, category and a status label', () => {
+  it('renders the plate, type label and requirement count', () => {
     render(<VehicleRosterCard vehicle={VEHICLE} onOpen={vi.fn()} />)
     expect(screen.getByText('ABCD12')).toBeInTheDocument()
     expect(screen.getByText('Tracto')).toBeInTheDocument()
-    expect(screen.getByText('Docs OK')).toBeInTheDocument()
+    expect(screen.getByText(/6 requisitos/)).toBeInTheDocument()
   })
 
   it('calls onOpen when clicked', () => {
@@ -27,5 +21,10 @@ describe('VehicleRosterCard', () => {
     render(<VehicleRosterCard vehicle={VEHICLE} onOpen={onOpen} />)
     fireEvent.click(screen.getByRole('button'))
     expect(onOpen).toHaveBeenCalled()
+  })
+
+  it('falls back to the raw asset_type when there is no label mapped', () => {
+    render(<VehicleRosterCard vehicle={{ ...VEHICLE, asset_type: 'OTRO' }} onOpen={vi.fn()} />)
+    expect(screen.getByText('Otro')).toBeInTheDocument()
   })
 })

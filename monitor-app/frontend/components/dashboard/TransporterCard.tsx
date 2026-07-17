@@ -1,23 +1,32 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, ChevronRight } from 'lucide-react'
-import type { TransporterListItem } from '@/lib/types'
-import { EligibilityDot } from './EligibilityDot'
-import { InsuranceStatusBadge } from './InsuranceStatusBadge'
-import { ClientChips } from './ClientChips'
-import { ComplianceProgressBar } from './ComplianceProgressBar'
+import { ChevronRight } from 'lucide-react'
+import type { CarrierListItem, OperationalStatus } from '@/lib/types'
+import { formatExpiry } from '@/lib/compliance'
+
+const STATUS_LABELS: Record<OperationalStatus, string> = {
+  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Legacy',
+}
+const STATUS_CLS: Record<OperationalStatus, string> = {
+  ACTIVE: 'bg-green-50 text-green-700 border-green-100',
+  INACTIVE: 'bg-gray-100 text-gray-500 border-transparent',
+  LEGACY_INACTIVE: 'bg-gray-100 text-gray-500 border-transparent',
+}
 
 interface Props {
-  item:     TransporterListItem
-  onOpen:   (item: TransporterListItem) => void
+  item:     CarrierListItem
+  onOpen:   (item: CarrierListItem) => void
   selected?: boolean
 }
 
 /** Tarjeta de empresa — vista Tarjetas del listado de Empresas y fallback
- *  mobile de la vista Tabla (una sola implementación para ambos casos).
- *  Click en la tarjeta abre el slide-over de resumen; el botón "Ver ficha"
- *  navega directo a la ficha completa. */
+ *  mobile de la vista Tabla. Click abre el slide-over de resumen; el botón
+ *  "Ver ficha" navega directo a la ficha completa. Solo muestra lo que
+ *  app.carrier_compliance_status realmente expone (tax_id, operational_status,
+ *  total_requirements, last_document_update) — sin semáforo de elegibilidad
+ *  ni chips de clientes/seguro, que no existen en el modelo nuevo a nivel
+ *  listado (ver AGENTLOG.md, Checkpoint H3). */
 export function TransporterCard({ item, onOpen, selected = false }: Props) {
   return (
     <div
@@ -29,19 +38,12 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
         selected ? 'border-accent ring-2 ring-accent/10' : 'border-border'
       }`}
     >
-      {/* Header: semáforo grande + nombre/RUT + acceso a ficha */}
       <div className="flex items-start gap-2.5">
-        <EligibilityDot
-          eligible={item.eligible}
-          blockingReasons={item.blocking_reasons}
-          compliancePct={item.compliance_pct}
-          size="lg"
-        />
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-sm text-text-primary truncate leading-tight">
-            {item.business_name ?? <span className="italic text-gray-400">Sin nombre</span>}
+            {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
           </p>
-          <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{item.rut ?? '—'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{item.tax_id}</p>
         </div>
         <Link
           href={`/dashboard/transportistas/empresa/${item.id}`}
@@ -53,23 +55,14 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
         </Link>
       </div>
 
-      {/* Avance 80/20 */}
-      <div>
-        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Avance 80/20</p>
-        <ComplianceProgressBar pct={item.avance_80_20} size="md" />
-      </div>
-
-      {/* Conteos compactos */}
-      <div className="flex items-center gap-3 text-[11px] text-gray-500">
-        <span><Building2 size={10} className="inline mr-1 -mt-0.5 text-gray-300" />{item.driver_count} cond.</span>
-        <span>{item.tracto_count} tractos</span>
-        <span>{item.trailer_count} ramplas</span>
-      </div>
-
-      {/* Footer: clientes GC + seguro */}
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
-        <ClientChips clients={item.clients} />
-        <InsuranceStatusBadge insuranceOk={item.insurance_ok} policiesCount={item.policies_count} />
+        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_CLS[item.operational_status]}`}>
+          {STATUS_LABELS[item.operational_status]}
+        </span>
+        <span className="text-[11px] text-gray-400">
+          {item.total_requirements} requisito{item.total_requirements === 1 ? '' : 's'}
+          {item.last_document_update && ` · ${formatExpiry(item.last_document_update)}`}
+        </span>
       </div>
     </div>
   )

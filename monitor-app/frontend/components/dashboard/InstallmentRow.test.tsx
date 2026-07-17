@@ -1,29 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { InstallmentRow } from './InstallmentRow'
-import { insuranceApi } from '@/lib/api/insurance'
+import { policiesApi } from '@/lib/api/policies'
 import type { InsuranceInstallment } from '@/lib/types'
 
-vi.mock('@/lib/api/insurance', () => ({
-  insuranceApi: {
-    patchInstallment:   vi.fn(),
-    revertInstallment:  vi.fn(),
-  },
+vi.mock('@/lib/api/policies', () => ({
+  policiesApi: { patchInstallment: vi.fn() },
 }))
 
 const PENDING: InsuranceInstallment = {
-  id: 'i1', policy_id: 'p1', installment_number: 4, total_installments: 5,
-  amount_uf: 4.54, due_date: '2099-01-01', status: 'pendiente', paid_at: null,
-  payment_url: null, manual_override: false, updated_at: '2026-07-01T00:00:00Z',
+  id: 'i1', installment_number: 4, total_installments: 5,
+  amount_uf: 4.54, due_date: '2099-01-01', payment_status: 'PENDING', paid_at: null,
 }
 
 const PAID: InsuranceInstallment = {
-  ...PENDING, status: 'pagada', paid_at: '2026-06-01',
+  ...PENDING, payment_status: 'PAID', paid_at: '2026-06-01',
 }
 
 beforeEach(() => {
-  vi.mocked(insuranceApi.patchInstallment).mockReset()
-  vi.mocked(insuranceApi.revertInstallment).mockReset()
+  vi.mocked(policiesApi.patchInstallment).mockReset()
 })
 
 describe('InstallmentRow — pendiente', () => {
@@ -40,15 +35,15 @@ describe('InstallmentRow — pendiente', () => {
 
   it('calls patchInstallment and onChanged when Pagar is clicked by an admin', async () => {
     const onChanged = vi.fn()
-    vi.mocked(insuranceApi.patchInstallment).mockResolvedValue(PAID)
+    vi.mocked(policiesApi.patchInstallment).mockResolvedValue(PAID)
     render(<InstallmentRow installment={PENDING} canAdmin={true} onChanged={onChanged} />)
     fireEvent.click(screen.getByRole('button', { name: /Pagar/i }))
-    await waitFor(() => expect(insuranceApi.patchInstallment).toHaveBeenCalledWith('i1', expect.objectContaining({ status: 'pagada' })))
+    await waitFor(() => expect(policiesApi.patchInstallment).toHaveBeenCalledWith('i1', expect.objectContaining({ payment_status: 'PAID' })))
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(PAID))
   })
 
   it('shows a visible error when marking as paid fails', async () => {
-    vi.mocked(insuranceApi.patchInstallment).mockRejectedValue(new Error('La cuota fue modificada por otro usuario'))
+    vi.mocked(policiesApi.patchInstallment).mockRejectedValue(new Error('La cuota fue modificada por otro usuario'))
     render(<InstallmentRow installment={PENDING} canAdmin={true} onChanged={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /Pagar/i }))
     expect(await screen.findByText('La cuota fue modificada por otro usuario')).toBeInTheDocument()
@@ -77,24 +72,24 @@ describe('InstallmentRow — pagada', () => {
     expect(screen.getByText('¿Revertir a pendiente?')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'No' }))
     expect(screen.queryByText('¿Revertir a pendiente?')).not.toBeInTheDocument()
-    expect(insuranceApi.revertInstallment).not.toHaveBeenCalled()
+    expect(policiesApi.patchInstallment).not.toHaveBeenCalled()
   })
 
-  it('calls revertInstallment and onChanged when confirmed with "Sí"', async () => {
+  it('calls patchInstallment with PENDING and onChanged when confirmed with "Sí"', async () => {
     const onChanged = vi.fn()
-    vi.mocked(insuranceApi.revertInstallment).mockResolvedValue(PENDING)
+    vi.mocked(policiesApi.patchInstallment).mockResolvedValue(PENDING)
     render(<InstallmentRow installment={PAID} canAdmin={true} onChanged={onChanged} />)
     fireEvent.click(screen.getByRole('button', { name: /revertir/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Sí' }))
-    await waitFor(() => expect(insuranceApi.revertInstallment).toHaveBeenCalledWith('i1', expect.objectContaining({ expected_updated_at: PAID.updated_at })))
+    await waitFor(() => expect(policiesApi.patchInstallment).toHaveBeenCalledWith('i1', { payment_status: 'PENDING' }))
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(PENDING))
   })
 
   it('shows a visible error when reverting fails', async () => {
-    vi.mocked(insuranceApi.revertInstallment).mockRejectedValue(new Error('Solo se puede revertir una cuota marcada como pagada'))
+    vi.mocked(policiesApi.patchInstallment).mockRejectedValue(new Error('Error al revertir'))
     render(<InstallmentRow installment={PAID} canAdmin={true} onChanged={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /revertir/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Sí' }))
-    expect(await screen.findByText('Solo se puede revertir una cuota marcada como pagada')).toBeInTheDocument()
+    expect(await screen.findByText('Error al revertir')).toBeInTheDocument()
   })
 })

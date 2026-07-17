@@ -2,21 +2,24 @@
 
 import { useState } from 'react'
 import { X, Search, Loader2, Building2, ArrowRightLeft } from 'lucide-react'
-import { transportersApi } from '@/lib/api/transporters'
+import { carriersApi } from '@/lib/api/carriers'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useQuery } from '@tanstack/react-query'
 
 interface Props {
-  open:                  boolean
-  title:                 string
-  currentTransporterId:  string
-  onClose:               () => void
-  onTransfer:            (toTransporterId: string) => Promise<void>
+  open:             boolean
+  title:            string
+  currentCarrierId: string
+  onClose:          () => void
+  onTransfer:       (toCarrierId: string) => Promise<void>
 }
 
-/** Mini-modal de transferencia (conductor/vehículo → otra empresa) — rol admin.
- *  Busca sobre transportersApi.list y hace POST .../transfer al confirmar. */
-export function TransferModal({ open, title, currentTransporterId, onClose, onTransfer }: Props) {
+/** Mini-modal de transferencia (conductor/vehículo → otra empresa) — rol
+ *  admin. Busca sobre carriersApi.list; el llamador orquesta la asignación
+ *  real (assignDriver/assignAsset a la empresa nueva ya desactiva la
+ *  asignación ACTIVE previa, ver H2.2 carriers.py — no hace falta un
+ *  endpoint .../transfer dedicado). */
+export function TransferModal({ open, title, currentCarrierId, onClose, onTransfer }: Props) {
   const [q, setQ]             = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -24,12 +27,12 @@ export function TransferModal({ open, title, currentTransporterId, onClose, onTr
   const qDebounced = useDebouncedValue(q, 250)
 
   const query = useQuery({
-    queryKey: ['transporters', 'transfer-search', qDebounced],
-    queryFn: () => transportersApi.list({ q: qDebounced, limit: 10 }),
+    queryKey: ['carriers', 'transfer-search', qDebounced],
+    queryFn: () => carriersApi.list({ q: qDebounced, limit: 10 }),
     enabled: open && qDebounced.length >= 2,
   })
 
-  const results = (query.data?.data ?? []).filter(t => t.id !== currentTransporterId)
+  const results = (query.data?.data ?? []).filter(c => c.id !== currentCarrierId)
 
   if (!open) return null
 
@@ -71,7 +74,7 @@ export function TransferModal({ open, title, currentTransporterId, onClose, onTr
               autoFocus
               value={q}
               onChange={e => { setQ(e.target.value); setSelectedId(null) }}
-              placeholder="Buscar empresa destino (nombre o RUT)…"
+              placeholder="Buscar empresa destino (nombre o tax_id)…"
               className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
           </div>
@@ -88,19 +91,19 @@ export function TransferModal({ open, title, currentTransporterId, onClose, onTr
             {q.length >= 2 && !query.isFetching && results.length === 0 && (
               <p className="px-3 py-6 text-center text-xs text-gray-400">Sin resultados</p>
             )}
-            {results.map(t => (
+            {results.map(c => (
               <button
-                key={t.id}
+                key={c.id}
                 type="button"
-                onClick={() => setSelectedId(t.id)}
+                onClick={() => setSelectedId(c.id)}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
-                  selectedId === t.id ? 'bg-accent/10' : 'hover:bg-gray-50'
+                  selectedId === c.id ? 'bg-accent/10' : 'hover:bg-gray-50'
                 }`}
               >
                 <Building2 size={13} className="text-gray-400 shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-text-primary truncate">{t.business_name}</p>
-                  <p className="text-[10px] text-gray-400 font-mono">{t.rut ?? '—'}</p>
+                  <p className="text-xs font-semibold text-text-primary truncate">{c.business_name}</p>
+                  <p className="text-[10px] text-gray-400 font-mono">{c.tax_id}</p>
                 </div>
               </button>
             ))}

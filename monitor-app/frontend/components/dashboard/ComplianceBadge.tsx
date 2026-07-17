@@ -1,7 +1,12 @@
 'use client'
 
 import { AlertTriangle, Clock } from 'lucide-react'
-import type { AlertStatus } from '@/lib/types'
+
+/** Union local, no un tipo global — cada módulo que consume este badge
+ *  (Diario en TripTable.tsx, Empresas/Seguros vía lib/compliance.ts)
+ *  define/deriva su propio 'ok'|'expiring_soon'|'expired', typing
+ *  estructural basta para pasarlo acá sin acoplar los módulos entre sí. */
+type AlertStatus = 'ok' | 'expiring_soon' | 'expired'
 
 interface Props {
   status:   AlertStatus | null

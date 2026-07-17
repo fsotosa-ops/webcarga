@@ -1,4 +1,4 @@
-import type { Driver, OperationalStatus } from '@/lib/types'
+import type { ComplianceRecord, Driver, OperationalStatus } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type DriverCreateBody = {
@@ -33,4 +33,7 @@ export const driversApi = {
 
   patch: (id: string, body: DriverPatchBody) =>
     apiFetch<Driver>(`/api/v1/drivers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  listComplianceRecords: (id: string) =>
+    apiFetch<ComplianceRecord[]>(`/api/v1/drivers/${id}/compliance-records`),
 }

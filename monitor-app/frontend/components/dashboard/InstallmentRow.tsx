@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Check, Circle, AlertTriangle, Loader2, Undo2 } from 'lucide-react'
-import { insuranceApi } from '@/lib/api/insurance'
+import { policiesApi } from '@/lib/api/policies'
 import type { InsuranceInstallment } from '@/lib/types'
 import { formatExpiry } from '@/lib/compliance'
 import { dueRelative, cuotaLabel } from '@/lib/utils/installments'
@@ -10,7 +10,7 @@ import { dueRelative, cuotaLabel } from '@/lib/utils/installments'
 const TODAY = () => new Date().toISOString().slice(0, 10)
 
 function isEffectivelyOverdue(inst: InsuranceInstallment): boolean {
-  return inst.status === 'vencida' || (inst.status === 'pendiente' && !!inst.due_date && inst.due_date < TODAY())
+  return inst.payment_status === 'OVERDUE' || (inst.payment_status === 'PENDING' && !!inst.due_date && inst.due_date < TODAY())
 }
 
 interface Props {
@@ -20,9 +20,10 @@ interface Props {
 }
 
 /** Una fila de cuota: ícono de estado + "Cuota N de M" + fecha + monto +
- *  acción (Pagar, o revertir si ya está pagada). El botón de revertir
- *  siempre está en el DOM (funciona en touch), solo se atenúa visualmente
- *  hasta el hover/foco — no depende de un gesto de long-press. */
+ *  acción (Pagar, o revertir si ya está pagada). No hay optimistic lock ni
+ *  endpoint dedicado de revertir en el backend nuevo (solo
+ *  PATCH /policies/installments/{id} con payment_status/paid_at) — revertir
+ *  es la misma llamada con payment_status='PENDING'. */
 export function InstallmentRow({ installment, canAdmin, onChanged }: Props) {
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
@@ -30,7 +31,7 @@ export function InstallmentRow({ installment, canAdmin, onChanged }: Props) {
   const popoverRef = useRef<HTMLDivElement>(null)
 
   const overdue  = isEffectivelyOverdue(installment)
-  const paid     = installment.status === 'pagada'
+  const paid     = installment.payment_status === 'PAID'
   const relative = dueRelative(installment.due_date, overdue)
 
   useEffect(() => {
@@ -45,10 +46,8 @@ export function InstallmentRow({ installment, canAdmin, onChanged }: Props) {
   async function markPaid() {
     setSaving(true); setErr(null)
     try {
-      const updated = await insuranceApi.patchInstallment(installment.id, {
-        status: 'pagada',
-        paid_at: TODAY(),
-        expected_updated_at: installment.updated_at ?? undefined,
+      const updated = await policiesApi.patchInstallment(installment.id, {
+        payment_status: 'PAID', paid_at: TODAY(),
       })
       onChanged(updated)
     } catch (e) {
@@ -61,9 +60,7 @@ export function InstallmentRow({ installment, canAdmin, onChanged }: Props) {
   async function revert() {
     setSaving(true); setErr(null); setConfirming(false)
     try {
-      const updated = await insuranceApi.revertInstallment(installment.id, {
-        expected_updated_at: installment.updated_at ?? undefined,
-      })
+      const updated = await policiesApi.patchInstallment(installment.id, { payment_status: 'PENDING' })
       onChanged(updated)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al revertir el pago')

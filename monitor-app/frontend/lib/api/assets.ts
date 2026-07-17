@@ -1,4 +1,4 @@
-import type { Asset, OperationalStatus } from '@/lib/types'
+import type { Asset, ComplianceRecord, OperationalStatus } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type AssetType = 'TRACTOCAMION' | 'RAMPLA' | 'CAMION' | 'FURGON' | 'OTRO'
@@ -33,4 +33,7 @@ export const assetsApi = {
 
   patch: (id: string, body: AssetPatchBody) =>
     apiFetch<Asset>(`/api/v1/assets/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  listComplianceRecords: (id: string) =>
+    apiFetch<ComplianceRecord[]>(`/api/v1/assets/${id}/compliance-records`),
 }

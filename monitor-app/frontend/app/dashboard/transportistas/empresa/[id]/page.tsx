@@ -1,19 +1,18 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
-import Link from 'next/link'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight, PenLine, Check, X, RotateCcw,
-  Loader2, ShieldCheck, Search,
+  ChevronRight, PenLine, Check, X,
+  Loader2, Search,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { transportersApi } from '@/lib/api/transporters'
-import type {
-  TransporterProfile, TransporterVehicle, TransporterContact,
-  DriverGovernance, VehicleGovernance,
-} from '@/lib/types'
-import { EligibilityDot } from '@/components/dashboard/EligibilityDot'
+import { carriersApi } from '@/lib/api/carriers'
+import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
+import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
+import { contactsApi } from '@/lib/api/contacts'
+import type { Driver, Asset, OperationalStatus } from '@/lib/types'
 import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCard'
 import { TransporterDocumentsPanel } from '@/components/dashboard/TransporterDocumentsPanel'
 import { TransporterAlertBanner } from '@/components/dashboard/TransporterAlertBanner'
@@ -23,37 +22,39 @@ import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
 import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
-import { describeEligibility } from '@/lib/utils/eligibility'
-import { getDriverAlertStatus, getVehicleAlertStatus } from '@/lib/compliance'
-import { vehicleCategory, VEHICLE_CATEGORY_LABELS, type VehicleCategory } from '@/lib/utils/transporterDocs'
+import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
 
-const ACCOUNT_STAGES = ['Lead', 'Operational']
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 const ADMIN_ROLES  = new Set(['admin', 'owner'])
+const ROSTER_PAGE_SIZE = 9
 
-const VEHICLE_TYPES = [
-  'Tractocamión', 'Camión Rígido', 'Camión Furgón', 'Camión Refrigerado', 'Plataforma', 'Cisterna',
+const OPERATIONAL_STATUS_OPTIONS: OperationalStatus[] = ['ACTIVE', 'INACTIVE', 'LEGACY_INACTIVE']
+const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
+  { value: 'TRACTOCAMION', label: 'Tracto' }, { value: 'RAMPLA', label: 'Rampla' },
+  { value: 'CAMION', label: 'Camión' }, { value: 'FURGON', label: 'Furgón' }, { value: 'OTRO', label: 'Otro' },
 ]
+const CONTACT_ROLE_OPTIONS = ['LEGAL_REP', 'OPERATIONS', 'FINANCE', 'DOCUMENTS']
 
-// ── Editable field (modal "Editar Datos Empresa") — sin cambios ────
+// ── Campo editable de la empresa (solo business_name/operational_status
+//    aceptan PATCH — ver schemas/carrier.py). Sin "revertir a valor del
+//    pipeline": el modelo nuevo no tiene un un-override explícito, solo
+//    is_manual_override a nivel de fila completa (H1.6). ──────────────
 function EditableField({
-  label, value, field, isProtected, canEdit, onSave, onReset, options,
+  label, value, canEdit, onSave, options,
 }: {
-  label: string; value: string | null; field: string
-  isProtected: boolean; canEdit: boolean
-  onSave: (field: string, val: string) => Promise<void>
-  onReset: (field: string) => Promise<void>
+  label: string; value: string; canEdit: boolean
+  onSave: (val: string) => Promise<void>
   options?: string[]
 }) {
   const [editing, setEditing]   = useState(false)
-  const [draft, setDraft]       = useState(value ?? '')
+  const [draft, setDraft]       = useState(value)
   const [saving, setSaving]     = useState(false)
   const [fieldErr, setFieldErr] = useState<string | null>(null)
 
   const handleSave = async () => {
-    if (draft === (value ?? '')) { setEditing(false); return }
+    if (draft === value) { setEditing(false); return }
     setSaving(true); setFieldErr(null)
-    try { await onSave(field, draft); setEditing(false) }
+    try { await onSave(draft); setEditing(false) }
     catch (e) { setFieldErr(e instanceof Error ? e.message : 'Error') }
     finally { setSaving(false) }
   }
@@ -96,23 +97,12 @@ function EditableField({
             <span className="text-sm text-text-primary flex-1 truncate">
               {value || <span className="text-gray-300 italic">sin datos</span>}
             </span>
-            {isProtected && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 shrink-0">Protegido</span>
-            )}
             {canEdit && (
               <button
-                onClick={() => { setDraft(value ?? ''); setEditing(true) }}
+                onClick={() => { setDraft(value); setEditing(true) }}
                 className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 shrink-0"
               >
                 <PenLine size={13} />
-              </button>
-            )}
-            {isProtected && canEdit && (
-              <button
-                onClick={async () => { setSaving(true); try { await onReset(field) } finally { setSaving(false) } }}
-                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-amber-500 hover:border-amber-300 shrink-0"
-              >
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
               </button>
             )}
           </div>
@@ -123,38 +113,46 @@ function EditableField({
   )
 }
 
-// ── Contactos (app.transporter_contacts) — edición inline por rol ──
-const CONTACT_ROLE_LABELS: Record<TransporterContact['role'], string> = {
-  rep_legal:   'Representante legal',
-  operacional: 'Operacional',
-  finanzas:    'Finanzas',
-  documentos:  'Documentos',
-}
-
-function ContactCard({ tid, role, contact, canEdit, onSaved }: {
-  tid: string; role: TransporterContact['role']; contact: TransporterContact | undefined
-  canEdit: boolean; onSaved: (c: TransporterContact) => void
+// ── Contactos (public.contacts, polimórfico, lista abierta) ────────
+function ContactCard({ contact, canEdit, onSaved, onDeleted }: {
+  contact: { id: string; contact_role: string; first_name: string | null; last_name: string | null; email: string | null; phone: string | null }
+  canEdit: boolean
+  onSaved: (patch: { first_name?: string; last_name?: string; email?: string; phone?: string }) => Promise<void>
+  onDeleted: () => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState({ name: contact?.name ?? '', phone: contact?.phone ?? '', email: contact?.email ?? '' })
+  const [draft, setDraft] = useState({
+    name: [contact.first_name, contact.last_name].filter(Boolean).join(' '),
+    phone: contact.phone ?? '', email: contact.email ?? '',
+  })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+
+  function openEdit() {
+    setDraft({
+      name: [contact.first_name, contact.last_name].filter(Boolean).join(' '),
+      phone: contact.phone ?? '', email: contact.email ?? '',
+    })
+    setEditing(true)
+  }
 
   async function save() {
     setBusy(true); setErr(null)
     try {
-      const res = await transportersApi.upsertContact(tid, { role, ...draft })
-      onSaved(res.data)
+      const [first_name, ...rest] = draft.name.trim().split(/\s+/)
+      await onSaved({ first_name: first_name || undefined, last_name: rest.join(' ') || undefined, phone: draft.phone, email: draft.email })
       setEditing(false)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally { setBusy(false) }
   }
 
+  const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ')
+
   if (editing) {
     return (
       <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">{CONTACT_ROLE_LABELS[role]}</p>
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">{contact.contact_role}</p>
         <input value={draft.name} onChange={e => setDraft(v => ({ ...v, name: e.target.value }))} placeholder="Nombre"
           className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
         <input value={draft.phone} onChange={e => setDraft(v => ({ ...v, phone: e.target.value }))} placeholder="Teléfono"
@@ -174,87 +172,89 @@ function ContactCard({ tid, role, contact, canEdit, onSaved }: {
 
   return (
     <div className="border border-border/60 rounded-lg p-3 group relative">
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{CONTACT_ROLE_LABELS[role]}</p>
-      {contact?.name || contact?.phone || contact?.email ? (
-        <div className="space-y-1">
-          <p className="text-xs font-semibold text-text-primary truncate">{contact.name ?? <span className="text-gray-300 italic">sin nombre</span>}</p>
-          {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">{contact.phone}</a>}
-          {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
-          {canEdit && (
-            <button
-              onClick={() => { setDraft({ name: contact?.name ?? '', phone: contact?.phone ?? '', email: contact?.email ?? '' }); setEditing(true) }}
-              className="text-[10px] text-gray-400 hover:text-accent mt-1"
-            >Editar</button>
-          )}
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{contact.contact_role}</p>
+      <p className="text-xs font-semibold text-text-primary truncate">{name || <span className="text-gray-300 italic">sin nombre</span>}</p>
+      {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">{contact.phone}</a>}
+      {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
+      {canEdit && (
+        <div className="flex gap-2 mt-1">
+          <button onClick={openEdit} className="text-[10px] text-gray-400 hover:text-accent">Editar</button>
+          <button onClick={onDeleted} className="text-[10px] text-gray-400 hover:text-red-500">Eliminar</button>
         </div>
-      ) : canEdit ? (
-        <button
-          onClick={() => { setDraft({ name: contact?.name ?? '', phone: contact?.phone ?? '', email: contact?.email ?? '' }); setEditing(true) }}
-          className="text-[11px] text-accent hover:underline"
-        >+ Agregar {CONTACT_ROLE_LABELS[role].toLowerCase()}</button>
-      ) : (
-        <p className="text-[11px] text-gray-300 italic">Sin datos</p>
       )}
     </div>
   )
 }
 
-function ContactsSection({ tid, contacts, canEdit, onContactsChange }: {
-  tid: string; contacts: TransporterContact[]; canEdit: boolean
-  onContactsChange: (contacts: TransporterContact[]) => void
-}) {
-  const byRole = new Map(contacts.map(c => [c.role, c]))
-  function handleSaved(role: TransporterContact['role'], updated: TransporterContact) {
-    const next = contacts.filter(c => c.role !== role)
-    next.push(updated)
-    onContactsChange(next)
+function AddContactForm({ onAdd }: { onAdd: (body: { contact_role: string; first_name?: string; last_name?: string; phone?: string; email?: string }) => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const [role, setRole] = useState(CONTACT_ROLE_OPTIONS[0])
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="border border-dashed border-border rounded-lg p-3 text-xs text-accent hover:bg-accent/5 text-left">
+        + Agregar contacto
+      </button>
+    )
   }
+
+  async function submit() {
+    setBusy(true)
+    try {
+      const [first_name, ...rest] = name.trim().split(/\s+/)
+      await onAdd({ contact_role: role, first_name: first_name || undefined, last_name: rest.join(' ') || undefined, phone: phone || undefined, email: email || undefined })
+      setOpen(false); setName(''); setPhone(''); setEmail('')
+    } finally { setBusy(false) }
+  }
+
   return (
-    <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Contactos</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {(Object.keys(CONTACT_ROLE_LABELS) as TransporterContact['role'][]).map(role => (
-          <ContactCard key={role} tid={tid} role={role} contact={byRole.get(role)} canEdit={canEdit}
-            onSaved={updated => handleSaved(role, updated)} />
-        ))}
+    <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
+      <select value={role} onChange={e => setRole(e.target.value)} className="w-full text-xs border border-border rounded px-2 py-1">
+        {CONTACT_ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+      </select>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="Nombre" className="w-full text-xs border border-border rounded px-2 py-1" />
+      <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono" className="w-full text-xs border border-border rounded px-2 py-1" />
+      <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className="w-full text-xs border border-border rounded px-2 py-1" />
+      <div className="flex gap-1.5 pt-1">
+        <button onClick={submit} disabled={busy} className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent rounded px-2 py-1 disabled:opacity-50">
+          {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Guardar
+        </button>
+        <button onClick={() => setOpen(false)} className="text-[11px] text-gray-400 hover:text-gray-600 px-2 py-1">Cancelar</button>
       </div>
     </div>
   )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────
 export default function EmpresaDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [tp, setTp]               = useState<TransporterProfile | null>(null)
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState<string | null>(null)
+  const queryClient = useQueryClient()
   const [canEdit, setCanEdit]     = useState(false)
   const [canAdmin, setCanAdmin]   = useState(false)
   const [editOpen, setEditOpen]   = useState(false)
 
   const [selectedDriverId,  setSelectedDriverId]  = useState<string | null>(null)
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
-  const [driverQ,         setDriverQ]         = useState('')
-  const [driverAlertOnly, setDriverAlertOnly] = useState(false)
-  const [driverShowAll,   setDriverShowAll]   = useState(false)
-  const [vehicleQ,        setVehicleQ]        = useState('')
-  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<VehicleCategory | 'todos'>('todos')
-  const [vehicleAlertOnly, setVehicleAlertOnly] = useState(false)
-  const [vehicleShowAll,   setVehicleShowAll]  = useState(false)
-
-  const ROSTER_PAGE_SIZE = 9
+  const [selectedAssetId,   setSelectedAssetId]   = useState<string | null>(null)
+  const [driverQ,  setDriverQ]  = useState('')
+  const [driverShowAll, setDriverShowAll] = useState(false)
+  const [assetQ,   setAssetQ]   = useState('')
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetType | 'todos'>('todos')
+  const [assetShowAll, setAssetShowAll] = useState(false)
 
   const [addDriverOpen,  setAddDriverOpen]  = useState(false)
-  const [driverForm,     setDriverForm]     = useState({ rut: '', name: '' })
-  const [addVehicleOpen, setAddVehicleOpen] = useState(false)
-  const [vehicleForm,    setVehicleForm]    = useState({ type: '', plate: '' })
+  const [driverForm,     setDriverForm]     = useState({ tax_id: '', full_name: '' })
+  const [addAssetOpen,   setAddAssetOpen]   = useState(false)
+  const [assetForm,      setAssetForm]      = useState<{ asset_type: AssetType; license_plate: string }>({ asset_type: 'TRACTOCAMION', license_plate: '' })
+  const [addPolicyOpen,  setAddPolicyOpen]  = useState(false)
+  const [policyForm,     setPolicyForm]     = useState({ insurance_company: '', policy_number: '' })
   const [submitting,     setSubmitting]     = useState(false)
 
-  const [transferTarget, setTransferTarget] = useState<
-    { kind: 'driver' | 'vehicle'; id: string; label: string } | null
-  >(null)
-
+  const [transferTarget, setTransferTarget] = useState<{ kind: 'driver' | 'asset'; id: string; label: string } | null>(null)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
+  const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -267,169 +267,161 @@ export default function EmpresaDetailPage() {
     })
   }, [])
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(null)
-    try { setTp(await transportersApi.get(id)) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Error cargando datos') }
-    finally { setLoading(false) }
-  }, [id])
+  const carrierQuery = useQuery({ queryKey: ['carrier-detail', id], queryFn: () => carriersApi.get(id) })
+  const driversQuery = useQuery({ queryKey: ['carrier-drivers', id], queryFn: () => carriersApi.listDrivers(id) })
+  const assetsQuery  = useQuery({ queryKey: ['carrier-assets-roster', id], queryFn: () => carriersApi.listAssets(id) })
+  const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
 
-  useEffect(() => { load() }, [load])
+  const selectedDriverQuery = useQuery({
+    queryKey: ['driver-detail', selectedDriverId],
+    queryFn: () => driversApi.get(selectedDriverId!),
+    enabled: !!selectedDriverId,
+  })
+  const selectedAssetQuery = useQuery({
+    queryKey: ['asset-detail', selectedAssetId],
+    queryFn: () => assetsApi.get(selectedAssetId!),
+    enabled: !!selectedAssetId,
+  })
 
-  const handleSaveField = async (field: string, value: string) => {
-    setTp(await transportersApi.patch(id, { [field]: value }))
+  const carrier = carrierQuery.data
+  const drivers = driversQuery.data ?? []
+  const assets  = assetsQuery.data ?? []
+  const policies = policiesQuery.data ?? []
+
+  function invalidateCarrier() { queryClient.invalidateQueries({ queryKey: ['carrier-detail', id] }) }
+  function invalidateDrivers() { queryClient.invalidateQueries({ queryKey: ['carrier-drivers', id] }) }
+  function invalidateAssets()  { queryClient.invalidateQueries({ queryKey: ['carrier-assets-roster', id] }) }
+  function invalidatePolicies(){ queryClient.invalidateQueries({ queryKey: ['carrier-policies', id] }) }
+
+  async function handleSaveBusinessName(value: string) {
+    await carriersApi.patch(id, { business_name: value })
+    invalidateCarrier()
   }
-  const handleResetField = async (field: string) => {
-    await transportersApi.resetField(id, field); await load()
+  async function handleChangeOperationalStatus(value: string) {
+    await carriersApi.patch(id, { operational_status: value as OperationalStatus })
+    invalidateCarrier()
+  }
+  async function handleDeactivateCarrier() {
+    await carriersApi.patch(id, { operational_status: 'INACTIVE' })
+    invalidateCarrier()
+  }
+  async function handleReactivateCarrier() {
+    await carriersApi.patch(id, { operational_status: 'ACTIVE' })
+    invalidateCarrier()
   }
 
-  const handleAddDriver = async () => {
-    if (!driverForm.rut || !driverForm.name) return
+  async function handleAddDriver() {
+    if (!driverForm.tax_id || !driverForm.full_name) return
     setSubmitting(true)
     try {
-      await transportersApi.addDriver(id, driverForm)
-      setDriverForm({ rut: '', name: '' })
+      const created = await driversApi.create(driverForm)
+      await carriersApi.assignDriver(id, created.id)
+      setDriverForm({ tax_id: '', full_name: '' })
       setAddDriverOpen(false)
-      await load()
+      invalidateDrivers()
     } finally { setSubmitting(false) }
   }
-
-  const handlePatchDriver = async (did: string, body: { rut?: string; name?: string; governance?: DriverGovernance }) => {
-    const res = await transportersApi.patchDriver(id, did, body)
-    // El endpoint no devuelve `governance` en la respuesta (solo id/rut/name),
-    // así que se mergea localmente con lo que se envió para no perder el
-    // estado optimista de la ficha (ver AGENTLOG.md).
-    setTp(prev => prev ? {
-      ...prev,
-      drivers: prev.drivers.map(d => d.id === did ? {
-        ...d, ...res.data,
-        governance: body.governance ? { ...d.governance, ...body.governance } : d.governance,
-      } : d),
-    } : prev)
+  async function handlePatchDriver(driverId: string, body: DriverPatchBody) {
+    await driversApi.patch(driverId, body)
+    queryClient.invalidateQueries({ queryKey: ['driver-detail', driverId] })
+    invalidateDrivers()
   }
-
-  // Sin try/catch propio (a diferencia del page original, donde
-  // handleRemoveVehicle/handleRemoveTrailer sí lo tenían): el error ahora
-  // se muestra inline dentro del panel de detalle (Tasks 5/6), no
-  // reemplazando toda la página — evita que un fallo al eliminar un
-  // conductor/equipo borre el resto de la ficha.
-  const handleRemoveDriver = async (did: string) => {
-    await transportersApi.removeDriver(id, did)
+  async function handleRemoveDriver(driverId: string) {
+    await carriersApi.unassignDriver(id, driverId)
     setSelectedDriverId(null)
-    await load()
+    invalidateDrivers()
   }
 
-  const handleAddVehicle = async () => {
-    if (!vehicleForm.plate) return
+  async function handleAddAsset() {
+    if (!assetForm.license_plate) return
     setSubmitting(true)
     try {
-      await transportersApi.addVehicle(id, vehicleForm)
-      setVehicleForm({ type: '', plate: '' })
-      setAddVehicleOpen(false)
-      await load()
+      const created = await assetsApi.create(assetForm)
+      await carriersApi.assignAsset(id, created.id)
+      setAssetForm({ asset_type: 'TRACTOCAMION', license_plate: '' })
+      setAddAssetOpen(false)
+      invalidateAssets()
+    } finally { setSubmitting(false) }
+  }
+  async function handlePatchAsset(assetId: string, body: AssetPatchBody) {
+    await assetsApi.patch(assetId, body)
+    queryClient.invalidateQueries({ queryKey: ['asset-detail', assetId] })
+    invalidateAssets()
+  }
+  async function handleRemoveAsset(assetId: string) {
+    await carriersApi.unassignAsset(id, assetId)
+    setSelectedAssetId(null)
+    invalidateAssets()
+  }
+
+  async function handleConfirmTransfer(toCarrierId: string) {
+    if (!transferTarget) return
+    if (transferTarget.kind === 'driver') {
+      await carriersApi.assignDriver(toCarrierId, transferTarget.id)
+      setSelectedDriverId(null)
+      invalidateDrivers()
+    } else {
+      await carriersApi.assignAsset(toCarrierId, transferTarget.id)
+      setSelectedAssetId(null)
+      invalidateAssets()
+    }
+    setTransferTarget(null)
+  }
+
+  async function handleAddPolicy() {
+    if (!policyForm.insurance_company) return
+    setSubmitting(true)
+    try {
+      await carriersApi.createPolicy(id, policyForm)
+      setPolicyForm({ insurance_company: '', policy_number: '' })
+      setAddPolicyOpen(false)
+      invalidatePolicies()
     } finally { setSubmitting(false) }
   }
 
-  const handlePatchVehicle = async (vid: string, body: { type?: string; plate?: string; governance?: VehicleGovernance }) => {
-    const res = await transportersApi.patchVehicle(id, vid, body)
-    // Mismo motivo que handlePatchDriver: el endpoint no devuelve `governance`.
-    setTp(prev => prev ? {
-      ...prev,
-      vehicles: prev.vehicles.map(v => v.id === vid ? {
-        ...v, ...res.data,
-        governance: body.governance ? { ...v.governance, ...body.governance } : v.governance,
-      } : v),
-    } : prev)
+  async function handleSaveContact(contactId: string, patch: { first_name?: string; last_name?: string; phone?: string; email?: string }) {
+    await contactsApi.patch(contactId, patch)
+    invalidateCarrier()
+  }
+  async function handleDeleteContact(contactId: string) {
+    await contactsApi.delete(contactId)
+    invalidateCarrier()
+  }
+  async function handleAddContact(body: { contact_role: string; first_name?: string; last_name?: string; phone?: string; email?: string }) {
+    await carriersApi.createContact(id, body)
+    invalidateCarrier()
   }
 
-  const handleRemoveVehicle = async (vid: string) => {
-    await transportersApi.removeVehicle(id, vid)
-    setSelectedVehicleId(null)
-    await load()
-  }
+  const filteredDrivers = useMemo(() => drivers.filter(d =>
+    !driverQ || d.full_name.toLowerCase().includes(driverQ.toLowerCase()) || d.tax_id.includes(driverQ),
+  ), [drivers, driverQ])
 
-  const handleRemoveTrailer = async (trid: string) => {
-    await transportersApi.removeTrailer(id, trid)
-    setSelectedVehicleId(null)
-    await load()
-  }
+  const filteredAssets = useMemo(() => assets.filter(a => {
+    const matchesQ = !assetQ || a.license_plate.toLowerCase().includes(assetQ.toLowerCase())
+    const matchesType = assetTypeFilter === 'todos' || a.asset_type === assetTypeFilter
+    return matchesQ && matchesType
+  }), [assets, assetQ, assetTypeFilter])
 
-  const handleConfirmTransfer = async (toTransporterId: string) => {
-    if (!transferTarget) return
-    try {
-      if (transferTarget.kind === 'driver') {
-        await transportersApi.transferDriver(id, transferTarget.id, toTransporterId)
-      } else {
-        await transportersApi.transferVehicle(id, transferTarget.id, toTransporterId)
-      }
-      setTransferTarget(null)
-      await load()
-    } catch (e) {
-      // Se relanza para que TransferModal muestre el error junto a la acción
-      throw e
-    }
-  }
+  useEffect(() => { setDriverShowAll(false) }, [driverQ])
+  useEffect(() => { setAssetShowAll(false) }, [assetQ, assetTypeFilter])
 
-  const handleReactivate = async () => {
-    await transportersApi.reactivate(id)
-    await load()
-  }
+  const visibleDrivers = driverShowAll ? filteredDrivers : filteredDrivers.slice(0, ROSTER_PAGE_SIZE)
+  const visibleAssets  = assetShowAll  ? filteredAssets  : filteredAssets.slice(0, ROSTER_PAGE_SIZE)
 
-  const filteredDrivers = useMemo(() => {
-    if (!tp) return []
-    return tp.drivers.filter(d => {
-      const matchesQ = !driverQ || d.name.toLowerCase().includes(driverQ.toLowerCase()) || d.rut.includes(driverQ)
-      const matchesAlert = !driverAlertOnly || getDriverAlertStatus(d) !== 'ok'
-      return matchesQ && matchesAlert
-    })
-  }, [tp, driverQ, driverAlertOnly])
+  const selectedDriver: Driver | null = selectedDriverId ? selectedDriverQuery.data ?? null : null
+  const selectedAsset:  Asset  | null = selectedAssetId  ? selectedAssetQuery.data  ?? null : null
 
-  // Equipos: tractos/camiones/furgones (con gobernanza completa) + ramplas
-  // (sin gobernanza en el contrato actual) unificados para el filtro de Tipo.
-  const allEquipment = useMemo((): (TransporterVehicle & { isTrailer: boolean })[] => tp ? [
-    ...tp.vehicles.map(v => ({ ...v, isTrailer: false })),
-    ...tp.trailers.map(t => ({
-      id: t.id, type: 'Rampla', plate: t.plate, governance: null, isTrailer: true,
-      // Ramplas no soportan baja manual: no existe .../trailers/{id}/deactivate en el backend.
-      baja_override: false, baja_reason: null,
-    })),
-  ] : [], [tp])
-
-  const filteredVehicles = useMemo(() => allEquipment.filter(v => {
-    const matchesQ = !vehicleQ ||
-      v.plate.toLowerCase().includes(vehicleQ.toLowerCase()) ||
-      (v.type ?? '').toLowerCase().includes(vehicleQ.toLowerCase())
-    const matchesType = vehicleTypeFilter === 'todos' || vehicleCategory(v.type) === vehicleTypeFilter
-    const matchesAlert = !vehicleAlertOnly || v.isTrailer || getVehicleAlertStatus(v) !== 'ok'
-    return matchesQ && matchesType && matchesAlert
-  }), [allEquipment, vehicleQ, vehicleTypeFilter, vehicleAlertOnly])
-
-  // El roster corta en 9 tarjetas por defecto (evita el scroll largo en
-  // empresas con decenas de conductores/equipos); "Mostrar los N
-  // restantes" expande el resto. Se resetea si cambia el filtro/búsqueda
-  // para no dejar un botón con un conteo que ya no corresponde.
-  useEffect(() => { setDriverShowAll(false) }, [driverQ, driverAlertOnly])
-  useEffect(() => { setVehicleShowAll(false) }, [vehicleQ, vehicleTypeFilter, vehicleAlertOnly])
-
-  const visibleDrivers  = driverShowAll  ? filteredDrivers  : filteredDrivers.slice(0, ROSTER_PAGE_SIZE)
-  const visibleVehicles = vehicleShowAll ? filteredVehicles : filteredVehicles.slice(0, ROSTER_PAGE_SIZE)
-
-  const selectedDriver  = tp?.drivers.find(d => d.id === selectedDriverId) ?? null
-  const selectedVehicle = allEquipment.find(v => v.id === selectedVehicleId) ?? null
-
-  if (loading) return (
+  if (carrierQuery.isPending) return (
     <div className="p-6 flex items-center gap-2 text-sm text-gray-400">
       <Loader2 size={16} className="animate-spin" /> Cargando…
     </div>
   )
-  if (error || !tp) return (
+  if (carrierQuery.error || !carrier) return (
     <div className="p-6 text-sm text-red-500">
-      {error ?? 'No encontrado'}
-      <Link href="/dashboard/transportistas" className="block mt-2 text-accent hover:underline text-xs">← Volver</Link>
+      {carrierQuery.error instanceof Error ? carrierQuery.error.message : 'No encontrado'}
+      <a href="/dashboard/transportistas" className="block mt-2 text-accent hover:underline text-xs">← Volver</a>
     </div>
   )
-
-  const protected_ = new Set(tp.manually_edited_fields)
 
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
@@ -437,55 +429,28 @@ export default function EmpresaDetailPage() {
         <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setEditOpen(false)} />
       )}
 
-      {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
-        <Link href="/dashboard/transportistas" className="hover:text-accent transition-colors shrink-0">Empresas</Link>
+        <a href="/dashboard/transportistas" className="hover:text-accent transition-colors shrink-0">Empresas</a>
         <ChevronRight size={13} />
-        <span className="text-text-primary font-medium truncate">{tp.business_name ?? id}</span>
+        <span className="text-text-primary font-medium truncate">{carrier.business_name || id}</span>
       </nav>
 
-      {/* Header + Seguros */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
         <div className="bg-white rounded-xl border border-border p-4 md:p-5">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <EligibilityDot
-                  eligible={tp.eligibility.eligible}
-                  blockingReasons={tp.eligibility.blocking_reasons}
-                  compliancePct={tp.eligibility.compliance_pct}
-                  size="md"
-                />
-                <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">
-                  {tp.business_name ?? '—'}
-                </h1>
-              </div>
-              <p className="text-[11px] text-gray-400 mt-0.5 pl-4">
-                {describeEligibility(tp.eligibility.eligible, tp.eligibility.blocking_reasons, tp.eligibility.compliance_pct)}
-              </p>
+              <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">
+                {carrier.business_name || '—'}
+              </h1>
               <div className="flex items-center gap-3 mt-2 flex-wrap">
-                {tp.rut && (
-                  <p className="text-xs text-gray-500">
-                    RUT: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{tp.rut}</span>
-                  </p>
-                )}
-                {tp.account_stage && (
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                    {tp.account_stage}
-                  </span>
-                )}
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  tp.in_admin ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'
-                }`}>
-                  {tp.in_admin ? 'En admin' : 'No registrada en admin'}
+                <p className="text-xs text-gray-500">
+                  Tax ID: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.tax_id}</span>
+                </p>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                  {carrier.operational_status}
                 </span>
-                {tp.clients.map(c => (
-                  <span key={c} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{c}</span>
-                ))}
-                {tp.eligibility.eligible && (
-                  <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 border border-green-100 rounded-lg px-2 py-0.5">
-                    <ShieldCheck size={11} /> Documentación al día
-                  </span>
+                {carrier.is_manual_override && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>
                 )}
               </div>
             </div>
@@ -501,40 +466,49 @@ export default function EmpresaDetailPage() {
               )}
               {canAdmin && (
                 <button
-                  onClick={() => tp.baja_override ? handleReactivate() : setBajaModalOpen(true)}
+                  onClick={() => carrier.operational_status !== 'ACTIVE' ? handleReactivateCarrier() : setBajaModalOpen(true)}
                   className={`px-4 py-2 rounded-lg text-sm font-bold transition border shadow-sm shrink-0 ${
-                    tp.baja_override
+                    carrier.operational_status !== 'ACTIVE'
                       ? 'bg-white hover:bg-gray-50 text-gray-700 border-border'
                       : 'bg-white hover:bg-red-50 text-red-500 border-red-200'
                   }`}
                 >
-                  {tp.baja_override ? 'Reactivar' : 'Dar de baja'}
+                  {carrier.operational_status !== 'ACTIVE' ? 'Reactivar' : 'Dar de baja'}
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        <InsuranceSummaryCard transporterId={tp.id} rut={tp.rut} />
+        <InsuranceSummaryCard carrierId={carrier.id} />
       </div>
 
-      <TransporterAlertBanner
-        eligible={tp.eligibility.eligible}
-        blockingReasons={tp.eligibility.blocking_reasons}
-        compliancePct={tp.eligibility.compliance_pct}
-      />
+      <TransporterAlertBanner records={carrier.compliance_records} />
 
-      <ContactsSection
-        tid={tp.id}
-        contacts={tp.contacts}
-        canEdit={canEdit}
-        onContactsChange={contacts => setTp(prev => prev ? { ...prev, contacts } : prev)}
-      />
+      {/* ── Contactos ── */}
+      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Contactos</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {carrier.contacts.map(c => (
+            <ContactCard
+              key={c.id}
+              contact={c}
+              canEdit={canEdit}
+              onSaved={patch => handleSaveContact(c.id, patch)}
+              onDeleted={() => handleDeleteContact(c.id)}
+            />
+          ))}
+          {canEdit && <AddContactForm onAdd={handleAddContact} />}
+          {carrier.contacts.length === 0 && !canEdit && (
+            <p className="text-xs text-gray-300 italic">Sin contactos registrados</p>
+          )}
+        </div>
+      </div>
 
       {/* ── Conductores ── */}
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Conductores ({tp.drivers.length})</h3>
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Conductores ({drivers.length})</h3>
           {canEdit && (
             <button
               onClick={() => setAddDriverOpen(v => !v)}
@@ -551,38 +525,29 @@ export default function EmpresaDetailPage() {
             <input
               value={driverQ}
               onChange={e => setDriverQ(e.target.value)}
-              placeholder="Filtrar por nombre o RUT…"
+              placeholder="Filtrar por nombre o tax_id…"
               className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
             />
           </div>
-          <button
-            onClick={() => setDriverAlertOnly(v => !v)}
-            aria-pressed={driverAlertOnly}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-              driverAlertOnly ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-            }`}
-          >
-            Con alertas
-          </button>
         </div>
 
         {addDriverOpen && (
           <div className="mb-3 p-3 rounded-lg bg-gray-50/80 flex items-center gap-2 flex-wrap">
             <input
-              placeholder="RUT"
-              value={driverForm.rut}
-              onChange={e => setDriverForm(v => ({ ...v, rut: e.target.value }))}
+              placeholder="Tax ID"
+              value={driverForm.tax_id}
+              onChange={e => setDriverForm(v => ({ ...v, tax_id: e.target.value }))}
               className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32"
             />
             <input
               placeholder="Nombre completo"
-              value={driverForm.name}
-              onChange={e => setDriverForm(v => ({ ...v, name: e.target.value }))}
+              value={driverForm.full_name}
+              onChange={e => setDriverForm(v => ({ ...v, full_name: e.target.value }))}
               className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1"
             />
             <button
               onClick={handleAddDriver}
-              disabled={submitting || !driverForm.rut || !driverForm.name}
+              disabled={submitting || !driverForm.tax_id || !driverForm.full_name}
               className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
             >
               {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
@@ -595,7 +560,7 @@ export default function EmpresaDetailPage() {
 
         {filteredDrivers.length === 0 ? (
           <p className="py-10 text-center text-sm text-gray-300">
-            {driverQ || driverAlertOnly ? 'Sin resultados' : 'Sin conductores registrados'}
+            {driverQ ? 'Sin resultados' : 'Sin conductores registrados'}
           </p>
         ) : (
           <>
@@ -619,10 +584,10 @@ export default function EmpresaDetailPage() {
       {/* ── Equipos ── */}
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Equipos ({tp.vehicles.length + tp.trailers.length})</h3>
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Equipos ({assets.length})</h3>
           {canEdit && (
             <button
-              onClick={() => setAddVehicleOpen(v => !v)}
+              onClick={() => setAddAssetOpen(v => !v)}
               className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
             >
               + Equipo
@@ -634,93 +599,148 @@ export default function EmpresaDetailPage() {
           <div className="relative">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             <input
-              value={vehicleQ}
-              onChange={e => setVehicleQ(e.target.value)}
-              placeholder="Filtrar por patente o tipo…"
+              value={assetQ}
+              onChange={e => setAssetQ(e.target.value)}
+              placeholder="Filtrar por patente…"
               className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
             />
           </div>
           <button
-            onClick={() => setVehicleTypeFilter('todos')}
-            aria-pressed={vehicleTypeFilter === 'todos'}
+            onClick={() => setAssetTypeFilter('todos')}
+            aria-pressed={assetTypeFilter === 'todos'}
             className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-              vehicleTypeFilter === 'todos' ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+              assetTypeFilter === 'todos' ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
             }`}
           >
             Todos
           </button>
-          {(Object.keys(VEHICLE_CATEGORY_LABELS) as VehicleCategory[]).map(cat => (
+          {ASSET_TYPE_OPTIONS.map(opt => (
             <button
-              key={cat}
-              onClick={() => setVehicleTypeFilter(cat)}
-              aria-pressed={vehicleTypeFilter === cat}
+              key={opt.value}
+              onClick={() => setAssetTypeFilter(opt.value)}
+              aria-pressed={assetTypeFilter === opt.value}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                vehicleTypeFilter === cat ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                assetTypeFilter === opt.value ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
-              {VEHICLE_CATEGORY_LABELS[cat]}
+              {opt.label}
             </button>
           ))}
-          <button
-            onClick={() => setVehicleAlertOnly(v => !v)}
-            aria-pressed={vehicleAlertOnly}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-              vehicleAlertOnly ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-            }`}
-          >
-            Con alertas
-          </button>
         </div>
 
-        {addVehicleOpen && (
+        {addAssetOpen && (
           <div className="mb-3 p-3 rounded-lg bg-gray-50/80 flex items-center gap-2 flex-wrap">
             <select
-              value={vehicleForm.type}
-              onChange={e => setVehicleForm(v => ({ ...v, type: e.target.value }))}
+              value={assetForm.asset_type}
+              onChange={e => setAssetForm(v => ({ ...v, asset_type: e.target.value as AssetType }))}
               className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-36 bg-white"
             >
-              <option value="">Tipo…</option>
-              {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <input
               placeholder="Patente"
-              value={vehicleForm.plate}
-              onChange={e => setVehicleForm(v => ({ ...v, plate: e.target.value }))}
+              value={assetForm.license_plate}
+              onChange={e => setAssetForm(v => ({ ...v, license_plate: e.target.value }))}
               className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-24 font-mono uppercase"
             />
             <button
-              onClick={handleAddVehicle}
-              disabled={submitting || !vehicleForm.plate}
+              onClick={handleAddAsset}
+              disabled={submitting || !assetForm.license_plate}
               className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
             >
               {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
             </button>
-            <button onClick={() => setAddVehicleOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+            <button onClick={() => setAddAssetOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
               <X size={14} />
             </button>
           </div>
         )}
 
-        {filteredVehicles.length === 0 ? (
+        {filteredAssets.length === 0 ? (
           <p className="py-10 text-center text-sm text-gray-300">
-            {vehicleQ || vehicleAlertOnly ? 'Sin resultados' : 'Sin equipos registrados'}
+            {assetQ || assetTypeFilter !== 'todos' ? 'Sin resultados' : 'Sin equipos registrados'}
           </p>
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {visibleVehicles.map(v => (
-                <VehicleRosterCard key={v.id} vehicle={v} onOpen={() => setSelectedVehicleId(v.id)} />
+              {visibleAssets.map(a => (
+                <VehicleRosterCard key={a.id} vehicle={a} onOpen={() => setSelectedAssetId(a.id)} />
               ))}
             </div>
-            {!vehicleShowAll && filteredVehicles.length > ROSTER_PAGE_SIZE && (
+            {!assetShowAll && filteredAssets.length > ROSTER_PAGE_SIZE && (
               <button
-                onClick={() => setVehicleShowAll(true)}
+                onClick={() => setAssetShowAll(true)}
                 className="mt-3 w-full text-xs font-semibold text-accent border border-dashed border-accent/40 hover:bg-accent/5 rounded-lg py-2.5 transition-colors"
               >
-                Mostrar los {filteredVehicles.length - ROSTER_PAGE_SIZE} restantes
+                Mostrar los {filteredAssets.length - ROSTER_PAGE_SIZE} restantes
               </button>
             )}
           </>
+        )}
+      </div>
+
+      {/* ── Pólizas de seguro ── */}
+      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Pólizas ({policies.length})</h3>
+          {canEdit && (
+            <button
+              onClick={() => setAddPolicyOpen(v => !v)}
+              className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
+            >
+              + Póliza
+            </button>
+          )}
+        </div>
+
+        {addPolicyOpen && (
+          <div className="mb-3 p-3 rounded-lg bg-gray-50/80 flex items-center gap-2 flex-wrap">
+            <input
+              placeholder="Aseguradora"
+              value={policyForm.insurance_company}
+              onChange={e => setPolicyForm(v => ({ ...v, insurance_company: e.target.value }))}
+              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1"
+            />
+            <input
+              placeholder="N° de póliza"
+              value={policyForm.policy_number}
+              onChange={e => setPolicyForm(v => ({ ...v, policy_number: e.target.value }))}
+              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32"
+            />
+            <button
+              onClick={handleAddPolicy}
+              disabled={submitting || !policyForm.insurance_company}
+              className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
+            >
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
+            </button>
+            <button onClick={() => setAddPolicyOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {policies.length === 0 ? (
+          <p className="py-10 text-center text-sm text-gray-300">Sin pólizas registradas</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {policies.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setSelectedPolicyId(p.id)}
+                className="flex items-center justify-between border border-border rounded-xl px-3 py-2.5 text-left hover:border-gray-300 hover:shadow-sm transition-all bg-white"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-text-primary truncate">{p.insurance_company}</p>
+                  <p className="text-[10px] text-gray-400 truncate">Póliza {p.policy_number ?? '—'}</p>
+                </div>
+                {p.overdue_installments > 0 && (
+                  <span className="text-[10px] font-semibold text-red-600 shrink-0">{p.overdue_installments} vencida{p.overdue_installments > 1 ? 's' : ''}</span>
+                )}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
@@ -728,10 +748,9 @@ export default function EmpresaDetailPage() {
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Documentos de la Empresa</h3>
         <TransporterDocumentsPanel
-          tid={tp.id}
-          documents={tp.documents}
+          records={carrier.compliance_records}
           canEdit={canEdit}
-          onDocumentsChange={docs => setTp(prev => prev ? { ...prev, documents: docs } : prev)}
+          onChanged={invalidateCarrier}
         />
       </div>
 
@@ -742,27 +761,26 @@ export default function EmpresaDetailPage() {
         onClose={() => setSelectedDriverId(null)}
         onPatch={handlePatchDriver}
         onRemove={() => handleRemoveDriver(selectedDriver!.id)}
-        onTransferClick={() => selectedDriver && setTransferTarget({ kind: 'driver', id: selectedDriver.id, label: `conductor ${selectedDriver.name}` })}
-        onDeactivate={body => transportersApi.deactivateDriver(id, selectedDriver!.id, body).then(load)}
-        onReactivate={() => transportersApi.reactivateDriver(id, selectedDriver!.id).then(load)}
+        onTransferClick={() => selectedDriver && setTransferTarget({ kind: 'driver', id: selectedDriver.id, label: `conductor ${selectedDriver.full_name}` })}
       />
 
       <VehicleDetailPanel
-        vehicle={selectedVehicle}
+        asset={selectedAsset}
         canEdit={canEdit}
         canAdmin={canAdmin}
-        onClose={() => setSelectedVehicleId(null)}
-        onPatch={handlePatchVehicle}
-        onRemove={() => selectedVehicle!.isTrailer ? handleRemoveTrailer(selectedVehicle!.id) : handleRemoveVehicle(selectedVehicle!.id)}
-        onTransferClick={selectedVehicle && !selectedVehicle.isTrailer
-          ? () => setTransferTarget({ kind: 'vehicle', id: selectedVehicle.id, label: `equipo ${selectedVehicle.plate}` })
-          : undefined}
-        onDeactivate={selectedVehicle && !selectedVehicle.isTrailer
-          ? body => transportersApi.deactivateVehicle(id, selectedVehicle.id, body).then(load)
-          : undefined}
-        onReactivate={selectedVehicle && !selectedVehicle.isTrailer
-          ? () => transportersApi.reactivateVehicle(id, selectedVehicle.id).then(load)
-          : undefined}
+        onClose={() => setSelectedAssetId(null)}
+        onPatch={handlePatchAsset}
+        onRemove={() => handleRemoveAsset(selectedAsset!.id)}
+        onTransferClick={() => selectedAsset && setTransferTarget({ kind: 'asset', id: selectedAsset.id, label: `equipo ${selectedAsset.license_plate}` })}
+      />
+
+      <InsurancePolicyModal
+        carrierId={selectedPolicyId ? id : null}
+        displayName={carrier.business_name || carrier.tax_id}
+        initialPolicyId={selectedPolicyId}
+        onClose={() => setSelectedPolicyId(null)}
+        canAdmin={canAdmin}
+        canEdit={canEdit}
       />
 
       {/* ── Edit Slide-Over ── */}
@@ -780,71 +798,28 @@ export default function EmpresaDetailPage() {
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div className="py-2.5 border-b border-border/60 flex items-center gap-3">
-            <span className="text-xs text-gray-400 w-32 shrink-0">Admin ID</span>
-            <span className="text-sm font-mono text-gray-500">{tp.admin_id ?? '—'}</span>
-          </div>
-          <div className="py-2.5 border-b border-border/60 flex items-center gap-3">
-            <span className="text-xs text-gray-400 w-32 shrink-0">Transporter ID</span>
-            <span className="text-xs font-mono text-gray-400 select-all break-all">{tp.id}</span>
+            <span className="text-xs text-gray-400 w-32 shrink-0">Carrier ID</span>
+            <span className="text-xs font-mono text-gray-400 select-all break-all">{carrier.id}</span>
           </div>
 
-          {([
-            { label: 'Razón Social', field: 'business_name', value: tp.business_name },
-            { label: 'RUT',          field: 'rut',           value: tp.rut },
-            { label: 'Estado',       field: 'account_stage', value: tp.account_stage, options: ACCOUNT_STAGES },
-          ] as const).map(f => (
-            <EditableField
-              key={f.field}
-              label={f.label}
-              value={f.value ?? null}
-              field={f.field}
-              isProtected={protected_.has(f.field)}
-              canEdit={canEdit}
-              onSave={handleSaveField}
-              onReset={handleResetField}
-              options={'options' in f ? f.options : undefined}
-            />
-          ))}
-
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-2">Contactabilidad</h2>
-          <div className="space-y-2">
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Emails</p>
-              <div className="flex flex-wrap gap-1.5">
-                {(tp.contactability?.emails ?? []).length > 0
-                  ? tp.contactability!.emails.map(e => (
-                      <span key={e} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{e}</span>
-                    ))
-                  : <span className="text-xs text-gray-300 italic">sin emails</span>}
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Teléfonos</p>
-              <div className="flex flex-wrap gap-1.5">
-                {(tp.contactability?.phones ?? []).length > 0
-                  ? tp.contactability!.phones.map(p => (
-                      <span key={p} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{p}</span>
-                    ))
-                  : <span className="text-xs text-gray-300 italic">sin teléfonos</span>}
-              </div>
-            </div>
-          </div>
+          <EditableField label="Razón Social" value={carrier.business_name} canEdit={canEdit} onSave={handleSaveBusinessName} />
+          <EditableField label="Estado operativo" value={carrier.operational_status} canEdit={canEdit} onSave={handleChangeOperationalStatus} options={OPERATIONAL_STATUS_OPTIONS} />
         </div>
       </div>
 
       <TransferModal
         open={!!transferTarget}
         title={transferTarget ? `Transferir ${transferTarget.label}` : 'Transferir'}
-        currentTransporterId={id}
+        currentCarrierId={id}
         onClose={() => setTransferTarget(null)}
         onTransfer={handleConfirmTransfer}
       />
 
       {bajaModalOpen && (
         <BajaReasonModal
-          label={tp.business_name ?? 'esta empresa'}
+          label={carrier.business_name || 'esta empresa'}
           onClose={() => setBajaModalOpen(false)}
-          onConfirm={async body => { await transportersApi.deactivate(id, body); await load() }}
+          onConfirm={handleDeactivateCarrier}
         />
       )}
     </div>

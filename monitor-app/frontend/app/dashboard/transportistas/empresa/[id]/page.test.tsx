@@ -3,8 +3,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import EmpresaDetailPage from './page'
-import { transportersApi } from '@/lib/api/transporters'
+import { carriersApi } from '@/lib/api/carriers'
+import { driversApi } from '@/lib/api/drivers'
+import { assetsApi } from '@/lib/api/assets'
+import { contactsApi } from '@/lib/api/contacts'
 import { createClient } from '@/lib/supabase/client'
+import type { Carrier, CarrierDriverRosterItem, CarrierAssetRosterItem } from '@/lib/types'
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -17,44 +21,46 @@ function renderPage() {
 
 vi.mock('next/navigation', () => ({ useParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
-vi.mock('@/lib/api/transporters', () => ({
-  transportersApi: {
-    get: vi.fn(), patch: vi.fn(), resetField: vi.fn(),
-    addDriver: vi.fn(), patchDriver: vi.fn(), removeDriver: vi.fn(),
-    addVehicle: vi.fn(), patchVehicle: vi.fn(), removeVehicle: vi.fn(),
-    addTrailer: vi.fn(), removeTrailer: vi.fn(),
-    transferDriver: vi.fn(), transferVehicle: vi.fn(),
-    listContacts: vi.fn(), upsertContact: vi.fn(), deleteContact: vi.fn(),
+vi.mock('@/lib/api/carriers', () => ({
+  carriersApi: {
+    get: vi.fn(), patch: vi.fn(),
+    listDrivers: vi.fn(), assignDriver: vi.fn(), unassignDriver: vi.fn(),
+    listAssets: vi.fn(), assignAsset: vi.fn(), unassignAsset: vi.fn(),
+    listContacts: vi.fn(), createContact: vi.fn(),
+    listPolicies: vi.fn(), createPolicy: vi.fn(),
   },
+}))
+vi.mock('@/lib/api/drivers', () => ({
+  driversApi: { get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn() },
+}))
+vi.mock('@/lib/api/assets', () => ({
+  assetsApi: { get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn() },
+}))
+vi.mock('@/lib/api/contacts', () => ({
+  contactsApi: { patch: vi.fn(), delete: vi.fn() },
 }))
 vi.mock('@/components/dashboard/InsuranceSummaryCard', () => ({ InsuranceSummaryCard: () => null }))
 
-const PROFILE = {
-  id: 't1', admin_id: '123', business_name: 'Transportes Test', rut: '11111111-1',
-  account_stage: 'Operational', contactability: null, contacts: [],
-  drivers: [{
-    id: 'd1', rut: '22222222-2', name: 'Juan Pérez',
-    governance: {
-      id_expiry: '2099-01-01', license_expiry: '2099-01-01',
-      anexo_3_gc: 'ok', epp: 'ok', das_odi: 'ok', hoja_de_vida: 'ok',
-      cert_antecedentes: 'ok', validado_gc_driver: 'ok', contrato_trabajo: 'ok',
-      creacion_gc_driver: 'ok', avance_total: 100,
-    },
+const CARRIER: Carrier = {
+  id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
+  operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
+  overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
+  contacts: [],
+  compliance_records: [{
+    id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',
+    requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'MISSING',
+    expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
+    is_expired: false, is_expiring_soon: false,
   }],
-  vehicles: [{
-    id: 'v1', type: 'Tractocamión', plate: 'ABCD12',
-    governance: {
-      year: 2020, circ_permit_expiry: '2099-01-01', tech_inspection_expiry: '2099-01-01',
-      gas_emissions_expiry: '2099-01-01', soap_insurance_expiry: '2099-01-01',
-      padron: 'ok', poliza_rc: 'ok', gps: 'ok', seguro_carga: 'ok',
-      mantencion_camara_frio: 'n_a', creacion_gc_vehicle: 'ok',
-    },
-  }],
-  trailers: [],
-  manually_edited_fields: [], edited_at: null, in_admin: true, clients: ['Walmart'],
-  eligibility: { eligible: false, compliance_pct: 82, insurance_ok: true, blocking_reasons: ['docs_below_threshold'] },
-  documents: [],
 }
+
+const DRIVERS: CarrierDriverRosterItem[] = [
+  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null },
+]
+
+const ASSETS: CarrierAssetRosterItem[] = [
+  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', total_requirements: 3, last_document_update: null },
+]
 
 beforeEach(() => {
   vi.mocked(useParams).mockReturnValue({ id: 't1' })
@@ -68,36 +74,47 @@ beforeEach(() => {
       }),
     }),
   } as unknown as ReturnType<typeof createClient>)
-  vi.mocked(transportersApi.get).mockReset().mockResolvedValue(PROFILE as never)
+
+  vi.mocked(carriersApi.get).mockReset().mockResolvedValue(CARRIER)
+  vi.mocked(carriersApi.listDrivers).mockReset().mockResolvedValue(DRIVERS)
+  vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue(ASSETS)
+  vi.mocked(carriersApi.listPolicies).mockReset().mockResolvedValue([])
+  vi.mocked(driversApi.listComplianceRecords).mockReset().mockResolvedValue([])
+  vi.mocked(assetsApi.listComplianceRecords).mockReset().mockResolvedValue([])
 })
 
 describe('EmpresaDetailPage', () => {
-  it('shows the alert banner with the blocking reason', async () => {
+  it('shows the alert banner when there is a mandatory MISSING record', async () => {
     renderPage()
-    expect(await screen.findByText('No habilitada para asignar')).toBeInTheDocument()
-    expect(screen.getAllByText(/Documentación bajo el umbral \(82% < 90%\)/).length).toBeGreaterThan(0)
+    expect(await screen.findByText('Documentos obligatorios pendientes o vencidos')).toBeInTheDocument()
+    expect(screen.getByText(/F30 Multas — falta/)).toBeInTheDocument()
   })
 
-  it('shows the driver and vehicle rosters', async () => {
+  it('shows the driver and equipment rosters', async () => {
     renderPage()
     expect(await screen.findByText('Juan Pérez')).toBeInTheDocument()
     expect(screen.getByText('ABCD12')).toBeInTheDocument()
   })
 
   it('opens the driver detail panel when a roster card is clicked', async () => {
+    vi.mocked(driversApi.get).mockResolvedValue({
+      id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
+      operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
+      total_requirements: 5, last_document_update: null,
+    })
     renderPage()
     fireEvent.click(await screen.findByText('Juan Pérez'))
-    expect(await screen.findByLabelText('Estado de EPP')).toBeInTheDocument()
+    await waitFor(() => expect(driversApi.get).toHaveBeenCalledWith('d1'))
   })
 
   it('filters the driver roster by search', async () => {
     renderPage()
     await screen.findByText('Juan Pérez')
-    fireEvent.change(screen.getByPlaceholderText('Filtrar por nombre o RUT…'), { target: { value: 'nadie' } })
+    fireEvent.change(screen.getByPlaceholderText('Filtrar por nombre o tax_id…'), { target: { value: 'nadie' } })
     await waitFor(() => expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument())
   })
 
-  it('filters the equipment roster by category (tracto/rampla)', async () => {
+  it('filters the equipment roster by asset type', async () => {
     renderPage()
     await screen.findByText('ABCD12')
     fireEvent.click(screen.getByRole('button', { name: 'Rampla' }))
@@ -105,11 +122,11 @@ describe('EmpresaDetailPage', () => {
   })
 
   it('shows only the first 9 drivers with a "Mostrar los N restantes" button for larger rosters', async () => {
-    const manyDrivers = Array.from({ length: 12 }, (_, i) => ({
-      id: `d${i}`, rut: `${i}-1`, name: `Conductor ${i}`,
-      governance: PROFILE.drivers[0].governance,
+    const manyDrivers: CarrierDriverRosterItem[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `d${i}`, tax_id: `${i}-1`, full_name: `Conductor ${i}`,
+      operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
     }))
-    vi.mocked(transportersApi.get).mockResolvedValue({ ...PROFILE, drivers: manyDrivers } as never)
+    vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
     renderPage()
     await screen.findByText('Conductor 0')
     expect(screen.queryByText('Conductor 9')).not.toBeInTheDocument()
@@ -120,30 +137,27 @@ describe('EmpresaDetailPage', () => {
     expect(screen.queryByRole('button', { name: /Mostrar los/ })).not.toBeInTheDocument()
   })
 
-  it('does not poison the contact draft after Cancelar: reopening Editar shows the real current values, not a leftover cleared field', async () => {
-    const contact = { role: 'rep_legal', name: 'Contacto Original', phone: '111111111', email: 'orig@example.com' }
-    vi.mocked(transportersApi.get).mockResolvedValue({ ...PROFILE, contacts: [contact] } as never)
+  it('does not poison the contact draft after Cancelar: reopening Editar shows the real current values', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({
+      ...CARRIER,
+      contacts: [{ id: 'ct1', contact_role: 'LEGAL_REP', first_name: 'Contacto', last_name: 'Original', job_title: null, phone: '111111111', email: 'orig@example.com', is_primary: true, is_active: true }],
+    })
     renderPage()
     await screen.findByText('Contacto Original')
 
-    // Abrir edición, vaciar el teléfono, cancelar sin guardar.
     fireEvent.click(screen.getByText('Editar'))
     const phoneInput = screen.getByPlaceholderText('Teléfono')
     expect(phoneInput).toHaveValue('111111111')
     fireEvent.change(phoneInput, { target: { value: '' } })
     fireEvent.click(screen.getByText('Cancelar'))
 
-    // La vista de lectura debe seguir mostrando el teléfono real (no se guardó nada).
     expect(screen.getByText('111111111')).toBeInTheDocument()
 
-    // Reabrir edición: el draft debe resincronizarse desde `contact`, no arrastrar
-    // el valor vaciado en memoria de la edición cancelada anterior.
     fireEvent.click(screen.getByText('Editar'))
     expect(screen.getByPlaceholderText('Teléfono')).toHaveValue('111111111')
     expect(screen.getByPlaceholderText('Nombre')).toHaveValue('Contacto Original')
     expect(screen.getByPlaceholderText('Email')).toHaveValue('orig@example.com')
 
-    // No se llamó a upsertContact en ningún momento de este flujo (solo Cancelar, nunca Guardar).
-    expect(transportersApi.upsertContact).not.toHaveBeenCalled()
+    expect(contactsApi.patch).not.toHaveBeenCalled()
   })
 })

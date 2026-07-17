@@ -3,9 +3,8 @@ interface Props {
   total: number
 }
 
-/** Anillo de progreso (conic-gradient CSS, mismo enfoque que StatusDonut
- *  en PolizasTab — sin librería de gráficos). Verde si está 100%
- *  completo, ámbar en caso contrario. */
+/** Anillo de progreso (conic-gradient CSS — sin librería de gráficos).
+ *  Verde si está 100% completo, ámbar en caso contrario. */
 export function CompletionRing({ ok, total }: Props) {
   const pct = total > 0 ? Math.round((ok / total) * 100) : 0
   const complete = total > 0 && ok === total

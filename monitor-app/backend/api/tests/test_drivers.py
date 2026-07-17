@@ -89,3 +89,21 @@ def test_patch_driver_updates_and_sets_override():
     override_sql = conn.execute.call_args_list[1].args[0]
     assert "UPDATE public.drivers" in override_sql
     assert "is_manual_override = true" in override_sql
+
+
+def test_list_driver_compliance_records():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": "cr1", "requirement_id": "req1", "requirement_code": "LIC_CONDUCIR", "name": "Licencia",
+        "requirement_level": "LEGAL_MANDATORY", "requires_file": True, "status": "MISSING",
+        "expiration_date": None, "file_url": None, "metadata": {}, "is_manual_override": False,
+        "is_expired": False, "is_expiring_soon": False,
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/drivers/d1/compliance-records")
+
+    assert res.status_code == 200
+    assert res.json()[0]["requirement_code"] == "LIC_CONDUCIR"
+    sql = pool.fetch.call_args.args[0]
+    assert "entity_type = 'DRIVER'" in sql
