@@ -192,10 +192,18 @@ Verificado: `tsc --noEmit` bajó de 182 a 169 errores / 50 a 46 archivos (los 4 
 
 Los 46 archivos restantes con error son **todos** Empresas/Seguros genuinos — sin más fugas cruzadas a otros módulos. Es el alcance real de la fase 2 (componentes).
 
+### 2026-07-16 (cont.) — Commit y push de toda la sesión (Checkpoints M, H0, H1, H2, H3 capa 1)
+
+Commit `5955c5f` en `dev`, pusheado a `origin/dev` (`10cb9b3..5955c5f`). 82 archivos, staging manual (no `git add -A`) para excluir explícitamente lo ajeno a esta sesión: ~70 migraciones de Checkpoints A-E ya marcadas para borrar por una sesión anterior (deletion pendiente, no tocada), `.pyc`/`__pycache__`, `venv/`, `node_modules/`, y varios archivos sueltos sin relación (`processor_qanalytics_mage.py`, `monitor-app/index.html`, etc.) que ya estaban untracked en el working directory antes de esta sesión.
+
+Alcance del commit: Checkpoint M completo (Mage: credenciales, dedupe, gap de RUT, "un activo a la vez"), H0 completo (RLS, migraciones regularizadas, índices, advisors), H1 completo (vistas, reconciliación bidireccional + backfill, `is_manual_override`), H2 completo (backend nuevo, `audit_log` movido, Checkpoint D retirado), H3 capa 1 (types + `lib/api/` + fix de regresión en Diario). Los cambios de Mage en sí (pipelines) ya estaban aplicados directo en el proyecto Mage real vía `sync_local_to_remote` — no viven en este repo git.
+
+**Sesión cerrada acá.** Próxima sesión arranca directo en H3 fase 2 (componentes).
+
 #### Próximo paso exacto
-1. [ ] Checkpoint H3 fase 2: reescribir los ~24 componentes + 2 páginas de Empresas/Seguros contra los tipos/API nuevos. Lista completa de archivos con error en `tsc --noEmit` (46 archivos, todos genuinamente Empresas/Seguros).
-2. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier — ahora también condiciona reactivar `EmpresaSelector`/`TransporterAssignSection`/las alertas de `TripTable`. **No iniciar sin que el usuario lo pida explícitamente** — fuera de alcance de esta sesión (ver memoria de auditoría de Diario pendiente).
-3. [ ] Pendientes de sesiones anteriores (ya no bloqueantes para este workstream): cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, mapeo `doc_code`↔cliente (Fabián), decidir push a remoto del historial acumulado de Checkpoints A-E (nada se pusheó desde `ad6afa8`).
+1. [ ] Checkpoint H3 fase 2: reescribir los ~24 componentes + 2 páginas de Empresas/Seguros contra los tipos/API nuevos (ya commiteados). Correr `npx tsc --noEmit` en el frontend al arrancar para tener la lista actualizada de archivos pendientes (era 46 al cierre de esta sesión, todos genuinamente Empresas/Seguros — sin fugas a otros módulos).
+2. [ ] H2.6 (decisión pendiente, sigue sin resolver desde Checkpoint M): si/cómo el módulo del Diario debe mostrar compliance/seguro del carrier — ahora también condiciona reactivar `EmpresaSelector`/`TransporterAssignSection`/las alertas de `TripTable` (quedaron con `TODO(H2.6)` explícito en el código). **No iniciar sin que el usuario lo pida explícitamente** — fuera de alcance (ver memoria de auditoría de Diario pendiente).
+3. [ ] Pendientes de sesiones anteriores (ya no bloqueantes para este workstream): cruces Cobranza↔Pólizas, cableado real del botón "Pagar" de Cobranza, mapeo `doc_code`↔cliente (Fabián), decidir qué hacer con las ~70 migraciones de Checkpoints A-E ya marcadas para borrar (deletion pendiente en el working tree, no de esta sesión, sin commitear).
 2. [ ] H2.0: retirar del repo `centralizer_uploads.py`, `centralizer_parser.py`, `centralizer_diff.py` y el frontend de `/dashboard/uploads` una vez confirmado que no se reutiliza nada.
 3. [ ] H2.4: confirmar si `app.transporter_profiles` se sigue refrescando por algún medio (el modelo dbt que lo hacía quedó retirado en Checkpoint M) antes de construir la integración con el módulo del diario.
 4. [ ] Tener presente para H2/H3: `app.carrier_compliance_status` vigente es la versión simple (sin `compliance_documents`/`active_shippers` JSONB anidados) — si el frontend necesita ese detalle habrá que ampliarla, no asumir que ya está.
