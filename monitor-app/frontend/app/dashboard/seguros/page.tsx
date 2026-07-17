@@ -121,63 +121,112 @@ export default function SegurosPage() {
       ) : items.length === 0 ? (
         <p className="bg-white rounded-2xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
       ) : (
-        <div className={`bg-white rounded-2xl border border-border overflow-hidden transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">
-                <th className="px-3 py-3 text-left">Empresa</th>
-                <th className="px-3 py-3 text-left w-32">Estado</th>
-                <th className="px-3 py-3 text-center w-24">Pólizas</th>
-                <th className="px-3 py-3 text-center w-28">Cuotas vencidas</th>
-                <th className="px-3 py-3 text-left w-40">Próximo pago</th>
-                <th className="px-3 py-3 w-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, i) => {
-                const health = item.worst_policy_health
-                const badge = health ? POLICY_HEALTH_CONFIG[health] : null
-                const nextPayLabel = dueRelative(item.next_payment_date, item.total_overdue_installments > 0)
-                return (
-                  <tr
-                    key={item.carrier_id}
-                    onClick={() => setSelected(item)}
-                    className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
-                      selected?.carrier_id === item.carrier_id ? 'bg-accent/5' : i % 2 === 1 ? 'bg-gray-50/40 hover:bg-gray-50' : 'hover:bg-gray-50/70'
-                    }`}
-                  >
-                    <td className="px-3 py-3">
-                      <p className="font-semibold text-text-primary truncate leading-tight">
+        <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
+          {/* Mobile: cards (misma resolución que TransporterCard en Empresas — una tabla
+             de 6 columnas no cabe en un viewport angosto sin recortar información). */}
+          <div className="md:hidden grid grid-cols-1 gap-3">
+            {items.map(item => {
+              const health = item.worst_policy_health
+              const badge = health ? POLICY_HEALTH_CONFIG[health] : null
+              const nextPayLabel = dueRelative(item.next_payment_date, item.total_overdue_installments > 0)
+              return (
+                <div
+                  key={item.carrier_id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelected(item)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(item) } }}
+                  className="text-left bg-white border border-border rounded-2xl p-4 space-y-3 cursor-pointer transition-all hover:shadow-md hover:border-gray-300"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm text-text-primary truncate leading-tight">
                         {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
                       </p>
-                      <p className="text-[11px] text-gray-400 font-mono">{item.tax_id}</p>
-                    </td>
-                    <td className="px-3 py-3">
-                      {badge ? (
-                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>
-                          {badge.icon} {badge.label}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">
-                          Sin póliza
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-center font-bold text-sm text-slate-700">{item.total_policies}</td>
-                    <td className="px-3 py-3 text-center">
-                      {item.total_overdue_installments > 0 ? (
-                        <span className="font-bold text-sm text-red-600">{item.total_overdue_installments}</span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-500">{nextPayLabel ?? '—'}</td>
-                    <td className="px-3 py-3 text-center text-gray-300"><ChevronRight size={15} /></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{item.tax_id}</p>
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
+                    {badge ? (
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>
+                        {badge.icon} {badge.label}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">
+                        Sin póliza
+                      </span>
+                    )}
+                    <span className="text-[11px] text-gray-400 text-right">
+                      {item.total_policies} póliza{item.total_policies === 1 ? '' : 's'}
+                      {item.total_overdue_installments > 0 && <span className="text-red-600 font-semibold"> · {item.total_overdue_installments} vencida{item.total_overdue_installments === 1 ? '' : 's'}</span>}
+                      {nextPayLabel && ` · ${nextPayLabel}`}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Desktop: tabla completa */}
+          <div className="hidden md:block bg-white rounded-2xl border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">
+                  <th className="px-3 py-3 text-left">Empresa</th>
+                  <th className="px-3 py-3 text-left w-32">Estado</th>
+                  <th className="px-3 py-3 text-center w-24">Pólizas</th>
+                  <th className="px-3 py-3 text-center w-28">Cuotas vencidas</th>
+                  <th className="px-3 py-3 text-left w-40">Próximo pago</th>
+                  <th className="px-3 py-3 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, i) => {
+                  const health = item.worst_policy_health
+                  const badge = health ? POLICY_HEALTH_CONFIG[health] : null
+                  const nextPayLabel = dueRelative(item.next_payment_date, item.total_overdue_installments > 0)
+                  return (
+                    <tr
+                      key={item.carrier_id}
+                      onClick={() => setSelected(item)}
+                      className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
+                        selected?.carrier_id === item.carrier_id ? 'bg-accent/5' : i % 2 === 1 ? 'bg-gray-50/40 hover:bg-gray-50' : 'hover:bg-gray-50/70'
+                      }`}
+                    >
+                      <td className="px-3 py-3">
+                        <p className="font-semibold text-text-primary truncate leading-tight">
+                          {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
+                        </p>
+                        <p className="text-[11px] text-gray-400 font-mono">{item.tax_id}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        {badge ? (
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>
+                            {badge.icon} {badge.label}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">
+                            Sin póliza
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-center font-bold text-sm text-slate-700">{item.total_policies}</td>
+                      <td className="px-3 py-3 text-center">
+                        {item.total_overdue_installments > 0 ? (
+                          <span className="font-bold text-sm text-red-600">{item.total_overdue_installments}</span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-gray-500">{nextPayLabel ?? '—'}</td>
+                      <td className="px-3 py-3 text-center text-gray-300"><ChevronRight size={15} /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
