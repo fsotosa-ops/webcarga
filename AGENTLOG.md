@@ -34,9 +34,9 @@
 `pytest` 162 passed, `tsc --noEmit` limpio, `vitest` 328 passed, `npm run build` exitoso.
 
 #### Próximo paso exacto
-1. [ ] Datos estructurados por documento (ej. F30: monto de la multa, fecha) — sigue sin confirmar si el usuario todavía lo quiere más allá de lo ya resuelto. Preguntar antes de construir nada.
+1. [ ] Datos estructurados por documento — acotado a **`F30_MULTAS`** (único caso real, ver ronda siguiente): monto + fecha de la infracción. Sigue sin confirmar si el usuario todavía lo quiere. Preguntar antes de construir nada.
 2. [x] H2.6 — **investigado a fondo esta sesión** (ver ronda siguiente), quedó documentado en `monitor-app/docs/data-model/trips/trips_context.md`. La implementación sigue sin iniciar — es el próximo paso real, ver checklist de la ronda siguiente.
-3. [ ] Cobranza (aging/agrupación cross-empresa, botón "Pagar" real) sigue sin ruta dedicada — requeriría endpoints nuevos (`GET /policies`, `GET /installments` globales), fuera de alcance por ahora.
+3. [x] ~~Cobranza (aging/agrupación cross-empresa, botón "Pagar" real)~~ — **no es un pendiente real, estaba mal arrastrado en este checklist.** Se construyó, pasó por 3 rondas de rechazo de diseño, y el usuario decidió explícitamente retirarla por completo en Checkpoint H3 fase 2 (2026-07-16): `CobranzaTab.tsx`/`PolizasTab.tsx`/`/dashboard/seguros` borrados, confirmado de nuevo en una ronda posterior ("no se restaura la vista global de Cobranza/cuotas cross-empresa"). Sacado del checklist esta sesión.
 
 ---
 
@@ -59,10 +59,16 @@
 
 **Seguridad aplicada en el momento (mismo día, a pedido explícito del usuario)**: RLS habilitado en las 14 tablas de `bronze` que estaban completamente expuestas (migración `enable_rls_bronze_exposed_tables`) — `raw_admin_customers`/`raw_admin_companies` (datos de autenticación de una plataforma legacy, 0 referencias en código) quedaron bloqueadas por completo, sin política ni para `authenticated`; las otras 12 (datos de negocio: conductores/vehículos/OTs/transportistas/seguros) quedaron con policy de lectura para `authenticated`, mismo patrón que ya usaba `bronze.tms_trips`. Verificado con el advisor de seguridad: el hallazgo `rls_disabled` para `bronze` ya no aparece. La credencial de `sharepoint_eett.py` **NO se rotó** — decisión explícita del usuario, queda igual que antes (vivo en el working tree, no trackeado en git).
 
+**Aclaraciones post-cierre de esta ronda (mismo día, respondiendo preguntas del usuario sobre el checklist)**:
+- **Cobranza sacada del checklist** (ver arriba) — nunca fue un pendiente real, quedó mal arrastrado de rondas anteriores.
+- **Alcance de "datos estructurados por documento" acotado a `F30_MULTAS`**: se revisó el catálogo completo de `public.compliance_requirements` (36 requisitos: 9 ASSET + 15 CARRIER + 12 DRIVER) — de los 36, **`F30_MULTAS`** (CARRIER) es el único conceptualmente distinto: documenta eventos cuantificables (multa = monto + fecha de infracción), no una credencial "válida hasta tal fecha" como el resto. Precedente directo: `INSURANCE_POLICY` tenía el mismo problema y se resolvió con tabla relacional propia (`insurance_policies`), no con campos sueltos en `compliance_records` — mismo patrón a seguir para F30 si se confirma que se necesita. Caso aparte marcado, no confirmado: `CONTROL_MENSUAL_COL_T` (DRIVER, "Control Documental Mensual") por nombre sugiere recurrencia/periodicidad, no campos adicionales — distinto tipo de gap, sin investigar a fondo.
+- **Bug nuevo encontrado y confirmado con causa raíz (no solo reportado por el usuario)**: la previsualización de archivos ya cargados **no existe en la UI**, para carrier/driver/asset por igual — mismo componente compartido (`DocumentChecklist.tsx`) para los tres. Causa raíz: el backend ya devuelve `file_url` (URL firmada, vía `resolve_signed_url()`) en cada `compliance_record`, pero `lib/utils/complianceChecklist.ts` lo descarta al mapear a `ChecklistItem` (el type ni siquiera incluye el campo), y `DocumentChecklist.tsx` no tiene ningún link/ícono de previsualización — solo botón "Subir" (reemplaza el archivo) o selector de estado. No se tocó código todavía, solo diagnosticado.
+
 #### Próximo paso exacto
 1. [ ] Confirmar con negocio los puntos abiertos de `trips_context.md` §11 antes de tocar código de H2.6 (regla de precedencia manual-vs-TMS, portal de shipper sí/no, RLS de `public.*` intencional o no, etc.).
 2. [ ] H2.6 implementación: sigue **sin iniciar**, sigue requiriendo pedido explícito del usuario — el plan de accionables está en `trips_context.md` §10, orden recomendado (e).
 3. [ ] Quick wins de bajo riesgo identificados y listos para ejecutar cuando el usuario lo pida: quitar columna "Estado SAP" del detalle de viaje, esquema de 4 campos híbridos de fecha, derivación server-side de "Indicadores", catálogo configurable de motivo de no asignación (`trips_context.md` §10(f)).
-4. [ ] Datos estructurados por documento (F30) y Cobranza siguen pendientes de la ronda anterior, sin cambios.
+4. [ ] **Bug de previsualización de archivos (carrier/driver/asset)** — fix acotado: agregar `file_url` a `ChecklistItem`/`complianceChecklist.ts` + affordance de preview/link en `DocumentChecklist.tsx`. Listo para ejecutar cuando el usuario lo pida.
+5. [ ] F30_MULTAS (monto + fecha de multa) — confirmar con el usuario si todavía lo quiere antes de construir; si sí, seguir el patrón de `insurance_policies` (tabla relacional propia), no campos sueltos en `compliance_records`.
 
 ---
