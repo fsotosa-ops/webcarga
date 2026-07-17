@@ -92,11 +92,15 @@
 
 **Migraciones versionadas esta sesión** (corrigiendo la deuda de proceso #1/#2 de `trips_context.md` en el momento, no solo documentándola): `20260717184519_enable_rls_bronze_exposed_tables.sql`, `20260717190246_trip_hybrid_date_fields.sql`.
 
-**Mitigación del riesgo de sync (mismo día)**: el usuario pausó manualmente el pipeline `batch_tms_monitor_trips` en Mage — el riesgo de que una corrida normal borre `cag_inicio`/`cag_fin`/`stop_manual_fields` (por `on_schema_change='sync_all_columns'`) queda contenido mientras el pipeline esté pausado. Sigue pendiente sincronizar el cambio de `app_trips.sql` a Mage antes de reanudarlo.
+**Mitigación del riesgo de sync (mismo día)**: el usuario pausó manualmente el pipeline `batch_tms_monitor_trips` en Mage — el riesgo de que una corrida normal borre `cag_inicio`/`cag_fin`/`stop_manual_fields` (por `on_schema_change='sync_all_columns'`) quedó contenido mientras el pipeline estuvo pausado.
+
+**Sync a Mage completado (mismo día)**: en vez de apuntar `sync_local_to_remote` al repo completo de webcarga (riesgo descartado antes, sin mapeo 1:1 de rutas confiable), se usó `sync_project_to_local` contra un directorio aislado (`scratchpad/mage-sync`) para bajar el proyecto Mage real completo (316 archivos), se ubicó el modelo real (`dbt/tms/models/app/trips.sql`), se confirmó por `diff` que coincidía exactamente con el espejo local del repo salvo el cambio pendiente, se aplicó el mismo cambio, se verificó con `sync_status` que solo ese archivo quedaba desincronizado, y se subió con `sync_local_to_remote` (`files_pushed: 1`). `sync_status` posterior confirma 0 diffs pendientes — el modelo real en Mage ya tiene las 3 columnas nuevas protegidas de `on_schema_change`.
+
+**No se reanudó el pipeline** — no hay tool de trigger/schedule enable en `mage-agent` para esto, y es simétrico que lo reanude el usuario manualmente en la Mage UI, mismo lugar donde lo pausó. Tampoco se ejecutó `run_pipeline`/`execute_pipeline` para verificar en vivo — dispararía una corrida real contra las 3 APIs de TMS y escribiría en Supabase, fuera de lo pedido.
 
 #### Próximo paso exacto
-1. [ ] **Sincronizar en Mage** el cambio de `app_trips.sql` (columnas `cag_inicio`/`cag_fin`/`stop_manual_fields` + `merge_exclude_columns`, líneas ~7-11 y ~254-262) y **luego reanudar** el pipeline `batch_tms_monitor_trips` — no reanudar antes de sincronizar. Ver `trips_context.md` §13.
-2. [ ] Verificar en vivo (con un viaje real) que los campos híbridos sobreviven a una corrida del pipeline una vez reanudado.
+1. [ ] **Reanudar el pipeline `batch_tms_monitor_trips` en Mage** (acción del usuario, vía la misma UI donde se pausó) — el sync ya está hecho, es seguro reanudar.
+2. [ ] Verificar en vivo (con un viaje real) que los campos híbridos sobreviven a la primera corrida tras reanudar.
 3. [ ] Confirmar con negocio los puntos abiertos de `trips_context.md` §11 antes de tocar código de H2.6.
 4. [ ] H2.6 implementación: sigue sin iniciar, sigue requiriendo pedido explícito.
 5. [ ] Catálogo configurable de "motivo de no asignación" — pendiente, depende de que la feature de "vista no asignados" exista primero.
