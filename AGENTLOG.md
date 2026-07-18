@@ -194,14 +194,13 @@ Migración versionada: `20260717220000_trip_hygiene_spanish_to_english_columns.s
 
 `pytest` 211/211, `tsc --noEmit` limpio, `vitest` 344/344, `npm run build` exitoso. Plan maestro (`~/.claude/plans/necesito-que-actues-como-rustling-river.md`) actualizado con el diseño real (reemplaza los supuestos del borrador anterior).
 
-**Sin commit todavía** — ni la higienización de la ronda anterior ni esta ronda están comiteadas; queda pendiente de confirmación del usuario (mismo punto 1 de abajo).
+**Corrección**: la higienización de la ronda anterior ya estaba comiteada desde antes de esta sesión (`aba7e29`) — el punto 1 del checklist anterior estaba desactualizado. Esta ronda (catálogo de locales) comiteada y pusheada a `dev`: commit `e870786` (`aba7e29..e870786`).
 
 #### Próximo paso exacto
-1. [ ] Commit/push de la higienización (ronda 9) + catálogo de locales (esta ronda) — pendiente de confirmación del usuario.
-2. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` (hoy es un upsert one-shot en la migración) — decidir dónde corre (Mage) cuando el usuario lo pida.
-3. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (sigue vigente, acción del usuario).
-4. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — sigue encolada, sin iniciar.
-5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
-6. [ ] F30_MULTAS — sigue sin confirmar.
+1. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` (hoy es un upsert one-shot en la migración) — decidir dónde corre (Mage) cuando el usuario lo pida.
+2. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (sigue vigente, acción del usuario).
+3. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — sigue encolada, sin iniciar.
+4. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
+5. [ ] F30_MULTAS — sigue sin confirmar.
 
 ---
