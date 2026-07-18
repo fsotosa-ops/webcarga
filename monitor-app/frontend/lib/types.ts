@@ -351,6 +351,14 @@ export type TripStop = {
    *  por (nombre, N° de local) — null si no matchea ningún local del
    *  generador de carga (ver plan maestro H2.6). */
   operation_type?:     string | null
+  /** ORIGIN (a lo sumo 1 por viaje, stop_order=0) o DESTINATION — origen
+   *  unificado como parada 0 del mismo timeline (Fase 1 del hardening del
+   *  Diario, 2026-07-18). Un viaje sin match de origen simplemente no trae
+   *  ninguna fila ORIGIN en `stops` (no es un `null`, está ausente).
+   *  Opcional en el tipo (el backend real siempre lo manda) para no romper
+   *  fixtures de test anteriores a esta fase — toda la lógica que lo lee
+   *  trata `undefined` igual que 'DESTINATION'. */
+  stop_type?:          'ORIGIN' | 'DESTINATION'
 }
 
 export type Trip = {
@@ -374,15 +382,17 @@ export type Trip = {
   driver_phone:           string | null
   carrier_name:           string | null   // linked company (public.carriers.business_name) only
   carrier_name_tms:       string | null   // TMS-reported name (fleet->>'transporter_name_tms')
+  /** Nombre del local de origen — computado desde la parada ORIGIN de
+   *  `stops` (Fase 1 del hardening del Diario, 2026-07-18). Ya no es una
+   *  columna propia de app.trips; se expone acá como conveniencia de
+   *  lectura para no romper vistas que solo necesitan el nombre. Editar
+   *  Carga Inicio/Fin ahora se hace vía la parada ORIGIN en `stops`
+   *  (mismo mecanismo que Desc. Inicio/Fin de cualquier destino), no acá. */
   origin:                 string | null
   /** Ubicación complementaria asignada desde el Monitor (dropdown Chile) —
    *  el pipeline nunca la escribe */
   origin_region?:         string | null
   origin_city?:           string | null
-  /** Carga Inicio/Fin (origen) — campo híbrido editable, sin equivalente
-   *  TMS. Ver esquema de fechas 2026-07-17. */
-  cag_inicio_at?:         string | null
-  cag_fin_at?:            string | null
   cargo_type:             string | null
   stops:                  TripStop[]
   is_active:              boolean

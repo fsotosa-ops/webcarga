@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.routers.trips import router, _load_trip_stops, _parse_timestamptz
+from app.routers.trips import router, _load_trip_stops, _parse_timestamptz, _attach_origin
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_editor
 
@@ -33,40 +33,13 @@ def make_client(pool):
     return TestClient(app)
 
 
-# ── Carga Inicio/Fin (origen) vía PATCH /trips/{id} ──────────────────────────
-
-def test_patch_cag_inicio_at_and_fin_at_persists_as_timestamptz():
-    pool = make_pool()
-    client = make_client(pool)
-    res = client.patch("/api/v1/trips/trip-1", json={
-        "cag_inicio_at": "2026-07-17T09:00:00", "cag_fin_at": "2026-07-17T09:30:00",
-    })
-    assert res.status_code == 200
-    update = next(c for c in pool.execute.call_args_list
-                  if c.args[0].startswith("UPDATE app.trips SET"))
-    assert "cag_inicio_at = $" in update.args[0]
-    assert "cag_fin_at = $" in update.args[0]
-    assert "::timestamptz" in update.args[0]
-    # Parseado a datetime con tzinfo de Chile explícito, no str crudo — mismo
-    # bug de huso horario que se encontró y corrigió en las paradas (Fase 2,
-    # ver _parse_timestamptz): asyncpg exige datetime.datetime para un
-    # parámetro ::timestamptz, y sin tzinfo explícito tomaría el huso del
-    # sistema operativo del contenedor en vez del de Chile.
-    from zoneinfo import ZoneInfo
-    chile = ZoneInfo("America/Santiago")
-    assert datetime(2026, 7, 17, 9, 0, tzinfo=chile) in update.args
-    assert datetime(2026, 7, 17, 9, 30, tzinfo=chile) in update.args
-
-
-def test_patch_cag_inicio_at_alone_does_not_touch_cag_fin_at():
-    pool = make_pool()
-    client = make_client(pool)
-    res = client.patch("/api/v1/trips/trip-1", json={"cag_inicio_at": "2026-07-17T09:00:00"})
-    assert res.status_code == 200
-    update = next(c for c in pool.execute.call_args_list
-                  if c.args[0].startswith("UPDATE app.trips SET"))
-    assert "cag_inicio_at = $" in update.args[0]
-    assert "cag_fin_at" not in update.args[0]
+# ── Carga Inicio/Fin (origen) — Fase 1 del hardening del Diario (2026-07-18):
+# ya no se editan vía PATCH /trips/{id} (cag_inicio_at/cag_fin_at fueron
+# eliminados de app.trips) — el origen es una parada más (stop_type=ORIGIN),
+# se edita con el MISMO mecanismo que Desc. Inicio/Fin de cualquier destino
+# (PATCH /trips/{id}/stops/{stop_id}), ya cubierto por
+# test_patch_stop_persists_desc_fields_in_trip_stops_table de abajo — ese
+# endpoint no distingue stop_type, así que no hace falta un test aparte.
 
 
 # ── Desc. Inicio/Fin por parada vía PATCH /trips/{id}/stops/{stop_id} ────────
@@ -239,3 +212,49 @@ def test_parse_timestamptz_422_for_invalid_format():
     with pytest.raises(HTTPException) as exc_info:
         _parse_timestamptz("no es una fecha")
     assert exc_info.value.status_code == 422
+
+
+# ── _attach_origin — origen derivado de la parada ORIGIN (Fase 1, cutover
+#    final del origen unificado como parada 0, 2026-07-18) ───────────────────
+
+def test_attach_origin_uses_the_origin_stop_local():
+    d = {"stops": [
+        {"stop_id": "o1", "stop_type": "ORIGIN", "local": "CD Tambores"},
+        {"stop_id": "s1", "stop_type": "DESTINATION", "local": "CD San Bernardo"},
+    ]}
+    _attach_origin(d)
+    assert d["origin"] == "CD Tambores"
+
+
+def test_attach_origin_none_when_no_origin_stop():
+    d = {"stops": [{"stop_id": "s1", "stop_type": "DESTINATION", "local": "CD San Bernardo"}]}
+    _attach_origin(d)
+    assert d["origin"] is None
+
+
+def test_attach_origin_none_for_empty_stops():
+    d = {"stops": []}
+    _attach_origin(d)
+    assert d["origin"] is None
+
+
+def test_get_trip_endpoint_derives_origin_from_stops():
+    pool = make_pool()
+    pool.fetchrow.return_value = {"id": "trip-1", "client_name": None}
+
+    def fetch_side_effect(query, *args):
+        if "FROM app.trip_stops" in query:
+            return [
+                _stop_row(stop_id="o1", stop_order=0, stop_type="ORIGIN", local="CD Tambores"),
+                _stop_row(stop_id="s1", stop_order=1, stop_type="DESTINATION", local="CD San Bernardo"),
+            ]
+        return []
+    pool.fetch.side_effect = fetch_side_effect
+    client = make_client(pool)
+
+    res = client.get("/api/v1/trips/trip-1")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["origin"] == "CD Tambores"
+    assert [s["stop_type"] for s in body["stops"]] == ["ORIGIN", "DESTINATION"]

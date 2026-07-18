@@ -268,16 +268,50 @@ Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (
 - `npm run build`: exitoso.
 - **Sin verificación en navegador autenticado** — la app usa SSO real (Google/Microsoft) contra Supabase de producción, sin credenciales de test ni bypass de auth disponibles en este entorno. Los servidores dev (backend :8001, frontend :3000) arrancaron limpios sin errores, pero no se pudo hacer click-through real. Queda pendiente que el usuario lo prueбe en vivo o provea credenciales de test.
 
-**Sin commitear a git todavía** — se acumulan cambios de 3 rondas (Fase 0 completa + Fase 1 parcial): `trips.py`, `assets.py`, `lib/api/assets.ts`, `lib/types.ts`, `VehicleDetailPanel.tsx` (+test), `page.tsx` de empresa, 3 migraciones nuevas (`20260718060000`, `20260718070000`, más el fix de Fase 0 ya aplicado directo a Mage). Sigue pendiente confirmación del usuario para el commit.
+**Commiteado**: sí, commit `7741ffe` en `dev` (10 archivos: Fase 0 + Fase 1 parcial hasta acá). Sin pushear — pendiente de confirmación del usuario.
 
-#### Próximo paso exacto
-1. [ ] Confirmar commit de todos los cambios acumulados (Fase 0 + Fase 1 parcial).
+#### Próximo paso exacto (histórico — ver ronda siguiente, Fase 1 completa)
+1. [x] Confirmar commit de los cambios acumulados — hecho (`7741ffe`).
 2. [ ] Verificación manual en navegador del flujo de asignación (requiere credenciales reales del usuario).
-3. [ ] Exponer `origin_operation_type` en el frontend — pendiente, ítem de la Fase 1.
-4. [ ] Unificar origen como parada 0 en `app.trip_stops` — pendiente, el ítem más grande de la Fase 1.
-5. [ ] Unificar carga masiva CSV con el alta individual — pendiente.
+3. [x] Exponer `origin_operation_type` — hecho, ver ronda siguiente.
+4. [x] Unificar origen como parada 0 en `app.trip_stops` — hecho, ver ronda siguiente.
+5. [x] Unificar carga masiva CSV con el alta individual — hecho, ver ronda siguiente.
 6. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
 7. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
 8. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+
+---
+
+### 2026-07-18 (cont.) — Ronda 21: Fase 1 del hardening del Diario — CERRADA. Origen unificado como parada 0, con 2 regresiones de datos históricas encontradas y corregidas en el camino
+
+**Pedido del usuario**: "sigue con los 3 ítems que quedan" (origin_operation_type, origen como parada 0, unificar CSV). Los 2 primeros salieron rápido; el tercero (origen como parada 0) resultó ser mucho más profundo de lo planeado — encontró y corrigió 2 bugs reales de datos históricos en el camino, más un tercero preexistente ajeno a la tarea.
+
+**Ítems chicos, hechos sin sorpresas**:
+- `origin_operation_type`: badge agregado junto a "Ubicación de origen" en `TripSlideOver.tsx`, reusando `OperationTypeBadge` ya existente.
+- Unificar CSV con alta individual: viajes manuales/CSV sin empresa explícita ahora auto-resuelven `carrier_id`/`tractor_asset_id`/`driver_id` por patente al crearse (`_auto_resolve_fleet_link`, mismo mecanismo que el fallback en vivo de la ronda anterior).
+
+**Origen como parada 0 — el trabajo grande**:
+
+1. **Modelo de datos**: `app.trip_stops` gana `stop_type` (ORIGIN/DESTINATION, migración `20260718080000`). `dbt/tms/models/app/trip_stops.sql` reescrito para emitir la fila ORIGIN (stop_order=0) leyendo `origin_location_name`/`planned_departure_at`/`actual_departure_at` directo de `silver.int_tms_trips_conformed` (no de `app.trips`, que se iba a dejar de tener esas columnas). Viajes manuales: `_insert_trip_stops` en `trips.py` inserta la fila ORIGIN directo (mismo patrón dual TMS/manual que ya usan las paradas de destino desde Fase 2).
+
+2. **Bug real encontrado #1 — dbt incremental nunca reprocesa el historial viejo**: el modelo `trip_stops` (y `trips`) son incrementales con watermark basado en `MAX(updated_at)` del target. Apenas corre una vez, el watermark salta a "hoy" y el resto del historial (viajes cerrados sin actividad reciente) queda huérfano para siempre — el caso de prueba `398410` se quedó sin fila ORIGIN. Se resolvió con una migración de backfill directa en SQL (`20260718090000`, no `--full-refresh`, que hubiera borrado `desc_inicio_manual`/`desc_fin_manual` reales de operaciones al ignorar `merge_exclude_columns`).
+
+3. **Bug real encontrado #2 — el fix de Wingsuite de la Fase 0 nunca se propagó al historial**: mismo problema de raíz que el bug #1, un nivel más abajo — `app.trips.stops` (el jsonb que alimenta `trip_stops`) es TAMBIÉN incremental, así que los 12 viajes de Wingsuite (100% de ese TMS) seguían con el origen duplicado como parada de destino (el bug que se creía cerrado en Fase 0). Corregido con un DELETE dirigido + renumeración (`20260718100000`), verificado caso por caso contra los 12 afectados antes de aplicar.
+
+4. **Bug real preexistente encontrado #3, ajeno a esta tarea**: `PATCH /trips/{id}/stops/{stop_id}` hacía `SELECT id FROM app.trip_stops` — esa tabla nunca tuvo columna `id` (solo `stop_id`, su PK). Tiraba error real en cualquier llamada; los tests nunca lo agarraron porque mockean el pool. Corregido de paso porque bloqueaba directamente la edición de Carga Inicio/Fin del origen.
+
+5. **Cutover final**: `origin`/`cag_inicio_at`/`cag_fin_at` eliminados de `app.trips` y `app.trips_manual` (migración `20260718110000`, verificado sin vistas/funciones dependientes antes de aplicar). `origin_region`/`origin_city` **NO se tocaron** — siguen siendo un filtro real y activo del Diario, sin relación con la unificación de timing. El nombre de origen ahora se deriva en runtime (`_attach_origin`, desde la parada ORIGIN) para no romper consumidores que solo necesitan el string (`TripTable.tsx`).
+
+6. **Frontend**: `stop_type` en `TripStop`; `StopTimeline`/`RouteProgress` tratan la salida (no la llegada) como señal de completitud del origen; `describeStopTiming` no dice "llega ~X" para el origen (no tiene noción de llegada); el contador "N/M paradas" y `StopProgressDots` cuentan solo destinos (el origen no es una "parada" en el vocabulario operativo); "Datos operativos" perdió Origen/Carga Inicio/Fin (ahora se editan en la fila ORIGIN de la tabla técnica de Ruta, con badge "ORIGEN" visible). Esto resuelve de raíz los puntos 1 y 2 del plan original (origen mezclado con paradas, orden narrativo invertido) — la Ruta ahora cuenta la historia en orden cronológico real.
+
+**Verificación**: 228/228 backend, 371/371 frontend, `tsc` limpio, `npm run build` exitoso. Todas las migraciones probadas con dry-run antes de aplicar. La query real de `_TRIP_SELECT`/`_TRIP_FROM` se corrió contra Supabase en vivo (no solo mocks) para confirmar que compila contra el schema ya recortado.
+
+#### Próximo paso exacto
+1. [ ] Confirmar commit y push de todos los cambios de hoy a `dev`.
+2. [ ] (heredado) Confirmar push de `1e65a53` a `dev` (commit más viejo, arrastrado de varias rondas).
+3. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+4. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git — esta ronda reforzó el argumento: 2 de los 3 bugs reales encontrados hoy fueron por trabajar sobre incrementales sin visibilidad completa del historial, no por el código en sí.
+5. [ ] (heredado) Decidir si se quiere verificación manual en navegador — ninguna ronda de la Fase 0/1 pudo probarse con clic real (sin credenciales de test para la app con SSO real).
+6. [ ] Fase 2 del plan (UX del detalle de viaje) queda como siguiente bloque natural si el usuario quiere seguir — reordenar ya se resolvió de hecho en esta ronda (Origen ahora es parada 0), quedaría revisar "Ingresó al sistema" (footer invisible) y la profesionalización general de la bitácora.
 
 ---

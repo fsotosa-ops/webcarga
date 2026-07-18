@@ -22,8 +22,9 @@ export type TripPatch = {
   driver_phone?:   string
   tractor_plate?:  string
   trailer_plate?:  string
-  cag_inicio_at?:  string
-  cag_fin_at?:     string
+  // cag_inicio_at/cag_fin_at removidos (Fase 1, 2026-07-18) — Carga
+  // Inicio/Fin se edita vía TripStopPatch sobre la parada ORIGIN, mismo
+  // mecanismo que Desc. Inicio/Fin de cualquier destino.
   unassigned_reason_id?: string
 }
 

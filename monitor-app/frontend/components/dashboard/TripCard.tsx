@@ -52,9 +52,11 @@ export function TripCard({ trip, meta, onSaved, onSelect, updated }: Props) {
         {trip.driver_name ?? <span className="italic text-gray-300">sin conductor</span>}
         {trip.client_name && <span className="text-gray-300"> · {trip.client_name}</span>}
       </p>
-      {(trip.stops?.length ?? 0) > 0 && (
+      {/* Solo destinos — el origen no tiene noción de on-time/late (Fase 1,
+          origen como parada 0, 2026-07-18). */}
+      {(trip.stops?.filter(s => s.stop_type !== 'ORIGIN').length ?? 0) > 0 && (
         <div className="mt-1.5">
-          <StopProgressDots stops={trip.stops} />
+          <StopProgressDots stops={trip.stops.filter(s => s.stop_type !== 'ORIGIN')} />
         </div>
       )}
       {(eta || since !== '—') && (

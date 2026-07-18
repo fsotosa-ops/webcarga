@@ -16,10 +16,9 @@ class TripPatch(BaseModel):
     driver_phone:           Optional[str]  = None
     tractor_plate:          Optional[str]  = None
     trailer_plate:          Optional[str]  = None
-    # Campos híbridos de origen (Carga Inicio/Fin) — sin equivalente TMS,
-    # ver migración 20260717190246_trip_hybrid_date_fields
-    cag_inicio_at:          Optional[str]  = None
-    cag_fin_at:             Optional[str]  = None
+    # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen) removidos de acá
+    # (Fase 1, cutover final, 2026-07-18) — origen ahora es una parada más
+    # (stop_type=ORIGIN), se edita vía TripStopPatch como cualquier destino.
     # Motivo de no asignación (app.unassigned_reasons) — Fase 1.5d
     unassigned_reason_id:   Optional[str]  = None
 

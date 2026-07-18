@@ -360,26 +360,40 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
 })
 
 describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)', () => {
-  it('saves Carga inicio via tripsApi.patch on blur', async () => {
-    vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
-    renderSlideOver(baseTrip)
-    fireEvent.click(screen.getByText('Datos operativos'))
-    const input = screen.getByLabelText('Carga inicio') as HTMLInputElement
+  // Fase 1 del hardening del Diario (2026-07-18): Carga Inicio/Fin dejó de
+  // vivir en trip.cag_inicio_at/cag_fin_at (editado desde "Datos
+  // operativos") — el origen ahora es una parada más (stop_type=ORIGIN,
+  // stop_order=0) y se edita con el mismo mecanismo que Desc. Inicio/Fin de
+  // cualquier destino, vía tripsApi.patchStop.
+  it('saves Carga inicio of the ORIGIN stop via tripsApi.patchStop on blur', async () => {
+    vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
+    const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
+    renderSlideOver({ ...baseTrip, stops })
+    fireEvent.click(screen.getByText(/Ver detalle técnico/))
+    const input = screen.getByLabelText('Carga inicio de CD Origen') as HTMLInputElement
     fireEvent.change(input, { target: { value: '2026-07-17T09:00' } })
     fireEvent.blur(input)
     await waitFor(() =>
-      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_inicio_at: '2026-07-17T09:00' }))
+      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 'origin1', { desc_inicio: '2026-07-17T09:00' }))
   })
 
-  it('saves Carga fin via tripsApi.patch on blur', async () => {
-    vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
-    renderSlideOver(baseTrip)
-    fireEvent.click(screen.getByText('Datos operativos'))
-    const input = screen.getByLabelText('Carga fin') as HTMLInputElement
+  it('saves Carga fin of the ORIGIN stop via tripsApi.patchStop on blur', async () => {
+    vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
+    const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
+    renderSlideOver({ ...baseTrip, stops })
+    fireEvent.click(screen.getByText(/Ver detalle técnico/))
+    const input = screen.getByLabelText('Carga fin de CD Origen') as HTMLInputElement
     fireEvent.change(input, { target: { value: '2026-07-17T09:30' } })
     fireEvent.blur(input)
     await waitFor(() =>
-      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { cag_fin_at: '2026-07-17T09:30' }))
+      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 'origin1', { desc_fin: '2026-07-17T09:30' }))
+  })
+
+  it('shows an ORIGEN badge for the origin stop in the technical table', () => {
+    const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
+    renderSlideOver({ ...baseTrip, stops })
+    fireEvent.click(screen.getByText(/Ver detalle técnico/))
+    expect(screen.getAllByText('ORIGEN').length).toBeGreaterThan(0)
   })
 
   it('saves Desc. inicio of a stop via tripsApi.patchStop on blur', async () => {

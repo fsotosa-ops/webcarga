@@ -246,9 +246,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   // Ubicación de origen (región/ciudad) — draft local, se guarda vía PATCH
   const [locRegion, setLocRegion]               = useState<string | null>(null)
   const [locCity, setLocCity]                   = useState<string | null>(null)
-  // Carga Inicio/Fin (origen) — draft local, mismo motivo que locRegion/locCity
-  const [cagInicioDraft, setCagInicioDraft]     = useState('')
-  const [cagFinDraft, setCagFinDraft]           = useState('')
   const [locSaving, setLocSaving]               = useState(false)
   const [locErr, setLocErr]                     = useState<string | null>(null)
   const panelRef                                = useRef<HTMLDivElement>(null)
@@ -295,32 +292,18 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     setLocRegion(trip.origin_region ?? null)
     setLocCity(trip.origin_city ?? null)
     setLocErr(null)
-    setCagInicioDraft(toDatetimeLocalValue(trip.cag_inicio_at))
-    setCagFinDraft(toDatetimeLocalValue(trip.cag_fin_at))
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const locDirty =
     !!trip && ((locRegion ?? null) !== (trip.origin_region ?? null) || (locCity ?? null) !== (trip.origin_city ?? null))
 
-  // Campos híbridos (esquema de fechas 2026-07-17): Carga Inicio/Fin (origen,
-  // sin equivalente TMS) y Desc. Inicio/Fin (por parada, override manual de
-  // lo que reporta el TMS). Guardado directo al cambiar, sin botón aparte —
-  // mismo patrón que onExpirationChange en DocumentChecklist.
-  const [cagSaving, setCagSaving] = useState<'cag_inicio_at' | 'cag_fin_at' | null>(null)
+  // Desc. Inicio/Fin (esquema de fechas 2026-07-17): override manual de lo
+  // que reporta el TMS por parada — incluye el origen desde que se unificó
+  // como parada 0 (Fase 1, 2026-07-18; antes vivía aparte como
+  // trip.cag_inicio_at/cag_fin_at, "Carga Inicio/Fin"). Guardado directo al
+  // cambiar, sin botón aparte — mismo patrón que onExpirationChange en
+  // DocumentChecklist.
   const [stopSaving, setStopSaving] = useState<string | null>(null)
-
-  async function handleCagChange(field: 'cag_inicio_at' | 'cag_fin_at', value: string) {
-    if (!trip) return
-    setCagSaving(field)
-    try {
-      const updated = await tripsApi.patch(trip.id, { [field]: value } as TripPatch)
-      onSaved(updated)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al guardar')
-    } finally {
-      setCagSaving(null)
-    }
-  }
 
   async function handleStopFieldChange(stopId: string, field: 'desc_inicio' | 'desc_fin', value: string) {
     if (!trip) return
@@ -399,11 +382,16 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const tempStatus    = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
   const isManualTrip  = trip.source_system === 'manual'
 
-  // Hero: la historia del viaje de un vistazo
-  const stops       = trip.stops ?? []
+  // Hero: la historia del viaje de un vistazo. `stops` incluye el origen
+  // (Fase 1, 2026-07-18) — se pasa completo al timeline/barra de progreso
+  // (ahí SÍ tiene que aparecer como nodo 0), pero el conteo "N/M paradas"
+  // usa solo destinos: "parada" en el vocabulario del equipo operativo
+  // significa destino de entrega, no el punto de carga.
+  const stops            = trip.stops ?? []
+  const destinationStops = stops.filter(s => s.stop_type !== 'ORIGIN')
   const activeStop  = getActiveStop(stops)
   const activeTiming = activeStop ? describeStopTiming(activeStop) : null
-  const doneCount   = stops.filter(s => s.arrival_date || s.gps_arrival_date || s.on_time_status).length
+  const doneCount   = destinationStops.filter(s => s.arrival_date || s.gps_arrival_date || s.on_time_status).length
   const compliance  = stopComplianceSummary(stops)
   const tmsSince    = formatRelativeTime(trip.status_reported_at)
   const syncSince   = formatRelativeTime(trip.pipeline_updated_at)
@@ -519,8 +507,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
           {/* Gestión por excepción: solo se badgea lo que está mal (OFF TIME,
               temp fuera de rango) — lo demás es texto plano discreto */}
           <div className="flex items-center gap-2.5 flex-wrap text-[11px] text-gray-500">
-            {stops.length > 0 && (
-              <span>{doneCount}/{stops.length} paradas</span>
+            {destinationStops.length > 0 && (
+              <span>{doneCount}/{destinationStops.length} paradas</span>
             )}
             {compliance === 'warn' && (
               <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-[10px]">OFF TIME</span>
@@ -656,10 +644,17 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               </div>
             )}
 
-            {/* Ubicación de origen — región/ciudad asignable desde el Monitor */}
+            {/* Ubicación de origen — región/ciudad asignable desde el Monitor.
+                FIX 2026-07-18 (Fase 1): origin_operation_type ya lo calculaba
+                el backend (_apply_operation_types, catálogo public.locations)
+                pero nunca se renderizaba en ningún componente — mismo dato
+                que OperationTypeBadge ya muestra para cada parada, ahora
+                también acá, de solo lectura (se deriva automáticamente por
+                comuna, no se edita a mano). */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                 <MapPin size={10} /> Ubicación de origen
+                <OperationTypeBadge operationType={trip.origin_operation_type} meta={meta} />
               </p>
               <RegionCityPicker
                 size="sm"
@@ -819,14 +814,20 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                         </thead>
                         <tbody className="divide-y divide-border/50">
                           {stops.map((stop, i) => {
+                            const isOrigin = stop.stop_type === 'ORIGIN'
                             const rowBg =
+                              isOrigin ? 'bg-slate-50' :
                               stop.on_time_status === 'ON TIME'  ? 'bg-green-50/40' :
                               stop.on_time_status === 'OFF TIME' ? 'bg-amber-50/40' :
                               i % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
+                            const opLabel = isOrigin ? 'Carga' : 'Desc.'
                             return (
                               <tr key={stop.stop_id ?? i} className={rowBg}>
                                 <td className={`px-3 py-2 sticky left-0 z-10 ${rowBg}`}>
                                   <p className="font-medium text-slate-700 leading-snug flex items-center gap-1">
+                                    {isOrigin && (
+                                      <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-slate-700 text-white shrink-0">ORIGEN</span>
+                                    )}
                                     {stop.local ?? '—'}
                                     <OperationTypeBadge operationType={stop.operation_type} meta={meta} />
                                   </p>
@@ -845,7 +846,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                                   <input
                                     key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
                                     type="datetime-local"
-                                    aria-label={`Desc. inicio de ${stop.local ?? 'parada'}`}
+                                    aria-label={`${opLabel} inicio de ${stop.local ?? 'parada'}`}
                                     defaultValue={toDatetimeLocalValue(stop.unload_start)}
                                     onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_inicio', e.target.value)}
                                     disabled={stopSaving === stop.stop_id}
@@ -856,7 +857,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                                   <input
                                     key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
                                     type="datetime-local"
-                                    aria-label={`Desc. fin de ${stop.local ?? 'parada'}`}
+                                    aria-label={`${opLabel} fin de ${stop.local ?? 'parada'}`}
                                     defaultValue={toDatetimeLocalValue(stop.unload_end)}
                                     onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_fin', e.target.value)}
                                     disabled={stopSaving === stop.stop_id}
@@ -901,37 +902,15 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               </button>
               {datosOpen && (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 px-3 pb-3 pt-2 border-t border-border/60 bg-gray-50/40">
+                  {/* Origen y Carga Inicio/Fin se movieron a la parada 0 de
+                      "Ruta" (Fase 1, origen unificado, 2026-07-18) — editables
+                      ahí junto al resto de las paradas, no acá aparte. */}
                   <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
-                  <MetaField label="Origen" value={trip.origin ?? '—'} />
                   <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
                   <MetaField label="EETT TMS" value={trip.carrier_name_tms ?? '—'} />
                   {trip.milestone_status && (
                     <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
                   )}
-                  <div>
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Carga inicio</p>
-                    <input
-                      type="datetime-local"
-                      aria-label="Carga inicio"
-                      value={cagInicioDraft}
-                      onChange={e => setCagInicioDraft(e.target.value)}
-                      onBlur={e => e.target.value && handleCagChange('cag_inicio_at', e.target.value)}
-                      disabled={cagSaving === 'cag_inicio_at'}
-                      className="text-[11px] text-slate-700 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white w-full disabled:opacity-50"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Carga fin</p>
-                    <input
-                      type="datetime-local"
-                      aria-label="Carga fin"
-                      value={cagFinDraft}
-                      onChange={e => setCagFinDraft(e.target.value)}
-                      onBlur={e => e.target.value && handleCagChange('cag_fin_at', e.target.value)}
-                      disabled={cagSaving === 'cag_fin_at'}
-                      className="text-[11px] text-slate-700 border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white w-full disabled:opacity-50"
-                    />
-                  </div>
                 </div>
               )}
             </section>

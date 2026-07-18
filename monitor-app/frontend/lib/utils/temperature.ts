@@ -46,6 +46,16 @@ export function classifyTemperature(
 // de TMS y de estado (done/active/pending): prefiere el dato real, cae a lo
 // planificado cuando no hay real todavía, y no muestra nada si ninguno existe.
 export function describeStopTiming(stop: TripStop): string | null {
+  // El origen no tiene "llegada" (el viaje arranca ahí) — describirlo con
+  // el mismo par llegada/salida que un destino confundía "llega ~X" con lo
+  // que en realidad es la salida planificada (Fase 1, origen como parada
+  // 0, 2026-07-18).
+  if (stop.stop_type === 'ORIGIN') {
+    if (stop.departure_date) return `salió ${fmtShort(stop.departure_date)}`
+    if (stop.planning_date) return `sale ~${fmtShort(stop.planning_date)}`
+    return null
+  }
+
   const arrival = stop.arrival_date
     ? `llegó ${fmtShort(stop.arrival_date)}`
     : stop.planning_date

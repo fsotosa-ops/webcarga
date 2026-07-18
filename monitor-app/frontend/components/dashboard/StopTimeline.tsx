@@ -8,6 +8,9 @@ import { stopDwellTime, transitTime } from '@/lib/utils/stopStats'
 type StopState = 'done' | 'active' | 'pending'
 
 function isCompleted(s: TripStop): boolean {
+  // El origen no tiene "llegada" — su señal de completitud es la salida
+  // (Fase 1, origen como parada 0, 2026-07-18).
+  if (s.stop_type === 'ORIGIN') return !!s.departure_date
   return !!(s.arrival_date || s.gps_arrival_date || s.on_time_status)
 }
 

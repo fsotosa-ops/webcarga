@@ -54,7 +54,7 @@ def _parse_timestamptz(s: str | None) -> datetime | None:
 
 
 _TRIP_STOP_FIELDS = (
-    "stop_id, trip_id, stop_order, local, destination_city, destination_region, "
+    "stop_id, trip_id, stop_order, stop_type, local, destination_city, destination_region, "
     "on_time_status, milestone_status, s2s, temperature, planning_date, "
     "arrival_date, departure_date, departure_date_prog, gps_arrival_date, "
     "gps_departure_date, unload_start, unload_end, desc_inicio_manual, desc_fin_manual"
@@ -172,6 +172,16 @@ def _resolve_operation_type(bucket: dict | None, local: str | None) -> str | Non
     return None
 
 
+def _attach_origin(d: dict) -> None:
+    """Deriva d['origin'] (nombre del local) desde la parada stop_type=ORIGIN
+    de d['stops'] — ya no es una columna propia de app.trips (Fase 1 del
+    hardening del Diario, 2026-07-18: origen unificado como parada 0). Se
+    computa acá, después de cargar stops, para no romper vistas/consumidores
+    que solo necesitan el nombre de origen de un vistazo (ej. TripTable)."""
+    origin_stop = next((s for s in d.get("stops", []) if s.get("stop_type") == "ORIGIN"), None)
+    d["origin"] = origin_stop["local"] if origin_stop else None
+
+
 def _apply_operation_types(d: dict, buckets: dict) -> None:
     bucket = buckets.get((d.get("client_name") or "").strip().lower())
     d["origin_operation_type"] = _resolve_operation_type(bucket, d.get("origin"))
@@ -218,11 +228,13 @@ _TRIP_SELECT = """
     t.origin_tms,
     COALESCE(c.business_name, c_auto.business_name) AS carrier_name,
     t.fleet->>'transporter_name_tms'              AS carrier_name_tms,
-    t.origin,
+    -- FIX 2026-07-18 (Fase 1, cutover final): t.origin/cag_inicio_at/
+    -- cag_fin_at se eliminaron de app.trips — el nombre de origen ahora se
+    -- deriva de la parada ORIGIN en app.trip_stops (_attach_origin, después
+    -- de cargar d["stops"]) y Carga Inicio/Fin se edita ahí mismo, con el
+    -- mismo mecanismo que Desc. Inicio/Fin de cualquier destino.
     t.origin_region,
     t.origin_city,
-    t.cag_inicio_at,
-    t.cag_fin_at,
     t.cargo_type,
     t.is_active,
     t.is_working,
@@ -399,6 +411,7 @@ async def list_trips(
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
     for d in data:
         d["stops"] = stops_by_trip.get(str(d["id"]), [])
+        _attach_origin(d)
         _apply_operation_types(d, op_type_buckets)
 
     return {"data": data, "count": count, "page": page, "limit": limit}
@@ -735,19 +748,36 @@ def _build_manual_stops(stops: list[TripStopCreate], trip_id: str) -> str:
     return json.dumps(out)
 
 
-async def _insert_trip_stops(conn, stops: list[TripStopCreate], trip_id: str) -> None:
+async def _insert_trip_stops(conn, stops: list[TripStopCreate], trip_id: str, origin: str | None = None) -> None:
     """Espeja las paradas de un viaje manual en app.trip_stops (Fase 2 del
     hardening H2.6) — el pipeline dbt solo puebla esta tabla para viajes
     TMS (vía app.trips.stops), los viajes 100% manuales nunca pasan por
     ahí. Mismo stop_id que _build_manual_stops (misma fórmula que usa el
-    pipeline: md5(trip_id + local + índice))."""
+    pipeline: md5(trip_id + local + índice)).
+
+    FIX 2026-07-18 (Fase 1, origen como parada 0): si `origin` viene
+    seteado, inserta también la fila ORIGIN (stop_order=0) — mismo patrón
+    dual que el pipeline dbt usa para viajes TMS (app/trip_stops.sql),
+    donde el origen lo arma el modelo pero las paradas manuales las inserta
+    este mismo backend. Sin esto, un viaje manual/CSV nacería sin origen en
+    el timeline unificado."""
+    if origin:
+        origin_stop_id = hashlib.md5(f"{trip_id}{origin}|origin".encode()).hexdigest()
+        await conn.execute(
+            """
+            INSERT INTO app.trip_stops (stop_id, trip_id, stop_order, stop_type, local)
+            VALUES ($1, $2, 0, 'ORIGIN', $3)
+            ON CONFLICT (stop_id) DO UPDATE SET local = EXCLUDED.local, updated_at = NOW()
+            """,
+            origin_stop_id, trip_id, origin,
+        )
     for i, s in enumerate(stops):
         stop_id = hashlib.md5(f"{trip_id}{s.local}{i}".encode()).hexdigest()
         await conn.execute(
             """
             INSERT INTO app.trip_stops
-                (stop_id, trip_id, stop_order, local, planning_date, destination_region, destination_city)
-            VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7)
+                (stop_id, trip_id, stop_order, stop_type, local, planning_date, destination_region, destination_city)
+            VALUES ($1, $2, $3, 'DESTINATION', $4, $5::timestamptz, $6, $7)
             ON CONFLICT (stop_id) DO UPDATE SET
                 local               = EXCLUDED.local,
                 planning_date       = EXCLUDED.planning_date,
@@ -758,7 +788,7 @@ async def _insert_trip_stops(conn, stops: list[TripStopCreate], trip_id: str) ->
             # planning_date pasa tal cual (sin macro de huso horario propio,
             # mismo criterio que cag_inicio_at/cag_fin_at), solo parseado a
             # datetime porque asyncpg lo exige para un parámetro ::timestamptz.
-            stop_id, trip_id, i, s.local, _parse_timestamptz(s.planning_date),
+            stop_id, trip_id, i + 1, s.local, _parse_timestamptz(s.planning_date),
             s.destination_region, s.destination_city,
         )
 
@@ -777,6 +807,32 @@ def _validate_create_body(body: TripCreateBody, valid_statuses: set[str]) -> Non
     stops_sin_nombre = [s for s in body.stops if not s.local.strip()]
     if stops_sin_nombre:
         raise HTTPException(422, "Cada destino debe tener un nombre")
+
+
+async def _auto_resolve_fleet_link(conn, tractor_plate: str | None, trailer_plate: str | None):
+    """Resuelve carrier_id/driver_id/tractor_asset_id por patente — mismo
+    mecanismo que el fallback en vivo de _TRIP_FROM (public.assets +
+    asset_assignments + vehicle_driver_assignments). Se usa al crear un
+    viaje manual/CSV sin empresa seleccionada explícitamente, para que nazca
+    con el mismo nivel de trazabilidad que uno vinculado a mano vía
+    EmpresaSelector — unificación de la carga masiva con el alta individual
+    (Fase 1 del hardening del Diario, 2026-07-18)."""
+    plate = (tractor_plate or trailer_plate or "").strip().upper()
+    if not plate:
+        return None
+    row = await conn.fetchrow(
+        """
+        SELECT a.id AS tractor_asset_id, aa.carrier_id, vda.driver_id
+        FROM public.assets a
+        LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+        LEFT JOIN public.vehicle_driver_assignments vda ON vda.asset_id = a.id AND vda.status = 'ACTIVE'
+        WHERE upper(trim(a.license_plate)) = $1
+        """,
+        plate,
+    )
+    if not row or (row["carrier_id"] is None and row["driver_id"] is None and row["tractor_asset_id"] is None):
+        return None
+    return dict(row)
 
 
 async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: set[str]) -> str:
@@ -814,12 +870,12 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             """
             INSERT INTO app.trips_manual (
                 id, origin_tms, source_system_trip_id, client_name, planning_date,
-                origin, origin_region, origin_city, cargo_type, trip_status,
+                origin_region, origin_city, cargo_type, trip_status,
                 fleet, stops, created_by
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::uuid)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::uuid)
             """,
             trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
-            body.planning_date, body.origin, body.origin_region, body.origin_city,
+            body.planning_date, body.origin_region, body.origin_city,
             body.cargo_type, body.current_status,
             fleet_json, stops_json, user["sub"],
         )
@@ -836,21 +892,21 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
         """
         INSERT INTO app.trips (
             id, source_system, origin_tms, source_system_trip_id, client_name,
-            planning_date, origin, origin_region, origin_city, cargo_type,
+            planning_date, origin_region, origin_city, cargo_type,
             trip_status, fleet, stops,
             is_active, is_working, is_assigned, is_first_leg,
             status_reported_at, pipeline_updated_at, created_at, updated_at,
             manually_edited_fields
-        ) VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,
+        ) VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,
                   true,false,false,false,NOW(),NOW(),NOW(),NOW(),'{}')
         """,
         trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
-        body.planning_date, body.origin, body.origin_region, body.origin_city,
+        body.planning_date, body.origin_region, body.origin_city,
         body.cargo_type, body.current_status,
         fleet_json, stops_json,
     )
 
-    await _insert_trip_stops(conn, body.stops, trip_id)
+    await _insert_trip_stops(conn, body.stops, trip_id, origin=body.origin)
 
     # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
     if body.carrier_id:
@@ -882,6 +938,43 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             "UPDATE app.trips_manual SET fleet_link_id = $1 WHERE id = $2",
             link_id, trip_id,
         )
+    elif body.tractor_plate or body.trailer_plate:
+        # Sin empresa seleccionada a mano (típicamente carga masiva CSV,
+        # que hoy no tiene ningún picker de empresa): intentar resolver por
+        # patente antes de dejar el viaje sin ningún vínculo. El fallback en
+        # vivo de _TRIP_FROM ya cubriría esto en lectura, pero crear el
+        # trip_fleet_links acá deja el viaje con la misma trazabilidad
+        # explícita que uno vinculado a mano — mismo trato para viajes
+        # cargados de a uno y en lote.
+        resolved = await _auto_resolve_fleet_link(conn, body.tractor_plate, body.trailer_plate)
+        if resolved:
+            link_id = await conn.fetchval(
+                """
+                INSERT INTO app.trip_fleet_links
+                  (trip_id, carrier_id, driver_id, tractor_asset_id,
+                   tractor_plate, trailer_plate, driver_name_raw, driver_phone,
+                   link_source, created_by)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'auto',$9::uuid)
+                RETURNING id
+                """,
+                trip_id,
+                resolved["carrier_id"],
+                resolved["driver_id"],
+                resolved["tractor_asset_id"],
+                body.tractor_plate,
+                body.trailer_plate,
+                body.driver_name,
+                body.driver_phone,
+                user["sub"],
+            )
+            await conn.execute(
+                "UPDATE app.trips SET fleet_link_id = $1 WHERE id = $2",
+                link_id, trip_id,
+            )
+            await conn.execute(
+                "UPDATE app.trips_manual SET fleet_link_id = $1 WHERE id = $2",
+                link_id, trip_id,
+            )
 
     return trip_id
 
@@ -1031,6 +1124,7 @@ async def get_trip(
     d = dict(row)
     stops_by_trip = await _load_trip_stops(pool, {trip_id})
     d["stops"] = stops_by_trip.get(trip_id, [])
+    _attach_origin(d)
     client_names = {d["client_name"].strip().lower()} if d.get("client_name") else set()
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
     _apply_operation_types(d, op_type_buckets)
@@ -1123,12 +1217,11 @@ async def patch_trip(
     bool_fields = ("is_active", "is_working", "is_assigned", "is_first_leg")
     str_fields  = ("manual_status", "notes", "comments",
                    "origin_region", "origin_city", "unassigned_reason_id")
-    # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen): campos híbridos sin
-    # equivalente TMS — no compiten con el pipeline, no necesitan pasar por
-    # manually_edited_fields/protect_manual_overrides (eso protege campos que
-    # el TMS SÍ puede seguir reportando).
-    datetime_fields = ("cag_inicio_at", "cag_fin_at")
-    trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields, *datetime_fields)}
+    # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen) removidos de acá
+    # (Fase 1, cutover final, 2026-07-18) — se editan vía TripStopPatch sobre
+    # la parada ORIGIN (PATCH /trips/{id}/stops/{stop_id}), mismo mecanismo
+    # que Desc. Inicio/Fin de cualquier destino.
+    trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields)}
     # Ubicación / motivo de no asignación: string vacío = limpiar (NULL) —
     # evita mezclar '' y NULL en filtros exactos y en la FK de unassigned_reason_id
     for k in ("origin_region", "origin_city", "unassigned_reason_id"):
@@ -1149,11 +1242,6 @@ async def patch_trip(
             if field in trip_fields:
                 vals.append(trip_fields[field])
                 sets.append(f"{field} = ${len(vals)}")
-
-        for field in datetime_fields:
-            if field in trip_fields:
-                vals.append(_parse_timestamptz(trip_fields[field]))
-                sets.append(f"{field} = ${len(vals)}::timestamptz")
 
         vals.append(sent)
         sets.append(
@@ -1191,7 +1279,13 @@ async def patch_trip_stop(
     app.trip_stops.desc_inicio_manual/desc_fin_manual (columnas reales,
     Fase 2 del hardening H2.6), nunca en `stops` (se sobrescribe completo
     en cada corrida del pipeline dbt)."""
-    exists = await pool.fetchval("SELECT id FROM app.trip_stops WHERE stop_id = $1 AND trip_id = $2", stop_id, trip_id)
+    # FIX 2026-07-18: app.trip_stops no tiene columna `id` (solo `stop_id`,
+    # su PK) — este SELECT tiraba "column id does not exist" en cualquier
+    # llamada real (los tests mockean pool.fetchval, nunca ejecutaron el
+    # SQL de verdad, así que pasó desapercibido). Encontrado al verificar
+    # que este mismo endpoint sirve para editar Carga Inicio/Fin de la
+    # parada ORIGIN (Fase 1, unificación de origen como parada 0).
+    exists = await pool.fetchval("SELECT stop_id FROM app.trip_stops WHERE stop_id = $1 AND trip_id = $2", stop_id, trip_id)
     if not exists:
         raise HTTPException(404, "Parada no encontrada")
 
