@@ -1,7 +1,7 @@
 import type { TripsMeta } from '@/lib/types'
 
 interface Props {
-  /** Estado a mostrar (ya resuelto: estado_manual ?? current_status) */
+  /** Estado a mostrar (ya resuelto: manual_status ?? current_status) */
   status: string | null | undefined
   meta?:  TripsMeta | null
   size?:  'sm' | 'md'
@@ -17,7 +17,7 @@ const SIZE_CLS = {
 
 export function StatusBadge({ status, meta, size = 'sm', onDark = false, fallbackLabel = '—' }: Props) {
   // Resuelve contra ambos vocabularios: estados TMS (nomenclatura conservada
-  // verbatim) y estados operacionales (estado_manual — ids uuid, se muestra su
+  // verbatim) y estados operacionales (manual_status — ids uuid, se muestra su
   // label configurado). Sin esto, un override manual caía al gris con id crudo.
   const tmsMeta = status ? meta?.statuses.find(s => s.id === status) : null
   const opMeta  = !tmsMeta && status ? meta?.operational_states.find(s => s.id === status) : null

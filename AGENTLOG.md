@@ -149,15 +149,24 @@
 
 **Migraciones aplicadas y versionadas esta sesión**: `20260717210000_trip_fleet_links_carrier_id_and_asset_fks.sql`, `20260717211500_trip_unassigned_reasons_catalog.sql`.
 
-**Explícitamente fuera de esta fase**: catálogo de locales/`public.locations` (diseñado en el plan maestro, bloqueado hasta que el usuario cree `bronze.raw_shipper_locations`), higienización español→inglés de `app.trips` (Fase siguiente, ya planificada), vista dedicada "no asignados" con conteo (solo se resolvió el campo + catálogo, no la UI de vista/tab).
+**Explícitamente fuera de esta fase**: catálogo de locales/`public.locations` (diseñado en el plan maestro, bloqueado hasta que el usuario cree `bronze.raw_shipper_locations`), vista dedicada "no asignados" con conteo (solo se resolvió el campo + catálogo, no la UI de vista/tab).
+
+Commit `e1a31a9`, pusheado a `dev` (`git push origin dev`).
+
+**Higienización de nomenclatura (misma sesión, a continuación)**: rename español→inglés en `app.trips`/`app.trips_manual` — `activo`→`is_active`, `trabajando`→`is_working`, `asignado`→`is_assigned`, `primera_vuelta`→`is_first_leg`, `estado_manual`→`manual_status`, `observaciones`→`notes`, `comentarios`→`comments`. Barrido completo: migración → `app.protect_manual_overrides` recreado → `app_trips.sql` (ambas ramas del `UNION ALL`, sincronizado a Mage) → backend (`schemas/trip.py`, `_TRIP_SELECT`, query params, `bool_fields`/`str_fields`, `VALID` de `reset_field`, `_mirror_manual_trip`) → frontend (`types.ts`, `lib/api/trips.ts`, `IndicatorDots.tsx`, `useDiarioFilters.ts` + `FilterPopover.tsx` — también renombrados `fActivo`→`fIsActive` etc., `TripBoard.tsx`, `TripSlideOver.tsx`, `TripTable.tsx`, `page.tsx`, `StatusBadge.tsx`, `TripNotesFeed.tsx`, `kpis.ts`) → ~7 archivos de test.
+
+**Hallazgo real detectado y corregido en el camino**: al inspeccionar el trigger `app.protect_manual_overrides` antes de recrearlo, se descubrió que **no estaba adjunto a ninguna tabla** (`pg_trigger` vacío para `app.trips`/`app.trips_manual`) — la función existía pero el trigger se perdió en algún `--full-refresh` anterior y nunca se re-creó, a diferencia de PK/RLS/índices que sí están en el `post_hook` de `app_trips.sql` (documentados como "se perdieron 6 veces, restaurados a mano"). La protección de campos manuales (`activo`/`trabajando`/`asignado`/`estado_manual`/`primera_vuelta`) llevaba tiempo **inactiva sin que nadie lo notara** — `manually_edited_fields` estaba en 0 filas, así que nunca se disparó el caso que lo habría expuesto. Corregido: función recreada con los nombres nuevos, trigger adjunto (`trg_protect_manual_overrides`), y su creación agregada al `post_hook` del modelo dbt para que sobreviva a full-refresh futuros — mismo patrón que ya protege PK/RLS/índices. Verificado en vivo con una transacción de prueba (rollback, sin dejar datos): un `UPDATE` que intentó pisar `manual_status` con un valor "del pipeline" fue revertido correctamente al valor manual por el trigger.
+
+Backend: agregado `test_trip_hygiene_fields.py` (5 tests nuevos, cubre el gap de que nunca había tests para estos 7 campos). `pytest` 187/187, `tsc --noEmit` limpio, `vitest` 340/340, `npm run build` exitoso.
+
+Migración versionada: `20260717220000_trip_hygiene_spanish_to_english_columns.sql`.
 
 #### Próximo paso exacto
-1. [ ] Higienización de nomenclatura: `app.trips`/`app.trips_manual` español→inglés (`activo`→`is_active`, `trabajando`→`is_working`, `asignado`→`is_assigned`, `primera_vuelta`→`is_first_leg`, `estado_manual`→`manual_status`, `observaciones`→`notes`, `comentarios`→`comments`) + recrear `app.protect_manual_overrides` con los nombres nuevos. Plan detallado en el plan maestro H2.6.
+1. [ ] Commit/push de la higienización — pendiente de confirmación del usuario.
 2. [ ] Catálogo de locales por generador de carga (`public.locations`, polimórfica `entity_type`/`entity_id`) — bloqueado hasta que el usuario cree `bronze.raw_shipper_locations`; diseño completo (tabla real con upsert `COALESCE`, no vista) ya en el plan maestro.
 3. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (sigue vigente, acción del usuario).
 4. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — sigue encolada, sin iniciar.
 5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
 6. [ ] F30_MULTAS — sigue sin confirmar.
-7. [ ] Commit/push de esta ronda — pendiente de confirmación del usuario.
 
 ---

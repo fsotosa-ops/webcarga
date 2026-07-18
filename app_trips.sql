@@ -5,7 +5,7 @@
         incremental_strategy='merge',
         on_schema_change='sync_all_columns',
         merge_exclude_columns=[
-            'observaciones', 'comentarios', 'fleet_link_id',
+            'notes', 'comments', 'fleet_link_id',
             'manually_edited_fields', 'edited_by', 'edited_at', 'created_at',
             'origin_region', 'origin_city',
             'cag_inicio_at', 'cag_fin_at', 'stop_manual_fields',
@@ -23,19 +23,29 @@
             "CREATE INDEX IF NOT EXISTS idx_trips_fleet_link ON {{ this }} (fleet_link_id)",
             "CREATE INDEX IF NOT EXISTS idx_trips_fleet_plate ON {{ this }} ((fleet->>'tractor_plate'))",
             "CREATE INDEX IF NOT EXISTS idx_trips_fleet_driver ON {{ this }} ((fleet->>'driver_name_tms'))",
-            "CREATE INDEX IF NOT EXISTS idx_trips_fleet_rut ON {{ this }} ((fleet->>'driver_rut_tms'))"
+            "CREATE INDEX IF NOT EXISTS idx_trips_fleet_rut ON {{ this }} ((fleet->>'driver_rut_tms'))",
+            "CREATE OR REPLACE FUNCTION app.protect_manual_overrides() RETURNS trigger LANGUAGE plpgsql SET search_path TO 'app', 'pg_catalog' AS $function$ BEGIN IF 'is_active' = ANY(OLD.manually_edited_fields) THEN NEW.is_active := OLD.is_active; END IF; IF 'is_working' = ANY(OLD.manually_edited_fields) THEN NEW.is_working := OLD.is_working; END IF; IF 'is_assigned' = ANY(OLD.manually_edited_fields) THEN NEW.is_assigned := OLD.is_assigned; END IF; IF 'manual_status' = ANY(OLD.manually_edited_fields) THEN NEW.manual_status := OLD.manual_status; END IF; IF 'is_first_leg' = ANY(OLD.manually_edited_fields) THEN NEW.is_first_leg := OLD.is_first_leg; END IF; RETURN NEW; END; $function$",
+            "DROP TRIGGER IF EXISTS trg_protect_manual_overrides ON {{ this }}",
+            "CREATE TRIGGER trg_protect_manual_overrides BEFORE UPDATE ON {{ this }} FOR EACH ROW EXECUTE FUNCTION app.protect_manual_overrides()"
         ]
     )
 }}
 
 /*
-  POST-HOOKS (PK / RLS / índices) — FIX DEFINITIVO del patrón recurrente:
-  un --full-refresh hace DROP + CREATE TABLE AS SELECT, y la tabla nueva nace
-  sin PK, sin RLS, sin políticas y sin índices (se perdieron 6 veces entre
-  2026-05 y 2026-07, restauradas a mano cada vez: 20260618000001,
-  20260702000005, 20260707000001). Los post-hooks re-aplican todo después de
-  CADA corrida (idempotentes: IF NOT EXISTS / DROP POLICY IF EXISTS), así el
-  full-refresh deja de ser destructivo para las protecciones.
+  POST-HOOKS (PK / RLS / índices / trigger) — FIX DEFINITIVO del patrón
+  recurrente: un --full-refresh hace DROP + CREATE TABLE AS SELECT, y la
+  tabla nueva nace sin PK, sin RLS, sin políticas y sin índices (se
+  perdieron 6 veces entre 2026-05 y 2026-07, restauradas a mano cada vez:
+  20260618000001, 20260702000005, 20260707000001). Los post-hooks re-aplican
+  todo después de CADA corrida (idempotentes: IF NOT EXISTS / DROP POLICY IF
+  EXISTS / DROP TRIGGER IF EXISTS), así el full-refresh deja de ser
+  destructivo para las protecciones.
+
+  `protect_manual_overrides` (función + trigger) agregado al post_hook en la
+  higienización 2026-07-17: se detectó que la función existía en DB pero sin
+  ningún trigger adjunto a app.trips (pg_trigger vacío) — mismo patrón de
+  pérdida por full-refresh que ya afectaba a PK/RLS/índices, nunca corregido
+  para el trigger porque no estaba en esta lista. Ahora sí sobrevive.
 */
 
 /*
@@ -59,40 +69,41 @@
   trips.py.
 
   PROTECCIÓN DE CAMPOS OPERATIVOS — dos niveles (ver
-  monitor-app/backend/supabase/migrations/20260702000002_protect_manual_overrides_trigger.sql):
+  monitor-app/backend/supabase/migrations/20260717220000_trip_hygiene_spanish_to_english_columns.sql,
+  nombres renombrados de español a inglés en la higienización 2026-07-17):
 
-  1. `merge_exclude_columns` (arriba): observaciones, comentarios,
+  1. `merge_exclude_columns` (arriba): notes, comments,
      fleet_link_id, manually_edited_fields, edited_by, edited_at, created_at
      — el pipeline los incluye en el SELECT (para el INSERT inicial) pero
      dbt NUNCA los toca en el UPDATE del MERGE. Sin esto, cada corrida
-     pisaría observaciones/comentarios reales con NULL y created_at con
+     pisaría notes/comments reales con NULL y created_at con
      el timestamp de esa corrida — bug real detectado en una versión
      anterior de este archivo, donde el SELECT emitía NULL/now() para
      estas columnas en CADA fila, no solo en el INSERT.
 
-  2. Trigger `app.protect_manual_overrides` (BEFORE UPDATE en app.trips):
-     activo, trabajando, asignado, estado_manual, primera_vuelta SÍ están
-     en el MERGE (el pipeline los recalcula cada corrida para reflejar el
-     estado real del viaje — ver derivación abajo), pero el trigger
-     revierte al valor anterior si ese campo específico está en
-     manually_edited_fields (lo pone la API en el mismo UPDATE que cambia
-     el valor, así que ese UPDATE puntual no se ve afectado — solo las
-     corridas siguientes del pipeline quedan bloqueadas para ese campo).
-     Estos campos deben reflejar por defecto lo que reporta la TMS, y solo
-     quedar en manual cuando operaciones confirma algo distinto con el
-     transportista (WhatsApp/llamada) o para viajes cargados a mano sin
-     fuente TMS.
+  2. Trigger `app.protect_manual_overrides` (BEFORE UPDATE en app.trips,
+     creado vía post_hook arriba): is_active, is_working, is_assigned,
+     manual_status, is_first_leg SÍ están en el MERGE (el pipeline los
+     recalcula cada corrida para reflejar el estado real del viaje — ver
+     derivación abajo), pero el trigger revierte al valor anterior si ese
+     campo específico está en manually_edited_fields (lo pone la API en el
+     mismo UPDATE que cambia el valor, así que ese UPDATE puntual no se ve
+     afectado — solo las corridas siguientes del pipeline quedan
+     bloqueadas para ese campo). Estos campos deben reflejar por defecto
+     lo que reporta la TMS, y solo quedar en manual cuando operaciones
+     confirma algo distinto con el transportista (WhatsApp/llamada) o
+     para viajes cargados a mano sin fuente TMS.
 
   DERIVACIÓN DE CAMPOS OPERATIVOS (valor por defecto, sobreescribible):
-    - activo: true mientras el viaje no esté en un estado terminal
+    - is_active: true mientras el viaje no esté en un estado terminal
       (CERRADO* / CANCELADO / Declinada / Removida de sodimac) — mismo
       criterio que ya usa el watermark incremental más abajo.
-    - asignado: true si la TMS ya reportó tractor o conductor (forzado a
+    - is_assigned: true si la TMS ya reportó tractor o conductor (forzado a
       false para los estados pre-viaje de sodimac Creada/Aceptada/Control
       de salida).
-    - trabajando: true si el estado normalizado indica movimiento activo
+    - is_working: true si el estado normalizado indica movimiento activo
       (RUTA, EN LOCAL, RETORNANDO). SUPUESTO A CONFIRMAR: no hay una
-      definición explícita de "trabajando" en el código existente más
+      definición explícita de "is_working" en el código existente más
       allá del toggle manual.
 
   SUPUESTO A CONFIRMAR (sodimac): Creada/Aceptada/Control de salida
@@ -255,7 +266,7 @@ SELECT
     origin,
     -- origin_region / origin_city: ubicación complementaria asignada desde el
     -- Monitor (API) — el pipeline NUNCA las escribe (merge_exclude_columns
-    -- arriba, mismo patrón que observaciones/comentarios). Solo el INSERT
+    -- arriba, mismo patrón que notes/comments). Solo el INSERT
     -- inicial las deja NULL; migración 20260709000001.
     NULL::text          AS origin_region,
     NULL::text          AS origin_city,
@@ -285,21 +296,21 @@ SELECT
         trip_status NOT LIKE 'CERRADO%'
         AND trip_status NOT IN ('CANCELADO', 'Declinada', 'Removida'),
         false
-    )                                                   AS activo,
+    )                                                   AS is_active,
     COALESCE(trip_status IN ('RUTA', 'EN LOCAL', 'RETORNANDO'), false)
-                                                        AS trabajando,
+                                                        AS is_working,
     (
         COALESCE(trip_status NOT IN ('Creada', 'Aceptada', 'Control de salida'), true)
         AND (NULLIF(vehicle_plate, '') IS NOT NULL OR NULLIF(driver_name, '') IS NOT NULL)
-    )                                                   AS asignado,
-    false               AS primera_vuelta,
-    NULL::varchar       AS estado_manual,
+    )                                                   AS is_assigned,
+    false               AS is_first_leg,
+    NULL::varchar       AS manual_status,
 
     -- ── Nunca tocados en UPDATE (merge_exclude_columns arriba) ────────────────
-    NULL::text          AS observaciones,
-    NULL::text          AS comentarios,
+    NULL::text          AS notes,
+    NULL::text          AS comments,
     -- unassigned_reason_id (motivo de no asignación, Fase 1.5d): mismo
-    -- patrón que observaciones/comentarios — solo lo setea el operador
+    -- patrón que notes/comments — solo lo setea el operador
     -- desde la API, el pipeline nunca lo escribe.
     NULL::text          AS unassigned_reason_id,
     ARRAY[]::text[]     AS manually_edited_fields,
@@ -374,14 +385,14 @@ SELECT
     m.fleet                                             AS fleet,
     m.stops                                             AS stops,
 
-    m.activo                                            AS activo,
-    m.trabajando                                        AS trabajando,
-    m.asignado                                          AS asignado,
-    m.primera_vuelta                                    AS primera_vuelta,
-    m.estado_manual::varchar                            AS estado_manual,
+    m.is_active                                         AS is_active,
+    m.is_working                                        AS is_working,
+    m.is_assigned                                       AS is_assigned,
+    m.is_first_leg                                      AS is_first_leg,
+    m.manual_status::varchar                            AS manual_status,
 
-    m.observaciones                                     AS observaciones,
-    m.comentarios                                       AS comentarios,
+    m.notes                                             AS notes,
+    m.comments                                          AS comments,
     m.unassigned_reason_id                              AS unassigned_reason_id,
     m.manually_edited_fields                            AS manually_edited_fields,
     m.fleet_link_id                                     AS fleet_link_id,

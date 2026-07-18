@@ -111,7 +111,7 @@ export function TripNotesFeed({ trip }: Props) {
   const addNote    = useAddTripNote(trip.id)
   const pinNote    = usePinTripNote(trip.id)
 
-  const legacyText = [trip.observaciones, trip.comentarios].filter(Boolean).join('\n')
+  const legacyText = [trip.notes, trip.comments].filter(Boolean).join('\n')
 
   const notes    = notesQuery.data ?? []
   const pinned   = notes.filter(n => n.pinned)

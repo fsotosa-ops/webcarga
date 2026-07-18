@@ -6,13 +6,13 @@ import type { Trip } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { fmtDT } from '@/lib/utils/datetime'
 
-type IndicatorField = 'activo' | 'trabajando' | 'asignado' | 'primera_vuelta'
+type IndicatorField = 'is_active' | 'is_working' | 'is_assigned' | 'is_first_leg'
 
 const INDICATORS: { field: IndicatorField; label: string; title: string; color: string }[] = [
-  { field: 'activo',         label: 'A',  title: 'Activo',     color: 'bg-blue-500'   },
-  { field: 'trabajando',     label: 'T',  title: 'Trabajando', color: 'bg-green-500'  },
-  { field: 'asignado',       label: 'As', title: 'Asignado',   color: 'bg-violet-500' },
-  { field: 'primera_vuelta', label: '1V', title: '1ra Vuelta', color: 'bg-amber-500'  },
+  { field: 'is_active',    label: 'A',  title: 'Activo',     color: 'bg-blue-500'   },
+  { field: 'is_working',   label: 'T',  title: 'Trabajando', color: 'bg-green-500'  },
+  { field: 'is_assigned',  label: 'As', title: 'Asignado',   color: 'bg-violet-500' },
+  { field: 'is_first_leg', label: '1V', title: '1ra Vuelta', color: 'bg-amber-500'  },
 ]
 
 interface Props {

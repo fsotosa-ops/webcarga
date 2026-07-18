@@ -40,7 +40,7 @@ describe('useDiarioFilters', () => {
   it('clear wipes filters (incluyendo el filtro KPI) but keeps tab and fecha', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
     act(() => result.current[1]({ type: 'patch', patch: { q: 'x' } }))
-    act(() => result.current[1]({ type: 'toggleFlag', field: 'fActivo' }))
+    act(() => result.current[1]({ type: 'toggleFlag', field: 'fIsActive' }))
     act(() => result.current[1]({ type: 'toggleKpi', kpi: 'off_time' }))
     act(() => result.current[1]({ type: 'clear' }))
     const [f] = result.current

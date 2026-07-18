@@ -9,13 +9,13 @@ export type TripListResponse = {
 }
 
 export type TripPatch = {
-  activo?:         boolean
-  trabajando?:     boolean
-  asignado?:       boolean
-  primera_vuelta?: boolean
-  estado_manual?:  string
-  observaciones?:  string
-  comentarios?:    string
+  is_active?:      boolean
+  is_working?:     boolean
+  is_assigned?:    boolean
+  is_first_leg?:   boolean
+  manual_status?:  string
+  notes?:          string
+  comments?:       string
   origin_region?:  string
   origin_city?:    string
   driver_name?:    string
@@ -50,10 +50,10 @@ export const tripsApi = {
     fecha_desde?:    string
     fecha_hasta?:    string
     status?:         string
-    activo?:         boolean
-    trabajando?:     boolean
-    asignado?:       boolean
-    primera_vuelta?: boolean
+    is_active?:      boolean
+    is_working?:     boolean
+    is_assigned?:    boolean
+    is_first_leg?:   boolean
     tms?:            string
     client?:         string
     origin_region?:  string
@@ -74,10 +74,10 @@ export const tripsApi = {
     if (params?.origin_region)   qs.set('origin_region',   params.origin_region)
     if (params?.origin_city)     qs.set('origin_city',     params.origin_city)
     if (params?.sort)            qs.set('sort',            params.sort)
-    if (params?.activo         != null) qs.set('activo',         String(params.activo))
-    if (params?.trabajando     != null) qs.set('trabajando',     String(params.trabajando))
-    if (params?.asignado       != null) qs.set('asignado',       String(params.asignado))
-    if (params?.primera_vuelta != null) qs.set('primera_vuelta', String(params.primera_vuelta))
+    if (params?.is_active    != null) qs.set('is_active',    String(params.is_active))
+    if (params?.is_working   != null) qs.set('is_working',   String(params.is_working))
+    if (params?.is_assigned  != null) qs.set('is_assigned',  String(params.is_assigned))
+    if (params?.is_first_leg != null) qs.set('is_first_leg', String(params.is_first_leg))
     if (params?.page)            qs.set('page',            String(params.page))
     if (params?.limit)           qs.set('limit',           String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''

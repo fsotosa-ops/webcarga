@@ -13,8 +13,8 @@ function makeTrip(id: string, overrides: Partial<Trip> = {}): Trip {
     id, source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',
     status_reported_at: null, current_status: 'ORIGEN', tractor_plate: 'ABCD12', tractor_plate_tms: null, trailer_plate: null,
     driver_name: 'Juan Perez', driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
-    origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], activo: true, trabajando: false, asignado: true,
-    primera_vuelta: false, estado_manual: null, observaciones: null, comentarios: null, unassigned_reason_id: null,
+    origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], is_active: true, is_working: false, is_assigned: true,
+    is_first_leg: false, manual_status: null, notes: null, comments: null, unassigned_reason_id: null,
     fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
     edited_by: null, updated_at: null, created_at: null,
     source_system_trip_id: '2000711', milestone_status: null, pipeline_updated_at: null,
@@ -103,7 +103,7 @@ describe('TripTable — estado manual resuelto contra estados operacionales', ()
       operational_states: [{ id: 'op-uuid-1', label: 'Confirmado en panne', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
       tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [],
     }
-    const trip = makeTrip('t1', { estado_manual: 'op-uuid-1' })
+    const trip = makeTrip('t1', { manual_status: 'op-uuid-1' })
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={meta} />)
     expect(screen.getAllByText('Confirmado en panne').length).toBeGreaterThan(0)
     expect(screen.queryByText('op-uuid-1')).not.toBeInTheDocument()

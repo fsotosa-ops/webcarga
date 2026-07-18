@@ -27,14 +27,14 @@ interface Props {
 }
 
 /** Grupo del tablero de un viaje — resuelve AMBOS vocabularios:
- *  estado_manual (estados operacionales) y current_status (estados TMS).
+ *  manual_status (estados operacionales) y current_status (estados TMS).
  *  Antes un override manual no matcheaba ningún grupo y caía a "Otro". */
 export function groupOfTrip(trip: Trip, meta: TripsMeta | null | undefined, groups: Group[]): string {
-  if (trip.estado_manual) {
-    const op = meta?.operational_states.find(s => s.id === trip.estado_manual)
+  if (trip.manual_status) {
+    const op = meta?.operational_states.find(s => s.id === trip.manual_status)
     if (op?.group) return op.group
   }
-  const status = trip.estado_manual ?? trip.current_status ?? ''
+  const status = trip.manual_status ?? trip.current_status ?? ''
   const tms = meta?.statuses.find(s => s.id === status)
   if (tms?.group) return tms.group
   // Fallback para meta ausente: membresía por lista de estados del grupo
@@ -117,14 +117,14 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, updatedIds }
     ? [...groups, { id: 'otro', label: 'Otro', statuses: [] }]
     : groups
 
-  async function applyMove(trip: Trip, estadoManualId: string) {
+  async function applyMove(trip: Trip, manualStatusId: string) {
     const original = trip
     setSavingId(trip.id)
     setMoveErr(null)
     // Optimista: la tarjeta salta a la columna destino de inmediato
-    onSaved({ ...trip, estado_manual: estadoManualId })
+    onSaved({ ...trip, manual_status: manualStatusId })
     try {
-      const updated = await tripsApi.patch(trip.id, { estado_manual: estadoManualId } as TripPatch)
+      const updated = await tripsApi.patch(trip.id, { manual_status: manualStatusId } as TripPatch)
       onSaved(updated)
     } catch (e) {
       onSaved(original)  // rollback

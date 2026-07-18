@@ -8,10 +8,10 @@ import { countPopoverFilters } from '@/hooks/useDiarioFilters'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 const FLAGS: { label: string; field: FlagField }[] = [
-  { label: 'Activo',     field: 'fActivo'        },
-  { label: 'Trabajando', field: 'fTrabajando'    },
-  { label: 'Asignado',   field: 'fAsignado'      },
-  { label: '1ra Vuelta', field: 'fPrimeraVuelta' },
+  { label: 'Activo',     field: 'fIsActive'        },
+  { label: 'Trabajando', field: 'fIsWorking'    },
+  { label: 'Asignado',   field: 'fIsAssigned'      },
+  { label: '1ra Vuelta', field: 'fIsFirstLeg' },
 ]
 
 interface Props {

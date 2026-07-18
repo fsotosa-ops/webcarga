@@ -416,7 +416,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
           const primaryPlate  = trip.tractor_plate ?? trip.trailer_plate ?? null
           const plateAlert    = alertSummary?.plates[primaryPlate ?? ''] as AlertStatus | undefined
           const driverAlert   = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
-          const currentStatus = trip.estado_manual ?? trip.current_status
+          const currentStatus = trip.manual_status ?? trip.current_status
 
           return (
             <div
@@ -524,7 +524,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               const isActive    = trip.id === selectedId
               const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
               const driverAlert = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
-              const currentStatus = trip.estado_manual ?? trip.current_status
+              const currentStatus = trip.manual_status ?? trip.current_status
 
               return (
                 <tr
@@ -653,7 +653,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   {/* ESTADO — sticky derecha */}
                   <td className="sticky right-[90px] z-10 bg-inherit border-l border-border/60 px-3 py-2.5">
                     <StatusBadge status={currentStatus} meta={meta} />
-                    {trip.estado_manual && (
+                    {trip.manual_status && (
                       <span className="text-[8px] text-accent block mt-0.5">override</span>
                     )}
                     {stopComplianceSummary(trip.stops ?? []) === 'warn' && (

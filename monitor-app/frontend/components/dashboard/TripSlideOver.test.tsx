@@ -26,8 +26,8 @@ const baseTrip: Trip = {
   id: 't1', source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',
   status_reported_at: null, current_status: 'ORIGEN', tractor_plate: 'ABCD12', tractor_plate_tms: null, trailer_plate: null,
   driver_name: 'Juan Perez', driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
-  origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], activo: true, trabajando: false, asignado: true,
-  primera_vuelta: false, estado_manual: null, observaciones: null, comentarios: null, unassigned_reason_id: null,
+  origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], is_active: true, is_working: false, is_assigned: true,
+  is_first_leg: false, manual_status: null, notes: null, comments: null, unassigned_reason_id: null,
   fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
   edited_by: null, created_at: null,
   updated_at: null, source_system_trip_id: '2000711', milestone_status: null, pipeline_updated_at: null,
@@ -211,22 +211,22 @@ describe('TripSlideOver — override de estado', () => {
     expect(screen.getByText(/Establecer estado operativo/)).toBeInTheDocument()
   })
 
-  it('shows attribution with editor name and a revert control when estado_manual is set', () => {
-    renderSlideOver({ ...baseTrip, estado_manual: 'en_seguimiento', edited_at: '2026-07-02 10:15:00', edited_by: 'Felipe Sumadots' })
+  it('shows attribution with editor name and a revert control when manual_status is set', () => {
+    renderSlideOver({ ...baseTrip, manual_status: 'en_seguimiento', edited_at: '2026-07-02 10:15:00', edited_by: 'Felipe Sumadots' })
     expect(screen.getByText(/confirmado manualmente/)).toBeInTheDocument()
     expect(screen.getByText(/Felipe Sumadots/)).toBeInTheDocument()
   })
 
-  it('reverting the override calls tripsApi.resetField with estado_manual', async () => {
-    vi.mocked(tripsApi.resetField).mockResolvedValue({ ok: true, field: 'estado_manual' })
-    renderSlideOver({ ...baseTrip, estado_manual: 'en_seguimiento' })
+  it('reverting the override calls tripsApi.resetField with manual_status', async () => {
+    vi.mocked(tripsApi.resetField).mockResolvedValue({ ok: true, field: 'manual_status' })
+    renderSlideOver({ ...baseTrip, manual_status: 'en_seguimiento' })
     fireEvent.click(screen.getByTitle('Revertir a valor del TMS'))
-    await waitFor(() => expect(tripsApi.resetField).toHaveBeenCalledWith('t1', 'estado_manual'))
+    await waitFor(() => expect(tripsApi.resetField).toHaveBeenCalledWith('t1', 'manual_status'))
   })
 
   it('shows a visible error when reverting the override fails', async () => {
     vi.mocked(tripsApi.resetField).mockRejectedValue(new Error('network down'))
-    renderSlideOver({ ...baseTrip, estado_manual: 'en_seguimiento' })
+    renderSlideOver({ ...baseTrip, manual_status: 'en_seguimiento' })
     fireEvent.click(screen.getByTitle('Revertir a valor del TMS'))
     expect(await screen.findByText('network down')).toBeInTheDocument()
   })
@@ -278,8 +278,8 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
     expect(await screen.findByText('network down')).toBeInTheDocument()
   })
 
-  it('shows legacy observaciones/comentarios as a read-only entry', () => {
-    renderSlideOver({ ...baseTrip, observaciones: 'obs vieja', comentarios: 'comentario viejo' })
+  it('shows legacy notes/comments as a read-only entry', () => {
+    renderSlideOver({ ...baseTrip, notes: 'obs vieja', comments: 'comentario viejo' })
     expect(screen.getByText(/Nota anterior/)).toBeInTheDocument()
     expect(screen.getByText(/obs vieja/)).toBeInTheDocument()
     expect(screen.getByText(/comentario viejo/)).toBeInTheDocument()
@@ -410,9 +410,9 @@ describe('TripSlideOver — motivo de no asignación (Fase 1.5d)', () => {
     unassigned_reasons: [{ id: 'pana', label: 'Pana' }, { id: 'sin_conductor', label: 'Sin conductor' }],
   } as never
 
-  it('shows the reason dropdown when the trip is not asignado and saves via tripsApi.patch', async () => {
+  it('shows the reason dropdown when the trip is not is_assigned and saves via tripsApi.patch', async () => {
     vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
-    renderSlideOver({ ...baseTrip, asignado: false }, { meta: metaWithReasons })
+    renderSlideOver({ ...baseTrip, is_assigned: false }, { meta: metaWithReasons })
 
     fireEvent.change(screen.getByDisplayValue('— Sin especificar —'), { target: { value: 'pana' } })
 
@@ -420,8 +420,8 @@ describe('TripSlideOver — motivo de no asignación (Fase 1.5d)', () => {
       expect(tripsApi.patch).toHaveBeenCalledWith('t1', { unassigned_reason_id: 'pana' }))
   })
 
-  it('hides the reason dropdown once the trip is asignado', () => {
-    renderSlideOver({ ...baseTrip, asignado: true }, { meta: metaWithReasons })
+  it('hides the reason dropdown once the trip is is_assigned', () => {
+    renderSlideOver({ ...baseTrip, is_assigned: true }, { meta: metaWithReasons })
     expect(screen.queryByText('Motivo de no asignación')).not.toBeInTheDocument()
   })
 })

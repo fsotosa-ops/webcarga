@@ -370,13 +370,13 @@ export type Trip = {
   cag_fin_at?:            string | null
   cargo_type:             string | null
   stops:                  TripStop[]
-  activo:                 boolean
-  trabajando:             boolean
-  asignado:               boolean
-  primera_vuelta:         boolean
-  estado_manual:          string | null
-  observaciones:          string | null
-  comentarios:            string | null
+  is_active:              boolean
+  is_working:             boolean
+  is_assigned:            boolean
+  is_first_leg:           boolean
+  manual_status:          string | null
+  notes:                  string | null
+  comments:               string | null
   /** Motivo de no asignación (app.unassigned_reasons) — Fase 1.5d */
   unassigned_reason_id:   string | null
   fleet_link_id:          string | null

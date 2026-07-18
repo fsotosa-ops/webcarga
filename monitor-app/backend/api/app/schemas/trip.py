@@ -3,13 +3,13 @@ from typing import Optional
 
 
 class TripPatch(BaseModel):
-    activo:                 Optional[bool] = None
-    trabajando:             Optional[bool] = None
-    asignado:               Optional[bool] = None
-    primera_vuelta:         Optional[bool] = None
-    estado_manual:          Optional[str]  = None
-    observaciones:          Optional[str]  = None
-    comentarios:            Optional[str]  = None
+    is_active:              Optional[bool] = None
+    is_working:             Optional[bool] = None
+    is_assigned:            Optional[bool] = None
+    is_first_leg:           Optional[bool] = None
+    manual_status:          Optional[str]  = None
+    notes:                  Optional[str]  = None
+    comments:               Optional[str]  = None
     origin_region:          Optional[str]  = None
     origin_city:            Optional[str]  = None
     driver_name:            Optional[str]  = None

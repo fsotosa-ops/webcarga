@@ -156,10 +156,10 @@ export default function DiarioPage() {
 
   // ── Data: TanStack Query + polling (60s, solo En Curso) ─────────────────────
   const boolParams = {
-    ...(f.fActivo        != null ? { activo:         f.fActivo }        : {}),
-    ...(f.fTrabajando    != null ? { trabajando:     f.fTrabajando }    : {}),
-    ...(f.fAsignado      != null ? { asignado:       f.fAsignado }      : {}),
-    ...(f.fPrimeraVuelta != null ? { primera_vuelta: f.fPrimeraVuelta } : {}),
+    ...(f.fIsActive   != null ? { is_active:    f.fIsActive }   : {}),
+    ...(f.fIsWorking  != null ? { is_working:   f.fIsWorking }  : {}),
+    ...(f.fIsAssigned != null ? { is_assigned:  f.fIsAssigned } : {}),
+    ...(f.fIsFirstLeg != null ? { is_first_leg: f.fIsFirstLeg } : {}),
   }
   const locParams = {
     ...(f.fRegion ? { origin_region: f.fRegion } : {}),

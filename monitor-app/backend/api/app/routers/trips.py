@@ -83,13 +83,13 @@ _TRIP_SELECT = """
     t.cargo_type,
     t.stops,
     t.stop_manual_fields,
-    t.activo,
-    t.trabajando,
-    t.asignado,
-    t.primera_vuelta,
-    t.estado_manual,
-    t.observaciones,
-    t.comentarios,
+    t.is_active,
+    t.is_working,
+    t.is_assigned,
+    t.is_first_leg,
+    t.manual_status,
+    t.notes,
+    t.comments,
     t.unassigned_reason_id,
     t.manually_edited_fields,
     t.fleet_link_id,
@@ -131,10 +131,10 @@ async def list_trips(
     fecha_desde: str = Query(""),
     fecha_hasta: str = Query(""),
     status: str = Query(""),
-    activo: str = Query(""),
-    trabajando: str = Query(""),
-    asignado: str = Query(""),
-    primera_vuelta: str = Query(""),
+    is_active: str = Query(""),
+    is_working: str = Query(""),
+    is_assigned: str = Query(""),
+    is_first_leg: str = Query(""),
     tms: str = Query(""),
     client: str = Query(""),
     origin_region: str = Query(""),
@@ -171,22 +171,22 @@ async def list_trips(
     if status:
         statuses = [s.strip() for s in status.split(',') if s.strip()]
         add("t.trip_status = ANY(?)", statuses)
-    if activo == "true":
-        filters.append("t.activo = true")
-    elif activo == "false":
-        filters.append("t.activo = false")
-    if trabajando == "true":
-        filters.append("t.trabajando = true")
-    elif trabajando == "false":
-        filters.append("t.trabajando = false")
-    if asignado == "true":
-        filters.append("t.asignado = true")
-    elif asignado == "false":
-        filters.append("t.asignado = false")
-    if primera_vuelta == "true":
-        filters.append("t.primera_vuelta = true")
-    elif primera_vuelta == "false":
-        filters.append("t.primera_vuelta = false")
+    if is_active == "true":
+        filters.append("t.is_active = true")
+    elif is_active == "false":
+        filters.append("t.is_active = false")
+    if is_working == "true":
+        filters.append("t.is_working = true")
+    elif is_working == "false":
+        filters.append("t.is_working = false")
+    if is_assigned == "true":
+        filters.append("t.is_assigned = true")
+    elif is_assigned == "false":
+        filters.append("t.is_assigned = false")
+    if is_first_leg == "true":
+        filters.append("t.is_first_leg = true")
+    elif is_first_leg == "false":
+        filters.append("t.is_first_leg = false")
     if tms:
         tms_list = [t.strip() for t in tms.split(',') if t.strip()]
         add("t.source_system = ANY(?)", tms_list)
@@ -287,7 +287,7 @@ class OperationalStateMeta(BaseModel):
     bg_color:   str
     text_color: str
     # Grupo del tablero (misma taxonomía que StatusMeta.group) — permite que un
-    # override manual (estado_manual) bucketee a su columna en vez de caer a "Otro"
+    # override manual (manual_status) bucketee a su columna en vez de caer a "Otro"
     group:      str = "otro"
 
 
@@ -403,7 +403,7 @@ async def available_drivers(
                 COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')     AS tractor_plate,
                 c.business_name                                           AS carrier_name,
                 t.status_reported_at,
-                -- mismo criterio de "terminal" que la derivación de activo en dbt
+                -- mismo criterio de "terminal" que la derivación de is_active en dbt
                 (t.trip_status LIKE 'CERRADO%'
                  OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')) AS closed
             FROM app.trips t
@@ -593,7 +593,7 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             id, source_system, origin_tms, source_system_trip_id, client_name,
             planning_date, origin, origin_region, origin_city, cargo_type,
             trip_status, fleet, stops,
-            activo, trabajando, asignado, primera_vuelta,
+            is_active, is_working, is_assigned, is_first_leg,
             status_reported_at, pipeline_updated_at, created_at, updated_at,
             manually_edited_fields
         ) VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,
@@ -648,15 +648,15 @@ async def _mirror_manual_trip(pool, trip_id: str) -> None:
             """
             UPDATE app.trips_manual m SET
                 trip_status            = t.trip_status,
-                estado_manual          = t.estado_manual,
+                manual_status          = t.manual_status,
                 origin_region          = t.origin_region,
                 origin_city            = t.origin_city,
-                activo                 = COALESCE(t.activo, m.activo),
-                trabajando             = COALESCE(t.trabajando, m.trabajando),
-                asignado               = COALESCE(t.asignado, m.asignado),
-                primera_vuelta         = COALESCE(t.primera_vuelta, m.primera_vuelta),
-                observaciones          = t.observaciones,
-                comentarios            = t.comentarios,
+                is_active              = COALESCE(t.is_active, m.is_active),
+                is_working             = COALESCE(t.is_working, m.is_working),
+                is_assigned            = COALESCE(t.is_assigned, m.is_assigned),
+                is_first_leg           = COALESCE(t.is_first_leg, m.is_first_leg),
+                notes                  = t.notes,
+                comments               = t.comments,
                 unassigned_reason_id   = t.unassigned_reason_id,
                 fleet_link_id          = t.fleet_link_id,
                 manually_edited_fields = COALESCE(t.manually_edited_fields, '{}'),
@@ -871,8 +871,8 @@ async def patch_trip(
             )
 
     # Remaining fields go to app.trips
-    bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
-    str_fields  = ("estado_manual", "observaciones", "comentarios",
+    bool_fields = ("is_active", "is_working", "is_assigned", "is_first_leg")
+    str_fields  = ("manual_status", "notes", "comments",
                    "origin_region", "origin_city", "unassigned_reason_id")
     # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen): campos híbridos sin
     # equivalente TMS — no compiten con el pipeline, no necesitan pasar por
@@ -920,10 +920,10 @@ async def patch_trip(
             *vals,
         )
 
-    if "estado_manual" in data:
+    if "manual_status" in data:
         await _log_system_note(
             pool, trip_id, user,
-            f"Estableció estado operativo manual: {data['estado_manual']}",
+            f"Estableció estado operativo manual: {data['manual_status']}",
         )
 
     await _mirror_manual_trip(pool, trip_id)
@@ -1052,8 +1052,8 @@ async def reset_field(
     pool=Depends(get_pool),
     user=Depends(require_editor),
 ):
-    VALID = {"estado_manual", "observaciones", "comentarios",
-             "activo", "trabajando", "asignado", "primera_vuelta"}
+    VALID = {"manual_status", "notes", "comments",
+             "is_active", "is_working", "is_assigned", "is_first_leg"}
     if field not in VALID:
         raise HTTPException(422, f"Campo no restaurable: {field}")
     await pool.execute(
@@ -1065,7 +1065,7 @@ async def reset_field(
         """,
         trip_id, field,
     )
-    if field == "estado_manual":
+    if field == "manual_status":
         await _log_system_note(
             pool, trip_id, user, "Revirtió el estado manual al valor del TMS"
         )

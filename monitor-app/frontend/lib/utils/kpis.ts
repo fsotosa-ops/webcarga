@@ -19,7 +19,7 @@ function toMs(iso: string | null | undefined): number | null {
   return isNaN(t) ? null : t
 }
 
-/** Mismo criterio de estado terminal que la derivación de `activo` en dbt —
+/** Mismo criterio de estado terminal que la derivación de `is_active` en dbt —
  *  las alertas operacionales solo aplican a viajes abiertos (accionables) */
 export function isOpenTrip(trip: Trip): boolean {
   const s = trip.current_status ?? ''

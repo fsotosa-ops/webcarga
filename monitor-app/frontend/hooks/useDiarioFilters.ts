@@ -5,7 +5,7 @@ import type { KpiId } from '@/lib/utils/kpis'
 
 export type Tab        = 'en_curso' | 'historial'
 export type BoolFilter = boolean | null
-export type FlagField  = 'fActivo' | 'fTrabajando' | 'fAsignado' | 'fPrimeraVuelta'
+export type FlagField  = 'fIsActive' | 'fIsWorking' | 'fIsAssigned' | 'fIsFirstLeg'
 
 export interface DiarioFilters {
   tab:            Tab
@@ -15,10 +15,10 @@ export interface DiarioFilters {
   fechaHasta:     string
   /** 'default:id' o 'custom:id' */
   activeGroup:    string | null
-  fActivo:        BoolFilter
-  fTrabajando:    BoolFilter
-  fAsignado:      BoolFilter
-  fPrimeraVuelta: BoolFilter
+  fIsActive:        BoolFilter
+  fIsWorking:    BoolFilter
+  fIsAssigned:      BoolFilter
+  fIsFirstLeg: BoolFilter
   fTms:           string[]
   /** Ubicación de origen (dropdown región/ciudad de Chile) */
   fRegion:        string
@@ -59,7 +59,7 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
       return {
         ...state,
         q: '', fechaDesde: '', fechaHasta: '', activeGroup: null,
-        fActivo: null, fTrabajando: null, fAsignado: null, fPrimeraVuelta: null,
+        fIsActive: null, fIsWorking: null, fIsAssigned: null, fIsFirstLeg: null,
         fTms: [], fRegion: '', fCity: '', kpiFilter: null, page: 1,
       }
   }
@@ -68,7 +68,7 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
 export function countActiveFilters(f: DiarioFilters): number {
   return [
     f.q, f.fechaDesde, f.fechaHasta, f.activeGroup,
-    f.fActivo, f.fTrabajando, f.fAsignado, f.fPrimeraVuelta,
+    f.fIsActive, f.fIsWorking, f.fIsAssigned, f.fIsFirstLeg,
     f.fRegion, f.fCity, f.kpiFilter,
   ].filter(v => v !== '' && v !== null).length + f.fTms.length
 }
@@ -77,7 +77,7 @@ export function countActiveFilters(f: DiarioFilters): number {
 export function countPopoverFilters(f: DiarioFilters): number {
   return [
     f.fechaDesde, f.fechaHasta,
-    f.fActivo, f.fTrabajando, f.fAsignado, f.fPrimeraVuelta,
+    f.fIsActive, f.fIsWorking, f.fIsAssigned, f.fIsFirstLeg,
     f.fRegion, f.fCity,
   ].filter(v => v !== '' && v !== null).length + f.fTms.length
 }
@@ -85,7 +85,7 @@ export function countPopoverFilters(f: DiarioFilters): number {
 export function useDiarioFilters(initialFecha: string) {
   return useReducer(reducer, {
     tab: 'en_curso', fecha: initialFecha, q: '', fechaDesde: '', fechaHasta: '',
-    activeGroup: null, fActivo: null, fTrabajando: null, fAsignado: null,
-    fPrimeraVuelta: null, fTms: [], fRegion: '', fCity: '', kpiFilter: null, page: 1,
+    activeGroup: null, fIsActive: null, fIsWorking: null, fIsAssigned: null,
+    fIsFirstLeg: null, fTms: [], fRegion: '', fCity: '', kpiFilter: null, page: 1,
   } satisfies DiarioFilters)
 }

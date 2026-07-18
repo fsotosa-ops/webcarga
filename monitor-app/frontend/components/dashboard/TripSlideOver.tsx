@@ -356,7 +356,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     setSaving(true)
     setErr(null)
     try {
-      const updated = await tripsApi.patch(trip.id, { estado_manual: estadoDraft } as TripPatch)
+      const updated = await tripsApi.patch(trip.id, { manual_status: estadoDraft } as TripPatch)
       onSaved(updated)
       setShowEstadoSelect(false)
     } catch (e) {
@@ -370,8 +370,8 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     if (!trip) return
     setClearingOverride(true)
     try {
-      await tripsApi.resetField(trip.id, 'estado_manual')
-      onSaved({ ...trip, estado_manual: null })
+      await tripsApi.resetField(trip.id, 'manual_status')
+      onSaved({ ...trip, manual_status: null })
       setEstadoDraft('')
       setShowEstadoSelect(false)
     } catch (e) {
@@ -391,7 +391,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
 
   if (!trip) return null
 
-  const currentStatus = trip.estado_manual ?? trip.current_status
+  const currentStatus = trip.manual_status ?? trip.current_status
   const tmsMeta       = trip.source_system ? meta?.tms_sources.find(t => t.id === trip.source_system.toLowerCase()) : null
   const tmsLabel      = tmsMeta?.label ?? trip.source_system?.toUpperCase().slice(0, 3) ?? '?'
   const temp          = getLatestTemp(trip.stops ?? [])
@@ -493,7 +493,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
         <div className="px-4 py-3 md:px-6 border-b border-border bg-gray-50/80 shrink-0 space-y-2">
           <div className="flex items-center gap-2.5 flex-wrap">
             <StatusBadge status={currentStatus} meta={meta} size="md" fallbackLabel="Sin estado" />
-            {trip.estado_manual && (
+            {trip.manual_status && (
               <span className="text-[9px] font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">manual</span>
             )}
             {activeStop && (
@@ -551,11 +551,11 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 <StatusBadge status={trip.current_status} meta={meta} />
               </div>
 
-              {trip.estado_manual ? (
+              {trip.manual_status ? (
                 <div className="flex items-center gap-2 flex-wrap">
                   {(() => {
-                    const opState = meta?.operational_states.find(s => s.id === trip.estado_manual)
-                    const label = opState?.label ?? trip.estado_manual
+                    const opState = meta?.operational_states.find(s => s.id === trip.manual_status)
+                    const label = opState?.label ?? trip.manual_status
                     return (
                       <span
                         className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
@@ -619,7 +619,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
 
             {/* Motivo de no asignación — solo visible mientras el viaje no está
                 asignado (Fase 1.5d); catálogo editable en app.unassigned_reasons */}
-            {!trip.asignado && (meta?.unassigned_reasons?.length ?? 0) > 0 && (
+            {!trip.is_assigned && (meta?.unassigned_reasons?.length ?? 0) > 0 && (
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Motivo de no asignación</p>
                 <select
