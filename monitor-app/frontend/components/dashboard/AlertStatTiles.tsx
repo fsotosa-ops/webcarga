@@ -21,10 +21,10 @@ const TONE_VALUE_CLS: Record<AlertStatTile['tone'], string> = {
 
 /** Fila de tiles clickeables que resumen + filtran por compliance_health —
  *  reemplaza tabs de pill apiladas cuando ya hay otro eje de tabs (ej.
- *  Activas/Legacy) compitiendo por el mismo espacio. Mismo patrón en
+ *  Activas/Inactivo) compitiendo por el mismo espacio. Mismo patrón en
  *  Empresas y en los rosters de Conductores/Equipos dentro de la ficha,
  *  para poder triagear y actuar rápido en los tres niveles (pedido
- *  explícito del usuario). Activas/Legacy se queda como tabs de pill
+ *  explícito del usuario). Activas/Inactivo se queda como tabs de pill
  *  (membresía mutuamente excluyente real); esto es para el eje de
  *  severidad, que además deja espacio para más ejes a futuro sin apilar
  *  una tercera fila de tabs. */

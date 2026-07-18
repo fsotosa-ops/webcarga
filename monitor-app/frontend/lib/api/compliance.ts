@@ -6,9 +6,10 @@ export type ComplianceRecordPatchBody = {
   expiration_date?:  string
 }
 
-/** POST /{id}/file — respuesta = upload_document_version() + status forzado. */
+/** POST /{id}/file — respuesta = upload_document_version() + status forzado.
+ *  Subir = revisar (no existe due diligence separado del negocio hoy). */
 export type ComplianceFileUploadResult = {
-  status:      'PENDING_REVIEW'
+  status:      'APPROVED_MANUAL'
   storage_path: string
   file_name:   string
   mime_type:   string
@@ -34,4 +35,9 @@ export const complianceApi = {
 
   listFiles: (id: string) =>
     apiFetch<DocumentVersion[]>(`/api/v1/compliance-records/${id}/files`),
+
+  deleteFile: (id: string) =>
+    apiFetch<ComplianceRecordDetail>(`/api/v1/compliance-records/${id}/file`, {
+      method: 'DELETE',
+    }),
 }

@@ -11,7 +11,7 @@ vi.mock('@/lib/api/drivers', () => ({
   driversApi: { listComplianceRecords: vi.fn(), listContacts: vi.fn(), createContact: vi.fn() },
 }))
 vi.mock('@/lib/api/compliance', () => ({
-  complianceApi: { patch: vi.fn(), uploadFile: vi.fn() },
+  complianceApi: { patch: vi.fn(), uploadFile: vi.fn(), deleteFile: vi.fn() },
 }))
 vi.mock('@/lib/api/contacts', () => ({
   contactsApi: { patch: vi.fn(), delete: vi.fn() },

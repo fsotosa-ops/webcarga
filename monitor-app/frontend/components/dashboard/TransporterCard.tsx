@@ -4,8 +4,12 @@ import Link from 'next/link'
 import { ChevronRight, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { CarrierListItem, OperationalStatus } from '@/lib/types'
 
+/** El concepto expuesto al usuario es Activo/Inactivo, no Activo/Legacy
+ *  (decisión explícita 2026-07-18) — INACTIVE (baja manual real, sin filas
+ *  hoy) y LEGACY_INACTIVE (nunca onboardeada) comparten el mismo label
+ *  visible aunque sigan siendo 2 valores distintos en la DB. */
 export const STATUS_LABELS: Record<OperationalStatus, string> = {
-  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Legacy',
+  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Inactiva',
 }
 export const STATUS_CLS: Record<OperationalStatus, string> = {
   ACTIVE: 'bg-green-50 text-green-700 border-green-100',

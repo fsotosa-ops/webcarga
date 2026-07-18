@@ -9,6 +9,7 @@ import type { CoverageType, InsuranceInstallment, InsurancePolicy } from '@/lib/
 import { formatExpiry } from '@/lib/compliance'
 import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { InstallmentRow } from './InstallmentRow'
+import { DocumentPreviewModal } from './DocumentPreviewModal'
 
 export type PolicyFormState = {
   insurance_company: string; policy_number: string
@@ -293,6 +294,12 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     }
   }
 
+  async function handleDeletePolicyFile(kind: 'document' | 'endorsement') {
+    if (!selectedPolicyId) return
+    await policiesApi.deleteFile(selectedPolicyId, kind)
+    invalidateDetail()
+  }
+
   async function handleGenerateSchedule() {
     if (!selectedPolicyId || !scheduleForm.amount_uf || !scheduleForm.first_due_date) return
     setGeneratingSchedule(true)
@@ -487,10 +494,10 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                   <div className="space-y-4">
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentos</p>
-                      <PolicyFileRow label="Póliza" url={policy.policy_document_url} onUpload={file => handleUploadPolicyFile('document', file)} canEdit={canEdit} />
+                      <PolicyFileRow label="Póliza" url={policy.policy_document_url} onUpload={file => handleUploadPolicyFile('document', file)} onDelete={() => handleDeletePolicyFile('document')} canEdit={canEdit} />
                       {policy.has_endorsement ? (
                         <>
-                          <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} canEdit={canEdit} />
+                          <PolicyFileRow label="Endoso" url={policy.endorsement_document_url} onUpload={file => handleUploadPolicyFile('endorsement', file)} onDelete={() => handleDeletePolicyFile('endorsement')} canEdit={canEdit} />
                           <PolicyTextRow label="N° endoso" field="endorsement_number" value={policy.endorsement_number} policyId={policy.id} canEdit={canEdit} onSaved={handlePolicyFieldSaved} />
                         </>
                       ) : canEdit ? (
@@ -655,36 +662,66 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
 
 /** Fila de archivo (documento de póliza / endoso) — sube vía POST
  *  .../file?kind=document|endorsement. `url` ya viene firmada por el
- *  backend (resolve_signed_url), lista para abrir directo. */
-function PolicyFileRow({ label, url, canEdit, onUpload }: {
+ *  backend (resolve_signed_url), lista para abrir directo. Mismo modal de
+ *  preview/descarga/borrado que Empresas y Conductores/Vehículos (pedido
+ *  explícito del usuario 2026-07-18 de unificar la experiencia). */
+function PolicyFileRow({ label, url, canEdit, onUpload, onDelete }: {
   label: string; url: string | null; canEdit: boolean; onUpload: (file: File) => void
+  onDelete?: () => Promise<void>
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-[10px] text-gray-400 w-16 shrink-0">{label}</span>
       {url ? (
-        <a href={url} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline truncate flex-1 min-w-0">Ver archivo</a>
+        <button
+          type="button" onClick={() => setPreviewOpen(true)}
+          className="text-[11px] text-accent hover:underline truncate flex-1 min-w-0 text-left"
+        >
+          Ver archivo
+        </button>
       ) : (
         <span className="text-[11px] text-gray-300 italic flex-1">Falta subir</span>
       )}
       {canEdit && (
-        <>
+        url ? (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            aria-label={`Reemplazar ${label}`}
+            className="text-[10px] text-gray-400 hover:text-accent shrink-0"
+          >
+            Reemplazar
+          </button>
+        ) : (
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
             aria-label={`Subir ${label}`}
-            className="text-[10px] text-gray-400 hover:text-accent shrink-0"
+            className="text-[10px] font-semibold text-accent border border-dashed border-accent/40 rounded px-1.5 py-0.5 hover:bg-accent/5 transition-colors shrink-0"
           >
-            {url ? 'Reemplazar' : 'Subir'}
+            Subir documento
           </button>
-          <input
-            ref={inputRef}
-            type="file"
-            className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f) }}
-          />
-        </>
+        )
+      )}
+      {canEdit && (
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f) }}
+        />
+      )}
+
+      {previewOpen && url && (
+        <DocumentPreviewModal
+          label={label}
+          url={url}
+          canEdit={canEdit}
+          onClose={() => setPreviewOpen(false)}
+          onDelete={canEdit && onDelete ? onDelete : undefined}
+        />
       )}
     </div>
   )

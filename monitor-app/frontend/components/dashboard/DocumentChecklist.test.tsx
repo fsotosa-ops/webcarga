@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 
 const ITEMS = [
@@ -104,16 +104,58 @@ describe('DocumentChecklist', () => {
     expect(screen.queryByLabelText('Fecha de vencimiento de Póliza firmada')).not.toBeInTheDocument()
   })
 
-  it('shows a "Ver" link to the uploaded file when file_url is set, regardless of canEdit', () => {
+  it('shows a "Ver" trigger for the uploaded file when file_url is set, regardless of canEdit', () => {
     render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
-    const link = screen.getByLabelText('Ver Póliza firmada') as HTMLAnchorElement
-    expect(link).toBeInTheDocument()
-    expect(link.href).toBe('https://storage.example/poliza.pdf')
-    expect(link.target).toBe('_blank')
+    expect(screen.getByLabelText('Ver Póliza firmada')).toBeInTheDocument()
   })
 
-  it('does not show a "Ver" link when file_url is null', () => {
+  it('does not show a "Ver" trigger when file_url is null', () => {
     render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
     expect(screen.queryByLabelText('Ver Endoso')).not.toBeInTheDocument()
+  })
+
+  it('opens the preview modal when clicking "Ver" and closes it', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Ver Póliza firmada'))
+    expect(screen.getByLabelText('Cerrar')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Cerrar'))
+    expect(screen.queryByLabelText('Cerrar')).not.toBeInTheDocument()
+  })
+
+  it('does not offer PENDING_REVIEW as a selectable status (no due diligence step today)', () => {
+    const noFileItems = [{ ...ITEMS[2], requires_file: false }]
+    render(<DocumentChecklist items={noFileItems} canEdit={true} onStatusChange={vi.fn()} />)
+    const select = screen.getByLabelText('Estado de Endoso') as HTMLSelectElement
+    const values = Array.from(select.options).map(o => o.value)
+    expect(values).not.toContain('PENDING_REVIEW')
+  })
+
+  it('labels the expiration date so it is clear what it means', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} />)
+    expect(screen.getByText('Vence:')).toBeInTheDocument()
+  })
+
+  it('shows a prominent upload CTA for a record without a file, and a plain replace trigger once it has one', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={true} onUpload={vi.fn()} />)
+    expect(screen.getByLabelText('Subir Endoso')).toBeInTheDocument()
+    expect(screen.getByLabelText('Reemplazar Póliza firmada')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Subir Póliza firmada')).not.toBeInTheDocument()
+  })
+
+  it('deletes the file from the preview modal and calls onDelete with the record id', async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined)
+    render(<DocumentChecklist items={ITEMS} canEdit={true} onUpload={vi.fn()} onDelete={onDelete} />)
+
+    fireEvent.click(screen.getByLabelText('Ver Póliza firmada'))
+    fireEvent.click(screen.getByLabelText('Eliminar Póliza firmada'))
+    fireEvent.click(screen.getByText('Sí'))
+
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith('cr1'))
+  })
+
+  it('does not offer delete inside the preview modal for a non-editor', () => {
+    render(<DocumentChecklist items={ITEMS} canEdit={false} onUpload={vi.fn()} onDelete={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Ver Póliza firmada'))
+    expect(screen.queryByLabelText(/Eliminar/)).not.toBeInTheDocument()
   })
 })

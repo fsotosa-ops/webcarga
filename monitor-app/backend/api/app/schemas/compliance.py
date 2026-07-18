@@ -15,6 +15,6 @@ ComplianceStatus = Literal[
 class ComplianceRecordPatchBody(BaseModel):
     """Override manual de un compliance_record (ej. un admin aprueba a mano
     sin subir archivo). El upload de archivo real usa un endpoint separado
-    (H2.4) que fuerza status='PENDING_REVIEW', no este PATCH libre."""
+    (H2.4) que fuerza status='APPROVED_MANUAL', no este PATCH libre."""
     status: Optional[ComplianceStatus] = None
     expiration_date: Optional[date] = None

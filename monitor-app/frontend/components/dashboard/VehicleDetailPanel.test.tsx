@@ -10,7 +10,7 @@ vi.mock('@/lib/api/assets', () => ({
   assetsApi: { listComplianceRecords: vi.fn() },
 }))
 vi.mock('@/lib/api/compliance', () => ({
-  complianceApi: { patch: vi.fn(), uploadFile: vi.fn() },
+  complianceApi: { patch: vi.fn(), uploadFile: vi.fn(), deleteFile: vi.fn() },
 }))
 
 function renderWithClient(ui: React.ReactElement) {

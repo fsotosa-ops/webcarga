@@ -149,6 +149,11 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     }
   }
 
+  async function handleDelete(recordId: string) {
+    await complianceApi.deleteFile(recordId)
+    invalidateCompliance()
+  }
+
   async function handleRemove() {
     setRemoving(true); setErr(null)
     try {
@@ -285,6 +290,7 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
                 onStatusChange={handleStatusChange}
                 onExpirationChange={handleExpirationChange}
                 onUpload={handleUpload}
+                onDelete={handleDelete}
                 hideCounter
               />
             )}

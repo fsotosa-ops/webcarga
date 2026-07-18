@@ -43,8 +43,8 @@ describe('TransporterCard', () => {
     expect(screen.getByText('Sin nombre')).toBeInTheDocument()
   })
 
-  it('shows Legacy for legacy_inactive companies', () => {
+  it('shows Inactiva for legacy_inactive companies (concept exposed to the user is Activo/Inactivo, not Activo/Legacy)', () => {
     render(<TransporterCard item={{ ...ITEM, operational_status: 'LEGACY_INACTIVE' }} onOpen={vi.fn()} />)
-    expect(screen.getByText('Legacy')).toBeInTheDocument()
+    expect(screen.getByText('Inactiva')).toBeInTheDocument()
   })
 })

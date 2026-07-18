@@ -57,6 +57,17 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
     }
 
 
+def delete_document_version(supabase, storage_path: str | None) -> None:
+    """Borra el blob de Storage. No falla si el objeto ya no existe (idempotente
+    — el borrado a nivel de app.py es lo que importa, no el estado de Storage)."""
+    if not storage_path:
+        return
+    try:
+        supabase.storage.from_(COMPLIANCE_BUCKET).remove([storage_path])
+    except Exception:
+        pass
+
+
 async def log_document_replacement(
     pool, *, entity_type: str, entity_id, doc_name: str,
     old_status, old_expiry_date, old_storage_path, actor: str,

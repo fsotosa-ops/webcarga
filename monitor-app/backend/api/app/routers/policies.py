@@ -15,7 +15,9 @@ from ..schemas.insurance import (
     PolicyAssetLinkBody, PolicyCoverageLinkBody,
 )
 from ..services.audit import log_change, record_manual_edit
-from ..utils.document_storage import log_document_replacement, resolve_signed_url, upload_document_version
+from ..utils.document_storage import (
+    delete_document_version, log_document_replacement, resolve_signed_url, upload_document_version,
+)
 
 router = APIRouter(prefix="/policies", tags=["insurance"])
 
@@ -374,3 +376,50 @@ async def upload_policy_file(
                 )
 
     return {"kind": kind, **uploaded}
+
+
+@router.delete("/{policy_id}/file")
+async def delete_policy_file(
+    policy_id: str,
+    kind: str = "document",
+    pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
+    user=Depends(require_editor),
+):
+    """Borra el archivo físico de la póliza o del endoso — mismo criterio
+    que delete_compliance_file, sin estado intermedio."""
+    if kind not in ("document", "endorsement"):
+        raise HTTPException(422, "kind debe ser 'document' o 'endorsement'")
+    column = "policy_document_url" if kind == "document" else "endorsement_document_url"
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                f"SELECT carrier_id, {column} AS current_path FROM public.insurance_policies WHERE id = $1",
+                policy_id,
+            )
+            if not current:
+                raise HTTPException(404, "Póliza no encontrada")
+            storage_path = current["current_path"]
+            if not storage_path:
+                raise HTTPException(422, "Esta póliza no tiene ningún archivo cargado")
+
+            delete_document_version(supabase, storage_path)
+
+            await conn.execute(
+                f"""
+                UPDATE public.insurance_policies SET
+                    {column} = NULL,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                policy_id,
+            )
+            await record_manual_edit(
+                conn, table="insurance_policies", where={"id": policy_id}, actor=user["sub"],
+                entity_type="CARRIER", entity_id=current["carrier_id"],
+                action="document_delete", field=column,
+                old_value=storage_path, new_value=None,
+            )
+
+    return await _assemble_policy_detail(policy_id, pool, supabase)

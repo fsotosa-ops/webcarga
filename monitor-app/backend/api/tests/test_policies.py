@@ -368,6 +368,91 @@ def test_upload_policy_file_logs_replacement_when_previous_file_existed():
     assert any("document_replace" in s for s in audit_sqls)
 
 
+def test_delete_policy_file_404_when_policy_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/policies/p1/file")
+
+    assert res.status_code == 404
+
+
+def test_delete_policy_file_rejects_bad_kind():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/policies/p1/file?kind=invalid")
+
+    assert res.status_code == 422
+
+
+def test_delete_policy_file_422_when_no_file_loaded():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"carrier_id": "c1", "current_path": None}
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/policies/p1/file")
+
+    assert res.status_code == 422
+
+
+def test_delete_policy_file_clears_column_and_removes_from_storage():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"carrier_id": "c1", "current_path": "policy/p1/document/old.pdf"}
+    pool.fetchrow.return_value = {
+        "id": "p1", "carrier_id": "c1", "insurance_company": "SURA", "policy_number": "1",
+        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
+        "policy_document_url": None, "has_endorsement": False, "endorsement_number": None,
+        "endorsement_document_url": None, "external_portal_url": None, "status": "ACTIVE",
+        "is_manual_override": True, "created_at": None, "updated_at": None,
+    }
+    pool.fetch.return_value = []
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    res = client.delete("/api/v1/policies/p1/file")
+
+    assert res.status_code == 200
+    assert res.json()["policy_document_url"] is None
+    supabase.storage.from_.return_value.remove.assert_called_once_with(["policy/p1/document/old.pdf"])
+
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "policy_document_url = NULL" in update_sql
+
+    override_sql = conn.execute.call_args_list[1].args[0]
+    assert "is_manual_override = true" in override_sql
+
+
+def test_delete_policy_file_endorsement_kind_clears_endorsement_column():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"carrier_id": "c1", "current_path": "policy/p1/endorsement/old.pdf"}
+    pool.fetchrow.return_value = {
+        "id": "p1", "carrier_id": "c1", "insurance_company": "SURA", "policy_number": "1",
+        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
+        "policy_document_url": None, "has_endorsement": True, "endorsement_number": "END-1",
+        "endorsement_document_url": None, "external_portal_url": None, "status": "ACTIVE",
+        "is_manual_override": True, "created_at": None, "updated_at": None,
+    }
+    pool.fetch.return_value = []
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    res = client.delete("/api/v1/policies/p1/file?kind=endorsement")
+
+    assert res.status_code == 200
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "endorsement_document_url = NULL" in update_sql
+
+
 def test_get_policy_resolves_signed_urls():
     pool = AsyncMock()
     pool.fetchrow.return_value = {

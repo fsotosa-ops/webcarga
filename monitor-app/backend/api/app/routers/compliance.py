@@ -1,8 +1,13 @@
 """public.compliance_records — PATCH libre de status/expiration_date +
 endpoint de archivos (H2.4). El upload es el "camino feliz" real: a
 diferencia de la implementación vieja (solo persiste storage_path plano y
-nunca transiciona status), este SIEMPRE deja status='PENDING_REVIEW' y
+nunca transiciona status), este SIEMPRE deja status='APPROVED_MANUAL' y
 persiste la evidencia en el JSONB metadata — ver context_carriers.md §4.2.
+No existe un proceso de due diligence separado del negocio hoy: quien sube
+el archivo ya lo revisó, no queda un estado intermedio "en revisión"
+(decisión explícita del usuario 2026-07-18) — PENDING_REVIEW sigue siendo
+un valor válido del CHECK constraint (datos legacy), pero nada nuevo lo
+setea.
 """
 import json
 
@@ -13,7 +18,8 @@ from ..db import get_pool
 from ..schemas.compliance import ComplianceRecordPatchBody
 from ..services.audit import record_manual_edit
 from ..utils.document_storage import (
-    get_document_history, log_document_replacement, resolve_signed_url, upload_document_version,
+    delete_document_version, get_document_history, log_document_replacement, resolve_signed_url,
+    upload_document_version,
 )
 
 router = APIRouter(prefix="/compliance-records", tags=["compliance"])
@@ -55,7 +61,7 @@ async def patch_compliance_record(
 ):
     """Override manual libre (ej. un admin aprueba a mano sin archivo). Para
     subir evidencia real, usar POST /{record_id}/file — ese fuerza
-    PENDING_REVIEW en vez de dejar setear cualquier status a mano."""
+    APPROVED_MANUAL en vez de dejar setear cualquier status a mano."""
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
@@ -129,7 +135,7 @@ async def upload_compliance_file(
             await conn.execute(
                 """
                 UPDATE public.compliance_records SET
-                    status = 'PENDING_REVIEW',
+                    status = 'APPROVED_MANUAL',
                     file_url = $2,
                     metadata = $3::jsonb,
                     updated_at = NOW()
@@ -141,7 +147,7 @@ async def upload_compliance_file(
                 conn, table="compliance_records", where={"id": record_id}, actor=user["sub"],
                 entity_type=current["entity_type"], entity_id=current["entity_id"],
                 action="document_upload", field="status",
-                old_value=current["status"], new_value="PENDING_REVIEW",
+                old_value=current["status"], new_value="APPROVED_MANUAL",
             )
             if old_storage_path:
                 await log_document_replacement(
@@ -151,7 +157,53 @@ async def upload_compliance_file(
                     old_storage_path=old_storage_path, actor=user["sub"],
                 )
 
-    return {"status": "PENDING_REVIEW", **uploaded}
+    return {"status": "APPROVED_MANUAL", **uploaded}
+
+
+@router.delete("/{record_id}/file")
+async def delete_compliance_file(
+    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
+):
+    """Borra la evidencia cargada y vuelve el registro a MISSING — mismo
+    estado que un documento nunca subido (decisión explícita del usuario
+    2026-07-18, no queda un estado "archivado" intermedio)."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                "SELECT entity_id, entity_type, status, metadata FROM public.compliance_records "
+                "WHERE id = $1 AND is_current = true",
+                record_id,
+            )
+            if not current:
+                raise HTTPException(404, "Registro de cumplimiento no encontrado")
+
+            metadata = current["metadata"] or {}
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+            storage_path = metadata.get("storage_path")
+            if not storage_path:
+                raise HTTPException(422, "Este registro no tiene ningún archivo cargado")
+
+            delete_document_version(supabase, storage_path)
+
+            await conn.execute(
+                """
+                UPDATE public.compliance_records SET
+                    status = 'MISSING',
+                    file_url = NULL,
+                    metadata = '{}'::jsonb,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                record_id,
+            )
+            await record_manual_edit(
+                conn, table="compliance_records", where={"id": record_id}, actor=user["sub"],
+                entity_type=current["entity_type"], entity_id=current["entity_id"],
+                action="document_delete", field="status",
+                old_value=current["status"], new_value="MISSING",
+            )
+    return await _fetch_record(record_id, pool, supabase)
 
 
 @router.get("/{record_id}/files")

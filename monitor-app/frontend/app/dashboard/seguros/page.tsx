@@ -18,6 +18,7 @@ const ADMIN_ROLES  = new Set(['admin', 'owner'])
 const LIMIT = 50
 
 type HealthTab = '' | 'EXPIRED' | 'EXPIRING_SOON' | 'VALID' | 'NONE'
+type StatusTab = 'active' | 'legacy'
 
 /** Tabs mapean 1:1 a worst_policy_health — misma fuente real (app.carrier_insurance_status)
  *  que la tab Seguros de la ficha de empresa (H3 rediseño, "landing sincronizada con
@@ -29,6 +30,15 @@ const TABS: { id: HealthTab; label: string; facetKey: keyof InsuranceOverviewFac
   { id: 'EXPIRING_SOON',  label: 'Por vencer',   facetKey: 'expiring_soon' },
   { id: 'VALID',          label: 'Al día',       facetKey: 'valid' },
   { id: 'NONE',           label: 'Sin póliza',   facetKey: 'no_policy' },
+]
+
+/** Segundo eje, independiente de los health tabs — mismo operational_status
+ *  y mismo concepto Activo/Inactivo (no Activo/Legacy) que la landing de
+ *  Empresas (pedido explícito del usuario 2026-07-18: Seguros debe tener
+ *  la misma separación). */
+const STATUS_TABS: { id: StatusTab; label: string; status: 'ACTIVE' | 'LEGACY_INACTIVE' }[] = [
+  { id: 'active', label: 'Activas',  status: 'ACTIVE' },
+  { id: 'legacy', label: 'Inactivo', status: 'LEGACY_INACTIVE' },
 ]
 
 const EMPTY_FACETS: InsuranceOverviewFacets = {
@@ -50,13 +60,14 @@ function SegurosPageInner() {
   const searchParams = useSearchParams()
   const [q, setQ]           = useState(() => searchParams.get('q') ?? '')
   const [tab, setTab]       = useState<HealthTab>('')
+  const [statusTab, setStatusTab] = useState<StatusTab>('active')
   const [page, setPage]     = useState(1)
   const [canEdit, setCanEdit]   = useState(false)
   const [canAdmin, setCanAdmin] = useState(false)
   const [selected, setSelected] = useState<CarrierInsuranceOverviewItem | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
 
-  useEffect(() => { setPage(1) }, [tab, qDebounced])
+  useEffect(() => { setPage(1) }, [tab, statusTab, qDebounced])
 
   useEffect(() => {
     const supabase = createClient()
@@ -69,9 +80,23 @@ function SegurosPageInner() {
     })
   }, [])
 
+  const currentOperationalStatus = STATUS_TABS.find(t => t.id === statusTab)!.status
+
   const query = useQuery({
-    queryKey: ['carriers-insurance-overview', qDebounced, tab, page],
-    queryFn: () => carriersApi.listInsuranceOverview({ q: qDebounced, health: tab, page, limit: LIMIT }),
+    queryKey: ['carriers-insurance-overview', qDebounced, tab, statusTab, page],
+    queryFn: () => carriersApi.listInsuranceOverview({
+      q: qDebounced, health: tab, operational_status: currentOperationalStatus, page, limit: LIMIT,
+    }),
+  })
+
+  // Conteo del otro status tab, independiente de la paginación y del health
+  // tab actual (limit=1: solo interesa `facets.total`) — mismo patrón que
+  // Activas/Inactivo en /dashboard/transportistas.
+  const otherStatusTabId = statusTab === 'active' ? 'legacy' : 'active'
+  const otherOperationalStatus = STATUS_TABS.find(t => t.id === otherStatusTabId)!.status
+  const otherStatusQuery = useQuery({
+    queryKey: ['carriers-insurance-overview-count', otherOperationalStatus, qDebounced],
+    queryFn: () => carriersApi.listInsuranceOverview({ q: qDebounced, operational_status: otherOperationalStatus, page: 1, limit: 1 }),
   })
 
   const items   = query.data?.data ?? []
@@ -82,7 +107,12 @@ function SegurosPageInner() {
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando seguros') : null
 
-  const emptyLabel = q ? 'Sin resultados' : 'Sin empresas en esta categoría'
+  const statusTabCounts: Record<StatusTab, number> = {
+    [statusTab]: facets.total,
+    [otherStatusTabId]: otherStatusQuery.data?.facets.total ?? 0,
+  } as Record<StatusTab, number>
+
+  const emptyLabel = q ? 'Sin resultados' : `Sin empresas ${statusTab === 'active' ? 'activas' : 'inactivas'} en esta categoría`
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -91,6 +121,24 @@ function SegurosPageInner() {
         <p className="text-xs text-gray-400 mt-0.5">
           {loading ? '…' : `${facets.total.toLocaleString('es-CL')} empresa${facets.total !== 1 ? 's' : ''} con seguimiento de pólizas`}
         </p>
+      </div>
+
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
+        {STATUS_TABS.map(t => {
+          const active = statusTab === t.id
+          return (
+            <button
+              key={t.id}
+              onClick={() => setStatusTab(t.id)}
+              aria-pressed={active}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label} <span className="ml-1 text-gray-400">{statusTabCounts[t.id]}</span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">

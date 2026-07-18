@@ -1,14 +1,21 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Upload, FileText, Loader2, Check } from 'lucide-react'
+import { Upload, FileText, Loader2, Check, Eye } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import type { ComplianceRecord, ComplianceStatus, DocumentVersion } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
+import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { COMPLIANCE_STATUS_CONFIG, complianceAlertStatus, formatExpiry } from '@/lib/compliance'
 
+/** PENDING_REVIEW excluido a propósito: no existe un proceso de due
+ *  diligence separado del negocio hoy — quien sube un documento ya lo
+ *  revisó (POST .../file fuerza APPROVED_MANUAL directo, ver
+ *  routers/compliance.py). El valor sigue siendo válido en el CHECK
+ *  constraint para datos legacy, solo deja de ofrecerse acá. */
 const STATUS_OPTIONS: { value: ComplianceStatus; label: string }[] =
   (Object.entries(COMPLIANCE_STATUS_CONFIG) as [ComplianceStatus, { label: string }][])
+    .filter(([value]) => value !== 'PENDING_REVIEW')
     .map(([value, cfg]) => ({ value, label: cfg.label }))
 
 // ── Una fila por compliance_record — mismo lenguaje visual que
@@ -30,6 +37,7 @@ function DocumentRow({
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [versions, setVersions]   = useState<DocumentVersion[] | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function changeStatus(status: ComplianceStatus) {
@@ -87,6 +95,12 @@ function DocumentRow({
     if (next && versions === null) await loadVersions()
   }
 
+  async function handleDelete() {
+    await complianceApi.deleteFile(record.id)
+    onUpdated()
+    if (versionsOpen) await loadVersions()
+  }
+
   const alert = complianceAlertStatus(record.is_expired, record.is_expiring_soon)
   const approved = record.status === 'APPROVED' || record.status === 'APPROVED_MANUAL'
   const iconCls = approved && !record.is_expired
@@ -106,8 +120,10 @@ function DocumentRow({
         {(record.expiration_date || canEdit) && (
           <span className="flex items-center gap-1.5 shrink-0">
             {record.expiration_date && (
-              <span className="flex items-center gap-1 text-[10px] font-mono text-gray-500">
-                {formatExpiry(record.expiration_date)} <ComplianceBadge status={alert} compact />
+              <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                <span className="text-gray-400">Vence:</span>
+                <span className="font-mono">{formatExpiry(record.expiration_date)}</span>
+                <ComplianceBadge status={alert} compact />
               </span>
             )}
             {canEdit && (
@@ -123,15 +139,6 @@ function DocumentRow({
           </span>
         )}
 
-        {record.is_manual_override && (
-          <span
-            title="Editado manualmente — el pipeline no lo sobreescribe"
-            className="text-[9px] font-semibold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-full shrink-0"
-          >
-            manual
-          </span>
-        )}
-
         {canEdit && (
           <select
             aria-label={`Estado de ${record.name}`}
@@ -144,26 +151,54 @@ function DocumentRow({
           </select>
         )}
         {record.file_url && (
-          <a href={record.file_url} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline flex items-center gap-1 shrink-0">
-            Ver archivo
-          </a>
+          <button
+            type="button" onClick={() => setPreviewOpen(true)}
+            className="text-[11px] text-accent hover:underline flex items-center gap-1 shrink-0"
+          >
+            <Eye size={12} /> Ver archivo
+          </button>
+        )}
+
+        {/* Estado "Falta" con carga habilitada: CTA visible en vez de solo
+           el ícono chico — cargar debe ser la acción obvia, no una que haya
+           que buscar (pedido explícito del usuario 2026-07-18). */}
+        {canEdit && record.requires_file && !record.file_url && (
+          <button
+            type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}
+            className="flex items-center gap-1 text-[11px] font-semibold text-accent border border-dashed border-accent/40 rounded-md px-2 py-1 hover:bg-accent/5 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {busy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+            Subir documento
+          </button>
         )}
 
         {canEdit && record.requires_file && (
           <div className="flex items-center gap-1 shrink-0">
-            <button type="button" onClick={() => fileInputRef.current?.click()} title="Subir archivo" disabled={busy}
-              className="p-1 rounded border border-border/60 text-gray-400 hover:text-accent hover:border-accent transition-colors disabled:opacity-50">
-              {busy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-            </button>
+            {record.file_url && (
+              <button type="button" onClick={() => fileInputRef.current?.click()} title="Reemplazar archivo" disabled={busy}
+                className="p-1 rounded border border-border/60 text-gray-400 hover:text-accent hover:border-accent transition-colors disabled:opacity-50">
+                {busy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+              </button>
+            )}
             <input ref={fileInputRef} type="file" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
-            <button type="button" onClick={toggleVersions} title="Ver archivo / versiones"
+            <button type="button" onClick={toggleVersions} title="Ver historial de versiones"
               className="p-1 rounded border border-border/60 text-gray-400 hover:text-accent hover:border-accent transition-colors">
               <FileText size={11} />
             </button>
           </div>
         )}
       </div>
+
+      {previewOpen && record.file_url && (
+        <DocumentPreviewModal
+          label={record.name}
+          url={record.file_url}
+          canEdit={canEdit}
+          onClose={() => setPreviewOpen(false)}
+          onDelete={canEdit ? handleDelete : undefined}
+        />
+      )}
 
       {versionsOpen && (
         <div className="mt-2 pl-7 space-y-1">

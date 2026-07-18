@@ -13,7 +13,7 @@ vi.mock('@/lib/api/policies', () => ({
   policiesApi: {
     get: vi.fn(), patch: vi.fn(), patchInstallment: vi.fn(),
     linkCoverage: vi.fn(), unlinkCoverage: vi.fn(), linkAsset: vi.fn(), unlinkAsset: vi.fn(),
-    uploadFile: vi.fn(), generateInstallments: vi.fn(),
+    uploadFile: vi.fn(), deleteFile: vi.fn(), generateInstallments: vi.fn(),
   },
   coverageTypesApi: { list: vi.fn() },
 }))
@@ -200,14 +200,32 @@ describe('InsurancePolicyModal', () => {
     await waitFor(() => expect(policiesApi.uploadFile).toHaveBeenCalledWith('p1', file, 'document'))
   })
 
-  it('shows a link instead of "Falta subir" once policy_document_url is set', async () => {
+  it('shows a "Ver archivo" trigger instead of "Falta subir" once policy_document_url is set, opening the preview modal', async () => {
     vi.mocked(policiesApi.get).mockImplementation(async (id: string) =>
       id === 'p1' ? { ...DETAIL_P1, policy_document_url: 'https://signed.example.com/p1.pdf' } : DETAIL_P2,
     )
     renderModal('c1')
     await screen.findByText('Póliza 5663040')
     expect(screen.queryByText('Falta subir')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: 'Ver archivo' })[0]).toHaveAttribute('href', 'https://signed.example.com/p1.pdf')
+
+    fireEvent.click(screen.getAllByText('Ver archivo')[0])
+    const iframe = document.querySelector('iframe')
+    expect(iframe).toHaveAttribute('src', 'https://signed.example.com/p1.pdf')
+  })
+
+  it('deletes the policy file from the preview modal', async () => {
+    vi.mocked(policiesApi.get).mockImplementation(async (id: string) =>
+      id === 'p1' ? { ...DETAIL_P1, policy_document_url: 'https://signed.example.com/p1.pdf' } : DETAIL_P2,
+    )
+    vi.mocked(policiesApi.deleteFile).mockResolvedValue({ ...DETAIL_P1, policy_document_url: null })
+    renderModal('c1')
+    await screen.findByText('Póliza 5663040')
+
+    fireEvent.click(screen.getAllByText('Ver archivo')[0])
+    fireEvent.click(screen.getByLabelText('Eliminar Póliza'))
+    fireEvent.click(screen.getByText('Sí'))
+
+    await waitFor(() => expect(policiesApi.deleteFile).toHaveBeenCalledWith('p1', 'document'))
   })
 
   it('does not show an endoso upload row when has_endorsement is false', async () => {

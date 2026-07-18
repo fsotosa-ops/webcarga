@@ -78,6 +78,11 @@ export const policiesApi = {
       method: 'POST', body: form,
     })
   },
+
+  deleteFile: (id: string, kind: 'document' | 'endorsement' = 'document') =>
+    apiFetch<InsurancePolicy>(`/api/v1/policies/${id}/file?kind=${kind}`, {
+      method: 'DELETE',
+    }),
 }
 
 export const coverageTypesApi = {

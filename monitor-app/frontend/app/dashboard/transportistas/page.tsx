@@ -32,10 +32,10 @@ const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
  *  página — 208 > el límite de 100 por página del backend. */
 const TABS: { id: TransporterTab; label: string; status: OperationalStatus }[] = [
   { id: 'active', label: 'Activas', status: 'ACTIVE' },
-  { id: 'legacy', label: 'Legacy', status: 'LEGACY_INACTIVE' },
+  { id: 'legacy', label: 'Inactivo', status: 'LEGACY_INACTIVE' },
 ]
 
-/** Segundo eje de filtrado, independiente de Activas/Legacy — agrupa por
+/** Segundo eje de filtrado, independiente de Activas/Inactivo — agrupa por
  *  documentación obligatoria pendiente (mismo criterio que la ficha de
  *  empresa). Los conteos vienen de `facets`, ya acotados a la tab
  *  operational_status + búsqueda actuales (no cambian al clickear un
@@ -131,7 +131,7 @@ export default function EmpresasTransportePage() {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, v)
   }
 
-  const emptyLabel = q ? 'Sin resultados' : `Sin empresas ${tab === 'active' ? 'activas' : 'legacy'}`
+  const emptyLabel = q ? 'Sin resultados' : `Sin empresas ${tab === 'active' ? 'activas' : 'inactivas'}`
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -209,7 +209,7 @@ export default function EmpresasTransportePage() {
 
       {/* ── Tiles de alertas — segundo eje, viene de compliance_health.
          Clickeables (filtran), no solo informativos: dejan triagear y
-         actuar rápido sin competir por espacio con Activas/Legacy. ── */}
+         actuar rápido sin competir por espacio con Activas/Inactivo. ── */}
       <AlertStatTiles
         tiles={HEALTH_TABS.map(t => ({
           id: t.id, label: t.label, value: healthFacets[t.facetKey],

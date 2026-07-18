@@ -119,6 +119,37 @@ def test_list_carriers_insurance_overview_filters_by_search():
     assert pool.fetch.call_args.args[1] == "Acme"
 
 
+def test_list_carriers_insurance_overview_filters_by_operational_status():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/insurance-overview?operational_status=LEGACY_INACTIVE")
+
+    assert res.status_code == 200
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "c.operational_status = $1" in fetch_query
+    assert pool.fetch.call_args.args[1] == "LEGACY_INACTIVE"
+
+
+def test_list_carriers_insurance_overview_combines_search_and_operational_status():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/insurance-overview?q=Acme&operational_status=ACTIVE")
+
+    assert res.status_code == 200
+    fetch_query = pool.fetch.call_args.args[0]
+    assert "AND" in fetch_query
+    assert pool.fetch.call_args.args[1] == "Acme"
+    assert pool.fetch.call_args.args[2] == "ACTIVE"
+
+
 def test_list_carriers_insurance_overview_filters_by_health():
     pool = AsyncMock()
     pool.fetch.return_value = []

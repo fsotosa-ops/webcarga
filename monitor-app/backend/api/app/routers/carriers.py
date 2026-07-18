@@ -173,6 +173,7 @@ _INSURANCE_OVERVIEW_AGG = """
 async def list_carriers_insurance_overview(
     q: str = Query("", description="Buscar por nombre o tax_id"),
     health: str = Query("", description="EXPIRED|EXPIRING_SOON|VALID|CANCELLED|NONE — filtra por worst_policy_health"),
+    operational_status: str = Query("", description="ACTIVE|INACTIVE|LEGACY_INACTIVE — filtra por estado de la empresa, mismo eje que /carriers"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
@@ -182,11 +183,14 @@ async def list_carriers_insurance_overview(
         raise HTTPException(422, "health inválido")
 
     q_params: list = []
+    q_clauses: list[str] = []
     if q:
         q_params.append(q)
-        q_where = f"WHERE (c.business_name ILIKE '%' || ${len(q_params)} || '%' OR c.tax_id ILIKE '%' || ${len(q_params)} || '%')"
-    else:
-        q_where = ""
+        q_clauses.append(f"(c.business_name ILIKE '%' || ${len(q_params)} || '%' OR c.tax_id ILIKE '%' || ${len(q_params)} || '%')")
+    if operational_status:
+        q_params.append(operational_status)
+        q_clauses.append(f"c.operational_status = ${len(q_params)}")
+    q_where = ("WHERE " + " AND ".join(q_clauses)) if q_clauses else ""
     agg_cte = f"WITH agg AS ({_INSURANCE_OVERVIEW_AGG.format(q_where=q_where)})"
 
     health_params = list(q_params)

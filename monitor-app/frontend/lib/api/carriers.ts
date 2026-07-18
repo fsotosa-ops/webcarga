@@ -164,12 +164,13 @@ export const carriersApi = {
 
   // ── Landing de Seguros — agregado por carrier (GET /carriers/insurance-overview) ──
 
-  listInsuranceOverview: (params?: { q?: string; health?: string; page?: number; limit?: number }) => {
+  listInsuranceOverview: (params?: { q?: string; health?: string; operational_status?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams()
-    if (params?.q)      qs.set('q', params.q)
-    if (params?.health) qs.set('health', params.health)
-    if (params?.page)   qs.set('page', String(params.page))
-    if (params?.limit)  qs.set('limit', String(params.limit))
+    if (params?.q)                  qs.set('q', params.q)
+    if (params?.health)             qs.set('health', params.health)
+    if (params?.operational_status) qs.set('operational_status', params.operational_status)
+    if (params?.page)               qs.set('page', String(params.page))
+    if (params?.limit)              qs.set('limit', String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<CarrierInsuranceOverviewResponse>(`/api/v1/carriers/insurance-overview${suffix}`)
   },
