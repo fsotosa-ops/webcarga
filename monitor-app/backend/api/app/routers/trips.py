@@ -195,22 +195,28 @@ _TRIP_SELECT = """
     t.planning_date,
     t.status_reported_at,
     t.trip_status                                  AS current_status,
-    COALESCE(fl.tractor_plate,
+    -- FIX 2026-07-18 (Fase 1): prioriza el dato resuelto contra la tabla
+    -- maestra (public.assets/drivers, vía driver_id/tractor_asset_id) sobre
+    -- el texto libre de trip_fleet_links, que a su vez sigue siendo mejor
+    -- que el texto crudo del TMS. Antes solo existían los últimos dos
+    -- niveles — driver_id/tractor_asset_id se guardaban pero nunca se
+    -- resolvían a nombre/patente real.
+    COALESCE(ta.license_plate, ta_auto.license_plate, fl.tractor_plate,
              t.fleet->>'tractor_plate')           AS tractor_plate,
     -- Valor crudo del TMS, sin resolver contra el vínculo manual — permite
     -- detectar divergencia cuando ops vinculó a mano y el TMS reporta otro
     -- dato después (reconciliación TMS↔manual, Fase 1.5b).
     t.fleet->>'tractor_plate'                     AS tractor_plate_tms,
-    COALESCE(fl.trailer_plate,
+    COALESCE(tr.license_plate, fl.trailer_plate,
              t.fleet->>'trailer_plate')           AS trailer_plate,
-    COALESCE(fl.driver_name_raw,
+    COALESCE(d.full_name, d_auto.full_name, fl.driver_name_raw,
              t.fleet->>'driver_name_tms')         AS driver_name,
     t.fleet->>'driver_name_tms'                   AS driver_name_tms,
-    t.fleet->>'driver_rut_tms'                    AS driver_tax_id,
+    COALESCE(d.tax_id, d_auto.tax_id, t.fleet->>'driver_rut_tms') AS driver_tax_id,
     COALESCE(fl.driver_phone,
              t.fleet->>'driver_phone')            AS driver_phone,
     t.origin_tms,
-    c.business_name                               AS carrier_name,
+    COALESCE(c.business_name, c_auto.business_name) AS carrier_name,
     t.fleet->>'transporter_name_tms'              AS carrier_name_tms,
     t.origin,
     t.origin_region,
@@ -228,9 +234,9 @@ _TRIP_SELECT = """
     t.unassigned_reason_id,
     t.manually_edited_fields,
     t.fleet_link_id,
-    fl.carrier_id,
-    fl.driver_id,
-    fl.tractor_asset_id,
+    COALESCE(fl.carrier_id, c_auto.id)             AS carrier_id,
+    COALESCE(fl.driver_id, d_auto.id)              AS driver_id,
+    COALESCE(fl.tractor_asset_id, ta_auto.id)      AS tractor_asset_id,
     fl.trailer_asset_id,
     t.edited_at,
     t.updated_at,
@@ -243,8 +249,42 @@ _TRIP_SELECT = """
 
 _TRIP_FROM = """
     FROM app.trips t
-    LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
+    -- FIX 2026-07-18 (Fase 1 del hardening): antes unía por fl.id = t.fleet_link_id,
+    -- una columna que dbt resetea a NULL en cada --full-refresh de app.trips
+    -- (protegida solo en el MERGE incremental, no en un full-refresh que
+    -- reconstruye la tabla completa). Confirmado en vivo: 608 de 609 vínculos
+    -- reales quedaron huérfanos (trip_fleet_links.trip_id válido, pero
+    -- trips.fleet_link_id en NULL) — la trazabilidad carrier/driver/asset
+    -- nunca se veía vía API pese a que el dato existía. trip_id es la llave
+    -- estable (trip_fleet_links nunca lo toca el pipeline).
+    LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
     LEFT JOIN public.carriers c ON c.id = fl.carrier_id
+    LEFT JOIN public.drivers d ON d.id = fl.driver_id
+    LEFT JOIN public.assets ta ON ta.id = fl.tractor_asset_id
+    LEFT JOIN public.assets tr ON tr.id = fl.trailer_asset_id
+    -- RESOLUCIÓN EN VIVO (Fase 1, 2026-07-18): la migración 20260718060000
+    -- bootstrapeó driver_id/carrier_id/tractor_asset_id vía bronze.raw_bd_ot,
+    -- pero esa fuente es un bootstrap histórico de una sola vez (plataforma
+    -- legacy a dar de baja, trips_context.md §5.3) — no cubre ningún viaje
+    -- que llegue de acá en adelante. Sin este fallback, todo viaje nuevo
+    -- quedaría sin trazabilidad hasta que alguien lo vinculara a mano.
+    -- Vehículo/empresa: se resuelven solo por patente contra datos que ya
+    -- vive en public.* (asset_assignments), sin depender de raw_bd_ot.
+    LEFT JOIN public.assets ta_auto
+        ON fl.tractor_asset_id IS NULL
+       AND upper(trim(ta_auto.license_plate)) =
+           upper(trim(COALESCE(NULLIF(t.fleet->>'tractor_plate', ''), t.fleet->>'trailer_plate')))
+    LEFT JOIN public.asset_assignments aa_auto
+        ON aa_auto.asset_id = ta_auto.id AND aa_auto.status = 'ACTIVE'
+    LEFT JOIN public.carriers c_auto ON c_auto.id = aa_auto.carrier_id
+    -- Conductor: no hay forma de derivarlo del payload TMS (QAnalytics/
+    -- Sodimac nunca reportan RUT ni nombre) — se resuelve vía
+    -- vehicle_driver_assignments (migración 20260718070000, "qué conductor
+    -- maneja este vehículo hoy"), que operaciones mantiene una vez por
+    -- vehículo en vez de viaje por viaje (POST /assets/{id}/driver-assignment).
+    LEFT JOIN public.vehicle_driver_assignments vda_auto
+        ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
+    LEFT JOIN public.drivers d_auto ON d_auto.id = vda_auto.driver_id
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 
@@ -561,18 +601,31 @@ async def available_drivers(
         """
         WITH day_trips AS (
             SELECT
-                COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms') AS driver_name,
+                COALESCE(fl.driver_name_raw, d_auto.full_name, t.fleet->>'driver_name_tms') AS driver_name,
                 t.fleet->>'driver_rut_tms'                                AS driver_rut,
                 COALESCE(fl.driver_phone, t.fleet->>'driver_phone')       AS driver_phone,
-                COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')     AS tractor_plate,
-                c.business_name                                           AS carrier_name,
+                COALESCE(fl.tractor_plate, ta_auto.license_plate, t.fleet->>'tractor_plate') AS tractor_plate,
+                COALESCE(c.business_name, c_auto.business_name)           AS carrier_name,
                 t.status_reported_at,
                 -- mismo criterio de "terminal" que la derivación de is_active en dbt
                 (t.trip_status LIKE 'CERRADO%'
                  OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')) AS closed
             FROM app.trips t
-            LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
+            -- Mismo fix de _TRIP_FROM: unir por trip_id, no por el
+            -- fleet_link_id denormalizado (se rompe con --full-refresh).
+            LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
             LEFT JOIN public.carriers c ON c.id = fl.carrier_id
+            -- Misma resolución en vivo que _TRIP_FROM (ver ahí el porqué).
+            LEFT JOIN public.assets ta_auto
+                ON fl.tractor_asset_id IS NULL
+               AND upper(trim(ta_auto.license_plate)) =
+                   upper(trim(COALESCE(NULLIF(t.fleet->>'tractor_plate', ''), t.fleet->>'trailer_plate')))
+            LEFT JOIN public.asset_assignments aa_auto
+                ON aa_auto.asset_id = ta_auto.id AND aa_auto.status = 'ACTIVE'
+            LEFT JOIN public.carriers c_auto ON c_auto.id = aa_auto.carrier_id
+            LEFT JOIN public.vehicle_driver_assignments vda_auto
+                ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
+            LEFT JOIN public.drivers d_auto ON d_auto.id = vda_auto.driver_id
             WHERE t.planning_date = $1
               AND t.source_system != 'sodimac'
         )
@@ -1003,7 +1056,7 @@ async def patch_trip(
     # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
     if "driver_name" in data:
         new_name = data.pop("driver_name")
-        link_id = await pool.fetchval("SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id)
+        link_id = await pool.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
         if link_id:
             await pool.execute(
                 "UPDATE app.trip_fleet_links SET driver_name_raw = $1, updated_at = NOW() WHERE id = $2",
@@ -1024,7 +1077,7 @@ async def patch_trip(
     # driver_phone goes to trip_fleet_links
     if "driver_phone" in data:
         new_phone = data.pop("driver_phone")
-        link_id = await pool.fetchval("SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id)
+        link_id = await pool.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
         if link_id:
             await pool.execute(
                 "UPDATE app.trip_fleet_links SET driver_phone = $1, updated_at = NOW() WHERE id = $2",
@@ -1045,7 +1098,7 @@ async def patch_trip(
     # tractor_plate / trailer_plate go to trip_fleet_links
     plate_updates = {k: data.pop(k) for k in ("tractor_plate", "trailer_plate") if k in data}
     if plate_updates:
-        link_id = await pool.fetchval("SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id)
+        link_id = await pool.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
         if link_id:
             for col, val in plate_updates.items():
                 await pool.execute(
@@ -1176,8 +1229,13 @@ async def assign_fleet_link(
     if not carrier_id:
         raise HTTPException(422, "carrier_id requerido")
 
+    # FIX 2026-07-18: buscar por trip_id en trip_fleet_links, no por
+    # trips.fleet_link_id (se desincroniza con cada --full-refresh de dbt —
+    # ver comentario en _TRIP_FROM). Sin este fix, reasignar la empresa de un
+    # viaje con un vínculo huérfano fallaba con 23505 (unique violation en
+    # trip_id) porque el INSERT de abajo no encontraba nada que borrar antes.
     old_link_id = await pool.fetchval(
-        "SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id
+        "SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id
     )
     if old_link_id:
         await pool.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", old_link_id)
@@ -1225,8 +1283,10 @@ async def remove_fleet_link(
     user=Depends(require_editor),
 ):
     """Remove the manual fleet link from a trip."""
+    # FIX 2026-07-18: mismo motivo que assign_fleet_link — buscar por trip_id,
+    # no por trips.fleet_link_id (huérfano tras cualquier --full-refresh).
     link_id = await pool.fetchval(
-        "SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id
+        "SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id
     )
     if link_id:
         await pool.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", link_id)

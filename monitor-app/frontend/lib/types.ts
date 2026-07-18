@@ -642,6 +642,17 @@ export type Asset = {
   last_document_update:  string | null
 }
 
+/** GET /assets/{id}/driver-assignment — conductor habitual asignado a este
+ *  vehículo (Fase 1 del hardening del Diario, 2026-07-18). El Diario lo
+ *  resuelve automáticamente para viajes nuevos que reporten esta patente,
+ *  en vez de depender de un bootstrap histórico único (raw_bd_ot). */
+export type VehicleDriverAssignment = {
+  id:          string
+  driver_id:   string
+  driver_name: string
+  start_date:  string
+}
+
 // ── Seguros (public.insurance_* — M:N coberturas/activos) ──────────────────
 
 export type PolicyStatus   = 'ACTIVE' | 'EXPIRED' | 'CANCELLED'

@@ -90,6 +90,97 @@ async def patch_asset(
     return await get_asset(asset_id, pool, user)
 
 
+@router.get("/{asset_id}/driver-assignment")
+async def get_asset_driver_assignment(
+    asset_id: str, pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    """Conductor habitual actualmente asignado a este vehículo (Fase 1 del
+    hardening del Diario, 2026-07-18) — ver POST para el porqué."""
+    row = await pool.fetchrow(
+        """
+        SELECT va.id, va.driver_id, d.full_name AS driver_name, va.start_date
+        FROM public.vehicle_driver_assignments va
+        JOIN public.drivers d ON d.id = va.driver_id
+        WHERE va.asset_id = $1 AND va.status = 'ACTIVE'
+        """,
+        asset_id,
+    )
+    return dict(row) if row else None
+
+
+@router.post("/{asset_id}/driver-assignment", status_code=201)
+async def assign_driver_to_asset(
+    asset_id: str, body: dict, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """Asigna el conductor habitual de este vehículo. Reemplaza la
+    dependencia de bronze.raw_bd_ot (bootstrap histórico de una sola vez,
+    migración 20260718060000) para viajes NUEVOS: el Diario resuelve
+    driver_id automáticamente vía esta tabla cuando un viaje reporta la
+    patente de este activo (routers/trips.py, _TRIP_FROM) — operaciones
+    asigna el conductor UNA vez por vehículo, no viaje por viaje."""
+    driver_id = body.get("driver_id")
+    if not driver_id:
+        raise HTTPException(422, "driver_id requerido")
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            if not await conn.fetchval("SELECT 1 FROM public.assets WHERE id = $1", asset_id):
+                raise HTTPException(404, "Activo no encontrado")
+            if not await conn.fetchval("SELECT 1 FROM public.drivers WHERE id = $1", driver_id):
+                raise HTTPException(404, "Conductor no encontrado")
+
+            # Desactivar la asignación ACTIVE previa de este vehículo (a
+            # cualquier conductor) antes de insertar la nueva — el índice
+            # único parcial (asset_id WHERE status='ACTIVE') exige que no
+            # convivan dos activas para el mismo vehículo.
+            await conn.execute(
+                """
+                UPDATE public.vehicle_driver_assignments
+                SET status = 'INACTIVE'
+                WHERE asset_id = $1 AND status = 'ACTIVE'
+                """,
+                asset_id,
+            )
+            await conn.execute(
+                """
+                INSERT INTO public.vehicle_driver_assignments
+                    (asset_id, driver_id, status, is_manual_override, overridden_by, overridden_at)
+                VALUES ($1, $2, 'ACTIVE', true, $3, now())
+                ON CONFLICT (asset_id, driver_id) DO UPDATE
+                    SET status = 'ACTIVE', is_manual_override = true,
+                        overridden_by = $3, overridden_at = now()
+                """,
+                asset_id, driver_id, user["sub"],
+            )
+            await log_change(
+                conn, actor=user["sub"], entity_type="ASSET", entity_id=asset_id,
+                action="assign_driver", field="driver_id", new_value=driver_id, source="api",
+            )
+    return {"ok": True}
+
+
+@router.delete("/{asset_id}/driver-assignment")
+async def unassign_driver_from_asset(
+    asset_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            result = await conn.execute(
+                """
+                UPDATE public.vehicle_driver_assignments
+                SET status = 'INACTIVE'
+                WHERE asset_id = $1 AND status = 'ACTIVE'
+                """,
+                asset_id,
+            )
+            if result == "UPDATE 0":
+                raise HTTPException(404, "Asignación activa no encontrada")
+            await log_change(
+                conn, actor=user["sub"], entity_type="ASSET", entity_id=asset_id,
+                action="unassign_driver", source="api",
+            )
+    return {"ok": True}
+
+
 @router.get("/{asset_id}/compliance-records")
 async def list_asset_compliance_records(
     asset_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),

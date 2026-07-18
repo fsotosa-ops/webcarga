@@ -7,7 +7,12 @@ import { complianceApi } from '@/lib/api/compliance'
 import type { Asset, ComplianceRecord } from '@/lib/types'
 
 vi.mock('@/lib/api/assets', () => ({
-  assetsApi: { listComplianceRecords: vi.fn() },
+  assetsApi: {
+    listComplianceRecords: vi.fn(),
+    getDriverAssignment: vi.fn(),
+    assignDriver: vi.fn(),
+    unassignDriver: vi.fn(),
+  },
 }))
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: { patch: vi.fn(), uploadFile: vi.fn(), deleteFile: vi.fn() },
@@ -31,10 +36,16 @@ const RECORDS: ComplianceRecord[] = [{
   is_expired: false, is_expiring_soon: false, updated_at: null,
 }]
 
+const DRIVERS = [
+  { id: 'd1', full_name: 'Juan Pérez' },
+  { id: 'd2', full_name: 'María López' },
+]
+
 function renderPanel(asset: Asset | null, opts: {
   canEdit?: boolean; canAdmin?: boolean
   onPatch?: (...args: unknown[]) => Promise<void>
   onRemove?: () => Promise<void>
+  drivers?: { id: string; full_name: string }[]
 } = {}) {
   return renderWithClient(
     <VehicleDetailPanel
@@ -45,6 +56,7 @@ function renderPanel(asset: Asset | null, opts: {
       onPatch={opts.onPatch ?? vi.fn().mockResolvedValue(undefined)}
       onRemove={opts.onRemove ?? vi.fn().mockResolvedValue(undefined)}
       onTransferClick={vi.fn()}
+      drivers={opts.drivers ?? DRIVERS}
     />,
   )
 }
@@ -52,6 +64,9 @@ function renderPanel(asset: Asset | null, opts: {
 describe('VehicleDetailPanel', () => {
   beforeEach(() => {
     vi.mocked(assetsApi.listComplianceRecords).mockResolvedValue(RECORDS)
+    vi.mocked(assetsApi.getDriverAssignment).mockResolvedValue(null)
+    vi.mocked(assetsApi.assignDriver).mockResolvedValue({ ok: true })
+    vi.mocked(assetsApi.unassignDriver).mockResolvedValue({ ok: true })
   })
 
   it('renders nothing meaningful when asset is null', () => {
@@ -131,5 +146,32 @@ describe('VehicleDetailPanel', () => {
     renderPanel(ASSET, { canAdmin: false })
     expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
+  })
+
+  it('assigns the picked driver via assetsApi.assignDriver', async () => {
+    renderPanel(ASSET)
+    await waitFor(() => expect(screen.getByLabelText('Asignar conductor habitual')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Asignar conductor habitual'), { target: { value: 'd2' } })
+    fireEvent.click(screen.getByLabelText('Confirmar conductor habitual'))
+    await waitFor(() => expect(assetsApi.assignDriver).toHaveBeenCalledWith('v1', 'd2'))
+  })
+
+  it('shows the assigned driver name and unassigns on click', async () => {
+    vi.mocked(assetsApi.getDriverAssignment).mockResolvedValue({
+      id: 'va1', driver_id: 'd1', driver_name: 'Juan Pérez', start_date: '2026-07-18',
+    })
+    renderPanel(ASSET)
+    await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText('Quitar conductor habitual'))
+    await waitFor(() => expect(assetsApi.unassignDriver).toHaveBeenCalledWith('v1'))
+  })
+
+  it('does not show the unassign button when canEdit is false', async () => {
+    vi.mocked(assetsApi.getDriverAssignment).mockResolvedValue({
+      id: 'va1', driver_id: 'd1', driver_name: 'Juan Pérez', start_date: '2026-07-18',
+    })
+    renderPanel(ASSET, { canEdit: false })
+    await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument())
+    expect(screen.queryByLabelText('Quitar conductor habitual')).not.toBeInTheDocument()
   })
 })

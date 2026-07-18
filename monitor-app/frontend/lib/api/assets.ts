@@ -1,4 +1,4 @@
-import type { Asset, ComplianceRecord, OperationalStatus } from '@/lib/types'
+import type { Asset, ComplianceRecord, OperationalStatus, VehicleDriverAssignment } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type AssetType = 'TRACTOCAMION' | 'RAMPLA' | 'CAMION' | 'FURGON' | 'OTRO'
@@ -39,4 +39,15 @@ export const assetsApi = {
 
   listComplianceRecords: (id: string) =>
     apiFetch<ComplianceRecord[]>(`/api/v1/assets/${id}/compliance-records`),
+
+  getDriverAssignment: (id: string) =>
+    apiFetch<VehicleDriverAssignment | null>(`/api/v1/assets/${id}/driver-assignment`),
+
+  assignDriver: (id: string, driverId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/assets/${id}/driver-assignment`, {
+      method: 'POST', body: JSON.stringify({ driver_id: driverId }),
+    }),
+
+  unassignDriver: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/assets/${id}/driver-assignment`, { method: 'DELETE' }),
 }

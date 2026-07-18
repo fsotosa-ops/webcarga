@@ -127,9 +127,157 @@ Detalle completo de las 6 rondas, evidencia por objeto y las 2 memorias de méto
 
 Comiteado en `dev`: commit `1e65a53`. **Sin pushear** — pendiente de confirmación del usuario.
 
-#### Próximo paso exacto
+#### Próximo paso exacto (histórico — ver ronda siguiente, el punto 3 ya se resolvió)
 1. [ ] Confirmar push de `1e65a53` a `dev`.
 2. [ ] Decidir si se quiere verificación manual en navegador de los flujos de preview/descarga/borrado (implica mutar datos reales de Storage/compliance_records).
-3. [ ] (heredado, sin cambios) Abrir brainstorming dedicado para el rediseño del modelo lógico/datos del Diario — ver checklist de la ronda anterior, items 2-8 siguen vigentes sin cambios.
+3. [x] Abrir brainstorming dedicado para el rediseño del modelo lógico/datos del Diario — hecho, ver ronda siguiente.
+
+---
+
+### 2026-07-18 (cont.) — Decimosexta ronda: auditoría + plan de hardening del Diario (modo plan, sin implementación)
+
+**Pedido del usuario**: auditar el módulo Diario (modelo lógico/datos + UX) contra el estándar ya alcanzado en Empresas/Seguros, con 9 puntos concretos de UX/trazabilidad más una pregunta de arquitectura sobre disponibilidad de flota. Explícito: solo auditoría y plan, sin implementar nada esta sesión.
+
+**Metodología**: 3 exploraciones paralelas (frontend del detalle de viaje, backend/DB de trips, arquitectura de referencia Empresas/Seguros) + verificación de los scripts dbt reales **contra el pipeline vivo en Mage** (no las copias locales en `monitor-app/docs/`/raíz del repo, confirmadas desactualizadas en el proceso).
+
+**2 bugs de datos nuevos encontrados con evidencia dura, no documentados en ningún lado hasta ahora**:
+- **Wingsuite**: el origen del viaje (`accion='Carga'`) queda mezclado dentro del array de paradas en `app.trip_stops` HOY en producción — confirma el punto 1 del usuario. Un comentario en `dbt/tms/models/app/trips.sql` (live) dice que esto ya estaba filtrado (caso `398410`), pero el filtro no existe en el código real — regresión, no percepción de UX.
+- **IANSA**: pérdida silenciosa de origen/destino/estado para el 100% de sus viajes — el branch de ingesta de IANSA (`qanalytics_endpoint_scraper_iansa`) cae en el modelo genérico `stg_qanalytics_trips.sql`, que lee keys (`Local`, milestone SAP) distintas a las que usa el payload real de IANSA (`trip_metadata.Origen`, `stops[].Destino`). Verificado con un viaje real (`IA148820`).
+
+**Decisiones de arquitectura tomadas** (confirmadas por el usuario vía preguntas dirigidas):
+1. Unificar origen como "parada 0" en `app.trip_stops` (no solo arreglar el orden visual) — mismo patrón que la Fase 2 del hardening, con excepción explícita de tocar la capa `stg_*`/`int_tms_trips_conformed` para corregir los bugs de Wingsuite/IANSA (esas capas siguen congeladas para todo lo demás).
+2. Columna "Indicadores" de la tabla → tabs de filtro arriba (patrón `AlertStatTiles` ya usado en Empresas), edición exclusiva en el detalle del viaje.
+3. Bootstrap de `trip_fleet_links.driver_id` (0/609 hoy): el usuario corrigió el enfoque original del plan — NO depender de `bronze.raw_bd_ot` (legacy) como vía principal, sino matchear contra `public.drivers`/`public.assets`, que ya cubren ~90% de los conductores visibles gracias al directorio de Empresas. `raw_bd_ot` queda solo como bootstrap residual.
+4. Alcance unificado: el roadmap de esta auditoría se fusiona con el backlog ya existente en `AGENTLOG.md` (F30_MULTAS, vista no asignados, rediseño Configuración, etc.) en un solo plan priorizado, no queda como lista aparte.
+5. Hallazgo nuevo aportado por el usuario en revisión: la carga masiva de viajes manuales (`TripBulkUpload.tsx`, CSV) es un flujo completamente desconectado del directorio de empresas/conductores/vehículos (solo texto libre, sin `carrier_id`/`driver_id`/`asset_id`) — a diferencia del alta individual (`TripCreateSlideOver.tsx`, que sí usa `EmpresaSelector`). Se agrega como punto 10 del plan: unificar ambos flujos al mismo mecanismo de resolución contra el directorio real.
+6. Principio transversal agregado a pedido del usuario (pregunta sobre deuda técnica futura): sin un mecanismo de contrato/validación en la ingesta, cualquier TMS o cliente nuevo puede repetir el bug de Wingsuite/IANSA en silencio. Se agregan al roadmap (Fase 0, bajo costo): tests de completitud dbt segmentados por `(tms_name, source_client)` (no solo por TMS — hubiera atrapado IANSA de inmediato) y cuarentena explícita de payloads no reconocidos en vez de descarte silencioso. Declarar el mapeo de campos como configuración (en vez de SQL bespoke por TMS) queda como decisión de mediano plazo, no bloqueante.
+
+**Plan completo, aprobado por el usuario**, guardado en `/Users/usuario/.claude/plans/necesito-que-actues-como-lucky-bentley.md` — incluye los 10 hallazgos verificados, el modelo de datos objetivo, el rediseño UX (reusando patrones de Empresas: diálogos centrados tipo Attio, `AlertStatTiles`, `DocumentPreviewModal`), y un roadmap de 6 fases (0: bugs críticos de datos → 1: modelo de datos → 2: UX detalle de viaje → 3: indicadores/disponibilidad → 4: consolidación de componentes → 5: backlog heredado).
+
+**Sin cambios de código esta sesión** — modo plan estricto, a pedido explícito del usuario.
+
+#### Próximo paso exacto (histórico — Fase 0 ejecutada y verificada, ver ronda siguiente)
+1. [x] Fase 0 del plan — hecha, ver ronda siguiente.
+2. [ ] (heredado, sin cambios) Confirmar push de `1e65a53` a `dev`.
+3. [ ] (heredado, sin cambios) Decidir si se quiere verificación manual en navegador de los flujos de preview/descarga/borrado de documentos de compliance.
+4. [ ] Barrer `source_client` dentro de `tms_name='qanalytics'` para descartar más casos silenciosos tipo IANSA (pregunta abierta del plan).
+5. [ ] Re-medir el % de match real de `driver_name`/`tractor_plate` contra `public.drivers`/`public.assets` antes de decidir si hace falta el bootstrap residual vía `raw_bd_ot` (prerrequisito de la Fase 1 del plan).
+
+---
+
+### 2026-07-18 (cont.) — Decimoséptima ronda: Fase 0 del hardening del Diario ejecutada y verificada en producción
+
+**Pedido del usuario**: "dale, arranca con la Fase 0" (fix Wingsuite + fix IANSA + tests de completitud por cliente + cuarentena de payloads no reconocidos).
+
+**Ejecución**: se usó `mage-agent sync_project_to_local` para bajar el proyecto dbt real completo (325 archivos, vive solo en Mage — confirmado una vez más que no está versionado en este repo). Cambios aplicados sobre esa copia y sincronizados de vuelta con `sync_local_to_remote` (10 archivos, sin conflictos):
+
+1. **Fix Wingsuite** (`dbt/tms/models/silver/stg_wingsuite_trips.sql`): agregado `FILTER (WHERE p.accion NOT IN ('Carga','Recolección','Pickup'))` al `jsonb_agg` que arma `trip_stops` — el origen ya no queda mezclado como parada `PICKUP`. Corregido también el comentario obsoleto en `dbt/tms/models/app/trips.sql` que afirmaba (falso) que ese filtro ya existía ahí.
+2. **Fix IANSA** (`dbt/tms/models/silver/stg_qanalytics_trips.sql`): fallback genérico vía `COALESCE` — `raw_local` ahora cae a `elemento->>'Destino'` cuando `'Local'` no existe, y `origin_location_name` cae a `trip_metadata->>'Origen'` cuando no hay match de milestone SAP. Implementado como COALESCE genérico, no como rama `WHEN source_client='iansa'`, a propósito (cualquier cliente futuro con esa misma forma de payload queda cubierto sin código nuevo — alineado con el principio transversal del plan).
+3. **Tests de completitud por cliente** (`dbt/tms/tests/assert_qanalytics_trips_{origin,stop_names}_completeness_by_client.sql`, tests singulares nuevos): fallan si algún `source_client` de `stg_qanalytics_trips` tiene el 100% de sus viajes/paradas sin origen/nombre — el control que hubiera atrapado IANSA el mismo día.
+4. **Cuarentena de payloads no reconocidos**: mismo bug (`extract_timestamp` devolvía `0` en vez de señalizar fallo de parseo, indistinguible de "archivo viejo", confirmado duplicado idéntico en los 5 `data_loaders/processor(_qanalytics)_*.py`) corregido en los 5 a la vez — ahora devuelve `None` y el loop principal loguea explícitamente `⚠️ N archivo(s) con nombre no reconocido, EXCLUIDOS` con el nombre de cada uno. **Nota de alcance**: esto es visibilidad en el log de la corrida, no una tabla de rechazados persistida — la versión completa (tabla dead-letter con alerta) queda para cuando se decida invertir en eso, no se armó sin acordarlo primero.
+
+**Bloqueo de tooling encontrado y resuelto**: `run_block` vía API falló con el mismo bug interno de Mage ya documentado en la ronda 12 (`NoResultFound` buscando un `pipeline_schedule` tipo "api" — no relacionado a estos cambios). Mismo patrón de resolución que la vez anterior: se le pidió al usuario correr los 2 bloques (`stg_wingsuite_trips`, `stg_qanalytics_trips`) manualmente en la UI de Mage — sin disparar scraping real (son bloques `dbt` puros, sin upstream de scraper). El usuario los corrió.
+
+**Verificación en vivo contra Supabase real** (`viclzoftiudkepqnhekv`):
+- Wingsuite `398410`: `pickup_entries_in_stops = 0`, origen (`CD Tambores`) intacto por separado.
+- IANSA `IA148820`: `origin_location_name` pasó de NULL a `"CD Noviciado"`, parada de destino pasó de NULL a `"NESTLE CHILE S.A. (Maipú)..."`.
+- A escala: IANSA pasó de **0/66 a 65/66** viajes con origen resuelto (el único caso restante es plausible — un archivo puntual sin la key `Origen`, no un fallo del fix). Walmart no se vio afectado (2126/2162, mismo ratio de antes).
+- Los 2 tests de completitud nuevos: 0 filas (pasan) contra los datos reales actuales.
+- `trip_status` de IANSA sigue en NULL — su payload no trae ningún campo de estado a nivel de viaje ni matchea SAP; **fuera de alcance de esta fase** (el plan solo prometía origen/destino), queda como gap conocido y documentado, no una promesa incumplida.
+
+**Decisión de arquitectura**: el fallback de IANSA se implementó genérico (COALESCE de keys alternativas) en vez de una rama condicional por `source_client`, siguiendo el principio transversal acordado en el plan — reduce el riesgo de que el próximo cliente con un payload "distinto" repita el mismo bug en silencio.
+
+**No se tocaron** las copias locales "espejo manual" del repo (`monitor-app/docs/`, raíz) — quedan desactualizadas como ya estaban (deuda ya documentada, "versionar el proyecto dbt en git" sigue como accionable de `trips_context.md`, no incluido en el alcance de esta Fase 0).
+
+#### Próximo paso exacto (histórico — ver ronda siguiente, Fase 1 en curso)
+1. [x] Fase 1 del plan arrancada — 3 de 5 ítems hechos, ver ronda siguiente.
+2. [ ] (heredado, sin cambios) Confirmar push de `1e65a53` a `dev`.
+3. [ ] (heredado, sin cambios) Decidir si se quiere verificación manual en navegador de los flujos de preview/descarga/borrado de documentos de compliance.
+4. [ ] Barrer `source_client` dentro de `tms_name='qanalytics'` para descartar más casos silenciosos tipo IANSA.
+6. [ ] Evaluar si vale la pena versionar el proyecto dbt real en git (deuda ya documentada, no resuelta esta ronda).
+
+---
+
+### 2026-07-18 (cont.) — Decimoctava ronda: Fase 1 del hardening en curso — bug crítico de trazabilidad encontrado y corregido, bootstrap masivo de driver_id/carrier_id/tractor_asset_id
+
+**Pedido del usuario**: "dale, arranca con la Fase 1".
+
+**Corrección del usuario sobre el bootstrap de driver_id**: medí el match real por nombre/RUT contra `public.drivers` (29-37%, lejos del ~90% que el usuario recordaba) y lo reporté honestamente en vez de asumir. El usuario aclaró el dato clave: **QAnalytics (86% del volumen) nunca reporta RUT, Sodimac (13%) no reporta NADA de conductor (limitación estructural del TMS, no de matching), solo Wingsuite (0.4%) reporta RUT** — y pidió específicamente evaluar `bronze.raw_bd_ot` para reconstruir la trazabilidad histórica. Verificado en vivo: match temporal patente+fecha (usando `f_despacho`, no `f_h_asignar_camion` — este último resultó ser un artefacto del batch de sync, mismo valor repetido entre viajes distintos) contra `raw_bd_ot` resolvió candidato para 2361 viajes, mediana de 0.2 días de diferencia, 99.4% dentro de 30 días — el usuario tenía razón, el ~90% era alcanzable, solo que la vía correcta era el bootstrap histórico, no el match directo contra el payload del TMS.
+
+**Bug crítico encontrado en el camino, no buscado**: al medir el estado de `trip_fleet_links`, se descubrió que `app.trips.fleet_link_id` (la columna que usa `trips.py` para el JOIN) estaba en NULL para **608 de 609 vínculos reales** — `trip_fleet_links.trip_id` apuntaba correctamente a viajes válidos, pero el JOIN `fl.id = t.fleet_link_id` nunca los encontraba. Causa raíz: `fleet_link_id` está protegido en el MERGE incremental de dbt (`merge_exclude_columns`) pero NO en un `--full-refresh` (siempre computa `NULL::uuid` en el SELECT base), y el pipeline pasó por varios full-refresh durante el hardening de julio. Consecuencia real y verificada: la funcionalidad de "empresa transportista vinculada" era invisible vía API para casi todos los viajes pese a que el dato existía, y además **reasignar o desvincular una empresa en cualquiera de esos 608 viajes fallaba en silencio o con 500** (`assign_fleet_link`/`remove_fleet_link` también dependían de `trips.fleet_link_id` para encontrar el link a reemplazar/borrar).
+
+**Fix aplicado** (confirmado por el usuario: invertir el JOIN + resincronizar, no solo parchear el dato):
+- `trips.py`: los 2 JOINs de lectura (`_TRIP_FROM`, `available_drivers`) y los 5 lookups de escritura (PATCH driver_name/driver_phone/plates, POST fleet-link, DELETE fleet-link) ahora resuelven contra `app.trip_fleet_links.trip_id` directamente, no contra `trips.fleet_link_id` — inmune a futuros full-refresh, mismo principio que ya se aplicó con `post_hook` para PK/RLS/trigger.
+- `_TRIP_FROM` gana además `LEFT JOIN public.drivers`/`public.assets` (tractor y trailer) — el dato resuelto de la tabla maestra ahora tiene prioridad sobre el texto libre de `trip_fleet_links` y sobre el texto crudo del TMS (`COALESCE(d.full_name, fl.driver_name_raw, tms_raw)`, mismo patrón para patentes).
+- Tests: 226/226 backend en verde tras el cambio.
+
+**Migración aplicada y versionada** (`20260718060000_bootstrap_trip_fleet_links_via_raw_bd_ot.sql`): resincroniza `fleet_link_id` para los 608 huérfanos + bootstrap de 1737 vínculos nuevos vía match temporal contra `raw_bd_ot` (carrier_id vía `eett_id`↔`legacy_admin_id`, driver_id vía RUT, tractor_asset_id vía patente). **Resultado verificado en vivo**: `app.trips.fleet_link_id` pasó de 1/2734 a 2346/2734 (85.8%); de esos 2346 vínculos, `driver_id` resuelto en 2161 (**92.1%** — confirma el ~90% que decía el usuario), `carrier_id` en 2345 (99.9%), `tractor_asset_id` en 2306 (98.3%). Sin duplicados (verificado). `raw_bd_ot` usado exclusivamente como bootstrap de una sola vez, sin crear ningún job/trigger que la consulte de nuevo (consistente con `trips_context.md` §5.3 — es una plataforma legacy a dar de baja).
+
+**Sin commitear a git todavía** — cambios en `trips.py` y la migración nueva están en el working tree, pendientes de confirmación del usuario para commit.
+
+#### Próximo paso exacto (histórico — ver ronda siguiente, gap de mecanismo ongoing resuelto)
+1. [ ] Confirmar commit de los cambios de `trips.py` + la migración nueva.
+2. [x] Exponer `origin_operation_type` — sigue pendiente, ver ronda siguiente para el resto.
+3. [ ] Unificar origen como parada 0 en `app.trip_stops` — pendiente.
+4. [ ] Unificar carga masiva CSV con el alta individual — pendiente.
+5. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+6. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+7. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+
+---
+
+### 2026-07-18 (cont.) — Decimonovena ronda: mecanismo ongoing de trazabilidad (sin depender de raw_bd_ot)
+
+**Objeción del usuario, justificada**: el bootstrap de la ronda anterior resolvía el histórico, pero `raw_bd_ot` es una plataforma legacy que se va a dar de baja — no sirve como dependencia permanente. El usuario preguntó explícitamente cómo se controla esto hacia adelante, sin asignación manual viaje por viaje, usando lo que ya existe en `public.*` + lo que reporta cada viaje nuevo.
+
+**Diagnóstico**: `public.driver_assignments` vincula conductor↔EMPRESA y `public.asset_assignments` vincula vehículo↔EMPRESA — ninguna de las dos dice qué conductor maneja qué vehículo específico. Ese es el dato real que falta, y no había forma de derivarlo sin construir algo nuevo (confirmado revisando el schema de las 4 tablas relevantes en `public`).
+
+**Solución implementada, separada en dos partes con confirmación del usuario en ambas**:
+
+1. **Vehículo + empresa — resolución en vivo, sin tabla nueva**: `_TRIP_FROM` y `available_drivers` en `trips.py` ganan un fallback que resuelve `tractor_asset_id`/`carrier_id` por match de patente contra `public.assets`/`public.asset_assignments` cuando no hay un `trip_fleet_links` explícito. Funciona para CUALQUIER viaje nuevo, sin cron ni dependencia externa — verificado en vivo contra viajes reales sin vínculo (`CRGD44` → `Transporte Cribas Transporte Spa`, resuelto en el momento de la consulta).
+
+2. **Conductor — tabla nueva `public.vehicle_driver_assignments`** (migración `20260718070000`): mismo patrón que `driver_assignments`/`asset_assignments` (status ACTIVE/INACTIVE, índice único parcial 1 activo por vehículo). Nuevos endpoints `POST`/`GET`/`DELETE /assets/{asset_id}/driver-assignment` en `assets.py` (mismo patrón de reasignación que `carriers.py assign_driver`). Operaciones asigna el conductor **una vez por vehículo**, no viaje por viaje — `_TRIP_FROM` la consulta automáticamente vía `vehicle_driver_assignments` para cualquier viaje que reporte esa patente. Reemplaza la necesidad de `raw_bd_ot` para todo viaje futuro.
+
+**Nota de alcance**: la tabla nueva existe y el backend ya la consulta, pero **no hay UI todavía** para que operaciones cargue la asignación — el endpoint existe, falta el componente de frontend (candidato natural: junto a `DriverDetailPanel`/`VehicleDetailPanel` en Empresas, o un flujo dedicado en el Diario). No se construyó en esta ronda por alcance/tiempo — queda como pendiente explícito, no como decisión de que no hace falta.
+
+Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (no solo mocks).
+
+#### Próximo paso exacto (histórico — UI de asignación construida, ver ronda siguiente)
+1. [x] Construir la UI de asignación vehículo→conductor — hecho, ver ronda siguiente.
+2. [ ] Confirmar commit de todos los cambios de esta sesión (`trips.py`, `assets.py`, 2 migraciones nuevas).
+3. [ ] Exponer `origin_operation_type` en el frontend — pendiente, ítem de la Fase 1.
+4. [ ] Unificar origen como parada 0 en `app.trip_stops` — pendiente, el ítem más grande de la Fase 1.
+5. [ ] Unificar carga masiva CSV con el alta individual — pendiente.
+6. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+7. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+8. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+
+---
+
+### 2026-07-18 (cont.) — Vigésima ronda: UI de asignación vehículo→conductor
+
+**Pedido del usuario**: "si haz la asignacion UI" — construir el frontend para `POST /assets/{id}/driver-assignment` (backend ya existía desde la ronda anterior).
+
+**Implementado**: sección "Conductor habitual" agregada a `VehicleDetailPanel.tsx` (modal de detalle de vehículo en Empresas, `/dashboard/transportistas/empresa/[id]`) — reusa el roster de conductores de la empresa ya cargado en la página (`carriersApi.listDrivers`, sin fetch nuevo ni componente de búsqueda duplicado #4). Muestra el conductor asignado con botón de quitar, o un `<select>` + confirmar cuando no hay ninguno. Nuevos métodos en `lib/api/assets.ts` (`getDriverAssignment`/`assignDriver`/`unassignDriver`) y tipo `VehicleDriverAssignment` en `lib/types.ts`.
+
+**Decisión de tipos**: el prop `drivers` se tipó como `{id, full_name}[]` mínimo (no el `Driver` completo) porque `carriersApi.listDrivers` devuelve `CarrierDriverRosterItem[]`, un shape más angosto — evita forzar un tipo más ancho del que hace falta.
+
+**Verificación**:
+- `tsc --noEmit`: limpio.
+- `vitest`: 370/370 (14 nuevos tests en `VehicleDetailPanel.test.tsx` para el flujo completo: asignar, quitar, permisos `canEdit`).
+- `npm run build`: exitoso.
+- **Sin verificación en navegador autenticado** — la app usa SSO real (Google/Microsoft) contra Supabase de producción, sin credenciales de test ni bypass de auth disponibles en este entorno. Los servidores dev (backend :8001, frontend :3000) arrancaron limpios sin errores, pero no se pudo hacer click-through real. Queda pendiente que el usuario lo prueбe en vivo o provea credenciales de test.
+
+**Sin commitear a git todavía** — se acumulan cambios de 3 rondas (Fase 0 completa + Fase 1 parcial): `trips.py`, `assets.py`, `lib/api/assets.ts`, `lib/types.ts`, `VehicleDetailPanel.tsx` (+test), `page.tsx` de empresa, 3 migraciones nuevas (`20260718060000`, `20260718070000`, más el fix de Fase 0 ya aplicado directo a Mage). Sigue pendiente confirmación del usuario para el commit.
+
+#### Próximo paso exacto
+1. [ ] Confirmar commit de todos los cambios acumulados (Fase 0 + Fase 1 parcial).
+2. [ ] Verificación manual en navegador del flujo de asignación (requiere credenciales reales del usuario).
+3. [ ] Exponer `origin_operation_type` en el frontend — pendiente, ítem de la Fase 1.
+4. [ ] Unificar origen como parada 0 en `app.trip_stops` — pendiente, el ítem más grande de la Fase 1.
+5. [ ] Unificar carga masiva CSV con el alta individual — pendiente.
+6. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+7. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+8. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
 
 ---

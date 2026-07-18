@@ -852,6 +852,7 @@ export default function EmpresaDetailPage() {
         onPatch={handlePatchAsset}
         onRemove={() => handleRemoveAsset(selectedAsset!.id)}
         onTransferClick={() => selectedAsset && setTransferTarget({ kind: 'asset', id: selectedAsset.id, label: `equipo ${selectedAsset.license_plate}` })}
+        drivers={drivers}
       />
 
       <InsurancePolicyModal
