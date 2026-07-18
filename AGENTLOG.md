@@ -226,14 +226,40 @@ Migración versionada: `20260717220000_trip_hygiene_spanish_to_english_columns.s
 
 `pytest` 216/216 (backend; no se tocó frontend, sin necesidad de correr esa suite). `trips_context.md` §13.5 actualizado (Fase 2 pasa de "encolada" a "implementada").
 
-**Sin commit todavía** — pendiente de confirmación del usuario.
+Comiteado y pusheado a `dev`: commit `3b14941` (`19109f6..3b14941`).
 
-#### Próximo paso exacto
-1. [ ] Commit/push de esta ronda (tests dbt + Fase 2 + fix de huso horario) — pendiente de confirmación del usuario.
-2. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage — sigue vigente, acción del usuario. Cuando corra por primera vez tras esta ronda, verificar que `dbt build` pasa los tests nuevos y que `app/trip_stops.sql` hace `MERGE` sin duplicar contra los 4470 stops ya migrados.
+#### Próximo paso exacto (histórico — ver ronda siguiente para el intento real de reanudar el pipeline)
+1. [x] Commit/push de esta ronda — hecho, `3b14941`.
+2. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage — **intentado esta jornada, encontró un bug de infraestructura preexistente que lo bloquea por completo, ver ronda siguiente**.
 3. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` — sigue pendiente (Fase de locales, ronda anterior).
 4. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
 5. [ ] F30_MULTAS — sigue sin confirmar.
 6. [ ] Limpieza futura (no ahora, decisión explícita): sacar `app.trips.stops`/`stop_manual_fields` de `app_trips.sql` una vez que `app.trip_stops` lleve un tiempo estable en producción.
+
+---
+
+### 2026-07-18 — Decimosegunda ronda: intento de reanudar el pipeline en Mage — bloqueado por un bug de infraestructura preexistente, ajeno a Fase 2
+
+**Pedido del usuario**: *"dale, retoma el pipeline en Mage"*. Confirmado antes de actuar: no existe ninguna tool de `mage-agent` para reactivar el trigger recurrente (~15 min) que el usuario pausó en la UI — solo `execute_pipeline`/`run_pipeline` para disparar una corrida manual puntual real. El usuario confirmó proceder con la corrida manual.
+
+**3 corridas reales del pipeline** (`batch_tms_monitor_trips`), todas con el mismo resultado — **falla siempre en el mismo punto, antes de llegar a cualquier bloque dbt de la capa `app.*`** (mi código de Fase 2 nunca llegó a ejecutarse):
+
+1. **Primera corrida**: falló en el scraping (`qanalytics_endpoint_sap`/`qanalytics_endpoint_scraper_iansa`, `KeyError: 'status'`). Causa probable: `extraction_service` (Cloud Run separado, `app/jobs/store.py` — job store **en memoria**) frío tras ~1 día pausado; el polling del job pudo pegarle a una instancia distinta a la que lo creó. Ajeno a `monitor-app`, no se tocó.
+2. **Segunda corrida**: el scraping pasó completo (contenedor ya caliente, confirma la hipótesis anterior). Pero **`int_tms_trips_conformed` falló** — `silver.stg_qanalytics_sap_only_trips` no existía pese a que el log del bloque decía explícitamente `"1 of 1 OK created sql view model silver.stg_qanalytics_sap_only_trips ... [CREATE VIEW in 1.59s]"`. Verificado por SQL directo contra Supabase: la vista no existe en ningún schema.
+3. **Tercera corrida** (a pedido del usuario, para descartar que fuera puntual): **mismo fallo exacto**, y esta vez ni siquiera `stg_qanalytics_trips` (que sí había persistido después de la corrida 2) seguía existiendo. Confirma que el problema es sistemático, no de una vista puntual — **las vistas de la capa `silver` se crean con éxito (el log lo confirma) y desaparecen poco después, de forma reproducible**.
+
+**Hallazgo de infraestructura, sin causa raíz confirmada**: cada bloque dbt corre en su **propio pod de Kubernetes efímero e independiente** (`Failed to execute k8s job mageai-...-job-block-...` en los logs), cada uno con su propio `dbt deps` + `dbt run --select <un solo modelo>` desde cero, compartiendo el mismo filesystem (`dbt_packages`/`target`). Consistente con una condición de carrera entre bloques corriendo en paralelo, pero **no se pudo confirmar con certeza** — requeriría logs del lado del servidor de Kubernetes/Postgres, fuera del alcance de las tools de `mage-agent` disponibles. Se intentó aislar el problema con `run_block` (ejecución sincrónica de un solo bloque) pero la tool falló con un error interno de Mage no relacionado (`NoResultFound` buscando un pipeline_schedule tipo "api").
+
+**Decisión**: se frenaron los reintentos después de la 3ª corrida — cada intento dispara scraping real contra los 3 TMS de producción, no es una operación gratuita ni sin efectos. El fix de dbt de la ronda anterior (agregar `trip_stops` al `--select` de `app_trips_update.yaml`, sincronizado a Mage) sigue aplicado y correcto, pero **no se pudo verificar en un pipeline real** porque el fallo ocurre en una capa muy anterior (`int_tms_trips_conformed`, congelada, no tocada por Fase 2).
+
+**Explícitamente fuera de esta ronda**: arreglar `extraction_service` (job store en memoria) o investigar más a fondo la condición de carrera de Kubernetes — ambos requieren su propia exploración dedicada y acceso que no está disponible vía las tools actuales (logs de servidor, acceso directo a la UI de Mage).
+
+#### Próximo paso exacto
+1. [ ] **Revisar directamente en la UI de Mage** (logs de Kubernetes del pipeline `batch_tms_monitor_trips`, corridas de hoy) — necesita ojos humanos con acceso que esta sesión no tiene.
+2. [ ] Una vez resuelto lo anterior, verificar que `app/trip_stops.sql` corre bien (mismo criterio ya documentado: comparar contra los 4470 stops ya migrados, sin duplicar).
+3. [ ] Considerar investigar `extraction_service` (job store en memoria, `app/jobs/store.py`) — causa probable del fallo de la corrida 1, no confirmada con certeza, out of scope de `monitor-app`.
+4. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` — sigue pendiente.
+5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
+6. [ ] F30_MULTAS — sigue sin confirmar.
 
 ---
