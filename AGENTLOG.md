@@ -254,10 +254,42 @@ Comiteado y pusheado a `dev`: commit `3b14941` (`19109f6..3b14941`).
 
 **Explícitamente fuera de esta ronda**: arreglar `extraction_service` (job store en memoria) o investigar más a fondo la condición de carrera de Kubernetes — ambos requieren su propia exploración dedicada y acceso que no está disponible vía las tools actuales (logs de servidor, acceso directo a la UI de Mage).
 
+#### Próximo paso exacto (histórico — ver ronda siguiente, los 3 bugs de esta ronda se resolvieron el mismo día)
+1. [x] Revisar directamente en la UI de Mage — el usuario lo hizo, ver ronda siguiente para las 3 causas raíz reales encontradas y corregidas.
+2. [x] Verificar que `app/trip_stops.sql` corre bien — causa raíz encontrada (bug propio, no de infraestructura), corregida, ver ronda siguiente.
+3. [ ] Considerar investigar `extraction_service` (job store en memoria, `app/jobs/store.py`) — patrón confirmado más fuerte: falló en 5 de 10 corridas reales del pipeline en la jornada. Sigue sin investigar a fondo, out of scope de `monitor-app`.
+4. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` — sigue pendiente.
+5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
+6. [ ] F30_MULTAS — sigue sin confirmar.
+
+---
+
+### 2026-07-18 (cont.) — Decimotercera ronda: 3 bugs reales de infraestructura del pipeline encontrados y corregidos + higienización de bloques dbt redundantes
+
+**Pedido del usuario**: preguntas exploratorias sobre si convenía rediseñar el pipeline (global data products, unificar bloques dbt) → *"primero higieniza los bloques con esas redundancias y por unos días testeemos como va antes de unificar en 1-2 bloques. Prueba con actualizar la dependencia nuevamente"*. 10 corridas reales del pipeline en la jornada (scraping real de los 3 TMS cada vez) — costo asumido explícitamente por el usuario dado el valor de la información.
+
+**Bug real #1 — pooler de Supabase en modo Transaction (puerto 6543)**: causa raíz del misterio de la ronda anterior ("las vistas se crean y desaparecen"). Supabase no recomienda el pooler modo Transaction para DDL — cada conexión corta desde un pod distinto puede no ver el `CREATE VIEW` de otra conexión. Cambiado a puerto 5432 (modo Session) en `dbt/tms/profiles.yml`, sincronizado a Mage. **Resultado inmediato**: `int_tms_trips_conformed` pasó por primera vez en toda la sesión.
+
+**Bug real #2 — `UNION ALL` con conteo de columnas distinto en `app_trips.sql`** (preexistente, de la ronda de "campos híbridos de fecha", no de Fase 2): la rama de viajes manuales (`app.trips_manual`) nunca recibió `cag_inicio_at`/`cag_fin_at`/`stop_manual_fields` cuando se agregaron a la rama TMS. Estaba dormido porque el pipeline no había corrido con éxito desde que se agregaron esos campos. Corregido en `app_trips.sql` (repo + Mage): mismo default `NULL`/`'{}'` que la rama TMS. **Resultado: `app.trips` hizo `MERGE` exitoso por primera vez desde la pausa del pipeline** (17 filas, luego 1 fila en corridas siguientes).
+
+**Bug real #3 — 2 conexiones de dependencia faltantes en el grafo de bloques de Mage** (distinto del grafo de `ref()` de dbt): `stg_qanalytics_trips` no tenía `slv_milestone_trips` como upstream pese a que el modelo lo necesita (`{{ ref('slv_milestone_trips') }}`); `stg_qanalytics_sap_trips` no tenía ni `slv_milestone_trips` ni `stg_qanalytics_trips`. Mapeado sistemáticamente: se cruzó cada modelo dbt contra su `ref()` real vs. `upstream_blocks` declarado en Mage para los 9 bloques tipo `dbt` — estos 2 fueron los únicos con gap real. **`block_update` vía `mage-agent` no aplicó el fix por API** (2 intentos, `200 OK` sin error pero sin efecto persistido, confirmado con `block_get`) — se descartó `pipeline_update` por riesgo de *replace* del grafo completo de 34 bloques sin garantía de que sea *merge*. El usuario agregó las 2 conexiones a mano en la UI de Mage; verificado por API que quedaron bien (la segunda queda satisfecha transitivamente: `stg_qanalytics_sap_trips` → `stg_qanalytics_trips` → `slv_milestone_trips`).
+
+**Higienización de redundancia** (a pedido explícito, sin llegar a unificar bloques todavía): `app_trips_update` corría `dbt run --select +trips trip_stops`, donde `+trips` reconstruía desde cero los 6 modelos de `silver` que YA habían corrido como bloques separados segundos antes en la misma corrida — 100% de trabajo duplicado. Cambiado a `--select trips trip_stops` (sin `+`) una vez confirmado que las dependencias del punto anterior ya garantizan que esos modelos existen antes de que este bloque arranque.
+
+**Bug real #4 (el que realmente bloqueaba Fase 2) — comentario SQL mal cerrado en `trip_stops.sql`**: después de descartar exhaustivamente lógica del `SELECT` (`EXPLAIN` limpio), el `MERGE` completo simulado a mano (funciona), el `CREATE TABLE AS SELECT` exacto vía la misma conexión/pooler/credenciales que usa dbt (funciona), y datos sucios en todo el dataset (limpio, 0 nulls/duplicados en 4481 filas) — el usuario corrió el bloque en la UI de Mage y pegó el log completo (sin el límite de truncado de la API de `mage-agent`, que venía cortando todos los logs a 8013 caracteres y ocultando el error real toda la sesión). Error real: `syntax error at or near "int_tms_trips_conformed"` — el comentario descriptivo del modelo tenía el texto `stg_*/int_tms_trips_conformed`, donde `*` seguido de `/` forma literalmente `*/`, cerrando el bloque `/* ... */` a mitad de camino. Todo el texto siguiente quedaba como SQL crudo inválido. Corregido con un espacio (`stg_* / int_tms_trips_conformed`). Sincronizado a Mage.
+
+**Verificación final**: 2 corridas más después del fix de `trip_stops.sql` fallaron, pero **ambas en `extraction_service`** (el bug ya documentado en la ronda anterior, `KeyError: 'status'`) — nunca llegaron a la capa dbt para poder confirmar `trip_stops` de punta a punta en un pipeline real. Se frenaron los reintentos en 10 corridas totales de la jornada. **Confianza alta en el fix igual**: el error de sintaxis encontrado es explícito, inequívoco, y la corrección es mínima y directa (no una hipótesis).
+
+**Patrón confirmado, no solo sospechado**: `extraction_service` falló en 5 de 10 corridas reales de hoy — job store en memoria (`app/jobs/store.py`) más que probablemente incompatible con el comportamiento multi-instancia de Cloud Run. Merece su propia investigación dedicada, fuera de `monitor-app`.
+
+**Lección de proceso para sesiones futuras**: las tools de `mage-agent` (`execute_pipeline`, `run_logs`) truncan cada archivo de log a ~8013 caracteres sin aviso — en un pipeline con muchos bloques y errores tempranos en la cadena, el mensaje de error real casi nunca entra en esa ventana. Cuando un error de dbt no se puede explicar con evidencia (SQL que funciona a mano pero falla dentro de dbt), pedirle al usuario que corra el bloque en la UI de Mage y pegue el log completo es más rápido y confiable que seguir iterando corridas completas del pipeline por API.
+
+`app.trips.stops`/`stop_manual_fields` (jsonb legacy) siguen intactas sin uso — ninguna migración/rollback necesario pase lo que pase con `trip_stops`.
+
 #### Próximo paso exacto
-1. [ ] **Revisar directamente en la UI de Mage** (logs de Kubernetes del pipeline `batch_tms_monitor_trips`, corridas de hoy) — necesita ojos humanos con acceso que esta sesión no tiene.
-2. [ ] Una vez resuelto lo anterior, verificar que `app/trip_stops.sql` corre bien (mismo criterio ya documentado: comparar contra los 4470 stops ya migrados, sin duplicar).
-3. [ ] Considerar investigar `extraction_service` (job store en memoria, `app/jobs/store.py`) — causa probable del fallo de la corrida 1, no confirmada con certeza, out of scope de `monitor-app`.
+1. [ ] **Confirmar que `app/trip_stops.sql` corre limpio** en la próxima corrida real del pipeline (una vez que `extraction_service` coopere) — el fix está aplicado pero sin verificación end-to-end todavía.
+2. [ ] Investigar `extraction_service` (job store en memoria) — patrón confirmado, 5/10 fallos hoy. Fuera de `monitor-app`, requiere su propia sesión.
+3. [ ] Reevaluar unificación de bloques dbt en 1-2 bloques `dbt build` — el usuario pidió esperar "unos días" con la higienización actual antes de decidir. No iniciar sin pedido explícito.
 4. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` — sigue pendiente.
 5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
 6. [ ] F30_MULTAS — sigue sin confirmar.

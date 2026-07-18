@@ -379,6 +379,17 @@ SELECT
     m.origin                                            AS origin,
     m.origin_region                                     AS origin_region,
     m.origin_city                                       AS origin_city,
+    -- cag_inicio_at/cag_fin_at/stop_manual_fields: agregados acá 2026-07-18
+    -- (bug real encontrado en vivo — la rama TMS ya los tenía desde que se
+    -- agregó el esquema de fechas híbridas, esta rama nunca los recibió,
+    -- UNION ALL con conteo de columnas distinto rompía la corrida completa
+    -- en silencio hasta que el pipeline lograra llegar hasta acá). Los
+    -- viajes manuales no tienen estos campos en app.trips_manual —
+    -- mismo default NULL/'{}' que usa el INSERT inicial de la rama TMS,
+    -- se llenan después vía PATCH (merge_exclude_columns protege ambas ramas).
+    NULL::timestamptz                                   AS cag_inicio_at,
+    NULL::timestamptz                                   AS cag_fin_at,
+    '{}'::jsonb                                         AS stop_manual_fields,
     m.updated_at::timestamp                             AS status_reported_at,
     now()::timestamp                                    AS pipeline_updated_at,
 
