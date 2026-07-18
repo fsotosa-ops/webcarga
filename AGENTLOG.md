@@ -110,3 +110,26 @@ Detalle completo de las 6 rondas, evidencia por objeto y las 2 memorias de méto
 8. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
 
 ---
+
+### 2026-07-18 (cont.) — Decimoquinta ronda: rediseño de la experiencia de documentos de compliance (Empresas/Conductores/Vehículos/Seguros)
+
+**Pedido del usuario** (verbatim, resumen): 7 puntos de feedback de UX sobre el panel de documentos — (1) unificar el link+ícono de "Ver archivo" entre Empresas y Seguros, (2) preview embebido en vez de pestaña nueva, (3) descarga/edición/borrado no existían, (4) el estado "En Revisión" no tiene sentido (no hay due diligence del negocio hoy), (5) el badge "manual" en Empresas sobra, (6) la fecha sin label no se entiende + el estado "Falta" debería permitir cargar directo desde ahí (best practice de UX), (7) Seguros necesita el mismo split Activo/Inactivo que Empresas (no "Activo/Legacy", que es mala nomenclatura).
+
+**Investigación previa** confirmó: (1) Seguros (`PolicyFileRow`) ya tenía la coexistencia correcta, sin bug; (3) no existía ningún endpoint de borrado en el backend — capacidad nueva de punta a punta, no solo un botón.
+
+**Implementado, con tests reales (backend 226/226, frontend `tsc`/`build`/`vitest` 367/367 en verde):**
+- **Backend**: `POST .../file` (compliance + pólizas) pasa de forzar `PENDING_REVIEW` a `APPROVED_MANUAL` — decisión explícita del usuario ("si subiste un archivo es porque ya lo revisaste"). Nuevos `DELETE .../file` para `compliance_records` y pólizas/endosos (borra el blob de Storage, vuelve el registro a `MISSING`/limpia la columna). `GET /carriers/insurance-overview` gana `operational_status`, mismo eje que `/carriers`.
+- **Frontend**: `DocumentPreviewModal` nuevo (preview PDF/imagen embebido, descarga forzada real vía fetch+blob, borrado con confirmación inline) — compartido entre `TransporterDocumentsPanel`, `DocumentChecklist` (conductores/vehículos) y `PolicyFileRow` (Seguros). `PENDING_REVIEW` quitado de los 2 selectores de estado manual (sigue válido en el CHECK constraint para datos legacy). Badge "manual" quitado en Empresas. Fecha con prefijo "Vence:" explícito. CTA de carga visible (borde punteado, "Subir documento") en vez de ícono chico cuando el estado es "Falta" — una vez cargado, el trigger pasa a ser el ícono secundario de "reemplazar". Tabs Activo/Inactivo agregados a `/dashboard/seguros`; "Legacy" renombrado a "Inactivo" en toda la UI de Empresas (concepto único, aunque `INACTIVE`/`LEGACY_INACTIVE` sigan siendo 2 valores distintos en la DB).
+
+**Explícitamente NO implementado** (fuera de alcance de "borrar"): edición de metadata del documento (el usuario no aclaró qué significaría más allá de reemplazar, que ya existía) — no se preguntó de nuevo, se asumió cubierto por "Reemplazar".
+
+**Sin verificar en navegador contra datos reales**: hubiera requerido correr el backend contra Supabase de producción y mutar `compliance_records`/pólizas reales para probar el flujo de borrado — se cubrió en cambio con tests de componente que simulan la interacción completa (click → confirmación → llamada a la API → refresco), más `tsc`/`build` limpios. Pendiente si el usuario quiere una verificación en vivo.
+
+Comiteado en `dev`: commit `1e65a53`. **Sin pushear** — pendiente de confirmación del usuario.
+
+#### Próximo paso exacto
+1. [ ] Confirmar push de `1e65a53` a `dev`.
+2. [ ] Decidir si se quiere verificación manual en navegador de los flujos de preview/descarga/borrado (implica mutar datos reales de Storage/compliance_records).
+3. [ ] (heredado, sin cambios) Abrir brainstorming dedicado para el rediseño del modelo lógico/datos del Diario — ver checklist de la ronda anterior, items 2-8 siguen vigentes sin cambios.
+
+---
