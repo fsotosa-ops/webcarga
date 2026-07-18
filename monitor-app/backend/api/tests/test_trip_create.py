@@ -23,7 +23,15 @@ STATUS_ROWS = [{"id": "ASIGNADO"}, {"id": "EN RUTA"}]
 
 def make_pool(trip_exists=False):
     pool = AsyncMock()
-    pool.fetch.return_value = STATUS_ROWS
+
+    # fetch se usa para: _valid_status_ids, y (dentro de get_trip al final del
+    # create) _load_trip_stops/_load_operation_type_buckets — vacío para esas
+    # dos, no hay datos reales que simular en estos tests de creación.
+    def fetch_side_effect(query, *args):
+        if "FROM app.trip_statuses" in query:
+            return STATUS_ROWS
+        return []
+    pool.fetch.side_effect = fetch_side_effect
 
     # fetchval se usa para: SELECT source_system (dedup check) y RETURNING id (fleet link)
     def fetchval_side_effect(query, *args):
@@ -33,7 +41,7 @@ def make_pool(trip_exists=False):
     pool.fetchval.side_effect = fetchval_side_effect
 
     # get_trip al final del create
-    pool.fetchrow.return_value = {"id": "x", "stops": "[]"}
+    pool.fetchrow.return_value = {"id": "x"}
     return pool
 
 
@@ -222,6 +230,13 @@ def test_create_persists_origin_location_and_stop_destination():
         stops = json.loads(stops_arg)
         assert stops[0]["destination_city"] == "San Bernardo"
         assert stops[0]["destination_region"] == "Región Metropolitana de Santiago"
+
+    # Fase 2 del hardening H2.6: la parada también se espeja en app.trip_stops
+    # (los viajes manuales nunca pasan por el pipeline dbt que puebla esa tabla).
+    trip_stops_call = next(c for c in pool.execute.call_args_list if "INSERT INTO app.trip_stops" in c.args[0])
+    assert "San Bernardo" in trip_stops_call.args
+    assert "Región Metropolitana de Santiago" in trip_stops_call.args
+    assert "CD El Peñón" in trip_stops_call.args
 
 
 def test_patch_origin_location_updates_and_marks_manual_edit():

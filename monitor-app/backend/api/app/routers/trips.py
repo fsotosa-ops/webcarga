@@ -3,8 +3,10 @@ import json
 import re
 import unicodedata
 from datetime import date as _date
+from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
@@ -19,29 +21,73 @@ def _parse_date(s: str) -> _date | None:
         return None
 
 
-def _apply_stop_manual_fields(d: dict) -> None:
-    """Mergea el override manual de Desc. Inicio/Fin (app.trips.stop_manual_fields,
-    keyed por stop_id) sobre unload_start/unload_end de cada parada — campo
-    híbrido: el pipeline reporta unload_start/unload_end, pero si operaciones
-    lo corrigió a mano, ese valor gana. Vive fuera de `stops` (jsonb) porque
-    ese campo se sobrescribe completo en cada corrida del pipeline dbt."""
-    manual = d.pop("stop_manual_fields", None)
-    if isinstance(manual, str):
-        manual = json.loads(manual) if manual else {}
-    manual = manual or {}
-    stops = d.get("stops")
-    if not stops or not manual:
-        return
-    for stop in stops:
-        override = manual.get(stop.get("stop_id"))
-        if not override:
-            stop["desc_manual"] = False
-            continue
-        if override.get("desc_inicio") is not None:
-            stop["unload_start"] = override["desc_inicio"]
-        if override.get("desc_fin") is not None:
-            stop["unload_end"] = override["desc_fin"]
-        stop["desc_manual"] = True
+_CHILE_TZ = ZoneInfo("America/Santiago")
+
+
+def _parse_timestamptz(s: str | None) -> datetime | None:
+    """asyncpg no acepta str para un parámetro casteado a ::timestamptz (usa
+    protocolo binario, exige datetime.datetime) — hay que parsear acá antes
+    de mandarlo. Bug real encontrado en vivo 2026-07-17 verificando Fase 2
+    (mismo patrón ya estaba roto en cag_inicio_at/cag_fin_at, sin cobertura
+    porque los tests mockean el pool y nunca ejecutan SQL real).
+
+    Si el string no trae offset (caso normal: el frontend manda hora local
+    de Chile sin zona, mismo formato que datetime-local del browser), hay
+    que fijar la zona EXPLÍCITAMENTE acá — asyncpg interpreta un
+    datetime.datetime naive usando el huso horario del SISTEMA OPERATIVO
+    donde corre el proceso, no el de la sesión de Postgres. Confirmado en
+    vivo: en una máquina con TZ=America/Santiago el round-trip da la hora
+    correcta por pura coincidencia; en un contenedor de Cloud Run (TZ=UTC
+    casi seguro) el mismo código habría guardado la hora 3-4 horas
+    corrida. Mismo criterio de conversión que ya usa parse_date_tms en el
+    pipeline dbt (AT TIME ZONE 'America/Santiago'), aplicado acá porque
+    asyncpg no permite ese macro."""
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        raise HTTPException(422, f"Fecha/hora inválida: '{s}'")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_CHILE_TZ)
+    return dt
+
+
+_TRIP_STOP_FIELDS = (
+    "stop_id, trip_id, stop_order, local, destination_city, destination_region, "
+    "on_time_status, milestone_status, s2s, temperature, planning_date, "
+    "arrival_date, departure_date, departure_date_prog, gps_arrival_date, "
+    "gps_departure_date, unload_start, unload_end, desc_inicio_manual, desc_fin_manual"
+)
+
+
+async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
+    """Carga app.trip_stops en batch (Fase 2 del hardening H2.6 — reemplaza
+    el jsonb app.trips.stops + el parche stop_manual_fields). Resuelve
+    unload_start/unload_end contra el override manual (desc_inicio_manual/
+    desc_fin_manual, columnas reales — antes jsonb keyed por stop_id) al
+    mismo tiempo que arma la lista, sin N+1."""
+    if not trip_ids:
+        return {}
+    rows = await pool.fetch(
+        f"SELECT {_TRIP_STOP_FIELDS} FROM app.trip_stops "
+        "WHERE trip_id = ANY($1::uuid[]) ORDER BY trip_id, stop_order",
+        list(trip_ids),
+    )
+    stops_by_trip: dict[str, list[dict]] = {}
+    for r in rows:
+        d = dict(r)
+        trip_id = str(d.pop("trip_id"))
+        d.pop("stop_order")
+        desc_inicio_manual = d.pop("desc_inicio_manual")
+        desc_fin_manual = d.pop("desc_fin_manual")
+        if desc_inicio_manual is not None:
+            d["unload_start"] = desc_inicio_manual
+        if desc_fin_manual is not None:
+            d["unload_end"] = desc_fin_manual
+        d["desc_manual"] = desc_inicio_manual is not None or desc_fin_manual is not None
+        stops_by_trip.setdefault(trip_id, []).append(d)
+    return stops_by_trip
 
 
 _LOCAL_NUMBER_PATTERN = re.compile(r"^(.*?)\s*-\s*(\d+)\s*$")
@@ -172,8 +218,6 @@ _TRIP_SELECT = """
     t.cag_inicio_at,
     t.cag_fin_at,
     t.cargo_type,
-    t.stops,
-    t.stop_manual_fields,
     t.is_active,
     t.is_working,
     t.is_assigned,
@@ -303,17 +347,18 @@ async def list_trips(
     )
     data = []
     client_names = set()
+    trip_ids = set()
     for r in rows:
         d = dict(r)
-        if d.get("stops") and isinstance(d["stops"], str):
-            d["stops"] = json.loads(d["stops"])
-        _apply_stop_manual_fields(d)
         if d.get("client_name"):
             client_names.add(d["client_name"].strip().lower())
+        trip_ids.add(str(d["id"]))
         data.append(d)
 
+    stops_by_trip = await _load_trip_stops(pool, trip_ids)
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
     for d in data:
+        d["stops"] = stops_by_trip.get(str(d["id"]), [])
         _apply_operation_types(d, op_type_buckets)
 
     return {"data": data, "count": count, "page": page, "limit": limit}
@@ -637,6 +682,34 @@ def _build_manual_stops(stops: list[TripStopCreate], trip_id: str) -> str:
     return json.dumps(out)
 
 
+async def _insert_trip_stops(conn, stops: list[TripStopCreate], trip_id: str) -> None:
+    """Espeja las paradas de un viaje manual en app.trip_stops (Fase 2 del
+    hardening H2.6) — el pipeline dbt solo puebla esta tabla para viajes
+    TMS (vía app.trips.stops), los viajes 100% manuales nunca pasan por
+    ahí. Mismo stop_id que _build_manual_stops (misma fórmula que usa el
+    pipeline: md5(trip_id + local + índice))."""
+    for i, s in enumerate(stops):
+        stop_id = hashlib.md5(f"{trip_id}{s.local}{i}".encode()).hexdigest()
+        await conn.execute(
+            """
+            INSERT INTO app.trip_stops
+                (stop_id, trip_id, stop_order, local, planning_date, destination_region, destination_city)
+            VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7)
+            ON CONFLICT (stop_id) DO UPDATE SET
+                local               = EXCLUDED.local,
+                planning_date       = EXCLUDED.planning_date,
+                destination_region  = EXCLUDED.destination_region,
+                destination_city    = EXCLUDED.destination_city,
+                updated_at          = NOW()
+            """,
+            # planning_date pasa tal cual (sin macro de huso horario propio,
+            # mismo criterio que cag_inicio_at/cag_fin_at), solo parseado a
+            # datetime porque asyncpg lo exige para un parámetro ::timestamptz.
+            stop_id, trip_id, i, s.local, _parse_timestamptz(s.planning_date),
+            s.destination_region, s.destination_city,
+        )
+
+
 async def _valid_status_ids(conn) -> set[str]:
     rows = await conn.fetch("SELECT id FROM app.trip_statuses WHERE active = true")
     return {r["id"] for r in rows}
@@ -723,6 +796,8 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
         body.cargo_type, body.current_status,
         fleet_json, stops_json,
     )
+
+    await _insert_trip_stops(conn, body.stops, trip_id)
 
     # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
     if body.carrier_id:
@@ -901,9 +976,8 @@ async def get_trip(
     if not row:
         raise HTTPException(404, "Viaje no encontrado")
     d = dict(row)
-    if d.get("stops") and isinstance(d["stops"], str):
-        d["stops"] = json.loads(d["stops"])
-    _apply_stop_manual_fields(d)
+    stops_by_trip = await _load_trip_stops(pool, {trip_id})
+    d["stops"] = stops_by_trip.get(trip_id, [])
     client_names = {d["client_name"].strip().lower()} if d.get("client_name") else set()
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
     _apply_operation_types(d, op_type_buckets)
@@ -1025,7 +1099,7 @@ async def patch_trip(
 
         for field in datetime_fields:
             if field in trip_fields:
-                vals.append(trip_fields[field] or None)
+                vals.append(_parse_timestamptz(trip_fields[field]))
                 sets.append(f"{field} = ${len(vals)}::timestamptz")
 
         vals.append(sent)
@@ -1061,11 +1135,12 @@ async def patch_trip_stop(
     user=Depends(require_editor),
 ):
     """Override manual de Desc. Inicio/Fin de una parada — persiste en
-    app.trips.stop_manual_fields (keyed por stop_id), nunca en el jsonb
-    `stops` del pipeline (se sobrescribe completo en cada corrida)."""
-    exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
+    app.trip_stops.desc_inicio_manual/desc_fin_manual (columnas reales,
+    Fase 2 del hardening H2.6), nunca en `stops` (se sobrescribe completo
+    en cada corrida del pipeline dbt)."""
+    exists = await pool.fetchval("SELECT id FROM app.trip_stops WHERE stop_id = $1 AND trip_id = $2", stop_id, trip_id)
     if not exists:
-        raise HTTPException(404, "Viaje no encontrado")
+        raise HTTPException(404, "Parada no encontrada")
 
     patch = body.model_dump(exclude_none=True)
     if not patch:
@@ -1073,17 +1148,14 @@ async def patch_trip_stop(
 
     await pool.execute(
         """
-        UPDATE app.trips
-        SET stop_manual_fields = jsonb_set(
-                COALESCE(stop_manual_fields, '{}'::jsonb),
-                ARRAY[$2],
-                COALESCE(stop_manual_fields->$2, '{}'::jsonb) || $3::jsonb,
-                true
-            ),
-            updated_at = NOW()
-        WHERE id = $1
+        UPDATE app.trip_stops SET
+            desc_inicio_manual = COALESCE($3::timestamptz, desc_inicio_manual),
+            desc_fin_manual    = COALESCE($4::timestamptz, desc_fin_manual),
+            updated_at         = NOW()
+        WHERE stop_id = $1 AND trip_id = $2
         """,
-        trip_id, stop_id, json.dumps(patch),
+        stop_id, trip_id,
+        _parse_timestamptz(patch.get("desc_inicio")), _parse_timestamptz(patch.get("desc_fin")),
     )
     return await get_trip(trip_id, pool, user)
 

@@ -196,11 +196,44 @@ Migración versionada: `20260717220000_trip_hygiene_spanish_to_english_columns.s
 
 **Corrección**: la higienización de la ronda anterior ya estaba comiteada desde antes de esta sesión (`aba7e29`) — el punto 1 del checklist anterior estaba desactualizado. Esta ronda (catálogo de locales) comiteada y pusheada a `dev`: commit `e870786` (`aba7e29..e870786`).
 
-#### Próximo paso exacto
+#### Próximo paso exacto (histórico — ver ronda siguiente para el estado real de Fase 2)
 1. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` (hoy es un upsert one-shot en la migración) — decidir dónde corre (Mage) cuando el usuario lo pida.
 2. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (sigue vigente, acción del usuario).
-3. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — sigue encolada, sin iniciar.
+3. [x] Fase 2 del hardening (normalizar `stops` a tabla relacional) — **implementada esta misma jornada**, ver ronda siguiente.
 4. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
 5. [ ] F30_MULTAS — sigue sin confirmar.
+
+---
+
+### 2026-07-17 (cont.) — Decimoprimera ronda: refuerzo de tests dbt + Fase 2 del hardening (normalizar `stops` a `app.trip_stops`) + bug real de huso horario
+
+**Pedido del usuario**: *"reforcemos los tests dbt y continua con fase 2"*. Sesión completa en modo `brainstorming` (superpowers) dado el riesgo — diseño presentado y aprobado en secciones antes de tocar código, ver preguntas/respuestas en la conversación.
+
+**Exploración previa**: sincronizado el proyecto dbt real completo desde Mage (`scratchpad/mage-sync`, solo lectura) — no vive en este repo (confirma auditoría). Mapeada la cadena real: 4 modelos `stg_*` (uno por TMS) → `int_tms_trips_conformed` (vista, hoy inexistente como relación porque el pipeline sigue pausado) → `app_trips.sql` (incremental, calcula `stop_id` on-the-fly vía `md5(trip_id|location_name|ordinal)`). Confirmado que `slv_tms_trips`/`fct_walmart_qanalytics_stop_timeline` son nodos huérfanos (nada los `ref()`), excluidos del refuerzo de tests.
+
+**1. Refuerzo de tests dbt** (`dbt/tms/models/silver/schema.yml`, `dbt/tms/models/app/schema.yml`, nuevos — no existía ninguno real, solo el scaffolding de ejemplo): `not_null`+`unique` en `trip_id` para los 4 `stg_*` + `int_tms_trips_conformed` + `trips` (alias `app.trips`), `not_null` en `source_system_trip_id`/`source_system`/`client_name`, más `slv_milestone_trips` (alimenta el join de milestones de qanalytics). Ajuste sobre lo propuesto: se descartó un `unique` compuesto con `is_current` tras confirmar que los 4 `stg_*` ya pre-filtran a la versión vigente (`rn_current = 1`) — un `unique(trip_id)` simple alcanza. Sincronizado a Mage (`sync_local_to_remote`, 0 conflictos). **No se pudo correr `dbt build` para verificar contra una ejecución real** — dispararía el pipeline pausado, fuera de lo pedido; verificado en cambio contra `app.trips` (tabla real persistida): 0 nulls/duplicados.
+
+**2. Fase 2 — normalizar `stops`** (diseño completo en `trips_context.md` §13.5, alcance acotado a la capa `app.*` como estaba planeado — sin tocar `stg_*`/`int_tms_trips_conformed`, congeladas):
+- Migración `20260717233000_app_trip_stops_table`: `CREATE TABLE app.trip_stops` (RLS, índice por `trip_id`) + backfill de los 4470 stops reales existentes desde `app.trips.stops` (misma extracción que hará el modelo dbt, para que el primer `MERGE` no duplique). Verificado: 4470/4470 migrados.
+- Modelo dbt nuevo `app/trip_stops.sql` (incremental/merge, `merge_exclude_columns=[desc_inicio_manual, desc_fin_manual, created_at]`, mismo patrón de post_hook PK/RLS/índice que `app_trips.sql`) — lee de `{{ ref('trips') }}` (ya remapeado), reusa el `stop_id` que ese modelo ya calcula, no lo recalcula. Sincronizado a Mage.
+- `app.trips.stops`/`stop_manual_fields` quedan **intactas sin uso** (decisión explícita del usuario) — red de seguridad para el cambio más riesgoso del proyecto, sin pérdida de datos posible si hay que revertir.
+- Backend (`routers/trips.py`): `_load_trip_stops()` (batch, mismo patrón que `_load_operation_type_buckets`) reemplaza `_apply_stop_manual_fields()`/lectura de `t.stops` en `_TRIP_SELECT`; `PATCH /trips/{id}/stops/{stop_id}` pasa de `jsonb_set` sobre `app.trips` a `UPDATE app.trip_stops`; nuevo `_insert_trip_stops()` espeja las paradas de viajes 100% manuales (`POST /trips`, `POST /trips/bulk` — nunca pasan por el pipeline dbt) con el mismo `stop_id` que `_build_manual_stops` ya calculaba. Forma de respuesta de la API sin cambios (`Trip.stops: TripStop[]`) — **el frontend no se tocó**.
+- Verificado en vivo (no solo tests): código Python real (no reimplementación en SQL) corrido con `asyncpg` directo contra un viaje real — `app.trip_stops` reconstruye exactamente los mismos 2 stops que el jsonb original, campo por campo.
+
+**Bug real encontrado y corregido en la verificación en vivo (severo, fuera del diseño original)**: al probar `PATCH /trips/{id}/stops/{stop_id}` contra la DB real, un datetime naive `"2026-07-17T10:00:00"` se guardó como `14:00:00+00:00` — un shift de 4 horas. Causa raíz: `asyncpg` interpreta un `datetime.datetime` sin tzinfo usando el **huso horario del sistema operativo del proceso**, no el de la sesión de Postgres — en la máquina de esta sesión (TZ=America/Santiago) el resultado fue correcto por pura coincidencia; en un contenedor Cloud Run (TZ=UTC casi seguro) el mismo código habría guardado la hora mal. Se confirmó que **el mismo bug ya existía en producción** en `cag_inicio_at`/`cag_fin_at` (Fase 1 de campos híbridos, ronda anterior) — nunca detectado porque los tests mockean el pool y no ejecutan SQL real contra asyncpg. Preguntado al usuario si corregirlo también: confirmó que sí. Corregido en ambos lugares con `_parse_timestamptz()` (`zoneinfo.ZoneInfo("America/Santiago")` explícito cuando el string no trae offset — mismo criterio que ya usa el macro `parse_date_tms` del pipeline dbt, aplicado acá porque asyncpg no permite ese macro). Reverificado en vivo con rollback (sin dejar datos de prueba) para `patch_trip_stop`, `_insert_trip_stops` y `cag_inicio_at` — los 3 puntos de escritura de datetime del router.
+
+**Verificación adicional del pedido explícito del usuario sobre huso horario** ("las fechas ya vienen en huso horario de Chile, no hacer transformaciones a UTC"): confirmado que ni la migración ni el modelo dbt nuevo tienen ningún `AT TIME ZONE` — solo castean el string que el jsonb original ya trae con offset explícito (`+00:00`, producto de la conversión Chile→UTC que ya hace el macro `parse_date_tms` en la capa congelada). Verificado en vivo comparando 5 stops reales: mismo instante exacto entre el jsonb original y la tabla nueva.
+
+`pytest` 216/216 (backend; no se tocó frontend, sin necesidad de correr esa suite). `trips_context.md` §13.5 actualizado (Fase 2 pasa de "encolada" a "implementada").
+
+**Sin commit todavía** — pendiente de confirmación del usuario.
+
+#### Próximo paso exacto
+1. [ ] Commit/push de esta ronda (tests dbt + Fase 2 + fix de huso horario) — pendiente de confirmación del usuario.
+2. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage — sigue vigente, acción del usuario. Cuando corra por primera vez tras esta ronda, verificar que `dbt build` pasa los tests nuevos y que `app/trip_stops.sql` hace `MERGE` sin duplicar contra los 4470 stops ya migrados.
+3. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` — sigue pendiente (Fase de locales, ronda anterior).
+4. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
+5. [ ] F30_MULTAS — sigue sin confirmar.
+6. [ ] Limpieza futura (no ahora, decisión explícita): sacar `app.trips.stops`/`stop_manual_fields` de `app_trips.sql` una vez que `app.trip_stops` lleve un tiempo estable en producción.
 
 ---
