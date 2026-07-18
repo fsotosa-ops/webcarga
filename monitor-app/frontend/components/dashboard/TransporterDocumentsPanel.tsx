@@ -132,7 +132,7 @@ function DocumentRow({
           </span>
         )}
 
-        {canEdit ? (
+        {canEdit && (
           <select
             aria-label={`Estado de ${record.name}`}
             value={record.status}
@@ -142,11 +142,12 @@ function DocumentRow({
           >
             {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-        ) : record.file_url ? (
+        )}
+        {record.file_url && (
           <a href={record.file_url} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline flex items-center gap-1 shrink-0">
             Ver archivo
           </a>
-        ) : null}
+        )}
 
         {canEdit && record.requires_file && (
           <div className="flex items-center gap-1 shrink-0">

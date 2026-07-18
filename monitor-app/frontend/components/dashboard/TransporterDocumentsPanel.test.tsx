@@ -107,6 +107,13 @@ describe('TransporterDocumentsPanel', () => {
     expect(screen.getByRole('link', { name: /Ver archivo/ })).toHaveAttribute('href', 'https://example.com/doc.pdf')
   })
 
+  it('shows the "Ver archivo" link alongside the status select for an editor when file_url is set', () => {
+    const withLink = [{ ...RECORDS[0], file_url: 'https://example.com/doc.pdf' }]
+    render(<TransporterDocumentsPanel records={withLink} canEdit={true} onChanged={vi.fn()} />)
+    expect(screen.getByRole('link', { name: /Ver archivo/ })).toHaveAttribute('href', 'https://example.com/doc.pdf')
+    expect(screen.getByLabelText('Estado de Rol SII')).toBeInTheDocument()
+  })
+
   it('does not show upload controls for records that do not require a file', () => {
     const noFile = [{ ...RECORDS[0], requires_file: false }]
     render(<TransporterDocumentsPanel records={noFile} canEdit={true} onChanged={vi.fn()} />)
