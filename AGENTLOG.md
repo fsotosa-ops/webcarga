@@ -97,6 +97,8 @@ Detalle completo de las 6 rondas, evidencia por objeto y las 2 memorias de méto
 
 `pytest` 216/216 en las 6 rondas de DB. `vitest`/`tsc`/`build` no se corrieron esta ronda salvo para el fix del punto 1 (verificado ahí, en verde).
 
+**Sesión cerrada 2026-07-18 a pedido del usuario** — la próxima arranca directo en el punto 1 del checklist, ya con la síntesis de `trips_context.md`/`uat-ux-minuta-modulo-diario.md`/`AGENTLOG_ARCHIVE.md` hecha esta sesión (no releer los 3 documentos de cero, la síntesis ya está en el punto 1 y en `project_db_cleanup_audit_2026_07`). Único cabo suelto de esa síntesis sin resolver: `AGENTLOG_ARCHIVE.md` línea ~534 dice que el auto-refresh del Diario está "pendiente", pero línea ~355 dice que la Fase F2 (2026-07-05) ya lo implementó vía TanStack Query — contradicción sin verificar contra el código real, chequear al empezar si importa para el rediseño.
+
 #### Próximo paso exacto
 1. [ ] **Abrir brainstorming dedicado para el rediseño del modelo lógico/datos del Diario** (accionable explícito del usuario) — cubre: modelo de datos de `trips`/config/filtros, historial de cambios por campo (reusar `public.audit_log`), `F30_MULTAS` (definir desde cero, no documentado en ningún lado), vista "no asignados" con conteo, calidad de diseño del módulo de Configuración. No iniciar implementación sin el diseño aprobado primero.
 2. [ ] Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles` — si no, van a recrear las tablas dropeadas en `20260718040000` en la próxima corrida.
