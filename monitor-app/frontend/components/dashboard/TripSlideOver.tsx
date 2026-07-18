@@ -19,6 +19,7 @@ import { RouteProgress } from './RouteProgress'
 import { IndicatorDots } from './IndicatorDots'
 import { TripNotesFeed } from './TripNotesFeed'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 // ── CarrierAssignSection ──────────────────────────────────────────────────────
@@ -825,7 +826,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                             return (
                               <tr key={stop.stop_id ?? i} className={rowBg}>
                                 <td className={`px-3 py-2 sticky left-0 z-10 ${rowBg}`}>
-                                  <p className="font-medium text-slate-700 leading-snug">{stop.local ?? '—'}</p>
+                                  <p className="font-medium text-slate-700 leading-snug flex items-center gap-1">
+                                    {stop.local ?? '—'}
+                                    <OperationTypeBadge operationType={stop.operation_type} meta={meta} />
+                                  </p>
                                   {stop.destination_city && (
                                     <p className="text-[9px] text-gray-400 mt-0.5">
                                       {stop.destination_city}{stop.destination_region ? `, ${stop.destination_region}` : ''}

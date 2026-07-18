@@ -403,6 +403,27 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
   })
 })
 
+describe('TripSlideOver — clasificación RM/Zona Cero por parada (H2.6, catálogo de locales)', () => {
+  it('shows the classification badge next to a stop in the technical table when operation_type resolved', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'ALAMEDA - 72', operation_type: 'RM' })]
+    const meta = {
+      statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
+      temperature_ranges: [], unassigned_reasons: [],
+      operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
+    }
+    renderSlideOver({ ...baseTrip, stops }, { meta: meta as never })
+    fireEvent.click(screen.getByText(/Ver detalle técnico/))
+    expect(screen.getByText('RM')).toBeInTheDocument()
+  })
+
+  it('does not show a classification badge when the stop has no operation_type resolved', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'CD LO AGUIRRE', operation_type: null })]
+    renderSlideOver({ ...baseTrip, stops })
+    fireEvent.click(screen.getByText(/Ver detalle técnico/))
+    expect(screen.queryByText('RM')).not.toBeInTheDocument()
+  })
+})
+
 describe('TripSlideOver — motivo de no asignación (Fase 1.5d)', () => {
   const metaWithReasons = {
     statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [],

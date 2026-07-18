@@ -161,9 +161,44 @@ Backend: agregado `test_trip_hygiene_fields.py` (5 tests nuevos, cubre el gap de
 
 Migración versionada: `20260717220000_trip_hygiene_spanish_to_english_columns.sql`.
 
-#### Próximo paso exacto
+#### Próximo paso exacto (histórico — ver ronda siguiente para el estado real del catálogo de locales)
 1. [ ] Commit/push de la higienización — pendiente de confirmación del usuario.
-2. [ ] Catálogo de locales por generador de carga (`public.locations`, polimórfica `entity_type`/`entity_id`) — bloqueado hasta que el usuario cree `bronze.raw_shipper_locations`; diseño completo (tabla real con upsert `COALESCE`, no vista) ya en el plan maestro.
+2. [x] Catálogo de locales por generador de carga — **implementado esta jornada** (usuario cargó `bronze.raw_shipper_locations`), ver ronda siguiente.
+3. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (sigue vigente, acción del usuario).
+4. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — sigue encolada, sin iniciar.
+5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
+6. [ ] F30_MULTAS — sigue sin confirmar.
+
+---
+
+### 2026-07-17 (cont.) — Décima ronda: catálogo de locales por generador de carga (`public.locations`) — RM/Zona Cero
+
+**Pedido del usuario**: revisar el plan pendiente — avisó que ya cargó `bronze.raw_shipper_locations` (el bloqueo documentado en la ronda anterior). Antes de escribir el `SELECT` del upsert (como decía el plan maestro), se auditó el schema y los datos reales, lo que invalidó varios supuestos del diseño original:
+
+- Columnas reales distintas a las asumidas: `n__local`, `_local`, `n__region`, `"tipo_operación"` (con tilde), `desde`/`hasta` como `text` "HH:MM:SS" (con basura real: `#N/D`, error de Excel colado en el mirror).
+- **`n__local` (site_number) NO es una clave interna confiable** — decisión explícita del usuario ("es un dato dado por el generador de carga, no tiene que tener incidencia en la lógica interna"): solo Walmart lo puebla (Iansa/Sodimac/Colun 100% NULL), y dentro de Walmart mismo se repite 3 veces con locales distintos (171/463/50).
+- `_local` (nombre) tampoco alcanza solo: 49 colisiones en Walmart (ciudades con varias tiendas). `direccion` es dirección real solo para Walmart; para los otros 3 generadores es apenas el nombre de la ciudad, sin poder de disambiguación.
+- **Clave de identidad para el upsert, decidida con el usuario**: `UNIQUE NULLS NOT DISTINCT (entity_type, entity_id, name, site_number)` — 4 filas de 494 quedaron como duplicados literales indistinguibles (mismo nombre, sin número, en Sodimac/Iansa) y se colapsan automáticamente vía `ON CONFLICT` (decisión explícita del usuario, no se tratan como error).
+- **`country_code`** agregado a `public.locations` (default `'CL'`, mismo patrón que `public.carriers`) — a pedido del usuario, que cuestionó por qué `region_name` no estaba preparado para una eventual internacionalización. No normaliza el nombre de región en sí (sigue siendo texto libre de la planilla, sin librería de geografía — cero evidencia de un segundo país hoy), solo evita mezclar datos de países distintos el día que haga falta.
+- **CRUD básico agregado al alcance** (antes descartado como "vía SQL directo si hace falta") — el usuario lo pidió explícitamente al ver los problemas de calidad de datos reales recién encontrados (duplicados, direcciones faltantes): mantenibilidad real desde la UI, mismo estándar que Empresas/Seguros.
+
+**Implementado, con tests reales (backend 211/211, frontend `tsc`/`build`/`vitest` 344/344 en verde, verificado en vivo contra la DB real con 2 viajes reales):**
+- 3 migraciones: `20260717230000_public_locations_catalog` (tabla + carga inicial 490 filas desde bronze, con `DISTINCT ON` para colapsar los 4 duplicados exactos), `20260717231500_locations_case_insensitive_identity` (fix real encontrado en el momento: "Sitrans"/"SITRANS" en Iansa no colapsaba por case-sensitivity — constraint reemplazado por índice único `lower(name)`), `20260717232000_locations_country_code`.
+- Backend: `schemas/location.py` + `routers/locations.py` (GET/POST/PATCH, mismo patrón que `carriers.py`/`config.py`), `routers/shippers.py` nuevo (`GET /shippers` — no existía plano, solo anidado bajo `/carriers/{id}/shippers`; lo necesita el selector de generador de carga en la UI).
+- Backend (`routers/trips.py`): resolución de `operation_type` en runtime — `_split_local()` extrae `(nombre, número)` de `stops[].local` (patrón `"NOMBRE - N"`), `_load_operation_type_buckets()` carga `public.locations` scopeado por shipper en una sola query batch (no N+1), `_resolve_operation_type()` prioriza número exacto, desambigua por nombre normalizado cuando el número se repite, y cae a nombre solo cuando no hay número (los CDs de origen de Walmart nunca lo traen). Expuesto en `GET /trips` y `GET /trips/{id}` (`stop.operation_type` + `trip.origin_operation_type`), y el catálogo fijo de 4 valores en `GET /trips/meta` (`operation_types`, mismo patrón que `_TMS_META` — no es tabla configurable, son los valores fijos de la planilla).
+- Frontend: `OperationTypeBadge.tsx` (mismo patrón que `StatusBadge`), integrado en `TripTable.tsx` (paradas, vista principal) y `TripSlideOver.tsx` (tabla técnica de paradas, detalle) — visible en ambos niveles, pedido explícito de la minuta UAT. Tab "Locales" nueva en `/dashboard/admin/configuracion` (`locales-tab.tsx`): selector de generador de carga + listado editable inline (mismo patrón que `RangosTemperaturaTab`) + alta manual.
+
+**Bug real encontrado y corregido en la verificación en vivo (no en tests)**: se corrió el código Python real (no una reimplementación en SQL) contra la DB con `asyncpg` directo, sobre 2 viajes reales de Walmart. El caso simple (`"ALAMEDA - 72"` → `RM`) resolvió bien a la primera. El caso ambiguo (`site_number` 171) reveló un gap real: el TMS reporta `"SBA San Bernardo Eucaliptus - 171"`, pero el nombre maestro en `public.locations` es `"San Bernardo Eucaliptus"` (el formato "SBA" vive en una columna aparte) — el match exacto por nombre normalizado fallaba y devolvía `None` en vez de `RM`. Corregido: `_resolve_operation_type()` agrega un fallback de contención (nombre del stop contiene al candidato o viceversa) cuando el match exacto falla en el caso ambiguo, verificado que sigue sin poder confundir "Linares" con "San Bernardo Eucaliptus" (ninguno es substring del otro). Test de regresión agregado (`test_resolve_operation_type_disambiguates_by_containment_when_tms_adds_format_prefix`), y reverificado en vivo contra el mismo viaje real tras el fix.
+
+**Explícitamente fuera de esta fase**: sync recurrente automático de `bronze.raw_shipper_locations` → `public.locations` (el upsert de esta ronda fue un one-shot en la migración; el mecanismo de sync periódico queda para cuando el usuario decida dónde correrá — Mage, mismo patrón que `raw_info_conductores` — no se construyó ahora), merge de duplicados desde la UI, historial de auditoría por campo en locations.
+
+`pytest` 211/211, `tsc --noEmit` limpio, `vitest` 344/344, `npm run build` exitoso. Plan maestro (`~/.claude/plans/necesito-que-actues-como-rustling-river.md`) actualizado con el diseño real (reemplaza los supuestos del borrador anterior).
+
+**Sin commit todavía** — ni la higienización de la ronda anterior ni esta ronda están comiteadas; queda pendiente de confirmación del usuario (mismo punto 1 de abajo).
+
+#### Próximo paso exacto
+1. [ ] Commit/push de la higienización (ronda 9) + catálogo de locales (esta ronda) — pendiente de confirmación del usuario.
+2. [ ] Sync recurrente `bronze.raw_shipper_locations` → `public.locations` (hoy es un upsert one-shot en la migración) — decidir dónde corre (Mage) cuando el usuario lo pida.
 3. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (sigue vigente, acción del usuario).
 4. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — sigue encolada, sin iniciar.
 5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.

@@ -44,6 +44,97 @@ def _apply_stop_manual_fields(d: dict) -> None:
         stop["desc_manual"] = True
 
 
+_LOCAL_NUMBER_PATTERN = re.compile(r"^(.*?)\s*-\s*(\d+)\s*$")
+
+
+def _split_local(local: str | None) -> tuple[str | None, str | None]:
+    """Extrae (nombre, número) de un string de local tipo "ALAMEDA - 72"
+    (patrón real de stops[].local para Walmart). Si no matchea (ej. los CDs
+    de origen: "CD LO AGUIRRE", que nunca traen número) el string completo
+    se trata como nombre, sin número — resuelve por nombre solo."""
+    if not local:
+        return None, None
+    local = local.strip()
+    m = _LOCAL_NUMBER_PATTERN.match(local)
+    if m:
+        return m.group(1).strip(), m.group(2)
+    return local, None
+
+
+def _normalize_location_name(name: str) -> str:
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"\s+", " ", name).strip().upper()
+
+
+async def _load_operation_type_buckets(pool, client_names: set[str]) -> dict:
+    """shipper_name (lower) -> {"by_number": {site_number: [(nombre_norm, operation_type)]},
+    "by_name": {nombre_norm: operation_type}} — resuelve operation_type contra
+    public.locations, siempre scopeado por shipper (nunca un lookup global de
+    site_number, que sería ambiguo si dos shippers reusan el mismo número)."""
+    if not client_names:
+        return {}
+    rows = await pool.fetch(
+        """
+        SELECT lower(s.name) AS shipper_name, l.name, l.site_number, l.operation_type
+        FROM public.locations l
+        JOIN public.shippers s ON s.id = l.entity_id AND l.entity_type = 'SHIPPER'
+        WHERE lower(s.name) = ANY($1::text[])
+          AND l.operational_status = 'ACTIVE' AND l.operation_type IS NOT NULL
+        """,
+        list(client_names),
+    )
+    buckets: dict = {}
+    for r in rows:
+        bucket = buckets.setdefault(r["shipper_name"], {"by_number": {}, "by_name": {}})
+        norm_name = _normalize_location_name(r["name"])
+        if r["site_number"]:
+            bucket["by_number"].setdefault(r["site_number"], []).append((norm_name, r["operation_type"]))
+        bucket["by_name"].setdefault(norm_name, r["operation_type"])
+    return buckets
+
+
+def _resolve_operation_type(bucket: dict | None, local: str | None) -> str | None:
+    """Resuelve primero por número (clave más exacta cuando existe); si el
+    número aparece más de una vez para el shipper (pasa en 3/490 casos
+    reales — ver plan maestro H2.6), desempata por nombre normalizado.
+    Sin número (o sin match), cae a lookup por nombre solo."""
+    if not bucket or not local:
+        return None
+    name, number = _split_local(local)
+    if number:
+        candidates = bucket["by_number"].get(number, [])
+        if len(candidates) == 1:
+            return candidates[0][1]
+        if len(candidates) > 1:
+            if name:
+                norm = _normalize_location_name(name)
+                for cand_name, op in candidates:
+                    if cand_name == norm:
+                        return op
+                # El nombre que reporta el TMS a veces trae el formato como
+                # prefijo (ej. parada real "SBA San Bernardo Eucaliptus" vs
+                # nombre maestro "San Bernardo Eucaliptus", formato "SBA"
+                # aparte) — contención en cualquier sentido, verificado en
+                # vivo contra un viaje real 2026-07-17. Solo se acepta si
+                # desambigua a un único candidato.
+                contained = [op for cand_name, op in candidates if cand_name in norm or norm in cand_name]
+                if len(contained) == 1:
+                    return contained[0]
+            return None
+    if name:
+        return bucket["by_name"].get(_normalize_location_name(name))
+    return None
+
+
+def _apply_operation_types(d: dict, buckets: dict) -> None:
+    bucket = buckets.get((d.get("client_name") or "").strip().lower())
+    d["origin_operation_type"] = _resolve_operation_type(bucket, d.get("origin"))
+    stops = d.get("stops")
+    if stops:
+        for stop in stops:
+            stop["operation_type"] = _resolve_operation_type(bucket, stop.get("local"))
+
+
 router = APIRouter(prefix="/trips", tags=["trips"])
 
 # SQL fragment that maps actual DB columns to the expected API response shape.
@@ -211,12 +302,20 @@ async def list_trips(
         f"SELECT COUNT(*) {_TRIP_FROM} {where}", *params
     )
     data = []
+    client_names = set()
     for r in rows:
         d = dict(r)
         if d.get("stops") and isinstance(d["stops"], str):
             d["stops"] = json.loads(d["stops"])
         _apply_stop_manual_fields(d)
+        if d.get("client_name"):
+            client_names.add(d["client_name"].strip().lower())
         data.append(d)
+
+    op_type_buckets = await _load_operation_type_buckets(pool, client_names)
+    for d in data:
+        _apply_operation_types(d, op_type_buckets)
+
     return {"data": data, "count": count, "page": page, "limit": limit}
 
 
@@ -246,6 +345,17 @@ _TMS_META = [
     {"id": "wingsuite",  "label": "WS",     "bg_color": "#f3e8ff", "text_color": "#9333ea"},
     {"id": "sodimac",    "label": "SDM",    "bg_color": "#ffedd5", "text_color": "#ea580c"},
     {"id": "manual",     "label": "Manual", "bg_color": "#f0fdf4", "text_color": "#166534"},
+]
+
+# Clasificación RM/Zona Cero de la minuta UAT (catálogo de locales, H2.6) —
+# valores fijos tal cual vienen de la planilla de generadores de carga
+# (public.locations.operation_type), no una tabla configurable como
+# trip_statuses: no hay pedido de negocio para editarlos desde Configuración.
+_OPERATION_TYPE_META = [
+    {"id": "RM",            "label": "RM",            "bg_color": "#e8eeff", "text_color": "#053bfa"},
+    {"id": "Z0",             "label": "Zona Cero",     "bg_color": "#fef0e6", "text_color": "#ea6b25"},
+    {"id": "Region Norte",  "label": "Región Norte",  "bg_color": "#fef3c7", "text_color": "#d97706"},
+    {"id": "Region Sur",    "label": "Región Sur",    "bg_color": "#e6f8fd", "text_color": "#0e8db5"},
 ]
 
 _CSV_COLUMNS = [
@@ -326,6 +436,13 @@ class UnassignedReasonMeta(BaseModel):
     label: str
 
 
+class OperationTypeMeta(BaseModel):
+    id:         str
+    label:      str
+    bg_color:   str
+    text_color: str
+
+
 class TripsMeta(BaseModel):
     statuses:            list[StatusMeta]
     tms_sources:         list[TmsSourceMeta]
@@ -334,6 +451,7 @@ class TripsMeta(BaseModel):
     csv_columns:         list[CSVColumnDef]
     temperature_ranges:  list[TemperatureRangeMeta]
     unassigned_reasons:  list[UnassignedReasonMeta]
+    operation_types:     list[OperationTypeMeta]
     monitor_alert_rules: Optional[MonitorAlertRulesMeta] = None
 
 
@@ -375,6 +493,7 @@ async def get_trips_meta(pool=Depends(get_pool)):
         csv_columns=[CSVColumnDef(**c) for c in _CSV_COLUMNS],
         temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
         unassigned_reasons=[UnassignedReasonMeta(**dict(r)) for r in unassigned_reason_rows],
+        operation_types=[OperationTypeMeta(**t) for t in _OPERATION_TYPE_META],
         monitor_alert_rules=MonitorAlertRulesMeta(**dict(alert_rules_row)) if alert_rules_row else None,
     )
 
@@ -785,6 +904,9 @@ async def get_trip(
     if d.get("stops") and isinstance(d["stops"], str):
         d["stops"] = json.loads(d["stops"])
     _apply_stop_manual_fields(d)
+    client_names = {d["client_name"].strip().lower()} if d.get("client_name") else set()
+    op_type_buckets = await _load_operation_type_buckets(pool, client_names)
+    _apply_operation_types(d, op_type_buckets)
     await _log_tms_divergence_once(pool, trip_id, user, d)
     return d
 

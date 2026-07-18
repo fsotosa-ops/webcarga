@@ -14,8 +14,10 @@ from .routers.contacts import router as contacts_router
 from .routers.coverage_types import router as coverage_types_router
 from .routers.drivers import router as drivers_router
 from .routers.filter_groups import router as filter_groups_router
+from .routers.locations import router as locations_router
 from .routers.policies import router as policies_router
 from .routers.roles import router as roles_router
+from .routers.shippers import router as shippers_router
 from .routers.trips import router as trips_router
 from .routers.users import router as users_router
 
@@ -65,6 +67,9 @@ app.include_router(contacts_router,            prefix="/api/v1")
 app.include_router(policies_router,            prefix="/api/v1")
 app.include_router(compliance_router,          prefix="/api/v1")
 app.include_router(coverage_types_router,      prefix="/api/v1")
+# Catálogo de locales por generador de carga (H2.6, fase "catálogo de locales")
+app.include_router(locations_router,           prefix="/api/v1")
+app.include_router(shippers_router,            prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

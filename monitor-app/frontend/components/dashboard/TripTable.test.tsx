@@ -79,6 +79,33 @@ describe('TripTable', () => {
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
     expect(screen.getAllByText(/hace 5 min/).length).toBeGreaterThan(0)
   })
+
+  it('shows the RM/Zona Cero classification badge next to a stop when operation_type resolved (H2.6, catálogo de locales)', () => {
+    const stops: Trip['stops'] = [{
+      stop_id: 's1', local: 'ALAMEDA - 72', planning_date: null, arrival_date: null, departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null, operation_type: 'RM',
+    }]
+    const meta = {
+      statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
+      temperature_ranges: [], unassigned_reasons: [],
+      operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
+    }
+    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={meta} />)
+    expect(screen.getAllByText('RM').length).toBeGreaterThan(0)
+  })
+
+  it('does not show a classification badge when operation_type could not be resolved', () => {
+    const stops: Trip['stops'] = [{
+      stop_id: 's1', local: 'CD LO AGUIRRE', planning_date: null, arrival_date: null, departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null, operation_type: null,
+    }]
+    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
+    expect(screen.queryByText('RM')).not.toBeInTheDocument()
+  })
 })
 
 describe('TripTable — errores de edición inline visibles', () => {
@@ -101,7 +128,7 @@ describe('TripTable — estado manual resuelto contra estados operacionales', ()
     const meta = {
       statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
       operational_states: [{ id: 'op-uuid-1', label: 'Confirmado en panne', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
-      tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [],
+      tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
     }
     const trip = makeTrip('t1', { manual_status: 'op-uuid-1' })
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={meta} />)

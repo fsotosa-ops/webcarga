@@ -225,6 +225,16 @@ export type UnassignedReasonMeta = {
   label: string
 }
 
+/** Clasificación RM/Zona Cero por local (public.locations.operation_type,
+ *  catálogo de locales — H2.6). Valores fijos de la planilla, no editables
+ *  desde Configuración. */
+export type OperationTypeMeta = {
+  id:         string
+  label:      string
+  bg_color:   string
+  text_color: string
+}
+
 /** Conductor que terminó todos sus viajes del día — reasignable */
 export type AvailableDriver = {
   driver_name:    string
@@ -251,6 +261,7 @@ export type TripsMeta = {
   csv_columns:         CSVColumnDef[]
   temperature_ranges:  TemperatureRangeMeta[]
   unassigned_reasons:  UnassignedReasonMeta[]
+  operation_types:     OperationTypeMeta[]
   monitor_alert_rules?: MonitorAlertRules | null
 }
 
@@ -336,6 +347,10 @@ export type TripStop = {
    *  esquema de fechas 2026-07-17. Ausente (no `false` explícito) cuando el
    *  viaje no tiene ningún override todavía. */
   desc_manual?:        boolean
+  /** Clasificación RM/Zona Cero resuelta en runtime contra public.locations
+   *  por (nombre, N° de local) — null si no matchea ningún local del
+   *  generador de carga (ver plan maestro H2.6). */
+  operation_type?:     string | null
 }
 
 export type Trip = {
@@ -392,6 +407,50 @@ export type Trip = {
   source_system_trip_id:  string | null
   milestone_status:       string | null  // trip-level, distinct from TripStop.milestone_status
   pipeline_updated_at:    string | null
+  /** Clasificación RM/Zona Cero del origen — mismo mecanismo que
+   *  TripStop.operation_type. Casi siempre null para orígenes tipo CD (no
+   *  son locales de cliente, no están en el catálogo). */
+  origin_operation_type?: string | null
+}
+
+// ── Catálogo de locales por generador de carga (public.locations, H2.6) ──
+
+export type Location = {
+  id:                  string
+  entity_type:         'SHIPPER'
+  entity_id:           string
+  site_number:         string | null
+  name:                string
+  country_code:        string
+  format:              string | null
+  address:             string | null
+  region_name:         string | null
+  region_number:       number | null
+  opens_at:            string | null
+  closes_at:           string | null
+  operation_type:      string | null
+  operational_status:  'ACTIVE' | 'INACTIVE'
+  created_at:          string | null
+  updated_at:          string | null
+}
+
+export type LocationCreatePayload = {
+  entity_type:     'SHIPPER'
+  entity_id:       string
+  name:            string
+  country_code?:   string
+  site_number?:    string | null
+  format?:         string | null
+  address?:        string | null
+  region_name?:    string | null
+  region_number?:  number | null
+  opens_at?:       string | null
+  closes_at?:      string | null
+  operation_type?: string | null
+}
+
+export type LocationPatchPayload = Partial<Omit<LocationCreatePayload, 'entity_type' | 'entity_id'>> & {
+  operational_status?: 'ACTIVE' | 'INACTIVE'
 }
 
 // ── Empresas (public.carriers/drivers/assets/contacts + vistas de H1) ──────

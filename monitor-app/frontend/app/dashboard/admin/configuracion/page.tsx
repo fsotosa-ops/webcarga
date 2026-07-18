@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { EstadosTmsTab, EstadosOperacionalesTab } from './estados-tabs'
 import { AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab } from './umbrales-tabs'
+import { LocalesTab } from './locales-tab'
 
-type Tab = 'estados_tms' | 'estados_op' | 'alertas_monitor' | 'alertas' | 'rangos_temperatura'
+type Tab = 'estados_tms' | 'estados_op' | 'alertas_monitor' | 'alertas' | 'rangos_temperatura' | 'locales'
 
 const TABS: { key: Tab; label: string; desc: string }[] = [
   { key: 'estados_tms',        label: 'Estados TMS',            desc: 'Colores y columna del tablero' },
@@ -12,6 +13,7 @@ const TABS: { key: Tab; label: string; desc: string }[] = [
   { key: 'alertas_monitor',    label: 'Alertas del Monitor',    desc: 'Umbrales operacionales' },
   { key: 'alertas',            label: 'Alertas de Vencimiento', desc: 'Documentos, en días' },
   { key: 'rangos_temperatura', label: 'Rangos de Temperatura',  desc: 'Por tipo de carga' },
+  { key: 'locales',            label: 'Locales',                desc: 'Por generador de carga' },
 ]
 
 export default function ConfiguracionPage() {
@@ -50,6 +52,7 @@ export default function ConfiguracionPage() {
           {tab === 'alertas_monitor'    && <AlertasMonitorTab />}
           {tab === 'alertas'            && <AlertasVencimientoTab />}
           {tab === 'rangos_temperatura' && <RangosTemperaturaTab />}
+          {tab === 'locales'            && <LocalesTab />}
         </div>
       </div>
     </div>

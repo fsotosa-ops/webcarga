@@ -22,6 +22,7 @@ import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
 import { IndicatorDots } from './IndicatorDots'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 
 
 export function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
@@ -39,7 +40,7 @@ export function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null })
   )
 }
 
-function StopPills({ stops }: { stops: TripStop[] }) {
+function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null }) {
   if (!stops?.length) return <span className="text-gray-200 text-xs">—</span>
 
   const isCompleted = (s: TripStop) =>
@@ -54,24 +55,26 @@ function StopPills({ stops }: { stops: TripStop[] }) {
         const isActive = i === activeIdx
         const isDone   = currentIdx < 0 ? isCompleted(stop) : i < activeIdx
         return (
-          <span
-            key={stop.stop_id ?? i}
-            title={name}
-            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit max-w-[120px] truncate flex items-center gap-1 ${
-              isActive
-                ? 'bg-accent/10 text-accent border border-accent/20'
-                : isDone
-                ? 'text-gray-300 bg-gray-50'
-                : 'text-gray-200'
-            }`}
-          >
-            {stop.on_time_status && (
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stop.on_time_status === 'ON TIME' ? 'bg-green-500' : 'bg-red-500'}`} />
-            )}
-            {isActive && <span className="shrink-0 text-[8px]">→</span>}
-            {isDone && !isActive && <span className="shrink-0 text-[8px]">✓</span>}
-            <span className="truncate">{name}</span>
-          </span>
+          <div key={stop.stop_id ?? i} className="flex items-center gap-1">
+            <span
+              title={name}
+              className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit max-w-[120px] truncate flex items-center gap-1 ${
+                isActive
+                  ? 'bg-accent/10 text-accent border border-accent/20'
+                  : isDone
+                  ? 'text-gray-300 bg-gray-50'
+                  : 'text-gray-200'
+              }`}
+            >
+              {stop.on_time_status && (
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stop.on_time_status === 'ON TIME' ? 'bg-green-500' : 'bg-red-500'}`} />
+              )}
+              {isActive && <span className="shrink-0 text-[8px]">→</span>}
+              {isDone && !isActive && <span className="shrink-0 text-[8px]">✓</span>}
+              <span className="truncate">{name}</span>
+            </span>
+            <OperationTypeBadge operationType={stop.operation_type} meta={meta} />
+          </div>
         )
       })}
     </div>
@@ -636,7 +639,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
 
                   {/* DESTINOS */}
                   <td className="px-3 py-2.5 max-w-[200px]">
-                    <StopPills stops={trip.stops} />
+                    <StopPills stops={trip.stops} meta={meta} />
                   </td>
 
                   {/* TEMP */}
