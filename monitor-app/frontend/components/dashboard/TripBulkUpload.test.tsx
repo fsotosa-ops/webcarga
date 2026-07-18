@@ -18,7 +18,7 @@ const columns: CSVColumnDef[] = [
 
 const meta: TripsMeta = {
   statuses: [{ id: 'ASIGNADO', label: 'ASIGNADO', bg_color: '#fff', text_color: '#000', group: 'otro' }],
-  tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: columns, temperature_ranges: [],
+  tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: columns, temperature_ranges: [], unassigned_reasons: [],
 }
 
 function uploadCSV(content: string, name = 'viajes.csv') {

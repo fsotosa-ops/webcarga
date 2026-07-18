@@ -262,8 +262,8 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
     setEmpresa(profile)
     setForm(f => ({
       ...f,
-      transporter_name:       profile.business_name ?? undefined,
-      transporter_profile_id: profile.id,
+      transporter_name: profile.business_name ?? undefined,
+      carrier_id:       profile.id,
     }))
   }
 
@@ -271,13 +271,15 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
     setEmpresa(null)
     setForm(f => ({
       ...f,
-      transporter_name:       undefined,
-      transporter_profile_id: undefined,
-      driver_name:            undefined,
-      driver_rut:             undefined,
-      driver_phone:           undefined,
-      tractor_plate:          undefined,
-      trailer_plate:          undefined,
+      transporter_name: undefined,
+      carrier_id:        undefined,
+      driver_name:       undefined,
+      driver_rut:        undefined,
+      driver_phone:      undefined,
+      driver_id:         undefined,
+      tractor_plate:     undefined,
+      trailer_plate:     undefined,
+      tractor_asset_id:  undefined,
     }))
   }
 
@@ -569,7 +571,12 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
                       <select
                         onChange={e => {
                           const d = drivers.find(x => x.id === e.target.value)
-                          if (d) setForm(f => ({ ...f, driver_name: d.name ?? f.driver_name, driver_rut: d.rut ?? f.driver_rut }))
+                          setForm(f => ({
+                            ...f,
+                            driver_name: d?.name ?? f.driver_name,
+                            driver_rut:  d?.rut ?? f.driver_rut,
+                            driver_id:   d?.id,
+                          }))
                         }}
                         className={INPUT}
                         defaultValue=""
@@ -606,7 +613,11 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
                       <select
                         onChange={e => {
                           const v = vehicles.find(x => x.id === e.target.value)
-                          if (v?.plate) setForm(f => ({ ...f, tractor_plate: v.plate!.toUpperCase() }))
+                          setForm(f => ({
+                            ...f,
+                            tractor_plate:    v?.plate ? v.plate.toUpperCase() : f.tractor_plate,
+                            tractor_asset_id: v?.id,
+                          }))
                         }}
                         className={INPUT}
                         defaultValue=""

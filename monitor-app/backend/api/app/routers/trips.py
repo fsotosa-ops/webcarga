@@ -60,16 +60,21 @@ _TRIP_SELECT = """
     t.trip_status                                  AS current_status,
     COALESCE(fl.tractor_plate,
              t.fleet->>'tractor_plate')           AS tractor_plate,
+    -- Valor crudo del TMS, sin resolver contra el vínculo manual — permite
+    -- detectar divergencia cuando ops vinculó a mano y el TMS reporta otro
+    -- dato después (reconciliación TMS↔manual, Fase 1.5b).
+    t.fleet->>'tractor_plate'                     AS tractor_plate_tms,
     COALESCE(fl.trailer_plate,
              t.fleet->>'trailer_plate')           AS trailer_plate,
     COALESCE(fl.driver_name_raw,
              t.fleet->>'driver_name_tms')         AS driver_name,
-    t.fleet->>'driver_rut_tms'                    AS driver_rut,
+    t.fleet->>'driver_name_tms'                   AS driver_name_tms,
+    t.fleet->>'driver_rut_tms'                    AS driver_tax_id,
     COALESCE(fl.driver_phone,
              t.fleet->>'driver_phone')            AS driver_phone,
     t.origin_tms,
-    c.business_name                               AS transporter,
-    t.fleet->>'transporter_name_tms'              AS transporter_tms,
+    c.business_name                               AS carrier_name,
+    t.fleet->>'transporter_name_tms'              AS carrier_name_tms,
     t.origin,
     t.origin_region,
     t.origin_city,
@@ -85,9 +90,13 @@ _TRIP_SELECT = """
     t.estado_manual,
     t.observaciones,
     t.comentarios,
+    t.unassigned_reason_id,
     t.manually_edited_fields,
     t.fleet_link_id,
-    fl.transporter_id                             AS transporter_profile_id,
+    fl.carrier_id,
+    fl.driver_id,
+    fl.tractor_asset_id,
+    fl.trailer_asset_id,
     t.edited_at,
     t.updated_at,
     t.created_at,
@@ -100,7 +109,7 @@ _TRIP_SELECT = """
 _TRIP_FROM = """
     FROM app.trips t
     LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
-    LEFT JOIN public.carriers c ON c.id = fl.transporter_id
+    LEFT JOIN public.carriers c ON c.id = fl.carrier_id
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 
@@ -312,6 +321,11 @@ class TemperatureRangeMeta(BaseModel):
     max_c:      float
 
 
+class UnassignedReasonMeta(BaseModel):
+    id:    str
+    label: str
+
+
 class TripsMeta(BaseModel):
     statuses:            list[StatusMeta]
     tms_sources:         list[TmsSourceMeta]
@@ -319,6 +333,7 @@ class TripsMeta(BaseModel):
     alert_thresholds:    list[AlertThresholdMeta]
     csv_columns:         list[CSVColumnDef]
     temperature_ranges:  list[TemperatureRangeMeta]
+    unassigned_reasons:  list[UnassignedReasonMeta]
     monitor_alert_rules: Optional[MonitorAlertRulesMeta] = None
 
 
@@ -349,6 +364,9 @@ async def get_trips_meta(pool=Depends(get_pool)):
         "SELECT cargo_type, label, min_c, max_c "
         "FROM app.temperature_ranges ORDER BY cargo_type"
     )
+    unassigned_reason_rows = await pool.fetch(
+        "SELECT id, label FROM app.unassigned_reasons WHERE active = true ORDER BY sort_order"
+    )
     return TripsMeta(
         statuses=[StatusMeta(**dict(r)) for r in status_rows],
         tms_sources=[TmsSourceMeta(**t) for t in _TMS_META],
@@ -356,6 +374,7 @@ async def get_trips_meta(pool=Depends(get_pool)):
         alert_thresholds=[AlertThresholdMeta(**dict(r)) for r in thresh_rows],
         csv_columns=[CSVColumnDef(**c) for c in _CSV_COLUMNS],
         temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
+        unassigned_reasons=[UnassignedReasonMeta(**dict(r)) for r in unassigned_reason_rows],
         monitor_alert_rules=MonitorAlertRulesMeta(**dict(alert_rules_row)) if alert_rules_row else None,
     )
 
@@ -382,14 +401,14 @@ async def available_drivers(
                 t.fleet->>'driver_rut_tms'                                AS driver_rut,
                 COALESCE(fl.driver_phone, t.fleet->>'driver_phone')       AS driver_phone,
                 COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')     AS tractor_plate,
-                c.business_name                                           AS transporter,
+                c.business_name                                           AS carrier_name,
                 t.status_reported_at,
                 -- mismo criterio de "terminal" que la derivación de activo en dbt
                 (t.trip_status LIKE 'CERRADO%'
                  OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')) AS closed
             FROM app.trips t
             LEFT JOIN app.trip_fleet_links fl ON fl.id = t.fleet_link_id
-            LEFT JOIN public.carriers c ON c.id = fl.transporter_id
+            LEFT JOIN public.carriers c ON c.id = fl.carrier_id
             WHERE t.planning_date = $1
               AND t.source_system != 'sodimac'
         )
@@ -398,7 +417,7 @@ async def available_drivers(
             max(driver_rut)          AS driver_rut,
             max(driver_phone)        AS driver_phone,
             max(tractor_plate)       AS tractor_plate,
-            max(transporter)         AS transporter,
+            max(carrier_name)        AS carrier_name,
             count(*)                 AS trips_total,
             max(status_reported_at)  AS last_report_at
         FROM day_trips
@@ -446,7 +465,13 @@ class TripCreateBody(BaseModel):
     driver_rut:             Optional[str] = None
     driver_phone:           Optional[str] = None
     transporter_name:       Optional[str] = None
-    transporter_profile_id: Optional[str] = None  # si se selecciona desde Empresas
+    carrier_id:             Optional[str] = None  # si se selecciona desde Empresas
+    # Vínculo real de roster (Fase 1.5c) — mismos 3 campos opcionales que
+    # assign_fleet_link, para que un viaje creado a mano y un viaje TMS
+    # vinculado a mano después escriban la misma estructura en trip_fleet_links.
+    driver_id:              Optional[str] = None
+    tractor_asset_id:       Optional[str] = None
+    trailer_asset_id:       Optional[str] = None
 
 
 MAPPED_TMS_IDS = {t["id"] for t in _TMS_META if t["id"] != "manual"}
@@ -581,17 +606,21 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
     )
 
     # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
-    if body.transporter_profile_id:
+    if body.carrier_id:
         link_id = await conn.fetchval(
             """
             INSERT INTO app.trip_fleet_links
-              (trip_id, transporter_id, tractor_plate, trailer_plate,
-               driver_name_raw, driver_phone, link_source, created_by)
-            VALUES ($1,$2,$3,$4,$5,$6,'manual',$7::uuid)
+              (trip_id, carrier_id, driver_id, tractor_asset_id, trailer_asset_id,
+               tractor_plate, trailer_plate, driver_name_raw, driver_phone,
+               link_source, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'manual',$10::uuid)
             RETURNING id
             """,
             trip_id,
-            body.transporter_profile_id,
+            body.carrier_id,
+            body.driver_id,
+            body.tractor_asset_id,
+            body.trailer_asset_id,
             body.tractor_plate,
             body.trailer_plate,
             body.driver_name,
@@ -628,6 +657,7 @@ async def _mirror_manual_trip(pool, trip_id: str) -> None:
                 primera_vuelta         = COALESCE(t.primera_vuelta, m.primera_vuelta),
                 observaciones          = t.observaciones,
                 comentarios            = t.comentarios,
+                unassigned_reason_id   = t.unassigned_reason_id,
                 fleet_link_id          = t.fleet_link_id,
                 manually_edited_fields = COALESCE(t.manually_edited_fields, '{}'),
                 updated_at             = NOW()
@@ -707,11 +737,43 @@ async def bulk_create_trips(
     return {"created": len(ids), "ids": ids, "errors": []}
 
 
+async def _log_tms_divergence_once(pool, trip_id: str, user: dict, d: dict) -> None:
+    """Reconciliación TMS↔manual (Fase 1.5b): si hay un vínculo manual
+    (fleet_link_id) y el TMS reporta un conductor/patente distinto al
+    vinculado, registra una nota de bitácora — pero solo la primera vez que
+    se ve ESE valor divergente (evita spamear la bitácora en cada GET),
+    chequeando la última nota 'sistema' de divergencia ya registrada."""
+    if not d.get("fleet_link_id"):
+        return
+    divergences = []
+    if d.get("driver_name_tms") and d.get("driver_name_tms") != d.get("driver_name"):
+        divergences.append(("conductor", d["driver_name_tms"]))
+    if d.get("tractor_plate_tms") and d.get("tractor_plate_tms") != d.get("tractor_plate"):
+        divergences.append(("patente", d["tractor_plate_tms"]))
+    if not divergences:
+        return
+    try:
+        last = await pool.fetchval(
+            """
+            SELECT body FROM app.trip_notes
+            WHERE trip_id = $1 AND note_type = 'sistema' AND body LIKE 'Divergencia TMS:%'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            trip_id,
+        )
+        new_values = ", ".join(f"{label} reportado por TMS: {value}" for label, value in divergences)
+        if last == f"Divergencia TMS: {new_values}":
+            return
+        await _log_system_note(pool, trip_id, user, f"Divergencia TMS: {new_values}")
+    except Exception:
+        pass  # best-effort: nunca romper la lectura del viaje
+
+
 @router.get("/{trip_id}")
 async def get_trip(
     trip_id: str,
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
     row = await pool.fetchrow(
         f"SELECT {_TRIP_SELECT} {_TRIP_FROM} WHERE t.id = $1",
@@ -723,6 +785,7 @@ async def get_trip(
     if d.get("stops") and isinstance(d["stops"], str):
         d["stops"] = json.loads(d["stops"])
     _apply_stop_manual_fields(d)
+    await _log_tms_divergence_once(pool, trip_id, user, d)
     return d
 
 
@@ -810,16 +873,16 @@ async def patch_trip(
     # Remaining fields go to app.trips
     bool_fields = ("activo", "trabajando", "asignado", "primera_vuelta")
     str_fields  = ("estado_manual", "observaciones", "comentarios",
-                   "origin_region", "origin_city")
+                   "origin_region", "origin_city", "unassigned_reason_id")
     # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen): campos híbridos sin
     # equivalente TMS — no compiten con el pipeline, no necesitan pasar por
     # manually_edited_fields/protect_manual_overrides (eso protege campos que
     # el TMS SÍ puede seguir reportando).
     datetime_fields = ("cag_inicio_at", "cag_fin_at")
     trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields, *datetime_fields)}
-    # Ubicación: string vacío = limpiar (NULL) — evita mezclar '' y NULL en los
-    # filtros exactos de region/ciudad
-    for k in ("origin_region", "origin_city"):
+    # Ubicación / motivo de no asignación: string vacío = limpiar (NULL) —
+    # evita mezclar '' y NULL en filtros exactos y en la FK de unassigned_reason_id
+    for k in ("origin_region", "origin_city", "unassigned_reason_id"):
         if trip_fields.get(k) == "":
             trip_fields[k] = None
 
@@ -915,9 +978,9 @@ async def assign_fleet_link(
     if not exists:
         raise HTTPException(404, "Viaje no encontrado")
 
-    transporter_id = body.get("transporter_id")
-    if not transporter_id:
-        raise HTTPException(422, "transporter_id requerido")
+    carrier_id = body.get("carrier_id")
+    if not carrier_id:
+        raise HTTPException(422, "carrier_id requerido")
 
     old_link_id = await pool.fetchval(
         "SELECT fleet_link_id FROM app.trips WHERE id = $1", trip_id
@@ -928,14 +991,16 @@ async def assign_fleet_link(
     link_id = await pool.fetchval(
         """
         INSERT INTO app.trip_fleet_links
-          (trip_id, transporter_id, driver_id, tractor_plate, trailer_plate,
-           driver_name_raw, link_source, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, 'manual', $7)
+          (trip_id, carrier_id, driver_id, tractor_asset_id, trailer_asset_id,
+           tractor_plate, trailer_plate, driver_name_raw, link_source, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'manual', $9)
         RETURNING id
         """,
         trip_id,
-        transporter_id,
+        carrier_id,
         body.get("driver_id"),
+        body.get("tractor_asset_id"),
+        body.get("trailer_asset_id"),
         body.get("tractor_plate"),
         body.get("trailer_plate"),
         body.get("driver_name"),
@@ -947,12 +1012,12 @@ async def assign_fleet_link(
         link_id, trip_id,
     )
 
-    transporter_name = await pool.fetchval(
-        "SELECT business_name FROM public.carriers WHERE id = $1", transporter_id
+    carrier_name = await pool.fetchval(
+        "SELECT business_name FROM public.carriers WHERE id = $1", carrier_id
     )
     await _log_system_note(
         pool, trip_id, user,
-        f"Vinculó empresa transportista: {transporter_name or transporter_id}",
+        f"Vinculó empresa transportista: {carrier_name or carrier_id}",
     )
 
     await _mirror_manual_trip(pool, trip_id)

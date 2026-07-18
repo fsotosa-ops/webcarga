@@ -19,7 +19,7 @@ const meta: TripsMeta = {
     { id: 'qanalytics', label: 'QA', bg_color: '#fff', text_color: '#000' },
     { id: 'manual', label: 'Manual', bg_color: '#fff', text_color: '#000' },
   ],
-  operational_states: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [],
+  operational_states: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [],
 }
 
 function renderCreate(props: Partial<Parameters<typeof TripCreateSlideOver>[0]> = {}) {
@@ -168,7 +168,7 @@ describe('TripCreateSlideOver', () => {
     expect(screen.queryByLabelText('Nombre destino 1')).not.toBeInTheDocument()
   })
 
-  it('searches carriers, fetches its roster on selection, and sends transporter_profile_id on create', async () => {
+  it('searches carriers, fetches its roster on selection, and sends carrier_id on create', async () => {
     vi.mocked(carriersApi.list).mockResolvedValue({
       data: [{ id: 'c1', business_name: 'Transportes Sur Spa', tax_id: '76111222-3' }],
       count: 1, page: 1, limit: 10,
@@ -189,7 +189,7 @@ describe('TripCreateSlideOver', () => {
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
     const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
-    expect(payload.transporter_profile_id).toBe('c1')
+    expect(payload.carrier_id).toBe('c1')
     expect(payload.transporter_name).toBe('Transportes Sur Spa')
   })
 })

@@ -8,7 +8,8 @@
             'observaciones', 'comentarios', 'fleet_link_id',
             'manually_edited_fields', 'edited_by', 'edited_at', 'created_at',
             'origin_region', 'origin_city',
-            'cag_inicio_at', 'cag_fin_at', 'stop_manual_fields'
+            'cag_inicio_at', 'cag_fin_at', 'stop_manual_fields',
+            'unassigned_reason_id'
         ],
         schema='app',
         alias='trips',
@@ -297,6 +298,10 @@ SELECT
     -- ── Nunca tocados en UPDATE (merge_exclude_columns arriba) ────────────────
     NULL::text          AS observaciones,
     NULL::text          AS comentarios,
+    -- unassigned_reason_id (motivo de no asignación, Fase 1.5d): mismo
+    -- patrón que observaciones/comentarios — solo lo setea el operador
+    -- desde la API, el pipeline nunca lo escribe.
+    NULL::text          AS unassigned_reason_id,
     ARRAY[]::text[]     AS manually_edited_fields,
     NULL::uuid          AS fleet_link_id,
     NULL::uuid          AS edited_by,
@@ -377,6 +382,7 @@ SELECT
 
     m.observaciones                                     AS observaciones,
     m.comentarios                                       AS comentarios,
+    m.unassigned_reason_id                              AS unassigned_reason_id,
     m.manually_edited_fields                            AS manually_edited_fields,
     m.fleet_link_id                                     AS fleet_link_id,
     NULL::uuid                                          AS edited_by,

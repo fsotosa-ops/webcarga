@@ -24,6 +24,7 @@ export type TripPatch = {
   trailer_plate?:  string
   cag_inicio_at?:  string
   cag_fin_at?:     string
+  unassigned_reason_id?: string
 }
 
 export type TripStopPatch = {
@@ -32,10 +33,13 @@ export type TripStopPatch = {
 }
 
 export type FleetLinkPayload = {
-  transporter_id:  string
-  tractor_plate?:  string
-  trailer_plate?:  string
-  driver_name?:    string
+  carrier_id:        string
+  driver_id?:        string
+  tractor_asset_id?: string
+  trailer_asset_id?: string
+  tractor_plate?:    string
+  trailer_plate?:    string
+  driver_name?:      string
 }
 
 export const tripsApi = {

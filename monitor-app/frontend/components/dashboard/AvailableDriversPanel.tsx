@@ -91,7 +91,7 @@ export function AvailableDriversPanel({ open, fecha, onClose, onAssign }: Props)
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-800 truncate">{d.driver_name}</p>
                   <p className="text-[10px] text-gray-400">
-                    {d.transporter ?? 'Sin empresa'} · {d.trips_total} viaje{d.trips_total !== 1 ? 's' : ''} hoy
+                    {d.carrier_name ?? 'Sin empresa'} · {d.trips_total} viaje{d.trips_total !== 1 ? 's' : ''} hoy
                     {d.last_report_at && ` · libre ${formatRelativeTime(d.last_report_at)}`}
                   </p>
                 </div>

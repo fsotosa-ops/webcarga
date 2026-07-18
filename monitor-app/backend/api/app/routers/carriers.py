@@ -378,7 +378,8 @@ async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(r
     operational_status) — solo permitido si la empresa no tiene datos
     asociados todavía, para poder limpiar altas por error/duplicadas sin
     riesgo de perder datos reales. Si tiene cualquier rastro real (roster,
-    pólizas, contactos, generador de carga, o un compliance_record ya
+    pólizas, contactos, generador de carga, viajes vinculados
+    (app.trip_fleet_links, FK real desde Fase 1.5), o un compliance_record ya
     tocado por el usuario/con archivo), se bloquea con 409 y se indica qué
     la bloquea — la vía para esos casos sigue siendo 'Dar de baja'.
     Los compliance_records MISSING auto-sembrados por trg_reconcile_new_carrier
@@ -408,6 +409,10 @@ async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(r
                 blockers.append("pólizas de seguro")
             if await conn.fetchval("SELECT 1 FROM public.carrier_shippers WHERE carrier_id = $1 LIMIT 1", carrier_id):
                 blockers.append("generadores de carga vinculados")
+            if await conn.fetchval(
+                "SELECT 1 FROM app.trip_fleet_links WHERE carrier_id = $1 LIMIT 1", carrier_id,
+            ):
+                blockers.append("viajes vinculados")
             if await conn.fetchval(
                 "SELECT 1 FROM public.contacts WHERE entity_type = 'CARRIER' AND entity_id = $1 LIMIT 1",
                 carrier_id,

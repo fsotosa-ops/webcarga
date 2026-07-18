@@ -123,12 +123,40 @@
 
 `pytest` 177 passed, `tsc --noEmit` limpio, `vitest` 337 passed, `npm run build` exitoso.
 
+#### Próximo paso exacto (histórico — ver ronda siguiente para el estado real de Fase 1.5)
+1. [x] Fase 1.5 (hardening estructural de `trip_fleet_links`) — **implementada esta jornada**, ver ronda siguiente.
+2. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage — sigue vigente, sigue siendo acción del usuario.
+3. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — diseño de alto nivel ya en `trips_context.md` §13.5, requiere su propia exploración dedicada antes de implementar. No iniciar sin pedido explícito.
+4. [ ] Antes de la Fase 2, reforzar la red de tests dbt — reduce el riesgo de repetir el patrón de incidente ya visto 5 veces en este proyecto.
+5. [ ] Cargar compliance real de conductores (prerrequisito para cualquier alerta de documentación, sigue en `MISSING` 100%) antes de invertir en el bootstrap de `driver_id` vía `raw_bd_ot`.
+6. [ ] F30_MULTAS — sigue sin confirmar.
+
+---
+
+### 2026-07-17 (cont.) — Novena ronda: hardening del modelo de datos del Diario, Fase 1.5 (FK reales, reconciliación TMS↔manual, catálogo de no asignación) + plan maestro H2.6
+
+**Motivación**: al preguntar si `trip_fleet_links` (ya repuntada a `public.carriers` en Fase 1) era realmente "estándar", surgieron 4 gaps estructurales reales: sin FK real en `carrier_id`/`driver_id`, vehículo como texto libre sin vínculo a `public.assets`, `driver_id` como capacidad muerta (0/609, agregado en Fase 1 pero sin ningún flujo de frontend que lo mandara), y sin mecanismo de reconciliación cuando ops vincula a mano y el TMS después reporta otro dato. El usuario decidió cerrar esto como Fase 1.5, antes de la higienización de nombres, y absorber ahí el rename `transporter_id`→`carrier_id` (evita tocar la tabla dos veces). Se consolidó además un **plan maestro H2.6** (`/Users/usuario/.claude/plans/necesito-que-actues-como-rustling-river.md`) cruzando todo lo hecho/planificado/encolado contra este archivo, incluyendo una fase nueva de catálogo de locales por generador de carga (`public.locations`, polimórfica) para resolver el pendiente de clasificación RM/Zona Cero de la minuta UAT — bloqueada hasta que el usuario cree `bronze.raw_shipper_locations`, no implementada todavía.
+
+**Verificado en vivo antes de migrar** (no asumido): 609 links, 1 huérfano (Agro Mist Spa, no onboardeada), `driver_id` 0/609, `tractor_plate` 606/609 (99.5%) matchea por patente contra `public.assets.license_plate`, `trailer_plate` 1/609 (matchea). Post-migración: 0 huérfanos, 4 FK reales activas.
+
+**Implementado, con tests reales (backend 182/182, frontend `tsc` limpio + `vitest` 340/340, `npm run build` exitoso, verificado en vivo por SQL):**
+- Migración `trip_fleet_links_carrier_id_and_asset_fks`: limpia el huérfano, renombra `transporter_id`→`carrier_id`, agrega `tractor_asset_id`/`trailer_asset_id` con bootstrap por patente, agrega 4 FK reales (`carrier_id`→`public.carriers`, `driver_id`→`public.drivers`, `tractor_asset_id`/`trailer_asset_id`→`public.assets`).
+- Backend (`routers/trips.py`): rename mecánico completo (`_TRIP_SELECT`/`_TRIP_FROM`/`available_drivers`/`assign_fleet_link`/`_insert_trip`) — alias `transporter`→`carrier_name`, `transporter_tms`→`carrier_name_tms`, `driver_rut`→`driver_tax_id` (solo en la lectura resuelta; los campos de creación manual `driver_rut`/`transporter_name` quedaron igual, son texto libre sin equivalente resuelto). `assign_fleet_link`/`_insert_trip`/`TripCreateBody` ahora aceptan y persisten `driver_id`/`tractor_asset_id`/`trailer_asset_id` opcionales — un viaje creado a mano y un viaje TMS vinculado a mano después escriben la misma estructura en `trip_fleet_links`.
+- **Corrección de correctness real, no cosmética**: `DELETE /carriers/{id}` no chequeaba `trip_fleet_links` — con el FK real agregado, borrar una empresa con viajes vinculados habría roto con un 500 crudo de violación de FK en vez del 409 legible ya establecido. Agregado el chequeo + test de regresión.
+- **Reconciliación TMS↔manual** (Fase 1.5b): `_TRIP_SELECT` expone ahora `driver_name_tms`/`tractor_plate_tms` (valor crudo del TMS, sin resolver contra el vínculo manual). Frontend (`TripSlideOver.tsx`): hint ámbar "TMS reporta: X" cuando hay vínculo manual y el TMS diverge, con botón "Usar dato del TMS" que reusa `removeFleetLink` (sin endpoint nuevo). Backend: nota de bitácora automática (`Divergencia TMS: ...`) la primera vez que se detecta cada valor divergente — dedupe contra la última nota de divergencia ya registrada, no reescribe en cada `GET`.
+- Frontend (`TripSlideOver.tsx`): `CarrierAssignSection` (renombrado desde `TransporterAssignSection`) ahora es un flujo de 2 pasos — buscar/elegir empresa → cargar roster (`listDrivers`/`listAssets`) → dropdowns opcionales "Conductor"/"Tracto" → confirmar. Antes solo mandaba el nombre en texto libre a pesar de ya fetchear el roster.
+- **Catálogo `app.unassigned_reasons`** (Fase 1.5d): tabla nueva (`id`/`label`/`sort_order`/`active`, mismo patrón que `trip_statuses`/`temperature_ranges`) sembrada con 6 motivos (pana, mantención, sin conductor, no se presentó, médico, en abstención). Columna `unassigned_reason_id` agregada a `app.trips`/`app.trips_manual`, expuesta en `GET /trips/meta`, editable vía `PATCH /trips/{id}`, dropdown en `TripSlideOver.tsx` visible solo cuando el viaje no está asignado. `app_trips.sql` actualizado (columna protegida vía `merge_exclude_columns`, mismo patrón que `cag_inicio_at`) y sincronizado a Mage con el procedimiento seguro ya establecido (checkout aislado en `scratchpad/mage-sync`, diff, edición, `sync_status`, `sync_local_to_remote`).
+
+**Migraciones aplicadas y versionadas esta sesión**: `20260717210000_trip_fleet_links_carrier_id_and_asset_fks.sql`, `20260717211500_trip_unassigned_reasons_catalog.sql`.
+
+**Explícitamente fuera de esta fase**: catálogo de locales/`public.locations` (diseñado en el plan maestro, bloqueado hasta que el usuario cree `bronze.raw_shipper_locations`), higienización español→inglés de `app.trips` (Fase siguiente, ya planificada), vista dedicada "no asignados" con conteo (solo se resolvió el campo + catálogo, no la UI de vista/tab).
+
 #### Próximo paso exacto
-1. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (pendiente de la ronda anterior, sigue vigente) y verificar en vivo que los campos híbridos sobreviven a la primera corrida.
-2. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — diseño de alto nivel ya en `trips_context.md` §13.5, requiere su propia exploración dedicada antes de implementar. No iniciar sin pedido explícito.
-3. [ ] Antes de la Fase 2, reforzar la red de tests dbt (accionable (c) de `trips_context.md`) — reduce el riesgo de repetir el patrón de incidente ya visto 5 veces en este proyecto (error de contrato de schema entre capas sin tests que lo atajen).
-4. [ ] Cargar compliance real de conductores (prerrequisito para cualquier alerta de documentación, sigue en `MISSING` 100%) antes de invertir en el bootstrap de `driver_id` vía `raw_bd_ot`.
-5. [ ] Catálogo configurable de "motivo de no asignación" — sigue pendiente.
+1. [ ] Higienización de nomenclatura: `app.trips`/`app.trips_manual` español→inglés (`activo`→`is_active`, `trabajando`→`is_working`, `asignado`→`is_assigned`, `primera_vuelta`→`is_first_leg`, `estado_manual`→`manual_status`, `observaciones`→`notes`, `comentarios`→`comments`) + recrear `app.protect_manual_overrides` con los nombres nuevos. Plan detallado en el plan maestro H2.6.
+2. [ ] Catálogo de locales por generador de carga (`public.locations`, polimórfica `entity_type`/`entity_id`) — bloqueado hasta que el usuario cree `bronze.raw_shipper_locations`; diseño completo (tabla real con upsert `COALESCE`, no vista) ya en el plan maestro.
+3. [ ] Reanudar el pipeline `batch_tms_monitor_trips` en Mage (sigue vigente, acción del usuario).
+4. [ ] Fase 2 del hardening (normalizar `stops` a tabla relacional) — sigue encolada, sin iniciar.
+5. [ ] Cargar compliance real de conductores — sigue en `MISSING` 100%.
 6. [ ] F30_MULTAS — sigue sin confirmar.
 7. [ ] Commit/push de esta ronda — pendiente de confirmación del usuario.
 

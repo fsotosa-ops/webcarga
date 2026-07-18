@@ -21,50 +21,143 @@ import { TripNotesFeed } from './TripNotesFeed'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
-// ── TransporterAssignSection ──────────────────────────────────────────────────
+// ── CarrierAssignSection ──────────────────────────────────────────────────────
 //
 // Búsqueda debounced de empresa (public.carriers) — mismo patrón que
-// TransferModal.tsx. Reactivado 2026-07-17: trip_fleet_links.transporter_id
+// TransferModal.tsx. Reactivado 2026-07-17: trip_fleet_links.carrier_id
 // ya resuelve contra public.carriers.id (repuntado desde la tabla legacy
-// app.transporter_profiles, ver migración migrate_trip_fleet_links_to_carriers).
+// app.transporter_profiles, ver migración migrate_trip_fleet_links_to_carriers;
+// columna renombrada transporter_id→carrier_id en Fase 1.5).
 
-function TransporterAssignSection({
-  tripId, currentTransporter, onAssigned,
+type PendingCarrier = { id: string; business_name: string | null }
+
+function CarrierAssignSection({
+  tripId, currentCarrierName, onAssigned,
 }: {
   tripId: string
-  currentTransporter: string | null
+  currentCarrierName: string | null
   onAssigned: (t: Trip) => void
 }) {
-  const [q, setQ]                   = useState('')
-  const [assigning, setAssigning]   = useState<string | null>(null)
-  const [err, setErr]               = useState<string | null>(null)
+  const [q, setQ]                             = useState('')
+  const [pending, setPending]                 = useState<PendingCarrier | null>(null)
+  const [driverId, setDriverId]                = useState('')
+  const [tractorAssetId, setTractorAssetId]    = useState('')
+  const [assigning, setAssigning]             = useState(false)
+  const [err, setErr]                         = useState<string | null>(null)
   const qDebounced = useDebouncedValue(q, 250)
 
-  const query = useQuery({
+  const searchQuery = useQuery({
     queryKey: ['carriers', 'fleet-link-search', qDebounced],
     queryFn: () => carriersApi.list({ q: qDebounced, limit: 10 }),
-    enabled: qDebounced.length >= 2,
+    enabled: qDebounced.length >= 2 && !pending,
   })
-  const results = query.data?.data ?? []
+  const results = searchQuery.data?.data ?? []
 
-  async function handleAssign(carrierId: string) {
-    setAssigning(carrierId); setErr(null)
+  // Roster de la empresa preseleccionada — mismo patrón que EmpresaSelector
+  // en TripCreateSlideOver.tsx, para poder vincular driver_id/tractor_asset_id
+  // reales en vez de solo el nombre en texto libre.
+  const rosterQuery = useQuery({
+    queryKey: ['carriers', pending?.id, 'roster'],
+    queryFn: async () => {
+      const [drivers, assets] = await Promise.all([
+        carriersApi.listDrivers(pending!.id),
+        carriersApi.listAssets(pending!.id),
+      ])
+      return { drivers, assets }
+    },
+    enabled: !!pending,
+  })
+  const drivers  = rosterQuery.data?.drivers ?? []
+  const vehicles = rosterQuery.data?.assets ?? []
+
+  function handlePick(c: { id: string; business_name: string; tax_id: string }) {
+    setPending({ id: c.id, business_name: c.business_name })
+    setDriverId('')
+    setTractorAssetId('')
+    setErr(null)
+  }
+
+  async function handleConfirm() {
+    if (!pending) return
+    setAssigning(true); setErr(null)
+    const driver  = drivers.find(d => d.id === driverId)
+    const tractor = vehicles.find(v => v.id === tractorAssetId)
     try {
-      const updated = await tripsApi.assignFleetLink(tripId, { transporter_id: carrierId })
+      const updated = await tripsApi.assignFleetLink(tripId, {
+        carrier_id:        pending.id,
+        driver_id:         driverId || undefined,
+        tractor_asset_id:  tractorAssetId || undefined,
+        driver_name:       driver?.full_name ?? undefined,
+        tractor_plate:     tractor?.license_plate ?? undefined,
+      })
       onAssigned(updated)
-      setQ('')
+      setQ(''); setPending(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al vincular')
     } finally {
-      setAssigning(null)
+      setAssigning(false)
     }
+  }
+
+  if (pending) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-lg px-3 py-2">
+          <p className="text-[11px] font-semibold text-slate-800 truncate">{pending.business_name ?? '—'}</p>
+          <button type="button" onClick={() => setPending(null)} className="text-[10px] text-gray-400 hover:text-gray-600 shrink-0 ml-2">
+            Cambiar
+          </button>
+        </div>
+        {rosterQuery.isFetching ? (
+          <p className="text-[11px] text-gray-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Cargando roster…</p>
+        ) : (
+          <>
+            {drivers.length > 0 && (
+              <select
+                value={driverId}
+                onChange={e => setDriverId(e.target.value)}
+                aria-label="Conductor (opcional)"
+                className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
+              >
+                <option value="">Conductor (opcional)</option>
+                {drivers.map(d => (
+                  <option key={d.id} value={d.id}>{d.full_name ?? '—'} · {d.tax_id ?? ''}</option>
+                ))}
+              </select>
+            )}
+            {vehicles.length > 0 && (
+              <select
+                value={tractorAssetId}
+                onChange={e => setTractorAssetId(e.target.value)}
+                aria-label="Tracto (opcional)"
+                className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
+              >
+                <option value="">Tracto (opcional)</option>
+                {vehicles.map(v => (
+                  <option key={v.id} value={v.id}>{v.license_plate ?? '—'} · {v.asset_type ?? ''}</option>
+                ))}
+              </select>
+            )}
+          </>
+        )}
+        <button
+          type="button"
+          disabled={assigning}
+          onClick={handleConfirm}
+          className="w-full text-xs font-semibold bg-accent text-white rounded-lg py-1.5 hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+        >
+          {assigning ? <Loader2 size={12} className="animate-spin" /> : 'Vincular'}
+        </button>
+        {err && <p className="text-[11px] text-red-500">{err}</p>}
+      </div>
+    )
   }
 
   return (
     <div className="space-y-2">
-      {currentTransporter && (
+      {currentCarrierName && (
         <p className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded border border-border/60">
-          TMS reporta: <span className="font-medium text-gray-600">{currentTransporter}</span>
+          TMS reporta: <span className="font-medium text-gray-600">{currentCarrierName}</span>
         </p>
       )}
       <div className="relative">
@@ -80,28 +173,26 @@ function TransporterAssignSection({
       </div>
       {q.length >= 2 && (
         <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/60">
-          {query.isFetching && (
+          {searchQuery.isFetching && (
             <p className="px-3 py-2 text-center text-[11px] text-gray-400 flex items-center justify-center gap-1.5">
               <Loader2 size={11} className="animate-spin" /> Buscando…
             </p>
           )}
-          {!query.isFetching && results.length === 0 && (
+          {!searchQuery.isFetching && results.length === 0 && (
             <p className="px-3 py-2 text-center text-[11px] text-gray-400">Sin resultados</p>
           )}
           {results.map(c => (
             <button
               key={c.id}
               type="button"
-              disabled={assigning === c.id}
-              onClick={() => handleAssign(c.id)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors disabled:opacity-50"
+              onClick={() => handlePick(c)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
             >
               <Building2 size={12} className="text-gray-400 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-semibold text-text-primary truncate">{c.business_name}</p>
                 <p className="text-[10px] text-gray-400 font-mono">{c.tax_id}</p>
               </div>
-              {assigning === c.id && <Loader2 size={11} className="animate-spin shrink-0" />}
             </button>
           ))}
         </div>
@@ -146,6 +237,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const [copied, setCopied]                     = useState(false)
   const [showEstadoSelect, setShowEstadoSelect] = useState(false)
   const [clearingOverride, setClearingOverride] = useState(false)
+  const [reasonSaving, setReasonSaving]         = useState(false)
   const [techDetailOpen, setTechDetailOpen]     = useState(false)
   const [datosOpen, setDatosOpen]               = useState(false)
   const [unlinkErr, setUnlinkErr]               = useState<string | null>(null)
@@ -525,6 +617,36 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               )}
             </div>
 
+            {/* Motivo de no asignación — solo visible mientras el viaje no está
+                asignado (Fase 1.5d); catálogo editable en app.unassigned_reasons */}
+            {!trip.asignado && (meta?.unassigned_reasons?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Motivo de no asignación</p>
+                <select
+                  value={trip.unassigned_reason_id ?? ''}
+                  disabled={reasonSaving}
+                  onChange={async e => {
+                    const value = e.target.value
+                    setReasonSaving(true)
+                    try {
+                      const updated = await tripsApi.patch(trip.id, { unassigned_reason_id: value } as TripPatch)
+                      onSaved(updated)
+                    } catch {
+                      // best-effort — el select vuelve al valor real del trip en el próximo render
+                    } finally {
+                      setReasonSaving(false)
+                    }
+                  }}
+                  className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                >
+                  <option value="">— Sin especificar —</option>
+                  {meta!.unassigned_reasons.map(r => (
+                    <option key={r.id} value={r.id}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Indicadores — solo para viajes manuales */}
             {isManualTrip && (
               <div>
@@ -575,12 +697,12 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
                 <Building2 size={10} /> Empresa transportista
               </p>
-              {trip.transporter_profile_id ? (
+              {trip.carrier_id ? (
                 <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-800 truncate">{trip.transporter ?? '—'}</p>
-                    {trip.transporter_tms && (
-                      <p className="text-[9px] text-gray-400 mt-0.5 truncate">TMS: {trip.transporter_tms}</p>
+                    <p className="text-xs font-semibold text-slate-800 truncate">{trip.carrier_name ?? '—'}</p>
+                    {trip.carrier_name_tms && (
+                      <p className="text-[9px] text-gray-400 mt-0.5 truncate">TMS: {trip.carrier_name_tms}</p>
                     )}
                   </div>
                   <button
@@ -590,7 +712,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                       setUnlinking(true); setUnlinkErr(null)
                       try {
                         await tripsApi.removeFleetLink(trip.id)
-                        onSaved({ ...trip, transporter_profile_id: null, fleet_link_id: null })
+                        onSaved({ ...trip, carrier_id: null, fleet_link_id: null })
                       } catch (e) {
                         setUnlinkErr(e instanceof Error ? e.message : 'Error al desvincular')
                       } finally {
@@ -603,13 +725,51 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   </button>
                 </div>
               ) : (
-                <TransporterAssignSection
+                <CarrierAssignSection
                   tripId={trip.id}
-                  currentTransporter={trip.transporter_tms}
+                  currentCarrierName={trip.carrier_name_tms}
                   onAssigned={onSaved}
                 />
               )}
               {unlinkErr && <p className="text-xs text-red-500 mt-1">{unlinkErr}</p>}
+              {/* Reconciliación TMS↔manual (Fase 1.5b): si hay vínculo manual y el
+                  TMS reporta un conductor/patente distinto al vinculado, avisar y
+                  ofrecer revertir — nunca sobrescribir automáticamente. */}
+              {!!trip.fleet_link_id && (
+                (trip.driver_name_tms && trip.driver_name_tms !== trip.driver_name) ||
+                (trip.tractor_plate_tms && trip.tractor_plate_tms !== trip.tractor_plate)
+              ) && (
+                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+                  {trip.driver_name_tms && trip.driver_name_tms !== trip.driver_name && (
+                    <p className="text-[10px] text-amber-700">
+                      TMS reporta conductor: <span className="font-semibold">{trip.driver_name_tms}</span>
+                    </p>
+                  )}
+                  {trip.tractor_plate_tms && trip.tractor_plate_tms !== trip.tractor_plate && (
+                    <p className="text-[10px] text-amber-700">
+                      TMS reporta patente: <span className="font-semibold">{trip.tractor_plate_tms}</span>
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={unlinking}
+                    onClick={async () => {
+                      setUnlinking(true); setUnlinkErr(null)
+                      try {
+                        await tripsApi.removeFleetLink(trip.id)
+                        onSaved({ ...trip, carrier_id: null, fleet_link_id: null })
+                      } catch (e) {
+                        setUnlinkErr(e instanceof Error ? e.message : 'Error al desvincular')
+                      } finally {
+                        setUnlinking(false)
+                      }
+                    }}
+                    className="text-[10px] font-semibold text-amber-700 hover:text-amber-900 underline disabled:opacity-50"
+                  >
+                    {unlinking ? 'Revirtiendo…' : 'Usar dato del TMS'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Bitácora — feed cronológico con historial */}
@@ -740,7 +900,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
                   <MetaField label="Origen" value={trip.origin ?? '—'} />
                   <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
-                  <MetaField label="EETT TMS" value={trip.transporter_tms ?? '—'} />
+                  <MetaField label="EETT TMS" value={trip.carrier_name_tms ?? '—'} />
                   {trip.milestone_status && (
                     <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
                   )}

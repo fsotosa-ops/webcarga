@@ -354,7 +354,7 @@ function PlateCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }
   )
 }
 
-type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'transporter' | 'client_name' | 'current_status' | 'source_system_trip_id'
+type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'carrier_name' | 'client_name' | 'current_status' | 'source_system_trip_id'
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: 'asc' | 'desc' }) {
   if (sortKey !== col) return <ArrowUpDown size={10} className="inline ml-0.5 text-gray-300" />
@@ -415,7 +415,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
           const isActive      = trip.id === selectedId
           const primaryPlate  = trip.tractor_plate ?? trip.trailer_plate ?? null
           const plateAlert    = alertSummary?.plates[primaryPlate ?? ''] as AlertStatus | undefined
-          const driverAlert   = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
+          const driverAlert   = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
           const currentStatus = trip.estado_manual ?? trip.current_status
 
           return (
@@ -474,8 +474,8 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
 
               {/* fila 3: EETT + origen */}
               <div className="flex items-center gap-1.5 mt-1 text-[10px] text-gray-400 min-w-0">
-                {trip.transporter_profile_id
-                  ? <span className="font-medium text-slate-500 truncate max-w-[160px]">{trip.transporter}</span>
+                {trip.carrier_id
+                  ? <span className="font-medium text-slate-500 truncate max-w-[160px]">{trip.carrier_name}</span>
                   : <span className="italic">sin EETT</span>}
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
@@ -510,7 +510,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               <th onClick={() => handleSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
               <th onClick={() => handleSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
-              <th onClick={() => handleSort('transporter')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="transporter" sortKey={sortKey} sortDir={sortDir} /></th>
+              <th onClick={() => handleSort('carrier_name')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="carrier_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th onClick={() => handleSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<SortIcon col="client_name" sortKey={sortKey} sortDir={sortDir} /></th>
               <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
               <th className="px-3 py-2.5 text-left">Destinos</th>
@@ -523,7 +523,7 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
             {sorted.map((trip, i) => {
               const isActive    = trip.id === selectedId
               const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
-              const driverAlert = alertSummary?.driver_ruts[trip.driver_rut ?? ''] as AlertStatus | undefined
+              const driverAlert = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
               const currentStatus = trip.estado_manual ?? trip.current_status
 
               return (
@@ -606,9 +606,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
 
                   {/* EETT */}
                   <td className="px-3 py-2.5">
-                    {trip.transporter_profile_id ? (
+                    {trip.carrier_id ? (
                       <span className="text-xs font-medium text-slate-700 leading-tight block truncate max-w-[120px]">
-                        {trip.transporter}
+                        {trip.carrier_name}
                       </span>
                     ) : (
                       <span className="text-[10px] text-gray-300 italic">sin vincular</span>

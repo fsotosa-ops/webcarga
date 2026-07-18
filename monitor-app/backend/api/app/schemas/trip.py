@@ -20,6 +20,8 @@ class TripPatch(BaseModel):
     # ver migración 20260717190246_trip_hybrid_date_fields
     cag_inicio_at:          Optional[str]  = None
     cag_fin_at:             Optional[str]  = None
+    # Motivo de no asignación (app.unassigned_reasons) — Fase 1.5d
+    unassigned_reason_id:   Optional[str]  = None
 
     def sent_fields(self) -> list[str]:
         return list(self.model_dump(exclude_none=True).keys())

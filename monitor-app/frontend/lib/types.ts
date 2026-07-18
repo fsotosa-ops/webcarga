@@ -220,13 +220,18 @@ export type TemperatureRangeMeta = {
   max_c:      number
 }
 
+export type UnassignedReasonMeta = {
+  id:    string
+  label: string
+}
+
 /** Conductor que terminó todos sus viajes del día — reasignable */
 export type AvailableDriver = {
   driver_name:    string
   driver_rut:     string | null
   driver_phone:   string | null
   tractor_plate:  string | null
-  transporter:    string | null
+  carrier_name:   string | null
   trips_total:    number
   last_report_at: string | null
 }
@@ -245,6 +250,7 @@ export type TripsMeta = {
   alert_thresholds:    AlertThresholdMeta[]
   csv_columns:         CSVColumnDef[]
   temperature_ranges:  TemperatureRangeMeta[]
+  unassigned_reasons:  UnassignedReasonMeta[]
   monitor_alert_rules?: MonitorAlertRules | null
 }
 
@@ -300,7 +306,10 @@ export type TripCreatePayload = {
   driver_rut?:            string | null
   driver_phone?:          string | null
   transporter_name?:      string | null
-  transporter_profile_id?:string | null
+  carrier_id?:            string | null
+  driver_id?:             string | null
+  tractor_asset_id?:      string | null
+  trailer_asset_id?:      string | null
 }
 
 // ── Trips (app.trips via FastAPI) ──────────────────────────────────
@@ -339,12 +348,17 @@ export type Trip = {
   status_reported_at:     string | null
   current_status:         string | null
   tractor_plate:          string | null
+  /** Valor crudo del TMS (sin resolver contra el vínculo manual) — permite
+   *  detectar divergencia cuando ops vinculó a mano y el TMS reporta otro
+   *  dato después. Ver reconciliación TMS↔manual, Fase 1.5b. */
+  tractor_plate_tms:      string | null
   trailer_plate:          string | null
   driver_name:            string | null
-  driver_rut:             string | null
+  driver_name_tms:        string | null
+  driver_tax_id:          string | null
   driver_phone:           string | null
-  transporter:            string | null   // linked company (tp.business_name) only
-  transporter_tms:        string | null   // TMS-reported name (fleet->>'transporter_name_tms')
+  carrier_name:           string | null   // linked company (public.carriers.business_name) only
+  carrier_name_tms:       string | null   // TMS-reported name (fleet->>'transporter_name_tms')
   origin:                 string | null
   /** Ubicación complementaria asignada desde el Monitor (dropdown Chile) —
    *  el pipeline nunca la escribe */
@@ -363,8 +377,13 @@ export type Trip = {
   estado_manual:          string | null
   observaciones:          string | null
   comentarios:            string | null
+  /** Motivo de no asignación (app.unassigned_reasons) — Fase 1.5d */
+  unassigned_reason_id:   string | null
   fleet_link_id:          string | null
-  transporter_profile_id: string | null
+  carrier_id:             string | null
+  driver_id:              string | null
+  tractor_asset_id:       string | null
+  trailer_asset_id:       string | null
   manually_edited_fields: string[]
   edited_at:              string | null
   edited_by:              string | null  // nombre/email ya resueltos por el backend, nunca un uuid

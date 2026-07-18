@@ -41,13 +41,13 @@ def test_trip_from_resolves_against_public_carriers_not_legacy_transporter_profi
 
 # ── POST /trips/{id}/fleet-link ──────────────────────────────────────────────
 
-def test_assign_fleet_link_inserts_transporter_and_driver_id():
+def test_assign_fleet_link_inserts_carrier_and_driver_id():
     pool = make_pool()
     pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={
-        "transporter_id": "c1", "driver_id": "d1", "tractor_plate": "ABCD12",
+        "carrier_id": "c1", "driver_id": "d1", "tractor_plate": "ABCD12",
     })
     assert res.status_code == 200
 
@@ -56,12 +56,28 @@ def test_assign_fleet_link_inserts_transporter_and_driver_id():
     assert "c1" in insert.args and "d1" in insert.args
 
 
+def test_assign_fleet_link_accepts_tractor_and_trailer_asset_id():
+    pool = make_pool()
+    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/trips/trip-1/fleet-link", json={
+        "carrier_id": "c1", "tractor_asset_id": "a1", "trailer_asset_id": "a2",
+    })
+    assert res.status_code == 200
+
+    insert = next(c for c in pool.fetchval.call_args_list if "INSERT INTO app.trip_fleet_links" in c.args[0])
+    assert "tractor_asset_id" in insert.args[0]
+    assert "trailer_asset_id" in insert.args[0]
+    assert "a1" in insert.args and "a2" in insert.args
+
+
 def test_assign_fleet_link_looks_up_business_name_from_public_carriers():
     pool = make_pool()
     pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
     client = make_client(pool)
 
-    res = client.post("/api/v1/trips/trip-1/fleet-link", json={"transporter_id": "c1"})
+    res = client.post("/api/v1/trips/trip-1/fleet-link", json={"carrier_id": "c1"})
     assert res.status_code == 200
 
     lookup = next(c for c in pool.fetchval.call_args_list if "business_name" in c.args[0])
@@ -69,7 +85,7 @@ def test_assign_fleet_link_looks_up_business_name_from_public_carriers():
     assert "app.transporter_profiles" not in lookup.args[0]
 
 
-def test_assign_fleet_link_requires_transporter_id():
+def test_assign_fleet_link_requires_carrier_id():
     pool = make_pool()
     pool.fetchval.return_value = "trip-1"  # exists-check pasa, llega a la validación
     client = make_client(pool)
@@ -82,7 +98,7 @@ def test_assign_fleet_link_works_without_driver_id():
     pool = make_pool()
     pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
     client = make_client(pool)
-    res = client.post("/api/v1/trips/trip-1/fleet-link", json={"transporter_id": "c1"})
+    res = client.post("/api/v1/trips/trip-1/fleet-link", json={"carrier_id": "c1"})
     assert res.status_code == 200
     insert = next(c for c in pool.fetchval.call_args_list if "INSERT INTO app.trip_fleet_links" in c.args[0])
     assert None in insert.args  # driver_id enviado como NULL

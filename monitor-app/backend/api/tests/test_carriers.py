@@ -499,7 +499,7 @@ def test_delete_carrier_blocked_when_has_drivers():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.side_effect = [1, 1, None, None, None, None, None]  # carrier existe, tiene driver_assignments
+    conn.fetchval.side_effect = [1, 1, None, None, None, None, None, None]  # carrier existe, tiene driver_assignments
     client = make_client(pool)
 
     res = client.delete("/api/v1/carriers/c1")
@@ -508,12 +508,30 @@ def test_delete_carrier_blocked_when_has_drivers():
     assert "conductores" in res.json()["detail"]
 
 
+def test_delete_carrier_blocked_when_has_linked_trips():
+    """Fase 1.5: trip_fleet_links.carrier_id ahora es FK real hacia
+    public.carriers — sin este chequeo, borrar una empresa con viajes
+    vinculados rompería con un 500 crudo de violación de FK en vez de un
+    409 legible."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    # carrier existe, sin conductores/equipos/pólizas/generadores, con viaje vinculado
+    conn.fetchval.side_effect = [1, None, None, None, None, 1, None, None]
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/carriers/c1")
+
+    assert res.status_code == 409
+    assert "viajes" in res.json()["detail"]
+
+
 def test_delete_carrier_blocked_when_has_uploaded_documents():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    # carrier existe, sin conductores/equipos/pólizas/generadores/contactos, pero con documentos cargados
-    conn.fetchval.side_effect = [1, None, None, None, None, None, 1]
+    # carrier existe, sin conductores/equipos/pólizas/generadores/viajes/contactos, pero con documentos cargados
+    conn.fetchval.side_effect = [1, None, None, None, None, None, None, 1]
     client = make_client(pool)
 
     res = client.delete("/api/v1/carriers/c1")
@@ -530,7 +548,7 @@ def test_delete_carrier_only_blocks_on_active_assignments():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.side_effect = [1, None, None, None, None, None, None]
+    conn.fetchval.side_effect = [1, None, None, None, None, None, None, None]
     client = make_client(pool)
 
     client.delete("/api/v1/carriers/c1")
@@ -545,12 +563,12 @@ def test_delete_carrier_excludes_untouched_missing_compliance_records():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.side_effect = [1, None, None, None, None, None, None]
+    conn.fetchval.side_effect = [1, None, None, None, None, None, None, None]
     client = make_client(pool)
 
     client.delete("/api/v1/carriers/c1")
 
-    compliance_check_sql = conn.fetchval.call_args_list[6].args[0]
+    compliance_check_sql = conn.fetchval.call_args_list[7].args[0]
     assert "status != 'MISSING'" in compliance_check_sql
     assert "file_url IS NOT NULL" in compliance_check_sql
     assert "expiration_date IS NOT NULL" in compliance_check_sql
@@ -560,7 +578,7 @@ def test_delete_carrier_succeeds_when_no_associated_data():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.side_effect = [1, None, None, None, None, None, None]
+    conn.fetchval.side_effect = [1, None, None, None, None, None, None, None]
     client = make_client(pool)
 
     res = client.delete("/api/v1/carriers/c1")

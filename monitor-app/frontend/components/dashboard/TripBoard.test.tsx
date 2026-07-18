@@ -10,11 +10,11 @@ vi.mock('@/lib/api/trips', () => ({
 function makeTrip(id: string, currentStatus: string): Trip {
   return {
     id, source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',
-    status_reported_at: null, current_status: currentStatus, tractor_plate: id.toUpperCase(), trailer_plate: null,
-    driver_name: 'Conductor', driver_rut: null, driver_phone: null, transporter: null, transporter_tms: null,
+    status_reported_at: null, current_status: currentStatus, tractor_plate: id.toUpperCase(), tractor_plate_tms: null, trailer_plate: null,
+    driver_name: 'Conductor', driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
     origin: null, cargo_type: null, stops: [], activo: true, trabajando: false, asignado: true,
-    primera_vuelta: false, estado_manual: null, observaciones: null, comentarios: null,
-    fleet_link_id: null, transporter_profile_id: null, manually_edited_fields: [], edited_at: null,
+    primera_vuelta: false, estado_manual: null, observaciones: null, comentarios: null, unassigned_reason_id: null,
+    fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
     edited_by: null, updated_at: null, created_at: null,
     source_system_trip_id: null, milestone_status: null, pipeline_updated_at: null,
   }
@@ -62,7 +62,7 @@ describe('TripBoard', () => {
     const meta = {
       statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
       operational_states: [{ id: 'op-uuid-1', label: 'En panne confirmada', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
-      tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [],
+      tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [],
     }
     const trip = { ...makeTrip('a', 'ORIGEN'), estado_manual: 'op-uuid-1' }
     render(<TripBoard trips={[trip]} groups={groups} meta={meta} onSaved={vi.fn()} onSelect={vi.fn()} />)

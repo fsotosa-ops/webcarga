@@ -19,16 +19,16 @@ vi.mock('@/lib/api/trips', () => ({
   },
 }))
 vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { list: vi.fn() },
+  carriersApi: { list: vi.fn(), listDrivers: vi.fn(), listAssets: vi.fn() },
 }))
 
 const baseTrip: Trip = {
   id: 't1', source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',
-  status_reported_at: null, current_status: 'ORIGEN', tractor_plate: 'ABCD12', trailer_plate: null,
-  driver_name: 'Juan Perez', driver_rut: null, driver_phone: null, transporter: null, transporter_tms: null,
+  status_reported_at: null, current_status: 'ORIGEN', tractor_plate: 'ABCD12', tractor_plate_tms: null, trailer_plate: null,
+  driver_name: 'Juan Perez', driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
   origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], activo: true, trabajando: false, asignado: true,
-  primera_vuelta: false, estado_manual: null, observaciones: null, comentarios: null,
-  fleet_link_id: null, transporter_profile_id: null, manually_edited_fields: [], edited_at: null,
+  primera_vuelta: false, estado_manual: null, observaciones: null, comentarios: null, unassigned_reason_id: null,
+  fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
   edited_by: null, created_at: null,
   updated_at: null, source_system_trip_id: '2000711', milestone_status: null, pipeline_updated_at: null,
 }
@@ -58,6 +58,8 @@ beforeEach(() => {
   vi.mocked(tripsApi.listNotes).mockReset().mockResolvedValue([])
   vi.mocked(tripsApi.addNote).mockReset()
   vi.mocked(carriersApi.list).mockReset().mockResolvedValue({ data: [], count: 0, page: 1, limit: 10 } as never)
+  vi.mocked(carriersApi.listDrivers).mockReset().mockResolvedValue([])
+  vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue([])
 })
 
 describe('TripSlideOver — hero (la historia del viaje)', () => {
@@ -147,24 +149,56 @@ describe('TripSlideOver — layout y a11y', () => {
 })
 
 describe('TripSlideOver — vínculo de empresa (public.carriers)', () => {
-  it('searches carriers and calls assignFleetLink with the selected carrier id', async () => {
+  it('searches carriers, then confirms via Vincular to call assignFleetLink with the selected carrier id', async () => {
     vi.mocked(carriersApi.list).mockResolvedValue({
       data: [{ id: 'c1', business_name: 'Transportes Sur Spa', tax_id: '76111222-3' }],
       count: 1, page: 1, limit: 10,
     } as never)
-    vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, transporter_profile_id: 'c1', transporter: 'Transportes Sur Spa' })
+    vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
+    renderSlideOver(baseTrip)
+
+    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Transportes' } })
+    fireEvent.click(await screen.findByText('Transportes Sur Spa'))
+    fireEvent.click(await screen.findByText('Vincular'))
+
+    await waitFor(() =>
+      expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', {
+        carrier_id: 'c1', driver_id: undefined, tractor_asset_id: undefined,
+        driver_name: undefined, tractor_plate: undefined,
+      }))
+  })
+
+  it('lets the operator pick a driver/tractor from the carrier roster before confirming', async () => {
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Sur Spa', tax_id: '76111222-3' }],
+      count: 1, page: 1, limit: 10,
+    } as never)
+    vi.mocked(carriersApi.listDrivers).mockResolvedValue([
+      { id: 'd1', tax_id: '11111111-1', full_name: 'Juan Perez' } as never,
+    ])
+    vi.mocked(carriersApi.listAssets).mockResolvedValue([
+      { id: 'a1', license_plate: 'ABCD12', asset_type: 'TRACTO' } as never,
+    ])
+    vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
     renderSlideOver(baseTrip)
 
     fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Transportes' } })
     fireEvent.click(await screen.findByText('Transportes Sur Spa'))
 
+    fireEvent.change(await screen.findByLabelText('Conductor (opcional)'), { target: { value: 'd1' } })
+    fireEvent.change(screen.getByLabelText('Tracto (opcional)'), { target: { value: 'a1' } })
+    fireEvent.click(screen.getByText('Vincular'))
+
     await waitFor(() =>
-      expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', { transporter_id: 'c1' }))
+      expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', {
+        carrier_id: 'c1', driver_id: 'd1', tractor_asset_id: 'a1',
+        driver_name: 'Juan Perez', tractor_plate: 'ABCD12',
+      }))
   })
 
   it('shows the linked carrier and unlinks via removeFleetLink', async () => {
     vi.mocked(tripsApi.removeFleetLink).mockResolvedValue({ ok: true })
-    renderSlideOver({ ...baseTrip, transporter_profile_id: 'c1', transporter: 'Transportes Sur Spa' })
+    renderSlideOver({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
     expect(screen.getByText('Transportes Sur Spa')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Desvincular'))
     await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalledWith('t1'))
@@ -366,5 +400,28 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
     fireEvent.click(screen.getByText(/Ver detalle técnico/))
     const input = screen.getByLabelText('Desc. inicio de Local 1') as HTMLInputElement
     expect(input.className).toMatch(/text-accent/)
+  })
+})
+
+describe('TripSlideOver — motivo de no asignación (Fase 1.5d)', () => {
+  const metaWithReasons = {
+    statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [],
+    csv_columns: [], temperature_ranges: [],
+    unassigned_reasons: [{ id: 'pana', label: 'Pana' }, { id: 'sin_conductor', label: 'Sin conductor' }],
+  } as never
+
+  it('shows the reason dropdown when the trip is not asignado and saves via tripsApi.patch', async () => {
+    vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
+    renderSlideOver({ ...baseTrip, asignado: false }, { meta: metaWithReasons })
+
+    fireEvent.change(screen.getByDisplayValue('— Sin especificar —'), { target: { value: 'pana' } })
+
+    await waitFor(() =>
+      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { unassigned_reason_id: 'pana' }))
+  })
+
+  it('hides the reason dropdown once the trip is asignado', () => {
+    renderSlideOver({ ...baseTrip, asignado: true }, { meta: metaWithReasons })
+    expect(screen.queryByText('Motivo de no asignación')).not.toBeInTheDocument()
   })
 })
