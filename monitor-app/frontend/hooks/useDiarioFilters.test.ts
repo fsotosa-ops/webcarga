@@ -37,6 +37,15 @@ describe('useDiarioFilters', () => {
     expect(result.current[0].fTms).toEqual(['sodimac'])
   })
 
+  it('toggleOperationType adds and removes types', () => {
+    const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
+    act(() => result.current[1]({ type: 'toggleOperationType', id: 'RM' }))
+    act(() => result.current[1]({ type: 'toggleOperationType', id: 'ZONA_CERO' }))
+    expect(result.current[0].fOperationType).toEqual(['RM', 'ZONA_CERO'])
+    act(() => result.current[1]({ type: 'toggleOperationType', id: 'RM' }))
+    expect(result.current[0].fOperationType).toEqual(['ZONA_CERO'])
+  })
+
   it('toggleSignal adds and removes signals, any kind, same action', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
     act(() => result.current[1]({ type: 'toggleSignal', id: 'off_time' }))
@@ -59,13 +68,13 @@ describe('useDiarioFilters', () => {
     expect(f.tab).toBe('en_curso')
   })
 
-  it('fRegion/fCity cuentan como filtros activos y clear los resetea', () => {
+  it('fOperationType cuenta como filtro activo y clear lo resetea', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
-    act(() => result.current[1]({ type: 'patch', patch: { fRegion: 'Biobío', fCity: 'Concepción' } }))
+    act(() => result.current[1]({ type: 'toggleOperationType', id: 'RM' }))
+    act(() => result.current[1]({ type: 'toggleOperationType', id: 'ZONA_CERO' }))
     expect(countActiveFilters(result.current[0])).toBe(2)
     act(() => result.current[1]({ type: 'clear' }))
-    expect(result.current[0].fRegion).toBe('')
-    expect(result.current[0].fCity).toBe('')
+    expect(result.current[0].fOperationType).toEqual([])
     expect(countActiveFilters(result.current[0])).toBe(0)
   })
 
