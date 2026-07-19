@@ -2,12 +2,12 @@
 
 import { useRef, useState } from 'react'
 import {
-  Loader2, Send, Archive, Paperclip, X, Pin, PinOff,
+  Loader2, Send, Paperclip, X, Pin, PinOff,
   Phone, MessageCircle, AlertTriangle, StickyNote, Activity,
   FileText, ImageIcon, FolderOpen, ListOrdered,
 } from 'lucide-react'
 import type { Trip, TripNote, TripNoteAttachment, TripNoteType } from '@/lib/types'
-import { useTripNotes, useAddTripNote, usePinTripNote } from '@/hooks/useTripNotes'
+import { useTripNotes, useAddTripNote, usePinTripNote, useResolveTripNote } from '@/hooks/useTripNotes'
 import { formatRelativeTime, fmtDT } from '@/lib/utils/datetime'
 
 const NOTE_TYPES: { id: Exclude<TripNoteType, 'sistema'>; label: string; Icon: typeof Phone; cls: string }[] = [
@@ -57,21 +57,48 @@ function AttachmentCard({ att }: { att: TripNoteAttachment }) {
   )
 }
 
-function NoteCard({ note, onPin, pinPending }: { note: TripNote; onPin: (n: TripNote) => void; pinPending: boolean }) {
+function NoteCard({
+  note, onPin, pinPending, onResolve, resolvePending,
+}: {
+  note: TripNote
+  onPin: (n: TripNote) => void
+  pinPending: boolean
+  onResolve: (n: TripNote) => void
+  resolvePending: boolean
+}) {
   const meta = typeMeta(note.note_type)
+  const isIncident = note.note_type === 'incidente'
+  const resolved = !!note.resolved_at
   return (
     <div className={`group bg-white border rounded-lg px-3 py-2 shadow-sm ${note.pinned ? 'border-amber-300 bg-amber-50/40' : 'border-border/60'}`}>
-      <p className="flex items-center gap-1.5 mb-1">
+      <p className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded ${meta.cls}`}>
           <meta.Icon size={9} />
           {meta.label}
         </span>
+        {isIncident && (
+          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+            resolved ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+          }`}>
+            {resolved ? 'Resuelto' : 'Abierto'}
+          </span>
+        )}
         <span className="text-[10px] font-semibold text-slate-600 truncate">
           {note.author_name ?? 'Usuario'}
         </span>
         <span className="text-[9px] text-gray-300 whitespace-nowrap" title={fmtDT(note.created_at)}>
           {formatRelativeTime(note.created_at)}
         </span>
+        {isIncident && (
+          <button
+            type="button"
+            onClick={() => onResolve(note)}
+            disabled={resolvePending}
+            className="text-[9px] font-semibold text-accent hover:text-accent/80 disabled:opacity-50"
+          >
+            {resolved ? 'Reabrir' : 'Marcar resuelto'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onPin(note)}
@@ -107,11 +134,10 @@ export function TripNotesFeed({ trip }: Props) {
   const [view, setView]             = useState<'feed' | 'documentos'>('feed')
   const fileInputRef                = useRef<HTMLInputElement>(null)
 
-  const notesQuery = useTripNotes(trip.id)
-  const addNote    = useAddTripNote(trip.id)
-  const pinNote    = usePinTripNote(trip.id)
-
-  const legacyText = [trip.notes, trip.comments].filter(Boolean).join('\n')
+  const notesQuery  = useTripNotes(trip.id)
+  const addNote     = useAddTripNote(trip.id)
+  const pinNote     = usePinTripNote(trip.id)
+  const resolveNote = useResolveTripNote(trip.id)
 
   const notes    = notesQuery.data ?? []
   const pinned   = notes.filter(n => n.pinned)
@@ -141,6 +167,10 @@ export function TripNotesFeed({ trip }: Props) {
 
   function handlePin(note: TripNote) {
     pinNote.mutate({ noteId: note.id, pinned: !note.pinned })
+  }
+
+  function handleResolve(note: TripNote) {
+    resolveNote.mutate({ noteId: note.id, resolved: !note.resolved_at })
   }
 
   return (
@@ -217,8 +247,9 @@ export function TripNotesFeed({ trip }: Props) {
             </div>
           )}
 
-          {/* Feed */}
-          <div className="space-y-2 max-h-80 overflow-y-auto">
+          {/* Feed — ya no vive en un sidebar angosto (Fase 2, Plan 4), sin
+              tope de altura interno (Plan 5: se quitó max-h-80/overflow-y-auto). */}
+          <div className="space-y-2">
             {/* Destacadas arriba */}
             {pinned.length > 0 && (
               <div className="space-y-2">
@@ -226,17 +257,8 @@ export function TripNotesFeed({ trip }: Props) {
                   <Pin size={9} /> Destacadas
                 </p>
                 {pinned.map(n => (
-                  <NoteCard key={n.id} note={n} onPin={handlePin} pinPending={pinNote.isPending} />
+                  <NoteCard key={n.id} note={n} onPin={handlePin} pinPending={pinNote.isPending} onResolve={handleResolve} resolvePending={resolveNote.isPending} />
                 ))}
-              </div>
-            )}
-
-            {legacyText && !filter && (
-              <div className="bg-gray-50 border border-border/60 rounded-lg px-3 py-2">
-                <p className="flex items-center gap-1 text-[9px] text-gray-400 mb-1">
-                  <Archive size={9} /> Nota anterior (campo legacy, solo lectura)
-                </p>
-                <p className="text-xs text-gray-500 whitespace-pre-wrap">{legacyText}</p>
               </div>
             )}
 
@@ -256,7 +278,7 @@ export function TripNotesFeed({ trip }: Props) {
                 {notesQuery.error instanceof Error ? notesQuery.error.message : 'Error cargando la bitácora'}
               </p>
             )}
-            {!notesQuery.isPending && notes.length === 0 && !legacyText && (
+            {!notesQuery.isPending && notes.length === 0 && (
               <p className="text-[10px] text-gray-300 italic">Sin novedades registradas</p>
             )}
 
@@ -274,12 +296,17 @@ export function TripNotesFeed({ trip }: Props) {
                   </span>
                 </p>
               ) : (
-                <NoteCard key={note.id} note={note} onPin={handlePin} pinPending={pinNote.isPending} />
+                <NoteCard key={note.id} note={note} onPin={handlePin} pinPending={pinNote.isPending} onResolve={handleResolve} resolvePending={resolveNote.isPending} />
               ),
             )}
             {pinNote.error && (
               <p className="text-[10px] text-red-500">
                 {pinNote.error instanceof Error ? pinNote.error.message : 'Error al destacar'}
+              </p>
+            )}
+            {resolveNote.error && (
+              <p className="text-[10px] text-red-500">
+                {resolveNote.error instanceof Error ? resolveNote.error.message : 'Error al actualizar el incidente'}
               </p>
             )}
           </div>

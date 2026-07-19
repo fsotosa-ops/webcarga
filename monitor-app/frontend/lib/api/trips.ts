@@ -150,4 +150,10 @@ export const tripsApi = {
       method: 'PATCH',
       body: JSON.stringify({ pinned }),
     }),
+
+  resolveNote: (id: string, noteId: string, resolved: boolean) =>
+    apiFetch<{ ok: boolean; resolved: boolean }>(`/api/v1/trips/${id}/notes/${noteId}/resolve`, {
+      method: 'PATCH',
+      body: JSON.stringify({ resolved }),
+    }),
 }

@@ -301,6 +301,9 @@ export type TripNote = {
   pinned:      boolean
   created_at:  string
   attachments: TripNoteAttachment[]
+  /** Solo tiene significado para note_type='incidente' — null = abierto,
+   *  con timestamp = resuelto (Fase 2, Plan 5). */
+  resolved_at: string | null
 }
 
 export type TripStopCreatePayload = {

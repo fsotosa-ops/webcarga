@@ -13,8 +13,9 @@ import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { fmtDT, fmtDate, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { StopTimeline } from './StopTimeline'
-import { IndicatorDots } from './IndicatorDots'
+import { IndicatorSwitches } from './IndicatorSwitches'
 import { TripNotesFeed } from './TripNotesFeed'
+import { useTripNotes } from '@/hooks/useTripNotes'
 import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from './FleetAssignSection'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
@@ -64,6 +65,11 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const [assigningFleet, setAssigningFleet]     = useState(false)
   const [fleetErr, setFleetErr]                 = useState<string | null>(null)
   const panelRef                                = useRef<HTMLDivElement>(null)
+  // Badge de incidentes abiertos en el hero (Fase 2, Plan 5) — mismo hook
+  // que ya usa TripNotesFeed internamente; TanStack Query dedupea por
+  // queryKey (['trip-notes', tripId]), así que esto no dispara una segunda
+  // request, comparte la misma cache/carga.
+  const notesQuery = useTripNotes(trip?.id ?? null)
 
   // Semántica de diálogo: Escape cierra, Tab queda atrapado en el panel, el foco vuelve al origen al cerrar
   useEffect(() => {
@@ -214,6 +220,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   // entrega, no el punto de carga.
   const stops            = trip.stops ?? []
   const destinationStops = stops.filter(s => s.stop_type !== 'ORIGIN')
+  const openIncidents    = (notesQuery.data ?? []).filter(n => n.note_type === 'incidente' && !n.resolved_at).length
   const activeStop  = getActiveStop(stops)
   const activeTiming = activeStop ? describeStopTiming(activeStop) : null
   const doneCount   = destinationStops.filter(s => s.arrival_date || s.gps_arrival_date || s.on_time_status).length
@@ -375,6 +382,11 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             {compliance === 'warn' && (
               <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-[10px]">OFF TIME</span>
             )}
+            {openIncidents > 0 && (
+              <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-[10px]">
+                {openIncidents} incidente{openIncidents === 1 ? '' : 's'} abierto{openIncidents === 1 ? '' : 's'}
+              </span>
+            )}
             {temp != null && (
               tempStatus === 'out_of_range'
                 ? <span className="font-semibold px-1.5 py-0.5 rounded-full text-[10px] bg-red-50 text-red-700">{temp}°C</span>
@@ -479,11 +491,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               )}
             </div>
 
-            {/* Indicadores — el rediseño a switches con etiqueta es el
-                Plan 5; acá sigue siendo IndicatorDots sin cambios. */}
+            {/* Indicadores — switches con etiqueta completa (Fase 2, Plan 5) */}
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
-              <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
+              <IndicatorSwitches trip={trip} onSaved={onSaved} />
             </div>
 
             {/* Motivo de no asignación — movido después de Indicadores (Fase

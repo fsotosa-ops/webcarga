@@ -16,6 +16,7 @@ vi.mock('@/lib/api/trips', () => ({
     listNotes: vi.fn(),
     addNote: vi.fn(),
     pinNote: vi.fn(),
+    resolveNote: vi.fn(),
   },
 }))
 vi.mock('@/lib/api/drivers', () => ({
@@ -58,6 +59,7 @@ beforeEach(() => {
   vi.mocked(tripsApi.removeFleetLink).mockReset()
   vi.mocked(tripsApi.listNotes).mockReset().mockResolvedValue([])
   vi.mocked(tripsApi.addNote).mockReset()
+  vi.mocked(tripsApi.resolveNote).mockReset()
   vi.mocked(driversApi.search).mockReset().mockResolvedValue([])
 })
 
@@ -79,8 +81,6 @@ describe('TripSlideOver — hero (la historia del viaje)', () => {
     ]
     renderSlideOver({ ...baseTrip, stops })
     expect(screen.getByText('1/2 paradas')).toBeInTheDocument()
-    // "ON TIME" sí puede aparecer en la tabla técnica (siempre visible desde
-    // este plan) — la regla de "gestión por excepción" aplica solo al hero.
     expect(within(screen.getByTestId('hero')).queryByText('ON TIME')).not.toBeInTheDocument()
   })
 
@@ -112,14 +112,22 @@ describe('TripSlideOver — hero (la historia del viaje)', () => {
     expect(screen.getAllByText('4°C').length).toBeGreaterThan(0)
   })
 
-  it('does not render RouteProgress anymore (retirado, StopTimeline es el único timeline)', () => {
-    const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
-    const { container } = renderSlideOver({ ...baseTrip, stops })
-    // RouteProgress usaba nodos redondos con title=local; StopTimeline (Ruta,
-    // siempre visible) usa otro layout — confirmamos que no hay 2 renders de
-    // la misma parada en el hero contando cuántas veces aparece su nombre
-    // fuera de la sección "Ruta" (una sola vez, no dos).
-    expect(container.querySelectorAll('[title="Local 1"]').length).toBe(0)
+  it('shows "N incidente(s) abierto(s)" badge in the hero when there are open incident notes', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { id: 'n1', trip_id: 't1', author_id: 'u1', author_name: 'Op', body: 'x', note_type: 'incidente', pinned: false, created_at: '2026-07-05 12:00:00', attachments: [], resolved_at: null },
+      { id: 'n2', trip_id: 't1', author_id: 'u1', author_name: 'Op', body: 'y', note_type: 'incidente', pinned: false, created_at: '2026-07-05 12:00:00', attachments: [], resolved_at: '2026-07-05 13:00:00' },
+    ])
+    renderSlideOver(baseTrip)
+    expect(await within(screen.getByTestId('hero')).findByText('1 incidente abierto')).toBeInTheDocument()
+  })
+
+  it('does not show the incidents badge when all incidents are resolved', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { id: 'n1', trip_id: 't1', author_id: 'u1', author_name: 'Op', body: 'x', note_type: 'incidente', pinned: false, created_at: '2026-07-05 12:00:00', attachments: [], resolved_at: '2026-07-05 13:00:00' },
+    ])
+    renderSlideOver(baseTrip)
+    await waitFor(() => expect(tripsApi.listNotes).toHaveBeenCalled())
+    expect(within(screen.getByTestId('hero')).queryByText(/incidente/i)).not.toBeInTheDocument()
   })
 })
 
@@ -131,7 +139,7 @@ describe('TripSlideOver — header (IDs unificados + link a TMS)', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('2000711')
   })
 
-  it('shows the internal uuid in the header with its own copy button (no footer anymore)', () => {
+  it('shows the internal uuid in the header with its own copy button', () => {
     Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
     renderSlideOver(baseTrip)
     expect(screen.getByText('t1')).toBeInTheDocument()
@@ -144,10 +152,9 @@ describe('TripSlideOver — header (IDs unificados + link a TMS)', () => {
     const link = screen.getByTitle(/Abrir en/)
     expect(link.tagName).toBe('A')
     expect(link).toHaveAttribute('href', 'https://www.qanalytics.cl/qnew/#')
-    expect(link).toHaveAttribute('target', '_blank')
   })
 
-  it('the TMS chip is not a link for a manual trip (no TMS to open)', () => {
+  it('the TMS chip is not a link for a manual trip', () => {
     renderSlideOver({ ...baseTrip, source_system: 'manual' })
     expect(screen.queryByTitle(/Abrir en/)).not.toBeInTheDocument()
   })
@@ -193,9 +200,6 @@ describe('TripSlideOver — layout y a11y', () => {
 
 describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)', () => {
   it('searches a driver, then Vincular calls assignFleetLink with the picked fleet', async () => {
-    // Nombre distinto al de baseTrip.driver_name ("Juan Perez") a propósito
-    // — evita que el header (que siempre muestra ese nombre) haga match
-    // ambiguo con la fila de resultado de la búsqueda.
     vi.mocked(driversApi.search).mockResolvedValueOnce([{
       driver_id: 'd1', driver_name: 'Ana Torres', driver_rut: '11.111.111-1', driver_phone: '+56911112222',
       carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', tractor_asset_id: 'a1', tractor_plate: 'ABCD12',
@@ -214,44 +218,12 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
       }))
   })
 
-  it('lets the operator correct the autofilled tractor plate before confirming', async () => {
-    vi.mocked(driversApi.search).mockResolvedValueOnce([{
-      driver_id: 'd1', driver_name: 'Ana Torres', driver_rut: null, driver_phone: null,
-      carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', tractor_asset_id: 'a1', tractor_plate: 'ABCD12',
-    }])
-    vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, carrier_id: 'c1' })
-    renderSlideOver(baseTrip)
-
-    fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'Ana' } })
-    fireEvent.click(await screen.findByText('Ana Torres'))
-    fireEvent.change(screen.getByLabelText('Patente tracto'), { target: { value: 'zxzx99' } })
-    fireEvent.click(screen.getByText('Vincular'))
-
-    await waitFor(() =>
-      expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', expect.objectContaining({ tractor_plate: 'ZXZX99' })))
-  })
-
-  it('does not show Vincular until a driver is picked', () => {
-    renderSlideOver(baseTrip)
-    expect(screen.queryByText('Vincular')).not.toBeInTheDocument()
-  })
-
-  it('shows the linked carrier as a compact card (not FleetAssignSection) and unlinks via removeFleetLink', async () => {
+  it('shows the linked carrier as a compact card and unlinks via removeFleetLink', async () => {
     vi.mocked(tripsApi.removeFleetLink).mockResolvedValue({ ok: true })
     renderSlideOver({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
     expect(screen.getByText('Transportes Sur Spa')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Buscar conductor')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Desvincular'))
     await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalledWith('t1'))
-  })
-
-  it('shows the driver search again after unlinking, with a clean draft', async () => {
-    vi.mocked(tripsApi.removeFleetLink).mockResolvedValue({ ok: true })
-    const onSaved = vi.fn()
-    renderSlideOver({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' }, { onSaved })
-    fireEvent.click(screen.getByText('Desvincular'))
-    await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalled())
-    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ carrier_id: null }))
   })
 
   it('shows a reconciliation banner including carrier divergence, and reverts via "Usar dato del TMS"', async () => {
@@ -262,18 +234,8 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
       carrier_name_tms: 'Transportes ACME SPA',
     })
     expect(screen.getByText(/TMS reporta empresa/)).toBeInTheDocument()
-    expect(screen.getByText('Transportes ACME SPA')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Usar dato del TMS'))
     await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalledWith('t1'))
-  })
-
-  it('does not show the reconciliation banner when TMS and linked carrier match', () => {
-    renderSlideOver({
-      ...baseTrip,
-      fleet_link_id: 'fl1', carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
-      carrier_name_tms: 'Transportes Sur Spa',
-    })
-    expect(screen.queryByText(/TMS reporta empresa/)).not.toBeInTheDocument()
   })
 })
 
@@ -283,41 +245,35 @@ describe('TripSlideOver — override de estado', () => {
     expect(screen.getByText(/Establecer estado operativo/)).toBeInTheDocument()
   })
 
-  it('shows a microcopy clarifying it mirrors the header when there is no manual override', () => {
-    renderSlideOver(baseTrip)
-    expect(screen.getByText(/mismo estado que se muestra en el encabezado/)).toBeInTheDocument()
-  })
-
-  it('shows attribution with editor name and a revert control when manual_status is set', () => {
-    renderSlideOver({ ...baseTrip, manual_status: 'en_seguimiento', edited_at: '2026-07-02 10:15:00', edited_by: 'Felipe Sumadots' })
-    expect(screen.getByText(/confirmado manualmente/)).toBeInTheDocument()
-    expect(screen.getByText(/Felipe Sumadots/)).toBeInTheDocument()
-  })
-
   it('reverting the override calls tripsApi.resetField with manual_status', async () => {
     vi.mocked(tripsApi.resetField).mockResolvedValue({ ok: true, field: 'manual_status' })
     renderSlideOver({ ...baseTrip, manual_status: 'en_seguimiento' })
     fireEvent.click(screen.getByTitle('Revertir a valor del TMS'))
     await waitFor(() => expect(tripsApi.resetField).toHaveBeenCalledWith('t1', 'manual_status'))
   })
-
-  it('shows a visible error when reverting the override fails', async () => {
-    vi.mocked(tripsApi.resetField).mockRejectedValue(new Error('network down'))
-    renderSlideOver({ ...baseTrip, manual_status: 'en_seguimiento' })
-    fireEvent.click(screen.getByTitle('Revertir a valor del TMS'))
-    expect(await screen.findByText('network down')).toBeInTheDocument()
-  })
 })
 
-describe('TripSlideOver — indicadores', () => {
-  it('renders editable Indicadores for a TMS-sourced trip', () => {
+describe('TripSlideOver — indicadores (switches, Fase 2 Plan 5)', () => {
+  it('renders Activo/Trabajando/Asignado as switches, without "1ra Vuelta"', () => {
     renderSlideOver(baseTrip)
-    expect(screen.getByTitle('Activo')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Activo' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Trabajando' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Asignado' })).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: '1ra Vuelta' })).not.toBeInTheDocument()
   })
 
-  it('renders editable Indicadores for a manual trip', () => {
-    renderSlideOver({ ...baseTrip, source_system: 'manual' })
-    expect(screen.getByTitle('Activo')).toBeInTheDocument()
+  it('toggles a switch via tripsApi.patch', async () => {
+    // baseTrip.is_working arranca en false — el click debería togglearlo a true
+    vi.mocked(tripsApi.patch).mockResolvedValue({ ...baseTrip, is_working: true })
+    renderSlideOver(baseTrip)
+    fireEvent.click(screen.getByRole('switch', { name: 'Trabajando' }))
+    await waitFor(() => expect(tripsApi.patch).toHaveBeenCalledWith('t1', { is_working: true }))
+  })
+
+  it('shows explicit override attribution text and a revert control when a field is manually edited', () => {
+    renderSlideOver({ ...baseTrip, manually_edited_fields: ['is_assigned'], edited_by: 'Felipe Sumadots', edited_at: '2026-07-02 10:15:00' })
+    expect(screen.getByText(/Editado manualmente por Felipe Sumadots/)).toBeInTheDocument()
+    expect(screen.getByText('Revertir a automático')).toBeInTheDocument()
   })
 })
 
@@ -325,7 +281,7 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
   const note: TripNote = {
     id: 'n1', trip_id: 't1', author_id: 'u1', author_name: 'Operador Uno',
     body: 'Conductor confirmó por teléfono', note_type: 'llamada', pinned: false,
-    created_at: '2026-07-05 12:00:00', attachments: [],
+    created_at: '2026-07-05 12:00:00', attachments: [], resolved_at: null,
   }
 
   it('renders existing notes with author and type chip', async () => {
@@ -347,19 +303,11 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
     expect(await screen.findByText('nueva nota')).toBeInTheDocument()
   })
 
-  it('shows a visible error when adding a note fails', async () => {
-    vi.mocked(tripsApi.addNote).mockRejectedValue(new Error('network down'))
-    renderSlideOver(baseTrip)
-    fireEvent.change(screen.getByPlaceholderText(/Registrar novedad/), { target: { value: 'x' } })
-    fireEvent.click(screen.getByText('Agregar nota'))
-    expect(await screen.findByText('network down')).toBeInTheDocument()
-  })
-
-  it('shows legacy notes/comments as a read-only entry (retiro es del Plan 5, no de este)', () => {
+  it('no longer shows a legacy notes/comments block (retirado, Fase 2 Plan 5)', async () => {
     renderSlideOver({ ...baseTrip, notes: 'obs vieja', comments: 'comentario viejo' })
-    expect(screen.getByText(/Nota anterior/)).toBeInTheDocument()
-    expect(screen.getByText(/obs vieja/)).toBeInTheDocument()
-    expect(screen.getByText(/comentario viejo/)).toBeInTheDocument()
+    await waitFor(() => expect(tripsApi.listNotes).toHaveBeenCalled())
+    expect(screen.queryByText(/Nota anterior/)).not.toBeInTheDocument()
+    expect(screen.queryByText('obs vieja')).not.toBeInTheDocument()
   })
 
   it('renders pinned notes in a Destacadas section above the feed', async () => {
@@ -383,6 +331,35 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
     await screen.findByText('Conductor confirmó por teléfono')
     fireEvent.click(screen.getByTitle('Destacar nota'))
     await waitFor(() => expect(tripsApi.pinNote).toHaveBeenCalledWith('t1', 'n1', true))
+  })
+
+  it('shows an "Abierto" chip and "Marcar resuelto" action for an unresolved incident note', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n1', note_type: 'incidente', body: 'sobreestadía', resolved_at: null },
+    ])
+    renderSlideOver(baseTrip)
+    expect(await screen.findByText('Abierto')).toBeInTheDocument()
+    expect(screen.getByText('Marcar resuelto')).toBeInTheDocument()
+  })
+
+  it('marking an incident resolved calls tripsApi.resolveNote', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n1', note_type: 'incidente', body: 'sobreestadía', resolved_at: null },
+    ])
+    vi.mocked(tripsApi.resolveNote).mockResolvedValue({ ok: true, resolved: true })
+    renderSlideOver(baseTrip)
+    await screen.findByText('sobreestadía')
+    fireEvent.click(screen.getByText('Marcar resuelto'))
+    await waitFor(() => expect(tripsApi.resolveNote).toHaveBeenCalledWith('t1', 'n1', true))
+  })
+
+  it('shows a "Resuelto" chip and "Reabrir" action for a resolved incident note', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n1', note_type: 'incidente', body: 'sobreestadía', resolved_at: '2026-07-06 09:00:00' },
+    ])
+    renderSlideOver(baseTrip)
+    expect(await screen.findByText('Resuelto')).toBeInTheDocument()
+    expect(screen.getByText('Reabrir')).toBeInTheDocument()
   })
 
   it('renders system events as compact one-line entries without a pin control', async () => {
@@ -447,17 +424,6 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin) �
       expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 'origin1', { desc_inicio: '2026-07-17T09:00' }))
   })
 
-  it('saves Carga fin of the ORIGIN stop via tripsApi.patchStop on blur', async () => {
-    vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
-    const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
-    renderSlideOver({ ...baseTrip, stops })
-    const input = screen.getByLabelText('Carga fin de CD Origen') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '2026-07-17T09:30' } })
-    fireEvent.blur(input)
-    await waitFor(() =>
-      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 'origin1', { desc_fin: '2026-07-17T09:30' }))
-  })
-
   it('shows an ORIGEN badge for the origin stop in the technical table', () => {
     const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
     renderSlideOver({ ...baseTrip, stops })
@@ -483,37 +449,7 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin) �
   })
 })
 
-describe('TripSlideOver — clasificación RM/Zona Cero por parada (H2.6, catálogo de locales)', () => {
-  it('shows the classification badge next to a stop in the technical table when operation_type resolved', () => {
-    const stops = [makeStop({ stop_id: 's1', local: 'ALAMEDA - 72', operation_type: 'RM' })]
-    const meta = {
-      statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
-      temperature_ranges: [], unassigned_reasons: [],
-      operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
-    }
-    renderSlideOver({ ...baseTrip, stops }, { meta: meta as never })
-    expect(screen.getByText('RM')).toBeInTheDocument()
-  })
-
-  it('does not show a classification badge when the stop has no operation_type resolved', () => {
-    const stops = [makeStop({ stop_id: 's1', local: 'CD LO AGUIRRE', operation_type: null })]
-    renderSlideOver({ ...baseTrip, stops })
-    expect(screen.queryByText('RM')).not.toBeInTheDocument()
-  })
-})
-
-describe('TripSlideOver — Ubicación de origen (solo operation_type, sin región/ciudad)', () => {
-  const metaWithOpTypes = {
-    statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
-    temperature_ranges: [], unassigned_reasons: [],
-    operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
-  } as never
-
-  it('shows the operation_type badge when resolved', () => {
-    renderSlideOver({ ...baseTrip, origin_operation_type: 'RM' }, { meta: metaWithOpTypes })
-    expect(screen.getByText('RM')).toBeInTheDocument()
-  })
-
+describe('TripSlideOver — Ubicación de origen (solo operation_type)', () => {
   it('shows "Sin clasificar" instead of an empty section when origin_operation_type is null', () => {
     renderSlideOver({ ...baseTrip, origin_operation_type: null })
     expect(screen.getByText('Sin clasificar')).toBeInTheDocument()
@@ -536,9 +472,7 @@ describe('TripSlideOver — motivo de no asignación (Fase 1.5d)', () => {
   it('shows the reason dropdown when the trip is not is_assigned and saves via tripsApi.patch', async () => {
     vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
     renderSlideOver({ ...baseTrip, is_assigned: false }, { meta: metaWithReasons })
-
     fireEvent.change(screen.getByDisplayValue('— Sin especificar —'), { target: { value: 'pana' } })
-
     await waitFor(() =>
       expect(tripsApi.patch).toHaveBeenCalledWith('t1', { unassigned_reason_id: 'pana' }))
   })

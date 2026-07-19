@@ -43,3 +43,23 @@ export function usePinTripNote(tripId: string | null) {
     },
   })
 }
+
+export function useResolveTripNote(tripId: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ noteId, resolved }: { noteId: string; resolved: boolean }) =>
+      tripsApi.resolveNote(tripId!, noteId, resolved),
+    // Optimista con rollback — mismo criterio que usePinTripNote (acción
+    // binaria de baja fricción, no amerita esperar el round-trip).
+    onMutate: async ({ noteId, resolved }) => {
+      await queryClient.cancelQueries({ queryKey: ['trip-notes', tripId] })
+      const prev = queryClient.getQueryData<TripNote[]>(['trip-notes', tripId])
+      queryClient.setQueryData<TripNote[]>(['trip-notes', tripId], old =>
+        old?.map(n => (n.id === noteId ? { ...n, resolved_at: resolved ? new Date().toISOString() : null } : n)))
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['trip-notes', tripId], ctx.prev)
+    },
+  })
+}
