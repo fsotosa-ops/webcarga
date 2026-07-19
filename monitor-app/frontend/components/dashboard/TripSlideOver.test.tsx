@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TripSlideOver } from './TripSlideOver'
 import { tripsApi } from '@/lib/api/trips'
-import { carriersApi } from '@/lib/api/carriers'
+import { driversApi } from '@/lib/api/drivers'
 import type { Trip, TripNote } from '@/lib/types'
 
 vi.mock('@/lib/api/trips', () => ({
@@ -18,8 +18,8 @@ vi.mock('@/lib/api/trips', () => ({
     pinNote: vi.fn(),
   },
 }))
-vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { list: vi.fn(), listDrivers: vi.fn(), listAssets: vi.fn() },
+vi.mock('@/lib/api/drivers', () => ({
+  driversApi: { search: vi.fn() },
 }))
 
 const baseTrip: Trip = {
@@ -55,11 +55,10 @@ beforeEach(() => {
   vi.mocked(tripsApi.patchStop).mockReset()
   vi.mocked(tripsApi.resetField).mockReset()
   vi.mocked(tripsApi.assignFleetLink).mockReset()
+  vi.mocked(tripsApi.removeFleetLink).mockReset()
   vi.mocked(tripsApi.listNotes).mockReset().mockResolvedValue([])
   vi.mocked(tripsApi.addNote).mockReset()
-  vi.mocked(carriersApi.list).mockReset().mockResolvedValue({ data: [], count: 0, page: 1, limit: 10 } as never)
-  vi.mocked(carriersApi.listDrivers).mockReset().mockResolvedValue([])
-  vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue([])
+  vi.mocked(driversApi.search).mockReset().mockResolvedValue([])
 })
 
 describe('TripSlideOver — hero (la historia del viaje)', () => {
@@ -80,8 +79,9 @@ describe('TripSlideOver — hero (la historia del viaje)', () => {
     ]
     renderSlideOver({ ...baseTrip, stops })
     expect(screen.getByText('1/2 paradas')).toBeInTheDocument()
-    // gestión por excepción: ON TIME no se badgea (el check verde ya lo comunica)
-    expect(screen.queryByText('ON TIME')).not.toBeInTheDocument()
+    // "ON TIME" sí puede aparecer en la tabla técnica (siempre visible desde
+    // este plan) — la regla de "gestión por excepción" aplica solo al hero.
+    expect(within(screen.getByTestId('hero')).queryByText('ON TIME')).not.toBeInTheDocument()
   })
 
   it('shows the OFF TIME badge in the hero when a stop is off time', () => {
@@ -109,8 +109,47 @@ describe('TripSlideOver — hero (la historia del viaje)', () => {
   it('shows a temperature badge when a reading exists', () => {
     const stops = [makeStop({ arrival_date: '2026-07-02 10:00:00', temperature: 4 })]
     renderSlideOver({ ...baseTrip, stops })
-    // aparece en el hero y en la parada del timeline
     expect(screen.getAllByText('4°C').length).toBeGreaterThan(0)
+  })
+
+  it('does not render RouteProgress anymore (retirado, StopTimeline es el único timeline)', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
+    const { container } = renderSlideOver({ ...baseTrip, stops })
+    // RouteProgress usaba nodos redondos con title=local; StopTimeline (Ruta,
+    // siempre visible) usa otro layout — confirmamos que no hay 2 renders de
+    // la misma parada en el hero contando cuántas veces aparece su nombre
+    // fuera de la sección "Ruta" (una sola vez, no dos).
+    expect(container.querySelectorAll('[title="Local 1"]').length).toBe(0)
+  })
+})
+
+describe('TripSlideOver — header (IDs unificados + link a TMS)', () => {
+  it('copies the external id via its own button', () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    renderSlideOver(baseTrip)
+    fireEvent.click(screen.getByTitle('Copiar ID externo'))
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('2000711')
+  })
+
+  it('shows the internal uuid in the header with its own copy button (no footer anymore)', () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    renderSlideOver(baseTrip)
+    expect(screen.getByText('t1')).toBeInTheDocument()
+    fireEvent.click(screen.getByTitle('Copiar ID interno'))
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('t1')
+  })
+
+  it('the TMS chip links to the public login page for a TMS-sourced trip', () => {
+    renderSlideOver({ ...baseTrip, source_system: 'qanalytics' })
+    const link = screen.getByTitle(/Abrir en/)
+    expect(link.tagName).toBe('A')
+    expect(link).toHaveAttribute('href', 'https://www.qanalytics.cl/qnew/#')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('the TMS chip is not a link for a manual trip (no TMS to open)', () => {
+    renderSlideOver({ ...baseTrip, source_system: 'manual' })
+    expect(screen.queryByTitle(/Abrir en/)).not.toBeInTheDocument()
   })
 })
 
@@ -128,87 +167,113 @@ describe('TripSlideOver — layout y a11y', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('shows Empresa as a compact card in Gestión, not behind an accordion', () => {
+  it('shows the driver search directly in Gestión, no accordion, when no company is linked', () => {
     renderSlideOver(baseTrip)
-    // sin vínculo: el buscador de empresa está visible directamente, sin acordeón
-    expect(screen.getByLabelText('Buscar empresa transportista')).toBeInTheDocument()
+    expect(screen.getByLabelText('Buscar conductor')).toBeInTheDocument()
   })
 
-  it('shows the internal trip id in the footer', () => {
-    renderSlideOver({ ...baseTrip, created_at: '2026-06-30 08:00:00' })
-    expect(screen.getByText('t1')).toBeInTheDocument()
-  })
-
-  // Fase 2 del hardening del Diario (2026-07-18): created_at se movió del
-  // footer casi invisible (text-[9px] text-gray-300) al hero, junto a "TMS
-  // reportó" — misma familia de info de timing, con jerarquía visual acorde.
-  it('shows "en el Diario desde" with created_at in the hero, not buried in the footer', () => {
+  it('shows "en el Diario desde" with created_at in the hero', () => {
     renderSlideOver({ ...baseTrip, created_at: '2026-06-30 08:00:00' })
     expect(screen.getByText(/en el Diario desde/)).toBeInTheDocument()
   })
 
-  it('collapses Datos operativos behind an accordion', () => {
-    renderSlideOver(baseTrip)
-    expect(screen.queryByText('Fecha planificación')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText('Datos operativos'))
+  it('shows Datos operativos always visible, no accordion, without EETT TMS', () => {
+    renderSlideOver({ ...baseTrip, carrier_name_tms: 'Transportes ACME (texto TMS)' })
     expect(screen.getByText('Fecha planificación')).toBeInTheDocument()
+    expect(screen.queryByText('EETT TMS')).not.toBeInTheDocument()
+  })
+
+  it('shows the technical stops table always visible, no "Ver detalle técnico" toggle', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
+    renderSlideOver({ ...baseTrip, stops })
+    expect(screen.queryByText(/Ver detalle técnico/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Desc. inicio de Local 1')).toBeInTheDocument()
   })
 })
 
-describe('TripSlideOver — vínculo de empresa (public.carriers)', () => {
-  it('searches carriers, then confirms via Vincular to call assignFleetLink with the selected carrier id', async () => {
-    vi.mocked(carriersApi.list).mockResolvedValue({
-      data: [{ id: 'c1', business_name: 'Transportes Sur Spa', tax_id: '76111222-3' }],
-      count: 1, page: 1, limit: 10,
-    } as never)
+describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)', () => {
+  it('searches a driver, then Vincular calls assignFleetLink with the picked fleet', async () => {
+    // Nombre distinto al de baseTrip.driver_name ("Juan Perez") a propósito
+    // — evita que el header (que siempre muestra ese nombre) haga match
+    // ambiguo con la fila de resultado de la búsqueda.
+    vi.mocked(driversApi.search).mockResolvedValueOnce([{
+      driver_id: 'd1', driver_name: 'Ana Torres', driver_rut: '11.111.111-1', driver_phone: '+56911112222',
+      carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', tractor_asset_id: 'a1', tractor_plate: 'ABCD12',
+    }])
     vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
     renderSlideOver(baseTrip)
 
-    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Transportes' } })
-    fireEvent.click(await screen.findByText('Transportes Sur Spa'))
-    fireEvent.click(await screen.findByText('Vincular'))
-
-    await waitFor(() =>
-      expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', {
-        carrier_id: 'c1', driver_id: undefined, tractor_asset_id: undefined,
-        driver_name: undefined, tractor_plate: undefined,
-      }))
-  })
-
-  it('lets the operator pick a driver/tractor from the carrier roster before confirming', async () => {
-    vi.mocked(carriersApi.list).mockResolvedValue({
-      data: [{ id: 'c1', business_name: 'Transportes Sur Spa', tax_id: '76111222-3' }],
-      count: 1, page: 1, limit: 10,
-    } as never)
-    vi.mocked(carriersApi.listDrivers).mockResolvedValue([
-      { id: 'd1', tax_id: '11111111-1', full_name: 'Juan Perez' } as never,
-    ])
-    vi.mocked(carriersApi.listAssets).mockResolvedValue([
-      { id: 'a1', license_plate: 'ABCD12', asset_type: 'TRACTO' } as never,
-    ])
-    vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
-    renderSlideOver(baseTrip)
-
-    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Transportes' } })
-    fireEvent.click(await screen.findByText('Transportes Sur Spa'))
-
-    fireEvent.change(await screen.findByLabelText('Conductor (opcional)'), { target: { value: 'd1' } })
-    fireEvent.change(screen.getByLabelText('Tracto (opcional)'), { target: { value: 'a1' } })
+    fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'Ana' } })
+    fireEvent.click(await screen.findByText('Ana Torres'))
     fireEvent.click(screen.getByText('Vincular'))
 
     await waitFor(() =>
       expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', {
         carrier_id: 'c1', driver_id: 'd1', tractor_asset_id: 'a1',
-        driver_name: 'Juan Perez', tractor_plate: 'ABCD12',
+        driver_name: 'Ana Torres', tractor_plate: 'ABCD12',
       }))
   })
 
-  it('shows the linked carrier and unlinks via removeFleetLink', async () => {
+  it('lets the operator correct the autofilled tractor plate before confirming', async () => {
+    vi.mocked(driversApi.search).mockResolvedValueOnce([{
+      driver_id: 'd1', driver_name: 'Ana Torres', driver_rut: null, driver_phone: null,
+      carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', tractor_asset_id: 'a1', tractor_plate: 'ABCD12',
+    }])
+    vi.mocked(tripsApi.assignFleetLink).mockResolvedValue({ ...baseTrip, carrier_id: 'c1' })
+    renderSlideOver(baseTrip)
+
+    fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'Ana' } })
+    fireEvent.click(await screen.findByText('Ana Torres'))
+    fireEvent.change(screen.getByLabelText('Patente tracto'), { target: { value: 'zxzx99' } })
+    fireEvent.click(screen.getByText('Vincular'))
+
+    await waitFor(() =>
+      expect(tripsApi.assignFleetLink).toHaveBeenCalledWith('t1', expect.objectContaining({ tractor_plate: 'ZXZX99' })))
+  })
+
+  it('does not show Vincular until a driver is picked', () => {
+    renderSlideOver(baseTrip)
+    expect(screen.queryByText('Vincular')).not.toBeInTheDocument()
+  })
+
+  it('shows the linked carrier as a compact card (not FleetAssignSection) and unlinks via removeFleetLink', async () => {
     vi.mocked(tripsApi.removeFleetLink).mockResolvedValue({ ok: true })
     renderSlideOver({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
     expect(screen.getByText('Transportes Sur Spa')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Buscar conductor')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Desvincular'))
     await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalledWith('t1'))
+  })
+
+  it('shows the driver search again after unlinking, with a clean draft', async () => {
+    vi.mocked(tripsApi.removeFleetLink).mockResolvedValue({ ok: true })
+    const onSaved = vi.fn()
+    renderSlideOver({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' }, { onSaved })
+    fireEvent.click(screen.getByText('Desvincular'))
+    await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalled())
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ carrier_id: null }))
+  })
+
+  it('shows a reconciliation banner including carrier divergence, and reverts via "Usar dato del TMS"', async () => {
+    vi.mocked(tripsApi.removeFleetLink).mockResolvedValue({ ok: true })
+    renderSlideOver({
+      ...baseTrip,
+      fleet_link_id: 'fl1', carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      carrier_name_tms: 'Transportes ACME SPA',
+    })
+    expect(screen.getByText(/TMS reporta empresa/)).toBeInTheDocument()
+    expect(screen.getByText('Transportes ACME SPA')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Usar dato del TMS'))
+    await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalledWith('t1'))
+  })
+
+  it('does not show the reconciliation banner when TMS and linked carrier match', () => {
+    renderSlideOver({
+      ...baseTrip,
+      fleet_link_id: 'fl1', carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      carrier_name_tms: 'Transportes Sur Spa',
+    })
+    expect(screen.queryByText(/TMS reporta empresa/)).not.toBeInTheDocument()
   })
 })
 
@@ -216,6 +281,11 @@ describe('TripSlideOver — override de estado', () => {
   it('shows an inline "set manual override" affordance', () => {
     renderSlideOver(baseTrip)
     expect(screen.getByText(/Establecer estado operativo/)).toBeInTheDocument()
+  })
+
+  it('shows a microcopy clarifying it mirrors the header when there is no manual override', () => {
+    renderSlideOver(baseTrip)
+    expect(screen.getByText(/mismo estado que se muestra en el encabezado/)).toBeInTheDocument()
   })
 
   it('shows attribution with editor name and a revert control when manual_status is set', () => {
@@ -240,10 +310,6 @@ describe('TripSlideOver — override de estado', () => {
 })
 
 describe('TripSlideOver — indicadores', () => {
-  // Fase 3 del hardening del Diario (2026-07-18): antes solo se mostraban acá
-  // para viajes manuales (inconsistente con la tabla, que los editaba inline
-  // para cualquier origen). Ahora la tabla no edita nada inline — este es el
-  // único lugar de edición, tiene que estar disponible siempre.
   it('renders editable Indicadores for a TMS-sourced trip', () => {
     renderSlideOver(baseTrip)
     expect(screen.getByTitle('Activo')).toBeInTheDocument()
@@ -289,7 +355,7 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
     expect(await screen.findByText('network down')).toBeInTheDocument()
   })
 
-  it('shows legacy notes/comments as a read-only entry', () => {
+  it('shows legacy notes/comments as a read-only entry (retiro es del Plan 5, no de este)', () => {
     renderSlideOver({ ...baseTrip, notes: 'obs vieja', comments: 'comentario viejo' })
     expect(screen.getByText(/Nota anterior/)).toBeInTheDocument()
     expect(screen.getByText(/obs vieja/)).toBeInTheDocument()
@@ -335,7 +401,6 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
     ])
     renderSlideOver(baseTrip)
     await screen.findByText('nota de llamada')
-    // el primer botón "Incidente" es el chip de filtro (el composer usa title)
     fireEvent.click(screen.getAllByText('Incidente')[0])
     expect(screen.queryByText('nota de llamada')).not.toBeInTheDocument()
     expect(screen.getByText('nota de incidente')).toBeInTheDocument()
@@ -370,17 +435,11 @@ describe('TripSlideOver — Bitácora (feed con historial)', () => {
   })
 })
 
-describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)', () => {
-  // Fase 1 del hardening del Diario (2026-07-18): Carga Inicio/Fin dejó de
-  // vivir en trip.cag_inicio_at/cag_fin_at (editado desde "Datos
-  // operativos") — el origen ahora es una parada más (stop_type=ORIGIN,
-  // stop_order=0) y se edita con el mismo mecanismo que Desc. Inicio/Fin de
-  // cualquier destino, vía tripsApi.patchStop.
+describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin) — tabla técnica siempre visible', () => {
   it('saves Carga inicio of the ORIGIN stop via tripsApi.patchStop on blur', async () => {
     vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
     const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
     renderSlideOver({ ...baseTrip, stops })
-    fireEvent.click(screen.getByText(/Ver detalle técnico/))
     const input = screen.getByLabelText('Carga inicio de CD Origen') as HTMLInputElement
     fireEvent.change(input, { target: { value: '2026-07-17T09:00' } })
     fireEvent.blur(input)
@@ -392,7 +451,6 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
     vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
     const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
     renderSlideOver({ ...baseTrip, stops })
-    fireEvent.click(screen.getByText(/Ver detalle técnico/))
     const input = screen.getByLabelText('Carga fin de CD Origen') as HTMLInputElement
     fireEvent.change(input, { target: { value: '2026-07-17T09:30' } })
     fireEvent.blur(input)
@@ -403,7 +461,6 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
   it('shows an ORIGEN badge for the origin stop in the technical table', () => {
     const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
     renderSlideOver({ ...baseTrip, stops })
-    fireEvent.click(screen.getByText(/Ver detalle técnico/))
     expect(screen.getAllByText('ORIGEN').length).toBeGreaterThan(0)
   })
 
@@ -411,7 +468,6 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
     vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
     const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
     renderSlideOver({ ...baseTrip, stops })
-    fireEvent.click(screen.getByText(/Ver detalle técnico/))
     const input = screen.getByLabelText('Desc. inicio de Local 1') as HTMLInputElement
     fireEvent.change(input, { target: { value: '2026-07-17T10:00' } })
     fireEvent.blur(input)
@@ -422,7 +478,6 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin)',
   it('marks a stop\'s Desc. inicio/fin inputs as manual when desc_manual is true', () => {
     const stops = [makeStop({ stop_id: 's1', local: 'Local 1', desc_manual: true })]
     renderSlideOver({ ...baseTrip, stops })
-    fireEvent.click(screen.getByText(/Ver detalle técnico/))
     const input = screen.getByLabelText('Desc. inicio de Local 1') as HTMLInputElement
     expect(input.className).toMatch(/text-accent/)
   })
@@ -437,15 +492,37 @@ describe('TripSlideOver — clasificación RM/Zona Cero por parada (H2.6, catál
       operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
     }
     renderSlideOver({ ...baseTrip, stops }, { meta: meta as never })
-    fireEvent.click(screen.getByText(/Ver detalle técnico/))
     expect(screen.getByText('RM')).toBeInTheDocument()
   })
 
   it('does not show a classification badge when the stop has no operation_type resolved', () => {
     const stops = [makeStop({ stop_id: 's1', local: 'CD LO AGUIRRE', operation_type: null })]
     renderSlideOver({ ...baseTrip, stops })
-    fireEvent.click(screen.getByText(/Ver detalle técnico/))
     expect(screen.queryByText('RM')).not.toBeInTheDocument()
+  })
+})
+
+describe('TripSlideOver — Ubicación de origen (solo operation_type, sin región/ciudad)', () => {
+  const metaWithOpTypes = {
+    statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
+    temperature_ranges: [], unassigned_reasons: [],
+    operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
+  } as never
+
+  it('shows the operation_type badge when resolved', () => {
+    renderSlideOver({ ...baseTrip, origin_operation_type: 'RM' }, { meta: metaWithOpTypes })
+    expect(screen.getByText('RM')).toBeInTheDocument()
+  })
+
+  it('shows "Sin clasificar" instead of an empty section when origin_operation_type is null', () => {
+    renderSlideOver({ ...baseTrip, origin_operation_type: null })
+    expect(screen.getByText('Sin clasificar')).toBeInTheDocument()
+  })
+
+  it('no longer shows a región/ciudad picker for the origin', () => {
+    renderSlideOver(baseTrip)
+    expect(screen.queryByLabelText('Región de origen')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Ciudad de origen')).not.toBeInTheDocument()
   })
 })
 

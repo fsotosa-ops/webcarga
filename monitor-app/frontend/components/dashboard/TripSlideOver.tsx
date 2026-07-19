@@ -2,162 +2,22 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  X, Loader2, Building2, Copy, Check,
+  X, Loader2, Copy, Check,
   Truck, User, Phone, Hash,
-  MapPin, ChevronDown, RotateCcw, ClipboardList,
+  MapPin, RotateCcw, ClipboardList,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
-import { carriersApi } from '@/lib/api/carriers'
-import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useQuery } from '@tanstack/react-query'
 import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { fmtDT, fmtDate, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
+import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { StopTimeline } from './StopTimeline'
-import { RouteProgress } from './RouteProgress'
 import { IndicatorDots } from './IndicatorDots'
 import { TripNotesFeed } from './TripNotesFeed'
+import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from './FleetAssignSection'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
-import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
-import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
-
-// ── CarrierAssignSection ──────────────────────────────────────────────────────
-//
-// Búsqueda debounced de empresa (public.carriers) — mismo patrón que
-// TransferModal.tsx. Reactivado 2026-07-17: trip_fleet_links.carrier_id
-// ya resuelve contra public.carriers.id (repuntado desde la tabla legacy
-// app.transporter_profiles, ver migración migrate_trip_fleet_links_to_carriers;
-// columna renombrada transporter_id→carrier_id en Fase 1.5).
-
-type PendingCarrier = { id: string; business_name: string | null }
-
-function CarrierAssignSection({
-  tripId, currentCarrierName, onAssigned,
-}: {
-  tripId: string
-  currentCarrierName: string | null
-  onAssigned: (t: Trip) => void
-}) {
-  const [q, setQ]                             = useState('')
-  const [pending, setPending]                 = useState<PendingCarrier | null>(null)
-  const [driverId, setDriverId]                = useState('')
-  const [tractorAssetId, setTractorAssetId]    = useState('')
-  const [assigning, setAssigning]             = useState(false)
-  const [err, setErr]                         = useState<string | null>(null)
-
-  // Roster de la empresa preseleccionada — para poder vincular driver_id/
-  // tractor_asset_id reales en vez de solo el nombre en texto libre.
-  const rosterQuery = useQuery({
-    queryKey: ['carriers', pending?.id, 'roster'],
-    queryFn: async () => {
-      const [drivers, assets] = await Promise.all([
-        carriersApi.listDrivers(pending!.id),
-        carriersApi.listAssets(pending!.id),
-      ])
-      return { drivers, assets }
-    },
-    enabled: !!pending,
-  })
-  const drivers  = rosterQuery.data?.drivers ?? []
-  const vehicles = rosterQuery.data?.assets ?? []
-
-  function handlePick(c: CarrierSearchResult) {
-    setPending({ id: c.id, business_name: c.business_name })
-    setDriverId('')
-    setTractorAssetId('')
-    setErr(null)
-  }
-
-  async function handleConfirm() {
-    if (!pending) return
-    setAssigning(true); setErr(null)
-    const driver  = drivers.find(d => d.id === driverId)
-    const tractor = vehicles.find(v => v.id === tractorAssetId)
-    try {
-      const updated = await tripsApi.assignFleetLink(tripId, {
-        carrier_id:        pending.id,
-        driver_id:         driverId || undefined,
-        tractor_asset_id:  tractorAssetId || undefined,
-        driver_name:       driver?.full_name ?? undefined,
-        tractor_plate:     tractor?.license_plate ?? undefined,
-      })
-      onAssigned(updated)
-      setQ(''); setPending(null)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al vincular')
-    } finally {
-      setAssigning(false)
-    }
-  }
-
-  if (pending) {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-lg px-3 py-2">
-          <p className="text-[11px] font-semibold text-slate-800 truncate">{pending.business_name ?? '—'}</p>
-          <button type="button" onClick={() => setPending(null)} className="text-[10px] text-gray-400 hover:text-gray-600 shrink-0 ml-2">
-            Cambiar
-          </button>
-        </div>
-        {rosterQuery.isFetching ? (
-          <p className="text-[11px] text-gray-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Cargando roster…</p>
-        ) : (
-          <>
-            {drivers.length > 0 && (
-              <select
-                value={driverId}
-                onChange={e => setDriverId(e.target.value)}
-                aria-label="Conductor (opcional)"
-                className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
-              >
-                <option value="">Conductor (opcional)</option>
-                {drivers.map(d => (
-                  <option key={d.id} value={d.id}>{d.full_name ?? '—'} · {d.tax_id ?? ''}</option>
-                ))}
-              </select>
-            )}
-            {vehicles.length > 0 && (
-              <select
-                value={tractorAssetId}
-                onChange={e => setTractorAssetId(e.target.value)}
-                aria-label="Tracto (opcional)"
-                className="w-full text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/20"
-              >
-                <option value="">Tracto (opcional)</option>
-                {vehicles.map(v => (
-                  <option key={v.id} value={v.id}>{v.license_plate ?? '—'} · {v.asset_type ?? ''}</option>
-                ))}
-              </select>
-            )}
-          </>
-        )}
-        <button
-          type="button"
-          disabled={assigning}
-          onClick={handleConfirm}
-          className="w-full text-xs font-semibold bg-accent text-white rounded-lg py-1.5 hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
-        >
-          {assigning ? <Loader2 size={12} className="animate-spin" /> : 'Vincular'}
-        </button>
-        {err && <p className="text-[11px] text-red-500">{err}</p>}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      {currentCarrierName && (
-        <p className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded border border-border/60">
-          TMS reporta: <span className="font-medium text-gray-600">{currentCarrierName}</span>
-        </p>
-      )}
-      <CarrierSearchPicker query={q} onQueryChange={setQ} onPick={handlePick} size="sm" />
-      {err && <p className="text-[11px] text-red-500">{err}</p>}
-    </div>
-  )
-}
 
 // ── MetaField helper ──────────────────────────────────────────────────────────
 
@@ -191,19 +51,18 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const [estadoDraft, setEstadoDraft]           = useState('')
   const [saving, setSaving]                     = useState(false)
   const [err, setErr]                           = useState<string | null>(null)
-  const [copied, setCopied]                     = useState(false)
+  const [copiedField, setCopiedField]           = useState<'external' | 'internal' | null>(null)
   const [showEstadoSelect, setShowEstadoSelect] = useState(false)
   const [clearingOverride, setClearingOverride] = useState(false)
   const [reasonSaving, setReasonSaving]         = useState(false)
-  const [techDetailOpen, setTechDetailOpen]     = useState(false)
-  const [datosOpen, setDatosOpen]               = useState(false)
   const [unlinkErr, setUnlinkErr]               = useState<string | null>(null)
   const [unlinking, setUnlinking]               = useState(false)
-  // Ubicación de origen (región/ciudad) — draft local, se guarda vía PATCH
-  const [locRegion, setLocRegion]               = useState<string | null>(null)
-  const [locCity, setLocCity]                   = useState<string | null>(null)
-  const [locSaving, setLocSaving]               = useState(false)
-  const [locErr, setLocErr]                     = useState<string | null>(null)
+  // Conductor→empresa/vehículo (FleetAssignSection, driver-first) — solo
+  // importa mientras el viaje no tiene carrier_id (rama "vincular"); la rama
+  // "ya vinculado" muestra una tarjeta compacta aparte, sin usar este draft.
+  const [fleetDraft, setFleetDraft]             = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
+  const [assigningFleet, setAssigningFleet]     = useState(false)
+  const [fleetErr, setFleetErr]                 = useState<string | null>(null)
   const panelRef                                = useRef<HTMLDivElement>(null)
 
   // Semántica de diálogo: Escape cierra, Tab queda atrapado en el panel, el foco vuelve al origen al cerrar
@@ -240,18 +99,12 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     if (!trip) return
     setEstadoDraft('')
     setErr(null)
-    setCopied(false)
+    setCopiedField(null)
     setShowEstadoSelect(false)
-    setTechDetailOpen(false)
-    setDatosOpen(false)
     setUnlinkErr(null)
-    setLocRegion(trip.origin_region ?? null)
-    setLocCity(trip.origin_city ?? null)
-    setLocErr(null)
+    setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
+    setFleetErr(null)
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const locDirty =
-    !!trip && ((locRegion ?? null) !== (trip.origin_region ?? null) || (locCity ?? null) !== (trip.origin_city ?? null))
 
   // Desc. Inicio/Fin (esquema de fechas 2026-07-17): override manual de lo
   // que reporta el TMS por parada — incluye el origen desde que se unificó
@@ -271,23 +124,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
       setStopSaving(null)
-    }
-  }
-
-  async function handleSaveLocation() {
-    if (!trip) return
-    setLocSaving(true)
-    setLocErr(null)
-    try {
-      const updated = await tripsApi.patch(trip.id, {
-        origin_region: locRegion ?? '',
-        origin_city:   locCity ?? '',
-      })
-      onSaved(updated)
-    } catch (e) {
-      setLocErr(e instanceof Error ? e.message : 'Error al guardar la ubicación')
-    } finally {
-      setLocSaving(false)
     }
   }
 
@@ -321,12 +157,45 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     }
   }
 
-  function handleCopyId() {
-    if (!trip?.source_system_trip_id) return
-    navigator.clipboard.writeText(trip.source_system_trip_id).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+  function handleCopy(field: 'external' | 'internal', value: string) {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(null), 2000)
     })
+  }
+
+  async function handleUnlink() {
+    if (!trip) return
+    setUnlinking(true); setUnlinkErr(null)
+    try {
+      await tripsApi.removeFleetLink(trip.id)
+      onSaved({ ...trip, carrier_id: null, fleet_link_id: null })
+      setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
+    } catch (e) {
+      setUnlinkErr(e instanceof Error ? e.message : 'Error al desvincular')
+    } finally {
+      setUnlinking(false)
+    }
+  }
+
+  async function handleAssignFleet() {
+    if (!trip || !fleetDraft.carrier_id) return
+    setAssigningFleet(true); setFleetErr(null)
+    try {
+      const updated = await tripsApi.assignFleetLink(trip.id, {
+        carrier_id:       fleetDraft.carrier_id,
+        driver_id:        fleetDraft.driver_id ?? undefined,
+        tractor_asset_id: fleetDraft.tractor_asset_id ?? undefined,
+        driver_name:      fleetDraft.driver_name ?? undefined,
+        tractor_plate:    fleetDraft.tractor_plate ?? undefined,
+      })
+      onSaved(updated)
+      setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
+    } catch (e) {
+      setFleetErr(e instanceof Error ? e.message : 'Error al vincular')
+    } finally {
+      setAssigningFleet(false)
+    }
   }
 
   if (!trip) return null
@@ -334,14 +203,15 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const currentStatus = trip.manual_status ?? trip.current_status
   const tmsMeta       = trip.source_system ? meta?.tms_sources.find(t => t.id === trip.source_system.toLowerCase()) : null
   const tmsLabel      = tmsMeta?.label ?? trip.source_system?.toUpperCase().slice(0, 3) ?? '?'
+  const tmsLoginUrl   = trip.source_system && trip.source_system !== 'manual' ? TMS_LOGIN_URLS[trip.source_system.toLowerCase()] : undefined
   const temp          = getLatestTemp(trip.stops ?? [])
   const tempStatus    = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
 
   // Hero: la historia del viaje de un vistazo. `stops` incluye el origen
-  // (Fase 1, 2026-07-18) — se pasa completo al timeline/barra de progreso
-  // (ahí SÍ tiene que aparecer como nodo 0), pero el conteo "N/M paradas"
-  // usa solo destinos: "parada" en el vocabulario del equipo operativo
-  // significa destino de entrega, no el punto de carga.
+  // (Fase 1, 2026-07-18) — se pasa completo al timeline (ahí SÍ tiene que
+  // aparecer como nodo 0), pero el conteo "N/M paradas" usa solo destinos:
+  // "parada" en el vocabulario del equipo operativo significa destino de
+  // entrega, no el punto de carga.
   const stops            = trip.stops ?? []
   const destinationStops = stops.filter(s => s.stop_type !== 'ORIGIN')
   const activeStop  = getActiveStop(stops)
@@ -350,6 +220,17 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const compliance  = stopComplianceSummary(stops)
   const tmsSince    = formatRelativeTime(trip.status_reported_at)
   const syncSince   = formatRelativeTime(trip.pipeline_updated_at)
+
+  // Reconciliación TMS↔manual (Fase 1.5b, extendida a empresa en Fase 2 Plan
+  // 4): si hay vínculo manual y el TMS reporta conductor/patente/empresa
+  // distinta a lo vinculado, avisar y ofrecer revertir — nunca sobrescribir
+  // automáticamente. EETT TMS (antes en "Datos operativos") se retiró porque
+  // esta es la única función real que cumplía: detectar cuándo la empresa
+  // vinculada diverge de lo que reporta la TMS.
+  const driverDiverges  = !!(trip.driver_name_tms && trip.driver_name_tms !== trip.driver_name)
+  const tractorDiverges = !!(trip.tractor_plate_tms && trip.tractor_plate_tms !== trip.tractor_plate)
+  const carrierDiverges = !!(trip.carrier_name_tms && trip.carrier_name_tms !== trip.carrier_name)
+  const hasReconciliationDivergence = !!trip.fleet_link_id && (driverDiverges || tractorDiverges || carrierDiverges)
 
   return (
     <>
@@ -370,29 +251,58 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
 
         {/* ── Header — 1 fila compacta: identidad del viaje ─────────── */}
         <div className="bg-slate-900 px-4 py-2.5 md:px-6 shrink-0 flex items-center gap-3 flex-wrap">
-          <span
-            className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
-            style={tmsMeta
-              ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color }
-              : { backgroundColor: '#334155', color: '#94a3b8' }}
-          >
-            {tmsLabel}
-          </span>
+          {tmsLoginUrl ? (
+            <a
+              href={tmsLoginUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Abrir en ${tmsMeta?.label ?? tmsLabel}`}
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 hover:opacity-80 transition-opacity"
+              style={tmsMeta
+                ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color }
+                : { backgroundColor: '#334155', color: '#94a3b8' }}
+            >
+              {tmsLabel}
+            </a>
+          ) : (
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+              style={tmsMeta
+                ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color }
+                : { backgroundColor: '#334155', color: '#94a3b8' }}
+            >
+              {tmsLabel}
+            </span>
+          )}
 
+          {/* IDs unificados: externo (con copiar, ya existía) + interno
+              (con copiar, antes vivía solo — casi invisible — en un footer
+              que ya no existe) — un solo lugar para "los IDs de este viaje". */}
           {trip.source_system_trip_id && (
             <span className="flex items-center gap-1.5 min-w-0">
               <Hash size={11} className="text-white/40 shrink-0" />
               <span className="font-mono text-xs text-white/60 truncate">{trip.source_system_trip_id}</span>
               <button
                 type="button"
-                onClick={handleCopyId}
-                title="Copiar ID de viaje"
+                onClick={() => handleCopy('external', trip.source_system_trip_id!)}
+                title="Copiar ID externo"
                 className="text-white/40 hover:text-white/80 transition-colors shrink-0"
               >
-                {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                {copiedField === 'external' ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
               </button>
             </span>
           )}
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span className="font-mono text-[10px] text-white/30 truncate">{trip.id}</span>
+            <button
+              type="button"
+              onClick={() => handleCopy('internal', trip.id)}
+              title="Copiar ID interno"
+              className="text-white/40 hover:text-white/80 transition-colors shrink-0"
+            >
+              {copiedField === 'internal' ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+            </button>
+          </span>
 
           <span className="flex items-center gap-1.5 shrink-0">
             <Truck size={13} className="text-white/40" />
@@ -434,7 +344,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
         </div>
 
         {/* ── Hero — la historia del viaje ──────────────────────────── */}
-        <div className="px-4 py-3 md:px-6 border-b border-border bg-gray-50/80 shrink-0 space-y-2">
+        <div data-testid="hero" className="px-4 py-3 md:px-6 border-b border-border bg-gray-50/80 shrink-0 space-y-2">
           <div className="flex items-center gap-2.5 flex-wrap">
             <StatusBadge status={currentStatus} meta={meta} size="md" fallbackLabel="Sin estado" />
             {trip.manual_status && (
@@ -452,15 +362,12 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             )}
           </div>
 
-          {/* Barra de progreso de ruta — sin nombres (viven en el timeline; tooltip en el nodo) */}
-          {stops.length > 0 && (
-            <div className="pt-1 pb-0.5">
-              <RouteProgress stops={stops} />
-            </div>
-          )}
-
           {/* Gestión por excepción: solo se badgea lo que está mal (OFF TIME,
-              temp fuera de rango) — lo demás es texto plano discreto */}
+              temp fuera de rango) — lo demás es texto plano discreto. La
+              barra de puntos RouteProgress se retiró (Fase 2, Plan 4) — era
+              la 3ª representación de la misma secuencia de paradas junto a
+              StopTimeline (Ruta) y la tabla técnica; este texto ya comunica
+              el vistazo rápido sin un gráfico aparte. */}
           <div className="flex items-center gap-2.5 flex-wrap text-[11px] text-gray-500">
             {destinationStops.length > 0 && (
               <span>{doneCount}/{destinationStops.length} paradas</span>
@@ -476,11 +383,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             <span className="text-gray-400">
               TMS reportó {tmsSince}{syncSince !== '—' ? ` · sync ${syncSince}` : ''}
             </span>
-            {/* Ingresó al sistema — movido acá desde un footer casi invisible
-                (text-[9px] text-gray-300, al final de todo el panel) — Fase 2
-                del hardening del Diario, 2026-07-18. Misma familia de info
-                de timing que "TMS reportó"/"sync", con jerarquía visual
-                acorde a que sí aporta valor operativo. */}
             {trip.created_at && (
               <span className="text-gray-400">· en el Diario desde {fmtDT(trip.created_at)}</span>
             )}
@@ -555,13 +457,21 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowEstadoSelect(true)}
-                  className="text-xs text-accent hover:text-accent/80 transition-colors"
-                >
-                  + Establecer estado operativo manual
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowEstadoSelect(true)}
+                    className="text-xs text-accent hover:text-accent/80 transition-colors"
+                  >
+                    + Establecer estado operativo manual
+                  </button>
+                  {/* Microcopy (Fase 2, Plan 4): sin override, este badge y el
+                      del hero muestran el mismo dato — antes no había nada
+                      que lo explicara. */}
+                  <p className="text-[9px] text-gray-400 mt-1">
+                    Es el mismo estado que se muestra en el encabezado — acá podés confirmarlo manualmente si hace falta.
+                  </p>
+                </>
               )}
 
               {err && (
@@ -569,8 +479,17 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               )}
             </div>
 
-            {/* Motivo de no asignación — solo visible mientras el viaje no está
-                asignado (Fase 1.5d); catálogo editable en app.unassigned_reasons */}
+            {/* Indicadores — el rediseño a switches con etiqueta es el
+                Plan 5; acá sigue siendo IndicatorDots sin cambios. */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
+              <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
+            </div>
+
+            {/* Motivo de no asignación — movido después de Indicadores (Fase
+                2, Plan 4): es el mismo concepto causal que el switch
+                "Asignado" de arriba, antes vivían en bloques sin relación
+                visual. Catálogo editable en app.unassigned_reasons. */}
             {!trip.is_assigned && (meta?.unassigned_reasons?.length ?? 0) > 0 && (
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Motivo de no asignación</p>
@@ -599,150 +518,127 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               </div>
             )}
 
-            {/* Indicadores — antes solo se mostraba (y editaba) acá para
-                viajes manuales, pese a que la columna de la tabla los
-                editaba inline para CUALQUIER viaje sin esa restricción
-                (inconsistencia real, ver AGENTLOG). Fase 3 del hardening
-                del Diario (2026-07-18): la tabla ya no edita inline (son
-                tabs de filtro), así que esta es ahora la ÚNICA superficie
-                de edición — tiene que estar disponible para todos. */}
+            {/* Conductor y flota — driver-first (Fase 2, Plan 4). Antes
+                "Empresa transportista" con CarrierAssignSection (búsqueda
+                de empresa primero, roster de conductor/tracto en
+                dropdowns) — mismo bug de fondo que motivó toda esta Fase:
+                una superficie de búsqueda propia en vez de reusar
+                DriverSearchPicker. Ahora FleetAssignSection (compartido con
+                TripAssignDialog, Plan 3) cubre la búsqueda + autocompletado
+                editable; "Vincular" solo llama a la API cuando el operador
+                confirma. */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
-              <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                <User size={10} /> Conductor y flota
+              </p>
+              {trip.carrier_id ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 truncate">{trip.carrier_name ?? '—'}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={unlinking}
+                      onClick={handleUnlink}
+                      className="text-[11px] text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50 shrink-0 ml-2"
+                    >
+                      {unlinking ? <Loader2 size={12} className="animate-spin" /> : 'Desvincular'}
+                    </button>
+                  </div>
+                  {unlinkErr && <p className="text-xs text-red-500 mt-1">{unlinkErr}</p>}
+                  {hasReconciliationDivergence && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+                      {carrierDiverges && (
+                        <p className="text-[10px] text-amber-700">
+                          TMS reporta empresa: <span className="font-semibold">{trip.carrier_name_tms}</span>
+                        </p>
+                      )}
+                      {driverDiverges && (
+                        <p className="text-[10px] text-amber-700">
+                          TMS reporta conductor: <span className="font-semibold">{trip.driver_name_tms}</span>
+                        </p>
+                      )}
+                      {tractorDiverges && (
+                        <p className="text-[10px] text-amber-700">
+                          TMS reporta patente: <span className="font-semibold">{trip.tractor_plate_tms}</span>
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        disabled={unlinking}
+                        onClick={handleUnlink}
+                        className="text-[10px] font-semibold text-amber-700 hover:text-amber-900 underline disabled:opacity-50"
+                      >
+                        {unlinking ? 'Revirtiendo…' : 'Usar dato del TMS'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <FleetAssignSection
+                    value={fleetDraft}
+                    onChange={setFleetDraft}
+                    size="sm"
+                    notFoundHint={
+                      <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
+                        Si no aparece en la lista, hay que darlo de alta primero en{' '}
+                        <a href="/dashboard/transportistas" className="underline font-semibold">Empresas</a>.
+                      </p>
+                    }
+                  />
+                  {fleetDraft.driver_id && (
+                    <button
+                      type="button"
+                      disabled={assigningFleet || !fleetDraft.carrier_id}
+                      onClick={handleAssignFleet}
+                      className="w-full text-xs font-semibold bg-accent text-white rounded-lg py-1.5 hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                      {assigningFleet ? <Loader2 size={12} className="animate-spin" /> : 'Vincular'}
+                    </button>
+                  )}
+                  {fleetErr && <p className="text-[11px] text-red-500">{fleetErr}</p>}
+                </div>
+              )}
             </div>
 
-            {/* Ubicación de origen — región/ciudad asignable desde el Monitor.
-                FIX 2026-07-18 (Fase 1): origin_operation_type ya lo calculaba
-                el backend (_apply_operation_types, catálogo public.locations)
-                pero nunca se renderizaba en ningún componente — mismo dato
-                que OperationTypeBadge ya muestra para cada parada, ahora
-                también acá, de solo lectura (se deriva automáticamente por
-                comuna, no se edita a mano). */}
+            {/* Ubicación de origen — solo operation_type (Fase 2, Plan 4).
+                Región/ciudad (RegionCityPicker) se retiró por completo:
+                origin_operation_type es el dato real/automático, la
+                asignación manual de respaldo competía visualmente con él
+                sin aportar. "Sin clasificar" explícito en vez de una
+                sección vacía cuando OperationTypeBadge no tiene nada que
+                mostrar (retorna null si operationType es falsy). */}
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                 <MapPin size={10} /> Ubicación de origen
-                <OperationTypeBadge operationType={trip.origin_operation_type} meta={meta} />
               </p>
-              <RegionCityPicker
-                size="sm"
-                region={locRegion}
-                city={locCity}
-                onChange={(region, city) => { setLocRegion(region); setLocCity(city) }}
-                labelSuffix="de origen"
-              />
-              {locDirty && (
-                <div className="flex items-center gap-2 mt-1.5">
-                  <button
-                    type="button"
-                    onClick={handleSaveLocation}
-                    disabled={locSaving}
-                    className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent hover:bg-accent/90 rounded-lg px-2.5 py-1 transition-colors disabled:opacity-50"
-                  >
-                    {locSaving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-                    Guardar ubicación
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setLocRegion(trip.origin_region ?? null); setLocCity(trip.origin_city ?? null); setLocErr(null) }}
-                    className="text-[10px] text-gray-400 hover:text-gray-600"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              )}
-              {locErr && (
-                <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{locErr}</p>
-              )}
-            </div>
-
-            {/* Empresa transportista — card compacta, sin acordeón */}
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-                <Building2 size={10} /> Empresa transportista
-              </p>
-              {trip.carrier_id ? (
-                <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-800 truncate">{trip.carrier_name ?? '—'}</p>
-                    {trip.carrier_name_tms && (
-                      <p className="text-[9px] text-gray-400 mt-0.5 truncate">TMS: {trip.carrier_name_tms}</p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={unlinking}
-                    onClick={async () => {
-                      setUnlinking(true); setUnlinkErr(null)
-                      try {
-                        await tripsApi.removeFleetLink(trip.id)
-                        onSaved({ ...trip, carrier_id: null, fleet_link_id: null })
-                      } catch (e) {
-                        setUnlinkErr(e instanceof Error ? e.message : 'Error al desvincular')
-                      } finally {
-                        setUnlinking(false)
-                      }
-                    }}
-                    className="text-[11px] text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50 shrink-0 ml-2"
-                  >
-                    {unlinking ? <Loader2 size={12} className="animate-spin" /> : 'Desvincular'}
-                  </button>
-                </div>
+              {trip.origin_operation_type ? (
+                <OperationTypeBadge operationType={trip.origin_operation_type} meta={meta} size="md" />
               ) : (
-                <CarrierAssignSection
-                  tripId={trip.id}
-                  currentCarrierName={trip.carrier_name_tms}
-                  onAssigned={onSaved}
-                />
-              )}
-              {unlinkErr && <p className="text-xs text-red-500 mt-1">{unlinkErr}</p>}
-              {/* Reconciliación TMS↔manual (Fase 1.5b): si hay vínculo manual y el
-                  TMS reporta un conductor/patente distinto al vinculado, avisar y
-                  ofrecer revertir — nunca sobrescribir automáticamente. */}
-              {!!trip.fleet_link_id && (
-                (trip.driver_name_tms && trip.driver_name_tms !== trip.driver_name) ||
-                (trip.tractor_plate_tms && trip.tractor_plate_tms !== trip.tractor_plate)
-              ) && (
-                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
-                  {trip.driver_name_tms && trip.driver_name_tms !== trip.driver_name && (
-                    <p className="text-[10px] text-amber-700">
-                      TMS reporta conductor: <span className="font-semibold">{trip.driver_name_tms}</span>
-                    </p>
-                  )}
-                  {trip.tractor_plate_tms && trip.tractor_plate_tms !== trip.tractor_plate && (
-                    <p className="text-[10px] text-amber-700">
-                      TMS reporta patente: <span className="font-semibold">{trip.tractor_plate_tms}</span>
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    disabled={unlinking}
-                    onClick={async () => {
-                      setUnlinking(true); setUnlinkErr(null)
-                      try {
-                        await tripsApi.removeFleetLink(trip.id)
-                        onSaved({ ...trip, carrier_id: null, fleet_link_id: null })
-                      } catch (e) {
-                        setUnlinkErr(e instanceof Error ? e.message : 'Error al desvincular')
-                      } finally {
-                        setUnlinking(false)
-                      }
-                    }}
-                    className="text-[10px] font-semibold text-amber-700 hover:text-amber-900 underline disabled:opacity-50"
-                  >
-                    {unlinking ? 'Revirtiendo…' : 'Usar dato del TMS'}
-                  </button>
-                </div>
+                <span className="text-[11px] text-gray-400">Sin clasificar</span>
               )}
             </div>
 
-            {/* Bitácora — feed cronológico con historial */}
+            {/* Datos operativos — antes acordeón colapsado en la columna
+                principal (Fase 2, Plan 4): se aplana y se muda acá, es la
+                sección que menos ancho horizontal necesita. EETT TMS se
+                retira — su única función real (divergencia de empresa) la
+                cubre ahora el banner de reconciliación de arriba. */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Bitácora</p>
-              <TripNotesFeed trip={trip} />
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Datos operativos</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
+                <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
+                {trip.milestone_status && (
+                  <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
+                )}
+              </div>
             </div>
           </aside>
 
-          {/* Columna izquierda en desktop / segunda en mobile: RUTA + secundario */}
+          {/* Columna izquierda en desktop / segunda en mobile: RUTA + BITÁCORA */}
           <div className="order-2 md:order-1 flex-1 min-w-0 md:overflow-y-auto p-4 md:p-6 space-y-5">
             {stops.length > 0 && (
               <section>
@@ -751,142 +647,115 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 </h4>
                 <StopTimeline stops={stops} />
 
-                <button
-                  type="button"
-                  onClick={() => setTechDetailOpen(v => !v)}
-                  className="mt-3 flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <ChevronDown size={11} className={`transition-transform ${techDetailOpen ? 'rotate-180' : ''}`} />
-                  Ver detalle técnico (GPS, SAP)
-                </button>
-
-                {techDetailOpen && (
-                  <div className="overflow-x-auto mt-2 -mx-4 md:-mx-6">
-                    <div className="min-w-[860px] px-4 md:px-6">
-                      <table className="w-full text-xs border border-border/80 rounded-lg overflow-hidden">
-                        <thead>
-                          <tr className="bg-slate-800 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
-                            <th className="px-3 py-2 text-left sticky left-0 bg-slate-800 z-10 min-w-[120px]">Local</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Llegada</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Salida</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">GPS Arr.</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">GPS Sal.</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Desc. inicio</th>
-                            <th className="px-3 py-2 text-left min-w-[82px]">Desc. fin</th>
-                            <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
-                            <th className="px-3 py-2 text-center min-w-[52px]">°C</th>
-                            <th className="px-3 py-2 text-center min-w-[68px]">On Time</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/50">
-                          {stops.map((stop, i) => {
-                            const isOrigin = stop.stop_type === 'ORIGIN'
-                            const rowBg =
-                              isOrigin ? 'bg-slate-50' :
-                              stop.on_time_status === 'ON TIME'  ? 'bg-green-50/40' :
-                              stop.on_time_status === 'OFF TIME' ? 'bg-amber-50/40' :
-                              i % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
-                            const opLabel = isOrigin ? 'Carga' : 'Desc.'
-                            return (
-                              <tr key={stop.stop_id ?? i} className={rowBg}>
-                                <td className={`px-3 py-2 sticky left-0 z-10 ${rowBg}`}>
-                                  <p className="font-medium text-slate-700 leading-snug flex items-center gap-1">
-                                    {isOrigin && (
-                                      <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-slate-700 text-white shrink-0">ORIGEN</span>
-                                    )}
-                                    {stop.local ?? '—'}
-                                    <OperationTypeBadge operationType={stop.operation_type} meta={meta} />
+                {/* Tabla técnica — siempre visible (Fase 2, Plan 4: acordeón
+                    "Ver detalle técnico" retirado). No se reemplaza por
+                    RouteEditor (el de creación): no existe endpoint para
+                    agregar/quitar/renombrar paradas de un viaje ya
+                    existente, y el timeline GPS/SAP es exclusivo del
+                    detalle por diseño (decisión #2 del spec). */}
+                <div className="overflow-x-auto mt-3 -mx-4 md:-mx-6">
+                  <div className="min-w-[860px] px-4 md:px-6">
+                    <table className="w-full text-xs border border-border/80 rounded-lg overflow-hidden">
+                      <thead>
+                        <tr className="bg-slate-800 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
+                          <th className="px-3 py-2 text-left sticky left-0 bg-slate-800 z-10 min-w-[120px]">Local</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Llegada</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Salida</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Arr.</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Sal.</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Desc. inicio</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Desc. fin</th>
+                          <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
+                          <th className="px-3 py-2 text-center min-w-[52px]">°C</th>
+                          <th className="px-3 py-2 text-center min-w-[68px]">On Time</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {stops.map((stop, i) => {
+                          const isOrigin = stop.stop_type === 'ORIGIN'
+                          const rowBg =
+                            isOrigin ? 'bg-slate-50' :
+                            stop.on_time_status === 'ON TIME'  ? 'bg-green-50/40' :
+                            stop.on_time_status === 'OFF TIME' ? 'bg-amber-50/40' :
+                            i % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
+                          const opLabel = isOrigin ? 'Carga' : 'Desc.'
+                          return (
+                            <tr key={stop.stop_id ?? i} className={rowBg}>
+                              <td className={`px-3 py-2 sticky left-0 z-10 ${rowBg}`}>
+                                <p className="font-medium text-slate-700 leading-snug flex items-center gap-1">
+                                  {isOrigin && (
+                                    <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-slate-700 text-white shrink-0">ORIGEN</span>
+                                  )}
+                                  {stop.local ?? '—'}
+                                  <OperationTypeBadge operationType={stop.operation_type} meta={meta} />
+                                </p>
+                                {stop.destination_city && (
+                                  <p className="text-[9px] text-gray-400 mt-0.5">
+                                    {stop.destination_city}{stop.destination_region ? `, ${stop.destination_region}` : ''}
                                   </p>
-                                  {stop.destination_city && (
-                                    <p className="text-[9px] text-gray-400 mt-0.5">
-                                      {stop.destination_city}{stop.destination_region ? `, ${stop.destination_region}` : ''}
-                                    </p>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
-                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
-                                <td className="px-2 py-1">
-                                  <input
-                                    key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
-                                    type="datetime-local"
-                                    aria-label={`${opLabel} inicio de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.unload_start)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_inicio', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
-                                </td>
-                                <td className="px-2 py-1">
-                                  <input
-                                    key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
-                                    type="datetime-local"
-                                    aria-label={`${opLabel} fin de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.unload_end)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_fin', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {stop.s2s ? <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{stop.s2s}</span> : <span className="text-gray-200">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {stopWasVisited(stop) && stop.temperature != null ? <span className="text-sm font-mono text-blue-600 font-semibold">{stop.temperature}°C</span> : <span className="text-gray-200">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {stop.on_time_status === 'ON TIME' ? (
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
-                                  ) : stop.on_time_status === 'OFF TIME' ? (
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">OFF TIME</span>
-                                  ) : (
-                                    <span className="text-gray-200">—</span>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
+                              <td className="px-2 py-1">
+                                <input
+                                  key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
+                                  type="datetime-local"
+                                  aria-label={`${opLabel} inicio de ${stop.local ?? 'parada'}`}
+                                  defaultValue={toDatetimeLocalValue(stop.unload_start)}
+                                  onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_inicio', e.target.value)}
+                                  disabled={stopSaving === stop.stop_id}
+                                  className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input
+                                  key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
+                                  type="datetime-local"
+                                  aria-label={`${opLabel} fin de ${stop.local ?? 'parada'}`}
+                                  defaultValue={toDatetimeLocalValue(stop.unload_end)}
+                                  onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_fin', e.target.value)}
+                                  disabled={stopSaving === stop.stop_id}
+                                  className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {stop.s2s ? <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{stop.s2s}</span> : <span className="text-gray-200">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {stopWasVisited(stop) && stop.temperature != null ? <span className="text-sm font-mono text-blue-600 font-semibold">{stop.temperature}°C</span> : <span className="text-gray-200">—</span>}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {stop.on_time_status === 'ON TIME' ? (
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
+                                ) : stop.on_time_status === 'OFF TIME' ? (
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">OFF TIME</span>
+                                ) : (
+                                  <span className="text-gray-200">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                )}
+                </div>
               </section>
             )}
 
-            {/* Datos operativos — acordeón colapsado (secundario) */}
-            <section className="border border-border/60 rounded-lg overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setDatosOpen(v => !v)}
-                className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-50/60 transition-colors"
-              >
-                <span className="text-xs font-semibold text-slate-700">Datos operativos</span>
-                <ChevronDown size={13} className={`text-gray-400 transition-transform ${datosOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {datosOpen && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 px-3 pb-3 pt-2 border-t border-border/60 bg-gray-50/40">
-                  {/* Origen y Carga Inicio/Fin se movieron a la parada 0 de
-                      "Ruta" (Fase 1, origen unificado, 2026-07-18) — editables
-                      ahí junto al resto de las paradas, no acá aparte. */}
-                  <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
-                  <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
-                  <MetaField label="EETT TMS" value={trip.carrier_name_tms ?? '—'} />
-                  {trip.milestone_status && (
-                    <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
-                  )}
-                </div>
-              )}
+            {/* Bitácora — full width (Fase 2, Plan 4: se muda desde el aside
+                de Gestión de 360px). TripNotesFeed en sí no se toca acá —
+                su max-h-80 interno y el retiro del texto legacy son del
+                Plan 5. */}
+            <section>
+              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Bitácora</h4>
+              <TripNotesFeed trip={trip} />
             </section>
-
-            {/* Footer secundario — solo referencia técnica (UUID). "Ingresó
-                al sistema" se movió al hero (ver arriba), ya no vive acá. */}
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/40">
-              <p className="font-mono text-[9px] text-gray-300 shrink-0">{trip.id}</p>
-            </div>
           </div>
         </div>
       </div>
