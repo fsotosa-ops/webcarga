@@ -516,10 +516,75 @@ Los 3 planes del spec (`driver_leg_number`, `TripAssignDialog`, escalabilidad de
 
 **2 commits en `dev`** (`660bc93`, `6357c87`). **Con esto, los Planes 1+2+3 quedan efectivamente conectados** — es el primer punto de esta Fase 2 donde pushear tendría sentido real (el frontend ya manda el contrato nuevo que el backend espera desde el Plan 1). Sigue sin pushear, pendiente de confirmación explícita del usuario.
 
-#### Próximo paso exacto
-1. [ ] Confirmar con el usuario el push conjunto de los Planes 1+2+3 (`597a0f6`..`6357c87`) — primer momento real donde tiene sentido, ver nota de arriba.
-2. [ ] Escribir y ejecutar el Plan 4 (`TripSlideOver` reconstrucción estructural — acordeones aplanados, reorden de columnas, `FleetAssignSection` reemplazando `CarrierAssignSection`, origen solo `operation_type`, EETT TMS retirado + banner de reconciliación extendido a `carrier_name_tms`, link a TMS colgando del chip, IDs unificados en el header, `RouteProgress` retirado).
+#### Próximo paso exacto (histórico — Plan 4 hecho y pusheado, ver Ronda 30)
+1. [x] Confirmar con el usuario el push conjunto de los Planes 1+2+3 — hecho, pusheado (`6357c87`) más el commit de docs (`6dc6f6b`).
+2. [x] Escribir y ejecutar el Plan 4 (`TripSlideOver` reconstrucción estructural) — hecho, ver Ronda 30.
 3. [ ] Plan 5 (Indicadores + Bitácora), Plan 6 (`TripTable` solo lectura), Plan 7 (filtro `operation_type`) — en ese orden, cada uno escrito recién al momento de ejecutarlo.
+4. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+5. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+6. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+7. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+
+---
+
+### 2026-07-19 (cont.) — Ronda 30: Fase 2 Plan 4 — TripSlideOver reconstruido
+
+**Pedido del usuario**: "dale, sigue con el plan 4".
+
+**Proceso**: `writing-plans` con research directo (`TripSlideOver.tsx` completo, `RouteProgress.tsx`, `TripSlideOver.test.tsx` completo, `OperationTypeBadge.tsx`, `FleetLinkPayload`) + extracción de las 3 URLs públicas de login de TMS desde `extraction_service/.env` (no son credenciales). Plan guardado en `docs/superpowers/plans/2026-07-19-diario-fase2-trip-slideover-plan.md`, ejecutado inline, 2 tareas.
+
+**Tarea 1 — `TMS_LOGIN_URLS`**: constante nueva (`lib/utils/tmsLinks.ts`), mapa `source_system` → URL pública de login, sin entrada para `manual`.
+
+**Tarea 2 — reconstrucción completa de `TripSlideOver.tsx`**:
+- Los 2 acordeones (`techDetailOpen` de la tabla técnica, `datosOpen` de "Datos operativos") se eliminan — ambos contenidos quedan siempre visibles.
+- `CarrierAssignSection` (carrier-first, con su propia búsqueda de empresa) se retira por completo, reemplazada por `FleetAssignSection` (driver-first, compartida con `TripAssignDialog` desde el Plan 3) en la rama "sin empresa vinculada" — mismo componente controlado, con un botón "Vincular" nuevo que llama a `tripsApi.assignFleetLink` solo cuando el operador confirma. La rama "ya vinculado" (tarjeta compacta + Desvincular) no se tocó — evita regresión en el caso real (~8% de los vínculos, Ronda 18) de empresa vinculada sin conductor.
+- Banner de reconciliación TMS↔manual extendido: además de conductor/patente, ahora también compara `carrier_name_tms` contra `carrier_name` — absorbe la función que cumplía "EETT TMS" (retirado de "Datos operativos").
+- "Ubicación de origen" pierde el `RegionCityPicker` — queda solo `OperationTypeBadge`, con "Sin clasificar" explícito cuando no hay clasificación (antes la sección quedaba vacía sin explicación).
+- "Datos operativos" se muda de la columna principal (acordeón) a la columna Gestión (siempre visible, grid 2 columnas, sin EETT TMS).
+- Bitácora (`TripNotesFeed`) se muda del aside de 360px a la columna principal, ancho completo — el componente en sí no se tocó (eso es Plan 5).
+- Header: el chip de TMS es ahora un link (`<a target="_blank">`) a `TMS_LOGIN_URLS[source_system]` (no aplica a viajes manuales); el UUID interno se agregó junto al ID externo, con su propio botón de copiar — el footer que solo tenía el UUID casi invisible se eliminó.
+- `RouteProgress.tsx` borrado por completo (sin más consumidores) — `StopTimeline` queda como único timeline visual, cerrando la triplicación de renders de la misma secuencia de paradas (barra de puntos + timeline + tabla técnica) que tenía hoy.
+- **Decisión de alcance documentada explícitamente en el plan**: la frase del spec "Ruta (con RouteEditor, origen primero...)" NO significa reusar el componente `RouteEditor` (de creación) en el detalle — no existe backend para editar paradas de un viaje ya existente, y la decisión #2 del propio spec reserva el timeline GPS al detalle. Se interpretó como el mismo principio de orden origen-primero que `StopTimeline` ya tiene desde la Ronda 21.
+
+**2 bugs reales encontrados y corregidos durante la verificación** (no en el plan original):
+1. Un test nuevo asumía que "ON TIME" nunca aparece en pantalla salvo como badge de excepción en el hero — pero la tabla técnica (ahora siempre visible) sí renderiza ese texto para paradas a tiempo. Corregido escopeando la aserción al hero (`data-testid="hero"` agregado al componente + `within()` en el test).
+2. Dos tests nuevos de `FleetAssignSection` usaban un conductor mock llamado "Juan Perez" — el mismo nombre que `baseTrip.driver_name`, ya visible en el header desde el primer render. `findByText('Juan Perez')` matcheaba el header (no clickeable) en vez de la fila de resultado de búsqueda, dejando el click sin efecto. Corregido usando un nombre sin colisión ("Ana Torres") en los mocks de esos 2 tests.
+
+**Verificación**: 438/438 frontend (era 425 antes de esta ronda), `tsc --noEmit` limpio (confirma cero referencias colgantes a `RouteProgress`). Sin verificación en navegador (mismo motivo de siempre).
+
+**2 commits en `dev`** (`cbd1534`, `2d26867`). **Sin pushear** — pendiente de confirmación del usuario, mismo criterio que las rondas anteriores de esta Fase.
+
+#### Próximo paso exacto (histórico — Plan 5 hecho, ver Ronda 31)
+1. [ ] Confirmar con el usuario el push conjunto de los Planes 4+5.
+2. [x] Escribir y ejecutar el Plan 5 (`TripSlideOver` — Indicadores rediseñado a switches con etiqueta, "1ra Vuelta" retirado; Bitácora — texto legacy retirado, ciclo de vida de incidentes) — hecho, ver Ronda 31.
+3. [ ] Plan 6 (`TripTable` solo lectura — retiro de `ConductorCell`/`PhoneTagCell`/`PlateCell`), Plan 7 (filtro `operation_type` en `FilterPopover`, baja del filtro región/ciudad) — en ese orden, cada uno escrito recién al momento de ejecutarlo.
+4. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+5. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+6. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+7. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+
+---
+
+### 2026-07-19 (cont.) — Ronda 31: Fase 2 Plan 5 — Indicadores a switches + Bitácora con ciclo de vida de incidentes
+
+**Pedido del usuario**: "dale, sigue con el plan 5".
+
+**Proceso**: `writing-plans` con research directo (`IndicatorDots.tsx` completo, `TripNotesFeed.tsx` completo — confirmé que no tiene test file propio, toda su cobertura vive en `TripSlideOver.test.tsx`, mismo patrón para `hooks/useTripNotes.ts`). **Gap real encontrado en la investigación, no en el spec original**: el Plan 1 de esta Fase (backend, ya commiteado y pusheado hace varias rondas) creó la columna `app.trip_notes.resolved_at` y el endpoint `PATCH .../notes/{id}/resolve`, pero `_NOTE_SELECT` — la fragment SQL que arma tanto `GET /trips/{id}/notes` como el fetch de una nota individual — nunca se actualizó para leerla. El dato existía en la DB desde el Plan 1 pero nunca llegaba al frontend; sin este fix, nada del resto del Plan 5 podía funcionar en producción. Plan guardado en `docs/superpowers/plans/2026-07-19-diario-fase2-indicadores-bitacora-plan.md`, ejecutado inline, 3 tareas.
+
+**Tarea 1 — fix backend**: `n.resolved_at` agregado a `_NOTE_SELECT` (`trips.py`).
+
+**Tarea 2 — `IndicatorSwitches`** (reemplaza `IndicatorDots`, no se editó in place — cambio de paradigma real): 3 switches con etiqueta completa (Activo/Trabajando/Asignado) en vez de 4 puntos crípticos de 1-2 letras. **"1ra Vuelta" retirado por completo** — ya estaba desconectado de cualquier efecto real desde el Plan 3 de la Ronda 26. Cuando un campo está en `manually_edited_fields`, en vez del candado silencioso de antes se muestra texto explícito ("Editado manualmente por X el fecha · Revertir a automático"), con un botón que llama a `tripsApi.resetField` (mismo endpoint `DELETE /trips/{id}/overrides/{field}` ya usado para `manual_status`) — confirmé leyendo el endpoint real que devuelve solo `{ok, field}`, así que `manually_edited_fields` se actualiza con un filtro local al pasar el trip a `onSaved`, no esperando que el backend lo recalcule.
+
+**Tarea 3 — integración**: `TripNote.resolved_at` (tipo), `tripsApi.resolveNote` (espejo exacto de `pinNote`), `useResolveTripNote` (hook, mismo patrón optimista que `usePinTripNote`). `TripNotesFeed.tsx`: retirado el bloque "Nota anterior (campo legacy)" que leía `trip.notes`/`trip.comments` (verificado 0/2734 viajes con datos ahí, desde la investigación original del spec); retirado el `max-h-80 overflow-y-auto` interno (ya no vive en un sidebar angosto desde el Plan 4); cada nota tipo Incidente gana un chip Abierto/Resuelto + acción Marcar resuelto/Reabrir. `TripSlideOver.tsx` rewireado a `IndicatorSwitches`; badge "N incidente(s) abierto(s)" nuevo en el hero, calculado sobre `useTripNotes(trip.id)` llamado directo ahí — mismo hook que ya usa `TripNotesFeed` internamente, TanStack Query dedupea por queryKey así que no dispara una segunda request. `IndicatorDots.tsx`/test borrados recién después de rewirear (nunca quedó el árbol sin compilar entre pasos, mismo cuidado que `is_manual_stop` en el Plan 1).
+
+**Verificación**: 432/432 frontend (era 438 antes de esta ronda — neto -6: +9 tests nuevos de `IndicatorSwitches`, -9 de `IndicatorDots` borrado, -7 neto en la reescritura de `TripSlideOver.test.tsx`), 245/245 backend, `tsc --noEmit` limpio (confirma cero referencias colgantes a `IndicatorDots`). Sin verificación en navegador (mismo motivo de siempre).
+
+**4 commits en `dev`** (`2c1f784`, `dba9722`, más los 2 de la integración — ver git log). **Sin pushear** — mismo criterio que el resto de esta Fase.
+
+#### Próximo paso exacto
+1. [ ] Confirmar con el usuario el push conjunto de los Planes 4+5.
+2. [ ] Escribir y ejecutar el Plan 6 (`TripTable` solo lectura — retiro de `ConductorCell`/`PhoneTagCell`/`PlateCell`, clic en cualquier parte de la fila abre el detalle).
+3. [ ] Plan 7 (filtro `operation_type` en `FilterPopover`, baja del filtro región/ciudad) — último plan de la Fase 2, escrito recién al momento de ejecutarlo.
 4. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
 5. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
 6. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
