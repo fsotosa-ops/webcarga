@@ -5,7 +5,6 @@ import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming }
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime } from '@/lib/utils/datetime'
 import { StopProgressDots } from './StopProgressDots'
-import { IndicatorDots } from './IndicatorDots'
 import { TmsChip } from './TripTable'
 
 interface Props {
@@ -66,12 +65,14 @@ export function TripCard({ trip, meta, onSaved, onSelect, updated }: Props) {
           {since !== '—' && since}
         </p>
       )}
-      <div className="flex items-center justify-between mt-1.5">
-        <IndicatorDots trip={trip} onSaved={onSaved} />
-        {compliance === 'warn' && (
+      {/* Indicadores (Activo/Trabajando/Asignado/1ra Vuelta) se ven y
+          filtran arriba de la tabla, se editan en el detalle del viaje —
+          Fase 3 del hardening del Diario, 2026-07-18. */}
+      {compliance === 'warn' && (
+        <div className="flex items-center justify-end mt-1.5">
           <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">OFF TIME</span>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

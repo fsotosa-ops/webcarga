@@ -23,28 +23,17 @@ function makeTrip(id: string, overrides: Partial<Trip> = {}): Trip {
 }
 
 describe('TripTable', () => {
-  it('renders an "Indicadores" column with clickable dots for a manual trip', () => {
-    render(<TripTable trips={[makeTrip('t1', { source_system: 'manual' })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
-    expect(screen.getAllByTitle('Activo').length).toBeGreaterThan(0)
-  })
-
-  it('also renders Indicadores for a TMS-sourced trip — el pipeline ya los deriva de trip_status, y la excepción de UAT permite override manual para cualquier origen', () => {
-    render(<TripTable trips={[makeTrip('t1', { source_system: 'qanalytics' })]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
-    expect(screen.getAllByTitle('Activo').length).toBeGreaterThan(0)
-  })
+  // Fase 3 del hardening del Diario (2026-07-18): la columna "Indicadores"
+  // (con edición inline) se reemplazó por tabs de filtro sobre la tabla
+  // (page.tsx) — la tabla ya no renderiza IndicatorDots en ningún lado, se
+  // edita solo en el detalle del viaje. Sin tests acá para ese
+  // comportamiento removido.
 
   it('calls onSelect directly when a row is clicked (no intermediate expand step)', () => {
     const onSelect = vi.fn()
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSaved={vi.fn()} meta={null} />)
     fireEvent.click(screen.getAllByText('ABCD12')[0])
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
-  })
-
-  it('clicking an indicator dot does not call onSelect', () => {
-    const onSelect = vi.fn()
-    render(<TripTable trips={[makeTrip('t1', { source_system: 'manual' })]} selectedId={null} onSelect={onSelect} onSaved={vi.fn()} meta={null} />)
-    fireEvent.click(screen.getAllByTitle('Activo')[0])
-    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('shows an OFF TIME compliance badge when a stop is off time', () => {
@@ -188,13 +177,16 @@ describe('TripTable — accesibilidad por teclado', () => {
 })
 
 describe('TripTable — columnas fijas (sticky)', () => {
-  it('Patente queda fija a la izquierda y Estado/Indicadores a la derecha', () => {
+  it('Patente queda fija a la izquierda y Estado/chevron de apertura a la derecha', () => {
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSaved={vi.fn()} meta={null} />)
     const patenteTh = screen.getByText('Patente').closest('th')!
     const estadoTh  = screen.getByText('Estado').closest('th')!
-    const indTh     = screen.getByText('Indicadores').closest('th')!
+    // Fase 3 del hardening del Diario (2026-07-18): la columna "Indicadores"
+    // se reemplazó por tabs de filtro sobre la tabla — esta última columna
+    // sticky ahora solo tiene el chevron de apertura, con label sr-only.
+    const chevronTh = screen.getByText('Abrir detalle').closest('th')!
     expect(patenteTh.className).toContain('sticky left-0')
     expect(estadoTh.className).toContain('sticky right-')
-    expect(indTh.className).toContain('sticky right-0')
+    expect(chevronTh.className).toContain('sticky right-0')
   })
 })

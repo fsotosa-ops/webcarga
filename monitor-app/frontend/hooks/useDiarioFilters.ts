@@ -7,6 +7,17 @@ export type Tab        = 'en_curso' | 'historial'
 export type BoolFilter = boolean | null
 export type FlagField  = 'fIsActive' | 'fIsWorking' | 'fIsAssigned' | 'fIsFirstLeg'
 
+// Fase 3 del hardening del Diario (2026-07-18): antes vivía duplicado
+// dentro de FilterPopover — ahora es la única fuente, usada tanto por los
+// tiles de filtro sobre la tabla (page.tsx) como, si hiciera falta, por
+// cualquier otro selector de estos 4 indicadores.
+export const FLAGS: { label: string; field: FlagField }[] = [
+  { label: 'Activo',     field: 'fIsActive'    },
+  { label: 'Trabajando', field: 'fIsWorking'   },
+  { label: 'Asignado',   field: 'fIsAssigned'  },
+  { label: '1ra Vuelta', field: 'fIsFirstLeg'  },
+]
+
 export interface DiarioFilters {
   tab:            Tab
   fecha:          string

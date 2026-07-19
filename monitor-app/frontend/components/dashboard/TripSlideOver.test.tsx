@@ -240,9 +240,13 @@ describe('TripSlideOver — override de estado', () => {
 })
 
 describe('TripSlideOver — indicadores', () => {
-  it('does not render Indicadores for a TMS-sourced trip', () => {
+  // Fase 3 del hardening del Diario (2026-07-18): antes solo se mostraban acá
+  // para viajes manuales (inconsistente con la tabla, que los editaba inline
+  // para cualquier origen). Ahora la tabla no edita nada inline — este es el
+  // único lugar de edición, tiene que estar disponible siempre.
+  it('renders editable Indicadores for a TMS-sourced trip', () => {
     renderSlideOver(baseTrip)
-    expect(screen.queryByTitle('Activo')).not.toBeInTheDocument()
+    expect(screen.getByTitle('Activo')).toBeInTheDocument()
   })
 
   it('renders editable Indicadores for a manual trip', () => {

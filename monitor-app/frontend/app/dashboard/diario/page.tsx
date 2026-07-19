@@ -17,7 +17,7 @@ import { TripCreateSlideOver } from '@/components/dashboard/TripCreateSlideOver'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
-import { useDiarioFilters, countActiveFilters, type FlagField } from '@/hooks/useDiarioFilters'
+import { useDiarioFilters, countActiveFilters, FLAGS, type FlagField } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
 import { deriveKpis, matchesKpi, DEFAULT_ALERT_RULES, type KpiId } from '@/lib/utils/kpis'
 import { AvailableDriversPanel, useAvailableDrivers } from '@/components/dashboard/AvailableDriversPanel'
@@ -51,6 +51,29 @@ const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
   amber:  { on: 'bg-amber-500  border-amber-500  text-white', off: 'text-amber-700  border-amber-300  bg-amber-50  hover:border-amber-400'  },
   pink:   { on: 'bg-pink-500   border-pink-500   text-white', off: 'text-pink-700   border-pink-300   bg-pink-50   hover:border-pink-400'   },
   slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
+}
+
+// Fase 3 del hardening del Diario (2026-07-18) — tabs de filtro para
+// Activo/Trabajando/Asignado/1ra Vuelta, mismos colores que ya usaba
+// IndicatorDots (blue/green/violet/amber) para no romper la asociación
+// visual que el equipo operativo ya tiene con estos 4 indicadores.
+const FLAG_TRIP_KEY: Record<FlagField, 'is_active' | 'is_working' | 'is_assigned' | 'is_first_leg'> = {
+  fIsActive:   'is_active',
+  fIsWorking:  'is_working',
+  fIsAssigned: 'is_assigned',
+  fIsFirstLeg: 'is_first_leg',
+}
+const FLAG_ACTIVE_CLS: Record<FlagField, string> = {
+  fIsActive:   'border-blue-400 ring-2 ring-blue-100 bg-blue-50',
+  fIsWorking:  'border-green-400 ring-2 ring-green-100 bg-green-50',
+  fIsAssigned: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50',
+  fIsFirstLeg: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50',
+}
+const FLAG_COUNT_CLS: Record<FlagField, string> = {
+  fIsActive:   'text-blue-600',
+  fIsWorking:  'text-green-600',
+  fIsAssigned: 'text-violet-600',
+  fIsFirstLeg: 'text-amber-600',
 }
 
 function kpiCards(rules: typeof DEFAULT_ALERT_RULES): { id: KpiId; label: string; activeCls: string; countCls: string }[] {
@@ -411,6 +434,39 @@ export default function DiarioPage() {
                   </span>
                 </button>
               )}
+            </div>
+          )}
+
+          {/* ── Indicadores como tabs de filtro (Fase 3 del hardening del
+              Diario, 2026-07-18) — antes era una columna de la tabla con
+              edición inline (clic en el punto cambiaba el viaje) Y, por
+              separado, un filtro escondido en el popover: dos superficies
+              desconectadas para el mismo dato. Ahora es un solo lugar:
+              filtra acá, edita en el detalle del viaje. Mismo patrón visual
+              que las KPI cards de arriba (tile clickeable con conteo). */}
+          {f.tab === 'en_curso' && !loading && (
+            <div className="flex gap-2 flex-wrap">
+              {FLAGS.map(flag => {
+                const count  = trips.filter(t => t[FLAG_TRIP_KEY[flag.field]]).length
+                const active = f[flag.field] === true
+                return (
+                  <button
+                    key={flag.field}
+                    onClick={() => dispatch({ type: 'toggleFlag', field: flag.field })}
+                    disabled={count === 0 && !active}
+                    aria-pressed={active}
+                    className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
+                      active ? FLAG_ACTIVE_CLS[flag.field] : 'border-border hover:border-gray-300'
+                    }`}
+                  >
+                    <span className={`text-lg font-bold leading-none ${count > 0 ? FLAG_COUNT_CLS[flag.field] : 'text-gray-300'}`}>
+                      {count}
+                    </span>
+                    <span className="text-[11px] font-medium text-gray-500">{flag.label}</span>
+                    {active && <X size={11} className="text-gray-400" />}
+                  </button>
+                )
+              })}
             </div>
           )}
 

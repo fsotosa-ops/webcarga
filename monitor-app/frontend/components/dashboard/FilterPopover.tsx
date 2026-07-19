@@ -3,16 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
 import type { TripsMeta } from '@/lib/types'
-import type { DiarioFilters, DiarioFiltersAction, FlagField } from '@/hooks/useDiarioFilters'
+import type { DiarioFilters, DiarioFiltersAction } from '@/hooks/useDiarioFilters'
 import { countPopoverFilters } from '@/hooks/useDiarioFilters'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
-
-const FLAGS: { label: string; field: FlagField }[] = [
-  { label: 'Activo',     field: 'fIsActive'        },
-  { label: 'Trabajando', field: 'fIsWorking'    },
-  { label: 'Asignado',   field: 'fIsAssigned'      },
-  { label: '1ra Vuelta', field: 'fIsFirstLeg' },
-]
 
 interface Props {
   filters:  DiarioFilters
@@ -109,30 +102,11 @@ export function FilterPopover({ filters: f, dispatch, meta }: Props) {
             </div>
           </div>
 
-          {/* Indicadores (relevantes para viajes manuales) */}
-          <div>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Indicadores</p>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {FLAGS.map(flag => {
-                const active = f[flag.field] === true
-                return (
-                  <button
-                    key={flag.field}
-                    type="button"
-                    onClick={() => dispatch({ type: 'toggleFlag', field: flag.field })}
-                    aria-pressed={active}
-                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                      active
-                        ? 'bg-accent border-accent text-white'
-                        : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    {flag.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          {/* Indicadores (Activo/Trabajando/Asignado/1ra Vuelta) se movieron
+              a tiles visibles arriba de la tabla, junto a las KPI cards —
+              Fase 3 del hardening del Diario, 2026-07-18. Ya no viven acá
+              (estaban escondidos en este popover de "uso ocasional", pese a
+              ser uno de los filtros más usados). */}
 
           {/* Ubicación de origen (región/ciudad asignada desde el Monitor) */}
           <div>

@@ -380,7 +380,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const tmsLabel      = tmsMeta?.label ?? trip.source_system?.toUpperCase().slice(0, 3) ?? '?'
   const temp          = getLatestTemp(trip.stops ?? [])
   const tempStatus    = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
-  const isManualTrip  = trip.source_system === 'manual'
 
   // Hero: la historia del viaje de un vistazo. `stops` incluye el origen
   // (Fase 1, 2026-07-18) — se pasa completo al timeline/barra de progreso
@@ -644,13 +643,17 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               </div>
             )}
 
-            {/* Indicadores — solo para viajes manuales */}
-            {isManualTrip && (
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
-                <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
-              </div>
-            )}
+            {/* Indicadores — antes solo se mostraba (y editaba) acá para
+                viajes manuales, pese a que la columna de la tabla los
+                editaba inline para CUALQUIER viaje sin esa restricción
+                (inconsistencia real, ver AGENTLOG). Fase 3 del hardening
+                del Diario (2026-07-18): la tabla ya no edita inline (son
+                tabs de filtro), así que esta es ahora la ÚNICA superficie
+                de edición — tiene que estar disponible para todos. */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
+              <IndicatorDots trip={trip} onSaved={onSaved} size="md" />
+            </div>
 
             {/* Ubicación de origen — región/ciudad asignable desde el Monitor.
                 FIX 2026-07-18 (Fase 1): origin_operation_type ya lo calculaba

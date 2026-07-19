@@ -20,7 +20,6 @@ import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
-import { IndicatorDots } from './IndicatorDots'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 
@@ -466,13 +465,12 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                 </div>
               </div>
 
-              {/* fila 2: conductor + flags */}
+              {/* fila 2: conductor */}
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-xs text-slate-600 truncate">
                   {trip.driver_name ?? <span className="text-gray-300 italic text-[11px]">sin conductor</span>}
                 </span>
                 <ComplianceBadge status={driverAlert ?? null} compact />
-                <IndicatorDots trip={trip} onSaved={onSaved} />
               </div>
 
               {/* fila 3: EETT + origen */}
@@ -519,7 +517,12 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
               <th className="px-3 py-2.5 text-left">Destinos</th>
               <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
               <th onClick={() => handleSort('current_status')} className="sticky right-[90px] z-10 bg-inherit border-l border-border/60 px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} /></th>
-              <th className="sticky right-0 z-10 bg-inherit px-3 py-2.5 text-left w-[90px]">Indicadores</th>
+              {/* Indicadores se movió a tabs de filtro arriba de la tabla
+                  (Fase 3, 2026-07-18) — esta columna ahora es solo el
+                  chevron de apertura del detalle. */}
+              <th className="sticky right-0 z-10 bg-inherit px-3 py-2.5 text-left w-[32px]">
+                <span className="sr-only">Abrir detalle</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -673,12 +676,12 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     })()}
                   </td>
 
-                  {/* INDICADORES — sticky derecha, incluye el chevron de apertura */}
-                  <td className="sticky right-0 z-10 bg-inherit px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <IndicatorDots trip={trip} onSaved={onSaved} />
-                      <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
-                    </div>
+                  {/* Chevron de apertura — sticky derecha. Los indicadores
+                      (Activo/Trabajando/Asignado/1ra Vuelta) se ven y
+                      filtran arriba de la tabla, se editan en el detalle
+                      (Fase 3 del hardening del Diario, 2026-07-18). */}
+                  <td className="sticky right-0 z-10 bg-inherit px-3 py-2.5 text-center">
+                    <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
                   </td>
                 </tr>
               )

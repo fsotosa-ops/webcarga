@@ -35,17 +35,11 @@ describe('TripCard', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
   })
 
-  it('renders Indicadores for a manual trip and clicking a dot does not call onSelect', () => {
-    const onSelect = vi.fn()
-    render(<TripCard trip={makeTrip({ source_system: 'manual' })} meta={null} onSaved={vi.fn()} onSelect={onSelect} />)
-    fireEvent.click(screen.getAllByTitle('Activo')[0])
-    expect(onSelect).not.toHaveBeenCalled()
-  })
-
-  it('also renders Indicadores for a TMS-sourced trip', () => {
-    render(<TripCard trip={makeTrip({ source_system: 'qanalytics' })} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
-    expect(screen.getAllByTitle('Activo').length).toBeGreaterThan(0)
-  })
+  // Fase 3 del hardening del Diario (2026-07-18): los indicadores
+  // (Activo/Trabajando/Asignado/1ra Vuelta) dejaron de editarse inline en
+  // la tarjeta/tabla — ahora son tabs de filtro sobre la tabla (page.tsx) y
+  // se editan solo en el detalle del viaje (TripSlideOver). Sin tests acá
+  // para ese comportamiento removido.
 
   it('shows an OFF TIME badge when the trip has a compliance problem', () => {
     const stops: Trip['stops'] = [{

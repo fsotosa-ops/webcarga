@@ -328,9 +328,32 @@ Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (
 
 **Pendiente de la Fase 2**: la "profesionalización general de la bitácora" (punto 6 del plan original) sigue sin abordarse — es un ítem más grande y menos definido (el plan lo dejó como "evaluar si el patrón de diálogo centrado tipo Attio aplica mejor... para reclamos de sobreestadía con adjuntos", sin decisión tomada todavía).
 
+#### Próximo paso exacto (histórico — ver ronda siguiente)
+1. [x] Commit de esta ronda — hecho. Push pendiente de confirmación (ver ronda siguiente).
+2. [x] "Los más fáciles y simples" → Indicadores a tabs de filtro (Fase 3) — hecho, ver ronda siguiente.
+3. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+4. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+5. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+6. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+
+---
+
+### 2026-07-18 (cont.) — Ronda 23: Indicadores → tabs de filtro (Fase 3, el ítem "más fácil y simple")
+
+**Pedido del usuario**: "vamos por los mas faciles y simples de ajustar" — de lo que quedaba del roadmap (bitácora sin alcance definido, Indicadores→tabs, vista de disponibilidad, consolidar 3 selectores duplicados), el más acotado era Indicadores→tabs: ya estaba decidido en el plan original y reusa un patrón visual ya existente en la propia página del Diario (las KPI cards), no algo importado de otro módulo.
+
+**Implementado**:
+- `FLAGS` (Activo/Trabajando/Asignado/1ra Vuelta) se movió de una constante duplicada dentro de `FilterPopover.tsx` a `useDiarioFilters.ts` (fuente única).
+- Nueva fila de tiles clickeables sobre la tabla del Diario (`page.tsx`), mismo patrón visual y de interacción que las KPI cards ya existentes en esa misma página (conteo + tile con color + disabled si count=0) — no truje un componente de otro módulo, reusé el patrón nativo de esta página porque calzaba mejor (los 4 indicadores no son mutuamente excluyentes, a diferencia de `AlertStatTiles` que sí lo es).
+- Filtro "Indicadores" sacado del popover (quedaba escondido pese a ser de los más usados).
+- `IndicatorDots` (edición inline con clic) removido de `TripTable.tsx` (columna completa + 2 usos) y `TripCard.tsx` — la columna sticky derecha de la tabla ahora es solo el chevron de apertura.
+- `TripSlideOver.tsx`: la sección "Indicadores" ya no se restringe a viajes manuales — es la única superficie de edición ahora, tiene que estar disponible siempre (corrige la inconsistencia real que ya estaba documentada: la tabla editaba para cualquier origen, el detalle no).
+
+**Verificación**: `tsc` limpio, 367/367 tests frontend (5 tests obsoletos del comportamiento inline removidos/reescritos en `TripTable.test.tsx`, `TripCard.test.tsx`, `TripSlideOver.test.tsx`), `npm run build` exitoso.
+
 #### Próximo paso exacto
 1. [ ] Confirmar commit y push de esta ronda.
-2. [ ] Decidir si se aborda la profesionalización de la bitácora (Fase 2, sin alcance definido todavía) o se salta a Fase 3 (Indicadores → tabs de filtro, vista de disponibilidad) o Fase 4 (consolidar los 3 selectores de empresa duplicados).
+2. [ ] Con esto, del roadmap original quedan: profesionalización de bitácora (Fase 2, sin alcance definido), vista de disponibilidad roster-driven (Fase 3, depende de que haya suficiente `driver_id` poblado — ya lo está, 92%), consolidar 3 selectores de empresa duplicados (Fase 4).
 3. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
 4. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
 5. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
