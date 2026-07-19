@@ -773,6 +773,10 @@ class TripStopCreate(BaseModel):
     # stops del pipeline (hoy solo qanalytics las trae)
     destination_region: Optional[str] = None
     destination_city:   Optional[str] = None
+    # 'ORIGIN' | 'DESTINATION' — el origen del viaje se manda como una parada
+    # más (Ronda 26, Fase 2, unificación crear/editar), no como un campo
+    # aparte. Default 'DESTINATION' para no romper a nadie que no lo mande.
+    stop_type:          str = 'DESTINATION'
 
 
 class TripCreateBody(BaseModel):
@@ -785,7 +789,6 @@ class TripCreateBody(BaseModel):
     # Compat: clientes viejos mandan source_system — se IGNORA (siempre 'manual')
     source_system:          str           = 'manual'
     client_name:            Optional[str] = None
-    origin:                 Optional[str] = None
     origin_region:          Optional[str] = None
     origin_city:            Optional[str] = None
     cargo_type:             Optional[str] = None
@@ -850,49 +853,52 @@ def _build_manual_stops(stops: list[TripStopCreate], trip_id: str) -> str:
     return json.dumps(out)
 
 
-async def _insert_trip_stops(conn, stops: list[TripStopCreate], trip_id: str, origin: str | None = None) -> None:
+async def _insert_trip_stops(conn, stops: list[TripStopCreate], trip_id: str) -> None:
     """Espeja las paradas de un viaje manual en app.trip_stops (Fase 2 del
     hardening H2.6) — el pipeline dbt solo puebla esta tabla para viajes
-    TMS (vía app.trips.stops), los viajes 100% manuales nunca pasan por
-    ahí. Mismo stop_id que _build_manual_stops (misma fórmula que usa el
-    pipeline: md5(trip_id + local + índice)).
+    TMS, los viajes 100% manuales nunca pasan por ahí. Mismo stop_id que
+    _build_manual_stops para destinos (misma fórmula que usa el pipeline:
+    md5(trip_id + local + índice entre los destinos, 0-based)).
 
-    FIX 2026-07-18 (Fase 1, origen como parada 0): si `origin` viene
-    seteado, inserta también la fila ORIGIN (stop_order=0) — mismo patrón
-    dual que el pipeline dbt usa para viajes TMS (app/trip_stops.sql),
-    donde el origen lo arma el modelo pero las paradas manuales las inserta
-    este mismo backend. Sin esto, un viaje manual/CSV nacería sin origen en
-    el timeline unificado."""
-    if origin:
-        origin_stop_id = hashlib.md5(f"{trip_id}{origin}|origin".encode()).hexdigest()
-        await conn.execute(
-            """
-            INSERT INTO app.trip_stops (stop_id, trip_id, stop_order, stop_type, local)
-            VALUES ($1, $2, 0, 'ORIGIN', $3)
-            ON CONFLICT (stop_id) DO UPDATE SET local = EXCLUDED.local, updated_at = NOW()
-            """,
-            origin_stop_id, trip_id, origin,
-        )
-    for i, s in enumerate(stops):
-        stop_id = hashlib.md5(f"{trip_id}{s.local}{i}".encode()).hexdigest()
-        await conn.execute(
-            """
-            INSERT INTO app.trip_stops
-                (stop_id, trip_id, stop_order, stop_type, local, planning_date, destination_region, destination_city)
-            VALUES ($1, $2, $3, 'DESTINATION', $4, $5::timestamptz, $6, $7)
-            ON CONFLICT (stop_id) DO UPDATE SET
-                local               = EXCLUDED.local,
-                planning_date       = EXCLUDED.planning_date,
-                destination_region  = EXCLUDED.destination_region,
-                destination_city    = EXCLUDED.destination_city,
-                updated_at          = NOW()
-            """,
-            # planning_date pasa tal cual (sin macro de huso horario propio,
-            # mismo criterio que cag_inicio_at/cag_fin_at), solo parseado a
-            # datetime porque asyncpg lo exige para un parámetro ::timestamptz.
-            stop_id, trip_id, i + 1, s.local, _parse_timestamptz(s.planning_date),
-            s.destination_region, s.destination_city,
-        )
+    UNIFICADO (Ronda 26, Fase 2): el origen ya no es un parámetro aparte —
+    viene como una fila más de `stops` con stop_type='ORIGIN'. Todas las
+    filas que inserta esta función quedan marcadas is_manual_stop=true
+    (columna nueva, ver migración de la Task 2 de este plan) — así el
+    post_hook de app/trip_stops.sql sabe cuáles limpiar cuando el viaje se
+    reconcilia con datos reales de una TMS."""
+    dest_index = 0
+    for s in stops:
+        if s.stop_type == 'ORIGIN':
+            stop_id = hashlib.md5(f"{trip_id}{s.local}|origin".encode()).hexdigest()
+            await conn.execute(
+                """
+                INSERT INTO app.trip_stops (stop_id, trip_id, stop_order, stop_type, local, is_manual_stop)
+                VALUES ($1, $2, 0, 'ORIGIN', $3, true)
+                ON CONFLICT (stop_id) DO UPDATE SET local = EXCLUDED.local, updated_at = NOW()
+                """,
+                stop_id, trip_id, s.local,
+            )
+        else:
+            stop_id = hashlib.md5(f"{trip_id}{s.local}{dest_index}".encode()).hexdigest()
+            await conn.execute(
+                """
+                INSERT INTO app.trip_stops
+                    (stop_id, trip_id, stop_order, stop_type, local, planning_date, destination_region, destination_city, is_manual_stop)
+                VALUES ($1, $2, $3, 'DESTINATION', $4, $5::timestamptz, $6, $7, true)
+                ON CONFLICT (stop_id) DO UPDATE SET
+                    local               = EXCLUDED.local,
+                    planning_date       = EXCLUDED.planning_date,
+                    destination_region  = EXCLUDED.destination_region,
+                    destination_city    = EXCLUDED.destination_city,
+                    updated_at          = NOW()
+                """,
+                # planning_date pasa tal cual (sin macro de huso horario propio,
+                # mismo criterio que el resto de fechas manuales), solo parseado
+                # a datetime porque asyncpg lo exige para un parámetro ::timestamptz.
+                stop_id, trip_id, dest_index + 1, s.local, _parse_timestamptz(s.planning_date),
+                s.destination_region, s.destination_city,
+            )
+            dest_index += 1
 
 
 async def _valid_status_ids(conn) -> set[str]:
@@ -909,6 +915,9 @@ def _validate_create_body(body: TripCreateBody, valid_statuses: set[str]) -> Non
     stops_sin_nombre = [s for s in body.stops if not s.local.strip()]
     if stops_sin_nombre:
         raise HTTPException(422, "Cada destino debe tener un nombre")
+    origins = [s for s in body.stops if s.stop_type == 'ORIGIN']
+    if len(origins) > 1:
+        raise HTTPException(422, "Un viaje no puede tener más de un origen")
 
 
 async def _auto_resolve_fleet_link(conn, tractor_plate: str | None, trailer_plate: str | None):
@@ -965,7 +974,12 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
         "driver_phone":         body.driver_phone,
     }.items() if v}
     fleet_json = json.dumps(fleet)
-    stops_json = _build_manual_stops(body.stops, trip_id)
+    # app.trips.stops (jsonb legacy, espejo del pipeline) sigue siendo
+    # solo-destinos — el origen unificado vive en app.trip_stops (tabla),
+    # no en este jsonb. Se filtra acá para no cambiar el shape de ese
+    # campo, que otros consumidores (si los hay) siguen esperando igual.
+    destination_stops = [s for s in body.stops if s.stop_type != 'ORIGIN']
+    stops_json = _build_manual_stops(destination_stops, trip_id)
 
     try:
         await conn.execute(
@@ -1008,7 +1022,7 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
         fleet_json, stops_json,
     )
 
-    await _insert_trip_stops(conn, body.stops, trip_id, origin=body.origin)
+    await _insert_trip_stops(conn, body.stops, trip_id)
 
     # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
     if body.carrier_id:

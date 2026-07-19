@@ -92,6 +92,46 @@ def test_stops_payload_builds_pipeline_shape():
     assert parsed[0]["stop_id"] != parsed[1]["stop_id"]
 
 
+def test_stops_payload_ignores_origin_type_entries():
+    # _build_manual_stops sigue armando SOLO el jsonb legacy de destinos
+    # (app.trips.stops) — el origen unificado vive en app.trip_stops (tabla),
+    # insertado por _insert_trip_stops, no en este jsonb.
+    stops = [
+        TripStopCreate(local="CD Origen", stop_type="ORIGIN"),
+        TripStopCreate(local="Local Maipú", stop_type="DESTINATION"),
+    ]
+    destinations = [s for s in stops if s.stop_type != "ORIGIN"]
+    parsed = json.loads(_build_manual_stops(destinations, "trip-1"))
+    assert len(parsed) == 1
+    assert parsed[0]["local"] == "Local Maipú"
+
+
+def test_trip_create_body_has_no_origin_field():
+    body = TripCreateBody(
+        planning_date="2026-07-06",
+        stops=[{"local": "CD Origen", "stop_type": "ORIGIN"}, {"local": "Destino 1"}],
+    )
+    assert not hasattr(body, "origin")
+    assert body.stops[0].stop_type == "ORIGIN"
+    assert body.stops[1].stop_type == "DESTINATION"  # default
+
+
+def test_validate_create_body_rejects_more_than_one_origin():
+    from app.routers.trips import _validate_create_body
+    body = TripCreateBody(
+        planning_date="2026-07-06",
+        stops=[
+            {"local": "Origen 1", "stop_type": "ORIGIN"},
+            {"local": "Origen 2", "stop_type": "ORIGIN"},
+        ],
+    )
+    try:
+        _validate_create_body(body, set())
+        assert False, "debía levantar HTTPException"
+    except Exception as e:
+        assert e.status_code == 422
+
+
 # ── POST /trips ───────────────────────────────────────────────────────────────
 
 def test_create_forces_source_system_manual():
