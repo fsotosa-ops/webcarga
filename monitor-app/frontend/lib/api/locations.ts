@@ -36,4 +36,7 @@ export const locationsApi = {
 
 export const shippersApi = {
   list: () => apiFetch<Shipper[]>('/api/v1/shippers'),
+
+  create: (body: { name: string }) =>
+    apiFetch<Shipper>('/api/v1/shippers', { method: 'POST', body: JSON.stringify(body) }),
 }
