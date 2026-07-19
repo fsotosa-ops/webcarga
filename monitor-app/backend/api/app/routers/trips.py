@@ -265,7 +265,9 @@ _TRIP_SELECT = """
     -- filtra, get_trip restringe a un solo id — una ventana calculada acá
     -- se rompería en ambos casos). NULL si el viaje no tiene
     -- trip_fleet_links.driver_id explícito (la vista no lo incluye).
-    (SELECT vdtl.leg_number FROM app.v_driver_daily_trip_legs vdtl WHERE vdtl.trip_id = t.id) AS driver_leg_number
+    (SELECT vdtl.leg_number FROM app.v_driver_daily_trip_legs vdtl WHERE vdtl.trip_id = t.id) AS driver_leg_number,
+    sh.id   AS shipper_id,
+    sh.name AS shipper_name
 """
 
 _TRIP_FROM = """
@@ -311,6 +313,14 @@ _TRIP_FROM = """
     -- origen — trae solo la fila ORIGIN de trip_stops (a lo sumo 1 por viaje,
     -- ver assert_trip_stops_at_most_one_origin_per_trip, Ronda 21).
     LEFT JOIN app.trip_stops ots ON ots.trip_id = t.id AND ots.stop_type = 'ORIGIN'
+    -- Cliente/shipper real, resuelto en vivo (Ronda 26, Fase 2) — mismo
+    -- patrón "resolución en vivo" que driver_id/carrier_id/tractor_asset_id
+    -- (Rondas 18-19), sin tocar el pipeline dbt. client_name va a estar
+    -- garantizado como el nombre exacto de un shipper real desde que el
+    -- formulario de creación usa el directorio real (ClientPicker) — el
+    -- match por texto alcanza, no hace falta una columna persistida.
+    LEFT JOIN public.shippers sh
+        ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 

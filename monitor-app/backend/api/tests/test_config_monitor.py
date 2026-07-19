@@ -186,3 +186,16 @@ def test_list_trips_second_leg_plus_filters_against_driver_daily_trip_legs_view(
     query = pool.fetch.call_args.args[0]
     assert "app.v_driver_daily_trip_legs" in query
     assert "leg_number >= 2" in query
+
+
+def test_trip_select_resolves_shipper_id_live_via_client_name_match():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": "trip-1", "client_name": "Walmart", "shipper_id": "s1", "shipper_name": "Walmart"}
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/trip-1")
+    assert res.status_code == 200
+    assert res.json()["shipper_id"] == "s1"
+    query = pool.fetchrow.call_args.args[0]
+    assert "public.shippers" in query
+    assert "lower(trim(" in query

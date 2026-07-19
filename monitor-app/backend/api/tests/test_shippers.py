@@ -33,3 +33,20 @@ def test_list_shippers_orders_by_name():
     query = pool.fetch.call_args.args[0]
     assert "FROM public.shippers" in query
     assert "ORDER BY name" in query
+
+
+def test_create_shipper_success():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": "s2", "name": "Nuevo Cliente Spot", "status": "ACTIVE"}
+    client = make_client(pool)
+    res = client.post("/api/v1/shippers", json={"name": "Nuevo Cliente Spot"})
+    assert res.status_code == 201
+    assert res.json()["name"] == "Nuevo Cliente Spot"
+
+
+def test_create_shipper_duplicate_name_is_409():
+    pool = AsyncMock()
+    pool.fetchrow.side_effect = Exception('duplicate key value violates unique constraint "shippers_name_key"')
+    client = make_client(pool)
+    res = client.post("/api/v1/shippers", json={"name": "Walmart"})
+    assert res.status_code == 409
