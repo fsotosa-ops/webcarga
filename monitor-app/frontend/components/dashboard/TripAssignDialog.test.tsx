@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TripAssignDialog } from './TripAssignDialog'
 import { tripsApi } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
+import { shippersApi } from '@/lib/api/locations'
 import type { TripsMeta } from '@/lib/types'
 
 vi.mock('@/lib/api/trips', () => ({
@@ -11,6 +12,9 @@ vi.mock('@/lib/api/trips', () => ({
 }))
 vi.mock('@/lib/api/drivers', () => ({
   driversApi: { search: vi.fn() },
+}))
+vi.mock('@/lib/api/locations', () => ({
+  shippersApi: { list: vi.fn(), create: vi.fn() },
 }))
 
 const meta: TripsMeta = {
@@ -33,7 +37,7 @@ function renderCreate(props: Partial<Parameters<typeof TripAssignDialog>[0]> = {
 
 /** La mayoría de los tests de este archivo necesitan un conductor elegido
  *  antes de poder enviar el form — Crear viaje queda disabled sin
- *  form.driver_id (Ronda 26, bloqueo driver-first). */
+ *  fleet.driver_id (Ronda 26, bloqueo driver-first). */
 async function pickDriver() {
   vi.mocked(driversApi.search).mockResolvedValueOnce([{
     driver_id: 'd1', driver_name: 'Juan Pérez', driver_rut: '12345678-9', driver_phone: null,
@@ -47,6 +51,10 @@ beforeEach(() => {
   vi.mocked(tripsApi.create).mockReset()
   vi.mocked(tripsApi.availableDrivers).mockReset().mockResolvedValue([])
   vi.mocked(driversApi.search).mockReset().mockResolvedValue([])
+  vi.mocked(shippersApi.list).mockReset().mockResolvedValue([
+    { id: 's1', name: 'Walmart', status: 'ACTIVE' },
+  ] as never)
+  vi.mocked(shippersApi.create).mockReset()
 })
 
 describe('TripAssignDialog', () => {
@@ -103,52 +111,53 @@ describe('TripAssignDialog', () => {
     expect(screen.getByText('Crear viaje')).toBeDisabled()
   })
 
-  it('submits with Enter (form submit) and sends stops + origin', async () => {
+  it('submits with Enter (form submit) y manda el origen y los destinos dentro de stops', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new', planning_date: '2026-07-06' } as never)
     const onCreated = vi.fn()
     renderCreate({ onCreated })
     await pickDriver()
 
-    // Agregar un destino
+    fireEvent.change(screen.getByLabelText('Origen'), { target: { value: 'CD Lo Aguirre' } })
     fireEvent.click(screen.getByText('Agregar destino'))
     fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'Local Maipú' } })
 
-    // Enviar el form
     fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
     const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
-    expect(payload.stops).toEqual([{ local: 'Local Maipú', planning_date: null }])
+    expect(payload.stops).toEqual([
+      { local: 'CD Lo Aguirre', stop_type: 'ORIGIN' },
+      { local: 'Local Maipú', planning_date: null, stop_type: 'DESTINATION' },
+    ])
     expect(payload.origin_tms).toBeUndefined() // modo "Sin TMS"
     expect(onCreated).toHaveBeenCalled()
   })
 
-  it('shows TMS selector and reconciliation hint when origin is a mapped TMS', () => {
+  it('shows TMS selector y los 2 avisos de reconciliación cuando el origen es un TMS mapeado', async () => {
     renderCreate()
     fireEvent.click(screen.getByText('TMS integrado'))
     fireEvent.change(screen.getByLabelText('TMS de origen'), { target: { value: 'qanalytics' } })
     fireEvent.change(screen.getByPlaceholderText('1994062'), { target: { value: '555' } })
-    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'walmart' } })
-    expect(screen.getByText(/Se vinculará automáticamente/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'Walmart' } })
+    expect(await screen.findByText(/Se vinculará automáticamente/)).toBeInTheDocument()
+    expect(screen.getByText(/pueden reemplazarse por lo que reporte el TMS/)).toBeInTheDocument()
   })
 
-  it('cliente es dropdown con canónicos y "Otro cliente" revela texto libre', async () => {
+  it('Cliente busca contra el directorio real y permite crear uno nuevo al vuelo', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+    vi.mocked(shippersApi.create).mockResolvedValue({ id: 's2', name: 'Agrosuper', status: 'ACTIVE' } as never)
     renderCreate()
     await pickDriver()
-    const select = screen.getByLabelText('Cliente') as HTMLSelectElement
-    const values = Array.from(select.options).map(o => o.value)
-    expect(values).toEqual(expect.arrayContaining(['walmart', 'sodimac', 'colun', 'iansa', 'otro']))
 
-    // Sin nombre → se envía el genérico 'otro'
-    fireEvent.change(select, { target: { value: 'otro' } })
-    expect(screen.getByLabelText(/Nombre del cliente/i)).toBeInTheDocument()
+    fireEvent.focus(screen.getByLabelText('Cliente'))
+    fireEvent.click(await screen.findByText('Walmart'))
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
-    expect(vi.mocked(tripsApi.create).mock.calls[0][0].client_name).toBe('otro')
+    expect(vi.mocked(tripsApi.create).mock.calls[0][0].client_name).toBe('Walmart')
 
-    // Con nombre → se envía el texto
     vi.mocked(tripsApi.create).mockClear()
-    fireEvent.change(screen.getByLabelText(/Nombre del cliente/i), { target: { value: 'Agrosuper' } })
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'Agrosuper' } })
+    fireEvent.click(await screen.findByText('Crear cliente “Agrosuper”'))
+    await waitFor(() => expect(shippersApi.create).toHaveBeenCalledWith({ name: 'Agrosuper' }))
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
     expect(vi.mocked(tripsApi.create).mock.calls[0][0].client_name).toBe('Agrosuper')
@@ -190,13 +199,10 @@ describe('TripAssignDialog', () => {
     expect(await screen.findByText(/Ya registraste el viaje/)).toBeInTheDocument()
   })
 
-  it('envía región/ciudad de origen y de cada destino en el payload', async () => {
+  it('envía región/ciudad de cada destino en el payload (sin región/ciudad de origen — se retiró del form de creación)', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
     renderCreate()
     await pickDriver()
-
-    fireEvent.change(screen.getByLabelText('Región de origen'), { target: { value: 'Biobío' } })
-    fireEvent.change(screen.getByLabelText('Ciudad de origen'), { target: { value: 'Concepción' } })
 
     fireEvent.click(screen.getByText('Agregar destino'))
     fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'CD El Peñón' } })
@@ -206,13 +212,19 @@ describe('TripAssignDialog', () => {
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
     const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
-    expect(payload.origin_region).toBe('Biobío')
-    expect(payload.origin_city).toBe('Concepción')
+    expect(payload.origin_region).toBeUndefined()
+    expect(payload.origin_city).toBeUndefined()
     expect(payload.stops?.[0]).toMatchObject({
       local: 'CD El Peñón',
       destination_region: 'Región Metropolitana de Santiago',
       destination_city: 'San Bernardo',
     })
+  })
+
+  it('no expone ningún picker de región/ciudad de origen (retirado en Fase 2, Plan 3)', () => {
+    renderCreate()
+    expect(screen.queryByLabelText('Región de origen')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Ciudad de origen')).not.toBeInTheDocument()
   })
 
   it('destinos can be removed', () => {

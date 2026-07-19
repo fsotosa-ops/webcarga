@@ -324,7 +324,6 @@ export type TripCreatePayload = {
   origin_tms?:            string | null
   source_system_trip_id?: string | null
   client_name?:           string | null
-  origin?:                string | null
   origin_region?:         string | null
   origin_city?:           string | null
   cargo_type?:            string | null

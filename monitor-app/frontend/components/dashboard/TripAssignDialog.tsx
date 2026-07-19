@@ -1,18 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import {
-  X, Loader2, Plus, Search, User, Truck,
-  MapPin, Trash2, Link2,
-} from 'lucide-react'
-import type {
-  Trip, TripsMeta, TripCreatePayload, TripStopCreatePayload, DriverPickCandidate,
-} from '@/lib/types'
+import { X, Loader2, Plus, Search, User, MapPin, Link2 } from 'lucide-react'
+import type { Trip, TripsMeta, TripCreatePayload, TripStopCreatePayload } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
-import { driversApi } from '@/lib/api/drivers'
 import { useQuery } from '@tanstack/react-query'
-import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
-import { DriverSearchPicker } from '@/components/dashboard/DriverSearchPicker'
+import { RouteEditor } from '@/components/dashboard/RouteEditor'
+import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
+import { ClientPicker } from '@/components/dashboard/ClientPicker'
 
 interface Props {
   open:      boolean
@@ -24,21 +19,6 @@ interface Props {
 }
 
 const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
-
-// Sin w-full: convive en la fila de destino con el input de nombre (INPUT trae
-// w-full y dos utilidades de ancho en conflicto dejan el ancho al azar del stylesheet)
-const INPUT_DATE = "text-sm border border-border rounded-lg px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all w-[150px] sm:w-[185px]"
-
-// Valores canónicos en minúscula: coinciden con app.trips.client_name real y con
-// la fórmula md5 de reconciliación (que lowercasea el cliente)
-const MANUAL_CLIENTS = [
-  { value: 'walmart', label: 'Walmart' },
-  { value: 'sodimac', label: 'Sodimac' },
-  { value: 'colun',   label: 'Colún'   },
-  { value: 'iansa',   label: 'Iansa'   },
-] as const
-
-const OTHER_CLIENT = 'otro'
 
 const BASE_CARGO_TYPES = ['SECO', 'FRIO', 'CONGELADO']
 
@@ -72,13 +52,11 @@ type OriginMode = 'none' | 'mapped' | 'other'
 
 export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Props) {
   const [form, setForm]             = useState<Partial<TripCreatePayload>>({})
-  const [clientChoice, setClientChoice] = useState('')
-  const [clientOther, setClientOther]   = useState('')
+  const [clientName, setClientName] = useState('')
   const [originMode, setOriginMode] = useState<OriginMode>('none')
   const [originTms, setOriginTms]   = useState('')
   const [stops, setStops]           = useState<TripStopCreatePayload[]>([])
-  const [driverQuery, setDriverQuery]   = useState('')
-  const [pickedDriver, setPickedDriver] = useState<DriverPickCandidate | null>(null)
+  const [fleet, setFleet]           = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
   const panelRef                    = useRef<HTMLDivElement>(null)
@@ -93,12 +71,11 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
   useEffect(() => {
     if (open) {
       setForm({ planning_date: todayISO() })
-      setClientChoice(''); setClientOther('')
+      setClientName('')
       setOriginMode('none')
       setOriginTms('')
       setStops([])
-      setPickedDriver(null)
-      setDriverQuery('')
+      setFleet(EMPTY_FLEET_ASSIGN_VALUE)
       setErr(null)
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -137,37 +114,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
     setForm(f => ({ ...f, [field]: value || undefined }))
   }
 
-  function handlePickDriver(d: DriverPickCandidate) {
-    setPickedDriver(d)
-    setDriverQuery('')
-    setForm(f => ({
-      ...f,
-      driver_id:         d.driver_id,
-      driver_name:       d.driver_name,
-      driver_rut:        d.driver_rut ?? undefined,
-      driver_phone:      d.driver_phone ?? undefined,
-      carrier_id:        d.carrier_id ?? undefined,
-      transporter_name:  d.carrier_name ?? undefined,
-      tractor_asset_id:  d.tractor_asset_id ?? undefined,
-      tractor_plate:     d.tractor_plate ?? undefined,
-    }))
-  }
-
-  function handleClearDriver() {
-    setPickedDriver(null)
-    setForm(f => ({
-      ...f,
-      driver_id: undefined, driver_name: undefined, driver_rut: undefined,
-      driver_phone: undefined, carrier_id: undefined, transporter_name: undefined,
-      tractor_asset_id: undefined, tractor_plate: undefined,
-    }))
-  }
-
   const mappedTms = (meta?.tms_sources ?? []).filter(t => t.id !== 'manual')
-
-  // Cliente derivado del dropdown: "Otro cliente" usa el texto libre o el genérico 'otro'
-  const clientName =
-    clientChoice === OTHER_CLIENT ? (clientOther.trim() || OTHER_CLIENT) : clientChoice || undefined
 
   // Tipos de carga: base + los configurados en Rangos de Temperatura (dedup)
   const cargoTypes = Array.from(new Set([
@@ -181,15 +128,27 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
 
   async function handleCreate() {
     if (!form.planning_date) { setErr('La fecha de planificación es requerida'); return }
-    if (!form.driver_id) { setErr('Elegí un conductor del directorio de Empresas antes de crear el viaje'); return }
-    if (stops.some(s => !s.local.trim())) { setErr('Cada destino debe tener un nombre'); return }
+    if (!fleet.driver_id) { setErr('Elegí un conductor del directorio de Empresas antes de crear el viaje'); return }
+    if (stops.some(s => s.stop_type !== 'ORIGIN' && !s.local.trim())) { setErr('Cada destino debe tener un nombre'); return }
     setSaving(true); setErr(null)
     try {
       const payload: TripCreatePayload = {
-        ...(form as TripCreatePayload),
-        client_name: clientName,
-        origin_tms: originMode === 'none' ? undefined : originTms || undefined,
-        stops: stops.filter(s => s.local.trim()),
+        planning_date:          form.planning_date,
+        origin_tms:              originMode === 'none' ? undefined : originTms || undefined,
+        source_system_trip_id:  form.source_system_trip_id,
+        client_name:             clientName.trim() || undefined,
+        cargo_type:              form.cargo_type,
+        current_status:          form.current_status,
+        stops:                   stops.filter(s => s.local.trim()),
+        tractor_plate:           fleet.tractor_plate ?? undefined,
+        trailer_plate:           fleet.trailer_plate ?? undefined,
+        driver_name:             fleet.driver_name ?? undefined,
+        driver_rut:              fleet.driver_rut ?? undefined,
+        driver_phone:            fleet.driver_phone ?? undefined,
+        transporter_name:        fleet.carrier_name ?? undefined,
+        carrier_id:               fleet.carrier_id ?? undefined,
+        driver_id:                fleet.driver_id ?? undefined,
+        tractor_asset_id:        fleet.tractor_asset_id ?? undefined,
       }
       const created = await tripsApi.create(payload)
       onCreated(created)
@@ -237,7 +196,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
         >
           <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/50 flex-1">
 
-            {/* LEFT — Esencial + Origen del viaje + Destinos */}
+            {/* LEFT — Esencial + Sistema de origen + Ruta (origen y destinos unificados) */}
             <div className="p-6 space-y-5">
               <SectionTitle icon={<Search size={14} />}>Datos del viaje</SectionTitle>
 
@@ -246,57 +205,21 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
                   <input ref={firstFieldRef} type="date" value={form.planning_date ?? ''} onChange={e => set('planning_date', e.target.value)} className={INPUT} />
                 </Field>
                 <Field label="Cliente">
-                  <select
-                    value={clientChoice}
-                    onChange={e => { setClientChoice(e.target.value); if (e.target.value !== OTHER_CLIENT) setClientOther('') }}
-                    aria-label="Cliente"
-                    className={INPUT}
-                  >
-                    <option value="">— Seleccionar…</option>
-                    {MANUAL_CLIENTS.map(c => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                    <option value={OTHER_CLIENT}>Otro cliente (spot)</option>
-                  </select>
+                  <ClientPicker value={clientName} onChange={setClientName} placeholder="Buscar o crear cliente…" />
                 </Field>
               </div>
-              {clientChoice === OTHER_CLIENT && (
-                <Field label="Nombre del cliente (opcional)">
-                  <input
-                    type="text"
-                    value={clientOther}
-                    onChange={e => setClientOther(e.target.value)}
-                    placeholder="Si aún no se sabe, queda como “otro”"
-                    aria-label="Nombre del cliente"
-                    className={INPUT}
-                  />
-                </Field>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Origen">
-                  <input type="text" value={form.origin ?? ''} onChange={e => set('origin', e.target.value)} placeholder="Santiago CD" className={INPUT} />
-                </Field>
-                <Field label="Tipo de carga">
-                  <select
-                    value={form.cargo_type ?? ''}
-                    onChange={e => set('cargo_type', e.target.value)}
-                    aria-label="Tipo de carga"
-                    className={INPUT}
-                  >
-                    <option value="">— Sin especificar</option>
-                    {cargoTypes.map(ct => (
-                      <option key={ct} value={ct}>{ct}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-              <Field label="Región / ciudad de origen">
-                <RegionCityPicker
-                  region={form.origin_region ?? null}
-                  city={form.origin_city ?? null}
-                  onChange={(region, city) => setForm(f => ({ ...f, origin_region: region, origin_city: city }))}
-                  labelSuffix="de origen"
-                />
+              <Field label="Tipo de carga">
+                <select
+                  value={form.cargo_type ?? ''}
+                  onChange={e => set('cargo_type', e.target.value)}
+                  aria-label="Tipo de carga"
+                  className={INPUT}
+                >
+                  <option value="">— Sin especificar</option>
+                  {cargoTypes.map(ct => (
+                    <option key={ct} value={ct}>{ct}</option>
+                  ))}
+                </select>
               </Field>
               <Field label="Estado inicial">
                 <select value={form.current_status ?? ''} onChange={e => set('current_status', e.target.value)} className={INPUT}>
@@ -373,123 +296,41 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
                   </div>
                 )}
                 {canReconcile && (
-                  <p className="mt-2 text-[10px] text-accent bg-accent/5 border border-accent/15 rounded-lg px-3 py-2">
-                    Se vinculará automáticamente cuando {mappedTms.find(t => t.id === originTms)?.label ?? originTms} reporte este viaje (mismo cliente e ID).
-                  </p>
+                  <div className="mt-2 space-y-1.5">
+                    <p className="text-[10px] text-accent bg-accent/5 border border-accent/15 rounded-lg px-3 py-2">
+                      Se vinculará automáticamente cuando {mappedTms.find(t => t.id === originTms)?.label ?? originTms} reporte este viaje (mismo cliente e ID).
+                    </p>
+                    <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                      El origen se conserva siempre, pero si {mappedTms.find(t => t.id === originTms)?.label ?? originTms} reporta paradas distintas a las que cargues abajo, los destinos que hayas puesto acá pueden reemplazarse por lo que reporte el TMS.
+                    </p>
+                  </div>
                 )}
               </div>
 
-              {/* Destinos */}
+              {/* Ruta — origen + destinos unificados (Fase 2, Plan 3) */}
               <div className="border-t border-border/50 pt-5">
-                <SectionTitle icon={<MapPin size={14} />}>Destinos</SectionTitle>
-                <div className="space-y-2">
-                  {stops.map((s, i) => (
-                    <div key={i} className="space-y-1.5 border border-border/60 rounded-lg p-2">
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
-                        <input
-                          type="text"
-                          value={s.local}
-                          onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, local: e.target.value } : x))}
-                          placeholder={`Destino ${i + 1} — nombre del local`}
-                          className={INPUT}
-                          aria-label={`Nombre destino ${i + 1}`}
-                        />
-                        <input
-                          type="datetime-local"
-                          value={s.planning_date ?? ''}
-                          onChange={e => setStops(prev => prev.map((x, j) => j === i ? { ...x, planning_date: e.target.value || null } : x))}
-                          className={INPUT_DATE}
-                          aria-label={`Fecha planificada destino ${i + 1}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setStops(prev => prev.filter((_, j) => j !== i))}
-                          aria-label={`Quitar destino ${i + 1}`}
-                          className="p-2 rounded-lg border border-transparent text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                      <RegionCityPicker
-                        size="sm"
-                        region={s.destination_region ?? null}
-                        city={s.destination_city ?? null}
-                        onChange={(region, city) => setStops(prev => prev.map((x, j) =>
-                          j === i ? { ...x, destination_region: region, destination_city: city } : x))}
-                        labelSuffix={`destino ${i + 1}`}
-                      />
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setStops(prev => [...prev, { local: '', planning_date: null }])}
-                    className="flex items-center gap-1.5 text-xs text-accent hover:text-accent/80 transition-colors"
-                  >
-                    <Plus size={12} />
-                    Agregar destino
-                  </button>
-                </div>
+                <SectionTitle icon={<MapPin size={14} />}>Ruta</SectionTitle>
+                <RouteEditor stops={stops} onChange={setStops} />
               </div>
             </div>
 
             {/* RIGHT — Conductor primero (llave real de la operación diaria);
                 empresa/vehículo se autocompletan editables desde sus
-                asignaciones activas — Ronda 26, TripAssignDialog */}
+                asignaciones activas — Ronda 26, sobre FleetAssignSection (Fase 2, Plan 3) */}
             <div className="p-6 space-y-5">
               <SectionTitle icon={<User size={14} />}>Conductor</SectionTitle>
-
-              {pickedDriver ? (
-                <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">{pickedDriver.driver_name}</p>
-                    <p className="text-[10px] text-gray-400 font-mono">{pickedDriver.driver_rut ?? ''}</p>
-                  </div>
-                  <button type="button" onClick={handleClearDriver} className="text-xs text-gray-400 hover:text-red-400 transition-colors shrink-0 ml-3">
-                    Cambiar
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <DriverSearchPicker
-                    query={driverQuery}
-                    onQueryChange={setDriverQuery}
-                    onPick={handlePickDriver}
-                    suggested={availableQuery.data ?? []}
-                    suggestedLabel="Disponibles hoy"
-                    autoFocus
-                  />
-                  {driverQuery.trim().length >= 2 && (
-                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
-                      Si no aparece en la lista, hay que darlo de alta primero en{' '}
-                      <a href="/dashboard/transportistas" className="underline font-semibold">Empresas</a> — no se puede crear el viaje sin un conductor vinculado al directorio real.
-                    </p>
-                  )}
-                </>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Empresa de transporte">
-                  <input type="text" value={form.transporter_name ?? ''} onChange={e => set('transporter_name', e.target.value)} placeholder="Se autocompleta al elegir conductor" className={INPUT} disabled={!pickedDriver} />
-                </Field>
-                <Field label="Teléfono">
-                  <input type="text" value={form.driver_phone ?? ''} onChange={e => set('driver_phone', e.target.value)} placeholder="+56912345678" className={INPUT} disabled={!pickedDriver} />
-                </Field>
-              </div>
-
-              <div className="border-t border-border/50 pt-5">
-                <SectionTitle icon={<Truck size={14} />}>Vehículo</SectionTitle>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Patente tracto">
-                    <input type="text" value={form.tractor_plate ?? ''} onChange={e => set('tractor_plate', e.target.value.toUpperCase())} placeholder="BGVS12" className={INPUT + ' uppercase'} disabled={!pickedDriver} />
-                  </Field>
-                  <Field label="Patente rampla">
-                    <input type="text" value={form.trailer_plate ?? ''} onChange={e => set('trailer_plate', e.target.value.toUpperCase())} placeholder="RMPLA01" className={INPUT + ' uppercase'} />
-                  </Field>
-                </div>
-                <p className="text-[10px] text-gray-400 mt-1.5">
-                  Autocompletado editable desde la asignación activa del conductor — corregí acá si ese día manejó otro equipo.
-                </p>
-              </div>
+              <FleetAssignSection
+                value={fleet}
+                onChange={setFleet}
+                suggested={availableQuery.data ?? []}
+                suggestedLabel="Disponibles hoy"
+                notFoundHint={
+                  <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
+                    Si no aparece en la lista, hay que darlo de alta primero en{' '}
+                    <a href="/dashboard/transportistas" className="underline font-semibold">Empresas</a> — no se puede crear el viaje sin un conductor vinculado al directorio real.
+                  </p>
+                }
+              />
             </div>
           </div>
 
@@ -505,7 +346,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
             </button>
             <button
               type="submit"
-              disabled={saving || !form.planning_date || !form.driver_id}
+              disabled={saving || !form.planning_date || !fleet.driver_id}
               className="flex-1 flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-40 transition-colors"
             >
               {saving && <Loader2 size={14} className="animate-spin" />}
