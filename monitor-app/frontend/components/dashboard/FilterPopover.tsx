@@ -5,7 +5,6 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import type { TripsMeta } from '@/lib/types'
 import type { DiarioFilters, DiarioFiltersAction } from '@/hooks/useDiarioFilters'
 import { countPopoverFilters } from '@/hooks/useDiarioFilters'
-import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
 
 interface Props {
   filters:  DiarioFilters
@@ -14,8 +13,9 @@ interface Props {
 }
 
 /**
- * Filtros de uso ocasional (Fuente TMS, Indicadores, rango de fechas) fuera de
- * la barra principal — reduce la carga visual del monitor de ~25 a ~10 controles.
+ * Filtros de uso ocasional (Fuente TMS, Tipo de operación, rango de fechas)
+ * fuera de la barra principal — reduce la carga visual del monitor de ~25 a
+ * ~10 controles.
  */
 export function FilterPopover({ filters: f, dispatch, meta }: Props) {
   const [open, setOpen] = useState(false)
@@ -102,22 +102,36 @@ export function FilterPopover({ filters: f, dispatch, meta }: Props) {
             </div>
           </div>
 
-          {/* Indicadores (Activo/Trabajando/Asignado/1ra Vuelta) se movieron
-              a tiles visibles arriba de la tabla, junto a las KPI cards —
-              Fase 3 del hardening del Diario, 2026-07-18. Ya no viven acá
-              (estaban escondidos en este popover de "uso ocasional", pese a
-              ser uno de los filtros más usados). */}
+          {/* Indicadores (Activo/Trabajando/Asignado) se movieron a tiles
+              visibles arriba de la tabla, junto a las KPI cards — Fase 3
+              del hardening del Diario, 2026-07-18. Ya no viven acá. */}
 
-          {/* Ubicación de origen (región/ciudad asignada desde el Monitor) */}
+          {/* Tipo de operación (RM/Zona Cero) — reemplaza el filtro de
+              región/ciudad de origen (Fase 2, Plan 7). origin_operation_type
+              es la clasificación real/automática, ya viene resuelta en cada
+              trip de GET /trips — el filtro es 100% client-side, mismo
+              mecanismo que las alertas KPI de la Ronda 26. */}
           <div>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Ubicación de origen</p>
-            <RegionCityPicker
-              size="sm"
-              region={f.fRegion || null}
-              city={f.fCity || null}
-              onChange={(region, city) => dispatch({ type: 'patch', patch: { fRegion: region ?? '', fCity: city ?? '' } })}
-              labelSuffix="(filtro)"
-            />
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Tipo de operación</p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(meta?.operation_types ?? []).map(ot => {
+                const active = f.fOperationType.includes(ot.id)
+                return (
+                  <button
+                    key={ot.id}
+                    type="button"
+                    onClick={() => dispatch({ type: 'toggleOperationType', id: ot.id })}
+                    aria-pressed={active}
+                    style={active ? { backgroundColor: ot.bg_color, color: ot.text_color, borderColor: ot.bg_color } : undefined}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                      active ? '' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    {ot.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {/* Rango de fechas — solo historial */}

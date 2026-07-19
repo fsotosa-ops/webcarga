@@ -151,15 +151,11 @@ export default function DiarioPage() {
     ...(f.activeSignals.includes('assigned')        ? { is_assigned:      true } : {}),
     ...(f.activeSignals.includes('second_leg_plus') ? { second_leg_plus:  true } : {}),
   }
-  const locParams = {
-    ...(f.fRegion ? { origin_region: f.fRegion } : {}),
-    ...(f.fCity   ? { origin_city:   f.fCity }   : {}),
-  }
   const params: TripListParams =
     f.tab === 'en_curso'
-      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), limit: 200, ...boolParams, ...locParams }
+      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), limit: 200, ...boolParams }
       : { view: 'historial', q: qDebounced, fecha_desde: f.fechaDesde, fecha_hasta: f.fechaHasta,
-          status: statusParam, tms: f.fTms.join(','), limit: HISTORIAL_LIMIT, page: f.page, ...boolParams, ...locParams }
+          status: statusParam, tms: f.fTms.join(','), limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
 
   const queryClient = useQueryClient()
   const tripsQuery  = useTrips(params, { poll: f.tab === 'en_curso' })
@@ -179,9 +175,18 @@ export default function DiarioPage() {
   )
   const { pinned, togglePin } = usePinnedAlertSignals()
   const visibleTrips = useMemo(() => {
-    if (f.tab !== 'en_curso' || f.activeSignals.length === 0) return trips
-    return trips.filter(t => matchesActiveSignals(t, f.activeSignals, tripsMeta?.temperature_ranges ?? [], alertRules))
-  }, [trips, f.tab, f.activeSignals, tripsMeta?.temperature_ranges, alertRules])
+    let result = trips
+    if (f.tab === 'en_curso' && f.activeSignals.length > 0) {
+      result = result.filter(t => matchesActiveSignals(t, f.activeSignals, tripsMeta?.temperature_ranges ?? [], alertRules))
+    }
+    // Tipo de operación (Fase 2, Plan 7) — a diferencia de activeSignals,
+    // aplica en ambos tabs (en_curso e historial): no es una alerta de
+    // operación en vivo, es una clasificación permanente del origen.
+    if (f.fOperationType.length > 0) {
+      result = result.filter(t => f.fOperationType.includes(t.origin_operation_type ?? ''))
+    }
+    return result
+  }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules])
 
   // ── Conductores disponibles (sin viaje abierto hoy) — solo para el conteo
   // del tile, la lista sugerida vive dentro de TripAssignDialog (Ronda 26)

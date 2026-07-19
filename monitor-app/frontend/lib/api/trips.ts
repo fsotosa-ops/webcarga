@@ -16,8 +16,6 @@ export type TripPatch = {
   manual_status?:  string
   notes?:          string
   comments?:       string
-  origin_region?:  string
-  origin_city?:    string
   driver_name?:    string
   driver_phone?:   string
   tractor_plate?:  string
@@ -57,8 +55,6 @@ export const tripsApi = {
     second_leg_plus?: boolean
     tms?:            string
     client?:         string
-    origin_region?:  string
-    origin_city?:    string
     sort?:           'default' | 'status_reported_at_asc' | 'status_reported_at_desc'
     page?:           number
     limit?:          number
@@ -72,8 +68,6 @@ export const tripsApi = {
     if (params?.status)          qs.set('status',          params.status)
     if (params?.tms)             qs.set('tms',             params.tms)
     if (params?.client)          qs.set('client',          params.client)
-    if (params?.origin_region)   qs.set('origin_region',   params.origin_region)
-    if (params?.origin_city)     qs.set('origin_city',     params.origin_city)
     if (params?.sort)            qs.set('sort',            params.sort)
     if (params?.is_active       != null) qs.set('is_active',       String(params.is_active))
     if (params?.is_working      != null) qs.set('is_working',      String(params.is_working))
