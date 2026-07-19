@@ -1581,7 +1581,7 @@ def _safe_storage_name(file_name: str) -> str:
 _NOTE_SELECT = """
     n.id, n.trip_id, n.author_id,
     COALESCE(p.full_name, p.email) AS author_name,
-    n.body, n.note_type, n.pinned, n.created_at
+    n.body, n.note_type, n.pinned, n.created_at, n.resolved_at
     FROM app.trip_notes n
     LEFT JOIN public.profiles p ON p.id = n.author_id
 """

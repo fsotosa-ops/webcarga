@@ -54,6 +54,18 @@ def test_list_notes_empty():
     assert res.json() == []
 
 
+def test_list_notes_includes_resolved_at():
+    pool = AsyncMock()
+    # 1ra llamada: notas; 2da: adjuntos (sin adjuntos acá)
+    pool.fetch.side_effect = [[{**NOTE_ROW, "note_type": "incidente", "resolved_at": None}], []]
+    client = make_client(pool)
+    res = client.get(f"/api/v1/trips/{NOTE_ROW['trip_id']}/notes")
+    assert res.status_code == 200
+    assert res.json()[0]["resolved_at"] is None
+    query = pool.fetch.call_args_list[0].args[0]
+    assert "resolved_at" in query
+
+
 def test_add_note_returns_created_note_with_author():
     pool = AsyncMock()
     # 1ra llamada: viaje existe; 2da: RETURNING id del insert
