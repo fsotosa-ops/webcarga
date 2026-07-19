@@ -1591,6 +1591,10 @@ class TripNotePin(BaseModel):
     pinned: bool
 
 
+class TripNoteResolve(BaseModel):
+    resolved: bool
+
+
 async def _log_system_note(pool, trip_id: str, user: dict, body: str) -> None:
     """Registra un evento del sistema en la bitácora. Best-effort: un fallo acá
     nunca debe romper la operación principal que lo origina."""
@@ -1740,3 +1744,26 @@ async def pin_trip_note(
     if not updated:
         raise HTTPException(404, "Nota no encontrada")
     return {"ok": True, "pinned": payload.pinned}
+
+
+@router.patch("/{trip_id}/notes/{note_id}/resolve")
+async def resolve_trip_note(
+    trip_id: str,
+    note_id: str,
+    payload: TripNoteResolve,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Marca/desmarca una nota tipo 'incidente' como resuelta — mismo patrón
+    que pin_trip_note. resolved_at nulo = abierto (Ronda 26, Fase 2)."""
+    updated = await pool.fetchval(
+        """
+        UPDATE app.trip_notes SET resolved_at = CASE WHEN $3 THEN NOW() ELSE NULL END
+        WHERE id = $1 AND trip_id = $2
+        RETURNING id
+        """,
+        note_id, trip_id, payload.resolved,
+    )
+    if not updated:
+        raise HTTPException(404, "Nota no encontrada")
+    return {"ok": True, "resolved": payload.resolved}

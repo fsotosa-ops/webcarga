@@ -196,6 +196,31 @@ def test_pin_missing_note_is_404():
     assert res.status_code == 404
 
 
+def test_resolve_incident_note_toggles():
+    pool = AsyncMock()
+    pool.fetchval.return_value = NOTE_ROW["id"]
+    client = make_client(pool)
+    res = client.patch(
+        f"/api/v1/trips/{NOTE_ROW['trip_id']}/notes/{NOTE_ROW['id']}/resolve",
+        json={"resolved": True},
+    )
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "resolved": True}
+    update_sql = pool.fetchval.call_args.args[0]
+    assert "resolved_at" in update_sql
+
+
+def test_resolve_missing_note_is_404():
+    pool = AsyncMock()
+    pool.fetchval.return_value = None
+    client = make_client(pool)
+    res = client.patch(
+        f"/api/v1/trips/{NOTE_ROW['trip_id']}/notes/{NOTE_ROW['id']}/resolve",
+        json={"resolved": True},
+    )
+    assert res.status_code == 404
+
+
 def test_notes_require_auth():
     pool = AsyncMock()
     client = make_client(pool, authenticated=False)
