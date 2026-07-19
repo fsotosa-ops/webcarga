@@ -596,7 +596,14 @@ async def get_trips_meta(pool=Depends(get_pool)):
     )
 
 
-# ── Conductores liberados: terminaron sus viajes del día, reasignables ────────
+# ── Disponibilidad de conductores/equipos — Fase 3 del hardening del Diario
+# (2026-07-18): antes agrupaba por nombre de texto libre DENTRO de los
+# viajes del día — un conductor sin NINGÚN viaje ese día ni siquiera
+# aparecía, y no cruzaba contra public.carriers.operational_status. El
+# diseño correcto parte del directorio real (conductor/equipo activo de una
+# empresa transportista activa, público.driver_assignments/
+# asset_assignments) y recién ahí cruza contra los viajes del día — mismo
+# patrón que ya usa Empresas para membresía activa/inactiva.
 # Declarado ANTES de /{trip_id} para que FastAPI no matchee "available-drivers"
 # como un id de viaje. Sodimac excluido: nunca reporta patente ni conductor.
 
@@ -612,49 +619,107 @@ async def available_drivers(
 
     rows = await pool.fetch(
         """
-        WITH day_trips AS (
+        WITH active_roster AS (
+            SELECT d.id, d.full_name, d.tax_id, c.business_name AS carrier_name
+            FROM public.drivers d
+            JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+            JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
+            WHERE d.operational_status = 'ACTIVE'
+        ),
+        today_trips AS (
             SELECT
-                COALESCE(fl.driver_name_raw, d_auto.full_name, t.fleet->>'driver_name_tms') AS driver_name,
-                t.fleet->>'driver_rut_tms'                                AS driver_rut,
-                COALESCE(fl.driver_phone, t.fleet->>'driver_phone')       AS driver_phone,
-                COALESCE(fl.tractor_plate, ta_auto.license_plate, t.fleet->>'tractor_plate') AS tractor_plate,
-                COALESCE(c.business_name, c_auto.business_name)           AS carrier_name,
-                t.status_reported_at,
-                -- mismo criterio de "terminal" que la derivación de is_active en dbt
-                (t.trip_status LIKE 'CERRADO%'
-                 OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')) AS closed
+                fl.driver_id,
+                count(*) AS trips_total,
+                count(*) FILTER (
+                    WHERE t.trip_status LIKE 'CERRADO%'
+                       OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')
+                ) AS closed_count,
+                max(t.status_reported_at) AS last_report_at,
+                max(COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')) AS tractor_plate
             FROM app.trips t
-            -- Mismo fix de _TRIP_FROM: unir por trip_id, no por el
-            -- fleet_link_id denormalizado (se rompe con --full-refresh).
-            LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
-            LEFT JOIN public.carriers c ON c.id = fl.carrier_id
-            -- Misma resolución en vivo que _TRIP_FROM (ver ahí el porqué).
-            LEFT JOIN public.assets ta_auto
-                ON fl.tractor_asset_id IS NULL
-               AND upper(trim(ta_auto.license_plate)) =
-                   upper(trim(COALESCE(NULLIF(t.fleet->>'tractor_plate', ''), t.fleet->>'trailer_plate')))
-            LEFT JOIN public.asset_assignments aa_auto
-                ON aa_auto.asset_id = ta_auto.id AND aa_auto.status = 'ACTIVE'
-            LEFT JOIN public.carriers c_auto ON c_auto.id = aa_auto.carrier_id
-            LEFT JOIN public.vehicle_driver_assignments vda_auto
-                ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
-            LEFT JOIN public.drivers d_auto ON d_auto.id = vda_auto.driver_id
+            JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
             WHERE t.planning_date = $1
               AND t.source_system != 'sodimac'
+              AND fl.driver_id IS NOT NULL
+            GROUP BY fl.driver_id
         )
         SELECT
-            driver_name,
-            max(driver_rut)          AS driver_rut,
-            max(driver_phone)        AS driver_phone,
-            max(tractor_plate)       AS tractor_plate,
-            max(carrier_name)        AS carrier_name,
-            count(*)                 AS trips_total,
-            max(status_reported_at)  AS last_report_at
-        FROM day_trips
-        WHERE driver_name IS NOT NULL AND driver_name != ''
-        GROUP BY driver_name
-        HAVING count(*) = count(*) FILTER (WHERE closed)
-        ORDER BY max(status_reported_at) DESC NULLS LAST
+            ar.id            AS driver_id,
+            ar.full_name     AS driver_name,
+            ar.tax_id        AS driver_rut,
+            -- Último teléfono capturado para este conductor en cualquier
+            -- viaje anterior — public.drivers no tiene columna de teléfono
+            -- propia, y no hay un viaje de hoy del que tomarlo si está libre.
+            (
+                SELECT fl2.driver_phone FROM app.trip_fleet_links fl2
+                WHERE fl2.driver_id = ar.id AND fl2.driver_phone IS NOT NULL
+                ORDER BY fl2.updated_at DESC LIMIT 1
+            )                AS driver_phone,
+            tt.tractor_plate,
+            ar.carrier_name,
+            COALESCE(tt.trips_total, 0) AS trips_total,
+            tt.last_report_at
+        FROM active_roster ar
+        LEFT JOIN today_trips tt ON tt.driver_id = ar.id
+        WHERE tt.driver_id IS NULL OR tt.trips_total = tt.closed_count
+        ORDER BY tt.last_report_at DESC NULLS LAST, ar.full_name
+        """,
+        day,
+    )
+    return [dict(r) for r in rows]
+
+
+@router.get("/available-assets")
+async def available_assets(
+    fecha: str = Query(""),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Mismo diseño que /available-drivers (ver comentario arriba), para
+    equipos: parte de public.assets activos de una empresa transportista
+    activa (asset_assignments) y cruza contra los viajes del día."""
+    day = _parse_date(fecha)
+    if day is None:
+        raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
+
+    rows = await pool.fetch(
+        """
+        WITH active_roster AS (
+            SELECT a.id, a.license_plate, a.asset_type, c.business_name AS carrier_name
+            FROM public.assets a
+            JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+            JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+            WHERE a.operational_status = 'ACTIVE'
+        ),
+        today_trips AS (
+            SELECT
+                fl.tractor_asset_id AS asset_id,
+                count(*) AS trips_total,
+                count(*) FILTER (
+                    WHERE t.trip_status LIKE 'CERRADO%'
+                       OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')
+                ) AS closed_count,
+                max(t.status_reported_at) AS last_report_at,
+                max(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) AS driver_name
+            FROM app.trips t
+            JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
+            WHERE t.planning_date = $1
+              AND t.source_system != 'sodimac'
+              AND fl.tractor_asset_id IS NOT NULL
+            GROUP BY fl.tractor_asset_id
+        )
+        SELECT
+            ar.id            AS asset_id,
+            ar.license_plate AS tractor_plate,
+            ar.asset_type,
+            ar.carrier_name,
+            COALESCE(tt.trips_total, 0) AS trips_total,
+            tt.last_report_at,
+            tt.driver_name
+        FROM active_roster ar
+        LEFT JOIN today_trips tt ON tt.asset_id = ar.id
+        WHERE tt.asset_id IS NULL OR tt.trips_total = tt.closed_count
+        ORDER BY tt.last_report_at DESC NULLS LAST, ar.license_plate
         """,
         day,
     )

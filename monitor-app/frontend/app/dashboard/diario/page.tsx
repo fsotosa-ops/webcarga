@@ -20,8 +20,8 @@ import { useTrips, type TripListParams } from '@/hooks/useTrips'
 import { useDiarioFilters, countActiveFilters, FLAGS, type FlagField } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
 import { deriveKpis, matchesKpi, DEFAULT_ALERT_RULES, type KpiId } from '@/lib/utils/kpis'
-import { AvailableDriversPanel, useAvailableDrivers } from '@/components/dashboard/AvailableDriversPanel'
-import type { AvailableDriver, TripCreatePayload } from '@/lib/types'
+import { AvailabilityPanel, useAvailableDrivers, useAvailableAssets } from '@/components/dashboard/AvailabilityPanel'
+import type { AvailableDriver, AvailableAsset, TripCreatePayload } from '@/lib/types'
 import { UserCheck } from 'lucide-react'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
@@ -215,11 +215,12 @@ export default function DiarioPage() {
     return trips.filter(t => matchesKpi(t, f.kpiFilter!, tripsMeta?.temperature_ranges ?? [], alertRules))
   }, [trips, f.tab, f.kpiFilter, tripsMeta?.temperature_ranges, alertRules])
 
-  // ── Conductores liberados (terminaron sus viajes del día) ──────────────────
-  const [showDrivers, setShowDrivers]   = useState(false)
+  // ── Conductores/equipos disponibles (sin viaje abierto hoy) ─────────────────
+  const [showAvailability, setShowAvailability] = useState(false)
   const [createPrefill, setCreatePrefill] = useState<Partial<TripCreatePayload> | null>(null)
   const driversQuery = useAvailableDrivers(f.fecha, f.tab === 'en_curso')
-  const availableCount = driversQuery.data?.length ?? 0
+  const assetsQuery  = useAvailableAssets(f.fecha, f.tab === 'en_curso')
+  const availableCount = (driversQuery.data?.length ?? 0) + (assetsQuery.data?.length ?? 0)
 
   function handleAssignDriver(d: AvailableDriver) {
     setCreatePrefill({
@@ -228,7 +229,15 @@ export default function DiarioPage() {
       driver_phone:  d.driver_phone ?? undefined,
       tractor_plate: d.tractor_plate ?? undefined,
     })
-    setShowDrivers(false)
+    setShowAvailability(false)
+    setShowCreate(true)
+  }
+
+  function handleAssignAsset(a: AvailableAsset) {
+    setCreatePrefill({
+      tractor_plate: a.tractor_plate,
+    })
+    setShowAvailability(false)
     setShowCreate(true)
   }
 
@@ -421,16 +430,16 @@ export default function DiarioPage() {
                 )
               })}
 
-              {/* Conductores liberados — reasignables a viajes nuevos */}
+              {/* Conductores/equipos liberados — reasignables a viajes nuevos */}
               {availableCount > 0 && (
                 <button
-                  onClick={() => setShowDrivers(true)}
+                  onClick={() => setShowAvailability(true)}
                   className="flex items-center gap-2 bg-white border border-green-200 rounded-xl px-3.5 py-2 transition-all hover:border-green-400 ml-auto"
                 >
                   <UserCheck size={14} className="text-green-600" />
                   <span className="text-lg font-bold leading-none text-green-600">{availableCount}</span>
                   <span className="text-[11px] font-medium text-gray-500">
-                    conductor{availableCount !== 1 ? 'es' : ''} disponible{availableCount !== 1 ? 's' : ''}
+                    disponible{availableCount !== 1 ? 's' : ''}
                   </span>
                 </button>
               )}
@@ -638,11 +647,12 @@ export default function DiarioPage() {
         meta={tripsMeta}
         prefill={createPrefill}
       />
-      <AvailableDriversPanel
-        open={showDrivers}
+      <AvailabilityPanel
+        open={showAvailability}
         fecha={f.fecha}
-        onClose={() => setShowDrivers(false)}
-        onAssign={handleAssignDriver}
+        onClose={() => setShowAvailability(false)}
+        onAssignDriver={handleAssignDriver}
+        onAssignAsset={handleAssignAsset}
       />
       <TripBulkUpload
         open={showBulkUpload}

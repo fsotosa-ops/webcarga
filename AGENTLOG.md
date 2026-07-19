@@ -351,12 +351,45 @@ Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (
 
 **Verificación**: `tsc` limpio, 367/367 tests frontend (5 tests obsoletos del comportamiento inline removidos/reescritos en `TripTable.test.tsx`, `TripCard.test.tsx`, `TripSlideOver.test.tsx`), `npm run build` exitoso.
 
+#### Próximo paso exacto (histórico — ver ronda siguiente, vista de disponibilidad hecha)
+1. [x] Vista de disponibilidad roster-driven (Fase 3) — hecha, ver ronda siguiente.
+2. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+3. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+4. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+5. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+
+---
+
+### 2026-07-18 (cont.) — Ronda 24: vista de disponibilidad de conductores/equipos, roster-driven (Fase 3, cierra el punto 9 del plan original)
+
+**Pedido del usuario**: "sigamos con la vista de disponibilidad de conductores/equipos" — reemplazar `GET /trips/available-drivers` (agrupaba por nombre de texto libre dentro de los viajes del día, invisibilizando a cualquier conductor sin NINGÚN viaje ese día) por el diseño correcto que el plan ya había identificado: partir del directorio real de conductores/equipos activos y recién ahí cruzar contra los viajes del día. Quedaba bloqueado hasta que `trip_fleet_links.driver_id` tuviera cobertura suficiente — la Ronda 18 ya lo dejó en 92.1%.
+
+**Backend**:
+- `available_drivers` reescrito: CTE `active_roster` (`public.drivers` JOIN `public.driver_assignments` status=ACTIVE JOIN `public.carriers` operational_status=ACTIVE) LEFT JOIN `today_trips` (viajes del día vía `trip_fleet_links.driver_id`, excluye sodimac por no reportar flota). `WHERE tt.driver_id IS NULL OR tt.trips_total = tt.closed_count` — así un conductor sin ningún viaje hoy ya no queda invisible, que era el bug de fondo del diseño anterior. Ahora expone `driver_id`.
+- `available_assets` (endpoint nuevo, mismo diseño exacto sobre `public.assets`/`public.asset_assignments`).
+- Tests: `test_available_drivers_returns_rows_and_excludes_sodimac_in_query` actualizado (aserciones sobre `public.driver_assignments`/`operational_status = 'ACTIVE'` en vez de `HAVING`, que ya no existe en la query nueva); 2 tests nuevos para `available_assets`. 230/230 backend en verde.
+- Verificado en vivo contra Supabase real: 79 conductores en el roster activo, 76 sin ningún viaje hoy (invisibles en el diseño anterior), 3 ocupados — mismo patrón confirmado para equipos.
+
+**Frontend**:
+- `AvailableDriver` gana `driver_id`; tipo nuevo `AvailableAsset` (`asset_id`, `tractor_plate`, `asset_type`, `carrier_name`, `trips_total`, `last_report_at`, `driver_name`).
+- `tripsApi.availableAssets(fecha)` agregado junto al ya existente `availableDrivers`.
+- `AvailableDriversPanel.tsx` → renombrado y reescrito como `AvailabilityPanel.tsx`: mismo panel, con tabs Conductores/Equipos (decisión del usuario vía pregunta dirigida — no dos paneles separados). Cada tab tiene su propio fetch (`useAvailableDrivers`/`useAvailableAssets`, solo el tab activo hace query), su propio estado vacío, y el mismo botón "Asignar a viaje nuevo" que pre-llena `TripCreateSlideOver` (misma acción confirmada por el usuario: pre-llenar el formulario con la patente, sin forzar `carrier_id`/`driver_id` directo porque `AvailableAsset`/`AvailableDriver` no traen `carrier_id` real, solo el nombre — evita dejar el form con un `driver_id`/`tractor_asset_id` sin `carrier_id` correspondiente).
+- `page.tsx`: `showDrivers` → `showAvailability`; el tile de "conductores disponibles" pasa a "disponibles" (cuenta conductores + equipos combinados, abre el panel en la tab Conductores por default); nuevo `handleAssignAsset` análogo a `handleAssignDriver`.
+- Tests nuevos: `AvailabilityPanel.test.tsx` (7 tests — tab por defecto, cambio de tab, ambas acciones de asignar, ambos estados vacíos, cerrado no renderiza).
+
+**Verificación**: `tsc --noEmit` limpio, 374/374 tests frontend (7 nuevos, 0 regresiones), `npm run build` exitoso, 230/230 backend.
+
+**Con esto, del roadmap original de la auditoría (`necesito-que-actues-como-lucky-bentley.md`) solo quedan**: Fase 2 "profesionalización general de la bitácora" (sin alcance definido todavía) y Fase 4 "consolidar los 3 selectores de empresa duplicados" (`CarrierAssignSection`/`EmpresaSelector`/`TransferModal`).
+
+**Sin commitear todavía** — cambios en el working tree, pendientes de confirmación del usuario para commit (y push, por separado, como en cada ronda anterior).
+
 #### Próximo paso exacto
 1. [ ] Confirmar commit y push de esta ronda.
-2. [ ] Con esto, del roadmap original quedan: profesionalización de bitácora (Fase 2, sin alcance definido), vista de disponibilidad roster-driven (Fase 3, depende de que haya suficiente `driver_id` poblado — ya lo está, 92%), consolidar 3 selectores de empresa duplicados (Fase 4).
-3. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
-4. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-5. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-6. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+2. [ ] Fase 2 restante: profesionalización de la bitácora (sin alcance definido — evaluar si el patrón de diálogo centrado tipo Attio aplica mejor que el slide-over actual, decisión pendiente).
+3. [ ] Fase 4: consolidar `CarrierAssignSection`/`EmpresaSelector`/`TransferModal` en un componente reusable.
+4. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+5. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+6. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+7. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
 
 ---

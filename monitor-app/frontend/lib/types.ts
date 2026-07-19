@@ -235,8 +235,9 @@ export type OperationTypeMeta = {
   text_color: string
 }
 
-/** Conductor que terminó todos sus viajes del día — reasignable */
+/** Conductor activo del directorio de empresas sin viaje abierto hoy — reasignable */
 export type AvailableDriver = {
+  driver_id:      string
   driver_name:    string
   driver_rut:     string | null
   driver_phone:   string | null
@@ -244,6 +245,17 @@ export type AvailableDriver = {
   carrier_name:   string | null
   trips_total:    number
   last_report_at: string | null
+}
+
+/** Equipo (tracto) activo del directorio de empresas sin viaje abierto hoy — reasignable */
+export type AvailableAsset = {
+  asset_id:       string
+  tractor_plate:  string
+  asset_type:     string | null
+  carrier_name:   string | null
+  trips_total:    number
+  last_report_at: string | null
+  driver_name:    string | null
 }
 
 export type MonitorAlertRules = {

@@ -103,11 +103,16 @@ def test_available_drivers_requires_fecha():
 
 
 def test_available_drivers_returns_rows_and_excludes_sodimac_in_query():
+    # Fase 3 del hardening del Diario (2026-07-18): la query dejó de agrupar
+    # por nombre de texto libre dentro de los viajes del día — ahora parte
+    # del directorio real (conductor activo de empresa activa) y recién ahí
+    # cruza contra los viajes del día, para no perder a los conductores sin
+    # NINGÚN viaje hoy.
     pool = AsyncMock()
     pool.fetch.return_value = [{
-        "driver_name": "Juan Pérez", "driver_rut": "12345678-9",
+        "driver_id": "d1", "driver_name": "Juan Pérez", "driver_rut": "12345678-9",
         "driver_phone": "+56911112222", "tractor_plate": "ABCD12",
-        "transporter": "TransCargo", "trips_total": 2,
+        "carrier_name": "TransCargo", "trips_total": 2,
         "last_report_at": "2026-07-06T18:00:00",
     }]
     client = make_client(pool, router=trips_router)
@@ -116,8 +121,35 @@ def test_available_drivers_returns_rows_and_excludes_sodimac_in_query():
     data = res.json()
     assert data[0]["driver_name"] == "Juan Pérez"
     query = pool.fetch.call_args.args[0]
-    assert "sodimac" in query          # exclusión de la fuente sin flota
-    assert "HAVING" in query           # todos los viajes del día cerrados
+    assert "sodimac" in query                        # exclusión de la fuente sin flota
+    assert "public.driver_assignments" in query       # directorio real, no texto libre
+    assert "operational_status = 'ACTIVE'" in query    # solo conductores/empresas activas
+
+
+# ── /trips/available-assets ─────────────────────────────────────────────────
+
+def test_available_assets_requires_fecha():
+    pool = AsyncMock()
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/available-assets")
+    assert res.status_code == 422
+
+
+def test_available_assets_returns_rows_from_active_roster():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "asset_id": "a1", "tractor_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "carrier_name": "TransCargo", "trips_total": 0, "last_report_at": None,
+        "driver_name": None,
+    }]
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
+    assert res.status_code == 200
+    data = res.json()
+    assert data[0]["tractor_plate"] == "ABCD12"
+    query = pool.fetch.call_args.args[0]
+    assert "public.asset_assignments" in query
+    assert "sodimac" in query
 
 
 # ── list_trips q amplía a cliente ─────────────────────────────────────────────
