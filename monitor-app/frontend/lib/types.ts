@@ -309,6 +309,12 @@ export type TripStopCreatePayload = {
   /** Dropdown región/ciudad de Chile — van a las claves destination_* del jsonb stops */
   destination_region?: string | null
   destination_city?:   string | null
+  /** 'ORIGIN' | 'DESTINATION' — el origen del viaje se manda como una parada
+   *  más (Ronda 26, Fase 2, backend ya unificado). Opcional (default
+   *  'DESTINATION' en el backend) para no romper construcciones existentes
+   *  de este tipo que todavía no lo mandan (TripAssignDialog.tsx, hasta que
+   *  el Plan 3 de esta Fase lo rewiree sobre RouteEditor). */
+  stop_type?:          'ORIGIN' | 'DESTINATION'
 }
 
 export type TripCreatePayload = {
