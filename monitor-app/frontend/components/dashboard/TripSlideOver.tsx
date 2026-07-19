@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   X, Loader2, Building2, Copy, Check,
-  Truck, User, Phone, Hash, Search,
+  Truck, User, Phone, Hash,
   MapPin, ChevronDown, RotateCcw, ClipboardList,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
@@ -21,6 +21,7 @@ import { TripNotesFeed } from './TripNotesFeed'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
+import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 
 // ── CarrierAssignSection ──────────────────────────────────────────────────────
 //
@@ -45,14 +46,6 @@ function CarrierAssignSection({
   const [tractorAssetId, setTractorAssetId]    = useState('')
   const [assigning, setAssigning]             = useState(false)
   const [err, setErr]                         = useState<string | null>(null)
-  const qDebounced = useDebouncedValue(q, 250)
-
-  const searchQuery = useQuery({
-    queryKey: ['carriers', 'fleet-link-search', qDebounced],
-    queryFn: () => carriersApi.list({ q: qDebounced, limit: 10 }),
-    enabled: qDebounced.length >= 2 && !pending,
-  })
-  const results = searchQuery.data?.data ?? []
 
   // Roster de la empresa preseleccionada — mismo patrón que EmpresaSelector
   // en TripCreateSlideOver.tsx, para poder vincular driver_id/tractor_asset_id
@@ -71,7 +64,7 @@ function CarrierAssignSection({
   const drivers  = rosterQuery.data?.drivers ?? []
   const vehicles = rosterQuery.data?.assets ?? []
 
-  function handlePick(c: { id: string; business_name: string; tax_id: string }) {
+  function handlePick(c: CarrierSearchResult) {
     setPending({ id: c.id, business_name: c.business_name })
     setDriverId('')
     setTractorAssetId('')
@@ -161,43 +154,7 @@ function CarrierAssignSection({
           TMS reporta: <span className="font-medium text-gray-600">{currentCarrierName}</span>
         </p>
       )}
-      <div className="relative">
-        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        <input
-          type="text"
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          placeholder="Buscar empresa (nombre o RUT)…"
-          aria-label="Buscar empresa transportista"
-          className="w-full text-xs border border-border rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/20"
-        />
-      </div>
-      {q.length >= 2 && (
-        <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/60">
-          {searchQuery.isFetching && (
-            <p className="px-3 py-2 text-center text-[11px] text-gray-400 flex items-center justify-center gap-1.5">
-              <Loader2 size={11} className="animate-spin" /> Buscando…
-            </p>
-          )}
-          {!searchQuery.isFetching && results.length === 0 && (
-            <p className="px-3 py-2 text-center text-[11px] text-gray-400">Sin resultados</p>
-          )}
-          {results.map(c => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => handlePick(c)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
-            >
-              <Building2 size={12} className="text-gray-400 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold text-text-primary truncate">{c.business_name}</p>
-                <p className="text-[10px] text-gray-400 font-mono">{c.tax_id}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+      <CarrierSearchPicker query={q} onQueryChange={setQ} onPick={handlePick} size="sm" />
       {err && <p className="text-[11px] text-red-500">{err}</p>}
     </div>
   )

@@ -1,10 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Search, Loader2, Building2, ArrowRightLeft } from 'lucide-react'
-import { carriersApi } from '@/lib/api/carriers'
-import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { useQuery } from '@tanstack/react-query'
+import { X, Loader2, ArrowRightLeft } from 'lucide-react'
+import { CarrierSearchPicker } from '@/components/dashboard/CarrierSearchPicker'
 
 interface Props {
   open:             boolean
@@ -24,15 +22,6 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr]         = useState<string | null>(null)
-  const qDebounced = useDebouncedValue(q, 250)
-
-  const query = useQuery({
-    queryKey: ['carriers', 'transfer-search', qDebounced],
-    queryFn: () => carriersApi.list({ q: qDebounced, limit: 10 }),
-    enabled: open && qDebounced.length >= 2,
-  })
-
-  const results = (query.data?.data ?? []).filter(c => c.id !== currentCarrierId)
 
   if (!open) return null
 
@@ -68,46 +57,18 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
         </div>
 
         <div className="p-4 space-y-3">
-          <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              autoFocus
-              value={q}
-              onChange={e => { setQ(e.target.value); setSelectedId(null) }}
-              placeholder="Buscar empresa destino (nombre o tax_id)…"
-              className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
-          </div>
-
-          <div className="max-h-56 overflow-y-auto border border-border rounded-lg divide-y divide-border/60">
-            {q.length < 2 && (
-              <p className="px-3 py-6 text-center text-xs text-gray-400">Escribe al menos 2 caracteres…</p>
-            )}
-            {q.length >= 2 && query.isFetching && (
-              <p className="px-3 py-6 text-center text-xs text-gray-400 flex items-center justify-center gap-1.5">
-                <Loader2 size={12} className="animate-spin" /> Buscando…
-              </p>
-            )}
-            {q.length >= 2 && !query.isFetching && results.length === 0 && (
-              <p className="px-3 py-6 text-center text-xs text-gray-400">Sin resultados</p>
-            )}
-            {results.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setSelectedId(c.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
-                  selectedId === c.id ? 'bg-accent/10' : 'hover:bg-gray-50'
-                }`}
-              >
-                <Building2 size={13} className="text-gray-400 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-text-primary truncate">{c.business_name}</p>
-                  <p className="text-[10px] text-gray-400 font-mono">{c.tax_id}</p>
-                </div>
-              </button>
-            ))}
-          </div>
+          <CarrierSearchPicker
+            query={q}
+            onQueryChange={v => { setQ(v); setSelectedId(null) }}
+            onPick={c => setSelectedId(c.id)}
+            placeholder="Buscar empresa destino (nombre o tax_id)…"
+            excludeId={currentCarrierId}
+            selectedId={selectedId}
+            autoFocus
+            size="md"
+            maxHeightClass="max-h-56"
+            showMinCharsHint
+          />
 
           {err && <p className="text-xs text-red-500">{err}</p>}
 

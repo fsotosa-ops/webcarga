@@ -381,15 +381,43 @@ Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (
 
 **Con esto, del roadmap original de la auditoría (`necesito-que-actues-como-lucky-bentley.md`) solo quedan**: Fase 2 "profesionalización general de la bitácora" (sin alcance definido todavía) y Fase 4 "consolidar los 3 selectores de empresa duplicados" (`CarrierAssignSection`/`EmpresaSelector`/`TransferModal`).
 
-**Sin commitear todavía** — cambios en el working tree, pendientes de confirmación del usuario para commit (y push, por separado, como en cada ronda anterior).
+**Comiteado y pusheado**: commit `884f9e6` en `dev`, pusheado a `origin/dev` a pedido explícito del usuario.
 
-#### Próximo paso exacto
-1. [ ] Confirmar commit y push de esta ronda.
-2. [ ] Fase 2 restante: profesionalización de la bitácora (sin alcance definido — evaluar si el patrón de diálogo centrado tipo Attio aplica mejor que el slide-over actual, decisión pendiente).
-3. [ ] Fase 4: consolidar `CarrierAssignSection`/`EmpresaSelector`/`TransferModal` en un componente reusable.
+#### Próximo paso exacto (histórico — Fase 4 hecha, ver ronda siguiente)
+1. [x] Confirmar commit y push de esta ronda — hecho (`884f9e6`).
+2. [x] Fase 4: consolidar `CarrierAssignSection`/`EmpresaSelector`/`TransferModal` — hecho, ver ronda siguiente.
+3. [ ] Fase 2 restante: profesionalización de la bitácora (sin alcance definido — evaluar si el patrón de diálogo centrado tipo Attio aplica mejor que el slide-over actual, decisión pendiente).
 4. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
 5. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
 6. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
 7. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+
+---
+
+### 2026-07-18 (cont.) — Ronda 25: Fase 4 — consolidación de los 3 selectores de empresa duplicados
+
+**Pedido del usuario**: "dale, arranca con la Fase 4" — `CarrierAssignSection` (`TripSlideOver.tsx`), `EmpresaSelector` (`TripCreateSlideOver.tsx`) y `TransferModal.tsx` implementaban cada uno, por separado, el mismo patrón de búsqueda debounced de empresa transportista (`carriersApi.list`) con su propio estado, su propio `useQuery`, y una lista de resultados casi idéntica (ícono `Building2` + nombre + RUT + loading/vacío).
+
+**Diseño**: se extrajo el denominador común real — la caja de búsqueda + la lista de resultados con sus estados de carga/vacío/error — a un componente nuevo, `CarrierSearchPicker.tsx`. Lo que cada uno de los 3 hacía *después* de elegir una empresa seguía siendo genuinamente distinto (swap a card resumen + carga de roster async en `EmpresaSelector`; swap a selects de conductor/tracto + botón "Vincular" que llama a la API en `CarrierAssignSection`; fila resaltada + botón "Confirmar transferencia" separado en `TransferModal`) — esa lógica quedó en cada consumidor, no se forzó a una abstracción única que no calzaba.
+
+**Decisión de diseño clave**: `onPick` del componente compartido acepta un callback `void | Promise<void>`. Esto le permitió absorber también el spinner-por-fila y el manejo de error que `EmpresaSelector` tenía escrito a mano para su carga async de roster — quedó gratis al migrar, sin tener que replicar esa lógica en el componente compartido de forma especial.
+
+**Props de variación cubiertas**: `size` (`sm`/`md`, difieren tamaños de fuente/input entre uso embebido en panel vs. diálogo), `excludeId` (no ofrecer la empresa actual como destino en `TransferModal`), `selectedId` (resaltar fila sin sacarla de la lista, patrón exclusivo de `TransferModal` — los otros 2 swapean a una vista resumen en vez de resaltar), `showMinCharsHint` (`TransferModal` muestra "Escribe al menos 2 caracteres…" en vez de no renderizar nada), `maxHeightClass`, `autoFocus`, `helperText`.
+
+**Resultado**: -178 líneas / +45 en los 3 consumidores (neto -133), + el componente compartido nuevo (~120 líneas) con su propio test file. Sin cambios de comportamiento visible — mismos 3 flujos, mismo texto, mismos endpoints.
+
+**Verificación**: `tsc --noEmit` limpio, 381/381 tests frontend (7 nuevos en `CarrierSearchPicker.test.tsx`; los tests existentes de `TripCreateSlideOver.test.tsx`/`TripSlideOver.test.tsx` que ejercitan el flujo de búsqueda end-to-end pasaron sin modificarse, confirmando que el refactor no cambió el comportamiento observable), `npm run build` exitoso. `TransferModal.tsx` no tenía tests propios antes de esta ronda y sigue sin tenerlos — fuera de alcance de "consolidar", su comportamiento queda cubierto indirectamente por los tests del componente compartido que ahora usa.
+
+**Con esto, del roadmap original de la auditoría del Diario solo queda**: Fase 2 "profesionalización general de la bitácora" (sin alcance definido).
+
+**Sin commitear todavía** — cambios en el working tree, pendientes de confirmación del usuario para commit y push.
+
+#### Próximo paso exacto
+1. [ ] Confirmar commit y push de esta ronda.
+2. [ ] Fase 2 restante: profesionalización de la bitácora (sin alcance definido — evaluar si el patrón de diálogo centrado tipo Attio aplica mejor que el slide-over actual, decisión pendiente). Con esto se cierra el roadmap completo de la auditoría del Diario.
+3. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+4. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+5. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+6. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
 
 ---
