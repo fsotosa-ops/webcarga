@@ -31,12 +31,18 @@ interface Props {
   suggested?:      DriverPickCandidate[]
   suggestedLabel?: string
   size?:           'sm' | 'md'
+  /** Mostrado bajo la búsqueda cuando el operador tipeó ≥2 caracteres y
+   *  todavía no eligió un conductor — cada consumidor pasa su propio texto
+   *  (ej. TripAssignDialog explica que bloquea la creación del viaje). El
+   *  componente no expone su estado de búsqueda interno al padre, así que
+   *  esta es la única forma de condicionar contenido según ese estado. */
+  notFoundHint?:   React.ReactNode
 }
 
 const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
 const INPUT_SM = "w-full text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
 
-export function FleetAssignSection({ value, onChange, suggested = [], suggestedLabel, size = 'md' }: Props) {
+export function FleetAssignSection({ value, onChange, suggested = [], suggestedLabel, size = 'md', notFoundHint }: Props) {
   const [query, setQuery] = useState('')
   const inputCls = size === 'sm' ? INPUT_SM : INPUT
 
@@ -65,13 +71,16 @@ export function FleetAssignSection({ value, onChange, suggested = [], suggestedL
 
   if (!value.driver_id) {
     return (
-      <DriverSearchPicker
-        query={query}
-        onQueryChange={setQuery}
-        onPick={pick}
-        suggested={suggested}
-        suggestedLabel={suggestedLabel}
-      />
+      <div>
+        <DriverSearchPicker
+          query={query}
+          onQueryChange={setQuery}
+          onPick={pick}
+          suggested={suggested}
+          suggestedLabel={suggestedLabel}
+        />
+        {notFoundHint && query.trim().length >= 2 && notFoundHint}
+      </div>
     )
   }
 

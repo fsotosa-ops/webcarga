@@ -15,16 +15,22 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 }
 
 function Harness({
-  initial = EMPTY_FLEET_ASSIGN_VALUE, onChangeSpy, suggested,
+  initial = EMPTY_FLEET_ASSIGN_VALUE, onChangeSpy, suggested, notFoundHint,
 }: {
   initial?: FleetAssignValue
   onChangeSpy?: (v: FleetAssignValue) => void
   suggested?: React.ComponentProps<typeof FleetAssignSection>['suggested']
+  notFoundHint?: React.ComponentProps<typeof FleetAssignSection>['notFoundHint']
 }) {
   const [value, setValue] = useState<FleetAssignValue>(initial)
   return (
     <Wrapper>
-      <FleetAssignSection value={value} onChange={v => { setValue(v); onChangeSpy?.(v) }} suggested={suggested} />
+      <FleetAssignSection
+        value={value}
+        onChange={v => { setValue(v); onChangeSpy?.(v) }}
+        suggested={suggested}
+        notFoundHint={notFoundHint}
+      />
     </Wrapper>
   )
 }
@@ -89,5 +95,17 @@ describe('FleetAssignSection', () => {
     }} />)
     fireEvent.click(screen.getByText('Cambiar'))
     expect(spy).toHaveBeenCalledWith(EMPTY_FLEET_ASSIGN_VALUE)
+  })
+
+  it('shows the notFoundHint once the search query reaches 2 characters', () => {
+    render(<Harness notFoundHint={<p>Alta en Empresas</p>} />)
+    fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'Na' } })
+    expect(screen.getByText('Alta en Empresas')).toBeInTheDocument()
+  })
+
+  it('does not show the notFoundHint below 2 characters', () => {
+    render(<Harness notFoundHint={<p>Alta en Empresas</p>} />)
+    fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'N' } })
+    expect(screen.queryByText('Alta en Empresas')).not.toBeInTheDocument()
   })
 })
