@@ -238,6 +238,38 @@ def test_attach_origin_none_for_empty_stops():
     assert d["origin"] is None
 
 
+# ── driver_leg_number — "vuelta N" calculada, no is_first_leg manual ────────
+
+def test_trip_from_joins_origin_stop_for_leg_number_ordering():
+    pool = make_pool()
+    client = make_client(pool)
+    client.get("/api/v1/trips/trip-1")
+    query = pool.fetchrow.call_args.args[0]
+    assert "LEFT JOIN app.trip_stops ots" in query
+    assert "ots.stop_type = 'ORIGIN'" in query
+
+
+def test_get_trip_endpoint_returns_driver_leg_number():
+    pool = make_pool()
+    pool.fetchrow.return_value = {"id": "trip-1", "client_name": None, "driver_leg_number": 2}
+    client = make_client(pool)
+    res = client.get("/api/v1/trips/trip-1")
+    assert res.status_code == 200
+    assert res.json()["driver_leg_number"] == 2
+
+
+def test_trip_select_looks_up_driver_leg_number_from_view():
+    pool = make_pool()
+    client = make_client(pool)
+    client.get("/api/v1/trips/trip-1")
+    query = pool.fetchrow.call_args.args[0]
+    assert "driver_leg_number" in query
+    assert "app.v_driver_daily_trip_legs" in query
+    # Lookup de una fila (no una ventana recalculada acá) — la ventana ya
+    # vive adentro de la vista.
+    assert "OVER (" not in query
+
+
 def test_get_trip_endpoint_derives_origin_from_stops():
     pool = make_pool()
     pool.fetchrow.return_value = {"id": "trip-1", "client_name": None}

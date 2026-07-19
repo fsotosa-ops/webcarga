@@ -256,7 +256,16 @@ _TRIP_SELECT = """
     COALESCE(p.full_name, p.email)                 AS edited_by,
     t.source_system_trip_id,
     t.milestone_status,
-    t.pipeline_updated_at
+    t.pipeline_updated_at,
+    -- "Vuelta N" del conductor ese día — reemplaza a is_first_leg (manual/
+    -- TMS) como fuente del filtro "2ª+ vuelta". Lookup de una fila contra
+    -- app.v_driver_daily_trip_legs (migración 20260718120000) — la ventana
+    -- vive adentro de esa vista, no acá, para que el resultado sea estable
+    -- sin importar qué WHERE aplique la consulta de afuera (list_trips
+    -- filtra, get_trip restringe a un solo id — una ventana calculada acá
+    -- se rompería en ambos casos). NULL si el viaje no tiene
+    -- trip_fleet_links.driver_id explícito (la vista no lo incluye).
+    (SELECT vdtl.leg_number FROM app.v_driver_daily_trip_legs vdtl WHERE vdtl.trip_id = t.id) AS driver_leg_number
 """
 
 _TRIP_FROM = """
@@ -297,6 +306,11 @@ _TRIP_FROM = """
     LEFT JOIN public.vehicle_driver_assignments vda_auto
         ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
     LEFT JOIN public.drivers d_auto ON d_auto.id = vda_auto.driver_id
+    -- "Vuelta N" (driver_leg_number, ver _TRIP_SELECT): orden cronológico de
+    -- los viajes de un conductor en el día, basado en cuándo salió del
+    -- origen — trae solo la fila ORIGIN de trip_stops (a lo sumo 1 por viaje,
+    -- ver assert_trip_stops_at_most_one_origin_per_trip, Ronda 21).
+    LEFT JOIN app.trip_stops ots ON ots.trip_id = t.id AND ots.stop_type = 'ORIGIN'
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 

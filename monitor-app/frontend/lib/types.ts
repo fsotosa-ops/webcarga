@@ -433,6 +433,11 @@ export type Trip = {
    *  TripStop.operation_type. Casi siempre null para orígenes tipo CD (no
    *  son locales de cliente, no están en el catálogo). */
   origin_operation_type?: string | null
+  /** Nº de viaje del conductor ese día (1 = primero, 2 = segundo...),
+   *  calculado en vivo por trips.py vía app.v_driver_daily_trip_legs — null
+   *  si no hay driver_id explícito. Reemplaza a is_first_leg como fuente
+   *  del filtro "2ª+ vuelta". */
+  driver_leg_number?:      number | null
 }
 
 // ── Catálogo de locales por generador de carga (public.locations, H2.6) ──
