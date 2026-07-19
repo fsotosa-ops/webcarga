@@ -521,6 +521,14 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
             <span className="text-gray-400">
               TMS reportó {tmsSince}{syncSince !== '—' ? ` · sync ${syncSince}` : ''}
             </span>
+            {/* Ingresó al sistema — movido acá desde un footer casi invisible
+                (text-[9px] text-gray-300, al final de todo el panel) — Fase 2
+                del hardening del Diario, 2026-07-18. Misma familia de info
+                de timing que "TMS reportó"/"sync", con jerarquía visual
+                acorde a que sí aporta valor operativo. */}
+            {trip.created_at && (
+              <span className="text-gray-400">· en el Diario desde {fmtDT(trip.created_at)}</span>
+            )}
           </div>
         </div>
 
@@ -915,9 +923,9 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               )}
             </section>
 
-            {/* Footer secundario — auditoría */}
-            <div className="flex items-center justify-between gap-3 pt-2 border-t border-border/40">
-              {trip.created_at && <MetaField label="Ingresó al sistema" value={fmtDT(trip.created_at)} />}
+            {/* Footer secundario — solo referencia técnica (UUID). "Ingresó
+                al sistema" se movió al hero (ver arriba), ya no vive acá. */}
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/40">
               <p className="font-mono text-[9px] text-gray-300 shrink-0">{trip.id}</p>
             </div>
           </div>

@@ -306,12 +306,34 @@ Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (
 
 **Verificación**: 228/228 backend, 371/371 frontend, `tsc` limpio, `npm run build` exitoso. Todas las migraciones probadas con dry-run antes de aplicar. La query real de `_TRIP_SELECT`/`_TRIP_FROM` se corrió contra Supabase en vivo (no solo mocks) para confirmar que compila contra el schema ya recortado.
 
-#### Próximo paso exacto
-1. [ ] Confirmar commit y push de todos los cambios de hoy a `dev`.
-2. [ ] (heredado) Confirmar push de `1e65a53` a `dev` (commit más viejo, arrastrado de varias rondas).
+**Push**: `7741ffe`+`882c216` pusheados a `origin/dev` (confirmado por el usuario).
+
+#### Próximo paso exacto (histórico — ver ronda siguiente)
+1. [x] Confirmar commit y push de todos los cambios de hoy a `dev` — hecho.
+2. [ ] (heredado) Confirmar push de `1e65a53` a `dev` (commit más viejo, arrastrado de varias rondas — sigue sin confirmarse, sigue pendiente).
 3. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-4. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git — esta ronda reforzó el argumento: 2 de los 3 bugs reales encontrados hoy fueron por trabajar sobre incrementales sin visibilidad completa del historial, no por el código en sí.
+4. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
 5. [ ] (heredado) Decidir si se quiere verificación manual en navegador — ninguna ronda de la Fase 0/1 pudo probarse con clic real (sin credenciales de test para la app con SSO real).
-6. [ ] Fase 2 del plan (UX del detalle de viaje) queda como siguiente bloque natural si el usuario quiere seguir — reordenar ya se resolvió de hecho en esta ronda (Origen ahora es parada 0), quedaría revisar "Ingresó al sistema" (footer invisible) y la profesionalización general de la bitácora.
+6. [x] Fase 2 del plan, ítem 1 ("Ingresó al sistema") — hecho, ver ronda siguiente. Profesionalización general de la bitácora sigue pendiente.
+
+---
+
+### 2026-07-18 (cont.) — Ronda 22: Fase 2 — "Ingresó al sistema" fuera del footer invisible
+
+**Pedido del usuario**: "continua" (tras confirmar el push).
+
+**Implementado**: `trip.created_at` se movió del footer (`text-[9px] text-gray-300`, la tipografía más chica del componente, al final de todo el panel) al hero, junto a "TMS reportó X · sync Y" — misma familia de info de timing ("¿cuándo supimos esto?"), mismo tratamiento visual (`text-[11px] text-gray-400`). El footer ahora solo tiene el UUID técnico del viaje, que sí amerita quedar de referencia discreta.
+
+**Verificación**: `tsc` limpio, 372/372 tests frontend, `npm run build` exitoso. Test viejo que buscaba el label "Ingresó al sistema" (MetaField) actualizado para buscar el texto nuevo "en el Diario desde".
+
+**Pendiente de la Fase 2**: la "profesionalización general de la bitácora" (punto 6 del plan original) sigue sin abordarse — es un ítem más grande y menos definido (el plan lo dejó como "evaluar si el patrón de diálogo centrado tipo Attio aplica mejor... para reclamos de sobreestadía con adjuntos", sin decisión tomada todavía).
+
+#### Próximo paso exacto
+1. [ ] Confirmar commit y push de esta ronda.
+2. [ ] Decidir si se aborda la profesionalización de la bitácora (Fase 2, sin alcance definido todavía) o se salta a Fase 3 (Indicadores → tabs de filtro, vista de disponibilidad) o Fase 4 (consolidar los 3 selectores de empresa duplicados).
+3. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+4. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+5. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+6. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
 
 ---

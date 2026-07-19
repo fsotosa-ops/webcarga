@@ -134,10 +134,17 @@ describe('TripSlideOver — layout y a11y', () => {
     expect(screen.getByLabelText('Buscar empresa transportista')).toBeInTheDocument()
   })
 
-  it('shows created_at and the internal trip id in the footer', () => {
+  it('shows the internal trip id in the footer', () => {
     renderSlideOver({ ...baseTrip, created_at: '2026-06-30 08:00:00' })
-    expect(screen.getByText('Ingresó al sistema')).toBeInTheDocument()
     expect(screen.getByText('t1')).toBeInTheDocument()
+  })
+
+  // Fase 2 del hardening del Diario (2026-07-18): created_at se movió del
+  // footer casi invisible (text-[9px] text-gray-300) al hero, junto a "TMS
+  // reportó" — misma familia de info de timing, con jerarquía visual acorde.
+  it('shows "en el Diario desde" with created_at in the hero, not buried in the footer', () => {
+    renderSlideOver({ ...baseTrip, created_at: '2026-06-30 08:00:00' })
+    expect(screen.getByText(/en el Diario desde/)).toBeInTheDocument()
   })
 
   it('collapses Datos operativos behind an accordion', () => {
