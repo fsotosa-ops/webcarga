@@ -47,9 +47,8 @@ function CarrierAssignSection({
   const [assigning, setAssigning]             = useState(false)
   const [err, setErr]                         = useState<string | null>(null)
 
-  // Roster de la empresa preseleccionada — mismo patrón que EmpresaSelector
-  // en TripCreateSlideOver.tsx, para poder vincular driver_id/tractor_asset_id
-  // reales en vez de solo el nombre en texto libre.
+  // Roster de la empresa preseleccionada — para poder vincular driver_id/
+  // tractor_asset_id reales en vez de solo el nombre en texto libre.
   const rosterQuery = useQuery({
     queryKey: ['carriers', pending?.id, 'roster'],
     queryFn: async () => {

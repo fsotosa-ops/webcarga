@@ -1,6 +1,6 @@
 """public.drivers — master data, independiente de a qué carrier esté asignado
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
@@ -10,6 +10,53 @@ from ..services.audit import log_change, record_manual_edit
 from ..utils.document_storage import resolve_signed_url
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
+
+
+# Declarado ANTES de /{driver_id} por convención con el resto del router
+# (colección primero, item después) — no hay colisión real de rutas, "" y
+# "/{driver_id}" tienen distinta cantidad de segmentos.
+@router.get("")
+async def list_drivers(
+    q: str = Query(""),
+    limit: int = Query(10, ge=1, le=50),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Búsqueda de conductores activos por nombre/RUT, con su empresa y
+    vehículo estándar ya resueltos — usada por TripAssignDialog (Ronda 26,
+    hardening del Diario) para el flujo driver-first de creación de viajes.
+    Mismo shape que GET /trips/available-drivers menos trips_total/
+    last_report_at (acá no importa si tuvo viajes hoy, es búsqueda general)."""
+    if len(q.strip()) < 2:
+        return []
+    rows = await pool.fetch(
+        """
+        SELECT
+            d.id       AS driver_id,
+            d.full_name AS driver_name,
+            d.tax_id    AS driver_rut,
+            (
+                SELECT fl2.driver_phone FROM app.trip_fleet_links fl2
+                WHERE fl2.driver_id = d.id AND fl2.driver_phone IS NOT NULL
+                ORDER BY fl2.updated_at DESC LIMIT 1
+            )          AS driver_phone,
+            c.id       AS carrier_id,
+            c.business_name AS carrier_name,
+            a.id       AS tractor_asset_id,
+            a.license_plate AS tractor_plate
+        FROM public.drivers d
+        LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+        LEFT JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
+        LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
+        LEFT JOIN public.assets a ON a.id = vda.asset_id
+        WHERE d.operational_status = 'ACTIVE'
+          AND (d.full_name ILIKE '%'||$1||'%' OR d.tax_id ILIKE '%'||$1||'%')
+        ORDER BY d.full_name
+        LIMIT $2
+        """,
+        q.strip(), limit,
+    )
+    return [dict(r) for r in rows]
 
 
 @router.get("/{driver_id}")

@@ -634,11 +634,20 @@ async def available_drivers(
     rows = await pool.fetch(
         """
         WITH active_roster AS (
-            SELECT d.id, d.full_name, d.tax_id, c.business_name AS carrier_name
+            SELECT d.id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name
             FROM public.drivers d
             JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
             JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
             WHERE d.operational_status = 'ACTIVE'
+        ),
+        -- Vehículo que el conductor maneja habitualmente (migración
+        -- 20260718070000) — independiente de si tuvo viaje hoy, para no
+        -- perder la patente de alguien con 0 viajes hoy pero con equipo fijo.
+        standing_vehicle AS (
+            SELECT vda.driver_id, a.id AS tractor_asset_id, a.license_plate AS tractor_plate
+            FROM public.vehicle_driver_assignments vda
+            JOIN public.assets a ON a.id = vda.asset_id
+            WHERE vda.status = 'ACTIVE'
         ),
         today_trips AS (
             SELECT
@@ -669,12 +678,15 @@ async def available_drivers(
                 WHERE fl2.driver_id = ar.id AND fl2.driver_phone IS NOT NULL
                 ORDER BY fl2.updated_at DESC LIMIT 1
             )                AS driver_phone,
-            tt.tractor_plate,
+            ar.carrier_id,
             ar.carrier_name,
+            sv.tractor_asset_id,
+            COALESCE(tt.tractor_plate, sv.tractor_plate) AS tractor_plate,
             COALESCE(tt.trips_total, 0) AS trips_total,
             tt.last_report_at
         FROM active_roster ar
         LEFT JOIN today_trips tt ON tt.driver_id = ar.id
+        LEFT JOIN standing_vehicle sv ON sv.driver_id = ar.id
         WHERE tt.driver_id IS NULL OR tt.trips_total = tt.closed_count
         ORDER BY tt.last_report_at DESC NULLS LAST, ar.full_name
         """,

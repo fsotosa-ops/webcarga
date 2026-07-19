@@ -1,4 +1,4 @@
-import type { ComplianceRecord, Contact, Driver, OperationalStatus } from '@/lib/types'
+import type { ComplianceRecord, Contact, Driver, DriverSearchResult, OperationalStatus } from '@/lib/types'
 import type { ContactCreateBody } from './carriers'
 import { apiFetch } from './client'
 
@@ -26,6 +26,9 @@ export type DriverCreateResult = {
 }
 
 export const driversApi = {
+  search: (q: string, limit = 10) =>
+    apiFetch<DriverSearchResult[]>(`/api/v1/drivers?q=${encodeURIComponent(q)}&limit=${limit}`),
+
   get: (id: string) =>
     apiFetch<Driver>(`/api/v1/drivers/${id}`),
 

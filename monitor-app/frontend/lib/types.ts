@@ -235,28 +235,29 @@ export type OperationTypeMeta = {
   text_color: string
 }
 
+/** Shape común mínimo entre AvailableDriver y DriverSearchResult — lo que
+ *  DriverSearchPicker necesita para autocompletar empresa/vehículo al
+ *  elegir un conductor, sin importar si vino de la lista sugerida (hoy
+ *  disponible) o de una búsqueda libre. */
+export type DriverPickCandidate = {
+  driver_id:         string
+  driver_name:       string
+  driver_rut:        string | null
+  driver_phone:      string | null
+  carrier_id:        string | null
+  carrier_name:      string | null
+  tractor_asset_id:  string | null
+  tractor_plate:     string | null
+}
+
 /** Conductor activo del directorio de empresas sin viaje abierto hoy — reasignable */
-export type AvailableDriver = {
-  driver_id:      string
-  driver_name:    string
-  driver_rut:     string | null
-  driver_phone:   string | null
-  tractor_plate:  string | null
-  carrier_name:   string | null
+export type AvailableDriver = DriverPickCandidate & {
   trips_total:    number
   last_report_at: string | null
 }
 
-/** Equipo (tracto) activo del directorio de empresas sin viaje abierto hoy — reasignable */
-export type AvailableAsset = {
-  asset_id:       string
-  tractor_plate:  string
-  asset_type:     string | null
-  carrier_name:   string | null
-  trips_total:    number
-  last_report_at: string | null
-  driver_name:    string | null
-}
+/** Resultado de GET /drivers?q= — búsqueda general de conductores activos */
+export type DriverSearchResult = DriverPickCandidate
 
 export type MonitorAlertRules = {
   stale_report_hours:     number

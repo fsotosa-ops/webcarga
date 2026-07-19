@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, Upload } from 'lucide-react'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
-import type { TripListResponse } from '@/lib/api/trips'
+import { tripsApi, type TripListResponse } from '@/lib/api/trips'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { TripTable, type ComplianceAlertSummary } from '@/components/dashboard/TripTable'
 import { TripBoard } from '@/components/dashboard/TripBoard'
@@ -13,15 +13,13 @@ import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { FilterPopover } from '@/components/dashboard/FilterPopover'
-import { TripCreateSlideOver } from '@/components/dashboard/TripCreateSlideOver'
+import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
 import { useDiarioFilters, countActiveFilters, FLAGS, type FlagField } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
 import { deriveKpis, matchesKpi, DEFAULT_ALERT_RULES, type KpiId } from '@/lib/utils/kpis'
-import { AvailabilityPanel, useAvailableDrivers, useAvailableAssets } from '@/components/dashboard/AvailabilityPanel'
-import type { AvailableDriver, AvailableAsset, TripCreatePayload } from '@/lib/types'
 import { UserCheck } from 'lucide-react'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
@@ -215,31 +213,14 @@ export default function DiarioPage() {
     return trips.filter(t => matchesKpi(t, f.kpiFilter!, tripsMeta?.temperature_ranges ?? [], alertRules))
   }, [trips, f.tab, f.kpiFilter, tripsMeta?.temperature_ranges, alertRules])
 
-  // ── Conductores/equipos disponibles (sin viaje abierto hoy) ─────────────────
-  const [showAvailability, setShowAvailability] = useState(false)
-  const [createPrefill, setCreatePrefill] = useState<Partial<TripCreatePayload> | null>(null)
-  const driversQuery = useAvailableDrivers(f.fecha, f.tab === 'en_curso')
-  const assetsQuery  = useAvailableAssets(f.fecha, f.tab === 'en_curso')
-  const availableCount = (driversQuery.data?.length ?? 0) + (assetsQuery.data?.length ?? 0)
-
-  function handleAssignDriver(d: AvailableDriver) {
-    setCreatePrefill({
-      driver_name:   d.driver_name,
-      driver_rut:    d.driver_rut ?? undefined,
-      driver_phone:  d.driver_phone ?? undefined,
-      tractor_plate: d.tractor_plate ?? undefined,
-    })
-    setShowAvailability(false)
-    setShowCreate(true)
-  }
-
-  function handleAssignAsset(a: AvailableAsset) {
-    setCreatePrefill({
-      tractor_plate: a.tractor_plate,
-    })
-    setShowAvailability(false)
-    setShowCreate(true)
-  }
+  // ── Conductores disponibles (sin viaje abierto hoy) — solo para el conteo
+  // del tile, la lista sugerida vive dentro de TripAssignDialog (Ronda 26)
+  const availableCountQuery = useQuery({
+    queryKey: ['available-drivers', f.fecha],
+    queryFn: () => tripsApi.availableDrivers(f.fecha),
+    enabled: f.tab === 'en_curso',
+  })
+  const availableCount = availableCountQuery.data?.length ?? 0
 
   // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
   const prevReportedRef = useRef<Map<string, string | null>>(new Map())
@@ -430,16 +411,17 @@ export default function DiarioPage() {
                 )
               })}
 
-              {/* Conductores/equipos liberados — reasignables a viajes nuevos */}
+              {/* Conductores disponibles hoy — atajo directo a crear viaje,
+                  con la lista ya sugerida dentro del diálogo (Ronda 26) */}
               {availableCount > 0 && (
                 <button
-                  onClick={() => setShowAvailability(true)}
+                  onClick={() => setShowCreate(true)}
                   className="flex items-center gap-2 bg-white border border-green-200 rounded-xl px-3.5 py-2 transition-all hover:border-green-400 ml-auto"
                 >
                   <UserCheck size={14} className="text-green-600" />
                   <span className="text-lg font-bold leading-none text-green-600">{availableCount}</span>
                   <span className="text-[11px] font-medium text-gray-500">
-                    disponible{availableCount !== 1 ? 's' : ''}
+                    conductor{availableCount !== 1 ? 'es' : ''} disponible{availableCount !== 1 ? 's' : ''}
                   </span>
                 </button>
               )}
@@ -640,19 +622,12 @@ export default function DiarioPage() {
       </div>
 
       <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} meta={tripsMeta} />
-      <TripCreateSlideOver
+      <TripAssignDialog
         open={showCreate}
-        onClose={() => { setShowCreate(false); setCreatePrefill(null) }}
+        onClose={() => setShowCreate(false)}
         onCreated={handleCreated}
         meta={tripsMeta}
-        prefill={createPrefill}
-      />
-      <AvailabilityPanel
-        open={showAvailability}
         fecha={f.fecha}
-        onClose={() => setShowAvailability(false)}
-        onAssignDriver={handleAssignDriver}
-        onAssignAsset={handleAssignAsset}
       />
       <TripBulkUpload
         open={showBulkUpload}

@@ -2,36 +2,25 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  X, Loader2, Plus, Search, Building2, User, Truck,
+  X, Loader2, Plus, Search, User, Truck,
   MapPin, Trash2, Link2,
 } from 'lucide-react'
 import type {
-  Trip, TripsMeta, TripCreatePayload, TripStopCreatePayload,
+  Trip, TripsMeta, TripCreatePayload, TripStopCreatePayload, DriverPickCandidate,
 } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
-import { carriersApi } from '@/lib/api/carriers'
+import { driversApi } from '@/lib/api/drivers'
 import { useQuery } from '@tanstack/react-query'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
-import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
-
-// Búsqueda debounced de empresa (public.carriers) — mismo patrón que
-// TransferModal.tsx/TransporterAssignSection. Reactivado 2026-07-17: ver
-// migración migrate_trip_fleet_links_to_carriers.
-type EmpresaSeleccionada = {
-  id: string
-  business_name: string | null
-  rut: string | null
-  drivers: { id: string; name: string | null; rut: string | null }[]
-  vehicles: { id: string; plate: string | null; type: string | null }[]
-}
+import { DriverSearchPicker } from '@/components/dashboard/DriverSearchPicker'
 
 interface Props {
   open:      boolean
   onClose:   () => void
   onCreated: (trip: Trip) => void
   meta?:     TripsMeta | null
-  /** Pre-llenado (ej: asignar un conductor liberado a un viaje nuevo) */
-  prefill?:  Partial<TripCreatePayload> | null
+  /** Fecha activa del Diario — para sugerir conductores disponibles hoy */
+  fecha:     string
 }
 
 const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
@@ -77,98 +66,39 @@ function Field({ label, required, children }: { label: string; required?: boolea
   )
 }
 
-// ── Empresa search (asociado con módulo Empresas) ─────────────────────────────
-
-function EmpresaSelector({
-  selected,
-  onSelect,
-  onClear,
-}: {
-  selected: EmpresaSeleccionada | null
-  onSelect: (t: EmpresaSeleccionada) => void
-  onClear:  () => void
-}) {
-  const [q, setQ] = useState('')
-
-  async function handlePick(c: CarrierSearchResult) {
-    const [drivers, assets] = await Promise.all([
-      carriersApi.listDrivers(c.id),
-      carriersApi.listAssets(c.id),
-    ])
-    onSelect({
-      id: c.id,
-      business_name: c.business_name,
-      rut: c.tax_id,
-      drivers: drivers.map(d => ({ id: d.id, name: d.full_name, rut: d.tax_id })),
-      vehicles: assets.map(a => ({ id: a.id, plate: a.license_plate, type: a.asset_type })),
-    })
-    setQ('')
-  }
-
-  if (selected) {
-    return (
-      <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
-            <Building2 size={14} className="text-accent" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-800 truncate">{selected.business_name ?? '—'}</p>
-            <p className="text-[10px] text-gray-400 font-mono">{selected.rut ?? ''}</p>
-          </div>
-        </div>
-        <button type="button" onClick={onClear} className="text-xs text-gray-400 hover:text-red-400 transition-colors shrink-0 ml-3">
-          Cambiar
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <CarrierSearchPicker
-      query={q}
-      onQueryChange={setQ}
-      onPick={handlePick}
-      size="md"
-      helperText={
-        <p className="text-[10px] text-gray-400 mt-1.5 pl-1">
-          O ingreso libre de conductor y patente más abajo
-        </p>
-      }
-    />
-  )
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 type OriginMode = 'none' | 'mapped' | 'other'
 
-export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }: Props) {
+export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Props) {
   const [form, setForm]             = useState<Partial<TripCreatePayload>>({})
   const [clientChoice, setClientChoice] = useState('')
   const [clientOther, setClientOther]   = useState('')
   const [originMode, setOriginMode] = useState<OriginMode>('none')
   const [originTms, setOriginTms]   = useState('')
   const [stops, setStops]           = useState<TripStopCreatePayload[]>([])
-  const [empresa, setEmpresa]       = useState<EmpresaSeleccionada | null>(null)
+  const [driverQuery, setDriverQuery]   = useState('')
+  const [pickedDriver, setPickedDriver] = useState<DriverPickCandidate | null>(null)
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
   const panelRef                    = useRef<HTMLDivElement>(null)
   const firstFieldRef               = useRef<HTMLInputElement>(null)
 
+  const availableQuery = useQuery({
+    queryKey: ['available-drivers', fecha],
+    queryFn: () => tripsApi.availableDrivers(fecha),
+    enabled: open,
+  })
+
   useEffect(() => {
     if (open) {
-      setForm({ planning_date: todayISO(), ...(prefill ?? {}) })
-      const preClient = prefill?.client_name ?? ''
-      if (MANUAL_CLIENTS.some(c => c.value === preClient)) {
-        setClientChoice(preClient); setClientOther('')
-      } else {
-        setClientChoice(preClient ? OTHER_CLIENT : ''); setClientOther(preClient)
-      }
+      setForm({ planning_date: todayISO() })
+      setClientChoice(''); setClientOther('')
       setOriginMode('none')
       setOriginTms('')
       setStops([])
-      setEmpresa(null)
+      setPickedDriver(null)
+      setDriverQuery('')
       setErr(null)
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -207,28 +137,29 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
     setForm(f => ({ ...f, [field]: value || undefined }))
   }
 
-  function handleSelectEmpresa(profile: EmpresaSeleccionada) {
-    setEmpresa(profile)
+  function handlePickDriver(d: DriverPickCandidate) {
+    setPickedDriver(d)
+    setDriverQuery('')
     setForm(f => ({
       ...f,
-      transporter_name: profile.business_name ?? undefined,
-      carrier_id:       profile.id,
+      driver_id:         d.driver_id,
+      driver_name:       d.driver_name,
+      driver_rut:        d.driver_rut ?? undefined,
+      driver_phone:      d.driver_phone ?? undefined,
+      carrier_id:        d.carrier_id ?? undefined,
+      transporter_name:  d.carrier_name ?? undefined,
+      tractor_asset_id:  d.tractor_asset_id ?? undefined,
+      tractor_plate:     d.tractor_plate ?? undefined,
     }))
   }
 
-  function handleClearEmpresa() {
-    setEmpresa(null)
+  function handleClearDriver() {
+    setPickedDriver(null)
     setForm(f => ({
       ...f,
-      transporter_name: undefined,
-      carrier_id:        undefined,
-      driver_name:       undefined,
-      driver_rut:        undefined,
-      driver_phone:      undefined,
-      driver_id:         undefined,
-      tractor_plate:     undefined,
-      trailer_plate:     undefined,
-      tractor_asset_id:  undefined,
+      driver_id: undefined, driver_name: undefined, driver_rut: undefined,
+      driver_phone: undefined, carrier_id: undefined, transporter_name: undefined,
+      tractor_asset_id: undefined, tractor_plate: undefined,
     }))
   }
 
@@ -250,6 +181,7 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
 
   async function handleCreate() {
     if (!form.planning_date) { setErr('La fecha de planificación es requerida'); return }
+    if (!form.driver_id) { setErr('Elegí un conductor del directorio de Empresas antes de crear el viaje'); return }
     if (stops.some(s => !s.local.trim())) { setErr('Cada destino debe tener un nombre'); return }
     setSaving(true); setErr(null)
     try {
@@ -270,9 +202,6 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
   }
 
   if (!open) return null
-
-  const drivers  = empresa?.drivers  ?? []
-  const vehicles = empresa?.vehicles ?? []
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 md:p-8 animate-backdrop-in">
@@ -503,90 +432,63 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
               </div>
             </div>
 
-            {/* RIGHT — Empresa & Flota (asociado con módulo Empresas) */}
+            {/* RIGHT — Conductor primero (llave real de la operación diaria);
+                empresa/vehículo se autocompletan editables desde sus
+                asignaciones activas — Ronda 26, TripAssignDialog */}
             <div className="p-6 space-y-5">
-              <SectionTitle icon={<Building2 size={14} />}>Empresa de Transporte</SectionTitle>
+              <SectionTitle icon={<User size={14} />}>Conductor</SectionTitle>
 
-              <Field label="Buscar en módulo Empresas">
-                <EmpresaSelector selected={empresa} onSelect={handleSelectEmpresa} onClear={handleClearEmpresa} />
-              </Field>
-
-              {/* Conductor — dropdown como atajo; los campos libres SIEMPRE disponibles */}
-              <div className="border-t border-border/50 pt-5">
-                <SectionTitle icon={<User size={14} />}>Conductor</SectionTitle>
-                {empresa && drivers.length > 0 && (
-                  <div className="mb-3">
-                    <Field label="Autocompletar desde la empresa">
-                      <select
-                        onChange={e => {
-                          const d = drivers.find(x => x.id === e.target.value)
-                          setForm(f => ({
-                            ...f,
-                            driver_name: d?.name ?? f.driver_name,
-                            driver_rut:  d?.rut ?? f.driver_rut,
-                            driver_id:   d?.id,
-                          }))
-                        }}
-                        className={INPUT}
-                        defaultValue=""
-                      >
-                        <option value="">— Seleccionar conductor…</option>
-                        {drivers.map(d => (
-                          <option key={d.id} value={d.id}>{d.name ?? '—'} · {d.rut ?? ''}</option>
-                        ))}
-                      </select>
-                    </Field>
+              {pickedDriver ? (
+                <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{pickedDriver.driver_name}</p>
+                    <p className="text-[10px] text-gray-400 font-mono">{pickedDriver.driver_rut ?? ''}</p>
                   </div>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Nombre">
-                    <input type="text" value={form.driver_name ?? ''} onChange={e => set('driver_name', e.target.value)} placeholder="Juan Pérez" className={INPUT} />
-                  </Field>
-                  <Field label="RUT">
-                    <input type="text" value={form.driver_rut ?? ''} onChange={e => set('driver_rut', e.target.value)} placeholder="12345678-9" className={INPUT} />
-                  </Field>
+                  <button type="button" onClick={handleClearDriver} className="text-xs text-gray-400 hover:text-red-400 transition-colors shrink-0 ml-3">
+                    Cambiar
+                  </button>
                 </div>
-                <div className="mt-3">
-                  <Field label="Teléfono">
-                    <input type="text" value={form.driver_phone ?? ''} onChange={e => set('driver_phone', e.target.value)} placeholder="+56912345678" className={INPUT} />
-                  </Field>
-                </div>
+              ) : (
+                <>
+                  <DriverSearchPicker
+                    query={driverQuery}
+                    onQueryChange={setDriverQuery}
+                    onPick={handlePickDriver}
+                    suggested={availableQuery.data ?? []}
+                    suggestedLabel="Disponibles hoy"
+                    autoFocus
+                  />
+                  {driverQuery.trim().length >= 2 && (
+                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
+                      Si no aparece en la lista, hay que darlo de alta primero en{' '}
+                      <a href="/dashboard/transportistas" className="underline font-semibold">Empresas</a> — no se puede crear el viaje sin un conductor vinculado al directorio real.
+                    </p>
+                  )}
+                </>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Empresa de transporte">
+                  <input type="text" value={form.transporter_name ?? ''} onChange={e => set('transporter_name', e.target.value)} placeholder="Se autocompleta al elegir conductor" className={INPUT} disabled={!pickedDriver} />
+                </Field>
+                <Field label="Teléfono">
+                  <input type="text" value={form.driver_phone ?? ''} onChange={e => set('driver_phone', e.target.value)} placeholder="+56912345678" className={INPUT} disabled={!pickedDriver} />
+                </Field>
               </div>
 
-              {/* Vehículo — dropdown como atajo; campos libres siempre disponibles */}
               <div className="border-t border-border/50 pt-5">
                 <SectionTitle icon={<Truck size={14} />}>Vehículo</SectionTitle>
-                {empresa && vehicles.length > 0 && (
-                  <div className="mb-3">
-                    <Field label="Autocompletar desde la empresa">
-                      <select
-                        onChange={e => {
-                          const v = vehicles.find(x => x.id === e.target.value)
-                          setForm(f => ({
-                            ...f,
-                            tractor_plate:    v?.plate ? v.plate.toUpperCase() : f.tractor_plate,
-                            tractor_asset_id: v?.id,
-                          }))
-                        }}
-                        className={INPUT}
-                        defaultValue=""
-                      >
-                        <option value="">— Seleccionar vehículo…</option>
-                        {vehicles.map(v => (
-                          <option key={v.id} value={v.id}>{v.plate ?? '—'} · {v.type ?? ''}</option>
-                        ))}
-                      </select>
-                    </Field>
-                  </div>
-                )}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Patente tracto">
-                    <input type="text" value={form.tractor_plate ?? ''} onChange={e => set('tractor_plate', e.target.value.toUpperCase())} placeholder="BGVS12" className={INPUT + ' uppercase'} />
+                    <input type="text" value={form.tractor_plate ?? ''} onChange={e => set('tractor_plate', e.target.value.toUpperCase())} placeholder="BGVS12" className={INPUT + ' uppercase'} disabled={!pickedDriver} />
                   </Field>
                   <Field label="Patente rampla">
                     <input type="text" value={form.trailer_plate ?? ''} onChange={e => set('trailer_plate', e.target.value.toUpperCase())} placeholder="RMPLA01" className={INPUT + ' uppercase'} />
                   </Field>
                 </div>
+                <p className="text-[10px] text-gray-400 mt-1.5">
+                  Autocompletado editable desde la asignación activa del conductor — corregí acá si ese día manejó otro equipo.
+                </p>
               </div>
             </div>
           </div>
@@ -603,7 +505,7 @@ export function TripCreateSlideOver({ open, onClose, onCreated, meta, prefill }:
             </button>
             <button
               type="submit"
-              disabled={saving || !form.planning_date}
+              disabled={saving || !form.planning_date || !form.driver_id}
               className="flex-1 flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-40 transition-colors"
             >
               {saving && <Loader2 size={14} className="animate-spin" />}

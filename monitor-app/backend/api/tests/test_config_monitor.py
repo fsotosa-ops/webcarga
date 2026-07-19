@@ -107,12 +107,14 @@ def test_available_drivers_returns_rows_and_excludes_sodimac_in_query():
     # por nombre de texto libre dentro de los viajes del día — ahora parte
     # del directorio real (conductor activo de empresa activa) y recién ahí
     # cruza contra los viajes del día, para no perder a los conductores sin
-    # NINGÚN viaje hoy.
+    # NINGÚN viaje hoy. Ronda 26 (TripAssignDialog): suma carrier_id/
+    # tractor_asset_id reales (no solo texto) y cae al vehículo estándar del
+    # conductor (vehicle_driver_assignments) cuando no hay viaje hoy.
     pool = AsyncMock()
     pool.fetch.return_value = [{
         "driver_id": "d1", "driver_name": "Juan Pérez", "driver_rut": "12345678-9",
-        "driver_phone": "+56911112222", "tractor_plate": "ABCD12",
-        "carrier_name": "TransCargo", "trips_total": 2,
+        "driver_phone": "+56911112222", "carrier_id": "c1", "carrier_name": "TransCargo",
+        "tractor_asset_id": "a1", "tractor_plate": "ABCD12", "trips_total": 2,
         "last_report_at": "2026-07-06T18:00:00",
     }]
     client = make_client(pool, router=trips_router)
@@ -120,10 +122,13 @@ def test_available_drivers_returns_rows_and_excludes_sodimac_in_query():
     assert res.status_code == 200
     data = res.json()
     assert data[0]["driver_name"] == "Juan Pérez"
+    assert data[0]["carrier_id"] == "c1"
+    assert data[0]["tractor_asset_id"] == "a1"
     query = pool.fetch.call_args.args[0]
     assert "sodimac" in query                        # exclusión de la fuente sin flota
     assert "public.driver_assignments" in query       # directorio real, no texto libre
     assert "operational_status = 'ACTIVE'" in query    # solo conductores/empresas activas
+    assert "public.vehicle_driver_assignments" in query  # vehículo estándar, no solo el de hoy
 
 
 # ── /trips/available-assets ─────────────────────────────────────────────────

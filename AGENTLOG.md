@@ -410,14 +410,55 @@ Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (
 
 **Con esto, del roadmap original de la auditoría del Diario solo queda**: Fase 2 "profesionalización general de la bitácora" (sin alcance definido).
 
-**Sin commitear todavía** — cambios en el working tree, pendientes de confirmación del usuario para commit y push.
+**Comiteado y pusheado**: commit `a6176cc` en `dev`, pusheado a `origin/dev`.
 
-#### Próximo paso exacto
-1. [ ] Confirmar commit y push de esta ronda.
-2. [ ] Fase 2 restante: profesionalización de la bitácora (sin alcance definido — evaluar si el patrón de diálogo centrado tipo Attio aplica mejor que el slide-over actual, decisión pendiente). Con esto se cierra el roadmap completo de la auditoría del Diario.
+#### Próximo paso exacto (histórico — ver ronda siguiente, requerimientos nuevos de UX abrieron un spec propio)
+1. [x] Confirmar commit y push de esta ronda — hecho (`a6176cc`).
+2. [ ] Fase 2 restante: profesionalización de la bitácora — sigue sin alcance definido, ver ronda siguiente para requerimientos nuevos relacionados que sí se definieron.
 3. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
 4. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
 5. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
 6. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+
+---
+
+### 2026-07-18 (cont.) — Ronda 26: brainstorm + spec de rediseño driver-first del Diario, Plan 1 (driver_leg_number) ejecutado
+
+**Pedido del usuario**: al usar la vista de disponibilidad recién construida, planteó 3 problemas nuevos — (1) `TripCreateSlideOver` trata a la empresa como llave del flujo de asignación cuando el conductor es la llave real de la operación diaria (webcarga no opera vehículos como entidad de primer nivel en el uso diario), (2) el patrón de slide-over lateral no da la talla como experiencia SaaS world-class para un equipo de monitoreo, (3) las tabs de filtro (KPI cards + FLAGS) se van a saturar visualmente a medida que se agreguen más alertas — y pidió alinear esto al estándar logtech/SaaS world-class, como alcance adicional a la Fase 2 (antes indefinida).
+
+**Proceso**: brainstorm formal (skill `superpowers:brainstorming`) con exploración de contexto + preguntas dirigidas de a una + 2-3 enfoques con trade-offs, cerrado en un spec aprobado (`docs/superpowers/specs/2026-07-18-diario-assign-dialog-redesign-design.md` — **nota: `docs/` está en `.gitignore`, no se pushea, vive solo local, mismo patrón que los demás specs de esta carpeta**). Decisiones clave del spec:
+
+1. **Alcance**: un solo spec integral (los 3 problemas conviven en las mismas pantallas), pero **3 planes de implementación separados y secuenciales** (`driver_leg_number` → `TripAssignDialog` → escalabilidad de filtros) — la revisión de alcance de la skill de planes marcó que eran subsistemas con dependencias distintas, no ameritaba un solo plan monolítico.
+2. **`TripAssignDialog`** (Plan 2, todavía no escrito): fusiona `AvailabilityPanel` + `TripCreateSlideOver` en un diálogo centrado (mismo patrón Attio que `TransferModal`) — busca conductor primero, empresa/vehículo se autocompletan editables desde sus asignaciones activas, bloquea si el conductor no está en `public.drivers` (decisión explícita del usuario: prioriza trazabilidad completa sobre fricción operativa). **Hallazgo real durante el diseño**: `TripCreateSlideOver` ya es un diálogo centrado (`max-w-4xl`), no un slide-over lateral como se asumió inicialmente — el problema real de "slide-over" era específico de `AvailabilityPanel` (`w-[380px]` lateral). Corregido en el spec.
+3. **Escalabilidad de filtros** (Plan 3, todavía no escrito): las 10 señales actuales (6 KPI + 4 flags) se consolidan en un popover "Alertas (N)" con OR entre alertas de condición / AND con flags operativos (estándar Linear/Jira/Attio, y más correcto: un viaje puede estar OFF TIME y sin reporte a la vez, la restricción actual a una sola KPI activa es limitación de implementación, no regla de negocio) — 3 señales pineadas por default (OFF TIME, Sin asignación, Sin reporte), personalizable por usuario vía `localStorage` (mismo patrón que `VIEW_MODE_STORAGE_KEY`). Suma "estilo BI/KPI" a pedido del usuario: jerarquía visual por severidad (banda simple sobre el conteo, sin datos nuevos — entra en Plan 3) y contexto de tendencia vs. hace 1h/ayer (**fuera de alcance, fast-follow** — no existe ningún historial de estos conteos hoy, ni siquiera `audit_log` sirve, requiere diseñar un mecanismo de snapshot aparte).
+4. **`driver_leg_number` calculado** (Plan 1, **completo esta ronda**): reemplaza `is_first_leg` (booleano manual/TMS) como fuente del filtro "2ª+ vuelta" — surgió durante el diseño de la Fase 3 cuando el usuario cuestionó por qué la vuelta no se calculaba sola si ya hay tracking a nivel de conductor.
+
+**Plan 1 — corrección de arquitectura real encontrada al revisar el plan antes de ejecutar (no en el spec)**: una ventana `ROW_NUMBER() OVER (PARTITION BY driver_id, planning_date)` calculada directo sobre `_TRIP_SELECT` se rompe en los 2 usos reales de esa constante — `GET /trips/{id}` filtra por un solo id *antes* de que la ventana vea a los demás viajes del conductor (siempre daría 1); `GET /trips` aplica los filtros del usuario *antes* de numerar (número inestable según qué filtro esté prendido). Mejorado además a pedido del usuario en pleno tool call ("esto puede ser la base para lo otro, para no rehacer trabajo" — refiriéndose al fast-follow de tendencia histórica del punto 3): en vez de una subconsulta ad-hoc, se creó una **vista** nueva, `app.v_driver_daily_trip_legs` (migración `20260718120000`) — ahí la ventana es segura (FROM fijo, Postgres no empuja un WHERE externo hacia adentro de una ventana), y queda como fuente única reusable el día que se arme el reporte agregado con histórico, sin duplicar la lógica de conteo. `_TRIP_SELECT` pasa a hacer solo un lookup de una fila contra la vista.
+
+**Verificación**: 233/233 backend, 381/381 frontend, `tsc` limpio. Vista verificada en vivo contra Supabase (secuencias `1..N` sin huecos ni repetidos, ej. un conductor real con 6 viajes el mismo día numerados correctamente) antes y después de conectar el endpoint.
+
+**Ejecución**: inline en esta misma sesión (skill `superpowers:executing-plans`, sin subagentes — plan chico, un archivo backend principal).
+
+**Comiteado y pusheado**: commit `7c3ea85` en `dev`, pusheado a `origin/dev`.
+
+**Plan 2 (`TripAssignDialog`) — también ejecutado esta ronda, inline, mismo estilo TDD.** Fusiona `AvailabilityPanel.tsx` + `TripCreateSlideOver.tsx` en un solo diálogo centrado driver-first:
+- **Backend**: `available_drivers` extendido con `carrier_id`/`tractor_asset_id` reales (antes solo devolvía nombres de texto; ahora cae al vehículo estándar del conductor — `vehicle_driver_assignments` — cuando no hay viaje hoy, cerrando un gap real). Nuevo endpoint `GET /drivers?q=` para búsqueda general de conductores por nombre/RUT (no existía ninguno — antes solo se podía buscar por empresa o por id directo).
+- **Frontend**: `DriverPickCandidate`/`DriverSearchResult` (`types.ts`) + `driversApi.search()`; componente compartido `DriverSearchPicker.tsx` (mismo patrón que `CarrierSearchPicker` de la Fase 4); `TripAssignDialog.tsx` — el conductor es el único punto de entrada, empresa/vehículo se autocompletan editables desde sus asignaciones activas, bloquea `Crear viaje` sin `driver_id` real. `page.tsx` wireado a un solo diálogo desde ambas entradas ("+ Nuevo viaje" y el tile "N disponibles").
+- **Correcciones reales encontradas en plena ejecución** (no en el spec/plan original): `TripCreateSlideOver` YA era un diálogo centrado (`max-w-4xl`), no un slide-over — el "slide-over que rompía la experiencia SaaS" era específicamente `AvailabilityPanel` (`w-[380px]` lateral); casi todos los tests heredados de `TripCreateSlideOver.test.tsx` necesitaron un paso nuevo de "elegir conductor" antes de poder enviar el form (el bloqueo nuevo deshabilita el submit); `AvailableAsset`/`tripsApi.availableAssets()` (frontend) se retiraron por quedar sin consumidor tras el borrado de `AvailabilityPanel` (el endpoint backend, Ronda 24, queda intacto).
+- **`public.vehicle_driver_assignments` está vacía en producción** (funcionalidad nueva de esta sesión, Rondas 19-20 — nadie cargó una asignación real todavía) — el fallback funciona correctamente, solo no tiene datos reales que mostrar por ahora.
+- El bloqueo "conductor no encontrado" es **solo frontend** — `POST /trips` sigue aceptando texto libre sin `driver_id`, porque `TripBulkUpload` (fuera de alcance) sigue usando ese mismo endpoint sin pasar por el diálogo nuevo.
+- **Verificación**: 235/235 backend, 382/382 frontend, `tsc`/`build` limpios, ambos endpoints nuevos probados en vivo contra Supabase.
+
+**Comiteado y pusheado**: pendiente — ver checklist.
+
+#### Próximo paso exacto
+1. [ ] Confirmar commit y push de esta ronda (Plan 2).
+2. [ ] Escribir Plan 3 (escalabilidad de filtros — popover "Alertas", OR/AND, pineado + severidad) — depende de que `driver_leg_number` ya esté disponible (lo está, Plan 1 cerrado) para el filtro "2ª+ vuelta". Único punto pendiente del spec de la Ronda 26.
+3. [ ] Fast-follow documentado, no iniciar sin pedido explícito: mecanismo de snapshot para "contexto de tendencia" (vs. hace 1h/ayer) en las tiles de alerta — requiere diseño propio (dónde vive, cada cuánto refresca).
+4. [ ] Fase 2 restante (bitácora): sigue sin alcance definido — el patrón de diálogo de `TripAssignDialog` es candidato a reaplicarse ahí.
+5. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+6. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+7. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+8. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
 
 ---

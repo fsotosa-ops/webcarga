@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { TripCreateSlideOver } from './TripCreateSlideOver'
+import { TripAssignDialog } from './TripAssignDialog'
 import { tripsApi } from '@/lib/api/trips'
-import { carriersApi } from '@/lib/api/carriers'
+import { driversApi } from '@/lib/api/drivers'
 import type { TripsMeta } from '@/lib/types'
 
 vi.mock('@/lib/api/trips', () => ({
-  tripsApi: { create: vi.fn() },
+  tripsApi: { create: vi.fn(), availableDrivers: vi.fn() },
 }))
-vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { list: vi.fn(), listDrivers: vi.fn(), listAssets: vi.fn() },
+vi.mock('@/lib/api/drivers', () => ({
+  driversApi: { search: vi.fn() },
 }))
 
 const meta: TripsMeta = {
@@ -22,23 +22,34 @@ const meta: TripsMeta = {
   operational_states: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
 }
 
-function renderCreate(props: Partial<Parameters<typeof TripCreateSlideOver>[0]> = {}) {
+function renderCreate(props: Partial<Parameters<typeof TripAssignDialog>[0]> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <TripCreateSlideOver open onClose={vi.fn()} onCreated={vi.fn()} meta={meta} {...props} />
+      <TripAssignDialog open onClose={vi.fn()} onCreated={vi.fn()} meta={meta} fecha="2026-07-18" {...props} />
     </QueryClientProvider>,
   )
 }
 
+/** La mayoría de los tests de este archivo necesitan un conductor elegido
+ *  antes de poder enviar el form — Crear viaje queda disabled sin
+ *  form.driver_id (Ronda 26, bloqueo driver-first). */
+async function pickDriver() {
+  vi.mocked(driversApi.search).mockResolvedValueOnce([{
+    driver_id: 'd1', driver_name: 'Juan Pérez', driver_rut: '12345678-9', driver_phone: null,
+    carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', tractor_asset_id: 'a1', tractor_plate: 'ABCD12',
+  }])
+  fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'Juan' } })
+  fireEvent.click(await screen.findByText('Juan Pérez'))
+}
+
 beforeEach(() => {
   vi.mocked(tripsApi.create).mockReset()
-  vi.mocked(carriersApi.list).mockReset().mockResolvedValue({ data: [], count: 0, page: 1, limit: 10 } as never)
-  vi.mocked(carriersApi.listDrivers).mockReset()
-  vi.mocked(carriersApi.listAssets).mockReset()
+  vi.mocked(tripsApi.availableDrivers).mockReset().mockResolvedValue([])
+  vi.mocked(driversApi.search).mockReset().mockResolvedValue([])
 })
 
-describe('TripCreateSlideOver', () => {
+describe('TripAssignDialog', () => {
   it('has dialog semantics and closes with Escape', () => {
     const onClose = vi.fn()
     renderCreate({ onClose })
@@ -53,10 +64,50 @@ describe('TripCreateSlideOver', () => {
     expect(screen.getByDisplayValue(today)).toBeInTheDocument()
   })
 
+  it('Crear viaje queda deshabilitado hasta elegir un conductor del directorio', () => {
+    renderCreate()
+    expect(screen.getByText('Crear viaje')).toBeDisabled()
+  })
+
+  it('picks a driver, autofills empresa/vehículo (editables), and sends driver_id + carrier_id + tractor_asset_id on create', async () => {
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+    renderCreate()
+
+    await pickDriver()
+
+    expect(screen.getByDisplayValue('Transportes Sur Spa')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('ABCD12')).toBeInTheDocument()
+    expect(screen.getByText('Crear viaje')).not.toBeDisabled()
+
+    fireEvent.click(screen.getByText('Crear viaje'))
+    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
+    const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
+    expect(payload.driver_id).toBe('d1')
+    expect(payload.carrier_id).toBe('c1')
+    expect(payload.tractor_asset_id).toBe('a1')
+    expect(payload.transporter_name).toBe('Transportes Sur Spa')
+  })
+
+  it('shows a warning with a link to Empresas when the driver search has no matches', async () => {
+    renderCreate()
+    fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'Nadie Real' } })
+    expect(await screen.findByText(/no se puede crear el viaje sin un conductor vinculado/)).toBeInTheDocument()
+  })
+
+  it('lets clearing the picked driver ("Cambiar") to search again', async () => {
+    renderCreate()
+    await pickDriver()
+    expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Cambiar'))
+    expect(screen.getByLabelText('Buscar conductor')).toBeInTheDocument()
+    expect(screen.getByText('Crear viaje')).toBeDisabled()
+  })
+
   it('submits with Enter (form submit) and sends stops + origin', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new', planning_date: '2026-07-06' } as never)
     const onCreated = vi.fn()
     renderCreate({ onCreated })
+    await pickDriver()
 
     // Agregar un destino
     fireEvent.click(screen.getByText('Agregar destino'))
@@ -83,6 +134,7 @@ describe('TripCreateSlideOver', () => {
   it('cliente es dropdown con canónicos y "Otro cliente" revela texto libre', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
     renderCreate()
+    await pickDriver()
     const select = screen.getByLabelText('Cliente') as HTMLSelectElement
     const values = Array.from(select.options).map(o => o.value)
     expect(values).toEqual(expect.arrayContaining(['walmart', 'sodimac', 'colun', 'iansa', 'otro']))
@@ -112,6 +164,7 @@ describe('TripCreateSlideOver', () => {
   it('modo Sin TMS permite anotar un ID de seguimiento y lo envía sin origin_tms', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
     renderCreate()
+    await pickDriver()
     fireEvent.change(screen.getByPlaceholderText(/Guía, hoja de ruta/), { target: { value: 'FAC-50' } })
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
@@ -132,6 +185,7 @@ describe('TripCreateSlideOver', () => {
   it('shows a visible error when the backend rejects (409 duplicado)', async () => {
     vi.mocked(tripsApi.create).mockRejectedValue(new Error('Ya registraste el viaje 555 de Walmart'))
     renderCreate()
+    await pickDriver()
     fireEvent.click(screen.getByText('Crear viaje'))
     expect(await screen.findByText(/Ya registraste el viaje/)).toBeInTheDocument()
   })
@@ -139,6 +193,7 @@ describe('TripCreateSlideOver', () => {
   it('envía región/ciudad de origen y de cada destino en el payload', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
     renderCreate()
+    await pickDriver()
 
     fireEvent.change(screen.getByLabelText('Región de origen'), { target: { value: 'Biobío' } })
     fireEvent.change(screen.getByLabelText('Ciudad de origen'), { target: { value: 'Concepción' } })
@@ -168,28 +223,14 @@ describe('TripCreateSlideOver', () => {
     expect(screen.queryByLabelText('Nombre destino 1')).not.toBeInTheDocument()
   })
 
-  it('searches carriers, fetches its roster on selection, and sends carrier_id on create', async () => {
-    vi.mocked(carriersApi.list).mockResolvedValue({
-      data: [{ id: 'c1', business_name: 'Transportes Sur Spa', tax_id: '76111222-3' }],
-      count: 1, page: 1, limit: 10,
-    } as never)
-    vi.mocked(carriersApi.listDrivers).mockResolvedValue([
-      { id: 'd1', tax_id: '11111111-1', full_name: 'Juan Perez' } as never,
-    ])
-    vi.mocked(carriersApi.listAssets).mockResolvedValue([])
-    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+  it('shows the "Disponibles hoy" suggested list from availableDrivers when the search field is empty', async () => {
+    vi.mocked(tripsApi.availableDrivers).mockResolvedValue([{
+      driver_id: 's1', driver_name: 'Pedro Soto', driver_rut: null, driver_phone: null,
+      carrier_id: 'c2', carrier_name: 'TransCargo', tractor_asset_id: null, tractor_plate: null,
+      trips_total: 0, last_report_at: null,
+    }])
     renderCreate()
-
-    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Transportes' } })
-    fireEvent.click(await screen.findByText('Transportes Sur Spa'))
-
-    await waitFor(() => expect(carriersApi.listDrivers).toHaveBeenCalledWith('c1'))
-    expect(await screen.findByText('76111222-3')).toBeInTheDocument() // card compacta post-selección
-
-    fireEvent.click(screen.getByText('Crear viaje'))
-    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
-    const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
-    expect(payload.carrier_id).toBe('c1')
-    expect(payload.transporter_name).toBe('Transportes Sur Spa')
+    expect(await screen.findByText('Pedro Soto')).toBeInTheDocument()
+    expect(driversApi.search).not.toHaveBeenCalled()
   })
 })
