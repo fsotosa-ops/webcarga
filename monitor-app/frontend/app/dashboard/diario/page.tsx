@@ -550,7 +550,6 @@ export default function DiarioPage() {
                   trips={visibleTrips}
                   selectedId={selected?.id ?? null}
                   onSelect={setSelected}
-                  onSaved={handleSaved}
                   alertSummary={alertSummary}
                   meta={tripsMeta}
                   updatedIds={updatedIds}

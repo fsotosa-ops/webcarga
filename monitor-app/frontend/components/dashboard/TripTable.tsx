@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { Check, Loader2, PenLine, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 
@@ -16,7 +16,6 @@ export type ComplianceAlertSummary = {
   total_expired:       number
   total_expiring_soon: number
 }
-import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
@@ -80,82 +79,6 @@ function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null
   )
 }
 
-function ConductorCell({
-  trip,
-  alertStatus,
-  onSaved,
-}: {
-  trip: Trip
-  alertStatus: AlertStatus | undefined
-  onSaved: (t: Trip) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft]     = useState(trip.driver_name ?? '')
-  const [saving, setSaving]   = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-
-  const handleSave = async (e: React.MouseEvent | React.KeyboardEvent) => {
-    e.stopPropagation()
-    if (!draft.trim() || draft === trip.driver_name) { setEditing(false); return }
-    setSaving(true)
-    setError(null)
-    try {
-      const updated = await tripsApi.patch(trip.id, { driver_name: draft.trim() })
-      onSaved(updated)
-      setEditing(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setDraft(trip.driver_name ?? '')
-    setError(null)
-    setEditing(false)
-  }
-
-  if (editing) {
-    return (
-      <div className="min-w-[140px]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-1">
-          <input
-            autoFocus
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleSave(e); if (e.key === 'Escape') { setDraft(trip.driver_name ?? ''); setError(null); setEditing(false) } }}
-            className="text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30"
-          />
-          <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
-            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-          </button>
-          <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
-            <X size={11} />
-          </button>
-        </div>
-        {error && <p className="text-[9px] text-red-500 mt-0.5 max-w-[160px]">{error}</p>}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className="group cursor-text"
-      onClick={e => { e.stopPropagation(); setDraft(trip.driver_name ?? ''); setEditing(true) }}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-slate-700 font-medium leading-tight">
-          {trip.driver_name ?? <span className="text-gray-300 italic">sin asignar</span>}
-        </span>
-        <ComplianceBadge status={alertStatus ?? null} compact />
-        <PenLine size={10} className="text-gray-200 group-hover:text-accent/60 transition-colors shrink-0" />
-      </div>
-    </div>
-  )
-}
-
 // Phones stored as JSON array string in driver_phone column
 function parsePhones(raw: string | null): string[] {
   if (!raw) return []
@@ -164,196 +87,6 @@ function parsePhones(raw: string | null): string[] {
     if (Array.isArray(p)) return p.filter(Boolean)
   } catch { /* plain string */ }
   return [raw]
-}
-
-function PhoneTagCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }) {
-  const [editing, setEditing]   = useState(false)
-  const [draft, setDraft]       = useState<string[]>(() => parsePhones(trip.driver_phone))
-  const [input, setInput]       = useState('')
-  const [saving, setSaving]     = useState(false)
-  const [error, setError]       = useState<string | null>(null)
-
-  useEffect(() => { setDraft(parsePhones(trip.driver_phone)) }, [trip.driver_phone])
-
-  const addPhone = () => {
-    const v = input.trim().replace(/,/g, '').replace(/\s/g, '')
-    if (v && !draft.includes(v)) setDraft(p => [...p, v])
-    setInput('')
-  }
-
-  const handleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setSaving(true)
-    setError(null)
-    try {
-      const updated = await tripsApi.patch(trip.id, { driver_phone: JSON.stringify(draft) })
-      onSaved(updated)
-      setEditing(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar')
-    } finally { setSaving(false) }
-  }
-
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setDraft(parsePhones(trip.driver_phone))
-    setInput('')
-    setError(null)
-    setEditing(false)
-  }
-
-  const phones = parsePhones(trip.driver_phone)
-
-  if (editing) {
-    return (
-      <div className="space-y-1 min-w-[130px]" onClick={e => e.stopPropagation()}>
-        {draft.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {draft.map(p => (
-              <span key={p} className="flex items-center gap-0.5 text-[9px] font-mono bg-accent/10 text-accent px-1.5 py-0.5 rounded-full">
-                {p}
-                <button type="button" onClick={() => setDraft(d => d.filter(x => x !== p))}
-                  className="hover:text-red-400 ml-0.5 leading-none">
-                  <X size={8} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <input
-          autoFocus
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addPhone() }
-            if (e.key === 'Escape') handleCancel(e as unknown as React.MouseEvent)
-          }}
-          placeholder="+56912345678"
-          className="text-[11px] font-mono border border-border rounded px-2 py-1 w-full focus:outline-none focus:ring-1 focus:ring-accent/30"
-        />
-        <div className="flex items-center gap-1">
-          {input.trim() && (
-            <button type="button" onClick={addPhone}
-              className="text-[10px] text-accent hover:underline">+ agregar</button>
-          )}
-          <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent shrink-0">
-            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-          </button>
-          <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
-            <X size={11} />
-          </button>
-        </div>
-        {error && <p className="text-[9px] text-red-500 max-w-[160px]">{error}</p>}
-      </div>
-    )
-  }
-
-  return (
-    <div className="group cursor-pointer"
-      onClick={e => { e.stopPropagation(); setDraft(parsePhones(trip.driver_phone)); setEditing(true) }}>
-      {phones.length > 0 ? (
-        <div className="flex flex-wrap gap-1">
-          {phones.map(p => (
-            <a key={p} href={`tel:${p}`} onClick={e => e.stopPropagation()}
-              className="text-[10px] font-mono text-accent hover:underline block">
-              {p}
-            </a>
-          ))}
-        </div>
-      ) : (
-        <span className="text-[10px] text-gray-300 group-hover:text-accent/50 transition-colors">—</span>
-      )}
-      <PenLine size={9} className="text-gray-200 group-hover:text-accent/60 mt-0.5 transition-colors" />
-    </div>
-  )
-}
-
-function PlateCell({ trip, onSaved }: { trip: Trip; onSaved: (t: Trip) => void }) {
-  const primaryPlate   = trip.tractor_plate ?? trip.trailer_plate ?? null
-  const secondaryPlate = trip.tractor_plate && trip.trailer_plate ? trip.trailer_plate : null
-
-  const [editing, setEditing] = useState<'primary' | 'secondary' | null>(null)
-  const [draft, setDraft]     = useState('')
-  const [saving, setSaving]   = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-
-  const startEdit = (which: 'primary' | 'secondary', e: React.MouseEvent) => {
-    e.stopPropagation()
-    const current = which === 'primary'
-      ? (trip.tractor_plate ?? trip.trailer_plate ?? '')
-      : (trip.trailer_plate ?? '')
-    setDraft(current)
-    setEditing(which)
-  }
-
-  const handleSave = async (e: React.MouseEvent | React.KeyboardEvent) => {
-    e.stopPropagation()
-    setSaving(true)
-    setError(null)
-    try {
-      const field = editing === 'secondary' ? 'trailer_plate' : 'tractor_plate'
-      const updated = await tripsApi.patch(trip.id, { [field]: draft.trim().toUpperCase() })
-      onSaved(updated)
-      setEditing(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar')
-    } finally { setSaving(false) }
-  }
-
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setError(null)
-    setEditing(null)
-  }
-
-  if (editing) {
-    return (
-      <div className="min-w-[110px]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-1">
-          <input
-            autoFocus
-            value={draft}
-            onChange={e => setDraft(e.target.value.toUpperCase())}
-            onKeyDown={e => {
-              if (e.key === 'Enter') handleSave(e)
-              if (e.key === 'Escape') { setError(null); setEditing(null) }
-            }}
-            placeholder="XXNN00"
-            className="font-mono text-xs border border-accent/40 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-accent/30 uppercase"
-          />
-          <button type="button" onClick={handleSave} disabled={saving} className="p-1 text-accent hover:text-accent/80 shrink-0">
-            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-          </button>
-          <button type="button" onClick={handleCancel} className="p-1 text-gray-300 hover:text-gray-500 shrink-0">
-            <X size={11} />
-          </button>
-        </div>
-        {error && <p className="text-[9px] text-red-500 mt-0.5 max-w-[160px]">{error}</p>}
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div
-        className="group flex items-center gap-1.5 cursor-text"
-        onClick={e => startEdit('primary', e)}
-      >
-        <span className={`font-mono text-xs font-bold ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal'}`}>
-          {primaryPlate ?? 'sin patente'}
-        </span>
-        <PenLine size={10} className="text-gray-200 group-hover:text-accent/60 transition-colors shrink-0" />
-      </div>
-      {secondaryPlate && (
-        <span
-          className="font-mono text-[10px] text-gray-400 mt-0.5 block cursor-text hover:text-gray-600 transition-colors"
-          onClick={e => startEdit('secondary', e)}
-        >
-          {secondaryPlate}
-        </span>
-      )}
-    </div>
-  )
 }
 
 type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'carrier_name' | 'client_name' | 'current_status' | 'source_system_trip_id'
@@ -368,14 +101,13 @@ interface Props {
   trips:         Trip[]
   selectedId:    string | null
   onSelect:      (trip: Trip) => void
-  onSaved:       (trip: Trip) => void
   alertSummary?: ComplianceAlertSummary | null
   meta?:         TripsMeta | null
   /** Viajes cuyo último reporte TMS cambió en el refetch más reciente — glow sutil */
   updatedIds?:   Set<string>
 }
 
-export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, meta, updatedIds }: Props) {
+export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, updatedIds }: Props) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
@@ -527,10 +259,13 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
           </thead>
           <tbody>
             {sorted.map((trip, i) => {
-              const isActive    = trip.id === selectedId
-              const plateAlert  = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
-              const driverAlert = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
-              const currentStatus = trip.manual_status ?? trip.current_status
+              const isActive       = trip.id === selectedId
+              const primaryPlate   = trip.tractor_plate ?? trip.trailer_plate ?? null
+              const secondaryPlate = trip.tractor_plate && trip.trailer_plate ? trip.trailer_plate : null
+              const plateAlert     = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
+              const driverAlert    = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
+              const currentStatus  = trip.manual_status ?? trip.current_status
+              const phones         = parsePhones(trip.driver_phone)
 
               return (
                 <tr
@@ -539,7 +274,6 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   aria-selected={isActive}
                   onClick={() => onSelect(trip)}
                   onKeyDown={e => {
-                    // Enter abre el detalle solo si el foco está en la fila misma (no en un input de edición inline)
                     if (e.key === 'Enter' && e.target === e.currentTarget) onSelect(trip)
                     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                       e.preventDefault()
@@ -559,10 +293,23 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                       : 'bg-white hover:bg-gray-50'
                   }`}
                 >
-                  {/* PATENTE — sticky: siempre visible al scrollear horizontal */}
+                  {/* PATENTE — sticky: siempre visible al scrollear horizontal.
+                      Solo lectura (Fase 2, Plan 6) — se editaba inline con
+                      PlateCell, ahora el mismo texto que ya mostraba el card
+                      mobile, sin click-to-edit; clic en cualquier parte de la
+                      fila abre el detalle. */}
                   <td className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5">
                     <div className="flex items-start gap-1.5">
-                      <PlateCell trip={trip} onSaved={onSaved} />
+                      <div>
+                        <span className={`font-mono text-xs font-bold ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal'}`}>
+                          {primaryPlate ?? 'sin patente'}
+                        </span>
+                        {secondaryPlate && (
+                          <span className="font-mono text-[10px] text-gray-400 mt-0.5 block">
+                            {secondaryPlate}
+                          </span>
+                        )}
+                      </div>
                       <ComplianceBadge status={plateAlert ?? null} compact
                         tooltip={plateAlert === 'expired' ? 'Vehículo vencido' : 'Vence pronto'} />
                     </div>
@@ -600,14 +347,36 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                     </span>
                   </td>
 
-                  {/* CONDUCTOR + FLAGS */}
+                  {/* CONDUCTOR — solo lectura (Fase 2, Plan 6), antes ConductorCell */}
                   <td className="px-3 py-2.5">
-                    <ConductorCell trip={trip} alertStatus={driverAlert} onSaved={onSaved} />
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-slate-700 font-medium leading-tight">
+                        {trip.driver_name ?? <span className="text-gray-300 italic">sin asignar</span>}
+                      </span>
+                      <ComplianceBadge status={driverAlert ?? null} compact />
+                    </div>
                   </td>
 
-                  {/* TELÉFONO */}
+                  {/* TELÉFONO — solo lectura (Fase 2, Plan 6), antes PhoneTagCell.
+                      El enlace tel: conserva stopPropagation: llamar es una
+                      acción distinta de abrir el detalle, no "editar". */}
                   <td className="px-3 py-2.5">
-                    <PhoneTagCell trip={trip} onSaved={onSaved} />
+                    {phones.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {phones.map(p => (
+                          <a
+                            key={p}
+                            href={`tel:${p}`}
+                            onClick={e => e.stopPropagation()}
+                            className="text-[10px] font-mono text-accent hover:underline block"
+                          >
+                            {p}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-gray-300">—</span>
+                    )}
                   </td>
 
                   {/* EETT */}
@@ -677,9 +446,9 @@ export function TripTable({ trips, selectedId, onSelect, onSaved, alertSummary, 
                   </td>
 
                   {/* Chevron de apertura — sticky derecha. Los indicadores
-                      (Activo/Trabajando/Asignado/1ra Vuelta) se ven y
-                      filtran arriba de la tabla, se editan en el detalle
-                      (Fase 3 del hardening del Diario, 2026-07-18). */}
+                      (Activo/Trabajando/Asignado) se ven y filtran arriba de
+                      la tabla, se editan en el detalle (Fase 3 del hardening
+                      del Diario, 2026-07-18). */}
                   <td className="sticky right-0 z-10 bg-inherit px-3 py-2.5 text-center">
                     <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
                   </td>
