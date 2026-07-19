@@ -1,0 +1,37 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import type { AlertSignalId } from '@/lib/utils/alertSignals'
+
+const STORAGE_KEY = 'diario:alertas-pineadas'
+const DEFAULT_PINNED: AlertSignalId[] = ['off_time', 'unassigned', 'stale']
+
+/** Qué señales quedan siempre visibles como tile fuera del popover "Alertas"
+ *  — personalizable por usuario, persistido en localStorage. Mismo mecanismo
+ *  que VIEW_MODE_STORAGE_KEY en page.tsx (sin backend, sin tabla de
+ *  preferencias nueva). El preset de fábrica (OFF TIME, Sin asignación, Sin
+ *  reporte) es el que ve cualquier usuario que nunca tocó el pin. */
+export function usePinnedAlertSignals() {
+  const [pinned, setPinned] = useState<AlertSignalId[]>(DEFAULT_PINNED)
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (!saved) return
+    try {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed)) setPinned(parsed)
+    } catch {
+      // localStorage corrupto/editado a mano — se ignora, queda el default
+    }
+  }, [])
+
+  function togglePin(id: AlertSignalId) {
+    setPinned(prev => {
+      const next = prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  return { pinned, togglePin }
+}

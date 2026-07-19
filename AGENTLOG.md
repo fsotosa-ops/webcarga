@@ -449,16 +449,25 @@ Tests backend: 226/226 en verde. Verificado con queries reales contra Supabase (
 - El bloqueo "conductor no encontrado" es **solo frontend** — `POST /trips` sigue aceptando texto libre sin `driver_id`, porque `TripBulkUpload` (fuera de alcance) sigue usando ese mismo endpoint sin pasar por el diálogo nuevo.
 - **Verificación**: 235/235 backend, 382/382 frontend, `tsc`/`build` limpios, ambos endpoints nuevos probados en vivo contra Supabase.
 
-**Comiteado y pusheado**: pendiente — ver checklist.
+**Comiteado y pusheado**: commit `aacfa65` en `dev`, pusheado a `origin/dev`.
+
+**Plan 3 (escalabilidad de filtros) — también ejecutado esta ronda, inline, mismo estilo TDD. Cierra el spec completo de la Ronda 26.** Reemplaza las 2 filas crecientes (6 KPI cards + 4 flags, 10 controles) por 3 tiles pineadas + un popover "Alertas":
+- **Backend**: `GET /trips` reemplaza el query param `is_first_leg` por `second_leg_plus`, resuelto vía `EXISTS` contra `app.v_driver_daily_trip_legs` (Plan 1) — la columna `app.trips.is_first_leg` sigue intacta, sin relación con este filtro (sigue usándose para el toggle manual "1V" de `IndicatorDots.tsx`, un feature distinto).
+- **Frontend**: `alertSignals.ts` (registro unificado de las 10 señales: 6 KPI + `active`/`working`/`assigned`/`second_leg_plus`, conteos, y `severityBand()` — 0/1-2/3+ → neutro/elevado/crítico). `useDiarioFilters` unificado: `activeSignals: AlertSignalId[]` reemplaza `kpiFilter` + los 4 campos `fIs*`, un solo reducer action `toggleSignal` reemplaza `toggleKpi`/`toggleFlag`. `usePinnedAlertSignals` — personalización de qué tiles quedan siempre visibles, vía `localStorage` (mismo patrón que `VIEW_MODE_STORAGE_KEY`), default OFF TIME/Sin asignación/Sin reporte. `AlertsPopover.tsx` — checkbox + conteo + pin (⭐) por señal, mismo patrón de interacción que `FilterPopover.tsx`. Semántica: OR entre las 6 alertas KPI activas, AND con los flags — un viaje puede estar OFF TIME y sin reporte a la vez (antes forzaba elegir una sola KPI).
+- **Corrección real encontrada al escribir el plan, antes de tocar código**: mi propio borrador del plan decía que `is_first_leg` aparecía "2 veces" en `lib/api/trips.ts` para renombrar — en realidad aparece 3 veces, y la tercera (`TripPatch.is_first_leg`) es el campo que usa `IndicatorDots.tsx` para editar la columna real manualmente. Detectado y corregido en el plan antes de ejecutar el wiring — de no corregirse, hubiera roto la edición manual del indicador "1ra Vuelta" en el detalle del viaje.
+- **Verificación**: 236/236 backend, 401/401 frontend, `tsc`/`build` limpios, filtro `second_leg_plus` verificado en vivo contra Supabase (5 de 6 viajes de un conductor real, excluyendo el de `leg_number=1`).
+
+**Comiteado y pusheado**: ver checklist.
+
+**Con esto, los 3 planes del spec de la Ronda 26** (`driver_leg_number`, `TripAssignDialog`, escalabilidad de filtros) **quedan completos.**
 
 #### Próximo paso exacto
-1. [ ] Confirmar commit y push de esta ronda (Plan 2).
-2. [ ] Escribir Plan 3 (escalabilidad de filtros — popover "Alertas", OR/AND, pineado + severidad) — depende de que `driver_leg_number` ya esté disponible (lo está, Plan 1 cerrado) para el filtro "2ª+ vuelta". Único punto pendiente del spec de la Ronda 26.
-3. [ ] Fast-follow documentado, no iniciar sin pedido explícito: mecanismo de snapshot para "contexto de tendencia" (vs. hace 1h/ayer) en las tiles de alerta — requiere diseño propio (dónde vive, cada cuánto refresca).
-4. [ ] Fase 2 restante (bitácora): sigue sin alcance definido — el patrón de diálogo de `TripAssignDialog` es candidato a reaplicarse ahí.
-5. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
-6. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-7. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-8. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
+1. [ ] Confirmar commit y push de esta ronda (Plan 3).
+2. [ ] Fast-follow documentado, no iniciar sin pedido explícito: mecanismo de snapshot para "contexto de tendencia" (vs. hace 1h/ayer) en las tiles de alerta — requiere diseño propio (dónde vive, cada cuánto refresca).
+3. [ ] Fase 2 restante (bitácora): sigue sin alcance definido — el patrón de diálogo de `TripAssignDialog` es candidato a reaplicarse ahí.
+4. [ ] (heredado) Confirmar push de `1e65a53` a `dev`.
+5. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+6. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+7. [ ] (heredado) Verificación manual en navegador — sigue sin poder hacerse (sin credenciales de test).
 
 ---

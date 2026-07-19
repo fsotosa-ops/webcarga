@@ -37,15 +37,24 @@ describe('useDiarioFilters', () => {
     expect(result.current[0].fTms).toEqual(['sodimac'])
   })
 
-  it('clear wipes filters (incluyendo el filtro KPI) but keeps tab and fecha', () => {
+  it('toggleSignal adds and removes signals, any kind, same action', () => {
+    const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'off_time' }))
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'active' }))
+    expect(result.current[0].activeSignals).toEqual(['off_time', 'active'])
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'off_time' }))
+    expect(result.current[0].activeSignals).toEqual(['active'])
+  })
+
+  it('clear wipes filters (incluyendo activeSignals) but keeps tab and fecha', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
     act(() => result.current[1]({ type: 'patch', patch: { q: 'x' } }))
-    act(() => result.current[1]({ type: 'toggleFlag', field: 'fIsActive' }))
-    act(() => result.current[1]({ type: 'toggleKpi', kpi: 'off_time' }))
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'active' }))
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'off_time' }))
     act(() => result.current[1]({ type: 'clear' }))
     const [f] = result.current
     expect(countActiveFilters(f)).toBe(0)
-    expect(f.kpiFilter).toBeNull()
+    expect(f.activeSignals).toEqual([])
     expect(f.fecha).toBe('2026-07-04')
     expect(f.tab).toBe('en_curso')
   })
@@ -60,12 +69,11 @@ describe('useDiarioFilters', () => {
     expect(countActiveFilters(result.current[0])).toBe(0)
   })
 
-  it('kpiFilter cuenta en activeCount y togglea', () => {
+  it('activeSignals cuenta en activeCount, cada señal por separado', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
-    act(() => result.current[1]({ type: 'toggleKpi', kpi: 'stale' }))
-    expect(result.current[0].kpiFilter).toBe('stale')
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'stale' }))
     expect(countActiveFilters(result.current[0])).toBe(1)
-    act(() => result.current[1]({ type: 'toggleKpi', kpi: 'stale' }))
-    expect(result.current[0].kpiFilter).toBeNull()
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'active' }))
+    expect(countActiveFilters(result.current[0])).toBe(2)
   })
 })

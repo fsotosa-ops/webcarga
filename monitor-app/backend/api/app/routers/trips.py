@@ -335,7 +335,7 @@ async def list_trips(
     is_active: str = Query(""),
     is_working: str = Query(""),
     is_assigned: str = Query(""),
-    is_first_leg: str = Query(""),
+    second_leg_plus: str = Query(""),
     tms: str = Query(""),
     client: str = Query(""),
     origin_region: str = Query(""),
@@ -384,10 +384,21 @@ async def list_trips(
         filters.append("t.is_assigned = true")
     elif is_assigned == "false":
         filters.append("t.is_assigned = false")
-    if is_first_leg == "true":
-        filters.append("t.is_first_leg = true")
-    elif is_first_leg == "false":
-        filters.append("t.is_first_leg = false")
+    # "2ª+ vuelta" — reemplaza a is_first_leg (columna manual/TMS, que sigue
+    # existiendo sin relación con este filtro) como fuente. driver_leg_number
+    # es un alias de _TRIP_SELECT (subconsulta contra la vista), no una
+    # columna real — no se puede referenciar en este WHERE, así que se
+    # resuelve de nuevo contra app.v_driver_daily_trip_legs (Plan 1).
+    if second_leg_plus == "true":
+        filters.append(
+            "EXISTS (SELECT 1 FROM app.v_driver_daily_trip_legs vdtl "
+            "WHERE vdtl.trip_id = t.id AND vdtl.leg_number >= 2)"
+        )
+    elif second_leg_plus == "false":
+        filters.append(
+            "NOT EXISTS (SELECT 1 FROM app.v_driver_daily_trip_legs vdtl "
+            "WHERE vdtl.trip_id = t.id AND vdtl.leg_number >= 2)"
+        )
     if tms:
         tms_list = [t.strip() for t in tms.split(',') if t.strip()]
         add("t.source_system = ANY(?)", tms_list)

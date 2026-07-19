@@ -168,3 +168,21 @@ def test_list_trips_q_matches_client_name():
     assert res.status_code == 200
     query = pool.fetch.call_args.args[0]
     assert "t.client_name ILIKE" in query
+
+
+def test_list_trips_second_leg_plus_filters_against_driver_daily_trip_legs_view():
+    # Ronda 26 (escalabilidad de filtros): reemplaza is_first_leg (columna
+    # manual/TMS) como fuente del filtro "2ª+ vuelta" — la columna sigue
+    # existiendo en la base, solo dejó de ser lo que este filtro consulta.
+    # driver_leg_number es un alias de SELECT (Plan 1), no una columna real
+    # de app.trips — no se puede referenciar directo en un WHERE del mismo
+    # nivel, por eso la query real vuelve a resolver contra la vista.
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?second_leg_plus=true&view=historial")
+    assert res.status_code == 200
+    query = pool.fetch.call_args.args[0]
+    assert "app.v_driver_daily_trip_legs" in query
+    assert "leg_number >= 2" in query

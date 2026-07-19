@@ -17,9 +17,14 @@ import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
-import { useDiarioFilters, countActiveFilters, FLAGS, type FlagField } from '@/hooks/useDiarioFilters'
+import { useDiarioFilters, countActiveFilters } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
-import { deriveKpis, matchesKpi, DEFAULT_ALERT_RULES, type KpiId } from '@/lib/utils/kpis'
+import { DEFAULT_ALERT_RULES } from '@/lib/utils/kpis'
+import {
+  alertSignalDefs, computeSignalCounts, matchesActiveSignals, severityBand,
+} from '@/lib/utils/alertSignals'
+import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
+import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { UserCheck } from 'lucide-react'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
@@ -49,42 +54,6 @@ const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
   amber:  { on: 'bg-amber-500  border-amber-500  text-white', off: 'text-amber-700  border-amber-300  bg-amber-50  hover:border-amber-400'  },
   pink:   { on: 'bg-pink-500   border-pink-500   text-white', off: 'text-pink-700   border-pink-300   bg-pink-50   hover:border-pink-400'   },
   slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
-}
-
-// Fase 3 del hardening del Diario (2026-07-18) — tabs de filtro para
-// Activo/Trabajando/Asignado/1ra Vuelta, mismos colores que ya usaba
-// IndicatorDots (blue/green/violet/amber) para no romper la asociación
-// visual que el equipo operativo ya tiene con estos 4 indicadores.
-const FLAG_TRIP_KEY: Record<FlagField, 'is_active' | 'is_working' | 'is_assigned' | 'is_first_leg'> = {
-  fIsActive:   'is_active',
-  fIsWorking:  'is_working',
-  fIsAssigned: 'is_assigned',
-  fIsFirstLeg: 'is_first_leg',
-}
-const FLAG_ACTIVE_CLS: Record<FlagField, string> = {
-  fIsActive:   'border-blue-400 ring-2 ring-blue-100 bg-blue-50',
-  fIsWorking:  'border-green-400 ring-2 ring-green-100 bg-green-50',
-  fIsAssigned: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50',
-  fIsFirstLeg: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50',
-}
-const FLAG_COUNT_CLS: Record<FlagField, string> = {
-  fIsActive:   'text-blue-600',
-  fIsWorking:  'text-green-600',
-  fIsAssigned: 'text-violet-600',
-  fIsFirstLeg: 'text-amber-600',
-}
-
-function kpiCards(rules: typeof DEFAULT_ALERT_RULES): { id: KpiId; label: string; activeCls: string; countCls: string }[] {
-  return [
-    { id: 'off_time',     label: 'OFF TIME',                                   activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50',        countCls: 'text-red-600'    },
-    { id: 'late_arrival', label: 'Atraso de llegada',                          activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50',        countCls: 'text-red-600'    },
-    { id: 'dwell',        label: `Detenido en local > ${rules.dwell_hours}h`,  activeCls: 'border-orange-400 ring-2 ring-orange-100 bg-orange-50', countCls: 'text-orange-600' },
-    { id: 'stale',        label: `Sin reporte > ${rules.stale_report_hours}h`, activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50',  countCls: 'text-amber-600'  },
-    { id: 'temp_out',     label: 'Temp fuera de rango',                        activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50',     countCls: 'text-blue-600'   },
-    ...(rules.unassigned_enabled
-      ? [{ id: 'unassigned' as KpiId, label: 'Sin asignación', activeCls: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50', countCls: 'text-violet-600' }]
-      : []),
-  ]
 }
 
 function todayISO() {
@@ -177,10 +146,10 @@ export default function DiarioPage() {
 
   // ── Data: TanStack Query + polling (60s, solo En Curso) ─────────────────────
   const boolParams = {
-    ...(f.fIsActive   != null ? { is_active:    f.fIsActive }   : {}),
-    ...(f.fIsWorking  != null ? { is_working:   f.fIsWorking }  : {}),
-    ...(f.fIsAssigned != null ? { is_assigned:  f.fIsAssigned } : {}),
-    ...(f.fIsFirstLeg != null ? { is_first_leg: f.fIsFirstLeg } : {}),
+    ...(f.activeSignals.includes('active')          ? { is_active:        true } : {}),
+    ...(f.activeSignals.includes('working')         ? { is_working:       true } : {}),
+    ...(f.activeSignals.includes('assigned')        ? { is_assigned:      true } : {}),
+    ...(f.activeSignals.includes('second_leg_plus') ? { second_leg_plus:  true } : {}),
   }
   const locParams = {
     ...(f.fRegion ? { origin_region: f.fRegion } : {}),
@@ -201,17 +170,18 @@ export default function DiarioPage() {
   const fetching = tripsQuery.isFetching
   const error    = tripsQuery.error ? (tripsQuery.error instanceof Error ? tripsQuery.error.message : 'Error cargando viajes') : null
 
-  // ── KPIs accionables: excepciones derivadas de la data ya cargada (un clic = filtro) ──
+  // ── Alertas accionables: excepciones derivadas de la data ya cargada (un clic = filtro) ──
   const alertRules = tripsMeta?.monitor_alert_rules ?? DEFAULT_ALERT_RULES
-  const KPI_CARDS = useMemo(() => kpiCards(alertRules), [alertRules])
-  const kpis = useMemo(
-    () => deriveKpis(trips, tripsMeta?.temperature_ranges ?? [], alertRules),
+  const signalDefs = useMemo(() => alertSignalDefs(alertRules), [alertRules])
+  const signalCounts = useMemo(
+    () => computeSignalCounts(trips, tripsMeta?.temperature_ranges ?? [], alertRules),
     [trips, tripsMeta?.temperature_ranges, alertRules],
   )
+  const { pinned, togglePin } = usePinnedAlertSignals()
   const visibleTrips = useMemo(() => {
-    if (f.tab !== 'en_curso' || !f.kpiFilter) return trips
-    return trips.filter(t => matchesKpi(t, f.kpiFilter!, tripsMeta?.temperature_ranges ?? [], alertRules))
-  }, [trips, f.tab, f.kpiFilter, tripsMeta?.temperature_ranges, alertRules])
+    if (f.tab !== 'en_curso' || f.activeSignals.length === 0) return trips
+    return trips.filter(t => matchesActiveSignals(t, f.activeSignals, tripsMeta?.temperature_ranges ?? [], alertRules))
+  }, [trips, f.tab, f.activeSignals, tripsMeta?.temperature_ranges, alertRules])
 
   // ── Conductores disponibles (sin viaje abierto hoy) — solo para el conteo
   // del tile, la lista sugerida vive dentro de TripAssignDialog (Ronda 26)
@@ -386,28 +356,59 @@ export default function DiarioPage() {
             </div>
           </div>
 
-          {/* ── KPIs accionables — cada tarjeta es un filtro de un clic ─ */}
+          {/* ── Alertas: 3 tiles pineadas (severidad visual) + popover para
+              el resto — reemplaza las 2 filas crecientes de KPI cards/flags
+              (Ronda 26, escalabilidad de filtros). Estado no se toca, sigue
+              como fila separada más abajo — es la dimensión de navegación
+              primaria, no una alerta. */}
           {f.tab === 'en_curso' && !loading && (
-            <div className="flex gap-2 flex-wrap">
-              {KPI_CARDS.map(card => {
-                const count  = kpis[card.id]
-                const active = f.kpiFilter === card.id
+            <div className="flex items-center gap-2 flex-wrap">
+              {signalDefs.filter(d => pinned.includes(d.id)).map(def => {
+                const count  = signalCounts[def.id] ?? 0
+                const active = f.activeSignals.includes(def.id)
+                const band   = severityBand(count)
                 return (
                   <button
-                    key={card.id}
-                    onClick={() => dispatch({ type: 'toggleKpi', kpi: card.id })}
+                    key={def.id}
+                    onClick={() => dispatch({ type: 'toggleSignal', id: def.id })}
                     disabled={count === 0 && !active}
                     aria-pressed={active}
                     className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
-                      active ? card.activeCls : 'border-border hover:border-gray-300'
+                      active ? def.activeCls : band === 'critical' ? 'border-gray-300' : 'border-border hover:border-gray-300'
                     }`}
                   >
-                    <span className={`text-lg font-bold leading-none ${count > 0 ? card.countCls : 'text-gray-300'}`}>
+                    <span className={`leading-none font-bold ${
+                      band === 'neutral'  ? 'text-sm text-gray-300' :
+                      band === 'elevated' ? `text-base ${def.colorCls}` :
+                                             `text-lg ${def.colorCls}`
+                    }`}>
                       {count}
                     </span>
-                    <span className="text-[11px] font-medium text-gray-500">{card.label}</span>
+                    <span className="text-[11px] font-medium text-gray-500">{def.label}</span>
                     {active && <X size={11} className="text-gray-400" />}
                   </button>
+                )
+              })}
+
+              <AlertsPopover
+                defs={signalDefs}
+                counts={signalCounts}
+                active={f.activeSignals}
+                pinned={pinned}
+                onToggle={id => dispatch({ type: 'toggleSignal', id })}
+                onTogglePin={togglePin}
+              />
+
+              {f.activeSignals.filter(id => !pinned.includes(id)).map(id => {
+                const def = signalDefs.find(d => d.id === id)
+                if (!def) return null
+                return (
+                  <span key={id} className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 rounded-full pl-2.5 pr-1.5 py-1">
+                    {def.label}
+                    <button type="button" onClick={() => dispatch({ type: 'toggleSignal', id })} aria-label={`Quitar filtro ${def.label}`}>
+                      <X size={11} />
+                    </button>
+                  </span>
                 )
               })}
 
@@ -425,39 +426,6 @@ export default function DiarioPage() {
                   </span>
                 </button>
               )}
-            </div>
-          )}
-
-          {/* ── Indicadores como tabs de filtro (Fase 3 del hardening del
-              Diario, 2026-07-18) — antes era una columna de la tabla con
-              edición inline (clic en el punto cambiaba el viaje) Y, por
-              separado, un filtro escondido en el popover: dos superficies
-              desconectadas para el mismo dato. Ahora es un solo lugar:
-              filtra acá, edita en el detalle del viaje. Mismo patrón visual
-              que las KPI cards de arriba (tile clickeable con conteo). */}
-          {f.tab === 'en_curso' && !loading && (
-            <div className="flex gap-2 flex-wrap">
-              {FLAGS.map(flag => {
-                const count  = trips.filter(t => t[FLAG_TRIP_KEY[flag.field]]).length
-                const active = f[flag.field] === true
-                return (
-                  <button
-                    key={flag.field}
-                    onClick={() => dispatch({ type: 'toggleFlag', field: flag.field })}
-                    disabled={count === 0 && !active}
-                    aria-pressed={active}
-                    className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
-                      active ? FLAG_ACTIVE_CLS[flag.field] : 'border-border hover:border-gray-300'
-                    }`}
-                  >
-                    <span className={`text-lg font-bold leading-none ${count > 0 ? FLAG_COUNT_CLS[flag.field] : 'text-gray-300'}`}>
-                      {count}
-                    </span>
-                    <span className="text-[11px] font-medium text-gray-500">{flag.label}</span>
-                    {active && <X size={11} className="text-gray-400" />}
-                  </button>
-                )
-              })}
             </div>
           )}
 
