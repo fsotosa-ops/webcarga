@@ -64,4 +64,15 @@ describe('DriverSearchPicker', () => {
     fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'Nadie' } })
     expect(await screen.findByText('Sin resultados en el directorio de Empresas')).toBeInTheDocument()
   })
+
+  // HU-06 (Fase 3): % de similitud en sugerencias de fuzzy match
+  it('shows a similarity percentage badge when the candidate carries one', () => {
+    render(<Controlled suggested={[{ ...SUGGESTED, similarity: 0.87 }]} />)
+    expect(screen.getByText('87%')).toBeInTheDocument()
+  })
+
+  it('does not show a similarity badge for a plain manual-search candidate', () => {
+    render(<Controlled suggested={[SUGGESTED]} />)
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument()
+  })
 })

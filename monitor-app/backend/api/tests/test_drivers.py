@@ -212,3 +212,53 @@ def test_list_drivers_searches_active_roster_with_resolved_carrier_and_vehicle()
     assert "public.vehicle_driver_assignments" in query
     assert "d.full_name ILIKE" in query
     assert "d.tax_id ILIKE" in query
+
+
+# ── GET /drivers/fuzzy-match (HU-06, Fase 3) ─────────────────────────────────
+# Fuzzy match por similitud de texto (pg_trgm) contra un nombre crudo del
+# TMS — usado cuando fleet_match_status = UNMATCHED. Confirmación humana
+# siempre requerida (el operador debe hacer click), este endpoint solo
+# sugiere.
+
+def test_fuzzy_match_drivers_strips_rut_and_trailing_punctuation():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "driver_id": "d1", "driver_name": "Hernandez Contreras Ulices Alfredo", "driver_rut": "1-9",
+        "driver_phone": None, "carrier_id": "c1", "carrier_name": "TransCargo",
+        "tractor_asset_id": None, "tractor_plate": None, "similarity": 0.868421,
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/drivers/fuzzy-match?name=HERNANDEZ CONTRERAS EULICES ALFREDO / 12345678-9")
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data[0]["driver_name"] == "Hernandez Contreras Ulices Alfredo"
+    assert data[0]["similarity"] == 0.868421
+    params = pool.fetch.call_args.args[1:]
+    assert params[0] == "HERNANDEZ CONTRERAS EULICES ALFREDO"
+
+
+def test_fuzzy_match_drivers_uses_similarity_threshold():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/drivers/fuzzy-match?name=Algun Nombre")
+
+    assert res.status_code == 200
+    query = pool.fetch.call_args.args[0]
+    assert "similarity(upper(d.full_name), upper($1)) >= $2" in query
+    params = pool.fetch.call_args.args[1:]
+    assert params[1] == 0.7
+
+
+def test_fuzzy_match_drivers_requires_min_length_after_cleaning():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/drivers/fuzzy-match?name=A / 12345678-9")
+
+    assert res.status_code == 200
+    assert res.json() == []
+    pool.fetch.assert_not_called()

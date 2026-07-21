@@ -1,4 +1,4 @@
-import type { ComplianceRecord, Contact, Driver, DriverSearchResult, OperationalStatus } from '@/lib/types'
+import type { ComplianceRecord, Contact, Driver, DriverPickCandidate, DriverSearchResult, OperationalStatus } from '@/lib/types'
 import type { ContactCreateBody } from './carriers'
 import { apiFetch } from './client'
 
@@ -28,6 +28,11 @@ export type DriverCreateResult = {
 export const driversApi = {
   search: (q: string, limit = 10) =>
     apiFetch<DriverSearchResult[]>(`/api/v1/drivers?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  /** HU-06 (Fase 3): candidatos por similitud de texto contra un nombre
+   *  crudo del TMS — usado cuando el viaje no cruza por nombre exacto. */
+  fuzzyMatch: (name: string, limit = 5) =>
+    apiFetch<DriverPickCandidate[]>(`/api/v1/drivers/fuzzy-match?name=${encodeURIComponent(name)}&limit=${limit}`),
 
   get: (id: string) =>
     apiFetch<Driver>(`/api/v1/drivers/${id}`),

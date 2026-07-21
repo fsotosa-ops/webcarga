@@ -1,5 +1,7 @@
 """public.drivers — master data, independiente de a qué carrier esté asignado
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase, require_editor
@@ -55,6 +57,67 @@ async def list_drivers(
         LIMIT $2
         """,
         q.strip(), limit,
+    )
+    return [dict(r) for r in rows]
+
+
+# HU-06 (Fase 3, 2026-07-22): fuzzy match del nombre reportado por el TMS
+# contra el roster — ~80% de similitud + confirmación humana, diseño
+# confirmado por Pablo en la reunión del 20/07 (no reemplaza la búsqueda
+# manual de arriba, la complementa cuando el cruce exacto por nombre falla).
+# Umbral calibrado contra nombres reales de viajes UNMATCHED: coincidencias
+# legítimas (typo/nombre incompleto) caen en 0.70-1.0, ruido cae por debajo
+# de 0.30 — 0.7 da margen sin acercarse a la zona de ruido.
+_FUZZY_MATCH_MIN_SIMILARITY = 0.7
+
+
+@router.get("/fuzzy-match")
+async def fuzzy_match_drivers(
+    name: str = Query(..., min_length=2),
+    limit: int = Query(5, ge=1, le=20),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Candidatos del roster por similitud de texto (pg_trgm) contra un
+    nombre crudo del TMS — usado cuando un viaje no logra cruzar por nombre
+    exacto (fleet_match_status = UNMATCHED). El operador debe confirmar el
+    candidato con un click (mismo flujo que la búsqueda manual); esto nunca
+    vincula nada por sí solo."""
+    # El TMS suele adjuntar el RUT ("NOMBRE / 12345678-9") y puntuación/tabs
+    # sueltos — se limpia antes de comparar para no penalizar la similitud
+    # por ruido que no es parte del nombre.
+    cleaned = re.sub(r"\s*/\s*[\w.-]+$", "", name.strip())
+    cleaned = re.sub(r"[\s.]+$", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) < 2:
+        return []
+    rows = await pool.fetch(
+        """
+        SELECT
+            d.id       AS driver_id,
+            d.full_name AS driver_name,
+            d.tax_id    AS driver_rut,
+            (
+                SELECT fl2.driver_phone FROM app.trip_fleet_links fl2
+                WHERE fl2.driver_id = d.id AND fl2.driver_phone IS NOT NULL
+                ORDER BY fl2.updated_at DESC LIMIT 1
+            )          AS driver_phone,
+            c.id       AS carrier_id,
+            c.business_name AS carrier_name,
+            a.id       AS tractor_asset_id,
+            a.license_plate AS tractor_plate,
+            similarity(upper(d.full_name), upper($1)) AS similarity
+        FROM public.drivers d
+        LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+        LEFT JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
+        LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
+        LEFT JOIN public.assets a ON a.id = vda.asset_id
+        WHERE d.operational_status = 'ACTIVE'
+          AND similarity(upper(d.full_name), upper($1)) >= $2
+        ORDER BY similarity DESC
+        LIMIT $3
+        """,
+        cleaned, _FUZZY_MATCH_MIN_SIMILARITY, limit,
     )
     return [dict(r) for r in rows]
 

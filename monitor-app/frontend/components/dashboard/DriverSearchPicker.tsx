@@ -83,6 +83,13 @@ export function DriverSearchPicker({
                 {d.carrier_name ?? 'Sin empresa'}{d.tractor_plate ? ` · ${d.tractor_plate}` : ''}
               </p>
             </div>
+            {/* HU-06 (Fase 3): % de similitud — solo presente en sugerencias
+                de fuzzy match, nunca en búsqueda manual por texto. */}
+            {d.similarity != null && (
+              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">
+                {Math.round(d.similarity * 100)}%
+              </span>
+            )}
           </button>
         ))}
       </div>

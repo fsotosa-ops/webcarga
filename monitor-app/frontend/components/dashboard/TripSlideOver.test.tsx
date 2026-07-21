@@ -20,7 +20,7 @@ vi.mock('@/lib/api/trips', () => ({
   },
 }))
 vi.mock('@/lib/api/drivers', () => ({
-  driversApi: { search: vi.fn() },
+  driversApi: { search: vi.fn(), fuzzyMatch: vi.fn() },
 }))
 
 const baseTrip: Trip = {
@@ -61,6 +61,7 @@ beforeEach(() => {
   vi.mocked(tripsApi.addNote).mockReset()
   vi.mocked(tripsApi.resolveNote).mockReset()
   vi.mocked(driversApi.search).mockReset().mockResolvedValue([])
+  vi.mocked(driversApi.fuzzyMatch).mockReset().mockResolvedValue([])
 })
 
 describe('TripSlideOver — hero (la historia del viaje)', () => {
@@ -236,6 +237,37 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     expect(screen.getByText(/TMS reporta empresa/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('Usar dato del TMS'))
     await waitFor(() => expect(tripsApi.removeFleetLink).toHaveBeenCalledWith('t1'))
+  })
+
+  // ── HU-06/HU-05 (Fase 3): fuzzy match + gatillo de creación ──────────────
+
+  it('shows fuzzy-match candidates by TMS name and picking one fills the draft', async () => {
+    vi.mocked(driversApi.fuzzyMatch).mockResolvedValue([{
+      driver_id: 'd9', driver_name: 'Hernandez Contreras Ulices Alfredo', driver_rut: '9-9', driver_phone: null,
+      carrier_id: 'c9', carrier_name: 'Transportes Norte', tractor_asset_id: null, tractor_plate: null,
+      similarity: 0.87,
+    }])
+    renderSlideOver({ ...baseTrip, driver_name_tms: 'HERNANDEZ CONTRERAS EULICES ALFREDO' })
+
+    expect(await screen.findByText('Posibles coincidencias (nombre TMS)')).toBeInTheDocument()
+    expect(screen.getByText('Hernandez Contreras Ulices Alfredo')).toBeInTheDocument()
+    expect(screen.getByText('87%')).toBeInTheDocument()
+    expect(driversApi.fuzzyMatch).toHaveBeenCalledWith('HERNANDEZ CONTRERAS EULICES ALFREDO')
+
+    fireEvent.click(screen.getByText('Hernandez Contreras Ulices Alfredo'))
+    expect(screen.getByLabelText('Empresa de transporte')).toHaveValue('Transportes Norte')
+  })
+
+  it('shows a "create in Empresas" trigger when the TMS name has no fuzzy match', async () => {
+    vi.mocked(driversApi.fuzzyMatch).mockResolvedValue([])
+    renderSlideOver({ ...baseTrip, driver_name_tms: 'NOMBRE SIN CRUCE' })
+
+    expect(await screen.findByText(/Sin coincidencias — dar de alta en Empresas/)).toBeInTheDocument()
+  })
+
+  it('does not query fuzzy-match when the trip already has a carrier linked', () => {
+    renderSlideOver({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', driver_name_tms: 'ALGUIEN' })
+    expect(driversApi.fuzzyMatch).not.toHaveBeenCalled()
   })
 })
 

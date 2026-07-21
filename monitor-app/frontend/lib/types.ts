@@ -248,6 +248,9 @@ export type DriverPickCandidate = {
   carrier_name:      string | null
   tractor_asset_id:  string | null
   tractor_plate:     string | null
+  /** Solo presente en resultados de GET /drivers/fuzzy-match (HU-06,
+   *  Fase 3) — 0-1, similitud de texto (pg_trgm) contra el nombre TMS. */
+  similarity?:       number
 }
 
 /** Conductor activo del directorio de empresas sin viaje abierto hoy — reasignable */

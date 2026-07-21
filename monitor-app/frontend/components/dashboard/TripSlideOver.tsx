@@ -1,14 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   X, Loader2, Copy, Check,
   Truck, User, Phone, Hash,
   MapPin, RotateCcw, ClipboardList,
-  ShieldAlert,
+  ShieldAlert, Search,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
+import { driversApi } from '@/lib/api/drivers'
 import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { fmtDT, fmtDate, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
@@ -66,6 +68,15 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const [fleetDraft, setFleetDraft]             = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
   const [assigningFleet, setAssigningFleet]     = useState(false)
   const [fleetErr, setFleetErr]                 = useState<string | null>(null)
+  // HU-06 (Fase 3): cuando el viaje no cruzó por nombre exacto pero el TMS sí
+  // reportó un nombre, se buscan candidatos por similitud de texto — el
+  // operador confirma con un click (FleetAssignSection.pick), esto nunca
+  // vincula solo. Solo tiene sentido en la rama "sin vincular" (!carrier_id).
+  const fuzzyMatchQuery = useQuery({
+    queryKey: ['drivers', 'fuzzy-match', trip?.id, trip?.driver_name_tms],
+    queryFn: () => driversApi.fuzzyMatch(trip!.driver_name_tms!),
+    enabled: !!trip && !trip.carrier_id && !!trip.driver_name_tms,
+  })
   const panelRef                                = useRef<HTMLDivElement>(null)
   // Badge de incidentes abiertos en el hero (Fase 2, Plan 5) — mismo hook
   // que ya usa TripNotesFeed internamente; TanStack Query dedupea por
@@ -616,10 +627,22 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {/* HU-06 (Fase 3): el TMS reportó un nombre pero no cruzó
+                      exacto contra el roster — se buscan candidatos por
+                      similitud (~80%, confirmado por Pablo) y se muestran
+                      como sugerencia; elegir uno sigue pasando por el mismo
+                      click de confirmación que la búsqueda manual. */}
+                  {trip.driver_name_tms && (
+                    <p className="text-[10px] text-gray-400">
+                      TMS reportó: <span className="font-semibold text-slate-600">{trip.driver_name_tms}</span>
+                    </p>
+                  )}
                   <FleetAssignSection
                     value={fleetDraft}
                     onChange={setFleetDraft}
                     size="sm"
+                    suggested={fuzzyMatchQuery.data ?? []}
+                    suggestedLabel="Posibles coincidencias (nombre TMS)"
                     notFoundHint={
                       <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
                         Si no aparece en la lista, hay que darlo de alta primero en{' '}
@@ -627,6 +650,18 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                       </p>
                     }
                   />
+                  {/* HU-05 (Fase 3): gatillo explícito para crear el
+                      conductor/empresa cuando ni el cruce exacto ni el
+                      fuzzy match encontraron nada — antes esto solo
+                      aparecía si el operador tipeaba en la búsqueda manual. */}
+                  {trip.driver_name_tms && !fuzzyMatchQuery.isLoading && (fuzzyMatchQuery.data?.length ?? 0) === 0 && (
+                    <a
+                      href="/dashboard/transportistas"
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-accent hover:underline"
+                    >
+                      <Search size={11} /> Sin coincidencias — dar de alta en Empresas
+                    </a>
+                  )}
                   {fleetDraft.driver_id && (
                     <button
                       type="button"

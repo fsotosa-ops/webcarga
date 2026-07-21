@@ -17,9 +17,10 @@
 
 | Servicio | Ruta | Estado |
 |----------|------|--------|
-| extraction_service | `extraction_service/` | Activo en Cloud Run |
+| extraction_service | `extraction_service/` | Activo en Cloud Run (`webcarga-extraction`) |
 | monitor-app | `monitor-app/backend/supabase/` | En desarrollo (Supabase) |
-| monitor-app/frontend | `monitor-app/frontend/` | Deployado en Vercel |
+| monitor-app/backend/api | `monitor-app/backend/api/` | Activo en Cloud Run (`webcarga-monitor-api[-dev]`) |
+| monitor-app/frontend | `monitor-app/frontend/` | Activo en Cloud Run (`webcarga-frontend-dev`), no Vercel |
 
 ### extraction_service — TMS soportados
 
@@ -87,12 +88,8 @@ curl -s http://localhost:8080/api/v1/jobs/{job_id} | python3 -m json.tool
 - `/smoke-test` — hace POST + poll de un job completo
 - `/new-tms` — guía para agregar un nuevo adapter TMS
 
-**monitor-app/frontend (Vercel):**
-- `/deploy` — ciclo completo: build local → push → deploy producción → verificar env
-- `/check-env` — compara `.env.local` vs Vercel, detecta faltantes
-
-**Vercel config:**
-- Proyecto: `fsotosas-projects-7b3a7c7c/frontend`
-- URL producción: `https://frontend-two-alpha-39.vercel.app`
-- Root dir: `monitor-app/frontend/`
-- Framework: Next.js 16.2.6
+**monitor-app/frontend (Cloud Run, confirmado 2026-07-22 — no Vercel):**
+- Deploy real vía `.github/workflows/deploy-frontend.yml` (push a `main`/`dev` → build Docker → `gcloud run deploy`), no Vercel. `/deploy` y `/check-env` describen el flujo viejo de Vercel y están desactualizados — no usar hasta reescribirlos.
+- Proyecto GCP: `webcarga-dev-493220`, región `us-central1`.
+- Servicios confirmados: `webcarga-frontend-dev` (rama `dev`), `webcarga-monitor-api`/`webcarga-monitor-api-dev`, `webcarga-extraction`. `webcarga-frontend-prod` (rama `main`) no aparece todavía en `gcloud run services list` — no confirmado si ya se hizo el primer deploy a `main`.
+- Secrets de Cloud Run vía GCP Secret Manager (ver `scripts/infra-init.sh`), no `vercel env`.
