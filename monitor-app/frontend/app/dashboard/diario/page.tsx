@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, Upload } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, Upload, ClipboardCheck } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
@@ -15,6 +16,7 @@ import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { FilterPopover } from '@/components/dashboard/FilterPopover'
 import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
+import { CloseDayDialog } from '@/components/dashboard/CloseDayDialog'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
 import { useDiarioFilters, countActiveFilters } from '@/hooks/useDiarioFilters'
@@ -28,6 +30,7 @@ import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { UserCheck } from 'lucide-react'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
+const ADMIN_ROLES = new Set(['admin', 'owner'])
 
 const HISTORIAL_LIMIT = 100
 
@@ -98,6 +101,8 @@ export default function DiarioPage() {
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,     setShowCreate]     = useState(false)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
+  const [showCloseDay,   setShowCloseDay]   = useState(false)
+  const [canAdmin,       setCanAdmin]       = useState(false)
   const [viewMode,       setViewMode]       = useState<ViewMode>('tabla')
 
   // Custom groups
@@ -222,6 +227,17 @@ export default function DiarioPage() {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en TripTable/TripSlideOver */ })
   }, [])
 
+  // Rol para el override de "Cerrar el día" (mismo patrón que Empresas/Seguros)
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return
+      const { data: profile } = await supabase
+        .from('profiles').select('role').eq('id', session.user.id).single()
+      if (profile && ADMIN_ROLES.has(profile.role)) setCanAdmin(true)
+    })
+  }, [])
+
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
     if (saved === 'tabla' || saved === 'tablero') setViewMode(saved)
@@ -344,6 +360,14 @@ export default function DiarioPage() {
               <ViewToggle value={viewMode} onChange={handleViewModeChange} />
             ) : <div />}
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowCloseDay(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
+                title="Revisar pendientes y cerrar la cuadratura del día"
+              >
+                <ClipboardCheck size={13} />
+                Cerrar día
+              </button>
               <button
                 onClick={() => setShowBulkUpload(true)}
                 className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-accent transition-colors"
@@ -606,6 +630,13 @@ export default function DiarioPage() {
         onClose={() => setShowBulkUpload(false)}
         onImported={handleBulkImported}
         meta={tripsMeta}
+      />
+      <CloseDayDialog
+        open={showCloseDay}
+        fecha={f.fecha}
+        canAdmin={canAdmin}
+        unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
+        onClose={() => setShowCloseDay(false)}
       />
     </div>
   )

@@ -1,0 +1,96 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { CloseDayDialog } from './CloseDayDialog'
+import type { DailyClosureStatus, UnassignedReasonMeta } from '@/lib/types'
+
+vi.mock('@/lib/api/dailyClosures', () => ({
+  dailyClosuresApi: { get: vi.fn(), setReason: vi.fn(), close: vi.fn() },
+  isClosePendingError: () => false,
+}))
+
+const REASONS: UnassignedReasonMeta[] = [{ id: 'pana', label: 'Pana' }]
+
+const STATUS: DailyClosureStatus = {
+  business_date: '2026-07-21',
+  closed: false,
+  closure: null,
+  total_drivers: 3,
+  assigned_count: 1,
+  unassigned_count: 1,
+  mismatch_count: 1,
+  pending_count: 2,
+  drivers: [
+    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+  ],
+}
+
+function renderDialog(props: Partial<Parameters<typeof CloseDayDialog>[0]> = {}) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <CloseDayDialog open fecha="2026-07-21" canAdmin={false} unassignedReasons={REASONS} onClose={vi.fn()} {...props} />
+    </QueryClientProvider>,
+  )
+}
+
+beforeEach(async () => {
+  const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+  vi.mocked(dailyClosuresApi.get).mockReset().mockResolvedValue(STATUS)
+  vi.mocked(dailyClosuresApi.setReason).mockReset()
+  vi.mocked(dailyClosuresApi.close).mockReset()
+})
+
+describe('CloseDayDialog', () => {
+  it('no renderiza nada cuando open=false', () => {
+    renderDialog({ open: false })
+    expect(screen.queryByText(/Cerrar el día/)).not.toBeInTheDocument()
+  })
+
+  it('muestra el resumen y solo los conductores pendientes', async () => {
+    renderDialog()
+    expect(await screen.findByText('Total')).toBeInTheDocument()
+    expect(screen.getByText('Ana Soto')).toBeInTheDocument()
+    expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
+    // Juan Pérez (ASSIGNED) no aparece en la lista de pendientes
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('sets el motivo de un conductor no asignado', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    renderDialog()
+    await screen.findByText('Ana Soto')
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pana' } })
+    await waitFor(() => expect(dailyClosuresApi.setReason).toHaveBeenCalledWith('d2', '2026-07-21', 'pana'))
+  })
+
+  it('bloquea el cierre mientras haya pendientes', async () => {
+    renderDialog()
+    const closeBtn = await screen.findByRole('button', { name: /Cerrar día/ })
+    expect(closeBtn).toBeDisabled()
+  })
+
+  it('cierra el día cuando no hay pendientes', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...STATUS, pending_count: 0, unassigned_count: 0, mismatch_count: 0, assigned_count: 3,
+      drivers: STATUS.drivers.map(d => ({ ...d, status: 'ASSIGNED' as const })),
+    })
+    vi.mocked(dailyClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-07-21', overridden: 0 })
+    renderDialog()
+    const closeBtn = await screen.findByRole('button', { name: /Cerrar día/ })
+    expect(closeBtn).not.toBeDisabled()
+    fireEvent.click(closeBtn)
+    await waitFor(() => expect(dailyClosuresApi.close).toHaveBeenCalledWith('2026-07-21', false, ''))
+  })
+
+  it('llama a onClose al hacer click en la X', async () => {
+    const onClose = vi.fn()
+    renderDialog({ onClose })
+    await screen.findByText(/Cerrar el día/)
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }))
+    expect(onClose).toHaveBeenCalled()
+  })
+})

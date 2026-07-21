@@ -859,3 +859,15 @@ export type CloseDayPending = {
   full_name: string
   status:    DriverDayStatusValue
 }
+
+// ── Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md) ──
+// Fila plana por conductor×día — sin agregar, el pivot se arma en el cliente.
+export type DailyClosureReportRow = Omit<DriverDayStatusRow, 'resolved_by' | 'resolved_at'> & {
+  business_date: string
+}
+
+export type DailyClosureReport = {
+  fecha_desde: string
+  fecha_hasta: string
+  rows:        DailyClosureReportRow[]
+}

@@ -7,18 +7,20 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Building2, Users, LogOut,
-  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, ClipboardCheck,
+  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, BarChart3,
 } from 'lucide-react'
 
-// "Monitor de Viajes" agrupa Diario + Cuadratura (y a futuro el reporte por
-// cliente de Fase 1.5, ver AGENTLOG.md) bajo un solo item expandible —
-// Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
+// "Monitor de Viajes" agrupa Diario + Reportería bajo un solo item
+// expandible — Empresas/Seguros no tienen esa profundidad todavía, se
+// quedan planos. "Cerrar el día" (ex-Cuadratura) dejó de ser un item de
+// nav — ahora es un botón dentro del propio Diario (spec
+// 2026-07-21-cuadratura-reporteria-redesign-design.md).
 const MONITOR_GROUP = {
   label: 'Monitor de Viajes',
   icon:  Truck,
   items: [
     { href: '/dashboard/diario',            label: 'Diario' },
-    { href: '/dashboard/diario/cuadratura', label: 'Cuadratura' },
+    { href: '/dashboard/diario/reporteria', label: 'Reportería' },
   ],
 }
 
@@ -31,7 +33,7 @@ const NAV_ITEMS = [
 // los items de Monitor de Viajes ya aplanados junto a los demás.
 const MOBILE_NAV_ITEMS = [
   { href: MONITOR_GROUP.items[0].href, label: MONITOR_GROUP.items[0].label, icon: Truck },
-  { href: MONITOR_GROUP.items[1].href, label: MONITOR_GROUP.items[1].label, icon: ClipboardCheck },
+  { href: MONITOR_GROUP.items[1].href, label: MONITOR_GROUP.items[1].label, icon: BarChart3 },
   ...NAV_ITEMS,
 ]
 

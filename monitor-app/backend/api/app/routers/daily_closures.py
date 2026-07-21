@@ -104,6 +104,33 @@ ORDER BY d.full_name
 """
 
 
+# Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md):
+# dataset plano sobre un RANGO de fechas, sin recompute — es una vista de
+# lectura sobre lo que ya quedó calculado (típicamente al cerrar cada día),
+# no fuerza el cálculo en vivo de días pasados. El pivot (filas/columnas/
+# filtros/granularidad de fecha) se arma 100% en el cliente sobre este
+# dataset — evita ida y vuelta al backend por cada cambio de la tabla dinámica.
+_REPORT_SQL = """
+SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name AS carrier_name,
+       dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
+       COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names
+FROM app.driver_day_status dds
+JOIN public.drivers d ON d.id = dds.driver_id
+LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+LEFT JOIN public.carriers c ON c.id = da.carrier_id
+LEFT JOIN app.unassigned_reasons ur ON ur.id = dds.unassigned_reason_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name)) AS client_names
+    FROM app.trip_fleet_links fl
+    JOIN app.trips t ON t.id = fl.trip_id
+    LEFT JOIN public.shippers sh ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+    WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
+) clients ON true
+WHERE dds.business_date BETWEEN $1 AND $2
+ORDER BY dds.business_date, d.full_name
+"""
+
+
 async def _recompute(pool, business_date: _date) -> None:
     await pool.execute(_RECOMPUTE_SQL, business_date)
 
@@ -137,6 +164,26 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
         "mismatch_count": len(mismatch),
         "pending_count": len(unassigned_without_reason) + len(mismatch),
         "drivers": drivers,
+    }
+
+
+@router.get("/report")
+async def get_daily_closures_report(
+    fecha_desde: str, fecha_hasta: str, pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    """Dataset plano para Reportería — sin agregar, sin recompute. El rango
+    puede abarcar días que nunca se cerraron explícitamente (quedan con lo
+    último calculado, o ausentes si ese día nunca se abrió ni una vez)."""
+    desde = _parse_business_date(fecha_desde)
+    hasta = _parse_business_date(fecha_hasta)
+    if desde > hasta:
+        raise HTTPException(422, "fecha_desde no puede ser posterior a fecha_hasta")
+
+    rows = await pool.fetch(_REPORT_SQL, desde, hasta)
+    return {
+        "fecha_desde": desde.isoformat(),
+        "fecha_hasta": hasta.isoformat(),
+        "rows": [dict(r) for r in rows],
     }
 
 

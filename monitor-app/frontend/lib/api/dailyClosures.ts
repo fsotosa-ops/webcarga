@@ -1,4 +1,4 @@
-import type { DailyClosureStatus, DriverDayStatusRow } from '@/lib/types'
+import type { DailyClosureReport, DailyClosureStatus, DriverDayStatusRow } from '@/lib/types'
 import { apiFetch, ApiError } from './client'
 
 export type ClosePendingError = {
@@ -26,5 +26,11 @@ export const dailyClosuresApi = {
     apiFetch<{ ok: boolean; business_date: string; overridden: number }>(
       `/api/v1/daily-closures/close?fecha=${encodeURIComponent(fecha)}`,
       { method: 'POST', body: JSON.stringify({ override: !!override, override_note: overrideNote }) },
+    ),
+
+  /** Reportería (spec 2026-07-21) — dataset plano por rango, sin recompute. */
+  report: (fechaDesde: string, fechaHasta: string) =>
+    apiFetch<DailyClosureReport>(
+      `/api/v1/daily-closures/report?fecha_desde=${encodeURIComponent(fechaDesde)}&fecha_hasta=${encodeURIComponent(fechaHasta)}`,
     ),
 }

@@ -113,6 +113,59 @@ def test_get_daily_closure_status_includes_client_names():
     assert "public.shippers" in detail_sql
 
 
+# ── GET /daily-closures/report (Reportería) ─────────────────────────────
+# Spec 2026-07-21-cuadratura-reporteria-redesign-design.md
+
+def test_get_daily_closures_report_returns_flat_rows_with_business_date():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {**_driver_row(driver_id="d1"), "business_date": "2026-07-20"},
+        {**_driver_row(driver_id="d2", status="UNASSIGNED"), "business_date": "2026-07-21"},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures/report?fecha_desde=2026-07-20&fecha_hasta=2026-07-21")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["fecha_desde"] == "2026-07-20"
+    assert body["fecha_hasta"] == "2026-07-21"
+    assert len(body["rows"]) == 2
+    assert body["rows"][0]["business_date"] == "2026-07-20"
+    report_sql = pool.fetch.call_args_list[0].args[0]
+    assert "BETWEEN $1 AND $2" in report_sql
+
+
+def test_get_daily_closures_report_does_not_recompute():
+    """A diferencia de GET /daily-closures (un solo día), el reporte es
+    puramente de lectura — no debe llamar a pool.execute (_RECOMPUTE_SQL)."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/daily-closures/report?fecha_desde=2026-07-20&fecha_hasta=2026-07-21")
+
+    pool.execute.assert_not_called()
+
+
+def test_get_daily_closures_report_422_when_range_inverted():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures/report?fecha_desde=2026-07-21&fecha_hasta=2026-07-20")
+
+    assert res.status_code == 422
+
+
+def test_get_daily_closures_report_422_invalid_dates():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures/report?fecha_desde=no-es-fecha&fecha_hasta=2026-07-21")
+
+    assert res.status_code == 422
+
+
 # ── PATCH /cuadratura/{driver_id} ────────────────────────────────────────
 
 def test_patch_driver_day_status_sets_reason():
