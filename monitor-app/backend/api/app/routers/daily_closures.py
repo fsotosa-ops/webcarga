@@ -1,0 +1,215 @@
+"""Cuadratura diaria de conductores (Fase 1 del plan de refinamiento del
+backlog de 17 HU, 2026-07-21 — ver AGENTLOG.md, HU-01/02/03).
+
+Concepto tomado literal de la reunión del 20/07 con Pablo (CEO): "cuadrar
+la caja" — todo conductor activo debe quedar clasificado al cierre del día
+(asignado/no asignado con motivo/mismatch de flota), y el resultado queda
+guardado en app.daily_closures para que se pueda revisar el descuadre de
+días anteriores.
+
+app.driver_day_status se recalcula en cada GET (mismo criterio "resolución
+en vivo" ya usado en trips.py — evita watermarks incrementales), pero
+preserva unassigned_reason_id/resolved_by/resolved_at ya capturados a mano
+mientras el conductor siga UNASSIGNED. El cierre (POST .../close) es lo
+único que persiste un snapshot inmutable."""
+from datetime import date as _date
+
+from fastapi import APIRouter, Depends, HTTPException
+from ..auth import ADMIN_ROLES, get_current_user, require_editor
+from ..db import get_pool
+from ..schemas.daily_closures import CloseDayBody, DriverDayStatusPatchBody
+from ..services.audit import log_change
+
+router = APIRouter(prefix="/daily-closures", tags=["daily-closures"])
+
+
+def _parse_business_date(fecha: str) -> _date:
+    try:
+        return _date.fromisoformat(fecha)
+    except ValueError:
+        raise HTTPException(422, f"Fecha inválida: '{fecha}' (formato esperado YYYY-MM-DD)")
+
+
+# Roster activo + viajes del día: mismo criterio que available_drivers en
+# trips.py (public.driver_assignments/carriers ACTIVE). MISMATCH es la
+# subcategoría de HU-04 (Fase 0) llevada al grano conductor×día: cualquier
+# viaje del conductor ese día sin empresa resuelta, o con una empresa
+# distinta a la propia, tira todo el día a MISMATCH — necesita
+# regularización antes de poder cerrarse limpio.
+_RECOMPUTE_SQL = """
+WITH active_roster AS (
+    SELECT d.id AS driver_id, da.carrier_id AS home_carrier_id
+    FROM public.drivers d
+    JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+    JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
+),
+day_trips AS (
+    SELECT fl.driver_id, fl.carrier_id AS trip_carrier_id, fl.trip_id
+    FROM app.trip_fleet_links fl
+    JOIN app.trips t ON t.id = fl.trip_id
+    WHERE t.planning_date = $1 AND fl.driver_id IS NOT NULL
+),
+computed AS (
+    SELECT
+        r.driver_id,
+        CASE
+            WHEN count(dt.trip_id) > 0
+                 AND bool_or(dt.trip_carrier_id IS NULL OR dt.trip_carrier_id IS DISTINCT FROM r.home_carrier_id)
+                THEN 'MISMATCH'
+            WHEN count(dt.trip_id) > 0 THEN 'ASSIGNED'
+            ELSE 'UNASSIGNED'
+        END AS status
+    FROM active_roster r
+    LEFT JOIN day_trips dt ON dt.driver_id = r.driver_id
+    GROUP BY r.driver_id, r.home_carrier_id
+)
+INSERT INTO app.driver_day_status (driver_id, business_date, status, computed_at)
+SELECT driver_id, $1, status, now() FROM computed
+ON CONFLICT (driver_id, business_date) DO UPDATE SET
+    status = EXCLUDED.status,
+    computed_at = EXCLUDED.computed_at,
+    -- Un motivo capturado a mano solo sigue teniendo sentido si el
+    -- conductor sigue UNASSIGNED — si ahora tiene viaje o mismatch, el
+    -- motivo viejo queda obsoleto.
+    unassigned_reason_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.unassigned_reason_id ELSE NULL END,
+    resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_by ELSE NULL END,
+    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_at ELSE NULL END
+"""
+
+_DETAIL_SQL = """
+SELECT dds.driver_id, d.full_name, d.tax_id, c.business_name AS carrier_name,
+       dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
+       dds.resolved_by, dds.resolved_at
+FROM app.driver_day_status dds
+JOIN public.drivers d ON d.id = dds.driver_id
+LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+LEFT JOIN public.carriers c ON c.id = da.carrier_id
+LEFT JOIN app.unassigned_reasons ur ON ur.id = dds.unassigned_reason_id
+WHERE dds.business_date = $1
+ORDER BY d.full_name
+"""
+
+
+async def _recompute(pool, business_date: _date) -> None:
+    await pool.execute(_RECOMPUTE_SQL, business_date)
+
+
+@router.get("")
+async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+    business_date = _parse_business_date(fecha)
+    await _recompute(pool, business_date)
+
+    rows = await pool.fetch(_DETAIL_SQL, business_date)
+    drivers = [dict(r) for r in rows]
+
+    closure = await pool.fetchrow(
+        "SELECT closed_by, closed_at, total_drivers, resolved_count, override_count "
+        "FROM app.daily_closures WHERE business_date = $1",
+        business_date,
+    )
+
+    assigned = sum(1 for d in drivers if d["status"] == "ASSIGNED")
+    unassigned = [d for d in drivers if d["status"] == "UNASSIGNED"]
+    mismatch = [d for d in drivers if d["status"] == "MISMATCH"]
+    unassigned_without_reason = [d for d in unassigned if not d["unassigned_reason_id"]]
+
+    return {
+        "business_date": business_date.isoformat(),
+        "closed": closure is not None,
+        "closure": dict(closure) if closure else None,
+        "total_drivers": len(drivers),
+        "assigned_count": assigned,
+        "unassigned_count": len(unassigned),
+        "mismatch_count": len(mismatch),
+        "pending_count": len(unassigned_without_reason) + len(mismatch),
+        "drivers": drivers,
+    }
+
+
+@router.patch("/{driver_id}")
+async def patch_driver_day_status(
+    driver_id: str, fecha: str, body: DriverDayStatusPatchBody,
+    pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """Captura el motivo de no asignación (HU-02) — el punto de captura
+    estructurado que pidió el usuario explícitamente (reusa app.unassigned_reasons,
+    no texto libre)."""
+    business_date = _parse_business_date(fecha)
+    await _recompute(pool, business_date)
+
+    row = await pool.fetchrow(
+        "SELECT status FROM app.driver_day_status WHERE driver_id = $1 AND business_date = $2",
+        driver_id, business_date,
+    )
+    if not row:
+        raise HTTPException(404, "Conductor no encontrado en la cuadratura de ese día")
+    if row["status"] != "UNASSIGNED":
+        raise HTTPException(422, "Solo se puede registrar motivo para un conductor no asignado")
+
+    await pool.execute(
+        """
+        UPDATE app.driver_day_status
+        SET unassigned_reason_id = $1, resolved_by = $2::uuid, resolved_at = now()
+        WHERE driver_id = $3 AND business_date = $4
+        """,
+        body.unassigned_reason_id, user["sub"], driver_id, business_date,
+    )
+    rows = await pool.fetch(_DETAIL_SQL, business_date)
+    updated = next((dict(r) for r in rows if r["driver_id"] == driver_id or str(r["driver_id"]) == driver_id), None)
+    return updated
+
+
+@router.post("/close")
+async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user=Depends(require_editor)):
+    """Bloqueo real de HU-03 — requisito explícito y no negociable de Pablo
+    ("si no cierra el proceso lógico, el sistema debería no dejarlos
+    avanzar"). El override (HU-03 + el riesgo "deadlock operativo" del
+    refinamiento) reusa public.audit_log en vez de un esquema de
+    excepciones nuevo — requiere rol admin/owner y un comentario
+    obligatorio, uno por conductor pendiente."""
+    business_date = _parse_business_date(fecha)
+    await _recompute(pool, business_date)
+
+    rows = await pool.fetch(_DETAIL_SQL, business_date)
+    drivers = [dict(r) for r in rows]
+    pending = [
+        d for d in drivers
+        if d["status"] == "MISMATCH" or (d["status"] == "UNASSIGNED" and not d["unassigned_reason_id"])
+    ]
+
+    if pending and not body.override:
+        raise HTTPException(
+            409,
+            {
+                "message": f"{len(pending)} conductor(es) sin resolver — no se puede cerrar el día",
+                "pending": [{"driver_id": str(d["driver_id"]), "full_name": d["full_name"], "status": d["status"]} for d in pending],
+            },
+        )
+
+    if pending and body.override:
+        if user["role"] not in ADMIN_ROLES:
+            raise HTTPException(403, "Forzar el cierre con pendientes requiere rol admin o superior")
+        if not body.override_note or not body.override_note.strip():
+            raise HTTPException(422, "El override requiere un comentario de justificación")
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for d in pending:
+                    await log_change(
+                        conn, actor=user["sub"], entity_type="DRIVER", entity_id=d["driver_id"],
+                        action="cuadratura_override", field="status",
+                        old_value=d["status"],
+                        new_value={"business_date": business_date.isoformat(), "note": body.override_note},
+                    )
+
+    await pool.execute(
+        """
+        INSERT INTO app.daily_closures (business_date, closed_by, total_drivers, resolved_count, override_count)
+        VALUES ($1, $2::uuid, $3, $4, $5)
+        ON CONFLICT (business_date) DO UPDATE SET
+            closed_by = EXCLUDED.closed_by, closed_at = now(),
+            total_drivers = EXCLUDED.total_drivers, resolved_count = EXCLUDED.resolved_count,
+            override_count = EXCLUDED.override_count
+        """,
+        business_date, user["sub"], len(drivers), len(drivers) - len(pending), len(pending) if body.override else 0,
+    )
+    return {"ok": True, "business_date": business_date.isoformat(), "overridden": len(pending) if body.override else 0}

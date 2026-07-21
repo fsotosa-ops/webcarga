@@ -815,3 +815,44 @@ export function canManage(actorRole: UserRole, targetRole: UserRole): boolean {
 }
 
 export type Profile = Database['public']['Tables']['profiles']['Row'] & { active: boolean }
+
+// ── Cuadratura diaria (Fase 1, HU-01/02/03 — ver AGENTLOG.md) ───────────────
+export type DriverDayStatusValue = 'ASSIGNED' | 'UNASSIGNED' | 'MISMATCH'
+
+export type DriverDayStatusRow = {
+  driver_id:                  string
+  full_name:                  string
+  tax_id:                     string | null
+  carrier_name:                string | null
+  status:                     DriverDayStatusValue
+  unassigned_reason_id:        string | null
+  unassigned_reason_label:     string | null
+  resolved_by:                 string | null
+  resolved_at:                 string | null
+}
+
+export type DailyClosureInfo = {
+  closed_by:      string
+  closed_at:      string
+  total_drivers:  number
+  resolved_count: number
+  override_count: number
+}
+
+export type DailyClosureStatus = {
+  business_date:    string
+  closed:           boolean
+  closure:          DailyClosureInfo | null
+  total_drivers:    number
+  assigned_count:   number
+  unassigned_count: number
+  mismatch_count:   number
+  pending_count:    number
+  drivers:          DriverDayStatusRow[]
+}
+
+export type CloseDayPending = {
+  driver_id: string
+  full_name: string
+  status:    DriverDayStatusValue
+}

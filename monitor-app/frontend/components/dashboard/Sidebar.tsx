@@ -7,13 +7,32 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Building2, Users, LogOut,
-  ChevronLeft, ChevronRight, Shield, Settings,
+  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, ClipboardCheck,
 } from 'lucide-react'
 
+// "Monitor de Viajes" agrupa Diario + Cuadratura (y a futuro el reporte por
+// cliente de Fase 1.5, ver AGENTLOG.md) bajo un solo item expandible —
+// Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
+const MONITOR_GROUP = {
+  label: 'Monitor de Viajes',
+  icon:  Truck,
+  items: [
+    { href: '/dashboard/diario',            label: 'Diario' },
+    { href: '/dashboard/diario/cuadratura', label: 'Cuadratura' },
+  ],
+}
+
 const NAV_ITEMS = [
-  { href: '/dashboard/diario',         label: 'Diario',   icon: Truck },
   { href: '/dashboard/transportistas', label: 'Empresas', icon: Building2 },
   { href: '/dashboard/seguros',        label: 'Seguros',  icon: Shield },
+]
+
+// Solo para el bottom nav mobile — sin concepto de dropdown ahí, se listan
+// los items de Monitor de Viajes ya aplanados junto a los demás.
+const MOBILE_NAV_ITEMS = [
+  { href: MONITOR_GROUP.items[0].href, label: MONITOR_GROUP.items[0].label, icon: Truck },
+  { href: MONITOR_GROUP.items[1].href, label: MONITOR_GROUP.items[1].label, icon: ClipboardCheck },
+  ...NAV_ITEMS,
 ]
 
 const ROLE_BADGE: Record<string, string> = {
@@ -33,6 +52,26 @@ export default function Sidebar({ role }: SidebarProps) {
   const router   = useRouter()
   const supabase = createClient()
   const [collapsed, setCollapsed] = useState(false)
+
+  const monitorActiveHref = [...MONITOR_GROUP.items]
+    .map(i => i.href)
+    .filter(href => pathname.startsWith(href))
+    .sort((a, b) => b.length - a.length)[0]
+  const monitorGroupActive = !!monitorActiveHref
+
+  const [monitorOpen, setMonitorOpen] = useState(monitorGroupActive)
+  // Si navegan directo a una sub-ruta de Monitor de Viajes (deep-link,
+  // back/forward), el submenú se abre solo para mostrar dónde están.
+  useEffect(() => {
+    if (monitorGroupActive) setMonitorOpen(true)
+  }, [monitorGroupActive])
+
+  // Match más específico primero (ej. /dashboard/diario/cuadratura no debe
+  // también resaltar /dashboard/diario) — evita 2 items activos a la vez.
+  const activeHref = [...NAV_ITEMS]
+    .map(i => i.href)
+    .filter(href => pathname.startsWith(href))
+    .sort((a, b) => b.length - a.length)[0]
 
   useEffect(() => {
     if (localStorage.getItem('sidebar-collapsed') === 'true') setCollapsed(true)
@@ -91,8 +130,60 @@ export default function Sidebar({ role }: SidebarProps) {
 
         {/* ── Main nav ── */}
         <nav className="flex-1 flex flex-col px-2.5 py-3 gap-0.5 overflow-hidden">
+          {/* Monitor de Viajes — grupo expandible (Diario + Cuadratura) */}
+          {collapsed ? (
+            <Link
+              href={MONITOR_GROUP.items[0].href}
+              title={MONITOR_GROUP.label}
+              className={`group relative flex items-center justify-center h-10 w-10 mx-auto rounded-xl text-[13px] transition-all duration-150 ${
+                monitorGroupActive ? 'bg-white/12 text-white' : 'text-white/45 hover:bg-white/6 hover:text-white/80'
+              }`}
+            >
+              {monitorGroupActive && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
+              )}
+              <Truck size={16} className={monitorGroupActive ? 'text-accent' : 'group-hover:text-white/70'} />
+            </Link>
+          ) : (
+            <div>
+              <button
+                type="button"
+                onClick={() => setMonitorOpen(v => !v)}
+                aria-expanded={monitorOpen}
+                className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all duration-150 ${
+                  monitorGroupActive ? 'bg-white/12 text-white' : 'text-white/45 hover:bg-white/6 hover:text-white/80'
+                }`}
+              >
+                {monitorGroupActive && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
+                )}
+                <Truck size={16} className={`shrink-0 ${monitorGroupActive ? 'text-accent' : 'group-hover:text-white/70'}`} />
+                <span className={`font-medium truncate flex-1 text-left ${monitorGroupActive ? 'text-white' : ''}`}>{MONITOR_GROUP.label}</span>
+                <ChevronDown size={13} className={`shrink-0 transition-transform ${monitorOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {monitorOpen && (
+                <div className="mt-0.5 ml-3 pl-3.5 border-l border-white/8 flex flex-col gap-0.5">
+                  {MONITOR_GROUP.items.map(({ href, label }) => {
+                    const active = href === monitorActiveHref
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={`relative rounded-lg text-[12.5px] px-2.5 py-2 transition-colors ${
+                          active ? 'bg-white/12 text-white font-medium' : 'text-white/40 hover:bg-white/6 hover:text-white/75'
+                        }`}
+                      >
+                        {label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href)
+            const active = href === activeHref
             return (
               <Link
                 key={href}
@@ -184,8 +275,8 @@ export default function Sidebar({ role }: SidebarProps) {
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname.startsWith(href)
+        {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          const active = pathname.startsWith(href) && (href !== '/dashboard/diario' || pathname === href)
           return (
             <Link
               key={href}
