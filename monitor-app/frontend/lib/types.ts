@@ -447,6 +447,14 @@ export type Trip = {
    *  si no hay driver_id explícito. Reemplaza a is_first_leg como fuente
    *  del filtro "2ª+ vuelta". */
   driver_leg_number?:      number | null
+  /** HU-04 (Fase 0, 2026-07-21): MATCHED (default) | UNMATCHED (flota
+   *  reportada sin poder cruzar con empresa) | MISMATCH (conductor y tracto
+   *  calzan cada uno por su lado pero bajo empresas distintas — regla de
+   *  Pablo: ambos deben pertenecer a la misma empresa de transporte). */
+  fleet_match_status?:    'MATCHED' | 'UNMATCHED' | 'MISMATCH'
+  /** Empresa propia del conductor cuando difiere de la empresa resuelta
+   *  para el tracto (solo presente si fleet_match_status === 'MISMATCH') */
+  fleet_match_driver_home_carrier?: string | null
 }
 
 // ── Catálogo de locales por generador de carga (public.locations, H2.6) ──
@@ -556,6 +564,8 @@ export type DocumentVersion = {
   replaced_by:   string | null
   /** URL firmada, null si el storage_path es null o si la firma falló */
   url:           string | null
+  /** true = versión vigente (nunca reemplazada), no una entrada de audit_log */
+  is_current:    boolean
 }
 
 /** contact_role no tiene CHECK constraint en DB — string abierto (valores

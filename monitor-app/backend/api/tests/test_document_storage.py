@@ -116,3 +116,45 @@ async def test_get_document_history_returns_prior_versions_with_signed_url():
     assert result[0]["status"] == "ok"
     assert result[0]["url"] == "https://signed.example/x"
     assert result[0]["replaced_by"] == "user-1"
+    assert result[0]["is_current"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_document_history_prepends_current_version_before_replacements():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "old_value": '{"status": "ok", "expiry_date": "2026-01-01", "storage_path": "driver/abc-123/licencia/v1_x.pdf"}',
+        "occurred_at": datetime(2026, 1, 5, tzinfo=timezone.utc),
+        "actor": "user-1",
+    }]
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.create_signed_url.return_value = {"signedURL": "https://signed.example/current"}
+
+    result = await get_document_history(
+        pool, supabase, entity_type="driver", entity_id="abc-123", doc_name="licencia",
+        current_storage_path="driver/abc-123/licencia/v2_y.pdf",
+        current_status="ok",
+        current_expiry_date=date(2026, 6, 1),
+        current_updated_at=datetime(2026, 1, 10, tzinfo=timezone.utc),
+        current_actor="user-2",
+    )
+
+    assert len(result) == 2
+    assert result[0]["storage_path"] == "driver/abc-123/licencia/v2_y.pdf"
+    assert result[0]["is_current"] is True
+    assert result[0]["expiry_date"] == "2026-06-01"
+    assert result[1]["storage_path"] == "driver/abc-123/licencia/v1_x.pdf"
+    assert result[1]["is_current"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_document_history_no_current_when_never_uploaded():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    supabase = MagicMock()
+
+    result = await get_document_history(
+        pool, supabase, entity_type="driver", entity_id="abc-123", doc_name="licencia",
+    )
+
+    assert result == []

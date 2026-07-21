@@ -211,7 +211,9 @@ function DocumentRow({
               <a key={v.storage_path ?? v.replaced_at ?? i} href={v.url ?? undefined} target="_blank" rel="noreferrer"
                 className={`flex items-center justify-between text-[10px] gap-2 ${v.url ? 'text-accent hover:underline' : 'text-gray-400 pointer-events-none'}`}>
                 <span className="truncate">
-                  {v.status ?? '—'} · reemplazado {v.replaced_at ? formatExpiry(v.replaced_at) : '—'}
+                  {v.status ?? '—'} · {v.is_current
+                    ? 'vigente'
+                    : `reemplazado ${v.replaced_at ? formatExpiry(v.replaced_at) : '—'}`}
                 </span>
                 {!v.url && <span className="text-gray-300 shrink-0">(sin archivo)</span>}
               </a>

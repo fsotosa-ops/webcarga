@@ -211,7 +211,8 @@ async def list_compliance_files(
     record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
 ):
     current = await pool.fetchrow(
-        "SELECT entity_id, entity_type FROM public.compliance_records WHERE id = $1",
+        "SELECT entity_id, entity_type, status, expiration_date, file_url, updated_at, overridden_by "
+        "FROM public.compliance_records WHERE id = $1",
         record_id,
     )
     if not current:
@@ -219,4 +220,9 @@ async def list_compliance_files(
     return await get_document_history(
         pool, supabase, entity_type=current["entity_type"], entity_id=current["entity_id"],
         doc_name=f"compliance_record:{record_id}",
+        current_storage_path=current["file_url"],
+        current_status=current["status"],
+        current_expiry_date=current["expiration_date"],
+        current_updated_at=current["updated_at"],
+        current_actor=current["overridden_by"],
     )

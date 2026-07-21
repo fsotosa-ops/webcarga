@@ -221,7 +221,10 @@ def test_list_compliance_files_404_when_record_missing():
 
 def test_list_compliance_files_uses_synthetic_doc_name():
     pool = AsyncMock()
-    pool.fetchrow.return_value = {"entity_id": "c1", "entity_type": "CARRIER"}
+    pool.fetchrow.return_value = {
+        "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
+        "expiration_date": None, "file_url": None, "updated_at": None, "overridden_by": None,
+    }
     pool.fetch.return_value = []
     client = make_client(pool)
 
@@ -231,3 +234,28 @@ def test_list_compliance_files_uses_synthetic_doc_name():
     assert res.json() == []
     fetch_call = pool.fetch.call_args
     assert fetch_call.args[3] == "compliance_record:r1"
+
+
+def test_list_compliance_files_includes_current_version_never_replaced():
+    """Bug real corregido 2026-07-21 (detectado en vivo por Fabián el 20/07):
+    un documento subido una sola vez, nunca reemplazado, no aparecía en su
+    propio historial pese a tener un archivo real cargado."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "entity_id": "c1", "entity_type": "CARRIER", "status": "APPROVED_MANUAL",
+        "expiration_date": None, "file_url": "carrier/c1/r1/x.pdf",
+        "updated_at": None, "overridden_by": "user-1",
+    }
+    pool.fetch.return_value = []  # sin reemplazos en audit_log
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.create_signed_url.return_value = {"signedURL": "https://signed.example/current"}
+    client = make_client(pool, supabase=supabase)
+
+    res = client.get("/api/v1/compliance-records/r1/files")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body) == 1
+    assert body[0]["storage_path"] == "carrier/c1/r1/x.pdf"
+    assert body[0]["is_current"] is True
+    assert body[0]["url"] == "https://signed.example/current"

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.routers.trips import router, _TRIP_FROM, _TRIP_SELECT
+from app.routers.trips import router, _TRIP_FROM, _TRIP_SELECT, _FLEET_MATCH_CASE
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_editor
 
@@ -115,3 +115,63 @@ def test_available_drivers_query_resolves_against_public_carriers():
     query = pool.fetch.call_args_list[0].args[0]
     assert "public.carriers" in query
     assert "app.transporter_profiles" not in query
+
+
+# ── HU-04 (Fase 0): fleet_match_status / filtro ?fleet_match= ───────────────
+# Antes, cuando un viaje no lograba cruzar con empresa/conductor, el caso se
+# perdía en silencio (_auto_resolve_fleet_link retornaba None sin dejar
+# rastro). Ahora fleet_match_status distingue MATCHED/UNMATCHED/MISMATCH y
+# es filtrable — ver _FLEET_MATCH_CASE.
+
+def test_trip_select_exposes_fleet_match_status():
+    assert "fleet_match_status" in _TRIP_SELECT
+    assert "UNMATCHED" in _TRIP_SELECT
+    assert "MISMATCH" in _TRIP_SELECT
+
+
+def test_trip_from_joins_driver_home_carrier_for_mismatch_detection():
+    assert "public.driver_assignments da_home" in _TRIP_FROM
+
+
+def test_list_trips_fleet_match_unmatched_filters_by_case_expression():
+    pool = make_pool()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    client = make_client(pool)
+
+    res = client.get("/api/v1/trips?fleet_match=unmatched")
+
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    assert _FLEET_MATCH_CASE in query
+    params = pool.fetch.call_args_list[0].args[1:]
+    assert "UNMATCHED" in params
+
+
+def test_list_trips_fleet_match_mismatch_filters_by_case_expression():
+    pool = make_pool()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    client = make_client(pool)
+
+    res = client.get("/api/v1/trips?fleet_match=mismatch")
+
+    assert res.status_code == 200
+    params = pool.fetch.call_args_list[0].args[1:]
+    assert "MISMATCH" in params
+
+
+def test_list_trips_ignores_invalid_fleet_match_value():
+    """_FLEET_MATCH_CASE siempre aparece una vez (fleet_match_status en el
+    SELECT) — un valor inválido no debe agregar una segunda ocurrencia en el
+    WHERE."""
+    pool = make_pool()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    client = make_client(pool)
+
+    res = client.get("/api/v1/trips?fleet_match=bogus")
+
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    assert query.count(_FLEET_MATCH_CASE) == 1

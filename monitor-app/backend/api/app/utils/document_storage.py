@@ -102,7 +102,23 @@ def resolve_signed_url(supabase, storage_path: str | None) -> str | None:
         return None
 
 
-async def get_document_history(pool, supabase, *, entity_type: str, entity_id, doc_name: str) -> list[dict]:
+async def get_document_history(
+    pool, supabase, *, entity_type: str, entity_id, doc_name: str,
+    current_storage_path: str | None = None,
+    current_status: str | None = None,
+    current_expiry_date=None,
+    current_updated_at=None,
+    current_actor: str | None = None,
+) -> list[dict]:
+    """Historial de versiones de un documento. BUG REAL corregido 2026-07-21
+    (detectado en vivo por Fabián en la reunión del 20/07: "reemplazó" pero
+    el historial no mostraba la versión vigente) — antes esta función solo
+    leía public.audit_log (action='document_replace'), que únicamente se
+    escribe cuando HAY un reemplazo — un documento subido una sola vez y
+    nunca reemplazado no aparecía en su propio historial pese a tener un
+    archivo real cargado. Ahora el caller pasa el estado ACTUAL del registro
+    (current_*) y esta función lo antepone como la entrada más reciente
+    (is_current=True), sin tocar la lógica de log_document_replacement."""
     rows = await pool.fetch(
         """
         SELECT old_value, occurred_at, actor
@@ -113,6 +129,16 @@ async def get_document_history(pool, supabase, *, entity_type: str, entity_id, d
         entity_type, str(entity_id), doc_name,
     )
     out = []
+    if current_storage_path:
+        out.append({
+            "storage_path": current_storage_path,
+            "status": current_status,
+            "expiry_date": current_expiry_date.isoformat() if hasattr(current_expiry_date, "isoformat") else current_expiry_date,
+            "replaced_at": current_updated_at.isoformat() if hasattr(current_updated_at, "isoformat") else current_updated_at,
+            "replaced_by": current_actor,
+            "url": resolve_signed_url(supabase, current_storage_path),
+            "is_current": True,
+        })
     for r in rows:
         old = r["old_value"]
         if isinstance(old, str):
@@ -126,5 +152,6 @@ async def get_document_history(pool, supabase, *, entity_type: str, entity_id, d
             "replaced_at": r["occurred_at"].isoformat() if r["occurred_at"] else None,
             "replaced_by": r["actor"],
             "url": url,
+            "is_current": False,
         })
     return out

@@ -267,8 +267,34 @@ _TRIP_SELECT = """
     -- trip_fleet_links.driver_id explícito (la vista no lo incluye).
     (SELECT vdtl.leg_number FROM app.v_driver_daily_trip_legs vdtl WHERE vdtl.trip_id = t.id) AS driver_leg_number,
     sh.id   AS shipper_id,
-    sh.name AS shipper_name
+    sh.name AS shipper_name,
+    {fleet_match_case} AS fleet_match_status,
+    c_home.business_name AS fleet_match_driver_home_carrier
 """
+
+# HU-04 (Fase 0, 2026-07-21): antes, cuando un viaje no lograba cruzar con
+# empresa/conductor (_auto_resolve_fleet_link/el fallback en vivo de acá
+# abajo no encontraban match), el caso se perdía en silencio — no quedaba
+# ningún flag ni fila que lo distinguiera de "todavía no se intentó
+# resolver". Este CASE se repite en el WHERE de list_trips (mismo patrón ya
+# usado por second_leg_plus, que tampoco puede referenciar un alias del
+# SELECT) para exponer un filtro real. 'MISMATCH' es la subcategoría
+# adicional que pidió Pablo en la reunión del 20/07: el conductor tiene
+# empresa propia activa (public.driver_assignments) distinta de la empresa
+# resuelta para el tracto — "algo tenemos mal puesto", no un simple faltante.
+_FLEET_MATCH_CASE = """
+    CASE
+      WHEN COALESCE(fl.carrier_id, c_auto.id) IS NULL
+           AND (t.fleet->>'tractor_plate' IS NOT NULL OR fl.tractor_plate IS NOT NULL
+                OR t.fleet->>'driver_name_tms' IS NOT NULL OR fl.driver_name_raw IS NOT NULL)
+        THEN 'UNMATCHED'
+      WHEN da_home.carrier_id IS NOT NULL
+           AND da_home.carrier_id IS DISTINCT FROM COALESCE(fl.carrier_id, c_auto.id)
+        THEN 'MISMATCH'
+      ELSE 'MATCHED'
+    END
+"""
+_TRIP_SELECT = _TRIP_SELECT.format(fleet_match_case=_FLEET_MATCH_CASE)
 
 _TRIP_FROM = """
     FROM app.trips t
@@ -308,6 +334,14 @@ _TRIP_FROM = """
     LEFT JOIN public.vehicle_driver_assignments vda_auto
         ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
     LEFT JOIN public.drivers d_auto ON d_auto.id = vda_auto.driver_id
+    -- HU-04 (Fase 0): empresa PROPIA del conductor (independiente de la
+    -- empresa resuelta para el tracto) — permite detectar "MISMATCH" cuando
+    -- conductor y tracto calzan cada uno por su lado pero no bajo la misma
+    -- empresa (regla explícita de Pablo: ambos deben estar bajo la misma
+    -- empresa de transporte). Ver _FLEET_MATCH_CASE.
+    LEFT JOIN public.driver_assignments da_home
+        ON da_home.driver_id = COALESCE(fl.driver_id, d_auto.id) AND da_home.status = 'ACTIVE'
+    LEFT JOIN public.carriers c_home ON c_home.id = da_home.carrier_id
     -- "Vuelta N" (driver_leg_number, ver _TRIP_SELECT): orden cronológico de
     -- los viajes de un conductor en el día, basado en cuándo salió del
     -- origen — trae solo la fila ORIGIN de trip_stops (a lo sumo 1 por viaje,
@@ -350,6 +384,7 @@ async def list_trips(
     client: str = Query(""),
     origin_region: str = Query(""),
     origin_city: str = Query(""),
+    fleet_match: str = Query(""),  # unmatched | mismatch — HU-04 (Fase 0)
     sort: str = Query("default"),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
@@ -418,6 +453,13 @@ async def list_trips(
         add("t.origin_region = ?", origin_region)
     if origin_city:
         add("t.origin_city = ?", origin_city)
+    # HU-04 (Fase 0): "unmatched" = flota reportada sin poder cruzar con
+    # empresa; "mismatch" = conductor y tracto calzan cada uno por su lado
+    # pero bajo empresas distintas. Repite _FLEET_MATCH_CASE porque el WHERE
+    # no puede referenciar el alias fleet_match_status del SELECT (mismo
+    # motivo que second_leg_plus más arriba).
+    if fleet_match in ("unmatched", "mismatch"):
+        add(f"({_FLEET_MATCH_CASE}) = ?", fleet_match.upper())
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit

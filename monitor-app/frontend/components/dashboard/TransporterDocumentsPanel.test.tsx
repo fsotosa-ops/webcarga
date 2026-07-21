@@ -113,6 +113,7 @@ describe('TransporterDocumentsPanel', () => {
         replaced_at: '2026-06-01T14:23:11.123456+00:00',
         replaced_by: 'admin@webcarga.cl',
         url: 'https://signed.example.com/old.pdf',
+        is_current: false,
       },
     ])
     render(<TransporterDocumentsPanel records={RECORDS} canEdit={true} onChanged={vi.fn()} />)
@@ -121,6 +122,27 @@ describe('TransporterDocumentsPanel', () => {
     const entry = await screen.findByText(/REJECTED · reemplazado/)
     expect(entry.textContent).not.toMatch(/undefined/)
     expect(entry.textContent).toContain('01-06-26')
+  })
+
+  it('renders the current (never-replaced) version as "vigente", not "reemplazado"', async () => {
+    // Bug real corregido 2026-07-21: un documento subido una sola vez no
+    // aparecía en su propio historial. Ahora aparece con is_current=true.
+    vi.mocked(complianceApi.listFiles).mockResolvedValue([
+      {
+        storage_path: 'compliance_record:cr1/current.pdf',
+        status: 'APPROVED_MANUAL',
+        expiry_date: null,
+        replaced_at: null,
+        replaced_by: null,
+        url: 'https://signed.example.com/current.pdf',
+        is_current: true,
+      },
+    ])
+    render(<TransporterDocumentsPanel records={RECORDS} canEdit={true} onChanged={vi.fn()} />)
+    fireEvent.click(screen.getAllByTitle('Ver historial de versiones')[0])
+    await waitFor(() => expect(complianceApi.listFiles).toHaveBeenCalledWith('cr1'))
+    const entry = await screen.findByText(/APPROVED_MANUAL · vigente/)
+    expect(entry).toBeInTheDocument()
   })
 
   it('shows a "Ver archivo" trigger for a non-editor when file_url is set', () => {

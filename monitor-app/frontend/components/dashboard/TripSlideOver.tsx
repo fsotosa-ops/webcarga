@@ -558,6 +558,18 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     </button>
                   </div>
                   {unlinkErr && <p className="text-xs text-red-500 mt-1">{unlinkErr}</p>}
+                  {/* HU-04 (Fase 0): conductor y tracto calzan cada uno por su
+                      lado pero bajo empresas distintas — regla de Pablo
+                      (reunión 20/07): ambos deben pertenecer a la misma
+                      empresa. Solo informativo acá; la resolución (transferir
+                      conductor o tracto) se hace en el módulo Empresas. */}
+                  {trip.fleet_match_status === 'MISMATCH' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+                      <p className="text-[10px] text-amber-700">
+                        El conductor pertenece a <span className="font-semibold">{trip.fleet_match_driver_home_carrier}</span>, distinta de la empresa de este viaje — revisar en Empresas.
+                      </p>
+                    </div>
+                  )}
                   {hasReconciliationDivergence && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
                       {carrierDiverges && (
