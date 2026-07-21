@@ -680,13 +680,24 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                   <div className="min-w-[860px] px-4 md:px-6">
                     <table className="w-full text-xs border border-border/80 rounded-lg overflow-hidden">
                       <thead>
+                        {/* HU-14 (Fase 0, 2026-07-21): orden y nomenclatura
+                            alineados a lo que Pablo pidió explícitamente en
+                            la reunión del 20/07 (transcript líneas 554-557):
+                            Plan. → GPS Llegada/Salida → Llegada/Salida TR
+                            (híbrido) → Desc. Inicio/Fin. Antes GPS aparecía
+                            DESPUÉS de Llegada/Salida y con el mismo nombre
+                            genérico que el campo híbrido — ambigüedad real
+                            detectada en vivo durante la reunión, no solo de
+                            documentación (los datos en sí ya son correctos,
+                            verificado contra Supabase: 0 filas con
+                            gps_departure_date = planning_date). */}
                         <tr className="bg-slate-800 text-[9px] font-bold text-slate-300 uppercase tracking-wide">
                           <th className="px-3 py-2 text-left sticky left-0 bg-slate-800 z-10 min-w-[120px]">Local</th>
                           <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
-                          <th className="px-3 py-2 text-left min-w-[82px]">Llegada</th>
-                          <th className="px-3 py-2 text-left min-w-[82px]">Salida</th>
-                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Arr.</th>
-                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Sal.</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Llegada</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">GPS Salida</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Llegada TR</th>
+                          <th className="px-3 py-2 text-left min-w-[82px]">Salida TR</th>
                           <th className="px-3 py-2 text-left min-w-[82px]">Desc. inicio</th>
                           <th className="px-3 py-2 text-left min-w-[82px]">Desc. fin</th>
                           <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
@@ -720,10 +731,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                                 )}
                               </td>
                               <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
                               <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
                               <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
+                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
                               <td className="px-2 py-1">
                                 <input
                                   key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}

@@ -47,6 +47,56 @@ async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
     return record
 
 
+@router.get("/pending-summary")
+async def get_pending_summary(pool=Depends(get_pool), _=Depends(get_current_user)):
+    """HU-08 (Fase 0, 2026-07-21): vista consolidada de documentos pendientes
+    — hoy solo existía el conteo por empresa dentro de su propia ficha
+    (`app.carrier_compliance_status`); Pablo pidió explícitamente en la
+    reunión del 20/07 poder ver el total agregado y, desde ahí, ir directo a
+    la empresa que le falta, "sin necesidad de entrar empresa por empresa".
+    Los pendientes de DRIVER/ASSET se atribuyen a la empresa vía su
+    asignación ACTIVE vigente (mismo criterio que el resto del roster) — sin
+    asignación activa, ese pendiente queda fuera del agregado (no hay a qué
+    empresa cargárselo)."""
+    rows = await pool.fetch(
+        """
+        WITH pending AS (
+            SELECT cr.entity_type, cr.entity_id, req.requirement_level
+            FROM public.compliance_records cr
+            JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+            WHERE cr.is_current = true AND cr.status IN ('MISSING', 'EXPIRED')
+        ),
+        attributed AS (
+            SELECT
+                p.requirement_level,
+                CASE p.entity_type
+                    WHEN 'CARRIER' THEN p.entity_id
+                    WHEN 'DRIVER'  THEN da.carrier_id
+                    WHEN 'ASSET'   THEN aa.carrier_id
+                END AS carrier_id
+            FROM pending p
+            LEFT JOIN public.driver_assignments da
+                ON p.entity_type = 'DRIVER' AND da.driver_id = p.entity_id AND da.status = 'ACTIVE'
+            LEFT JOIN public.asset_assignments aa
+                ON p.entity_type = 'ASSET' AND aa.asset_id = p.entity_id AND aa.status = 'ACTIVE'
+        )
+        SELECT c.id AS carrier_id, c.business_name AS carrier_name, c.operational_status,
+               count(*) AS pending_count,
+               count(*) FILTER (WHERE a.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory
+        FROM attributed a
+        JOIN public.carriers c ON c.id = a.carrier_id
+        GROUP BY c.id, c.business_name, c.operational_status
+        ORDER BY pending_count DESC
+        """
+    )
+    carriers = [dict(r) for r in rows]
+    return {
+        "total_pending": sum(c["pending_count"] for c in carriers),
+        "total_pending_mandatory": sum(c["pending_mandatory"] for c in carriers),
+        "carriers": carriers,
+    }
+
+
 @router.get("/{record_id}")
 async def get_compliance_record(
     record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),

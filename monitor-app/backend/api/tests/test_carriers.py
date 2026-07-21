@@ -374,6 +374,40 @@ def test_assign_driver_deactivates_previous_and_activates_new():
     assert any("INSERT INTO public.driver_assignments" in s for s in sqls)
 
 
+def test_assign_driver_transfer_never_touches_trip_fleet_links():
+    """HU-07 (Fase 0, cierre documentado): transferir un conductor a otra
+    empresa NO debe recalcular/tocar app.trip_fleet_links — esa tabla guarda
+    carrier_id por viaje en el momento de la ingesta (snapshot de facto), así
+    que los viajes históricos conservan la empresa original sin necesitar
+    bitemporalidad. Confirmado en TransferModal.tsx (reusa este mismo
+    endpoint) y verificado acá a nivel de SQL ejecutado."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = 1
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers/c2/drivers", json={"driver_id": "d1", "carrier_id": "c2"})
+
+    assert res.status_code == 201
+    sqls = [c.args[0] for c in conn.execute.call_args_list]
+    assert not any("trip_fleet_links" in s for s in sqls)
+
+
+def test_assign_asset_transfer_never_touches_trip_fleet_links():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = 1
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers/c2/assets", json={"asset_id": "a1", "carrier_id": "c2"})
+
+    assert res.status_code == 201
+    sqls = [c.args[0] for c in conn.execute.call_args_list]
+    assert not any("trip_fleet_links" in s for s in sqls)
+
+
 def test_assign_driver_404_when_driver_missing():
     pool = AsyncMock()
     conn = AsyncMock()

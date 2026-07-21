@@ -209,6 +209,53 @@ def test_delete_file_resets_to_missing_and_removes_from_storage():
     assert "is_manual_override = true" in override_sql
 
 
+def test_pending_summary_aggregates_by_carrier():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"carrier_id": "c1", "carrier_name": "Transportes Sur Spa", "operational_status": "ACTIVE",
+         "pending_count": 12, "pending_mandatory": 5},
+        {"carrier_id": "c2", "carrier_name": "Rios Ltda", "operational_status": "ACTIVE",
+         "pending_count": 3, "pending_mandatory": 0},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending-summary")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total_pending"] == 15
+    assert body["total_pending_mandatory"] == 5
+    assert len(body["carriers"]) == 2
+    query = pool.fetch.call_args.args[0]
+    assert "status IN ('MISSING', 'EXPIRED')" in query
+
+
+def test_pending_summary_empty_when_nothing_pending():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending-summary")
+
+    assert res.status_code == 200
+    assert res.json() == {"total_pending": 0, "total_pending_mandatory": 0, "carriers": []}
+
+
+def test_pending_summary_route_does_not_collide_with_record_id_path():
+    """La ruta fija /pending-summary debe declararse antes de /{record_id} —
+    si no, FastAPI la matchearía como record_id='pending-summary' y llamaría
+    a get_compliance_record en su lugar."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending-summary")
+
+    assert res.status_code == 200
+    assert "carriers" in res.json()
+    pool.fetchrow.assert_not_called()
+
+
 def test_list_compliance_files_404_when_record_missing():
     pool = AsyncMock()
     pool.fetchrow.return_value = None
