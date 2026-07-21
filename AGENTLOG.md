@@ -78,6 +78,37 @@
 
 Verificación: 277/277 backend, 456/456 frontend, `tsc`/`build` limpios. Query de `client_names` verificada contra datos reales antes de codear.
 
+#### Próximo paso exacto (histórico — ver Ronda 37, rediseño de Cuadratura)
+1. [x] Fase 2/3/4/5 siguen sin empezar — ver Ronda 37 para el rediseño intermedio de Cuadratura que las precede.
+2. [ ] Confirmar con el usuario si Vercel sigue siendo un deploy target real o si `CLAUDE.md` debe actualizarse a Cloud Run como fuente de verdad (heredado, Ronda 34).
+3. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+4. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+5. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+6. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+
+---
+
+### 2026-07-21 (cont.) — Ronda 37: rediseño de Cuadratura — "Cerrar el día" (overlay en el Diario) + Reportería (tabla dinámica)
+
+**Pedido del usuario**: rechazó la página de Cuadratura (Fase 1/1.5) — *"no me cierra que la cuadratura funcione así... ese dropdown no me dice nada y la UI es horrible"*. Pidió pensar UX/arquitectura antes de tocar código (pros/contras, estándar de industria, mantenibilidad).
+
+**Brainstorming** (skill `superpowers:brainstorming`, spec aprobada en `docs/superpowers/specs/2026-07-21-cuadratura-reporteria-redesign-design.md`, gitignored): se identificaron 2 necesidades mezcladas en una sola pantalla — una acción operativa rápida (cerrar el día) vs. una vista analítica/BI (ver el global en el tiempo). Decisiones confirmadas por el usuario:
+- **"Cerrar el día"**: overlay dentro del Diario (no página aparte), hereda la fecha activa ahí.
+- **Reportería**: página nueva y separada, hermana de Diario en "Monitor de Viajes", con pivot **real** (filas/columnas/filtros configurables, no un dropdown de 3 opciones fijas) — incluye granularidad de fecha (Día/Semana/Mes/Trimestre/Semestre) y presets de período, a pedido del usuario.
+- **Build vs. librería de pivot**: componente propio y liviano, no una librería externa (`react-pivottable` está poco mantenida y su estilo no calza con Tailwind sin pelear CSS — mismo tipo de fricción ya rechazada).
+
+**Implementado** (commit `ea88732`):
+- Eliminada `/dashboard/diario/cuadratura` completa.
+- `CloseDayDialog.tsx` — diálogo centrado (mismo patrón que Empresas), reusa `daily_closures.py` sin cambios de backend. Botón "Cerrar día" agregado al header del Diario.
+- `lib/utils/pivot.ts` — motor de pivot propio: `bucketDate` (con quarter/semester correctos), `fieldValues` (multi-valor para Cliente), `buildPivot` (claves compuestas, cartesian product). 17 tests unitarios puros.
+- `/dashboard/diario/reporteria` — página nueva con constructor de Filas/Columnas/Filtros (chips + selects, sin drag-and-drop) + presets de período + export CSV.
+- Backend: `GET /daily-closures/report?fecha_desde=&fecha_hasta=` — dataset plano por rango, **sin recompute** (solo lectura sobre lo ya calculado al cerrar cada día).
+- Sidebar: "Cuadratura" → "Reportería" dentro de "Monitor de Viajes".
+
+**Gaps conocidos, documentados en la spec, no bloquean**: categorías de tipo de equipo específicas de Walmart (Equipo Completo/Tracto-Región/Z0/Se retira sin carga) y zona/región de destino como campo de pivot — ninguna modelada hoy, quedan para cuando se defina con el usuario.
+
+Verificación: 281/281 backend, 475/475 frontend, `tsc`/`build` limpios.
+
 #### Próximo paso exacto
 1. [ ] Fase 2 (Seguros↔Diario, badge/banner de póliza crítica en el Diario) — sin empezar.
 2. [ ] Fase 3 (HU-05 gatillo desde alerta + HU-06 fuzzy match, diseño ya aprobado por Pablo: ~80% similitud + confirmación humana) — sin empezar.
