@@ -269,7 +269,8 @@ _TRIP_SELECT = """
     sh.id   AS shipper_id,
     sh.name AS shipper_name,
     {fleet_match_case} AS fleet_match_status,
-    c_home.business_name AS fleet_match_driver_home_carrier
+    c_home.business_name AS fleet_match_driver_home_carrier,
+    ins.insurance_alert
 """
 
 # HU-04 (Fase 0, 2026-07-21): antes, cuando un viaje no lograba cruzar con
@@ -342,6 +343,22 @@ _TRIP_FROM = """
     LEFT JOIN public.driver_assignments da_home
         ON da_home.driver_id = COALESCE(fl.driver_id, d_auto.id) AND da_home.status = 'ACTIVE'
     LEFT JOIN public.carriers c_home ON c_home.id = da_home.carrier_id
+    -- Fase 2 (HU-12, 2026-07-22): alerta de póliza crítica en el Diario —
+    -- pedido explícito de Pablo ("recibir una alerta prominente cuando un
+    -- equipo tenga póliza vencida o cuotas críticas impagas"). Una empresa
+    -- puede tener varias pólizas (app.carrier_insurance_status, 1 fila por
+    -- póliza) — se toma el peor caso (regla del eslabón más débil, mismo
+    -- criterio ya usado para calcular policy_health). "2+ cuotas impagas"
+    -- es el umbral que Pablo mencionó explícitamente en notes-meeting.md.
+    LEFT JOIN LATERAL (
+        SELECT CASE
+            WHEN bool_or(cis.policy_health = 'EXPIRED') THEN 'EXPIRED'
+            WHEN bool_or(cis.overdue_installments >= 2) THEN 'OVERDUE_INSTALLMENTS'
+            WHEN bool_or(cis.policy_health = 'EXPIRING_SOON') THEN 'EXPIRING_SOON'
+        END AS insurance_alert
+        FROM app.carrier_insurance_status cis
+        WHERE cis.carrier_id = COALESCE(fl.carrier_id, c_auto.id)
+    ) ins ON true
     -- "Vuelta N" (driver_leg_number, ver _TRIP_SELECT): orden cronológico de
     -- los viajes de un conductor en el día, basado en cuándo salió del
     -- origen — trae solo la fila ORIGIN de trip_stops (a lo sumo 1 por viaje,
@@ -385,6 +402,7 @@ async def list_trips(
     origin_region: str = Query(""),
     origin_city: str = Query(""),
     fleet_match: str = Query(""),  # unmatched | mismatch — HU-04 (Fase 0)
+    insurance_alert: str = Query(""),  # EXPIRED | OVERDUE_INSTALLMENTS | EXPIRING_SOON — HU-12 (Fase 2)
     sort: str = Query("default"),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
@@ -460,6 +478,11 @@ async def list_trips(
     # motivo que second_leg_plus más arriba).
     if fleet_match in ("unmatched", "mismatch"):
         add(f"({_FLEET_MATCH_CASE}) = ?", fleet_match.upper())
+    # HU-12 (Fase 2): a diferencia de fleet_match_status, ins.insurance_alert
+    # es un alias real de la LATERAL join (no un CASE repetido) — se puede
+    # referenciar directo en el WHERE.
+    if insurance_alert in ("EXPIRED", "OVERDUE_INSTALLMENTS", "EXPIRING_SOON"):
+        add("ins.insurance_alert = ?", insurance_alert)
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit

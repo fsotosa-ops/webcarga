@@ -5,6 +5,7 @@ import {
   X, Loader2, Copy, Check,
   Truck, User, Phone, Hash,
   MapPin, RotateCcw, ClipboardList,
+  ShieldAlert,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
@@ -19,6 +20,7 @@ import { useTripNotes } from '@/hooks/useTripNotes'
 import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from './FleetAssignSection'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
+import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 
 // ── MetaField helper ──────────────────────────────────────────────────────────
 
@@ -545,8 +547,9 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               {trip.carrier_id ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex items-center gap-2">
                       <p className="text-xs font-semibold text-slate-800 truncate">{trip.carrier_name ?? '—'}</p>
+                      <InsuranceAlertBadge alert={trip.insurance_alert} />
                     </div>
                     <button
                       type="button"
@@ -558,6 +561,19 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     </button>
                   </div>
                   {unlinkErr && <p className="text-xs text-red-500 mt-1">{unlinkErr}</p>}
+                  {/* HU-12 (Fase 2): alerta prominente pedida por Pablo — no
+                      solo el badge chico junto al nombre, un banner que no
+                      se pueda pasar por alto al abrir el detalle del viaje. */}
+                  {(trip.insurance_alert === 'EXPIRED' || trip.insurance_alert === 'OVERDUE_INSTALLMENTS') && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                      <ShieldAlert size={13} className="text-red-600 shrink-0" />
+                      <p className="text-[11px] text-red-700 font-medium">
+                        {trip.insurance_alert === 'EXPIRED'
+                          ? 'Póliza vencida para esta empresa — revisar en Seguros.'
+                          : 'Cuotas críticas impagas para esta empresa — revisar en Seguros.'}
+                      </p>
+                    </div>
+                  )}
                   {/* HU-04 (Fase 0): conductor y tracto calzan cada uno por su
                       lado pero bajo empresas distintas — regla de Pablo
                       (reunión 20/07): ambos deben pertenecer a la misma

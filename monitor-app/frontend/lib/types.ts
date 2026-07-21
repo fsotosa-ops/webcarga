@@ -455,6 +455,11 @@ export type Trip = {
   /** Empresa propia del conductor cuando difiere de la empresa resuelta
    *  para el tracto (solo presente si fleet_match_status === 'MISMATCH') */
   fleet_match_driver_home_carrier?: string | null
+  /** HU-12 (Fase 2, 2026-07-22): alerta de póliza del transportista resuelto
+   *  para este viaje — regla del eslabón más débil sobre
+   *  app.carrier_insurance_status (una empresa puede tener varias pólizas).
+   *  null cuando no hay empresa resuelta o su cobertura está VALID. */
+  insurance_alert?: 'EXPIRED' | 'OVERDUE_INSTALLMENTS' | 'EXPIRING_SOON' | null
 }
 
 // ── Catálogo de locales por generador de carga (public.locations, H2.6) ──

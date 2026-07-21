@@ -21,6 +21,7 @@ import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
+import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 
 
 export function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
@@ -210,6 +211,7 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                 {trip.carrier_id
                   ? <span className="font-medium text-slate-500 truncate max-w-[160px]">{trip.carrier_name}</span>
                   : <span className="italic">sin EETT</span>}
+                <InsuranceAlertBadge alert={trip.insurance_alert} compact />
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
 
@@ -382,9 +384,12 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                   {/* EETT */}
                   <td className="px-3 py-2.5">
                     {trip.carrier_id ? (
-                      <span className="text-xs font-medium text-slate-700 leading-tight block truncate max-w-[120px]">
-                        {trip.carrier_name}
-                      </span>
+                      <>
+                        <span className="text-xs font-medium text-slate-700 leading-tight block truncate max-w-[120px]">
+                          {trip.carrier_name}
+                        </span>
+                        <InsuranceAlertBadge alert={trip.insurance_alert} />
+                      </>
                     ) : (
                       <span className="text-[10px] text-gray-300 italic">sin vincular</span>
                     )}
