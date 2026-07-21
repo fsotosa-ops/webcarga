@@ -57,17 +57,34 @@
 - **Sidebar reestructurado a pedido del usuario**: en vez de sumar "Cuadratura" como 4º item plano, se agrupó con Diario bajo un item expandible "Monitor de Viajes" (con Empresas/Seguros quedando planos) — deja lugar para el futuro reporte por cliente de Fase 1.5 sin seguir apilando items sueltos.
 - Verificación: 276/276 backend, 453/453 frontend, `tsc`/`build` limpios.
 
-**Pipeline reactivado por el usuario** durante la Ronda 34 — pendiente de confirmar si ya volvió a ingestar (wakeup programado, puede haber quedado obsoleto si esta ronda se cerró antes de que dispare; volver a chequear `bronze.tms_trips_snapshot`/`app.trips` al empezar la próxima sesión si no se confirmó en el chat).
+**Pipeline confirmado en vivo (ver Ronda 36)**: volvió a fluir de punta a punta tras la reactivación del usuario.
 
-#### Próximo paso exacto
-1. [ ] Confirmar si el pipeline volvió a ingestar datos (chequear `bronze.tms_trips_snapshot`/`app.trips` — baseline conocido: detenido en 2026-07-18 07:23 UTC).
-2. [ ] Fase 1.5 (reporte por cliente, iterativo sobre la base de `driver_day_status`) — sin empezar, Pablo mismo reconoció que la unificación total puede tomar más de una iteración.
+#### Próximo paso exacto (histórico — ver Ronda 36)
+1. [x] Confirmar si el pipeline volvió a ingestar datos — confirmado, ver Ronda 36.
+2. [x] Fase 1.5 — hecha, ver Ronda 36.
 3. [ ] Fase 2 (Seguros↔Diario, badge/banner de póliza crítica en el Diario) — sin empezar.
 4. [ ] Fase 3 (HU-05 gatillo desde alerta + HU-06 fuzzy match, diseño ya aprobado por Pablo: ~80% similitud + confirmación humana) — sin empezar.
 5. [ ] Fase 4 (locales + sync recurrente Mage `bronze.raw_shipper_locations → public.locations`) — sin empezar, requiere tocar Mage.
 6. [ ] Fase 5 (tarifario, módulo nuevo "Tarifario 1.0" separado en el menú) — sin empezar.
 7. [ ] Confirmar con el usuario si Vercel sigue siendo un deploy target real o si `CLAUDE.md` debe actualizarse a Cloud Run como fuente de verdad (heredado, Ronda 34).
-8. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-9. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-10. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-11. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+
+---
+
+### 2026-07-21 (cont.) — Ronda 36: pipeline confirmado en vivo + Fase 1.5 (cuadratura por empresa/cliente + export CSV)
+
+**Pipeline verificado tras la reactivación del usuario**: `bronze.tms_trips_snapshot` avanzó de `2026-07-18 07:23 UTC` → `2026-07-21 21:32 UTC`; `app.trips` con `planning_date` hasta `2026-07-22`. Confirmado fluyendo de punta a punta, no solo en la capa cruda.
+
+**Fase 1.5 completa** (commit `43790be`): sobre `driver_day_status`, agrega `client_names` por conductor/día (`trip_fleet_links` → `trips` → `public.shippers`, mismo criterio de nombre prolijo que `trips.py`) y una vista "Por empresa"/"Por cliente" con conteos asignado/no asignado/mismatch — el denominador común de los 3 reportes manuales (Sider/Lansa, Sodimac, Walmart). Deliberadamente **no** se replican las categorías propias de cada cliente (ej. "Equipo Completo"/"Z0" de Walmart) — vocabulario específico no modelado, la unificación total queda iterativa (palabras de Pablo: "hay que ver cómo lo armamos"). Export CSV de la vista activa agregado.
+
+Verificación: 277/277 backend, 456/456 frontend, `tsc`/`build` limpios. Query de `client_names` verificada contra datos reales antes de codear.
+
+#### Próximo paso exacto
+1. [ ] Fase 2 (Seguros↔Diario, badge/banner de póliza crítica en el Diario) — sin empezar.
+2. [ ] Fase 3 (HU-05 gatillo desde alerta + HU-06 fuzzy match, diseño ya aprobado por Pablo: ~80% similitud + confirmación humana) — sin empezar.
+3. [ ] Fase 4 (locales + sync recurrente Mage `bronze.raw_shipper_locations → public.locations`) — sin empezar, requiere tocar Mage.
+4. [ ] Fase 5 (tarifario, módulo nuevo "Tarifario 1.0" separado en el menú) — sin empezar.
+5. [ ] Confirmar con el usuario si Vercel sigue siendo un deploy target real o si `CLAUDE.md` debe actualizarse a Cloud Run como fuente de verdad (heredado, Ronda 34).
+6. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+7. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+8. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+9. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
