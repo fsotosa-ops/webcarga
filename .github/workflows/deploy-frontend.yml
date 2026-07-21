@@ -67,7 +67,7 @@ jobs:
             --service-account=${{ env.CLOUD_RUN_SA }}
             --allow-unauthenticated
             --set-env-vars=ENVIRONMENT=${{ env.ENV_SUFFIX }}
-            --set-secrets=FASTAPI_URL=frontend-fastapi-url-${{ env.ENV_SUFFIX }}:latest,UPSTASH_REDIS_REST_URL=frontend-upstash-url:latest,UPSTASH_REDIS_REST_TOKEN=frontend-upstash-token:latest
+            --set-secrets=FASTAPI_URL=frontend-fastapi-url-${{ env.ENV_SUFFIX }}:latest,UPSTASH_REDIS_REST_URL=frontend-upstash-url:latest,UPSTASH_REDIS_REST_TOKEN=frontend-upstash-token:latest,SUPABASE_SERVICE_ROLE_KEY=monitor-api-supabase-service-role-key:latest
 
       - name: Show service URL
         run: |

@@ -159,7 +159,7 @@ for secret in monitor-api-upstash-url monitor-api-upstash-token; do
         --project="$PROJECT_ID" --quiet >/dev/null 2>&1 || true
     ok "IAM: $secret → $MONITOR_SA"
 done
-for secret in frontend-upstash-url frontend-upstash-token frontend-fastapi-url-dev frontend-fastapi-url-prod; do
+for secret in frontend-upstash-url frontend-upstash-token frontend-fastapi-url-dev frontend-fastapi-url-prod monitor-api-supabase-service-role-key; do
     gcloud secrets add-iam-policy-binding "$secret" \
         --member="serviceAccount:${FRONTEND_SA_EMAIL}" \
         --role="roles/secretmanager.secretAccessor" \

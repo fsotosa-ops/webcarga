@@ -55,6 +55,7 @@ export const tripsApi = {
     second_leg_plus?: boolean
     tms?:            string
     client?:         string
+    fleet_match?:    'unmatched' | 'mismatch'
     sort?:           'default' | 'status_reported_at_asc' | 'status_reported_at_desc'
     page?:           number
     limit?:          number
@@ -68,6 +69,7 @@ export const tripsApi = {
     if (params?.status)          qs.set('status',          params.status)
     if (params?.tms)             qs.set('tms',             params.tms)
     if (params?.client)          qs.set('client',          params.client)
+    if (params?.fleet_match)     qs.set('fleet_match',     params.fleet_match)
     if (params?.sort)            qs.set('sort',            params.sort)
     if (params?.is_active       != null) qs.set('is_active',       String(params.is_active))
     if (params?.is_working      != null) qs.set('is_working',      String(params.is_working))
@@ -76,7 +78,14 @@ export const tripsApi = {
     if (params?.page)            qs.set('page',            String(params.page))
     if (params?.limit)           qs.set('limit',           String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''
-    return apiFetch<TripListResponse>(`/api/v1/trips/${suffix}`)
+    // BUG REAL (2026-07-21): antes había una '/' de más antes de `suffix`
+    // (`/api/v1/trips/${suffix}`) — con cualquier query param eso arma
+    // `/api/v1/trips/?...` (slash antes del `?`). next.config.ts usa
+    // trailingSlash: false (default), así que Next.js devuelve 308 antes de
+    // que el route handler catch-all `[...path]` llegue a ejecutarse — el
+    // Diario nunca cargaba viajes filtrados en producción (confirmado en
+    // logs reales de Cloud Run, webcarga-frontend-dev).
+    return apiFetch<TripListResponse>(`/api/v1/trips${suffix}`)
   },
 
   create: (body: TripCreatePayload) =>
