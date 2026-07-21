@@ -4,15 +4,21 @@ NUEVA (nunca sobrescribe el blob anterior) y registra el valor previo en
 public.audit_log en vez de una tabla de versiones dedicada. Decisión de
 Checkpoint A §2.2/decisión 4.
 """
+import io
 import json
 import re
 import unicodedata
+import zipfile
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, UploadFile
 
 COMPLIANCE_BUCKET = "compliance-docs"
-STORED_FILE_MAX_BYTES = 10 * 1024 * 1024
+# Bajado de 10MB a 7MB (Fase 0, 2026-07-21) — pedido explícito de Pablo en
+# la reunión del 20/07: fotos de celular sin comprimir (una hoja por foto)
+# pesan mucho más que el documento real; un límite más chico obliga a
+# comprimir antes de subir en vez de aceptar cualquier tamaño.
+STORED_FILE_MAX_BYTES = 7 * 1024 * 1024
 ALLOWED_STORED_FILE_MIMES = {
     "application/pdf", "image/png", "image/jpeg", "image/webp",
     "image/heic", "image/heif",
@@ -39,7 +45,7 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
         raise HTTPException(422, f"Tipo de archivo no permitido: {file.filename} ({mime})")
     data = await file.read()
     if len(data) > STORED_FILE_MAX_BYTES:
-        raise HTTPException(422, f"Archivo supera 10MB: {file.filename}")
+        raise HTTPException(422, f"{file.filename} supera 7MB — comprimí el archivo antes de subirlo")
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     storage_path = f"{key_prefix}/{stamp}_{safe_storage_name(file.filename or 'archivo')}"
@@ -55,6 +61,32 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
         "mime_type": mime,
         "size_bytes": len(data),
     }
+
+
+def build_documents_zip(supabase, records: list[dict]) -> bytes:
+    """HU-08 (Fase 0, 2026-07-21): arma un .zip en memoria con los archivos
+    de una lista de compliance_records — pedido explícito de Fabián en la
+    reunión del 20/07 ("si yo quisiera bajar toda esta documentación de esta
+    empresa, ¿tengo que ir uno a uno?"). Cada `record` necesita `name`
+    (nombre del requisito, para el nombre de archivo dentro del zip) y
+    `file_url` (el storage_path crudo, ver upload_compliance_file). Los
+    registros sin archivo se ignoran (no hay nada que descargar); una
+    descarga individual que falle no aborta el zip completo — mejor un zip
+    parcial que ninguno."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for r in records:
+            storage_path = r.get("file_url")
+            if not storage_path:
+                continue
+            try:
+                data = supabase.storage.from_(COMPLIANCE_BUCKET).download(storage_path)
+            except Exception:
+                continue
+            original_name = storage_path.rsplit("/", 1)[-1]
+            arcname = f"{safe_storage_name(r.get('name') or 'documento')}_{original_name}"
+            zf.writestr(arcname, data)
+    return buf.getvalue()
 
 
 def delete_document_version(supabase, storage_path: str | None) -> None:

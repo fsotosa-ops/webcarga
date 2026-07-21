@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from app.utils.document_storage import (
     upload_document_version, log_document_replacement, get_document_history,
+    STORED_FILE_MAX_BYTES,
 )
 
 
@@ -30,6 +31,32 @@ async def test_upload_document_version_returns_new_path_no_db_write():
     assert result["storage_path"].startswith("driver/abc-123/licencia/")
     assert "licencia.pdf" in result["storage_path"]
     supabase.storage.from_.assert_called_with("compliance-docs")
+
+
+def test_stored_file_max_bytes_is_7mb():
+    """Bajado de 10MB a 7MB (Fase 0, 2026-07-21) — pedido de Pablo en la
+    reunión del 20/07 para obligar a comprimir fotos de celular sin editar."""
+    assert STORED_FILE_MAX_BYTES == 7 * 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_upload_document_version_rejects_file_over_7mb():
+    supabase = MagicMock()
+    file = MagicMock()
+    file.content_type = "application/pdf"
+    file.filename = "escaneo.pdf"
+
+    oversized = b"x" * (STORED_FILE_MAX_BYTES + 1)
+
+    async def fake_read():
+        return oversized
+    file.read = fake_read
+
+    with pytest.raises(Exception) as exc_info:
+        await upload_document_version(supabase, key_prefix="driver/abc-123/licencia", file=file)
+
+    assert "7MB" in str(exc_info.value)
+    assert "comprimí" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

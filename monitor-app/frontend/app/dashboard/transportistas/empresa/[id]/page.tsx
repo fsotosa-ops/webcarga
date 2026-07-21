@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight, PenLine, Check, X,
-  Loader2, Search, Users, Truck, ShieldCheck, FileText,
+  Loader2, Search, Users, Truck, ShieldCheck, FileText, Download,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { carriersApi } from '@/lib/api/carriers'
@@ -131,6 +131,8 @@ export default function EmpresaDetailPage() {
   const [canAdmin, setCanAdmin]   = useState(false)
   const [editOpen, setEditOpen]   = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('resumen')
+  const [exportingDocs, setExportingDocs] = useState(false)
+  const [exportErr, setExportErr]         = useState<string | null>(null)
 
   const [selectedDriverId,  setSelectedDriverId]  = useState<string | null>(null)
   const [selectedAssetId,   setSelectedAssetId]   = useState<string | null>(null)
@@ -308,6 +310,27 @@ export default function EmpresaDetailPage() {
   async function handleAddContact(body: { contact_role: string; first_name?: string; last_name?: string; phone?: string; email?: string }) {
     await carriersApi.createContact(id, body)
     invalidateCarrier()
+  }
+
+  // HU-08 (Fase 0): export en bloque de documentos — pedido de Fabián en la
+  // reunión del 20/07 ("¿puedo bajar toda esta documentación de una vez?").
+  async function handleExportDocuments() {
+    setExportingDocs(true); setExportErr(null)
+    try {
+      const blob = await carriersApi.exportDocuments(id)
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = `${carrier?.business_name ?? 'empresa'}_documentos.zip`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch (e) {
+      setExportErr(e instanceof Error ? e.message : 'No se pudo exportar la documentación')
+    } finally {
+      setExportingDocs(false)
+    }
   }
 
   const driverFacets = useMemo(() => ({
@@ -539,7 +562,20 @@ export default function EmpresaDetailPage() {
         <>
           <TransporterAlertBanner records={carrier.compliance_records} />
           <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Documentos de la Empresa</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Documentos de la Empresa</h3>
+              <button
+                type="button"
+                onClick={handleExportDocuments}
+                disabled={exportingDocs}
+                title="Descargar toda la documentación cargada en un .zip"
+                className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-accent border border-border/80 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-50"
+              >
+                {exportingDocs ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                Exportar todo
+              </button>
+            </div>
+            {exportErr && <p className="text-xs text-red-500 mb-2">{exportErr}</p>}
             <TransporterDocumentsPanel
               records={carrier.compliance_records}
               canEdit={canEdit}

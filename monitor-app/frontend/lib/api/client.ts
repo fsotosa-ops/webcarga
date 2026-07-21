@@ -44,6 +44,24 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return res.json() as Promise<T>
 }
 
+/** Variante de apiFetch para descargas binarias (zip, etc.) — mismo auth
+ *  que apiFetch, pero devuelve el Blob crudo en vez de parsear JSON. HU-08
+ *  (Fase 0, 2026-07-21): primer consumidor es el export de documentos de
+ *  una empresa. */
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  const token = await getToken()
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    const detail = (err as { detail?: unknown }).detail
+    const message = typeof detail === 'string' ? detail : `Error ${res.status}`
+    throw new ApiError(message, res.status, detail)
+  }
+  return res.blob()
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

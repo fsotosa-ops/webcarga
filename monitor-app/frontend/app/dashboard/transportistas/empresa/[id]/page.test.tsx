@@ -35,7 +35,7 @@ vi.mock('@/lib/api/carriers', () => ({
     listAssets: vi.fn(), assignAsset: vi.fn(), unassignAsset: vi.fn(),
     listContacts: vi.fn(), createContact: vi.fn(),
     listPolicies: vi.fn(), createPolicy: vi.fn(),
-    listShippers: vi.fn(),
+    listShippers: vi.fn(), exportDocuments: vi.fn(),
   },
 }))
 vi.mock('@/lib/api/drivers', () => ({
@@ -106,6 +106,31 @@ describe('EmpresaDetailPage', () => {
     await clickTab(/Documentos/)
     expect(await screen.findByText('1 documento obligatorio con atención')).toBeInTheDocument()
     expect(screen.getAllByText('F30 Multas').length).toBeGreaterThan(0)
+  })
+
+  // HU-08 (Fase 0): export en bloque de documentos — pedido de Fabián en la
+  // reunión del 20/07.
+  it('exports all carrier documents as a zip on click', async () => {
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
+    vi.mocked(carriersApi.exportDocuments).mockResolvedValue(new Blob(['zip-content']))
+    renderPage()
+    await clickTab(/Documentos/)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Exportar todo/ }))
+
+    await waitFor(() => expect(carriersApi.exportDocuments).toHaveBeenCalledWith('t1'))
+    expect(URL.createObjectURL).toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('shows an error if exporting documents fails', async () => {
+    vi.mocked(carriersApi.exportDocuments).mockRejectedValue(new Error('Esta empresa no tiene documentos cargados'))
+    renderPage()
+    await clickTab(/Documentos/)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Exportar todo/ }))
+
+    expect(await screen.findByText('Esta empresa no tiene documentos cargados')).toBeInTheDocument()
   })
 
   it('shows the driver and equipment rosters in their own tabs', async () => {

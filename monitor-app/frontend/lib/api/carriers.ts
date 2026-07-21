@@ -11,7 +11,7 @@ import type {
   OperationalStatus,
   PolicyStatus,
 } from '@/lib/types'
-import { apiFetch } from './client'
+import { apiFetch, apiFetchBlob } from './client'
 
 export type CarrierListParams = {
   q?:                  string
@@ -97,6 +97,11 @@ export const carriersApi = {
 
   get: (id: string) =>
     apiFetch<Carrier>(`/api/v1/carriers/${id}`),
+
+  /** HU-08 (Fase 0): zip con toda la documentación cargada de la empresa —
+   *  pedido explícito de Fabián en la reunión del 20/07. */
+  exportDocuments: (id: string) =>
+    apiFetchBlob(`/api/v1/carriers/${id}/documents/export`),
 
   create: (body: CarrierCreateBody) =>
     apiFetch<CarrierCreateResult>('/api/v1/carriers', { method: 'POST', body: JSON.stringify(body) }),

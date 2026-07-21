@@ -653,3 +653,77 @@ def test_delete_carrier_succeeds_when_no_associated_data():
     delete_calls = [c.args[0] for c in conn.execute.call_args_list]
     assert any("DELETE FROM public.compliance_records" in s for s in delete_calls)
     assert any("DELETE FROM public.carriers" in s for s in delete_calls)
+
+
+# ── GET /carriers/{id}/documents/export (HU-08, Fase 0) ─────────────────────
+# Fabián pidió explícitamente en la reunión del 20/07 poder bajar toda la
+# documentación de una empresa de una sola vez, en vez de ir documento por
+# documento — antes no existía ningún export.
+
+def test_export_carrier_documents_404_when_carrier_missing():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/c1/documents/export")
+
+    assert res.status_code == 404
+
+
+def test_export_carrier_documents_404_when_nothing_uploaded():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"business_name": "Transportes Sur Spa"}
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/c1/documents/export")
+
+    assert res.status_code == 404
+
+
+def test_export_carrier_documents_returns_zip_with_uploaded_files():
+    import zipfile
+    from io import BytesIO
+
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"business_name": "Transportes Sur Spa"}
+    pool.fetch.return_value = [
+        {"name": "Licencia de conducir", "file_url": "carrier/c1/r1/20260101_licencia.pdf"},
+        {"name": "F30 Multas", "file_url": "carrier/c1/r2/20260102_f30.pdf"},
+    ]
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.side_effect = [b"contenido-licencia", b"contenido-f30"]
+    client = make_client(pool, supabase=supabase)
+
+    res = client.get("/api/v1/carriers/c1/documents/export")
+
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "application/zip"
+    assert "Transportes_Sur_Spa_documentos.zip" in res.headers["content-disposition"]
+    zf = zipfile.ZipFile(BytesIO(res.content))
+    names = zf.namelist()
+    assert len(names) == 2
+    assert any("licencia.pdf" in n for n in names)
+    assert any("f30.pdf" in n for n in names)
+
+
+def test_export_carrier_documents_skips_records_without_file():
+    import zipfile
+    from io import BytesIO
+
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"business_name": "Rios Ltda"}
+    # el WHERE del endpoint ya filtra file_url IS NOT NULL, pero el helper
+    # de zip también debe ser defensivo si algún día se le pasa uno sin archivo
+    pool.fetch.return_value = [
+        {"name": "Poliza", "file_url": "carrier/c2/r1/poliza.pdf"},
+    ]
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = b"contenido"
+    client = make_client(pool, supabase=supabase)
+
+    res = client.get("/api/v1/carriers/c2/documents/export")
+
+    assert res.status_code == 200
+    zf = zipfile.ZipFile(BytesIO(res.content))
+    assert len(zf.namelist()) == 1

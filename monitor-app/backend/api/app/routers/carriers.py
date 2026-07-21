@@ -4,7 +4,7 @@ router de Checkpoint A-E (transporters.py/transporters_legacy.py, borrados
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
@@ -14,7 +14,7 @@ from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
-from ..utils.document_storage import resolve_signed_url
+from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
 
 router = APIRouter(prefix="/carriers", tags=["carriers"])
 
@@ -304,6 +304,42 @@ async def get_carrier(
     carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
 ):
     return await _assemble_carrier_detail(carrier_id, pool, supabase)
+
+
+@router.get("/{carrier_id}/documents/export")
+async def export_carrier_documents(
+    carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+):
+    """HU-08 (Fase 0, 2026-07-21): exportar en bloque toda la documentación
+    cargada de una empresa — pedido explícito de Fabián en la reunión del
+    20/07 ("¿puedo bajar toda esta documentación... o tengo que ir uno a
+    uno?"). Antes no existía ningún export, solo descarga individual por
+    documento."""
+    carrier = await pool.fetchrow("SELECT business_name FROM public.carriers WHERE id = $1", carrier_id)
+    if not carrier:
+        raise HTTPException(404, "Empresa no encontrada")
+
+    records = await pool.fetch(
+        """
+        SELECT req.name, cr.file_url
+        FROM public.compliance_records cr
+        JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+        WHERE cr.entity_id = $1 AND cr.entity_type = 'CARRIER' AND cr.is_current = true
+          AND cr.file_url IS NOT NULL
+        ORDER BY req.name
+        """,
+        carrier_id,
+    )
+    if not records:
+        raise HTTPException(404, "Esta empresa no tiene documentos cargados")
+
+    zip_bytes = build_documents_zip(supabase, [dict(r) for r in records])
+    filename = f"{safe_storage_name(carrier['business_name'])}_documentos.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("", status_code=201)
