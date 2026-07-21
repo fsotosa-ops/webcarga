@@ -30,13 +30,44 @@
 
 **Rediseño de roles/permisos**: el usuario mencionó que es momento de separar ambientes/vistas por rol — anotado como tema real pero de alcance grande, no iniciado, requiere su propia conversación de diseño.
 
-#### Próximo paso exacto
-1. [ ] Verificar (vía el wakeup programado) si el pipeline volvió a ingestar datos tras reactivar el trigger — si no, revisar la corrida en la UI de Mage.
+#### Próximo paso exacto (histórico — ver Ronda 35, Fase 0 cerrada y Fase 1 completa)
+1. [x] Verificar si el pipeline volvió a ingestar datos tras reactivar el trigger — ver Ronda 35.
 2. [ ] Confirmar con el usuario si Vercel sigue siendo un deploy target real o si `CLAUDE.md` debe actualizarse a Cloud Run como fuente de verdad.
-3. [ ] Terminar Fase 0: export en bloque de documentos (zip), política de tamaño/compresión de archivos.
-4. [ ] Fase 1 (cuadratura diaria): diseñar e implementar `app.driver_day_status` + `app.daily_closures`, con override auditado vía `audit_log` — preguntar al usuario el mecanismo de HU-04/05 (auto-crear vs. solo alertar) antes de construir esa parte.
+3. [x] Terminar Fase 0 — hecho, ver Ronda 35.
+4. [x] Fase 1 (cuadratura diaria) — hecha, ver Ronda 35.
 5. [ ] Fases 1.5 → 5 del plan (reporte por cliente, Seguros↔Diario, fuzzy match HU-06, locales+sync Mage, tarifario) — sin empezar.
 6. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
 7. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
 8. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
 9. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+
+---
+
+### 2026-07-21 (cont.) — Ronda 35: cierre de Fase 0 + Fase 1 completa (cuadratura diaria de conductores)
+
+**Fase 0, últimos 2 ítems** (commit `82d316f`): export en bloque de documentos de una empresa (`GET /carriers/{id}/documents/export`, zip in-memory, botón "Exportar todo" en la ficha) — pedido de Fabián en la reunión; límite de archivo bajado de 10MB a 7MB (pedido de Pablo, obligar a comprimir). Verificado HU-09/HU-11 ya cubiertas por la UI existente (`TransporterAlertBanner`/`mandatoryProblems` ya filtran por `LEGAL_MANDATORY`; `/dashboard/seguros` ya tiene tabs Vencidas/Por vencer/Al día) — no requirieron cambios.
+
+**Decisión confirmada por el usuario para HU-04/05**: solo alertar, resolución manual — sin auto-creación de conductor/tracto/empresa cuando no cruza. Coordinador busca/asigna empresa existente o crea a mano.
+
+**Fase 1 completa — cuadratura diaria** (commit `ded4ba4`), implementa "cuadrar la caja" (HU-01/02/03):
+- Migración `app.driver_day_status` (grano conductor×día: ASSIGNED/UNASSIGNED/MISMATCH) + `app.daily_closures` (snapshot de cierre) — aplicada y verificada en vivo contra Supabase (2026-07-18: 3 ASIGNADOS, 76 NO ASIGNADOS, coherente con el roster real).
+- `GET/PATCH/POST /daily-closures` (`daily_closures.py`) — recompute en vivo sin watermark incremental (mismo criterio que `available_drivers`), captura de motivo (HU-02), bloqueo de cierre real con override admin+comentario obligatorio vía `audit_log` (HU-03) — sin esquema de excepciones nuevo.
+- Frontend: `/dashboard/diario/cuadratura` (tiles clickeables + tabla + selector de motivo + botón de cierre con flujo de override).
+- **Nomenclatura corregida a pedido del usuario**: el router/schema/tests se llamaban `cuadratura.py`/`/cuadratura` — rompía con la convención en inglés del resto del backend (`trips.py`→`/trips`, `compliance.py`→`/compliance-records`). Renombrado a `daily_closures.py`/`/daily-closures` antes de comitear.
+- **Sidebar reestructurado a pedido del usuario**: en vez de sumar "Cuadratura" como 4º item plano, se agrupó con Diario bajo un item expandible "Monitor de Viajes" (con Empresas/Seguros quedando planos) — deja lugar para el futuro reporte por cliente de Fase 1.5 sin seguir apilando items sueltos.
+- Verificación: 276/276 backend, 453/453 frontend, `tsc`/`build` limpios.
+
+**Pipeline reactivado por el usuario** durante la Ronda 34 — pendiente de confirmar si ya volvió a ingestar (wakeup programado, puede haber quedado obsoleto si esta ronda se cerró antes de que dispare; volver a chequear `bronze.tms_trips_snapshot`/`app.trips` al empezar la próxima sesión si no se confirmó en el chat).
+
+#### Próximo paso exacto
+1. [ ] Confirmar si el pipeline volvió a ingestar datos (chequear `bronze.tms_trips_snapshot`/`app.trips` — baseline conocido: detenido en 2026-07-18 07:23 UTC).
+2. [ ] Fase 1.5 (reporte por cliente, iterativo sobre la base de `driver_day_status`) — sin empezar, Pablo mismo reconoció que la unificación total puede tomar más de una iteración.
+3. [ ] Fase 2 (Seguros↔Diario, badge/banner de póliza crítica en el Diario) — sin empezar.
+4. [ ] Fase 3 (HU-05 gatillo desde alerta + HU-06 fuzzy match, diseño ya aprobado por Pablo: ~80% similitud + confirmación humana) — sin empezar.
+5. [ ] Fase 4 (locales + sync recurrente Mage `bronze.raw_shipper_locations → public.locations`) — sin empezar, requiere tocar Mage.
+6. [ ] Fase 5 (tarifario, módulo nuevo "Tarifario 1.0" separado en el menú) — sin empezar.
+7. [ ] Confirmar con el usuario si Vercel sigue siendo un deploy target real o si `CLAUDE.md` debe actualizarse a Cloud Run como fuente de verdad (heredado, Ronda 34).
+8. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+9. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+10. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+11. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
