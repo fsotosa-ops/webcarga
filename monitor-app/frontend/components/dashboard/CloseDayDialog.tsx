@@ -6,8 +6,12 @@ import { Loader2, ClipboardCheck, AlertTriangle, CheckCircle2, X } from 'lucide-
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import type { DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
 
+// "Por regularizar" en vez de "Mismatch" (feedback del usuario 2026-07-22:
+// el término técnico está fuera del vocabulario operativo de la app) —
+// misma palabra que usa Pablo en la reunión del 20/07 para este caso
+// exacto ("regularizar la operación sin perder trazabilidad").
 const STATUS_LABEL: Record<DriverDayStatusValue, string> = {
-  ASSIGNED: 'Asignado', UNASSIGNED: 'No asignado', MISMATCH: 'Mismatch',
+  ASSIGNED: 'Asignado', UNASSIGNED: 'No asignado', MISMATCH: 'Por regularizar',
 }
 const STATUS_CLS: Record<DriverDayStatusValue, string> = {
   ASSIGNED:   'bg-green-50 text-green-700 border-green-200',
@@ -134,7 +138,7 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
                     ['Total', data.total_drivers, 'text-text-primary'],
                     ['Asignados', data.assigned_count, 'text-green-600'],
                     ['No asignados', data.unassigned_count, 'text-text-primary'],
-                    ['Mismatch', data.mismatch_count, 'text-red-600'],
+                    ['Por regularizar', data.mismatch_count, 'text-red-600'],
                   ] as const).map(([label, value, cls]) => (
                     <div key={label} className="border border-border rounded-xl px-3 py-2.5 bg-white">
                       <p className={`text-xl font-bold leading-none ${cls}`}>{value}</p>

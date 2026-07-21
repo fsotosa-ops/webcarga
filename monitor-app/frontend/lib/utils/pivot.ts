@@ -23,8 +23,9 @@ export const GRANULARITY_LABELS: Record<Granularity, string> = {
   day: 'Día', week: 'Semana', month: 'Mes', quarter: 'Trimestre', semester: 'Semestre',
 }
 
+// "Por regularizar" en vez de "Mismatch" (feedback del usuario 2026-07-22)
 const STATUS_LABEL: Record<DriverDayStatusValue, string> = {
-  ASSIGNED: 'Asignado', UNASSIGNED: 'No asignado', MISMATCH: 'Mismatch',
+  ASSIGNED: 'Asignado', UNASSIGNED: 'No asignado', MISMATCH: 'Por regularizar',
 }
 
 function isoWeekStart(dateStr: string): string {

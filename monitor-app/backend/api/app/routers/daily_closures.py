@@ -36,6 +36,20 @@ def _parse_business_date(fecha: str) -> _date:
 # viaje del conductor ese día sin empresa resuelta, o con una empresa
 # distinta a la propia, tira todo el día a MISMATCH — necesita
 # regularización antes de poder cerrarse limpio.
+#
+# BUG REAL corregido 2026-07-22 (reportado por el usuario: "no veo
+# conductores asignados si el Diario reporta viajes con conductores"):
+# day_trips solo miraba trip_fleet_links.driver_id, sin replicar el mismo
+# fallback en vivo que ya usa _TRIP_FROM/available_drivers en trips.py —
+# y trip_fleet_links no tiene ninguna fila nueva desde el 2026-07-19 (nada
+# la puebla para viajes que llegan del TMS, solo existía el bootstrap
+# histórico + altas manuales). Se agrega la misma cadena de resolución en
+# vivo (patente → public.assets → vehicle_driver_assignments), MÁS un
+# tercer nivel nuevo confirmado con el usuario: si ninguno de los dos
+# anteriores resuelve pero el nombre que reporta el TMS coincide EXACTO
+# (case-insensitive) con un conductor real del roster, se toma como
+# asignado — mismo nivel de confianza que ya usa trips.py para MOSTRAR ese
+# nombre en el Diario, no una regla nueva más laxa.
 _RECOMPUTE_SQL = """
 WITH active_roster AS (
     SELECT d.id AS driver_id, da.carrier_id AS home_carrier_id
@@ -44,10 +58,25 @@ WITH active_roster AS (
     JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
 ),
 day_trips AS (
-    SELECT fl.driver_id, fl.carrier_id AS trip_carrier_id, fl.trip_id
-    FROM app.trip_fleet_links fl
-    JOIN app.trips t ON t.id = fl.trip_id
-    WHERE t.planning_date = $1 AND fl.driver_id IS NOT NULL
+    SELECT
+        t.id AS trip_id,
+        COALESCE(fl.driver_id, vda_auto.driver_id, d_by_name.id) AS driver_id,
+        COALESCE(fl.carrier_id, c_auto.id) AS trip_carrier_id
+    FROM app.trips t
+    LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
+    LEFT JOIN public.assets ta_auto
+        ON fl.tractor_asset_id IS NULL
+       AND upper(trim(ta_auto.license_plate)) =
+           upper(trim(COALESCE(NULLIF(t.fleet->>'tractor_plate', ''), t.fleet->>'trailer_plate')))
+    LEFT JOIN public.asset_assignments aa_auto ON aa_auto.asset_id = ta_auto.id AND aa_auto.status = 'ACTIVE'
+    LEFT JOIN public.carriers c_auto ON c_auto.id = aa_auto.carrier_id
+    LEFT JOIN public.vehicle_driver_assignments vda_auto ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
+    -- 3er nivel (nuevo): match exacto de nombre contra el roster cuando no
+    -- hay vínculo vehículo-conductor registrado todavía.
+    LEFT JOIN public.drivers d_by_name
+        ON fl.driver_id IS NULL AND vda_auto.driver_id IS NULL
+       AND lower(trim(d_by_name.full_name)) = lower(trim(t.fleet->>'driver_name_tms'))
+    WHERE t.planning_date = $1
 ),
 computed AS (
     SELECT
