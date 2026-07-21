@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CuadraturaPage from './page'
 import { createClient } from '@/lib/supabase/client'
@@ -35,9 +35,9 @@ const STATUS: DailyClosureStatus = {
   mismatch_count: 1,
   pending_count: 2,
   drivers: [
-    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null },
-    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null },
-    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null },
+    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: ['Walmart'] },
+    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: ['Sodimac'] },
   ],
 }
 
@@ -80,9 +80,48 @@ describe('CuadraturaPage', () => {
     const { dailyClosuresApi: mockedApi } = await import('@/lib/api/dailyClosures')
     renderPage()
     await screen.findByText('Ana Soto')
-    const select = screen.getByRole('combobox')
-    fireEvent.change(select, { target: { value: 'pana' } })
+    // 2 combobox ahora: el selector "Vista" (Conductor/Empresa/Cliente) y el
+    // motivo de Ana Soto — el motivo es el que NO tiene la opción "Por conductor".
+    const selects = screen.getAllByRole('combobox')
+    const reasonSelect = selects.find(s => !within(s).queryByText('Por conductor'))!
+    fireEvent.change(reasonSelect, { target: { value: 'pana' } })
     await waitFor(() => expect(mockedApi.setReason).toHaveBeenCalledWith('d2', '2026-07-21', 'pana'))
+  })
+
+  it('shows a pivot table grouped by empresa', async () => {
+    renderPage()
+    await screen.findByText('Juan Pérez')
+    fireEvent.change(screen.getByDisplayValue('Por conductor'), { target: { value: 'empresa' } })
+    expect(await screen.findByText('Transportes Sur')).toBeInTheDocument()
+    expect(screen.getByText('Rios Ltda')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('shows a pivot table grouped by cliente', async () => {
+    renderPage()
+    await screen.findByText('Juan Pérez')
+    fireEvent.change(screen.getByDisplayValue('Por conductor'), { target: { value: 'cliente' } })
+    expect(await screen.findByText('Walmart')).toBeInTheDocument()
+    expect(screen.getByText('Sodimac')).toBeInTheDocument()
+  })
+
+  it('exports the current view as CSV', async () => {
+    const clickSpy = vi.fn()
+    const originalCreateElement = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = originalCreateElement(tag)
+      if (tag === 'a') el.click = clickSpy
+      return el
+    })
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
+
+    renderPage()
+    await screen.findByText('Juan Pérez')
+    fireEvent.click(screen.getByRole('button', { name: /CSV/ }))
+
+    expect(clickSpy).toHaveBeenCalled()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('shows mismatch rows with a link to review in Empresas', async () => {

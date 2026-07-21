@@ -26,7 +26,7 @@ def _driver_row(**overrides):
         "driver_id": "d1", "full_name": "Juan Pérez", "tax_id": "11111111-1",
         "carrier_name": "Transportes Sur Spa", "status": "ASSIGNED",
         "unassigned_reason_id": None, "unassigned_reason_label": None,
-        "resolved_by": None, "resolved_at": None,
+        "resolved_by": None, "resolved_at": None, "client_names": [],
     }
     base.update(overrides)
     return base
@@ -95,6 +95,22 @@ def test_get_daily_closure_status_invalid_fecha_422():
     res = client.get("/api/v1/daily-closures?fecha=no-es-una-fecha")
 
     assert res.status_code == 422
+
+
+def test_get_daily_closure_status_includes_client_names():
+    """Fase 1.5 (2026-07-21): cliente(s) servidos ese día — denominador
+    común de los 3 reportes manuales (Sider/Lansa, Sodimac, Walmart)."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row(driver_id="d1", client_names=["Walmart"])]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures?fecha=2026-07-21")
+
+    assert res.json()["drivers"][0]["client_names"] == ["Walmart"]
+    detail_sql = pool.fetch.call_args_list[0].args[0]
+    assert "client_names" in detail_sql
+    assert "public.shippers" in detail_sql
 
 
 # ── PATCH /cuadratura/{driver_id} ────────────────────────────────────────

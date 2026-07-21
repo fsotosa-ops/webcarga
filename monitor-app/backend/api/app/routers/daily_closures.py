@@ -79,12 +79,26 @@ ON CONFLICT (driver_id, business_date) DO UPDATE SET
 _DETAIL_SQL = """
 SELECT dds.driver_id, d.full_name, d.tax_id, c.business_name AS carrier_name,
        dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
-       dds.resolved_by, dds.resolved_at
+       dds.resolved_by, dds.resolved_at,
+       COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names
 FROM app.driver_day_status dds
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
 LEFT JOIN app.unassigned_reasons ur ON ur.id = dds.unassigned_reason_id
+-- Fase 1.5 (2026-07-21): cliente(s) que el conductor sirvió ese día — el
+-- denominador común de los 3 reportes manuales hoy armados a mano
+-- (Sider/Lansa, Sodimac, Walmart todos pivotean por EETT y/o cliente).
+-- Resuelve vía public.shippers para un nombre prolijo, mismo criterio ya
+-- usado en trips.py (_TRIP_FROM) — client_name crudo del TMS puede venir
+-- con mayúsculas/minúsculas inconsistentes.
+LEFT JOIN LATERAL (
+    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name)) AS client_names
+    FROM app.trip_fleet_links fl
+    JOIN app.trips t ON t.id = fl.trip_id
+    LEFT JOIN public.shippers sh ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+    WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
+) clients ON true
 WHERE dds.business_date = $1
 ORDER BY d.full_name
 """

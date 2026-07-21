@@ -829,6 +829,9 @@ export type DriverDayStatusRow = {
   unassigned_reason_label:     string | null
   resolved_by:                 string | null
   resolved_at:                 string | null
+  /** Cliente(s) servidos ese día (Fase 1.5) — denominador común de los 3
+   *  reportes manuales hoy armados a mano (Sider/Lansa, Sodimac, Walmart). */
+  client_names:                string[]
 }
 
 export type DailyClosureInfo = {
