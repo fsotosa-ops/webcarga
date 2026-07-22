@@ -88,6 +88,130 @@ def test_list_locations_ignores_incomplete_when_not_true():
     assert "operation_type IS NULL" not in query
 
 
+def _location_rate_row(**overrides):
+    base = {
+        "id": "r1", "location_id": "loc-1", "tarifa": "450.000 CLP",
+        "valid_from": "2026-07-22", "valid_to": None, "created_at": None, "updated_at": None,
+    }
+    base.update(overrides)
+    return base
+
+
+# ── HU-17 (Fase 5, Tarifario 1.0): GET ?include_rate= ────────────────────────
+
+def test_list_locations_include_rate_joins_current_rate():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_location_row(
+        current_rate="450.000 CLP", current_rate_valid_from="2026-07-01", current_rate_valid_to=None,
+    )]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations?include_rate=true")
+
+    assert res.status_code == 200
+    assert res.json()[0]["current_rate"] == "450.000 CLP"
+    query = pool.fetch.call_args.args[0]
+    assert "public.location_rates" in query
+    assert "current_rate" in query
+
+
+def test_list_locations_omits_rate_join_by_default():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_location_row()]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations")
+
+    assert res.status_code == 200
+    query = pool.fetch.call_args.args[0]
+    assert "public.location_rates" not in query
+
+
+# ── GET/POST/PATCH /locations/{id}/rates ─────────────────────────────────────
+
+def test_list_location_rates_orders_by_valid_from_desc():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_location_rate_row()]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations/loc-1/rates")
+
+    assert res.status_code == 200
+    assert res.json()[0]["tarifa"] == "450.000 CLP"
+    query = pool.fetch.call_args.args[0]
+    assert "ORDER BY valid_from DESC" in query
+
+
+def test_create_location_rate_404_when_location_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.post("/api/v1/locations/loc-1/rates", json={"tarifa": "450.000 CLP"})
+
+    assert res.status_code == 404
+
+
+def test_create_location_rate_inserts_new_row():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [
+        {"entity_type": "SHIPPER", "entity_id": "shipper-1"},
+        _location_rate_row(),
+    ]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/locations/loc-1/rates", json={"tarifa": "450.000 CLP", "valid_from": "2026-07-22"})
+
+    assert res.status_code == 201
+    assert res.json()["tarifa"] == "450.000 CLP"
+    insert_sql = conn.fetchrow.call_args_list[-1].args[0]
+    assert "INSERT INTO public.location_rates" in insert_sql
+
+
+def test_patch_location_rate_404_when_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/locations/loc-1/rates/r1", json={"tarifa": "500.000 CLP"})
+
+    assert res.status_code == 404
+
+
+def test_patch_location_rate_no_fields_422():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/locations/loc-1/rates/r1", json={})
+
+    assert res.status_code == 422
+
+
+def test_patch_location_rate_updates_without_creating_history():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [
+        _location_rate_row(),
+        {"entity_type": "SHIPPER", "entity_id": "shipper-1"},
+    ]
+    pool.fetchrow.return_value = _location_rate_row(tarifa="500.000 CLP")
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/locations/loc-1/rates/r1", json={"tarifa": "500.000 CLP"})
+
+    assert res.status_code == 200
+    assert res.json()["tarifa"] == "500.000 CLP"
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "UPDATE public.location_rates SET" in update_sql
+
+
 # ── POST /locations ───────────────────────────────────────────────────────
 
 def test_create_location_rejects_unknown_shipper():

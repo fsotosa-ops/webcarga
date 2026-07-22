@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import get_current_user, require_editor
 from ..db import get_pool
 from ..schemas.location import LocationCreateBody, LocationPatchBody
+from ..schemas.location_rate import LocationRateCreateBody, LocationRatePatchBody
 from ..services.audit import log_change
 
 router = APIRouter(prefix="/locations", tags=["locations"])
@@ -29,6 +30,7 @@ async def list_locations(
     operation_type: str = Query(""),
     operational_status: str = Query(""),
     incomplete: str = Query("", description="true = solo locales sin clasificación (HU-16)"),
+    include_rate: str = Query("", description="true = agrega la tarifa vigente (Fase 5, Tarifario 1.0)"),
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
@@ -60,11 +62,120 @@ async def list_locations(
         clauses.append("operational_status = 'ACTIVE'")
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    # Fase 5 (Tarifario 1.0): opt-in — el Diario y Configuración > Locales
+    # no lo piden, sin cambio de comportamiento para ellos. "Vigente" se
+    # calcula acá, no se almacena: valid_from <= hoy <= valid_to (o
+    # valid_to NULL = vigente indefinidamente). public.locations.id (sin
+    # alias) porque el FROM de esta consulta no alías la tabla.
+    rate_select = ""
+    rate_join = ""
+    if include_rate == "true":
+        rate_select = ", cr.tarifa AS current_rate, cr.valid_from AS current_rate_valid_from, cr.valid_to AS current_rate_valid_to"
+        rate_join = """
+            LEFT JOIN LATERAL (
+                SELECT tarifa, valid_from, valid_to
+                FROM public.location_rates lr
+                WHERE lr.location_id = public.locations.id
+                  AND lr.valid_from <= CURRENT_DATE
+                  AND (lr.valid_to IS NULL OR lr.valid_to >= CURRENT_DATE)
+                ORDER BY lr.valid_from DESC
+                LIMIT 1
+            ) cr ON true
+        """
+
     rows = await pool.fetch(
-        f"SELECT {_LOCATION_FIELDS} FROM public.locations {where} ORDER BY name",
+        f"SELECT {_LOCATION_FIELDS}{rate_select} FROM public.locations {rate_join} {where} ORDER BY name",
         *params,
     )
     return [dict(r) for r in rows]
+
+
+_LOCATION_RATE_FIELDS = "id, location_id, tarifa, valid_from, valid_to, created_at, updated_at"
+
+
+@router.get("/{location_id}/rates")
+async def list_location_rates(location_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+    rows = await pool.fetch(
+        f"SELECT {_LOCATION_RATE_FIELDS} FROM public.location_rates "
+        "WHERE location_id = $1 ORDER BY valid_from DESC",
+        location_id,
+    )
+    return [dict(r) for r in rows]
+
+
+@router.post("/{location_id}/rates", status_code=201)
+async def create_location_rate(
+    location_id: str, body: LocationRateCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            loc = await conn.fetchrow(
+                "SELECT entity_type, entity_id FROM public.locations WHERE id = $1", location_id,
+            )
+            if not loc:
+                raise HTTPException(404, "Local no encontrado")
+
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO public.location_rates (location_id, tarifa, valid_from, valid_to, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING {_LOCATION_RATE_FIELDS}
+                """,
+                location_id, body.tarifa, body.valid_from, body.valid_to, user["sub"],
+            )
+            await log_change(
+                conn, actor=user["sub"], entity_type=loc["entity_type"], entity_id=loc["entity_id"],
+                action="create", field="location_rate", new_value=body.tarifa, source="api",
+            )
+    return dict(row)
+
+
+@router.patch("/{location_id}/rates/{rate_id}")
+async def patch_location_rate(
+    location_id: str, rate_id: str, body: LocationRatePatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    touched = body.sent_fields()
+    if not touched:
+        raise HTTPException(422, "Ningún campo enviado")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                f"SELECT {_LOCATION_RATE_FIELDS} FROM public.location_rates "
+                "WHERE id = $1 AND location_id = $2",
+                rate_id, location_id,
+            )
+            if not current:
+                raise HTTPException(404, "Tarifa no encontrada")
+
+            loc = await conn.fetchrow(
+                "SELECT entity_type, entity_id FROM public.locations WHERE id = $1", location_id,
+            )
+
+            await conn.execute(
+                """
+                UPDATE public.location_rates SET
+                    tarifa     = COALESCE($2, tarifa),
+                    valid_from = COALESCE($3, valid_from),
+                    valid_to   = COALESCE($4, valid_to),
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                rate_id, body.tarifa, body.valid_from, body.valid_to,
+            )
+            for field in touched:
+                await log_change(
+                    conn, actor=user["sub"], entity_type=loc["entity_type"], entity_id=loc["entity_id"],
+                    action="update", field=f"location_rate.{field}",
+                    old_value=str(current[field]) if current[field] is not None else None,
+                    new_value=str(getattr(body, field)), source="api",
+                )
+
+    row = await pool.fetchrow(
+        f"SELECT {_LOCATION_RATE_FIELDS} FROM public.location_rates WHERE id = $1", rate_id,
+    )
+    return dict(row)
 
 
 @router.post("", status_code=201)
