@@ -312,7 +312,11 @@ SELECT
     -- unassigned_reason_id (motivo de no asignación, Fase 1.5d): mismo
     -- patrón que notes/comments — solo lo setea el operador
     -- desde la API, el pipeline nunca lo escribe.
-    NULL::text          AS unassigned_reason_id,
+    -- Tipo uuid desde Ronda 43 (migración status_taxonomies,
+    -- 20260722040000): antes referenciaba app.unassigned_reasons(id) (text),
+    -- ahora app.status_taxonomies(id) (uuid) — coordinado con esa migración,
+    -- ambos lados del UNION ALL de abajo deben resolver al mismo tipo.
+    NULL::uuid          AS unassigned_reason_id,
     ARRAY[]::text[]     AS manually_edited_fields,
     NULL::uuid          AS fleet_link_id,
     NULL::uuid          AS edited_by,
