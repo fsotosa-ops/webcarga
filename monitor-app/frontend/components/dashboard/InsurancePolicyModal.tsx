@@ -25,12 +25,13 @@ export type PolicyFormState = {
  *  depende de esos campos — una póliza recién creada quedaba "incompleta"
  *  respecto al resto. Reusado en el quick-add del sidebar y en el estado
  *  vacío (sin pólizas todavía). */
-export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submitting, compact = false }: {
+export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submitting, error, compact = false }: {
   form: PolicyFormState
   onChange: (form: PolicyFormState) => void
   onSubmit: () => void
   onCancel: () => void
   submitting: boolean
+  error?: string | null
   compact?: boolean
 }) {
   const inputCls = compact
@@ -81,6 +82,7 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
           className={inputCls}
         />
       )}
+      {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={onSubmit}
@@ -153,6 +155,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     has_endorsement: false, endorsement_number: '',
   })
   const [addingPolicy, setAddingPolicy] = useState(false)
+  const [addPolicyErr, setAddPolicyErr] = useState<string | null>(null)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduleForm, setScheduleForm] = useState({ total_installments: '12', amount_uf: '', first_due_date: '' })
   const [generatingSchedule, setGeneratingSchedule] = useState(false)
@@ -196,6 +199,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   useEffect(() => {
     setAddPolicyOpen(false)
     setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false, endorsement_number: '' })
+    setAddPolicyErr(null)
   }, [carrierId])
 
   const detailQuery = useQuery({
@@ -322,6 +326,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   async function handleAddPolicy() {
     if (!carrierId || !policyForm.insurance_company) return
     setAddingPolicy(true)
+    setAddPolicyErr(null)
     try {
       await carriersApi.createPolicy(carrierId, {
         insurance_company: policyForm.insurance_company,
@@ -335,6 +340,8 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
       setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false, endorsement_number: '' })
       setAddPolicyOpen(false)
       queryClient.invalidateQueries({ queryKey: ['carrier-policies', carrierId] })
+    } catch (e) {
+      setAddPolicyErr(e instanceof Error ? e.message : 'Error al crear la póliza')
     } finally {
       setAddingPolicy(false)
     }
@@ -405,6 +412,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                   onSubmit={handleAddPolicy}
                   onCancel={() => setAddPolicyOpen(false)}
                   submitting={addingPolicy}
+                  error={addPolicyErr}
                   compact
                 />
               </div>
@@ -448,6 +456,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                         onSubmit={handleAddPolicy}
                         onCancel={() => setAddPolicyOpen(false)}
                         submitting={addingPolicy}
+                        error={addPolicyErr}
                       />
                     </>
                   ) : (

@@ -269,6 +269,19 @@ describe('InsurancePolicyModal', () => {
     }))
   })
 
+  it('shows an error and keeps the form open when creating a policy fails', async () => {
+    vi.mocked(carriersApi.createPolicy).mockRejectedValue(new Error('Ya existe una póliza con ese número'))
+    renderModal('c2')
+    await screen.findByText(/Sin pólizas registradas todavía/)
+
+    fireEvent.click(screen.getByText('Agregar la primera póliza'))
+    fireEvent.change(screen.getByPlaceholderText('Aseguradora'), { target: { value: 'Mapfre' } })
+    fireEvent.click(screen.getByText('Guardar'))
+
+    expect(await screen.findByText('Ya existe una póliza con ese número')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Aseguradora')).toHaveValue('Mapfre')
+  })
+
   it('does not offer to add a policy for a carrier with none when the user cannot edit', async () => {
     renderModal('c2', { canEdit: false })
     expect(await screen.findByText('Sin pólizas registradas')).toBeInTheDocument()
