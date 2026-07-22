@@ -12,6 +12,17 @@ export type LocationListParams = {
   incomplete?:            boolean
   /** Fase 5 (Tarifario 1.0): agrega la tarifa vigente de cada local. */
   include_rate?:          boolean
+  /** Ronda 43 (Fase C, Tarea 7): paginación de servidor — verificado que el
+   *  generador de carga con más volumen tiene 566 locales activos. */
+  page?:                  number
+  limit?:                 number
+}
+
+export type LocationListResponse = {
+  data:  Location[]
+  count: number
+  page:  number
+  limit: number
 }
 
 export type Shipper = {
@@ -30,8 +41,10 @@ export const locationsApi = {
     if (params?.operational_status) qs.set('operational_status', params.operational_status)
     if (params?.incomplete)         qs.set('incomplete', 'true')
     if (params?.include_rate)       qs.set('include_rate', 'true')
+    if (params?.page)               qs.set('page', String(params.page))
+    if (params?.limit)              qs.set('limit', String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''
-    return apiFetch<Location[]>(`/api/v1/locations${suffix}`)
+    return apiFetch<LocationListResponse>(`/api/v1/locations${suffix}`)
   },
 
   create: (body: LocationCreatePayload) =>

@@ -35,12 +35,14 @@ def _location_row(**overrides):
 def test_list_locations_defaults_to_active_only():
     pool = AsyncMock()
     pool.fetch.return_value = [_location_row()]
+    pool.fetchval.return_value = 1
     client = make_client(pool)
 
     res = client.get("/api/v1/locations")
 
     assert res.status_code == 200
-    assert res.json()[0]["name"] == "Alameda"
+    assert res.json()["data"][0]["name"] == "Alameda"
+    assert res.json()["count"] == 1
     query = pool.fetch.call_args.args[0]
     assert "operational_status = 'ACTIVE'" in query
 
@@ -48,6 +50,7 @@ def test_list_locations_defaults_to_active_only():
 def test_list_locations_filters_by_entity_and_query():
     pool = AsyncMock()
     pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
     client = make_client(pool)
 
     res = client.get("/api/v1/locations?entity_type=SHIPPER&entity_id=shipper-1&q=alameda")
@@ -58,7 +61,40 @@ def test_list_locations_filters_by_entity_and_query():
     assert "entity_type = $1" in query
     assert "entity_id = $2" in query
     assert "name ILIKE" in query
-    assert params == ("SHIPPER", "shipper-1", "alameda")
+    # +limit +offset al final de la tupla de params (paginación, Ronda 43)
+    assert params == ("SHIPPER", "shipper-1", "alameda", 50, 0)
+
+
+# Ronda 43 (Fase C, Tarea 7): paginación de servidor — el generador de carga
+# con más volumen real tiene 566 locales activos (verificado contra datos
+# reales antes de agregar esto).
+
+def test_list_locations_paginates_with_limit_and_offset():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_location_row()]
+    pool.fetchval.return_value = 566
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations?page=3&limit=50")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["count"] == 566
+    assert body["page"] == 3
+    assert body["limit"] == 50
+    query = pool.fetch.call_args.args[0]
+    params = pool.fetch.call_args.args[1:]
+    assert "LIMIT" in query and "OFFSET" in query
+    assert params[-2:] == (50, 100)  # offset = (page-1)*limit = 100
+
+
+def test_list_locations_rejects_limit_over_200():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations?limit=500")
+
+    assert res.status_code == 422
 
 
 # ── HU-15/16 (Fase 4): ?incomplete=true — locales auto-registrados desde el
@@ -67,6 +103,7 @@ def test_list_locations_filters_by_entity_and_query():
 def test_list_locations_incomplete_filters_by_null_operation_type():
     pool = AsyncMock()
     pool.fetch.return_value = [_location_row(operation_type=None)]
+    pool.fetchval.return_value = 1
     client = make_client(pool)
 
     res = client.get("/api/v1/locations?incomplete=true")
@@ -79,6 +116,7 @@ def test_list_locations_incomplete_filters_by_null_operation_type():
 def test_list_locations_ignores_incomplete_when_not_true():
     pool = AsyncMock()
     pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
     client = make_client(pool)
 
     res = client.get("/api/v1/locations?incomplete=false")
@@ -104,12 +142,13 @@ def test_list_locations_include_rate_joins_current_rate():
     pool.fetch.return_value = [_location_row(
         current_rate="450.000 CLP", current_rate_valid_from="2026-07-01", current_rate_valid_to=None,
     )]
+    pool.fetchval.return_value = 1
     client = make_client(pool)
 
     res = client.get("/api/v1/locations?include_rate=true")
 
     assert res.status_code == 200
-    assert res.json()[0]["current_rate"] == "450.000 CLP"
+    assert res.json()["data"][0]["current_rate"] == "450.000 CLP"
     query = pool.fetch.call_args.args[0]
     assert "public.location_rates" in query
     assert "current_rate" in query
@@ -118,6 +157,7 @@ def test_list_locations_include_rate_joins_current_rate():
 def test_list_locations_omits_rate_join_by_default():
     pool = AsyncMock()
     pool.fetch.return_value = [_location_row()]
+    pool.fetchval.return_value = 1
     client = make_client(pool)
 
     res = client.get("/api/v1/locations")

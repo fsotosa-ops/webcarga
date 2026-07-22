@@ -31,6 +31,14 @@ async def list_locations(
     operational_status: str = Query(""),
     incomplete: str = Query("", description="true = solo locales sin clasificación (HU-16)"),
     include_rate: str = Query("", description="true = agrega la tarifa vigente (Fase 5, Tarifario 1.0)"),
+    # Ronda 43 (Fase C, Tarea 7): verificado contra datos reales antes de
+    # agregar esto — el generador de carga con más volumen tiene 566 locales
+    # activos (bien lejos de las "decenas" que hubieran hecho innecesaria la
+    # paginación de servidor). limit tope 200 (no 100 como carriers/insurance)
+    # porque acá no hay filtro de "solo pendientes" que reduzca el volumen
+    # real visto de entrada.
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
@@ -84,11 +92,19 @@ async def list_locations(
             ) cr ON true
         """
 
+    offset = (page - 1) * limit
+    lp, op = len(params) + 1, len(params) + 2
+
     rows = await pool.fetch(
-        f"SELECT {_LOCATION_FIELDS}{rate_select} FROM public.locations {rate_join} {where} ORDER BY name",
-        *params,
+        f"""
+        SELECT {_LOCATION_FIELDS}{rate_select} FROM public.locations {rate_join} {where}
+        ORDER BY name
+        LIMIT ${lp} OFFSET ${op}
+        """,
+        *params, limit, offset,
     )
-    return [dict(r) for r in rows]
+    count = await pool.fetchval(f"SELECT count(*) FROM public.locations {where}", *params)
+    return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit}
 
 
 _LOCATION_RATE_FIELDS = "id, location_id, tarifa, valid_from, valid_to, created_at, updated_at"
