@@ -270,6 +270,19 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     expect(driversApi.fuzzyMatch).not.toHaveBeenCalled()
   })
 
+  // Fase B (ítem 5, feedback post-weekly 2026-07-22): "Equipo OVNI" es el
+  // término real de Pablo (transcript-meeting.md) para un tracto/conductor
+  // sin ningún cruce contra empresa — reemplaza "UNMATCHED" como label.
+  it('shows "Equipo OVNI" when fleet_match_status is UNMATCHED', () => {
+    renderSlideOver({ ...baseTrip, fleet_match_status: 'UNMATCHED', driver_name_tms: 'ALGUIEN SIN CRUCE' })
+    expect(screen.getByText(/Equipo OVNI/)).toBeInTheDocument()
+  })
+
+  it('does not show "Equipo OVNI" when fleet_match_status is MATCHED or unset', () => {
+    renderSlideOver({ ...baseTrip, driver_name_tms: 'ALGUIEN' })
+    expect(screen.queryByText(/Equipo OVNI/)).not.toBeInTheDocument()
+  })
+
   // Gap cerrado 2026-07-22: documentación LEGAL_MANDATORY de conductor/
   // tracto/empresa — antes solo Seguros tenía esta prominencia en el Diario.
   it('shows a pending-docs badge per domain, labeled so it is not ambiguous which entity it refers to', () => {

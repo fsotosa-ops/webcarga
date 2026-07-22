@@ -6,7 +6,7 @@ import {
   X, Loader2, Copy, Check,
   Truck, User, Phone, Hash,
   MapPin, RotateCcw, ClipboardList,
-  ShieldAlert, Search, FileWarning,
+  ShieldAlert, Search, FileWarning, AlertTriangle,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
@@ -645,6 +645,20 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {/* Fase B (ítem 5, feedback post-weekly 2026-07-22):
+                      "Equipo OVNI" es el término real de Pablo para este
+                      caso exacto — tracto/conductor que el TMS reporta sin
+                      ningún cruce contra empresa (transcript-meeting.md:
+                      "un tracto que no está asociado a una empresa de
+                      transporte, tiene que quedar ahí... Equipo OVNI, o no
+                      identificado"). Reemplaza el enum interno UNMATCHED
+                      solo como label — la resolución sigue siendo manual. */}
+                  {trip.fleet_match_status === 'UNMATCHED' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                      <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                      <p className="text-[11px] text-amber-700 font-medium">Equipo OVNI — sin cruce contra ninguna empresa todavía.</p>
+                    </div>
+                  )}
                   {/* HU-06 (Fase 3): el TMS reportó un nombre pero no cruzó
                       exacto contra el roster — se buscan candidatos por
                       similitud (~80%, confirmado por Pablo) y se muestran
