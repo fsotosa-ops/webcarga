@@ -724,7 +724,7 @@ async def create_carrier_policy(
             )
             await log_change(
                 conn, actor=user["sub"], entity_type="CARRIER", entity_id=carrier_id,
-                action="create", field="insurance_policy", new_value=row["id"], source="api",
+                action="create", field="insurance_policy", new_value=str(row["id"]), source="api",
             )
     return dict(row)
 

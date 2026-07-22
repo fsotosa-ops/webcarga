@@ -507,6 +507,35 @@ def test_create_carrier_policy_success():
     assert res.status_code == 201
 
 
+def test_create_carrier_policy_serializes_uuid_id_in_audit_log():
+    """Bug real de producción (500, confirmado en Cloud Run logs
+    2026-07-22): asyncpg decodifica una columna uuid de Postgres como
+    uuid.UUID de Python, no str — log_change hace json.dumps(new_value)
+    antes de mandarlo a Postgres, y json.dumps no sabe serializar un UUID
+    crudo. Con "id": "p1" (string) el mock nunca reproducía el bug real."""
+    import uuid
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = 1
+    conn.fetchrow.return_value = {
+        "id": uuid.UUID("11111111-1111-1111-1111-111111111111"), "carrier_id": "c1",
+        "insurance_company": "HDI", "policy_number": None,
+        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
+        "status": "ACTIVE", "created_at": None,
+    }
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/carriers/c1/policies",
+        json={"carrier_id": "c1", "insurance_company": "HDI"},
+    )
+
+    assert res.status_code == 201
+    audit_call = conn.execute.call_args
+    assert audit_call.args[7] == '"11111111-1111-1111-1111-111111111111"'
+
+
 def test_create_carrier_policy_persists_has_endorsement():
     pool = AsyncMock()
     conn = AsyncMock()
