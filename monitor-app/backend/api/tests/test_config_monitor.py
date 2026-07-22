@@ -43,29 +43,6 @@ def test_list_statuses_returns_group_key():
     assert 'group_id AS "group"' in pool.fetch.call_args.args[0]
 
 
-# ── /config/operational-states — group_id nuevo ──────────────────────────────
-
-def test_create_operational_state_with_invalid_group_is_422():
-    pool = AsyncMock()
-    client = make_client(pool)
-    res = client.post("/api/v1/config/operational-states",
-                      json={"label": "En bodega", "group_id": "no-existe"})
-    assert res.status_code == 422
-
-
-def test_patch_operational_state_accepts_group_id():
-    pool = AsyncMock()
-    pool.fetchrow.side_effect = [
-        {"id": "s1"},
-        {"id": "s1", "label": "En bodega", "bg_color": "#fff", "text_color": "#000",
-         "sort_order": 1, "active": True, "group": "en_local"},
-    ]
-    client = make_client(pool)
-    res = client.patch("/api/v1/config/operational-states/s1", json={"group_id": "en_local"})
-    assert res.status_code == 200
-    assert res.json()["group"] == "en_local"
-
-
 # ── /config/monitor-alert-rules ───────────────────────────────────────────────
 
 def test_get_monitor_alert_rules():

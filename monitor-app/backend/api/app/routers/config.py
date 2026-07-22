@@ -28,43 +28,6 @@ class TripStatusPatch(BaseModel):
         return v
 
 
-class OperationalStateBody(BaseModel):
-    label:      str
-    bg_color:   str = "#f3f4f6"
-    text_color: str = "#374151"
-    sort_order: int = 99
-    group_id:   str = "otro"
-
-    @field_validator("label")
-    @classmethod
-    def label_not_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v or len(v) > 60:
-            raise ValueError("label debe tener entre 1 y 60 caracteres")
-        return v
-
-    @field_validator("group_id")
-    @classmethod
-    def group_valid(cls, v: str) -> str:
-        if v not in VALID_GROUP_IDS:
-            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
-        return v
-
-
-class OperationalStatePatch(BaseModel):
-    label:      Optional[str] = None
-    bg_color:   Optional[str] = None
-    text_color: Optional[str] = None
-    sort_order: Optional[int] = None
-    active:     Optional[bool] = None
-    group_id:   Optional[str] = None
-
-    @field_validator("group_id")
-    @classmethod
-    def group_valid(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in VALID_GROUP_IDS:
-            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
-        return v
 
 
 class MonitorAlertRulesPatch(BaseModel):
@@ -189,81 +152,6 @@ async def patch_status(
         status_id,
     )
     return dict(row)
-
-
-# ── Operational states (full CRUD) ───────────────────────────────────────────
-
-@router.get("/operational-states")
-async def list_operational_states(pool=Depends(get_pool)):
-    rows = await pool.fetch(
-        'SELECT id::text, label, bg_color, text_color, sort_order, active, group_id AS "group" '
-        "FROM app.operational_states ORDER BY sort_order, created_at"
-    )
-    return [dict(r) for r in rows]
-
-
-@router.post("/operational-states")
-async def create_operational_state(
-    body: OperationalStateBody,
-    pool=Depends(get_pool),
-    _=Depends(require_admin),
-):
-    row = await pool.fetchrow(
-        """INSERT INTO app.operational_states (label, bg_color, text_color, sort_order, group_id)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id::text, label, bg_color, text_color, sort_order, active, group_id AS "group\"""",
-        body.label, body.bg_color, body.text_color, body.sort_order, body.group_id,
-    )
-    return dict(row)
-
-
-@router.patch("/operational-states/{state_id}")
-async def patch_operational_state(
-    state_id: str,
-    body: OperationalStatePatch,
-    pool=Depends(get_pool),
-    _=Depends(require_admin),
-):
-    existing = await pool.fetchrow(
-        "SELECT id FROM app.operational_states WHERE id = $1", state_id
-    )
-    if not existing:
-        raise HTTPException(404, "Estado operacional no encontrado")
-
-    data = body.model_dump(exclude_none=True)
-    if not data:
-        raise HTTPException(422, "Ningún campo enviado")
-
-    sets, vals = [], [state_id]
-    for field, value in data.items():
-        vals.append(value)
-        sets.append(f"{field} = ${len(vals)}")
-    sets.append("updated_at = NOW()")
-
-    await pool.execute(
-        f"UPDATE app.operational_states SET {', '.join(sets)} WHERE id = $1", *vals
-    )
-    row = await pool.fetchrow(
-        'SELECT id::text, label, bg_color, text_color, sort_order, active, group_id AS "group" '
-        "FROM app.operational_states WHERE id = $1",
-        state_id,
-    )
-    return dict(row)
-
-
-@router.delete("/operational-states/{state_id}")
-async def delete_operational_state(
-    state_id: str,
-    pool=Depends(get_pool),
-    _=Depends(require_admin),
-):
-    result = await pool.execute(
-        "UPDATE app.operational_states SET active = false, updated_at = NOW() WHERE id = $1",
-        state_id,
-    )
-    if result == "UPDATE 0":
-        raise HTTPException(404, "Estado operacional no encontrado")
-    return {"ok": True}
 
 
 # ── Alert thresholds ─────────────────────────────────────────────────────────
