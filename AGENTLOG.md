@@ -51,13 +51,23 @@ El usuario aprobó incluir el fix de Hallazgo E y F en el alcance de ejecución 
 
 Verificación en cada tarea: backend 308→311 tests, frontend 505→514 tests, `tsc`/`vitest`/`build` limpios (frontend y backend).
 
+**Ítem 6 (Reportería) — brainstorming + plan completos, sin ejecutar todavía** (commits `7224ed8`, `b5e1e9d`, `aaf1de6`):
+- Los 4 mockups de Figma resultaron ser un **WebCarga legado** (Recursos/Viajes/Reportes + Resumen), no un rediseño literal a copiar — el usuario aclaró que es un ejemplo de lenguaje visual (tiles clickeables + shortcuts), y que "lo principal es monitorear el estado del equipo, es en base a eso como gestionan los viajes del diario".
+- Gap real encontrado: existe `app.driver_day_status` (cuadratura de conductor) pero no hay equivalente para equipo/tracto — solo `/available-assets` binario, sin motivo.
+- Reencuadre acordado con el usuario: el primer sub-proyecto real no es Reportería, es una **taxonomía unificada configurable** (`app.status_taxonomies`, dominios `OPERATIONAL_STATE`/`DRIVER_REASON`/`EQUIPMENT_STATE`) que reemplaza `app.operational_states` + `app.unassigned_reasons` — la misma discusión que ya dio Empresas/Seguros (estructura real cuando hay 3+ dominios confirmados, no especulativa). Se descartó un dominio `ALERT_TYPE` separado: "Documentación vencida"/"Póliza vencida" ya son datos calculados (`compliance_records`/`insurance_alert`), no vocabulario manual — en cambio se agregó una **sugerencia de motivo en la UI** (no un trigger de DB) cuando existe esa alerta.
+- Spec: `docs/superpowers/specs/2026-07-22-status-taxonomies-design.md`. Plan: `docs/superpowers/plans/2026-07-22-status-taxonomies-plan.md` (9 tareas TDD, backend+frontend).
+- Los 3 formatos fijos de Reportería por cliente y la UI de monitoreo con tiles/shortcuts quedan para specs posteriores — dependen de que exista `app.equipment_day_status` (todavía no diseñado), que a su vez depende de esta taxonomía.
+
+**Hallazgo de infra encontrado en el camino**: `.gitignore` (patrón `docs/` sin slash inicial) bloqueaba **todo** `docs/` del repo, no solo `monitor-app/docs/` (la intención real) — `docs/superpowers/specs/` y `docs/superpowers/plans/`, referenciados en este archivo desde hace decenas de rondas, nunca estuvieron versionados. Corregido (acotado a `/monitor-app/docs/`, `/extraction_service/docs/`, `/docs/claude_logs/`, `/docs/screenshots/`) y commiteado todo el histórico (21 plans + 18 specs).
+
 #### Próximo paso exacto
-1. [ ] Ítem 6 (Reportería) — requiere traer primero el contenido real de los 4 mockups de Figma (`NW7aAqbiCxML2HLd8uMTzf`, nodos `19-17067`/`24-18435`/`25-9068`/`35-15699`) antes de decidir si `reporteria/page.tsx` (pivot genérico, Ronda 41) se reemplaza por presets fijos (Sider Botelleros/Sodimac/Walmart-Spot, ver `reporte-1/2/3-cierre-diario.png`) o los mantiene como modo avanzado. Es su propio brainstorming (`superpowers:brainstorming` o Plan agent dedicado) — no ejecutar a ciegas.
-2. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-3. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención — quedó sin resolver, el usuario redirigió la conversación hacia el bug de columnas (Hallazgo E, ya cerrado).
-4. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
-5. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-6. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-7. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-8. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-9. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+1. [ ] Ejecutar el plan de `status_taxonomies` (`docs/superpowers/plans/2026-07-22-status-taxonomies-plan.md`) — Tarea 1 (migración SQL) requiere confirmación explícita del usuario antes de aplicar a producción, verificando conteos antes/después. Tareas 2-8 son código normal (TDD). Tarea 9 (DROP de tablas viejas) queda diferida a una confirmación separada, después de correr un tiempo en producción sin errores.
+2. [ ] Una vez exista `status_taxonomies`, diseñar (spec nuevo) `app.equipment_day_status` — el uso real de la taxonomía para cuadrar equipo, no solo dejarla configurable.
+3. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+4. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención — quedó sin resolver, el usuario redirigió la conversación hacia el bug de columnas (Hallazgo E, ya cerrado).
+5. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
+6. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+7. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+8. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+9. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+10. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
