@@ -1,4 +1,4 @@
-import type { Location, LocationCreatePayload, LocationPatchPayload } from '@/lib/types'
+import type { Location, LocationCreatePayload, LocationPatchPayload, LocationRate, LocationRateCreatePayload, LocationRatePatchPayload } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type LocationListParams = {
@@ -10,6 +10,8 @@ export type LocationListParams = {
   /** HU-16 (Fase 4): solo locales sin clasificación — auto-registrados
    *  incompletos por trg_reconcile_new_trip_stop_location. */
   incomplete?:            boolean
+  /** Fase 5 (Tarifario 1.0): agrega la tarifa vigente de cada local. */
+  include_rate?:          boolean
 }
 
 export type Shipper = {
@@ -27,6 +29,7 @@ export const locationsApi = {
     if (params?.operation_type)     qs.set('operation_type', params.operation_type)
     if (params?.operational_status) qs.set('operational_status', params.operational_status)
     if (params?.incomplete)         qs.set('incomplete', 'true')
+    if (params?.include_rate)       qs.set('include_rate', 'true')
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<Location[]>(`/api/v1/locations${suffix}`)
   },
@@ -36,6 +39,17 @@ export const locationsApi = {
 
   patch: (id: string, body: LocationPatchPayload) =>
     apiFetch<Location>(`/api/v1/locations/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // ── Tarifario (Fase 5) ──────────────────────────────────────────────────
+
+  listRates: (locationId: string) =>
+    apiFetch<LocationRate[]>(`/api/v1/locations/${locationId}/rates`),
+
+  createRate: (locationId: string, body: LocationRateCreatePayload) =>
+    apiFetch<LocationRate>(`/api/v1/locations/${locationId}/rates`, { method: 'POST', body: JSON.stringify(body) }),
+
+  patchRate: (locationId: string, rateId: string, body: LocationRatePatchPayload) =>
+    apiFetch<LocationRate>(`/api/v1/locations/${locationId}/rates/${rateId}`, { method: 'PATCH', body: JSON.stringify(body) }),
 }
 
 export const shippersApi = {

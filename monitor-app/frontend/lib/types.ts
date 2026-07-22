@@ -499,7 +499,36 @@ export type Location = {
   operational_status:  'ACTIVE' | 'INACTIVE'
   created_at:          string | null
   updated_at:          string | null
+  /** Solo presentes cuando se pide ?include_rate=true (Fase 5, Tarifario
+   *  1.0) — tarifa vigente resuelta en el momento de la consulta
+   *  (valid_from <= hoy <= valid_to, o valid_to NULL). */
+  current_rate?:                string | null
+  current_rate_valid_from?:     string | null
+  current_rate_valid_to?:       string | null
 }
+
+// ── Tarifario (public.location_rates, Fase 5) ──────────────────────────────
+// tarifa es texto libre a propósito, no numérico — depende de contexto de
+// viaje que este proyecto no modela (ver docs/superpowers/specs/
+// 2026-07-22-tarifario-design.md).
+
+export type LocationRate = {
+  id:          string
+  location_id: string
+  tarifa:      string
+  valid_from:  string
+  valid_to:    string | null
+  created_at:  string | null
+  updated_at:  string | null
+}
+
+export type LocationRateCreatePayload = {
+  tarifa:      string
+  valid_from?: string
+  valid_to?:   string | null
+}
+
+export type LocationRatePatchPayload = Partial<LocationRateCreatePayload>
 
 export type LocationCreatePayload = {
   entity_type:     'SHIPPER'
