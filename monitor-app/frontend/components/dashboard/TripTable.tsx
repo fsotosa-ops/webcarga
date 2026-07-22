@@ -99,11 +99,11 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
-  // Ítem 3 (feedback post-weekly 2026-07-22): con varias columnas sticky
-  // compitiendo por espacio (Patente a la izquierda, Estado + chevron a la
-  // derecha), es fácil no notar que hay más columnas fuera de vista sin
-  // scrollear. Sombra/gradiente en el borde que corresponde, visible solo
-  // mientras hay contenido para ese lado — desaparece sola al llegar al final.
+  // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): solo
+  // Patente queda sticky (izquierda) — es fácil no notar que hay más
+  // columnas fuera de vista sin scrollear. Sombra/gradiente en el borde que
+  // corresponde, visible solo mientras hay contenido para ese lado —
+  // desaparece sola al llegar al final.
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollEdges, setScrollEdges] = useState({ left: false, right: false })
 
@@ -270,16 +270,16 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                 <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
                 <th className="px-3 py-2.5 text-left">Destinos</th>
                 <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
-                {/* Estado + chevron de apertura, UNA sola columna sticky
-                    (ítem 3, feedback post-weekly 2026-07-22): antes eran 2
-                    columnas sticky separadas (right-[90px] y right-0) — con
-                    table-layout: auto (el default, sin colgroup), el ancho
-                    real de la columna del chevron puede variar según el
-                    contenido de otras filas, así que un offset fijo en px
-                    para Estado podía desalinearse/superponerse. Un solo
-                    right-0 no tiene ese problema — no hay ningún offset que
-                    calcular. */}
-                <th onClick={() => handleSort('current_status')} className="sticky right-0 z-10 bg-inherit border-l border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
+                {/* Estado + chevron de apertura (ítem 3, feedback
+                    post-weekly 2026-07-22 + Ronda 43): se intentó fusionar
+                    en una sola columna sticky a la derecha (right-[90px] +
+                    right-0 por separado desalineaban con table-layout:
+                    auto), pero el fix quedó a medias — el <tbody> nunca se
+                    actualizó a juego con el <thead>, mismatch real de
+                    columnas entre header y body. Criterio final del usuario:
+                    sin sticky del lado derecho — solo Patente (izquierda)
+                    queda fija. Columnas normales de aquí en más. */}
+                <th onClick={() => handleSort('current_status')} className="border-l border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
                   Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} />
                   <span className="sr-only">, Abrir detalle</span>
                 </th>
@@ -456,32 +456,36 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                       })()}
                     </td>
 
-                    {/* ESTADO — sticky derecha */}
-                    <td className="sticky right-[90px] z-10 bg-inherit border-l border-border/60 px-3 py-2.5">
-                      <StatusBadge status={currentStatus} meta={meta} />
-                      {trip.manual_status && (
-                        <span className="text-[8px] text-accent block mt-0.5">override</span>
-                      )}
-                      {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
-                        <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full block mt-0.5 w-fit">OFF TIME</span>
-                      )}
-                      {(() => {
-                        const activeStop = getActiveStop(trip.stops ?? [])
-                        const eta = activeStop ? describeStopTiming(activeStop) : null
-                        return eta ? <span className="text-[9px] text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
-                      })()}
-                      {(() => {
-                        const since = formatRelativeTime(trip.status_reported_at)
-                        return since !== '—' ? <span className="text-[9px] text-gray-300 block mt-0.5 whitespace-nowrap">{since}</span> : null
-                      })()}
-                    </td>
-
-                    {/* Chevron de apertura — sticky derecha. Los indicadores
-                        (Activo/Trabajando/Asignado) se ven y filtran arriba de
-                        la tabla, se editan en el detalle (Fase 3 del hardening
-                        del Diario, 2026-07-18). */}
-                    <td className="sticky right-0 z-10 bg-inherit px-3 py-2.5 text-center">
-                      <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
+                    {/* ESTADO + chevron de apertura — una sola columna,
+                        en línea con el <th> combinado del header (Ronda 43:
+                        antes eran 2 <td> sticky separados que no calzaban
+                        con el <th> ya fusionado, mismatch real de columnas).
+                        Sin sticky — columna normal, solo Patente queda fija. */}
+                    <td className="border-l border-border/60 px-3 py-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <StatusBadge status={currentStatus} meta={meta} />
+                          {trip.manual_status && (
+                            <span className="text-[8px] text-accent block mt-0.5">override</span>
+                          )}
+                          {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
+                            <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full block mt-0.5 w-fit">OFF TIME</span>
+                          )}
+                          {(() => {
+                            const activeStop = getActiveStop(trip.stops ?? [])
+                            const eta = activeStop ? describeStopTiming(activeStop) : null
+                            return eta ? <span className="text-[9px] text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
+                          })()}
+                          {(() => {
+                            const since = formatRelativeTime(trip.status_reported_at)
+                            return since !== '—' ? <span className="text-[9px] text-gray-300 block mt-0.5 whitespace-nowrap">{since}</span> : null
+                          })()}
+                        </div>
+                        {/* Los indicadores (Activo/Trabajando/Asignado) se ven
+                            y filtran arriba de la tabla, se editan en el
+                            detalle (Fase 3 del hardening del Diario, 2026-07-18). */}
+                        <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
+                      </div>
                     </td>
                   </tr>
                 )

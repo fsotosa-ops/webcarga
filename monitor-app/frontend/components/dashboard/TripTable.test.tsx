@@ -208,17 +208,18 @@ describe('TripTable — accesibilidad por teclado', () => {
 })
 
 describe('TripTable — columnas fijas (sticky)', () => {
-  it('Patente queda fija a la izquierda y Estado (con el chevron de apertura adentro) a la derecha', () => {
-    // Ítem 3 (feedback post-weekly 2026-07-22): Estado y el chevron eran 2
-    // columnas sticky separadas con un offset en px hardcodeado entre
-    // ellas — frágil con table-layout: auto, causaba que se vieran
-    // "movidas"/superpuestas. Ahora es UNA sola columna sticky right-0, sin
-    // ningún offset que calcular.
+  it('solo Patente queda fija — Estado (con el chevron de apertura adentro) es una columna normal', () => {
+    // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): Estado y
+    // el chevron eran 2 columnas sticky separadas con un offset en px
+    // hardcodeado entre ellas — frágil con table-layout: auto, causaba que
+    // se vieran "movidas"/superpuestas. Un intento posterior las fusionó en
+    // el <th> pero no en el <tbody> (mismatch real de columnas). Criterio
+    // final: sin sticky del lado derecho — solo Patente queda fija.
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} meta={null} />)
     const patenteTh = screen.getByText('Patente').closest('th')!
     const estadoTh  = screen.getByText('Estado').closest('th')!
     expect(patenteTh.className).toContain('sticky left-0')
-    expect(estadoTh.className).toContain('sticky right-0')
+    expect(estadoTh.className).not.toContain('sticky')
     expect(estadoTh.textContent).toContain('Abrir detalle')
   })
 })
