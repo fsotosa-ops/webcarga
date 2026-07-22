@@ -21,9 +21,9 @@ const STATUS: DailyClosureStatus = {
   mismatch_count: 1,
   pending_count: 2,
   drivers: [
-    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
-    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
-    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
   ],
 }
 
@@ -56,6 +56,13 @@ describe('CloseDayDialog', () => {
     expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
     // Juan Pérez (ASSIGNED) no aparece en la lista de pendientes
     expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('"Revisar en Empresas" en un conductor MISMATCH es un link real a su empresa, no texto estático', async () => {
+    renderDialog()
+    await screen.findByText('Luis Rojas')
+    const link = screen.getByRole('link', { name: /Revisar en Empresas/ })
+    expect(link).toHaveAttribute('href', '/dashboard/transportistas/empresa/c3')
   })
 
   it('sets el motivo de un conductor no asignado', async () => {

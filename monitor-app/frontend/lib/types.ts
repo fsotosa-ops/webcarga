@@ -875,6 +875,10 @@ export type DriverDayStatusRow = {
   driver_id:                  string
   full_name:                  string
   tax_id:                     string | null
+  /** Empresa activa del conductor — puede ser null si no tiene ninguna
+   *  asignación ACTIVE (ej. recién dado de alta). Usado para linkear a
+   *  "Revisar en Empresas" desde Cerrar el día. */
+  carrier_id:                  string | null
   carrier_name:                string | null
   status:                     DriverDayStatusValue
   unassigned_reason_id:        string | null

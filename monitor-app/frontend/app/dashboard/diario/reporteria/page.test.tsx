@@ -12,9 +12,9 @@ const REPORT: DailyClosureReport = {
   fecha_desde: '2026-07-01',
   fecha_hasta: '2026-07-21',
   rows: [
-    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, client_names: ['Walmart'], business_date: '2026-07-20' },
-    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '2', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', client_names: [], business_date: '2026-07-20' },
-    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, client_names: ['Sodimac'], business_date: '2026-07-21' },
+    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, client_names: ['Walmart'], business_date: '2026-07-20' },
+    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', client_names: [], business_date: '2026-07-20' },
+    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, client_names: ['Sodimac'], business_date: '2026-07-21' },
   ],
 }
 

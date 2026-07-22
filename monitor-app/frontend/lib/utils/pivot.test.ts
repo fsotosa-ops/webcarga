@@ -5,7 +5,7 @@ import type { DailyClosureReportRow } from '@/lib/types'
 function row(overrides: Partial<DailyClosureReportRow> = {}): DailyClosureReportRow {
   return {
     driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1',
-    carrier_name: 'Transportes Sur', status: 'ASSIGNED',
+    carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED',
     unassigned_reason_id: null, unassigned_reason_label: null,
     client_names: [], business_date: '2026-07-21',
     ...overrides,

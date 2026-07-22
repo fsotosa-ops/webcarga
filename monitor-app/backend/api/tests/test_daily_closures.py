@@ -24,7 +24,7 @@ def make_client(pool, user=None):
 def _driver_row(**overrides):
     base = {
         "driver_id": "d1", "full_name": "Juan Pérez", "tax_id": "11111111-1",
-        "carrier_name": "Transportes Sur Spa", "status": "ASSIGNED",
+        "carrier_id": "c1", "carrier_name": "Transportes Sur Spa", "status": "ASSIGNED",
         "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None, "client_names": [],
     }
@@ -72,6 +72,22 @@ def test_get_daily_closure_status_returns_counts_and_drivers():
     recompute_sql = pool.execute.call_args_list[0].args[0]
     assert "app.driver_day_status" in recompute_sql
     assert "ON CONFLICT (driver_id, business_date)" in recompute_sql
+
+
+def test_get_daily_closure_status_includes_carrier_id_for_linking_to_empresas():
+    """Ítem 4 (feedback post-weekly 2026-07-22): 'Revisar en Empresas' en el
+    modal Cerrar el día necesita un carrier_id real para armar el link — sin
+    esto era texto estático sin ninguna acción posible."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row(driver_id="d3", status="MISMATCH", carrier_id="c7")]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures?fecha=2026-07-21")
+
+    assert res.json()["drivers"][0]["carrier_id"] == "c7"
+    detail_sql = pool.fetch.call_args_list[0].args[0]
+    assert "c.id AS carrier_id" in detail_sql
 
 
 def test_get_daily_closure_status_pending_excludes_unassigned_with_reason():

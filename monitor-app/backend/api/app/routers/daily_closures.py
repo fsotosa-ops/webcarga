@@ -106,7 +106,7 @@ ON CONFLICT (driver_id, business_date) DO UPDATE SET
 """
 
 _DETAIL_SQL = """
-SELECT dds.driver_id, d.full_name, d.tax_id, c.business_name AS carrier_name,
+SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name,
        dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        dds.resolved_by, dds.resolved_at,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names
