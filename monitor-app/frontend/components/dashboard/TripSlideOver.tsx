@@ -253,6 +253,23 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
   const carrierDiverges = !!(trip.carrier_name_tms && trip.carrier_name_tms !== trip.carrier_name)
   const hasReconciliationDivergence = !!trip.fleet_link_id && (driverDiverges || tractorDiverges || carrierDiverges)
 
+  // Ronda 43 (Hallazgo F): flujo de alta guiado para UNMATCHED — en ese
+  // caso no hay ninguna empresa resuelta (ni para el conductor ni para el
+  // tracto), así que el punto de partida real es crear la empresa. Se
+  // pre-cargan los 3 datos que el TMS ya reportó (razón social, conductor,
+  // patente) para no tener que re-tipearlos: la landing de Empresas abre el
+  // formulario de alta con `create=1`, y tras crear la empresa reenvía
+  // driver_name/tractor_plate a la ficha recién creada para pre-cargar
+  // también "+ Conductor"/"+ Equipo" ahí.
+  const empresasHandoffHref = (() => {
+    const params = new URLSearchParams({ create: '1' })
+    if (trip.carrier_name_tms)  params.set('business_name', trip.carrier_name_tms)
+    if (trip.driver_name_tms)   params.set('driver_name', trip.driver_name_tms)
+    const plateTms = trip.tractor_plate_tms ?? trip.tractor_plate
+    if (plateTms) params.set('tractor_plate', plateTms)
+    return `/dashboard/transportistas?${params.toString()}`
+  })()
+
   return (
     <>
       {/* Backdrop */}
@@ -646,17 +663,19 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               ) : (
                 <div className="space-y-2">
                   {/* Fase B (ítem 5, feedback post-weekly 2026-07-22):
-                      "Equipo OVNI" es el término real de Pablo para este
-                      caso exacto — tracto/conductor que el TMS reporta sin
-                      ningún cruce contra empresa (transcript-meeting.md:
-                      "un tracto que no está asociado a una empresa de
-                      transporte, tiene que quedar ahí... Equipo OVNI, o no
-                      identificado"). Reemplaza el enum interno UNMATCHED
-                      solo como label — la resolución sigue siendo manual. */}
+                      tracto/conductor que el TMS reporta sin ningún cruce
+                      contra empresa (transcript-meeting.md: "un tracto que
+                      no está asociado a una empresa de transporte, tiene
+                      que quedar ahí..."). Label visible: "Sin identificar"
+                      — Pablo dijo "Equipo OVNI" en la reunión como forma
+                      coloquial de explicar la idea en el momento, no como
+                      término de producto (corregido en Ronda 43, no es
+                      nomenclatura estándar de industria/logtech). El enum
+                      interno sigue siendo UNMATCHED — solo cambia el label. */}
                   {trip.fleet_match_status === 'UNMATCHED' && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2">
                       <AlertTriangle size={13} className="text-amber-600 shrink-0" />
-                      <p className="text-[11px] text-amber-700 font-medium">Equipo OVNI — sin cruce contra ninguna empresa todavía.</p>
+                      <p className="text-[11px] text-amber-700 font-medium">Sin identificar — sin cruce contra ninguna empresa todavía.</p>
                     </div>
                   )}
                   {/* HU-06 (Fase 3): el TMS reportó un nombre pero no cruzó
@@ -678,20 +697,28 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     notFoundHint={
                       <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
                         Si no aparece en la lista, hay que darlo de alta primero en{' '}
-                        <a href="/dashboard/transportistas" className="underline font-semibold">Empresas</a>.
+                        <a href={empresasHandoffHref} className="underline font-semibold">Empresas</a>.
                       </p>
                     }
                   />
                   {/* HU-05 (Fase 3): gatillo explícito para crear el
                       conductor/empresa cuando ni el cruce exacto ni el
                       fuzzy match encontraron nada — antes esto solo
-                      aparecía si el operador tipeaba en la búsqueda manual. */}
+                      aparecía si el operador tipeaba en la búsqueda manual.
+                      Ronda 43 (Hallazgo F): en UNMATCHED no hay NINGUNA
+                      empresa resuelta (vfr.resolved_carrier_id IS NULL) —
+                      el link lleva razón social/conductor/patente que
+                      reportó el TMS pre-cargados vía query params, para
+                      abrir directo el formulario de alta de empresa en vez
+                      de mandar a una búsqueda que no filtra por nombre de
+                      conductor (la lista de Empresas busca por razón
+                      social/tax_id, no por conductor). */}
                   {trip.driver_name_tms && !fuzzyMatchQuery.isLoading && (fuzzyMatchQuery.data?.length ?? 0) === 0 && (
                     <a
-                      href="/dashboard/transportistas"
+                      href={empresasHandoffHref}
                       className="flex items-center gap-1.5 text-[11px] font-semibold text-accent hover:underline"
                     >
-                      <Search size={11} /> Sin coincidencias — dar de alta en Empresas
+                      <Search size={11} /> Sin coincidencias — dar de alta empresa/conductor/equipo
                     </a>
                   )}
                   {fleetDraft.driver_id && (

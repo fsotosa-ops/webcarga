@@ -262,7 +262,27 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     vi.mocked(driversApi.fuzzyMatch).mockResolvedValue([])
     renderSlideOver({ ...baseTrip, driver_name_tms: 'NOMBRE SIN CRUCE' })
 
-    expect(await screen.findByText(/Sin coincidencias — dar de alta en Empresas/)).toBeInTheDocument()
+    expect(await screen.findByText(/Sin coincidencias — dar de alta empresa\/conductor\/equipo/)).toBeInTheDocument()
+  })
+
+  // Ronda 43 (Hallazgo F): el link de alta pre-carga los 3 datos que ya
+  // reportó el TMS (razón social, conductor, patente) para no re-tipearlos.
+  it('the "create in Empresas" trigger carries TMS-reported data as query params', async () => {
+    vi.mocked(driversApi.fuzzyMatch).mockResolvedValue([])
+    renderSlideOver({
+      ...baseTrip,
+      driver_name_tms: 'NOMBRE SIN CRUCE',
+      carrier_name_tms: 'TRANSPORTES SAN EXPEDITO',
+      tractor_plate_tms: 'XYZW12',
+    })
+
+    const link = await screen.findByText(/Sin coincidencias — dar de alta empresa\/conductor\/equipo/)
+    const href = link.closest('a')!.getAttribute('href')!
+    const params = new URLSearchParams(href.split('?')[1])
+    expect(params.get('create')).toBe('1')
+    expect(params.get('business_name')).toBe('TRANSPORTES SAN EXPEDITO')
+    expect(params.get('driver_name')).toBe('NOMBRE SIN CRUCE')
+    expect(params.get('tractor_plate')).toBe('XYZW12')
   })
 
   it('does not query fuzzy-match when the trip already has a carrier linked', () => {
@@ -270,17 +290,19 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     expect(driversApi.fuzzyMatch).not.toHaveBeenCalled()
   })
 
-  // Fase B (ítem 5, feedback post-weekly 2026-07-22): "Equipo OVNI" es el
-  // término real de Pablo (transcript-meeting.md) para un tracto/conductor
-  // sin ningún cruce contra empresa — reemplaza "UNMATCHED" como label.
-  it('shows "Equipo OVNI" when fleet_match_status is UNMATCHED', () => {
+  // Fase B (ítem 5, feedback post-weekly 2026-07-22): tracto/conductor sin
+  // ningún cruce contra empresa (transcript-meeting.md). Label "Sin
+  // identificar" (corregido Ronda 43 — "Equipo OVNI" fue la forma
+  // coloquial en que Pablo lo explicó en la reunión, no un término de
+  // producto ni nomenclatura estándar de industria/logtech).
+  it('shows "Sin identificar" when fleet_match_status is UNMATCHED', () => {
     renderSlideOver({ ...baseTrip, fleet_match_status: 'UNMATCHED', driver_name_tms: 'ALGUIEN SIN CRUCE' })
-    expect(screen.getByText(/Equipo OVNI/)).toBeInTheDocument()
+    expect(screen.getByText(/Sin identificar/)).toBeInTheDocument()
   })
 
-  it('does not show "Equipo OVNI" when fleet_match_status is MATCHED or unset', () => {
+  it('does not show "Sin identificar" when fleet_match_status is MATCHED or unset', () => {
     renderSlideOver({ ...baseTrip, driver_name_tms: 'ALGUIEN' })
-    expect(screen.queryByText(/Equipo OVNI/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Sin identificar/)).not.toBeInTheDocument()
   })
 
   // Gap cerrado 2026-07-22: documentación LEGAL_MANDATORY de conductor/

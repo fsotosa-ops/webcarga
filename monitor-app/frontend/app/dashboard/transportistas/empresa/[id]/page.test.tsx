@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import EmpresaDetailPage from './page'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi } from '@/lib/api/drivers'
@@ -26,7 +26,7 @@ async function clickTab(name: RegExp) {
   fireEvent.click(matches[0])
 }
 
-vi.mock('next/navigation', () => ({ useParams: vi.fn(), useRouter: vi.fn() }))
+vi.mock('next/navigation', () => ({ useParams: vi.fn(), useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: {
@@ -79,6 +79,7 @@ beforeEach(() => {
   vi.mocked(useParams).mockReturnValue({ id: 't1' })
   pushMock.mockReset()
   vi.mocked(useRouter).mockReturnValue({ push: pushMock } as unknown as ReturnType<typeof useRouter>)
+  vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>)
   vi.mocked(createClient).mockReturnValue({
     auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } }) },
     from: vi.fn().mockReturnValue({
@@ -245,6 +246,25 @@ describe('EmpresaDetailPage', () => {
     expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
     expect(screen.getByText('1 obligatorio pendiente')).toBeInTheDocument()
     expect(screen.queryByText('Documentos obligatorios pendientes o vencidos')).not.toBeInTheDocument()
+  })
+
+  // Ronda 43 (Hallazgo F): handoff desde el flujo guiado de "Sin identificar"
+  // (TripSlideOver → landing de Empresas → acá) — llega con driver_name/
+  // tractor_plate ya reportados por el TMS, sin tener que re-tipearlos.
+  it('pre-fills and opens "+ Conductor" when arriving with a driver_name handoff', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams({ driver_name: 'NOMBRE SIN CRUCE' }) as unknown as ReturnType<typeof useSearchParams>,
+    )
+    renderPage()
+    expect(await screen.findByDisplayValue('NOMBRE SIN CRUCE')).toBeInTheDocument()
+  })
+
+  it('pre-fills and opens "+ Equipo" when arriving with a tractor_plate handoff', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams({ tractor_plate: 'XYZW12' }) as unknown as ReturnType<typeof useSearchParams>,
+    )
+    renderPage()
+    expect(await screen.findByDisplayValue('XYZW12')).toBeInTheDocument()
   })
 
   it('shows a pending-docs badge on the Documentos tab', async () => {

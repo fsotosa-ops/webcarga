@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus, Check, X } from 'lucide-react'
 import type { CarrierListFacets, CarrierListItem, ComplianceHealth, OperationalStatus } from '@/lib/types'
@@ -49,7 +49,23 @@ const HEALTH_TABS: { id: HealthTab; label: string; facetKey: keyof CarrierListFa
 const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0 }
 
 export default function EmpresasTransportePage() {
+  return (
+    <Suspense fallback={null}>
+      <EmpresasTransportePageInner />
+    </Suspense>
+  )
+}
+
+/** Ronda 43 (Hallazgo F): flujo de alta guiado desde el "Sin identificar"
+ *  del Diario (TripSlideOver) — llega acá con `?create=1` (+ business_name/
+ *  driver_name/tractor_plate ya reportados por el TMS) y abre el panel de
+ *  "Nueva empresa" pre-cargado en vez de una búsqueda que no filtra por
+ *  nombre de conductor. driver_name/tractor_plate se reenvían a la ficha de
+ *  la empresa recién creada (ver handleAddCarrier) para pre-cargar también
+ *  "+ Conductor"/"+ Equipo" ahí. */
+function EmpresasTransportePageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [q, setQ]                 = useState('')
   const [tab, setTab]             = useState<TransporterTab>('active')
   const [healthTab, setHealthTab] = useState<HealthTab>('')
@@ -57,8 +73,11 @@ export default function EmpresasTransportePage() {
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
   const [canEdit, setCanEdit]     = useState(false)
-  const [addCarrierOpen, setAddCarrierOpen] = useState(false)
-  const [carrierForm, setCarrierForm] = useState({ tax_id: '', business_name: '' })
+  const [addCarrierOpen, setAddCarrierOpen] = useState(searchParams.get('create') === '1')
+  const [carrierForm, setCarrierForm] = useState({
+    tax_id: '',
+    business_name: searchParams.get('business_name') ?? '',
+  })
   const [creatingCarrier, setCreatingCarrier] = useState(false)
   const [createErr, setCreateErr] = useState<string | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
@@ -83,7 +102,16 @@ export default function EmpresasTransportePage() {
     setCreatingCarrier(true); setCreateErr(null)
     try {
       const created = await carriersApi.create(carrierForm)
-      router.push(`/dashboard/transportistas/empresa/${created.id}`)
+      // Ronda 43 (Hallazgo F): si venimos del flujo guiado de "Sin
+      // identificar", reenviar conductor/patente ya reportados por el TMS
+      // para pre-cargar "+ Conductor"/"+ Equipo" en la ficha recién creada.
+      const handoff = new URLSearchParams()
+      const driverName = searchParams.get('driver_name')
+      const tractorPlate = searchParams.get('tractor_plate')
+      if (driverName)   handoff.set('driver_name', driverName)
+      if (tractorPlate) handoff.set('tractor_plate', tractorPlate)
+      const qs = handoff.toString()
+      router.push(`/dashboard/transportistas/empresa/${created.id}${qs ? `?${qs}` : ''}`)
     } catch (e) {
       setCreateErr(e instanceof Error ? e.message : 'Error al crear la empresa')
     } finally {

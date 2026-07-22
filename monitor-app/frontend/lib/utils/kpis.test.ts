@@ -93,21 +93,34 @@ describe('matchesKpi — alertas nuevas', () => {
     const off: MonitorAlertRules = { ...RULES, unassigned_enabled: false }
     expect(matchesKpi(noDriver, 'unassigned', RANGES, off, NOW)).toBe(false)
   })
+
+  it('fleet_unmatched ("Sin identificar"): true solo si fleet_match_status es UNMATCHED', () => {
+    const ovni    = makeTrip('a', { fleet_match_status: 'UNMATCHED' })
+    const matched = makeTrip('b', { fleet_match_status: 'MATCHED' })
+    const mismatch = makeTrip('c', { fleet_match_status: 'MISMATCH' })
+    const none    = makeTrip('d')
+    expect(matchesKpi(ovni, 'fleet_unmatched', RANGES, RULES, NOW)).toBe(true)
+    expect(matchesKpi(matched, 'fleet_unmatched', RANGES, RULES, NOW)).toBe(false)
+    expect(matchesKpi(mismatch, 'fleet_unmatched', RANGES, RULES, NOW)).toBe(false)
+    expect(matchesKpi(none, 'fleet_unmatched', RANGES, RULES, NOW)).toBe(false)
+  })
 })
 
 describe('deriveKpis', () => {
-  it('cuenta las 6 excepciones de forma independiente', () => {
+  it('cuenta las 7 excepciones de forma independiente', () => {
     const trips = [
       makeTrip('a', { stops: [makeStop({ on_time_status: 'OFF TIME', temperature: 11 })] }),
       makeTrip('b', { status_reported_at: '2026-07-04 14:00:00' }),
       makeTrip('c', { driver_name: null }),
       makeTrip('d'),
+      makeTrip('e', { fleet_match_status: 'UNMATCHED' }),
     ]
     const kpis = deriveKpis(trips, RANGES, RULES, NOW)
     expect(kpis.off_time).toBe(1)
     expect(kpis.stale).toBe(1)
     expect(kpis.temp_out).toBe(1)
     expect(kpis.unassigned).toBe(1)
+    expect(kpis.fleet_unmatched).toBe(1)
     expect(kpis.dwell).toBe(0)
     expect(kpis.late_arrival).toBe(0)
   })

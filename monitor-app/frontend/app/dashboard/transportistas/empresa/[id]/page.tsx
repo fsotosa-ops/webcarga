@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState, useMemo } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -124,13 +124,30 @@ function EditableField({
 }
 
 export default function EmpresaDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <EmpresaDetailPageInner />
+    </Suspense>
+  )
+}
+
+/** Ronda 43 (Hallazgo F): recibe driver_name/tractor_plate de la landing de
+ *  Empresas (handleAddCarrier) cuando la empresa se creó desde el flujo
+ *  guiado de "Sin identificar" — pre-carga y abre "+ Conductor"/"+ Equipo"
+ *  directo, sin que el usuario tenga que re-tipear lo que ya reportó el TMS. */
+function EmpresaDetailPageInner() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const handoffDriverName   = searchParams.get('driver_name')
+  const handoffTractorPlate = searchParams.get('tractor_plate')
   const [canEdit, setCanEdit]     = useState(false)
   const [canAdmin, setCanAdmin]   = useState(false)
   const [editOpen, setEditOpen]   = useState(false)
-  const [activeTab, setActiveTab] = useState<Tab>('resumen')
+  const [activeTab, setActiveTab] = useState<Tab>(
+    handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen',
+  )
   const [exportingDocs, setExportingDocs] = useState(false)
   const [exportErr, setExportErr]         = useState<string | null>(null)
 
@@ -144,10 +161,10 @@ export default function EmpresaDetailPage() {
   const [assetHealthFilter, setAssetHealthFilter] = useState<ComplianceHealth | ''>('')
   const [assetShowAll, setAssetShowAll] = useState(false)
 
-  const [addDriverOpen,  setAddDriverOpen]  = useState(false)
-  const [driverForm,     setDriverForm]     = useState({ tax_id: '', full_name: '' })
-  const [addAssetOpen,   setAddAssetOpen]   = useState(false)
-  const [assetForm,      setAssetForm]      = useState<{ asset_type: AssetType; license_plate: string }>({ asset_type: 'TRACTOCAMION', license_plate: '' })
+  const [addDriverOpen,  setAddDriverOpen]  = useState(!!handoffDriverName)
+  const [driverForm,     setDriverForm]     = useState({ tax_id: '', full_name: handoffDriverName ?? '' })
+  const [addAssetOpen,   setAddAssetOpen]   = useState(!!handoffTractorPlate)
+  const [assetForm,      setAssetForm]      = useState<{ asset_type: AssetType; license_plate: string }>({ asset_type: 'TRACTOCAMION', license_plate: handoffTractorPlate ?? '' })
   const [addPolicyOpen,  setAddPolicyOpen]  = useState(false)
   const [policyForm,     setPolicyForm]     = useState<PolicyFormState>({
     insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',

@@ -3,7 +3,7 @@ import { stopComplianceSummary } from './compliance'
 import { getLatestTemp, classifyTemperature } from './temperature'
 import { normalizeUTC } from './datetime'
 
-export type KpiId = 'off_time' | 'stale' | 'temp_out' | 'dwell' | 'late_arrival' | 'unassigned'
+export type KpiId = 'off_time' | 'stale' | 'temp_out' | 'dwell' | 'late_arrival' | 'unassigned' | 'fleet_unmatched'
 
 // Defaults si meta.monitor_alert_rules aún no está disponible
 export const DEFAULT_ALERT_RULES: MonitorAlertRules = {
@@ -84,6 +84,16 @@ export function matchesKpi(
       const noDriver = !trip.driver_name
       return noPlate || noDriver
     }
+
+    // "Sin identificar" (Ronda 43, Hallazgo F): tracto/conductor que el TMS
+    // reporta sin ningún cruce contra empresa — la detección ya existe
+    // (app.v_trip_fleet_resolution → fleet_match_status), pero hasta ahora
+    // solo se veía como banner pasivo dentro del detalle de un viaje. Pablo
+    // pidió explícitamente que quede visible "en la cuadratura de la caja"
+    // (transcript-meeting.md línea 605) — de ahí que sea un KPI contable y
+    // filtrable como el resto, no solo texto en el slide-over.
+    case 'fleet_unmatched':
+      return trip.fleet_match_status === 'UNMATCHED'
   }
 }
 
@@ -95,7 +105,7 @@ export function deriveKpis(
   rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
   now: number = Date.now(),
 ): DiarioKpis {
-  const kpis: DiarioKpis = { off_time: 0, stale: 0, temp_out: 0, dwell: 0, late_arrival: 0, unassigned: 0 }
+  const kpis: DiarioKpis = { off_time: 0, stale: 0, temp_out: 0, dwell: 0, late_arrival: 0, unassigned: 0, fleet_unmatched: 0 }
   for (const t of trips) {
     for (const id of Object.keys(kpis) as KpiId[]) {
       if (matchesKpi(t, id, ranges, rules, now)) kpis[id]++

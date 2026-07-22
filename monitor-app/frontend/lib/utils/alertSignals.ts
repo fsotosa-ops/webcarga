@@ -8,7 +8,7 @@ export type FlagSignalId = 'active' | 'working' | 'assigned' | 'second_leg_plus'
 export type AlertSignalId = KpiId | FlagSignalId
 
 export const KPI_SIGNAL_IDS: KpiId[] =
-  ['off_time', 'late_arrival', 'dwell', 'stale', 'temp_out', 'unassigned']
+  ['off_time', 'late_arrival', 'dwell', 'stale', 'temp_out', 'unassigned', 'fleet_unmatched']
 export const FLAG_SIGNAL_IDS: FlagSignalId[] =
   ['active', 'working', 'assigned', 'second_leg_plus']
 
@@ -33,6 +33,13 @@ export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
     ...(rules.unassigned_enabled
       ? [{ id: 'unassigned' as const, label: 'Sin asignación', colorCls: 'text-violet-600', activeCls: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50' }]
       : []),
+    // "Sin identificar" (Ronda 43, Hallazgo F) — tracto/conductor sin
+    // ningún cruce contra empresa, pedido por Pablo específicamente visible
+    // "en la cuadratura de la caja", no solo dentro del detalle de un
+    // viaje. Label neutro, no la frase coloquial ("Equipo OVNI") que usó
+    // Pablo en la reunión al explicar la idea — no es nomenclatura
+    // estándar de industria/logtech.
+    { id: 'fleet_unmatched',  label: 'Sin identificar', colorCls: 'text-amber-600',  activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
     { id: 'active',           label: 'Activo',       colorCls: 'text-blue-600',   activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50' },
     { id: 'working',          label: 'Trabajando',   colorCls: 'text-green-600',  activeCls: 'border-green-400 ring-2 ring-green-100 bg-green-50' },
     { id: 'assigned',         label: 'Asignado',     colorCls: 'text-violet-600', activeCls: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50' },

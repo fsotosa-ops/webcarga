@@ -22,18 +22,26 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
 }
 
 describe('alertSignals', () => {
-  it('alertSignalDefs returns 6 KPI + 4 flag = 10 signals when unassigned is enabled', () => {
+  it('alertSignalDefs returns 7 KPI + 4 flag = 11 signals when unassigned is enabled', () => {
     const defs = alertSignalDefs(DEFAULT_ALERT_RULES)
     expect(defs.map(d => d.id)).toEqual([
-      'off_time', 'late_arrival', 'dwell', 'stale', 'temp_out', 'unassigned',
+      'off_time', 'late_arrival', 'dwell', 'stale', 'temp_out', 'unassigned', 'fleet_unmatched',
       'active', 'working', 'assigned', 'second_leg_plus',
     ])
   })
 
-  it('alertSignalDefs drops unassigned when the rule is disabled, keeping 9', () => {
+  it('alertSignalDefs drops unassigned when the rule is disabled, keeping 10', () => {
     const defs = alertSignalDefs({ ...DEFAULT_ALERT_RULES, unassigned_enabled: false })
     expect(defs.map(d => d.id)).not.toContain('unassigned')
-    expect(defs).toHaveLength(9)
+    expect(defs).toHaveLength(10)
+  })
+
+  it('fleet_unmatched ("Sin identificar") cuenta y filtra vía el KPI compartido', () => {
+    const trips = [makeTrip({ fleet_match_status: 'UNMATCHED' }), makeTrip({ fleet_match_status: 'MATCHED' })]
+    const counts = computeSignalCounts(trips, [])
+    expect(counts.fleet_unmatched).toBe(1)
+    expect(matchesActiveSignals(trips[0], ['fleet_unmatched'], [])).toBe(true)
+    expect(matchesActiveSignals(trips[1], ['fleet_unmatched'], [])).toBe(false)
   })
 
   it('isKpiSignal classifies both groups correctly', () => {
