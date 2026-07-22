@@ -211,7 +211,10 @@ _TRIP_SELECT = """
     -- que el texto crudo del TMS. Antes solo existían los últimos dos
     -- niveles — driver_id/tractor_asset_id se guardaban pero nunca se
     -- resolvían a nombre/patente real.
-    COALESCE(ta.license_plate, ta_auto.license_plate, fl.tractor_plate,
+    -- Fase B (2026-07-22): ta/d/c ahora joinean directo contra el ID ya
+    -- resuelto por app.v_trip_fleet_resolution — no hace falta un segundo
+    -- COALESCE acá, la vista ya solo devuelve un id por viaje.
+    COALESCE(ta.license_plate, fl.tractor_plate,
              t.fleet->>'tractor_plate')           AS tractor_plate,
     -- Valor crudo del TMS, sin resolver contra el vínculo manual — permite
     -- detectar divergencia cuando ops vinculó a mano y el TMS reporta otro
@@ -219,14 +222,14 @@ _TRIP_SELECT = """
     t.fleet->>'tractor_plate'                     AS tractor_plate_tms,
     COALESCE(tr.license_plate, fl.trailer_plate,
              t.fleet->>'trailer_plate')           AS trailer_plate,
-    COALESCE(d.full_name, d_auto.full_name, fl.driver_name_raw,
+    COALESCE(d.full_name, fl.driver_name_raw,
              t.fleet->>'driver_name_tms')         AS driver_name,
     t.fleet->>'driver_name_tms'                   AS driver_name_tms,
-    COALESCE(d.tax_id, d_auto.tax_id, t.fleet->>'driver_rut_tms') AS driver_tax_id,
+    COALESCE(d.tax_id, t.fleet->>'driver_rut_tms') AS driver_tax_id,
     COALESCE(fl.driver_phone,
              t.fleet->>'driver_phone')            AS driver_phone,
     t.origin_tms,
-    COALESCE(c.business_name, c_auto.business_name) AS carrier_name,
+    c.business_name                                AS carrier_name,
     t.fleet->>'transporter_name_tms'              AS carrier_name_tms,
     -- FIX 2026-07-18 (Fase 1, cutover final): t.origin/cag_inicio_at/
     -- cag_fin_at se eliminaron de app.trips — el nombre de origen ahora se
@@ -246,9 +249,9 @@ _TRIP_SELECT = """
     t.unassigned_reason_id,
     t.manually_edited_fields,
     t.fleet_link_id,
-    COALESCE(fl.carrier_id, c_auto.id)             AS carrier_id,
-    COALESCE(fl.driver_id, d_auto.id)              AS driver_id,
-    COALESCE(fl.tractor_asset_id, ta_auto.id)      AS tractor_asset_id,
+    vfr.resolved_carrier_id                        AS carrier_id,
+    vfr.resolved_driver_id                         AS driver_id,
+    vfr.resolved_tractor_asset_id                  AS tractor_asset_id,
     fl.trailer_asset_id,
     t.edited_at,
     t.updated_at,
@@ -291,12 +294,12 @@ _TRIP_SELECT = """
 # resuelta para el tracto — "algo tenemos mal puesto", no un simple faltante.
 _FLEET_MATCH_CASE = """
     CASE
-      WHEN COALESCE(fl.carrier_id, c_auto.id) IS NULL
+      WHEN vfr.resolved_carrier_id IS NULL
            AND (t.fleet->>'tractor_plate' IS NOT NULL OR fl.tractor_plate IS NOT NULL
                 OR t.fleet->>'driver_name_tms' IS NOT NULL OR fl.driver_name_raw IS NOT NULL)
         THEN 'UNMATCHED'
-      WHEN da_home.carrier_id IS NOT NULL
-           AND da_home.carrier_id IS DISTINCT FROM COALESCE(fl.carrier_id, c_auto.id)
+      WHEN vfr.resolved_driver_home_carrier_id IS NOT NULL
+           AND vfr.resolved_driver_home_carrier_id IS DISTINCT FROM vfr.resolved_carrier_id
         THEN 'MISMATCH'
       ELSE 'MATCHED'
     END
@@ -367,41 +370,25 @@ _TRIP_FROM = """
     -- nunca se veía vía API pese a que el dato existía. trip_id es la llave
     -- estable (trip_fleet_links nunca lo toca el pipeline).
     LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
-    LEFT JOIN public.carriers c ON c.id = fl.carrier_id
-    LEFT JOIN public.drivers d ON d.id = fl.driver_id
-    LEFT JOIN public.assets ta ON ta.id = fl.tractor_asset_id
+    -- Fase B (ítem 5, feedback post-weekly 2026-07-22): la cadena de
+    -- resolución en vivo (stored → auto por patente → auto por
+    -- vehicle_driver_assignments → match exacto de nombre) vivía inline acá
+    -- Y en 3 lugares más (available_drivers, available_assets,
+    -- daily_closures.py) — la duplicación fue la causa raíz de un bug real
+    -- (Ronda 38). Consolidada en app.v_trip_fleet_resolution (migración
+    -- 20260722030000), inlineada por el planner — mismo plan de ejecución
+    -- que antes, verificado con EXPLAIN antes de aplicar.
+    LEFT JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+    LEFT JOIN public.carriers c ON c.id = vfr.resolved_carrier_id
+    LEFT JOIN public.drivers d ON d.id = vfr.resolved_driver_id
+    LEFT JOIN public.assets ta ON ta.id = vfr.resolved_tractor_asset_id
     LEFT JOIN public.assets tr ON tr.id = fl.trailer_asset_id
-    -- RESOLUCIÓN EN VIVO (Fase 1, 2026-07-18): la migración 20260718060000
-    -- bootstrapeó driver_id/carrier_id/tractor_asset_id vía bronze.raw_bd_ot,
-    -- pero esa fuente es un bootstrap histórico de una sola vez (plataforma
-    -- legacy a dar de baja, trips_context.md §5.3) — no cubre ningún viaje
-    -- que llegue de acá en adelante. Sin este fallback, todo viaje nuevo
-    -- quedaría sin trazabilidad hasta que alguien lo vinculara a mano.
-    -- Vehículo/empresa: se resuelven solo por patente contra datos que ya
-    -- vive en public.* (asset_assignments), sin depender de raw_bd_ot.
-    LEFT JOIN public.assets ta_auto
-        ON fl.tractor_asset_id IS NULL
-       AND upper(trim(ta_auto.license_plate)) =
-           upper(trim(COALESCE(NULLIF(t.fleet->>'tractor_plate', ''), t.fleet->>'trailer_plate')))
-    LEFT JOIN public.asset_assignments aa_auto
-        ON aa_auto.asset_id = ta_auto.id AND aa_auto.status = 'ACTIVE'
-    LEFT JOIN public.carriers c_auto ON c_auto.id = aa_auto.carrier_id
-    -- Conductor: no hay forma de derivarlo del payload TMS (QAnalytics/
-    -- Sodimac nunca reportan RUT ni nombre) — se resuelve vía
-    -- vehicle_driver_assignments (migración 20260718070000, "qué conductor
-    -- maneja este vehículo hoy"), que operaciones mantiene una vez por
-    -- vehículo en vez de viaje por viaje (POST /assets/{id}/driver-assignment).
-    LEFT JOIN public.vehicle_driver_assignments vda_auto
-        ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
-    LEFT JOIN public.drivers d_auto ON d_auto.id = vda_auto.driver_id
     -- HU-04 (Fase 0): empresa PROPIA del conductor (independiente de la
     -- empresa resuelta para el tracto) — permite detectar "MISMATCH" cuando
     -- conductor y tracto calzan cada uno por su lado pero no bajo la misma
     -- empresa (regla explícita de Pablo: ambos deben estar bajo la misma
     -- empresa de transporte). Ver _FLEET_MATCH_CASE.
-    LEFT JOIN public.driver_assignments da_home
-        ON da_home.driver_id = COALESCE(fl.driver_id, d_auto.id) AND da_home.status = 'ACTIVE'
-    LEFT JOIN public.carriers c_home ON c_home.id = da_home.carrier_id
+    LEFT JOIN public.carriers c_home ON c_home.id = vfr.resolved_driver_home_carrier_id
     -- Fase 2 (HU-12, 2026-07-22): alerta de póliza crítica en el Diario —
     -- pedido explícito de Pablo ("recibir una alerta prominente cuando un
     -- equipo tenga póliza vencida o cuotas críticas impagas"). Una empresa
@@ -416,11 +403,11 @@ _TRIP_FROM = """
             WHEN bool_or(cis.policy_health = 'EXPIRING_SOON') THEN 'EXPIRING_SOON'
         END AS insurance_alert
         FROM app.carrier_insurance_status cis
-        WHERE cis.carrier_id = COALESCE(fl.carrier_id, c_auto.id)
+        WHERE cis.carrier_id = vfr.resolved_carrier_id
     ) ins ON true
-""" + _compliance_alert_lateral("dcomp", "DRIVER", "COALESCE(fl.driver_id, d_auto.id)", _DRIVER_CRITICAL_DOC_CODES) \
-    + _compliance_alert_lateral("tcomp", "ASSET", "COALESCE(fl.tractor_asset_id, ta_auto.id)") \
-    + _compliance_alert_lateral("ccomp", "CARRIER", "COALESCE(fl.carrier_id, c_auto.id)") + """
+""" + _compliance_alert_lateral("dcomp", "DRIVER", "vfr.resolved_driver_id", _DRIVER_CRITICAL_DOC_CODES) \
+    + _compliance_alert_lateral("tcomp", "ASSET", "vfr.resolved_tractor_asset_id") \
+    + _compliance_alert_lateral("ccomp", "CARRIER", "vfr.resolved_carrier_id") + """
     -- "Vuelta N" (driver_leg_number, ver _TRIP_SELECT): orden cronológico de
     -- los viajes de un conductor en el día, basado en cuándo salió del
     -- origen — trae solo la fila ORIGIN de trip_stops (a lo sumo 1 por viaje,
@@ -797,9 +784,18 @@ async def available_drivers(
             JOIN public.assets a ON a.id = vda.asset_id
             WHERE vda.status = 'ACTIVE'
         ),
+        -- Fase B (ítem 5, feedback post-weekly 2026-07-22): antes solo
+        -- miraba trip_fleet_links.driver_id (sin la cadena de resolución en
+        -- vivo) — trip_fleet_links casi no recibe filas nuevas para viajes
+        -- del TMS, así que un conductor con viaje ya resuelto podía seguir
+        -- apareciendo acá como "disponible". Ahora usa
+        -- app.v_trip_fleet_resolution (misma vista que _TRIP_FROM/
+        -- daily_closures.py) — LEFT JOIN a trip_fleet_links, no INNER, para
+        -- no perder los viajes resueltos solo por la cadena auto/nombre
+        -- (que no tienen ninguna fila en trip_fleet_links).
         today_trips AS (
             SELECT
-                fl.driver_id,
+                vfr.resolved_driver_id AS driver_id,
                 count(*) AS trips_total,
                 count(*) FILTER (
                     WHERE t.trip_status LIKE 'CERRADO%'
@@ -808,11 +804,12 @@ async def available_drivers(
                 max(t.status_reported_at) AS last_report_at,
                 max(COALESCE(fl.tractor_plate, t.fleet->>'tractor_plate')) AS tractor_plate
             FROM app.trips t
-            JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
+            JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+            LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
             WHERE t.planning_date = $1
               AND t.source_system != 'sodimac'
-              AND fl.driver_id IS NOT NULL
-            GROUP BY fl.driver_id
+              AND vfr.resolved_driver_id IS NOT NULL
+            GROUP BY vfr.resolved_driver_id
         )
         SELECT
             ar.id            AS driver_id,
@@ -865,9 +862,12 @@ async def available_assets(
             JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
             WHERE a.operational_status = 'ACTIVE'
         ),
+        -- Fase B (ítem 5, feedback post-weekly 2026-07-22): mismo fix que
+        -- available-drivers — antes solo miraba trip_fleet_links.tractor_asset_id,
+        -- ahora usa la cadena de resolución completa vía la vista compartida.
         today_trips AS (
             SELECT
-                fl.tractor_asset_id AS asset_id,
+                vfr.resolved_tractor_asset_id AS asset_id,
                 count(*) AS trips_total,
                 count(*) FILTER (
                     WHERE t.trip_status LIKE 'CERRADO%'
@@ -876,11 +876,12 @@ async def available_assets(
                 max(t.status_reported_at) AS last_report_at,
                 max(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) AS driver_name
             FROM app.trips t
-            JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
+            JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+            LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
             WHERE t.planning_date = $1
               AND t.source_system != 'sodimac'
-              AND fl.tractor_asset_id IS NOT NULL
-            GROUP BY fl.tractor_asset_id
+              AND vfr.resolved_tractor_asset_id IS NOT NULL
+            GROUP BY vfr.resolved_tractor_asset_id
         )
         SELECT
             ar.id            AS asset_id,

@@ -32,18 +32,26 @@ def _driver_row(**overrides):
     return base
 
 
-# ── Bug real corregido 2026-07-22: day_trips debe replicar la MISMA cadena
-# de resolución en vivo que usa available_drivers/_TRIP_FROM en trips.py,
-# no solo trip_fleet_links.driver_id (vacío para todo viaje desde el
-# 2026-07-19 — nada lo puebla para viajes que llegan del TMS). ──────────
+# ── Bug real corregido 2026-07-22 (Ronda 38): day_trips debe replicar la
+# MISMA cadena de resolución en vivo que usa available_drivers/_TRIP_FROM en
+# trips.py, no solo trip_fleet_links.driver_id (vacío para todo viaje desde
+# el 2026-07-19 — nada lo puebla para viajes que llegan del TMS).
+#
+# Consolidado en Fase B (feedback post-weekly 2026-07-22, ítem 5): la cadena
+# ahora vive en app.v_trip_fleet_resolution (migración 20260722030000), no
+# inline acá — la duplicación en 4 lugares fue justo la causa del bug de
+# arriba. Este test verifica que day_trips usa la vista compartida en vez de
+# reconstruir su propia copia. ──────────
 
-def test_recompute_sql_uses_full_live_resolution_chain():
+def test_recompute_sql_uses_shared_fleet_resolution_view():
     from app.routers.daily_closures import _RECOMPUTE_SQL
-    assert "public.vehicle_driver_assignments" in _RECOMPUTE_SQL
-    assert "public.assets" in _RECOMPUTE_SQL
-    # 3er nivel: match exacto de nombre contra el roster
-    assert "d_by_name" in _RECOMPUTE_SQL
-    assert "driver_name_tms" in _RECOMPUTE_SQL
+    assert "app.v_trip_fleet_resolution" in _RECOMPUTE_SQL
+    assert "vfr.resolved_driver_id" in _RECOMPUTE_SQL
+    assert "vfr.resolved_carrier_id" in _RECOMPUTE_SQL
+    # No debe reconstruir la cadena inline — si aparece un JOIN real a
+    # vehicle_driver_assignments (no solo la mención en un comentario
+    # explicativo), alguien la duplicó de nuevo en vez de usar la vista.
+    assert "JOIN public.vehicle_driver_assignments" not in _RECOMPUTE_SQL
 
 
 # ── GET /cuadratura ──────────────────────────────────────────────────────

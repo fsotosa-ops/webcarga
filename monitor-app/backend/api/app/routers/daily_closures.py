@@ -57,25 +57,20 @@ WITH active_roster AS (
     JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
     JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
 ),
+-- Fase B (ítem 5, feedback post-weekly 2026-07-22): la cadena de
+-- resolución (stored → auto por patente → auto por
+-- vehicle_driver_assignments → match exacto de nombre) vivía inline acá y
+-- en 3 lugares más (_TRIP_FROM, available_drivers, available_assets en
+-- trips.py) — la duplicación fue justo la causa del bug que esta misma
+-- ronda arregló acá (Ronda 38). Consolidada en app.v_trip_fleet_resolution
+-- (migración 20260722030000) para que no vuelva a divergir.
 day_trips AS (
     SELECT
         t.id AS trip_id,
-        COALESCE(fl.driver_id, vda_auto.driver_id, d_by_name.id) AS driver_id,
-        COALESCE(fl.carrier_id, c_auto.id) AS trip_carrier_id
+        vfr.resolved_driver_id AS driver_id,
+        vfr.resolved_carrier_id AS trip_carrier_id
     FROM app.trips t
-    LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
-    LEFT JOIN public.assets ta_auto
-        ON fl.tractor_asset_id IS NULL
-       AND upper(trim(ta_auto.license_plate)) =
-           upper(trim(COALESCE(NULLIF(t.fleet->>'tractor_plate', ''), t.fleet->>'trailer_plate')))
-    LEFT JOIN public.asset_assignments aa_auto ON aa_auto.asset_id = ta_auto.id AND aa_auto.status = 'ACTIVE'
-    LEFT JOIN public.carriers c_auto ON c_auto.id = aa_auto.carrier_id
-    LEFT JOIN public.vehicle_driver_assignments vda_auto ON vda_auto.asset_id = ta_auto.id AND vda_auto.status = 'ACTIVE'
-    -- 3er nivel (nuevo): match exacto de nombre contra el roster cuando no
-    -- hay vínculo vehículo-conductor registrado todavía.
-    LEFT JOIN public.drivers d_by_name
-        ON fl.driver_id IS NULL AND vda_auto.driver_id IS NULL
-       AND lower(trim(d_by_name.full_name)) = lower(trim(t.fleet->>'driver_name_tms'))
+    JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE t.planning_date = $1
 ),
 computed AS (

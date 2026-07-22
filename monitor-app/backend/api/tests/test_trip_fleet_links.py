@@ -130,7 +130,12 @@ def test_trip_select_exposes_fleet_match_status():
 
 
 def test_trip_from_joins_driver_home_carrier_for_mismatch_detection():
-    assert "public.driver_assignments da_home" in _TRIP_FROM
+    """Fase B (feedback post-weekly 2026-07-22): la empresa propia del
+    conductor (para detectar MISMATCH) ahora viene resuelta directo de
+    app.v_trip_fleet_resolution (resolved_driver_home_carrier_id) — no de
+    un JOIN inline contra public.driver_assignments acá."""
+    assert "app.v_trip_fleet_resolution" in _TRIP_FROM
+    assert "vfr.resolved_driver_home_carrier_id" in _TRIP_FROM
 
 
 def test_list_trips_fleet_match_unmatched_filters_by_case_expression():

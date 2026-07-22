@@ -131,6 +131,23 @@ def test_available_drivers_returns_rows_and_excludes_sodimac_in_query():
     assert "public.vehicle_driver_assignments" in query  # vehículo estándar, no solo el de hoy
 
 
+def test_available_drivers_today_trips_uses_shared_resolution_view():
+    """Fase B (feedback post-weekly 2026-07-22, ítem 5): today_trips
+    detectaba "tiene viaje hoy" mirando solo trip_fleet_links.driver_id, sin
+    la cadena de resolución en vivo — un conductor con viaje ya resuelto
+    (auto por patente/vehicle_driver_assignments/nombre) podía seguir
+    apareciendo acá como "disponible" (confirmado contra datos reales:
+    2026-07-21, 1 conductor del roster resuelto en vivo, 0 detectados).
+    Ahora usa la misma vista que _TRIP_FROM/daily_closures.py."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    client.get("/api/v1/trips/available-drivers?fecha=2026-07-06")
+    query = pool.fetch.call_args.args[0]
+    assert "app.v_trip_fleet_resolution" in query
+    assert "vfr.resolved_driver_id" in query
+
+
 # ── /trips/available-assets ─────────────────────────────────────────────────
 
 def test_available_assets_requires_fecha():
@@ -155,6 +172,18 @@ def test_available_assets_returns_rows_from_active_roster():
     query = pool.fetch.call_args.args[0]
     assert "public.asset_assignments" in query
     assert "sodimac" in query
+
+
+def test_available_assets_today_trips_uses_shared_resolution_view():
+    """Fase B (feedback post-weekly 2026-07-22, ítem 5): mismo fix que
+    available-drivers, para el lado del equipo/tracto."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
+    query = pool.fetch.call_args.args[0]
+    assert "app.v_trip_fleet_resolution" in query
+    assert "vfr.resolved_tractor_asset_id" in query
 
 
 # ── list_trips q amplía a cliente ─────────────────────────────────────────────
