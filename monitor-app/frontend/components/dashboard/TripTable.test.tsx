@@ -90,14 +90,14 @@ describe('TripTable', () => {
 // dependía de un `alertSummary` que nunca se poblaba (endpoint viejo
 // borrado en Checkpoint A-E) — ahora viene directo del trip, live.
 describe('TripTable — documentación pendiente (conductor/tracto/empresa)', () => {
-  it('shows a pending-docs count next to the driver when driver_pending_docs > 0, labeled so it is not ambiguous', () => {
+  it('shows a pending-docs count next to the driver when driver_pending_docs > 0, with a title identifying the entity', () => {
     render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2 })]} selectedId={null} onSelect={vi.fn()} meta={null} />)
-    expect(screen.getAllByText('C2').length).toBeGreaterThan(0)
+    expect(screen.getAllByTitle('Conductor: 2 documento(s) pendiente(s)').length).toBeGreaterThan(0)
   })
 
-  it('shows a pending-docs count next to the plate when tractor_pending_docs > 0, labeled so it is not ambiguous', () => {
+  it('shows a pending-docs count next to the plate when tractor_pending_docs > 0, with a title identifying the entity', () => {
     render(<TripTable trips={[makeTrip('t1', { tractor_pending_docs: 7 })]} selectedId={null} onSelect={vi.fn()} meta={null} />)
-    expect(screen.getAllByText('T7').length).toBeGreaterThan(0)
+    expect(screen.getAllByTitle('Tracto: 7 documento(s) pendiente(s)').length).toBeGreaterThan(0)
   })
 
   it('does not show a pending-docs badge when the count is 0 or null', () => {
@@ -208,13 +208,17 @@ describe('TripTable — accesibilidad por teclado', () => {
 })
 
 describe('TripTable — columnas fijas (sticky)', () => {
-  it('Patente queda fija a la izquierda y Estado/chevron de apertura a la derecha', () => {
+  it('Patente queda fija a la izquierda y Estado (con el chevron de apertura adentro) a la derecha', () => {
+    // Ítem 3 (feedback post-weekly 2026-07-22): Estado y el chevron eran 2
+    // columnas sticky separadas con un offset en px hardcodeado entre
+    // ellas — frágil con table-layout: auto, causaba que se vieran
+    // "movidas"/superpuestas. Ahora es UNA sola columna sticky right-0, sin
+    // ningún offset que calcular.
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} meta={null} />)
     const patenteTh = screen.getByText('Patente').closest('th')!
     const estadoTh  = screen.getByText('Estado').closest('th')!
-    const chevronTh = screen.getByText('Abrir detalle').closest('th')!
     expect(patenteTh.className).toContain('sticky left-0')
-    expect(estadoTh.className).toContain('sticky right-')
-    expect(chevronTh.className).toContain('sticky right-0')
+    expect(estadoTh.className).toContain('sticky right-0')
+    expect(estadoTh.textContent).toContain('Abrir detalle')
   })
 })

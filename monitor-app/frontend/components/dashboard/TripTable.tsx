@@ -270,12 +270,18 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                 <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
                 <th className="px-3 py-2.5 text-left">Destinos</th>
                 <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
-                <th onClick={() => handleSort('current_status')} className="sticky right-[90px] z-10 bg-inherit border-l border-border/60 px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} /></th>
-                {/* Indicadores se movió a tabs de filtro arriba de la tabla
-                    (Fase 3, 2026-07-18) — esta columna ahora es solo el
-                    chevron de apertura del detalle. */}
-                <th className="sticky right-0 z-10 bg-inherit px-3 py-2.5 text-left w-[32px]">
-                  <span className="sr-only">Abrir detalle</span>
+                {/* Estado + chevron de apertura, UNA sola columna sticky
+                    (ítem 3, feedback post-weekly 2026-07-22): antes eran 2
+                    columnas sticky separadas (right-[90px] y right-0) — con
+                    table-layout: auto (el default, sin colgroup), el ancho
+                    real de la columna del chevron puede variar según el
+                    contenido de otras filas, así que un offset fijo en px
+                    para Estado podía desalinearse/superponerse. Un solo
+                    right-0 no tiene ese problema — no hay ningún offset que
+                    calcular. */}
+                <th onClick={() => handleSort('current_status')} className="sticky right-0 z-10 bg-inherit border-l border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
+                  Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} />
+                  <span className="sr-only">, Abrir detalle</span>
                 </th>
               </tr>
             </thead>
