@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Building2, Users, LogOut,
-  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, BarChart3,
+  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, BarChart3, Receipt,
 } from 'lucide-react'
 
 // "Monitor de Viajes" agrupa Diario + Reportería bajo un solo item
@@ -25,8 +25,9 @@ const MONITOR_GROUP = {
 }
 
 const NAV_ITEMS = [
-  { href: '/dashboard/transportistas', label: 'Empresas', icon: Building2 },
-  { href: '/dashboard/seguros',        label: 'Seguros',  icon: Shield },
+  { href: '/dashboard/transportistas', label: 'Empresas',  icon: Building2 },
+  { href: '/dashboard/seguros',        label: 'Seguros',   icon: Shield },
+  { href: '/dashboard/tarifario',      label: 'Tarifario', icon: Receipt },
 ]
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahí, se listan
