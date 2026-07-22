@@ -19,7 +19,7 @@ Spec: `docs/superpowers/specs/2026-07-22-post-weekly-refinamiento-v2-design.md`.
 **Fase B — consolidación + terminología** (commits `f7ed75d`, `752d284`, `3c434b4`, ya pusheados) — la más delicada de esta ronda, verificada exhaustivamente contra datos reales antes y después de aplicar:
 - **`app.v_trip_fleet_resolution`** (migración `20260722030000`): consolida la cadena de resolución driver/tracto/carrier (stored → auto por patente → auto por `vehicle_driver_assignments` → match exacto de nombre), duplicada hasta ahora en 4 lugares — la duplicación fue la causa raíz del bug de Ronda 38. Confirmado con `EXPLAIN` que el planner la inlinea (cero costo de performance) antes de aplicar.
 - **Impacto real medido** (2026-07-21): `available_drivers` pasó de 79/79 (100%, bug prácticamente total) a 68/79 tras la vista.
-- **"Equipo OVNI"** adoptado como label visible en `TripSlideOver.tsx` para `fleet_match_status === 'UNMATCHED'`. **Solo el label — ver Ronda 43, Hallazgo F: la detección y la terminología están, pero falta la superficie (no aparece en la cuadratura) y la resolución (sigue siendo 100% manual, sin datos del TMS pre-cargados).**
+- **"Equipo OVNI"** adoptado como label visible en `TripSlideOver.tsx` para `fleet_match_status === 'UNMATCHED'`. **Solo el label — ver Ronda 43, Hallazgo F: la detección y la terminología están, pero falta la superficie (no aparece en la cuadratura) y la resolución (sigue siendo 100% manual, sin datos del TMS pre-cargados).** (Corrección posterior en Ronda 43: el label pasó a ser "Sin identificar" — "Equipo OVNI" no es nomenclatura de producto ni estándar de industria, fue la forma coloquial en que Pablo lo explicó en la reunión.)
 
 Verificación en cada tarea: backend 306→308 tests, frontend 497→500 tests, `tsc`/`build` limpios.
 
@@ -42,16 +42,22 @@ Verificación en cada tarea: backend 306→308 tests, frontend 497→500 tests, 
 
 El usuario aprobó incluir el fix de Hallazgo E y F en el alcance de ejecución inmediata, junto con Fase C (Tarifario) e Ítem 6 (Reportería). Plan completo: `~/.claude/plans/necesito-que-veas-que-silly-octopus.md`.
 
+**Corrección de terminología (durante la ejecución)**: el usuario cuestionó "Equipo OVNI" como copy real de producto — es la forma coloquial en que Pablo explicó la idea en la reunión (transcript línea 605), no un término de producto ni nomenclatura estándar de industria/logtech. Reemplazado por **"Sin identificar"** en todo lo visible (banner de `TripSlideOver.tsx`, label del KPI en `alertSignals.ts`, tests). El id interno (`fleet_unmatched`) no cambia — solo el copy.
+
+**Ejecución de los 3 primeros puntos, completa** (commits `1019f33`, `c37f471`, `afa52a0`, `af73bb8`, ya en `dev`):
+1. **Hallazgo E (bug de columnas)**: `TripTable.tsx` — se retiró el sticky del lado derecho por completo (Estado+chevron vuelven a ser una columna normal fusionada, ya no 2 `<td>` desalineados con el header). Solo `Patente` (izquierda) queda fija. `TripTable.test.tsx` actualizado.
+2. **Hallazgo F ("Sin identificar")**: nuevo KPI `fleet_unmatched` en `kpis.ts`/`alertSignals.ts` — cuenta y filtra como el resto de las alertas del Diario, ya no solo un banner pasivo. Flujo de alta guiado real: el link desde `TripSlideOver.tsx` pre-carga razón social/conductor/patente ya reportados por el TMS (`carrier_name_tms`/`driver_name_tms`/`tractor_plate_tms`) directo en el formulario de alta de Empresas (`?create=1&business_name=…`), y reenvía conductor/patente a la ficha de la empresa recién creada para pre-cargar también "+ Conductor"/"+ Equipo" ahí — sin re-tipear nada. Investigado antes de codear: en UNMATCHED no hay ninguna empresa resuelta (ni conductor ni tracto), así que el punto de partida real es crear la empresa, no buscar (la búsqueda de Empresas filtra por razón social/tax_id, no por nombre de conductor).
+3. **Fase C (Tareas 7-8)**: `TarifarioPage` rediseñada tipo SaaS — paginación de servidor (verificado antes: 566 locales en el generador de carga con más volumen, no "decenas"), búsqueda `?q=`, botón de creación en el header, densidad/hover al estilo `TripTable`. Absorbe por completo los campos de la ex-pestaña Locales de Configuración (Formato/Dirección/Región/Clasificación/Activo, filtro "Solo sin clasificar" HU-16) — `locales-tab.tsx` borrado, tab retirado de Configuración.
+
+Verificación en cada tarea: backend 308→311 tests, frontend 505→514 tests, `tsc`/`vitest`/`build` limpios (frontend y backend).
+
 #### Próximo paso exacto
-1. [ ] Fix de columnas sticky del Diario (Hallazgo E): en `TripTable.tsx`, quitar `sticky right-[90px]`/`right-0` de Estado y chevron (tanto `<th>` como los 2 `<td>` del body) — solo `Patente` (`sticky left-0`) queda fija. Actualizar `TripTable.test.tsx`.
-2. [ ] Cerrar el gap de "Equipo OVNI" (Hallazgo F): agregar signal/alerta en `alertSignals.ts` (+ `kpis.ts` si corresponde) para que `UNMATCHED` cuente y filtre en el Diario/cuadratura; agregar acción de resolución guiada (crear empresa/conductor/tracto con datos del TMS pre-cargados, reusando el flujo de HU-05) desde el banner de `TripSlideOver.tsx`.
-3. [ ] Fase C (ítems 7+8): rediseño de `TarifarioPage` tipo SaaS + absorber Locales + retirar esa pestaña de Configuración. Plan ya detallado y listo: `docs/superpowers/plans/2026-07-22-post-weekly-refinamiento-v2-plan.md`, Tareas 7-8.
-4. [ ] Ítem 6 (Reportería) — requiere traer primero el contenido real de los 4 mockups de Figma (`NW7aAqbiCxML2HLd8uMTzf`, nodos `19-17067`/`24-18435`/`25-9068`/`35-15699`) antes de decidir si `reporteria/page.tsx` se reemplaza por presets fijos o los mantiene como modo avanzado. Brainstorming propio, arrancar después de Fase C.
-5. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-6. [ ] (nuevo, no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención.
-7. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
-8. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-9. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-10. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-11. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-12. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+1. [ ] Ítem 6 (Reportería) — requiere traer primero el contenido real de los 4 mockups de Figma (`NW7aAqbiCxML2HLd8uMTzf`, nodos `19-17067`/`24-18435`/`25-9068`/`35-15699`) antes de decidir si `reporteria/page.tsx` (pivot genérico, Ronda 41) se reemplaza por presets fijos (Sider Botelleros/Sodimac/Walmart-Spot, ver `reporte-1/2/3-cierre-diario.png`) o los mantiene como modo avanzado. Es su propio brainstorming (`superpowers:brainstorming` o Plan agent dedicado) — no ejecutar a ciegas.
+2. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+3. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención — quedó sin resolver, el usuario redirigió la conversación hacia el bug de columnas (Hallazgo E, ya cerrado).
+4. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
+5. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+6. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+7. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+8. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+9. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
