@@ -90,14 +90,14 @@ describe('TripTable', () => {
 // dependía de un `alertSummary` que nunca se poblaba (endpoint viejo
 // borrado en Checkpoint A-E) — ahora viene directo del trip, live.
 describe('TripTable — documentación pendiente (conductor/tracto/empresa)', () => {
-  it('shows a pending-docs count next to the driver when driver_pending_docs > 0', () => {
+  it('shows a pending-docs count next to the driver when driver_pending_docs > 0, labeled so it is not ambiguous', () => {
     render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2 })]} selectedId={null} onSelect={vi.fn()} meta={null} />)
-    expect(screen.getAllByText('2').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('C2').length).toBeGreaterThan(0)
   })
 
-  it('shows a pending-docs count next to the plate when tractor_pending_docs > 0', () => {
+  it('shows a pending-docs count next to the plate when tractor_pending_docs > 0, labeled so it is not ambiguous', () => {
     render(<TripTable trips={[makeTrip('t1', { tractor_pending_docs: 7 })]} selectedId={null} onSelect={vi.fn()} meta={null} />)
-    expect(screen.getAllByText('7').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('T7').length).toBeGreaterThan(0)
   })
 
   it('does not show a pending-docs badge when the count is 0 or null', () => {

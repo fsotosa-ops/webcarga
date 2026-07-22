@@ -165,7 +165,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                   <span className={`font-mono text-sm font-bold shrink-0 ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal text-xs'}`}>
                     {primaryPlate ?? 'sin patente'}
                   </span>
-                  <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} compact />
+                  <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" compact />
                   <TmsChip tms={trip.source_system ?? ''} meta={meta} />
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -188,7 +188,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                 <span className="text-xs text-slate-600 truncate">
                   {trip.driver_name ?? <span className="text-gray-300 italic text-[11px]">sin conductor</span>}
                 </span>
-                <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} compact />
+                <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" compact />
               </div>
 
               {/* fila 3: EETT + origen */}
@@ -197,7 +197,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                   ? <span className="font-medium text-slate-500 truncate max-w-[160px]">{trip.carrier_name}</span>
                   : <span className="italic">sin EETT</span>}
                 <InsuranceAlertBadge alert={trip.insurance_alert} compact />
-                <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} compact />
+                <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" compact />
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
 
@@ -296,7 +296,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                           </span>
                         )}
                       </div>
-                      <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} compact />
+                      <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" compact />
                     </div>
                   </td>
 
@@ -338,7 +338,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                       <span className="text-xs text-slate-700 font-medium leading-tight">
                         {trip.driver_name ?? <span className="text-gray-300 italic">sin asignar</span>}
                       </span>
-                      <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} compact />
+                      <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" compact />
                     </div>
                   </td>
 
@@ -373,7 +373,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                         </span>
                         <div className="flex items-center gap-1 mt-0.5">
                           <InsuranceAlertBadge alert={trip.insurance_alert} />
-                          <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} />
+                          <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" />
                         </div>
                       </>
                     ) : (

@@ -272,14 +272,14 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
 
   // Gap cerrado 2026-07-22: documentación LEGAL_MANDATORY de conductor/
   // tracto/empresa — antes solo Seguros tenía esta prominencia en el Diario.
-  it('shows a pending-docs badge per domain when the trip has a linked carrier', () => {
+  it('shows a pending-docs badge per domain, labeled so it is not ambiguous which entity it refers to', () => {
     renderSlideOver({
       ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
       driver_pending_docs: 2, tractor_pending_docs: 7, carrier_pending_docs: 11,
     })
-    expect(screen.getByText('2 pendientes')).toBeInTheDocument()
-    expect(screen.getByText('7 pendientes')).toBeInTheDocument()
-    expect(screen.getByText('11 pendientes')).toBeInTheDocument()
+    expect(screen.getByText('Conductor: 2 pendientes')).toBeInTheDocument()
+    expect(screen.getByText('Tracto: 7 pendientes')).toBeInTheDocument()
+    expect(screen.getByText('Empresa: 11 pendientes')).toBeInTheDocument()
   })
 
   it('shows a critical banner when the driver is missing Licencia de Conducir or Carnet', () => {

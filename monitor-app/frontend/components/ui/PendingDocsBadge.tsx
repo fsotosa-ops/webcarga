@@ -22,6 +22,11 @@ export function PendingDocsBadge({ count, critical, compact = false, label }: Pr
   const tone = critical ? 'red' : 'amber'
   const title = label ? `${label}: ${count} documento(s) pendiente(s)` : `${count} documento(s) pendiente(s)`
 
+  // Ítem 2 (feedback post-weekly 2026-07-22): un badge sin identificar de
+  // qué entidad habla (conductor/tracto/empresa) es ambiguo — el `title`
+  // (tooltip) no alcanza porque no es visible sin hover/touch sostenido.
+  // Mismo criterio que el mockup de Figma "Listado de Recursos": columna de
+  // certificación con texto explícito, no un badge de color solo.
   if (compact) {
     return (
       <span
@@ -30,7 +35,7 @@ export function PendingDocsBadge({ count, critical, compact = false, label }: Pr
           tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
         }`}
       >
-        {count}
+        {label ? `${label[0].toUpperCase()}${count}` : count}
       </span>
     )
   }
@@ -42,7 +47,7 @@ export function PendingDocsBadge({ count, critical, compact = false, label }: Pr
         tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
       }`}
     >
-      <FileWarning size={9} /> {count} pendiente{count === 1 ? '' : 's'}
+      <FileWarning size={9} /> {label ? `${label}: ` : ''}{count} pendiente{count === 1 ? '' : 's'}
     </span>
   )
 }
