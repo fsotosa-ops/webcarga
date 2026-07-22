@@ -19,6 +19,7 @@ from .routers.locations import router as locations_router
 from .routers.policies import router as policies_router
 from .routers.roles import router as roles_router
 from .routers.shippers import router as shippers_router
+from .routers.status_taxonomies import router as status_taxonomies_router
 from .routers.trips import router as trips_router
 from .routers.users import router as users_router
 
@@ -55,6 +56,7 @@ app.add_middleware(
 
 app.include_router(roles_router,               prefix="/api/v1")
 app.include_router(config_router,              prefix="/api/v1")
+app.include_router(status_taxonomies_router,   prefix="/api/v1")
 app.include_router(trips_router,               prefix="/api/v1")
 app.include_router(users_router,               prefix="/api/v1")
 app.include_router(filter_groups_router,       prefix="/api/v1")
