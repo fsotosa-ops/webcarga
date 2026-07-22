@@ -86,6 +86,26 @@ describe('TripTable', () => {
   })
 })
 
+// Gap cerrado 2026-07-22: el badge de compliance (conductor/tracto/empresa)
+// dependía de un `alertSummary` que nunca se poblaba (endpoint viejo
+// borrado en Checkpoint A-E) — ahora viene directo del trip, live.
+describe('TripTable — documentación pendiente (conductor/tracto/empresa)', () => {
+  it('shows a pending-docs count next to the driver when driver_pending_docs > 0', () => {
+    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2 })]} selectedId={null} onSelect={vi.fn()} meta={null} />)
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0)
+  })
+
+  it('shows a pending-docs count next to the plate when tractor_pending_docs > 0', () => {
+    render(<TripTable trips={[makeTrip('t1', { tractor_pending_docs: 7 })]} selectedId={null} onSelect={vi.fn()} meta={null} />)
+    expect(screen.getAllByText('7').length).toBeGreaterThan(0)
+  })
+
+  it('does not show a pending-docs badge when the count is 0 or null', () => {
+    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 0, tractor_pending_docs: null })]} selectedId={null} onSelect={vi.fn()} meta={null} />)
+    expect(screen.queryByTitle(/documento/)).not.toBeInTheDocument()
+  })
+})
+
 describe('TripTable — solo lectura (Fase 2, Plan 6)', () => {
   it('renders conductor, patente and phone as read-only text, with no editable inputs anywhere in the table', () => {
     render(<TripTable trips={[makeTrip('t1', { driver_phone: JSON.stringify(['+56911112222']) })]} selectedId={null} onSelect={vi.fn()} meta={null} />)

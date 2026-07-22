@@ -463,6 +463,21 @@ export type Trip = {
    *  app.carrier_insurance_status (una empresa puede tener varias pólizas).
    *  null cuando no hay empresa resuelta o su cobertura está VALID. */
   insurance_alert?: 'EXPIRED' | 'OVERDUE_INSTALLMENTS' | 'EXPIRING_SOON' | null
+  /** Cierre del gap detectado 2026-07-22: el Diario solo mostraba alerta de
+   *  Seguros — la documentación LEGAL_MANDATORY de conductor/tracto/empresa
+   *  (HU-08/09) nunca llegaba acá (el summary endpoint viejo que la
+   *  alimentaba se borró en Checkpoint A-E). Consolidado, no tri-state: el
+   *  100% del roster tiene al menos 1 documento pendiente hoy — un badge
+   *  binario saturaría cada fila sin aportar señal. null cuando el dominio
+   *  no tiene ID resuelto todavía (no confundir con "0 pendientes"). */
+  driver_pending_docs?:            number | null
+  /** true cuando el pendiente incluye Licencia de Conducir o Carnet — los
+   *  "más críticos" según el usuario, distintos del resto de LEGAL_MANDATORY. */
+  driver_pending_docs_critical?:   boolean | null
+  tractor_pending_docs?:           number | null
+  tractor_pending_docs_critical?:  boolean | null
+  carrier_pending_docs?:           number | null
+  carrier_pending_docs_critical?:  boolean | null
 }
 
 // ── Catálogo de locales por generador de carga (public.locations, H2.6) ──

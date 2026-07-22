@@ -8,7 +8,7 @@ import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/fi
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
 import type { Trip, TripsMeta } from '@/lib/types'
-import { TripTable, type ComplianceAlertSummary } from '@/components/dashboard/TripTable'
+import { TripTable } from '@/components/dashboard/TripTable'
 import { TripBoard } from '@/components/dashboard/TripBoard'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
@@ -97,7 +97,6 @@ export default function DiarioPage() {
   const [f, dispatch] = useDiarioFilters(todayISO())
 
   const [selected,       setSelected]       = useState<Trip | null>(null)
-  const [alertSummary,   setAlertSummary]   = useState<ComplianceAlertSummary | null>(null)
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,     setShowCreate]     = useState(false)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
@@ -579,7 +578,6 @@ export default function DiarioPage() {
                   trips={visibleTrips}
                   selectedId={selected?.id ?? null}
                   onSelect={setSelected}
-                  alertSummary={alertSummary}
                   meta={tripsMeta}
                   updatedIds={updatedIds}
                 />

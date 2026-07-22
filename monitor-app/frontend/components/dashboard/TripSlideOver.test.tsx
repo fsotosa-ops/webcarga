@@ -269,6 +269,34 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     renderSlideOver({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', driver_name_tms: 'ALGUIEN' })
     expect(driversApi.fuzzyMatch).not.toHaveBeenCalled()
   })
+
+  // Gap cerrado 2026-07-22: documentación LEGAL_MANDATORY de conductor/
+  // tracto/empresa — antes solo Seguros tenía esta prominencia en el Diario.
+  it('shows a pending-docs badge per domain when the trip has a linked carrier', () => {
+    renderSlideOver({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      driver_pending_docs: 2, tractor_pending_docs: 7, carrier_pending_docs: 11,
+    })
+    expect(screen.getByText('2 pendientes')).toBeInTheDocument()
+    expect(screen.getByText('7 pendientes')).toBeInTheDocument()
+    expect(screen.getByText('11 pendientes')).toBeInTheDocument()
+  })
+
+  it('shows a critical banner when the driver is missing Licencia de Conducir or Carnet', () => {
+    renderSlideOver({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      driver_pending_docs: 2, driver_pending_docs_critical: true,
+    })
+    expect(screen.getByText(/Falta Licencia de Conducir o Carnet del conductor/)).toBeInTheDocument()
+  })
+
+  it('does not show the critical banner when pending docs are non-critical', () => {
+    renderSlideOver({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      driver_pending_docs: 2, driver_pending_docs_critical: false,
+    })
+    expect(screen.queryByText(/Falta Licencia de Conducir o Carnet del conductor/)).not.toBeInTheDocument()
+  })
 })
 
 describe('TripSlideOver — override de estado', () => {

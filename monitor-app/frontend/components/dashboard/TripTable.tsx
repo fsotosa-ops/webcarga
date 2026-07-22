@@ -3,25 +3,13 @@
 import { useState, useMemo } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
-import { ComplianceBadge } from './ComplianceBadge'
-
-// TODO(H2.6): venían de GET /transporters/compliance-alerts/summary (Checkpoint
-// A-E, borrado). Sin productor hasta que se resuelva el puente del Diario con
-// el modelo nuevo de Empresas — alertSummary queda siempre null/undefined
-// mientras tanto (degradación limpia, no se muestran alertas de vencimiento).
-export type AlertStatus = 'expired' | 'expiring_soon' | 'ok'
-export type ComplianceAlertSummary = {
-  driver_ruts:         Record<string, AlertStatus>
-  plates:              Record<string, AlertStatus>
-  total_expired:       number
-  total_expiring_soon: number
-}
 import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
+import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 
 
 export function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
@@ -102,13 +90,12 @@ interface Props {
   trips:         Trip[]
   selectedId:    string | null
   onSelect:      (trip: Trip) => void
-  alertSummary?: ComplianceAlertSummary | null
   meta?:         TripsMeta | null
   /** Viajes cuyo último reporte TMS cambió en el refetch más reciente — glow sutil */
   updatedIds?:   Set<string>
 }
 
-export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, updatedIds }: Props) {
+export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Props) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
@@ -149,8 +136,6 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
         {trips.map(trip => {
           const isActive      = trip.id === selectedId
           const primaryPlate  = trip.tractor_plate ?? trip.trailer_plate ?? null
-          const plateAlert    = alertSummary?.plates[primaryPlate ?? ''] as AlertStatus | undefined
-          const driverAlert   = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
           const currentStatus = trip.manual_status ?? trip.current_status
 
           return (
@@ -180,7 +165,7 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                   <span className={`font-mono text-sm font-bold shrink-0 ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal text-xs'}`}>
                     {primaryPlate ?? 'sin patente'}
                   </span>
-                  <ComplianceBadge status={plateAlert ?? null} compact />
+                  <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} compact />
                   <TmsChip tms={trip.source_system ?? ''} meta={meta} />
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -203,7 +188,7 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                 <span className="text-xs text-slate-600 truncate">
                   {trip.driver_name ?? <span className="text-gray-300 italic text-[11px]">sin conductor</span>}
                 </span>
-                <ComplianceBadge status={driverAlert ?? null} compact />
+                <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} compact />
               </div>
 
               {/* fila 3: EETT + origen */}
@@ -212,6 +197,7 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                   ? <span className="font-medium text-slate-500 truncate max-w-[160px]">{trip.carrier_name}</span>
                   : <span className="italic">sin EETT</span>}
                 <InsuranceAlertBadge alert={trip.insurance_alert} compact />
+                <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} compact />
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
 
@@ -264,8 +250,6 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
               const isActive       = trip.id === selectedId
               const primaryPlate   = trip.tractor_plate ?? trip.trailer_plate ?? null
               const secondaryPlate = trip.tractor_plate && trip.trailer_plate ? trip.trailer_plate : null
-              const plateAlert     = alertSummary?.plates[trip.tractor_plate ?? ''] as AlertStatus | undefined
-              const driverAlert    = alertSummary?.driver_ruts[trip.driver_tax_id ?? ''] as AlertStatus | undefined
               const currentStatus  = trip.manual_status ?? trip.current_status
               const phones         = parsePhones(trip.driver_phone)
 
@@ -312,8 +296,7 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                           </span>
                         )}
                       </div>
-                      <ComplianceBadge status={plateAlert ?? null} compact
-                        tooltip={plateAlert === 'expired' ? 'Vehículo vencido' : 'Vence pronto'} />
+                      <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} compact />
                     </div>
                   </td>
 
@@ -355,7 +338,7 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                       <span className="text-xs text-slate-700 font-medium leading-tight">
                         {trip.driver_name ?? <span className="text-gray-300 italic">sin asignar</span>}
                       </span>
-                      <ComplianceBadge status={driverAlert ?? null} compact />
+                      <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} compact />
                     </div>
                   </td>
 
@@ -388,7 +371,10 @@ export function TripTable({ trips, selectedId, onSelect, alertSummary, meta, upd
                         <span className="text-xs font-medium text-slate-700 leading-tight block truncate max-w-[120px]">
                           {trip.carrier_name}
                         </span>
-                        <InsuranceAlertBadge alert={trip.insurance_alert} />
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <InsuranceAlertBadge alert={trip.insurance_alert} />
+                          <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} />
+                        </div>
                       </>
                     ) : (
                       <span className="text-[10px] text-gray-300 italic">sin vincular</span>

@@ -6,7 +6,7 @@ import {
   X, Loader2, Copy, Check,
   Truck, User, Phone, Hash,
   MapPin, RotateCcw, ClipboardList,
-  ShieldAlert, Search,
+  ShieldAlert, Search, FileWarning,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
@@ -23,6 +23,7 @@ import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } f
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
+import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 
 // ── MetaField helper ──────────────────────────────────────────────────────────
 
@@ -558,9 +559,12 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
               {trip.carrier_id ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
-                    <div className="min-w-0 flex items-center gap-2">
+                    <div className="min-w-0 flex items-center gap-2 flex-wrap">
                       <p className="text-xs font-semibold text-slate-800 truncate">{trip.carrier_name ?? '—'}</p>
                       <InsuranceAlertBadge alert={trip.insurance_alert} />
+                      <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" />
+                      <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" />
+                      <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" />
                     </div>
                     <button
                       type="button"
@@ -582,6 +586,20 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                         {trip.insurance_alert === 'EXPIRED'
                           ? 'Póliza vencida para esta empresa — revisar en Seguros.'
                           : 'Cuotas críticas impagas para esta empresa — revisar en Seguros.'}
+                      </p>
+                    </div>
+                  )}
+                  {/* Gap cerrado 2026-07-22: documentación LEGAL_MANDATORY
+                      de conductor/tracto/empresa — antes solo Seguros tenía
+                      esta prominencia en el Diario. Banner solo para el caso
+                      crítico (Licencia de Conducir/Carnet, pedido explícito
+                      del usuario); el resto de pendientes ya se ve en los
+                      badges de arriba, sin duplicar el banner por cada uno. */}
+                  {trip.driver_pending_docs_critical && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                      <FileWarning size={13} className="text-red-600 shrink-0" />
+                      <p className="text-[11px] text-red-700 font-medium">
+                        Falta Licencia de Conducir o Carnet del conductor — revisar en Empresas.
                       </p>
                     </div>
                   )}

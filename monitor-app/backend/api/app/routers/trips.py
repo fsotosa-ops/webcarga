@@ -270,7 +270,13 @@ _TRIP_SELECT = """
     sh.name AS shipper_name,
     {fleet_match_case} AS fleet_match_status,
     c_home.business_name AS fleet_match_driver_home_carrier,
-    ins.insurance_alert
+    ins.insurance_alert,
+    dcomp.pending_count AS driver_pending_docs,
+    dcomp.has_critical_pending AS driver_pending_docs_critical,
+    tcomp.pending_count AS tractor_pending_docs,
+    tcomp.has_critical_pending AS tractor_pending_docs_critical,
+    ccomp.pending_count AS carrier_pending_docs,
+    ccomp.has_critical_pending AS carrier_pending_docs_critical
 """
 
 # HU-04 (Fase 0, 2026-07-21): antes, cuando un viaje no lograba cruzar con
@@ -296,6 +302,59 @@ _FLEET_MATCH_CASE = """
     END
 """
 _TRIP_SELECT = _TRIP_SELECT.format(fleet_match_case=_FLEET_MATCH_CASE)
+
+
+def _compliance_alert_lateral(alias: str, entity_type: str, id_expr: str, critical_codes: tuple[str, ...] = ()) -> str:
+    """Cierre del gap detectado 2026-07-22: el Diario solo mostraba alerta de
+    Seguros (HU-12) — la documentación LEGAL_MANDATORY de conductor/tracto/
+    empresa (HU-08/09) nunca llegó a mostrarse acá (el summary endpoint viejo
+    que la alimentaba se borró en Checkpoint A-E; TripTable.tsx quedó con un
+    ComplianceBadge sin productor). Mismo criterio de is_expired/
+    is_expiring_soon que ya usa GET /drivers/{id}/compliance-records y
+    _pending_mandatory_join (carriers.py).
+    Diseño confirmado por el usuario 2026-07-22: NO un tri-state ok/vencido —
+    hoy el 100% de conductores/tractos/empresas tiene al menos 1 documento
+    LEGAL_MANDATORY pendiente (verificado contra datos reales, misma consulta
+    que ya usa Empresas), así que un badge binario saturaría cada fila del
+    Diario sin aportar señal. En cambio: un CONSOLIDADO (cuántos documentos
+    pendientes) + un flag de "crítico" cuando el pendiente incluye uno de
+    `critical_codes` (ej. Licencia de Conducir/Carnet para conductor, pedido
+    explícito del usuario) — se recalcula en cada request, así que baja solo
+    a medida que el equipo sube documentación, sin cache que actualizar.
+    `entity_type`/`critical_codes` siempre vienen hardcodeados por el caller,
+    nunca de request."""
+    codes_sql = "ARRAY[" + ", ".join(f"'{c}'" for c in critical_codes) + "]::varchar[]" if critical_codes else "ARRAY[]::varchar[]"
+    return f"""
+    LEFT JOIN LATERAL (
+        SELECT
+            -- CASE por {id_expr} IS NULL: distingue "sin conductor/tracto/
+            -- empresa resuelto todavía" (NULL, no hay nada que evaluar) de
+            -- "resuelto y sin pendientes" (0) — un COUNT(*) FILTER liso sobre
+            -- cero filas ya da 0 por sí solo, lo que mentiría "todo en orden"
+            -- cuando en realidad no hay ningún ID contra el que preguntar.
+            CASE WHEN {id_expr} IS NULL THEN NULL ELSE COUNT(*) FILTER (
+                WHERE req.requirement_level = 'LEGAL_MANDATORY' AND (
+                    cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
+                    OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE)
+                )
+            ) END AS pending_count,
+            CASE WHEN {id_expr} IS NULL THEN NULL ELSE bool_or(
+                req.requirement_level = 'LEGAL_MANDATORY'
+                AND req.requirement_code = ANY({codes_sql})
+                AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
+                     OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+            ) END AS has_critical_pending
+        FROM public.compliance_records cr
+        JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+        WHERE cr.entity_type = '{entity_type}' AND cr.entity_id = {id_expr} AND cr.is_current = true
+    ) {alias} ON true
+    """
+
+
+# Licencia de Conducir/Carnet — pedido explícito del usuario 2026-07-22 como
+# "de los más críticos" dentro de la documentación de conductor.
+_DRIVER_CRITICAL_DOC_CODES = ("LICENCIA_CONDUCIR", "COPIA_CI_CONDUCTOR")
+
 
 _TRIP_FROM = """
     FROM app.trips t
@@ -359,6 +418,9 @@ _TRIP_FROM = """
         FROM app.carrier_insurance_status cis
         WHERE cis.carrier_id = COALESCE(fl.carrier_id, c_auto.id)
     ) ins ON true
+""" + _compliance_alert_lateral("dcomp", "DRIVER", "COALESCE(fl.driver_id, d_auto.id)", _DRIVER_CRITICAL_DOC_CODES) \
+    + _compliance_alert_lateral("tcomp", "ASSET", "COALESCE(fl.tractor_asset_id, ta_auto.id)") \
+    + _compliance_alert_lateral("ccomp", "CARRIER", "COALESCE(fl.carrier_id, c_auto.id)") + """
     -- "Vuelta N" (driver_leg_number, ver _TRIP_SELECT): orden cronológico de
     -- los viajes de un conductor en el día, basado en cuándo salió del
     -- origen — trae solo la fila ORIGIN de trip_stops (a lo sumo 1 por viaje,
