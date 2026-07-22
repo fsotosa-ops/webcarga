@@ -28,6 +28,7 @@ async def list_locations(
     q: str = Query("", description="Buscar por nombre o N° de local"),
     operation_type: str = Query(""),
     operational_status: str = Query(""),
+    incomplete: str = Query("", description="true = solo locales sin clasificación (HU-16)"),
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
@@ -45,6 +46,13 @@ async def list_locations(
     if operation_type:
         params.append(operation_type)
         clauses.append(f"operation_type = ${len(params)}")
+    # HU-15/16 (Fase 4): "incompleto" no es una columna nueva — se deriva de
+    # operation_type IS NULL, el mismo campo que ya decide "Sin clasificar"
+    # en el Diario (trg_reconcile_new_trip_stop_location siembra locales sin
+    # este dato). Suficiente para identificar qué falta completar sin
+    # inventar un flag de completitud separado que se pueda desincronizar.
+    if incomplete == "true":
+        clauses.append("operation_type IS NULL")
     if operational_status:
         params.append(operational_status)
         clauses.append(f"operational_status = ${len(params)}")

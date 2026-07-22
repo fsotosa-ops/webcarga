@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Plus } from 'lucide-react'
+import { Loader2, Plus, AlertCircle } from 'lucide-react'
 import type { Location } from '@/lib/types'
 import { locationsApi, shippersApi, type Shipper } from '@/lib/api/locations'
 import { INPUT, LoadState, SaveRowButton, useConfigList, useRowFeedback } from './shared'
@@ -16,12 +16,23 @@ const EMPTY_LOCATION = {
 export function LocalesTab() {
   const [shippers, setShippers]   = useState<Shipper[]>([])
   const [shipperId, setShipperId] = useState('')
+  // HU-15/16 (Fase 4): locales auto-registrados desde el TMS sin
+  // clasificación todavía (trg_reconcile_new_trip_stop_location) — el
+  // conteo global es independiente del generador de carga seleccionado,
+  // para que se note el pendiente aunque todavía no se eligió ninguno.
+  const [incompleteTotal, setIncompleteTotal]     = useState<number | null>(null)
+  const [onlyIncomplete, setOnlyIncomplete]       = useState(false)
 
   useEffect(() => { shippersApi.list().then(setShippers).catch(() => setShippers([])) }, [])
+  useEffect(() => {
+    locationsApi.list({ incomplete: true }).then(rows => setIncompleteTotal(rows.length)).catch(() => setIncompleteTotal(null))
+  }, [])
 
   const fetcher = useCallback(
-    () => (shipperId ? locationsApi.list({ entity_type: 'SHIPPER', entity_id: shipperId }) : Promise.resolve([])),
-    [shipperId],
+    () => (shipperId
+      ? locationsApi.list({ entity_type: 'SHIPPER', entity_id: shipperId, incomplete: onlyIncomplete })
+      : Promise.resolve([])),
+    [shipperId, onlyIncomplete],
   )
   const { items, setItems, loading, error, reload } = useConfigList<Location>(fetcher)
   const [drafts, setDrafts]       = useState<Record<string, Partial<Location>>>({})
@@ -79,18 +90,33 @@ export function LocalesTab() {
   return (
     <div className="p-4 md:p-5 space-y-3">
       <p className="text-xs text-gray-400">
-        Locales por generador de carga, con su clasificación RM/Zona Cero — poblado inicialmente desde la planilla del generador (bronze.raw_shipper_locations), editable acá para corregir o robustecer datos.
+        Locales por generador de carga, con su clasificación RM/Zona Cero — poblado inicialmente desde la planilla del generador (bronze.raw_shipper_locations), editable acá para corregir o robustecer datos. Los que llegan nuevos desde el TMS sin cruce se registran solos, incompletos (HU-15).
       </p>
 
-      <select
-        value={shipperId}
-        onChange={e => setShipperId(e.target.value)}
-        aria-label="Generador de carga"
-        className={INPUT + ' w-56'}
-      >
-        <option value="">Seleccionar generador de carga…</option>
-        {shippers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-      </select>
+      {!!incompleteTotal && (
+        <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <AlertCircle size={12} className="shrink-0" />
+          {incompleteTotal} local{incompleteTotal === 1 ? '' : 'es'} sin clasificar en total (todos los generadores de carga).
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <select
+          value={shipperId}
+          onChange={e => setShipperId(e.target.value)}
+          aria-label="Generador de carga"
+          className={INPUT + ' w-56'}
+        >
+          <option value="">Seleccionar generador de carga…</option>
+          {shippers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        {shipperId && (
+          <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <input type="checkbox" checked={onlyIncomplete} onChange={e => setOnlyIncomplete(e.target.checked)} />
+            Solo sin clasificar
+          </label>
+        )}
+      </div>
 
       {!shipperId && (
         <p className="text-xs text-gray-300 italic py-4">Elegí un generador de carga para ver sus locales.</p>
@@ -118,8 +144,9 @@ export function LocalesTab() {
                   <tbody className="divide-y divide-border/50">
                     {items.map(row => {
                       const m = merged(row)
+                      const incomplete = !m.operation_type
                       return (
-                        <tr key={row.id} className={isDirty(row) ? 'bg-accent/[0.03]' : ''}>
+                        <tr key={row.id} className={isDirty(row) ? 'bg-accent/[0.03]' : incomplete ? 'bg-amber-50/50' : ''}>
                           <td className="py-2.5 pr-3 font-mono text-gray-500">{row.site_number ?? '—'}</td>
                           <td className="py-2.5 pr-3">
                             <input value={m.name} onChange={e => setDraft(row.id, { name: e.target.value })}

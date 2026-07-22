@@ -7,6 +7,9 @@ export type LocationListParams = {
   q?:                     string
   operation_type?:        string
   operational_status?:   'ACTIVE' | 'INACTIVE' | ''
+  /** HU-16 (Fase 4): solo locales sin clasificación — auto-registrados
+   *  incompletos por trg_reconcile_new_trip_stop_location. */
+  incomplete?:            boolean
 }
 
 export type Shipper = {
@@ -23,6 +26,7 @@ export const locationsApi = {
     if (params?.q)                  qs.set('q', params.q)
     if (params?.operation_type)     qs.set('operation_type', params.operation_type)
     if (params?.operational_status) qs.set('operational_status', params.operational_status)
+    if (params?.incomplete)         qs.set('incomplete', 'true')
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<Location[]>(`/api/v1/locations${suffix}`)
   },

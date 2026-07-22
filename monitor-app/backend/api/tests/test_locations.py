@@ -61,6 +61,33 @@ def test_list_locations_filters_by_entity_and_query():
     assert params == ("SHIPPER", "shipper-1", "alameda")
 
 
+# ── HU-15/16 (Fase 4): ?incomplete=true — locales auto-registrados desde el
+# TMS sin clasificación todavía (trg_reconcile_new_trip_stop_location).
+
+def test_list_locations_incomplete_filters_by_null_operation_type():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_location_row(operation_type=None)]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations?incomplete=true")
+
+    assert res.status_code == 200
+    query = pool.fetch.call_args.args[0]
+    assert "operation_type IS NULL" in query
+
+
+def test_list_locations_ignores_incomplete_when_not_true():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations?incomplete=false")
+
+    assert res.status_code == 200
+    query = pool.fetch.call_args.args[0]
+    assert "operation_type IS NULL" not in query
+
+
 # ── POST /locations ───────────────────────────────────────────────────────
 
 def test_create_location_rejects_unknown_shipper():
