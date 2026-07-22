@@ -90,6 +90,20 @@ RETURNING id, label;
 
 Esta migración toca datos reales de producción (motivos ya asignados a conductores en cuadraturas pasadas) — se ejecuta con confirmación explícita del usuario antes de aplicar, verificando conteos antes/después (mismo criterio que otras migraciones de este proyecto).
 
+**Inventario verificado de todo lo que referencia las 2 tablas viejas** (grep real contra `monitor-app/backend/api/app` y `monitor-app/backend/supabase/migrations/*.sql`, no una lista supuesta — esto es lo que el plan de implementación debe migrar/reapuntar, sin nada más suelto):
+
+FK reales (las 3 son `unassigned_reason_id text REFERENCES app.unassigned_reasons(id)` — ninguna tabla tiene FK real contra `operational_states`, solo se lee):
+- `app.trips.unassigned_reason_id` (migración `20260717211500`)
+- `app.trips_manual.unassigned_reason_id` (misma migración)
+- `app.driver_day_status.unassigned_reason_id` (migración `20260721020000`)
+
+Lectura sin FK (hay que reapuntar el `SELECT`, no una constraint):
+- `trips.py::GET /trips/meta` — expone `operational_states` y `unassigned_reasons` activos al frontend (línea ~713 y ~733).
+- `daily_closures.py` — `LEFT JOIN app.unassigned_reasons` para el label (`_DETAIL_SQL`/`_REPORT_SQL`).
+- `config.py` — el router CRUD viejo de `operational_states` (se retira, ver sección Backend).
+
+**Buena noticia encontrada al verificar**: `app.trips.manual_status`/`app.trips_manual.manual_status` (el estado manual que un operador setea sobre un viaje) **no es una FK** — es una columna de texto libre que guarda el label directamente (`ALTER TABLE ... RENAME COLUMN estado_manual TO manual_status`, migración `20260717220000`), no un `id` de `operational_states`. Mientras los labels no cambien de texto durante la migración, `manual_status` no necesita ningún remapeo — un riesgo menos del que había que cuidarse.
+
 ## Backend
 
 Un router `app/routers/status_taxonomies.py`:
