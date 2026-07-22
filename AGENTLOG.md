@@ -60,11 +60,27 @@ Verificación en cada tarea: backend 308→311 tests, frontend 505→514 tests, 
 
 **Hallazgo de infra encontrado en el camino**: `.gitignore` (patrón `docs/` sin slash inicial) bloqueaba **todo** `docs/` del repo, no solo `monitor-app/docs/` (la intención real) — `docs/superpowers/specs/` y `docs/superpowers/plans/`, referenciados en este archivo desde hace decenas de rondas, nunca estuvieron versionados. Corregido (acotado a `/monitor-app/docs/`, `/extraction_service/docs/`, `/docs/claude_logs/`, `/docs/screenshots/`) y commiteado todo el histórico (21 plans + 18 specs).
 
+---
+
+### 2026-07-22 (cont.) — Ronda 44: ejecución de `status_taxonomies` — Tareas 1-3 completas, Tarea 4 pendiente
+
+**Contexto**: se retomó el plan dejado listo en Ronda 43 (`docs/superpowers/plans/2026-07-22-status-taxonomies-plan.md`), vía `superpowers:subagent-driven-development`.
+
+**Tarea 1 (migración SQL) — desviación real encontrada antes de aplicar, resuelta con el usuario**: el plan original cambiaba el tipo de `unassigned_reason_id` (text→uuid) en `app.trips`/`app.trips_manual`/`app.driver_day_status`. Antes de aplicar se descubrió que `app.trips` **no es una tabla solo-backend** — es un modelo dbt (`dbt/tms/models/app/trips.sql`) que el pipeline de Mage (`batch_tms_monitor_trips` → bloque `app_trips_update`) reescribe con un MERGE incremental en cada corrida, emitiendo `NULL::text AS unassigned_reason_id` en un `UNION ALL` con `app.trips_manual`. Cambiar el tipo en Supabase sin coordinar con Mage habría roto la próxima corrida del pipeline (mismo patrón que el incidente de `app.trips` congelada 13 días en 2026-06-18). Verificado contra el proyecto Mage **real** (`sync_project_to_local`, no la copia local de `app_trips.sql`, que estaba desactualizada en varios otros puntos).
+
+El usuario pidió explícitamente no tocar el pipeline sin entender el impacto, y luego — tras explicar el flujo TMS→Mage→app.trips→backend y las 2 opciones (acotar a solo `driver_day_status` vs. migrar las 3 con FK real) — confirmó migrar las 3 tablas con integridad referencial completa, citando el patrón ya probado de catálogo-único+FK-real que usa `public.compliance_records → public.compliance_requirements` (el ejemplo inicial citado, `compliance_doc_catalog`, resultó ya no existir — corregido en vivo contra el schema real antes de seguir). Resuelto: se editó la línea del modelo dbt en Mage (`NULL::text` → `NULL::uuid`, vía `sync_local_to_remote`) **antes** de aplicar la migración de Supabase. La migración también se simplificó: verificado que las 3 columnas tenían 0 filas no-nulas en producción, así que el cambio de tipo es un `ALTER COLUMN TYPE` directo, sin el mapeo viejo-id→nuevo-id que tenía el plan original. Aplicada y verificada (conteos antes/después, tipos de columna confirmados `uuid`). Commit `7bc8f4e`.
+
+**Tareas 2-3 completas vía subagent-driven-development** (implementador + review por tarea, ambas Approved):
+- Tarea 2: router genérico `/config/taxonomies` (GET/POST/PATCH/DELETE por `domain`). Commit `6103f7e`. 320/320 tests.
+- Tarea 3: retirados los 4 endpoints + 2 clases Pydantic viejos de `operational-states` en `config.py`. Commit `67c3b0a`. 318/318 tests. Nota del reviewer: el frontend (`lib/api/config.ts`) todavía llama a `/config/operational-states` (ya no existe en el backend) — esperado, lo resuelve la Tarea 6, no es un hueco de esta tarea.
+
+**Tarea 4 (GET /trips/meta lee de status_taxonomies) — NO iniciada**: el implementador se lanzó y se detuvo (killed) por pedido explícito del usuario antes de tocar cualquier archivo — `git status` confirmado limpio de cambios de código fuente. El brief ya está generado en `.superpowers/sdd/task-4-brief.md`, reusable en la próxima sesión.
+
 #### Próximo paso exacto
-1. [ ] Ejecutar el plan de `status_taxonomies` (`docs/superpowers/plans/2026-07-22-status-taxonomies-plan.md`) — Tarea 1 (migración SQL) requiere confirmación explícita del usuario antes de aplicar a producción, verificando conteos antes/después. Tareas 2-8 son código normal (TDD). Tarea 9 (DROP de tablas viejas) queda diferida a una confirmación separada, después de correr un tiempo en producción sin errores.
-2. [ ] Una vez exista `status_taxonomies`, diseñar (spec nuevo) `app.equipment_day_status` — el uso real de la taxonomía para cuadrar equipo, no solo dejarla configurable.
+1. [ ] Retomar `docs/superpowers/plans/2026-07-22-status-taxonomies-plan.md` desde la **Tarea 4** (`GET /trips/meta` lee `operational_states`/`unassigned_reasons` desde `status_taxonomies` en vez de las tablas viejas). Brief ya extraído en `.superpowers/sdd/task-4-brief.md`. Tareas 5-8 siguen (backend `daily_closures.py` + frontend `TaxonomyTab`/tab nuevo/hint en `CloseDayDialog.tsx`). Tarea 9 (DROP de tablas viejas) sigue diferida a confirmación separada después de correr en producción sin errores.
+2. [ ] Una vez exista `status_taxonomies` completo (Tareas 4-8), diseñar (spec nuevo) `app.equipment_day_status` — el uso real de la taxonomía para cuadrar equipo, no solo dejarla configurable.
 3. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-4. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención — quedó sin resolver, el usuario redirigió la conversación hacia el bug de columnas (Hallazgo E, ya cerrado).
+4. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención.
 5. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
 6. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
 7. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
