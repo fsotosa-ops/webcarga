@@ -2,7 +2,13 @@ AGENTLOG.md
 AGENTLOG_ARCHIVE.md
 CLAUDE.md
 logextraction.txt
-docs/
+# Solo estas rutas de docs/ (PII/mirrors de SharePoint, logs locales de
+# Claude, screenshots sueltos) — no el docs/ de la raíz completo: ahí vive
+# docs/superpowers/ (specs/plans) y sí debe trackearse.
+/monitor-app/docs/
+/extraction_service/docs/
+/docs/claude_logs/
+/docs/screenshots/
 credenciales.txt
 .vercel
 .superpowers/

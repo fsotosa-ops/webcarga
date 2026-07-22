@@ -1,0 +1,117 @@
+# Fase 2 del hardening del Diario — bitácora, tabla y unificación crear/editar
+
+**Fecha**: 2026-07-19
+**Alcance**: Fase 2 del roadmap original (`.claude/plans/necesito-que-actues-como-lucky-bentley.md`) — "profesionalización general de la bitácora", sin alcance definido hasta ahora. Se define con requerimientos concretos del usuario en esta sesión.
+
+## Contexto
+
+Al usar el flujo driver-first construido en la Ronda 26, el usuario reportó un bug (la patente no se sincroniza siempre al elegir un conductor en `TripAssignDialog`) y lo enmarcó como síntoma de un problema más de fondo: **crear un viaje y ver/editar un viaje existente son dos experiencias con distinto shape de campos**, cuando deberían ser la misma — "tiene que funcionar como un template". Sumó una queja nueva: `TripTable` no cumple el estándar de una tabla SaaS world-class.
+
+## Hallazgos verificados (no supuestos)
+
+### 1. Causa raíz del bug de la patente
+
+`GET /drivers?q=` (usado por `DriverSearchPicker` cuando se escribe una búsqueda) resuelve `tractor_plate` **únicamente** vía `public.vehicle_driver_assignments`, sin ningún fallback. Esa tabla está vacía en producción (funcionalidad nueva de la Ronda 19-20, sin datos cargados aún) — cualquier conductor encontrado por búsqueda libre siempre trae `tractor_plate: null`. La lista *sugerida* (`available_drivers`, con fallback al viaje de hoy) sí trae dato quiere veces — de ahí el "a veces" reportado.
+
+### 2. Divergencia real de modelo de datos entre crear y editar
+
+`TripAssignDialog` (crear) todavía trata el origen como un campo de texto libre separado (`TripCreateBody.origin`), mientras que `TripSlideOver` (ver/editar) lo unificó como "parada 0" dentro de `stops[]` desde la Ronda 21. Son dos contratos distintos para el mismo concepto.
+
+### 3. Gap de reconciliación manual↔TMS en `app.trip_stops` (verificado contra el dbt real sincronizado desde Mage, y contra datos en Supabase — **0 ocurrencias hoy, gap latente**)
+
+El id del viaje reconcilia correctamente (`_manual_trip_id()` usa la misma fórmula canónica md5 que el pipeline; `origin_region`/`origin_city` están protegidos por `merge_exclude_columns` en `app/trips.sql`). Pero `app.trip_stops` no: el backend calcula el `stop_id` del origen con el texto que tipeó el operador; dbt lo calcula con el nombre real que reporta la TMS. Como casi nunca coinciden, cuando un viaje manual con modo "TMS integrado" es reportado después por la TMS real, el `MERGE` de `app/trip_stops.sql` inserta una fila ORIGEN nueva y **deja la vieja huérfana** — dos orígenes para el mismo viaje, mismo riesgo para destinos. Verificado contra Supabase (proyecto `viclzoftiudkepqnhekv`): 0 viajes reconciliados hoy, así que nunca se disparó — pero el rediseño de este spec (origen siempre como parada real) lo hace más probable, no menos.
+
+### 4. Deuda real en `TripTable.tsx` y `TripSlideOver.tsx`
+
+`TripTable` tiene 3 editores inline casi idénticos (`ConductorCell`, `PhoneTagCell`, `PlateCell`), cada uno con su propio manejo de estado/guardado/error — mismo patrón de edición dispersa que ya se sacó de la tabla para Indicadores en la Ronda 23. `TripSlideOver` reimplementa a mano su propia búsqueda de empresa/conductor/vehículo (`CarrierAssignSection`, empresa-primero) en vez de reusar `DriverSearchPicker` (conductor-primero, ya construido en la Ronda 26) — la misma clase de duplicación que causó el bug de la patente.
+
+### 5. "Cliente" en el formulario de creación no usa el directorio real, sin ID de ningún tipo (verificado)
+
+`TripAssignDialog` ofrece un dropdown hardcodeado de 4 clientes (`walmart`/`sodimac`/`colun`/`iansa`), ignorando los otros 7 shippers reales que existen en `public.shippers` (CCU, CCU Porteo, Cencosud, Carozzi, Empresas PA, Minuto Verde, y **"Webcarga Spot"** — que ya es el shipper genérico para casos puntuales). `app.trips`/`app.trips_manual` no tienen ningún `shipper_id` — `client_name` es texto libre puro, matcheado de forma difusa (`lower(name) = ANY(...)`) solo para resolver `origin_operation_type`, sin FK real — mismo patrón de fragilidad que ya se corrigió para conductor/empresa/vehículo, nunca tocado para cliente. Ya existe `GET /shippers` (lista completa, sin búsqueda — alcanza con 11 registros, no hace falta un endpoint de búsqueda como el de conductores) pero no `POST /shippers` (crear).
+
+## Decisiones de diseño (confirmadas por el usuario vía preguntas dirigidas)
+
+1. **Un solo spec integral**, como la Ronda 26 — las 3 piezas (unificación crear/editar, `TripSlideOver`, `TripTable`) comparten una misma decisión de fondo sobre qué significa "world-class SaaS" acá. Se implementan en planes secuenciales separados.
+2. **Campos editables comparten componente real, no solo apariencia** — se extraen `RouteEditor` (origen+paradas) y `FleetAssignSection` (conductor→empresa/vehículo) como componentes compartidos entre crear y editar. Las secciones que solo aplican a un viaje ya en curso (bitácora/notas, timeline GPS) siguen existiendo solo en el detalle.
+3. **Contrato de creación unificado en el backend**: `TripCreateBody` deja de tener `origin` como campo de texto separado — el origen se manda como una parada más del array `stops`, con `stop_type: 'ORIGIN'`.
+4. **`CarrierAssignSection` se unifica a driver-first también** — reusa `DriverSearchPicker` en vez de su propia búsqueda de empresa. `FleetAssignSection` (punto 2) cubre tanto crear un viaje nuevo como reasignar flota a uno existente.
+5. **`TripSlideOver` sigue siendo diálogo** (no pasa a página con URL propia) — el equipo de monitoreo abre/cierra viajes constantemente (glance-and-act), una página agrega fricción de navegación. Se aplanan los 2 acordeones ("Ver detalle técnico", "Datos operativos") a secciones siempre visibles.
+6. **`TripTable` pasa a ser de solo lectura** — clic en la fila abre el detalle para editar, se retiran los 3 editores inline. Mismo criterio ya aplicado a Indicadores en la Ronda 23.
+7. **Fix del gap de reconciliación** (columna `is_manual_stop` + limpieza post-corrida): se agrega `app.trip_stops.is_manual_stop boolean NOT NULL DEFAULT false`, marcada `true` por el backend al insertar filas de un viaje manual. Un `post_hook` en `app/trip_stops.sql` (mismo mecanismo ya probado esta sesión para PK/RLS/índices/trigger) limpia, después de cada corrida, las filas manuales de viajes que dejaron de ser `source_system='manual'` — **con una mejora**: antes de borrar la fila ORIGEN vieja, copia `desc_inicio_manual`/`desc_fin_manual` a la fila ORIGEN nueva que generó dbt (match unívoco: mismo `trip_id`, `stop_order=0` siempre). Para destinos no hay match unívoco posible (el operador puede tipear nombres/orden distintos a los que reporta la TMS después) — en vez de resolverlo con más complejidad técnica, **se resuelve con una advertencia visible al operador en el momento de crear el viaje**: si elige modo "TMS integrado", ve el aviso de que las ediciones manuales de horario en destinos pueden perderse si la TMS reporta paradas distintas a las cargadas; el origen se preserva siempre. Pregunta abierta para negocio/Pablo-Fabián: si más adelante conviene invertir en una reconciliación más fina de destinos (ej. matching por proximidad de horario) — no se resuelve en este spec.
+8. **Cliente real de punta a punta, resuelto en vivo (no columna dbt)**: `TripAssignDialog` reemplaza el dropdown hardcodeado por el directorio real (`GET /shippers`, ya existe). Si el operador tipea un cliente que no matchea ninguno existente, puede crearlo al vuelo (`POST /shippers`, nuevo). `shipper_id`/`shipper_name` se agregan a la respuesta de `GET /trips`/`GET /trips/{id}` resueltos **en vivo** vía `LEFT JOIN public.shippers ON lower(trim(name)) = lower(trim(client_name))` en `_TRIP_FROM` — mismo patrón "resolución en vivo" ya probado para `driver_id`/`carrier_id`/`tractor_asset_id` (Rondas 18-19), funciona automáticamente tanto para viajes manuales como de TMS, **sin tocar el pipeline dbt** (decisión explícita: esta sesión tuvo varios incidentes reales tocando `app/trips.sql`, evitarlo cuando hay una alternativa igual de robusta). No se agrega ninguna columna `shipper_id` persistida — el join en vivo alcanza porque `client_name` va a estar garantizado como el nombre exacto de un shipper real desde este spec en adelante (elegido de la lista o recién creado).
+9. **Región/ciudad de origen se retira por completo** (detalle del viaje y filtro en `FilterPopover`) — `operation_type` pasa a ser la única clasificación de origen mostrada, ya que es la real/automática; región/ciudad era una asignación manual de respaldo que en la práctica competía visualmente con el dato correcto. Se agrega un filtro por `operation_type` en `FilterPopover` en su lugar (client-side, mismo mecanismo que las 6 alertas KPI de la Ronda 26 — `origin_operation_type` ya viene resuelto en cada trip de `GET /trips`, no hace falta ningún query param nuevo en el backend).
+10. **Link directo a la TMS de origen, sin manejo de credenciales**: en el detalle del viaje, un botón "Abrir en {TMS}" enlaza a la URL de login pública de la TMS correspondiente (`QANALYTICS_URL`/`WINGSUITE_URL`/`SODIMAC_URL` — **URLs, no credenciales**, configuradas como constante en el frontend del Monitor, sin ninguna relación con `extraction_service/.env`). El gestor inicia sesión con su propia cuenta y busca el viaje a mano del otro lado. **Explícitamente fuera de alcance, por decisión de seguridad**: cualquier deep-link autenticado que use la cuenta de servicio de `extraction_service` — esa cuenta es compartida (sin trazabilidad por usuario), y Sodimac además usa evasión de Cloudflare Bot Management pensada para scraping automatizado, no para sesiones interactivas de usuarios reales.
+
+## Componentes compartidos
+
+### `RouteEditor` (origen + paradas)
+
+Reemplaza tanto los inputs sueltos de origen/paradas de `TripAssignDialog` como la combinación `StopTimeline` + tabla técnica editable de `TripSlideOver`, para las partes que son genuinamente edición de datos. Recibe `stops: TripStopFormValue[]` (union que representa tanto una parada nueva sin persistir como una existente con su `stop_id` real) y expone `onChange`. Al crear, el primer elemento siempre es `stop_type: 'ORIGIN'`; al editar, viene poblado desde `trip.stops` real.
+
+**Corrección importante encontrada al revisar el diseño**: región/ciudad **no es un campo de la parada** — `origin_region`/`origin_city` son columnas de `app.trips` (asignación manual complementaria "desde el Monitor", protegidas por `merge_exclude_columns`, decisión explícita de la Ronda 21 de NO migrarlas a `app.trip_stops`). No aplican al crear un viaje — `RouteEditor` no las expone ahí; siguen asignándose solo desde el detalle (`TripSlideOver`), sin cambios respecto a hoy. Tampoco hace falta ningún mecanismo nuevo para mostrar `origin_operation_type` (clasificación RM/Zona Cero) durante la creación: ese campo **no se guarda, se recalcula en cada lectura** (`_apply_operation_types`, matchea el nombre del origen contra `public.locations` por shipper) — y `POST /trips` ya devuelve el viaje pasando por `get_trip()`, que aplica ese cálculo. El badge aparece solo, apenas se abre el viaje recién creado, sin trabajo adicional.
+
+Campos que sí expone `RouteEditor` por parada: nombre (`local`), fecha planificada. Desc. Inicio/Fin solo aplica a paradas que ya existen como fila real en `app.trip_stops` (tienen `stop_id`) — en el flujo de creación, antes de guardar, no hay `stop_id` todavía, así que esa edición sigue siendo exclusiva del detalle (sin cambio respecto a hoy).
+
+### `FleetAssignSection` (conductor → empresa/vehículo)
+
+Reemplaza el flujo de `TripAssignDialog` (búsqueda de conductor + autocompletado editable) y `CarrierAssignSection` (hoy empresa-primero, dentro de `TripSlideOver`). Recibe el estado actual (`driver_id`/`carrier_id`/`tractor_asset_id` + sus nombres) y un callback `onAssign` — al crear, popula el form local; al reasignar un viaje existente, llama a `tripsApi.assignFleetLink` directo (mismo comportamiento que `CarrierAssignSection.handleConfirm` hoy, solo que ahora entra por conductor en vez de por empresa).
+
+### `ClientPicker` (cliente/shipper)
+
+Combo simple (sin debounce ni búsqueda server-side — 11 registros hoy, filtro client-side alcanza) sobre `GET /shippers` (`shippersApi.list()`, cacheado vía `useQuery`). Si el texto tipeado no matchea ningún shipper existente, muestra "Crear cliente nuevo: '{texto}'" — al confirmar, llama a `POST /shippers` (nuevo endpoint) y usa el nombre creado como `client_name`. Reemplaza el dropdown hardcodeado (`MANUAL_CLIENTS`) de `TripAssignDialog`. `TripSlideOver` no necesita mostrar este picker — el cliente de un viaje ya creado no es editable hoy y este spec no cambia eso; solo expone `shipper_id`/`shipper_name` (resueltos en vivo) como dato de lectura donde ya se muestra `client_name`.
+
+## `TripSlideOver` — secciones aplanadas
+
+Los 2 acordeones colapsados (`techDetailOpen`, `datosOpen`) se eliminan — sus contenidos pasan a ser secciones siempre visibles, reordenadas. **Columna Gestión** (360px): Estado operativo (con microcopy que distingue "esto es lo que reporta la TMS" del badge grande del hero — mismo dato, dos roles distintos, hoy sin nada que lo aclare) → Motivo de no asignación, agrupado directo bajo el switch "Asignado" (son el mismo concepto causal, hoy viven en bloques separados sin relación visual) → `FleetAssignSection` → Ubicación de origen (solo `operation_type`) → **Datos operativos** (fecha planificación, tipo carga, estado cumplimiento — se mueve acá desde la columna principal, es la que necesita menos ancho horizontal; **EETT TMS se retira**, ver nota abajo). **Columna principal**: Ruta (con `RouteEditor`, origen primero, tabla técnica siempre visible — es lo único que realmente necesita el ancho completo) → Bitácora (ancho completo, ver más abajo).
+
+**EETT TMS se retira de Datos operativos, pero el dato no se pierde**: el banner de reconciliación TMS↔manual (hoy compara `driver_name_tms`/`tractor_plate_tms` contra lo resuelto) se extiende para comparar también `carrier_name_tms` contra `carrier_name` — es la única función real que cumplía mostrar el texto crudo de la TMS por separado (detectar cuándo la empresa vinculada diverge de lo que reporta la TMS). Sin este cambio, se pierde esa detección por completo.
+
+**"Ubicación de origen" pasa a mostrar solo `operation_type`**: se retira el `RegionCityPicker` de esta sección (decisión 9 de arriba) — el badge de `OperationTypeBadge` (ya existente) queda como único control, con un estado explícito "Sin clasificar" cuando `origin_operation_type` es `null` (en vez de simplemente no renderizar nada, que hoy deja la sección vacía sin explicación).
+
+**Link a la TMS**: cuelga directo del chip de la TMS que ya existe en el header (`tmsLabel`), no como un elemento nuevo en la fila (el header ya tiene 8 elementos con wrap — agregar uno más lo satura). El chip pasa a ser un link `<a href={TMS_LOGIN_URLS[trip.source_system]} target="_blank">` sobre el mismo chip visual. `TMS_LOGIN_URLS` es una constante nueva en el frontend (`lib/utils/tmsLinks.ts` o similar), un mapa fijo `source_system → URL de login pública`, sin credenciales. No aplica para viajes `source_system='manual'` (no tienen TMS de origen) — el chip sigue ahí pero sin link.
+
+### `RouteProgress` se retira — 3 representaciones de las mismas paradas apiladas era ruido, no diseño
+
+Hallazgo real al revisar el hero junto con la sección Ruta: hoy hay **3 renders distintos de la misma secuencia de paradas** en la misma pantalla — la barra horizontal de puntos `RouteProgress` (hero, sin nombres, solo tooltip), el timeline vertical `StopTimeline` (sección Ruta, con nombres/horarios/tránsito) y la tabla técnica (debajo, con cada campo crudo). `RouteProgress` y `StopTimeline` además **duplican literalmente la misma lógica** (`isCompleted`/`stateFor`) copiada en 2 archivos distintos — mismo estado, dos metáforas visuales compitiendo (puntos horizontales vs. timeline vertical) a un scroll de distancia.
+
+**Se retira `RouteProgress` del hero por completo.** El texto que ya existe ahí ("→ {próxima parada} · {ETA}" + "N/M paradas") ya comunica el vistazo rápido sin necesitar un gráfico aparte. `StopTimeline` queda como el único timeline visual de la ruta — la tabla técnica debajo sigue teniendo un rol distinto y complementario (el registro crudo/editable vía `RouteEditor`, no una segunda versión del resumen).
+
+**IDs unificados**: el UUID interno (hoy solo en un footer casi vacío, sin poder copiarse) se mueve junto al ID externo en el header, con el mismo botón de copiar que ya existe ahí — un solo lugar para "los IDs de este viaje" en vez de 2 mecanismos sin relación entre sí. El footer se elimina (dejaba de tener contenido).
+
+### "Indicadores" rediseñado — switches con etiqueta, no puntos crípticos
+
+Hallazgo real, no solo apariencia: hoy son 4 puntos de 1-2 letras ("A"/"T"/"As"/"1V") sin texto visible — clic togglea y "congela" el campo (dbt deja de recalcularlo) sin que nada en pantalla explique ese comportamiento, solo un tooltip al pasar el mouse. Confirmado con el usuario que el problema es que la UI es ilegible, no que el dato no sirva.
+
+- **"1ra Vuelta" se retira por completo** — desde el Plan 3 de la Ronda 26, el filtro real ("2ª+ vuelta") lee `driver_leg_number` calculado, no esta columna manual. El toggle quedó desconectado de cualquier efecto real.
+- **Activo/Trabajando/Asignado se rediseñan como switches con etiqueta completa** (no puntos), reemplazando `IndicatorDots.tsx`. Cuando un campo está en override manual (`manually_edited_fields`), se muestra un texto explícito — "Editado manualmente por {edited_by} el {fecha} · Revertir a automático" — en vez del candado silencioso de hoy. Mismos endpoints (`PATCH /trips/{id}` con el campo + `DELETE /trips/{id}/overrides/{field}` para revertir, ya existen).
+
+### Bitácora (`TripNotesFeed`) — más espacio + incidentes con ciclo de vida real
+
+- **Layout**: deja de vivir en el sidebar angosto de 360px (`aside` de "Gestión") — pasa a ser una sección de ancho completo al final del detalle, sin el `max-h-80 overflow-y-auto` actual (que la comprimía innecesariamente en ese espacio chico).
+- **Texto legacy retirado**: el bloque "Nota anterior (campo legacy, solo lectura)" que lee `trip.notes`/`trip.comments` se elimina — verificado contra Supabase, **0 de 2734 viajes tienen datos ahí**, es ruido puro de una migración vieja.
+- **Incidente con ciclo de vida real**: se agrega `app.trip_notes.resolved_at timestamptz NULL` (nulo = abierto, mismo criterio que otras tablas de esta sesión — `driver_assignments`/`asset_assignments` usan `status`, acá alcanza con un timestamp nulable porque solo aplica a `note_type='incidente'`). Nuevo endpoint `PATCH /trips/{id}/notes/{note_id}/resolve` (mismo patrón que `/pin`, ya existe). Una nota tipo Incidente muestra un chip de estado explícito ("Abierto" rojo / "Resuelto" verde) con acción para togglear. El hero del viaje (donde ya se badgean OFF TIME/temp fuera de rango — "gestión por excepción") suma un badge "N incidente(s) abierto(s)" cuando `count(resolved_at IS NULL AND note_type='incidente') > 0`, calculado sobre las notas ya cargadas en el detalle (sin query nueva).
+
+## `TripTable` — solo lectura
+
+`ConductorCell`, `PhoneTagCell`, `PlateCell` se retiran — sus columnas pasan a mostrar el valor sin edición inline (mismo texto, sin `onClick`/estado de edición). Clic en cualquier parte de la fila abre `TripSlideOver` (comportamiento que ya existe para el resto de la fila). El mobile card list se simplifica de la misma forma (ya no necesita `stopPropagation` en las celdas editables, se elimina esa lógica).
+
+## Testing
+
+- **Backend**: tests para el `TripCreateBody` unificado (origen en `stops[]`, no campo aparte); test para la limpieza `is_manual_stop` (mock del post_hook no aplica vía pytest — se verifica con SQL directo contra Supabase, mismo criterio que el resto de las migraciones de esta sesión); tests existentes de `_insert_trip`/`_insert_trip_stops` actualizados al nuevo contrato; test de `POST /shippers` (creación + 409 en nombre duplicado); test de `shipper_id`/`shipper_name` resueltos en vivo en `_TRIP_FROM`; test de `PATCH /trips/{id}/notes/{note_id}/resolve` (marca/desmarca `resolved_at`, mismo patrón que el test existente de `/pin`).
+- **Frontend**: tests de `RouteEditor`/`FleetAssignSection`/`ClientPicker` como componentes aislados (reusan patrón de `DriverSearchPicker.test.tsx`); tests de `TripAssignDialog`/`TripSlideOver` actualizados para el nuevo layout aplanado y los componentes compartidos (incluyendo el link a TMS y el badge "Sin clasificar"); tests de `TripTable` actualizados quitando las expectativas de edición inline, agregando que el clic en cualquier celda (no solo la fila) abre el detalle; test de `FilterPopover` para el filtro nuevo por `operation_type` y la baja del de región/ciudad; tests del rediseño de Indicadores (switches con etiqueta, texto de override explícito, "1ra Vuelta" ausente); tests de `TripNotesFeed` para el chip Abierto/Resuelto de incidentes y el badge de incidentes abiertos en el hero; test del banner de reconciliación extendido a `carrier_name_tms` (hoy solo cubre conductor/patente).
+- Verificación completa de rigor: `tsc --noEmit`, `vitest run`, `npm run build`, `pytest` — mismo estándar que el resto de la sesión. Migraciones probadas con dry-run antes de aplicar, verificadas en vivo contra Supabase.
+
+## Migración / componentes a retirar
+
+- `CarrierAssignSection` (función interna de `TripSlideOver.tsx`) se retira, reemplazada por `FleetAssignSection`.
+- `ConductorCell`/`PhoneTagCell`/`PlateCell` (funciones internas de `TripTable.tsx`) se retiran.
+- Los acordeones `techDetailOpen`/`datosOpen` y su estado asociado se retiran de `TripSlideOver.tsx`.
+- `MANUAL_CLIENTS`/`OTHER_CLIENT` (constantes de `TripAssignDialog.tsx`) se retiran, reemplazadas por `ClientPicker`.
+- `RegionCityPicker` para origen se retira de `TripSlideOver.tsx` (`locRegion`/`locCity`/`handleSaveLocation`/`locDirty` y su estado asociado). Sigue en uso para destinos (`RouteEditor`) y en `FilterPopover` para otros filtros no relacionados — no se borra el componente en sí, solo este uso puntual.
+- El filtro de región/ciudad de origen se retira de `FilterPopover.tsx`/`useDiarioFilters.ts` (`f.fRegion`/`f.fCity`), reemplazado por un filtro de `operation_type`.
+- `IndicatorDots.tsx` se retira por completo, reemplazado por el nuevo diseño de switches (vive inline en `TripSlideOver.tsx` o un componente nuevo chico, a decidir en el plan — no amerita tanta estructura como `IndicatorDots.tsx` tenía para 4 campos que bajan a 3).
+- El bloque de texto legacy (`trip.notes`/`trip.comments`, `legacyText` en `TripNotesFeed.tsx`) se retira — 0 de 2734 viajes tienen datos ahí, verificado.
+- `MetaField label="EETT TMS"` se retira de `TripSlideOver.tsx` — su única función real (detectar divergencia de empresa) se absorbe en el banner de reconciliación existente, extendido a `carrier_name_tms`.
+- El footer de `TripSlideOver.tsx` (solo el UUID) se elimina — el UUID se une al ID externo en el header, con el mismo botón de copiar.
+- `RouteProgress.tsx` se retira por completo (archivo entero, no solo su uso en el hero) — `StopTimeline.tsx` queda como único timeline visual, sin la lógica `isCompleted`/`stateFor` duplicada entre ambos.
+- `CarrierSearchPicker` sigue en uso por `TransferModal.tsx` (Empresas, fuera de alcance) — no se toca.
