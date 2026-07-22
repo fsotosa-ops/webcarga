@@ -27,15 +27,23 @@ export function PendingDocsBadge({ count, critical, compact = false, label }: Pr
   // (tooltip) no alcanza porque no es visible sin hover/touch sostenido.
   // Mismo criterio que el mockup de Figma "Listado de Recursos": columna de
   // certificación con texto explícito, no un badge de color solo.
+  //
+  // Primer intento (prefijo de 1 letra, "T7"/"C12") resultó igual de
+  // ambiguo — el usuario preguntó qué significaba. La entidad ya se
+  // desambigua por POSICIÓN (el badge está pegado al texto de esa entidad
+  // específica: patente, nombre de conductor, nombre de empresa) — lo que
+  // faltaba no era identificar A QUIÉN, sino QUÉ es el número. Un ícono de
+  // documento + el número se lee de forma universal como "N documentos
+  // [pendientes]" sin necesitar memorizar una convención de letras.
   if (compact) {
     return (
       <span
         title={title}
-        className={`inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold shrink-0 ${
+        className={`inline-flex items-center gap-0.5 justify-center h-4 px-1 rounded-full text-[9px] font-bold shrink-0 ${
           tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
         }`}
       >
-        {label ? `${label[0].toUpperCase()}${count}` : count}
+        <FileWarning size={8} /> {count}
       </span>
     )
   }
