@@ -170,17 +170,30 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
                               </td>
                               <td className="px-3 py-2">
                                 {d.status === 'UNASSIGNED' && (
-                                  <select
-                                    value={d.unassigned_reason_id ?? ''}
-                                    disabled={savingReason === d.driver_id}
-                                    onChange={e => handleSetReason(d.driver_id, e.target.value)}
-                                    className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
-                                  >
-                                    <option value="">— Sin especificar —</option>
-                                    {unassignedReasons.map(r => (
-                                      <option key={r.id} value={r.id}>{r.label}</option>
-                                    ))}
-                                  </select>
+                                  <>
+                                    <select
+                                      value={d.unassigned_reason_id ?? ''}
+                                      disabled={savingReason === d.driver_id}
+                                      onChange={e => handleSetReason(d.driver_id, e.target.value)}
+                                      className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
+                                    >
+                                      <option value="">— Sin especificar —</option>
+                                      {unassignedReasons.map(r => (
+                                        <option key={r.id} value={r.id}>{r.label}</option>
+                                      ))}
+                                    </select>
+                                    {/* Ronda 43: sugerencia de UI, no un trigger de base de datos — el
+                                        operador confirma con el click, no se escribe nada solo. */}
+                                    {!d.unassigned_reason_id && d.driver_pending_docs_critical && d.suggested_reason_id && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSetReason(d.driver_id, d.suggested_reason_id!)}
+                                        className="block text-[10px] text-amber-600 hover:text-amber-800 hover:underline mt-1"
+                                      >
+                                        Sugerido: {unassignedReasons.find(r => r.id === d.suggested_reason_id)?.label ?? 'Documentación vencida'}
+                                      </button>
+                                    )}
+                                  </>
                                 )}
                                 {d.status === 'MISMATCH' && (
                                   <a

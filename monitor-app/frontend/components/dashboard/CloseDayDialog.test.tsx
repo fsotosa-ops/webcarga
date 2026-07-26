@@ -21,9 +21,9 @@ const STATUS: DailyClosureStatus = {
   mismatch_count: 1,
   pending_count: 2,
   drivers: [
-    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
-    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
-    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [] },
+    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
+    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
+    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
   ],
 }
 
@@ -99,5 +99,43 @@ describe('CloseDayDialog', () => {
     await screen.findByText(/Cerrar el día/)
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }))
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('muestra una sugerencia de motivo clickeable cuando hay alerta crítica de compliance sin motivo asignado', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      business_date: '2026-07-22', closed: false, closure: null,
+      total_drivers: 1, assigned_count: 0, unassigned_count: 1, mismatch_count: 0, pending_count: 1,
+      drivers: [{
+        driver_id: 'd1', full_name: 'Juan Pérez', tax_id: null, carrier_id: null, carrier_name: null,
+        status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,
+        resolved_by: null, resolved_at: null, client_names: [],
+        driver_pending_docs_critical: true, suggested_reason_id: 'r-doc-vencida',
+      }],
+    })
+    renderDialog({
+      fecha: '2026-07-22',
+      unassignedReasons: [{ id: 'r-doc-vencida', label: 'Documentación vencida' }],
+    })
+    const hint = await screen.findByText('Sugerido: Documentación vencida')
+    fireEvent.click(hint)
+    await waitFor(() => expect(dailyClosuresApi.setReason).toHaveBeenCalledWith('d1', '2026-07-22', 'r-doc-vencida'))
+  })
+
+  it('no muestra sugerencia cuando no hay alerta crítica de compliance', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      business_date: '2026-07-22', closed: false, closure: null,
+      total_drivers: 1, assigned_count: 0, unassigned_count: 1, mismatch_count: 0, pending_count: 1,
+      drivers: [{
+        driver_id: 'd1', full_name: 'Juan Pérez', tax_id: null, carrier_id: null, carrier_name: null,
+        status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,
+        resolved_by: null, resolved_at: null, client_names: [],
+        driver_pending_docs_critical: false, suggested_reason_id: null,
+      }],
+    })
+    renderDialog({ fecha: '2026-07-22', unassignedReasons: [] })
+    await screen.findByText('Juan Pérez')
+    expect(screen.queryByText(/Sugerido:/)).not.toBeInTheDocument()
   })
 })

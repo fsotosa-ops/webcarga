@@ -888,6 +888,10 @@ export type DriverDayStatusRow = {
   /** Cliente(s) servidos ese día (Fase 1.5) — denominador común de los 3
    *  reportes manuales hoy armados a mano (Sider/Lansa, Sodimac, Walmart). */
   client_names:                string[]
+  /** Ronda 43: alerta de documentación vencida ya calculada — usada para
+   *  sugerir un motivo en CloseDayDialog, no bloquea nada. */
+  driver_pending_docs_critical: boolean | null
+  suggested_reason_id:         string | null
 }
 
 export type DailyClosureInfo = {
@@ -918,7 +922,9 @@ export type CloseDayPending = {
 
 // ── Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md) ──
 // Fila plana por conductor×día — sin agregar, el pivot se arma en el cliente.
-export type DailyClosureReportRow = Omit<DriverDayStatusRow, 'resolved_by' | 'resolved_at'> & {
+export type DailyClosureReportRow = Omit<
+  DriverDayStatusRow, 'resolved_by' | 'resolved_at' | 'driver_pending_docs_critical' | 'suggested_reason_id'
+> & {
   business_date: string
 }
 
