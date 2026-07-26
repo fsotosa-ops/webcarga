@@ -307,3 +307,12 @@ export const EstadosOperacionalesTab = () => (
     newLabel="estado operacional"
   />
 )
+
+export const EstadosEquipoTab = () => (
+  <TaxonomyTab
+    domain="EQUIPMENT_STATE"
+    title="Estados de Equipo"
+    hint="Motivo manual cuando un equipo/tracto activo no tiene viaje asignado hoy (en pana, en mantención, prestado, etc.)."
+    newLabel="estado de equipo"
+  />
+)

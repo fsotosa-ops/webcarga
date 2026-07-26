@@ -1,14 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { EstadosTmsTab, EstadosOperacionalesTab } from './estados-tabs'
+import { EstadosTmsTab, EstadosOperacionalesTab, EstadosEquipoTab } from './estados-tabs'
 import { AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab } from './umbrales-tabs'
 
-type Tab = 'estados_tms' | 'estados_op' | 'alertas_monitor' | 'alertas' | 'rangos_temperatura'
+type Tab = 'estados_tms' | 'estados_op' | 'estados_equipo' | 'alertas_monitor' | 'alertas' | 'rangos_temperatura'
 
 const TABS: { key: Tab; label: string; desc: string }[] = [
   { key: 'estados_tms',        label: 'Estados TMS',            desc: 'Colores y columna del tablero' },
   { key: 'estados_op',         label: 'Estados Operacionales',  desc: 'Vocabulario del equipo' },
+  { key: 'estados_equipo',     label: 'Estados de Equipo',      desc: 'Motivo cuando un equipo no sale hoy' },
   { key: 'alertas_monitor',    label: 'Alertas del Monitor',    desc: 'Umbrales operacionales' },
   { key: 'alertas',            label: 'Alertas de Vencimiento', desc: 'Documentos, en días' },
   { key: 'rangos_temperatura', label: 'Rangos de Temperatura',  desc: 'Por tipo de carga' },
@@ -47,6 +48,7 @@ export default function ConfiguracionPage() {
         <div role="tabpanel">
           {tab === 'estados_tms'        && <EstadosTmsTab />}
           {tab === 'estados_op'         && <EstadosOperacionalesTab />}
+          {tab === 'estados_equipo'     && <EstadosEquipoTab />}
           {tab === 'alertas_monitor'    && <AlertasMonitorTab />}
           {tab === 'alertas'            && <AlertasVencimientoTab />}
           {tab === 'rangos_temperatura' && <RangosTemperaturaTab />}
