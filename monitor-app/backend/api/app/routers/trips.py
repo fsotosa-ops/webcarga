@@ -710,7 +710,7 @@ async def get_trips_meta(pool=Depends(get_pool)):
     )
     op_rows = await pool.fetch(
         'SELECT id::text, label, bg_color, text_color, group_id AS "group" '
-        "FROM app.operational_states WHERE active = true ORDER BY sort_order"
+        "FROM app.status_taxonomies WHERE domain = 'OPERATIONAL_STATE' AND active = true ORDER BY sort_order"
     )
     # Resiliente al orden de deploy: si la tabla aún no existe (migración
     # pendiente), /meta sigue funcionando y el frontend usa sus defaults
@@ -730,7 +730,8 @@ async def get_trips_meta(pool=Depends(get_pool)):
         "FROM app.temperature_ranges ORDER BY cargo_type"
     )
     unassigned_reason_rows = await pool.fetch(
-        "SELECT id, label FROM app.unassigned_reasons WHERE active = true ORDER BY sort_order"
+        "SELECT id::text, label FROM app.status_taxonomies "
+        "WHERE domain = 'DRIVER_REASON' AND active = true ORDER BY sort_order"
     )
     return TripsMeta(
         statuses=[StatusMeta(**dict(r)) for r in status_rows],
