@@ -19,6 +19,7 @@ from ..auth import ADMIN_ROLES, get_current_user, require_editor
 from ..db import get_pool
 from ..schemas.daily_closures import CloseDayBody, DriverDayStatusPatchBody
 from ..services.audit import log_change
+from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
 
 router = APIRouter(prefix="/daily-closures", tags=["daily-closures"])
 
@@ -100,16 +101,18 @@ ON CONFLICT (driver_id, business_date) DO UPDATE SET
     resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_at ELSE NULL END
 """
 
-_DETAIL_SQL = """
+_DETAIL_SQL = f"""
 SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name,
        dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        dds.resolved_by, dds.resolved_at,
-       COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names
+       COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
+       dcomp.has_critical_pending AS driver_pending_docs_critical,
+       sugg.id AS suggested_reason_id
 FROM app.driver_day_status dds
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
-LEFT JOIN app.unassigned_reasons ur ON ur.id = dds.unassigned_reason_id
+LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 -- Fase 1.5 (2026-07-21): cliente(s) que el conductor sirvió ese día — el
 -- denominador común de los 3 reportes manuales hoy armados a mano
 -- (Sider/Lansa, Sodimac, Walmart todos pivotean por EETT y/o cliente).
@@ -123,6 +126,12 @@ LEFT JOIN LATERAL (
     LEFT JOIN public.shippers sh ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
     WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
 ) clients ON true
+{_compliance_alert_lateral('dcomp', 'DRIVER', 'dds.driver_id', _DRIVER_CRITICAL_DOC_CODES)}
+-- Tarea 5 (status_taxonomies, Ronda 44): sugerencia de UI cuando el
+-- conductor tiene documentación LEGAL_MANDATORY crítica vencida — el
+-- operador confirma con un click en CloseDayDialog, no se escribe solo.
+LEFT JOIN app.status_taxonomies sugg
+       ON sugg.domain = 'DRIVER_REASON' AND sugg.suggested_alert_source = 'compliance_expired' AND sugg.active = true
 WHERE dds.business_date = $1
 ORDER BY d.full_name
 """
@@ -142,7 +151,7 @@ FROM app.driver_day_status dds
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
-LEFT JOIN app.unassigned_reasons ur ON ur.id = dds.unassigned_reason_id
+LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name)) AS client_names
     FROM app.trip_fleet_links fl

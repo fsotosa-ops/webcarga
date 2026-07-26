@@ -27,6 +27,7 @@ def _driver_row(**overrides):
         "carrier_id": "c1", "carrier_name": "Transportes Sur Spa", "status": "ASSIGNED",
         "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None, "client_names": [],
+        "driver_pending_docs_critical": None, "suggested_reason_id": None,
     }
     base.update(overrides)
     return base
@@ -149,6 +150,40 @@ def test_get_daily_closure_status_includes_client_names():
     detail_sql = pool.fetch.call_args_list[0].args[0]
     assert "client_names" in detail_sql
     assert "public.shippers" in detail_sql
+
+
+# ── Tarea 5 (status_taxonomies, Ronda 44): label de motivo desde
+# status_taxonomies + sugerencia cuando hay documentación crítica vencida ──
+
+def test_get_daily_closure_status_includes_pending_docs_and_suggestion():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row(
+        driver_id="d1", status="UNASSIGNED",
+        driver_pending_docs_critical=True, suggested_reason_id="r-doc-vencida",
+    )]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures?fecha=2026-07-22")
+
+    assert res.status_code == 200
+    driver = res.json()["drivers"][0]
+    assert driver["driver_pending_docs_critical"] is True
+    assert driver["suggested_reason_id"] == "r-doc-vencida"
+
+
+def test_get_daily_closure_status_detail_sql_uses_status_taxonomies_and_compliance_join():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row()]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    client.get("/api/v1/daily-closures?fecha=2026-07-22")
+
+    detail_sql = pool.fetch.call_args_list[0].args[0]
+    assert "app.status_taxonomies" in detail_sql
+    assert "app.unassigned_reasons" not in detail_sql
+    assert "public.compliance_records" in detail_sql
 
 
 # ── GET /daily-closures/report (Reportería) ─────────────────────────────
