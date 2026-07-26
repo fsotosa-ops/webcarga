@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
-import { configApi, type TripStatusRow, type OperationalStateRow } from '@/lib/api/config'
+import { configApi, taxonomiesApi, type TripStatusRow, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
 import {
   GROUP_OPTIONS, INPUT, useConfigList, LoadState, useRowFeedback,
   SaveRowButton, SwatchPicker, SortArrows,
@@ -122,32 +122,43 @@ export function EstadosTmsTab() {
   )
 }
 
-// ── Estados Operacionales ─────────────────────────────────────────────────────
+// ── Taxonomía genérica (app.status_taxonomies) ────────────────────────────────
+// Reemplaza el cuerpo de EstadosOperacionalesTab — parametrizado por domain,
+// reusado también para "Estados de Equipo" (EQUIPMENT_STATE).
 
-const EMPTY_NEW = { label: '', bg_color: '#f3f4f6', text_color: '#374151', group: 'otro' }
+const emptyNew = (withGroup: boolean) =>
+  ({ label: '', bg_color: '#f3f4f6', text_color: '#374151', group: withGroup ? 'otro' : undefined })
 
-export function EstadosOperacionalesTab() {
-  const fetcher = useCallback(() => configApi.getOperationalStates(), [])
-  const { items, setItems, loading, error, reload } = useConfigList<OperationalStateRow>(fetcher)
-  const [drafts, setDrafts]     = useState<Record<string, Partial<OperationalStateRow>>>({})
-  const [nuevo, setNuevo]       = useState<typeof EMPTY_NEW | null>(null)
+interface TaxonomyTabProps {
+  domain:   TaxonomyDomain
+  title:    string
+  hint:     string
+  newLabel: string
+}
+
+export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
+  const fetcher = useCallback(() => taxonomiesApi.list(domain), [domain])
+  const { items, setItems, loading, error, reload } = useConfigList<TaxonomyRow>(fetcher)
+  const [drafts, setDrafts]     = useState<Record<string, Partial<TaxonomyRow>>>({})
+  const showGroup = domain === 'OPERATIONAL_STATE'
+  const [nuevo, setNuevo]       = useState<ReturnType<typeof emptyNew> | null>(null)
   const [creating, setCreating] = useState(false)
   const [createErr, setCreateErr] = useState<string | null>(null)
   const fb = useRowFeedback()
 
   const visibles = items.filter(s => s.active)
-  const merged = (row: OperationalStateRow) => ({ ...row, ...drafts[row.id] })
-  const isDirty = (row: OperationalStateRow) => !!drafts[row.id] && Object.keys(drafts[row.id]).length > 0
+  const merged = (row: TaxonomyRow) => ({ ...row, ...drafts[row.id] })
+  const isDirty = (row: TaxonomyRow) => !!drafts[row.id] && Object.keys(drafts[row.id]).length > 0
 
-  function setDraft(id: string, patch: Partial<OperationalStateRow>) {
+  function setDraft(id: string, patch: Partial<TaxonomyRow>) {
     setDrafts(d => ({ ...d, [id]: { ...d[id], ...patch } }))
   }
 
-  async function save(row: OperationalStateRow) {
+  async function save(row: TaxonomyRow) {
     const draft = drafts[row.id]
     if (!draft) return
     await fb.run(row.id, async () => {
-      const updated = await configApi.patchOperationalState(row.id, draft)
+      const updated = await taxonomiesApi.patch(row.id, draft)
       setItems(prev => prev.map(r => (r.id === row.id ? updated : r)))
       setDrafts(d => { const n = { ...d }; delete n[row.id]; return n })
     })
@@ -163,15 +174,15 @@ export function EstadosOperacionalesTab() {
       r.id === a.id ? { ...r, sort_order: aOrder } : r.id === b.id ? { ...r, sort_order: bOrder } : r,
     ).sort((x, y) => x.sort_order - y.sort_order))
     await fb.run(a.id, async () => {
-      await configApi.patchOperationalState(a.id, { sort_order: aOrder })
-      await configApi.patchOperationalState(b.id, { sort_order: bOrder })
+      await taxonomiesApi.patch(a.id, { sort_order: aOrder })
+      await taxonomiesApi.patch(b.id, { sort_order: bOrder })
     })
   }
 
-  async function deactivate(row: OperationalStateRow) {
-    if (!window.confirm(`¿Desactivar "${row.label}"? Dejará de aparecer como opción de estado manual.`)) return
+  async function deactivate(row: TaxonomyRow) {
+    if (!window.confirm(`¿Desactivar "${row.label}"? Dejará de aparecer como opción.`)) return
     await fb.run(row.id, async () => {
-      await configApi.deleteOperationalState(row.id)
+      await taxonomiesApi.deactivate(row.id)
       setItems(prev => prev.filter(r => r.id !== row.id))
     })
   }
@@ -180,7 +191,7 @@ export function EstadosOperacionalesTab() {
     if (!nuevo || !nuevo.label.trim()) { setCreateErr('El nombre es requerido'); return }
     setCreating(true); setCreateErr(null)
     try {
-      const created = await configApi.createOperationalState(nuevo)
+      const created = await taxonomiesApi.create({ domain, ...nuevo })
       setItems(prev => [...prev, created])
       setNuevo(null)
     } catch (e) {
@@ -192,9 +203,7 @@ export function EstadosOperacionalesTab() {
 
   return (
     <div className="p-4 md:p-5 space-y-3">
-      <p className="text-xs text-gray-400">
-        Estados que operaciones asigna manualmente a un viaje (override). La columna del tablero define dónde cae la tarjeta al arrastrarla.
-      </p>
+      <p className="text-xs text-gray-400">{hint}</p>
       <LoadState loading={loading} error={error} onRetry={reload} />
       {!loading && !error && (
         <>
@@ -206,7 +215,7 @@ export function EstadosOperacionalesTab() {
                   <th className="py-2 pr-3 text-left">Vista previa</th>
                   <th className="py-2 pr-3 text-left">Nombre</th>
                   <th className="py-2 pr-3 text-left">Color</th>
-                  <th className="py-2 pr-3 text-left" title={GROUP_HINT}>Columna del tablero</th>
+                  {showGroup && <th className="py-2 pr-3 text-left" title={GROUP_HINT}>Columna del tablero</th>}
                   <th className="py-2 text-right w-[120px]" aria-label="Acciones" />
                 </tr>
               </thead>
@@ -228,12 +237,14 @@ export function EstadosOperacionalesTab() {
                         <SwatchPicker name={row.label} bg={m.bg_color} text={m.text_color}
                           onPick={c => setDraft(row.id, { bg_color: c.bg, text_color: c.text })} />
                       </td>
-                      <td className="py-2 pr-3">
-                        <select value={m.group ?? 'otro'} onChange={e => setDraft(row.id, { group: e.target.value })}
-                          aria-label={`Columna del tablero de ${row.label}`} title={GROUP_HINT} className={INPUT}>
-                          {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
-                        </select>
-                      </td>
+                      {showGroup && (
+                        <td className="py-2 pr-3">
+                          <select value={m.group ?? 'otro'} onChange={e => setDraft(row.id, { group: e.target.value })}
+                            aria-label={`Columna del tablero de ${row.label}`} title={GROUP_HINT} className={INPUT}>
+                            {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                          </select>
+                        </td>
+                      )}
                       <td className="py-2 text-right whitespace-nowrap">
                         <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.id}
                           saved={!!fb.savedAt[row.id]} onClick={() => save(row)} />
@@ -254,13 +265,15 @@ export function EstadosOperacionalesTab() {
             <div className="border border-accent/30 bg-accent/[0.03] rounded-xl p-3 space-y-2.5">
               <div className="flex items-center gap-3 flex-wrap">
                 <input autoFocus value={nuevo.label} onChange={e => setNuevo({ ...nuevo, label: e.target.value })}
-                  placeholder="Nombre del estado" aria-label="Nombre del estado nuevo" className={INPUT + ' w-44'} />
-                <SwatchPicker name="nuevo estado" bg={nuevo.bg_color} text={nuevo.text_color}
+                  placeholder="Nombre" aria-label={`Nombre de ${newLabel} nuevo`} className={INPUT + ' w-44'} />
+                <SwatchPicker name={`nuevo ${newLabel}`} bg={nuevo.bg_color} text={nuevo.text_color}
                   onPick={c => setNuevo({ ...nuevo, bg_color: c.bg, text_color: c.text })} />
-                <select value={nuevo.group} onChange={e => setNuevo({ ...nuevo, group: e.target.value })}
-                  aria-label="Columna del tablero del estado nuevo" className={INPUT}>
-                  {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
-                </select>
+                {showGroup && (
+                  <select value={nuevo.group} onChange={e => setNuevo({ ...nuevo, group: e.target.value })}
+                    aria-label={`Columna del tablero de ${newLabel} nuevo`} className={INPUT}>
+                    {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                  </select>
+                )}
                 <Badge label={nuevo.label || 'Vista previa'} bg={nuevo.bg_color} text={nuevo.text_color} />
               </div>
               {createErr && <p className="text-[10px] text-red-500">{createErr}</p>}
@@ -268,16 +281,16 @@ export function EstadosOperacionalesTab() {
                 <button type="button" onClick={create} disabled={creating}
                   className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent hover:bg-accent/90 px-3 py-1.5 rounded-lg disabled:opacity-50">
                   {creating && <Loader2 size={12} className="animate-spin" />}
-                  Crear estado
+                  Crear
                 </button>
                 <button type="button" onClick={() => { setNuevo(null); setCreateErr(null) }}
                   className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
               </div>
             </div>
           ) : (
-            <button type="button" onClick={() => setNuevo(EMPTY_NEW)}
+            <button type="button" onClick={() => setNuevo(emptyNew(showGroup))}
               className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent/80">
-              <Plus size={13} /> Nuevo estado operacional
+              <Plus size={13} /> Nuevo {newLabel}
             </button>
           )}
         </>
@@ -285,3 +298,12 @@ export function EstadosOperacionalesTab() {
     </div>
   )
 }
+
+export const EstadosOperacionalesTab = () => (
+  <TaxonomyTab
+    domain="OPERATIONAL_STATE"
+    title="Estados Operacionales"
+    hint="Estados que operaciones asigna manualmente a un viaje (override). La columna del tablero define dónde cae la tarjeta al arrastrarla."
+    newLabel="estado operacional"
+  />
+)

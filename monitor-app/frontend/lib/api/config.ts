@@ -3,7 +3,6 @@ import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta, TemperatureR
 
 
 export type TripStatusRow = StatusMeta & { sort_order: number }
-export type OperationalStateRow = OperationalStateMeta & { sort_order: number; active: boolean }
 
 export const configApi = {
   // ── TMS Statuses (edit only — IDs are fixed by TMS) ──────────────────────
@@ -14,27 +13,6 @@ export const configApi = {
     apiFetch<TripStatusRow>(`/api/v1/config/statuses/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
-    }),
-
-  // ── Operational states (CRUD) ─────────────────────────────────────────────
-  getOperationalStates: () =>
-    apiFetch<OperationalStateRow[]>('/api/v1/config/operational-states'),
-
-  createOperationalState: (body: { label: string; bg_color: string; text_color: string; sort_order?: number; group?: string }) =>
-    apiFetch<OperationalStateRow>('/api/v1/config/operational-states', {
-      method: 'POST',
-      body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
-    }),
-
-  patchOperationalState: (id: string, body: Partial<{ label: string; bg_color: string; text_color: string; sort_order: number; active: boolean; group: string }>) =>
-    apiFetch<OperationalStateRow>(`/api/v1/config/operational-states/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
-    }),
-
-  deleteOperationalState: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/v1/config/operational-states/${id}`, {
-      method: 'DELETE',
     }),
 
   // ── Alert thresholds ──────────────────────────────────────────────────────
@@ -77,4 +55,31 @@ export const configApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+}
+
+// ── Taxonomías configurables (app.status_taxonomies) ────────────────────────
+// Reemplaza el CRUD de operational-states — mismo endpoint genérico sirve
+// también EQUIPMENT_STATE (Tarea 7) y DRIVER_REASON (usado solo de lectura
+// hoy, vía GET /trips/meta).
+export type TaxonomyDomain = 'OPERATIONAL_STATE' | 'DRIVER_REASON' | 'EQUIPMENT_STATE'
+export type TaxonomyRow = OperationalStateMeta & { sort_order: number; active: boolean }
+
+export const taxonomiesApi = {
+  list: (domain: TaxonomyDomain) =>
+    apiFetch<TaxonomyRow[]>(`/api/v1/config/taxonomies?domain=${domain}`),
+
+  create: (body: { domain: TaxonomyDomain; label: string; bg_color: string; text_color: string; sort_order?: number; group?: string }) =>
+    apiFetch<TaxonomyRow>('/api/v1/config/taxonomies', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
+    }),
+
+  patch: (id: string, body: Partial<{ label: string; bg_color: string; text_color: string; sort_order: number; active: boolean; group: string }>) =>
+    apiFetch<TaxonomyRow>(`/api/v1/config/taxonomies/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
+    }),
+
+  deactivate: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/config/taxonomies/${id}`, { method: 'DELETE' }),
 }
