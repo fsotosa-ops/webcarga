@@ -62,7 +62,7 @@ Verificación en cada tarea: backend 308→311 tests, frontend 505→514 tests, 
 
 ---
 
-### 2026-07-22 (cont.) — Ronda 44: ejecución de `status_taxonomies` — Tareas 1-3 completas, Tarea 4 pendiente
+### 2026-07-25/26 — Ronda 44: ejecución de `status_taxonomies` — Tareas 1-8 completas, Tarea 9 diferida
 
 **Contexto**: se retomó el plan dejado listo en Ronda 43 (`docs/superpowers/plans/2026-07-22-status-taxonomies-plan.md`), vía `superpowers:subagent-driven-development`.
 
@@ -74,17 +74,31 @@ El usuario pidió explícitamente no tocar el pipeline sin entender el impacto, 
 - Tarea 2: router genérico `/config/taxonomies` (GET/POST/PATCH/DELETE por `domain`). Commit `6103f7e`. 320/320 tests.
 - Tarea 3: retirados los 4 endpoints + 2 clases Pydantic viejos de `operational-states` en `config.py`. Commit `67c3b0a`. 318/318 tests. Nota del reviewer: el frontend (`lib/api/config.ts`) todavía llama a `/config/operational-states` (ya no existe en el backend) — esperado, lo resuelve la Tarea 6, no es un hueco de esta tarea.
 
-**Tarea 4 (GET /trips/meta lee de status_taxonomies) — COMPLETA**: modificado `app/routers/trips.py` (líneas 711-714, 732-735) para leer de `app.status_taxonomies` con filtros `domain = 'OPERATIONAL_STATE'` y `domain = 'DRIVER_REASON'`. Response shape idéntico. Tests extendidos: `test_meta_exposes_active_unassigned_reasons_ordered_by_sort_order()` actualizado + nuevo test `test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxonomies()`. TDD: RED→GREEN. Suite backend 319/319 ✓. Commit `8313033`.
+**Tarea 4 (GET /trips/meta lee de status_taxonomies) — completa**: modificado `app/routers/trips.py` (líneas 711-714, 732-735) para leer de `app.status_taxonomies` con filtros `domain = 'OPERATIONAL_STATE'` y `domain = 'DRIVER_REASON'`. Response shape idéntico. Tests extendidos: `test_meta_exposes_active_unassigned_reasons_ordered_by_sort_order()` actualizado + nuevo test `test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxonomies()`. TDD: RED→GREEN. Suite backend 319/319. Commit `8313033`.
+
+**A partir de la Tarea 4, ejecución cambió a modo inline** (pedido explícito del usuario, sin más subagentes implementadores/reviewers) — Tareas 5-8 hechas directamente por el controller, cada una con RED→GREEN real antes de tocar la implementación.
+
+**Tarea 5 (daily_closures.py) — completa**: `_DETAIL_SQL`/`_REPORT_SQL` leen `unassigned_reason_label` desde `app.status_taxonomies` en vez de `app.unassigned_reasons`. `_DETAIL_SQL` suma `driver_pending_docs_critical` (reusa `_compliance_alert_lateral`/`_DRIVER_CRITICAL_DOC_CODES` de `trips.py`, sin duplicar la lógica) y `suggested_reason_id` (JOIN a `status_taxonomies` con `domain='DRIVER_REASON'` y `suggested_alert_source='compliance_expired'`). `_REPORT_SQL` (Reportería) solo cambia el JOIN del label — no expone los 2 campos de sugerencia, ese dataset es histórico plano. Suite backend 321/321. Commit `46b12ae`.
+
+**Tarea 6 (frontend — `taxonomiesApi` + `TaxonomyTab`) — completa**: `taxonomiesApi` en `lib/api/config.ts` reemplaza los 4 métodos `configApi.*OperationalState*` que llamaban a `/config/operational-states` — endpoint que ya no existe desde la Tarea 3 (el dangling call que el reviewer de esa tarea había marcado como esperado, resuelto acá). `TaxonomyTab` es el componente genérico parametrizado por `domain`, oculta la columna "tablero" para domains ≠ `OPERATIONAL_STATE`. Test nuevo `estados-tabs.test.tsx` (no existía). tsc limpio, vitest 517/517. Commit `838f9c8`.
+
+**Tarea 7 (frontend — tab "Estados de Equipo") — completa**: `EstadosEquipoTab` reusa `TaxonomyTab` (`domain=EQUIPMENT_STATE`) sin código nuevo de fetching/CRUD, cableado en `configuracion/page.tsx`. tsc + vitest 517/517 + `npm run build` limpios. Commit `97281bf`.
+
+**Tarea 8 (frontend — hint de motivo sugerido en `CloseDayDialog`) — completa**: `DriverDayStatusRow` gana `driver_pending_docs_critical`/`suggested_reason_id`; `CloseDayDialog` muestra un botón "Sugerido: `<label>`" bajo el select de motivo cuando hay compliance crítica vencida y el conductor aún no tiene motivo — sugerencia de UI, el operador confirma con el click. `DailyClosureReportRow` excluye ambos campos nuevos (Reportería no los expone). tsc + vitest 519/519 + build limpios. Commit `8ff08cd`.
+
+**Verificación manual en browser (autenticada) — NO hecha**: los 2 checks manuales del plan ("Estados de Equipo" visible con las 6 semillas + sin regresión visual en "Estados Operacionales"; click en el hint de `CloseDayDialog` guarda el motivo) requieren sesión real contra el proyecto Supabase de producción (`viclzoftiudkepqnhekv`) — no se intentó login con credenciales adivinadas. Cobertura real hoy: tests unitarios con API mockeada simulando el comportamiento exacto + `tsc` + `npm run build`, no click-through. Pendiente que el usuario lo confirme en el navegador.
+
+**Tarea 9 (DROP de tablas legacy `operational_states`/`unassigned_reasons`) — sigue diferida**, tal como especifica el plan: gated por (a) grep en 0 código real y (b) confirmación explícita separada del usuario, después de correr en producción sin errores un tiempo. Verificado hoy: `grep -rn "app.operational_states\|app.unassigned_reasons" monitor-app/backend/api/app` da 2 hits, ambos comentarios/docstrings desactualizados (`daily_closures.py:229`, `schemas/trip.py:22`), no código real — las Tareas 2-5 reemplazaron todos los consumidores reales. No aplicar sin el doble gate; limpiar los 2 comentarios cuando se toque esos archivos de nuevo.
 
 #### Próximo paso exacto
-1. [x] Retomar `docs/superpowers/plans/2026-07-22-status-taxonomies-plan.md` desde la **Tarea 4** — COMPLETA. Tareas 5-8 siguen (backend `daily_closures.py` + frontend `TaxonomyTab`/tab nuevo/hint en `CloseDayDialog.tsx`). Tarea 9 (DROP de tablas viejas) sigue diferida a confirmación separada después de correr en producción sin errores.
-2. [ ] Iniciar **Tarea 5** — `daily_closures.py` lee unassigned_reason de `status_taxonomies`.
-2. [ ] Una vez exista `status_taxonomies` completo (Tareas 4-8), diseñar (spec nuevo) `app.equipment_day_status` — el uso real de la taxonomía para cuadrar equipo, no solo dejarla configurable.
-3. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-4. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención.
-5. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
-6. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-7. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-8. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-9. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-10. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+1. [ ] Usuario: verificar en el navegador (autenticado) el tab "Estados de Equipo" + el hint de `CloseDayDialog` — ver nota de verificación manual arriba.
+2. [ ] Tarea 9 (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario (grep ya en 0).
+3. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — el uso real de la taxonomía `EQUIPMENT_STATE` para cuadrar equipo, no solo dejarla configurable. Es el sub-proyecto que reencuadra Ítem 6 (Reportería).
+4. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+5. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` refleja una regresión real vista hoy en producción, o si fue un archivo reciclado sin intención.
+6. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
+7. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+8. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+9. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+10. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+11. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
