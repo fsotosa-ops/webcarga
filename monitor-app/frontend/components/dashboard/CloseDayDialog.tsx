@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, ClipboardCheck, AlertTriangle, CheckCircle2, X } from 'lucide-react'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
+import { AlertStatTiles } from './AlertStatTiles'
 import type { DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
+
+type Category = 'total' | 'assigned' | 'unassigned' | 'mismatch'
 
 // "Por regularizar" en vez de "Mismatch" (feedback del usuario 2026-07-22:
 // el término técnico está fuera del vocabulario operativo de la app) —
@@ -30,9 +33,18 @@ interface Props {
 /** "Cerrar el día" (spec 2026-07-21-cuadratura-reporteria-redesign-design.md)
  *  — reemplaza la página aislada de Cuadratura. Se abre desde un botón en el
  *  Diario, hereda la fecha que ya está activa ahí (sin date picker propio).
- *  Resumen básico + operativo (tiles informativos, no clickeables a un
- *  pivot — esa interacción se removió a pedido del usuario, ahora vive en
- *  Reportería). Reusa 100% el backend de daily_closures.py sin cambios. */
+ *  Reusa 100% el backend de daily_closures.py sin cambios.
+ *
+ *  Ronda 45 (2026-07-26): las 4 tiles de resumen pasan a ser clickeables
+ *  (mismo patrón AlertStatTiles que Empresas) y filtran la tabla de abajo
+ *  por categoría completa — antes la tabla solo mostraba lo que faltaba
+ *  resolver (mismatch + no asignados sin motivo), sin forma de ver/gestionar
+ *  el resto (ej. no asignados que ya tienen motivo, o revisar los
+ *  asignados). Sin tile activa, la tabla vuelve al comportamiento original
+ *  (solo pendientes) — es el foco real de "cerrar el día". Pedido explícito
+ *  del usuario, y coincide con feedback histórico real (Fabian, UAT
+ *  2026-07-06: "debería tirarse el listado entero... debería quedarte como
+ *  todo lo pendiente ahí en esa ventana"). */
 export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClose }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -42,6 +54,7 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
   const [pendingList, setPendingList] = useState<{ driver_id: string; full_name: string; status: string }[] | null>(null)
   const [savingReason, setSavingReason] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
+  const [category, setCategory] = useState<Category | ''>('')
 
   const { data, isLoading } = useQuery({
     queryKey: ['daily-closure', fecha],
@@ -51,7 +64,7 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
 
   useEffect(() => {
     if (!open) return
-    setOverrideOpen(false); setOverrideNote(''); setCloseErr(null); setPendingList(null)
+    setOverrideOpen(false); setOverrideNote(''); setCloseErr(null); setPendingList(null); setCategory('')
     const previouslyFocused = document.activeElement as HTMLElement | null
     dialogRef.current?.focus()
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -94,6 +107,19 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
 
   if (!open) return null
 
+  // Sin categoría activa: comportamiento original (solo lo que falta
+  // resolver para poder cerrar el día). Con una tile clickeada: la
+  // categoría completa, incluyendo filas que ya no requieren acción (ej.
+  // no asignados con motivo ya puesto, o los asignados para revisar).
+  const displayedDrivers = !data ? [] : (
+    category === 'total'      ? data.drivers :
+    category === 'assigned'   ? data.drivers.filter(d => d.status === 'ASSIGNED') :
+    category === 'unassigned' ? data.drivers.filter(d => d.status === 'UNASSIGNED') :
+    category === 'mismatch'   ? data.drivers.filter(d => d.status === 'MISMATCH') :
+    data.drivers.filter(d => d.status === 'MISMATCH' || (d.status === 'UNASSIGNED' && !d.unassigned_reason_id))
+  )
+  const showTable = !!data && (category !== '' || data.pending_count > 0)
+
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
@@ -132,22 +158,19 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
                   </div>
                 )}
 
-                {/* Resumen básico y operativo — informativo, no clickeable */}
-                <div className="grid grid-cols-4 gap-2.5">
-                  {([
-                    ['Total', data.total_drivers, 'text-text-primary'],
-                    ['Asignados', data.assigned_count, 'text-green-600'],
-                    ['No asignados', data.unassigned_count, 'text-text-primary'],
-                    ['Por regularizar', data.mismatch_count, 'text-red-600'],
-                  ] as const).map(([label, value, cls]) => (
-                    <div key={label} className="border border-border rounded-xl px-3 py-2.5 bg-white">
-                      <p className={`text-xl font-bold leading-none ${cls}`}>{value}</p>
-                      <p className="text-[11px] text-gray-400 mt-1">{label}</p>
-                    </div>
-                  ))}
-                </div>
+                {/* Resumen básico y operativo — clickeable, filtra la tabla de abajo por categoría */}
+                <AlertStatTiles
+                  tiles={[
+                    { id: 'total', label: 'Total', value: data.total_drivers, tone: 'neutral' },
+                    { id: 'assigned', label: 'Asignados', value: data.assigned_count, tone: 'success' },
+                    { id: 'unassigned', label: 'No asignados', value: data.unassigned_count, tone: 'neutral' },
+                    { id: 'mismatch', label: 'Por regularizar', value: data.mismatch_count, tone: 'danger' },
+                  ]}
+                  active={category}
+                  onSelect={id => setCategory(prev => (prev === id ? '' : id) as Category | '')}
+                />
 
-                {data.pending_count > 0 && (
+                {showTable && (
                   <div className="bg-white rounded-xl border border-border overflow-hidden">
                     <table className="w-full text-xs">
                       <thead>
@@ -158,8 +181,10 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/60">
-                        {data.drivers
-                          .filter(d => d.status === 'MISMATCH' || (d.status === 'UNASSIGNED' && !d.unassigned_reason_id))
+                        {displayedDrivers.length === 0 && (
+                          <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-300 italic">Sin conductores en esta categoría</td></tr>
+                        )}
+                        {displayedDrivers
                           .map(d => (
                             <tr key={d.driver_id}>
                               <td className="px-3 py-2 font-medium text-text-primary">{d.full_name}</td>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CloseDayDialog } from './CloseDayDialog'
 import type { DailyClosureStatus, UnassignedReasonMeta } from '@/lib/types'
@@ -24,6 +24,7 @@ const STATUS: DailyClosureStatus = {
     { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
     { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
     { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
+    { driver_id: 'd4', full_name: 'Carla Díaz', tax_id: '44444444-4', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', resolved_by: 'admin', resolved_at: '2026-07-21T10:00:00Z', client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
   ],
 }
 
@@ -56,6 +57,43 @@ describe('CloseDayDialog', () => {
     expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
     // Juan Pérez (ASSIGNED) no aparece en la lista de pendientes
     expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+    // Carla Díaz (UNASSIGNED, ya con motivo) tampoco — no requiere acción
+    expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
+  })
+
+  // Ronda 45: las tiles de resumen pasan a ser clickeables y filtran la
+  // tabla por categoría completa, no solo lo pendiente.
+  it('clickear la tile "Asignados" muestra el roster completo de asignados, incluidos los que no requieren acción', async () => {
+    renderDialog()
+    await screen.findByText('Ana Soto')
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Asignados/ }))
+
+    expect(await screen.findByText('Juan Pérez')).toBeInTheDocument()
+  })
+
+  it('clickear la tile activa de nuevo vuelve a la vista de pendientes', async () => {
+    renderDialog()
+    const tile = await screen.findByRole('button', { name: /Asignados/ })
+    fireEvent.click(tile)
+    await screen.findByText('Juan Pérez')
+
+    fireEvent.click(tile)
+
+    await waitFor(() => expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument())
+  })
+
+  it('clickear "No asignados" muestra conductores que ya tienen motivo asignado, con su select para cambiarlo', async () => {
+    renderDialog()
+    await screen.findByText('Ana Soto')
+    expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /No asignados/ }))
+
+    expect(await screen.findByText('Carla Díaz')).toBeInTheDocument()
+    const row = screen.getByText('Carla Díaz').closest('tr')!
+    expect(within(row).getByRole('combobox')).toHaveValue('pana')
   })
 
   it('"Revisar en Empresas" en un conductor MISMATCH es un link real a su empresa, no texto estático', async () => {

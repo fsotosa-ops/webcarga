@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import type { Location } from '@/lib/types'
 import { locationsApi, shippersApi, type Shipper } from '@/lib/api/locations'
 import { LocationCreateForm } from '@/components/dashboard/LocationCreateForm'
+import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { INPUT, LoadState, SaveRowButton, useRowFeedback } from '../admin/configuracion/shared'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
@@ -140,8 +141,8 @@ export default function TarifarioPage() {
     <div className="p-4 md:p-6 space-y-3">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-text-primary">Tarifario</h1>
-          <p className="text-xs text-gray-400 mt-1">
+          <h1 className="font-mulish font-bold text-xl text-text-primary">Tarifario</h1>
+          <p className="text-xs text-gray-400 mt-0.5">
             Local, formato, dirección, clasificación y tarifa vigente por generador de carga — texto libre para la tarifa a propósito (depende del contexto de cada viaje, sin cálculo automático en esta versión).
           </p>
         </div>
@@ -149,13 +150,17 @@ export default function TarifarioPage() {
       </div>
 
       {!!incompleteTotal && (
-        <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-          <AlertCircle size={12} className="shrink-0" />
-          {incompleteTotal} local{incompleteTotal === 1 ? '' : 'es'} sin clasificar en total (todos los generadores de carga).
-        </div>
+        <AlertStatTiles
+          tiles={[{
+            id: 'incomplete', label: 'Sin clasificar (todos los generadores)',
+            value: incompleteTotal, tone: 'danger',
+          }]}
+          active={onlyIncomplete ? 'incomplete' : ''}
+          onSelect={() => setOnlyIncomplete(v => !v)}
+        />
       )}
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
         <select
           value={shipperId}
           onChange={e => setShipperId(e.target.value)}
@@ -166,34 +171,31 @@ export default function TarifarioPage() {
           {shippers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         {shipperId && (
-          <>
-            <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                value={q}
-                onChange={e => setQ(e.target.value)}
-                placeholder="Buscar por nombre o N° de local…"
-                aria-label="Buscar local"
-                className={INPUT + ' pl-7 w-64'}
-              />
-            </div>
-            <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
-              <input type="checkbox" checked={onlyIncomplete} onChange={e => setOnlyIncomplete(e.target.checked)} />
-              Solo sin clasificar
-            </label>
-          </>
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Buscar por nombre o N° de local…"
+              aria-label="Buscar local"
+              className={INPUT + ' pl-7 w-64'}
+            />
+          </div>
         )}
       </div>
 
       {!shipperId && (
-        <p className="text-xs text-gray-300 italic py-4">Elegí un generador de carga para ver sus locales.</p>
+        <p className="bg-white rounded-2xl border border-border px-4 py-14 text-center text-sm text-gray-400">
+          Elegí un generador de carga para ver sus locales.
+        </p>
       )}
 
       {shipperId && (
         <>
           <LoadState loading={loading} error={error} onRetry={() => listQuery.refetch()} />
           {!loading && !error && (
-            <div className="overflow-x-auto">
+            <div className="bg-white border border-border rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-xs min-w-[1080px]">
                 <thead>
                   <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border bg-gray-50">
@@ -275,26 +277,27 @@ export default function TarifarioPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            </div>
+          )}
 
-              {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-3 pt-3">
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                    className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft size={13} /> Anterior
-                  </button>
-                  <span className="text-xs text-gray-400">Página {page} de {totalPages} ({count} locales)</span>
-                  <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={page >= totalPages}
-                    className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Siguiente <ChevronRight size={13} />
-                  </button>
-                </div>
-              )}
+          {!loading && !error && totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-3">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={13} /> Anterior
+              </button>
+              <span className="text-xs text-gray-400">Página {page} de {totalPages} ({count} locales)</span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Siguiente <ChevronRight size={13} />
+              </button>
             </div>
           )}
         </>
