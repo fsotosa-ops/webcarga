@@ -186,3 +186,39 @@ No tocado en este incidente (fuera de alcance, mencionado como hallazgo): la fra
 13. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
 14. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
 15. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante (y confirmado hoy que ya no es autoritativa para freshness de sync).
+
+---
+
+### 2026-07-27 (cont.) — Ronda 48: aclaraciones del usuario sobre Ronda 47 — umbrales de temperatura cargados, bug de cache encontrado y corregido, Artifact reescrito a lenguaje de negocio
+
+**Contexto**: el usuario devolvió 6 puntos sobre el reporte/trabajo de Ronda 47: visión de negocio de Tarifario/`public.locations` (no es solo el diccionario RM/Zona Cero, es robustecer el módulo completo), pedido de precargar los umbrales de temperatura que mencionó Pablo y validar que las alertas realmente monitoreen, confirmación de que Pablo ya es owner, pedido de explicar 3 puntos del checklist, corrección de que el Artifact mezclaba contenido técnico (bugs/commits/nombres de archivo) con contenido de negocio, y pedido de push.
+
+**Umbrales de temperatura cargados en producción vía la app** (no por SQL directo — flujo real de Configuración, rol Owner): Frío 2-5°C, Congelado -22 a -18°C, exactamente los valores que mencionó Pablo en la reunión del 19/06. Primer intento con valores por defecto (0-5 en ambos) por un bug propio al setear los inputs numéricos sin pasar por los eventos reales de React — corregido re-editando ambos campos con interacción real de teclado, verificado contra `app.temperature_ranges` en Supabase.
+
+**Bug real encontrado al validar "¿está monitoreando alertas?"**: un viaje CONGELADO con -22.06°C (fuera del rango recién cargado) seguía mostrando el pill azul ("dentro de rango") en el Diario varios minutos después de guardar los umbrales. Causa raíz: `GET /trips/meta` queda cacheado 5 minutos en Redis (`CacheMiddleware`) y ningún endpoint de escritura en `config.py`/`status_taxonomies.py` invalidaba esa cache — afecta a **todo** lo que Configuración expone ahí, no solo temperatura (estados de viaje, umbrales de vencimiento, reglas de alerta del monitor, motivos de no asignación). Encontrado el bug, se confirmó pasado el TTL que la alerta sí se enciende correctamente (pill roja) — la lógica de clasificación en sí estaba bien, solo el cache no se invalidaba. Corregido: `invalidate_trips_meta_cache()` en `cache.py`, llamado desde los 6 endpoints de escritura relevantes de `config.py` + los 3 de `status_taxonomies.py`. 5 tests nuevos (`test_config_monitor.py`, `test_status_taxonomies.py`). Backend 329/329. Commit `21a7f2e`.
+
+**Correcciones al Artifact (mismo link, republicado) tras las aclaraciones del usuario**:
+- Alertas de temperatura pasan de bloqueante a ✓ OK en las 4 tablas donde aparecían (única vez que un bloqueante se resolvió dentro de la misma sesión de auditoría, no solo se reclasificó).
+- Checklist §8 ítem 3 (owner Pablo) → ✓, confirmado directamente por el usuario.
+- Checklist §8 ítem 8 (ID de viaje fija) → ✓, el usuario aclaró que basta con que la columna esté visible en la tabla, no necesita quedar sticky.
+- Ítems 12 y 14 del checklist quedaron con evidencia reescrita en lenguaje llano (qué falta exactamente), respondiendo la pregunta directa del usuario.
+- **Reescritura completa del Artifact**: se retiró toda la sección "Hallazgos" (bugs, nombres de archivo, commits, tests) y se reescribió "Dirección de producto" sin jerga técnica — el usuario marcó explícitamente que el reporte debe contener solo información explicable al usuario de negocio (Pablo/Fabián), no detalle de implementación. Ese detalle vive en este archivo (AGENTLOG) y en la memoria del proyecto, no en el Artifact.
+- RM/Zona Cero queda como el **único bloqueante real restante**, reencuadrado con el contexto de negocio que dio el usuario: `public.locations` es el diccionario compartido de locales/destinos que usa el Diario para monitorear por zona; Tarifario es el módulo que debe centralizar la creación de locales nuevos y la gestión de tarifas; el desafío es robustecer ese módulo completo, no solo cargar un diccionario — "no estamos muy lejos de eso" (palabras del usuario).
+
+**Commits de esta ronda**: `21a7f2e` (fix de cache) + este commit de AGENTLOG, pusheados a `origin/dev` a pedido explícito del usuario.
+
+#### Próximo paso exacto
+1. [ ] Diseñar y ejecutar el rediseño de Tarifario/`public.locations` (centralizar creación de locales + gestión de tarifas + clasificación RM/Zona Cero por comuna) — único bloqueante real de Hito 3 que queda. El usuario confirma que no está lejos de cerrarse; falta definir el approach concreto.
+2. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3 además del punto 1.
+3. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47, sin spec todavía) — no se retomó esta ronda, sigue en la cola.
+4. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos).
+5. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
+6. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
+7. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
+8. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+9. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
+10. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+11. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+12. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+13. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+14. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
