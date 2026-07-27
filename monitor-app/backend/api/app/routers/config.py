@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
 from ..auth import require_admin
+from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -151,6 +152,7 @@ async def patch_status(
         "FROM app.trip_statuses WHERE id = $1",
         status_id,
     )
+    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -195,6 +197,7 @@ async def patch_alert_threshold(
         "FROM app.alert_thresholds WHERE doc_type = $1",
         doc_type,
     )
+    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -228,6 +231,7 @@ async def create_temperature_range(
            RETURNING cargo_type, label, min_c, max_c""",
         body.cargo_type, body.label, body.min_c, body.max_c,
     )
+    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -266,6 +270,7 @@ async def patch_temperature_range(
         "SELECT cargo_type, label, min_c, max_c FROM app.temperature_ranges WHERE cargo_type = $1",
         cargo_type,
     )
+    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -280,6 +285,7 @@ async def delete_temperature_range(
     )
     if result == "DELETE 0":
         raise HTTPException(404, "Rango de temperatura no encontrado")
+    await invalidate_trips_meta_cache()
     return {"ok": True}
 
 
@@ -319,4 +325,5 @@ async def patch_monitor_alert_rules(
         f"UPDATE app.monitor_alert_rules SET {', '.join(sets)} WHERE id = 1", *vals
     )
     row = await pool.fetchrow(_ALERT_RULES_SELECT)
+    await invalidate_trips_meta_cache()
     return dict(row)

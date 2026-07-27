@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_admin
+from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..schemas.status_taxonomy import StatusTaxonomyBody, StatusTaxonomyPatch, VALID_DOMAINS
 
@@ -28,6 +29,7 @@ async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), _=De
             RETURNING {_FIELDS}""",
         body.domain, body.label, body.bg_color, body.text_color, body.sort_order, body.group_id,
     )
+    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -51,6 +53,7 @@ async def patch_taxonomy(
 
     await pool.execute(f"UPDATE app.status_taxonomies SET {', '.join(sets)} WHERE id = $1", *vals)
     row = await pool.fetchrow(f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
+    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -61,3 +64,4 @@ async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), _=Depend
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "No encontrado")
+    await invalidate_trips_meta_cache()

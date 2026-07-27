@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -68,6 +68,56 @@ def test_patch_monitor_alert_rules_updates():
     res = client.patch("/api/v1/config/monitor-alert-rules", json={"dwell_hours": 3.5})
     assert res.status_code == 200
     assert res.json()["dwell_hours"] == 3.5
+
+
+# ── /config/temperature-ranges ────────────────────────────────────────────────
+# Auditoría 2026-07-27: GET /trips/meta queda cacheado 5 min (CacheMiddleware)
+# — sin invalidar acá, un admin que configura un rango de temperatura no lo ve
+# reflejado en el Diario hasta que expire el TTL. Confirmado en vivo contra
+# producción antes de agregar el fix (el pill de temperatura seguía "ok"
+# varios minutos después de crear el rango).
+
+def test_create_temperature_range_invalidates_meta_cache():
+    pool = AsyncMock()
+    pool.fetchrow.side_effect = [None, {"cargo_type": "FRIO", "label": "Frío", "min_c": 2, "max_c": 5}]
+    client = make_client(pool)
+    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
+        res = client.post("/api/v1/config/temperature-ranges", json={
+            "cargo_type": "FRIO", "label": "Frío", "min_c": 2, "max_c": 5,
+        })
+    assert res.status_code == 200
+    inv.assert_awaited_once()
+
+
+def test_patch_temperature_range_invalidates_meta_cache():
+    pool = AsyncMock()
+    existing = {"cargo_type": "FRIO", "label": "Frío", "min_c": 0, "max_c": 5}
+    pool.fetchrow.side_effect = [existing, {**existing, "min_c": 2}]
+    client = make_client(pool)
+    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
+        res = client.patch("/api/v1/config/temperature-ranges/FRIO", json={"min_c": 2})
+    assert res.status_code == 200
+    inv.assert_awaited_once()
+
+
+def test_delete_temperature_range_invalidates_meta_cache():
+    pool = AsyncMock()
+    pool.execute.return_value = "DELETE 1"
+    client = make_client(pool)
+    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
+        res = client.delete("/api/v1/config/temperature-ranges/FRIO")
+    assert res.status_code == 200
+    inv.assert_awaited_once()
+
+
+def test_patch_monitor_alert_rules_invalidates_meta_cache():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {**RULES_ROW, "dwell_hours": 3.5}
+    client = make_client(pool)
+    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
+        res = client.patch("/api/v1/config/monitor-alert-rules", json={"dwell_hours": 3.5})
+    assert res.status_code == 200
+    inv.assert_awaited_once()
 
 
 # ── /trips/available-drivers ──────────────────────────────────────────────────
