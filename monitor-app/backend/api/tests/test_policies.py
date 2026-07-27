@@ -102,6 +102,58 @@ def test_patch_policy_sets_manual_override():
     assert "is_manual_override = true" in override_sql
 
 
+def test_delete_policy_404_when_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/policies/p1")
+
+    assert res.status_code == 404
+
+
+def test_delete_policy_removes_row_and_files():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "carrier_id": "c1", "insurance_company": "HDI", "policy_number": "87974",
+        "policy_document_url": "policy/p1/document/x.pdf",
+        "endorsement_document_url": "policy/p1/endorsement/y.pdf",
+    }
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    res = client.delete("/api/v1/policies/p1")
+
+    assert res.status_code == 200
+    assert res.json() == {"ok": True}
+    assert supabase.storage.from_.return_value.remove.call_count == 2
+    delete_sql = conn.execute.call_args_list[0].args[0]
+    assert "DELETE FROM public.insurance_policies WHERE id = $1" in delete_sql
+    audit_sqls = [c.args[0] for c in conn.execute.call_args_list]
+    assert any("INSERT INTO public.audit_log" in s for s in audit_sqls)
+
+
+def test_delete_policy_skips_storage_when_no_files():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "carrier_id": "c1", "insurance_company": "HDI", "policy_number": "87974",
+        "policy_document_url": None, "endorsement_document_url": None,
+    }
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    res = client.delete("/api/v1/policies/p1")
+
+    assert res.status_code == 200
+    supabase.storage.from_.return_value.remove.assert_not_called()
+
+
 def test_link_coverage_404_when_coverage_type_missing():
     pool = AsyncMock()
     conn = AsyncMock()

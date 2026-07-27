@@ -146,6 +146,37 @@ async def patch_policy(
     return await _assemble_policy_detail(policy_id, pool, supabase)
 
 
+@router.delete("/{policy_id}")
+async def delete_policy(
+    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
+):
+    """Borra la póliza completa (coverages/assets/installments caen por
+    ON DELETE CASCADE). Borra también los archivos físicos en Storage si
+    existen — sin esto quedarían blobs huérfanos sin ninguna fila que
+    los referencie."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                "SELECT carrier_id, insurance_company, policy_number, policy_document_url, "
+                "endorsement_document_url FROM public.insurance_policies WHERE id = $1",
+                policy_id,
+            )
+            if not current:
+                raise HTTPException(404, "Póliza no encontrada")
+
+            for storage_path in (current["policy_document_url"], current["endorsement_document_url"]):
+                if storage_path:
+                    delete_document_version(supabase, storage_path)
+
+            await conn.execute("DELETE FROM public.insurance_policies WHERE id = $1", policy_id)
+            await log_change(
+                conn, actor=user["sub"], entity_type="CARRIER", entity_id=current["carrier_id"],
+                action="delete", field="insurance_policy",
+                old_value=f'{current["insurance_company"]} / {current["policy_number"]}', source="api",
+            )
+    return {"ok": True}
+
+
 @router.post("/{policy_id}/coverages", status_code=201)
 async def link_coverage(
     policy_id: str, body: PolicyCoverageLinkBody, pool=Depends(get_pool), user=Depends(require_editor),

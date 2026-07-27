@@ -42,6 +42,9 @@ export const policiesApi = {
   patch: (id: string, body: PolicyPatchBody) =>
     apiFetch<InsurancePolicy>(`/api/v1/policies/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
+  delete: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/policies/${id}`, { method: 'DELETE' }),
+
   linkCoverage: (id: string, coverageTypeId: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/policies/${id}/coverages`, {
       method: 'POST', body: JSON.stringify({ coverage_type_id: coverageTypeId }),

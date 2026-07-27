@@ -13,7 +13,7 @@ vi.mock('@/lib/api/policies', () => ({
   policiesApi: {
     get: vi.fn(), patch: vi.fn(), patchInstallment: vi.fn(),
     linkCoverage: vi.fn(), unlinkCoverage: vi.fn(), linkAsset: vi.fn(), unlinkAsset: vi.fn(),
-    uploadFile: vi.fn(), deleteFile: vi.fn(), generateInstallments: vi.fn(),
+    uploadFile: vi.fn(), deleteFile: vi.fn(), generateInstallments: vi.fn(), delete: vi.fn(),
   },
   coverageTypesApi: { list: vi.fn() },
 }))
@@ -95,6 +95,7 @@ beforeEach(() => {
   vi.mocked(policiesApi.unlinkAsset).mockReset().mockResolvedValue({ ok: true })
   vi.mocked(policiesApi.uploadFile).mockReset()
   vi.mocked(policiesApi.generateInstallments).mockReset().mockResolvedValue([])
+  vi.mocked(policiesApi.delete).mockReset().mockResolvedValue({ ok: true })
   vi.mocked(coverageTypesApi.list).mockReset().mockResolvedValue(COVERAGE_TYPES)
 })
 
@@ -329,5 +330,33 @@ describe('InsurancePolicyModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Guardar N° endoso' }))
 
     await waitFor(() => expect(policiesApi.patch).toHaveBeenCalledWith('p1', { endorsement_number: 'END-99' }))
+  })
+
+  it('lets an admin delete a policy after confirming', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderModal('c1', { canAdmin: true })
+    await screen.findByText('Póliza 5663040')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar póliza' }))
+
+    await waitFor(() => expect(policiesApi.delete).toHaveBeenCalledWith('p1'))
+    expect(carriersApi.listPolicies).toHaveBeenCalled()
+  })
+
+  it('does not delete the policy when the confirmation is dismissed', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderModal('c1', { canAdmin: true })
+    await screen.findByText('Póliza 5663040')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar póliza' }))
+
+    expect(policiesApi.delete).not.toHaveBeenCalled()
+  })
+
+  it('hides the delete policy button for a non-admin', async () => {
+    renderModal('c1', { canAdmin: false })
+    await screen.findByText('Póliza 5663040')
+
+    expect(screen.queryByRole('button', { name: 'Eliminar póliza' })).not.toBeInTheDocument()
   })
 })

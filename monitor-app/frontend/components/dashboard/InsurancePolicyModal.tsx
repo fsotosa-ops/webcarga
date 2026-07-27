@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Check, Loader2, ChevronDown, ChevronUp, Plus } from 'lucide-react'
+import { X, Check, Loader2, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import { policiesApi, coverageTypesApi } from '@/lib/api/policies'
 import type { CoverageType, InsuranceInstallment, InsurancePolicy } from '@/lib/types'
@@ -160,6 +160,8 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   const [scheduleForm, setScheduleForm] = useState({ total_installments: '12', amount_uf: '', first_due_date: '' })
   const [generatingSchedule, setGeneratingSchedule] = useState(false)
   const [scheduleErr, setScheduleErr] = useState<string | null>(null)
+  const [deletingPolicy, setDeletingPolicy] = useState(false)
+  const [deletePolicyErr, setDeletePolicyErr] = useState<string | null>(null)
 
   const listQuery = useQuery({
     queryKey: ['carrier-policies', carrierId],
@@ -347,6 +349,23 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
     }
   }
 
+  async function handleDeletePolicy() {
+    if (!selectedPolicyId || !policy) return
+    if (!window.confirm(`¿Eliminar la póliza ${policy.policy_number} (${policy.insurance_company})? Se borran también sus cuotas, coberturas y archivos. Esta acción no se puede deshacer.`)) return
+    setDeletingPolicy(true)
+    setDeletePolicyErr(null)
+    try {
+      await policiesApi.delete(selectedPolicyId)
+      setSelectedPolicyId(null)
+      queryClient.invalidateQueries({ queryKey: ['carrier-policies', carrierId] })
+      queryClient.removeQueries({ queryKey: ['policy-detail', selectedPolicyId] })
+    } catch (e) {
+      setDeletePolicyErr(e instanceof Error ? e.message : 'Error al eliminar la póliza')
+    } finally {
+      setDeletingPolicy(false)
+    }
+  }
+
   const selectedListItem = policies.find(p => p.id === selectedPolicyId) ?? null
   const policy = detailQuery.data ?? null
   const installments = policy?.installments ?? []
@@ -489,13 +508,27 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
                       Vigencia <span className="font-semibold text-gray-700">{formatExpiry(policy.valid_from)} – {formatExpiry(policy.valid_to)}</span>
                     </p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xl font-bold text-accent leading-none">
-                      {installments.length === 0 ? '—' : `${Math.round(100 * installments.filter(i => i.payment_status === 'PAID').length / installments.length)}%`}
+                  <div className="text-right shrink-0 flex items-start gap-3">
+                    <div>
+                      <div className="text-xl font-bold text-accent leading-none">
+                        {installments.length === 0 ? '—' : `${Math.round(100 * installments.filter(i => i.payment_status === 'PAID').length / installments.length)}%`}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">cuotas pagadas</p>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1">cuotas pagadas</p>
+                    {canAdmin && (
+                      <button
+                        onClick={handleDeletePolicy}
+                        disabled={deletingPolicy}
+                        aria-label="Eliminar póliza"
+                        title="Eliminar póliza"
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        {deletingPolicy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      </button>
+                    )}
                   </div>
                 </div>
+                {deletePolicyErr && <p className="text-xs text-red-500 -mt-3 mb-3">{deletePolicyErr}</p>}
 
                 {/* Documentos+Enlaces / Coberturas+Activos lado a lado — menos
                     stack vertical que 4 secciones apiladas una tras otra. */}
