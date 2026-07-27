@@ -142,11 +142,12 @@ function EmpresaDetailPageInner() {
   const searchParams = useSearchParams()
   const handoffDriverName   = searchParams.get('driver_name')
   const handoffTractorPlate = searchParams.get('tractor_plate')
+  const requestedTab        = searchParams.get('tab') as Tab | null
   const [canEdit, setCanEdit]     = useState(false)
   const [canAdmin, setCanAdmin]   = useState(false)
   const [editOpen, setEditOpen]   = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>(
-    handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen',
+    requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen'),
   )
   const [exportingDocs, setExportingDocs] = useState(false)
   const [exportErr, setExportErr]         = useState<string | null>(null)

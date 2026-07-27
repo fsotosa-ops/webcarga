@@ -317,12 +317,36 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     expect(screen.getByText('Empresa: 11 pendientes')).toBeInTheDocument()
   })
 
-  it('shows a critical banner when the driver is missing Licencia de Conducir or Carnet', () => {
+  it('shows a critical banner when the driver is missing Licencia de Conducir or Carnet, with a real link to Empresas', () => {
     renderSlideOver({
       ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
       driver_pending_docs: 2, driver_pending_docs_critical: true,
     })
     expect(screen.getByText(/Falta Licencia de Conducir o Carnet del conductor/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'revisar en Empresas' })).toHaveAttribute(
+      'href', '/dashboard/transportistas/empresa/c1?tab=conductores',
+    )
+  })
+
+  it('links "revisar en Seguros" to the carrier\'s Seguros tab when the policy is expired', () => {
+    renderSlideOver({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', insurance_alert: 'EXPIRED',
+    })
+    expect(screen.getByText(/Póliza vencida para esta empresa/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'revisar en Seguros' })).toHaveAttribute(
+      'href', '/dashboard/transportistas/empresa/c1?tab=seguros',
+    )
+  })
+
+  it('links "revisar en Empresas" to the conductores tab on a fleet mismatch', () => {
+    renderSlideOver({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      fleet_match_status: 'MISMATCH', fleet_match_driver_home_carrier: 'Otra Transportista Spa',
+    })
+    expect(screen.getByText(/distinta de la empresa de este viaje/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'revisar en Empresas' })).toHaveAttribute(
+      'href', '/dashboard/transportistas/empresa/c1?tab=conductores',
+    )
   })
 
   it('does not show the critical banner when pending docs are non-critical', () => {

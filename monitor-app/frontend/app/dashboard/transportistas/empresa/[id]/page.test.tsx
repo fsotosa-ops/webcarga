@@ -267,6 +267,16 @@ describe('EmpresaDetailPage', () => {
     expect(await screen.findByDisplayValue('XYZW12')).toBeInTheDocument()
   })
 
+  // Auditoría 2026-07-27: "revisar en Seguros/Empresas" en TripSlideOver
+  // ahora deep-linkea acá con ?tab=... — antes eran textos estáticos.
+  it('opens directly on the Seguros tab when arriving with ?tab=seguros', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams({ tab: 'seguros' }) as unknown as ReturnType<typeof useSearchParams>,
+    )
+    renderPage()
+    expect(await screen.findByText(/Pólizas \(/)).toBeInTheDocument()
+  })
+
   it('shows a pending-docs badge on the Documentos tab', async () => {
     renderPage()
     const tab = await screen.findByRole('button', { name: /Documentos/ })

@@ -10,18 +10,53 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
+import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 
+/** Hipervínculo desde la patente hacia el TMS de origen (minuta §7A ítem 16).
+ *  No es un deep-link autenticado a un viaje específico — decisión de
+ *  seguridad explícita (ver tmsLinks.ts: la cuenta de scraping es
+ *  compartida/sin trazabilidad por usuario). En cambio, el click abre el
+ *  login del TMS Y copia el ID externo del viaje al portapapeles, para que
+ *  el gestor lo pegue en la búsqueda del TMS apenas entra — mismo resultado
+ *  operativo (llegar rápido al viaje) sin comprometer la cuenta compartida. */
+function useCopyToClipboard() {
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  function copy(tripId: string, value: string) {
+    navigator.clipboard?.writeText(value).catch(() => {})
+    setCopiedId(tripId)
+    window.setTimeout(() => setCopiedId(id => id === tripId ? null : id), 1500)
+  }
+  return { copiedId, copy }
+}
 
-export function TmsChip({ tms, meta }: { tms: string; meta?: TripsMeta | null }) {
+export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: TripsMeta | null; sourceTripId?: string | null }) {
   const tm = meta?.tms_sources.find(x => x.id === tms.toLowerCase())
   const label = tm?.label ?? tms.toUpperCase().slice(0, 3)
+  const style = tm
+    ? { backgroundColor: tm.bg_color, color: tm.text_color, borderColor: `${tm.bg_color}80` }
+    : { backgroundColor: '#f3f4f6', color: '#6b7280', borderColor: '#e5e7eb' }
+  const loginUrl = TMS_LOGIN_URLS[tms.toLowerCase()]
+
+  if (loginUrl) {
+    return (
+      <a
+        href={loginUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={e => {
+          e.stopPropagation()
+          if (sourceTripId) navigator.clipboard?.writeText(sourceTripId).catch(() => {})
+        }}
+        title={sourceTripId ? `Abrir ${label} — ID ${sourceTripId} copiado para buscarlo` : `Abrir ${label}`}
+        className="text-[9px] font-bold px-1.5 py-0.5 rounded border hover:opacity-75 transition-opacity"
+        style={style}
+      >
+        {label}
+      </a>
+    )
+  }
   return (
-    <span
-      className="text-[9px] font-bold px-1.5 py-0.5 rounded border"
-      style={tm
-        ? { backgroundColor: tm.bg_color, color: tm.text_color, borderColor: `${tm.bg_color}80` }
-        : { backgroundColor: '#f3f4f6', color: '#6b7280', borderColor: '#e5e7eb' }}
-    >
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border" style={style}>
       {label}
     </span>
   )

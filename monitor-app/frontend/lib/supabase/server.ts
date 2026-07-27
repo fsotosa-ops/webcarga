@@ -31,15 +31,3 @@ export async function createClient() {
     { cookies: buildCookieHandlers(cookieStore) }
   )
 }
-
-export async function createGoldClient() {
-  const cookieStore = await getCookieStore()
-  return createServerClient<Database, 'gold'>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: buildCookieHandlers(cookieStore),
-      db: { schema: 'gold' },
-    }
-  )
-}
