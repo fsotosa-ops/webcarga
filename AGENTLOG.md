@@ -117,17 +117,72 @@ No tocado en este incidente (fuera de alcance, mencionado como hallazgo): la fra
 
 **Reportería — investigado, NO ejecutado**: el usuario preguntó si el rumbo (3 formatos fijos + `equipment_day_status`) sigue siendo válido. Verificado contra fuentes primarias (no solo AGENTLOG): `docs/superpowers/specs/2026-07-22-status-taxonomies-design.md:9,37` y el transcript real de la reunión (`monitor-app/docs/user-stories/20260720/transcript-meeting.md:379,421,425,427`, cita textual de Pablo sobre el formato del reporte) confirman que sí. Reportería hoy es un pivot genérico configurable (filas/columnas/filtros libres, sin narrativa por defecto) — el usuario coincide en que no es útil así. Queda **sin iniciar** el diseño de `equipment_day_status` (paso que bloquea el rediseño real) — el usuario pidió dejarlo para otra sesión.
 
+---
+
+### 2026-07-27 — Ronda 46: auditoría en vivo (Playwright) vs. minuta consolidada + backlog 20/07
+
+**Contexto**: el usuario pidió una auditoría real contra `webcarga-frontend-dev`, cruzando `monitor-app/docs/minuta_consolidado_20260720.md` (checklist §8 + tabla de pendientes §7) y el backlog de 17 HU + refinamiento v2 de `monitor-app/docs/user-stories/20260720/`, con evidencia en vivo (screenshots, consola, network) y acciones de escritura reversibles donde hiciera falta. Reporte completo publicado como Artifact (tabla `# | Ítem | Fuente | Estado | Evidencia | Bloqueante Hito 3`) — pedirle el link al usuario si se necesita retomar el detalle punto por punto, este resumen es solo lo accionable.
+
+**De paso, esta ronda resolvió la verificación manual pendiente desde Ronda 44/45**: tab "Estados de Equipo" (6 semillas ✓), hint de motivo sugerido en `CloseDayDialog` (✓), rediseño de Tarifario (✓ paginación/búsqueda/"+ Nuevo local" arriba), tiles clickeables de `CloseDayDialog` (✓, incluye bloqueo real de "Cerrar día" con 69 no asignados pendientes) — los 4 puntos que quedaban con "cobertura solo de tests, sin click-through real" ya están confirmados en producción.
+
+**Hallazgos de negocio (bloqueantes reales para Hito 3, ninguno es código complejo)**:
+1. **Rangos de Temperatura vacíos** — `/dashboard/admin/configuracion` → tab correspondiente muestra "Sin rangos configurados". El CRUD funciona, es tarea de Pablo/WebCarga cargar Frío 2-5°C / Congelado -18/-22°C, no de desarrollo.
+2. **Reporte diario automático por mail no existe** — confirmado que no hay SMTP/cron en ningún punto del backend, solo el dataset vía `daily-closures/report` + export CSV manual en Reportería. Es desarrollo real pendiente, sin empezar.
+3. **RM/Zona Cero sigue sin ser un diccionario por comuna** — la clasificación que se ve en pantalla es un valor pre-cargado por local en la planilla del generador de carga (`public.locations.operation_type`), no una regla `comuna → zona` como pidió la reunión del 10/07. Confirmado en vivo: **262 locales "sin clasificar"** en el Tarifario hoy.
+4. **Normalización de fecha QAnalytics↔WingSuite**: no hay lógica condicional por `source_system` en el backend (confirmado por grep). En cambio, comparando un viaje WingSuite/Colun real contra uno QAnalytics, el campo "Plan." por parada ya resuelve la ambigüedad de forma implícita (origen = plan de salida, destino = plan de llegada) — funciona en el caso verificado, pero es una solución distinta a la que pedía literalmente la minuta. Confirmar con el usuario si esto se da por bueno o si falta cerrar el diseño explícitamente.
+
+**Hallazgos de calidad, no bloqueantes**:
+- El fix de Ronda 42 ("Revisar en Empresas" clickeable) solo llegó a `CloseDayDialog.tsx` — los mismos textos dentro de `TripSlideOver.tsx` (detalle de viaje) siguen siendo texto plano sin `href` ni handler.
+- Columna "Última actualización" de Empresas muestra "sin actualizar hace 10 días" en **todas** las filas visibles — la minuta dice sync cada ~24h, vale la pena confirmar si el pipeline de SharePoint sigue corriendo.
+- Rutas legacy huérfanas `/dashboard/conductores/[id]` y `/dashboard/transportistas/[slug]` (schema `gold` vacío) siguen desplegadas — no crashean (manejan "no encontrado" con gracia) pero son código muerto.
+- `/dashboard/operaciones` es un `redirect()` vacío sin contenido propio, no está en el nav.
+- No se encontró ningún campo/columna "LSS" en ninguna pantalla — confirmar con el cliente a qué se refiere exactamente.
+
+**Gap real encontrado y corregido en la misma sesión (no pedido, autorizado explícitamente por el usuario)**: al crear una póliza de prueba en Seguros para confirmar el fix del bug de creación de pólizas (refinamiento v2 #1 — confirmado arreglado, se creó sin error), se encontró que **no existía ningún botón de eliminar póliza en toda la UI**. Se agregó:
+- Backend: `DELETE /api/v1/policies/{policy_id}` en `policies.py` — borra la póliza (cascada real vía FK `ON DELETE CASCADE` a cuotas/coberturas/activos, confirmado contra el schema real) y los archivos físicos en Storage si existen. 3 tests nuevos.
+- Frontend: botón papelera en `InsurancePolicyModal.tsx`, gateado a `canAdmin`, con `window.confirm` (mismo patrón que `UsersTable.tsx`/`GroupBuilder.tsx`/`umbrales-tabs.tsx`, no un modal custom nuevo). 3 tests nuevos.
+- Verificado: backend 324/324, frontend 525/525, `tsc` + `npm run build` limpios.
+- La póliza de prueba (`TEST-AUDIT-0727`) se borró vía SQL directo en Supabase (`viclzoftiudkepqnhekv`) antes de que existiera el botón, verificando primero que no tenía cuotas/coberturas/activos dependientes.
+- **Cambios hechos localmente, sin commit ni push todavía** — el usuario no llegó a confirmar el paso de deploy, solo pidió agregar el feature.
+
+---
+
+### 2026-07-27 (cont.) — Ronda 47: feedback del usuario sobre el Artifact de Ronda 46 — 14 puntos, corregidos/ejecutados
+
+**Contexto**: el usuario revisó el reporte de Ronda 46 y devolvió 14 puntos de feedback: 3 pedidos de fix directo, 1 pedido de re-verificar contra Mage+Supabase (no solo frontend), y 10 correcciones/matices al reporte (algunos porque mi lectura estaba mal, otros porque cambió el foco de negocio). Se procesó uno por uno, sin asumir ninguno como "menor".
+
+**Fixes de código ejecutados y verificados** (backend 324/324, frontend 528/528, tsc + `npm run build` limpios en cada paso — **sin commitear todavía**, el usuario no lo pidió explícitamente esta vez):
+1. **Rutas legacy huérfanas eliminadas** (`/dashboard/conductores/[id]`, `/dashboard/transportistas/[slug]`) — junto con `createGoldClient()` (`lib/supabase/client.ts`/`server.ts`) y los tipos `DiarioTrip`/`DiarioManualFields`/`DiarioRow`/`NormalizedStatus` en `lib/types.ts`, que solo esas 2 rutas consumían. Confirmado que no quedó ninguna referencia viva (solo artefactos `.next` regenerados).
+2. **Links "revisar en Seguros/Empresas" en `TripSlideOver.tsx`** — los 3 banners (póliza vencida/cuotas impagas, licencia de conducir faltante, empresa distinta conductor/viaje) ahora son `<a href>` reales a `/dashboard/transportistas/empresa/{carrier_id}?tab=seguros|conductores`, mismo patrón que ya usaba `CloseDayDialog.tsx`. Se agregó soporte de `?tab=` en `empresa/[id]/page.tsx` (mismo mecanismo que ya existía para `driver_name`/`tractor_plate` handoff).
+3. **Hipervínculo patente→TMS**: `TmsChip` en `TripTable.tsx` ahora es un link real (antes solo estaba en el detalle) — abre el login del TMS de origen y copia el ID externo del viaje al portapapeles en el mismo click. **No** es un deep-link autenticado a un viaje específico — se respetó la decisión de seguridad ya documentada en `lib/utils/tmsLinks.ts` (cuenta de scraping compartida sin trazabilidad por usuario; Sodimac usa evasión de Cloudflare no apta para sesión humana). Este es el máximo cumplimiento posible sin comprometer esa cuenta — explicado al usuario, no se re-preguntó.
+
+**Re-verificación contra Mage + Supabase (pedido explícito del usuario, punto 4 del feedback)** — usando `sync_project_to_local` (la API `pipeline_list` sigue devolviendo grafos incompletos, mismo issue que memorias previas) y `execute_sql` directo contra `viclzoftiudkepqnhekv`:
+- **Hallazgo real: "Última actualización" de Empresas no medía lo que yo creía.** La columna lee `MAX(compliance_records.updated_at)` (`carriers.py:52`) — cuándo se tocó un documento de compliance, no cuándo se sincronizó la empresa desde SharePoint. Mi hallazgo original ("sin actualizar hace 10 días" en Ronda 46) era una mala lectura de la UI, no un bug del producto.
+- **Confirmado que el pipeline SÍ sigue corriendo**: `custom/load_carriers_02.sql` (bloque real que puebla `public.carriers`, invisible en `pipeline_list` pero presente en `metadata.yaml` sincronizado) hace `INSERT ... ON CONFLICT DO UPDATE ... WHERE NOT is_manual_override` — upsert real, no replace ciego. `bronze.raw_centralizer_vehicles` pasó de 119→121 filas desde el log del 11/07 (`ops.pipeline_runs`, tabla legacy del Checkpoint D retirado, ya no autoritativa pero sirvió de baseline) — evidencia directa de datos frescos entrando. Nota menor sin resolver: `centralizer_eett_sharepoint` y `load_compliance_records_08` siguen con `status: failed` en el metadata sincronizado (mismo hallazgo que ya estaba en `project_mage_public_ingestion_conflict.md` del 2026-07-16) — no bloqueante dado que los datos sí están fluyendo, pero vale una revisión rápida en la UI de Mage si se retoma ese pipeline.
+
+**Correcciones al reporte (Artifact re-publicado en la misma URL)**:
+- SSO Microsoft, modelo de fechas QAnalytics/WingSuite, y "Vista detalle rediseñada" pasan de "~ Parcial/en progreso" a **✓ OK** — el usuario confirmó SSO operativo y pidió concluir el punto de vista de detalle; mi propia evidencia ya decía "implementado", solo me faltaba dejar de hedgear sin motivo (patrón general que el usuario marcó: "hay items que según tu análisis están ok... pero sigues poniéndolos en progreso").
+- Reporte diario automático por mail: sigue sin existir, pero **deja de listarse como bloqueante** — el usuario aclaró que es un ideal, no un requisito del MVP, aunque la minuta lo liste en la sección 5.
+- "Consultar a María Eugenia" (tabla §7B): estaba mal marcado "no verificable" — la propia minuta (§6.1) ya documenta la respuesta (Fecha Gestión se descartó, no es útil para el Diario), confirmada en la llamada durante la reunión del 10/07.
+- Bloqueantes reales de Hito 3 quedan en **2** (antes 4): rangos de temperatura sin configurar, diccionario RM/Zona Cero por comuna.
+
+**Dirección de producto capturada, no implementada** (nueva sección en el Artifact):
+- `/dashboard/operaciones` debe dejar de ser un redirect vacío y convertirse en el hub real que agrupa Diario + Reportería como submódulos.
+- El gap de RM/Zona Cero es más amplio que "cargar un diccionario" — el usuario pide repensar `public.locations`/Tarifario de fondo: hoy poco intuitivo, con carga cognitiva alta, lejos del estándar visual "world class SaaS" del resto de la app.
+
 #### Próximo paso exacto
-1. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos: Sider Botelleros/Sodimac/Walmart-Spot). Próximo foco real cuando se retome.
-2. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado, sin tool de `block_delete` disponible) — o decidir cablearlo bien si se retoma la idea del gate condicional.
-3. [ ] Confirmar si `bronze.tms_trips` de wingsuite necesita otra corrida puntual, o si genuinamente no tuvo viajes nuevos en la ventana 22-26 jul.
-4. [ ] Usuario: verificar en el navegador (autenticado) el tab "Estados de Equipo" + el hint de `CloseDayDialog` (Ronda 44) — ver nota de verificación manual en esa sección arriba. Aprovechar para verificar también el rediseño de Tarifario y las tiles clickeables de CloseDayDialog (Incidentes 2 y 4 de esta ronda) — ninguno de los tres tuvo verificación manual en browser todavía.
-5. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario (grep ya en 0 código real).
-6. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-7. [ ] (no bloqueante) Confirmar con el usuario si `bug-date-wingsuite.png` (distinto de este incidente) refleja una regresión real, o si fue un archivo reciclado sin intención.
-8. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run — siguen describiendo el flujo viejo de Vercel.
-9. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-10. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-11. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-12. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-13. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+1. [ ] **Decidir con el usuario si se commitea/pushea esta ronda de fixes** (rutas legacy borradas, links de TripSlideOver, hipervínculo TMS) — verificado pero no commiteado, a diferencia de Ronda 46 donde sí se pidió explícitamente.
+2. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada, sin spec todavía).
+3. [ ] Diseñar el rediseño de fondo de Tarifario/`public.locations` (no solo el diccionario RM/Zona Cero) — dirección de producto confirmada, sin spec todavía.
+4. [ ] Configurar los rangos de temperatura en `/dashboard/admin/configuracion` (responsabilidad de Pablo/WebCarga, no de desarrollo) — único bloqueante puramente operativo que queda.
+5. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos: Sider Botelleros/Sodimac/Walmart-Spot).
+6. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado, sin tool de `block_delete` disponible).
+7. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual, pero es deuda visible desde el 16/07).
+8. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
+9. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+10. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
+11. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+12. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+13. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+14. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+15. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante (y confirmado hoy que ya no es autoritativa para freshness de sync).
