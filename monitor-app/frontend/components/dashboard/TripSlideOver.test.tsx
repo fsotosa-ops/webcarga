@@ -604,3 +604,23 @@ describe('TripSlideOver — motivo de no asignación (Fase 1.5d)', () => {
     expect(screen.queryByText('Motivo de no asignación')).not.toBeInTheDocument()
   })
 })
+
+describe('TripSlideOver — focusNotes (badge de bitácora, 2026-07-28)', () => {
+  it('scrolls the Bitácora section into view when focusNotes is true', () => {
+    const scrollIntoViewMock = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+
+    renderSlideOver(baseTrip, { focusNotes: true })
+
+    expect(scrollIntoViewMock).toHaveBeenCalled()
+  })
+
+  it('does not scroll when focusNotes is false or omitted', () => {
+    const scrollIntoViewMock = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+
+    renderSlideOver(baseTrip)
+
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+  })
+})

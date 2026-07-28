@@ -47,13 +47,14 @@ function MetaField({
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
-  trip:    Trip | null
-  onClose: () => void
-  onSaved: (updated: Trip) => void
-  meta?:   TripsMeta | null
+  trip:        Trip | null
+  onClose:     () => void
+  onSaved:     (updated: Trip) => void
+  meta?:       TripsMeta | null
+  focusNotes?: boolean
 }
 
-export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
+export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false }: Props) {
   const [estadoDraft, setEstadoDraft]           = useState('')
   const [saving, setSaving]                     = useState(false)
   const [err, setErr]                           = useState<string | null>(null)
@@ -79,6 +80,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     enabled: !!trip && !trip.carrier_id && !!trip.driver_name_tms,
   })
   const panelRef                                = useRef<HTMLDivElement>(null)
+  const notesRef                                = useRef<HTMLElement>(null)
   // Badge de incidentes abiertos en el hero (Fase 2, Plan 5) — mismo hook
   // que ya usa TripNotesFeed internamente; TanStack Query dedupea por
   // queryKey (['trip-notes', tripId]), así que esto no dispara una segunda
@@ -114,6 +116,15 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
       previouslyFocused?.focus?.()
     }
   }, [trip?.id, onClose]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ítem 6.5 de la minuta (10/07): el badge de la tabla principal abre el
+  // detalle directo en la Bitácora en vez de que el operador tenga que
+  // scrollear a buscarla — no hay tabs en este panel, así que "abrir en la
+  // Bitácora" es llevar el scroll ahí, no cambiar de vista.
+  useEffect(() => {
+    if (!trip || !focusNotes) return
+    notesRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [trip?.id, focusNotes])
 
   useEffect(() => {
     if (!trip) return
@@ -903,7 +914,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                 de Gestión de 360px). TripNotesFeed en sí no se toca acá —
                 su max-h-80 interno y el retiro del texto legacy son del
                 Plan 5. */}
-            <section>
+            <section ref={notesRef}>
               <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Bitácora</h4>
               <TripNotesFeed trip={trip} />
             </section>
