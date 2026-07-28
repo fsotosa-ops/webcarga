@@ -902,7 +902,9 @@ async def available_assets(
                 ) AS closed_count,
                 max(t.status_reported_at) AS last_report_at,
                 max(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) AS driver_name,
-                max(vfr.resolved_driver_id) AS driver_id
+                -- Postgres no tiene max(uuid) — cast a text para agregar y
+                -- volver a uuid (bug real encontrado en producción 2026-07-28).
+                max(vfr.resolved_driver_id::text)::uuid AS driver_id
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
             LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id

@@ -232,6 +232,22 @@ def test_available_assets_response_shape_has_total_active_and_items():
     assert body["items"][0]["driver_id"] == "d1"
 
 
+def test_available_assets_casts_uuid_for_max_aggregate():
+    """Bug real en producción (2026-07-28): Postgres no tiene max(uuid) —
+    max(vfr.resolved_driver_id) sin cast tira '42883: function max(uuid)
+    does not exist' y available-assets devolvía 500 en el Diario real.
+    Confirmado y corregido contra la base real (execute_sql), no solo con
+    el mock de este test — el mock no ejecuta SQL de verdad y no lo hubiera
+    detectado."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
+    query = pool.fetch.call_args.args[0]
+    assert "max(vfr.resolved_driver_id::text)::uuid" in query
+
+
 def test_available_assets_includes_standing_driver_for_idle_equipment():
     """Centro de Flota (2026-07-28): un equipo sin viajes hoy debe traer su
     conductor habitual — antes solo se llenaba si el equipo tuvo un viaje hoy,
