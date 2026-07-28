@@ -128,7 +128,7 @@ describe('TripAssignDialog', () => {
     const payload = vi.mocked(tripsApi.create).mock.calls[0][0]
     expect(payload.stops).toEqual([
       { local: 'CD Lo Aguirre', stop_type: 'ORIGIN' },
-      { local: 'Local Maipú', planning_date: null, stop_type: 'DESTINATION' },
+      { local: 'Local Maipú', planning_date: null, stop_type: 'DESTINATION', destination_region: null },
     ])
     expect(payload.origin_tms).toBeUndefined() // modo "Sin TMS"
     expect(onCreated).toHaveBeenCalled()
@@ -201,15 +201,25 @@ describe('TripAssignDialog', () => {
     expect(await screen.findByText(/Ya registraste el viaje/)).toBeInTheDocument()
   })
 
-  it('envía región/ciudad de cada destino en el payload (sin región/ciudad de origen — se retiró del form de creación)', async () => {
+  it('envía destination_region numérico cuando el destino se elige de un local real (sin región/ciudad de origen — se retiró del form de creación)', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+    vi.mocked(locationsApi.list).mockResolvedValue({
+      data: [{
+        id: 'loc-1', entity_type: 'SHIPPER', entity_id: 's1', site_number: null,
+        name: 'CD El Peñón', country_code: 'CL', format: null, address: null,
+        region_name: 'RM. Metropolitana', region_number: 13, opens_at: null, closes_at: null,
+        operation_type: 'RM', operational_status: 'ACTIVE', is_manual_override: false,
+        created_at: null, updated_at: null,
+      }],
+      count: 1, page: 1, limit: 8,
+    })
     renderCreate()
     await pickDriver()
 
     fireEvent.click(screen.getByText('Agregar destino'))
     fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'CD El Peñón' } })
-    fireEvent.change(screen.getByLabelText('Región destino 1'), { target: { value: 'Región Metropolitana de Santiago' } })
-    fireEvent.change(screen.getByLabelText('Ciudad destino 1'), { target: { value: 'San Bernardo' } })
+    fireEvent.focus(screen.getByLabelText('Nombre destino 1'))
+    fireEvent.click(await screen.findByText('CD El Peñón'))
 
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
@@ -218,8 +228,7 @@ describe('TripAssignDialog', () => {
     expect(payload.origin_city).toBeUndefined()
     expect(payload.stops?.[0]).toMatchObject({
       local: 'CD El Peñón',
-      destination_region: 'Región Metropolitana de Santiago',
-      destination_city: 'San Bernardo',
+      destination_region: '13',
     })
   })
 

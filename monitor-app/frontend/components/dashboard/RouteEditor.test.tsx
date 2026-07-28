@@ -73,7 +73,7 @@ describe('RouteEditor', () => {
     fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'Local Maipú' } })
     expect(spy).toHaveBeenCalledWith([
       { local: 'CD Origen', stop_type: 'ORIGIN' },
-      { local: 'Local Maipú', planning_date: null, stop_type: 'DESTINATION' },
+      { local: 'Local Maipú', planning_date: null, stop_type: 'DESTINATION', destination_region: null },
     ])
   })
 
@@ -90,15 +90,42 @@ describe('RouteEditor', () => {
     expect(spy).toHaveBeenCalledWith([{ local: 'CD Origen', stop_type: 'ORIGIN' }])
   })
 
-  it('sets region/city on a destination via RegionCityPicker without touching its name', () => {
+  it('elegir un local real para un destino autocompleta destination_region (numérico) y muestra la zona', async () => {
+    vi.mocked(locationsApi.list).mockResolvedValue({
+      data: [{
+        id: 'loc-1', entity_type: 'SHIPPER', entity_id: 's1', site_number: null,
+        name: 'Bod La Farfana 1', country_code: 'CL', format: null, address: null,
+        region_name: 'RM. Metropolitana', region_number: 13, opens_at: null, closes_at: null,
+        operation_type: 'RM', operational_status: 'ACTIVE', is_manual_override: false,
+        created_at: null, updated_at: null,
+      }],
+      count: 1, page: 1, limit: 8,
+    })
     const spy = vi.fn()
     render(<Harness
-      initial={[{ local: 'Destino A', planning_date: null, stop_type: 'DESTINATION' }]}
+      initial={[{ local: '', planning_date: null, stop_type: 'DESTINATION' }]}
       onChangeSpy={spy}
     />)
-    fireEvent.change(screen.getByLabelText('Región destino 1'), { target: { value: 'Biobío' } })
+    fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'farfana' } })
+    fireEvent.focus(screen.getByLabelText('Nombre destino 1'))
+    fireEvent.click(await screen.findByText('Bod La Farfana 1'))
+
     expect(spy).toHaveBeenCalledWith([
-      { local: 'Destino A', planning_date: null, stop_type: 'DESTINATION', destination_region: 'Biobío', destination_city: null },
+      { local: 'Bod La Farfana 1', planning_date: null, stop_type: 'DESTINATION', destination_region: '13' },
     ])
+    expect(await screen.findByText('Zona: RM')).toBeInTheDocument()
+  })
+
+  it('escribir el nombre a mano (sin elegir sugerencia) no clasifica ninguna zona', () => {
+    const spy = vi.fn()
+    render(<Harness
+      initial={[{ local: '', planning_date: null, stop_type: 'DESTINATION' }]}
+      onChangeSpy={spy}
+    />)
+    fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'Local nuevo sin registrar' } })
+    expect(spy).toHaveBeenCalledWith([
+      { local: 'Local nuevo sin registrar', planning_date: null, stop_type: 'DESTINATION', destination_region: null },
+    ])
+    expect(screen.getByText(/Elegí una sugerencia/)).toBeInTheDocument()
   })
 })

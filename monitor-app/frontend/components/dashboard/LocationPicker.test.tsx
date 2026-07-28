@@ -83,4 +83,20 @@ describe('LocationPicker', () => {
     fireEvent.focus(screen.getByLabelText('Origen'))
     expect(await screen.findByText(/Sin locales existentes/)).toBeInTheDocument()
   })
+
+  it('elegir una sugerencia también llama a onSelectLocation con el local completo, para poder leer su zona', async () => {
+    const loc = {
+      id: 'loc-1', entity_type: 'SHIPPER' as const, entity_id: 's1', site_number: null,
+      name: 'Bod La Farfana 1', country_code: 'CL', format: null, address: null,
+      region_name: 'RM. Metropolitana', region_number: 13, opens_at: null, closes_at: null,
+      operation_type: 'RM', operational_status: 'ACTIVE' as const, is_manual_override: false,
+      created_at: null, updated_at: null,
+    }
+    vi.mocked(locationsApi.list).mockResolvedValue({ data: [loc], count: 1, page: 1, limit: 8 })
+    const onSelectLocation = vi.fn()
+    renderPicker({ value: 'farfana', onSelectLocation })
+    fireEvent.focus(screen.getByLabelText('Origen'))
+    fireEvent.click(await screen.findByText('Bod La Farfana 1'))
+    expect(onSelectLocation).toHaveBeenCalledWith(loc)
+  })
 })

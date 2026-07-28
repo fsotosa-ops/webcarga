@@ -5,13 +5,18 @@ import { Search, Loader2, MapPin } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { locationsApi } from '@/lib/api/locations'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import type { Location } from '@/lib/types'
 
 interface Props {
   /** Nombre del local — texto libre o el nombre exacto de un local real de
-   *  public.locations. Elegir una sugerencia solo reemplaza este texto, no
-   *  hay ningún otro campo que sincronizar (ver LocationPicker.tsx). */
+   *  public.locations. */
   value:        string
   onChange:     (name: string) => void
+  /** Se dispara además de onChange cuando la elección viene de una
+   *  sugerencia real (no al tipear) — permite al consumidor (ej.
+   *  RouteEditor) leer region_number/operation_type del local elegido sin
+   *  otro round-trip. */
+  onSelectLocation?: (loc: Location) => void
   placeholder?: string
   ariaLabel:    string
   size?:        'sm' | 'md'
@@ -24,7 +29,7 @@ interface Props {
  *  generando duplicados. Mismo patrón que ClientPicker: el valor real sigue
  *  siendo texto libre (compatible con el payload de siempre), la búsqueda
  *  solo ofrece reusar un nombre existente en vez de inventar uno nuevo. */
-export function LocationPicker({ value, onChange, placeholder, ariaLabel, size = 'md' }: Props) {
+export function LocationPicker({ value, onChange, onSelectLocation, placeholder, ariaLabel, size = 'md' }: Props) {
   const [open, setOpen] = useState(false)
   const qDebounced = useDebouncedValue(value, 250)
 
@@ -68,7 +73,7 @@ export function LocationPicker({ value, onChange, placeholder, ariaLabel, size =
               key={loc.id}
               type="button"
               onMouseDown={e => e.preventDefault()}
-              onClick={() => { onChange(loc.name); setOpen(false) }}
+              onClick={() => { onChange(loc.name); onSelectLocation?.(loc); setOpen(false) }}
               className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
             >
               <MapPin size={12} className="text-gray-400 shrink-0" />
