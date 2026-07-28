@@ -3,6 +3,7 @@
 import type { TripStopCreatePayload } from '@/lib/types'
 import { Plus, Trash2 } from 'lucide-react'
 import { RegionCityPicker } from '@/components/ui/RegionCityPicker'
+import { LocationPicker } from './LocationPicker'
 
 interface Props {
   /** Incluye a lo sumo 1 stop con stop_type='ORIGIN' + N con stop_type=
@@ -13,16 +14,13 @@ interface Props {
   size?:    'sm' | 'md'
 }
 
-const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
-const INPUT_SM = "w-full text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
-// Sin w-full: convive en la fila de destino con el input de nombre (INPUT trae
-// w-full y dos utilidades de ancho en conflicto dejan el ancho al azar del stylesheet)
+// Sin w-full: convive en la fila de destino con el input de nombre (LocationPicker
+// trae w-full y dos utilidades de ancho en conflicto dejan el ancho al azar del stylesheet)
 const INPUT_DATE = "text-sm border border-border rounded-lg px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all w-[150px] sm:w-[185px]"
 
 export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
   const origin       = stops.find(s => s.stop_type === 'ORIGIN') ?? null
   const destinations = stops.filter(s => s.stop_type !== 'ORIGIN')
-  const inputCls      = size === 'sm' ? INPUT_SM : INPUT
 
   function setOrigin(local: string) {
     const rest = stops.filter(s => s.stop_type !== 'ORIGIN')
@@ -55,13 +53,12 @@ export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
     <div className="space-y-4">
       <div>
         <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Origen</label>
-        <input
-          type="text"
+        <LocationPicker
           value={origin?.local ?? ''}
-          onChange={e => setOrigin(e.target.value)}
+          onChange={setOrigin}
           placeholder="Nombre del origen (CD, planta…)"
-          aria-label="Origen"
-          className={inputCls}
+          ariaLabel="Origen"
+          size={size}
         />
       </div>
       <div className="space-y-2">
@@ -69,13 +66,12 @@ export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
         {destinations.map((s, i) => (
           <div key={i} className="space-y-1.5 border border-border/60 rounded-lg p-2">
             <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
-              <input
-                type="text"
+              <LocationPicker
                 value={s.local}
-                onChange={e => patchDestination(i, { local: e.target.value })}
+                onChange={local => patchDestination(i, { local })}
                 placeholder={`Destino ${i + 1} — nombre del local`}
-                className={inputCls}
-                aria-label={`Nombre destino ${i + 1}`}
+                ariaLabel={`Nombre destino ${i + 1}`}
+                size={size}
               />
               <input
                 type="datetime-local"

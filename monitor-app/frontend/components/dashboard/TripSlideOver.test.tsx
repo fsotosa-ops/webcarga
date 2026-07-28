@@ -22,6 +22,9 @@ vi.mock('@/lib/api/trips', () => ({
 vi.mock('@/lib/api/drivers', () => ({
   driversApi: { search: vi.fn(), fuzzyMatch: vi.fn() },
 }))
+vi.mock('@/lib/api/locations', () => ({
+  locationsApi: { list: vi.fn() },
+}))
 
 const baseTrip: Trip = {
   id: 't1', source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',

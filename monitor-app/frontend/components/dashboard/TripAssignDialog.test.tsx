@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TripAssignDialog } from './TripAssignDialog'
 import { tripsApi } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
-import { shippersApi } from '@/lib/api/locations'
+import { shippersApi, locationsApi } from '@/lib/api/locations'
 import type { TripsMeta } from '@/lib/types'
 
 vi.mock('@/lib/api/trips', () => ({
@@ -15,6 +15,7 @@ vi.mock('@/lib/api/drivers', () => ({
 }))
 vi.mock('@/lib/api/locations', () => ({
   shippersApi: { list: vi.fn(), create: vi.fn() },
+  locationsApi: { list: vi.fn() },
 }))
 
 const meta: TripsMeta = {
@@ -55,6 +56,7 @@ beforeEach(() => {
     { id: 's1', name: 'Walmart', status: 'ACTIVE' },
   ] as never)
   vi.mocked(shippersApi.create).mockReset()
+  vi.mocked(locationsApi.list).mockReset().mockResolvedValue({ data: [], count: 0, page: 1, limit: 8 })
 })
 
 describe('TripAssignDialog', () => {

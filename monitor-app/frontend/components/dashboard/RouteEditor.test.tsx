@@ -1,8 +1,18 @@
 import { useState } from 'react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouteEditor } from './RouteEditor'
+import { locationsApi } from '@/lib/api/locations'
 import type { TripStopCreatePayload } from '@/lib/types'
+
+vi.mock('@/lib/api/locations', () => ({
+  locationsApi: { list: vi.fn() },
+}))
+
+beforeEach(() => {
+  vi.mocked(locationsApi.list).mockReset().mockResolvedValue({ data: [], count: 0, page: 1, limit: 8 })
+})
 
 function Harness({
   initial = [] as TripStopCreatePayload[], onChangeSpy,
@@ -11,11 +21,14 @@ function Harness({
   onChangeSpy?: (s: TripStopCreatePayload[]) => void
 }) {
   const [stops, setStops] = useState<TripStopCreatePayload[]>(initial)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return (
-    <RouteEditor
-      stops={stops}
-      onChange={s => { setStops(s); onChangeSpy?.(s) }}
-    />
+    <QueryClientProvider client={client}>
+      <RouteEditor
+        stops={stops}
+        onChange={s => { setStops(s); onChangeSpy?.(s) }}
+      />
+    </QueryClientProvider>
   )
 }
 
