@@ -384,6 +384,10 @@ export type Location = {
   closes_at:           string | null
   operation_type:      string | null
   operational_status:  'ACTIVE' | 'INACTIVE'
+  /** Robustecer Tarifario (2026-07-27): true cuando la clasificación
+   *  (operation_type) fue elegida a mano — el trigger de auto-registro de
+   *  locales nunca la pisa en ese caso. */
+  is_manual_override:  boolean
   created_at:          string | null
   updated_at:          string | null
   /** Solo presentes cuando se pide ?include_rate=true (Fase 5, Tarifario

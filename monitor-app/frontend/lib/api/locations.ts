@@ -10,6 +10,11 @@ export type LocationListParams = {
   /** HU-16 (Fase 4): solo locales sin clasificación — auto-registrados
    *  incompletos por trg_reconcile_new_trip_stop_location. */
   incomplete?:            boolean
+  /** Robustecer Tarifario (2026-07-27): locales sin ninguna región
+   *  disponible en su historial de viajes — el residual real que necesita
+   *  elección manual, distinto de `incomplete` (que incluye todo lo que
+   *  no tiene operation_type, aunque ya se pueda auto-clasificar). */
+  needs_manual_classification?: boolean
   /** Fase 5 (Tarifario 1.0): agrega la tarifa vigente de cada local. */
   include_rate?:          boolean
   /** Ronda 43 (Fase C, Tarea 7): paginación de servidor — verificado que el
@@ -40,6 +45,7 @@ export const locationsApi = {
     if (params?.operation_type)     qs.set('operation_type', params.operation_type)
     if (params?.operational_status) qs.set('operational_status', params.operational_status)
     if (params?.incomplete)         qs.set('incomplete', 'true')
+    if (params?.needs_manual_classification) qs.set('needs_manual_classification', 'true')
     if (params?.include_rate)       qs.set('include_rate', 'true')
     if (params?.page)               qs.set('page', String(params.page))
     if (params?.limit)              qs.set('limit', String(params.limit))
