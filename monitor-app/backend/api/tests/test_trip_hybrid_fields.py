@@ -88,13 +88,14 @@ def test_patch_stop_404_when_stop_missing():
 
 def _stop_row(**overrides):
     base = {
-        "stop_id": "s1", "trip_id": "trip-1", "stop_order": 0, "local": "Local 1",
+        "stop_id": "s1", "trip_id": "trip-1", "stop_order": 0, "stop_type": "DESTINATION", "local": "Local 1",
         "destination_city": None, "destination_region": None, "on_time_status": None,
         "milestone_status": None, "s2s": None, "temperature": None, "planning_date": None,
         "arrival_date": None, "departure_date": None, "departure_date_prog": None,
         "gps_arrival_date": None, "gps_departure_date": None,
         "unload_start": None, "unload_end": None,
         "desc_inicio_manual": None, "desc_fin_manual": None,
+        "created_at": None, "updated_at": None,
     }
     base.update(overrides)
     return base
@@ -177,6 +178,108 @@ def test_load_trip_stops_orders_by_stop_order_within_trip():
     ]
     result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
     assert [s["local"] for s in result["trip-1"]] == ["Primero", "Segundo"]
+
+
+# ── Dedup de locales duplicados (bug reportado 2026-07-28) ───────────────────
+# El pipeline dbt calcula stop_id incluyendo el nombre del local en el hash —
+# cuando el TMS corrige ese nombre entre dos pasadas de scraping, queda una
+# fila huérfana en vez de actualizarse. _load_trip_stops colapsa filas que
+# comparten (trip_id, stop_type, stop_order) a una sola, ver plan
+# docs/superpowers/plans/... (bug de locales duplicados en detalle de viaje).
+
+def test_load_trip_stops_collapses_duplicate_position_keeping_latest_updated_at():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="old", stop_order=1, local="Melipilla - 451",
+                  updated_at="2026-07-28T16:38:02+00:00", created_at="2026-07-28T16:09:22+00:00"),
+        _stop_row(stop_id="new", stop_order=1, local="MAIPU - 61", arrival_date="2026-07-28T16:47:23+00:00",
+                  updated_at="2026-07-28T20:09:01+00:00", created_at="2026-07-28T16:38:02+00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    stops = result["trip-1"]
+    assert len(stops) == 1
+    assert stops[0]["stop_id"] == "new"
+    assert stops[0]["local"] == "MAIPU - 61"
+
+
+def test_load_trip_stops_tiebreaks_by_created_at_when_updated_at_matches():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="older", stop_order=1, local=None,
+                  updated_at="2026-07-18T22:55:35+00:00", created_at="2026-07-18T05:46:53+00:00"),
+        _stop_row(stop_id="newer", stop_order=1, local="Local Centro de Distribución - 5105976",
+                  updated_at="2026-07-18T22:55:35+00:00", created_at="2026-07-18T22:53:13+00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    stops = result["trip-1"]
+    assert len(stops) == 1
+    assert stops[0]["stop_id"] == "newer"
+
+
+def test_load_trip_stops_tiebreaks_by_non_null_local_when_timestamps_match():
+    import asyncio
+    pool = AsyncMock()
+    same_ts = "2026-07-18T22:55:35+00:00"
+    pool.fetch.return_value = [
+        _stop_row(stop_id="no-local", stop_order=1, local=None, updated_at=same_ts, created_at=same_ts),
+        _stop_row(stop_id="has-local", stop_order=1, local="Local Centro de Distribución - 5105976",
+                  updated_at=same_ts, created_at=same_ts),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    stops = result["trip-1"]
+    assert len(stops) == 1
+    assert stops[0]["stop_id"] == "has-local"
+
+
+def test_load_trip_stops_never_returns_more_than_one_row_per_position():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="a", stop_order=1, local="Camilo Henriquez - 802"),
+        _stop_row(stop_id="b", stop_order=1, local="LAS REJAS - 140"),
+        _stop_row(stop_id="c", stop_order=1, local="SAN PABLO - 137"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert len(result["trip-1"]) == 1
+
+
+def test_load_trip_stops_does_not_collapse_different_stop_types_at_same_order():
+    import asyncio
+    pool = AsyncMock()
+    # ORIGIN siempre stop_order=0, pero por las dudas: distinto stop_type
+    # nunca debería colapsarse aunque coincida el stop_order.
+    pool.fetch.return_value = [
+        _stop_row(stop_id="origin", stop_order=1, stop_type="ORIGIN", local="CD El Peñon"),
+        _stop_row(stop_id="dest", stop_order=1, stop_type="DESTINATION", local="MAIPU - 61"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert len(result["trip-1"]) == 2
+
+
+def test_load_trip_stops_no_duplicates_passes_through_unchanged():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", stop_order=0, stop_type="ORIGIN", local="CD El Peñon"),
+        _stop_row(stop_id="s2", stop_order=1, local="MAIPU - 61"),
+        _stop_row(stop_id="s3", stop_order=2, local="Melipilla - 451"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["CD El Peñon", "MAIPU - 61", "Melipilla - 451"]
+
+
+def test_load_trip_stops_does_not_expose_created_at_or_updated_at():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", updated_at="2026-07-28T20:09:01+00:00", created_at="2026-07-28T16:09:22+00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    stop = result["trip-1"][0]
+    assert "updated_at" not in stop
+    assert "created_at" not in stop
 
 
 # ── _parse_timestamptz — asyncpg exige datetime.datetime, no str, para un

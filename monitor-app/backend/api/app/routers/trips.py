@@ -57,8 +57,25 @@ _TRIP_STOP_FIELDS = (
     "stop_id, trip_id, stop_order, stop_type, local, destination_city, destination_region, "
     "on_time_status, milestone_status, s2s, temperature, planning_date, "
     "arrival_date, departure_date, departure_date_prog, gps_arrival_date, "
-    "gps_departure_date, unload_start, unload_end, desc_inicio_manual, desc_fin_manual"
+    "gps_departure_date, unload_start, unload_end, desc_inicio_manual, desc_fin_manual, "
+    "created_at, updated_at"
 )
+
+
+def _stop_dedup_key(d: dict):
+    """Prioridad de desempate cuando dos filas comparten (trip_id, stop_type,
+    stop_order) — ver _load_trip_stops. `(v is not None, v)` evita comparar
+    None contra un valor real: si ambos lados son None, Python resuelve la
+    tupla completa por igualdad antes de necesitar comparar los None entre
+    sí, así que nunca explota con TypeError."""
+    def rank(v):
+        return (v is not None, v)
+    return (
+        rank(d.get("updated_at")),
+        rank(d.get("created_at")),
+        d.get("local") is not None,
+        d.get("arrival_date") is not None,
+    )
 
 
 async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
@@ -66,7 +83,18 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
     el jsonb app.trips.stops + el parche stop_manual_fields). Resuelve
     unload_start/unload_end contra el override manual (desc_inicio_manual/
     desc_fin_manual, columnas reales — antes jsonb keyed por stop_id) al
-    mismo tiempo que arma la lista, sin N+1."""
+    mismo tiempo que arma la lista, sin N+1.
+
+    Bug real encontrado 2026-07-28: el pipeline dbt calcula stop_id con
+    md5(trip_id + nombre_del_local + orden) — cuando el TMS corrige el
+    nombre de una parada entre dos pasadas de scraping, el hash cambia y el
+    MERGE inserta una fila nueva en vez de actualizar la vieja, dejando
+    huérfanas filas duplicadas para la misma posición real del viaje. Se
+    colapsa acá a una sola fila por (trip_id, stop_type, stop_order) — gana
+    la que _stop_dedup_key considere más reciente/completa. Es un
+    heurístico de lectura, no corrige las filas duplicadas en la tabla (ver
+    docs/superpowers/plans/2026-07-28-locales-duplicados-trip-stops-plan.md
+    para el fix de raíz en el pipeline)."""
     if not trip_ids:
         return {}
     rows = await pool.fetch(
@@ -74,11 +102,20 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
         "WHERE trip_id = ANY($1::uuid[]) ORDER BY trip_id, stop_order",
         list(trip_ids),
     )
-    stops_by_trip: dict[str, list[dict]] = {}
+    best_by_position: dict[tuple, dict] = {}
     for r in rows:
         d = dict(r)
+        key = (str(d["trip_id"]), d.get("stop_type"), d["stop_order"])
+        current = best_by_position.get(key)
+        if current is None or _stop_dedup_key(d) > _stop_dedup_key(current):
+            best_by_position[key] = d
+
+    stops_by_trip: dict[str, list[dict]] = {}
+    for d in best_by_position.values():
         trip_id = str(d.pop("trip_id"))
         d.pop("stop_order")
+        d.pop("created_at")
+        d.pop("updated_at")
         desc_inicio_manual = d.pop("desc_inicio_manual")
         desc_fin_manual = d.pop("desc_fin_manual")
         if desc_inicio_manual is not None:
