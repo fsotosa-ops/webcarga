@@ -198,7 +198,7 @@ def test_available_assets_returns_rows_from_active_roster():
     body = res.json()
     assert body["total_active"] == 1
     assert body["items"][0]["tractor_plate"] == "ABCD12"
-    query = pool.fetch.call_args.args[0]
+    query = pool.fetch.call_args_list[0].args[0]
     assert "public.asset_assignments" in query
     assert "sodimac" in query
 
@@ -211,7 +211,7 @@ def test_available_assets_today_trips_uses_shared_resolution_view():
     pool.fetch.return_value = []
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
-    query = pool.fetch.call_args.args[0]
+    query = pool.fetch.call_args_list[0].args[0]
     assert "app.v_trip_fleet_resolution" in query
     assert "vfr.resolved_tractor_asset_id" in query
 
@@ -244,7 +244,7 @@ def test_available_assets_casts_uuid_for_max_aggregate():
     pool.fetch.return_value = []
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
-    query = pool.fetch.call_args.args[0]
+    query = pool.fetch.call_args_list[0].args[0]
     assert "max(vfr.resolved_driver_id::text)::uuid" in query
 
 
@@ -257,10 +257,37 @@ def test_available_assets_includes_standing_driver_for_idle_equipment():
     pool.fetch.return_value = []
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
-    query = pool.fetch.call_args.args[0]
+    query = pool.fetch.call_args_list[0].args[0]
     assert "public.vehicle_driver_assignments" in query
     assert "standing_driver" in query
     assert "c.id AS carrier_id" in query
+
+
+def test_available_assets_returns_busy_equipment_with_real_trip_data():
+    """Centro de Flota, Opción B (2026-07-28): el tile "En viaje hoy" debe
+    poder mostrar datos reales (no solo un conteo) — qué viaje está haciendo
+    cada equipo ocupado, para poder abrirlo desde ahí. Antes ese tile mostraba
+    un número pero nunca ninguna fila (available-assets solo devolvía equipo
+    IDLE) — feedback real del usuario tras el primer deploy."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 2
+    pool.fetch.side_effect = [
+        [],  # items (idle) — vacío para simplificar
+        [{
+            "asset_id": "a1", "tractor_plate": "ABCD12", "carrier_name": "TransCargo",
+            "trip_id": "t1", "client_name": "Walmart", "current_status": "ORIGEN",
+        }],
+    ]
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
+    body = res.json()
+    assert body["busy"][0]["trip_id"] == "t1"
+    assert body["busy"][0]["client_name"] == "Walmart"
+    assert body["busy"][0]["current_status"] == "ORIGEN"
+    busy_query = pool.fetch.call_args_list[1].args[0]
+    assert "busy_trip" in busy_query
+    assert "app.v_trip_fleet_resolution" in busy_query
+    assert "NOT (t.trip_status LIKE 'CERRADO%'" in busy_query
 
 
 # ── list_trips q amplía a cliente ─────────────────────────────────────────────

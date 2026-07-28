@@ -937,7 +937,50 @@ async def available_assets(
         """,
         day,
     )
-    return {"total_active": total_active, "items": [dict(r) for r in rows]}
+
+    # Centro de Flota, Opción B (2026-07-28): el tile "En viaje hoy" mostraba
+    # un conteo pero nunca filas — este endpoint solo devolvía equipo IDLE.
+    # Se agrega el complemento real: equipo con un viaje ABIERTO hoy, con el
+    # trip_id concreto para poder abrirlo (mismo criterio de "más reciente si
+    # hay más de uno" que ya usa daily_closures.py para MISMATCH).
+    busy_rows = await pool.fetch(
+        """
+        WITH active_roster AS (
+            SELECT a.id, a.license_plate, c.business_name AS carrier_name
+            FROM public.assets a
+            JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+            JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+            WHERE a.operational_status = 'ACTIVE'
+        ),
+        busy_trip AS (
+            SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
+                vfr.resolved_tractor_asset_id AS asset_id,
+                t.id AS trip_id,
+                t.client_name,
+                t.trip_status AS current_status
+            FROM app.trips t
+            JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+            WHERE t.planning_date = $1
+              AND t.source_system != 'sodimac'
+              AND vfr.resolved_tractor_asset_id IS NOT NULL
+              AND NOT (t.trip_status LIKE 'CERRADO%'
+                       OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida'))
+            ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST
+        )
+        SELECT ar.id AS asset_id, ar.license_plate AS tractor_plate, ar.carrier_name,
+               bt.trip_id, bt.client_name, bt.current_status
+        FROM active_roster ar
+        JOIN busy_trip bt ON bt.asset_id = ar.id
+        ORDER BY ar.license_plate
+        """,
+        day,
+    )
+
+    return {
+        "total_active": total_active,
+        "items": [dict(r) for r in rows],
+        "busy": [dict(r) for r in busy_rows],
+    }
 
 
 # ── Trip creation (manual entry + bulk) ──────────────────────────────────────
