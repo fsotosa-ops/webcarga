@@ -279,7 +279,8 @@ _TRIP_SELECT = """
     tcomp.pending_count AS tractor_pending_docs,
     tcomp.has_critical_pending AS tractor_pending_docs_critical,
     ccomp.pending_count AS carrier_pending_docs,
-    ccomp.has_critical_pending AS carrier_pending_docs_critical
+    ccomp.has_critical_pending AS carrier_pending_docs_critical,
+    notes.last_human_note_at
 """
 
 # HU-04 (Fase 0, 2026-07-21): antes, cuando un viaje no lograba cruzar con
@@ -405,6 +406,18 @@ _TRIP_FROM = """
         FROM app.carrier_insurance_status cis
         WHERE cis.carrier_id = vfr.resolved_carrier_id
     ) ins ON true
+    -- Badge "necesita seguimiento en bitácora" (2026-07-28, ver spec
+    -- docs/superpowers/specs/2026-07-28-diario-bitacora-followup-badge-design.md):
+    -- nota humana más reciente del viaje, para cruzarla en el frontend
+    -- contra el momento en que se disparó cada alerta automática.
+    -- note_type != 'sistema' excluye las notas auto-generadas (ej.
+    -- "Divergencia TMS: ..."), que no cuentan como que un humano atendió
+    -- la alerta.
+    LEFT JOIN LATERAL (
+        SELECT MAX(created_at) AS last_human_note_at
+        FROM app.trip_notes
+        WHERE trip_id = t.id AND note_type != 'sistema'
+    ) notes ON true
 """ + _compliance_alert_lateral("dcomp", "DRIVER", "vfr.resolved_driver_id", _DRIVER_CRITICAL_DOC_CODES) \
     + _compliance_alert_lateral("tcomp", "ASSET", "vfr.resolved_tractor_asset_id") \
     + _compliance_alert_lateral("ccomp", "CARRIER", "vfr.resolved_carrier_id") + """
