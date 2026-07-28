@@ -282,13 +282,16 @@ export default function DiarioPage() {
     setShowCloseDay(true)
   }
 
-  async function handleSelectTripFromCloseDay(tripId: string) {
+  // Compartido entre CloseDayDialog (fila MISMATCH) y FleetCenterDialog
+  // (equipo "En viaje hoy") — ambos necesitan abrir un viaje real por id.
+  async function handleSelectTrip(tripId: string) {
     setShowCloseDay(false)
+    setShowFleetCenter(false)
     try {
       const trip = await tripsApi.get(tripId)
       setSelected(trip)
     } catch {
-      // silencioso — el operador puede reabrir Cerrar el día y reintentar
+      // silencioso — el operador puede reabrir el modal y reintentar
     }
   }
 
@@ -659,7 +662,7 @@ export default function DiarioPage() {
         unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
         onClose={() => setShowCloseDay(false)}
         onOpenFleetCenter={openFleetCenter}
-        onSelectTrip={handleSelectTripFromCloseDay}
+        onSelectTrip={handleSelectTrip}
       />
       <FleetCenterDialog
         open={showFleetCenter}
@@ -669,6 +672,7 @@ export default function DiarioPage() {
         onAssign={handleAssignFromFleet}
         onNewTrip={handleNewTripFromFleet}
         onImportCsv={handleImportCsvFromFleet}
+        onSelectTrip={handleSelectTrip}
       />
     </div>
   )

@@ -23,6 +23,12 @@ const DATA: AvailableAssetsResponse = {
       driver_id: 'd2', driver_name: 'Juan Pérez', driver_rut: '12345678-9', driver_phone: '+56911112222',
     },
   ],
+  busy: [
+    {
+      asset_id: 'a3', tractor_plate: 'ZZZZ99', carrier_name: 'Zeus Chile Spa',
+      trip_id: 't9', client_name: 'walmart', current_status: 'ORIGEN',
+    },
+  ],
 }
 
 function renderDialog(props: Partial<Parameters<typeof FleetCenterDialog>[0]> = {}) {
@@ -32,6 +38,7 @@ function renderDialog(props: Partial<Parameters<typeof FleetCenterDialog>[0]> = 
       <FleetCenterDialog
         open fecha="2026-07-28"
         onClose={vi.fn()} onOpenCloseDay={vi.fn()} onAssign={vi.fn()} onNewTrip={vi.fn()} onImportCsv={vi.fn()}
+        onSelectTrip={vi.fn()}
         {...props}
       />
     </QueryClientProvider>,
@@ -54,7 +61,7 @@ describe('FleetCenterDialog', () => {
     expect(screen.getByText('WXYZ99')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Nunca asignados hoy/ })).toHaveTextContent('1')
     expect(screen.getByRole('button', { name: /Liberados tras viaje/ })).toHaveTextContent('1')
-    expect(screen.getByRole('button', { name: /En viaje hoy/ })).toHaveTextContent('3')
+    expect(screen.getByRole('button', { name: /En viaje hoy/ })).toHaveTextContent('1')
   })
 
   it('clickear "Nunca asignados hoy" filtra la tabla a solo esos equipos', async () => {
@@ -65,12 +72,23 @@ describe('FleetCenterDialog', () => {
     expect(screen.queryByText('WXYZ99')).not.toBeInTheDocument()
   })
 
-  it('clickear "En viaje hoy" no filtra sobre datos inexistentes, muestra el aviso explicativo', async () => {
+  it('clickear "En viaje hoy" muestra el equipo ocupado con datos reales del viaje', async () => {
     renderDialog()
     await screen.findByText('ABCD12')
     fireEvent.click(screen.getByRole('button', { name: /En viaje hoy/ }))
-    expect(screen.getByText(/revisalos en el Diario/)).toBeInTheDocument()
+    expect(screen.getByText('ZZZZ99')).toBeInTheDocument()
+    expect(screen.getByText('walmart')).toBeInTheDocument()
+    expect(screen.getByText('ORIGEN')).toBeInTheDocument()
     expect(screen.queryByText('ABCD12')).not.toBeInTheDocument()
+  })
+
+  it('"Ver viaje" en un equipo ocupado llama a onSelectTrip con el trip_id real', async () => {
+    const onSelectTrip = vi.fn()
+    renderDialog({ onSelectTrip })
+    await screen.findByText('ABCD12')
+    fireEvent.click(screen.getByRole('button', { name: /En viaje hoy/ }))
+    fireEvent.click(await screen.findByText('Ver viaje'))
+    expect(onSelectTrip).toHaveBeenCalledWith('t9')
   })
 
   it('la búsqueda filtra por patente, empresa o conductor', async () => {

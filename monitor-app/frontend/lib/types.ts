@@ -163,9 +163,22 @@ export type AvailableAsset = {
   driver_phone:   string | null
 }
 
+/** Equipo con un viaje ABIERTO hoy (Centro de Flota, Opción B — 2026-07-28)
+ *  — el complemento real de `items`, con datos concretos del viaje para
+ *  poder abrirlo, en vez de solo un conteo sin filas. */
+export type BusyAsset = {
+  asset_id:       string
+  tractor_plate:  string
+  carrier_name:   string | null
+  trip_id:        string
+  client_name:    string | null
+  current_status: string | null
+}
+
 export type AvailableAssetsResponse = {
   total_active: number
   items:        AvailableAsset[]
+  busy:         BusyAsset[]
 }
 
 /** Resultado de GET /drivers?q= — búsqueda general de conductores activos */

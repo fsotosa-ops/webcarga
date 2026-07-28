@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2, Truck, X, Search, ChevronDown, ArrowRight, ClipboardCheck } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import { AlertStatTiles } from './AlertStatTiles'
-import type { AvailableAsset } from '@/lib/types'
+import type { AvailableAsset, BusyAsset } from '@/lib/types'
 import type { FleetAssignValue } from './FleetAssignSection'
 
 type Category = 'never' | 'released' | 'busy' | ''
@@ -18,6 +18,9 @@ interface Props {
   onAssign:       (fleet: FleetAssignValue) => void
   onNewTrip:      () => void
   onImportCsv:    () => void
+  /** Abre el viaje real de un equipo ocupado (categoría "En viaje hoy",
+   *  Opción B — 2026-07-28). Mismo patrón que CloseDayDialog.onSelectTrip. */
+  onSelectTrip:   (tripId: string) => void
 }
 
 function toFleetValue(a: AvailableAsset): FleetAssignValue {
@@ -33,7 +36,7 @@ function toFleetValue(a: AvailableAsset): FleetAssignValue {
  *  por link, no fusionado: la cuadratura de conductores sigue ahí sin cambios.
  *  Reemplaza el pill "conductores disponibles" + los botones "Agregar viaje"
  *  y "Carga masiva (CSV)" del Diario — un solo punto de entrada. */
-export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssign, onNewTrip, onImportCsv }: Props) {
+export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssign, onNewTrip, onImportCsv, onSelectTrip }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const [category, setCategory] = useState<Category>('')
   const [q, setQ] = useState('')
@@ -61,14 +64,13 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
   if (!open) return null
 
   const items = data?.items ?? []
+  const busy = data?.busy ?? []
   const neverAssigned = items.filter(i => i.trips_total === 0)
   const released = items.filter(i => i.trips_total > 0)
-  const busyCount = Math.max(0, (data?.total_active ?? 0) - items.length)
 
   const byCategory =
     category === 'never'    ? neverAssigned :
     category === 'released' ? released :
-    category === 'busy'     ? [] :
     items
 
   const qLower = q.trim().toLowerCase()
@@ -76,6 +78,11 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
     a.tractor_plate.toLowerCase().includes(qLower)
     || (a.carrier_name ?? '').toLowerCase().includes(qLower)
     || (a.driver_name ?? '').toLowerCase().includes(qLower)
+  )
+  const filteredBusy = qLower === '' ? busy : busy.filter(a =>
+    a.tractor_plate.toLowerCase().includes(qLower)
+    || (a.carrier_name ?? '').toLowerCase().includes(qLower)
+    || (a.client_name ?? '').toLowerCase().includes(qLower)
   )
 
   return (
@@ -151,7 +158,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                   tiles={[
                     { id: 'never', label: 'Nunca asignados hoy', value: neverAssigned.length, tone: 'danger' },
                     { id: 'released', label: 'Liberados tras viaje', value: released.length, tone: 'success' },
-                    { id: 'busy', label: 'En viaje hoy', value: busyCount, tone: 'neutral' },
+                    { id: 'busy', label: 'En viaje hoy', value: busy.length, tone: 'neutral' },
                   ]}
                   active={category}
                   onSelect={id => setCategory(prev => (prev === id ? '' : id) as Category)}
@@ -170,48 +177,81 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
 
                 <div className="bg-white rounded-xl border border-border overflow-hidden">
                   <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                        <th className="text-left px-3 py-2">Patente</th>
-                        <th className="text-left px-3 py-2">Empresa</th>
-                        <th className="text-left px-3 py-2">Conductor habitual</th>
-                        <th className="text-left px-3 py-2">Última actividad</th>
-                        <th className="text-right px-3 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {category === 'busy' ? (
-                        <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">
-                          En viaje ahora — revisalos en el Diario, no en Centro de Flota
-                        </td></tr>
-                      ) : filtered.length === 0 ? (
-                        <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos en esta categoría</td></tr>
-                      ) : filtered.map(a => (
-                        <tr key={a.asset_id}>
-                          <td className="px-3 py-2 font-semibold text-text-primary">{a.tractor_plate}</td>
-                          <td className="px-3 py-2">{a.carrier_name ?? '—'}</td>
-                          <td className="px-3 py-2">
-                            {a.driver_name ?? <span className="text-amber-600">Sin conductor asignado hoy</span>}
-                          </td>
-                          <td className="px-3 py-2 text-gray-400">
-                            {a.trips_total === 0
-                              ? 'Sin viajes hoy'
-                              : a.last_report_at
-                                ? `Cerró viaje ${new Date(a.last_report_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`
-                                : 'Liberado'}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => onAssign(toFleetValue(a))}
-                              className="flex items-center gap-1 ml-auto text-[11px] font-semibold text-accent hover:text-accent/80"
-                            >
-                              Asignar viaje <ArrowRight size={11} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
+                    {category === 'busy' ? (
+                      <>
+                        <thead>
+                          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                            <th className="text-left px-3 py-2">Patente</th>
+                            <th className="text-left px-3 py-2">Empresa</th>
+                            <th className="text-left px-3 py-2">Cliente</th>
+                            <th className="text-left px-3 py-2">Estado actual</th>
+                            <th className="text-right px-3 py-2" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {filteredBusy.length === 0 ? (
+                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos en esta categoría</td></tr>
+                          ) : filteredBusy.map((a: BusyAsset) => (
+                            <tr key={a.asset_id}>
+                              <td className="px-3 py-2 font-semibold text-text-primary">{a.tractor_plate}</td>
+                              <td className="px-3 py-2">{a.carrier_name ?? '—'}</td>
+                              <td className="px-3 py-2">{a.client_name ?? '—'}</td>
+                              <td className="px-3 py-2 text-gray-400">{a.current_status ?? '—'}</td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectTrip(a.trip_id)}
+                                  className="flex items-center gap-1 ml-auto text-[11px] font-semibold text-accent hover:text-accent/80"
+                                >
+                                  Ver viaje <ArrowRight size={11} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </>
+                    ) : (
+                      <>
+                        <thead>
+                          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                            <th className="text-left px-3 py-2">Patente</th>
+                            <th className="text-left px-3 py-2">Empresa</th>
+                            <th className="text-left px-3 py-2">Conductor habitual</th>
+                            <th className="text-left px-3 py-2">Última actividad</th>
+                            <th className="text-right px-3 py-2" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {filtered.length === 0 ? (
+                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos en esta categoría</td></tr>
+                          ) : filtered.map(a => (
+                            <tr key={a.asset_id}>
+                              <td className="px-3 py-2 font-semibold text-text-primary">{a.tractor_plate}</td>
+                              <td className="px-3 py-2">{a.carrier_name ?? '—'}</td>
+                              <td className="px-3 py-2">
+                                {a.driver_name ?? <span className="text-amber-600">Sin conductor asignado hoy</span>}
+                              </td>
+                              <td className="px-3 py-2 text-gray-400">
+                                {a.trips_total === 0
+                                  ? 'Sin viajes hoy'
+                                  : a.last_report_at
+                                    ? `Cerró viaje ${new Date(a.last_report_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`
+                                    : 'Liberado'}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => onAssign(toFleetValue(a))}
+                                  className="flex items-center gap-1 ml-auto text-[11px] font-semibold text-accent hover:text-accent/80"
+                                >
+                                  Asignar viaje <ArrowRight size={11} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </>
+                    )}
                   </table>
                 </div>
               </>
