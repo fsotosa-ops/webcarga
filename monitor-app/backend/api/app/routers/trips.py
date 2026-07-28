@@ -62,6 +62,19 @@ _TRIP_STOP_FIELDS = (
 )
 
 
+def _stop_display_key(d: dict):
+    """Orden de despliegue: origen siempre primero; destinos ordenados por
+    arrival_date ascendente (Llegada TR — mismo campo que ya usa el
+    pipeline dbt para ordenar el array de paradas). Paradas sin llegada van
+    al final, con stop_order como desempate estable entre paradas sin
+    llegada o con la misma fecha (bug real 2026-07-28: stop_order refleja
+    un orden inestable calculado aguas arriba por dbt, no una posición
+    fiable — ver AGENTLOG Ronda 58/59)."""
+    is_origin = d.get("stop_type") == "ORIGIN"
+    arrival = d.get("arrival_date")
+    return (0 if is_origin else 1, arrival is None, arrival or "", d["stop_order"])
+
+
 def _stop_dedup_key(d: dict):
     """Prioridad de desempate cuando dos filas comparten (trip_id, stop_type,
     stop_order) — ver _load_trip_stops. `(v is not None, v)` evita comparar
@@ -113,17 +126,21 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
     stops_by_trip: dict[str, list[dict]] = {}
     for d in best_by_position.values():
         trip_id = str(d.pop("trip_id"))
-        d.pop("stop_order")
-        d.pop("created_at")
-        d.pop("updated_at")
-        desc_inicio_manual = d.pop("desc_inicio_manual")
-        desc_fin_manual = d.pop("desc_fin_manual")
-        if desc_inicio_manual is not None:
-            d["unload_start"] = desc_inicio_manual
-        if desc_fin_manual is not None:
-            d["unload_end"] = desc_fin_manual
-        d["desc_manual"] = desc_inicio_manual is not None or desc_fin_manual is not None
         stops_by_trip.setdefault(trip_id, []).append(d)
+
+    for stops in stops_by_trip.values():
+        stops.sort(key=_stop_display_key)
+        for d in stops:
+            d.pop("stop_order")
+            d.pop("created_at")
+            d.pop("updated_at")
+            desc_inicio_manual = d.pop("desc_inicio_manual")
+            desc_fin_manual = d.pop("desc_fin_manual")
+            if desc_inicio_manual is not None:
+                d["unload_start"] = desc_inicio_manual
+            if desc_fin_manual is not None:
+                d["unload_end"] = desc_fin_manual
+            d["desc_manual"] = desc_inicio_manual is not None or desc_fin_manual is not None
     return stops_by_trip
 
 

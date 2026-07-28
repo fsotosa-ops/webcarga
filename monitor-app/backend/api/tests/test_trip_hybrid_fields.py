@@ -282,6 +282,57 @@ def test_load_trip_stops_does_not_expose_created_at_or_updated_at():
     assert "created_at" not in stop
 
 
+# ── Orden de destinos por arrival_date ascendente (bug reportado 2026-07-28) ──
+# stop_order refleja un orden inestable calculado aguas arriba (dbt ordena el
+# array de paradas por hora de llegada en cada corrida — ver AGENTLOG Ronda
+# 58) — la vista de detalle del viaje necesita mostrar los destinos en orden
+# cronológico real, no en el stop_order crudo de la BD.
+
+def test_load_trip_stops_orders_destinations_by_arrival_date_ascending():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", stop_order=1, local="Segundo", arrival_date="2026-07-28T14:00:00+00:00"),
+        _stop_row(stop_id="s2", stop_order=2, local="Primero", arrival_date="2026-07-28T10:00:00+00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["Primero", "Segundo"]
+
+
+def test_load_trip_stops_origin_always_first_regardless_of_arrival_date():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="dest", stop_order=1, local="Destino", arrival_date="2026-07-28T05:00:00+00:00"),
+        _stop_row(stop_id="orig", stop_order=0, stop_type="ORIGIN", local="Origen", arrival_date=None),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["Origen", "Destino"]
+
+
+def test_load_trip_stops_without_arrival_date_go_last():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", stop_order=1, local="Sin llegada", arrival_date=None),
+        _stop_row(stop_id="s2", stop_order=2, local="Con llegada", arrival_date="2026-07-28T10:00:00+00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["Con llegada", "Sin llegada"]
+
+
+def test_load_trip_stops_arrival_date_tie_breaks_by_stop_order():
+    import asyncio
+    pool = AsyncMock()
+    same_arrival = "2026-07-28T10:00:00+00:00"
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", stop_order=2, local="Segundo por stop_order", arrival_date=same_arrival),
+        _stop_row(stop_id="s2", stop_order=1, local="Primero por stop_order", arrival_date=same_arrival),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["Primero por stop_order", "Segundo por stop_order"]
+
+
 # ── _parse_timestamptz — asyncpg exige datetime.datetime, no str, para un
 #    parámetro casteado a ::timestamptz (bug real encontrado en vivo) ────────
 # Un datetime naive sin tzinfo explícito toma el huso horario del SISTEMA
