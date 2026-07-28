@@ -53,19 +53,43 @@
 
 **Verificación**: frontend 557/557 (63 archivos, antes 64 — se fue el test de `RegionCityPicker`), `tsc --noEmit` y `npm run build` limpios. **Pusheado y verificado en vivo**: elegir "Bod La Farfana 1" como destino autocompleta el campo y muestra "Zona: RM" sin ningún picker manual.
 
+---
+
+### 2026-07-28 (cont.) — Ronda 54: HU-18 a HU-24 (backlog Google Sheets) — alineación del módulo Empresas/Vehículos/Conductores
+
+**Contexto**: el usuario pidió cuadrar el módulo de Empresas y Seguros contra 7 historias de usuario de un backlog externo (Google Sheets, HU-18 a HU-24, épica "Gestión documental"). Sesión vía `/plan` (Explore agents en paralelo backend+frontend + verificación directa contra Supabase real y contra el pipeline de Mage en vivo, no solo el repo versionado — varias HU resultaron estar ya parcialmente implementadas en la base de datos, dormidas o mal cableadas, algo que ni el código ni la documentación (`context_carriers.md`) reflejaban con precisión).
+
+**Hallazgo de arquitectura clave**: el proyecto ya usa un motor de compliance polimórfico (`public.compliance_requirements` catálogo + `public.compliance_records` expediente vivo), y el frontend (`DocumentChecklist.tsx`, `TransporterDocumentsPanel.tsx`) renderiza cualquier fila 100% genérico, sin ningún nombre de campo hardcodeado. Esto significa que casi todas estas HU son cambios de **datos de catálogo**, no de código nuevo.
+
+**Implementado (migración `20260728100000_hu18_19_21_22_23_compliance_fields.sql`, aplicada contra la base real y verificada con conteos exactos antes/después)**:
+- **HU-18** (Roll SII, CARRIER): campo nuevo, sembrado para las 248 empresas existentes.
+- **HU-19** (unificar RIOHS + Reglamento Interno): ambos existían con 0% de completitud (248 registros MISSING cada uno) — se eliminó `RIOHS` (catálogo + registros), queda solo "Reglamento Interno" (decisión del usuario).
+- **HU-21** (Seguro de Carga, ASSET): campo nuevo, checklist documental simple (no se vincula al módulo relacional de Seguros — decisión del usuario), sembrado para los 117 vehículos.
+- **HU-22/23** (Mantención Cámara Frío / Resolución Sanitaria, ASSET): **ya existían en el catálogo pero nunca se sembraban** — `reconcile_new_asset()` solo cubría requisitos `LEGAL_MANDATORY` y estos quedaron `CONDITIONAL_OPTIONAL` sin ningún mecanismo que los activara (0 registros en 117 assets). Se amplió la función (allowlist hardcodeado de 2 códigos, sin agregar columna nueva) para sembrarlos solo cuando `asset_type = 'RAMPLA'` (semirremolque) — sembrado dirigido a los 36 RAMPLA reales, no a los 81 TRACTOCAMION.
+- **Sin cambios de frontend**: los campos nuevos aparecen solos al estar sembrados en la base — confirmado que ningún componente mapea `requirement_code` a label.
+
+**HU-20 (Póliza de Seguro Vigente) — DIFERIDO, no implementado**: se investigó a fondo (el campo `INSURANCE_POLICY` está vivo, actualizado a diario por el bloque de Mage `export_insurance_installments_and_compliance` del pipeline `bronze_to_silver_insurance_sync` — 22/248 empresas ya aprobadas automáticamente; se encontró además un bug real: aprueba con cualquier póliza activa de cualquier tipo de cobertura, no solo Responsabilidad Civil; y se detectó un campo dormido `SEGURO_RC_EMPRESA` que semánticamente ya es el campo correcto). Se propuso un rediseño completo y el usuario lo rechazó en el momento: **la integración de Mage hacia compliance_records es temporal — la gestión de pólizas se va a mover a la app**, y el usuario necesita validar con negocio el enfoque antes de tocar nada. Ningún cambio de HU-20 quedó aplicado — ni en Supabase ni en Mage.
+
+**HU-24 (Control Documental Mensual) — investigado, sin acción**: existe (`CONTROL_MENSUAL_COL_T`, DRIVER, LEGAL_MANDATORY, 118 registros, 0% completado desde su creación, cero lógica especial en código). Prioridad "Won't Have" en el backlog — es una decisión de negocio (mantener/reformular/eliminar), no una tarea de desarrollo de esta ronda.
+
+**Verificación**: backend 337/337 (pytest), conteos post-migración exactos contra la base real (ROLL_SII=248, SEGURO_CARGA=117, MANTENCION_FRIO=36, RESOLUCION_SANITARIA=36, RIOHS=0), `tsc --noEmit` limpio. **Límite de esta ronda**: no se pudo hacer un click-through real en navegador — el backend local no logra conectar a Postgres en este sandbox (el host directo `db.*.supabase.co` no resuelve por DNS aquí, y el intento de usar el pooler de Supabase con la contraseña de `.env` fue bloqueado por el clasificador de seguridad del entorno). La confianza en este cambio se apoya en: verificación SQL directa contra producción + pytest + lectura de código confirmando que la UI ya es 100% genérica (sin mapeos de campo hardcodeados) — no en una prueba visual en vivo. Se recomienda una revisión visual rápida por parte del usuario en el entorno real cuando pueda.
+
 #### Próximo paso exacto
-1. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3.
-2. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47 — ver archivo, sin spec todavía).
-3. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos según mockups de Figma, refinamiento v2 ítem 6). Distinto del "Centro de Flota" de la Ronda 51, que usa disponibilidad calculada en vivo, no un modelo persistido por día.
-4. [ ] Evaluar si "Centro de Flota" pasa a ser módulo de navegación de primer nivel (con espacio para alertas de póliza/documentación de equipo) — explícitamente dejado fuera de la Ronda 51.
-5. [ ] (opcional, negocio) Si se quiere que "Conductor habitual" deje de estar casi siempre vacío en Centro de Flota, hace falta que operaciones cargue `vehicle_driver_assignments` equipo por equipo desde la ficha de cada empresa (`VehicleDetailPanel.tsx`) — no es una tarea de desarrollo.
-6. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
-7. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
-8. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
-9. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-10. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
-11. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-12. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-13. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-14. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-15. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+1. [ ] HU-20: validar con negocio si "Póliza de Seguro Vigente" (RC) debe rediseñarse como se propuso en Ronda 54 (ocultar `INSURANCE_POLICY`, activar `SEGURO_RC_EMPRESA`) — bloqueado hasta esa confirmación, no tocar `compliance_requirements`/Mage para este campo mientras tanto.
+2. [ ] HU-24: decisión de negocio sobre "Control Documental Mensual" (`CONTROL_MENSUAL_COL_T`) — mantener, reformular o eliminar (0% completado en 118 registros desde su creación).
+3. [ ] Ronda 54 quedó sin verificación visual en navegador (limitación de red del sandbox, ver detalle arriba) — hacer una pasada rápida en el entorno real: ficha de Empresa (Roll SII visible, RIOHS ya no duplicado) y ficha de Vehículo RAMPLA vs. TRACTOCAMION (Seguro de Carga en ambos, Cámara Frío/Resolución Sanitaria solo en RAMPLA).
+4. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3.
+5. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47 — ver archivo, sin spec todavía).
+6. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos según mockups de Figma, refinamiento v2 ítem 6). Distinto del "Centro de Flota" de la Ronda 51, que usa disponibilidad calculada en vivo, no un modelo persistido por día.
+7. [ ] Evaluar si "Centro de Flota" pasa a ser módulo de navegación de primer nivel (con espacio para alertas de póliza/documentación de equipo) — explícitamente dejado fuera de la Ronda 51.
+8. [ ] (opcional, negocio) Si se quiere que "Conductor habitual" deje de estar casi siempre vacío en Centro de Flota, hace falta que operaciones cargue `vehicle_driver_assignments` equipo por equipo desde la ficha de cada empresa (`VehicleDetailPanel.tsx`) — no es una tarea de desarrollo.
+9. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
+10. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
+11. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
+12. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+13. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
+14. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+15. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+16. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+17. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+18. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
