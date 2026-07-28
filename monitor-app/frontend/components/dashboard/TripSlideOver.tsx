@@ -864,6 +864,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                               <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
                               <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
                               <td className="px-2 py-1">
+                                <span className="text-[8px] text-gray-400 block leading-none mb-0.5">{opLabel} inicio</span>
                                 <input
                                   key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
                                   type="datetime-local"
@@ -875,6 +876,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                 />
                               </td>
                               <td className="px-2 py-1">
+                                <span className="text-[8px] text-gray-400 block leading-none mb-0.5">{opLabel} fin</span>
                                 <input
                                   key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
                                   type="datetime-local"

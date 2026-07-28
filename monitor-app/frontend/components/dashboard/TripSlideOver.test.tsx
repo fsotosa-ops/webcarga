@@ -569,6 +569,24 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin) �
     const input = screen.getByLabelText('Desc. inicio de Local 1') as HTMLInputElement
     expect(input.className).toMatch(/text-accent/)
   })
+
+  it('shows a visible "Carga inicio"/"Carga fin" micro-label for the origin row (not just aria-label)', () => {
+    const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
+    renderSlideOver({ ...baseTrip, stops })
+    // El header compartido de columna también dice "Desc. inicio"/"Desc. fin"
+    // — lo que este test confirma es que además aparece "Carga inicio"/
+    // "Carga fin" visible en algún lado (el micro-label de la fila), no solo
+    // en el aria-label del input.
+    expect(screen.getByText('Carga inicio')).toBeInTheDocument()
+    expect(screen.getByText('Carga fin')).toBeInTheDocument()
+  })
+
+  it('does not show a "Carga"-labeled row when there is no origin stop', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
+    renderSlideOver({ ...baseTrip, stops })
+    expect(screen.queryByText('Carga inicio')).not.toBeInTheDocument()
+    expect(screen.queryByText('Carga fin')).not.toBeInTheDocument()
+  })
 })
 
 describe('TripSlideOver — Ubicación de origen (solo operation_type)', () => {
