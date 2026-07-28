@@ -91,20 +91,44 @@
 
 **Navegación "Por revisar" → "Todos los locales"**: `LocationsPendingTab.tsx` suma prop `onSelect: (loc) => void`, disparado al click en la tarjeta (con `stopPropagation` en el `<select>` de clasificar para no confundir ambas acciones). `TarifarioPage` lo conecta a `setQ(loc.name); setTab('all')` — sin panel nuevo, tal como lo pidió el usuario.
 
-**Verificación**: TDD en los 3 archivos tocados (`LocationsTable.test.tsx` reescrito para el layout colapsado, 2 tests nuevos en `LocationsPendingTab.test.tsx`, 1 test nuevo en `page.test.tsx` para el flujo de navegación). Frontend completo: 538/538 (antes 534). `tsc --noEmit` y `npm run build` limpios. **Commiteado en `dev` local, sin push todavía** — pendiente confirmación del usuario y verificación visual en `webcarga-frontend-dev` una vez desplegado (no se pudo probar localmente contra Supabase real por falta de sesión autenticada en el dev server local).
+**Verificación**: TDD en los 3 archivos tocados (`LocationsTable.test.tsx` reescrito para el layout colapsado, 2 tests nuevos en `LocationsPendingTab.test.tsx`, 1 test nuevo en `page.test.tsx` para el flujo de navegación). Frontend completo: 538/538 (antes 534). `tsc --noEmit` y `npm run build` limpios. **Pusheado a `origin/dev` y verificado en vivo contra `webcarga-frontend-dev`** (mismo día): `scrollWidth == clientWidth` (930px, antes 1438px) tanto colapsado como con "Editar tarifa" expandido, y click en una tarjeta de "Por revisar" navega a "Todos los locales" filtrado por ese nombre exacto — confirmado con Playwright real, no solo con tests.
+
+---
+
+### 2026-07-28 — Ronda 51: "Centro de Flota" — brainstorming + spec + plan + implementación completa
+
+**Contexto**: el usuario pidió entender "cerrar el día" y los estados de conductor/equipo (disponible/asignado/no asignado), señalando que el botón "conductores disponibles" del Diario estaba mal configurado y debía formar parte del User Journey de cierre. Sesión completa vía `superpowers:brainstorming` (con visual companion, 3 rondas de mockups) → `superpowers:writing-plans` → `superpowers:executing-plans` (modo inline, pedido explícito).
+
+**Hallazgo clave de la investigación** (`monitor-app/docs/user-stories/20260720/`, transcript completo de la reunión con Pablo + los 3 reportes reales que el equipo ya le envía por correo — Sodimac, Walmart, Sider/Iansa): la unidad correcta para "disponibilidad" es el **EQUIPO (tracto)**, no el conductor — cita textual de Pablo: *"el problema es que el conductor, de repente, hoy se montó a un camión, mañana se monta a otro"*. Los 3 reportes reales ya usan "equipos disponibles/asignados" como métrica, no "conductores". El backend ya tenía `GET /trips/available-assets` con el diseño correcto pero **ningún componente frontend lo consumía** — todo el flujo de creación de viaje era conductor-primero.
+
+**Decisión de arquitectura confirmada con el usuario** (brainstorming, 2 preguntas + 3 rondas de visual companion): "Cerrar el día" (`app.driver_day_status`) se mantiene 100% ancorado al conductor — coincide con HU-01 literal y con cómo Pablo cuenta cabezas en el transcript. Se agrega un modal nuevo y **separado**, "Centro de Flota", cruzado por link (no fusionado) con `CloseDayDialog` — evita mezclar la reconciliación de fin de día (con bloqueos/override) con la acción operativa de asignar un viaje ahora. Ese modal absorbe además "Agregar viaje" + "Carga masiva CSV" (antes 2 botones sueltos que creaban el mismo objeto) como un split-button "+ Nuevo viaje ▾", patrón estándar en SaaS operacional (Onfleet, Samsara Dispatch). Dentro de "disponibles", 3 tiles clickeables separan **Nunca asignados hoy** (alerta real — nadie los usó) de **Liberados tras viaje** (operación normal) y **En viaje hoy** — pedido explícito del usuario tras notar que esta distinción es "lo relevante y crítico".
+
+**Spec**: `docs/superpowers/specs/2026-07-28-centro-de-flota-design.md`. **Plan**: `docs/superpowers/plans/2026-07-28-centro-de-flota-plan.md` (7 tareas TDD, todas ejecutadas):
+1. **Backend** (`trips.py`): `GET /trips/available-assets` pasa de lista pelada a `{total_active, items}` — `total_active` permite calcular "en viaje hoy" sin duplicar la cuenta. Se agrega `standing_driver` (mismo patrón que `standing_vehicle` de `available-drivers`, en dirección inversa) para que un equipo sin viajes hoy siga mostrando su conductor habitual.
+2. **Backend** (`daily_closures.py`): `_DETAIL_SQL` suma `trip_id` vía LATERAL para filas MISMATCH — el viaje real que causó el descuadre (más reciente si hay más de uno), mismo criterio que ya usa `_RECOMPUTE_SQL` para marcar el estado.
+3. **Frontend — tipos/cliente**: `AvailableAsset`, `AvailableAssetsResponse`, `tripsApi.availableAssets()`, `DriverDayStatusRow.trip_id`.
+4. **`FleetCenterDialog.tsx`** (nuevo): tiles/búsqueda/tabla/split-button/cross-link. Bug propio encontrado y corregido en el momento (TDD hizo su trabajo): la tile "En viaje hoy" estaba programada como no-clickeable, dejando el mensaje explicativo de esa categoría como código muerto — se corrigió para que las 3 tiles se comporten igual.
+5. **`TripAssignDialog.tsx`**: prop `initialFleet` — al abrir desde "Asignar viaje" en Centro de Flota, el equipo/conductor llegan precargados.
+6. **`CloseDayDialog.tsx`**: link "Ver equipos disponibles" (cross-link) + filas MISMATCH ahora abren el viaje real (`TripSlideOver`) en vez de linkear genéricamente a la ficha de empresa — resuelve el ítem 4 del refinamiento v2 del 20/07 ("no permite interactuar con los viajes que aparecen ahí").
+7. **`page.tsx`**: el pill "conductores disponibles" + los botones "Agregar viaje" y "Carga masiva (CSV)" se funden en un solo botón "Flota — N disponibles"; nuevo estado orquesta los 4 modales (Centro de Flota ↔ Cerrar el día ↔ Asignar viaje ↔ Detalle del viaje).
+
+**Decisiones explícitas de alcance** (todas confirmadas con el usuario durante el brainstorming, no asumidas): nomenclatura "Por regularizar" del estado MISMATCH se mantiene sin cambios (se evaluó "En el aire", frase textual de Pablo, pero el usuario prefirió lo que ya está en producción); promover "Centro de Flota" a módulo de navegación de primer nivel quedó **fuera de alcance**, para un checkpoint separado.
+
+**Verificación**: backend 335/335, frontend 552/552 (antes 538), `tsc --noEmit` y `npm run build` limpios en cada tarea. Cero emojis en la UI (pedido explícito del usuario esta ronda) — toda la iconografía nueva usa `lucide-react` (`Truck`). Todos los commits en `dev` local, sin push todavía.
 
 #### Próximo paso exacto
-1. [ ] **Decidir con el usuario si se pushea Ronda 50** (fix de scroll + navegación de Tarifario) y verificar visualmente contra `webcarga-frontend-dev` una vez desplegado: confirmar que la tabla ya no tiene scroll horizontal y que el click en una tarjeta de "Por revisar" lleva a "Todos los locales" filtrado por ese local.
-2. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3, ahora que RM/Zona Cero y temperatura ya cerraron.
+1. [ ] **Decidir con el usuario si se pushea Ronda 51** (Centro de Flota) y verificar visualmente contra `webcarga-frontend-dev` una vez desplegado: botón "Flota" reemplaza al pill viejo, tiles "Nunca asignados"/"Liberados"/"En viaje" filtran bien, "Asignar viaje" precarga el equipo, split-button ofrece las 2 opciones, y los links cruzados con "Cerrar el día" funcionan en ambas direcciones.
+2. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3.
 3. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47, sin spec todavía).
-4. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos).
-5. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
-6. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
-7. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
-8. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-9. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
-10. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-11. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-12. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-13. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-14. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+4. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos según mockups de Figma, refinamiento v2 ítem 6). Nota: distinto del "Centro de Flota" de esta ronda, que usa disponibilidad calculada en vivo, no un modelo persistido por día.
+5. [ ] Evaluar si "Centro de Flota" pasa a ser módulo de navegación de primer nivel (con espacio para alertas de póliza/documentación de equipo) — explícitamente dejado fuera de esta ronda.
+6. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
+7. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
+8. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
+9. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+10. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
+11. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+12. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+13. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+14. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+15. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
