@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, Upload, ClipboardCheck } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
@@ -17,6 +17,8 @@ import { FilterPopover } from '@/components/dashboard/FilterPopover'
 import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { CloseDayDialog } from '@/components/dashboard/CloseDayDialog'
+import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
+import type { FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
 import { useDiarioFilters, countActiveFilters } from '@/hooks/useDiarioFilters'
@@ -27,7 +29,6 @@ import {
 } from '@/lib/utils/alertSignals'
 import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
-import { UserCheck } from 'lucide-react'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 const ADMIN_ROLES = new Set(['admin', 'owner'])
@@ -98,11 +99,13 @@ export default function DiarioPage() {
 
   const [selected,       setSelected]       = useState<Trip | null>(null)
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
-  const [showCreate,     setShowCreate]     = useState(false)
-  const [showBulkUpload, setShowBulkUpload] = useState(false)
-  const [showCloseDay,   setShowCloseDay]   = useState(false)
-  const [canAdmin,       setCanAdmin]       = useState(false)
-  const [viewMode,       setViewMode]       = useState<ViewMode>('tabla')
+  const [showCreate,      setShowCreate]      = useState(false)
+  const [showBulkUpload,  setShowBulkUpload]  = useState(false)
+  const [showCloseDay,    setShowCloseDay]    = useState(false)
+  const [showFleetCenter, setShowFleetCenter] = useState(false)
+  const [prefillFleet,    setPrefillFleet]    = useState<FleetAssignValue | null>(null)
+  const [canAdmin,        setCanAdmin]        = useState(false)
+  const [viewMode,        setViewMode]        = useState<ViewMode>('tabla')
 
   // Custom groups
   const [customGroups,      setCustomGroups]      = useState<FilterGroup[]>([])
@@ -192,14 +195,15 @@ export default function DiarioPage() {
     return result
   }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules])
 
-  // ── Conductores disponibles (sin viaje abierto hoy) — solo para el conteo
-  // del tile, la lista sugerida vive dentro de TripAssignDialog (Ronda 26)
-  const availableCountQuery = useQuery({
-    queryKey: ['available-drivers', f.fecha],
-    queryFn: () => tripsApi.availableDrivers(f.fecha),
+  // Centro de Flota (2026-07-28) — mismo queryKey que usa FleetCenterDialog
+  // internamente, así el badge del botón y el modal comparten cache y no
+  // duplican el fetch cuando se abre.
+  const fleetAvailableQuery = useQuery({
+    queryKey: ['available-assets', f.fecha],
+    queryFn: () => tripsApi.availableAssets(f.fecha),
     enabled: f.tab === 'en_curso',
   })
-  const availableCount = availableCountQuery.data?.length ?? 0
+  const fleetAvailableCount = fleetAvailableQuery.data?.items.length ?? 0
 
   // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
   const prevReportedRef = useRef<Map<string, string | null>>(new Map())
@@ -266,6 +270,43 @@ export default function DiarioPage() {
 
   function handleBulkImported(count: number) {
     if (count > 0) queryClient.invalidateQueries({ queryKey: ['trips'] })
+  }
+
+  function openFleetCenter() {
+    setShowCloseDay(false)
+    setShowFleetCenter(true)
+  }
+
+  function openCloseDayFromFleet() {
+    setShowFleetCenter(false)
+    setShowCloseDay(true)
+  }
+
+  async function handleSelectTripFromCloseDay(tripId: string) {
+    setShowCloseDay(false)
+    try {
+      const trip = await tripsApi.get(tripId)
+      setSelected(trip)
+    } catch {
+      // silencioso — el operador puede reabrir Cerrar el día y reintentar
+    }
+  }
+
+  function handleAssignFromFleet(fleet: FleetAssignValue) {
+    setShowFleetCenter(false)
+    setPrefillFleet(fleet)
+    setShowCreate(true)
+  }
+
+  function handleNewTripFromFleet() {
+    setShowFleetCenter(false)
+    setPrefillFleet(null)
+    setShowCreate(true)
+  }
+
+  function handleImportCsvFromFleet() {
+    setShowFleetCenter(false)
+    setShowBulkUpload(true)
   }
 
   function handleGroupSaved(group: FilterGroup) {
@@ -353,7 +394,7 @@ export default function DiarioPage() {
             ))}
           </div>
 
-          {/* Barra de acciones — vista + agregar viaje */}
+          {/* Barra de acciones — vista + gestión de flota */}
           <div className="flex items-center justify-between gap-3">
             {f.tab === 'en_curso' ? (
               <ViewToggle value={viewMode} onChange={handleViewModeChange} />
@@ -368,18 +409,14 @@ export default function DiarioPage() {
                 Cerrar día
               </button>
               <button
-                onClick={() => setShowBulkUpload(true)}
-                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-accent transition-colors"
-              >
-                <Upload size={12} />
-                Carga masiva (CSV)
-              </button>
-              <button
-                onClick={() => setShowCreate(true)}
+                onClick={() => setShowFleetCenter(true)}
                 className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
               >
-                <Plus size={13} />
-                Agregar viaje
+                <Truck size={13} />
+                Flota
+                {fleetAvailableCount > 0 && (
+                  <span className="bg-white/25 rounded-full px-1.5 text-[10px] font-bold">{fleetAvailableCount}</span>
+                )}
               </button>
             </div>
           </div>
@@ -439,21 +476,6 @@ export default function DiarioPage() {
                   </span>
                 )
               })}
-
-              {/* Conductores disponibles hoy — atajo directo a crear viaje,
-                  con la lista ya sugerida dentro del diálogo (Ronda 26) */}
-              {availableCount > 0 && (
-                <button
-                  onClick={() => setShowCreate(true)}
-                  className="flex items-center gap-2 bg-white border border-green-200 rounded-xl px-3.5 py-2 transition-all hover:border-green-400 ml-auto"
-                >
-                  <UserCheck size={14} className="text-green-600" />
-                  <span className="text-lg font-bold leading-none text-green-600">{availableCount}</span>
-                  <span className="text-[11px] font-medium text-gray-500">
-                    conductor{availableCount !== 1 ? 'es' : ''} disponible{availableCount !== 1 ? 's' : ''}
-                  </span>
-                </button>
-              )}
             </div>
           )}
 
@@ -618,10 +640,11 @@ export default function DiarioPage() {
       <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} meta={tripsMeta} />
       <TripAssignDialog
         open={showCreate}
-        onClose={() => setShowCreate(false)}
+        onClose={() => { setShowCreate(false); setPrefillFleet(null) }}
         onCreated={handleCreated}
         meta={tripsMeta}
         fecha={f.fecha}
+        initialFleet={prefillFleet ?? undefined}
       />
       <TripBulkUpload
         open={showBulkUpload}
@@ -635,6 +658,17 @@ export default function DiarioPage() {
         canAdmin={canAdmin}
         unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
         onClose={() => setShowCloseDay(false)}
+        onOpenFleetCenter={openFleetCenter}
+        onSelectTrip={handleSelectTripFromCloseDay}
+      />
+      <FleetCenterDialog
+        open={showFleetCenter}
+        fecha={f.fecha}
+        onClose={() => setShowFleetCenter(false)}
+        onOpenCloseDay={openCloseDayFromFleet}
+        onAssign={handleAssignFromFleet}
+        onNewTrip={handleNewTripFromFleet}
+        onImportCsv={handleImportCsvFromFleet}
       />
     </div>
   )
