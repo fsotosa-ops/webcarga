@@ -186,16 +186,18 @@ def test_available_assets_requires_fecha():
 
 def test_available_assets_returns_rows_from_active_roster():
     pool = AsyncMock()
+    pool.fetchval.return_value = 1
     pool.fetch.return_value = [{
         "asset_id": "a1", "tractor_plate": "ABCD12", "asset_type": "TRACTOCAMION",
-        "carrier_name": "TransCargo", "trips_total": 0, "last_report_at": None,
-        "driver_name": None,
+        "carrier_id": "c1", "carrier_name": "TransCargo", "trips_total": 0, "last_report_at": None,
+        "driver_id": None, "driver_name": None, "driver_rut": None, "driver_phone": None,
     }]
     client = make_client(pool, router=trips_router)
     res = client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
     assert res.status_code == 200
-    data = res.json()
-    assert data[0]["tractor_plate"] == "ABCD12"
+    body = res.json()
+    assert body["total_active"] == 1
+    assert body["items"][0]["tractor_plate"] == "ABCD12"
     query = pool.fetch.call_args.args[0]
     assert "public.asset_assignments" in query
     assert "sodimac" in query
@@ -205,12 +207,44 @@ def test_available_assets_today_trips_uses_shared_resolution_view():
     """Fase B (feedback post-weekly 2026-07-22, ítem 5): mismo fix que
     available-drivers, para el lado del equipo/tracto."""
     pool = AsyncMock()
+    pool.fetchval.return_value = 0
     pool.fetch.return_value = []
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
     query = pool.fetch.call_args.args[0]
     assert "app.v_trip_fleet_resolution" in query
     assert "vfr.resolved_tractor_asset_id" in query
+
+
+def test_available_assets_response_shape_has_total_active_and_items():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 5
+    pool.fetch.return_value = [{
+        "asset_id": "a1", "tractor_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "carrier_id": "c1", "carrier_name": "TransCargo", "trips_total": 0, "last_report_at": None,
+        "driver_id": "d1", "driver_name": "Juan Pérez", "driver_rut": "12345678-9", "driver_phone": None,
+    }]
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
+    body = res.json()
+    assert body["total_active"] == 5
+    assert body["items"][0]["carrier_id"] == "c1"
+    assert body["items"][0]["driver_id"] == "d1"
+
+
+def test_available_assets_includes_standing_driver_for_idle_equipment():
+    """Centro de Flota (2026-07-28): un equipo sin viajes hoy debe traer su
+    conductor habitual — antes solo se llenaba si el equipo tuvo un viaje hoy,
+    dejando la mitad de la lista sin conductor en la UI."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 1
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    client.get("/api/v1/trips/available-assets?fecha=2026-07-06")
+    query = pool.fetch.call_args.args[0]
+    assert "public.vehicle_driver_assignments" in query
+    assert "standing_driver" in query
+    assert "c.id AS carrier_id" in query
 
 
 # ── list_trips q amplía a cliente ─────────────────────────────────────────────

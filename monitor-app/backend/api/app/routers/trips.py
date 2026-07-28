@@ -847,21 +847,47 @@ async def available_assets(
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
-    """Mismo diseño que /available-drivers (ver comentario arriba), para
-    equipos: parte de public.assets activos de una empresa transportista
-    activa (asset_assignments) y cruza contra los viajes del día."""
+    """Mismo diseño que /available-drivers, para equipos: parte de
+    public.assets activos de una empresa transportista activa
+    (asset_assignments) y cruza contra los viajes del día.
+
+    Centro de Flota (2026-07-28): la respuesta pasa de lista pelada a
+    {total_active, items} — total_active permite calcular "en viaje hoy" en
+    el cliente (= total_active - len(items), ya que este endpoint solo
+    devuelve equipo IDLE) sin duplicar esa cuenta en dos lugares. Se agrega
+    standing_driver (mismo patrón que standing_vehicle en available_drivers,
+    en la dirección inversa) para que un equipo sin viajes hoy siga
+    mostrando su conductor habitual — antes quedaba en blanco."""
     day = _parse_date(fecha)
     if day is None:
         raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
 
+    total_active = await pool.fetchval(
+        """
+        SELECT count(*)
+        FROM public.assets a
+        JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+        JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+        WHERE a.operational_status = 'ACTIVE'
+        """
+    )
+
     rows = await pool.fetch(
         """
         WITH active_roster AS (
-            SELECT a.id, a.license_plate, a.asset_type, c.business_name AS carrier_name
+            SELECT a.id, a.license_plate, a.asset_type, c.id AS carrier_id, c.business_name AS carrier_name
             FROM public.assets a
             JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
             JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
             WHERE a.operational_status = 'ACTIVE'
+        ),
+        -- Centro de Flota (2026-07-28): conductor habitual de este equipo,
+        -- para cuando no tuvo ningún viaje hoy (ver docstring de arriba).
+        standing_driver AS (
+            SELECT vda.asset_id, d.id AS driver_id, d.full_name AS driver_name, d.tax_id AS driver_rut
+            FROM public.vehicle_driver_assignments vda
+            JOIN public.drivers d ON d.id = vda.driver_id
+            WHERE vda.status = 'ACTIVE'
         ),
         -- Fase B (ítem 5, feedback post-weekly 2026-07-22): mismo fix que
         -- available-drivers — antes solo miraba trip_fleet_links.tractor_asset_id,
@@ -875,7 +901,8 @@ async def available_assets(
                        OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')
                 ) AS closed_count,
                 max(t.status_reported_at) AS last_report_at,
-                max(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) AS driver_name
+                max(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) AS driver_name,
+                max(vfr.resolved_driver_id) AS driver_id
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
             LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
@@ -888,18 +915,27 @@ async def available_assets(
             ar.id            AS asset_id,
             ar.license_plate AS tractor_plate,
             ar.asset_type,
+            ar.carrier_id,
             ar.carrier_name,
             COALESCE(tt.trips_total, 0) AS trips_total,
             tt.last_report_at,
-            tt.driver_name
+            COALESCE(tt.driver_name, sd.driver_name) AS driver_name,
+            COALESCE(tt.driver_id, sd.driver_id)     AS driver_id,
+            sd.driver_rut,
+            (
+                SELECT fl2.driver_phone FROM app.trip_fleet_links fl2
+                WHERE fl2.driver_id = COALESCE(tt.driver_id, sd.driver_id) AND fl2.driver_phone IS NOT NULL
+                ORDER BY fl2.updated_at DESC LIMIT 1
+            ) AS driver_phone
         FROM active_roster ar
         LEFT JOIN today_trips tt ON tt.asset_id = ar.id
+        LEFT JOIN standing_driver sd ON sd.asset_id = ar.id
         WHERE tt.asset_id IS NULL OR tt.trips_total = tt.closed_count
         ORDER BY tt.last_report_at DESC NULLS LAST, ar.license_plate
         """,
         day,
     )
-    return [dict(r) for r in rows]
+    return {"total_active": total_active, "items": [dict(r) for r in rows]}
 
 
 # ── Trip creation (manual entry + bulk) ──────────────────────────────────────
