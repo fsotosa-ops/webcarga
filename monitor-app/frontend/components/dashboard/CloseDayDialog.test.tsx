@@ -21,10 +21,10 @@ const STATUS: DailyClosureStatus = {
   mismatch_count: 1,
   pending_count: 2,
   drivers: [
-    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
-    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
-    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
-    { driver_id: 'd4', full_name: 'Carla Díaz', tax_id: '44444444-4', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', resolved_by: 'admin', resolved_at: '2026-07-21T10:00:00Z', client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null },
+    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
+    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
+    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
+    { driver_id: 'd4', full_name: 'Carla Díaz', tax_id: '44444444-4', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', resolved_by: 'admin', resolved_at: '2026-07-21T10:00:00Z', client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
   ],
 }
 
@@ -32,7 +32,11 @@ function renderDialog(props: Partial<Parameters<typeof CloseDayDialog>[0]> = {})
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <CloseDayDialog open fecha="2026-07-21" canAdmin={false} unassignedReasons={REASONS} onClose={vi.fn()} {...props} />
+      <CloseDayDialog
+        open fecha="2026-07-21" canAdmin={false} unassignedReasons={REASONS}
+        onClose={vi.fn()} onOpenFleetCenter={vi.fn()} onSelectTrip={vi.fn()}
+        {...props}
+      />
     </QueryClientProvider>,
   )
 }
@@ -103,6 +107,28 @@ describe('CloseDayDialog', () => {
     expect(link).toHaveAttribute('href', '/dashboard/transportistas/empresa/c3')
   })
 
+  it('un conductor MISMATCH con trip_id abre el viaje real en vez de linkear a Empresas', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...STATUS,
+      drivers: STATUS.drivers.map(d => d.driver_id === 'd3' ? { ...d, trip_id: 't-77' } : d),
+    })
+    const onSelectTrip = vi.fn()
+    renderDialog({ onSelectTrip })
+    await screen.findByText('Luis Rojas')
+    expect(screen.queryByRole('link', { name: /Revisar en Empresas/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Ver viaje/ }))
+    expect(onSelectTrip).toHaveBeenCalledWith('t-77')
+  })
+
+  it('el link "Ver equipos disponibles" llama a onOpenFleetCenter', async () => {
+    const onOpenFleetCenter = vi.fn()
+    renderDialog({ onOpenFleetCenter })
+    await screen.findByText(/Cerrar el día/)
+    fireEvent.click(screen.getByText('Ver equipos disponibles'))
+    expect(onOpenFleetCenter).toHaveBeenCalled()
+  })
+
   it('sets el motivo de un conductor no asignado', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderDialog()
@@ -148,7 +174,7 @@ describe('CloseDayDialog', () => {
         driver_id: 'd1', full_name: 'Juan Pérez', tax_id: null, carrier_id: null, carrier_name: null,
         status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,
         resolved_by: null, resolved_at: null, client_names: [],
-        driver_pending_docs_critical: true, suggested_reason_id: 'r-doc-vencida',
+        driver_pending_docs_critical: true, suggested_reason_id: 'r-doc-vencida', trip_id: null,
       }],
     })
     renderDialog({
@@ -169,7 +195,7 @@ describe('CloseDayDialog', () => {
         driver_id: 'd1', full_name: 'Juan Pérez', tax_id: null, carrier_id: null, carrier_name: null,
         status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,
         resolved_by: null, resolved_at: null, client_names: [],
-        driver_pending_docs_critical: false, suggested_reason_id: null,
+        driver_pending_docs_critical: false, suggested_reason_id: null, trip_id: null,
       }],
     })
     renderDialog({ fecha: '2026-07-22', unassignedReasons: [] })

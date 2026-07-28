@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ClipboardCheck, AlertTriangle, CheckCircle2, X } from 'lucide-react'
+import { Loader2, ClipboardCheck, AlertTriangle, CheckCircle2, X, Truck } from 'lucide-react'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import { AlertStatTiles } from './AlertStatTiles'
 import type { DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
@@ -28,6 +28,13 @@ interface Props {
   canAdmin:           boolean
   unassignedReasons:  UnassignedReasonMeta[]
   onClose:            () => void
+  /** Centro de Flota (2026-07-28) — cross-link, no fusión: cuadratura de
+   *  conductores y disponibilidad de equipo son vistas separadas. */
+  onOpenFleetCenter:  () => void
+  /** Abre el viaje real que causó un MISMATCH puntual (ver trip_id en
+   *  DriverDayStatusRow) — reemplaza el link genérico a Empresas cuando hay
+   *  un viaje concreto al que apuntar. */
+  onSelectTrip:       (tripId: string) => void
 }
 
 /** "Cerrar el día" (spec 2026-07-21-cuadratura-reporteria-redesign-design.md)
@@ -45,7 +52,7 @@ interface Props {
  *  del usuario, y coincide con feedback histórico real (Fabian, UAT
  *  2026-07-06: "debería tirarse el listado entero... debería quedarte como
  *  todo lo pendiente ahí en esa ventana"). */
-export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClose }: Props) {
+export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClose, onOpenFleetCenter, onSelectTrip }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const [overrideOpen, setOverrideOpen] = useState(false)
@@ -142,6 +149,14 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <button
+              type="button"
+              onClick={onOpenFleetCenter}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-accent transition-colors"
+            >
+              <Truck size={12} /> Ver equipos disponibles
+            </button>
+
             {isLoading || !data ? (
               <div className="flex items-center justify-center py-16 text-gray-400">
                 <Loader2 size={20} className="animate-spin" />
@@ -221,12 +236,22 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
                                   </>
                                 )}
                                 {d.status === 'MISMATCH' && (
-                                  <a
-                                    href={d.carrier_id ? `/dashboard/transportistas/empresa/${d.carrier_id}` : '/dashboard/transportistas'}
-                                    className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
-                                  >
-                                    <AlertTriangle size={11} /> Revisar en Empresas
-                                  </a>
+                                  d.trip_id ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onSelectTrip(d.trip_id!)}
+                                      className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
+                                    >
+                                      <AlertTriangle size={11} /> Ver viaje
+                                    </button>
+                                  ) : (
+                                    <a
+                                      href={d.carrier_id ? `/dashboard/transportistas/empresa/${d.carrier_id}` : '/dashboard/transportistas'}
+                                      className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
+                                    >
+                                      <AlertTriangle size={11} /> Revisar en Empresas
+                                    </a>
+                                  )
                                 )}
                               </td>
                             </tr>
