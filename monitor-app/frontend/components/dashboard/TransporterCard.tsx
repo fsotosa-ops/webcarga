@@ -51,7 +51,7 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
         {/* prefetch=false: con 30+ tarjetas visibles, Next.js prefetchea todos los links
            "Ver ficha" en viewport a la vez y agota el rate limit del proxy (429 real). */}
         <Link
-          href={`/dashboard/transportistas/empresa/${item.id}`}
+          href={`/dashboard/carriers/${item.id}`}
           prefetch={false}
           onClick={e => e.stopPropagation()}
           title="Ver ficha completa"

@@ -39,7 +39,7 @@ const TABS: { id: TransporterTab; label: string; status: OperationalStatus }[] =
  *  documentación obligatoria pendiente (mismo criterio que la ficha de
  *  empresa). Los conteos vienen de `facets`, ya acotados a la tab
  *  operational_status + búsqueda actuales (no cambian al clickear un
- *  health tab, igual que en /dashboard/seguros). */
+ *  health tab, igual que en /dashboard/insurance). */
 const HEALTH_TABS: { id: HealthTab; label: string; facetKey: keyof CarrierListFacets }[] = [
   { id: '',        label: 'Todas',       facetKey: 'total' },
   { id: 'PENDING', label: 'Pendientes',  facetKey: 'pending' },
@@ -111,7 +111,7 @@ function EmpresasTransportePageInner() {
       if (driverName)   handoff.set('driver_name', driverName)
       if (tractorPlate) handoff.set('tractor_plate', tractorPlate)
       const qs = handoff.toString()
-      router.push(`/dashboard/transportistas/empresa/${created.id}${qs ? `?${qs}` : ''}`)
+      router.push(`/dashboard/carriers/${created.id}${qs ? `?${qs}` : ''}`)
     } catch (e) {
       setCreateErr(e instanceof Error ? e.message : 'Error al crear la empresa')
     } finally {
@@ -336,7 +336,7 @@ function EmpresasTransportePageInner() {
                       {/* prefetch=false: mismo motivo que TransporterCard — evita que Next.js
                          prefetchee las 100 filas visibles a la vez y agote el rate limit. */}
                       <Link
-                        href={`/dashboard/transportistas/empresa/${item.id}`}
+                        href={`/dashboard/carriers/${item.id}`}
                         prefetch={false}
                         onClick={e => e.stopPropagation()}
                         title="Ver ficha completa"

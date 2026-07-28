@@ -91,7 +91,7 @@ function SegurosPageInner() {
 
   // Conteo del otro status tab, independiente de la paginación y del health
   // tab actual (limit=1: solo interesa `facets.total`) — mismo patrón que
-  // Activas/Inactivo en /dashboard/transportistas.
+  // Activas/Inactivo en /dashboard/carriers.
   const otherStatusTabId = statusTab === 'active' ? 'legacy' : 'active'
   const otherOperationalStatus = STATUS_TABS.find(t => t.id === otherStatusTabId)!.status
   const otherStatusQuery = useQuery({

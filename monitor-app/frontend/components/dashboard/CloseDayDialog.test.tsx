@@ -104,7 +104,7 @@ describe('CloseDayDialog', () => {
     renderDialog()
     await screen.findByText('Luis Rojas')
     const link = screen.getByRole('link', { name: /Revisar en Empresas/ })
-    expect(link).toHaveAttribute('href', '/dashboard/transportistas/empresa/c3')
+    expect(link).toHaveAttribute('href', '/dashboard/carriers/c3')
   })
 
   it('un conductor MISMATCH con trip_id abre el viaje real en vez de linkear a Empresas', async () => {

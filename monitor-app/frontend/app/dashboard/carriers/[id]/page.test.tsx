@@ -302,7 +302,7 @@ describe('EmpresaDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }))
 
     await waitFor(() => expect(carriersApi.delete).toHaveBeenCalledWith('t1'))
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/dashboard/transportistas'))
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/dashboard/carriers'))
   })
 
   it('shows the backend blocker message and does not redirect when delete is rejected', async () => {

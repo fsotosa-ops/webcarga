@@ -79,7 +79,7 @@ describe('TransporterSlideOver', () => {
   it('links to the full ficha', () => {
     renderSlideOver(ITEM)
     const link = screen.getByText('Ver ficha completa').closest('a')
-    expect(link).toHaveAttribute('href', '/dashboard/transportistas/empresa/t1')
+    expect(link).toHaveAttribute('href', '/dashboard/carriers/t1')
   })
 
   it('closes on Escape', () => {

@@ -125,7 +125,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
               )}
 
               <Link
-                href={`/dashboard/transportistas/empresa/${item.id}`}
+                href={`/dashboard/carriers/${item.id}`}
                 className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-white bg-accent hover:bg-accent/90 rounded-xl px-4 py-2.5 transition-colors"
               >
                 Ver ficha completa <ArrowRight size={14} />

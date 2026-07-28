@@ -234,7 +234,7 @@ function EmpresaDetailPageInner() {
   }
   async function handleDeleteCarrier() {
     await carriersApi.delete(id)
-    router.push('/dashboard/transportistas')
+    router.push('/dashboard/carriers')
   }
 
   async function handleAddDriver() {
@@ -404,7 +404,7 @@ function EmpresaDetailPageInner() {
   if (carrierQuery.error || !carrier) return (
     <div className="p-6 text-sm text-red-500">
       {carrierQuery.error instanceof Error ? carrierQuery.error.message : 'No encontrado'}
-      <a href="/dashboard/transportistas" className="block mt-2 text-accent hover:underline text-xs">← Volver</a>
+      <a href="/dashboard/carriers" className="block mt-2 text-accent hover:underline text-xs">← Volver</a>
     </div>
   )
 
@@ -415,7 +415,7 @@ function EmpresaDetailPageInner() {
       )}
 
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
-        <a href="/dashboard/transportistas" className="hover:text-accent transition-colors shrink-0">Empresas</a>
+        <a href="/dashboard/carriers" className="hover:text-accent transition-colors shrink-0">Empresas</a>
         <ChevronRight size={13} />
         <span className="text-text-primary font-medium truncate">{carrier.business_name || id}</span>
       </nav>

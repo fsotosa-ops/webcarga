@@ -267,7 +267,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
     if (trip.driver_name_tms)   params.set('driver_name', trip.driver_name_tms)
     const plateTms = trip.tractor_plate_tms ?? trip.tractor_plate
     if (plateTms) params.set('tractor_plate', plateTms)
-    return `/dashboard/transportistas?${params.toString()}`
+    return `/dashboard/carriers?${params.toString()}`
   })()
 
   return (
@@ -601,7 +601,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                       <ShieldAlert size={13} className="text-red-600 shrink-0" />
                       <p className="text-[11px] text-red-700 font-medium">
                         {trip.insurance_alert === 'EXPIRED' ? 'Póliza vencida para esta empresa — ' : 'Cuotas críticas impagas para esta empresa — '}
-                        <a href={`/dashboard/transportistas/empresa/${trip.carrier_id}?tab=seguros`} className="underline hover:text-red-900">
+                        <a href={`/dashboard/carriers/${trip.carrier_id}?tab=seguros`} className="underline hover:text-red-900">
                           revisar en Seguros
                         </a>.
                       </p>
@@ -618,7 +618,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                       <FileWarning size={13} className="text-red-600 shrink-0" />
                       <p className="text-[11px] text-red-700 font-medium">
                         Falta Licencia de Conducir o Carnet del conductor —{' '}
-                        <a href={`/dashboard/transportistas/empresa/${trip.carrier_id}?tab=conductores`} className="underline hover:text-red-900">
+                        <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="underline hover:text-red-900">
                           revisar en Empresas
                         </a>.
                       </p>
@@ -633,7 +633,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta }: Props) {
                     <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
                       <p className="text-[10px] text-amber-700">
                         El conductor pertenece a <span className="font-semibold">{trip.fleet_match_driver_home_carrier}</span>, distinta de la empresa de este viaje —{' '}
-                        <a href={`/dashboard/transportistas/empresa/${trip.carrier_id}?tab=conductores`} className="underline hover:text-amber-900">
+                        <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="underline hover:text-amber-900">
                           revisar en Empresas
                         </a>.
                       </p>

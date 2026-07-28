@@ -246,7 +246,7 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
                                     </button>
                                   ) : (
                                     <a
-                                      href={d.carrier_id ? `/dashboard/transportistas/empresa/${d.carrier_id}` : '/dashboard/transportistas'}
+                                      href={d.carrier_id ? `/dashboard/carriers/${d.carrier_id}` : '/dashboard/carriers'}
                                       className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
                                     >
                                       <AlertTriangle size={11} /> Revisar en Empresas

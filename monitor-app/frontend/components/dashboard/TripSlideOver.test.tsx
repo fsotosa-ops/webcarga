@@ -327,7 +327,7 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     })
     expect(screen.getByText(/Falta Licencia de Conducir o Carnet del conductor/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'revisar en Empresas' })).toHaveAttribute(
-      'href', '/dashboard/transportistas/empresa/c1?tab=conductores',
+      'href', '/dashboard/carriers/c1?tab=conductores',
     )
   })
 
@@ -337,7 +337,7 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     })
     expect(screen.getByText(/Póliza vencida para esta empresa/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'revisar en Seguros' })).toHaveAttribute(
-      'href', '/dashboard/transportistas/empresa/c1?tab=seguros',
+      'href', '/dashboard/carriers/c1?tab=seguros',
     )
   })
 
@@ -348,7 +348,7 @@ describe('TripSlideOver — Conductor y flota (FleetAssignSection, driver-first)
     })
     expect(screen.getByText(/distinta de la empresa de este viaje/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'revisar en Empresas' })).toHaveAttribute(
-      'href', '/dashboard/transportistas/empresa/c1?tab=conductores',
+      'href', '/dashboard/carriers/c1?tab=conductores',
     )
   })
 
