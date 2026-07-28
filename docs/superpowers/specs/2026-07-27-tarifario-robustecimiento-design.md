@@ -60,7 +60,7 @@ RETURNS text AS $$
 $$ LANGUAGE sql IMMUTABLE;
 ```
 
-⚠️ **A confirmar con WebCarga antes de implementar**: el límite Norte/Sur de arriba es una inferencia razonable (regiones I-IV y XV al norte de la Región Metropolitana → Norte; VIII en adelante más XIV → Sur), pero no está escrito en la minuta con ese nivel de detalle — solo dice "el resto". Confirmar con Pablo/Fabián antes de aplicar el backfill.
+✅ **Confirmado por el usuario (2026-07-27)**: Región Norte = I-IV y XV; Región Sur = VIII-XII, XIV y XVI. Coincide con la regla de la función de arriba — sin cambios pendientes.
 
 **Backfill** (migración única, corre sobre los 262 locales existentes): para cada local sin `operation_type`, busca la región más frecuente entre sus paradas históricas (`app.trip_stops.destination_region` cruzado por nombre de local) y aplica `app.classify_operation_type()`. Deja `is_manual_override = false` en todos — son inferencias automáticas, no elecciones humanas.
 
@@ -89,6 +89,5 @@ $$ LANGUAGE sql IMMUTABLE;
 
 ## Riesgos aceptados
 
-- El límite Norte/Sur (regiones I-IV+XV vs. VIII+ +XIV) es una inferencia mía, no una regla que la minuta especifique con ese detalle — **bloqueante para implementar hasta que Pablo/Fabián lo confirmen o corrijan**.
 - Los 22 locales sin ningún viaje histórico quedan en "Por revisar" indefinidamente si nunca llega un viaje real hacia ellos y nadie los clasifica a mano — aceptado, es el mismo criterio que ya rige para "local nuevo incompleto" en el resto del proyecto (HU-16).
 - Un local cuyo historial de viajes tiene regiones mezcladas (ej. typo del TMS en una parada aislada) se clasifica por la región más frecuente, no por unanimidad — aceptado, mismo criterio pragmático que otras heurísticas del proyecto (ej. dedupe de locales en la carga inicial).
