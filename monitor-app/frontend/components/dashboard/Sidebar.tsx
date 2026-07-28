@@ -26,7 +26,7 @@ const MONITOR_GROUP = {
 
 const NAV_ITEMS = [
   { href: '/dashboard/carriers',       label: 'Empresas',  icon: Building2 },
-  { href: '/dashboard/seguros',        label: 'Seguros',   icon: Shield },
+  { href: '/dashboard/insurance',      label: 'Seguros',   icon: Shield },
   { href: '/dashboard/tarifario',      label: 'Tarifario', icon: Receipt },
 ]
 

@@ -14,7 +14,7 @@ interface Props {
 /** Card compacta de Seguros en la ficha de empresa — plan §4.2. Próxima
  *  cuota + cuotas vencidas + % pagado, agregando app.carrier_insurance_status
  *  (ya viene pre-agregado por póliza, sin date-math client-side). Clickeable:
- *  navega a la landing /dashboard/seguros pre-filtrada por tax_id (deep link
+ *  navega a la landing /dashboard/insurance pre-filtrada por tax_id (deep link
  *  vía ?q=), la "landing sincronizada con Empresas" del rediseño H3 —
  *  reemplaza la nota vieja de "sin link a un módulo Seguros separado" de
  *  cuando ese módulo todavía no existía. */
@@ -36,7 +36,7 @@ export function InsuranceSummaryCard({ carrierId, taxId }: Props) {
 
   return (
     <Link
-      href={`/dashboard/seguros?q=${encodeURIComponent(taxId)}`}
+      href={`/dashboard/insurance?q=${encodeURIComponent(taxId)}`}
       className="block bg-white rounded-xl border border-border p-4 space-y-3 text-left hover:border-gray-300 hover:shadow-sm transition-all"
     >
       <div className="flex items-center justify-between gap-2">

@@ -834,7 +834,7 @@ function EmpresaDetailPageInner() {
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Pólizas ({policies.length})</h3>
           <div className="flex items-center gap-3">
             <Link
-              href={`/dashboard/seguros?q=${encodeURIComponent(carrier.tax_id)}`}
+              href={`/dashboard/insurance?q=${encodeURIComponent(carrier.tax_id)}`}
               className="text-xs font-semibold text-accent hover:underline"
             >
               Ver en Seguros →
