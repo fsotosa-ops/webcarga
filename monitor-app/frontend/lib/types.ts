@@ -146,6 +146,28 @@ export type AvailableDriver = DriverPickCandidate & {
   last_report_at: string | null
 }
 
+/** Equipo (tracto) activo del directorio de empresas sin viaje abierto hoy —
+ *  Centro de Flota (2026-07-28). driver_* viene del viaje de hoy si tuvo
+ *  alguno, o del conductor habitual asignado al equipo si no. */
+export type AvailableAsset = {
+  asset_id:       string
+  tractor_plate:  string
+  asset_type:     string | null
+  carrier_id:     string | null
+  carrier_name:   string | null
+  trips_total:    number
+  last_report_at: string | null
+  driver_id:      string | null
+  driver_name:    string | null
+  driver_rut:     string | null
+  driver_phone:   string | null
+}
+
+export type AvailableAssetsResponse = {
+  total_active: number
+  items:        AvailableAsset[]
+}
+
 /** Resultado de GET /drivers?q= — búsqueda general de conductores activos */
 export type DriverSearchResult = DriverPickCandidate
 
@@ -783,6 +805,10 @@ export type DriverDayStatusRow = {
    *  sugerir un motivo en CloseDayDialog, no bloquea nada. */
   driver_pending_docs_critical: boolean | null
   suggested_reason_id:         string | null
+  /** Viaje real que causó el MISMATCH ese día (Centro de Flota, 2026-07-28)
+   *  — null para ASSIGNED/UNASSIGNED. Reemplaza el link genérico a Empresas
+   *  en CloseDayDialog por un link directo al viaje. */
+  trip_id:                     string | null
 }
 
 export type DailyClosureInfo = {
@@ -814,7 +840,7 @@ export type CloseDayPending = {
 // ── Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md) ──
 // Fila plana por conductor×día — sin agregar, el pivot se arma en el cliente.
 export type DailyClosureReportRow = Omit<
-  DriverDayStatusRow, 'resolved_by' | 'resolved_at' | 'driver_pending_docs_critical' | 'suggested_reason_id'
+  DriverDayStatusRow, 'resolved_by' | 'resolved_at' | 'driver_pending_docs_critical' | 'suggested_reason_id' | 'trip_id'
 > & {
   business_date: string
 }
