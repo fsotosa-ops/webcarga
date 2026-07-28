@@ -81,8 +81,20 @@
 
 **Nota de proceso**: durante la ejecución hubo 2 tropiezos propios sin impacto en el resultado — corrí `vitest` desde el directorio equivocado dos veces (error "document is not defined", no un bug real) y el spec inicial decía por error que había que agregar la columna `region_number` (ya existía desde la migración original, solo faltaba poblarla) — corregido en el spec antes de escribir el plan.
 
+---
+
+### 2026-07-27 (cont.) — Ronda 50: fix de scroll horizontal + navegación "Por revisar" → "Todos los locales"
+
+**Contexto**: Ronda 49 se desplegó (push a `origin/dev` confirmado). El usuario probó en producción y devolvió 2 ajustes: "hay que ajustar para que no haya scroll" en la tabla "Todos los locales", y "si selecciono un local, no me lleva a su detalle". Se confirmó con el usuario que el segundo punto **no** pedía un panel de detalle nuevo — pedía que el click en una tarjeta de "Por revisar" saltara a la tab "Todos los locales" con la búsqueda ya filtrada por ese local.
+
+**Scroll horizontal**: medido en vivo con `browser_evaluate` contra `webcarga-frontend-dev` — el `<div class="overflow-x-auto">` tenía `scrollWidth=1438px` vs. `clientWidth=930px`. Recortar anchos de columna no alcanzaba (~1200-1250px estimado); se rediseñó `LocationsTable.tsx`: N° de local se fusiona como badge dentro de "Nombre" (una columna menos), la clasificación automática pasa de texto "auto" a un punto con `title="Clasificado automáticamente"`, y Tarifa/Válido desde/Válido hasta colapsan en una celda "Tarifa vigente" (resumen de una línea, ej. "450.000 CLP · desde 22/07/26") que solo expande los 3 inputs al click en el ícono de lápiz — mismo `save()` de antes, solo cambia qué está visible por defecto. Tabla de 11 columnas → 8.
+
+**Navegación "Por revisar" → "Todos los locales"**: `LocationsPendingTab.tsx` suma prop `onSelect: (loc) => void`, disparado al click en la tarjeta (con `stopPropagation` en el `<select>` de clasificar para no confundir ambas acciones). `TarifarioPage` lo conecta a `setQ(loc.name); setTab('all')` — sin panel nuevo, tal como lo pidió el usuario.
+
+**Verificación**: TDD en los 3 archivos tocados (`LocationsTable.test.tsx` reescrito para el layout colapsado, 2 tests nuevos en `LocationsPendingTab.test.tsx`, 1 test nuevo en `page.test.tsx` para el flujo de navegación). Frontend completo: 538/538 (antes 534). `tsc --noEmit` y `npm run build` limpios. **Commiteado en `dev` local, sin push todavía** — pendiente confirmación del usuario y verificación visual en `webcarga-frontend-dev` una vez desplegado (no se pudo probar localmente contra Supabase real por falta de sesión autenticada en el dev server local).
+
 #### Próximo paso exacto
-1. [ ] **Decidir con el usuario si se commitea el push de esta ronda** (Ronda 49 — migración + backend + frontend de Tarifario, todo en `dev` local) y hacer la verificación en navegador contra `webcarga-frontend-dev` una vez desplegado (pendiente: tabs sin gate, tag "auto", triage de los 22 residuales, "+ Nuevo local" sin filtro previo).
+1. [ ] **Decidir con el usuario si se pushea Ronda 50** (fix de scroll + navegación de Tarifario) y verificar visualmente contra `webcarga-frontend-dev` una vez desplegado: confirmar que la tabla ya no tiene scroll horizontal y que el click en una tarjeta de "Por revisar" lleva a "Todos los locales" filtrado por ese local.
 2. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3, ahora que RM/Zona Cero y temperatura ya cerraron.
 3. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47, sin spec todavía).
 4. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos).

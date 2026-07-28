@@ -22,24 +22,42 @@ beforeEach(() => {
 
 describe('LocationsPendingTab', () => {
   it('shows one card per pending location with its generador de carga', () => {
-    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} />)
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={vi.fn()} />)
     expect(screen.getByText('Empresas Carozzi S.A.')).toBeInTheDocument()
     expect(screen.getByText(/Iansa/)).toBeInTheDocument()
   })
 
   it('shows an empty state when there is nothing pending', () => {
-    render(<LocationsPendingTab items={[]} shipperName={() => ''} onChanged={vi.fn()} />)
+    render(<LocationsPendingTab items={[]} shipperName={() => ''} onChanged={vi.fn()} onSelect={vi.fn()} />)
     expect(screen.getByText(/Sin locales por revisar/)).toBeInTheDocument()
   })
 
   it('classifying a card calls patch with the chosen zone and refreshes', async () => {
     vi.mocked(locationsApi.patch).mockResolvedValue({ ...LOCATION, operation_type: 'Z0' })
     const onChanged = vi.fn()
-    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={onChanged} />)
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={onChanged} onSelect={vi.fn()} />)
 
     fireEvent.change(screen.getByLabelText(`Clasificar ${LOCATION.name}`), { target: { value: 'Z0' } })
 
     await waitFor(() => expect(locationsApi.patch).toHaveBeenCalledWith('loc-9', { operation_type: 'Z0' }))
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
+
+  it('clicking a card calls onSelect with that location', () => {
+    const onSelect = vi.fn()
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={onSelect} />)
+
+    fireEvent.click(screen.getByText('Empresas Carozzi S.A.'))
+
+    expect(onSelect).toHaveBeenCalledWith(LOCATION)
+  })
+
+  it('clicking the classify select does not trigger onSelect', () => {
+    const onSelect = vi.fn()
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={onSelect} />)
+
+    fireEvent.click(screen.getByLabelText(`Clasificar ${LOCATION.name}`))
+
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

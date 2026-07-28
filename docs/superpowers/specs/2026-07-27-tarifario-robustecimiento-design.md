@@ -35,9 +35,10 @@ Construir y mantener un diccionario completo de ~346 comunas chilenas sería sob
 
 ## Modelo de datos
 
+`region_number` **ya existe** en `public.locations` (migración `20260717230000`) — hoy solo se llena en el sync inicial desde la planilla, nunca desde los viajes. Solo hace falta agregar el override:
+
 ```sql
 ALTER TABLE public.locations
-  ADD COLUMN region_number     smallint,           -- el dato crudo que ya reporta el TMS (destination_region)
   ADD COLUMN is_manual_override boolean NOT NULL DEFAULT false,
   ADD COLUMN overridden_by      uuid REFERENCES public.profiles(id),
   ADD COLUMN overridden_at      timestamptz;

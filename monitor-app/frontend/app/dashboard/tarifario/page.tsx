@@ -92,7 +92,14 @@ export default function TarifarioPage() {
       {tab === 'pending' && (
         <>
           <LoadState loading={pendingQuery.isPending} error={pendingQuery.error ? 'Error al cargar' : null} onRetry={() => pendingQuery.refetch()} />
-          {!pendingQuery.isPending && <LocationsPendingTab items={pendingItems} shipperName={shipperName} onChanged={invalidate} />}
+          {!pendingQuery.isPending && (
+            <LocationsPendingTab
+              items={pendingItems}
+              shipperName={shipperName}
+              onChanged={invalidate}
+              onSelect={loc => { setQ(loc.name); setTab('all') }}
+            />
+          )}
         </>
       )}
 

@@ -27,6 +27,17 @@ describe('LocationsTable', () => {
     expect(screen.getByDisplayValue('Alameda')).toBeInTheDocument()
   })
 
+  it('shows "Sin tarifa" and reveals inputs only after clicking Editar tarifa', () => {
+    render(<LocationsTable items={[LOCATION]} onChanged={vi.fn()} />)
+
+    expect(screen.getByText('Sin tarifa')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Tarifa de Alameda')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Editar tarifa de Alameda'))
+
+    expect(screen.getByLabelText('Tarifa de Alameda')).toBeInTheDocument()
+  })
+
   it('saving a tariff calls createRate, not patch', async () => {
     vi.mocked(locationsApi.createRate).mockResolvedValue({
       id: 'r1', location_id: 'loc-1', tarifa: '450.000 CLP', valid_from: '2026-07-27', valid_to: null,
@@ -35,6 +46,7 @@ describe('LocationsTable', () => {
     const onChanged = vi.fn()
     render(<LocationsTable items={[LOCATION]} onChanged={onChanged} />)
 
+    fireEvent.click(screen.getByLabelText('Editar tarifa de Alameda'))
     fireEvent.change(screen.getByLabelText('Tarifa de Alameda'), { target: { value: '450.000 CLP' } })
     fireEvent.click(screen.getByText('Guardar'))
 
@@ -67,13 +79,13 @@ describe('LocationsTable', () => {
     await waitFor(() => expect(locationsApi.patch).toHaveBeenCalledWith('loc-1', { operational_status: 'INACTIVE' }))
   })
 
-  it('shows "auto" tag next to classification when not manually overridden', () => {
+  it('shows an "auto-classified" dot next to classification when not manually overridden', () => {
     render(<LocationsTable items={[LOCATION]} onChanged={vi.fn()} />)
-    expect(screen.getByText('auto')).toBeInTheDocument()
+    expect(screen.getByTitle('Clasificado automáticamente')).toBeInTheDocument()
   })
 
-  it('does not show "auto" tag when classification was manually overridden', () => {
+  it('does not show the auto-classified dot when classification was manually overridden', () => {
     render(<LocationsTable items={[{ ...LOCATION, is_manual_override: true }]} onChanged={vi.fn()} />)
-    expect(screen.queryByText('auto')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Clasificado automáticamente')).not.toBeInTheDocument()
   })
 })

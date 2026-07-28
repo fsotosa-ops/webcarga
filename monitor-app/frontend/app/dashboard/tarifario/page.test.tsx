@@ -66,4 +66,12 @@ describe('TarifarioPage', () => {
     await screen.findByDisplayValue('Alameda')
     expect(locationsApi.list).toHaveBeenCalledWith(expect.objectContaining({ entity_id: '' }))
   })
+
+  it('clicking a pending card jumps to "Todos los locales" filtered by that location name', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByText('Empresas Carozzi S.A.'))
+
+    expect(await screen.findByRole('button', { name: /Todos los locales/, pressed: true })).toBeInTheDocument()
+    expect(screen.getByLabelText('Buscar local')).toHaveValue('Empresas Carozzi S.A.')
+  })
 })
