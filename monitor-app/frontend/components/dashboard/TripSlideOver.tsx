@@ -145,7 +145,11 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
   // DocumentChecklist.
   const [stopSaving, setStopSaving] = useState<string | null>(null)
 
-  async function handleStopFieldChange(stopId: string, field: 'desc_inicio' | 'desc_fin', value: string) {
+  async function handleStopFieldChange(
+    stopId: string,
+    field: 'desc_inicio' | 'desc_fin' | 'arrival' | 'departure' | 'gps_arrival' | 'gps_departure',
+    value: string,
+  ) {
     if (!trip) return
     setStopSaving(stopId)
     try {
@@ -859,10 +863,72 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                 )}
                               </td>
                               <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
+                              {/* GPS Llegada/Salida y Llegada/Salida TR: generalización del
+                                  override manual (bitácora 2026-07-29, hoja
+                                  "campos-seguimiento-viajes") — editables solo en destinos
+                                  (el origen no tiene un concepto real de llegada, ver plan).
+                                  Sodimac nunca reporta estos 4 campos vía TMS; con esto el
+                                  equipo de operaciones puede cargarlos a mano. */}
+                              {isOrigin ? (
+                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
+                              ) : (
+                                <td className="px-2 py-1">
+                                  <input
+                                    key={`${stop.stop_id}-gps_arrival-${stop.gps_arrival_date ?? ''}`}
+                                    type="datetime-local"
+                                    aria-label={`GPS Llegada de ${stop.local ?? 'parada'}`}
+                                    defaultValue={toDatetimeLocalValue(stop.gps_arrival_date)}
+                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_arrival', e.target.value)}
+                                    disabled={stopSaving === stop.stop_id}
+                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  />
+                                </td>
+                              )}
+                              {isOrigin ? (
+                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
+                              ) : (
+                                <td className="px-2 py-1">
+                                  <input
+                                    key={`${stop.stop_id}-gps_departure-${stop.gps_departure_date ?? ''}`}
+                                    type="datetime-local"
+                                    aria-label={`GPS Salida de ${stop.local ?? 'parada'}`}
+                                    defaultValue={toDatetimeLocalValue(stop.gps_departure_date)}
+                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_departure', e.target.value)}
+                                    disabled={stopSaving === stop.stop_id}
+                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  />
+                                </td>
+                              )}
+                              {isOrigin ? (
+                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
+                              ) : (
+                                <td className="px-2 py-1">
+                                  <input
+                                    key={`${stop.stop_id}-arrival-${stop.arrival_date ?? ''}`}
+                                    type="datetime-local"
+                                    aria-label={`Llegada TR de ${stop.local ?? 'parada'}`}
+                                    defaultValue={toDatetimeLocalValue(stop.arrival_date)}
+                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'arrival', e.target.value)}
+                                    disabled={stopSaving === stop.stop_id}
+                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  />
+                                </td>
+                              )}
+                              {isOrigin ? (
+                                <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
+                              ) : (
+                                <td className="px-2 py-1">
+                                  <input
+                                    key={`${stop.stop_id}-departure-${stop.departure_date ?? ''}`}
+                                    type="datetime-local"
+                                    aria-label={`Salida TR de ${stop.local ?? 'parada'}`}
+                                    defaultValue={toDatetimeLocalValue(stop.departure_date)}
+                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'departure', e.target.value)}
+                                    disabled={stopSaving === stop.stop_id}
+                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  />
+                                </td>
+                              )}
                               <td className="px-2 py-1">
                                 <span className="text-[8px] text-gray-400 block leading-none mb-0.5">{opLabel} inicio</span>
                                 <input

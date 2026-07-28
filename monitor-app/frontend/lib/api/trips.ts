@@ -27,8 +27,16 @@ export type TripPatch = {
 }
 
 export type TripStopPatch = {
-  desc_inicio?: string
-  desc_fin?:    string
+  desc_inicio?:   string
+  desc_fin?:      string
+  // Generalización del override manual (bitácora 2026-07-29) — mismo
+  // mecanismo que desc_inicio/desc_fin, para los 4 campos que la hoja
+  // "campos-seguimiento-viajes" documenta como editables cuando la TMS no
+  // los reporta.
+  arrival?:       string
+  departure?:     string
+  gps_arrival?:   string
+  gps_departure?: string
 }
 
 export type FleetLinkPayload = {

@@ -589,6 +589,65 @@ describe('TripSlideOver — campos híbridos de fecha (Carga/Desc. Inicio-Fin) �
   })
 })
 
+describe('TripSlideOver — generalización del override manual a GPS/TR (bitácora 2026-07-29)', () => {
+  it('shows GPS Llegada as an editable input for a destination stop without a TMS-reported value', async () => {
+    vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1', gps_arrival_date: null })]
+    renderSlideOver({ ...baseTrip, stops })
+    const input = screen.getByLabelText('GPS Llegada de Local 1') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '2026-07-29T08:00' } })
+    fireEvent.blur(input)
+    await waitFor(() =>
+      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { gps_arrival: '2026-07-29T08:00' }))
+  })
+
+  it('saves GPS Salida, Llegada TR and Salida TR for a destination stop via tripsApi.patchStop on blur', async () => {
+    vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
+    renderSlideOver({ ...baseTrip, stops })
+
+    const gpsSalida = screen.getByLabelText('GPS Salida de Local 1') as HTMLInputElement
+    fireEvent.change(gpsSalida, { target: { value: '2026-07-29T08:35' } })
+    fireEvent.blur(gpsSalida)
+    await waitFor(() =>
+      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { gps_departure: '2026-07-29T08:35' }))
+
+    const llegadaTr = screen.getByLabelText('Llegada TR de Local 1') as HTMLInputElement
+    fireEvent.change(llegadaTr, { target: { value: '2026-07-29T08:00' } })
+    fireEvent.blur(llegadaTr)
+    await waitFor(() =>
+      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { arrival: '2026-07-29T08:00' }))
+
+    const salidaTr = screen.getByLabelText('Salida TR de Local 1') as HTMLInputElement
+    fireEvent.change(salidaTr, { target: { value: '2026-07-29T08:30' } })
+    fireEvent.blur(salidaTr)
+    await waitFor(() =>
+      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { departure: '2026-07-29T08:30' }))
+  })
+
+  it('marks GPS/TR inputs as manual when the corresponding _manual flag is true', () => {
+    const stops = [makeStop({
+      stop_id: 's1', local: 'Local 1',
+      arrival_manual: true, departure_manual: true,
+      gps_arrival_manual: true, gps_departure_manual: true,
+    })]
+    renderSlideOver({ ...baseTrip, stops })
+    expect((screen.getByLabelText('Llegada TR de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
+    expect((screen.getByLabelText('Salida TR de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
+    expect((screen.getByLabelText('GPS Llegada de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
+    expect((screen.getByLabelText('GPS Salida de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
+  })
+
+  it('does not render GPS/TR as editable inputs for the ORIGIN stop', () => {
+    const stops = [makeStop({ stop_id: 'origin1', local: 'CD Origen', stop_type: 'ORIGIN' })]
+    renderSlideOver({ ...baseTrip, stops })
+    expect(screen.queryByLabelText('GPS Llegada de CD Origen')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('GPS Salida de CD Origen')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Llegada TR de CD Origen')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Salida TR de CD Origen')).not.toBeInTheDocument()
+  })
+})
+
 describe('TripSlideOver — Ubicación de origen (solo operation_type)', () => {
   it('shows "Sin clasificar" instead of an empty section when origin_operation_type is null', () => {
     renderSlideOver({ ...baseTrip, origin_operation_type: null })
