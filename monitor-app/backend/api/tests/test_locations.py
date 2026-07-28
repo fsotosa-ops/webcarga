@@ -24,7 +24,8 @@ def _location_row(**overrides):
         "site_number": "72", "name": "Alameda", "country_code": "CL",
         "format": "Express", "address": "Av. Alameda 123", "region_name": "RM. Metropolitana",
         "region_number": 13, "opens_at": None, "closes_at": None, "operation_type": "RM",
-        "operational_status": "ACTIVE", "created_at": None, "updated_at": None,
+        "operational_status": "ACTIVE", "is_manual_override": False,
+        "created_at": None, "updated_at": None,
     }
     base.update(overrides)
     return base
@@ -124,6 +125,25 @@ def test_list_locations_ignores_incomplete_when_not_true():
     assert res.status_code == 200
     query = pool.fetch.call_args.args[0]
     assert "operation_type IS NULL" not in query
+
+
+# ── Robustecer Tarifario (2026-07-27): needs_manual_classification ──────────
+# Distinto de `incomplete` — solo el residual real sin ninguna región
+# disponible en el historial de viajes (ver migración
+# 20260727100000_locations_auto_classification.sql).
+
+def test_list_locations_filters_needs_manual_classification():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    client = make_client(pool)
+
+    res = client.get("/api/v1/locations?needs_manual_classification=true")
+
+    assert res.status_code == 200
+    query = pool.fetch.call_args.args[0]
+    assert "operation_type IS NULL" in query
+    assert "region_number IS NULL" in query
 
 
 def _location_rate_row(**overrides):
@@ -339,3 +359,37 @@ def test_patch_location_updates_address_and_logs():
     assert "UPDATE public.locations SET" in update_sql
     audit_sql = conn.execute.call_args_list[-1].args[0]
     assert "INSERT INTO public.audit_log" in audit_sql
+
+
+# ── Robustecer Tarifario (2026-07-27): override manual de clasificación ─────
+
+def test_patch_location_operation_type_marks_manual_override():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = _location_row(operation_type=None, is_manual_override=False)
+    pool.fetchrow.return_value = _location_row(operation_type="Z0", is_manual_override=True)
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/locations/loc-1", json={"operation_type": "Z0"})
+
+    assert res.status_code == 200
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "is_manual_override = CASE WHEN $13 THEN true ELSE is_manual_override END" in update_sql
+    assert conn.execute.call_args_list[0].args[13] is True
+    assert conn.execute.call_args_list[0].args[14] == USER["sub"]
+
+
+def test_patch_location_other_fields_do_not_touch_override():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = _location_row()
+    pool.fetchrow.return_value = _location_row(address="Nueva dirección")
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/locations/loc-1", json={"address": "Nueva dirección"})
+
+    assert res.status_code == 200
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert conn.execute.call_args_list[0].args[13] is False

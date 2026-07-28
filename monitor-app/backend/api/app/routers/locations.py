@@ -18,7 +18,7 @@ router = APIRouter(prefix="/locations", tags=["locations"])
 _LOCATION_FIELDS = (
     "id, entity_type, entity_id, site_number, name, country_code, format, address, "
     "region_name, region_number, opens_at, closes_at, operation_type, "
-    "operational_status, created_at, updated_at"
+    "operational_status, is_manual_override, created_at, updated_at"
 )
 
 
@@ -30,6 +30,9 @@ async def list_locations(
     operation_type: str = Query(""),
     operational_status: str = Query(""),
     incomplete: str = Query("", description="true = solo locales sin clasificación (HU-16)"),
+    needs_manual_classification: str = Query(
+        "", description="true = sin región disponible en su historial de viajes, requiere elegir zona a mano "
+                         "(Robustecer Tarifario 2026-07-27) — subconjunto de `incomplete`, no todo lo incompleto."),
     include_rate: str = Query("", description="true = agrega la tarifa vigente (Fase 5, Tarifario 1.0)"),
     # Ronda 43 (Fase C, Tarea 7): verificado contra datos reales antes de
     # agregar esto — el generador de carga con más volumen tiene 566 locales
@@ -63,6 +66,8 @@ async def list_locations(
     # inventar un flag de completitud separado que se pueda desincronizar.
     if incomplete == "true":
         clauses.append("operation_type IS NULL")
+    if needs_manual_classification == "true":
+        clauses.append("operation_type IS NULL AND region_number IS NULL")
     if operational_status:
         params.append(operational_status)
         clauses.append(f"operational_status = ${len(params)}")
@@ -249,6 +254,12 @@ async def patch_location(
             if not current:
                 raise HTTPException(404, "Local no encontrado")
 
+            # Robustecer Tarifario (2026-07-27): si el body trae operation_type
+            # explícito, es una corrección humana — se marca is_manual_override
+            # para que el trigger de auto-registro de locales (que completa la
+            # clasificación desde destination_region) nunca la pise después.
+            manual_override = "operation_type" in touched
+
             await conn.execute(
                 """
                 UPDATE public.locations SET
@@ -263,12 +274,15 @@ async def patch_location(
                     closes_at          = COALESCE($10, closes_at),
                     operation_type     = COALESCE($11, operation_type),
                     operational_status = COALESCE($12, operational_status),
+                    is_manual_override = CASE WHEN $13 THEN true ELSE is_manual_override END,
+                    overridden_by      = CASE WHEN $13 THEN $14 ELSE overridden_by END,
+                    overridden_at      = CASE WHEN $13 THEN NOW() ELSE overridden_at END,
                     updated_at         = NOW()
                 WHERE id = $1
                 """,
                 location_id, body.name, body.site_number, body.country_code, body.format,
                 body.address, body.region_name, body.region_number, body.opens_at, body.closes_at,
-                body.operation_type, body.operational_status,
+                body.operation_type, body.operational_status, manual_override, user["sub"],
             )
             for field in touched:
                 await log_change(
