@@ -2,99 +2,6 @@
 > Proyecto: webcarga
 > Histórico completo en AGENTLOG_ARCHIVE.md — no es el histórico completo.
 
-### 2026-07-27 — Ronda 46: auditoría en vivo (Playwright) vs. minuta consolidada + backlog 20/07
-
-**Contexto**: el usuario pidió una auditoría real contra `webcarga-frontend-dev`, cruzando `monitor-app/docs/minuta_consolidado_20260720.md` (checklist §8 + tabla de pendientes §7) y el backlog de 17 HU + refinamiento v2 de `monitor-app/docs/user-stories/20260720/`, con evidencia en vivo (screenshots, consola, network) y acciones de escritura reversibles donde hiciera falta. Reporte completo publicado como Artifact (tabla `# | Ítem | Fuente | Estado | Evidencia | Bloqueante Hito 3`) — pedirle el link al usuario si se necesita retomar el detalle punto por punto, este resumen es solo lo accionable.
-
-**De paso, esta ronda resolvió la verificación manual pendiente desde Ronda 44/45**: tab "Estados de Equipo" (6 semillas ✓), hint de motivo sugerido en `CloseDayDialog` (✓), rediseño de Tarifario (✓ paginación/búsqueda/"+ Nuevo local" arriba), tiles clickeables de `CloseDayDialog` (✓, incluye bloqueo real de "Cerrar día" con 69 no asignados pendientes) — los 4 puntos que quedaban con "cobertura solo de tests, sin click-through real" ya están confirmados en producción.
-
-**Hallazgos de negocio (bloqueantes reales para Hito 3, ninguno es código complejo)**:
-1. **Rangos de Temperatura vacíos** — `/dashboard/admin/configuracion` → tab correspondiente muestra "Sin rangos configurados". El CRUD funciona, es tarea de Pablo/WebCarga cargar Frío 2-5°C / Congelado -18/-22°C, no de desarrollo.
-2. **Reporte diario automático por mail no existe** — confirmado que no hay SMTP/cron en ningún punto del backend, solo el dataset vía `daily-closures/report` + export CSV manual en Reportería. Es desarrollo real pendiente, sin empezar.
-3. **RM/Zona Cero sigue sin ser un diccionario por comuna** — la clasificación que se ve en pantalla es un valor pre-cargado por local en la planilla del generador de carga (`public.locations.operation_type`), no una regla `comuna → zona` como pidió la reunión del 10/07. Confirmado en vivo: **262 locales "sin clasificar"** en el Tarifario hoy.
-4. **Normalización de fecha QAnalytics↔WingSuite**: no hay lógica condicional por `source_system` en el backend (confirmado por grep). En cambio, comparando un viaje WingSuite/Colun real contra uno QAnalytics, el campo "Plan." por parada ya resuelve la ambigüedad de forma implícita (origen = plan de salida, destino = plan de llegada) — funciona en el caso verificado, pero es una solución distinta a la que pedía literalmente la minuta. Confirmar con el usuario si esto se da por bueno o si falta cerrar el diseño explícitamente.
-
-**Hallazgos de calidad, no bloqueantes**:
-- El fix de Ronda 42 ("Revisar en Empresas" clickeable) solo llegó a `CloseDayDialog.tsx` — los mismos textos dentro de `TripSlideOver.tsx` (detalle de viaje) siguen siendo texto plano sin `href` ni handler.
-- Columna "Última actualización" de Empresas muestra "sin actualizar hace 10 días" en **todas** las filas visibles — la minuta dice sync cada ~24h, vale la pena confirmar si el pipeline de SharePoint sigue corriendo.
-- Rutas legacy huérfanas `/dashboard/conductores/[id]` y `/dashboard/transportistas/[slug]` (schema `gold` vacío) siguen desplegadas — no crashean (manejan "no encontrado" con gracia) pero son código muerto.
-- `/dashboard/operaciones` es un `redirect()` vacío sin contenido propio, no está en el nav.
-- No se encontró ningún campo/columna "LSS" en ninguna pantalla — confirmar con el cliente a qué se refiere exactamente.
-
-**Gap real encontrado y corregido en la misma sesión (no pedido, autorizado explícitamente por el usuario)**: al crear una póliza de prueba en Seguros para confirmar el fix del bug de creación de pólizas (refinamiento v2 #1 — confirmado arreglado, se creó sin error), se encontró que **no existía ningún botón de eliminar póliza en toda la UI**. Se agregó:
-- Backend: `DELETE /api/v1/policies/{policy_id}` en `policies.py` — borra la póliza (cascada real vía FK `ON DELETE CASCADE` a cuotas/coberturas/activos, confirmado contra el schema real) y los archivos físicos en Storage si existen. 3 tests nuevos.
-- Frontend: botón papelera en `InsurancePolicyModal.tsx`, gateado a `canAdmin`, con `window.confirm` (mismo patrón que `UsersTable.tsx`/`GroupBuilder.tsx`/`umbrales-tabs.tsx`, no un modal custom nuevo). 3 tests nuevos.
-- Verificado: backend 324/324, frontend 525/525, `tsc` + `npm run build` limpios.
-- La póliza de prueba (`TEST-AUDIT-0727`) se borró vía SQL directo en Supabase (`viclzoftiudkepqnhekv`) antes de que existiera el botón, verificando primero que no tenía cuotas/coberturas/activos dependientes.
-
----
-
-### 2026-07-27 (cont.) — Ronda 47: feedback del usuario sobre el Artifact de Ronda 46 — 14 puntos, corregidos/ejecutados
-
-**Contexto**: el usuario revisó el reporte de Ronda 46 y devolvió 14 puntos de feedback: 3 pedidos de fix directo, 1 pedido de re-verificar contra Mage+Supabase (no solo frontend), y 10 correcciones/matices al reporte (algunos porque mi lectura estaba mal, otros porque cambió el foco de negocio). Se procesó uno por uno, sin asumir ninguno como "menor".
-
-**Fixes de código ejecutados y verificados** (backend 324/324, frontend 528/528, tsc + `npm run build` limpios en cada paso, commiteados y pusheados a `origin/dev` a pedido explícito del usuario):
-1. **Rutas legacy huérfanas eliminadas** (`/dashboard/conductores/[id]`, `/dashboard/transportistas/[slug]`) — junto con `createGoldClient()` (`lib/supabase/client.ts`/`server.ts`) y los tipos `DiarioTrip`/`DiarioManualFields`/`DiarioRow`/`NormalizedStatus` en `lib/types.ts`, que solo esas 2 rutas consumían.
-2. **Links "revisar en Seguros/Empresas" en `TripSlideOver.tsx`** — los 3 banners (póliza vencida/cuotas impagas, licencia de conducir faltante, empresa distinta conductor/viaje) ahora son `<a href>` reales a `/dashboard/transportistas/empresa/{carrier_id}?tab=seguros|conductores`, mismo patrón que ya usaba `CloseDayDialog.tsx`. Se agregó soporte de `?tab=` en `empresa/[id]/page.tsx`.
-3. **Hipervínculo patente→TMS**: `TmsChip` en `TripTable.tsx` ahora es un link real (antes solo estaba en el detalle) — abre el login del TMS de origen y copia el ID externo del viaje al portapapeles en el mismo click. **No** es un deep-link autenticado a un viaje específico — se respetó la decisión de seguridad ya documentada en `lib/utils/tmsLinks.ts` (cuenta de scraping compartida sin trazabilidad por usuario; Sodimac usa evasión de Cloudflare no apta para sesión humana).
-
-**Re-verificación contra Mage + Supabase (pedido explícito del usuario)** — usando `sync_project_to_local` (la API `pipeline_list` sigue devolviendo grafos incompletos) y `execute_sql` directo contra `viclzoftiudkepqnhekv`:
-- **Hallazgo real: "Última actualización" de Empresas no medía lo que yo creía.** La columna lee `MAX(compliance_records.updated_at)` — cuándo se tocó un documento de compliance, no cuándo se sincronizó la empresa desde SharePoint. Mi hallazgo original ("sin actualizar hace 10 días") era una mala lectura de la UI, no un bug del producto.
-- **Confirmado que el pipeline SÍ sigue corriendo**: `custom/load_carriers_02.sql` (bloque real que puebla `public.carriers`, invisible en `pipeline_list` pero presente en `metadata.yaml` sincronizado) hace upsert real. `bronze.raw_centralizer_vehicles` pasó de 119→121 filas — evidencia directa de datos frescos entrando. Nota menor sin resolver: `centralizer_eett_sharepoint` y `load_compliance_records_08` siguen con `status: failed` en el metadata sincronizado — no bloqueante, datos fluyen igual.
-
-**Correcciones al reporte (Artifact)**: SSO Microsoft, modelo de fechas QAnalytics/WingSuite, y "Vista detalle rediseñada" pasan a **✓ OK**. Reporte diario automático por mail deja de listarse como bloqueante (ideal, no MVP). "Consultar a María Eugenia" pasa a ✓ (ya resuelto en la minuta §6.1). Bloqueantes reales de Hito 3 quedan en **2**: rangos de temperatura, RM/Zona Cero.
-
-**Dirección de producto capturada, no implementada todavía**: `/dashboard/operaciones` debe convertirse en el hub real de Diario+Reportería. El gap de RM/Zona Cero es más amplio que "cargar un diccionario" — repensar `public.locations`/Tarifario de fondo.
-
----
-
-### 2026-07-27 (cont.) — Ronda 48: umbrales de temperatura cargados, bug de cache corregido, Artifact reescrito a lenguaje de negocio
-
-**Contexto**: el usuario devolvió 6 puntos: visión de negocio de Tarifario/`public.locations`, pedido de precargar los umbrales de temperatura y validar que las alertas realmente monitoreen, confirmación de que Pablo ya es owner, pedido de explicar 3 puntos del checklist, corrección de que el Artifact mezclaba contenido técnico con contenido de negocio, y pedido de push.
-
-**Umbrales de temperatura cargados en producción vía la app** (flujo real de Configuración, rol Owner): Frío 2-5°C, Congelado -22 a -18°C, exactamente los valores que mencionó Pablo. Verificado contra `app.temperature_ranges` en Supabase.
-
-**Bug real encontrado al validar "¿está monitoreando alertas?"**: un viaje CONGELADO con -22.06°C seguía mostrando el pill azul ("dentro de rango") varios minutos después de guardar los umbrales. Causa raíz: `GET /trips/meta` queda cacheado 5 minutos en Redis y ningún endpoint de escritura en `config.py`/`status_taxonomies.py` invalidaba esa cache — afecta a todo lo que Configuración expone ahí, no solo temperatura. Corregido: `invalidate_trips_meta_cache()` en `cache.py`, llamado desde los 9 endpoints de escritura relevantes. Backend 329/329. Commit `21a7f2e`, pusheado a `origin/dev`.
-
-**Reescritura completa del Artifact**: se retiró toda la sección "Hallazgos" (bugs, nombres de archivo, commits, tests) y se reescribió sin jerga técnica — el reporte debe contener solo información explicable al usuario de negocio (Pablo/Fabián). Ese detalle vive en AGENTLOG y en la memoria del proyecto, no en el Artifact. Alertas de temperatura pasan a ✓ OK. RM/Zona Cero queda como el **único bloqueante real restante**, reencuadrado con contexto de negocio: `public.locations` es el diccionario compartido de locales/destinos; Tarifario debe centralizar la creación de locales nuevos y la gestión de tarifas; el desafío es robustecer ese módulo completo, no solo cargar un diccionario — "no estamos muy lejos de eso".
-
----
-
-### 2026-07-27 (cont.) — Ronda 49: brainstorming + plan + implementación completa de "robustecer Tarifario"
-
-**Contexto**: el usuario pidió un plan para robustecer Tarifario. Sesión completa vía `superpowers:brainstorming` → `superpowers:writing-plans` → `superpowers:executing-plans` (modo inline, pedido explícito).
-
-**Hallazgo clave del brainstorming que cambió el enfoque**: la minuta pedía un diccionario comuna→zona construido a mano. Investigado antes de proponer nada: cada parada de un viaje ya trae `app.trip_stops.destination_region` (número de región real, reportado por el TMS). De los 262 locales sin clasificar, **240 ya tenían región disponible en su historial de viajes** — nunca se había propagado a `public.locations`. Se descartó construir un diccionario de ~346 comunas y se usó la región que el TMS ya reporta como fuente automática, dejando elección manual solo para el residual real (22 locales sin ningún viaje histórico).
-
-**Spec**: `docs/superpowers/specs/2026-07-27-tarifario-robustecimiento-design.md`. Mapeo de regiones confirmado por el usuario en la misma sesión: RM=región 13, Zona Cero=regiones 5/6/7, Región Norte=1/2/3/4/15, Región Sur=8/9/10/11/12/14/16 (coincidió exacto con lo que ya proponía el spec).
-
-**Plan**: `docs/superpowers/plans/2026-07-27-tarifario-robustecimiento-plan.md` (8 tareas TDD). Ejecutado completo en modo inline:
-1. **Migración** (`20260727100000_locations_auto_classification.sql`): `app.classify_operation_type()`, backfill, trigger de auto-registro extendido (clasifica locales nuevos de una, completa los existentes sin pisar `is_manual_override=true`). Aplicada contra `viclzoftiudkepqnhekv` — **verificado en vivo: 262 → 22 sin clasificar**, exacto a lo previsto en el spec.
-2. **Backend** (`locations.py`): filtro `needs_manual_classification` (el residual real, subconjunto de `incomplete`), `PATCH` con `operation_type` explícito marca `is_manual_override`/`overridden_by`/`overridden_at`. 3 tests nuevos, backend 332/332.
-3. **Frontend — tipos/cliente**: `Location.is_manual_override`, `locationsApi.list({ needs_manual_classification })`.
-4. **`LocationsTable.tsx`** (nuevo, extraído de `page.tsx`): tabla completa sin cambio de comportamiento, suma tag "auto" junto a la clasificación cuando no fue manual. 6 tests.
-5. **`LocationCreateForm.tsx`**: el selector de generador de carga se mueve adentro del formulario (antes vivía afuera, gateado por la página) — "+ Nuevo local" queda visible siempre. 7 tests.
-6. **`LocationsPendingTab.tsx`** (nuevo): tarjetas de triage solo para el residual sin señal de región — nada de tabla de 10 columnas. 3 tests.
-7. **`TarifarioPage` reescrita**: tabs "Por revisar" (default, sin gate)/"Todos los locales" (generador de carga como filtro opcional, no obligatorio). 4 tests.
-
-**Verificación final**: backend 332/332, frontend 534/534, `tsc` y `npm run build` limpios en cada tarea. Todos los commits en `dev` (locales, sin push todavía — pendiente decisión del usuario, ver checklist).
-
-**Nota de proceso**: durante la ejecución hubo 2 tropiezos propios sin impacto en el resultado — corrí `vitest` desde el directorio equivocado dos veces (error "document is not defined", no un bug real) y el spec inicial decía por error que había que agregar la columna `region_number` (ya existía desde la migración original, solo faltaba poblarla) — corregido en el spec antes de escribir el plan.
-
----
-
-### 2026-07-27 (cont.) — Ronda 50: fix de scroll horizontal + navegación "Por revisar" → "Todos los locales"
-
-**Contexto**: Ronda 49 se desplegó (push a `origin/dev` confirmado). El usuario probó en producción y devolvió 2 ajustes: "hay que ajustar para que no haya scroll" en la tabla "Todos los locales", y "si selecciono un local, no me lleva a su detalle". Se confirmó con el usuario que el segundo punto **no** pedía un panel de detalle nuevo — pedía que el click en una tarjeta de "Por revisar" saltara a la tab "Todos los locales" con la búsqueda ya filtrada por ese local.
-
-**Scroll horizontal**: medido en vivo con `browser_evaluate` contra `webcarga-frontend-dev` — el `<div class="overflow-x-auto">` tenía `scrollWidth=1438px` vs. `clientWidth=930px`. Recortar anchos de columna no alcanzaba (~1200-1250px estimado); se rediseñó `LocationsTable.tsx`: N° de local se fusiona como badge dentro de "Nombre" (una columna menos), la clasificación automática pasa de texto "auto" a un punto con `title="Clasificado automáticamente"`, y Tarifa/Válido desde/Válido hasta colapsan en una celda "Tarifa vigente" (resumen de una línea, ej. "450.000 CLP · desde 22/07/26") que solo expande los 3 inputs al click en el ícono de lápiz — mismo `save()` de antes, solo cambia qué está visible por defecto. Tabla de 11 columnas → 8.
-
-**Navegación "Por revisar" → "Todos los locales"**: `LocationsPendingTab.tsx` suma prop `onSelect: (loc) => void`, disparado al click en la tarjeta (con `stopPropagation` en el `<select>` de clasificar para no confundir ambas acciones). `TarifarioPage` lo conecta a `setQ(loc.name); setTab('all')` — sin panel nuevo, tal como lo pidió el usuario.
-
-**Verificación**: TDD en los 3 archivos tocados (`LocationsTable.test.tsx` reescrito para el layout colapsado, 2 tests nuevos en `LocationsPendingTab.test.tsx`, 1 test nuevo en `page.test.tsx` para el flujo de navegación). Frontend completo: 538/538 (antes 534). `tsc --noEmit` y `npm run build` limpios. **Pusheado a `origin/dev` y verificado en vivo contra `webcarga-frontend-dev`** (mismo día): `scrollWidth == clientWidth` (930px, antes 1438px) tanto colapsado como con "Editar tarifa" expandido, y click en una tarjeta de "Por revisar" navega a "Todos los locales" filtrado por ese nombre exacto — confirmado con Playwright real, no solo con tests.
-
----
-
 ### 2026-07-28 — Ronda 51: "Centro de Flota" — brainstorming + spec + plan + implementación completa
 
 **Contexto**: el usuario pidió entender "cerrar el día" y los estados de conductor/equipo (disponible/asignado/no asignado), señalando que el botón "conductores disponibles" del Diario estaba mal configurado y debía formar parte del User Journey de cierre. Sesión completa vía `superpowers:brainstorming` (con visual companion, 3 rondas de mockups) → `superpowers:writing-plans` → `superpowers:executing-plans` (modo inline, pedido explícito).
@@ -107,28 +14,45 @@
 1. **Backend** (`trips.py`): `GET /trips/available-assets` pasa de lista pelada a `{total_active, items}` — `total_active` permite calcular "en viaje hoy" sin duplicar la cuenta. Se agrega `standing_driver` (mismo patrón que `standing_vehicle` de `available-drivers`, en dirección inversa) para que un equipo sin viajes hoy siga mostrando su conductor habitual.
 2. **Backend** (`daily_closures.py`): `_DETAIL_SQL` suma `trip_id` vía LATERAL para filas MISMATCH — el viaje real que causó el descuadre (más reciente si hay más de uno), mismo criterio que ya usa `_RECOMPUTE_SQL` para marcar el estado.
 3. **Frontend — tipos/cliente**: `AvailableAsset`, `AvailableAssetsResponse`, `tripsApi.availableAssets()`, `DriverDayStatusRow.trip_id`.
-4. **`FleetCenterDialog.tsx`** (nuevo): tiles/búsqueda/tabla/split-button/cross-link. Bug propio encontrado y corregido en el momento (TDD hizo su trabajo): la tile "En viaje hoy" estaba programada como no-clickeable, dejando el mensaje explicativo de esa categoría como código muerto — se corrigió para que las 3 tiles se comporten igual.
+4. **`FleetCenterDialog.tsx`** (nuevo): tiles/búsqueda/tabla/split-button/cross-link.
 5. **`TripAssignDialog.tsx`**: prop `initialFleet` — al abrir desde "Asignar viaje" en Centro de Flota, el equipo/conductor llegan precargados.
 6. **`CloseDayDialog.tsx`**: link "Ver equipos disponibles" (cross-link) + filas MISMATCH ahora abren el viaje real (`TripSlideOver`) en vez de linkear genéricamente a la ficha de empresa — resuelve el ítem 4 del refinamiento v2 del 20/07 ("no permite interactuar con los viajes que aparecen ahí").
 7. **`page.tsx`**: el pill "conductores disponibles" + los botones "Agregar viaje" y "Carga masiva (CSV)" se funden en un solo botón "Flota — N disponibles"; nuevo estado orquesta los 4 modales (Centro de Flota ↔ Cerrar el día ↔ Asignar viaje ↔ Detalle del viaje).
 
 **Decisiones explícitas de alcance** (todas confirmadas con el usuario durante el brainstorming, no asumidas): nomenclatura "Por regularizar" del estado MISMATCH se mantiene sin cambios (se evaluó "En el aire", frase textual de Pablo, pero el usuario prefirió lo que ya está en producción); promover "Centro de Flota" a módulo de navegación de primer nivel quedó **fuera de alcance**, para un checkpoint separado.
 
-**Verificación**: backend 335/335, frontend 552/552 (antes 538), `tsc --noEmit` y `npm run build` limpios en cada tarea. Cero emojis en la UI (pedido explícito del usuario esta ronda) — toda la iconografía nueva usa `lucide-react` (`Truck`). Todos los commits en `dev` local, sin push todavía.
+**Deploy y verificación en vivo — bug real de producción encontrado y corregido en el momento**: tras el primer deploy, `GET /trips/available-assets` devolvía **500** en el Diario real (confirmado con Playwright + consola). Causa raíz diagnosticada contra la base real (`execute_sql`, no solo el mock de los tests): `max(vfr.resolved_driver_id)` — Postgres no tiene un agregado `max(uuid)`. Corregido con cast (`max(...::text)::uuid`), test de regresión agregado, verificado en vivo (200 + datos reales: 117 equipos activos, 79 conductores activos). **Lección de proceso**: los tests con `AsyncMock` no ejecutan SQL real y no detectan errores de tipo de Postgres — a partir de ahora, toda query nueva no trivial se verifica contra la base real (`mcp__claude_ai_Supabase__execute_sql`) antes de darla por buena, no solo con los tests unitarios.
+
+---
+
+### 2026-07-28 (cont.) — Ronda 52: feedback post-deploy de Centro de Flota — 3 puntos + 1 pregunta, todos resueltos
+
+**Contexto**: el usuario probó Centro de Flota en producción y devolvió 3 puntos: (1) el tile "En viaje hoy" mostraba un número pero ninguna fila al clickearlo, (2) los números de "Cerrar el día" y "Flota" no cuadran entre sí — ¿es normal?, (3) el "Ruta" del modal de Agregar viaje no está sincronizado con `public.locations`. Más una pregunta suelta: ¿por qué `vehicle_driver_assignments` está casi vacía?
+
+**Punto 2 — explicado, no era un bug**: verificado contra la base real: **117 equipos activos** vs. **79 conductores activos** — son dos rosters distintos (`public.assets` vs. `public.drivers`), no hay ninguna razón para que el total coincida (decisión de arquitectura de la Ronda 51: conductor para cerrar el día, equipo para disponibilidad). Dato relevante encontrado de paso: de esos 117 equipos, solo 1 tiene `vehicle_driver_assignments` activa — por eso casi todas las filas de Centro de Flota muestran "Sin conductor asignado hoy".
+
+**Pregunta suelta — `vehicle_driver_assignments` casi vacía**: no es un feature faltante. Existe un flujo real y completo: `VehicleDetailPanel.tsx` (abierto desde la ficha de empresa, `/dashboard/transportistas/empresa/[id]`, vía `VehicleRosterCard`) permite asignar/cambiar el conductor habitual de un equipo, llamando `POST/DELETE /assets/{id}/driver-assignment` (`assets.py`, con `is_manual_override`). Es un gap de **adopción/carga de datos** por parte de operaciones, no de desarrollo — nadie ha ido equipo por equipo a cargarlo todavía.
+
+**Punto 1 — resuelto con Opción B (elegida por el usuario)**: `GET /trips/available-assets` ahora también devuelve `busy: BusyAsset[]` — el complemento real de `items` (equipo con viaje ABIERTO hoy: patente, empresa, cliente, `trip_status`), calculado con una query nueva (`busy_trip`, `DISTINCT ON` por equipo, más reciente si hay más de un viaje). **Segundo bug real encontrado y corregido antes de aplicar** (verificado con `execute_sql` primero, como quedó como lección de la Ronda 51): la columna real es `t.trip_status`, no `t.current_status` como se escribió al principio. `FleetCenterDialog.tsx` — la tabla ahora cambia de columnas según la categoría activa (Patente/Empresa/Cliente/Estado actual para "En viaje hoy", con acción "Ver viaje" que abre el detalle real); `page.tsx` — handler compartido `handleSelectTrip` entre `CloseDayDialog` (fila MISMATCH) y `FleetCenterDialog` (equipo ocupado).
+
+**Punto 3 — resuelto, priorizado por el usuario**: `RouteEditor.tsx` (Origen + cada Destino del modal "Agregar viaje") era 100% texto libre, sin ninguna relación con el diccionario real de locales de Tarifario — un operador podía tipear un nombre existente con formato distinto y generar un duplicado. Nuevo componente `LocationPicker.tsx` (mismo patrón que `ClientPicker.tsx`: input + dropdown de sugerencias contra `GET /locations?q=`, el valor sigue siendo texto libre, sin auto-relleno de región/ciudad — `public.locations` no guarda ciudad y `region_name` no está garantizado que calce 1:1 con el picker de región/ciudad de Chile, se dejó fuera para no arriesgar un match silenciosamente incorrecto).
+
+**Verificación de toda la ronda**: backend 337/337, frontend 559/559, `tsc --noEmit` y `npm run build` limpios en cada commit. Las 2 queries nuevas (busy equipment, y la del fix de Ronda 51) se verificaron contra la base real antes de aplicarlas — 0 bugs de tipo/columna en producción esta vez. Todos los commits en `dev` local, sin push todavía de esta ronda (Ronda 51 sí está pusheada y desplegada).
 
 #### Próximo paso exacto
-1. [ ] **Decidir con el usuario si se pushea Ronda 51** (Centro de Flota) y verificar visualmente contra `webcarga-frontend-dev` una vez desplegado: botón "Flota" reemplaza al pill viejo, tiles "Nunca asignados"/"Liberados"/"En viaje" filtran bien, "Asignar viaje" precarga el equipo, split-button ofrece las 2 opciones, y los links cruzados con "Cerrar el día" funcionan en ambas direcciones.
+1. [ ] **Decidir con el usuario si se pushea Ronda 52** (tile "En viaje hoy" con datos reales + LocationPicker en Ruta) y verificar en vivo: clickear "En viaje hoy" muestra el equipo real y "Ver viaje" abre el detalle correcto; el campo Origen/Destino del modal "Agregar viaje" sugiere locales existentes al tipear 2+ caracteres.
 2. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3.
-3. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47, sin spec todavía).
-4. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos según mockups de Figma, refinamiento v2 ítem 6). Nota: distinto del "Centro de Flota" de esta ronda, que usa disponibilidad calculada en vivo, no un modelo persistido por día.
-5. [ ] Evaluar si "Centro de Flota" pasa a ser módulo de navegación de primer nivel (con espacio para alertas de póliza/documentación de equipo) — explícitamente dejado fuera de esta ronda.
-6. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
-7. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
-8. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
-9. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-10. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
-11. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-12. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-13. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-14. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-15. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+3. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47 — ver archivo, sin spec todavía).
+4. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos según mockups de Figma, refinamiento v2 ítem 6). Distinto del "Centro de Flota" de la Ronda 51, que usa disponibilidad calculada en vivo, no un modelo persistido por día.
+5. [ ] Evaluar si "Centro de Flota" pasa a ser módulo de navegación de primer nivel (con espacio para alertas de póliza/documentación de equipo) — explícitamente dejado fuera de la Ronda 51.
+6. [ ] (opcional, negocio) Si se quiere que "Conductor habitual" deje de estar casi siempre vacío en Centro de Flota, hace falta que operaciones cargue `vehicle_driver_assignments` equipo por equipo desde la ficha de cada empresa (`VehicleDetailPanel.tsx`) — no es una tarea de desarrollo.
+7. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
+8. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
+9. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
+10. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+11. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
+12. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+13. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+14. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+15. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+16. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
