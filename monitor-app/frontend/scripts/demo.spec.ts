@@ -23,8 +23,8 @@ test('demo tour completo', async ({ page }) => {
   await page.hover('[data-tour="sidebar"]')
   await page.waitForTimeout(600)
 
-  // ── 3. Diario — tabla de viajes ───────────────────────────────
-  await page.goto('/dashboard/diario')
+  // ── 3. Monitor — tabla de viajes ──────────────────────────────
+  await page.goto('/dashboard/operations/monitor')
   await page.waitForSelector('[data-tour="trip-table"]', { timeout: 10000 })
   await page.waitForTimeout(1000)
 
@@ -76,7 +76,7 @@ test('demo tour completo', async ({ page }) => {
   }
 
   // ── 7. Transportistas ─────────────────────────────────────────
-  await page.goto('/dashboard/transportistas')
+  await page.goto('/dashboard/carriers')
   await page.waitForSelector('[data-tour="transportistas-list"]', { timeout: 10000 })
   await page.waitForTimeout(800)
 
