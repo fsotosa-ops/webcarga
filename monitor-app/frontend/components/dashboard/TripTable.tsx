@@ -10,7 +10,9 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
+import { BitacoraFollowupBadge } from '@/components/ui/BitacoraFollowupBadge'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
+import { needsBitacoraFollowup } from '@/lib/utils/kpis'
 
 /** Hipervínculo desde la patente hacia el TMS de origen (minuta §7A ítem 16).
  *  No es un deep-link autenticado a un viaje específico — decisión de
@@ -122,15 +124,16 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | 
 }
 
 interface Props {
-  trips:         Trip[]
-  selectedId:    string | null
-  onSelect:      (trip: Trip) => void
-  meta?:         TripsMeta | null
+  trips:              Trip[]
+  selectedId:         string | null
+  onSelect:           (trip: Trip) => void
+  onSelectFocusNotes: (trip: Trip) => void
+  meta?:              TripsMeta | null
   /** Viajes cuyo último reporte TMS cambió en el refetch más reciente — glow sutil */
-  updatedIds?:   Set<string>
+  updatedIds?:        Set<string>
 }
 
-export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Props) {
+export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds }: Props) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
@@ -199,6 +202,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
           const isActive      = trip.id === selectedId
           const primaryPlate  = trip.tractor_plate ?? trip.trailer_plate ?? null
           const currentStatus = trip.manual_status ?? trip.current_status
+          const needsFollowup = needsBitacoraFollowup(trip, meta?.temperature_ranges ?? [], meta?.monitor_alert_rules ?? undefined)
 
           return (
             <div
@@ -242,6 +246,11 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                   {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
                     <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full whitespace-nowrap">OFF TIME</span>
                   )}
+                  <BitacoraFollowupBadge
+                    show={needsFollowup}
+                    compact
+                    onClick={e => { e.stopPropagation(); onSelectFocusNotes(trip) }}
+                  />
                 </div>
               </div>
 
@@ -327,6 +336,7 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                 const secondaryPlate = trip.tractor_plate && trip.trailer_plate ? trip.trailer_plate : null
                 const currentStatus  = trip.manual_status ?? trip.current_status
                 const phones         = parsePhones(trip.driver_phone)
+                const needsFollowup  = needsBitacoraFollowup(trip, meta?.temperature_ranges ?? [], meta?.monitor_alert_rules ?? undefined)
 
                 return (
                   <tr
@@ -506,6 +516,10 @@ export function TripTable({ trips, selectedId, onSelect, meta, updatedIds }: Pro
                           {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
                             <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full block mt-0.5 w-fit">OFF TIME</span>
                           )}
+                          <BitacoraFollowupBadge
+                            show={needsFollowup}
+                            onClick={e => { e.stopPropagation(); onSelectFocusNotes(trip) }}
+                          />
                           {(() => {
                             const activeStop = getActiveStop(trip.stops ?? [])
                             const eta = activeStop ? describeStopTiming(activeStop) : null
