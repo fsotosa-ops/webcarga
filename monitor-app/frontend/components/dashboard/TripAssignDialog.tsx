@@ -16,6 +16,9 @@ interface Props {
   meta?:     TripsMeta | null
   /** Fecha activa del Diario — para sugerir conductores disponibles hoy */
   fecha:     string
+  /** Precarga de equipo/conductor cuando se abre desde "Asignar viaje" en
+   *  Centro de Flota (2026-07-28) — sin esto, abre en blanco como siempre. */
+  initialFleet?: FleetAssignValue
 }
 
 const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
@@ -50,7 +53,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 type OriginMode = 'none' | 'mapped' | 'other'
 
-export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Props) {
+export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initialFleet }: Props) {
   const [form, setForm]             = useState<Partial<TripCreatePayload>>({})
   const [clientName, setClientName] = useState('')
   const [originMode, setOriginMode] = useState<OriginMode>('none')
@@ -75,7 +78,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha }: Prop
       setOriginMode('none')
       setOriginTms('')
       setStops([])
-      setFleet(EMPTY_FLEET_ASSIGN_VALUE)
+      setFleet(initialFleet ?? EMPTY_FLEET_ASSIGN_VALUE)
       setErr(null)
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps

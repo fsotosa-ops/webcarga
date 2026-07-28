@@ -245,4 +245,17 @@ describe('TripAssignDialog', () => {
     expect(await screen.findByText('Pedro Soto')).toBeInTheDocument()
     expect(driversApi.search).not.toHaveBeenCalled()
   })
+
+  it('con initialFleet (Centro de Flota → Asignar viaje), abre con el equipo ya cargado', () => {
+    renderCreate({
+      initialFleet: {
+        driver_id: 'd9', driver_name: 'Pedro Soto', driver_rut: '9-9', driver_phone: null,
+        carrier_id: 'c9', carrier_name: 'RPS Logística', tractor_asset_id: 'a9', tractor_plate: 'WXYZ99', trailer_plate: null,
+      },
+    })
+    expect(screen.getByText('Pedro Soto')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('RPS Logística')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('WXYZ99')).toBeInTheDocument()
+    expect(screen.getByText('Crear viaje')).not.toBeDisabled()
+  })
 })
