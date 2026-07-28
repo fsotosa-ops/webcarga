@@ -10,17 +10,17 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, BarChart3, Receipt,
 } from 'lucide-react'
 
-// "Monitor de Viajes" agrupa Diario + Reportería bajo un solo item
-// expandible — Empresas/Seguros no tienen esa profundidad todavía, se
-// quedan planos. "Cerrar el día" (ex-Cuadratura) dejó de ser un item de
-// nav — ahora es un botón dentro del propio Diario (spec
+// "Operaciones" agrupa Monitor + Cierres bajo un solo item expandible —
+// Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
+// "Cerrar el día" (ex-Cuadratura) dejó de ser un item de nav — ahora es
+// un botón dentro del propio Monitor (spec
 // 2026-07-21-cuadratura-reporteria-redesign-design.md).
 const MONITOR_GROUP = {
-  label: 'Monitor de Viajes',
+  label: 'Operaciones',
   icon:  Truck,
   items: [
-    { href: '/dashboard/diario',            label: 'Diario' },
-    { href: '/dashboard/diario/reporteria', label: 'Reportería' },
+    { href: '/dashboard/operations/monitor',  label: 'Monitor' },
+    { href: '/dashboard/operations/closures', label: 'Cierres' },
   ],
 }
 
@@ -31,7 +31,7 @@ const NAV_ITEMS = [
 ]
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahí, se listan
-// los items de Monitor de Viajes ya aplanados junto a los demás.
+// los items de Operaciones ya aplanados junto a los demás.
 const MOBILE_NAV_ITEMS = [
   { href: MONITOR_GROUP.items[0].href, label: MONITOR_GROUP.items[0].label, icon: Truck },
   { href: MONITOR_GROUP.items[1].href, label: MONITOR_GROUP.items[1].label, icon: BarChart3 },
@@ -69,8 +69,8 @@ export default function Sidebar({ role }: SidebarProps) {
     if (monitorGroupActive) setMonitorOpen(true)
   }, [monitorGroupActive])
 
-  // Match más específico primero (ej. /dashboard/diario/cuadratura no debe
-  // también resaltar /dashboard/diario) — evita 2 items activos a la vez.
+  // Match más específico primero (ej. /dashboard/operations/closures no debe
+  // también resaltar /dashboard/operations/monitor) — evita 2 items activos a la vez.
   const activeHref = [...NAV_ITEMS]
     .map(i => i.href)
     .filter(href => pathname.startsWith(href))
@@ -279,7 +279,7 @@ export default function Sidebar({ role }: SidebarProps) {
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
         {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname.startsWith(href) && (href !== '/dashboard/diario' || pathname === href)
+          const active = pathname.startsWith(href) && (href !== '/dashboard/operations/monitor' || pathname === href)
           return (
             <Link
               key={href}
