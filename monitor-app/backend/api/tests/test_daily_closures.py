@@ -28,6 +28,7 @@ def _driver_row(**overrides):
         "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None, "client_names": [],
         "driver_pending_docs_critical": None, "suggested_reason_id": None,
+        "trip_id": None,
     }
     base.update(overrides)
     return base
@@ -97,6 +98,23 @@ def test_get_daily_closure_status_includes_carrier_id_for_linking_to_empresas():
     assert res.json()["drivers"][0]["carrier_id"] == "c7"
     detail_sql = pool.fetch.call_args_list[0].args[0]
     assert "c.id AS carrier_id" in detail_sql
+
+
+def test_get_daily_closure_status_includes_trip_id_for_mismatch():
+    """Centro de Flota (2026-07-28) / ítem 4 del refinamiento v2: la fila
+    MISMATCH en Cerrar el día debe poder abrir el viaje real que causó el
+    descuadre, no solo linkear genéricamente a la ficha de empresa."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row(driver_id="d3", status="MISMATCH", trip_id="t-99")]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures?fecha=2026-07-21")
+
+    assert res.json()["drivers"][0]["trip_id"] == "t-99"
+    detail_sql = pool.fetch.call_args_list[0].args[0]
+    assert "mismatch_trip.trip_id" in detail_sql
+    assert "app.v_trip_fleet_resolution" in detail_sql
 
 
 def test_get_daily_closure_status_pending_excludes_unassigned_with_reason():

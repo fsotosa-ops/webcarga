@@ -107,7 +107,8 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        dds.resolved_by, dds.resolved_at,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
        dcomp.has_critical_pending AS driver_pending_docs_critical,
-       sugg.id AS suggested_reason_id
+       sugg.id AS suggested_reason_id,
+       mismatch_trip.trip_id
 FROM app.driver_day_status dds
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
@@ -132,6 +133,20 @@ LEFT JOIN LATERAL (
 -- operador confirma con un click en CloseDayDialog, no se escribe solo.
 LEFT JOIN app.status_taxonomies sugg
        ON sugg.domain = 'DRIVER_REASON' AND sugg.suggested_alert_source = 'compliance_expired' AND sugg.active = true
+-- Centro de Flota (2026-07-28): viaje real que causó el MISMATCH ese día —
+-- mismo criterio que _RECOMPUTE_SQL usa para marcar el estado (carrier nulo
+-- o distinto al del roster), pero a nivel de una fila puntual en vez de un
+-- bool_or agregado. El más reciente si hubo más de uno.
+LEFT JOIN LATERAL (
+    SELECT t.id AS trip_id
+    FROM app.trips t
+    JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+    WHERE vfr.resolved_driver_id = dds.driver_id
+      AND t.planning_date = dds.business_date
+      AND (vfr.resolved_carrier_id IS NULL OR vfr.resolved_carrier_id IS DISTINCT FROM c.id)
+    ORDER BY t.status_reported_at DESC NULLS LAST
+    LIMIT 1
+) mismatch_trip ON true
 WHERE dds.business_date = $1
 ORDER BY d.full_name
 """
