@@ -24,7 +24,7 @@ export default function LoginForm() {
       return
     }
 
-    router.push('/dashboard/diario')
+    router.push('/dashboard/operations/monitor')
     router.refresh()
   }
 

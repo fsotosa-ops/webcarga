@@ -5,7 +5,7 @@ import { cookies } from 'next/headers'
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard/diario'
+  const next = searchParams.get('next') ?? '/dashboard/operations/monitor'
 
   // Cloud Run proxies requests — request.url contains the internal 0.0.0.0 address.
   // Use x-forwarded-host to reconstruct the real public origin.

@@ -42,7 +42,7 @@ export default function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () 
     }
 
     if (data.session) {
-      router.push('/dashboard/diario')
+      router.push('/dashboard/operations/monitor')
       router.refresh()
       return
     }

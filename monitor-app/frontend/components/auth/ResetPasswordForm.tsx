@@ -55,7 +55,7 @@ export default function ResetPasswordForm() {
     }
 
     setDone(true)
-    setTimeout(() => router.push('/dashboard/operaciones'), 2000)
+    setTimeout(() => router.push('/dashboard/operations/monitor'), 2000)
   }
 
   if (done) {
