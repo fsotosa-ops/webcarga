@@ -3,40 +3,42 @@
 import { useState } from 'react'
 import { Loader2, Plus } from 'lucide-react'
 import type { Location } from '@/lib/types'
-import { locationsApi } from '@/lib/api/locations'
+import { locationsApi, type Shipper } from '@/lib/api/locations'
 
 const OPERATION_TYPE_OPTIONS = ['RM', 'Z0', 'Region Norte', 'Region Sur']
 
 const EMPTY_LOCATION = {
-  name: '', site_number: '', format: '', address: '',
+  shipperId: '', name: '', site_number: '', format: '', address: '',
   region_name: '', operation_type: '',
 }
 
 const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
 
 interface Props {
-  shipperId: string
+  shippers: Shipper[]
   onCreated: (location: Location) => void
 }
 
-/** Alta de local — extraído de Configuración > Locales (Fase 4) para
- *  reusarlo tal cual en Tarifario (Fase 5), que también necesita poder
- *  crear locales nuevos sin salir de su pantalla (spec
- *  2026-07-22-tarifario-design.md: "el motor de update de public.locations
- *  también y al tarifario"). */
-export function LocationCreateForm({ shipperId, onCreated }: Props) {
+/** Alta de local — el generador de carga se elige adentro del formulario
+ *  (Robustecer Tarifario, 2026-07-27) en vez de depender de un filtro de
+ *  página, para que "+ Nuevo local" quede visible siempre, no solo con un
+ *  generador ya elegido. */
+export function LocationCreateForm({ shippers, onCreated }: Props) {
   const [nuevo, setNuevo]         = useState<typeof EMPTY_LOCATION | null>(null)
   const [creating, setCreating]   = useState(false)
   const [createErr, setCreateErr] = useState<string | null>(null)
 
   async function create() {
-    if (!nuevo || !nuevo.name.trim() || !shipperId) {
+    if (!nuevo || !nuevo.name.trim()) {
       setCreateErr('Nombre es requerido'); return
+    }
+    if (!nuevo.shipperId) {
+      setCreateErr('Elegí un generador de carga'); return
     }
     setCreating(true); setCreateErr(null)
     try {
       const created = await locationsApi.create({
-        entity_type: 'SHIPPER', entity_id: shipperId, name: nuevo.name,
+        entity_type: 'SHIPPER', entity_id: nuevo.shipperId, name: nuevo.name,
         site_number: nuevo.site_number || null, format: nuevo.format || null,
         address: nuevo.address || null, region_name: nuevo.region_name || null,
         operation_type: nuevo.operation_type || null,
@@ -62,6 +64,11 @@ export function LocationCreateForm({ shipperId, onCreated }: Props) {
   return (
     <div className="border border-accent/30 bg-accent/[0.03] rounded-xl p-3 space-y-2.5 max-w-2xl">
       <div className="flex items-center gap-2 flex-wrap">
+        <select value={nuevo.shipperId} onChange={e => setNuevo({ ...nuevo, shipperId: e.target.value })}
+          aria-label="Generador de carga del local nuevo" className={INPUT + ' w-40'}>
+          <option value="">Generador de carga…</option>
+          {shippers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
         <input autoFocus value={nuevo.name} onChange={e => setNuevo({ ...nuevo, name: e.target.value })}
           placeholder="Nombre del local" aria-label="Nombre del local nuevo" className={INPUT + ' w-40'} />
         <input value={nuevo.site_number} onChange={e => setNuevo({ ...nuevo, site_number: e.target.value })}
