@@ -400,6 +400,10 @@ export type Trip = {
   tractor_pending_docs_critical?:  boolean | null
   carrier_pending_docs?:           number | null
   carrier_pending_docs_critical?:  boolean | null
+  /** Nota humana más reciente en la bitácora del viaje (excluye notas
+   *  note_type='sistema') — usado para saber si una alerta activa ya tuvo
+   *  seguimiento. Ver kpis.ts:needsBitacoraFollowup. */
+  last_human_note_at?: string | null
 }
 
 // ── Catálogo de locales por generador de carga (public.locations, H2.6) ──

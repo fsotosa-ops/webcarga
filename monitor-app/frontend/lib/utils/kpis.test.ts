@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveKpis, matchesKpi, DEFAULT_ALERT_RULES, isOpenTrip } from './kpis'
+import { deriveKpis, matchesKpi, DEFAULT_ALERT_RULES, isOpenTrip, kpiAnchorTimestamp, needsBitacoraFollowup } from './kpis'
 import type { Trip, TripStop, TemperatureRangeMeta, MonitorAlertRules } from '@/lib/types'
 
 function makeStop(overrides: Partial<TripStop> = {}): TripStop {
@@ -123,5 +123,119 @@ describe('deriveKpis', () => {
     expect(kpis.fleet_unmatched).toBe(1)
     expect(kpis.dwell).toBe(0)
     expect(kpis.late_arrival).toBe(0)
+  })
+})
+
+describe('kpiAnchorTimestamp', () => {
+  it('late_arrival: anchors on the overdue stop\'s planning_date', () => {
+    const trip = makeTrip('a', {
+      stops: [makeStop({ planning_date: '2026-07-04 10:00:00' })], // 8h before NOW, past 60min grace
+    })
+    expect(kpiAnchorTimestamp(trip, 'late_arrival', RANGES, RULES, NOW)).toBe(Date.parse('2026-07-04T10:00:00Z'))
+  })
+
+  it('late_arrival: does not anchor on a stop that has a plan but has not exceeded the grace period yet', () => {
+    const notYetLate = makeStop({ stop_id: 's1', planning_date: '2026-07-04 17:30:00' }) // 30min before NOW, under 60min grace
+    const trip = makeTrip('a', { stops: [notYetLate] })
+    expect(kpiAnchorTimestamp(trip, 'late_arrival', RANGES, RULES, NOW)).toBeNull()
+  })
+
+  it('late_arrival: with two candidate stops, anchors on the one that is actually overdue, not the first in the array', () => {
+    const notYetLate = makeStop({ stop_id: 's1', planning_date: '2026-07-04 17:30:00' }) // under grace
+    const overdue    = makeStop({ stop_id: 's2', planning_date: '2026-07-04 10:00:00' }) // well past grace
+    const trip = makeTrip('a', { stops: [notYetLate, overdue] })
+    expect(kpiAnchorTimestamp(trip, 'late_arrival', RANGES, RULES, NOW)).toBe(Date.parse('2026-07-04T10:00:00Z'))
+  })
+
+  it('dwell: anchors on the stuck stop\'s arrival_date', () => {
+    const trip = makeTrip('a', {
+      stops: [makeStop({ arrival_date: '2026-07-04 15:00:00', departure_date: null })], // 3h before NOW
+    })
+    expect(kpiAnchorTimestamp(trip, 'dwell', RANGES, RULES, NOW)).toBe(Date.parse('2026-07-04T15:00:00Z'))
+  })
+
+  it('dwell: does not anchor when the stop has not been stuck past the threshold yet', () => {
+    const trip = makeTrip('a', {
+      stops: [makeStop({ arrival_date: '2026-07-04 17:30:00', departure_date: null })], // 30min before NOW, under 2h dwell_hours
+    })
+    expect(kpiAnchorTimestamp(trip, 'dwell', RANGES, RULES, NOW)).toBeNull()
+  })
+
+  it('stale: anchors on status_reported_at', () => {
+    const trip = makeTrip('a', { status_reported_at: '2026-07-04 15:00:00' }) // 3h before NOW
+    expect(kpiAnchorTimestamp(trip, 'stale', RANGES, RULES, NOW)).toBe(Date.parse('2026-07-04T15:00:00Z'))
+  })
+
+  it('temp_out: anchors on the reporting stop\'s arrival_date', () => {
+    const trip = makeTrip('a', {
+      cargo_type: 'FRIO',
+      stops: [makeStop({ arrival_date: '2026-07-04 16:00:00', temperature: 9 })], // out of 2-5 range
+    })
+    expect(kpiAnchorTimestamp(trip, 'temp_out', RANGES, RULES, NOW)).toBe(Date.parse('2026-07-04T16:00:00Z'))
+  })
+
+  it('returns null when the KPI is not actually active', () => {
+    const trip = makeTrip('a', { status_reported_at: '2026-07-04 17:50:00' }) // 10min before NOW, not stale
+    expect(kpiAnchorTimestamp(trip, 'stale', RANGES, RULES, NOW)).toBeNull()
+  })
+
+  it('returns null for KPIs outside the followup badge scope', () => {
+    const trip = makeTrip('a', { tractor_plate: null, trailer_plate: null, driver_name: null })
+    expect(kpiAnchorTimestamp(trip, 'unassigned', RANGES, RULES, NOW)).toBeNull()
+  })
+
+  it('matches matchesKpi exactly: anchor is non-null if and only if matchesKpi is true', () => {
+    for (const kpi of ['late_arrival', 'dwell', 'stale', 'temp_out'] as const) {
+      const trip = makeTrip('a', {
+        status_reported_at: '2026-07-04 15:00:00',
+        stops: [makeStop({ arrival_date: '2026-07-04 15:00:00', departure_date: null, planning_date: '2026-07-04 10:00:00', temperature: 9 })],
+        cargo_type: 'FRIO',
+      })
+      const anchor = kpiAnchorTimestamp(trip, kpi, RANGES, RULES, NOW)
+      expect(anchor != null).toBe(matchesKpi(trip, kpi, RANGES, RULES, NOW))
+    }
+  })
+})
+
+describe('needsBitacoraFollowup', () => {
+  it('false when no in-scope KPI is active', () => {
+    const trip = makeTrip('a', { last_human_note_at: null })
+    expect(needsBitacoraFollowup(trip, RANGES, RULES, NOW)).toBe(false)
+  })
+
+  it('true when a KPI is active and there is no human note at all', () => {
+    const trip = makeTrip('a', {
+      status_reported_at: '2026-07-04 15:00:00', // stale, 3h before NOW
+      last_human_note_at: null,
+    })
+    expect(needsBitacoraFollowup(trip, RANGES, RULES, NOW)).toBe(true)
+  })
+
+  it('false when a human note came after the alert started', () => {
+    const trip = makeTrip('a', {
+      status_reported_at: '2026-07-04 15:00:00', // stale, 3h before NOW
+      last_human_note_at: '2026-07-04T16:00:00Z', // 1h after the alert's anchor
+    })
+    expect(needsBitacoraFollowup(trip, RANGES, RULES, NOW)).toBe(false)
+  })
+
+  it('true when the last human note predates the alert', () => {
+    const trip = makeTrip('a', {
+      status_reported_at: '2026-07-04 15:00:00', // stale, anchor 15:00
+      last_human_note_at: '2026-07-04T12:00:00Z', // note is older than the alert
+    })
+    expect(needsBitacoraFollowup(trip, RANGES, RULES, NOW)).toBe(true)
+  })
+
+  it('reopens when a second alert fires after the note that covered the first one', () => {
+    // stale since 14:00 (4h before NOW, past the 2h threshold); note at 14:30 covers it.
+    // dwell since 15:00 (3h before NOW, also past its 2h threshold) fires AFTER that note —
+    // latest anchor becomes 15:00, which the 14:30 note does not cover.
+    const trip = makeTrip('a', {
+      status_reported_at: '2026-07-04 14:00:00',
+      stops: [makeStop({ arrival_date: '2026-07-04 15:00:00', departure_date: null })],
+      last_human_note_at: '2026-07-04T14:30:00Z',
+    })
+    expect(needsBitacoraFollowup(trip, RANGES, RULES, NOW)).toBe(true)
   })
 })
