@@ -58,6 +58,7 @@ _TRIP_STOP_FIELDS = (
     "on_time_status, milestone_status, s2s, temperature, planning_date, "
     "arrival_date, departure_date, departure_date_prog, gps_arrival_date, "
     "gps_departure_date, unload_start, unload_end, desc_inicio_manual, desc_fin_manual, "
+    "arrival_date_manual, departure_date_manual, gps_arrival_date_manual, gps_departure_date_manual, "
     "created_at, updated_at"
 )
 
@@ -129,11 +130,11 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
         stops_by_trip.setdefault(trip_id, []).append(d)
 
     for stops in stops_by_trip.values():
-        stops.sort(key=_stop_display_key)
+        # Resolver overrides manuales ANTES de ordenar: si el equipo de
+        # operaciones cargó a mano un arrival_date que la TMS nunca reportó,
+        # la parada debe ordenarse por ese valor, no seguir al final como si
+        # siguiera sin llegada.
         for d in stops:
-            d.pop("stop_order")
-            d.pop("created_at")
-            d.pop("updated_at")
             desc_inicio_manual = d.pop("desc_inicio_manual")
             desc_fin_manual = d.pop("desc_fin_manual")
             if desc_inicio_manual is not None:
@@ -141,6 +142,29 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
             if desc_fin_manual is not None:
                 d["unload_end"] = desc_fin_manual
             d["desc_manual"] = desc_inicio_manual is not None or desc_fin_manual is not None
+
+            arrival_date_manual = d.pop("arrival_date_manual")
+            departure_date_manual = d.pop("departure_date_manual")
+            gps_arrival_date_manual = d.pop("gps_arrival_date_manual")
+            gps_departure_date_manual = d.pop("gps_departure_date_manual")
+            if arrival_date_manual is not None:
+                d["arrival_date"] = arrival_date_manual
+            if departure_date_manual is not None:
+                d["departure_date"] = departure_date_manual
+            if gps_arrival_date_manual is not None:
+                d["gps_arrival_date"] = gps_arrival_date_manual
+            if gps_departure_date_manual is not None:
+                d["gps_departure_date"] = gps_departure_date_manual
+            d["arrival_manual"] = arrival_date_manual is not None
+            d["departure_manual"] = departure_date_manual is not None
+            d["gps_arrival_manual"] = gps_arrival_date_manual is not None
+            d["gps_departure_manual"] = gps_departure_date_manual is not None
+
+        stops.sort(key=_stop_display_key)
+        for d in stops:
+            d.pop("stop_order")
+            d.pop("created_at")
+            d.pop("updated_at")
     return stops_by_trip
 
 
@@ -1678,10 +1702,12 @@ async def patch_trip_stop(
     pool=Depends(get_pool),
     user=Depends(require_editor),
 ):
-    """Override manual de Desc. Inicio/Fin de una parada — persiste en
-    app.trip_stops.desc_inicio_manual/desc_fin_manual (columnas reales,
-    Fase 2 del hardening H2.6), nunca en `stops` (se sobrescribe completo
-    en cada corrida del pipeline dbt)."""
+    """Override manual por parada — persiste en las columnas *_manual reales
+    de app.trip_stops (desc_inicio_manual/desc_fin_manual, Fase 2 del
+    hardening H2.6, más arrival_date_manual/departure_date_manual/
+    gps_arrival_date_manual/gps_departure_date_manual, bitácora
+    2026-07-29), nunca en `stops` (se sobrescribe completo en cada corrida
+    del pipeline dbt)."""
     # FIX 2026-07-18: app.trip_stops no tiene columna `id` (solo `stop_id`,
     # su PK) — este SELECT tiraba "column id does not exist" en cualquier
     # llamada real (los tests mockean pool.fetchval, nunca ejecutaron el
@@ -1699,13 +1725,19 @@ async def patch_trip_stop(
     await pool.execute(
         """
         UPDATE app.trip_stops SET
-            desc_inicio_manual = COALESCE($3::timestamptz, desc_inicio_manual),
-            desc_fin_manual    = COALESCE($4::timestamptz, desc_fin_manual),
-            updated_at         = NOW()
+            desc_inicio_manual         = COALESCE($3::timestamptz, desc_inicio_manual),
+            desc_fin_manual            = COALESCE($4::timestamptz, desc_fin_manual),
+            arrival_date_manual        = COALESCE($5::timestamptz, arrival_date_manual),
+            departure_date_manual      = COALESCE($6::timestamptz, departure_date_manual),
+            gps_arrival_date_manual    = COALESCE($7::timestamptz, gps_arrival_date_manual),
+            gps_departure_date_manual  = COALESCE($8::timestamptz, gps_departure_date_manual),
+            updated_at                 = NOW()
         WHERE stop_id = $1 AND trip_id = $2
         """,
         stop_id, trip_id,
         _parse_timestamptz(patch.get("desc_inicio")), _parse_timestamptz(patch.get("desc_fin")),
+        _parse_timestamptz(patch.get("arrival")), _parse_timestamptz(patch.get("departure")),
+        _parse_timestamptz(patch.get("gps_arrival")), _parse_timestamptz(patch.get("gps_departure")),
     )
     return await get_trip(trip_id, pool, user)
 

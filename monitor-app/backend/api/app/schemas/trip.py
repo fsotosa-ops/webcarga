@@ -27,8 +27,15 @@ class TripPatch(BaseModel):
 
 
 class TripStopPatch(BaseModel):
-    """Override manual de Desc. Inicio/Fin por parada — vive en
-    app.trips.stop_manual_fields (keyed por stop_id), nunca en el jsonb
-    `stops` del pipeline (se sobrescribe completo en cada corrida)."""
-    desc_inicio: Optional[str] = None
-    desc_fin:    Optional[str] = None
+    """Override manual por parada — columnas *_manual reales en
+    app.trip_stops, excluidas del MERGE de dbt (merge_exclude_columns),
+    nunca el jsonb `stops` del pipeline (se sobrescribe completo en cada
+    corrida). arrival/departure/gps_arrival/gps_departure generalizan el
+    mismo mecanismo que ya tenían desc_inicio/desc_fin — editable siempre
+    que la TMS no reporte el campo, sin condicionar por nombre de TMS."""
+    desc_inicio:   Optional[str] = None
+    desc_fin:      Optional[str] = None
+    arrival:       Optional[str] = None
+    departure:     Optional[str] = None
+    gps_arrival:   Optional[str] = None
+    gps_departure: Optional[str] = None

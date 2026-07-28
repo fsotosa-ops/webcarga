@@ -69,6 +69,40 @@ def test_patch_stop_persists_desc_fields_in_trip_stops_table():
     assert update.args[4] == datetime(2026, 7, 17, 10, 45, tzinfo=chile)
 
 
+# ── Generalización del override manual a arrival/departure/gps_* (bitácora
+# 2026-07-29): mismo mecanismo que desc_inicio/desc_fin, replicado a los 4
+# campos que la hoja "campos-seguimiento-viajes" documenta como editables
+# por operaciones cuando la TMS no los reporta (Sodimac, principalmente).
+
+def test_patch_stop_persists_arrival_departure_gps_fields_in_trip_stops_table():
+    pool = make_pool()
+    client = make_client(pool)
+    res = client.patch("/api/v1/trips/trip-1/stops/stop-abc", json={
+        "arrival": "2026-07-29T08:00:00",
+        "departure": "2026-07-29T08:30:00",
+        "gps_arrival": "2026-07-29T07:55:00",
+        "gps_departure": "2026-07-29T08:35:00",
+    })
+    assert res.status_code == 200
+    update = next(c for c in pool.execute.call_args_list
+                  if c.args[0].strip().startswith("UPDATE app.trip_stops SET"))
+    query = update.args[0]
+    assert "arrival_date_manual" in query
+    assert "departure_date_manual" in query
+    assert "gps_arrival_date_manual" in query
+    assert "gps_departure_date_manual" in query
+
+    from zoneinfo import ZoneInfo
+    chile = ZoneInfo("America/Santiago")
+    # desc_inicio/desc_fin no se enviaron en este PATCH — deben ir como None
+    assert update.args[3] is None
+    assert update.args[4] is None
+    assert update.args[5] == datetime(2026, 7, 29, 8, 0, tzinfo=chile)
+    assert update.args[6] == datetime(2026, 7, 29, 8, 30, tzinfo=chile)
+    assert update.args[7] == datetime(2026, 7, 29, 7, 55, tzinfo=chile)
+    assert update.args[8] == datetime(2026, 7, 29, 8, 35, tzinfo=chile)
+
+
 def test_patch_stop_requires_at_least_one_field():
     pool = make_pool()
     client = make_client(pool)
@@ -95,6 +129,8 @@ def _stop_row(**overrides):
         "gps_arrival_date": None, "gps_departure_date": None,
         "unload_start": None, "unload_end": None,
         "desc_inicio_manual": None, "desc_fin_manual": None,
+        "arrival_date_manual": None, "departure_date_manual": None,
+        "gps_arrival_date_manual": None, "gps_departure_date_manual": None,
         "created_at": None, "updated_at": None,
     }
     base.update(overrides)
@@ -136,6 +172,63 @@ def test_load_trip_stops_partial_override_keeps_other_field():
     s1 = result["trip-1"][0]
     assert s1["unload_start"] == "2026-07-17T10:00:00"
     assert s1["unload_end"] == "2026-07-17T09:00:00"  # sin override, queda el valor del TMS
+
+
+def test_load_trip_stops_overrides_arrival_departure_gps_and_marks_manual():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(
+            stop_id="s1", arrival_date=None, departure_date=None,
+            gps_arrival_date=None, gps_departure_date=None,
+            arrival_date_manual="2026-07-29T08:00:00",
+            departure_date_manual="2026-07-29T08:30:00",
+            gps_arrival_date_manual="2026-07-29T07:55:00",
+            gps_departure_date_manual="2026-07-29T08:35:00",
+        ),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    s1 = result["trip-1"][0]
+    assert s1["arrival_date"] == "2026-07-29T08:00:00"
+    assert s1["departure_date"] == "2026-07-29T08:30:00"
+    assert s1["gps_arrival_date"] == "2026-07-29T07:55:00"
+    assert s1["gps_departure_date"] == "2026-07-29T08:35:00"
+    assert s1["arrival_manual"] is True
+    assert s1["departure_manual"] is True
+    assert s1["gps_arrival_manual"] is True
+    assert s1["gps_departure_manual"] is True
+    for raw_col in ("arrival_date_manual", "departure_date_manual",
+                    "gps_arrival_date_manual", "gps_departure_date_manual"):
+        assert raw_col not in s1  # no se expone crudo en la respuesta
+
+
+def test_load_trip_stops_tms_value_wins_when_no_manual_override():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", arrival_date="2026-07-29T09:00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    s1 = result["trip-1"][0]
+    assert s1["arrival_date"] == "2026-07-29T09:00:00"
+    assert s1["arrival_manual"] is False
+
+
+def test_load_trip_stops_manual_arrival_date_affects_display_order():
+    """Bug potencial: si se resuelve el override manual DESPUES de ordenar,
+    una parada sin arrival_date del TMS pero con arrival_date_manual cargado
+    a mano quedaría igual al final (ordenada con el None crudo). El override
+    debe resolverse antes del sort para que la parada se mueva a su lugar
+    cronológico real."""
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", stop_order=1, local="TMS reporta 10:00", arrival_date="2026-07-29T10:00:00"),
+        _stop_row(stop_id="s2", stop_order=2, local="Manual cargado 09:00", arrival_date=None,
+                  arrival_date_manual="2026-07-29T09:00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["Manual cargado 09:00", "TMS reporta 10:00"]
 
 
 def test_load_trip_stops_empty_for_no_trip_ids():
