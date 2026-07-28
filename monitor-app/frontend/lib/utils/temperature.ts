@@ -10,16 +10,25 @@ export function getActiveStop(stops: TripStop[]): TripStop | null {
   return arrived.length > 0 ? arrived[arrived.length - 1] : null
 }
 
+// Returns the stop whose temperature reading is "the current one" — active
+// stop first, falling back to the most recently visited stop with a
+// non-null reading. Extracted from getLatestTemp so callers that need the
+// stop itself (not just the number, e.g. to anchor a timestamp) don't have
+// to duplicate this fallback order.
+export function getLatestTempStop(stops: TripStop[]): TripStop | null {
+  const active = getActiveStop(stops)
+  if (active?.temperature != null) return active
+  const visited = stops.filter(s => s.arrival_date || s.gps_arrival_date)
+  for (let i = visited.length - 1; i >= 0; i--) {
+    if (visited[i].temperature != null) return visited[i]
+  }
+  return null
+}
+
 // Returns the temperature at the active stop (current reading).
 // Falls back to the most recently visited stop if the active stop has no temp.
 export function getLatestTemp(stops: TripStop[]): number | null {
-  const active = getActiveStop(stops)
-  if (active?.temperature != null) return active.temperature
-  const visited = stops.filter(s => s.arrival_date || s.gps_arrival_date)
-  for (let i = visited.length - 1; i >= 0; i--) {
-    if (visited[i].temperature != null) return visited[i].temperature!
-  }
-  return null
+  return getLatestTempStop(stops)?.temperature ?? null
 }
 
 // Whether a stop has actually been reached (so temperature is a real reading).

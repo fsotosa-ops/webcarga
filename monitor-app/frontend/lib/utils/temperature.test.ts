@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeStopTiming } from './temperature'
+import { describeStopTiming, getLatestTemp, getLatestTempStop } from './temperature'
 import type { TripStop } from '@/lib/types'
 
 function makeStop(overrides: Partial<TripStop>): TripStop {
@@ -48,5 +48,27 @@ describe('describeStopTiming', () => {
   it('shows only the arrival segment when there is no departure data at all', () => {
     const stop = makeStop({ arrival_date: '2026-07-02 10:00:00' })
     expect(describeStopTiming(stop)).toMatch(/^llegó \d{2}:\d{2}$/)
+  })
+})
+
+describe('getLatestTempStop', () => {
+  it('returns the active stop when it has a temperature reading', () => {
+    const active = makeStop({ stop_id: 'active', arrival_date: '2026-07-28 10:00:00', temperature: 3 })
+    expect(getLatestTempStop([active])?.stop_id).toBe('active')
+  })
+
+  it('falls back to the most recently visited stop with a reading', () => {
+    const noTemp = makeStop({ stop_id: 'current', arrival_date: '2026-07-28 12:00:00', temperature: null })
+    const visited = makeStop({ stop_id: 'visited', arrival_date: '2026-07-28 09:00:00', departure_date: '2026-07-28 10:00:00', temperature: 4 })
+    expect(getLatestTempStop([visited, noTemp])?.stop_id).toBe('visited')
+  })
+
+  it('returns null when no stop has a temperature reading', () => {
+    expect(getLatestTempStop([makeStop({ arrival_date: '2026-07-28 10:00:00' })])).toBeNull()
+  })
+
+  it('getLatestTemp still returns the same value as before the refactor', () => {
+    const stop = makeStop({ arrival_date: '2026-07-28 10:00:00', temperature: 3 })
+    expect(getLatestTemp([stop])).toBe(3)
   })
 })
