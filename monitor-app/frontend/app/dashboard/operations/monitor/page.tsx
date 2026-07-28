@@ -98,6 +98,7 @@ export default function DiarioPage() {
   const [f, dispatch] = useDiarioFilters(todayISO())
 
   const [selected,       setSelected]       = useState<Trip | null>(null)
+  const [focusNotes,     setFocusNotes]     = useState(false)
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,      setShowCreate]      = useState(false)
   const [showBulkUpload,  setShowBulkUpload]  = useState(false)
@@ -293,6 +294,14 @@ export default function DiarioPage() {
     } catch {
       // silencioso — el operador puede reabrir el modal y reintentar
     }
+  }
+
+  // Click en BitacoraFollowupBadge (2026-07-28) — abre el mismo detalle que
+  // un click de fila normal, pero además pide que TripSlideOver scrollee
+  // derecho a la Bitácora en vez de abrir arriba del todo.
+  function handleSelectTripFocusNotes(trip: Trip) {
+    setSelected(trip)
+    setFocusNotes(true)
   }
 
   function handleAssignFromFleet(fleet: FleetAssignValue) {
@@ -602,7 +611,8 @@ export default function DiarioPage() {
                 <TripTable
                   trips={visibleTrips}
                   selectedId={selected?.id ?? null}
-                  onSelect={setSelected}
+                  onSelect={trip => { setSelected(trip); setFocusNotes(false) }}
+                  onSelectFocusNotes={handleSelectTripFocusNotes}
                   meta={tripsMeta}
                   updatedIds={updatedIds}
                 />
@@ -640,7 +650,13 @@ export default function DiarioPage() {
         </div>
       </div>
 
-      <TripSlideOver trip={selected} onClose={() => setSelected(null)} onSaved={handleSaved} meta={tripsMeta} />
+      <TripSlideOver
+        trip={selected}
+        onClose={() => { setSelected(null); setFocusNotes(false) }}
+        onSaved={handleSaved}
+        meta={tripsMeta}
+        focusNotes={focusNotes}
+      />
       <TripAssignDialog
         open={showCreate}
         onClose={() => { setShowCreate(false); setPrefillFleet(null) }}
