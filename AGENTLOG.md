@@ -37,22 +37,35 @@
 
 **Punto 3 — resuelto, priorizado por el usuario**: `RouteEditor.tsx` (Origen + cada Destino del modal "Agregar viaje") era 100% texto libre, sin ninguna relación con el diccionario real de locales de Tarifario — un operador podía tipear un nombre existente con formato distinto y generar un duplicado. Nuevo componente `LocationPicker.tsx` (mismo patrón que `ClientPicker.tsx`: input + dropdown de sugerencias contra `GET /locations?q=`, el valor sigue siendo texto libre, sin auto-relleno de región/ciudad — `public.locations` no guarda ciudad y `region_name` no está garantizado que calce 1:1 con el picker de región/ciudad de Chile, se dejó fuera para no arriesgar un match silenciosamente incorrecto).
 
-**Verificación de toda la ronda**: backend 337/337, frontend 559/559, `tsc --noEmit` y `npm run build` limpios en cada commit. Las 2 queries nuevas (busy equipment, y la del fix de Ronda 51) se verificaron contra la base real antes de aplicarlas — 0 bugs de tipo/columna en producción esta vez. Todos los commits en `dev` local, sin push todavía de esta ronda (Ronda 51 sí está pusheada y desplegada).
+**Verificación de toda la ronda**: backend 337/337, frontend 559/559, `tsc --noEmit` y `npm run build` limpios en cada commit. Las 2 queries nuevas (busy equipment, y la del fix de Ronda 51) se verificaron contra la base real antes de aplicarlas — 0 bugs de tipo/columna en producción esta vez. **Pusheado y verificado en vivo**: "En viaje hoy" muestra el equipo real (JLKD17/Transportes San Expedito/walmart/ORIGEN) y "Ver viaje" abre el detalle exacto del viaje; LocationPicker en Origen/Destino sugiere locales reales al tipear 2+ caracteres.
+
+---
+
+### 2026-07-28 (cont.) — Ronda 53: destinos auto-clasifican zona desde el local elegido — reemplaza el picker manual de Región/Ciudad
+
+**Contexto**: el usuario notó que la selección de Destinos en "Agregar viaje" no se sentía igual de completa que la de Origen — después de elegir un local real, todavía había que llenar Región/Ciudad a mano (`RegionCityPicker`). Pidió que la zona se autoseleccione según el destino elegido, en vez de usar ese dropdown manual.
+
+**Investigación antes de implementar (agente de exploración, sin tocar código) reveló un bug real y silencioso**: `app.trip_stops.destination_region` es la misma columna física para viajes TMS y manuales, pero con dos formatos incompatibles. El trigger de auto-clasificación de Tarifario (`app.reconcile_new_trip_stop_location`, Ronda 49) solo acepta un código numérico (`~ '^\d+$'`) y lo castea a `smallint`. Los viajes manuales, en cambio, escribían el **nombre completo de la región de Chile** (ej. "Región Metropolitana de Santiago", vía `RegionCityPicker` + `chile-locations.json`) — un string que nunca matchea el regex. Resultado: **todo destino de un viaje creado a mano quedaba sin clasificar, siempre, sin ningún error visible.**
+
+**Fix**: `LocationPicker.tsx` gana `onSelectLocation?: (loc: Location) => void` — al elegir una sugerencia real (no al tipear), además de `onChange(nombre)` expone el `Location` completo. `RouteEditor.tsx` usa esto para setear `destination_region = String(loc.region_number)` (numérico, compatible con el trigger) y mostrar un badge de zona ya resuelto (RM/Zona Cero/Región Norte/Región Sur, desde `loc.operation_type` — mismo dato que ya calculó Tarifario, sin reinventar el mapeo en el frontend). Escribir el nombre a mano sin elegir sugerencia limpia la zona — mismo comportamiento que un local nuevo sin registrar (queda pendiente de clasificar, como cualquier otro caso HU-15/16).
+
+**Limpieza**: `RegionCityPicker.tsx` + su test + `chile-locations.json` + el script que lo generaba (`generate-chile-locations.mjs`) quedaron sin ningún consumidor — eliminados (verificado con grep en todo el frontend antes de borrar).
+
+**Verificación**: frontend 557/557 (63 archivos, antes 64 — se fue el test de `RegionCityPicker`), `tsc --noEmit` y `npm run build` limpios. **Pusheado y verificado en vivo**: elegir "Bod La Farfana 1" como destino autocompleta el campo y muestra "Zona: RM" sin ningún picker manual.
 
 #### Próximo paso exacto
-1. [ ] **Decidir con el usuario si se pushea Ronda 52** (tile "En viaje hoy" con datos reales + LocationPicker en Ruta) y verificar en vivo: clickear "En viaje hoy" muestra el equipo real y "Ver viaje" abre el detalle correcto; el campo Origen/Destino del modal "Agregar viaje" sugiere locales existentes al tipear 2+ caracteres.
-2. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3.
-3. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47 — ver archivo, sin spec todavía).
-4. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos según mockups de Figma, refinamiento v2 ítem 6). Distinto del "Centro de Flota" de la Ronda 51, que usa disponibilidad calculada en vivo, no un modelo persistido por día.
-5. [ ] Evaluar si "Centro de Flota" pasa a ser módulo de navegación de primer nivel (con espacio para alertas de póliza/documentación de equipo) — explícitamente dejado fuera de la Ronda 51.
-6. [ ] (opcional, negocio) Si se quiere que "Conductor habitual" deje de estar casi siempre vacío en Centro de Flota, hace falta que operaciones cargue `vehicle_driver_assignments` equipo por equipo desde la ficha de cada empresa (`VehicleDetailPanel.tsx`) — no es una tarea de desarrollo.
-7. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
-8. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
-9. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
-10. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
-11. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
-12. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
-13. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
-14. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
-15. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-16. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
+1. [ ] Confirmar con el cliente a qué campo se refiere "LSS" — único punto sin resolver de los 10 criterios duros de Hito 3.
+2. [ ] Diseñar el rediseño de `/dashboard/operaciones` como hub de Diario+Reportería (dirección de producto confirmada en Ronda 47 — ver archivo, sin spec todavía).
+3. [ ] Diseñar (spec nuevo) `app.equipment_day_status` — desbloquea el rediseño real de Reportería (3 formatos fijos según mockups de Figma, refinamiento v2 ítem 6). Distinto del "Centro de Flota" de la Ronda 51, que usa disponibilidad calculada en vivo, no un modelo persistido por día.
+4. [ ] Evaluar si "Centro de Flota" pasa a ser módulo de navegación de primer nivel (con espacio para alertas de póliza/documentación de equipo) — explícitamente dejado fuera de la Ronda 51.
+5. [ ] (opcional, negocio) Si se quiere que "Conductor habitual" deje de estar casi siempre vacío en Centro de Flota, hace falta que operaciones cargue `vehicle_driver_assignments` equipo por equipo desde la ficha de cada empresa (`VehicleDetailPanel.tsx`) — no es una tarea de desarrollo.
+6. [ ] Borrar a mano en la UI de Mage el bloque `wingsuite_has_new_data` (desconectado).
+7. [ ] Revisar en la UI de Mage por qué `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `status: failed` (no bloqueante, datos fluyen igual).
+8. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
+9. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
+10. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
+11. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+12. [ ] (heredado) Barrer `source_client` dentro de `qanalytics` para descartar más casos tipo IANSA.
+13. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
+14. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
+15. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
