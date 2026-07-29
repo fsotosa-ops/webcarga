@@ -400,6 +400,20 @@ describe('TripSlideOver — indicadores (switches, Fase 2 Plan 5)', () => {
   })
 })
 
+describe('TripSlideOver — Gestión colapsable (página inmersiva, 2026-07-29)', () => {
+  it('shows a collapse toggle button for the Gestión panel', () => {
+    renderSlideOver(baseTrip)
+    expect(screen.getByTitle('Colapsar Gestión')).toBeInTheDocument()
+  })
+
+  it('collapsing Gestión hides its content and shows an expand toggle instead', () => {
+    renderSlideOver(baseTrip)
+    fireEvent.click(screen.getByTitle('Colapsar Gestión'))
+    expect(screen.queryByText('+ Establecer estado operativo manual')).not.toBeInTheDocument()
+    expect(screen.getByTitle('Expandir Gestión')).toBeInTheDocument()
+  })
+})
+
 describe('TripSlideOver — Bitácora (feed con historial)', () => {
   const note: TripNote = {
     id: 'n1', trip_id: 't1', author_id: 'u1', author_name: 'Operador Uno',

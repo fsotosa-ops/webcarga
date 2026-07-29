@@ -1,48 +1,22 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import {
-  X, Loader2, Copy, Check,
-  Truck, User, Phone, Hash,
-  MapPin, RotateCcw, ClipboardList,
-  ShieldAlert, Search, FileWarning, AlertTriangle,
+  X, Copy, Check,
+  Truck, User, Phone, Hash, MapPin,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
-import { tripsApi, type TripPatch } from '@/lib/api/trips'
-import { driversApi } from '@/lib/api/drivers'
+import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
-import { fmtDT, fmtDate, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
+import { fmtDT, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { StopTimeline } from './StopTimeline'
-import { IndicatorSwitches } from './IndicatorSwitches'
 import { TripNotesFeed } from './TripNotesFeed'
 import { useTripNotes } from '@/hooks/useTripNotes'
-import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from './FleetAssignSection'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
-import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
-import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
-
-// ── MetaField helper ──────────────────────────────────────────────────────────
-
-function MetaField({
-  label, value, highlight = false,
-}: {
-  label: string
-  value: string
-  highlight?: boolean
-}) {
-  return (
-    <div>
-      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
-      <p className={`text-xs leading-snug ${highlight ? 'font-semibold text-accent' : 'text-slate-700'}`}>
-        {value}
-      </p>
-    </div>
-  )
-}
+import { GestionPanel } from './GestionPanel'
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -55,30 +29,7 @@ interface Props {
 }
 
 export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false }: Props) {
-  const [estadoDraft, setEstadoDraft]           = useState('')
-  const [saving, setSaving]                     = useState(false)
-  const [err, setErr]                           = useState<string | null>(null)
   const [copiedField, setCopiedField]           = useState<'external' | 'internal' | null>(null)
-  const [showEstadoSelect, setShowEstadoSelect] = useState(false)
-  const [clearingOverride, setClearingOverride] = useState(false)
-  const [reasonSaving, setReasonSaving]         = useState(false)
-  const [unlinkErr, setUnlinkErr]               = useState<string | null>(null)
-  const [unlinking, setUnlinking]               = useState(false)
-  // Conductor→empresa/vehículo (FleetAssignSection, driver-first) — solo
-  // importa mientras el viaje no tiene carrier_id (rama "vincular"); la rama
-  // "ya vinculado" muestra una tarjeta compacta aparte, sin usar este draft.
-  const [fleetDraft, setFleetDraft]             = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
-  const [assigningFleet, setAssigningFleet]     = useState(false)
-  const [fleetErr, setFleetErr]                 = useState<string | null>(null)
-  // HU-06 (Fase 3): cuando el viaje no cruzó por nombre exacto pero el TMS sí
-  // reportó un nombre, se buscan candidatos por similitud de texto — el
-  // operador confirma con un click (FleetAssignSection.pick), esto nunca
-  // vincula solo. Solo tiene sentido en la rama "sin vincular" (!carrier_id).
-  const fuzzyMatchQuery = useQuery({
-    queryKey: ['drivers', 'fuzzy-match', trip?.id, trip?.driver_name_tms],
-    queryFn: () => driversApi.fuzzyMatch(trip!.driver_name_tms!),
-    enabled: !!trip && !trip.carrier_id && !!trip.driver_name_tms,
-  })
   const panelRef                                = useRef<HTMLDivElement>(null)
   const notesRef                                = useRef<HTMLElement>(null)
   // Badge de incidentes abiertos en el hero (Fase 2, Plan 5) — mismo hook
@@ -128,13 +79,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
 
   useEffect(() => {
     if (!trip) return
-    setEstadoDraft('')
-    setErr(null)
     setCopiedField(null)
-    setShowEstadoSelect(false)
-    setUnlinkErr(null)
-    setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
-    setFleetErr(null)
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Desc. Inicio/Fin (esquema de fechas 2026-07-17): override manual de lo
@@ -155,40 +100,10 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
     try {
       const updated = await tripsApi.patchStop(trip.id, stopId, { [field]: value })
       onSaved(updated)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al guardar')
+    } catch {
+      // best-effort — la próxima edición reintenta; sin bloquear la tabla con un error persistente
     } finally {
       setStopSaving(null)
-    }
-  }
-
-  async function handleSetOverride() {
-    if (!trip || !estadoDraft) return
-    setSaving(true)
-    setErr(null)
-    try {
-      const updated = await tripsApi.patch(trip.id, { manual_status: estadoDraft } as TripPatch)
-      onSaved(updated)
-      setShowEstadoSelect(false)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al guardar')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleClearOverride() {
-    if (!trip) return
-    setClearingOverride(true)
-    try {
-      await tripsApi.resetField(trip.id, 'manual_status')
-      onSaved({ ...trip, manual_status: null })
-      setEstadoDraft('')
-      setShowEstadoSelect(false)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al revertir')
-    } finally {
-      setClearingOverride(false)
     }
   }
 
@@ -197,40 +112,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
       setCopiedField(field)
       setTimeout(() => setCopiedField(null), 2000)
     })
-  }
-
-  async function handleUnlink() {
-    if (!trip) return
-    setUnlinking(true); setUnlinkErr(null)
-    try {
-      await tripsApi.removeFleetLink(trip.id)
-      onSaved({ ...trip, carrier_id: null, fleet_link_id: null })
-      setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
-    } catch (e) {
-      setUnlinkErr(e instanceof Error ? e.message : 'Error al desvincular')
-    } finally {
-      setUnlinking(false)
-    }
-  }
-
-  async function handleAssignFleet() {
-    if (!trip || !fleetDraft.carrier_id) return
-    setAssigningFleet(true); setFleetErr(null)
-    try {
-      const updated = await tripsApi.assignFleetLink(trip.id, {
-        carrier_id:       fleetDraft.carrier_id,
-        driver_id:        fleetDraft.driver_id ?? undefined,
-        tractor_asset_id: fleetDraft.tractor_asset_id ?? undefined,
-        driver_name:      fleetDraft.driver_name ?? undefined,
-        tractor_plate:    fleetDraft.tractor_plate ?? undefined,
-      })
-      onSaved(updated)
-      setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
-    } catch (e) {
-      setFleetErr(e instanceof Error ? e.message : 'Error al vincular')
-    } finally {
-      setAssigningFleet(false)
-    }
   }
 
   if (!trip) return null
@@ -256,34 +137,6 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
   const compliance  = stopComplianceSummary(stops)
   const tmsSince    = formatRelativeTime(trip.status_reported_at)
   const syncSince   = formatRelativeTime(trip.pipeline_updated_at)
-
-  // Reconciliación TMS↔manual (Fase 1.5b, extendida a empresa en Fase 2 Plan
-  // 4): si hay vínculo manual y el TMS reporta conductor/patente/empresa
-  // distinta a lo vinculado, avisar y ofrecer revertir — nunca sobrescribir
-  // automáticamente. EETT TMS (antes en "Datos operativos") se retiró porque
-  // esta es la única función real que cumplía: detectar cuándo la empresa
-  // vinculada diverge de lo que reporta la TMS.
-  const driverDiverges  = !!(trip.driver_name_tms && trip.driver_name_tms !== trip.driver_name)
-  const tractorDiverges = !!(trip.tractor_plate_tms && trip.tractor_plate_tms !== trip.tractor_plate)
-  const carrierDiverges = !!(trip.carrier_name_tms && trip.carrier_name_tms !== trip.carrier_name)
-  const hasReconciliationDivergence = !!trip.fleet_link_id && (driverDiverges || tractorDiverges || carrierDiverges)
-
-  // Ronda 43 (Hallazgo F): flujo de alta guiado para UNMATCHED — en ese
-  // caso no hay ninguna empresa resuelta (ni para el conductor ni para el
-  // tracto), así que el punto de partida real es crear la empresa. Se
-  // pre-cargan los 3 datos que el TMS ya reportó (razón social, conductor,
-  // patente) para no tener que re-tipearlos: la landing de Empresas abre el
-  // formulario de alta con `create=1`, y tras crear la empresa reenvía
-  // driver_name/tractor_plate a la ficha recién creada para pre-cargar
-  // también "+ Conductor"/"+ Equipo" ahí.
-  const empresasHandoffHref = (() => {
-    const params = new URLSearchParams({ create: '1' })
-    if (trip.carrier_name_tms)  params.set('business_name', trip.carrier_name_tms)
-    if (trip.driver_name_tms)   params.set('driver_name', trip.driver_name_tms)
-    const plateTms = trip.tractor_plate_tms ?? trip.tractor_plate
-    if (plateTms) params.set('tractor_plate', plateTms)
-    return `/dashboard/carriers?${params.toString()}`
-  })()
 
   return (
     <>
@@ -450,348 +303,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
         {/* ── Body — 2 columnas en desktop, apilado en mobile (Gestión primero) ── */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
 
-          {/* Columna derecha en desktop / primera en mobile: GESTIÓN */}
-          <aside className="order-1 md:order-2 md:w-[360px] md:shrink-0 md:overflow-y-auto md:border-l border-border bg-accent/[0.03] p-4 md:p-5 space-y-5">
-            <h4 className="text-[10px] font-bold text-accent uppercase tracking-widest flex items-center gap-1.5">
-              <ClipboardList size={11} /> Gestión
-            </h4>
-
-            {/* Estado operativo */}
-            <div>
-              <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[9px] text-gray-400">TMS reporta:</span>
-                <StatusBadge status={trip.current_status} meta={meta} />
-              </div>
-
-              {trip.manual_status ? (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {(() => {
-                    const opState = meta?.operational_states.find(s => s.id === trip.manual_status)
-                    const label = opState?.label ?? trip.manual_status
-                    return (
-                      <span
-                        className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                        style={opState
-                          ? { backgroundColor: opState.bg_color, color: opState.text_color }
-                          : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
-                      >
-                        {label}
-                      </span>
-                    )
-                  })()}
-                  <span className="text-[10px] text-gray-400">
-                    confirmado manualmente {trip.edited_by ? `por ${trip.edited_by} ` : ''}el {fmtDT(trip.edited_at)}
-                  </span>
-                  <button
-                    type="button"
-                    title="Revertir a valor del TMS"
-                    onClick={handleClearOverride}
-                    disabled={clearingOverride}
-                    className="text-gray-400 hover:text-accent transition-colors disabled:opacity-50"
-                  >
-                    {clearingOverride ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-                  </button>
-                </div>
-              ) : showEstadoSelect ? (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <select
-                    autoFocus
-                    value={estadoDraft}
-                    onChange={e => setEstadoDraft(e.target.value)}
-                    className="text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
-                  >
-                    <option value="">— Seleccionar estado…</option>
-                    {(meta?.operational_states ?? []).map(s => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
-                    ))}
-                  </select>
-                  <button type="button" onClick={handleSetOverride} disabled={saving || !estadoDraft}
-                    className="p-1.5 text-accent disabled:opacity-40">
-                    {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                  </button>
-                  <button type="button" onClick={() => { setShowEstadoSelect(false); setEstadoDraft('') }}
-                    className="text-[10px] text-gray-400 hover:text-gray-600">
-                    Cancelar
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowEstadoSelect(true)}
-                    className="text-xs text-accent hover:text-accent/80 transition-colors"
-                  >
-                    + Establecer estado operativo manual
-                  </button>
-                  {/* Microcopy (Fase 2, Plan 4): sin override, este badge y el
-                      del hero muestran el mismo dato — antes no había nada
-                      que lo explicara. */}
-                  <p className="text-[9px] text-gray-400 mt-1">
-                    Es el mismo estado que se muestra en el encabezado — acá podés confirmarlo manualmente si hace falta.
-                  </p>
-                </>
-              )}
-
-              {err && (
-                <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{err}</p>
-              )}
-            </div>
-
-            {/* Indicadores — switches con etiqueta completa (Fase 2, Plan 5) */}
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
-              <IndicatorSwitches trip={trip} onSaved={onSaved} />
-            </div>
-
-            {/* Motivo de no asignación — movido después de Indicadores (Fase
-                2, Plan 4): es el mismo concepto causal que el switch
-                "Asignado" de arriba, antes vivían en bloques sin relación
-                visual. Catálogo editable en app.unassigned_reasons. */}
-            {!trip.is_assigned && (meta?.unassigned_reasons?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Motivo de no asignación</p>
-                <select
-                  value={trip.unassigned_reason_id ?? ''}
-                  disabled={reasonSaving}
-                  onChange={async e => {
-                    const value = e.target.value
-                    setReasonSaving(true)
-                    try {
-                      const updated = await tripsApi.patch(trip.id, { unassigned_reason_id: value } as TripPatch)
-                      onSaved(updated)
-                    } catch {
-                      // best-effort — el select vuelve al valor real del trip en el próximo render
-                    } finally {
-                      setReasonSaving(false)
-                    }
-                  }}
-                  className="w-full text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
-                >
-                  <option value="">— Sin especificar —</option>
-                  {meta!.unassigned_reasons.map(r => (
-                    <option key={r.id} value={r.id}>{r.label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Conductor y flota — driver-first (Fase 2, Plan 4). Antes
-                "Empresa transportista" con CarrierAssignSection (búsqueda
-                de empresa primero, roster de conductor/tracto en
-                dropdowns) — mismo bug de fondo que motivó toda esta Fase:
-                una superficie de búsqueda propia en vez de reusar
-                DriverSearchPicker. Ahora FleetAssignSection (compartido con
-                TripAssignDialog, Plan 3) cubre la búsqueda + autocompletado
-                editable; "Vincular" solo llama a la API cuando el operador
-                confirma. */}
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-                <User size={10} /> Conductor y flota
-              </p>
-              {trip.carrier_id ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
-                    <div className="min-w-0 flex items-center gap-2 flex-wrap">
-                      <p className="text-xs font-semibold text-slate-800 truncate">{trip.carrier_name ?? '—'}</p>
-                      <InsuranceAlertBadge alert={trip.insurance_alert} />
-                      <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" />
-                      <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" />
-                      <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={unlinking}
-                      onClick={handleUnlink}
-                      className="text-[11px] text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50 shrink-0 ml-2"
-                    >
-                      {unlinking ? <Loader2 size={12} className="animate-spin" /> : 'Desvincular'}
-                    </button>
-                  </div>
-                  {unlinkErr && <p className="text-xs text-red-500 mt-1">{unlinkErr}</p>}
-                  {/* HU-12 (Fase 2): alerta prominente pedida por Pablo — no
-                      solo el badge chico junto al nombre, un banner que no
-                      se pueda pasar por alto al abrir el detalle del viaje. */}
-                  {(trip.insurance_alert === 'EXPIRED' || trip.insurance_alert === 'OVERDUE_INSTALLMENTS') && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                      <ShieldAlert size={13} className="text-red-600 shrink-0" />
-                      <p className="text-[11px] text-red-700 font-medium">
-                        {trip.insurance_alert === 'EXPIRED' ? 'Póliza vencida para esta empresa — ' : 'Cuotas críticas impagas para esta empresa — '}
-                        <a href={`/dashboard/carriers/${trip.carrier_id}?tab=seguros`} className="underline hover:text-red-900">
-                          revisar en Seguros
-                        </a>.
-                      </p>
-                    </div>
-                  )}
-                  {/* Gap cerrado 2026-07-22: documentación LEGAL_MANDATORY
-                      de conductor/tracto/empresa — antes solo Seguros tenía
-                      esta prominencia en el Diario. Banner solo para el caso
-                      crítico (Licencia de Conducir/Carnet, pedido explícito
-                      del usuario); el resto de pendientes ya se ve en los
-                      badges de arriba, sin duplicar el banner por cada uno. */}
-                  {trip.driver_pending_docs_critical && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                      <FileWarning size={13} className="text-red-600 shrink-0" />
-                      <p className="text-[11px] text-red-700 font-medium">
-                        Falta Licencia de Conducir o Carnet del conductor —{' '}
-                        <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="underline hover:text-red-900">
-                          revisar en Empresas
-                        </a>.
-                      </p>
-                    </div>
-                  )}
-                  {/* HU-04 (Fase 0): conductor y tracto calzan cada uno por su
-                      lado pero bajo empresas distintas — regla de Pablo
-                      (reunión 20/07): ambos deben pertenecer a la misma
-                      empresa. Solo informativo acá; la resolución (transferir
-                      conductor o tracto) se hace en el módulo Empresas. */}
-                  {trip.fleet_match_status === 'MISMATCH' && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
-                      <p className="text-[10px] text-amber-700">
-                        El conductor pertenece a <span className="font-semibold">{trip.fleet_match_driver_home_carrier}</span>, distinta de la empresa de este viaje —{' '}
-                        <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="underline hover:text-amber-900">
-                          revisar en Empresas
-                        </a>.
-                      </p>
-                    </div>
-                  )}
-                  {hasReconciliationDivergence && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
-                      {carrierDiverges && (
-                        <p className="text-[10px] text-amber-700">
-                          TMS reporta empresa: <span className="font-semibold">{trip.carrier_name_tms}</span>
-                        </p>
-                      )}
-                      {driverDiverges && (
-                        <p className="text-[10px] text-amber-700">
-                          TMS reporta conductor: <span className="font-semibold">{trip.driver_name_tms}</span>
-                        </p>
-                      )}
-                      {tractorDiverges && (
-                        <p className="text-[10px] text-amber-700">
-                          TMS reporta patente: <span className="font-semibold">{trip.tractor_plate_tms}</span>
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        disabled={unlinking}
-                        onClick={handleUnlink}
-                        className="text-[10px] font-semibold text-amber-700 hover:text-amber-900 underline disabled:opacity-50"
-                      >
-                        {unlinking ? 'Revirtiendo…' : 'Usar dato del TMS'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {/* Fase B (ítem 5, feedback post-weekly 2026-07-22):
-                      tracto/conductor que el TMS reporta sin ningún cruce
-                      contra empresa (transcript-meeting.md: "un tracto que
-                      no está asociado a una empresa de transporte, tiene
-                      que quedar ahí..."). Label visible: "Sin identificar"
-                      — Pablo dijo "Equipo OVNI" en la reunión como forma
-                      coloquial de explicar la idea en el momento, no como
-                      término de producto (corregido en Ronda 43, no es
-                      nomenclatura estándar de industria/logtech). El enum
-                      interno sigue siendo UNMATCHED — solo cambia el label. */}
-                  {trip.fleet_match_status === 'UNMATCHED' && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                      <AlertTriangle size={13} className="text-amber-600 shrink-0" />
-                      <p className="text-[11px] text-amber-700 font-medium">Sin identificar — sin cruce contra ninguna empresa todavía.</p>
-                    </div>
-                  )}
-                  {/* HU-06 (Fase 3): el TMS reportó un nombre pero no cruzó
-                      exacto contra el roster — se buscan candidatos por
-                      similitud (~80%, confirmado por Pablo) y se muestran
-                      como sugerencia; elegir uno sigue pasando por el mismo
-                      click de confirmación que la búsqueda manual. */}
-                  {trip.driver_name_tms && (
-                    <p className="text-[10px] text-gray-400">
-                      TMS reportó: <span className="font-semibold text-slate-600">{trip.driver_name_tms}</span>
-                    </p>
-                  )}
-                  <FleetAssignSection
-                    value={fleetDraft}
-                    onChange={setFleetDraft}
-                    size="sm"
-                    suggested={fuzzyMatchQuery.data ?? []}
-                    suggestedLabel="Posibles coincidencias (nombre TMS)"
-                    notFoundHint={
-                      <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
-                        Si no aparece en la lista, hay que darlo de alta primero en{' '}
-                        <a href={empresasHandoffHref} className="underline font-semibold">Empresas</a>.
-                      </p>
-                    }
-                  />
-                  {/* HU-05 (Fase 3): gatillo explícito para crear el
-                      conductor/empresa cuando ni el cruce exacto ni el
-                      fuzzy match encontraron nada — antes esto solo
-                      aparecía si el operador tipeaba en la búsqueda manual.
-                      Ronda 43 (Hallazgo F): en UNMATCHED no hay NINGUNA
-                      empresa resuelta (vfr.resolved_carrier_id IS NULL) —
-                      el link lleva razón social/conductor/patente que
-                      reportó el TMS pre-cargados vía query params, para
-                      abrir directo el formulario de alta de empresa en vez
-                      de mandar a una búsqueda que no filtra por nombre de
-                      conductor (la lista de Empresas busca por razón
-                      social/tax_id, no por conductor). */}
-                  {trip.driver_name_tms && !fuzzyMatchQuery.isLoading && (fuzzyMatchQuery.data?.length ?? 0) === 0 && (
-                    <a
-                      href={empresasHandoffHref}
-                      className="flex items-center gap-1.5 text-[11px] font-semibold text-accent hover:underline"
-                    >
-                      <Search size={11} /> Sin coincidencias — dar de alta empresa/conductor/equipo
-                    </a>
-                  )}
-                  {fleetDraft.driver_id && (
-                    <button
-                      type="button"
-                      disabled={assigningFleet || !fleetDraft.carrier_id}
-                      onClick={handleAssignFleet}
-                      className="w-full text-xs font-semibold bg-accent text-white rounded-lg py-1.5 hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
-                    >
-                      {assigningFleet ? <Loader2 size={12} className="animate-spin" /> : 'Vincular'}
-                    </button>
-                  )}
-                  {fleetErr && <p className="text-[11px] text-red-500">{fleetErr}</p>}
-                </div>
-              )}
-            </div>
-
-            {/* Ubicación de origen — solo operation_type (Fase 2, Plan 4).
-                Región/ciudad (RegionCityPicker) se retiró por completo:
-                origin_operation_type es el dato real/automático, la
-                asignación manual de respaldo competía visualmente con él
-                sin aportar. "Sin clasificar" explícito en vez de una
-                sección vacía cuando OperationTypeBadge no tiene nada que
-                mostrar (retorna null si operationType es falsy). */}
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                <MapPin size={10} /> Ubicación de origen
-              </p>
-              {trip.origin_operation_type ? (
-                <OperationTypeBadge operationType={trip.origin_operation_type} meta={meta} size="md" />
-              ) : (
-                <span className="text-[11px] text-gray-400">Sin clasificar</span>
-              )}
-            </div>
-
-            {/* Datos operativos — antes acordeón colapsado en la columna
-                principal (Fase 2, Plan 4): se aplana y se muda acá, es la
-                sección que menos ancho horizontal necesita. EETT TMS se
-                retira — su única función real (divergencia de empresa) la
-                cubre ahora el banner de reconciliación de arriba. */}
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Datos operativos</p>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-                <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
-                <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
-                {trip.milestone_status && (
-                  <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
-                )}
-              </div>
-            </div>
-          </aside>
+          <GestionPanel trip={trip} meta={meta} onSaved={onSaved} />
 
           {/* Columna izquierda en desktop / segunda en mobile: RUTA + BITÁCORA */}
           <div className="order-2 md:order-1 flex-1 min-w-0 md:overflow-y-auto p-4 md:p-6 space-y-5">
