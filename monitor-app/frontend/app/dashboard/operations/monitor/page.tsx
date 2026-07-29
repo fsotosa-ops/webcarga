@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -11,7 +12,6 @@ import type { Trip, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripBoard } from '@/components/dashboard/TripBoard'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
-import { TripSlideOver } from '@/components/dashboard/TripSlideOver'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { FilterPopover } from '@/components/dashboard/FilterPopover'
 import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
@@ -97,8 +97,6 @@ function LastUpdated({ updatedAt, fetching }: { updatedAt: number; fetching: boo
 export default function DiarioPage() {
   const [f, dispatch] = useDiarioFilters(todayISO())
 
-  const [selected,       setSelected]       = useState<Trip | null>(null)
-  const [focusNotes,     setFocusNotes]     = useState(false)
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,      setShowCreate]      = useState(false)
   const [showBulkUpload,  setShowBulkUpload]  = useState(false)
@@ -166,6 +164,14 @@ export default function DiarioPage() {
           status: statusParam, tms: f.fTms.join(','), limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
 
   const queryClient = useQueryClient()
+  const router       = useRouter()
+  const pathname      = usePathname()
+  // Mientras el overlay interceptado está abierto, la URL real de este mismo
+  // árbol de React sigue siendo /monitor/trips/[id] (Next.js actualiza el
+  // router context aunque este componente monte por el slot `children`, no
+  // por `@modal`) — se usa para resaltar la fila abierta en la tabla, mismo
+  // rol que cumplía `selected?.id` antes.
+  const openTripId = pathname.match(/\/trips\/([^/?]+)/)?.[1] ?? null
   const tripsQuery  = useTrips(params, { poll: f.tab === 'en_curso' })
 
   const trips    = tripsQuery.data?.data ?? []
@@ -253,20 +259,21 @@ export default function DiarioPage() {
   }
 
   function handleSaved(updated: Trip) {
-    setSelected(updated)
+    queryClient.setQueryData(['trip', updated.id], updated)
     // Actualiza el viaje en todas las listas cacheadas — sin refetch
     queryClient.setQueriesData<TripListResponse>({ queryKey: ['trips'] }, old =>
       old ? { ...old, data: old.data.map(t => (t.id === updated.id ? updated : t)) } : old)
   }
 
   function handleCreated(newTrip: Trip) {
-    setSelected(newTrip)
     // El viaje recién creado debe quedar visible: si su fecha no coincide con el
     // filtro actual, saltamos a esa fecha (si no, la lista lo escondería)
     if (newTrip.planning_date && (f.tab !== 'en_curso' || newTrip.planning_date !== f.fecha)) {
       dispatch({ type: 'patch', patch: { tab: 'en_curso', fecha: newTrip.planning_date } })
     }
     queryClient.invalidateQueries({ queryKey: ['trips'] })
+    queryClient.setQueryData(['trip', newTrip.id], newTrip)
+    router.push(`/dashboard/operations/monitor/trips/${newTrip.id}`)
   }
 
   function handleBulkImported(count: number) {
@@ -285,23 +292,18 @@ export default function DiarioPage() {
 
   // Compartido entre CloseDayDialog (fila MISMATCH) y FleetCenterDialog
   // (equipo "En viaje hoy") — ambos necesitan abrir un viaje real por id.
-  async function handleSelectTrip(tripId: string) {
+  function handleSelectTrip(tripId: string) {
     setShowCloseDay(false)
     setShowFleetCenter(false)
-    try {
-      const trip = await tripsApi.get(tripId)
-      setSelected(trip)
-    } catch {
-      // silencioso — el operador puede reabrir el modal y reintentar
-    }
+    router.push(`/dashboard/operations/monitor/trips/${tripId}`)
   }
 
   // Click en BitacoraFollowupBadge (2026-07-28) — abre el mismo detalle que
-  // un click de fila normal, pero además pide que TripSlideOver scrollee
-  // derecho a la Bitácora en vez de abrir arriba del todo.
+  // un click de fila normal, pero además pide que la página de detalle
+  // scrollee derecho a la Bitácora en vez de abrir arriba del todo.
   function handleSelectTripFocusNotes(trip: Trip) {
-    setSelected(trip)
-    setFocusNotes(true)
+    queryClient.setQueryData(['trip', trip.id], trip)
+    router.push(`/dashboard/operations/monitor/trips/${trip.id}?focus=bitacora`)
   }
 
   function handleAssignFromFleet(fleet: FleetAssignValue) {
@@ -604,14 +606,20 @@ export default function DiarioPage() {
                   groups={defaultGroups}
                   meta={tripsMeta}
                   onSaved={handleSaved}
-                  onSelect={setSelected}
+                  onSelect={trip => {
+                    queryClient.setQueryData(['trip', trip.id], trip)
+                    router.push(`/dashboard/operations/monitor/trips/${trip.id}`)
+                  }}
                   updatedIds={updatedIds}
                 />
               ) : (
                 <TripTable
                   trips={visibleTrips}
-                  selectedId={selected?.id ?? null}
-                  onSelect={trip => { setSelected(trip); setFocusNotes(false) }}
+                  selectedId={openTripId}
+                  onSelect={trip => {
+                    queryClient.setQueryData(['trip', trip.id], trip)
+                    router.push(`/dashboard/operations/monitor/trips/${trip.id}`)
+                  }}
                   onSelectFocusNotes={handleSelectTripFocusNotes}
                   meta={tripsMeta}
                   updatedIds={updatedIds}
@@ -650,13 +658,6 @@ export default function DiarioPage() {
         </div>
       </div>
 
-      <TripSlideOver
-        trip={selected}
-        onClose={() => { setSelected(null); setFocusNotes(false) }}
-        onSaved={handleSaved}
-        meta={tripsMeta}
-        focusNotes={focusNotes}
-      />
       <TripAssignDialog
         open={showCreate}
         onClose={() => { setShowCreate(false); setPrefillFleet(null) }}
