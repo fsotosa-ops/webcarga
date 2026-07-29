@@ -868,7 +868,15 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                   "campos-seguimiento-viajes") — editables solo en destinos
                                   (el origen no tiene un concepto real de llegada, ver plan).
                                   Sodimac nunca reporta estos 4 campos vía TMS; con esto el
-                                  equipo de operaciones puede cargarlos a mano. */}
+                                  equipo de operaciones puede cargarlos a mano.
+
+                                  BUG REAL (2026-07-29, reportado en vivo por el usuario): sin
+                                  `lang="en-GB"` el widget nativo de Chrome para
+                                  datetime-local renderiza en 12h (am/pm) en este entorno,
+                                  inconsistente con fmtDT() (siempre 24h) usado en las celdas
+                                  de solo lectura como "Plan.". `lang="en-GB"` es el workaround
+                                  estándar para forzar 24h en el picker nativo — no cambia
+                                  nada del valor ISO subyacente, solo cómo Chrome lo pinta. */}
                               {isOrigin ? (
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
                               ) : (
@@ -876,6 +884,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                   <input
                                     key={`${stop.stop_id}-gps_arrival-${stop.gps_arrival_date ?? ''}`}
                                     type="datetime-local"
+                                    lang="en-GB"
                                     aria-label={`GPS Llegada de ${stop.local ?? 'parada'}`}
                                     defaultValue={toDatetimeLocalValue(stop.gps_arrival_date)}
                                     onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_arrival', e.target.value)}
@@ -891,6 +900,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                   <input
                                     key={`${stop.stop_id}-gps_departure-${stop.gps_departure_date ?? ''}`}
                                     type="datetime-local"
+                                    lang="en-GB"
                                     aria-label={`GPS Salida de ${stop.local ?? 'parada'}`}
                                     defaultValue={toDatetimeLocalValue(stop.gps_departure_date)}
                                     onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_departure', e.target.value)}
@@ -906,6 +916,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                   <input
                                     key={`${stop.stop_id}-arrival-${stop.arrival_date ?? ''}`}
                                     type="datetime-local"
+                                    lang="en-GB"
                                     aria-label={`Llegada TR de ${stop.local ?? 'parada'}`}
                                     defaultValue={toDatetimeLocalValue(stop.arrival_date)}
                                     onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'arrival', e.target.value)}
@@ -921,6 +932,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                   <input
                                     key={`${stop.stop_id}-departure-${stop.departure_date ?? ''}`}
                                     type="datetime-local"
+                                    lang="en-GB"
                                     aria-label={`Salida TR de ${stop.local ?? 'parada'}`}
                                     defaultValue={toDatetimeLocalValue(stop.departure_date)}
                                     onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'departure', e.target.value)}
@@ -934,6 +946,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                 <input
                                   key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
                                   type="datetime-local"
+                                  lang="en-GB"
                                   aria-label={`${opLabel} inicio de ${stop.local ?? 'parada'}`}
                                   defaultValue={toDatetimeLocalValue(stop.unload_start)}
                                   onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_inicio', e.target.value)}
@@ -946,6 +959,7 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                 <input
                                   key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
                                   type="datetime-local"
+                                  lang="en-GB"
                                   aria-label={`${opLabel} fin de ${stop.local ?? 'parada'}`}
                                   defaultValue={toDatetimeLocalValue(stop.unload_end)}
                                   onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_fin', e.target.value)}
