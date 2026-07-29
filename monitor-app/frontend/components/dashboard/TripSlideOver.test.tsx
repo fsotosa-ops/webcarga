@@ -5,6 +5,7 @@ import { TripSlideOver } from './TripSlideOver'
 import { tripsApi } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
 import type { Trip, TripNote } from '@/lib/types'
+import { fmtDT } from '@/lib/utils/datetime'
 
 vi.mock('@/lib/api/trips', () => ({
   tripsApi: {
@@ -636,6 +637,27 @@ describe('TripSlideOver — generalización del override manual a GPS/TR (bitác
     expect((screen.getByLabelText('Salida TR de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
     expect((screen.getByLabelText('GPS Llegada de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
     expect((screen.getByLabelText('GPS Salida de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
+  })
+
+  it('always displays GPS/TR and Desc. Inicio/Fin values in 24h format, matching Plan.', () => {
+    // BUG REAL (2026-07-29, viaje 30182422): el widget nativo de Chrome para
+    // datetime-local renderiza 12h (am/pm) en vivo, inconsistente con "Plan."
+    // (fmtDT, siempre 24h). lang="en-GB" no lo soluciona — verificado en vivo
+    // que Chrome ignora ese atributo para este control. El fix real es un
+    // overlay con fmtDT() encima del input nativo (texto nativo transparente
+    // en reposo) — este test fija ese contrato: el texto VISIBLE en reposo
+    // debe ser exactamente fmtDT(valor), nunca el formato nativo del browser.
+    const stops = [makeStop({
+      stop_id: 's1', local: 'Local 1',
+      gps_arrival_date: '2026-07-28 15:27:00', gps_departure_date: '2026-07-28 19:31:00',
+      arrival_date: '2026-07-28 15:27:00', departure_date: '2026-07-28 19:31:00',
+      unload_start: '2026-07-28 16:00:00', unload_end: '2026-07-28 16:30:00',
+    })]
+    renderSlideOver({ ...baseTrip, stops })
+    expect(screen.getAllByText(fmtDT('2026-07-28 15:27:00')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(fmtDT('2026-07-28 19:31:00')).length).toBeGreaterThan(0)
+    expect(screen.getByText(fmtDT('2026-07-28 16:00:00'))).toBeInTheDocument()
+    expect(screen.getByText(fmtDT('2026-07-28 16:30:00'))).toBeInTheDocument()
   })
 
   it('does not render GPS/TR as editable inputs for the ORIGIN stop', () => {

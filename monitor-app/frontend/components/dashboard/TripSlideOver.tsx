@@ -870,102 +870,123 @@ export function TripSlideOver({ trip, onClose, onSaved, meta, focusNotes = false
                                   Sodimac nunca reporta estos 4 campos vía TMS; con esto el
                                   equipo de operaciones puede cargarlos a mano.
 
-                                  BUG REAL (2026-07-29, reportado en vivo por el usuario): sin
-                                  `lang="en-GB"` el widget nativo de Chrome para
-                                  datetime-local renderiza en 12h (am/pm) en este entorno,
-                                  inconsistente con fmtDT() (siempre 24h) usado en las celdas
-                                  de solo lectura como "Plan.". `lang="en-GB"` es el workaround
-                                  estándar para forzar 24h en el picker nativo — no cambia
-                                  nada del valor ISO subyacente, solo cómo Chrome lo pinta. */}
+                                  BUG REAL (2026-07-29, reportado en vivo por el usuario en el
+                                  viaje 30182422): el widget nativo de Chrome para
+                                  datetime-local renderiza en 12h (am/pm), inconsistente con
+                                  fmtDT() (siempre 24h, hour12:false explícito) usado en "Plan.".
+                                  Se probó `lang="en-GB"` (workaround documentado en la web) y
+                                  se descartó — verificado en vivo contra este mismo browser que
+                                  Chrome ignora el atributo `lang` por elemento para este
+                                  control y usa el locale de la app (es-419 en este entorno) sin
+                                  importar el valor de `lang`. Fix real: el texto nativo del
+                                  input queda transparente y un <span> encima (pointer-events
+                                  none, así los clics igual abren el date-picker nativo)
+                                  muestra fmtDT() — mismo formato exacto que "Plan." en reposo.
+                                  Al enfocar el campo para editar, el texto nativo (aunque sea
+                                  12h) vuelve a ser visible para dar feedback en vivo mientras
+                                  se escribe; al perder el foco vuelve a mostrarse el overlay
+                                  24h con el valor ya guardado. */}
                               {isOrigin ? (
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
                               ) : (
                                 <td className="px-2 py-1">
-                                  <input
-                                    key={`${stop.stop_id}-gps_arrival-${stop.gps_arrival_date ?? ''}`}
-                                    type="datetime-local"
-                                    lang="en-GB"
-                                    aria-label={`GPS Llegada de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.gps_arrival_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_arrival', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
+                                  <div className="relative">
+                                    <input
+                                      key={`${stop.stop_id}-gps_arrival-${stop.gps_arrival_date ?? ''}`}
+                                      type="datetime-local"
+                                      aria-label={`GPS Llegada de ${stop.local ?? 'parada'}`}
+                                      defaultValue={toDatetimeLocalValue(stop.gps_arrival_date)}
+                                      onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_arrival', e.target.value)}
+                                      disabled={stopSaving === stop.stop_id}
+                                      className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                    />
+                                    <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.gps_arrival_date)}</span>
+                                  </div>
                                 </td>
                               )}
                               {isOrigin ? (
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
                               ) : (
                                 <td className="px-2 py-1">
-                                  <input
-                                    key={`${stop.stop_id}-gps_departure-${stop.gps_departure_date ?? ''}`}
-                                    type="datetime-local"
-                                    lang="en-GB"
-                                    aria-label={`GPS Salida de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.gps_departure_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_departure', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
+                                  <div className="relative">
+                                    <input
+                                      key={`${stop.stop_id}-gps_departure-${stop.gps_departure_date ?? ''}`}
+                                      type="datetime-local"
+                                      aria-label={`GPS Salida de ${stop.local ?? 'parada'}`}
+                                      defaultValue={toDatetimeLocalValue(stop.gps_departure_date)}
+                                      onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_departure', e.target.value)}
+                                      disabled={stopSaving === stop.stop_id}
+                                      className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                    />
+                                    <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.gps_departure_date)}</span>
+                                  </div>
                                 </td>
                               )}
                               {isOrigin ? (
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
                               ) : (
                                 <td className="px-2 py-1">
-                                  <input
-                                    key={`${stop.stop_id}-arrival-${stop.arrival_date ?? ''}`}
-                                    type="datetime-local"
-                                    lang="en-GB"
-                                    aria-label={`Llegada TR de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.arrival_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'arrival', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
+                                  <div className="relative">
+                                    <input
+                                      key={`${stop.stop_id}-arrival-${stop.arrival_date ?? ''}`}
+                                      type="datetime-local"
+                                      aria-label={`Llegada TR de ${stop.local ?? 'parada'}`}
+                                      defaultValue={toDatetimeLocalValue(stop.arrival_date)}
+                                      onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'arrival', e.target.value)}
+                                      disabled={stopSaving === stop.stop_id}
+                                      className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                    />
+                                    <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.arrival_date)}</span>
+                                  </div>
                                 </td>
                               )}
                               {isOrigin ? (
                                 <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
                               ) : (
                                 <td className="px-2 py-1">
-                                  <input
-                                    key={`${stop.stop_id}-departure-${stop.departure_date ?? ''}`}
-                                    type="datetime-local"
-                                    lang="en-GB"
-                                    aria-label={`Salida TR de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.departure_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'departure', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
+                                  <div className="relative">
+                                    <input
+                                      key={`${stop.stop_id}-departure-${stop.departure_date ?? ''}`}
+                                      type="datetime-local"
+                                      aria-label={`Salida TR de ${stop.local ?? 'parada'}`}
+                                      defaultValue={toDatetimeLocalValue(stop.departure_date)}
+                                      onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'departure', e.target.value)}
+                                      disabled={stopSaving === stop.stop_id}
+                                      className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                    />
+                                    <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.departure_date)}</span>
+                                  </div>
                                 </td>
                               )}
                               <td className="px-2 py-1">
                                 <span className="text-[8px] text-gray-400 block leading-none mb-0.5">{opLabel} inicio</span>
+                                <div className="relative">
                                 <input
                                   key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
                                   type="datetime-local"
-                                  lang="en-GB"
                                   aria-label={`${opLabel} inicio de ${stop.local ?? 'parada'}`}
                                   defaultValue={toDatetimeLocalValue(stop.unload_start)}
                                   onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_inicio', e.target.value)}
                                   disabled={stopSaving === stop.stop_id}
-                                  className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
                                 />
+                                <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.unload_start)}</span>
+                                </div>
                               </td>
                               <td className="px-2 py-1">
                                 <span className="text-[8px] text-gray-400 block leading-none mb-0.5">{opLabel} fin</span>
+                                <div className="relative">
                                 <input
                                   key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
                                   type="datetime-local"
-                                  lang="en-GB"
                                   aria-label={`${opLabel} fin de ${stop.local ?? 'parada'}`}
                                   defaultValue={toDatetimeLocalValue(stop.unload_end)}
                                   onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_fin', e.target.value)}
                                   disabled={stopSaving === stop.stop_id}
-                                  className={`w-full text-[10px] font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
+                                  className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
                                 />
+                                <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.unload_end)}</span>
+                                </div>
                               </td>
                               <td className="px-3 py-2 text-center">
                                 {stop.s2s ? <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{stop.s2s}</span> : <span className="text-gray-200">—</span>}
