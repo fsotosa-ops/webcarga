@@ -264,8 +264,7 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 **Verificación**: backend 382/382 (16 tests nuevos: `_cargo_delivered` x5, `_classify_temperature`/`_trip_temp_status` x7, `_annotate_stop_temp_status` x4), frontend 604/604 (3 tests nuevos en `TripDetailView.test.tsx` para el color por parada) + `tsc --noEmit` limpio. 2 tests preexistentes de `test_config_monitor.py` corregidos (usaban `pool.fetch.call_args`, la ÚLTIMA llamada — dejaron de matchear al agregar la query de `temperature_ranges` después de la query principal; cambiados a `call_args_list` con `any(...)`, más robusto a futuras queries agregadas).
 
-**Decisión de arquitectura**: nada se commiteó todavía — cambios de backend/frontend en working tree, cambio de Mage ya sincronizado y corrido por el usuario. Pendiente decisión explícita de commit/push.
+**Commiteado y desplegado** (pedido explícito del usuario): commit `3736d3e` en `origin/dev`, ambos workflows (Frontend + Monitor API) verificados exitosos con `gh run watch`. **Verificado en vivo contra staging** (Playwright, viaje real `1953284`, cargo_type FRIO, rango 2-5°C): parada `SBA Isla de Maipo - 490` (entregada, congelada en 8°C) y `LIDER MELIPILLA - 607` (activa, sin salida, misma lectura en vivo 8°C) — ambas muestran el badge `°C` en rojo en la tabla técnica, y el badge del encabezado también en rojo. Confirma end-to-end: fix de Mage + reglas de backend + coloreado por parada del frontend, todo funcionando junto en producción.
 
 #### Próximo paso exacto
-- [ ] Confirmar con el usuario si se commitea/pushea esta ronda (backend + frontend), y si se despliega a `dev` para verificar en vivo el color rojo/verde por parada contra un viaje real con temperatura fuera de rango.
 - [ ] (heredado, sin cambios) max-instances en el workflow, promoción `dev` → `main` — ver Ronda 62.
