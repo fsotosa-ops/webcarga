@@ -291,6 +291,42 @@ def test_available_assets_returns_busy_equipment_with_real_trip_data():
     assert "NOT (t.trip_status LIKE 'CERRADO%'" in busy_query
 
 
+# ── Centro de Flota — fix multi-día (2026-08-02, ítem 16 de la minuta:
+#    "los números no cuadran"). Antes las 3 queries filtraban
+#    planning_date = fecha exacta — un equipo/conductor con viaje abierto
+#    desde un día anterior aparecía como "disponible" cuando no lo estaba.
+#    Ahora también cuentan los viajes de días anteriores mientras sigan
+#    is_active=true. ───────────────────────────────────────────────────────
+
+def test_available_drivers_counts_multi_day_active_trip_from_earlier_date():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    client.get("/api/v1/trips/available-drivers?fecha=2026-08-02")
+    query = pool.fetch.call_args.args[0]
+    assert "t.planning_date < $1 AND t.is_active" in query
+
+
+def test_available_assets_today_trips_counts_multi_day_active_trip():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    client.get("/api/v1/trips/available-assets?fecha=2026-08-02")
+    query = pool.fetch.call_args_list[0].args[0]
+    assert "t.planning_date < $1 AND t.is_active" in query
+
+
+def test_available_assets_busy_trip_counts_multi_day_active_trip():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.side_effect = [[], []]
+    client = make_client(pool, router=trips_router)
+    client.get("/api/v1/trips/available-assets?fecha=2026-08-02")
+    busy_query = pool.fetch.call_args_list[1].args[0]
+    assert "t.planning_date < $1 AND t.is_active" in busy_query
+
+
 # ── list_trips q amplía a cliente ─────────────────────────────────────────────
 
 def test_list_trips_q_matches_client_name():

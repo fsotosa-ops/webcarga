@@ -198,11 +198,21 @@ export default function DiarioPage() {
     if (f.tab === 'en_curso' && f.activeSignals.length > 0) {
       result = result.filter(t => matchesActiveSignals(t, f.activeSignals, tripsMeta?.temperature_ranges ?? [], alertRules))
     }
-    // Tipo de operación (Fase 2, Plan 7) — a diferencia de activeSignals,
-    // aplica en ambos tabs (en_curso e historial): no es una alerta de
-    // operación en vivo, es una clasificación permanente del origen.
+    // Tipo de operación (Fase 2, Plan 7; swap a destino 2026-08-02, ítem 12
+    // de la minuta) — a diferencia de activeSignals, aplica en ambos tabs
+    // (en_curso e historial): no es una alerta de operación en vivo, es una
+    // clasificación permanente. Se filtra por las paradas DESTINATION (94%
+    // de cobertura real) en vez de origin_operation_type (orígenes son casi
+    // siempre CD propios de WebCarga, no locales de cliente — ~70%+ quedaba
+    // sin clasificar). Un viaje matchea si CUALQUIERA de sus destinos cae en
+    // el tipo seleccionado (multi-destino: basta con que un tramo real
+    // pertenezca a RM/Zona Cero para que el viaje sea relevante al filtro).
     if (f.fOperationType.length > 0) {
-      result = result.filter(t => f.fOperationType.includes(t.origin_operation_type ?? ''))
+      result = result.filter(t =>
+        t.stops.some(
+          s => s.stop_type === 'DESTINATION' && f.fOperationType.includes(s.operation_type ?? ''),
+        ),
+      )
     }
     return result
   }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules])

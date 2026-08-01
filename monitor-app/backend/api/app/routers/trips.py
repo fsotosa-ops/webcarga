@@ -1076,7 +1076,14 @@ async def available_drivers(
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
             LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
-            WHERE t.planning_date = $1
+            -- FIX 2026-08-02 (ítem 16 de la minuta, "los números no cuadran"):
+            -- antes solo miraba planning_date = fecha exacta — un conductor
+            -- con viaje multi-día abierto desde un día anterior aparecía acá
+            -- como "disponible" cuando en realidad seguía ocupado. Ahora
+            -- también cuenta el viaje de un día anterior mientras siga
+            -- is_active=true (ya considera la recencia por fuente, ver
+            -- trips.sql).
+            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
               AND t.source_system != 'sodimac'
               AND vfr.resolved_driver_id IS NOT NULL
             GROUP BY vfr.resolved_driver_id
@@ -1177,7 +1184,10 @@ async def available_assets(
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
             LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
-            WHERE t.planning_date = $1
+            -- FIX 2026-08-02 (ítem 16 de la minuta) — mismo criterio que
+            -- available_drivers arriba: un equipo con viaje multi-día
+            -- abierto desde un día anterior cuenta como ocupado.
+            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
               AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
             GROUP BY vfr.resolved_tractor_asset_id
@@ -1229,7 +1239,10 @@ async def available_assets(
                 t.trip_status AS current_status
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-            WHERE t.planning_date = $1
+            -- FIX 2026-08-02 (ítem 16 de la minuta) — mismo criterio que las
+            -- 2 queries de arriba: un viaje multi-día abierto desde un día
+            -- anterior sigue haciendo "ocupado" al equipo hoy.
+            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
               AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
               AND NOT (t.trip_status LIKE 'CERRADO%'

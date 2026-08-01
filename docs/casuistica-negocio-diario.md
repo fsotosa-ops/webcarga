@@ -123,3 +123,25 @@ Cada caso sigue el mismo formato: **qué se observa** (lo que ve el usuario), **
 **Cómo lo resuelve la app**: corregido — la identidad de la parada ya no depende del orden en que aparece, solo del nombre del local.
 
 **Confirmado**: 2026-07-28.
+
+---
+
+## 9. Viajes que dejan de reportar y quedan "activos" para siempre
+
+**Qué se observa**: algunos viajes muestran una parada "en curso" con cientos o miles de horas (por ejemplo, más de 1000 horas detenido en un mismo local), o siguen apareciendo como "En Curso" en el Monitor semanas o meses después de su fecha planificada.
+
+**Qué pasa en realidad**: a veces la TMS (observado en QAnalytics) deja de reportar un viaje sin nunca avisar que terminó — el viaje simplemente desaparece del propio sistema en vivo de la TMS antes de llegar a reportar su cierre. La app se queda con el último estado real que sí conoció (por ejemplo "En Local") y, sin ninguna regla de "hace cuánto no sabemos nada de este viaje", lo seguía considerando activo para siempre. No es un dato que la app pierda ni que se pueda recuperar después — nunca llegó a existir de este lado.
+
+**Por qué opera así**: el Monitor necesita alguna definición de "todavía en curso" para que operaciones pueda confiar en esa vista como "lo que necesita atención ahora mismo", en vez de ir acumulando, para siempre, viajes que en la vida real ya terminaron hace tiempo pero de los que nunca llegó una confirmación formal de cierre. Sin este límite, la lista de "En Curso" se iba llenando de viajes fantasma y perdía utilidad operativa.
+
+**Cómo lo resuelve la app**: un viaje deja de considerarse activo si no recibió ningún reporte de la TMS en los últimos 7 días, sin importar cuál sea su último estado conocido. La alerta "Sin actualización del TMS" ya avisa mucho antes de eso (a las pocas horas sin reporte, umbral configurable), así que operaciones tiene tiempo de notar y actuar sobre un viaje que empieza a quedarse sin reportar, antes de que la app lo dé de baja sola.
+
+**Excepción importante — Sodimac**: esta regla de "7 días sin reporte" **no aplica a los viajes de Sodimac**. A diferencia de QAnalytics/Wingsuite (que reportan en vivo vía GPS/polling frecuente), el seguimiento de Sodimac pasa a gestión **manual** interna de WebCarga apenas el viaje se acepta: Sodimac da de alta el viaje como "ASIGNADO" para que WebCarga lo pueda operar, y "Aceptada" es el momento en que el equipo de operaciones ya validó un conductor disponible — desde ahí, el estado crudo que reporta Sodimac puede dejar de actualizarse durante semanas aunque el viaje siga completamente vigente, porque el seguimiento real ya no pasa por ese campo. Aplicarle la misma regla de 7 días habría dado de baja viajes de Sodimac que en realidad seguían en curso (confirmado con casos reales: viajes "ASIGNADO"/"Aceptada" con más de 30 días sin actualización, que no son abandono). Para Sodimac, un viaje solo se considera cerrado cuando su estado es explícitamente uno de los estados terminales (cerrado, cancelado, declinado, removido) — sin importar cuánto tiempo haya pasado.
+
+**Mapeo de estados de Sodimac (borrador, pendiente confirmación final de Fabián)**: hoy la app ya reconoce y clasifica los siguientes estados crudos que reporta Sodimac, aunque el detalle fino puede ajustarse cuando Fabián confirme el criterio operativo real: "Creada", "Aceptada" y "Control de salida" se agrupan como gestión interna previa a que el viaje esté realmente en curso; "Despachada" se trata igual que "en ruta"; "Declinada" y "Removida" se tratan como cierre (igual que "Cerrado Finalizado" y "Cancelado"). Mientras no llegue esa confirmación, ningún viaje de Sodimac queda "huérfano" sin badge o sin poder editarse manualmente por tener un estado no reconocido por la app.
+
+**Pendiente relacionado**: (1) hoy no queda registrado si un viaje se cerró de verdad o si el sistema lo dio de baja por inactividad — esa distinción depende de que se defina un protocolo de cierre de viajes manuales (responsabilidad de WebCarga, todavía pendiente); (2) el mapeo de estados de Sodimac de arriba sigue siendo un borrador pendiente de confirmación de Fabián (HU Cierre del Día §8) — se implementó con el criterio más razonable disponible hoy, no un dato confirmado de negocio.
+
+**Alcance conocido**: 751 viajes marcados como activos antes de esta corrección; 698 de ellos (93%) sin ningún reporte hace más de 30 días.
+
+**Confirmado**: 2026-08-02 (viaje 1968333, entre otros; excepción Sodimac aclarada el mismo día; mapeo de estados Sodimac + estados faltantes de QAnalytics — CERRADO POR INTERFAZ, Sin Registros — completados el mismo día).

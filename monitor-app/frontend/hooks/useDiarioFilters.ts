@@ -24,10 +24,14 @@ export interface DiarioFilters {
    *  el tipo de señal (Ronda 26, escalabilidad de filtros). */
   activeSignals:  AlertSignalId[]
   fTms:           string[]
-  /** Clasificación RM/Zona Cero del origen (public.locations.operation_type)
-   *  — reemplaza el filtro de región/ciudad de origen (Fase 2, Plan 7).
-   *  Client-side: origin_operation_type ya viene resuelto en cada Trip de
-   *  GET /trips, no hace falta ningún query param nuevo. */
+  /** Clasificación RM/Zona Cero (public.locations.operation_type) — reemplaza
+   *  el filtro de región/ciudad de origen (Fase 2, Plan 7). Filtra por las
+   *  paradas DESTINATION del viaje, no por el origen (swap 2026-08-02, ítem
+   *  12 de la minuta: los orígenes son casi siempre CD propios, sin
+   *  clasificación posible; los destinos sí son locales de cliente
+   *  catalogados, 94% de cobertura real). Client-side: TripStop.operation_type
+   *  ya viene resuelto en cada Trip de GET /trips, no hace falta ningún query
+   *  param nuevo. */
   fOperationType: string[]
   /** Cliente (shipper) — server-side, mismo parámetro `client` que ya
    *  soportaba el backend, ahora como lista (2026-08-02). */

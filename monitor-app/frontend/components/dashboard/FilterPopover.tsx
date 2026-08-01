@@ -115,10 +115,11 @@ export function FilterPopover({ filters: f, dispatch, meta, shippers }: Props) {
               del hardening del Diario, 2026-07-18. Ya no viven acá. */}
 
           {/* Tipo de operación (RM/Zona Cero) — reemplaza el filtro de
-              región/ciudad de origen (Fase 2, Plan 7). origin_operation_type
-              es la clasificación real/automática, ya viene resuelta en cada
-              trip de GET /trips — el filtro es 100% client-side, mismo
-              mecanismo que las alertas KPI de la Ronda 26. */}
+              región/ciudad de origen (Fase 2, Plan 7). Filtra por destino,
+              no por origen (swap 2026-08-02, ítem 12 de la minuta) — ya
+              viene resuelto en cada TripStop de GET /trips, el filtro es
+              100% client-side, mismo mecanismo que las alertas KPI de la
+              Ronda 26. */}
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Tipo de operación</p>
             <div className="flex items-center gap-1.5 flex-wrap">
