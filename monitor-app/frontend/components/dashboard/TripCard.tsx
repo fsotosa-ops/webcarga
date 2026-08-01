@@ -1,7 +1,7 @@
 'use client'
 
 import type { Trip, TripsMeta } from '@/lib/types'
-import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
+import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime } from '@/lib/utils/datetime'
 import { StopProgressDots } from './StopProgressDots'
@@ -18,7 +18,7 @@ interface Props {
 
 export function TripCard({ trip, meta, onSaved, onSelect, updated }: Props) {
   const temp       = getLatestTemp(trip.stops ?? [])
-  const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
+  const tempStatus = trip.temp_status
   const compliance = stopComplianceSummary(trip.stops ?? [])
   const plate      = trip.tractor_plate ?? trip.trailer_plate ?? null
   const activeStop = getActiveStop(trip.stops ?? [])

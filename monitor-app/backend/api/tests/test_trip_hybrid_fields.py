@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.routers.trips import router, _load_trip_stops, _mark_active_stop, _parse_timestamptz, _attach_origin
+from app.routers.trips import (
+    router, _load_trip_stops, _mark_active_stop, _cargo_delivered,
+    _classify_temperature, _trip_temp_status, _annotate_stop_temp_status,
+    _parse_timestamptz, _attach_origin,
+)
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_editor
 
@@ -673,6 +677,143 @@ def test_mark_active_stop_falls_back_to_last_visited_when_trip_fully_completed()
     _mark_active_stop(stops)
     assert origin["is_active"] is False
     assert done["is_active"] is True
+
+
+# ── _cargo_delivered — "¿ya no hay carga fría a bordo?" (reportado
+#    2026-08-01: temperatura de cumplimiento se seguía evaluando después de
+#    que el camión entregó TODA la carga — QAnalytics reporta 'T°' como la
+#    lectura EN VIVO del vehículo, no una foto histórica por parada
+#    (confirmado con datos reales: 62 paradas nunca visitadas ya traían
+#    temperatura poblada, y el primer scrape de un viaje ya mostraba la
+#    misma T° en las 6 paradas antes de llegar a ninguna). Una vez que el
+#    camión sale de su última parada, sigue reportando "la T° actual" pero
+#    ya no es carga refrigerada — no debe seguir contando como posible
+#    incumplimiento. ─────────────────────────────────────────────────────
+
+def test_cargo_delivered_false_while_a_destination_is_still_pending():
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen")
+    done = _stop_row(stop_id="d1", stop_order=1, local="Destino 1",
+                      departure_date="2026-08-01 09:30:00")
+    pending = _stop_row(stop_id="d2", stop_order=2, local="Destino 2")
+    assert _cargo_delivered([origin, done, pending]) is False
+
+
+def test_cargo_delivered_true_when_all_destinations_have_departed():
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen")
+    d1 = _stop_row(stop_id="d1", stop_order=1, local="Destino 1",
+                    departure_date="2026-08-01 09:30:00")
+    d2 = _stop_row(stop_id="d2", stop_order=2, local="Destino 2",
+                    departure_date="2026-08-01 11:00:00")
+    assert _cargo_delivered([origin, d1, d2]) is True
+
+
+def test_cargo_delivered_true_via_gps_departure_only():
+    """Wingsuite reporta salida real solo por GPS (Ronda 61) — debe contar igual."""
+    d1 = _stop_row(stop_id="d1", stop_order=1, local="Destino 1",
+                    gps_departure_date="2026-08-01 09:30:00")
+    assert _cargo_delivered([d1]) is True
+
+
+def test_cargo_delivered_ignores_origin_departure():
+    """El origen nunca transporta carga fría "entregada" — solo importan los destinos."""
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen")
+    pending = _stop_row(stop_id="d1", stop_order=1, local="Destino 1")
+    assert _cargo_delivered([origin, pending]) is False
+
+
+def test_cargo_delivered_false_when_trip_has_no_destinations():
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen",
+                        departure_date="2026-08-01 08:00:00")
+    assert _cargo_delivered([origin]) is False
+
+
+# ── _trip_temp_status — clasificación de cumplimiento de cadena de frío
+#    (movida del frontend al backend 2026-08-01, feedback directo del
+#    usuario: "de nuevo metiste reglas de negocio en el frontend" — misma
+#    categoría que _mark_active_stop, no una decisión de presentación.
+#    ─────────────────────────────────────────────────────────────────────
+
+_RANGES = {"Congelado": (-25.0, -15.0)}
+
+
+def test_classify_temperature_out_of_range():
+    assert _classify_temperature(-5, "Congelado", _RANGES) == "out_of_range"
+
+
+def test_classify_temperature_ok():
+    assert _classify_temperature(-20, "Congelado", _RANGES) == "ok"
+
+
+def test_classify_temperature_null_when_no_range_for_cargo_type():
+    assert _classify_temperature(-5, "Seco", _RANGES) is None
+
+
+def test_classify_temperature_null_when_temp_is_none():
+    assert _classify_temperature(None, "Congelado", _RANGES) is None
+
+
+def test_trip_temp_status_classifies_normally_while_cargo_pending():
+    stop = _stop_row(stop_id="d1", arrival_date="2026-08-01 10:00:00", temperature=-5, is_active=True)
+    assert _trip_temp_status([stop], "Congelado", cargo_delivered=False, ranges=_RANGES) == "out_of_range"
+
+
+def test_trip_temp_status_none_once_cargo_delivered_even_if_reading_out_of_range():
+    """El bug real reportado: la lectura EN VIVO (vehículo ya vacío) sigue
+    subiendo después de la última entrega, pero ya no es un incumplimiento."""
+    stop = _stop_row(stop_id="d1", arrival_date="2026-08-01 10:00:00",
+                      departure_date="2026-08-01 10:30:00", temperature=18, is_active=True)
+    assert _trip_temp_status([stop], "Congelado", cargo_delivered=True, ranges=_RANGES) is None
+
+
+def test_trip_temp_status_none_when_no_stop_has_a_reading():
+    stop = _stop_row(stop_id="d1", arrival_date="2026-08-01 10:00:00", temperature=None, is_active=True)
+    assert _trip_temp_status([stop], "Congelado", cargo_delivered=False, ranges=_RANGES) is None
+
+
+# ── _annotate_stop_temp_status — clasificación de cumplimiento POR PARADA
+#    (2026-08-01, pedido explícito del usuario: "¿los destinos van a
+#    freezear su temperatura para saber si cumplieron? tiene sentido hacer
+#    esto último?" — a diferencia de _trip_temp_status, NO se apaga con
+#    cargo_delivered: un valor ya congelado (ver trip_stops.sql) es
+#    exactamente lo que se quiere auditar por entrega, incluso después de
+#    que el viaje completo. Solo se clasifican paradas YA visitadas — una
+#    parada pendiente todavía espeja la lectura en vivo del vehículo, no
+#    representa esa parada todavía. ─────────────────────────────────────
+
+def test_annotate_stop_temp_status_classifies_visited_stop():
+    stop = _stop_row(stop_id="d1", arrival_date="2026-08-01 10:00:00",
+                      departure_date="2026-08-01 10:30:00", temperature=-5)
+    stops = [stop]
+    _annotate_stop_temp_status(stops, "Congelado", _RANGES)
+    assert stop["temp_status"] == "out_of_range"
+
+
+def test_annotate_stop_temp_status_null_for_unvisited_stop():
+    """Una parada sin llegada aún espeja la lectura EN VIVO del vehículo
+    (no es su propio dato todavía) — no se clasifica, aunque tenga un
+    valor numérico poblado."""
+    stop = _stop_row(stop_id="d1", temperature=-5)
+    stops = [stop]
+    _annotate_stop_temp_status(stops, "Congelado", _RANGES)
+    assert stop["temp_status"] is None
+
+
+def test_annotate_stop_temp_status_does_not_gate_on_cargo_delivered():
+    """A diferencia de _trip_temp_status: una parada YA congelada (salió)
+    se sigue clasificando aunque el viaje completo ya haya entregado todo
+    — es justo el dato histórico que se quiere auditar."""
+    delivered_stop = _stop_row(stop_id="d1", arrival_date="2026-08-01 10:00:00",
+                                departure_date="2026-08-01 10:30:00", temperature=-20)
+    stops = [delivered_stop]
+    _annotate_stop_temp_status(stops, "Congelado", _RANGES)
+    assert delivered_stop["temp_status"] == "ok"
+
+
+def test_annotate_stop_temp_status_null_for_origin():
+    origin = _stop_row(stop_id="origin", stop_type="ORIGIN", temperature=None)
+    stops = [origin]
+    _annotate_stop_temp_status(stops, "Congelado", _RANGES)
+    assert origin["temp_status"] is None
 
 
 def test_load_trip_stops_exposes_is_active_and_does_not_get_stuck_at_origin():

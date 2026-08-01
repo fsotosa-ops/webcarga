@@ -1,6 +1,6 @@
 import type { Trip, TripStop, TemperatureRangeMeta, MonitorAlertRules } from '@/lib/types'
 import { stopComplianceSummary } from './compliance'
-import { getLatestTemp, getLatestTempStop, classifyTemperature } from './temperature'
+import { getLatestTempStop } from './temperature'
 import { normalizeUTC } from './datetime'
 
 export type KpiId = 'off_time' | 'stale' | 'temp_out' | 'dwell' | 'late_arrival' | 'unassigned' | 'fleet_unmatched'
@@ -54,7 +54,7 @@ export function matchesKpi(
     }
 
     case 'temp_out':
-      return classifyTemperature(getLatestTemp(trip.stops ?? []), trip.cargo_type, ranges) === 'out_of_range'
+      return trip.temp_status === 'out_of_range'
 
     // Llegó a una parada y no registra salida hace más de N horas
     case 'dwell': {
@@ -150,7 +150,7 @@ export function kpiAnchorTimestamp(
     case 'temp_out': {
       const stop = getLatestTempStop(trip.stops ?? [])
       if (!stop) return null
-      if (classifyTemperature(stop.temperature ?? null, trip.cargo_type, ranges) !== 'out_of_range') return null
+      if (trip.temp_status !== 'out_of_range') return null
       return stopArrival(stop)
     }
 

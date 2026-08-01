@@ -1,4 +1,4 @@
-import type { TripStop, TemperatureRangeMeta } from '@/lib/types'
+import type { TripStop } from '@/lib/types'
 import { fmtShort } from './datetime'
 
 // "Parada activa" (dónde está el camión ahora) se calcula en el backend
@@ -35,21 +35,6 @@ export function getLatestTemp(stops: TripStop[]): number | null {
 // Whether a stop has actually been reached (so temperature is a real reading).
 export function stopWasVisited(stop: TripStop): boolean {
   return !!(stop.arrival_date || stop.gps_arrival_date)
-}
-
-// Classifies a temperature reading against the admin-configured range for the
-// trip's cargo_type. cargo_type is free text from the TMS (not a fixed enum),
-// so a trip whose cargo_type has no matching row is intentionally unclassified
-// (null) rather than assuming a default range.
-export function classifyTemperature(
-  temp: number | null,
-  cargoType: string | null,
-  ranges: TemperatureRangeMeta[],
-): 'ok' | 'out_of_range' | null {
-  if (temp == null || !cargoType) return null
-  const range = ranges.find(r => r.cargo_type === cargoType)
-  if (!range) return null
-  return temp < range.min_c || temp > range.max_c ? 'out_of_range' : 'ok'
 }
 
 // Describe la llegada/salida de una parada con una sola fórmula, agnóstica

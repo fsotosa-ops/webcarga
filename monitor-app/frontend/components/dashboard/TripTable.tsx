@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
-import { getLatestTemp, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
+import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -237,7 +237,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 <div className="flex items-center gap-1.5 shrink-0">
                   {(() => {
                     const temp = getLatestTemp(trip.stops ?? [])
-                    const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
+                    const tempStatus = trip.temp_status
                     return temp != null
                       ? <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                       : null
@@ -494,7 +494,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="px-3 py-2.5 text-center">
                       {(() => {
                         const temp = getLatestTemp(trip.stops ?? [])
-                        const tempStatus = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
+                        const tempStatus = trip.temp_status
                         return temp != null
                           ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                           : <span className="text-gray-300 text-xs">—</span>

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { X, Copy, Check, Truck, User, Phone, Hash, MapPin } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
-import { getLatestTemp, stopWasVisited, classifyTemperature, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
+import { getLatestTemp, stopWasVisited, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { stopComplianceSummary } from '@/lib/utils/compliance'
 import { fmtDT, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
@@ -63,7 +63,7 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
   const tmsLabel      = tmsMeta?.label ?? trip.source_system?.toUpperCase().slice(0, 3) ?? '?'
   const tmsLoginUrl   = trip.source_system && trip.source_system !== 'manual' ? TMS_LOGIN_URLS[trip.source_system.toLowerCase()] : undefined
   const temp          = getLatestTemp(trip.stops ?? [])
-  const tempStatus    = classifyTemperature(temp, trip.cargo_type, meta?.temperature_ranges ?? [])
+  const tempStatus    = trip.temp_status
 
   const stops            = trip.stops ?? []
   const destinationStops = stops.filter(s => s.stop_type !== 'ORIGIN')
@@ -344,7 +344,13 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                               {stop.s2s ? <span className="text-[9px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{stop.s2s}</span> : <span className="text-gray-200">—</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
-                              {stopWasVisited(stop) && stop.temperature != null ? <span className="text-sm font-mono text-blue-600 font-semibold">{stop.temperature}°C</span> : <span className="text-gray-200">—</span>}
+                              {stopWasVisited(stop) && stop.temperature != null ? (
+                                <span className={`text-sm font-mono font-semibold ${
+                                  stop.temp_status === 'out_of_range' ? 'text-red-700 bg-red-50 px-1.5 py-0.5 rounded'
+                                  : stop.temp_status === 'ok' ? 'text-green-700 bg-green-50 px-1.5 py-0.5 rounded'
+                                  : 'text-blue-600'
+                                }`}>{stop.temperature}°C</span>
+                              ) : <span className="text-gray-200">—</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
                               {stop.on_time_status === 'ON TIME' ? (

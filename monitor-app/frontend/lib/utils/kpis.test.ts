@@ -17,7 +17,7 @@ function makeTrip(id: string, overrides: Partial<Trip> = {}): Trip {
     id, source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-04',
     status_reported_at: null, current_status: 'RUTA', tractor_plate: 'ABCD12', tractor_plate_tms: null, trailer_plate: null,
     driver_name: 'Juan', driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
-    origin: null, cargo_type: 'FRIO', stops: [], is_active: true, is_working: false, is_assigned: true,
+    origin: null, cargo_type: 'FRIO', cargo_delivered: false, temp_status: null, stops: [], is_active: true, is_working: false, is_assigned: true,
     is_first_leg: false, manual_status: null, notes: null, comments: null, unassigned_reason_id: null,
     fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
     edited_by: null, updated_at: null, created_at: null,
@@ -54,8 +54,8 @@ describe('matchesKpi — alertas existentes', () => {
     expect(matchesKpi(closed, 'stale', RANGES, RULES, NOW)).toBe(false)
   })
 
-  it('temp_out: fuera de rango configurado', () => {
-    const hot = makeTrip('a', { stops: [makeStop({ temperature: 11, is_active: true })] })
+  it('temp_out: fuera de rango configurado (temp_status ya viene clasificado del backend)', () => {
+    const hot = makeTrip('a', { temp_status: 'out_of_range', stops: [makeStop({ temperature: 11, is_active: true })] })
     expect(matchesKpi(hot, 'temp_out', RANGES, RULES, NOW)).toBe(true)
   })
 })
@@ -109,7 +109,7 @@ describe('matchesKpi — alertas nuevas', () => {
 describe('deriveKpis', () => {
   it('cuenta las 7 excepciones de forma independiente', () => {
     const trips = [
-      makeTrip('a', { stops: [makeStop({ on_time_status: 'OFF TIME', temperature: 11, is_active: true })] }),
+      makeTrip('a', { temp_status: 'out_of_range', stops: [makeStop({ on_time_status: 'OFF TIME', temperature: 11, is_active: true })] }),
       makeTrip('b', { status_reported_at: '2026-07-04 14:00:00' }),
       makeTrip('c', { driver_name: null }),
       makeTrip('d'),
@@ -169,7 +169,8 @@ describe('kpiAnchorTimestamp', () => {
   it('temp_out: anchors on the reporting stop\'s arrival_date', () => {
     const trip = makeTrip('a', {
       cargo_type: 'FRIO',
-      stops: [makeStop({ arrival_date: '2026-07-04 16:00:00', temperature: 9 })], // out of 2-5 range
+      temp_status: 'out_of_range', // 9 está fuera de 2-5, ya clasificado por el backend
+      stops: [makeStop({ arrival_date: '2026-07-04 16:00:00', temperature: 9 })],
     })
     expect(kpiAnchorTimestamp(trip, 'temp_out', RANGES, RULES, NOW)).toBe(Date.parse('2026-07-04T16:00:00Z'))
   })
@@ -190,6 +191,7 @@ describe('kpiAnchorTimestamp', () => {
         status_reported_at: '2026-07-04 15:00:00',
         stops: [makeStop({ arrival_date: '2026-07-04 15:00:00', departure_date: null, planning_date: '2026-07-04 10:00:00', temperature: 9 })],
         cargo_type: 'FRIO',
+        temp_status: 'out_of_range',
       })
       const anchor = kpiAnchorTimestamp(trip, kpi, RANGES, RULES, NOW)
       expect(anchor != null).toBe(matchesKpi(trip, kpi, RANGES, RULES, NOW))

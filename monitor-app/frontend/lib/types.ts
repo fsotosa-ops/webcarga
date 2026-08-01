@@ -320,6 +320,15 @@ export type TripStop = {
    *  salida del origen, la parada activa quedaba pegada en el origen
    *  para siempre. Única fuente de verdad ahora. */
   is_active?:          boolean
+  /** Clasificación de cumplimiento de cadena de frío DE ESTA PARADA
+   *  (_annotate_stop_temp_status, trips.py — 2026-08-01, pedido explícito
+   *  de operaciones). A diferencia de Trip.temp_status, nunca se apaga
+   *  por cargo_delivered: una vez que la parada salió, su `temperature`
+   *  queda congelada (trip_stops.sql) y es exactamente el dato que se
+   *  quiere auditar por entrega. null = parada aún no visitada (su
+   *  `temperature` todavía espeja la lectura en vivo del vehículo, no es
+   *  su propio dato todavía) o sin cargo_type clasificable. */
+  temp_status?:        'ok' | 'out_of_range' | null
 }
 
 export type Trip = {
@@ -355,6 +364,17 @@ export type Trip = {
   origin_region?:         string | null
   origin_city?:           string | null
   cargo_type:             string | null
+  /** True cuando el camión ya salió de TODOS sus destinos (_cargo_delivered,
+   *  trips.py) — no queda carga fría a bordo. QAnalytics reporta la
+   *  temperatura como lectura EN VIVO del vehículo, no una foto histórica
+   *  por parada, así que sigue "reportando algo" después de la última
+   *  entrega — pero ya no es un posible incumplimiento de cadena de frío. */
+  cargo_delivered:        boolean
+  /** Clasificación de cumplimiento de cadena de frío, ya resuelta en el
+   *  backend (_trip_temp_status, trips.py — 2026-08-01: movida del
+   *  frontend acá, es una regla de negocio real, no de presentación).
+   *  null = sin dato, sin cargo_type clasificable, o cargo_delivered=true. */
+  temp_status:             'ok' | 'out_of_range' | null
   stops:                  TripStop[]
   is_active:              boolean
   is_working:             boolean

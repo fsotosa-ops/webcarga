@@ -31,7 +31,7 @@ const baseTrip: Trip = {
   id: 't1', source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',
   status_reported_at: null, current_status: 'ORIGEN', tractor_plate: 'ABCD12', tractor_plate_tms: null, trailer_plate: null,
   driver_name: 'Juan Perez', driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
-  origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], is_active: true, is_working: false, is_assigned: true,
+  origin: 'CD Quilicura', cargo_type: 'FRIO', cargo_delivered: false, temp_status: null, stops: [], is_active: true, is_working: false, is_assigned: true,
   is_first_leg: false, manual_status: null, notes: null, comments: null, unassigned_reason_id: null,
   fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
   edited_by: null, created_at: null,
@@ -588,6 +588,30 @@ describe('TripDetailView — campos híbridos de fecha (Carga/Desc. Inicio-Fin) 
     renderDetailView({ ...baseTrip, stops })
     expect(screen.queryByText('Carga inicio')).not.toBeInTheDocument()
     expect(screen.queryByText('Carga fin')).not.toBeInTheDocument()
+  })
+
+  // 2026-08-01: clasificación de cumplimiento POR PARADA (temp_status del
+  // backend, _annotate_stop_temp_status) — nunca se apaga por
+  // cargo_delivered, a diferencia del badge del encabezado.
+  it('colors the per-stop temperature cell red when the stop\'s temp_status is out_of_range', () => {
+    const stops = [makeStop({ stop_id: 's1', arrival_date: '2026-07-02 10:00:00', temperature: 11, temp_status: 'out_of_range' })]
+    renderDetailView({ ...baseTrip, stops, temp_status: null })
+    const badges = screen.getAllByText('11°C')
+    expect(badges.some(el => el.className.includes('text-red-700'))).toBe(true)
+  })
+
+  it('colors the per-stop temperature cell green when the stop\'s temp_status is ok', () => {
+    const stops = [makeStop({ stop_id: 's1', arrival_date: '2026-07-02 10:00:00', temperature: -20, temp_status: 'ok' })]
+    renderDetailView({ ...baseTrip, stops, temp_status: null })
+    const badges = screen.getAllByText('-20°C')
+    expect(badges.some(el => el.className.includes('text-green-700'))).toBe(true)
+  })
+
+  it('leaves the per-stop temperature cell uncolored when the stop has not been classified yet', () => {
+    const stops = [makeStop({ stop_id: 's1', arrival_date: '2026-07-02 10:00:00', temperature: 4, temp_status: null })]
+    renderDetailView({ ...baseTrip, stops, temp_status: null })
+    const badges = screen.getAllByText('4°C')
+    expect(badges.some(el => el.className.includes('text-blue-600'))).toBe(true)
   })
 })
 

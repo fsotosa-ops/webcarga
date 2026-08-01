@@ -299,8 +299,8 @@ def test_list_trips_q_matches_client_name():
     client = make_client(pool, router=trips_router)
     res = client.get("/api/v1/trips/?q=walmart&view=historial")
     assert res.status_code == 200
-    query = pool.fetch.call_args.args[0]
-    assert "t.client_name ILIKE" in query
+    queries = [c.args[0] for c in pool.fetch.call_args_list]
+    assert any("t.client_name ILIKE" in q for q in queries)
 
 
 def test_list_trips_second_leg_plus_filters_against_driver_daily_trip_legs_view():
@@ -316,9 +316,9 @@ def test_list_trips_second_leg_plus_filters_against_driver_daily_trip_legs_view(
     client = make_client(pool, router=trips_router)
     res = client.get("/api/v1/trips/?second_leg_plus=true&view=historial")
     assert res.status_code == 200
-    query = pool.fetch.call_args.args[0]
-    assert "app.v_driver_daily_trip_legs" in query
-    assert "leg_number >= 2" in query
+    queries = [c.args[0] for c in pool.fetch.call_args_list]
+    assert any("app.v_driver_daily_trip_legs" in q for q in queries)
+    assert any("leg_number >= 2" in q for q in queries)
 
 
 def test_trip_select_resolves_shipper_id_live_via_client_name_match():

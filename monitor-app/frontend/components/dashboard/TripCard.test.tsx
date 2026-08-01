@@ -12,7 +12,7 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
     id: 't1', source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',
     status_reported_at: null, current_status: 'ORIGEN', tractor_plate: 'DRZT17', tractor_plate_tms: null, trailer_plate: null,
     driver_name: 'Navarro Piñango', driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
-    origin: 'CD Quilicura', cargo_type: 'FRIO', stops: [], is_active: true, is_working: false, is_assigned: true,
+    origin: 'CD Quilicura', cargo_type: 'FRIO', cargo_delivered: false, temp_status: null, stops: [], is_active: true, is_working: false, is_assigned: true,
     is_first_leg: false, manual_status: null, notes: null, comments: null, unassigned_reason_id: null,
     fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
     edited_by: null, updated_at: null, created_at: null,

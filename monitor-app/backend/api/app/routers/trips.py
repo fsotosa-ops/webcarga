@@ -96,6 +96,95 @@ def _stop_departed(d: dict) -> bool:
     return bool(d.get("gps_departure_date") or d.get("departure_date"))
 
 
+def _cargo_delivered(stops: list[dict]) -> bool:
+    """True cuando el camión ya salió de TODOS sus destinos — no queda
+    carga fría a bordo. Bug real reportado 2026-08-01: QAnalytics reporta
+    'T°' como la lectura EN VIVO del vehículo (confirmado con datos reales:
+    62 paradas nunca visitadas ya traían temperatura poblada, y el primer
+    scrape de un viaje ya mostraba la misma T° en todas las paradas antes
+    de llegar a ninguna) — no una foto histórica por parada. Una vez
+    entregada toda la carga, esa misma lectura sigue subiendo (vehículo
+    vacío) pero ya no representa un posible incumplimiento de cadena de
+    frío — se usa para dejar de evaluar temp_out desde ese punto (ver
+    kpis.ts, temperature.ts)."""
+    destinations = [d for d in stops if d.get("stop_type") != "ORIGIN"]
+    return bool(destinations) and all(_stop_departed(d) for d in destinations)
+
+
+def _latest_temp_stop(stops: list[dict]) -> dict | None:
+    """Misma prioridad que _mark_active_stop: parada activa primero, si no
+    tiene lectura propia cae a la última parada visitada (en el orden ya
+    resuelto por _stop_display_key) con temperatura no nula. Requiere que
+    is_active ya esté marcado (llamar después de _mark_active_stop)."""
+    active = next((d for d in stops if d.get("is_active")), None)
+    if active is not None and active.get("temperature") is not None:
+        return active
+    visited = [d for d in stops if _stop_arrived(d)]
+    for d in reversed(visited):
+        if d.get("temperature") is not None:
+            return d
+    return None
+
+
+def _classify_temperature(
+    temp: float | None, cargo_type: str | None, ranges: dict[str, tuple[float, float]]
+) -> str | None:
+    """cargo_type es texto libre reportado por la TMS (no un enum fijo) —
+    un viaje cuyo cargo_type no matchea ninguna fila de app.temperature_ranges
+    queda intencionalmente sin clasificar (None), no se asume un rango
+    default."""
+    if temp is None or not cargo_type:
+        return None
+    r = ranges.get(cargo_type)
+    if r is None:
+        return None
+    min_c, max_c = r
+    return "out_of_range" if (temp < min_c or temp > max_c) else "ok"
+
+
+def _trip_temp_status(
+    stops: list[dict], cargo_type: str | None, cargo_delivered: bool,
+    ranges: dict[str, tuple[float, float]],
+) -> str | None:
+    """Clasificación de cumplimiento de cadena de frío del viaje. FIX
+    2026-08-01: vivía en el frontend (temperature.ts) — se movió acá
+    porque es una regla de negocio real, misma categoría que
+    _mark_active_stop/_cargo_delivered, no una decisión de presentación.
+    Una vez cargo_delivered=True, nunca cuenta como incumplimiento aunque
+    la lectura en vivo del vehículo (vacío) esté fuera de rango — ver
+    _cargo_delivered."""
+    if cargo_delivered:
+        return None
+    stop = _latest_temp_stop(stops)
+    if stop is None:
+        return None
+    return _classify_temperature(stop.get("temperature"), cargo_type, ranges)
+
+
+async def _load_temperature_ranges(pool) -> dict[str, tuple[float, float]]:
+    rows = await pool.fetch("SELECT cargo_type, min_c, max_c FROM app.temperature_ranges")
+    return {r["cargo_type"]: (r["min_c"], r["max_c"]) for r in rows}
+
+
+def _annotate_stop_temp_status(
+    stops: list[dict], cargo_type: str | None, ranges: dict[str, tuple[float, float]]
+) -> None:
+    """Clasificación de cumplimiento POR PARADA — 2026-08-01, pedido
+    explícito del usuario tras congelar `temperature` al salir de cada
+    destino (trip_stops.sql): a diferencia de _trip_temp_status, esta
+    clasificación NUNCA se apaga por cargo_delivered — un valor ya
+    congelado es exactamente lo que se quiere auditar por entrega, incluso
+    después de que el viaje completo termine. Solo se clasifican paradas
+    YA visitadas: una parada pendiente todavía espeja la lectura EN VIVO
+    del vehículo (no es su propio dato todavía), clasificarla sugeriría
+    una falsa certeza sobre una entrega que ni siquiera ocurrió."""
+    for d in stops:
+        d["temp_status"] = (
+            _classify_temperature(d.get("temperature"), cargo_type, ranges)
+            if _stop_arrived(d) else None
+        )
+
+
 def _mark_active_stop(stops: list[dict]) -> None:
     """Marca exactamente una parada con is_active=True (o ninguna, si el
     viaje ya completó todas sus paradas) — única fuente de verdad de "en
@@ -698,8 +787,12 @@ async def list_trips(
 
     stops_by_trip = await _load_trip_stops(pool, trip_ids)
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
+    temp_ranges = await _load_temperature_ranges(pool)
     for d in data:
         d["stops"] = stops_by_trip.get(str(d["id"]), [])
+        d["cargo_delivered"] = _cargo_delivered(d["stops"])
+        d["temp_status"] = _trip_temp_status(d["stops"], d.get("cargo_type"), d["cargo_delivered"], temp_ranges)
+        _annotate_stop_temp_status(d["stops"], d.get("cargo_type"), temp_ranges)
         _attach_origin(d)
         _apply_operation_types(d, op_type_buckets)
 
@@ -1600,6 +1693,10 @@ async def get_trip(
     d = dict(row)
     stops_by_trip = await _load_trip_stops(pool, {trip_id})
     d["stops"] = stops_by_trip.get(trip_id, [])
+    d["cargo_delivered"] = _cargo_delivered(d["stops"])
+    temp_ranges = await _load_temperature_ranges(pool)
+    d["temp_status"] = _trip_temp_status(d["stops"], d.get("cargo_type"), d["cargo_delivered"], temp_ranges)
+    _annotate_stop_temp_status(d["stops"], d.get("cargo_type"), temp_ranges)
     _attach_origin(d)
     client_names = {d["client_name"].strip().lower()} if d.get("client_name") else set()
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)

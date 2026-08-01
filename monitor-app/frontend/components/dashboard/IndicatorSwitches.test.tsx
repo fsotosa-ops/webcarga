@@ -12,7 +12,7 @@ const baseTrip: Trip = {
   id: 't1', source_system: 'qanalytics', client_name: null, planning_date: null,
   status_reported_at: null, current_status: null, tractor_plate: null, tractor_plate_tms: null, trailer_plate: null,
   driver_name: null, driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
-  origin: null, cargo_type: null, stops: [], is_active: false, is_working: false, is_assigned: false,
+  origin: null, cargo_type: null, cargo_delivered: false, temp_status: null, stops: [], is_active: false, is_working: false, is_assigned: false,
   is_first_leg: false, manual_status: null, notes: null, comments: null, unassigned_reason_id: null,
   fleet_link_id: null, carrier_id: null, driver_id: null, tractor_asset_id: null, trailer_asset_id: null, manually_edited_fields: [], edited_at: null,
   edited_by: null, created_at: null,

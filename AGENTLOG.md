@@ -244,3 +244,28 @@ Con esto, el pendiente heredado de la Ronda 63 (verificación visual del pelotit
 #### Próximo paso exacto
 - [x] (heredado) Ronda 63 — confirmar en vivo/staging que el pelotita/ETA/orden ya no queda pegado/invertido — **CERRADO**, ver arriba (casos 2020594 y 2021621).
 - [ ] (heredado, sin cambios) max-instances en el workflow, promoción `dev` → `main` — ver Ronda 62.
+
+### 2026-08-01 (cont.) — Ronda 65: cumplimiento de cadena de frío — causa raíz real (QAnalytics reporta T° en vivo, no por parada) + fix de raíz en Mage + reglas movidas al backend
+
+**Origen**: usuario reportó "estaba reportando la última temperatura más actual y no la lógica según la ruta del viaje". Investigación con datos reales (`viclzoftiudkepqnhekv`) descartó un bug de código: el campo `T°` de QAnalytics es la lectura EN VIVO del vehículo, duplicada idéntica en TODAS las paradas del payload crudo desde el primer scrape — confirmado con el viaje 2009536 (a las 07:49, antes de llegar a CUALQUIER parada, las 6 ya traían `T°: -18.00`) y con 62 paradas nunca visitadas en producción que ya traían temperatura poblada. No hay una señal histórica por parada en la fuente — solo la lectura actual, replicada.
+
+**Diseño acordado con el usuario** (2 señales distintas, mismo campo `temperature`, sin columna nueva):
+1. **Congelado por parada**: una vez que un destino registra su salida, su `temperature` deja de sobrescribirse — queda la lectura más cercana a la entrega real, auditable para siempre.
+2. **En vivo mientras hay carga a bordo**: paradas sin salida (activa o pendiente) siguen actualizándose en cada corrida — sirve para monitoreo en tiempo real.
+
+**Fix de raíz en Mage** (`dbt/tms/models/app/trip_stops.sql`, `materialized='incremental'`/`merge`): self-join condicional contra `{{ this }}` — `CASE WHEN existing.departure_date IS NOT NULL OR existing.gps_departure_date IS NOT NULL THEN existing.temperature ELSE <valor nuevo> END`, mismo patrón que `merge_exclude_columns` (ya usado para overrides manuales) pero condicional al estado en vez de un exclude ciego. Sincronizado y corrido por el usuario (`app_trips_update`, bloque real `--select +trips trip_stops`) — confirmado con `updated_at` fresco en 16 filas de `app.trip_stops`.
+
+**Corrección de arquitectura en el camino (feedback directo del usuario: "de nuevo metiste reglas de negocio en el frontend")**: mi primera implementación puso la clasificación ok/out_of_range en `temperature.ts` (frontend). Se movió completa al backend, misma categoría que `_mark_active_stop`/`_cargo_delivered`:
+- `_cargo_delivered(stops)` — true cuando TODOS los destinos ya salieron (ignora el origen). Usado para apagar `temp_out` a nivel de viaje una vez entregada toda la carga (la lectura en vivo sigue subiendo con el vehículo vacío, pero ya no es incumplimiento).
+- `_classify_temperature`/`_trip_temp_status` — clasificación a nivel de VIAJE (parada activa o última visitada), expuesta como `trip.temp_status`. Se apaga (`null`) con `cargo_delivered=true`.
+- `_annotate_stop_temp_status` — clasificación POR PARADA (pedido explícito del usuario tras preguntarle si tenía sentido auditar cumplimiento por entrega), expuesta como `stop.temp_status` por fila. A diferencia del nivel-viaje, **nunca se apaga por cargo_delivered** — un valor ya congelado es justo el dato que se quiere auditar aunque el viaje haya terminado. Solo clasifica paradas ya visitadas (una pendiente todavía espeja la lectura en vivo, no es su propio dato).
+
+Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_status`/`stop.temp_status` directo — cero lógica de clasificación en el cliente. La columna `°C` de la tabla técnica del detalle del viaje ahora se colorea rojo/verde por parada (antes texto plano azul siempre). El número (`getLatestTemp`) se sigue mostrando siempre, con o sin `cargo_delivered` — solo el color/badge de incumplimiento se apaga.
+
+**Verificación**: backend 382/382 (16 tests nuevos: `_cargo_delivered` x5, `_classify_temperature`/`_trip_temp_status` x7, `_annotate_stop_temp_status` x4), frontend 604/604 (3 tests nuevos en `TripDetailView.test.tsx` para el color por parada) + `tsc --noEmit` limpio. 2 tests preexistentes de `test_config_monitor.py` corregidos (usaban `pool.fetch.call_args`, la ÚLTIMA llamada — dejaron de matchear al agregar la query de `temperature_ranges` después de la query principal; cambiados a `call_args_list` con `any(...)`, más robusto a futuras queries agregadas).
+
+**Decisión de arquitectura**: nada se commiteó todavía — cambios de backend/frontend en working tree, cambio de Mage ya sincronizado y corrido por el usuario. Pendiente decisión explícita de commit/push.
+
+#### Próximo paso exacto
+- [ ] Confirmar con el usuario si se commitea/pushea esta ronda (backend + frontend), y si se despliega a `dev` para verificar en vivo el color rojo/verde por parada contra un viaje real con temperatura fuera de rango.
+- [ ] (heredado, sin cambios) max-instances en el workflow, promoción `dev` → `main` — ver Ronda 62.
