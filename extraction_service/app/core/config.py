@@ -37,5 +37,16 @@ class Settings(BaseSettings):
     # libera. Evita que un job zombie bloquee la instancia para siempre.
     JOB_TIMEOUT_MS: int = 600_000
 
+    # DSN de Postgres (Supabase) para el job_store compartido — mismo
+    # proyecto que usa monitor-app/backend/api. Ver
+    # docs/superpowers/specs/2026-07-31-extraction-service-hardening-design.md.
+    database_url: str
+
+    # Tope de espera en cola antes de reclamar un slot (MAX_CONCURRENT_JOBS
+    # ya ocupado por otros jobs). Distinto de JOB_TIMEOUT_MS: ese envuelve
+    # SOLO el scraping en sí, este envuelve el tiempo en 'queued'. Separarlos
+    # permite distinguir "contención" de "el scraper se colgó" en el error.
+    QUEUE_TIMEOUT_MS: int = 300_000
+
 
 settings = Settings()
