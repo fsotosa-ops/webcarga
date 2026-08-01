@@ -89,10 +89,10 @@ describe('TripDetailView — hero (la historia del viaje)', () => {
     expect(within(screen.getByTestId('hero')).queryByText('ON TIME')).not.toBeInTheDocument()
   })
 
-  it('shows the OFF TIME badge in the hero when a stop is off time', () => {
+  it('never shows an OFF TIME badge (2026-08-01: concepto retirado de toda la app)', () => {
     const stops = [makeStop({ stop_id: 's1', local: 'Local 1', on_time_status: 'OFF TIME' })]
     renderDetailView({ ...baseTrip, stops })
-    expect(screen.getAllByText('OFF TIME').length).toBeGreaterThan(0)
+    expect(screen.queryByText('OFF TIME')).not.toBeInTheDocument()
   })
 
   it('degrades gracefully for a trip without stops', () => {

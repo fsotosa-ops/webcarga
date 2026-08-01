@@ -1,9 +1,15 @@
 import type { Trip, TripStop, TemperatureRangeMeta, MonitorAlertRules } from '@/lib/types'
-import { stopComplianceSummary } from './compliance'
-import { getLatestTempStop } from './temperature'
 import { normalizeUTC } from './datetime'
+import { formatDurationMinutes } from './stopStats'
 
-export type KpiId = 'off_time' | 'stale' | 'temp_out' | 'dwell' | 'late_arrival' | 'unassigned' | 'fleet_unmatched'
+/** Set de alertas activas (2026-08-01): reducido a 4 mientras los hitos 12
+ *  (retornando)/15/16 (cruce de flota) no tengan una definición de negocio.
+ *  'off_time', 'late_arrival' y 'unassigned' quedaron descartados — el
+ *  binario 'dwell' fue reemplazado por 'dwell_severity' (semáforo de 4
+ *  niveles, Hito 14, ver dwellSeverity). */
+export type KpiId = 'stale' | 'temp_out' | 'dwell_severity' | 'fleet_unmatched'
+
+export type DwellSeverity = 'green' | 'yellow' | 'orange' | 'red'
 
 // Defaults si meta.monitor_alert_rules aún no está disponible
 export const DEFAULT_ALERT_RULES: MonitorAlertRules = {
@@ -11,6 +17,9 @@ export const DEFAULT_ALERT_RULES: MonitorAlertRules = {
   dwell_hours:            2,
   late_arrival_grace_min: 60,
   unassigned_enabled:     true,
+  dwell_yellow_min:       60,
+  dwell_orange_min:       90,
+  dwell_red_min:          120,
 }
 
 function toMs(iso: string | null | undefined): number | null {
@@ -26,12 +35,47 @@ export function isOpenTrip(trip: Trip): boolean {
   return !s.startsWith('CERRADO') && !['CANCELADO', 'Declinada', 'Removida'].includes(s)
 }
 
+/** GPS primero, TR (arrival_date/departure_date) como fallback — FIX
+ *  2026-08-01: antes priorizaba TR, al revés que el backend
+ *  (_stop_arrived/_stop_departed, trips.py). GPS se reporta ~87% de las
+ *  veces en paradas reales de QAnalytics vs. ~8% TR (Ronda 61) — con TR
+ *  primero, la severidad de tiempo en local (dwellSeverity) podía calcular
+ *  la llegada contra un dato menos confiable que el que ya usa is_active. */
 function stopArrival(s: TripStop): number | null {
-  return toMs(s.arrival_date) ?? toMs(s.gps_arrival_date)
+  return toMs(s.gps_arrival_date) ?? toMs(s.arrival_date)
 }
 
 function stopDeparture(s: TripStop): number | null {
-  return toMs(s.departure_date) ?? toMs(s.gps_departure_date)
+  return toMs(s.gps_departure_date) ?? toMs(s.departure_date)
+}
+
+export interface DwellStatus {
+  severity: DwellSeverity
+  /** Texto listo para mostrar, ej. "1h 45m en local". */
+  label:    string
+}
+
+/** Hito 14 (minuta 29/07 §4.4): severidad de tiempo en la parada activa —
+ *  única fuente de verdad de "quién está activo" es stop.is_active (mismo
+ *  criterio que StopTimeline/getActiveStop, calculado en backend por
+ *  _mark_active_stop). null cuando el viaje está cerrado, no hay parada
+ *  activa, o la parada activa todavía no llega (en ruta, no "en local"). */
+export function dwellStatus(
+  trip: Trip,
+  rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
+  now: number = Date.now(),
+): DwellStatus | null {
+  if (!isOpenTrip(trip)) return null
+  const stop = (trip.stops ?? []).find(s => s.is_active)
+  if (!stop) return null
+  const arr = stopArrival(stop)
+  if (arr == null || stopDeparture(stop) != null) return null
+  const minutes = (now - arr) / 60_000
+  const severity: DwellSeverity =
+    minutes >= rules.dwell_red_min ? 'red' :
+    minutes >= rules.dwell_orange_min ? 'orange' :
+    minutes >= rules.dwell_yellow_min ? 'yellow' : 'green'
+  return { severity, label: `${formatDurationMinutes(minutes)} en local` }
 }
 
 /** true si el viaje cae en la excepción indicada (KPIs accionables del Diario) */
@@ -43,9 +87,6 @@ export function matchesKpi(
   now: number = Date.now(),
 ): boolean {
   switch (kpi) {
-    case 'off_time':
-      return stopComplianceSummary(trip.stops ?? []) === 'warn'
-
     case 'stale': {
       if (!isOpenTrip(trip)) return false
       const t = toMs(trip.status_reported_at)
@@ -56,33 +97,12 @@ export function matchesKpi(
     case 'temp_out':
       return trip.temp_status === 'out_of_range'
 
-    // Llegó a una parada y no registra salida hace más de N horas
-    case 'dwell': {
-      if (!isOpenTrip(trip)) return false
-      return (trip.stops ?? []).some(s => {
-        const arr = stopArrival(s)
-        return arr != null && stopDeparture(s) == null && now - arr > rules.dwell_hours * 3600_000
-      })
-    }
-
-    // Parada con hora planificada vencida (+ gracia) sin llegada real ni GPS
-    case 'late_arrival': {
-      if (!isOpenTrip(trip)) return false
-      return (trip.stops ?? []).some(s => {
-        if (stopArrival(s) != null) return false
-        const plan = toMs(s.planning_date)
-        return plan != null && now - plan > rules.late_arrival_grace_min * 60_000
-      })
-    }
-
-    // Viaje sin patente o conductor (sodimac excluido: nunca reporta flota)
-    case 'unassigned': {
-      if (!rules.unassigned_enabled) return false
-      if (!isOpenTrip(trip)) return false
-      if (trip.source_system === 'sodimac') return false
-      const noPlate  = !trip.tractor_plate && !trip.trailer_plate
-      const noDriver = !trip.driver_name
-      return noPlate || noDriver
+    // Solo cuenta como alerta lo anómalo (amarillo/naranja/rojo) — verde es
+    // el estado normal, mismo criterio de "gestión por excepción" que ya
+    // usa el resto del Diario.
+    case 'dwell_severity': {
+      const status = dwellStatus(trip, rules, now)
+      return status != null && status.severity !== 'green'
     }
 
     // "Sin identificar" (Ronda 43, Hallazgo F): tracto/conductor que el TMS
@@ -97,95 +117,6 @@ export function matchesKpi(
   }
 }
 
-/** Los mismos 4 KPIs que puede disparar el badge de bitácora (ver
- *  needsBitacoraFollowup) — unassigned/fleet_unmatched no tienen un ancla
- *  temporal natural, off_time ya está cubierto en la práctica por
- *  late_arrival/dwell. */
-const FOLLOWUP_KPI_IDS: KpiId[] = ['late_arrival', 'dwell', 'stale', 'temp_out']
-
-/** Timestamp (ms) desde el que un KPI activo lleva sonando. Re-aplica el
- *  mismo umbral que matchesKpi usa para decidir si el KPI está activo (no
- *  alcanza con "hay un stop sin este dato" — si hay varios stops candidatos
- *  y solo uno cruzó el umbral, el ancla tiene que ser la de ESE, no la del
- *  primero del arreglo). Es una duplicación deliberada y acotada a estos 4
- *  casos — no se tocó matchesKpi (usado también por tiles/filtros/conteos
- *  en todo el Diario) para no ampliar el blast radius de este cambio; el
- *  test "matches matchesKpi exactly" en kpis.test.ts existe para que estas
- *  dos implementaciones no se desalineen en silencio. Devuelve null para
- *  los 3 KPIs sin ancla temporal (unassigned, fleet_unmatched, off_time). */
-export function kpiAnchorTimestamp(
-  trip: Trip,
-  kpi: KpiId,
-  ranges: TemperatureRangeMeta[],
-  rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
-  now: number = Date.now(),
-): number | null {
-  switch (kpi) {
-    case 'late_arrival': {
-      if (!isOpenTrip(trip)) return null
-      for (const s of trip.stops ?? []) {
-        if (stopArrival(s) != null) continue
-        const plan = toMs(s.planning_date)
-        if (plan != null && now - plan > rules.late_arrival_grace_min * 60_000) return plan
-      }
-      return null
-    }
-
-    case 'dwell': {
-      if (!isOpenTrip(trip)) return null
-      for (const s of trip.stops ?? []) {
-        const arr = stopArrival(s)
-        if (arr != null && stopDeparture(s) == null && now - arr > rules.dwell_hours * 3600_000) return arr
-      }
-      return null
-    }
-
-    case 'stale': {
-      if (!isOpenTrip(trip)) return null
-      const t = toMs(trip.status_reported_at)
-      if (t == null || now - t <= rules.stale_report_hours * 3600_000) return null
-      return t
-    }
-
-    case 'temp_out': {
-      const stop = getLatestTempStop(trip.stops ?? [])
-      if (!stop) return null
-      if (trip.temp_status !== 'out_of_range') return null
-      return stopArrival(stop)
-    }
-
-    default:
-      return null
-  }
-}
-
-/** true si el viaje tiene alguna de las 4 alertas en alcance (ver
- *  FOLLOWUP_KPI_IDS) activa y ningún humano dejó una nota en la bitácora
- *  desde que esa alerta empezó a sonar. Si hay más de una alerta activa a
- *  la vez, compara contra la más reciente — si una nota ya cubrió la más
- *  vieja pero apareció una alerta nueva después, vuelve a pedir
- *  seguimiento. Notas note_type='sistema' no cuentan (ya excluidas por el
- *  backend en last_human_note_at). No hace falta llamar matchesKpi acá:
- *  kpiAnchorTimestamp ya devuelve null exactamente cuando matchesKpi
- *  devolvería false, para los 4 KPIs en alcance. */
-export function needsBitacoraFollowup(
-  trip: Trip,
-  ranges: TemperatureRangeMeta[],
-  rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
-  now: number = Date.now(),
-): boolean {
-  let latestAnchor: number | null = null
-  for (const kpi of FOLLOWUP_KPI_IDS) {
-    const anchor = kpiAnchorTimestamp(trip, kpi, ranges, rules, now)
-    if (anchor != null && (latestAnchor == null || anchor > latestAnchor)) {
-      latestAnchor = anchor
-    }
-  }
-  if (latestAnchor == null) return false
-  const lastNote = toMs(trip.last_human_note_at)
-  return lastNote == null || lastNote < latestAnchor
-}
-
 export type DiarioKpis = Record<KpiId, number>
 
 export function deriveKpis(
@@ -194,7 +125,7 @@ export function deriveKpis(
   rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
   now: number = Date.now(),
 ): DiarioKpis {
-  const kpis: DiarioKpis = { off_time: 0, stale: 0, temp_out: 0, dwell: 0, late_arrival: 0, unassigned: 0, fleet_unmatched: 0 }
+  const kpis: DiarioKpis = { stale: 0, temp_out: 0, dwell_severity: 0, fleet_unmatched: 0 }
   for (const t of trips) {
     for (const id of Object.keys(kpis) as KpiId[]) {
       if (matchesKpi(t, id, ranges, rules, now)) kpis[id]++

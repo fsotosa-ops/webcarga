@@ -36,6 +36,9 @@ class MonitorAlertRulesPatch(BaseModel):
     dwell_hours:            Optional[float] = None
     late_arrival_grace_min: Optional[int]   = None
     unassigned_enabled:     Optional[bool]  = None
+    dwell_yellow_min:       Optional[int]   = None
+    dwell_orange_min:       Optional[int]   = None
+    dwell_red_min:          Optional[int]   = None
 
     @field_validator("stale_report_hours", "dwell_hours")
     @classmethod
@@ -44,11 +47,11 @@ class MonitorAlertRulesPatch(BaseModel):
             raise ValueError("las horas deben ser mayores a 0")
         return v
 
-    @field_validator("late_arrival_grace_min")
+    @field_validator("late_arrival_grace_min", "dwell_yellow_min", "dwell_orange_min", "dwell_red_min")
     @classmethod
     def grace_non_negative(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
-            raise ValueError("los minutos de gracia no pueden ser negativos")
+            raise ValueError("los minutos no pueden ser negativos")
         return v
 
 
@@ -292,7 +295,8 @@ async def delete_temperature_range(
 # ── Reglas de alerta del monitor (fila única) ─────────────────────────────────
 
 _ALERT_RULES_SELECT = (
-    "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled "
+    "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
+    "dwell_yellow_min, dwell_orange_min, dwell_red_min "
     "FROM app.monitor_alert_rules WHERE id = 1"
 )
 

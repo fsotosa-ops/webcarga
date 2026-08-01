@@ -2,13 +2,14 @@ import type { Trip, TemperatureRangeMeta, MonitorAlertRules } from '@/lib/types'
 import { matchesKpi, deriveKpis, type KpiId, DEFAULT_ALERT_RULES } from './kpis'
 
 /** IDs de tipo KPI (evaluados client-side sobre trips ya cargados, OR entre
- *  ellos) — mismos 6 de siempre. IDs de tipo flag (query param server-side,
- *  AND entre ellos) — 3 heredados + "2ª+ vuelta" (reemplaza a is_first_leg). */
+ *  ellos) — reducidos a 4 (2026-08-01, ver kpis.ts). IDs de tipo flag (query
+ *  param server-side, AND entre ellos) — 3 heredados + "2ª+ vuelta"
+ *  (reemplaza a is_first_leg). */
 export type FlagSignalId = 'active' | 'working' | 'assigned' | 'second_leg_plus'
 export type AlertSignalId = KpiId | FlagSignalId
 
 export const KPI_SIGNAL_IDS: KpiId[] =
-  ['off_time', 'late_arrival', 'dwell', 'stale', 'temp_out', 'unassigned', 'fleet_unmatched']
+  ['dwell_severity', 'stale', 'temp_out', 'fleet_unmatched']
 export const FLAG_SIGNAL_IDS: FlagSignalId[] =
   ['active', 'working', 'assigned', 'second_leg_plus']
 
@@ -25,14 +26,16 @@ export interface AlertSignalDef {
 
 export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
   return [
-    { id: 'off_time',     label: 'OFF TIME',                                  colorCls: 'text-red-600',    activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50' },
-    { id: 'late_arrival', label: 'Atraso de llegada',                         colorCls: 'text-red-600',    activeCls: 'border-red-400 ring-2 ring-red-100 bg-red-50' },
-    { id: 'dwell',        label: `Detenido en local > ${rules.dwell_hours}h`, colorCls: 'text-orange-600', activeCls: 'border-orange-400 ring-2 ring-orange-100 bg-orange-50' },
-    { id: 'stale',        label: `Sin reporte > ${rules.stale_report_hours}h`, colorCls: 'text-amber-600', activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
-    { id: 'temp_out',     label: 'Temp fuera de rango',                       colorCls: 'text-blue-600',   activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50' },
-    ...(rules.unassigned_enabled
-      ? [{ id: 'unassigned' as const, label: 'Sin asignación', colorCls: 'text-violet-600', activeCls: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50' }]
-      : []),
+    // Hito 14 (minuta 29/07 §4.4) — semáforo de 4 niveles reemplaza al
+    // binario "Detenido en local > 2h"; la tile cuenta solo lo anómalo
+    // (amarillo/naranja/rojo), ver dwellSeverity/matchesKpi en kpis.ts.
+    { id: 'dwell_severity', label: 'Detenido en local',           colorCls: 'text-orange-600', activeCls: 'border-orange-400 ring-2 ring-orange-100 bg-orange-50' },
+    // "Sin actualización del TMS" (antes "Sin reporte del TMS") — mismo
+    // concepto que "stale data"/"last ping" en tracking de flota,
+    // renombrado 2026-08-01 a pedido del usuario para usar un término más
+    // claro/estándar de la industria.
+    { id: 'stale',          label: `Sin actualización del TMS > ${rules.stale_report_hours}h`, colorCls: 'text-amber-600', activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
+    { id: 'temp_out',       label: 'Temp fuera de rango',         colorCls: 'text-blue-600',   activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50' },
     // "Sin identificar" (Ronda 43, Hallazgo F) — tracto/conductor sin
     // ningún cruce contra empresa, pedido por Pablo específicamente visible
     // "en la cuadratura de la caja", no solo dentro del detalle de un
@@ -49,7 +52,7 @@ export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
 
 /** Conteo de cada señal sobre los trips ya cargados — mismo dato para las
  *  tiles pineadas y las filas del popover. Los 4 flags leen directo de
- *  columnas de Trip (mismo criterio que ya usaba page.tsx); los 6 KPI usan
+ *  columnas de Trip (mismo criterio que ya usaba page.tsx); los 4 KPI usan
  *  el evaluador existente de kpis.ts, sin duplicar esa lógica. */
 export function computeSignalCounts(
   trips: Trip[],
@@ -66,7 +69,7 @@ export function computeSignalCounts(
   }
 }
 
-/** true si el trip matchea la señal dada — usa matchesKpi para las 6 KPI,
+/** true si el trip matchea la señal dada — usa matchesKpi para los 4 KPI,
  *  lee la columna directo para los 4 flags (mismo criterio que
  *  computeSignalCounts, para que conteo y filtro nunca diverjan). */
 export function matchesSignal(

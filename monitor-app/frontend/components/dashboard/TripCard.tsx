@@ -2,36 +2,34 @@
 
 import type { Trip, TripsMeta } from '@/lib/types'
 import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
-import { stopComplianceSummary } from '@/lib/utils/compliance'
-import { formatRelativeTime } from '@/lib/utils/datetime'
+import { dwellStatus } from '@/lib/utils/kpis'
 import { StopProgressDots } from './StopProgressDots'
+import { DwellSeverityBadge } from '@/components/ui/DwellSeverityBadge'
 import { TmsChip } from './TripTable'
 
 interface Props {
-  trip:     Trip
-  meta?:    TripsMeta | null
-  onSaved:  (t: Trip) => void
-  onSelect: (t: Trip) => void
+  trip:               Trip
+  meta?:              TripsMeta | null
+  onSaved:            (t: Trip) => void
+  onSelect:           (t: Trip) => void
+  onSelectFocusNotes: (t: Trip) => void
   /** true si el último reporte TMS de este viaje cambió en el refetch más reciente */
   updated?: boolean
 }
 
-export function TripCard({ trip, meta, onSaved, onSelect, updated }: Props) {
+export function TripCard({ trip, meta, onSaved, onSelect, onSelectFocusNotes, updated }: Props) {
   const temp       = getLatestTemp(trip.stops ?? [])
   const tempStatus = trip.temp_status
-  const compliance = stopComplianceSummary(trip.stops ?? [])
   const plate      = trip.tractor_plate ?? trip.trailer_plate ?? null
   const activeStop = getActiveStop(trip.stops ?? [])
   const eta        = activeStop ? describeStopTiming(activeStop) : null
-  const since      = formatRelativeTime(trip.status_reported_at)
+  const dwell      = dwellStatus(trip, meta?.monitor_alert_rules ?? undefined)
 
   return (
     <div
       onClick={() => onSelect(trip)}
-      className={`border rounded-lg p-2.5 mb-2 cursor-pointer hover:shadow-sm transition-all ${
+      className={`border rounded-lg p-2.5 mb-2 cursor-pointer hover:shadow-sm transition-all border-border ${
         updated ? 'bg-amber-50' : 'bg-white'
-      } ${
-        compliance === 'warn' ? 'border-l-[3px] border-l-red-500 border-y-border border-r-border' : 'border-border'
       }`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -51,26 +49,26 @@ export function TripCard({ trip, meta, onSaved, onSelect, updated }: Props) {
         {trip.driver_name ?? <span className="italic text-gray-300">sin conductor</span>}
         {trip.client_name && <span className="text-gray-300"> · {trip.client_name}</span>}
       </p>
-      {/* Solo destinos — el origen no tiene noción de on-time/late (Fase 1,
-          origen como parada 0, 2026-07-18). */}
-      {(trip.stops?.filter(s => s.stop_type !== 'ORIGIN').length ?? 0) > 0 && (
+      {/* Solo destinos — StopProgressDots filtra el origen internamente
+          (hito 13, mismo lenguaje visual que StopTimeline/StopPills). */}
+      {(trip.stops?.some(s => s.stop_type !== 'ORIGIN') ?? false) && (
         <div className="mt-1.5">
-          <StopProgressDots stops={trip.stops.filter(s => s.stop_type !== 'ORIGIN')} />
+          <StopProgressDots stops={trip.stops ?? []} />
         </div>
       )}
-      {(eta || since !== '—') && (
-        <p className="text-[9px] text-gray-400 truncate mt-1">
-          {eta}
-          {eta && since !== '—' && ' · '}
-          {since !== '—' && since}
-        </p>
+      {eta && (
+        <p className="text-[9px] text-gray-400 truncate mt-1">{eta}</p>
       )}
       {/* Indicadores (Activo/Trabajando/Asignado/1ra Vuelta) se ven y
           filtran arriba de la tabla, se editan en el detalle del viaje —
           Fase 3 del hardening del Diario, 2026-07-18. */}
-      {compliance === 'warn' && (
+      {dwell && (
         <div className="flex items-center justify-end mt-1.5">
-          <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">OFF TIME</span>
+          <DwellSeverityBadge
+            severity={dwell.severity}
+            label={dwell.label}
+            onClick={e => { e.stopPropagation(); onSelectFocusNotes(trip) }}
+          />
         </div>
       )}
     </div>

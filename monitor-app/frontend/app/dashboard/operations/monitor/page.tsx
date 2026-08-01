@@ -610,6 +610,7 @@ export default function DiarioPage() {
                     queryClient.setQueryData(['trip', trip.id], trip)
                     router.push(`/dashboard/operations/monitor/trips/${trip.id}`)
                   }}
+                  onSelectFocusNotes={handleSelectTripFocusNotes}
                   updatedIds={updatedIds}
                 />
               ) : (

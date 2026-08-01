@@ -22,18 +22,12 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
 }
 
 describe('alertSignals', () => {
-  it('alertSignalDefs returns 7 KPI + 4 flag = 11 signals when unassigned is enabled', () => {
+  it('alertSignalDefs returns 4 KPI + 4 flag = 8 signals (2026-08-01: set reducido)', () => {
     const defs = alertSignalDefs(DEFAULT_ALERT_RULES)
     expect(defs.map(d => d.id)).toEqual([
-      'off_time', 'late_arrival', 'dwell', 'stale', 'temp_out', 'unassigned', 'fleet_unmatched',
+      'dwell_severity', 'stale', 'temp_out', 'fleet_unmatched',
       'active', 'working', 'assigned', 'second_leg_plus',
     ])
-  })
-
-  it('alertSignalDefs drops unassigned when the rule is disabled, keeping 10', () => {
-    const defs = alertSignalDefs({ ...DEFAULT_ALERT_RULES, unassigned_enabled: false })
-    expect(defs.map(d => d.id)).not.toContain('unassigned')
-    expect(defs).toHaveLength(10)
   })
 
   it('fleet_unmatched ("Sin identificar") cuenta y filtra vía el KPI compartido', () => {
@@ -65,9 +59,9 @@ describe('alertSignals', () => {
   })
 
   it('matchesActiveSignals: OR between KPI signals — matches if at least one applies', () => {
-    const offTimeTrip = makeTrip({ stops: [{ stop_id: 's1', local: 'A', planning_date: null, arrival_date: null, departure_date: null, departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null, on_time_status: 'OFF TIME', destination_city: null, destination_region: null, s2s: null, temperature: null, milestone_status: null }] })
-    expect(matchesActiveSignals(offTimeTrip, ['off_time', 'temp_out'], [])).toBe(true)
-    expect(matchesActiveSignals(offTimeTrip, ['temp_out'], [])).toBe(false)
+    const tempOutTrip = makeTrip({ temp_status: 'out_of_range' })
+    expect(matchesActiveSignals(tempOutTrip, ['temp_out', 'fleet_unmatched'], [])).toBe(true)
+    expect(matchesActiveSignals(tempOutTrip, ['fleet_unmatched'], [])).toBe(false)
   })
 
   it('matchesActiveSignals: AND between flag signals', () => {

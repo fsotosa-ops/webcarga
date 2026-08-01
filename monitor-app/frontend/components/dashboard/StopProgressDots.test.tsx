@@ -21,10 +21,10 @@ describe('StopProgressDots', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('renders one dot per stop, titled with the stop name', () => {
+  it('renders one dot per destination stop, titled with the stop name', () => {
     const stops = [
-      makeStop({ stop_id: 'a', local: 'Parada A', on_time_status: 'ON TIME' }),
-      makeStop({ stop_id: 'b', local: 'Parada B', on_time_status: 'OFF TIME' }),
+      makeStop({ stop_id: 'a', local: 'Parada A', is_active: true }),
+      makeStop({ stop_id: 'b', local: 'Parada B' }),
       makeStop({ stop_id: 'c', local: 'Parada C' }),
     ]
     render(<StopProgressDots stops={stops} />)
@@ -33,19 +33,25 @@ describe('StopProgressDots', () => {
     expect(screen.getByTitle('Parada C')).toBeInTheDocument()
   })
 
-  it('colors ON TIME dots green and OFF TIME dots red', () => {
+  it('filters out the ORIGIN stop — only destinations get a dot', () => {
     const stops = [
-      makeStop({ stop_id: 'a', local: 'Parada A', on_time_status: 'ON TIME' }),
-      makeStop({ stop_id: 'b', local: 'Parada B', on_time_status: 'OFF TIME' }),
+      makeStop({ stop_id: 'o', local: 'Origen', stop_type: 'ORIGIN' }),
+      makeStop({ stop_id: 'a', local: 'Parada A', is_active: true }),
+    ]
+    render(<StopProgressDots stops={stops} />)
+    expect(screen.queryByTitle('Origen')).not.toBeInTheDocument()
+    expect(screen.getByTitle('Parada A')).toBeInTheDocument()
+  })
+
+  it('colors done stops green, the active stop with an accent ring, and pending gray (hito 13, mismo lenguaje que StopTimeline)', () => {
+    const stops = [
+      makeStop({ stop_id: 'a', local: 'Parada A', arrival_date: '2026-07-04 10:00:00', departure_date: '2026-07-04 10:30:00' }),
+      makeStop({ stop_id: 'b', local: 'Parada B', is_active: true }),
+      makeStop({ stop_id: 'c', local: 'Parada C' }),
     ]
     render(<StopProgressDots stops={stops} />)
     expect(screen.getByTitle('Parada A')).toHaveClass('bg-green-500')
-    expect(screen.getByTitle('Parada B')).toHaveClass('bg-red-500')
-  })
-
-  it('colors stops without on_time_status data gray', () => {
-    const stops = [makeStop({ stop_id: 'a', local: 'Parada A' })]
-    render(<StopProgressDots stops={stops} />)
-    expect(screen.getByTitle('Parada A')).toHaveClass('bg-gray-200')
+    expect(screen.getByTitle('Parada B')).toHaveClass('border-accent')
+    expect(screen.getByTitle('Parada C')).toHaveClass('bg-gray-200')
   })
 })

@@ -189,6 +189,11 @@ export type MonitorAlertRules = {
   dwell_hours:            number
   late_arrival_grace_min: number
   unassigned_enabled:     boolean
+  /** Hito 14 (minuta 29/07 §4.4): umbrales del semáforo de tiempo en el
+   *  local activo, en minutos — verde por debajo de dwell_yellow_min. */
+  dwell_yellow_min:       number
+  dwell_orange_min:       number
+  dwell_red_min:          number
 }
 
 export type TripsMeta = {

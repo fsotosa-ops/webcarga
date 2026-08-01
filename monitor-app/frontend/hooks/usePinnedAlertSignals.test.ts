@@ -7,9 +7,9 @@ beforeEach(() => {
 })
 
 describe('usePinnedAlertSignals', () => {
-  it('defaults to off_time/unassigned/stale when localStorage is empty', () => {
+  it('defaults to dwell_severity/temp_out/stale when localStorage is empty', () => {
     const { result } = renderHook(() => usePinnedAlertSignals())
-    expect(result.current.pinned).toEqual(['off_time', 'unassigned', 'stale'])
+    expect(result.current.pinned).toEqual(['dwell_severity', 'temp_out', 'stale'])
   })
 
   it('togglePin adds and removes, persisting to localStorage', () => {
@@ -18,19 +18,19 @@ describe('usePinnedAlertSignals', () => {
     expect(result.current.pinned).toContain('active')
     expect(JSON.parse(localStorage.getItem('diario:alertas-pineadas')!)).toContain('active')
 
-    act(() => result.current.togglePin('off_time'))
-    expect(result.current.pinned).not.toContain('off_time')
+    act(() => result.current.togglePin('dwell_severity'))
+    expect(result.current.pinned).not.toContain('dwell_severity')
   })
 
   it('reads a previously saved preference on mount', () => {
-    localStorage.setItem('diario:alertas-pineadas', JSON.stringify(['dwell']))
+    localStorage.setItem('diario:alertas-pineadas', JSON.stringify(['temp_out']))
     const { result } = renderHook(() => usePinnedAlertSignals())
-    expect(result.current.pinned).toEqual(['dwell'])
+    expect(result.current.pinned).toEqual(['temp_out'])
   })
 
   it('ignores corrupted localStorage and keeps the default', () => {
     localStorage.setItem('diario:alertas-pineadas', 'not json{')
     const { result } = renderHook(() => usePinnedAlertSignals())
-    expect(result.current.pinned).toEqual(['off_time', 'unassigned', 'stale'])
+    expect(result.current.pinned).toEqual(['dwell_severity', 'temp_out', 'stale'])
   })
 })

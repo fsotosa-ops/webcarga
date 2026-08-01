@@ -44,16 +44,11 @@ describe('StopTimeline', () => {
     expect(screen.getByText('pendiente')).toBeInTheDocument()
   })
 
-  it('does NOT badge ON TIME stops (gestión por excepción: el check verde ya lo comunica)', () => {
+  it('never badges ON TIME/OFF TIME (2026-08-01: concepto retirado de toda la app)', () => {
     const stops = [makeStop({ stop_id: 'a', local: 'Parada A', on_time_status: 'ON TIME' })]
     render(<StopTimeline stops={stops} />)
     expect(screen.queryByText('ON TIME')).not.toBeInTheDocument()
-  })
-
-  it('shows an OFF TIME badge for a stop with on_time_status OFF TIME', () => {
-    const stops = [makeStop({ stop_id: 'a', local: 'Parada A', on_time_status: 'OFF TIME' })]
-    render(<StopTimeline stops={stops} />)
-    expect(screen.getByText('OFF TIME')).toBeInTheDocument()
+    expect(screen.queryByText('OFF TIME')).not.toBeInTheDocument()
   })
 
   it('shows the milestone_status badge when present', () => {
@@ -95,12 +90,14 @@ describe('StopTimeline', () => {
   })
 
   it('shows "completada" instead of the contradictory "pendiente" for a done stop with no timing data', () => {
+    // "done" acá es puramente posicional (antes de is_active) — no depende
+    // de que la propia parada tenga arrival_date ni ningún otro campo.
     const stops = [
-      makeStop({ stop_id: 'a', local: 'Sin fechas', on_time_status: 'ON TIME', arrival_date: null, planning_date: null }),
+      makeStop({ stop_id: 'a', local: 'Sin fechas' }),
+      makeStop({ stop_id: 'b', local: 'Activa', is_active: true }),
     ]
     render(<StopTimeline stops={stops} />)
     expect(screen.getByText(/completada/)).toBeInTheDocument()
-    expect(screen.queryByText('pendiente')).not.toBeInTheDocument()
   })
 
   // FIX 2026-08-01: "quién está activo" pasó a ser una decisión 100% del

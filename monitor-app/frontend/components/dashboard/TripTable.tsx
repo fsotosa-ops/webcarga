@@ -1,18 +1,18 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, Check } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
-import { stopComplianceSummary } from '@/lib/utils/compliance'
-import { formatRelativeTime, normalizeUTC } from '@/lib/utils/datetime'
+import { getStopStates } from '@/lib/utils/stopState'
+import { normalizeUTC } from '@/lib/utils/datetime'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
-import { BitacoraFollowupBadge } from '@/components/ui/BitacoraFollowupBadge'
+import { DwellSeverityBadge } from '@/components/ui/DwellSeverityBadge'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
-import { needsBitacoraFollowup } from '@/lib/utils/kpis'
+import { dwellStatus } from '@/lib/utils/kpis'
 
 /** Hipervínculo desde la patente hacia el TMS de origen (minuta §7A ítem 16).
  *  No es un deep-link autenticado a un viaje específico — decisión de
@@ -64,38 +64,42 @@ export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: Trips
   )
 }
 
+/** Columna "Destinos" — solo destinos (el origen se ve en la columna
+ *  "Origen · Carga"), mismo lenguaje visual que StopTimeline (check verde =
+ *  visitada, anillo pulsante accent = activa, contorno gris = pendiente)
+ *  para que hito 13 se vea igual en la tabla y en el detalle del viaje. */
 function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null }) {
-  if (!stops?.length) return <span className="text-gray-200 text-xs">—</span>
+  const destinations = stops?.filter(s => s.stop_type !== 'ORIGIN') ?? []
+  if (!destinations.length) return <span className="text-gray-200 text-xs">—</span>
 
-  const isCompleted = (s: TripStop) =>
-    !!(s.arrival_date || s.gps_arrival_date || s.on_time_status)
-  const currentIdx = stops.findIndex(s => !isCompleted(s))
-  const activeIdx  = currentIdx >= 0 ? currentIdx : stops.length - 1
+  const states = getStopStates(destinations)
 
   return (
-    <div className="flex flex-col gap-0.5">
-      {stops.map((stop, i) => {
-        const name     = stop.local ?? stop.destination_city ?? '—'
-        const isActive = i === activeIdx
-        const isDone   = currentIdx < 0 ? isCompleted(stop) : i < activeIdx
+    <div className="flex flex-col gap-1">
+      {destinations.map((stop, i) => {
+        const name  = stop.local ?? stop.destination_city ?? '—'
+        const state = states[i]
         return (
-          <div key={stop.stop_id ?? i} className="flex items-center gap-1">
+          <div key={stop.stop_id ?? i} className="flex items-center gap-1.5">
             <span
-              title={name}
-              className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit max-w-[120px] truncate flex items-center gap-1 ${
-                isActive
-                  ? 'bg-accent/10 text-accent border border-accent/20'
-                  : isDone
-                  ? 'text-gray-300 bg-gray-50'
-                  : 'text-gray-200'
+              className={`w-3 h-3 rounded-full shrink-0 flex items-center justify-center ${
+                state === 'done'
+                  ? 'bg-green-500 text-white'
+                  : state === 'active'
+                  ? 'bg-white border-2 border-accent ring-2 ring-accent/10'
+                  : 'bg-white border-2 border-gray-200'
               }`}
             >
-              {stop.on_time_status && (
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stop.on_time_status === 'ON TIME' ? 'bg-green-500' : 'bg-red-500'}`} />
-              )}
-              {isActive && <span className="shrink-0 text-[8px]">→</span>}
-              {isDone && !isActive && <span className="shrink-0 text-[8px]">✓</span>}
-              <span className="truncate">{name}</span>
+              {state === 'done' && <Check size={7} strokeWidth={3} />}
+              {state === 'active' && <span className="w-1 h-1 rounded-full bg-accent animate-pulse" />}
+            </span>
+            <span
+              title={name}
+              className={`text-[11px] truncate max-w-[170px] ${
+                state === 'active' ? 'font-bold text-slate-800' : state === 'done' ? 'text-gray-500' : 'text-gray-400'
+              }`}
+            >
+              {name}
             </span>
             <OperationTypeBadge operationType={stop.operation_type} meta={meta} />
           </div>
@@ -202,7 +206,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
           const isActive      = trip.id === selectedId
           const primaryPlate  = trip.tractor_plate ?? trip.trailer_plate ?? null
           const currentStatus = trip.manual_status ?? trip.current_status
-          const needsFollowup = needsBitacoraFollowup(trip, meta?.temperature_ranges ?? [], meta?.monitor_alert_rules ?? undefined)
+          const dwell         = dwellStatus(trip, meta?.monitor_alert_rules ?? undefined)
 
           return (
             <div
@@ -243,11 +247,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       : null
                   })()}
                   <StatusBadge status={currentStatus} meta={meta} />
-                  {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
-                    <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full whitespace-nowrap">OFF TIME</span>
-                  )}
-                  <BitacoraFollowupBadge
-                    show={needsFollowup}
+                  <DwellSeverityBadge
+                    severity={dwell?.severity ?? null}
+                    label={dwell?.label ?? null}
                     compact
                     onClick={e => { e.stopPropagation(); onSelectFocusNotes(trip) }}
                   />
@@ -272,17 +274,14 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
 
-              {/* fila 4: ETA de la parada activa + tiempo desde el último reporte TMS */}
+              {/* fila 4: ETA de la parada activa */}
               {(() => {
                 const activeStop = getActiveStop(trip.stops ?? [])
                 const eta = activeStop ? describeStopTiming(activeStop) : null
-                const since = formatRelativeTime(trip.status_reported_at)
-                if (!eta && since === '—') return null
+                if (!eta) return null
                 return (
                   <div className="flex items-center gap-1.5 mt-1 text-[10px] text-gray-400 min-w-0">
-                    {eta && <span className="truncate">{eta}</span>}
-                    {eta && since !== '—' && <span>·</span>}
-                    {since !== '—' && <span className="whitespace-nowrap">{since}</span>}
+                    <span className="truncate">{eta}</span>
                   </div>
                 )
               })()}
@@ -303,10 +302,17 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
           <table className="w-full text-sm" style={{ minWidth: 1080 }}>
             <thead>
               <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                <th onClick={() => handleSort('tractor_plate')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
+                {/* ESTADO — columna fija (Hito 11, minuta 29/07 §4.3: "el
+                    estado es lo primero que filtran"). Reemplaza a Patente
+                    como única columna sticky al hacer scroll horizontal. */}
+                <th onClick={() => handleSort('current_status')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
+                  Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} />
+                  <span className="sr-only">, Abrir detalle</span>
+                </th>
                 <th onClick={() => handleSort('planning_date')} className="px-3 py-2.5 text-left w-[72px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
                 <th onClick={() => handleSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => handleSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th onClick={() => handleSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
                 <th onClick={() => handleSort('carrier_name')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="carrier_name" sortKey={sortKey} sortDir={sortDir} /></th>
@@ -314,19 +320,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
                 <th className="px-3 py-2.5 text-left">Destinos</th>
                 <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
-                {/* Estado + chevron de apertura (ítem 3, feedback
-                    post-weekly 2026-07-22 + Ronda 43): se intentó fusionar
-                    en una sola columna sticky a la derecha (right-[90px] +
-                    right-0 por separado desalineaban con table-layout:
-                    auto), pero el fix quedó a medias — el <tbody> nunca se
-                    actualizó a juego con el <thead>, mismatch real de
-                    columnas entre header y body. Criterio final del usuario:
-                    sin sticky del lado derecho — solo Patente (izquierda)
-                    queda fija. Columnas normales de aquí en más. */}
-                <th onClick={() => handleSort('current_status')} className="border-l border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
-                  Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} />
-                  <span className="sr-only">, Abrir detalle</span>
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -336,7 +329,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 const secondaryPlate = trip.tractor_plate && trip.trailer_plate ? trip.trailer_plate : null
                 const currentStatus  = trip.manual_status ?? trip.current_status
                 const phones         = parsePhones(trip.driver_phone)
-                const needsFollowup  = needsBitacoraFollowup(trip, meta?.temperature_ranges ?? [], meta?.monitor_alert_rules ?? undefined)
+                const dwell          = dwellStatus(trip, meta?.monitor_alert_rules ?? undefined)
 
                 return (
                   <tr
@@ -364,24 +357,30 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         : 'bg-white hover:bg-gray-50'
                     }`}
                   >
-                    {/* PATENTE — sticky: siempre visible al scrollear horizontal.
-                        Solo lectura (Fase 2, Plan 6) — se editaba inline con
-                        PlateCell, ahora el mismo texto que ya mostraba el card
-                        mobile, sin click-to-edit; clic en cualquier parte de la
-                        fila abre el detalle. */}
+                    {/* ESTADO — sticky: siempre visible al scrollear
+                        horizontal (Hito 11, reemplaza a Patente). */}
                     <td className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5">
-                      <div className="flex items-start gap-1.5">
-                        <div>
-                          <span className={`font-mono text-xs font-bold ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal'}`}>
-                            {primaryPlate ?? 'sin patente'}
-                          </span>
-                          {secondaryPlate && (
-                            <span className="font-mono text-[10px] text-gray-400 mt-0.5 block">
-                              {secondaryPlate}
-                            </span>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <StatusBadge status={currentStatus} meta={meta} />
+                          {trip.manual_status && (
+                            <span className="text-[8px] text-accent block mt-0.5">override</span>
                           )}
+                          <DwellSeverityBadge
+                            severity={dwell?.severity ?? null}
+                            label={dwell?.label ?? null}
+                            onClick={e => { e.stopPropagation(); onSelectFocusNotes(trip) }}
+                          />
+                          {(() => {
+                            const activeStop = getActiveStop(trip.stops ?? [])
+                            const eta = activeStop ? describeStopTiming(activeStop) : null
+                            return eta ? <span className="text-[9px] text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
+                          })()}
                         </div>
-                        <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" compact />
+                        {/* Los indicadores (Activo/Trabajando/Asignado) se ven
+                            y filtran arriba de la tabla, se editan en el
+                            detalle (Fase 3 del hardening del Diario, 2026-07-18). */}
+                        <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
                       </div>
                     </td>
 
@@ -415,6 +414,26 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       <span className="font-mono text-[11px] text-gray-500">
                         {trip.source_system_trip_id ?? '—'}
                       </span>
+                    </td>
+
+                    {/* PATENTE — solo lectura (Fase 2, Plan 6) — se editaba
+                        inline con PlateCell, ahora el mismo texto que ya
+                        mostraba el card mobile, sin click-to-edit; clic en
+                        cualquier parte de la fila abre el detalle. */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-start gap-1.5">
+                        <div>
+                          <span className={`font-mono text-xs font-bold ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal'}`}>
+                            {primaryPlate ?? 'sin patente'}
+                          </span>
+                          {secondaryPlate && (
+                            <span className="font-mono text-[10px] text-gray-400 mt-0.5 block">
+                              {secondaryPlate}
+                            </span>
+                          )}
+                        </div>
+                        <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" compact />
+                      </div>
                     </td>
 
                     {/* CONDUCTOR — solo lectura (Fase 2, Plan 6), antes ConductorCell */}
@@ -499,42 +518,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                           : <span className="text-gray-300 text-xs">—</span>
                       })()}
-                    </td>
-
-                    {/* ESTADO + chevron de apertura — una sola columna,
-                        en línea con el <th> combinado del header (Ronda 43:
-                        antes eran 2 <td> sticky separados que no calzaban
-                        con el <th> ya fusionado, mismatch real de columnas).
-                        Sin sticky — columna normal, solo Patente queda fija. */}
-                    <td className="border-l border-border/60 px-3 py-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <StatusBadge status={currentStatus} meta={meta} />
-                          {trip.manual_status && (
-                            <span className="text-[8px] text-accent block mt-0.5">override</span>
-                          )}
-                          {stopComplianceSummary(trip.stops ?? []) === 'warn' && (
-                            <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full block mt-0.5 w-fit">OFF TIME</span>
-                          )}
-                          <BitacoraFollowupBadge
-                            show={needsFollowup}
-                            onClick={e => { e.stopPropagation(); onSelectFocusNotes(trip) }}
-                          />
-                          {(() => {
-                            const activeStop = getActiveStop(trip.stops ?? [])
-                            const eta = activeStop ? describeStopTiming(activeStop) : null
-                            return eta ? <span className="text-[9px] text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
-                          })()}
-                          {(() => {
-                            const since = formatRelativeTime(trip.status_reported_at)
-                            return since !== '—' ? <span className="text-[9px] text-gray-300 block mt-0.5 whitespace-nowrap">{since}</span> : null
-                          })()}
-                        </div>
-                        {/* Los indicadores (Activo/Trabajando/Asignado) se ven
-                            y filtran arriba de la tabla, se editan en el
-                            detalle (Fase 3 del hardening del Diario, 2026-07-18). */}
-                        <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
-                      </div>
                     </td>
                   </tr>
                 )

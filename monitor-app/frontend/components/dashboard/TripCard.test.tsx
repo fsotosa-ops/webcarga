@@ -21,16 +21,29 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
   }
 }
 
+function renderCard(props: Partial<React.ComponentProps<typeof TripCard>> = {}) {
+  return render(
+    <TripCard
+      trip={makeTrip()}
+      meta={null}
+      onSaved={vi.fn()}
+      onSelect={vi.fn()}
+      onSelectFocusNotes={vi.fn()}
+      {...props}
+    />,
+  )
+}
+
 describe('TripCard', () => {
   it('renders the plate and driver name', () => {
-    render(<TripCard trip={makeTrip()} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    renderCard()
     expect(screen.getByText('DRZT17')).toBeInTheDocument()
     expect(screen.getByText('Navarro Piñango')).toBeInTheDocument()
   })
 
   it('calls onSelect when the card is clicked', () => {
     const onSelect = vi.fn()
-    render(<TripCard trip={makeTrip()} meta={null} onSaved={vi.fn()} onSelect={onSelect} />)
+    renderCard({ onSelect })
     fireEvent.click(screen.getByText('DRZT17'))
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
   })
@@ -41,24 +54,43 @@ describe('TripCard', () => {
   // se editan solo en el detalle del viaje (TripSlideOver). Sin tests acá
   // para ese comportamiento removido.
 
-  it('shows an OFF TIME badge when the trip has a compliance problem', () => {
+  it('shows the dwell severity badge (Hito 14) when the active stop has been arrived at for a while', () => {
     const stops: Trip['stops'] = [{
-      stop_id: 's1', local: 'Parada 1', planning_date: null, arrival_date: null, departure_date: null,
+      stop_id: 's1', local: 'Parada 1', planning_date: null,
+      arrival_date: new Date(Date.now() - 130 * 60_000).toISOString(),
+      departure_date: null,
       departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
-      on_time_status: 'OFF TIME', destination_city: null, destination_region: null, s2s: null,
-      temperature: null, milestone_status: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null, is_active: true,
     }]
-    render(<TripCard trip={makeTrip({ stops })} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
-    expect(screen.getByText('OFF TIME')).toBeInTheDocument()
+    renderCard({ trip: makeTrip({ stops }) })
+    expect(screen.getByText(/en local/)).toBeInTheDocument()
   })
 
-  it('does not show an OFF TIME badge when there is no compliance problem', () => {
-    render(<TripCard trip={makeTrip()} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
-    expect(screen.queryByText('OFF TIME')).not.toBeInTheDocument()
+  it('does not show the dwell severity badge when there is no active stop dwelling', () => {
+    renderCard()
+    expect(screen.queryByText(/en local/)).not.toBeInTheDocument()
+  })
+
+  it('opens the bitácora when the dwell severity badge is clicked', () => {
+    const onSelectFocusNotes = vi.fn()
+    const onSelect = vi.fn()
+    const stops: Trip['stops'] = [{
+      stop_id: 's1', local: 'Parada 1', planning_date: null,
+      arrival_date: new Date(Date.now() - 130 * 60_000).toISOString(),
+      departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null, is_active: true,
+    }]
+    renderCard({ trip: makeTrip({ stops }), onSelectFocusNotes, onSelect })
+    fireEvent.click(screen.getByText(/en local/))
+    expect(onSelectFocusNotes).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('shows a TMS chip and the client name', () => {
-    render(<TripCard trip={makeTrip()} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    renderCard()
     expect(screen.getByText('QAN')).toBeInTheDocument()
     expect(screen.getByText(/walmart/)).toBeInTheDocument()
   })
@@ -70,13 +102,7 @@ describe('TripCard', () => {
       on_time_status: null, destination_city: null, destination_region: null, s2s: null,
       temperature: null, milestone_status: null, is_active: true,
     }]
-    render(<TripCard trip={makeTrip({ stops })} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    renderCard({ trip: makeTrip({ stops }) })
     expect(screen.getByText(/llega ~\d{2}:\d{2}/)).toBeInTheDocument()
-  })
-
-  it('shows time since the last TMS report', () => {
-    const trip = makeTrip({ status_reported_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() })
-    render(<TripCard trip={trip} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
-    expect(screen.getByText(/hace 5 min/)).toBeInTheDocument()
   })
 })

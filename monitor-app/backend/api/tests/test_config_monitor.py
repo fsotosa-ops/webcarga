@@ -13,6 +13,7 @@ USER = {"sub": "11111111-1111-1111-1111-111111111111", "email": "a@b.c", "role":
 RULES_ROW = {
     "stale_report_hours": 2.0, "dwell_hours": 2.0,
     "late_arrival_grace_min": 60, "unassigned_enabled": True,
+    "dwell_yellow_min": 60, "dwell_orange_min": 90, "dwell_red_min": 120,
 }
 
 

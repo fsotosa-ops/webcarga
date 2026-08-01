@@ -5,7 +5,7 @@ import { X, Copy, Check, Truck, User, Phone, Hash, MapPin } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, stopWasVisited, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
-import { stopComplianceSummary } from '@/lib/utils/compliance'
+import { getStopStates } from '@/lib/utils/stopState'
 import { fmtDT, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { StopTimeline } from './StopTimeline'
@@ -70,8 +70,9 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
   const openIncidents    = (notesQuery.data ?? []).filter(n => n.note_type === 'incidente' && !n.resolved_at).length
   const activeStop  = getActiveStop(stops)
   const activeTiming = activeStop ? describeStopTiming(activeStop) : null
-  const doneCount   = destinationStops.filter(s => s.arrival_date || s.gps_arrival_date || s.on_time_status).length
-  const compliance  = stopComplianceSummary(stops)
+  // "Completadas" = destinos en estado 'done' según la misma fuente de
+  // verdad que StopTimeline/StopPills (is_active), no on_time_status.
+  const doneCount   = getStopStates(destinationStops).filter(s => s === 'done').length
   const tmsSince    = formatRelativeTime(trip.status_reported_at)
   const syncSince   = formatRelativeTime(trip.pipeline_updated_at)
 
@@ -191,9 +192,6 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
           {destinationStops.length > 0 && (
             <span>{doneCount}/{destinationStops.length} paradas</span>
           )}
-          {compliance === 'warn' && (
-            <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-[10px]">OFF TIME</span>
-          )}
           {openIncidents > 0 && (
             <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-[10px]">
               {openIncidents} incidente{openIncidents === 1 ? '' : 's'} abierto{openIncidents === 1 ? '' : 's'}
@@ -240,7 +238,6 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                         <th className="px-3 py-2 text-left min-w-[82px]">Desc. fin</th>
                         <th className="px-3 py-2 text-center min-w-[52px]">S2S</th>
                         <th className="px-3 py-2 text-center min-w-[52px]">°C</th>
-                        <th className="px-3 py-2 text-center min-w-[68px]">On Time</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
@@ -248,8 +245,6 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                         const isOrigin = stop.stop_type === 'ORIGIN'
                         const rowBg =
                           isOrigin ? 'bg-slate-50' :
-                          stop.on_time_status === 'ON TIME'  ? 'bg-green-50/40' :
-                          stop.on_time_status === 'OFF TIME' ? 'bg-amber-50/40' :
                           i % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
                         const opLabel = isOrigin ? 'Carga' : 'Desc.'
                         return (
@@ -351,15 +346,6 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                                   : 'text-blue-600'
                                 }`}>{stop.temperature}°C</span>
                               ) : <span className="text-gray-200">—</span>}
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              {stop.on_time_status === 'ON TIME' ? (
-                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">ON TIME</span>
-                              ) : stop.on_time_status === 'OFF TIME' ? (
-                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">OFF TIME</span>
-                              ) : (
-                                <span className="text-gray-200">—</span>
-                              )}
                             </td>
                           </tr>
                         )

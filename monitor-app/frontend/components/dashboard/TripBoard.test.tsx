@@ -28,7 +28,7 @@ const groups = [
 describe('TripBoard', () => {
   it('groups trips into the matching column by current_status', () => {
     const trips = [makeTrip('a', 'ORIGEN'), makeTrip('b', 'CANCELADO')]
-    render(<TripBoard trips={trips} groups={groups} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    render(<TripBoard trips={trips} groups={groups} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} />)
     expect(screen.getByText('En Ruta')).toBeInTheDocument()
     expect(screen.getByText('Problema')).toBeInTheDocument()
     expect(screen.getByText('A')).toBeInTheDocument()
@@ -36,13 +36,13 @@ describe('TripBoard', () => {
   })
 
   it('shows an empty-state message for a column with no trips', () => {
-    render(<TripBoard trips={[]} groups={groups} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    render(<TripBoard trips={[]} groups={groups} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} />)
     expect(screen.getAllByText('Sin viajes').length).toBe(groups.length)
   })
 
   it('buckets trips whose status matches no group into an "Otro" column', () => {
     const trips = [makeTrip('a', 'ESTADO_DESCONOCIDO')]
-    render(<TripBoard trips={trips} groups={groups} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    render(<TripBoard trips={trips} groups={groups} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} />)
     expect(screen.getByText('Otro')).toBeInTheDocument()
     expect(screen.getByText('A')).toBeInTheDocument()
   })
@@ -53,7 +53,7 @@ describe('TripBoard', () => {
       { id: 'otro', label: 'Otro', statuses: ['SIN_INFO'] },
     ]
     const trips = [makeTrip('a', 'ESTADO_DESCONOCIDO')]
-    render(<TripBoard trips={trips} groups={groupsWithOtro} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    render(<TripBoard trips={trips} groups={groupsWithOtro} meta={null} onSaved={vi.fn()} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} />)
     expect(screen.getAllByText('Otro').length).toBe(1)
     expect(screen.getByText('A')).toBeInTheDocument()
   })
@@ -65,7 +65,7 @@ describe('TripBoard', () => {
       tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
     }
     const trip = { ...makeTrip('a', 'ORIGEN'), manual_status: 'op-uuid-1' }
-    render(<TripBoard trips={[trip]} groups={groups} meta={meta} onSaved={vi.fn()} onSelect={vi.fn()} />)
+    render(<TripBoard trips={[trip]} groups={groups} meta={meta} onSaved={vi.fn()} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} />)
     // cae en Problema (grupo del estado operacional), no en la columna sintética Otro
     expect(screen.queryByText('Otro')).not.toBeInTheDocument()
     expect(screen.getByText('A')).toBeInTheDocument()

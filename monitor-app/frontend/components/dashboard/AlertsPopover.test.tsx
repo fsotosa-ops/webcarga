@@ -11,9 +11,9 @@ function renderPopover(props: Partial<React.ComponentProps<typeof AlertsPopover>
   return render(
     <AlertsPopover
       defs={defs}
-      counts={{ ...counts, off_time: 5 }}
+      counts={{ ...counts, dwell_severity: 5 }}
       active={[]}
-      pinned={['off_time']}
+      pinned={['dwell_severity']}
       onToggle={vi.fn()}
       onTogglePin={vi.fn()}
       {...props}
@@ -22,10 +22,10 @@ function renderPopover(props: Partial<React.ComponentProps<typeof AlertsPopover>
 }
 
 describe('AlertsPopover', () => {
-  it('opens on click and lists all 10 signals with their counts', () => {
+  it('opens on click and lists all 8 signals with their counts', () => {
     renderPopover()
     fireEvent.click(screen.getByText('Alertas'))
-    expect(screen.getByText('OFF TIME')).toBeInTheDocument()
+    expect(screen.getByText('Detenido en local')).toBeInTheDocument()
     expect(screen.getByText('5')).toBeInTheDocument()
     expect(screen.getByText('2ª+ vuelta')).toBeInTheDocument()
   })
@@ -34,8 +34,8 @@ describe('AlertsPopover', () => {
     const onToggle = vi.fn()
     renderPopover({ onToggle })
     fireEvent.click(screen.getByText('Alertas'))
-    fireEvent.click(screen.getByText('OFF TIME').closest('label')!.querySelector('input')!)
-    expect(onToggle).toHaveBeenCalledWith('off_time')
+    fireEvent.click(screen.getByText('Detenido en local').closest('label')!.querySelector('input')!)
+    expect(onToggle).toHaveBeenCalledWith('dwell_severity')
   })
 
   it('calls onTogglePin when the star is clicked, without also toggling the filter', () => {
@@ -43,13 +43,13 @@ describe('AlertsPopover', () => {
     const onTogglePin = vi.fn()
     renderPopover({ onToggle, onTogglePin })
     fireEvent.click(screen.getByText('Alertas'))
-    fireEvent.click(screen.getByLabelText('Quitar OFF TIME de las tiles fijas'))
-    expect(onTogglePin).toHaveBeenCalledWith('off_time')
+    fireEvent.click(screen.getByLabelText('Quitar Detenido en local de las tiles fijas'))
+    expect(onTogglePin).toHaveBeenCalledWith('dwell_severity')
     expect(onToggle).not.toHaveBeenCalled()
   })
 
   it('shows the active-count badge on the trigger button', () => {
-    renderPopover({ active: ['off_time', 'active'] })
+    renderPopover({ active: ['dwell_severity', 'active'] })
     expect(screen.getByText('2')).toBeInTheDocument()
   })
 

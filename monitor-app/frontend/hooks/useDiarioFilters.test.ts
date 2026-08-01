@@ -48,10 +48,10 @@ describe('useDiarioFilters', () => {
 
   it('toggleSignal adds and removes signals, any kind, same action', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
-    act(() => result.current[1]({ type: 'toggleSignal', id: 'off_time' }))
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'dwell_severity' }))
     act(() => result.current[1]({ type: 'toggleSignal', id: 'active' }))
-    expect(result.current[0].activeSignals).toEqual(['off_time', 'active'])
-    act(() => result.current[1]({ type: 'toggleSignal', id: 'off_time' }))
+    expect(result.current[0].activeSignals).toEqual(['dwell_severity', 'active'])
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'dwell_severity' }))
     expect(result.current[0].activeSignals).toEqual(['active'])
   })
 
@@ -59,7 +59,7 @@ describe('useDiarioFilters', () => {
     const { result } = renderHook(() => useDiarioFilters('2026-07-04'))
     act(() => result.current[1]({ type: 'patch', patch: { q: 'x' } }))
     act(() => result.current[1]({ type: 'toggleSignal', id: 'active' }))
-    act(() => result.current[1]({ type: 'toggleSignal', id: 'off_time' }))
+    act(() => result.current[1]({ type: 'toggleSignal', id: 'dwell_severity' }))
     act(() => result.current[1]({ type: 'clear' }))
     const [f] = result.current
     expect(countActiveFilters(f)).toBe(0)

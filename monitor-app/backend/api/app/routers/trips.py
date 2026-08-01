@@ -886,6 +886,9 @@ class MonitorAlertRulesMeta(BaseModel):
     dwell_hours:            float
     late_arrival_grace_min: int
     unassigned_enabled:     bool
+    dwell_yellow_min:       int
+    dwell_orange_min:       int
+    dwell_red_min:          int
 
 
 class AlertThresholdMeta(BaseModel):
@@ -949,7 +952,8 @@ async def get_trips_meta(pool=Depends(get_pool)):
     # pendiente), /meta sigue funcionando y el frontend usa sus defaults
     try:
         alert_rules_row = await pool.fetchrow(
-            "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled "
+            "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
+            "dwell_yellow_min, dwell_orange_min, dwell_red_min "
             "FROM app.monitor_alert_rules WHERE id = 1"
         )
     except Exception:

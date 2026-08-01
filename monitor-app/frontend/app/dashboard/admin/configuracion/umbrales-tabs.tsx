@@ -231,9 +231,13 @@ export function RangosTemperaturaTab() {
 // ── Alertas del Monitor (umbrales de las alertas operacionales) ───────────────
 
 const RULE_FIELDS: { key: keyof MonitorAlertRules; label: string; hint: string; unit: string; step: string }[] = [
-  { key: 'stale_report_hours',     label: 'Sin reporte del TMS',   hint: 'Horas sin actualización del TMS en un viaje abierto para encender la alerta', unit: 'horas', step: '0.5' },
-  { key: 'dwell_hours',            label: 'Detenido en local',     hint: 'Horas desde la llegada a una parada sin registrar salida', unit: 'horas', step: '0.5' },
-  { key: 'late_arrival_grace_min', label: 'Atraso de llegada',     hint: 'Minutos de gracia sobre la hora planificada de una parada antes de alertar', unit: 'min', step: '5' },
+  { key: 'stale_report_hours', label: 'Sin actualización del TMS', hint: 'Horas sin actualización del TMS en un viaje abierto para encender la alerta', unit: 'horas', step: '0.5' },
+  // Hito 14 (minuta 29/07 §4.4): semáforo de tiempo en el local activo —
+  // reemplaza al umbral binario "Detenido en local" (dwell_hours, sigue
+  // existiendo en la DB pero ya no se edita acá ni se usa como alerta).
+  { key: 'dwell_yellow_min', label: 'Semáforo local — amarillo', hint: 'Minutos en la parada activa para pasar de verde a amarillo', unit: 'min', step: '5' },
+  { key: 'dwell_orange_min', label: 'Semáforo local — naranja',  hint: 'Minutos en la parada activa para pasar a naranja', unit: 'min', step: '5' },
+  { key: 'dwell_red_min',    label: 'Semáforo local — rojo',     hint: 'Minutos en la parada activa para pasar a rojo', unit: 'min', step: '5' },
 ]
 
 export function AlertasMonitorTab() {
@@ -301,22 +305,6 @@ export function AlertasMonitorTab() {
               </div>
             </div>
           ))}
-          <div className="flex items-center gap-4 px-4 py-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-700">Sin asignación el día del viaje</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">Alerta cuando un viaje de hoy no tiene patente o conductor (excluye Sodimac, que no reporta flota)</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={merged.unassigned_enabled}
-              aria-label="Sin asignación el día del viaje"
-              onClick={() => setDraft(d => ({ ...d, unassigned_enabled: !merged.unassigned_enabled }))}
-              className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${merged.unassigned_enabled ? 'bg-accent' : 'bg-gray-200'}`}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${merged.unassigned_enabled ? 'left-[18px]' : 'left-0.5'}`} />
-            </button>
-          </div>
         </div>
       )}
       {saveErr && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveErr}</p>}

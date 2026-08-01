@@ -4,26 +4,7 @@ import { Check, Timer } from 'lucide-react'
 import type { TripStop } from '@/lib/types'
 import { stopWasVisited, describeStopTiming } from '@/lib/utils/temperature'
 import { stopDwellTime, transitTime } from '@/lib/utils/stopStats'
-
-type StopState = 'done' | 'active' | 'pending'
-
-// Fallback SOLO para el caso extremo de que el backend no haya marcado
-// ninguna parada is_active (ver _mark_active_stop, trips.py — en la
-// práctica casi siempre marca alguna). "Quién está activo" ya no se
-// decide acá — FIX 2026-08-01: esta lógica vivía duplicada (con reglas
-// ligeramente distintas) en este archivo y en lib/utils/temperature.ts,
-// y quedaba pegada en el origen para QAnalytics/Sodimac.
-function isCompleted(s: TripStop): boolean {
-  if (s.stop_type === 'ORIGIN') return !!(s.departure_date || s.gps_departure_date)
-  return !!(s.arrival_date || s.gps_arrival_date || s.on_time_status)
-}
-
-function stateFor(i: number, currentIdx: number, stop: TripStop): StopState {
-  if (currentIdx < 0) return isCompleted(stop) ? 'done' : 'pending'
-  if (i < currentIdx) return 'done'
-  if (i === currentIdx) return 'active'
-  return 'pending'
-}
+import { getStopStates } from '@/lib/utils/stopState'
 
 interface Props {
   stops: TripStop[]
@@ -32,12 +13,12 @@ interface Props {
 export function StopTimeline({ stops }: Props) {
   if (!stops?.length) return null
 
-  const currentIdx = stops.findIndex(s => s.is_active)
+  const states = getStopStates(stops)
 
   return (
     <div className="flex flex-col">
       {stops.map((stop, i) => {
-        const state = stateFor(i, currentIdx, stop)
+        const state = states[i]
         const name = stop.local ?? stop.destination_city ?? '—'
         const isLast = i === stops.length - 1
         const timing = describeStopTiming(stop)
@@ -61,11 +42,6 @@ export function StopTimeline({ stops }: Props) {
               <div className="min-w-0 flex-1 pb-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className={`text-xs truncate ${state === 'active' ? 'font-bold text-slate-800' : 'font-semibold text-slate-700'}`}>{name}</p>
-                  {/* Gestión por excepción: solo se badgea lo que está MAL —
-                      ON TIME ya lo comunica el check verde (feedback 2026-07-06: saturación) */}
-                  {stop.on_time_status === 'OFF TIME' && (
-                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">OFF TIME</span>
-                  )}
                   {stop.milestone_status && (
                     <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{stop.milestone_status}</span>
                   )}

@@ -18,11 +18,12 @@ interface Group {
 }
 
 interface Props {
-  trips:       Trip[]
-  groups:      Group[]
-  meta?:       TripsMeta | null
-  onSaved:     (t: Trip) => void
-  onSelect:    (t: Trip) => void
+  trips:               Trip[]
+  groups:              Group[]
+  meta?:               TripsMeta | null
+  onSaved:             (t: Trip) => void
+  onSelect:            (t: Trip) => void
+  onSelectFocusNotes:  (t: Trip) => void
   updatedIds?: Set<string>
 }
 
@@ -87,7 +88,7 @@ function Column({
   )
 }
 
-export function TripBoard({ trips, groups, meta, onSaved, onSelect, updatedIds }: Props) {
+export function TripBoard({ trips, groups, meta, onSaved, onSelect, onSelectFocusNotes, updatedIds }: Props) {
   const [dragging, setDragging] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [moveErr, setMoveErr]   = useState<string | null>(null)
@@ -180,7 +181,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, updatedIds }
                     </span>
                   )}
                   <TripCard trip={trip} meta={meta} onSaved={onSaved} onSelect={onSelect}
-                    updated={updatedIds?.has(trip.id)} />
+                    onSelectFocusNotes={onSelectFocusNotes} updated={updatedIds?.has(trip.id)} />
                 </DraggableCard>
               ))}
               {colTrips.length === 0 && (

@@ -25,7 +25,7 @@ describe('TripTable', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
   })
 
-  it('shows an OFF TIME compliance badge when a stop is off time', () => {
+  it('never shows an OFF TIME badge, even when a stop has on_time_status OFF TIME (2026-08-01: concepto retirado)', () => {
     const stops: Trip['stops'] = [{
       stop_id: 's1', local: 'Parada 1', planning_date: null, arrival_date: null, departure_date: null,
       departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
@@ -33,7 +33,7 @@ describe('TripTable', () => {
       temperature: null, milestone_status: null,
     }]
     render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
-    expect(screen.getAllByText(/OFF TIME/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/OFF TIME/)).not.toBeInTheDocument()
   })
 
   it('does not show a compliance badge when no stop has on_time_status data', () => {
@@ -52,11 +52,9 @@ describe('TripTable', () => {
     expect(screen.getAllByText(/llega ~\d{2}:\d{2}/).length).toBeGreaterThan(0)
   })
 
-  it('shows time since the last TMS report next to the status', () => {
-    const trip = makeTrip('t1', { status_reported_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() })
-    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
-    expect(screen.getAllByText(/hace 5 min/).length).toBeGreaterThan(0)
-  })
+  // "hace X hrs" (tiempo desde el último reporte TMS) fue reemplazado por el
+  // semáforo de tiempo en local (Hito 14, ver describe('DwellSeverityBadge...
+  // más abajo) — 2026-08-01.
 
   it('shows the RM/Zona Cero classification badge next to a stop when operation_type resolved (H2.6, catálogo de locales)', () => {
     const stops: Trip['stops'] = [{
@@ -208,48 +206,56 @@ describe('TripTable — accesibilidad por teclado', () => {
 })
 
 describe('TripTable — columnas fijas (sticky)', () => {
-  it('solo Patente queda fija — Estado (con el chevron de apertura adentro) es una columna normal', () => {
-    // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): Estado y
-    // el chevron eran 2 columnas sticky separadas con un offset en px
-    // hardcodeado entre ellas — frágil con table-layout: auto, causaba que
-    // se vieran "movidas"/superpuestas. Un intento posterior las fusionó en
-    // el <th> pero no en el <tbody> (mismatch real de columnas). Criterio
-    // final: sin sticky del lado derecho — solo Patente queda fija.
+  it('Estado (con el chevron de apertura adentro) queda fijo — Patente pasa a ser una columna normal (Hito 11)', () => {
+    // 2026-08-01: la minuta pide Estado al inicio de la tabla porque
+    // operaciones filtra por Estado primero — reemplaza a Patente como
+    // única columna sticky al hacer scroll horizontal.
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
     const patenteTh = screen.getByText('Patente').closest('th')!
     const estadoTh  = screen.getByText('Estado').closest('th')!
-    expect(patenteTh.className).toContain('sticky left-0')
-    expect(estadoTh.className).not.toContain('sticky')
+    expect(estadoTh.className).toContain('sticky left-0')
+    expect(patenteTh.className).not.toContain('sticky')
     expect(estadoTh.textContent).toContain('Abrir detalle')
   })
 })
 
-describe('BitacoraFollowupBadge in TripTable', () => {
+describe('DwellSeverityBadge in TripTable (Hito 14)', () => {
   const NOW = Date.parse('2026-07-04T18:00:00Z')
 
-  it('shows the badge when a trip has a stale alert with no human note', () => {
+  function stopStuckFor(minutes: number): Trip['stops'] {
+    return [{
+      stop_id: 's1', local: 'Parada 1', planning_date: null,
+      arrival_date: new Date(NOW - minutes * 60_000).toISOString(),
+      departure_date: null,
+      departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null, is_active: true,
+    }]
+  }
+
+  it('shows the semáforo when the active stop has been arrived at for a while', () => {
     vi.setSystemTime(NOW)
-    const trip = makeTrip('t1', { status_reported_at: '2026-07-04T15:00:00Z', last_human_note_at: null })
+    const trip = makeTrip('t1', { stops: stopStuckFor(150) }) // 150min → rojo
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
-    expect(screen.getAllByRole('button', { name: /sin seguimiento en la bitácora/i }).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/en local/).length).toBeGreaterThan(0)
     vi.useRealTimers()
   })
 
-  it('hides the badge when the last human note is after the alert started', () => {
+  it('hides the semáforo when there is no active stop dwelling', () => {
     vi.setSystemTime(NOW)
-    const trip = makeTrip('t1', { status_reported_at: '2026-07-04T15:00:00Z', last_human_note_at: '2026-07-04T16:00:00Z' })
+    const trip = makeTrip('t1')
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
-    expect(screen.queryByRole('button', { name: /sin seguimiento en la bitácora/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/en local/)).not.toBeInTheDocument()
     vi.useRealTimers()
   })
 
-  it('clicking the badge calls onSelectFocusNotes without also triggering the row onSelect', () => {
+  it('clicking the semáforo calls onSelectFocusNotes without also triggering the row onSelect', () => {
     vi.setSystemTime(NOW)
     const onSelect = vi.fn()
     const onSelectFocusNotes = vi.fn()
-    const trip = makeTrip('t1', { status_reported_at: '2026-07-04T15:00:00Z', last_human_note_at: null })
+    const trip = makeTrip('t1', { stops: stopStuckFor(150) })
     render(<TripTable trips={[trip]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={onSelectFocusNotes} meta={null} />)
-    fireEvent.click(screen.getAllByRole('button', { name: /sin seguimiento en la bitácora/i })[0])
+    fireEvent.click(screen.getAllByText(/en local/)[0])
     expect(onSelectFocusNotes).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
     expect(onSelect).not.toHaveBeenCalled()
     vi.useRealTimers()
