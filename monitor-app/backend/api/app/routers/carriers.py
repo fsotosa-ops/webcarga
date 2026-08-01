@@ -744,3 +744,24 @@ async def list_carrier_shippers(carrier_id: str, pool=Depends(get_pool), _=Depen
         carrier_id,
     )
     return [dict(r) for r in rows]
+
+
+# ── Tipo de operación (Fase 1, HU Cierre del Día §2.2) — public.carrier_
+# fleet_service_types M:N, mismo contrato "solo lectura por ahora" que
+# carrier_shippers arriba: la HU define esta columna como parte del mismo
+# Excel de empresas en SharePoint que ya alimenta carrier_shippers, así que
+# se puebla por el mismo canal externo, no por un POST/PATCH de esta API.
+
+@router.get("/{carrier_id}/fleet-service-types")
+async def list_carrier_fleet_service_types(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+    rows = await pool.fetch(
+        """
+        SELECT st.id::text, st.label, cfst.status, cfst.start_date, cfst.end_date
+        FROM public.carrier_fleet_service_types cfst
+        JOIN app.status_taxonomies st ON st.id = cfst.taxonomy_id
+        WHERE cfst.carrier_id = $1
+        ORDER BY st.sort_order
+        """,
+        carrier_id,
+    )
+    return [dict(r) for r in rows]

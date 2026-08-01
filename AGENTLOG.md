@@ -373,8 +373,28 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 **Pendiente explícito**: Fases 1-5 del roadmap completo (Fase 1: tabla `carrier_fleet_service_types` + taxonomía `FLEET_SERVICE_TYPE`; Fase 2-5: HU-01 a HU-04 del Cierre del Día) — no iniciadas, quedan para la próxima ronda de trabajo. El mapeo de estados Sodimac de la Fase 0.5 es un borrador — puede requerir ajuste cuando Fabián confirme el criterio real de negocio (podría implicar extender `VALID_GROUP_IDS` con un grupo dedicado en vez de `otro`).
 
 #### Próximo paso exacto
-1. [ ] Iniciar Fase 1 (tabla canónica `carrier_fleet_service_types` + taxonomía `status_taxonomies` domain `FLEET_SERVICE_TYPE`, 10 valores: Tractoreo + 9 subtipos de Equipo Completo) cuando el usuario lo pida.
+1. [x] Fase 1 — ver entrada siguiente, completada el mismo día.
 2. [ ] Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5) — hoy es un borrador razonable, no un dato de negocio confirmado.
 3. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario, sin cambios en esta ronda.
 4. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
 5. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 71: Fase 1 del Cierre del Día — taxonomía canónica "Tipo de operación" (FLEET_SERVICE_TYPE) + tabla puente empresa↔tipo, mirror exacto de carrier_shippers
+
+**Origen**: "fase 1" — siguiente paso del roadmap acordado en la Ronda 70 (HU Cierre del Día §2.2: "Tipo de operación por empresa", multi-selector obligatorio, 10 valores: Tractoreo + 9 subtipos de Equipo Completo). El usuario ya había confirmado en una ronda previa aplicar "Recomendación 1" (el tipo de operación se mantiene a nivel de EMPRESA, no por vehículo/asset) y pidió explícitamente que la tabla fuera canónica y siguiera el estándar de industria/mantenibilidad a largo plazo.
+
+**Decisión de arquitectura — mismo mecanismo ya existente, sin tabla/patrón nuevo**: en vez de crear una tabla de catálogo desde cero o un ENUM de Postgres (no reordenable/desactivable sin migración de esquema), se extendió `app.status_taxonomies` (dominio polimórfico ya usado por OPERATIONAL_STATE/DRIVER_REASON/EQUIPMENT_STATE) con un 4º dominio `FLEET_SERVICE_TYPE` (10 filas, `group_id` NULL — no aplica, es un multi-selector plano). Para la relación empresa↔tipo se creó `public.carrier_fleet_service_types`, **mirror exacto de `public.carrier_shippers`** (misma forma: `carrier_id`/`taxonomy_id`/`status`/`start_date`/`end_date`, `UNIQUE(carrier_id, taxonomy_id)`, índice sobre la FK no cubierta por la posición líder del UNIQUE) — mismo problema ya resuelto (empresa↔entidad M:N), mismo patrón, sin reinventar.
+
+**Contrato de solo lectura, heredado deliberadamente**: la HU dice textualmente que esta columna "se agrega como columna al Excel de empresas en el SharePoint" — la misma fuente externa que ya puebla `carrier_shippers` (que hoy es "solo lectura por ahora" en la API, sin POST/PATCH, poblada fuera de esta app). Se replicó el mismo contrato: `GET /carriers/{carrier_id}/fleet-service-types` (mirror línea por línea de `GET /carriers/{carrier_id}/shippers`), sin endpoint de escritura — la ingesta real desde SharePoint es un problema ya resuelto en otro lado, no hace falta duplicarlo acá todavía.
+
+**Gratis por ser genérico**: el catálogo ya es editable vía el CRUD de administración existente (`/config/taxonomies?domain=...`, `status_taxonomies.py`) con solo agregar `FLEET_SERVICE_TYPE` a `VALID_DOMAINS` (`schemas/status_taxonomy.py`) — no hizo falta escribir ningún endpoint nuevo para el catálogo en sí. Se dejó **sin tocar** la UI de Configuración (el componente `TaxonomyTab` ya es reutilizable por dominio, ver `estados-tabs.tsx`) — agregar una pestaña ahí es trivial pero no había pedido explícito ni consumidor todavía; se prefirió no adelantar UI sin uso real (mismo criterio YAGNI del resto de la sesión).
+
+**Verificado contra Supabase real**: constraint `status_taxonomies_domain_check` actualizado, 10 filas `FLEET_SERVICE_TYPE` confirmadas con el wording exacto de la HU §2.2, tabla `carrier_fleet_service_types` creada con índice. Backend 393/393 pytest (1 test nuevo, mirror de `test_list_carrier_shippers`).
+
+#### Próximo paso exacto
+1. [ ] Definir con el usuario cuándo/cómo se puebla `carrier_fleet_service_types` en la práctica (¿sync real desde el Excel de SharePoint, mismo mecanismo que `carrier_shippers`? ¿o de momento se carga a mano vía SQL mientras no exista ese flujo?) — hoy la tabla existe pero está vacía, sin ningún proceso de ingesta real todavía.
+2. [ ] Iniciar Fase 2 (HU-01 — Vista de flota del día) cuando el usuario lo pida — es el primer consumidor real de este catálogo (separa Tractoreo vs. Equipos Completos, % de utilización).
+3. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5) — ver Ronda 70.
+4. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+5. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+6. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.

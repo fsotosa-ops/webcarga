@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
-VALID_DOMAINS = {"OPERATIONAL_STATE", "DRIVER_REASON", "EQUIPMENT_STATE"}
+VALID_DOMAINS = {"OPERATIONAL_STATE", "DRIVER_REASON", "EQUIPMENT_STATE", "FLEET_SERVICE_TYPE"}
 VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
 
 
