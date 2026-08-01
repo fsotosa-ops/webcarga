@@ -14,17 +14,33 @@
       "Bash(cat:*)",
       "Bash(mkdir:*)",
       "Bash(cp:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)"
     ]
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/usuario/Desktop/projects/webcarga/.claude/hooks/skill-context.sh",
+            "timeout": 5,
+            "async": false
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'RECORDATORIO: Actualizar AGENTLOG.md antes de terminar la sesión'"
+            "command": "/Users/usuario/Desktop/projects/webcarga/.claude/hooks/smart-stop.sh",
+            "timeout": 10
           }
         ]
       }
@@ -35,7 +51,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('file_path',''))\" 2>/dev/null); if echo \"$FILE\" | grep -qE 'extraction_service.*(scraper|tms)'; then cd /Users/usuario/Desktop/projects/webcarga/extraction_service && python -m pytest tests/ -x -q 2>&1 | tail -8; fi"
+            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('file_path',''))\" 2>/dev/null); if echo \"$FILE\" | grep -qE 'extraction_service.*(scraper|tms)'; then cd /Users/usuario/Desktop/projects/webcarga/extraction_service && python -m pytest tests/ -x -q 2>&1 | tail -8; fi",
+            "timeout": 60,
+            "async": true
+          },
+          {
+            "type": "command",
+            "command": "/Users/usuario/Desktop/projects/webcarga/.claude/hooks/debt-detector.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "/Users/usuario/Desktop/projects/webcarga/.claude/hooks/casuistry-detector.sh",
+            "timeout": 10
           }
         ]
       }
