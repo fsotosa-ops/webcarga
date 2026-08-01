@@ -59,7 +59,7 @@ jobs:
             --cpu=${{ env.ENV_SUFFIX == 'prod' && '2' || '1' }}
             --timeout=600
             --concurrency=1
-            --min-instances=0
+            --min-instances=1
             --max-instances=3
             --no-cpu-throttling
             --service-account=${{ env.CLOUD_RUN_SA }}
