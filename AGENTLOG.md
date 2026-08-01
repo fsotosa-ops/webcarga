@@ -345,9 +345,10 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 **Verificación**: backend 389/389 pytest (7 tests nuevos: allow-list de sort + invalid fallback, client/cargo_type/origin), frontend 602/602 vitest (63 archivos; tests reescritos en `TripTable.test.tsx` para verificar que el clic en un header llama a `onSort` en vez de reordenar localmente, `useDiarioFilters.test.ts` sin `fecha` con casos nuevos de `toggleSort`/`toggleClient`/`toggleCargoType`/`toggleOrigin`, `FilterPopover.test.tsx` con `QueryClientProvider` — ahora incluye `LocationPicker`, que usa `useQuery`), `tsc --noEmit` limpio, `npm run build` exitoso (17 rutas). **Sin migración de Supabase en esta ronda** — todas las columnas usadas ya existían.
 
+**Desplegado (pedido explícito del usuario, mismo día)**: commit `5389a98` pusheado a `origin/dev` (11 archivos, sin migración). Ambos workflows (`Deploy Frontend`, `Deploy Monitor API`) verificados exitosos con `gh run watch`.
+
 #### Próximo paso exacto
-1. [ ] Commit + push a `origin/dev` — pendiente de confirmación explícita del usuario (cambio de comportamiento visible: "En Curso" ya no navega por fecha).
-2. [ ] Verificación en vivo contra staging (a cargo del usuario, junto con los 2 bugs pendientes de la Ronda 68): un viaje con `planning_date` de ayer y `is_active=true` debe aparecer en "En Curso" sin navegar nada; ordenar por Fecha/Patente/etc. y confirmar que el orden es correcto cruzando de página en Historial; filtrar por Cliente/Tipo de carga/Origen y confirmar resultados server-side; viajes 2021621/30159639 con destinos "completados"; tramo origen→destino1 con "Xh desde despacho"; viaje detenido en origen con semáforo Hito 14 activo.
-3. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
-4. [ ] (heredado) Ítem 12 de la minuta ("retornando" no transiciona solo) — sigue explícitamente fuera de alcance, ver Ronda 67.
-5. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+1. [ ] Verificación en vivo contra staging (a cargo del usuario, junto con los 2 bugs pendientes de la Ronda 68): un viaje con `planning_date` de ayer y `is_active=true` debe aparecer en "En Curso" sin navegar nada; ordenar por Fecha/Patente/etc. y confirmar que el orden es correcto cruzando de página en Historial; filtrar por Cliente/Tipo de carga/Origen y confirmar resultados server-side; viajes 2021621/30159639 con destinos "completados"; tramo origen→destino1 con "Xh desde despacho"; viaje detenido en origen con semáforo Hito 14 activo.
+2. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+3. [ ] (heredado) Ítem 12 de la minuta ("retornando" no transiciona solo) — sigue explícitamente fuera de alcance, ver Ronda 67.
+4. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
