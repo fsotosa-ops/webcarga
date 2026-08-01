@@ -288,12 +288,12 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 **Archivos nuevos**: `lib/utils/stopState.ts`, `components/ui/DwellSeverityBadge.tsx`, migración `20260801220000_dwell_severity_thresholds.sql`. **Borrados**: `lib/utils/compliance.ts(.test.tsx)`, `components/ui/BitacoraFollowupBadge.tsx(.test.tsx)`.
 
-**Verificación**: backend 382/382 pytest, frontend 584/584 vitest (63 archivos, incluye tests nuevos de `dwellStatus`/GPS-priority/columna sticky/semáforo en `TripTable`+`TripCard`), `tsc --noEmit` limpio, `npm run build` exitoso (17 rutas, sin errores). **Sin verificación en vivo todavía** — no se aplicó la migración a Supabase ni se desplegó a `dev`/staging en esta ronda (pendiente de confirmación explícita del usuario, ver checklist).
+**Verificación**: backend 382/382 pytest, frontend 584/584 vitest (63 archivos, incluye tests nuevos de `dwellStatus`/GPS-priority/columna sticky/semáforo en `TripTable`+`TripCard`), `tsc --noEmit` limpio, `npm run build` exitoso (17 rutas, sin errores).
+
+**Desplegado (pedido explícito del usuario, mismo día)**: migración `20260801220000_dwell_severity_thresholds.sql` aplicada contra Supabase (`viclzoftiudkepqnhekv`) vía `apply_migration` — verificada con `dwell_yellow_min=60/dwell_orange_min=90/dwell_red_min=120` en `app.monitor_alert_rules`. Commit `a2b13bc` pusheado a `origin/dev` (34 archivos). Ambos workflows (`Deploy Frontend`, `Deploy Monitor API`) verificados exitosos con `gh run watch`. **Sin click-through en vivo todavía** — queda para que el usuario verifique en staging con su propia sesión.
 
 #### Próximo paso exacto
-1. [ ] Aplicar la migración `20260801220000_dwell_severity_thresholds.sql` a Supabase (producción) — no hecho todavía, pendiente de confirmación del usuario.
-2. [ ] Commit + push a `origin/dev` (no hecho todavía) — pendiente de confirmación del usuario.
-3. [ ] Deploy y verificación en vivo contra staging (Playwright): Estado fijo/primero al hacer scroll, columna Destinos legible sin origen y sincronizada con el detalle (hito 13), semáforo Hito 14 con color real en un viaje detenido, dashboard con exactamente 4 tiles de alerta, cero rastro de ON TIME/OFF TIME.
-4. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
-5. [ ] (heredado) Ítem 12 de la minuta ("retornando" no transiciona solo) — **explícitamente fuera de esta ronda**, requiere definir junto con los hitos 15/16 (cierre del día / cruce de flota) antes de diseñar la lógica de override.
-6. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md` — nada nuevo se cerró ni se abrió en esta ronda salvo lo descrito.
+1. [ ] Verificación en vivo contra staging (a cargo del usuario): Estado fijo/primero al hacer scroll, columna Destinos legible sin origen y sincronizada con el detalle (hito 13), semáforo Hito 14 con color real en un viaje detenido, dashboard con exactamente 4 tiles de alerta, cero rastro de ON TIME/OFF TIME.
+2. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+3. [ ] (heredado) Ítem 12 de la minuta ("retornando" no transiciona solo) — **explícitamente fuera de esta ronda**, requiere definir junto con los hitos 15/16 (cierre del día / cruce de flota) antes de diseñar la lógica de override.
+4. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md` — nada nuevo se cerró ni se abrió en esta ronda salvo lo descrito.
