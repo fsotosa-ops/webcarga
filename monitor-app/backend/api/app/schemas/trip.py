@@ -30,12 +30,12 @@ class TripStopPatch(BaseModel):
     """Override manual por parada — columnas *_manual reales en
     app.trip_stops, excluidas del MERGE de dbt (merge_exclude_columns),
     nunca el jsonb `stops` del pipeline (se sobrescribe completo en cada
-    corrida). arrival/departure/gps_arrival/gps_departure generalizan el
-    mismo mecanismo que ya tenían desc_inicio/desc_fin — editable siempre
-    que la TMS no reporte el campo, sin condicionar por nombre de TMS."""
+    corrida). arrival/departure generalizan el mismo mecanismo que ya tenía
+    desc_inicio/desc_fin — editable siempre que la TMS no reporte el campo,
+    sin condicionar por nombre de TMS. gps_arrival/gps_departure removidos
+    2026-07-31: GPS Llegada/Salida son inamovibles (minuta 29/07 §4.2), la
+    API ya no acepta escribirlos — ver patch_trip_stop en routers/trips.py."""
     desc_inicio:   Optional[str] = None
     desc_fin:      Optional[str] = None
     arrival:       Optional[str] = None
     departure:     Optional[str] = None
-    gps_arrival:   Optional[str] = None
-    gps_departure: Optional[str] = None

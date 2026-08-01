@@ -591,28 +591,20 @@ describe('TripDetailView — campos híbridos de fecha (Carga/Desc. Inicio-Fin) 
   })
 })
 
-describe('TripDetailView — generalización del override manual a GPS/TR (bitácora 2026-07-29)', () => {
-  it('shows GPS Llegada as an editable input for a destination stop without a TMS-reported value', async () => {
-    vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
-    const stops = [makeStop({ stop_id: 's1', local: 'Local 1', gps_arrival_date: null })]
+describe('TripDetailView — GPS Llegada/Salida inamovibles, Llegada TR/Salida TR híbridos (minuta 29/07 §4.2, fix 2026-07-31)', () => {
+  it('never renders GPS Llegada/GPS Salida as editable inputs, for a destination stop', () => {
+    const stops = [makeStop({ stop_id: 's1', local: 'Local 1', gps_arrival_date: '2026-07-29 08:00:00', gps_departure_date: '2026-07-29 08:35:00' })]
     renderDetailView({ ...baseTrip, stops })
-    const input = screen.getByLabelText('GPS Llegada de Local 1') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '2026-07-29T08:00' } })
-    fireEvent.blur(input)
-    await waitFor(() =>
-      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { gps_arrival: '2026-07-29T08:00' }))
+    expect(screen.queryByLabelText('GPS Llegada de Local 1')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('GPS Salida de Local 1')).not.toBeInTheDocument()
+    expect(screen.getAllByText(fmtDT('2026-07-29 08:00:00')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(fmtDT('2026-07-29 08:35:00')).length).toBeGreaterThan(0)
   })
 
-  it('saves GPS Salida, Llegada TR and Salida TR for a destination stop via tripsApi.patchStop on blur', async () => {
+  it('saves Llegada TR and Salida TR for a destination stop via tripsApi.patchStop on blur', async () => {
     vi.mocked(tripsApi.patchStop).mockResolvedValue(baseTrip)
     const stops = [makeStop({ stop_id: 's1', local: 'Local 1' })]
     renderDetailView({ ...baseTrip, stops })
-
-    const gpsSalida = screen.getByLabelText('GPS Salida de Local 1') as HTMLInputElement
-    fireEvent.change(gpsSalida, { target: { value: '2026-07-29T08:35' } })
-    fireEvent.blur(gpsSalida)
-    await waitFor(() =>
-      expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { gps_departure: '2026-07-29T08:35' }))
 
     const llegadaTr = screen.getByLabelText('Llegada TR de Local 1') as HTMLInputElement
     fireEvent.change(llegadaTr, { target: { value: '2026-07-29T08:00' } })
@@ -627,17 +619,14 @@ describe('TripDetailView — generalización del override manual a GPS/TR (bitá
       expect(tripsApi.patchStop).toHaveBeenCalledWith('t1', 's1', { departure: '2026-07-29T08:30' }))
   })
 
-  it('marks GPS/TR inputs as manual when the corresponding _manual flag is true', () => {
+  it('marks TR inputs as manual when the corresponding _manual flag is true', () => {
     const stops = [makeStop({
       stop_id: 's1', local: 'Local 1',
       arrival_manual: true, departure_manual: true,
-      gps_arrival_manual: true, gps_departure_manual: true,
     })]
     renderDetailView({ ...baseTrip, stops })
     expect((screen.getByLabelText('Llegada TR de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
     expect((screen.getByLabelText('Salida TR de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
-    expect((screen.getByLabelText('GPS Llegada de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
-    expect((screen.getByLabelText('GPS Salida de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
   })
 
   it('always displays GPS/TR and Desc. Inicio/Fin values in 24h format, matching Plan.', () => {

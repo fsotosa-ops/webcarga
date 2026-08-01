@@ -30,13 +30,11 @@ export type TripStopPatch = {
   desc_inicio?:   string
   desc_fin?:      string
   // Generalización del override manual (bitácora 2026-07-29) — mismo
-  // mecanismo que desc_inicio/desc_fin, para los 4 campos que la hoja
-  // "campos-seguimiento-viajes" documenta como editables cuando la TMS no
-  // los reporta.
+  // mecanismo que desc_inicio/desc_fin. gps_arrival/gps_departure removidos
+  // 2026-07-31: GPS Llegada/Salida son inamovibles (minuta 29/07 §4.2), la
+  // API ya no acepta escribirlos.
   arrival?:       string
   departure?:     string
-  gps_arrival?:   string
-  gps_departure?: string
 }
 
 export type FleetLinkPayload = {

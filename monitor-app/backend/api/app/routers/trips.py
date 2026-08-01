@@ -58,7 +58,7 @@ _TRIP_STOP_FIELDS = (
     "on_time_status, milestone_status, s2s, temperature, planning_date, "
     "arrival_date, departure_date, departure_date_prog, gps_arrival_date, "
     "gps_departure_date, unload_start, unload_end, desc_inicio_manual, desc_fin_manual, "
-    "arrival_date_manual, departure_date_manual, gps_arrival_date_manual, gps_departure_date_manual, "
+    "arrival_date_manual, departure_date_manual, "
     "created_at, updated_at"
 )
 
@@ -145,20 +145,15 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
 
             arrival_date_manual = d.pop("arrival_date_manual")
             departure_date_manual = d.pop("departure_date_manual")
-            gps_arrival_date_manual = d.pop("gps_arrival_date_manual")
-            gps_departure_date_manual = d.pop("gps_departure_date_manual")
             if arrival_date_manual is not None:
                 d["arrival_date"] = arrival_date_manual
             if departure_date_manual is not None:
                 d["departure_date"] = departure_date_manual
-            if gps_arrival_date_manual is not None:
-                d["gps_arrival_date"] = gps_arrival_date_manual
-            if gps_departure_date_manual is not None:
-                d["gps_departure_date"] = gps_departure_date_manual
             d["arrival_manual"] = arrival_date_manual is not None
             d["departure_manual"] = departure_date_manual is not None
-            d["gps_arrival_manual"] = gps_arrival_date_manual is not None
-            d["gps_departure_manual"] = gps_departure_date_manual is not None
+            # GPS Llegada/Salida son inamovibles (minuta 29/07 §4.2, fix
+            # 2026-07-31) — nunca se resuelve un override manual acá, a
+            # diferencia de arrival_date/departure_date arriba.
 
         stops.sort(key=_stop_display_key)
         for d in stops:
@@ -1704,10 +1699,11 @@ async def patch_trip_stop(
 ):
     """Override manual por parada — persiste en las columnas *_manual reales
     de app.trip_stops (desc_inicio_manual/desc_fin_manual, Fase 2 del
-    hardening H2.6, más arrival_date_manual/departure_date_manual/
-    gps_arrival_date_manual/gps_departure_date_manual, bitácora
-    2026-07-29), nunca en `stops` (se sobrescribe completo en cada corrida
-    del pipeline dbt)."""
+    hardening H2.6, más arrival_date_manual/departure_date_manual,
+    bitácora 2026-07-29), nunca en `stops` (se sobrescribe completo en cada
+    corrida del pipeline dbt). GPS Llegada/Salida NO son overrideables acá
+    (fix 2026-07-31, minuta 29/07 §4.2, inamovibles) — TripStopPatch ya no
+    acepta esos campos, ver schemas/trip.py."""
     # FIX 2026-07-18: app.trip_stops no tiene columna `id` (solo `stop_id`,
     # su PK) — este SELECT tiraba "column id does not exist" en cualquier
     # llamada real (los tests mockean pool.fetchval, nunca ejecutaron el
@@ -1729,15 +1725,12 @@ async def patch_trip_stop(
             desc_fin_manual            = COALESCE($4::timestamptz, desc_fin_manual),
             arrival_date_manual        = COALESCE($5::timestamptz, arrival_date_manual),
             departure_date_manual      = COALESCE($6::timestamptz, departure_date_manual),
-            gps_arrival_date_manual    = COALESCE($7::timestamptz, gps_arrival_date_manual),
-            gps_departure_date_manual  = COALESCE($8::timestamptz, gps_departure_date_manual),
             updated_at                 = NOW()
         WHERE stop_id = $1 AND trip_id = $2
         """,
         stop_id, trip_id,
         _parse_timestamptz(patch.get("desc_inicio")), _parse_timestamptz(patch.get("desc_fin")),
         _parse_timestamptz(patch.get("arrival")), _parse_timestamptz(patch.get("departure")),
-        _parse_timestamptz(patch.get("gps_arrival")), _parse_timestamptz(patch.get("gps_departure")),
     )
     return await get_trip(trip_id, pool, user)
 

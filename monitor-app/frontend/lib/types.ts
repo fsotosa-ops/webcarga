@@ -293,14 +293,12 @@ export type TripStop = {
    *  esquema de fechas 2026-07-17. Ausente (no `false` explícito) cuando el
    *  viaje no tiene ningún override todavía. */
   desc_manual?:        boolean
-  /** Mismo mecanismo que desc_manual, generalizado a los 4 campos que la
-   *  hoja "campos-seguimiento-viajes" documenta como editables por
-   *  operaciones cuando la TMS no los reporta (bitácora 2026-07-29):
-   *  arrival_date/departure_date/gps_arrival_date/gps_departure_date. */
+  /** Mismo mecanismo que desc_manual, generalizado a arrival_date/
+   *  departure_date (bitácora 2026-07-29). gps_arrival_date/gps_departure_date
+   *  ya no tienen override manual — son inamovibles (minuta 29/07 §4.2, fix
+   *  2026-07-31), siempre de solo lectura en el frontend. */
   arrival_manual?:      boolean
   departure_manual?:    boolean
-  gps_arrival_manual?:  boolean
-  gps_departure_manual?: boolean
   /** Clasificación RM/Zona Cero resuelta en runtime contra public.locations
    *  por (nombre, N° de local) — null si no matchea ningún local del
    *  generador de carga (ver plan maestro H2.6). */

@@ -37,7 +37,7 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
 
   async function handleStopFieldChange(
     stopId: string,
-    field: 'desc_inicio' | 'desc_fin' | 'arrival' | 'departure' | 'gps_arrival' | 'gps_departure',
+    field: 'desc_inicio' | 'desc_fin' | 'arrival' | 'departure',
     value: string,
   ) {
     setStopSaving(stopId)
@@ -269,42 +269,11 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                               )}
                             </td>
                             <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
-                            {isOrigin ? (
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
-                            ) : (
-                              <td className="px-2 py-1">
-                                <div className="relative">
-                                  <input
-                                    key={`${stop.stop_id}-gps_arrival-${stop.gps_arrival_date ?? ''}`}
-                                    type="datetime-local"
-                                    aria-label={`GPS Llegada de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.gps_arrival_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_arrival', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
-                                  <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.gps_arrival_date)}</span>
-                                </div>
-                              </td>
-                            )}
-                            {isOrigin ? (
-                              <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
-                            ) : (
-                              <td className="px-2 py-1">
-                                <div className="relative">
-                                  <input
-                                    key={`${stop.stop_id}-gps_departure-${stop.gps_departure_date ?? ''}`}
-                                    type="datetime-local"
-                                    aria-label={`GPS Salida de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.gps_departure_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'gps_departure', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`peer w-full text-[10px] font-mono border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.gps_departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
-                                  <span className="absolute inset-0 flex items-center px-1 text-[10px] font-mono pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.gps_departure_date)}</span>
-                                </div>
-                              </td>
-                            )}
+                            {/* GPS Llegada/GPS Salida: inamovibles (minuta 29/07 §4.2, dato
+                                sagrado para disputas comerciales/seguros) — siempre de solo
+                                lectura, origen y destino por igual, nunca un <input>. */}
+                            <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
+                            <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
                             {isOrigin ? (
                               <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
                             ) : (
