@@ -311,6 +311,15 @@ export type TripStop = {
    *  fixtures de test anteriores a esta fase — toda la lógica que lo lee
    *  trata `undefined` igual que 'DESTINATION'. */
   stop_type?:          'ORIGIN' | 'DESTINATION'
+  /** true en, a lo sumo, una parada del viaje — "dónde está el camión
+   *  ahora", calculado en el backend (_mark_active_stop, trips.py). FIX
+   *  2026-08-01: antes se recalculaba por separado en el frontend
+   *  (lib/utils/temperature.ts y StopTimeline.tsx, con reglas
+   *  ligeramente distintas) — bug real reportado en producción: para
+   *  QAnalytics/Sodimac (~90% de los viajes), que nunca reportan la
+   *  salida del origen, la parada activa quedaba pegada en el origen
+   *  para siempre. Única fuente de verdad ahora. */
+  is_active?:          boolean
 }
 
 export type Trip = {

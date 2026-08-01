@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.routers.trips import router, _load_trip_stops, _parse_timestamptz, _attach_origin
+from app.routers.trips import router, _load_trip_stops, _mark_active_stop, _parse_timestamptz, _attach_origin
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_editor
 
@@ -576,3 +576,89 @@ def test_get_trip_endpoint_derives_origin_from_stops():
     body = res.json()
     assert body["origin"] == "CD Tambores"
     assert [s["stop_type"] for s in body["stops"]] == ["ORIGIN", "DESTINATION"]
+
+
+# ── _mark_active_stop — "en qué parada está el camión ahora" (bug real
+#    reportado 2026-08-01: quedaba pegado en el origen para siempre en
+#    viajes de QAnalytics/Sodimac, que nunca reportan la salida del
+#    origen) — única fuente de verdad, antes reimplementada por separado
+#    (con reglas ligeramente distintas) en 2 archivos de frontend. ────────
+
+def test_mark_active_stop_is_origin_while_truck_has_not_left_yet():
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen")
+    dest = _stop_row(stop_id="d1", stop_order=1, local="Destino 1")
+    stops = [origin, dest]
+    _mark_active_stop(stops)
+    assert origin["is_active"] is True
+    assert dest["is_active"] is False
+
+
+def test_mark_active_stop_does_not_get_stuck_at_origin_once_gps_shows_a_later_arrival():
+    """Caso real: viaje 2021346 (QAnalytics) — origen sin arrival_date NI
+    departure_date NI gps_departure_date (QAnalytics nunca reporta la
+    salida del origen), pero un destino más adelante ya tiene
+    gps_arrival_date real. El origen no puede seguir "activo"."""
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD EL PEÑON")
+    skipped = _stop_row(stop_id="d1", stop_order=1, local="SB Casablanca - 746")
+    reached = _stop_row(stop_id="d2", stop_order=2, local="VIÑA DEL MAR - 58",
+                         gps_arrival_date="2026-08-01 09:55:56")
+    stops = [origin, skipped, reached]
+    _mark_active_stop(stops)
+    assert origin["is_active"] is False
+    assert reached["is_active"] is True
+    assert skipped["is_active"] is False
+
+
+def test_mark_active_stop_treats_origin_as_departed_via_gps_departure_date():
+    """Wingsuite sí reporta la salida del origen (Ronda 61) — ese caso ya
+    funcionaba antes del fix y debe seguir funcionando."""
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen",
+                        gps_departure_date="2026-08-01 08:00:00")
+    dest = _stop_row(stop_id="d1", stop_order=1, local="Destino 1")
+    stops = [origin, dest]
+    _mark_active_stop(stops)
+    assert origin["is_active"] is False
+    assert dest["is_active"] is True
+
+
+def test_mark_active_stop_prefers_gps_arrival_over_tr_arrival():
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen",
+                        departure_date="2026-08-01 08:00:00")
+    in_progress = _stop_row(stop_id="d1", stop_order=1, local="Con GPS sin TR",
+                             gps_arrival_date="2026-08-01 10:00:00")
+    stops = [origin, in_progress]
+    _mark_active_stop(stops)
+    assert in_progress["is_active"] is True
+
+
+def test_mark_active_stop_falls_back_to_last_visited_when_trip_fully_completed():
+    """Comportamiento preexistente, no tocado por este fix: si TODAS las
+    paradas ya llegaron y salieron, se sigue mostrando la última visitada
+    como "activa" en vez de ninguna — no era parte del bug reportado."""
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen",
+                        departure_date="2026-08-01 08:00:00")
+    done = _stop_row(stop_id="d1", stop_order=1, local="Destino 1",
+                      arrival_date="2026-08-01 09:00:00", departure_date="2026-08-01 09:30:00")
+    stops = [origin, done]
+    _mark_active_stop(stops)
+    assert origin["is_active"] is False
+    assert done["is_active"] is True
+
+
+def test_load_trip_stops_exposes_is_active_and_does_not_get_stuck_at_origin():
+    """Mismo caso real de arriba, pero pasando por _load_trip_stops
+    completo (dedup + override resolution + sort + _mark_active_stop) para
+    confirmar que is_active sobrevive el pipeline de lectura real."""
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD EL PEÑON"),
+        _stop_row(stop_id="d1", stop_order=1, local="SB Casablanca - 746"),
+        _stop_row(stop_id="d2", stop_order=2, local="VIÑA DEL MAR - 58",
+                  gps_arrival_date="2026-08-01 09:55:56"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    stops = result["trip-1"]
+    active = [s for s in stops if s["is_active"]]
+    assert len(active) == 1
+    assert active[0]["local"] == "VIÑA DEL MAR - 58"

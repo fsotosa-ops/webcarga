@@ -55,7 +55,7 @@ describe('matchesKpi — alertas existentes', () => {
   })
 
   it('temp_out: fuera de rango configurado', () => {
-    const hot = makeTrip('a', { stops: [makeStop({ temperature: 11 })] })
+    const hot = makeTrip('a', { stops: [makeStop({ temperature: 11, is_active: true })] })
     expect(matchesKpi(hot, 'temp_out', RANGES, RULES, NOW)).toBe(true)
   })
 })
@@ -109,7 +109,7 @@ describe('matchesKpi — alertas nuevas', () => {
 describe('deriveKpis', () => {
   it('cuenta las 7 excepciones de forma independiente', () => {
     const trips = [
-      makeTrip('a', { stops: [makeStop({ on_time_status: 'OFF TIME', temperature: 11 })] }),
+      makeTrip('a', { stops: [makeStop({ on_time_status: 'OFF TIME', temperature: 11, is_active: true })] }),
       makeTrip('b', { status_reported_at: '2026-07-04 14:00:00' }),
       makeTrip('c', { driver_name: null }),
       makeTrip('d'),

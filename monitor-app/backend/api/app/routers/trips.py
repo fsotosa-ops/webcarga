@@ -76,6 +76,50 @@ def _stop_display_key(d: dict):
     return (0 if is_origin else 1, arrival is None, arrival or "", d["stop_order"])
 
 
+def _stop_arrived(d: dict) -> bool:
+    """GPS es la señal principal (reportado ~87% de las veces en paradas
+    reales de QAnalytics) — TR (arrival_date) es el fallback, se reporta
+    en solo ~8% de las paradas."""
+    return bool(d.get("gps_arrival_date") or d.get("arrival_date"))
+
+
+def _stop_departed(d: dict) -> bool:
+    return bool(d.get("gps_departure_date") or d.get("departure_date"))
+
+
+def _mark_active_stop(stops: list[dict]) -> None:
+    """Marca exactamente una parada con is_active=True (o ninguna, si el
+    viaje ya completó todas sus paradas) — única fuente de verdad de "en
+    qué parada está el camión ahora", consumida por el frontend (antes
+    reimplementada, con reglas ligeramente distintas, en 2 archivos
+    separados: lib/utils/temperature.ts y StopTimeline.tsx).
+
+    FIX 2026-08-01 (bug real reportado en producción): el origen no tiene
+    "llegada" — su única señal de salida es departure_date/gps_departure_date,
+    pero QAnalytics y Sodimac (~90% de los viajes activos) nunca la
+    reportan (solo Wingsuite la reporta, ver Ronda 61). Sin el fallback de
+    abajo, el origen quedaba marcado como parada activa PARA SIEMPRE en
+    esos viajes, aunque el GPS ya hubiera visto al camión en un destino
+    real más adelante (viaje 2021346 confirmado en vivo)."""
+    origin = next((d for d in stops if d.get("stop_type") == "ORIGIN"), None)
+    origin_departed = (
+        origin is None
+        or _stop_departed(origin)
+        or any(d.get("stop_type") != "ORIGIN" and _stop_arrived(d) for d in stops)
+    )
+    relevant = [d for d in stops if d.get("stop_type") != "ORIGIN" or not origin_departed]
+
+    active = next((d for d in relevant if _stop_arrived(d) and not _stop_departed(d)), None)
+    if active is None:
+        active = next((d for d in relevant if not _stop_arrived(d) and not _stop_departed(d)), None)
+    if active is None:
+        arrived = [d for d in relevant if _stop_arrived(d)]
+        active = arrived[-1] if arrived else None
+
+    for d in stops:
+        d["is_active"] = d is active
+
+
 def _stop_dedup_key(d: dict):
     """Prioridad de desempate cuando dos filas comparten (trip_id, stop_type,
     stop_order) — ver _load_trip_stops. `(v is not None, v)` evita comparar
@@ -156,6 +200,7 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
             # diferencia de arrival_date/departure_date arriba.
 
         stops.sort(key=_stop_display_key)
+        _mark_active_stop(stops)
         for d in stops:
             d.pop("stop_order")
             d.pop("created_at")

@@ -1,13 +1,14 @@
 import type { TripStop, TemperatureRangeMeta } from '@/lib/types'
 import { fmtShort } from './datetime'
 
+// "Parada activa" (dónde está el camión ahora) se calcula en el backend
+// (_mark_active_stop, trips.py) — única fuente de verdad. FIX 2026-08-01:
+// antes se recalculaba acá con TR/GPS directo, y por separado (con reglas
+// ligeramente distintas) en StopTimeline.tsx — bug real: para QAnalytics/
+// Sodimac (~90% de los viajes), que nunca reportan la salida del origen,
+// la parada activa quedaba pegada en el origen para siempre.
 export function getActiveStop(stops: TripStop[]): TripStop | null {
-  const inProgress = stops.find(s => s.arrival_date && !s.departure_date)
-  if (inProgress) return inProgress
-  const next = stops.find(s => !s.arrival_date && !s.departure_date)
-  if (next) return next
-  const arrived = stops.filter(s => s.arrival_date)
-  return arrived.length > 0 ? arrived[arrived.length - 1] : null
+  return stops.find(s => s.is_active) ?? null
 }
 
 // Returns the stop whose temperature reading is "the current one" — active

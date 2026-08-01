@@ -7,10 +7,14 @@ import { stopDwellTime, transitTime } from '@/lib/utils/stopStats'
 
 type StopState = 'done' | 'active' | 'pending'
 
+// Fallback SOLO para el caso extremo de que el backend no haya marcado
+// ninguna parada is_active (ver _mark_active_stop, trips.py — en la
+// práctica casi siempre marca alguna). "Quién está activo" ya no se
+// decide acá — FIX 2026-08-01: esta lógica vivía duplicada (con reglas
+// ligeramente distintas) en este archivo y en lib/utils/temperature.ts,
+// y quedaba pegada en el origen para QAnalytics/Sodimac.
 function isCompleted(s: TripStop): boolean {
-  // El origen no tiene "llegada" — su señal de completitud es la salida
-  // (Fase 1, origen como parada 0, 2026-07-18).
-  if (s.stop_type === 'ORIGIN') return !!s.departure_date
+  if (s.stop_type === 'ORIGIN') return !!(s.departure_date || s.gps_departure_date)
   return !!(s.arrival_date || s.gps_arrival_date || s.on_time_status)
 }
 
@@ -28,7 +32,7 @@ interface Props {
 export function StopTimeline({ stops }: Props) {
   if (!stops?.length) return null
 
-  const currentIdx = stops.findIndex(s => !isCompleted(s))
+  const currentIdx = stops.findIndex(s => s.is_active)
 
   return (
     <div className="flex flex-col">

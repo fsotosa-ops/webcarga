@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeStopTiming, getLatestTemp, getLatestTempStop } from './temperature'
+import { describeStopTiming, getActiveStop, getLatestTemp, getLatestTempStop } from './temperature'
 import type { TripStop } from '@/lib/types'
 
 function makeStop(overrides: Partial<TripStop>): TripStop {
@@ -12,6 +12,10 @@ function makeStop(overrides: Partial<TripStop>): TripStop {
     temperature: null, milestone_status: null,
     ...overrides,
   }
+}
+
+function makeOrigin(overrides: Partial<TripStop>): TripStop {
+  return makeStop({ stop_id: 'origin', stop_type: 'ORIGIN', ...overrides })
 }
 
 describe('describeStopTiming', () => {
@@ -48,6 +52,28 @@ describe('describeStopTiming', () => {
   it('shows only the arrival segment when there is no departure data at all', () => {
     const stop = makeStop({ arrival_date: '2026-07-02 10:00:00' })
     expect(describeStopTiming(stop)).toMatch(/^llegó \d{2}:\d{2}$/)
+  })
+})
+
+describe('getActiveStop', () => {
+  // FIX 2026-08-01: "parada activa" pasó a calcularse en el backend
+  // (_mark_active_stop, trips.py) — única fuente de verdad. Antes esta
+  // función reimplementaba la regla acá (y, con reglas ligeramente
+  // distintas, en StopTimeline.tsx) — bug real reportado en producción:
+  // para QAnalytics/Sodimac (~90% de los viajes), que nunca reportan la
+  // salida del origen, la parada activa quedaba pegada en el origen para
+  // siempre (viaje 2021346, ver AGENTLOG). Ahora solo lee el flag.
+
+  it('returns the stop flagged is_active by the backend', () => {
+    const origin = makeOrigin({})
+    const dest = makeStop({ stop_id: 'd1', local: 'Destino 1', is_active: true })
+    expect(getActiveStop([origin, dest])?.stop_id).toBe('d1')
+  })
+
+  it('returns null when no stop is flagged active (trip not yet loaded / fully completed)', () => {
+    const origin = makeOrigin({})
+    const dest = makeStop({ stop_id: 'd1', local: 'Destino 1' })
+    expect(getActiveStop([origin, dest])).toBeNull()
   })
 })
 

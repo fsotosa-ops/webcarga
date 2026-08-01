@@ -31,10 +31,10 @@ describe('StopTimeline', () => {
     expect(screen.getByText('Parada B')).toBeInTheDocument()
   })
 
-  it('marks the first stop without arrival_date/gps_arrival_date/on_time_status as active, the rest before it as done, the rest after as pending', () => {
+  it('marks the stop flagged is_active by the backend as active, the ones before it as done, the ones after as pending', () => {
     const stops = [
       makeStop({ stop_id: 'a', local: 'Hecha', arrival_date: '2026-07-02 10:00:00' }),
-      makeStop({ stop_id: 'b', local: 'Activa' }),
+      makeStop({ stop_id: 'b', local: 'Activa', is_active: true }),
       makeStop({ stop_id: 'c', local: 'Pendiente' }),
     ]
     render(<StopTimeline stops={stops} />)
@@ -72,7 +72,7 @@ describe('StopTimeline', () => {
   })
 
   it('shows the planned arrival (ETA) for the active stop when planning_date is present', () => {
-    const stops = [makeStop({ stop_id: 'a', local: 'Activa', planning_date: '2026-07-02 09:00:00' })]
+    const stops = [makeStop({ stop_id: 'a', local: 'Activa', planning_date: '2026-07-02 09:00:00', is_active: true })]
     render(<StopTimeline stops={stops} />)
     expect(screen.getByText(/llega ~\d{2}:\d{2}/)).toBeInTheDocument()
     expect(screen.queryByText('en camino')).not.toBeInTheDocument()
@@ -87,7 +87,7 @@ describe('StopTimeline', () => {
   it('still falls back to "pendiente" when a pending stop has no timing data at all', () => {
     const stops = [
       makeStop({ stop_id: 'a', local: 'Hecha', arrival_date: '2026-07-02 10:00:00' }),
-      makeStop({ stop_id: 'b', local: 'Activa' }),
+      makeStop({ stop_id: 'b', local: 'Activa', is_active: true }),
       makeStop({ stop_id: 'c', local: 'Sin datos' }),
     ]
     render(<StopTimeline stops={stops} />)
@@ -101,5 +101,35 @@ describe('StopTimeline', () => {
     render(<StopTimeline stops={stops} />)
     expect(screen.getByText(/completada/)).toBeInTheDocument()
     expect(screen.queryByText('pendiente')).not.toBeInTheDocument()
+  })
+
+  // FIX 2026-08-01: "quién está activo" pasó a ser una decisión 100% del
+  // backend (_mark_active_stop, trips.py) — este componente solo pinta el
+  // pulsing dot en la parada que venga con is_active=true, sin importar si
+  // es el origen o un destino, ni qué campos de fecha tenga. El bug real
+  // (pelotita pegada en el origen para QAnalytics/Sodimac) se prueba del
+  // lado del backend ahora — ver test_trip_hybrid_fields.py.
+  it('renders the pulsing dot on whichever stop the backend flags is_active, even if it is the origin', () => {
+    const stops = [
+      makeStop({ stop_id: 'origin', stop_type: 'ORIGIN', local: 'CD Origen', is_active: true }),
+      makeStop({ stop_id: 'd1', local: 'Destino 1' }),
+    ]
+    render(<StopTimeline stops={stops} />)
+    const originRow = screen.getByText('CD Origen').closest('.relative')
+    const destRow = screen.getByText('Destino 1').closest('.relative')
+    expect(originRow?.querySelector('.animate-pulse')).not.toBeNull()
+    expect(destRow?.querySelector('.animate-pulse')).toBeNull()
+  })
+
+  it('renders the pulsing dot on a destination when the backend flags it active instead of the origin', () => {
+    const stops = [
+      makeStop({ stop_id: 'origin', stop_type: 'ORIGIN', local: 'CD Origen' }),
+      makeStop({ stop_id: 'd1', local: 'Destino activo', is_active: true }),
+    ]
+    render(<StopTimeline stops={stops} />)
+    const originRow = screen.getByText('CD Origen').closest('.relative')
+    const destRow = screen.getByText('Destino activo').closest('.relative')
+    expect(originRow?.querySelector('.animate-pulse')).toBeNull()
+    expect(destRow?.querySelector('.animate-pulse')).not.toBeNull()
   })
 })

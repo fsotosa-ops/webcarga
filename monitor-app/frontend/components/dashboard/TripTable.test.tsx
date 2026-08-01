@@ -46,7 +46,7 @@ describe('TripTable', () => {
       stop_id: 's1', local: 'Parada 1', planning_date: '2026-07-02 09:00:00', arrival_date: null, departure_date: null,
       departure_date_prog: null, unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
       on_time_status: null, destination_city: null, destination_region: null, s2s: null,
-      temperature: null, milestone_status: null,
+      temperature: null, milestone_status: null, is_active: true,
     }]
     render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
     expect(screen.getAllByText(/llega ~\d{2}:\d{2}/).length).toBeGreaterThan(0)
