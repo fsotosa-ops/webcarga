@@ -267,4 +267,22 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 **Commiteado y desplegado** (pedido explícito del usuario): commit `3736d3e` en `origin/dev`, ambos workflows (Frontend + Monitor API) verificados exitosos con `gh run watch`. **Verificado en vivo contra staging** (Playwright, viaje real `1953284`, cargo_type FRIO, rango 2-5°C): parada `SBA Isla de Maipo - 490` (entregada, congelada en 8°C) y `LIDER MELIPILLA - 607` (activa, sin salida, misma lectura en vivo 8°C) — ambas muestran el badge `°C` en rojo en la tabla técnica, y el badge del encabezado también en rojo. Confirma end-to-end: fix de Mage + reglas de backend + coloreado por parada del frontend, todo funcionando junto en producción.
 
 #### Próximo paso exacto
-- [ ] (heredado, sin cambios) max-instances en el workflow, promoción `dev` → `main` — ver Ronda 62.
+- [x] (heredado) max-instances / promoción `dev` → `main` — **PROMOCIÓN HECHA, ver Ronda 66**. max-instances sigue hardcodeado (no bloqueante, ver Ronda 62).
+
+### 2026-08-01 (cont.) — Ronda 66: `docs/casuistica-negocio-diario.md` (documento vivo) + promoción `dev` → `main`
+
+**Casuística de negocio**: a pedido explícito del usuario ("arma un skill y hook que monitoree esto y automáticamente pueda almacenarlo"), se creó un sistema de 3 partes para documentar, en lenguaje de negocio, los comportamientos reales del Monitor que en algún momento parecieron un error:
+1. `docs/casuistica-negocio-diario.md` — documento vivo, 8 casos seedeados de esta sesión (fechas GPS vacías, GPS vs TR editable, orden de paradas, parada activa, trip_status sincronizado, temperatura por parada, viajes sin Origen, locales duplicados histórico). Cada caso incluye **qué se observa / qué pasa en realidad / por qué opera así / cómo lo resuelve la app** — el campo "por qué opera así" se agregó después de que el usuario preguntara explícitamente si se había considerado el racional de negocio detrás de cada lógica, no solo la causa técnica.
+2. `/log-casuistica` (comando) — registra casos nuevos con ese mismo formato de 4 campos.
+3. `casuistry-detector.sh` (hook `PostToolUse`, registrado en `.claude/settings.json`) — detecta las mismas frases marcadoras que ya se usan en los comentarios de esta sesión ("no es un bug", "bug real", "confirmado con datos reales", "causa raíz", "FIX 202X-") en `trips.py`/`temperature.ts`/`kpis.ts`/`AGENTLOG.md`, y sugiere correr `/log-casuistica`.
+
+**Gotcha real encontrado**: el primer intento puso el documento en `monitor-app/docs/` — esa ruta está gitignored a propósito (contiene mirrors de SharePoint con PII, logs locales) y nunca se habría commiteado. Movido a `docs/` (raíz, trackeada). Commit `9e7f5ba`, pusheado a `origin/dev`.
+
+**Promoción `dev` → `main`** (pedido explícito del usuario): 471 commits, fast-forward limpio confirmado antes de tocar nada (`origin/main` era ancestro estricto de `dev`, sin divergencia). Hallazgo en el camino: `main` local tenía 8 commits reales (Redis, migración a Cloud Run, refactor medallion, del 2026-06-18) que nunca se habían pusheado a `origin/main` — ya estaban contenidos en el historial de `dev`, así que no representaban riesgo, solo confirmaron que el fast-forward era seguro. `git checkout main` bloqueado inicialmente por `.pyc` trackeados con cambios locales (ruido preexistente, no de esta sesión) — descartados con `git checkout --` antes de reintentar. Push a `origin/main` (`6e0e40a..9e7f5ba`) disparó los 3 workflows de prod (Frontend, Monitor API, Extraction Service) — los 3 exitosos, primer deploy real de Frontend/Monitor API a los servicios `-prod` bajo el setup nuevo de Cloud Run.
+
+**Decisión explícita del usuario, post-promoción**: seguir operando sobre `dev` de acá en adelante — no promover a `main` de nuevo hasta que el usuario confirme que hay una base estable. Lo ya desplegado a prod se deja tal cual (no se revierte) — todo pasó por tests + verificación en vivo contra staging antes de llegar a `dev`.
+
+#### Próximo paso exacto
+- [ ] Nueva sesión enfocada en otros hitos de la minuta (indicado explícitamente por el usuario al cerrar esta sesión) — sin cambios de código pendientes de esta ronda.
+- [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+- [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado tal cual arriba — nada nuevo se cerró ni se abrió en esta ronda salvo lo descrito.
