@@ -65,14 +65,23 @@ _TRIP_STOP_FIELDS = (
 
 def _stop_display_key(d: dict):
     """Orden de despliegue: origen siempre primero; destinos ordenados por
-    arrival_date ascendente (Llegada TR — mismo campo que ya usa el
-    pipeline dbt para ordenar el array de paradas). Paradas sin llegada van
-    al final, con stop_order como desempate estable entre paradas sin
-    llegada o con la misma fecha (bug real 2026-07-28: stop_order refleja
-    un orden inestable calculado aguas arriba por dbt, no una posición
-    fiable — ver AGENTLOG Ronda 58/59)."""
+    llegada ascendente. Paradas sin llegada van al final, con stop_order
+    como desempate estable entre paradas sin llegada o con la misma fecha
+    (bug real 2026-07-28: stop_order refleja un orden inestable calculado
+    aguas arriba por dbt, no una posición fiable — ver AGENTLOG Ronda
+    58/59).
+
+    FIX 2026-08-01: la llegada usada para ordenar prioriza gps_arrival_date
+    sobre arrival_date (TR) — antes solo miraba TR, que QAnalytics reporta
+    en ~8% de las paradas. Con 2 destinos ambos sin TR, empataban y caían a
+    stop_order crudo, mostrando el destino SIN evidencia de visita ANTES
+    del que sí tenía gps_arrival_date real (viaje 2021621 confirmado en
+    vivo). Como el estado done/activo/pendiente del frontend es puramente
+    posicional respecto al índice de is_active (ver _mark_active_stop,
+    misma prioridad GPS-primero), un orden incorrecto invertía también
+    "completado" vs "pendiente" en la UI, no solo la posición visual."""
     is_origin = d.get("stop_type") == "ORIGIN"
-    arrival = d.get("arrival_date")
+    arrival = d.get("gps_arrival_date") or d.get("arrival_date")
     return (0 if is_origin else 1, arrival is None, arrival or "", d["stop_order"])
 
 

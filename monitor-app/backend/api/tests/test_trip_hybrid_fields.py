@@ -465,6 +465,36 @@ def test_load_trip_stops_arrival_date_tie_breaks_by_stop_order():
     assert [s["local"] for s in result["trip-1"]] == ["Primero por stop_order", "Segundo por stop_order"]
 
 
+# Bug real reportado 2026-08-01 (viaje 2021621, QAnalytics): el orden usaba
+# SOLO arrival_date (TR, ~8% de las paradas reales lo reportan) — con las
+# 2 paradas en TR null, empataba y caía a stop_order crudo, dejando el
+# destino SIN evidencia de visita ANTES del que sí tenía gps_arrival_date
+# real. Como el estado done/activo/pendiente del frontend es puramente
+# posicional respecto al índice de la parada activa, el destino visitado
+# terminaba mostrado "pendiente" y el no visitado "completado" — al revés.
+
+def test_load_trip_stops_orders_by_gps_arrival_when_tr_is_empty():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", stop_order=1, local="BA CARMEN MAIPU - 533"),  # sin TR ni GPS
+        _stop_row(stop_id="s2", stop_order=2, local="MAIPU - 75", gps_arrival_date="2026-08-01T12:51:38+00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["MAIPU - 75", "BA CARMEN MAIPU - 533"]
+
+
+def test_load_trip_stops_prefers_gps_arrival_over_tr_arrival_for_ordering():
+    import asyncio
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _stop_row(stop_id="s1", stop_order=1, local="Solo TR, más tarde", arrival_date="2026-07-28T14:00:00+00:00"),
+        _stop_row(stop_id="s2", stop_order=2, local="Solo GPS, más temprano", gps_arrival_date="2026-07-28T10:00:00+00:00"),
+    ]
+    result = asyncio.run(_run_load_trip_stops(pool, {"trip-1"}))
+    assert [s["local"] for s in result["trip-1"]] == ["Solo GPS, más temprano", "Solo TR, más tarde"]
+
+
 # ── _parse_timestamptz — asyncpg exige datetime.datetime, no str, para un
 #    parámetro casteado a ::timestamptz (bug real encontrado en vivo) ────────
 # Un datetime naive sin tzinfo explícito toma el huso horario del SISTEMA
