@@ -3,13 +3,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
 import type { TripsMeta } from '@/lib/types'
+import type { Shipper } from '@/lib/api/locations'
 import type { DiarioFilters, DiarioFiltersAction } from '@/hooks/useDiarioFilters'
 import { countPopoverFilters } from '@/hooks/useDiarioFilters'
+import { LocationPicker } from './LocationPicker'
 
 interface Props {
   filters:  DiarioFilters
   dispatch: React.Dispatch<DiarioFiltersAction>
   meta?:    TripsMeta | null
+  /** Catálogo de clientes/shippers (public.shippers) para el filtro de
+   *  Cliente — 2026-08-02, ver AGENTLOG (filtros del Diario). */
+  shippers?: Shipper[]
 }
 
 /**
@@ -17,10 +22,13 @@ interface Props {
  * fuera de la barra principal — reduce la carga visual del monitor de ~25 a
  * ~10 controles.
  */
-export function FilterPopover({ filters: f, dispatch, meta }: Props) {
+export function FilterPopover({ filters: f, dispatch, meta, shippers }: Props) {
   const [open, setOpen] = useState(false)
   const panelRef  = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  // Draft del autocomplete de Origen — se limpia apenas se elige un local
+  // real, para poder seguir agregando más de uno (chips removibles abajo).
+  const [originDraft, setOriginDraft] = useState('')
 
   const count = countPopoverFilters(f)
 
@@ -132,6 +140,89 @@ export function FilterPopover({ filters: f, dispatch, meta }: Props) {
                 )
               })}
             </div>
+          </div>
+
+          {/* Cliente (shipper) — server-side, mismo patrón de chips que
+              Fuente/Tipo de operación (2026-08-02). */}
+          {shippers && shippers.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Cliente</p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {shippers.map(sh => {
+                  const active = f.fClient.includes(sh.name)
+                  return (
+                    <button
+                      key={sh.id}
+                      type="button"
+                      onClick={() => dispatch({ type: 'toggleClient', id: sh.name })}
+                      aria-pressed={active}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                        active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      {sh.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Tipo de carga — catálogo de app.temperature_ranges (ya
+              disponible en meta, sin fetch nuevo). */}
+          {(meta?.temperature_ranges ?? []).length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Tipo de carga</p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(meta?.temperature_ranges ?? []).map(tr => {
+                  const active = f.fCargoType.includes(tr.cargo_type)
+                  return (
+                    <button
+                      key={tr.cargo_type}
+                      type="button"
+                      onClick={() => dispatch({ type: 'toggleCargoType', id: tr.cargo_type })}
+                      aria-pressed={active}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                        active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      {tr.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Origen — autocomplete (no chips estáticas: cientos de locales
+              reales, no escala como multi-select). Cada elección real se
+              agrega como chip removible; el draft se limpia para seguir
+              agregando más de uno. */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Origen</p>
+            <LocationPicker
+              value={originDraft}
+              onChange={setOriginDraft}
+              onSelectLocation={loc => {
+                dispatch({ type: 'toggleOrigin', id: loc.name })
+                setOriginDraft('')
+              }}
+              placeholder="Buscar local de origen…"
+              ariaLabel="Filtrar por local de origen"
+              size="sm"
+            />
+            {f.fOrigin.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                {f.fOrigin.map(name => (
+                  <span key={name} className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 rounded-full pl-2.5 pr-1.5 py-1">
+                    {name}
+                    <button type="button" onClick={() => dispatch({ type: 'toggleOrigin', id: name })} aria-label={`Quitar origen ${name}`}>
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Rango de fechas — solo historial */}

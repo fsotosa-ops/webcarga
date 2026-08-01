@@ -61,8 +61,11 @@ export const tripsApi = {
     second_leg_plus?: boolean
     tms?:            string
     client?:         string
+    cargo_type?:     string
+    origin?:         string
     fleet_match?:    'unmatched' | 'mismatch'
-    sort?:           'default' | 'status_reported_at_asc' | 'status_reported_at_desc'
+    sort_by?:        string
+    sort_dir?:       'asc' | 'desc'
     page?:           number
     limit?:          number
   }) => {
@@ -75,8 +78,11 @@ export const tripsApi = {
     if (params?.status)          qs.set('status',          params.status)
     if (params?.tms)             qs.set('tms',             params.tms)
     if (params?.client)          qs.set('client',          params.client)
+    if (params?.cargo_type)      qs.set('cargo_type',      params.cargo_type)
+    if (params?.origin)          qs.set('origin',          params.origin)
     if (params?.fleet_match)     qs.set('fleet_match',     params.fleet_match)
-    if (params?.sort)            qs.set('sort',            params.sort)
+    if (params?.sort_by)         qs.set('sort_by',         params.sort_by)
+    if (params?.sort_dir)        qs.set('sort_dir',        params.sort_dir)
     if (params?.is_active       != null) qs.set('is_active',       String(params.is_active))
     if (params?.is_working      != null) qs.set('is_working',      String(params.is_working))
     if (params?.is_assigned     != null) qs.set('is_assigned',     String(params.is_assigned))

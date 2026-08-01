@@ -662,13 +662,15 @@ _TRIP_FROM = """
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 
-# Allow-listed ORDER BY clauses — never build ORDER BY from raw user input.
-# status_reported_at_asc: viajes con más tiempo en su estado actual primero
-# (la fecha más antigua de reporte = el que lleva más tiempo sin cambiar).
-_SORT_OPTIONS = {
-    "default":                 "t.planning_date DESC, t.updated_at DESC",
-    "status_reported_at_asc":  "t.status_reported_at ASC NULLS LAST",
-    "status_reported_at_desc": "t.status_reported_at DESC NULLS LAST",
+# Allow-listed columnas ordenables — never build ORDER BY from raw user
+# input. Los 7 nombres son exactamente los alias de salida de _TRIP_SELECT
+# (Postgres permite ORDER BY por alias de la propia consulta), y coinciden
+# 1:1 con el type SortKey del frontend (TripTable.tsx) — ordenamiento
+# server-side real (2026-08-02), reemplaza al sort 100% client-side de
+# antes que solo reordenaba la página ya cargada.
+_SORTABLE_COLUMNS = {
+    "planning_date", "tractor_plate", "driver_name", "carrier_name",
+    "client_name", "current_status", "source_system_trip_id",
 }
 
 
@@ -686,11 +688,14 @@ async def list_trips(
     second_leg_plus: str = Query(""),
     tms: str = Query(""),
     client: str = Query(""),
+    cargo_type: str = Query(""),
+    origin: str = Query(""),
     origin_region: str = Query(""),
     origin_city: str = Query(""),
     fleet_match: str = Query(""),  # unmatched | mismatch — HU-04 (Fase 0)
     insurance_alert: str = Query(""),  # EXPIRED | OVERDUE_INSTALLMENTS | EXPIRING_SOON — HU-12 (Fase 2)
-    sort: str = Query("default"),
+    sort_by: str = Query("planning_date"),
+    sort_dir: str = Query("desc"),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
     pool=Depends(get_pool),
@@ -753,7 +758,23 @@ async def list_trips(
         tms_list = [t.strip() for t in tms.split(',') if t.strip()]
         add("t.source_system = ANY(?)", tms_list)
     if client:
-        add("t.client_name ILIKE '%'||?||'%'", client)
+        # Lista (multi-select en la UI), no ILIKE parcial — coincide exacto
+        # con los nombres del catálogo public.shippers (2026-08-02).
+        client_list = [c.strip() for c in client.split(',') if c.strip()]
+        add("t.client_name = ANY(?)", client_list)
+    if cargo_type:
+        cargo_type_list = [c.strip() for c in cargo_type.split(',') if c.strip()]
+        add("t.cargo_type = ANY(?)", cargo_type_list)
+    if origin:
+        # origin no es columna de app.trips (se deriva de la parada
+        # stop_type=ORIGIN en app.trip_stops, ver _attach_origin) — el
+        # filtro necesita un EXISTS contra esa tabla.
+        origin_list = [o.strip() for o in origin.split(',') if o.strip()]
+        add(
+            "EXISTS (SELECT 1 FROM app.trip_stops ts WHERE ts.trip_id = t.id "
+            "AND ts.stop_type = 'ORIGIN' AND ts.local = ANY(?))",
+            origin_list,
+        )
     if origin_region:
         add("t.origin_region = ?", origin_region)
     if origin_city:
@@ -773,7 +794,9 @@ async def list_trips(
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit
-    order_clause = _SORT_OPTIONS.get(sort, _SORT_OPTIONS["default"])
+    sort_col = sort_by if sort_by in _SORTABLE_COLUMNS else "planning_date"
+    sort_dir_sql = "ASC" if sort_dir == "asc" else "DESC"
+    order_clause = f"{sort_col} {sort_dir_sql} NULLS LAST, t.updated_at DESC"
 
     rows = await pool.fetch(
         f"SELECT {_TRIP_SELECT} {_TRIP_FROM} {where} "

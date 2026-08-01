@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown, Check } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
@@ -13,6 +13,7 @@ import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 import { DwellSeverityBadge } from '@/components/ui/DwellSeverityBadge'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { dwellStatus } from '@/lib/utils/kpis'
+import type { SortKey } from '@/hooks/useDiarioFilters'
 
 /** Hipervínculo desde la patente hacia el TMS de origen (minuta §7A ítem 16).
  *  No es un deep-link autenticado a un viaje específico — decisión de
@@ -119,8 +120,6 @@ function parsePhones(raw: string | null): string[] {
   return [raw]
 }
 
-type SortKey = 'planning_date' | 'tractor_plate' | 'driver_name' | 'carrier_name' | 'client_name' | 'current_status' | 'source_system_trip_id'
-
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: 'asc' | 'desc' }) {
   if (sortKey !== col) return <ArrowUpDown size={10} className="inline ml-0.5 text-gray-300" />
   if (sortDir === 'asc') return <ArrowUp size={10} className="inline ml-0.5 text-accent" />
@@ -135,12 +134,15 @@ interface Props {
   meta?:              TripsMeta | null
   /** Viajes cuyo último reporte TMS cambió en el refetch más reciente — glow sutil */
   updatedIds?:        Set<string>
+  /** Ordenamiento server-side real (2026-08-02) — controlado por el padre
+   *  (page.tsx/useDiarioFilters), ya no hay estado local ni reordenamiento
+   *  en memoria: `trips` llega pre-ordenado del backend. */
+  sortKey:            SortKey | null
+  sortDir:            'asc' | 'desc'
+  onSort:             (col: SortKey) => void
 }
 
-export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds }: Props) {
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-
+export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort }: Props) {
   // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): solo
   // Patente queda sticky (izquierda) — es fácil no notar que hay más
   // columnas fuera de vista sin scrollear. Sombra/gradiente en el borde que
@@ -167,27 +169,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
       window.removeEventListener('resize', update)
     }
   }, [trips])
-
-  function handleSort(col: SortKey) {
-    if (sortKey !== col) { setSortKey(col); setSortDir('asc') }
-    else if (sortDir === 'asc') setSortDir('desc')
-    else { setSortKey(null); setSortDir('asc') }
-  }
-
-  const sorted = useMemo(() => {
-    if (!sortKey) return trips
-    // Orden natural: '9' < '10', fechas ISO ordenan bien, acentos ignorados. Nulls siempre al final.
-    const collator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' })
-    return [...trips].sort((a, b) => {
-      const av = a[sortKey]
-      const bv = b[sortKey]
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-      const cmp = collator.compare(String(av), String(bv))
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-  }, [trips, sortKey, sortDir])
 
   if (trips.length === 0) {
     return (
@@ -305,25 +286,25 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 {/* ESTADO — columna fija (Hito 11, minuta 29/07 §4.3: "el
                     estado es lo primero que filtran"). Reemplaza a Patente
                     como única columna sticky al hacer scroll horizontal. */}
-                <th onClick={() => handleSort('current_status')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
+                <th onClick={() => onSort('current_status')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
                   Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} />
                   <span className="sr-only">, Abrir detalle</span>
                 </th>
-                <th onClick={() => handleSort('planning_date')} className="px-3 py-2.5 text-left w-[72px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('planning_date')} className="px-3 py-2.5 text-left w-[72px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
-                <th onClick={() => handleSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
-                <th onClick={() => handleSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
-                <th onClick={() => handleSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
-                <th onClick={() => handleSort('carrier_name')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="carrier_name" sortKey={sortKey} sortDir={sortDir} /></th>
-                <th onClick={() => handleSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<SortIcon col="client_name" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('carrier_name')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="carrier_name" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<SortIcon col="client_name" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
                 <th className="px-3 py-2.5 text-left">Destinos</th>
                 <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((trip, i) => {
+              {trips.map((trip, i) => {
                 const isActive       = trip.id === selectedId
                 const primaryPlate   = trip.tractor_plate ?? trip.trailer_plate ?? null
                 const secondaryPlate = trip.tractor_plate && trip.trailer_plate ? trip.trailer_plate : null

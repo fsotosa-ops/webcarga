@@ -20,7 +20,7 @@ function makeTrip(id: string, overrides: Partial<Trip> = {}): Trip {
 describe('TripTable', () => {
   it('calls onSelect directly when a row is clicked (no intermediate expand step)', () => {
     const onSelect = vi.fn()
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     fireEvent.click(screen.getAllByText('ABCD12')[0])
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
   })
@@ -32,12 +32,12 @@ describe('TripTable', () => {
       on_time_status: 'OFF TIME', destination_city: null, destination_region: null, s2s: null,
       temperature: null, milestone_status: null,
     }]
-    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByText(/OFF TIME/)).not.toBeInTheDocument()
   })
 
   it('does not show a compliance badge when no stop has on_time_status data', () => {
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByText(/OFF TIME/)).not.toBeInTheDocument()
   })
 
@@ -48,7 +48,7 @@ describe('TripTable', () => {
       on_time_status: null, destination_city: null, destination_region: null, s2s: null,
       temperature: null, milestone_status: null, is_active: true,
     }]
-    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByText(/llega ~\d{2}:\d{2}/).length).toBeGreaterThan(0)
   })
 
@@ -68,7 +68,7 @@ describe('TripTable', () => {
       temperature_ranges: [], unassigned_reasons: [],
       operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
     }
-    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={meta} />)
+    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={meta} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByText('RM').length).toBeGreaterThan(0)
   })
 
@@ -79,7 +79,7 @@ describe('TripTable', () => {
       on_time_status: null, destination_city: null, destination_region: null, s2s: null,
       temperature: null, milestone_status: null, operation_type: null,
     }]
-    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByText('RM')).not.toBeInTheDocument()
   })
 })
@@ -89,31 +89,31 @@ describe('TripTable', () => {
 // borrado en Checkpoint A-E) — ahora viene directo del trip, live.
 describe('TripTable — documentación pendiente (conductor/tracto/empresa)', () => {
   it('shows a pending-docs count next to the driver when driver_pending_docs > 0, with a title identifying the entity', () => {
-    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2 })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2 })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByTitle('Conductor: 2 documento(s) pendiente(s)').length).toBeGreaterThan(0)
   })
 
   it('shows a pending-docs count next to the plate when tractor_pending_docs > 0, with a title identifying the entity', () => {
-    render(<TripTable trips={[makeTrip('t1', { tractor_pending_docs: 7 })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { tractor_pending_docs: 7 })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByTitle('Tracto: 7 documento(s) pendiente(s)').length).toBeGreaterThan(0)
   })
 
   it('does not show a pending-docs badge when the count is 0 or null', () => {
-    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 0, tractor_pending_docs: null })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 0, tractor_pending_docs: null })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByTitle(/documento/)).not.toBeInTheDocument()
   })
 })
 
 describe('TripTable — solo lectura (Fase 2, Plan 6)', () => {
   it('renders conductor, patente and phone as read-only text, with no editable inputs anywhere in the table', () => {
-    render(<TripTable trips={[makeTrip('t1', { driver_phone: JSON.stringify(['+56911112222']) })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { driver_phone: JSON.stringify(['+56911112222']) })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.getByText('+56911112222')).toBeInTheDocument()
   })
 
   it('clicking the conductor cell opens the detail instead of entering edit mode', () => {
     const onSelect = vi.fn()
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     fireEvent.click(screen.getAllByText('Juan Perez')[1])
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
     expect(screen.queryByDisplayValue('Juan Perez')).not.toBeInTheDocument()
@@ -121,21 +121,21 @@ describe('TripTable — solo lectura (Fase 2, Plan 6)', () => {
 
   it('clicking the patente cell opens the detail instead of entering edit mode', () => {
     const onSelect = vi.fn()
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     fireEvent.click(screen.getAllByText('ABCD12')[1])
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
     expect(screen.queryByPlaceholderText('XXNN00')).not.toBeInTheDocument()
   })
 
   it('shows both plates when tractor and trailer are set', () => {
-    render(<TripTable trips={[makeTrip('t1', { tractor_plate: 'ABCD12', trailer_plate: 'RMPL01' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { tractor_plate: 'ABCD12', trailer_plate: 'RMPL01' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByText('ABCD12').length).toBeGreaterThan(0)
     expect(screen.getAllByText('RMPL01').length).toBeGreaterThan(0)
   })
 
   it('clicking a phone number does not trigger onSelect (tel: link stays a distinct action from opening the detail)', () => {
     const onSelect = vi.fn()
-    render(<TripTable trips={[makeTrip('t1', { driver_phone: JSON.stringify(['+56911112222']) })]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1', { driver_phone: JSON.stringify(['+56911112222']) })]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     fireEvent.click(screen.getByText('+56911112222'))
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -149,40 +149,53 @@ describe('TripTable — estado manual resuelto contra estados operacionales', ()
       tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
     }
     const trip = makeTrip('t1', { manual_status: 'op-uuid-1' })
-    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={meta} />)
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={meta} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByText('Confirmado en panne').length).toBeGreaterThan(0)
     expect(screen.queryByText('op-uuid-1')).not.toBeInTheDocument()
   })
 })
 
-describe('TripTable — orden tipado', () => {
-  it('sorts ID Viaje numerically, not lexicographically', () => {
+// 2026-08-02: el ordenamiento pasó a ser server-side real (antes reordenaba
+// en memoria solo la página cargada, ver AGENTLOG) — TripTable ya no
+// reordena nada por sí mismo, solo renderiza `trips` tal como llega y
+// delega el clic en un header a `onSort`.
+describe('TripTable — ordenamiento delegado al padre (onSort)', () => {
+  it('calls onSort with the clicked column key instead of reordering locally', () => {
+    const onSort = vi.fn()
     const trips = [
       makeTrip('a', { source_system_trip_id: '10' }),
       makeTrip('b', { source_system_trip_id: '9' }),
     ]
-    render(<TripTable trips={trips} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={trips} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={onSort} />)
     fireEvent.click(screen.getByText('ID Viaje'))
+    expect(onSort).toHaveBeenCalledWith('source_system_trip_id')
+    // No reordena nada localmente — sigue el orden en que llegó por props.
     const ids = screen.getAllByText(/^(9|10)$/).map(el => el.textContent)
-    expect(ids).toEqual(['9', '10'])
+    expect(ids).toEqual(['10', '9'])
   })
 
-  it('sorts null values last regardless of direction', () => {
+  it('renders trips in the exact order received (already sorted by the backend)', () => {
     const trips = [
       makeTrip('a', { driver_name: null }),
       makeTrip('b', { driver_name: 'Ana' }),
     ]
-    render(<TripTable trips={trips} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
-    fireEvent.click(screen.getByText('Conductor'))
+    render(<TripTable trips={trips} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey="driver_name" sortDir="asc" onSort={vi.fn()} />)
     const rows = document.querySelectorAll('tbody tr')
-    expect(rows[0].textContent).toContain('Ana')
+    expect(rows[0].textContent).toContain('sin asignar')
+    expect(rows[1].textContent).toContain('Ana')
+  })
+
+  it('shows the active sort icon based on sortKey/sortDir props, not local state', () => {
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey="planning_date" sortDir="desc" onSort={vi.fn()} />)
+    const fechaHeader = screen.getByText('Fecha').closest('th')!
+    expect(fechaHeader.querySelector('svg')).toHaveClass('lucide-arrow-down')
   })
 })
 
 describe('TripTable — accesibilidad por teclado', () => {
   it('opens the detail with Enter on a focused row', () => {
     const onSelect = vi.fn()
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     const row = screen.getAllByText('ABCD12')[1].closest('tr')!
     expect(row).toHaveAttribute('tabindex', '0')
     fireEvent.keyDown(row, { key: 'Enter' })
@@ -194,6 +207,7 @@ describe('TripTable — accesibilidad por teclado', () => {
       <TripTable
         trips={[makeTrip('t1'), makeTrip('t2', { tractor_plate: 'WXYZ99' })]}
         selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
+        sortKey={null} sortDir="asc" onSort={vi.fn()}
       />,
     )
     const rows = document.querySelectorAll('tbody tr')
@@ -210,7 +224,7 @@ describe('TripTable — columnas fijas (sticky)', () => {
     // 2026-08-01: la minuta pide Estado al inicio de la tabla porque
     // operaciones filtra por Estado primero — reemplaza a Patente como
     // única columna sticky al hacer scroll horizontal.
-    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     const patenteTh = screen.getByText('Patente').closest('th')!
     const estadoTh  = screen.getByText('Estado').closest('th')!
     expect(estadoTh.className).toContain('sticky left-0')
@@ -236,7 +250,7 @@ describe('DwellSeverityBadge in TripTable (Hito 14)', () => {
   it('shows the semáforo when the active stop has been arrived at for a while', () => {
     vi.setSystemTime(NOW)
     const trip = makeTrip('t1', { stops: stopStuckFor(150) }) // 150min → rojo
-    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByText(/en local/).length).toBeGreaterThan(0)
     vi.useRealTimers()
   })
@@ -244,7 +258,7 @@ describe('DwellSeverityBadge in TripTable (Hito 14)', () => {
   it('hides the semáforo when there is no active stop dwelling', () => {
     vi.setSystemTime(NOW)
     const trip = makeTrip('t1')
-    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} />)
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByText(/en local/)).not.toBeInTheDocument()
     vi.useRealTimers()
   })
@@ -254,7 +268,7 @@ describe('DwellSeverityBadge in TripTable (Hito 14)', () => {
     const onSelect = vi.fn()
     const onSelectFocusNotes = vi.fn()
     const trip = makeTrip('t1', { stops: stopStuckFor(150) })
-    render(<TripTable trips={[trip]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={onSelectFocusNotes} meta={null} />)
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={onSelectFocusNotes} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     fireEvent.click(screen.getAllByText(/en local/)[0])
     expect(onSelectFocusNotes).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
     expect(onSelect).not.toHaveBeenCalled()

@@ -5,9 +5,15 @@ import type { AlertSignalId } from '@/lib/utils/alertSignals'
 
 export type Tab = 'en_curso' | 'historial'
 
+/** Columnas ordenables de la tabla principal — mismos 7 alias que expone
+ *  `_TRIP_SELECT` en el backend (trips.py), único allow-list real del
+ *  `ORDER BY` server-side (2026-08-02). */
+export type SortKey =
+  | 'planning_date' | 'tractor_plate' | 'driver_name' | 'carrier_name'
+  | 'client_name' | 'current_status' | 'source_system_trip_id'
+
 export interface DiarioFilters {
   tab:            Tab
-  fecha:          string
   q:              string
   fechaDesde:     string
   fechaHasta:     string
@@ -23,6 +29,17 @@ export interface DiarioFilters {
    *  Client-side: origin_operation_type ya viene resuelto en cada Trip de
    *  GET /trips, no hace falta ningún query param nuevo. */
   fOperationType: string[]
+  /** Cliente (shipper) — server-side, mismo parámetro `client` que ya
+   *  soportaba el backend, ahora como lista (2026-08-02). */
+  fClient:        string[]
+  /** Tipo de carga (ej. FRIO/CONGELADO) — server-side, parámetro `cargo_type`. */
+  fCargoType:     string[]
+  /** Local de origen del viaje — server-side, parámetro `origin` (EXISTS
+   *  contra app.trip_stops, ver trips.py). Elegido vía autocomplete
+   *  (volumen de locales no escala como multi-select estático). */
+  fOrigin:        string[]
+  sortKey:        SortKey | null
+  sortDir:        'asc' | 'desc'
   page:           number
 }
 
@@ -33,6 +50,13 @@ export type DiarioFiltersAction =
   | { type: 'toggleSignal'; id: AlertSignalId }
   | { type: 'toggleTms'; id: string }
   | { type: 'toggleOperationType'; id: string }
+  | { type: 'toggleClient'; id: string }
+  | { type: 'toggleCargoType'; id: string }
+  | { type: 'toggleOrigin'; id: string }
+  /** Mismo ciclo de 3 estados que ya tenía TripTable.tsx localmente: sin
+   *  sort → asc → desc → sin sort — ahora dispara un fetch real al backend
+   *  en vez de reordenar en memoria solo la página cargada. */
+  | { type: 'toggleSort'; col: SortKey }
   | { type: 'clear' }
 
 function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilters {
@@ -65,11 +89,40 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
           ? state.fOperationType.filter(t => t !== action.id)
           : [...state.fOperationType, action.id],
       }
+    case 'toggleClient':
+      return {
+        ...state,
+        page: 1,
+        fClient: state.fClient.includes(action.id)
+          ? state.fClient.filter(c => c !== action.id)
+          : [...state.fClient, action.id],
+      }
+    case 'toggleCargoType':
+      return {
+        ...state,
+        page: 1,
+        fCargoType: state.fCargoType.includes(action.id)
+          ? state.fCargoType.filter(c => c !== action.id)
+          : [...state.fCargoType, action.id],
+      }
+    case 'toggleOrigin':
+      return {
+        ...state,
+        page: 1,
+        fOrigin: state.fOrigin.includes(action.id)
+          ? state.fOrigin.filter(o => o !== action.id)
+          : [...state.fOrigin, action.id],
+      }
+    case 'toggleSort':
+      if (state.sortKey !== action.col) return { ...state, page: 1, sortKey: action.col, sortDir: 'asc' }
+      if (state.sortDir === 'asc') return { ...state, page: 1, sortDir: 'desc' }
+      return { ...state, page: 1, sortKey: null, sortDir: 'asc' }
     case 'clear':
       return {
         ...state,
         q: '', fechaDesde: '', fechaHasta: '', activeGroup: null,
-        activeSignals: [], fTms: [], fOperationType: [], page: 1,
+        activeSignals: [], fTms: [], fOperationType: [],
+        fClient: [], fCargoType: [], fOrigin: [], page: 1,
       }
   }
 }
@@ -77,19 +130,25 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
 export function countActiveFilters(f: DiarioFilters): number {
   return [
     f.q, f.fechaDesde, f.fechaHasta, f.activeGroup,
-  ].filter(v => v !== '' && v !== null).length + f.fTms.length + f.activeSignals.length + f.fOperationType.length
+  ].filter(v => v !== '' && v !== null).length
+    + f.fTms.length + f.activeSignals.length + f.fOperationType.length
+    + f.fClient.length + f.fCargoType.length + f.fOrigin.length
 }
 
 /** Filtros que viven dentro del popover "Filtros" (para su badge contador) */
 export function countPopoverFilters(f: DiarioFilters): number {
   return [
     f.fechaDesde, f.fechaHasta,
-  ].filter(v => v !== '' && v !== null).length + f.fTms.length + f.fOperationType.length
+  ].filter(v => v !== '' && v !== null).length
+    + f.fTms.length + f.fOperationType.length
+    + f.fClient.length + f.fCargoType.length + f.fOrigin.length
 }
 
-export function useDiarioFilters(initialFecha: string) {
+export function useDiarioFilters() {
   return useReducer(reducer, {
-    tab: 'en_curso', fecha: initialFecha, q: '', fechaDesde: '', fechaHasta: '',
-    activeGroup: null, activeSignals: [], fTms: [], fOperationType: [], page: 1,
+    tab: 'en_curso', q: '', fechaDesde: '', fechaHasta: '',
+    activeGroup: null, activeSignals: [], fTms: [], fOperationType: [],
+    fClient: [], fCargoType: [], fOrigin: [],
+    sortKey: null, sortDir: 'asc', page: 1,
   } satisfies DiarioFilters)
 }

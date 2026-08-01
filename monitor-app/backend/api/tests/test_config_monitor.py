@@ -304,6 +304,92 @@ def test_list_trips_q_matches_client_name():
     assert any("t.client_name ILIKE" in q for q in queries)
 
 
+# ── list_trips — sort_by/sort_dir (2026-08-02: ordenamiento server-side real,
+#    reemplaza al sort 100% client-side de antes que solo reordenaba la
+#    página ya cargada) ─────────────────────────────────────────────────────
+
+def test_list_trips_sort_by_valid_column_builds_order_by():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial&sort_by=client_name&sort_dir=asc")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    assert "ORDER BY client_name ASC NULLS LAST" in query
+
+
+def test_list_trips_sort_by_defaults_to_desc_when_sort_dir_invalid():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial&sort_by=tractor_plate&sort_dir=sideways")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    assert "ORDER BY tractor_plate DESC NULLS LAST" in query
+
+
+def test_list_trips_ignores_invalid_sort_by_falls_back_to_planning_date():
+    """Allow-list real — nunca interpola sort_by directo en el SQL (un
+    nombre de columna arbitrario, que no sea uno de los 7 permitidos, cae
+    al default en vez de romper la query o filtrarse sin validar)."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial&sort_by=some_unknown_column")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    assert "ORDER BY planning_date DESC NULLS LAST" in query
+    assert "some_unknown_column" not in query
+
+
+# ── list_trips — client como lista (multi-select), cargo_type, origin
+#    (2026-08-02, ver AGENTLOG Ronda de filtros del Diario) ──────────────────
+
+def test_list_trips_client_filters_as_list():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client_test = make_client(pool, router=trips_router)
+    res = client_test.get("/api/v1/trips/?view=historial&client=Walmart,Sodimac")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    params = pool.fetch.call_args_list[0].args[1:]
+    assert "t.client_name = ANY(" in query
+    assert ["Walmart", "Sodimac"] in params
+
+
+def test_list_trips_cargo_type_filters_as_list():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial&cargo_type=FRIO,CONGELADO")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    params = pool.fetch.call_args_list[0].args[1:]
+    assert "t.cargo_type = ANY(" in query
+    assert ["FRIO", "CONGELADO"] in params
+
+
+def test_list_trips_origin_filters_via_exists_against_trip_stops():
+    """origin no es columna de app.trips (se deriva de la parada ORIGIN en
+    app.trip_stops, _attach_origin) — el filtro necesita un EXISTS."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial&origin=CD+Quilicura")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    params = pool.fetch.call_args_list[0].args[1:]
+    assert "EXISTS (SELECT 1 FROM app.trip_stops ts" in query
+    assert "ts.stop_type = 'ORIGIN'" in query
+    assert ["CD Quilicura"] in params
+
+
 def test_list_trips_second_leg_plus_filters_against_driver_daily_trip_legs_view():
     # Ronda 26 (escalabilidad de filtros): reemplaza is_first_leg (columna
     # manual/TMS) como fuente del filtro "2ª+ vuelta" — la columna sigue

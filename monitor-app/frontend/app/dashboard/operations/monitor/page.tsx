@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
+import { shippersApi } from '@/lib/api/locations'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripBoard } from '@/components/dashboard/TripBoard'
@@ -64,18 +65,6 @@ function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso + 'T12:00:00').toLocaleDateString('es-CL', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-}
-
-function shiftDay(iso: string, delta: number) {
-  const d = new Date(iso + 'T12:00:00')
-  d.setDate(d.getDate() + delta)
-  return d.toISOString().split('T')[0]
-}
-
 // Se re-renderiza solo (tick) para que "hace X" no quede congelado entre polls
 function LastUpdated({ updatedAt, fetching }: { updatedAt: number; fetching: boolean }) {
   const [, setTick] = useState(0)
@@ -95,7 +84,7 @@ function LastUpdated({ updatedAt, fetching }: { updatedAt: number; fetching: boo
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DiarioPage() {
-  const [f, dispatch] = useDiarioFilters(todayISO())
+  const [f, dispatch] = useDiarioFilters()
 
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,      setShowCreate]      = useState(false)
@@ -115,8 +104,12 @@ export default function DiarioPage() {
   // Debounce de la búsqueda: no disparar un fetch por cada tecla
   const qDebounced = useDebouncedValue(f.q, 300)
 
-  const today   = todayISO()
-  const isToday = f.fecha === today
+  // "En Curso" ya no navega por fecha (2026-08-02) — is_active es el
+  // criterio principal. `today` sigue haciendo falta para Centro de
+  // Flota/Cerrar el día/Nuevo viaje, que sí son conceptos de "hoy".
+  // Se recalcula en cada render (no queda pegado si la pestaña sigue
+  // abierta después de medianoche).
+  const today = todayISO()
 
   // Derive default filter groups from meta.statuses (group membership comes from DB)
   const defaultGroups = useMemo(() => {
@@ -157,11 +150,23 @@ export default function DiarioPage() {
     ...(f.activeSignals.includes('assigned')        ? { is_assigned:      true } : {}),
     ...(f.activeSignals.includes('second_leg_plus') ? { second_leg_plus:  true } : {}),
   }
+  const sortParams = { sort_by: f.sortKey ?? 'planning_date', sort_dir: f.sortDir }
+  const catalogFilterParams = {
+    client:     f.fClient.join(','),
+    cargo_type: f.fCargoType.join(','),
+    origin:     f.fOrigin.join(','),
+  }
   const params: TripListParams =
     f.tab === 'en_curso'
-      ? { fecha: f.fecha, view: 'en_curso', q: qDebounced, status: statusParam, tms: f.fTms.join(','), limit: 200, ...boolParams }
+      // is_active:true es el criterio principal de "En Curso" (2026-08-02,
+      // reemplaza al filtro por planning_date exacto) — se fuerza DESPUÉS
+      // de boolParams para que nunca dependa de que el usuario active el
+      // toggle "Activo" del popover de alertas: acá siempre es implícito.
+      ? { view: 'en_curso', ...boolParams, is_active: true, q: qDebounced, status: statusParam,
+          tms: f.fTms.join(','), ...catalogFilterParams, ...sortParams, limit: 200 }
       : { view: 'historial', q: qDebounced, fecha_desde: f.fechaDesde, fecha_hasta: f.fechaHasta,
-          status: statusParam, tms: f.fTms.join(','), limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
+          status: statusParam, tms: f.fTms.join(','), ...catalogFilterParams, ...sortParams,
+          limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
 
   const queryClient = useQueryClient()
   const router       = useRouter()
@@ -206,9 +211,17 @@ export default function DiarioPage() {
   // internamente, así el badge del botón y el modal comparten cache y no
   // duplican el fetch cuando se abre.
   const fleetAvailableQuery = useQuery({
-    queryKey: ['available-assets', f.fecha],
-    queryFn: () => tripsApi.availableAssets(f.fecha),
+    queryKey: ['available-assets', today],
+    queryFn: () => tripsApi.availableAssets(today),
     enabled: f.tab === 'en_curso',
+  })
+
+  // Catálogo de clientes/shippers para el filtro de Cliente (2026-08-02) —
+  // lista corta y estable, sin necesidad de refetch periódico.
+  const shippersQuery = useQuery({
+    queryKey: ['shippers'],
+    queryFn: () => shippersApi.list(),
+    staleTime: 5 * 60_000,
   })
   const fleetAvailableCount = fleetAvailableQuery.data?.items.length ?? 0
 
@@ -266,10 +279,11 @@ export default function DiarioPage() {
   }
 
   function handleCreated(newTrip: Trip) {
-    // El viaje recién creado debe quedar visible: si su fecha no coincide con el
-    // filtro actual, saltamos a esa fecha (si no, la lista lo escondería)
-    if (newTrip.planning_date && (f.tab !== 'en_curso' || newTrip.planning_date !== f.fecha)) {
-      dispatch({ type: 'patch', patch: { tab: 'en_curso', fecha: newTrip.planning_date } })
+    // El viaje recién creado debe quedar visible — "En Curso" ya no filtra
+    // por fecha (2026-08-02), solo por is_active, así que alcanza con
+    // asegurar el tab correcto sin importar planning_date.
+    if (f.tab !== 'en_curso') {
+      dispatch({ type: 'patch', patch: { tab: 'en_curso' } })
     }
     queryClient.invalidateQueries({ queryKey: ['trips'] })
     queryClient.setQueryData(['trip', newTrip.id], newTrip)
@@ -354,11 +368,14 @@ export default function DiarioPage() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto">
 
-          {/* Header */}
+          {/* Header — "En Curso" ya no navega por fecha (2026-08-02): filtra
+              por is_active, sin importar planning_date, así que no hay
+              ningún día que mostrar/navegar acá. Esa necesidad (mirar un
+              día específico) la cubre el tab Historial con su rango. */}
           <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="font-mulish font-bold text-xl text-text-primary capitalize">
-                {f.tab === 'en_curso' ? fmtDate(f.fecha) : 'Base Histórica'}
+                {f.tab === 'en_curso' ? 'En Curso' : 'Base Histórica'}
               </h1>
               <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
                 <span>{loading ? '…' : `${total.toLocaleString('es-CL')} viaje${total !== 1 ? 's' : ''}`}</span>
@@ -367,27 +384,6 @@ export default function DiarioPage() {
                 )}
               </p>
             </div>
-
-            {f.tab === 'en_curso' && (
-              <div className="flex items-center bg-white border border-border rounded-lg p-0.5 shrink-0">
-                <button onClick={() => dispatch({ type: 'patch', patch: { fecha: shiftDay(f.fecha, -1) } })} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors text-gray-500">
-                  <ChevronLeft size={16} />
-                </button>
-                {!isToday && (
-                  <button onClick={() => dispatch({ type: 'patch', patch: { fecha: today } })} className="px-2.5 py-1 text-xs font-semibold text-accent hover:bg-accent/5 rounded-md transition-colors">
-                    Hoy
-                  </button>
-                )}
-                <button
-                  onClick={() => { if (!isToday) dispatch({ type: 'patch', patch: { fecha: shiftDay(f.fecha, 1) } }) }}
-                  disabled={isToday}
-                  className="p-1.5 rounded-md transition-colors text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed hover:enabled:bg-gray-100"
-                  title={isToday ? 'No hay datos de días futuros' : 'Día siguiente'}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Tabs */}
@@ -576,7 +572,7 @@ export default function DiarioPage() {
 
             {/* Filtros ocasionales (Fuente, Indicadores, fechas) + Limpiar */}
             <div className="flex items-center gap-2 ml-auto">
-              <FilterPopover filters={f} dispatch={dispatch} meta={tripsMeta} />
+              <FilterPopover filters={f} dispatch={dispatch} meta={tripsMeta} shippers={shippersQuery.data} />
               {activeCount > 0 && (
                 <button onClick={() => dispatch({ type: 'clear' })}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors">
@@ -624,6 +620,9 @@ export default function DiarioPage() {
                   onSelectFocusNotes={handleSelectTripFocusNotes}
                   meta={tripsMeta}
                   updatedIds={updatedIds}
+                  sortKey={f.sortKey}
+                  sortDir={f.sortDir}
+                  onSort={col => dispatch({ type: 'toggleSort', col })}
                 />
               )}
             </div>
@@ -664,7 +663,7 @@ export default function DiarioPage() {
         onClose={() => { setShowCreate(false); setPrefillFleet(null) }}
         onCreated={handleCreated}
         meta={tripsMeta}
-        fecha={f.fecha}
+        fecha={today}
         initialFleet={prefillFleet ?? undefined}
       />
       <TripBulkUpload
@@ -675,7 +674,7 @@ export default function DiarioPage() {
       />
       <CloseDayDialog
         open={showCloseDay}
-        fecha={f.fecha}
+        fecha={today}
         canAdmin={canAdmin}
         unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
         onClose={() => setShowCloseDay(false)}
@@ -684,7 +683,7 @@ export default function DiarioPage() {
       />
       <FleetCenterDialog
         open={showFleetCenter}
-        fecha={f.fecha}
+        fecha={today}
         onClose={() => setShowFleetCenter(false)}
         onOpenCloseDay={openCloseDayFromFleet}
         onAssign={handleAssignFromFleet}
