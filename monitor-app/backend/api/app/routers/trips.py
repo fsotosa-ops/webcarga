@@ -210,9 +210,18 @@ def _mark_active_stop(stops: list[dict]) -> None:
     active = next((d for d in relevant if _stop_arrived(d) and not _stop_departed(d)), None)
     if active is None:
         active = next((d for d in relevant if not _stop_arrived(d) and not _stop_departed(d)), None)
-    if active is None:
-        arrived = [d for d in relevant if _stop_arrived(d)]
-        active = arrived[-1] if arrived else None
+    # FIX 2026-08-02 (bug real reportado en vivo, viajes 2021621/30159639):
+    # antes, si NINGUNA parada relevante calzaba en los 2 casos de arriba
+    # (es decir, TODAS ya llegaron Y salieron — el viaje entregó todo y
+    # está retornando), se caía a "la última visitada" como fallback y esa
+    # parada quedaba marcada is_active=True aunque ya tuviera salida real
+    # registrada — se veía "en curso" (pulsing) en vez de "completada"
+    # (check verde) tanto en la tabla como en el detalle del viaje. Este
+    # caso ya estaba identificado en la Ronda 63 pero se dejó a propósito
+    # por no ser parte del bug de ese momento; el docstring de esta función
+    # siempre documentó el comportamiento correcto ("o ninguna, si el viaje
+    # ya completó todas sus paradas") — el código no lo cumplía. Ahora sí:
+    # sin fallback adicional, active queda None.
 
     for d in stops:
         d["is_active"] = d is active

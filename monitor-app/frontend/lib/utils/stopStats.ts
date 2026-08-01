@@ -23,10 +23,37 @@ export function stopDwellTime(stop: TripStop): string | null {
   return formatDurationMinutes((dep - arr) / 60_000)
 }
 
-/** Tiempo de tránsito entre la salida de una parada y la llegada a la siguiente */
-export function transitTime(from: TripStop, to: TripStop): string | null {
-  const dep = toMs(from.departure_date ?? from.gps_departure_date)
-  const arr = toMs(to.arrival_date ?? to.gps_arrival_date)
-  if (dep == null || arr == null || arr <= dep) return null
-  return formatDurationMinutes((arr - dep) / 60_000)
+/** Tiempo de tránsito entre la salida de una parada y la llegada a la
+ *  siguiente. CASO ESPECIAL origen→primer destino (2026-08-02, pedido
+ *  explícito del usuario): QAnalytics/Sodimac nunca reportan la salida
+ *  real del origen (confirmado contra datos reales: 100% de los viajes
+ *  abiertos con 2+ destinos) — se usa `planning_date` (hora planificada de
+ *  despacho) como referencia de salida. Mientras el destino todavía no
+ *  llega, se calcula EN VIVO contra `now` (mismo criterio que dwellStatus,
+ *  Hito 14) para dar visibilidad de cuánto lleva en ruta; apenas hay una
+ *  llegada real, se recalcula (y congela) contra ese dato — nunca contra
+ *  `now` una vez que existe una llegada real. El resto de los tramos
+ *  (entre destinos) no cambia: sin salida/llegada real, siguen sin
+ *  mostrar nada, ninguno de ellos tiene un "planificado" confiable hoy. */
+export function transitTime(from: TripStop, to: TripStop, now: number = Date.now()): string | null {
+  let dep = toMs(from.departure_date ?? from.gps_departure_date)
+  const usingPlannedOrigin = dep == null && from.stop_type === 'ORIGIN'
+  if (usingPlannedOrigin) {
+    dep = toMs(from.planning_date)
+  }
+  if (dep == null) return null
+
+  let arr = toMs(to.arrival_date ?? to.gps_arrival_date)
+  // Sin llegada real todavía: en vivo contra `now`, marcado con "~" —
+  // estándar de la industria para distinguir un estimado (basado en la
+  // hora planificada de salida) de un dato confirmado. Se congela sin "~"
+  // apenas existe una llegada real, sin importar cuánto tiempo pase después.
+  const estimated = arr == null
+  if (estimated) {
+    if (!usingPlannedOrigin) return null
+    arr = now
+  }
+  if (arr == null || arr <= dep) return null
+  const duration = formatDurationMinutes((arr - dep) / 60_000)
+  return estimated ? `~${duration}` : duration
 }

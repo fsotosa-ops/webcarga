@@ -49,4 +49,46 @@ describe('transitTime', () => {
   it('returns null when either end is missing', () => {
     expect(transitTime(makeStop(), makeStop({ arrival_date: '2026-07-05 11:00:00' }))).toBeNull()
   })
+
+  // Caso real 2026-08-02: QAnalytics/Sodimac nunca reportan la salida real
+  // del origen (100% de los viajes abiertos con 2+ destinos, confirmado
+  // contra datos reales) — el tramo origen→primer destino quedaba siempre
+  // sin tiempo de tránsito, aunque el resto de los tramos (entre destinos)
+  // sí lo mostraran. Pedido explícito del usuario: usar planning_date
+  // (hora planificada de salida) como referencia; mientras el destino no
+  // llegue, calcular en vivo contra "now" para dar visibilidad de cuánto
+  // lleva en ruta; apenas hay llegada real, se congela contra ese dato.
+  describe('tramo origen→primer destino sin salida real (usa planning_date)', () => {
+    it('usa planning_date del origen como salida cuando no hay departure_date/gps_departure_date', () => {
+      const origin = makeStop({ stop_type: 'ORIGIN', planning_date: '2026-08-01 04:46:00' })
+      const dest = makeStop({ gps_arrival_date: '2026-08-01 12:51:00' })
+      expect(transitTime(origin, dest)).toBe('8h 5m')
+    })
+
+    it('calcula en vivo contra "now" mientras el destino todavía no llega, marcado con "~" (estimado)', () => {
+      const origin = makeStop({ stop_type: 'ORIGIN', planning_date: '2026-08-01 04:46:00' })
+      const dest = makeStop() // sin llegada todavía
+      const now = Date.parse('2026-08-01T07:46:00Z')
+      expect(transitTime(origin, dest, now)).toBe('~3h')
+    })
+
+    it('se congela contra la llegada real apenas existe, en vez de seguir usando "now"', () => {
+      const origin = makeStop({ stop_type: 'ORIGIN', planning_date: '2026-08-01 04:46:00' })
+      const dest = makeStop({ gps_arrival_date: '2026-08-01 06:46:00' })
+      const now = Date.parse('2026-08-01T09:00:00Z') // mucho más tarde que la llegada real
+      expect(transitTime(origin, dest, now)).toBe('2h')
+    })
+
+    it('null si el origen tampoco tiene planning_date (sin ningún dato de salida)', () => {
+      const origin = makeStop({ stop_type: 'ORIGIN' })
+      const dest = makeStop({ gps_arrival_date: '2026-08-01 12:51:00' })
+      expect(transitTime(origin, dest)).toBeNull()
+    })
+
+    it('no aplica el fallback "now" a tramos que no salen del origen (comportamiento existente sin cambios)', () => {
+      const a = makeStop({ local: 'Destino A' }) // no ORIGIN, sin salida real
+      const b = makeStop({ local: 'Destino B' }) // sin llegada todavía
+      expect(transitTime(a, b, Date.now())).toBeNull()
+    })
+  })
 })

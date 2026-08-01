@@ -665,10 +665,11 @@ def test_mark_active_stop_prefers_gps_arrival_over_tr_arrival():
     assert in_progress["is_active"] is True
 
 
-def test_mark_active_stop_falls_back_to_last_visited_when_trip_fully_completed():
-    """Comportamiento preexistente, no tocado por este fix: si TODAS las
-    paradas ya llegaron y salieron, se sigue mostrando la última visitada
-    como "activa" en vez de ninguna — no era parte del bug reportado."""
+def test_mark_active_stop_none_active_when_trip_fully_completed():
+    """FIX 2026-08-02 (bug real, viajes 2021621/30159639): si TODAS las
+    paradas ya llegaron y salieron, no debe quedar ninguna parada "activa"
+    — antes se caía a la última visitada, mostrándola "en curso" (pulsing)
+    aunque ya tuviera salida real registrada."""
     origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD Origen",
                         departure_date="2026-08-01 08:00:00")
     done = _stop_row(stop_id="d1", stop_order=1, local="Destino 1",
@@ -676,7 +677,25 @@ def test_mark_active_stop_falls_back_to_last_visited_when_trip_fully_completed()
     stops = [origin, done]
     _mark_active_stop(stops)
     assert origin["is_active"] is False
-    assert done["is_active"] is True
+    assert done["is_active"] is False
+
+
+def test_mark_active_stop_none_active_with_multiple_completed_destinations():
+    """Caso real: viaje 2021621 (QAnalytics) — 2 destinos, ambos con GPS
+    llegada Y salida ya registradas, origen sin datos de salida (nunca
+    reportada). Antes se marcaba la ÚLTIMA parada como activa aunque ya
+    hubiera salido — debía mostrarse completada (check verde), no en
+    curso (pulsing)."""
+    origin = _stop_row(stop_id="origin", stop_order=0, stop_type="ORIGIN", local="CD EL PEÑON")
+    d1 = _stop_row(stop_id="d1", stop_order=1, local="MAIPU - 75",
+                    gps_arrival_date="2026-08-01 12:51:38", gps_departure_date="2026-08-01 15:34:55")
+    d2 = _stop_row(stop_id="d2", stop_order=2, local="BA CARMEN MAIPU - 533",
+                    gps_arrival_date="2026-08-01 16:11:44", gps_departure_date="2026-08-01 18:08:23")
+    stops = [origin, d1, d2]
+    _mark_active_stop(stops)
+    assert origin["is_active"] is False
+    assert d1["is_active"] is False
+    assert d2["is_active"] is False
 
 
 # ── _cargo_delivered — "¿ya no hay carga fría a bordo?" (reportado
