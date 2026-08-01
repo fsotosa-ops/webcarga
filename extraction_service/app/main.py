@@ -1,10 +1,13 @@
 import logging
 import sys
+from contextlib import asynccontextmanager
 
 from pythonjsonlogger import jsonlogger
 from fastapi import FastAPI
 
 from app.api.routes import router
+from app.core.config import settings
+from app.db import close_pool, init_pool
 
 
 def setup_logging():
@@ -59,6 +62,14 @@ TAGS_METADATA = [
     },
 ]
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    pool = await init_pool(settings.database_url)
+    app.state.pool = pool
+    yield
+    await close_pool()
+
+
 app = FastAPI(
     title="Extraction API Service",
     version="1.0.0",
@@ -66,6 +77,7 @@ app = FastAPI(
     description=API_DESCRIPTION,
     contact={"name": "Webcarga", "email": "felipe@sumadots.com"},
     openapi_tags=TAGS_METADATA,
+    lifespan=lifespan,
 )
 app.include_router(router, prefix="/api/v1")
 
