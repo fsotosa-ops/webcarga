@@ -58,8 +58,21 @@ export interface DwellStatus {
 /** Hito 14 (minuta 29/07 §4.4): severidad de tiempo en la parada activa —
  *  única fuente de verdad de "quién está activo" es stop.is_active (mismo
  *  criterio que StopTimeline/getActiveStop, calculado en backend por
- *  _mark_active_stop). null cuando el viaje está cerrado, no hay parada
- *  activa, o la parada activa todavía no llega (en ruta, no "en local"). */
+ *  _mark_active_stop). null cuando el viaje está cerrado o no hay parada
+ *  activa.
+ *
+ *  FIX 2026-08-02 (pedido explícito del usuario: "¿qué pasa con los que
+ *  permanecen mucho tiempo en el origen?"): el origen nunca tiene
+ *  arrival_date/gps_arrival_date (no es una "llegada"), así que antes esta
+ *  función siempre devolvía null mientras is_active apuntaba al origen —
+ *  un camión parado horas sin salir del origen no disparaba ninguna
+ *  alerta. Ahora, cuando la parada activa es el origen, se usa
+ *  planning_date (para QAnalytics: la hora en que el vehículo ya está
+ *  dispuesto para salir, aclarado por el usuario) como referencia — mismo
+ *  criterio que ya usa transitTime (stopStats.ts) para el tramo
+ *  origen→primer destino. El label nunca dice "en local" para el origen
+ *  (no es un local de destino) — dice "desde despacho", igual framing que
+ *  transitTime. */
 export function dwellStatus(
   trip: Trip,
   rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
@@ -68,14 +81,18 @@ export function dwellStatus(
   if (!isOpenTrip(trip)) return null
   const stop = (trip.stops ?? []).find(s => s.is_active)
   if (!stop) return null
-  const arr = stopArrival(stop)
+  const isOrigin = stop.stop_type === 'ORIGIN'
+  const arr = isOrigin ? toMs(stop.planning_date) : stopArrival(stop)
   if (arr == null || stopDeparture(stop) != null) return null
   const minutes = (now - arr) / 60_000
   const severity: DwellSeverity =
     minutes >= rules.dwell_red_min ? 'red' :
     minutes >= rules.dwell_orange_min ? 'orange' :
     minutes >= rules.dwell_yellow_min ? 'yellow' : 'green'
-  return { severity, label: `${formatDurationMinutes(minutes)} en local` }
+  const label = isOrigin
+    ? `${formatDurationMinutes(minutes)} desde despacho`
+    : `${formatDurationMinutes(minutes)} en local`
+  return { severity, label }
 }
 
 /** true si el viaje cae en la excepción indicada (KPIs accionables del Diario) */

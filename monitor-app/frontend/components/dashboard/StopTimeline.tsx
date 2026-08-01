@@ -60,7 +60,7 @@ export function StopTimeline({ stops }: Props) {
                 {transit && (
                   <span className="inline-flex items-center gap-1 text-[9px] text-gray-400">
                     <Timer size={9} />
-                    {transit} de tránsito
+                    {transit}
                   </span>
                 )}
               </div>

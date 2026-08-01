@@ -40,10 +40,10 @@ describe('stopDwellTime', () => {
 })
 
 describe('transitTime', () => {
-  it('computes departure→next arrival duration', () => {
+  it('computes departure→next arrival duration, labeled "de tránsito" (ambos extremos confirmados)', () => {
     const a = makeStop({ departure_date: '2026-07-05 10:00:00' })
     const b = makeStop({ arrival_date: '2026-07-05 11:15:00' })
-    expect(transitTime(a, b)).toBe('1h 15m')
+    expect(transitTime(a, b)).toBe('1h 15m de tránsito')
   })
 
   it('returns null when either end is missing', () => {
@@ -54,29 +54,31 @@ describe('transitTime', () => {
   // del origen (100% de los viajes abiertos con 2+ destinos, confirmado
   // contra datos reales) — el tramo origen→primer destino quedaba siempre
   // sin tiempo de tránsito, aunque el resto de los tramos (entre destinos)
-  // sí lo mostraran. Pedido explícito del usuario: usar planning_date
-  // (hora planificada de salida) como referencia; mientras el destino no
-  // llegue, calcular en vivo contra "now" para dar visibilidad de cuánto
-  // lleva en ruta; apenas hay llegada real, se congela contra ese dato.
+  // sí lo mostraran. `planning_date` de QAnalytics es la hora en que el
+  // vehículo ya está dispuesto para salir (aclarado por el usuario) — no
+  // confirma que efectivamente salió, por eso el label nunca dice "de
+  // tránsito" para este tramo, siempre "desde despacho": en vivo contra
+  // "now" (con "~") mientras el destino no llega, congelado (sin "~", pero
+  // sigue diciendo "desde despacho") apenas hay llegada real.
   describe('tramo origen→primer destino sin salida real (usa planning_date)', () => {
     it('usa planning_date del origen como salida cuando no hay departure_date/gps_departure_date', () => {
       const origin = makeStop({ stop_type: 'ORIGIN', planning_date: '2026-08-01 04:46:00' })
       const dest = makeStop({ gps_arrival_date: '2026-08-01 12:51:00' })
-      expect(transitTime(origin, dest)).toBe('8h 5m')
+      expect(transitTime(origin, dest)).toBe('8h 5m desde despacho')
     })
 
     it('calcula en vivo contra "now" mientras el destino todavía no llega, marcado con "~" (estimado)', () => {
       const origin = makeStop({ stop_type: 'ORIGIN', planning_date: '2026-08-01 04:46:00' })
       const dest = makeStop() // sin llegada todavía
       const now = Date.parse('2026-08-01T07:46:00Z')
-      expect(transitTime(origin, dest, now)).toBe('~3h')
+      expect(transitTime(origin, dest, now)).toBe('~3h desde despacho')
     })
 
-    it('se congela contra la llegada real apenas existe, en vez de seguir usando "now"', () => {
+    it('se congela contra la llegada real apenas existe (sin "~", pero sigue diciendo "desde despacho", no "de tránsito")', () => {
       const origin = makeStop({ stop_type: 'ORIGIN', planning_date: '2026-08-01 04:46:00' })
       const dest = makeStop({ gps_arrival_date: '2026-08-01 06:46:00' })
       const now = Date.parse('2026-08-01T09:00:00Z') // mucho más tarde que la llegada real
-      expect(transitTime(origin, dest, now)).toBe('2h')
+      expect(transitTime(origin, dest, now)).toBe('2h desde despacho')
     })
 
     it('null si el origen tampoco tiene planning_date (sin ningún dato de salida)', () => {

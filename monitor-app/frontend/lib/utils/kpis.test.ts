@@ -127,6 +127,37 @@ describe('dwellStatus (Hito 14: semáforo de tiempo en el local activo)', () => 
     })
     expect(dwellStatus(trip, RULES, NOW)?.severity).toBe('red')
   })
+
+  // FIX 2026-08-02 (pedido explícito: "¿qué pasa con los que permanecen
+  // mucho tiempo en el origen?"): el origen nunca tiene arrival_date, así
+  // que antes esta función siempre devolvía null mientras is_active
+  // apuntaba al origen — un camión parado horas sin salir no disparaba
+  // ninguna alerta. Ahora usa planning_date como referencia, mismo
+  // criterio que transitTime (stopStats.ts).
+  describe('origen (is_active apunta al origen, sin salida real)', () => {
+    it('usa planning_date como referencia cuando la parada activa es el origen', () => {
+      const trip = makeTrip('a', {
+        stops: [makeStop({ stop_type: 'ORIGIN', is_active: true, planning_date: '2026-07-04 15:30:00' })], // 150min
+      })
+      const status = dwellStatus(trip, RULES, NOW)
+      expect(status?.severity).toBe('red')
+      expect(status?.label).toContain('desde despacho')
+    })
+
+    it('null si el origen tampoco tiene planning_date', () => {
+      const trip = makeTrip('a', {
+        stops: [makeStop({ stop_type: 'ORIGIN', is_active: true })],
+      })
+      expect(dwellStatus(trip, RULES, NOW)).toBeNull()
+    })
+
+    it('verde cuando lleva poco tiempo desde el despacho planificado', () => {
+      const trip = makeTrip('a', {
+        stops: [makeStop({ stop_type: 'ORIGIN', is_active: true, planning_date: '2026-07-04 17:30:00' })], // 30min
+      })
+      expect(dwellStatus(trip, RULES, NOW)?.severity).toBe('green')
+    })
+  })
 })
 
 describe('matchesKpi — dwell_severity', () => {

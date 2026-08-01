@@ -24,17 +24,23 @@ export function stopDwellTime(stop: TripStop): string | null {
 }
 
 /** Tiempo de tránsito entre la salida de una parada y la llegada a la
- *  siguiente. CASO ESPECIAL origen→primer destino (2026-08-02, pedido
- *  explícito del usuario): QAnalytics/Sodimac nunca reportan la salida
- *  real del origen (confirmado contra datos reales: 100% de los viajes
- *  abiertos con 2+ destinos) — se usa `planning_date` (hora planificada de
- *  despacho) como referencia de salida. Mientras el destino todavía no
- *  llega, se calcula EN VIVO contra `now` (mismo criterio que dwellStatus,
- *  Hito 14) para dar visibilidad de cuánto lleva en ruta; apenas hay una
- *  llegada real, se recalcula (y congela) contra ese dato — nunca contra
- *  `now` una vez que existe una llegada real. El resto de los tramos
- *  (entre destinos) no cambia: sin salida/llegada real, siguen sin
- *  mostrar nada, ninguno de ellos tiene un "planificado" confiable hoy. */
+ *  siguiente. Devuelve el texto completo (incluye "de tránsito"/"desde
+ *  despacho") — el llamador solo lo renderiza, no decide el sufijo.
+ *
+ *  CASO ESPECIAL origen→primer destino (2026-08-02, pedido explícito del
+ *  usuario): QAnalytics/Sodimac nunca reportan la salida real del origen
+ *  (confirmado contra datos reales: 100% de los viajes abiertos con 2+
+ *  destinos) — `planning_date` de QAnalytics es la hora en que el
+ *  vehículo YA ESTÁ DISPUESTO para salir (aclarado por el usuario), no una
+ *  estimación gruesa, pero sigue sin confirmar que efectivamente salió.
+ *  Por eso el label nunca dice "de tránsito" para este tramo (afirmaría un
+ *  movimiento que no está confirmado) — siempre "desde despacho": con "~"
+ *  y calculado EN VIVO contra `now` mientras el destino no ha llegado
+ *  (mismo criterio que dwellStatus, Hito 14); sin "~" y congelado contra
+ *  la llegada real apenas existe (el extremo de llegada si queda
+ *  confirmado, aunque el de salida siga siendo un supuesto). El resto de
+ *  los tramos (entre destinos) no cambia: solo con salida/llegada real
+ *  confirmadas por ambos lados, "de tránsito". */
 export function transitTime(from: TripStop, to: TripStop, now: number = Date.now()): string | null {
   let dep = toMs(from.departure_date ?? from.gps_departure_date)
   const usingPlannedOrigin = dep == null && from.stop_type === 'ORIGIN'
@@ -44,16 +50,16 @@ export function transitTime(from: TripStop, to: TripStop, now: number = Date.now
   if (dep == null) return null
 
   let arr = toMs(to.arrival_date ?? to.gps_arrival_date)
-  // Sin llegada real todavía: en vivo contra `now`, marcado con "~" —
-  // estándar de la industria para distinguir un estimado (basado en la
-  // hora planificada de salida) de un dato confirmado. Se congela sin "~"
-  // apenas existe una llegada real, sin importar cuánto tiempo pase después.
-  const estimated = arr == null
-  if (estimated) {
+  const noRealArrival = arr == null
+  if (noRealArrival) {
     if (!usingPlannedOrigin) return null
     arr = now
   }
   if (arr == null || arr <= dep) return null
   const duration = formatDurationMinutes((arr - dep) / 60_000)
-  return estimated ? `~${duration}` : duration
+
+  if (usingPlannedOrigin) {
+    return noRealArrival ? `~${duration} desde despacho` : `${duration} desde despacho`
+  }
+  return `${duration} de tránsito`
 }
