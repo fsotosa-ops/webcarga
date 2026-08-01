@@ -235,6 +235,12 @@ Plan completo (vía `/plan`, no `superpowers:writing-plans` — no quedó en `do
 
 **Decisión de arquitectura**: cambios de esta ronda viven solo en Mage (`tms_sap_snapshot.sql`) + una operación directa en Supabase (`TRUNCATE`) — no hay código de este repo git para commitear/pushear.
 
+**Confirmado en vivo en staging (mismo día, Playwright, sesión real)**: 2 casos reales QAnalytics/walmart verificados contra `https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app`.
+- **2020594**: caso ideal para el fix — `stop_order` crudo del TMS es Origen/La Farfana/SBA Puente Alto/Hiper San Joaquín, pero GPS real es Origen→SBA Puente Alto (llegada 08:16)→Hiper San Joaquín (llegada 10:52, sin salida)→La Farfana (nunca visitada). El timeline en staging muestra exactamente ese orden GPS-correcto, con el punto activo (pelotita) en Hiper San Joaquín ("en camino") y La Farfana al final como "pendiente" — confirma que ya no cae al `stop_order` crudo cuando `arrival_date` (TR) está vacío en ambos destinos.
+- **2021621** (el mismo viaje del fix de `trip_status` de esta ronda): header `RUTA → MAIPU - 75`, origen completado, MAIPU - 75 con la pelotita activa (GPS llegada real), BA CARMEN MAIPU - 533 pendiente después — consistente end-to-end con el fix de hoy.
+
+Con esto, el pendiente heredado de la Ronda 63 (verificación visual del pelotita/orden) queda **CERRADO**.
+
 #### Próximo paso exacto
-- [ ] (heredado, sin cambios) Ronda 63 — confirmar en vivo/staging que el pelotita/ETA/orden ya no queda pegado/invertido para un viaje QAnalytics real en curso.
+- [x] (heredado) Ronda 63 — confirmar en vivo/staging que el pelotita/ETA/orden ya no queda pegado/invertido — **CERRADO**, ver arriba (casos 2020594 y 2021621).
 - [ ] (heredado, sin cambios) max-instances en el workflow, promoción `dev` → `main` — ver Ronda 62.
