@@ -60,7 +60,7 @@ jobs:
             --timeout=600
             --concurrency=1
             --min-instances=0
-            --max-instances=${{ env.ENV_SUFFIX == 'prod' && '3' || '1' }}
+            --max-instances=3
             --no-cpu-throttling
             --service-account=${{ env.CLOUD_RUN_SA }}
             --allow-unauthenticated
