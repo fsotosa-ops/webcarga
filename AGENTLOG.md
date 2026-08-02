@@ -457,11 +457,55 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 **Explícitamente NO hecho todavía**: (1) ningún frontend — `CloseDayDialog` no muestra el resultado de `pre_cierre` todavía, es puro backend; (2) **nunca se ejecutó `run_pre_cierre` contra producción** — solo se verificaron las partes SELECT de las queries, nunca las escrituras reales, dado que es código que muta `asset_assignments`/`drivers`/`carrier_shippers` reales. Antes de que esto corra de verdad contra un `fecha` real (la próxima vez que alguien llame `GET /daily-closures`), vale la pena una verificación explícita en staging.
 
 #### Próximo paso exacto
-1. [ ] Decidir si probar `GET /daily-closures` en staging para ver el pre-cierre correr por primera vez contra datos reales (mutará `asset_assignments`/`drivers`/`carrier_shippers` si encuentra algo que corregir) — recomendable hacerlo con el usuario mirando, no en automático.
-2. [ ] Construir el frontend de HU-02 (mostrar `pre_cierre.auto_resolved`/`escalations` en `CloseDayDialog`) cuando el usuario lo pida.
-3. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01 Y HU-02 ya dependen de esto).
-4. [ ] (heredado) Verificación en vivo del usuario en staging de Fase 2 (Vista de Flota del Día).
-5. [ ] Iniciar Fase 4 (HU-03 — Cierre del día) cuando el usuario lo pida.
+1. [x] Ver Ronda 75 — push + verificación en vivo con Playwright, encontró y corrigió un bug real.
+2. [ ] Construir el frontend de HU-02 (mostrar `pre_cierre.auto_resolved`/`escalations` en el nuevo `EquipmentCloseDayDialog`, ver Ronda 76) cuando el usuario lo pida.
+3. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01, HU-02 y HU-03 ya dependen de esto).
+4. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+5. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+6. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+7. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 75: push a origin/dev + verificación en vivo con Playwright (no Claude in Chrome) — encuentra y corrige un bug real de cuadratura multi-día nunca replicado en daily_closures.py
+
+**Origen**: pedido explícito "haz el push, y valida usando playwright en staging y no usando claude chrome". Push de Fases 0-3 (`bef2e8c..72a94ef`), ambos workflows verdes.
+
+**Validación con Playwright** (sesión ya autenticada, sin usar Claude in Chrome): Vista de Flota del Día (Fase 2) confirmada funcionando en staging con datos reales (Tractoreo 0/0, Equipos Completos 0/0, Sin Clasificar 29/52, 35.8% utilización). Pre-cierre (Fase 3/HU-02) — **primera corrida real contra producción**: se guardó el estado antes (`audit_log` source='pre_cierre_auto' = 0 filas) y siguió en 0 después, correcto dado que ya se había verificado que los datos de hoy no tienen señal Tipo A válida.
+
+**Bug real encontrado por el usuario mirando la pantalla** ("veo 30 viajes en curso pero solo 14 asignados en la cuadratura, ¿tiene sentido?"): no lo tenía. `day_trips` en `daily_closures.py` filtraba `planning_date = fecha exacta` — el mismo bug "ítem 16 de la minuta" que Fase 0.1 ya había corregido en Centro de Flota, nunca replicado acá. Confirmado con datos reales (ojo: mi primer diagnóstico usó `current_date` de Postgres en vez de la fecha real probada, 2026-08-01 — Postgres UTC ya estaba en 2026-08-02, Chile no. Corregido el diagnóstico antes de reportar el número final): 2 conductores con viaje multi-día activo eran invisibles para la cuadratura, aparecían "No asignado" con un viaje real en curso. **Fix**: mismo criterio multi-día ya usado en Fase 0.1, aplicado a `day_trips` y al LATERAL `mismatch_trip`. Verificado en vivo con Playwright tras el deploy: 14→16 asignados, 64→62 no asignados, exactamente los 2 conductores esperados.
+
+**Verificado**: backend 416/416 pytest (2 tests nuevos). Commit `5300671` pusheado y desplegado.
+
+#### Próximo paso exacto
+1. [ ] Ver Ronda 76 — Fase 4 (HU-03) implementada el mismo día.
+2. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales.
+3. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+4. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+5. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+6. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 76: Fase 4 del Cierre del Día — HU-03 "Cerrar el día" pivota de conductor a tracto/equipo (backend + frontend)
+
+**Origen**: "sigue con la fase 4". El cierre que ya existía (`daily_closures.py`/`CloseDayDialog`, de una HU del 20/07 ya superada) era por CONDUCTOR; HU-03 (30/07, doc vigente) lo describe por TRACTO/EQUIPO. Antes de tocar código, el usuario pidió validar esto cruzando los documentos fuente en vez de asumir — un research agent confirmó con citas exactas: BLOQUE 1/2 de HU-03 son 100% tracto/equipo ("El sistema lista todos los tractos SIN CARGA del día" / "El cierre de equipos completos es PASIVO"), el conductor sigue apareciendo como dato mostrado junto al tracto (no como unidad que se cierra) salvo en el caso especial de viaje manual, y `driver_day_status` viene de una HU anterior (20/07, "Cierre diario de conductores activos") ya superada por la del 30/07.
+
+**Decisión confirmada**: nuevo cierre por equipo reemplaza al flujo de conductor en la UI — `daily_closures.py`/`driver_day_status`/`daily_closures` NO se tocan ni se borran (recuperables, sin pedido explícito de eliminarlos), simplemente dejan de estar conectados al botón "Cerrar día".
+
+**Decisión confirmada (Sin clasificar)**: dado que `carrier_fleet_service_types` sigue vacía (Fase 1, sin ingesta real), el 100% de las empresas caen en "Sin clasificar" hoy — se trata como Tractoreo (activo, exige motivo) en vez de Equipo Completo (pasivo): más riguroso, fuerza a notar la clasificación faltante en vez de dejarla pasar en silencio. Un equipo con ambos tipos seleccionados (multi-selector) también exige motivo por el mismo criterio.
+
+**Implementado**:
+- Migración `20260802050000`: `app.equipment_day_status` (mismo patrón que `driver_day_status`, recompute en cada GET, preserva motivo/resolved_by mientras siga UNASSIGNED) + `app.equipment_closures`.
+- `app/routers/equipment_closures.py` (nuevo): recompute reusa el mismo criterio "con carga hoy" ya verificado en Fase 0.1/2/3 (multi-día activo, excluye Sodimac) + el pre-cierre de HU-02 corre primero (mismo pipeline que `daily_closures.py`). `GET /equipment-closures` separa Tractoreo (bloque activo, con `pending_count` que bloquea el cierre) de Equipos Completos (resumen pasivo por empresa, nunca bloquea). `PATCH /equipment-closures/reason` con selección masiva (lista de `asset_ids` + un motivo). `POST /equipment-closures/close` con el mismo mecanismo de override admin+nota ya usado en `daily_closures.py`.
+- `EquipmentCloseDayDialog.tsx` (nuevo, reemplaza a `CloseDayDialog` en `page.tsx`): tiles Total/Asignados/Sin asignar/Pendientes (Tractoreo), tabla con checkbox + motivo individual o en lote, resumen de Equipos Completos por empresa sin ninguna acción posible. Conductor y "CD de origen" (mejor esfuerzo: origen de su viaje más reciente, no hay CD habitual en el modelo hoy — mismo gap ya documentado en Fase 2) se muestran como dato de cada fila.
+
+**Verificado contra Supabase real** (solo lectura, sin escribir en `equipment_day_status` todavía): 81 tractocamiones activos, 100% "Sin clasificar" → `requires_motivo=true`, 29 con carga / 52 sin carga — coincide exacto con los números de Fase 2 (misma fuente de verdad). Backend 428/428 pytest (12 tests nuevos), frontend 618/618 vitest (65 archivos, 10 tests nuevos), `tsc --noEmit` limpio, `npm run build` exitoso (17 rutas).
+
+**Explícitamente NO hecho todavía**: (1) nunca se ejecutó el recompute contra producción — solo se verificaron los SELECT, no el INSERT real a `equipment_day_status` (mismo criterio de cautela que Fase 3); (2) el frontend no muestra el resultado del pre-cierre (HU-02) dentro de este nuevo diálogo; (3) el caso especial de HU-03 "crear viaje manual desde la pantalla de cierre con el conductor pre-cargado" no se implementó (existe la creación manual de viajes en general, pero no este atajo específico).
+
+#### Próximo paso exacto
+1. [ ] Primera corrida supervisada de `GET /equipment-closures` en staging (con el usuario mirando, mismo criterio que Fase 3) — verificará que 81/29/52 se escriban correctamente en `equipment_day_status`.
+2. [ ] Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+3. [ ] Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03, no implementado todavía).
+4. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01, HU-02 y HU-03 dependen de esto).
+5. [ ] Iniciar Fase 5 (HU-04 — Reporte de estatus del día) cuando el usuario lo pida.
 6. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
 7. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
 8. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.

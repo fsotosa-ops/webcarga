@@ -17,7 +17,7 @@ import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { FilterPopover } from '@/components/dashboard/FilterPopover'
 import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
-import { CloseDayDialog } from '@/components/dashboard/CloseDayDialog'
+import { EquipmentCloseDayDialog } from '@/components/dashboard/EquipmentCloseDayDialog'
 import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
 import { FleetDailyOverviewDialog } from '@/components/dashboard/FleetDailyOverviewDialog'
 import type { FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
@@ -316,9 +316,10 @@ export default function DiarioPage() {
     setShowCloseDay(true)
   }
 
-  // Compartido entre CloseDayDialog (fila MISMATCH), FleetCenterDialog
-  // (equipo "En viaje hoy") y FleetDailyOverviewDialog (equipo con carga) —
-  // los 3 necesitan abrir un viaje real por id.
+  // Compartido entre FleetCenterDialog (equipo "En viaje hoy") y
+  // FleetDailyOverviewDialog (equipo con carga) — ambos necesitan abrir un
+  // viaje real por id. EquipmentCloseDayDialog (Fase 4) no lo necesita: ya
+  // no hay concepto de MISMATCH a nivel de tracto.
   function handleSelectTrip(tripId: string) {
     setShowCloseDay(false)
     setShowFleetCenter(false)
@@ -694,14 +695,13 @@ export default function DiarioPage() {
         onImported={handleBulkImported}
         meta={tripsMeta}
       />
-      <CloseDayDialog
+      <EquipmentCloseDayDialog
         open={showCloseDay}
         fecha={today}
         canAdmin={canAdmin}
         unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
         onClose={() => setShowCloseDay(false)}
         onOpenFleetCenter={openFleetCenter}
-        onSelectTrip={handleSelectTrip}
       />
       <FleetCenterDialog
         open={showFleetCenter}

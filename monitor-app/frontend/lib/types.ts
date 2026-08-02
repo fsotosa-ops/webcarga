@@ -930,6 +930,74 @@ export type DailyClosureReportRow = Omit<
   business_date: string
 }
 
+// ── Cierre del día por tracto/equipo (Fase 4, HU-03) — reemplaza al cierre
+// por conductor de arriba como el flujo que usa la UI (docs/AGENTLOG.md). ──
+
+export type EquipmentDayStatusValue = 'ASSIGNED' | 'UNASSIGNED'
+
+export type EquipmentDayStatusRow = {
+  asset_id:                string
+  tractor_plate:           string
+  carrier_id:              string | null
+  carrier_name:            string | null
+  status:                  EquipmentDayStatusValue
+  /** true = Tractoreo o Sin clasificar (cierre activo, exige motivo);
+   *  false = Equipo Completo puro (cierre pasivo, nunca bloquea). */
+  requires_motivo:         boolean
+  unassigned_reason_id:    string | null
+  unassigned_reason_label: string | null
+  resolved_by:             string | null
+  resolved_at:             string | null
+  driver_id:               string | null
+  driver_name:              string | null
+  /** Mejor esfuerzo — origen de su viaje más reciente, no un "CD habitual"
+   *  real (ese dato no existe en el modelo hoy). null si nunca tuvo viaje. */
+  last_known_origin:       string | null
+}
+
+export type EquipmentCategorySummary = {
+  total:            number
+  assigned:         number
+  unassigned:       number
+  utilization_pct:  number
+}
+
+export type EquipmentByCarrierSummary = {
+  carrier_id:   string | null
+  carrier_name: string | null
+  enrolled:     number
+  assigned:     number
+  unassigned:   number
+}
+
+export type EquipmentClosureInfo = {
+  closed_by:       string
+  closed_at:       string
+  total_equipment: number
+  resolved_count:  number
+  override_count:  number
+}
+
+export type EquipmentClosureStatus = {
+  business_date: string
+  closed:        boolean
+  closure:       EquipmentClosureInfo | null
+  tractoreo: {
+    summary:       EquipmentCategorySummary
+    equipment:     EquipmentDayStatusRow[]
+    pending_count: number
+  }
+  equipos_completos: {
+    summary:     EquipmentCategorySummary
+    by_carrier:  EquipmentByCarrierSummary[]
+  }
+}
+
+export type EquipmentClosePending = {
+  asset_id:      string
+  tractor_plate: string
+}
+
 export type DailyClosureReport = {
   fecha_desde: string
   fecha_hasta: string
