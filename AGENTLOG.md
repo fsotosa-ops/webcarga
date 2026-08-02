@@ -434,8 +434,35 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 #### Próximo paso exacto
 1. [ ] Definir cómo poblar `carrier_fleet_service_types` con datos reales (Excel de SharePoint vs. carga manual) — sigue abierto desde la Ronda 71, ahora con más urgencia porque HU-01 ya está construido y esperando datos.
 2. [ ] Verificación en vivo del usuario en staging de esta ronda (Vista de Flota del Día) antes de dar por cerrado el checkpoint.
-3. [ ] Iniciar Fase 3 (HU-02 — Pre-cierre y resolución de inconsistencias) cuando el usuario lo pida.
+3. [x] Fase 3 (HU-02) — ver entrada siguiente, backend implementado el mismo día.
 4. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
 5. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
 6. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
 7. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 74: Fase 3 del Cierre del Día — HU-02 "Pre-cierre y resolución de inconsistencias" (backend, sin frontend todavía)
+
+**Origen**: "continua con el desarrollo" tras Fase 2. HU-02 pide un pre-cierre automático que corrija lo que puede (Tipo A) y escale lo que no puede (Tipo B) al abrir "Cerrar el día".
+
+**2 decisiones de arquitectura confirmadas con el usuario antes de escribir código** (ambas cambian comportamiento real sobre datos de negocio, no solo agregación):
+1. **MISMATCH vs. Tipo A**: ya existía un mecanismo (`daily_closures.py`, estado `MISMATCH`) que detecta la MISMA señal que HU-02 Tipo A (conductor/tracto en empresa distinta a la esperada) pero con la filosofía opuesta — bloquear el cierre y escalar, en vez de autocorregir. Confirmado: **Tipo A corre ANTES de calcular MISMATCH** (dentro de `_recompute`) — así la mayoría de los MISMATCH por empresa mal asociada ya no existen cuando el coordinador llega a cerrar el día. MISMATCH no se eliminó del código — queda como red de contención para lo que Tipo A decide no tocar (señal ambigua dentro del mismo día).
+2. **Falso positivo real encontrado con datos de producción**: `transporter_name_tms` (qué empresa dice el TMS que opera el tracto) es una variante de "WEBCARGA" en ~3270 de ~3280 viajes reales — WebCarga es el operador de la plataforma, no una empresa transportista real. Confirmado excluir explícitamente cualquier variante de "WEBCARGA" como señal válida — sin esto, Tipo A intentaría "corregir" casi todos los tractos hacia una empresa inexistente.
+
+**Otras salvaguardas contra falsos positivos** (respondiendo directamente "cómo los reducimos", sin necesidad de otra pregunta): (a) una corrección Tipo A solo aplica si TODOS los viajes de hoy para esa patente/RUT coinciden — una sola discrepancia dentro del mismo día es ambigua, no se autoresuelve; (b) nunca toca filas con `is_manual_override=true`; (c) usa `log_change(source='pre_cierre_auto')`, nunca `record_manual_edit` — una corrección automática que resulta ser un falso positivo puede autocorregirse sola en la próxima corrida, no queda fijada para siempre (mismo criterio que ya usan `assign_driver`/`assign_asset` en carriers.py para una asignación "normal", a diferencia de `unassign`).
+
+**Implementado** (`app/services/pre_cierre.py`, nuevo, ~200 líneas): 3 correcciones Tipo A (patente↔empresa vía nombre real de empresa; conductor nombre/RUT — RUT nunca se autocambia, solo el nombre para un RUT ya existente; cliente agregado a `carrier_shippers`) + 3 escalaciones Tipo B (`PATENTE_NO_REGISTRADA`, `EMPRESA_NO_RECONOCIDA` — bucket nuevo no literal de la HU pero necesario dado el hallazgo de WEBCARGA, `CONDUCTOR_NO_REGISTRADO`, `EMPRESA_ONBOARDING`, `SIN_TIPO_OPERACION`). Conectado en `daily_closures.py`: `_recompute` ahora corre `run_pre_cierre` primero y el resultado se expone en `GET /daily-closures` como campo `pre_cierre`. Criterio 5 de la HU (Tipo B no bloquea el cierre) ya se cumple sin cambios adicionales — `close_day` nunca miró Tipo B, solo MISMATCH/UNASSIGNED.
+
+**Verificado**: 11 tests nuevos de `pre_cierre.py` (cada escenario Tipo A/Tipo B por separado) + arreglo de wiring en 15 tests existentes de `daily_closures.py` que no tenían `pool.acquire()` mockeado (`make_client` ahora wirea un stub vacío por defecto, salvo que el test ya lo haga a mano). Las queries de detección (sin ejecutar ningún UPDATE/INSERT) se corrieron contra Supabase real — confirman que "WEBCARGA SPA" se excluye correctamente y que **todas** las empresas con viaje hoy caen en `SIN_TIPO_OPERACION` (esperado, `carrier_fleet_service_types` sigue vacía). Backend 414/414 pytest.
+
+**Explícitamente NO hecho todavía**: (1) ningún frontend — `CloseDayDialog` no muestra el resultado de `pre_cierre` todavía, es puro backend; (2) **nunca se ejecutó `run_pre_cierre` contra producción** — solo se verificaron las partes SELECT de las queries, nunca las escrituras reales, dado que es código que muta `asset_assignments`/`drivers`/`carrier_shippers` reales. Antes de que esto corra de verdad contra un `fecha` real (la próxima vez que alguien llame `GET /daily-closures`), vale la pena una verificación explícita en staging.
+
+#### Próximo paso exacto
+1. [ ] Decidir si probar `GET /daily-closures` en staging para ver el pre-cierre correr por primera vez contra datos reales (mutará `asset_assignments`/`drivers`/`carrier_shippers` si encuentra algo que corregir) — recomendable hacerlo con el usuario mirando, no en automático.
+2. [ ] Construir el frontend de HU-02 (mostrar `pre_cierre.auto_resolved`/`escalations` en `CloseDayDialog`) cuando el usuario lo pida.
+3. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01 Y HU-02 ya dependen de esto).
+4. [ ] (heredado) Verificación en vivo del usuario en staging de Fase 2 (Vista de Flota del Día).
+5. [ ] Iniciar Fase 4 (HU-03 — Cierre del día) cuando el usuario lo pida.
+6. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+7. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+8. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+9. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.

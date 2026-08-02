@@ -13,6 +13,17 @@ ADMIN_USER = {"sub": "22222222-2222-2222-2222-222222222222", "email": "admin@web
 
 
 def make_client(pool, user=None):
+    """HU-02 (Fase 3): _recompute ahora corre run_pre_cierre primero, que
+    usa pool.acquire()/conn.transaction() — se wirea acá un stub vacío por
+    defecto (ningún viaje, ninguna inconsistencia) para que los tests de
+    este archivo (que no ejercitan pre-cierre, ver test_pre_cierre.py) no
+    tengan que repetir el wiring uno por uno."""
+    if isinstance(pool.acquire, AsyncMock):
+        # Todavía no wireado a mano (ver test_close_day_override_as_admin_logs_and_closes,
+        # que sí lo hace explícito para inspeccionar conn.execute) — stub vacío.
+        conn = AsyncMock()
+        conn.fetch.return_value = []
+        wire_transactional_conn(pool, conn)
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool

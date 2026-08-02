@@ -19,6 +19,7 @@ from ..auth import ADMIN_ROLES, get_current_user, require_editor
 from ..db import get_pool
 from ..schemas.daily_closures import CloseDayBody, DriverDayStatusPatchBody
 from ..services.audit import log_change
+from ..services.pre_cierre import run_pre_cierre
 from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
 
 router = APIRouter(prefix="/daily-closures", tags=["daily-closures"])
@@ -179,14 +180,20 @@ ORDER BY dds.business_date, d.full_name
 """
 
 
-async def _recompute(pool, business_date: _date) -> None:
+async def _recompute(pool, business_date: _date) -> dict:
+    """HU-02 (Fase 3): el pre-cierre corre SIEMPRE antes de recalcular la
+    cuadratura — corrige lo que puede (Tipo A) para que MISMATCH, calculado
+    justo después, ya refleje el directorio corregido en vez de la
+    inconsistencia cruda."""
+    pre_cierre = await run_pre_cierre(pool, business_date)
     await pool.execute(_RECOMPUTE_SQL, business_date)
+    return pre_cierre
 
 
 @router.get("")
 async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(get_current_user)):
     business_date = _parse_business_date(fecha)
-    await _recompute(pool, business_date)
+    pre_cierre = await _recompute(pool, business_date)
 
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     drivers = [dict(r) for r in rows]
@@ -212,6 +219,7 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
         "mismatch_count": len(mismatch),
         "pending_count": len(unassigned_without_reason) + len(mismatch),
         "drivers": drivers,
+        "pre_cierre": pre_cierre,
     }
 
 
