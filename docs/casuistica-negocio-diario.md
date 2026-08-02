@@ -144,4 +144,6 @@ Cada caso sigue el mismo formato: **qué se observa** (lo que ve el usuario), **
 
 **Alcance conocido**: 751 viajes marcados como activos antes de esta corrección; 698 de ellos (93%) sin ningún reporte hace más de 30 días.
 
-**Confirmado**: 2026-08-02 (viaje 1968333, entre otros; excepción Sodimac aclarada el mismo día; mapeo de estados Sodimac + estados faltantes de QAnalytics — CERRADO POR INTERFAZ, Sin Registros — completados el mismo día).
+**Gap encontrado y corregido el mismo día — viajes sin ningún reporte jamás**: 7 viajes de Wingsuite (planificados entre abril y junio) seguían apareciendo en "En Curso" incluso después de la corrección de arriba. Causa: a diferencia de los ~698 viajes que sí tenían una fecha de último reporte (vieja, pero una fecha), estos 7 nunca tuvieron ningún reporte de recencia en absoluto — y la corrección original solo sabía re-revisar viajes con una fecha vieja, no viajes sin fecha. Quedaron "invisibles" para la corrección, congelados en su estado de antes del fix. Se ajustó para que la revisión también alcance a los viajes sin ninguna fecha de reporte.
+
+**Confirmado**: 2026-08-02 (viaje 1968333, entre otros; excepción Sodimac aclarada el mismo día; mapeo de estados Sodimac + estados faltantes de QAnalytics — CERRADO POR INTERFAZ, Sin Registros — completados el mismo día; gap de los 7 viajes de Wingsuite sin fecha de reporte encontrado y corregido el mismo día, tras verificación del usuario en vivo).

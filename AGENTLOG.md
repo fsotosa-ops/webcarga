@@ -392,9 +392,30 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 **Verificado contra Supabase real**: constraint `status_taxonomies_domain_check` actualizado, 10 filas `FLEET_SERVICE_TYPE` confirmadas con el wording exacto de la HU §2.2, tabla `carrier_fleet_service_types` creada con índice. Backend 393/393 pytest (1 test nuevo, mirror de `test_list_carrier_shippers`).
 
 #### Próximo paso exacto
-1. [ ] Definir con el usuario cuándo/cómo se puebla `carrier_fleet_service_types` en la práctica (¿sync real desde el Excel de SharePoint, mismo mecanismo que `carrier_shippers`? ¿o de momento se carga a mano vía SQL mientras no exista ese flujo?) — hoy la tabla existe pero está vacía, sin ningún proceso de ingesta real todavía.
+1. [x] Definir cómo se puebla `carrier_fleet_service_types` — ver gap encontrado en Ronda 72 (bug real de la regla de recencia, no de esta tabla).
 2. [ ] Iniciar Fase 2 (HU-01 — Vista de flota del día) cuando el usuario lo pida — es el primer consumidor real de este catálogo (separa Tractoreo vs. Equipos Completos, % de utilización).
 3. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5) — ver Ronda 70.
 4. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
 5. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
 6. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 72: verificación en vivo de la Ronda 70 encuentra un gap real en el backfill de zombies — viajes de Wingsuite sin NINGÚN reporte de recencia quedaban fuera de la corrección
+
+**Origen**: tras el push+deploy de Fase 0/1, el usuario preguntó en vivo "¿por qué nuevamente se ven solo 36 viajes 'En Curso'?" y, al revisar, "veo registros de abril incluso" — señal directa de que la corrección de zombies de la Ronda 70 no había limpiado todo.
+
+**Causa raíz confirmada con datos reales**: la cláusula de backfill del watermark incremental (`OR 3` en `trips.sql`, agregada en la Ronda 70) solo re-seleccionaba viajes con `status_reported_at < now() - interval '7 days'` — una fecha vieja. 7 viajes de Wingsuite (planificados abril-junio 2026, todos `trip_status='RUTA'`) **nunca tuvieron ninguna fecha de reporte en absoluto** (`status_reported_at IS NULL`, confirmado con `manually_edited_fields=[]` y `updated_at` sin cambios desde antes del fix) — una comparación `NULL < fecha` nunca es verdadera en SQL, así que estos 7 nunca volvieron a pasar por el watermark y quedaron congelados en su `is_active=true` de antes de la Ronda 70, sin importar cuántas veces se ajustara la fórmula.
+
+**Fix**: la cláusula de backfill ahora también entra por `status_reported_at IS NULL` (mismo criterio: sin fecha es al menos tan "no reciente" como una fecha vieja). Sincronizado a Mage (`sync_local_to_remote`, 1 archivo). **Pendiente que el usuario corra el bloque `app_trips_update` de nuevo en la UI de Mage** (mismo motivo de siempre: `run_block`/`run_pipeline` documentados rotos para este pipeline).
+
+**Actualizado**: `docs/casuistica-negocio-diario.md` caso 9, nueva sección "Gap encontrado y corregido el mismo día".
+
+**Verificado en producción tras la corrida del usuario** (`pipeline_updated_at` = 2026-08-01 23:55): los 7 viajes de Wingsuite pasaron a `is_active=false`, 0 zombies restantes (ningún viaje no-Sodimac/no-manual con `status_reported_at` nulo o >7 días sigue `is_active=true`), los 7 viajes Sodimac legítimos siguen intactos. `is_active=true` total bajó de 35 a 28 (20 QAnalytics + 7 Sodimac + 1 manual). Backend 393/393 pytest sin cambios (el fix es 100% dbt, no tocó la API).
+
+#### Próximo paso exacto
+1. [x] Usuario corrió `app_trips_update` en Mage UI — verificado, 0 zombies restantes.
+2. [ ] Confirmar con el usuario si 28 viajes "En Curso" ahora coincide con lo que operaciones espera ver un día normal — si sigue pareciendo bajo, es una pregunta de volumen operativo real, no de este bug (ya verificado sin zombies).
+3. [ ] (heredado) Iniciar Fase 2 (HU-01 — Vista de flota del día) cuando el usuario lo pida.
+4. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+5. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+6. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+7. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
