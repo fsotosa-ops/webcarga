@@ -500,8 +500,10 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 **Explícitamente NO hecho todavía**: (1) nunca se ejecutó el recompute contra producción — solo se verificaron los SELECT, no el INSERT real a `equipment_day_status` (mismo criterio de cautela que Fase 3); (2) el frontend no muestra el resultado del pre-cierre (HU-02) dentro de este nuevo diálogo; (3) el caso especial de HU-03 "crear viaje manual desde la pantalla de cierre con el conductor pre-cargado" no se implementó (existe la creación manual de viajes en general, pero no este atajo específico).
 
+**Verificado en vivo en producción tras el push** (Playwright, sesión ya autenticada, sin usar Claude in Chrome — pedido explícito del usuario): `GET /equipment-closures` corrido por primera vez contra datos reales — coincide exacto con la verificación de solo-lectura de arriba (81/29/52, 35.8% utilización). Probado también el circuito completo de escritura: 2 checkboxes seleccionados, motivo "A confirmar" aplicado en lote, confirmado en `app.equipment_day_status` con `resolved_at` real. El botón "Cerrar día" en sí (acción irreversible por diseño — "un día cerrado no puede reabrirse desde la vista operativa") deliberadamente no se probó contra producción.
+
 #### Próximo paso exacto
-1. [ ] Primera corrida supervisada de `GET /equipment-closures` en staging (con el usuario mirando, mismo criterio que Fase 3) — verificará que 81/29/52 se escriban correctamente en `equipment_day_status`.
+1. [x] Primera corrida supervisada de `GET /equipment-closures` + escritura de motivo en lote — verificado en producción, funciona correctamente.
 2. [ ] Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
 3. [ ] Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03, no implementado todavía).
 4. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01, HU-02 y HU-03 dependen de esto).
