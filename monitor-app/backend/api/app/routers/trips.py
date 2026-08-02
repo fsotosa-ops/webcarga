@@ -1265,6 +1265,161 @@ async def available_assets(
     }
 
 
+@router.get("/fleet-daily-overview")
+async def fleet_daily_overview(
+    fecha: str = Query(""),
+    client: str = Query(""),
+    origin: str = Query(""),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """HU-01 (Cierre del Día, "Vista de flota del día"): separa la flota
+    activa en TRACTOREO / EQUIPO_COMPLETO / SIN_CLASIFICAR (según el tipo de
+    operación de la empresa, public.carrier_fleet_service_types — Fase 1) y
+    cuenta CON CARGA / SIN CARGA hoy dentro de cada categoría, con %% de
+    utilización. Una empresa puede tener ambos tipos seleccionados (Tipo de
+    operación es multi-selector) — sus equipos cuentan en ambas categorías,
+    no se fuerza una sola.
+
+    "Equipo" = tractocamión activo (`asset_type='TRACTOCAMION'`) de una
+    empresa ACTIVA, mismo criterio que `/available-assets`, excluyendo
+    ramplas (no son la unidad que un viaje resuelve/asigna). Empresas sin
+    ninguna fila en carrier_fleet_service_types todavía (la tabla es nueva,
+    Fase 1, sin ingesta real aún) caen en SIN_CLASIFICAR en vez de perderse
+    silenciosamente — HU-02 ya contempla esto como inconsistencia Tipo B
+    ("falta tipo de operación").
+
+    "CON CARGA hoy" reusa el mismo criterio ya verificado en
+    /available-drivers y /available-assets (ítem 16 de la minuta): viaje con
+    planning_date de hoy O viaje de un día anterior que siga is_active=true
+    (multi-día) — un equipo que YA CERRÓ su viaje de hoy sigue contando como
+    CON CARGA (criterio de aceptación #4 de la HU), porque no se exige
+    is_active, solo que exista el viaje de hoy. Excluye Sodimac, mismo
+    criterio heredado de /available-assets (esa fuente no resuelve
+    conductor/tracto por la misma cadena).
+
+    Filtros: `client` (lista separada por coma, nombre de shipper) matchea
+    contra `public.carrier_shippers` — no contra el viaje de hoy — para que
+    un equipo SIN CARGA de una empresa habilitada para ese cliente se siga
+    contando (o contra el cliente real del viaje de hoy, si lo tiene).
+    `origin` (lista de nombres de CD) solo puede aplicar a equipos CON
+    CARGA — hoy no existe un "CD habitual" por equipo/empresa en el modelo,
+    así que un equipo SIN CARGA queda fuera de un filtro por origen.
+    """
+    day = _parse_date(fecha)
+    if day is None:
+        raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
+    client_list = [c.strip().lower() for c in client.split(',') if c.strip()]
+    origin_list = [o.strip().lower() for o in origin.split(',') if o.strip()]
+
+    rows = await pool.fetch(
+        """
+        WITH active_roster AS (
+            SELECT a.id AS asset_id, a.license_plate AS tractor_plate,
+                   c.id AS carrier_id, c.business_name AS carrier_name
+            FROM public.assets a
+            JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+            JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+            WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
+        ),
+        carrier_types AS (
+            SELECT cfst.carrier_id,
+                   bool_or(st.label = 'Tractoreo')              AS is_tractoreo,
+                   bool_or(st.label LIKE 'Equipo Completo%')     AS is_equipo_completo
+            FROM public.carrier_fleet_service_types cfst
+            JOIN app.status_taxonomies st ON st.id = cfst.taxonomy_id
+            WHERE cfst.status = 'ACTIVE'
+            GROUP BY cfst.carrier_id
+        ),
+        today_trips AS (
+            SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
+                vfr.resolved_tractor_asset_id AS asset_id,
+                t.id AS trip_id,
+                t.client_name,
+                (
+                    SELECT ts.local FROM app.trip_stops ts
+                    WHERE ts.trip_id = t.id AND ts.stop_type = 'ORIGIN' LIMIT 1
+                ) AS origin_local
+            FROM app.trips t
+            JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+              AND t.source_system != 'sodimac'
+              AND vfr.resolved_tractor_asset_id IS NOT NULL
+            ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST
+        )
+        SELECT
+            ar.asset_id, ar.tractor_plate, ar.carrier_id, ar.carrier_name,
+            COALESCE(ct.is_tractoreo, false)      AS is_tractoreo,
+            COALESCE(ct.is_equipo_completo, false) AS is_equipo_completo,
+            tt.trip_id, tt.client_name, tt.origin_local
+        FROM active_roster ar
+        LEFT JOIN carrier_types ct ON ct.carrier_id = ar.carrier_id
+        LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
+        """,
+        day,
+    )
+
+    carriers_for_client: set[str] = set()
+    if client_list:
+        shipper_rows = await pool.fetch(
+            """
+            SELECT cs.carrier_id, lower(s.name) AS shipper_name
+            FROM public.carrier_shippers cs
+            JOIN public.shippers s ON s.id = cs.shipper_id
+            WHERE cs.status = 'ACTIVE'
+            """
+        )
+        carriers_for_client = {
+            r["carrier_id"] for r in shipper_rows if r["shipper_name"] in client_list
+        }
+
+    equipment = []
+    for r in rows:
+        if client_list:
+            today_client_ok = (r["client_name"] or "").strip().lower() in client_list
+            carrier_client_ok = r["carrier_id"] in carriers_for_client
+            if not (today_client_ok or carrier_client_ok):
+                continue
+        if origin_list:
+            if not r["trip_id"] or (r["origin_local"] or "").strip().lower() not in origin_list:
+                continue
+        categories = []
+        if r["is_tractoreo"]:
+            categories.append("TRACTOREO")
+        if r["is_equipo_completo"]:
+            categories.append("EQUIPO_COMPLETO")
+        if not categories:
+            categories.append("SIN_CLASIFICAR")
+        equipment.append({
+            "asset_id":      r["asset_id"],
+            "tractor_plate": r["tractor_plate"],
+            "carrier_id":    r["carrier_id"],
+            "carrier_name":  r["carrier_name"],
+            "categories":    categories,
+            "con_carga":     r["trip_id"] is not None,
+            "trip_id":       r["trip_id"],
+            "client_name":   r["client_name"],
+            "origin":        r["origin_local"],
+        })
+
+    def _summarize(category: str) -> dict:
+        items = [e for e in equipment if category in e["categories"]]
+        assigned = sum(1 for e in items if e["con_carga"])
+        total = len(items)
+        return {
+            "category":         category,
+            "assigned":         assigned,
+            "unassigned":       total - assigned,
+            "utilization_pct":  round(assigned / total * 100, 1) if total else 0.0,
+        }
+
+    return {
+        "fecha": fecha,
+        "categories": [_summarize(c) for c in ("TRACTOREO", "EQUIPO_COMPLETO", "SIN_CLASIFICAR")],
+        "equipment": equipment,
+    }
+
+
 # ── Trip creation (manual entry + bulk) ──────────────────────────────────────
 
 class TripStopCreate(BaseModel):

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck, LayoutGrid } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
@@ -19,6 +19,7 @@ import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { CloseDayDialog } from '@/components/dashboard/CloseDayDialog'
 import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
+import { FleetDailyOverviewDialog } from '@/components/dashboard/FleetDailyOverviewDialog'
 import type { FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
@@ -91,6 +92,7 @@ export default function DiarioPage() {
   const [showBulkUpload,  setShowBulkUpload]  = useState(false)
   const [showCloseDay,    setShowCloseDay]    = useState(false)
   const [showFleetCenter, setShowFleetCenter] = useState(false)
+  const [showFleetOverview, setShowFleetOverview] = useState(false)
   const [prefillFleet,    setPrefillFleet]    = useState<FleetAssignValue | null>(null)
   const [canAdmin,        setCanAdmin]        = useState(false)
   const [viewMode,        setViewMode]        = useState<ViewMode>('tabla')
@@ -314,11 +316,13 @@ export default function DiarioPage() {
     setShowCloseDay(true)
   }
 
-  // Compartido entre CloseDayDialog (fila MISMATCH) y FleetCenterDialog
-  // (equipo "En viaje hoy") — ambos necesitan abrir un viaje real por id.
+  // Compartido entre CloseDayDialog (fila MISMATCH), FleetCenterDialog
+  // (equipo "En viaje hoy") y FleetDailyOverviewDialog (equipo con carga) —
+  // los 3 necesitan abrir un viaje real por id.
   function handleSelectTrip(tripId: string) {
     setShowCloseDay(false)
     setShowFleetCenter(false)
+    setShowFleetOverview(false)
     router.push(`/dashboard/operations/monitor/trips/${tripId}`)
   }
 
@@ -420,6 +424,14 @@ export default function DiarioPage() {
               <ViewToggle value={viewMode} onChange={handleViewModeChange} />
             ) : <div />}
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowFleetOverview(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
+                title="Vista de flota del día — Tractoreo / Equipos Completos, con carga / sin carga"
+              >
+                <LayoutGrid size={13} />
+                Vista de flota
+              </button>
               <button
                 onClick={() => setShowCloseDay(true)}
                 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
@@ -699,6 +711,12 @@ export default function DiarioPage() {
         onAssign={handleAssignFromFleet}
         onNewTrip={handleNewTripFromFleet}
         onImportCsv={handleImportCsvFromFleet}
+        onSelectTrip={handleSelectTrip}
+      />
+      <FleetDailyOverviewDialog
+        open={showFleetOverview}
+        fecha={today}
+        onClose={() => setShowFleetOverview(false)}
         onSelectTrip={handleSelectTrip}
       />
     </div>

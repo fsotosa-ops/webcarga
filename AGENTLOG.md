@@ -413,8 +413,28 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 #### Próximo paso exacto
 1. [x] Usuario corrió `app_trips_update` en Mage UI — verificado, 0 zombies restantes.
-2. [ ] Confirmar con el usuario si 28 viajes "En Curso" ahora coincide con lo que operaciones espera ver un día normal — si sigue pareciendo bajo, es una pregunta de volumen operativo real, no de este bug (ya verificado sin zombies).
-3. [ ] (heredado) Iniciar Fase 2 (HU-01 — Vista de flota del día) cuando el usuario lo pida.
+2. [x] Fase 2 (HU-01) — ver entrada siguiente, implementada el mismo día.
+3. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+4. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+5. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+6. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 73: Fase 2 del Cierre del Día — HU-01 "Vista de Flota del Día" (backend + frontend)
+
+**Origen**: "continua con el desarrollo" tras cerrar el gap de zombies de la Ronda 72 — siguiente paso del roadmap acordado (HU-01: Tractoreo/Equipos Completos separados, CON CARGA/SIN CARGA, %% de utilización, filtrable por cliente y CD de origen).
+
+**Bloqueante detectado y resuelto antes de construir**: HU-01 necesita clasificar cada empresa como TRACTOREO/EQUIPO COMPLETO vía `carrier_fleet_service_types` (Fase 1) — pero esa tabla está vacía (sin ingesta real todavía). Se preguntó al usuario cómo seguir; confirmó construir la vista completa ya, con un bucket **SIN_CLASIFICAR** como fallback, para que cuando llegue el Excel real de SharePoint la vista se pueble sola sin tocar código.
+
+**Backend — `GET /api/v1/trips/fleet-daily-overview`** (`trips.py`): reusa exactamente el criterio "CON CARGA hoy" ya verificado en Fase 0.1 (`planning_date=fecha OR (planning_date<fecha AND is_active)`, excluyendo Sodimac — mismo criterio heredado de `/available-assets`, esa fuente no resuelve conductor/tracto por la misma cadena). "Equipo" = tractocamión activo (`asset_type='TRACTOCAMION'`) de una empresa ACTIVA. Categoriza por `carrier_fleet_service_types`: una empresa con AMBOS tipos seleccionados (multi-selector) cuenta sus equipos en ambas categorías, no fuerza una sola. Filtros: `client` matchea contra `public.carrier_shippers` (no contra el viaje de hoy, para que un equipo SIN CARGA de una empresa habilitada siga contando); `origin` solo puede aplicar a equipos CON CARGA (no existe "CD habitual" por equipo en el modelo hoy — limitación de datos documentada explícitamente en el docstring, no oculta). 10 tests nuevos.
+
+**Frontend**: nuevo `FleetDailyOverviewDialog.tsx` — mismo patrón de modal cruzado ya establecido (`CloseDayDialog`/`FleetCenterDialog`, ambos en `app/dashboard/operations/monitor/page.tsx`, sin una ruta dedicada — el spec de Centro de Flota (`docs/superpowers/specs/2026-07-28-centro-de-flota-design.md`) ya había diferido explícitamente "promover a página propia" a un checkpoint futuro). 3 tiles clickeables (Tractoreo/Equipos Completos/Sin clasificar) con "X asignados / Y sin asignar / Z%% utilización" que filtran la tabla de equipos debajo; botón nuevo "Vista de flota" en la barra de acciones del Diario. 6 tests nuevos.
+
+**Verificado**: SQL corrido directo contra Supabase real antes de confiar en los tests mockeados (mismo hábito de toda la sesión) — 81 tractocamiones activos, 16 con carga hoy, **81 en SIN_CLASIFICAR** (confirma que el fallback funciona exactamente como se esperaba, dado que `carrier_fleet_service_types` sigue vacía). Backend 403/403 pytest, frontend 608/608 vitest (64 archivos), `tsc --noEmit` limpio, `npm run build` exitoso (17 rutas, sin cambio de conteo).
+
+#### Próximo paso exacto
+1. [ ] Definir cómo poblar `carrier_fleet_service_types` con datos reales (Excel de SharePoint vs. carga manual) — sigue abierto desde la Ronda 71, ahora con más urgencia porque HU-01 ya está construido y esperando datos.
+2. [ ] Verificación en vivo del usuario en staging de esta ronda (Vista de Flota del Día) antes de dar por cerrado el checkpoint.
+3. [ ] Iniciar Fase 3 (HU-02 — Pre-cierre y resolución de inconsistencias) cuando el usuario lo pida.
 4. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
 5. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
 6. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.

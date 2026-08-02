@@ -181,6 +181,34 @@ export type AvailableAssetsResponse = {
   busy:         BusyAsset[]
 }
 
+/** HU-01 (Cierre del Día, Fase 2) — un equipo dentro de la "Vista de flota
+ *  del día". `categories` puede traer más de un valor si la empresa tiene
+ *  más de un tipo de operación seleccionado (multi-selector, ver Fase 1). */
+export type FleetOverviewEquipment = {
+  asset_id:       string
+  tractor_plate:  string
+  carrier_id:     string
+  carrier_name:   string
+  categories:     ('TRACTOREO' | 'EQUIPO_COMPLETO' | 'SIN_CLASIFICAR')[]
+  con_carga:      boolean
+  trip_id:        string | null
+  client_name:    string | null
+  origin:         string | null
+}
+
+export type FleetOverviewCategory = {
+  category:         'TRACTOREO' | 'EQUIPO_COMPLETO' | 'SIN_CLASIFICAR'
+  assigned:         number
+  unassigned:       number
+  utilization_pct:  number
+}
+
+export type FleetDailyOverviewResponse = {
+  fecha:      string
+  categories: FleetOverviewCategory[]
+  equipment:  FleetOverviewEquipment[]
+}
+
 /** Resultado de GET /drivers?q= — búsqueda general de conductores activos */
 export type DriverSearchResult = DriverPickCandidate
 
