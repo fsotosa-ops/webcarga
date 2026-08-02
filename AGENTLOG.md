@@ -557,10 +557,12 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 **Verificado**: backend 444/444 pytest (11 tests nuevos, centrados en las funciones puras de cada sección), frontend 632/632 vitest (9 tests nuevos), `tsc`/`build` limpios. Cada fragmento SQL de `_build_asset_rows` corrido individualmente contra Supabase real (solo lectura) antes de confiar en los tests mockeados — confirmado que resuelve CD de origen/destino/cliente reales correctamente.
 
-**Explícitamente NO hecho todavía**: (1) envío automático por mail (criterio #5, Hito 4 — fuera de alcance de Hito 3); (2) alerta cuando un tracto lleva 3+ días consecutivos en "A confirmar" (§7.7); (3) validación en vivo contra producción (a diferencia de Fase 4, este es un endpoint de solo lectura — más seguro, pero igual sin ejercitar contra el flujo real todavía).
+**Verificado en vivo en producción (Playwright)**: Sección 1 muestra Total=81 con Tractoreo/Equipos Completos en 0/0 — correcto, no un bug: los 81 caen en "Sin Clasificar" (`carrier_fleet_service_types` sigue vacía), y esa categoría no tiene tile propio en la Sección 1 tal como la define la HU. Sección 3 (Vueltas) confirmada con datos reales: "Transportes Charlotte Spa — CD LO AGUIRRE — RM — 3 vueltas". Sección 6 (resumen por CD, no depende de la clasificación Tractoreo/Equipo) confirmada: CD El Peñón 28 enrolados/16 asignados, CD Lo Aguirre 23/9, CD Noviciado 3/0.
+
+**Explícitamente NO hecho todavía**: (1) envío automático por mail (criterio #5, Hito 4 — fuera de alcance de Hito 3); (2) alerta cuando un tracto lleva 3+ días consecutivos en "A confirmar" (§7.7).
 
 #### Próximo paso exacto
-1. [ ] Validar en vivo (Playwright) contra staging — es de solo lectura, menor riesgo que Fase 4.
+1. [x] Validado en vivo contra producción — Secciones 1/3/6 confirmadas con datos reales, sin bugs.
 2. [ ] Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU) — no implementada todavía.
 3. [ ] Envío automático por mail al cerrar el día (criterio #5, Hito 4) — explícitamente fuera de alcance de Hito 3.
 4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
