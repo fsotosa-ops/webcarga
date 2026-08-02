@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
-from ..schemas.trip import TripPatch, TripStopPatch
+from ..schemas.trip import TripBulkCloseBody, TripPatch, TripStopPatch
 
 
 def _parse_date(s: str) -> _date | None:
@@ -1907,6 +1907,45 @@ async def get_trip(
     _apply_operation_types(d, op_type_buckets)
     await _log_tms_divergence_once(pool, trip_id, user, d)
     return d
+
+
+@router.patch("/bulk-close")
+async def bulk_close_trips(
+    body: TripBulkCloseBody, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """Selección masiva en el Diario (TripTable) para cerrar/finalizar
+    varios viajes de una — mismo mecanismo que ya usa IndicatorSwitches por
+    viaje individual (is_active/is_working=false), solo que en lote.
+    Declarado ANTES de PATCH /{trip_id} — FastAPI matchea rutas en el orden
+    en que se registran, así que un literal "/bulk-close" debe ir antes del
+    path param genérico o quedaría absorbido como trip_id="bulk-close"."""
+    if not body.trip_ids:
+        raise HTTPException(422, "trip_ids no puede estar vacío")
+
+    rows = await pool.fetch(
+        "SELECT id, manually_edited_fields FROM app.trips WHERE id = ANY($1::uuid[])",
+        body.trip_ids,
+    )
+    found_ids = {str(r["id"]) for r in rows}
+    missing = [tid for tid in body.trip_ids if tid not in found_ids]
+    if missing:
+        raise HTTPException(404, f"Viaje(s) no encontrado(s): {missing}")
+
+    await pool.execute(
+        """
+        UPDATE app.trips
+        SET is_active = false, is_working = false,
+            manually_edited_fields = ARRAY(SELECT DISTINCT unnest(
+                COALESCE(manually_edited_fields,'{}') || ARRAY['is_active','is_working']::text[]
+            )),
+            edited_by = $2::uuid, edited_at = NOW(), updated_at = NOW()
+        WHERE id = ANY($1::uuid[])
+        """,
+        body.trip_ids, user["sub"],
+    )
+    for tid in body.trip_ids:
+        await _log_system_note(pool, tid, user, "Cerrado manualmente en selección masiva")
+    return {"ok": True, "closed": len(body.trip_ids)}
 
 
 @router.patch("/{trip_id}")

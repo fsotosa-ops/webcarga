@@ -306,6 +306,15 @@ export default function DiarioPage() {
     if (count > 0) queryClient.invalidateQueries({ queryKey: ['trips'] })
   }
 
+  // Selección masiva en el Diario (pedido explícito del usuario,
+  // 2026-08-02): cerrar/finalizar varios viajes de una — is_active/
+  // is_working=false en lote, mismo mecanismo que IndicatorSwitches por
+  // viaje individual.
+  async function handleBulkCloseTrips(tripIds: string[]) {
+    await tripsApi.bulkClose(tripIds)
+    await queryClient.invalidateQueries({ queryKey: ['trips'] })
+  }
+
   function openFleetCenter() {
     setShowCloseDay(false)
     setShowFleetCenter(true)
@@ -646,6 +655,7 @@ export default function DiarioPage() {
                   sortKey={f.sortKey}
                   sortDir={f.sortDir}
                   onSort={col => dispatch({ type: 'toggleSort', col })}
+                  onBulkClose={handleBulkCloseTrips}
                 />
               )}
             </div>

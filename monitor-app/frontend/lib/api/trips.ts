@@ -126,6 +126,15 @@ export const tripsApi = {
       method: 'DELETE',
     }),
 
+  /** Selección masiva en el Diario — cierra/finaliza varios viajes de una
+   *  (is_active/is_working=false), mismo mecanismo que IndicatorSwitches
+   *  por viaje individual. */
+  bulkClose: (tripIds: string[]) =>
+    apiFetch<{ ok: boolean; closed: number }>(`/api/v1/trips/bulk-close`, {
+      method: 'PATCH',
+      body: JSON.stringify({ trip_ids: tripIds }),
+    }),
+
   patchStop: (id: string, stopId: string, body: TripStopPatch) =>
     apiFetch<Trip>(`/api/v1/trips/${id}/stops/${stopId}`, {
       method: 'PATCH',

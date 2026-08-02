@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { TripTable } from './TripTable'
 import type { Trip } from '@/lib/types'
 
@@ -273,5 +273,68 @@ describe('DwellSeverityBadge in TripTable (Hito 14)', () => {
     expect(onSelectFocusNotes).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }))
     expect(onSelect).not.toHaveBeenCalled()
     vi.useRealTimers()
+  })
+})
+
+// ── Selección masiva para cerrar viajes (pedido explícito del usuario,
+// 2026-08-02) — checkbox por fila + barra de acción cuando onBulkClose está
+// presente; sin onBulkClose, la tabla no muestra ningún checkbox. ──────────
+describe('TripTable — selección masiva para cerrar viajes', () => {
+  it('no muestra checkboxes cuando no se pasa onBulkClose', () => {
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('seleccionar un checkbox no dispara onSelect (no abre el detalle del viaje)', () => {
+    const onSelect = vi.fn()
+    render(
+      <TripTable
+        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
+        selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null}
+        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
+  })
+
+  it('pide confirmación antes de cerrar y llama a onBulkClose solo tras confirmar', async () => {
+    const onBulkClose = vi.fn().mockResolvedValue(undefined)
+    render(
+      <TripTable
+        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
+        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
+        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={onBulkClose}
+      />,
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Cerrar viajes seleccionados/ }))
+    expect(onBulkClose).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Sí, cerrar/ }))
+
+    await waitFor(() => expect(onBulkClose).toHaveBeenCalledWith(['t1']))
+  })
+
+  it('limpia la selección cuando cambia la lista de viajes (evita seleccionar viajes que ya no están)', () => {
+    const { rerender } = render(
+      <TripTable
+        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
+        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
+        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
+    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
+
+    rerender(
+      <TripTable
+        trips={[makeTrip('t2', { source_system_trip_id: '2000722' })]}
+        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
+        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
+      />,
+    )
+    expect(screen.queryByText(/seleccionados/)).not.toBeInTheDocument()
   })
 })

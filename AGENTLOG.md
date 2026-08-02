@@ -504,6 +504,30 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 #### Próximo paso exacto
 1. [x] Primera corrida supervisada de `GET /equipment-closures` + escritura de motivo en lote — verificado en producción, funciona correctamente.
+2. [ ] Ver Ronda 77 — selección masiva para cerrar viajes en el Diario, implementada el mismo día.
+3. [ ] Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+4. [ ] Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03, no implementado todavía).
+5. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01, HU-02 y HU-03 dependen de esto).
+6. [ ] Iniciar Fase 5 (HU-04 — Reporte de estatus del día) cuando el usuario lo pida.
+7. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+8. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+9. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+10. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 77: selección masiva en el Diario para cerrar/finalizar varios viajes de una
+
+**Origen**: tras ver el flujo de Cierre del Día (Fase 4), el usuario notó "no tiene una selección masiva para cerrar el viaje" — confirmó que se refería a marcar varios VIAJES (no tractos) como cerrados/finalizados en lote, y que debía vivir en el Diario (tabla de viajes), no dentro del diálogo de Cierre del Día.
+
+**Investigación previa**: no existía ningún mecanismo de "cerrar un viaje manualmente" en el sentido fuerte — `manual_status` (editable hoy vía `GestionPanel`) resuelve contra el dominio `OPERATIONAL_STATE` (relatos como "En seguimiento"/"Problema conductor"), no un estado terminal. Lo que sí existe y sobrevive a la próxima corrida de Mage (protegido por `manually_edited_fields` + el trigger `protect_manual_overrides`) es togglear `is_active`/`is_working` a `false` por viaje individual, vía `IndicatorSwitches`. La funcionalidad pedida es exactamente eso, aplicado a varios viajes de una — no un mecanismo nuevo.
+
+**Implementado**:
+- `PATCH /trips/bulk-close` (`trips.py`, declarado ANTES de `PATCH /{trip_id}` a propósito — FastAPI matchea rutas en orden de registro, un path literal debe ir antes del path-param genérico o quedaría absorbido como `trip_id="bulk-close"`): recibe `trip_ids`, pone `is_active`/`is_working=false` para todos, protegido vía `manually_edited_fields` (mismo mecanismo que el PATCH individual), un `_log_system_note` por viaje en la bitácora.
+- `TripTable.tsx`: checkbox por fila (columna nueva, solo si se pasa `onBulkClose` — opcional, no rompe otros consumidores del componente) + barra de acción con confirmación de 2 pasos ("Cerrar viajes seleccionados" → "¿Cerrar N? Sí/Cancelar") antes de ejecutar. La selección se resetea cuando cambia `trips` (mismo criterio que la clase de bug ya documentada de drafts que no se resincronizan).
+
+**Verificado**: backend 433/433 pytest (5 tests nuevos, incluida una regresión explícita sobre el orden de rutas), frontend 622/622 vitest (4 tests nuevos), `tsc`/`build` limpios. **No probado todavía contra producción** — a diferencia de fijar un motivo (Fase 4), cerrar un viaje real (`is_active=false`) es una acción con más peso operativo; se dejó pendiente una validación en vivo explícita antes de ejercitarla sobre datos reales.
+
+#### Próximo paso exacto
+1. [ ] Validar en vivo (Playwright) contra staging con un viaje de prueba de bajo riesgo (ej. uno ya viejo/zombie, no uno realmente en curso).
 2. [ ] Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
 3. [ ] Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03, no implementado todavía).
 4. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01, HU-02 y HU-03 dependen de esto).

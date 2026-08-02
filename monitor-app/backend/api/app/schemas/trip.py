@@ -26,6 +26,14 @@ class TripPatch(BaseModel):
         return list(self.model_dump(exclude_none=True).keys())
 
 
+class TripBulkCloseBody(BaseModel):
+    """Selección masiva en el Diario para cerrar/finalizar varios viajes de
+    una — mismo mecanismo que ya usa IndicatorSwitches por viaje individual
+    (is_active/is_working=false, protegido de que Mage lo pise en la
+    próxima corrida vía manually_edited_fields), solo que en lote."""
+    trip_ids: list[str]
+
+
 class TripStopPatch(BaseModel):
     """Override manual por parada — columnas *_manual reales en
     app.trip_stops, excluidas del MERGE de dbt (merge_exclude_columns),
