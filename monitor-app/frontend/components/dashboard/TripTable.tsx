@@ -184,13 +184,21 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
   // Mismo criterio que otros drafts del proyecto (ver feedback_draft_resync_bug_class):
   // una selección apuntando a viajes que ya no están en `trips` (cambió el
-  // filtro, la página, o el refetch tras un cierre) queda huérfana si no se
-  // resetea acá.
+  // filtro o la página) queda huérfana si no se poda acá. Depende del set
+  // de IDs (string estable), no de la referencia de `trips` — el polling
+  // de refetch (useTrips.ts, refetchInterval) genera un array nuevo cada
+  // pocos segundos con LOS MISMOS viajes, y resetear en cada referencia
+  // nueva borraba la selección de un coordinador a mitad de marcar varios
+  // viajes para cerrar (bug real encontrado en vivo, 2026-08-02).
+  const tripIdsKey = trips.map(t => t.id).join(',')
   useEffect(() => {
-    setSelectedForClose(new Set())
-    setConfirming(false)
-    setCloseErr(null)
-  }, [trips])
+    const currentIds = new Set(trips.map(t => t.id))
+    setSelectedForClose(prev => {
+      const pruned = new Set([...prev].filter(id => currentIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripIdsKey])
 
   useEffect(() => {
     const el = scrollRef.current

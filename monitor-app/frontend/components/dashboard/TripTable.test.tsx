@@ -317,6 +317,30 @@ describe('TripTable — selección masiva para cerrar viajes', () => {
     await waitFor(() => expect(onBulkClose).toHaveBeenCalledWith(['t1']))
   })
 
+  it('conserva la selección cuando el polling trae un array nuevo con los mismos viajes (bug real encontrado en vivo)', () => {
+    const { rerender } = render(
+      <TripTable
+        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
+        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
+        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
+    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
+
+    // Mismo viaje, pero un array NUEVO (referencia distinta) — simula el
+    // refetch de refetchInterval en useTrips.ts con datos sin cambios.
+    rerender(
+      <TripTable
+        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
+        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
+        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
+  })
+
   it('limpia la selección cuando cambia la lista de viajes (evita seleccionar viajes que ya no están)', () => {
     const { rerender } = render(
       <TripTable
