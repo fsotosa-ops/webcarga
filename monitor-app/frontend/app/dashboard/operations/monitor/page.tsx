@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck, LayoutGrid } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck, LayoutGrid, FileBarChart2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
@@ -20,6 +20,7 @@ import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { EquipmentCloseDayDialog } from '@/components/dashboard/EquipmentCloseDayDialog'
 import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
 import { FleetDailyOverviewDialog } from '@/components/dashboard/FleetDailyOverviewDialog'
+import { StatusReportDialog } from '@/components/dashboard/StatusReportDialog'
 import type { FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
@@ -93,6 +94,7 @@ export default function DiarioPage() {
   const [showCloseDay,    setShowCloseDay]    = useState(false)
   const [showFleetCenter, setShowFleetCenter] = useState(false)
   const [showFleetOverview, setShowFleetOverview] = useState(false)
+  const [showStatusReport, setShowStatusReport] = useState(false)
   const [prefillFleet,    setPrefillFleet]    = useState<FleetAssignValue | null>(null)
   const [canAdmin,        setCanAdmin]        = useState(false)
   const [viewMode,        setViewMode]        = useState<ViewMode>('tabla')
@@ -443,6 +445,14 @@ export default function DiarioPage() {
                 Vista de flota
               </button>
               <button
+                onClick={() => setShowStatusReport(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
+                title="Reporte de estatus del día — 6 secciones, filtrable por cliente"
+              >
+                <FileBarChart2 size={13} />
+                Reporte
+              </button>
+              <button
                 onClick={() => setShowCloseDay(true)}
                 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
                 title="Revisar pendientes y cerrar la cuadratura del día"
@@ -728,6 +738,12 @@ export default function DiarioPage() {
         fecha={today}
         onClose={() => setShowFleetOverview(false)}
         onSelectTrip={handleSelectTrip}
+      />
+      <StatusReportDialog
+        open={showStatusReport}
+        fecha={today}
+        shippers={shippersQuery.data}
+        onClose={() => setShowStatusReport(false)}
       />
     </div>
   )

@@ -1003,3 +1003,64 @@ export type DailyClosureReport = {
   fecha_hasta: string
   rows:        DailyClosureReportRow[]
 }
+
+// ── Reporte de estatus del día, 6 secciones (Fase 5, HU-04) ─────────────────
+
+export type ZoneCrossTab = {
+  cd: string
+  carrier_name?: string
+  RM: number
+  Z0: number
+  "Región": number
+  "Sin clasificar": number
+  total: number
+}
+
+export type MotivoCrossTab = {
+  cd: string
+  carrier_name?: string
+  [motivo: string]: string | number | undefined
+  total: number
+}
+
+export type EquipoCompletoResumen = {
+  carrier_name:     string
+  enrolled:         number
+  assigned:         number
+  unassigned:       number
+  utilization_pct:  number
+}
+
+export type VueltaRow = {
+  carrier_name: string
+  cd_origen:    string | null
+  tipo_destino: string | null
+  vueltas:      number
+}
+
+export type StatusReport = {
+  business_date: string
+  client_filter: string | null
+  section1_resumen: {
+    total_equipos_activos: number
+    tractoreo:              EquipmentCategorySummary
+    equipos_completos:      EquipmentCategorySummary
+    multi_dia_activos: { total: number; por_dias_atras: Record<string, number> }
+  }
+  section2_tractoreo_asignado: {
+    por_cd:          ZoneCrossTab[]
+    por_empresa_y_cd: ZoneCrossTab[]
+  }
+  section3_vueltas: VueltaRow[]
+  section4_tractoreo_no_trabajando: {
+    por_cd:           MotivoCrossTab[]
+    por_empresa_y_cd: MotivoCrossTab[]
+  }
+  section5_equipos_completos: EquipoCompletoResumen[]
+  section6_resumen_general: {
+    tractoreo:          EquipmentCategorySummary
+    equipos_completos:  EquipmentCategorySummary
+    por_cd:      { cd: string; enrolled: number; assigned: number }[]
+    por_cliente: { client_name: string; assigned: number }[]
+  }
+}

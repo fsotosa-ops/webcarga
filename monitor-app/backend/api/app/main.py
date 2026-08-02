@@ -20,6 +20,7 @@ from .routers.locations import router as locations_router
 from .routers.policies import router as policies_router
 from .routers.roles import router as roles_router
 from .routers.shippers import router as shippers_router
+from .routers.status_report import router as status_report_router
 from .routers.status_taxonomies import router as status_taxonomies_router
 from .routers.trips import router as trips_router
 from .routers.users import router as users_router
@@ -81,6 +82,8 @@ app.include_router(daily_closures_router,      prefix="/api/v1")
 # Cierre del día por tracto/equipo (Fase 4, HU-03) — reemplaza a
 # daily_closures_router como el flujo que usa la UI.
 app.include_router(equipment_closures_router,  prefix="/api/v1")
+# Reporte de estatus del día, 6 secciones (Fase 5, HU-04)
+app.include_router(status_report_router,       prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

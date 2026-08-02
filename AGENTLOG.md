@@ -530,11 +530,43 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 
 #### Próximo paso exacto
 1. [x] Validado en vivo contra producción — encontró y corrigió un bug real de polling, después funcionó correctamente.
-2. [ ] Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
-3. [ ] Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03, no implementado todavía).
-4. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01, HU-02 y HU-03 dependen de esto).
-5. [ ] Iniciar Fase 5 (HU-04 — Reporte de estatus del día) cuando el usuario lo pida.
+2. [ ] Ver Ronda 78 — Fase 5 (HU-04, Reporte de estatus), implementada el mismo día.
+3. [ ] Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+4. [ ] Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03, no implementado todavía).
+5. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente (HU-01, HU-02, HU-03 y HU-04 dependen de esto).
 6. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
 7. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
 8. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
 9. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-02 (cont.) — Ronda 78: Fase 5 del Cierre del Día — HU-04 "Reporte de Estatus del Día" (6 secciones completas, backend + frontend)
+
+**Origen**: "sigue con Fase 5". HU-04 es el reporte más grande del roadmap — 6 secciones, varios cross-tabs por CD/empresa. Confirmado con el usuario construir las 6 completas de una (no un MVP recortado), a sabiendas de que la HU tiene ambigüedades reales.
+
+**Decisiones documentadas donde la HU es ambigua** (en el docstring del módulo, no solo en el chat):
+- Sección 2 (Tractoreo asignado) lista una columna "Se retiró sin carga" junto a RM/Z0/Región — ese es un MOTIVO de no asignación (Bloque 1 del cierre), no un tipo de destino. Se omitió de esta sección para no modelar el mismo concepto dos veces; ya aparece en la Sección 4 como una columna de motivo más.
+- "CD de origen" para equipos SIN CARGA: mismo gap ya documentado en Fase 2/4 (no hay CD habitual en el modelo) — mejor esfuerzo, origen del viaje más reciente.
+- Un viaje con más de un destino usa el ÚLTIMO (el de entrega real) para la clasificación RM/Z0/Región, acorde a "la comuna DEL DESTINO (local de entrega)" — singular en la HU.
+- Empresa con ambos tipos de operación seleccionados cuenta en ambas secciones (Tractoreo y Equipos Completos) — mismo criterio de Fase 2/4.
+
+**Arquitectura**: mismo patrón ya probado en Fase 2/3/4 — una sola función (`_build_asset_rows`) calcula UNA fila enriquecida por equipo activo (categoría, con/sin carga, CD origen, tipo de destino RM/Z0/Región, vueltas, motivo), reusando en vez de reimplementar: el pre-cierre (HU-02) y la cuadratura por equipo (HU-03, corren primero), la resolución RM/Z0/Región por comuna de destino (mismos helpers `_load_operation_type_buckets`/`_resolve_operation_type` de `trips.py`, no una copia nueva de esa lógica en SQL), y las vueltas (Fase 0.3, `app.v_driver_daily_trip_legs`, ya unificado conductor O tracto). Las 6 secciones se derivan de esa única lista en Python — funciones puras, testeadas sin mockear las ~6 queries secuenciales.
+
+**Backend** (`app/routers/status_report.py`, nuevo): `GET /status-report?fecha=&client=` — filtro por cliente disponible en las 6 secciones (criterio #2 de la HU), manteniendo equipos SIN CARGA visibles aunque no tengan cliente asociado hoy.
+
+**Frontend** (`StatusReportDialog.tsx`, nuevo): mismo patrón de modal que el resto de esta fase — 6 tabs dentro de un solo diálogo (no una página nueva), filtro de cliente reusando el catálogo de shippers ya cargado en `page.tsx`. Botón "Reporte" nuevo en la barra de acciones del Diario.
+
+**Verificado**: backend 444/444 pytest (11 tests nuevos, centrados en las funciones puras de cada sección), frontend 632/632 vitest (9 tests nuevos), `tsc`/`build` limpios. Cada fragmento SQL de `_build_asset_rows` corrido individualmente contra Supabase real (solo lectura) antes de confiar en los tests mockeados — confirmado que resuelve CD de origen/destino/cliente reales correctamente.
+
+**Explícitamente NO hecho todavía**: (1) envío automático por mail (criterio #5, Hito 4 — fuera de alcance de Hito 3); (2) alerta cuando un tracto lleva 3+ días consecutivos en "A confirmar" (§7.7); (3) validación en vivo contra producción (a diferencia de Fase 4, este es un endpoint de solo lectura — más seguro, pero igual sin ejercitar contra el flujo real todavía).
+
+#### Próximo paso exacto
+1. [ ] Validar en vivo (Playwright) contra staging — es de solo lectura, menor riesgo que Fase 4.
+2. [ ] Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU) — no implementada todavía.
+3. [ ] Envío automático por mail al cerrar el día (criterio #5, Hito 4) — explícitamente fuera de alcance de Hito 3.
+4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
+6. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente, ahora las 4 fases del roadmap dependen de esto.
+7. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+8. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+9. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+10. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
