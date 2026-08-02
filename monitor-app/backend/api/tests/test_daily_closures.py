@@ -67,6 +67,25 @@ def test_recompute_sql_uses_shared_fleet_resolution_view():
     assert "JOIN public.vehicle_driver_assignments" not in _RECOMPUTE_SQL
 
 
+# ── Bug real reportado por el usuario en vivo 2026-08-02: "veo 30 viajes en
+# curso pero solo 14 asignados en la cuadratura, ¿tiene sentido?" — no lo
+# tenía. day_trips solo miraba planning_date = fecha exacta (mismo bug
+# "ítem 16 de la minuta" ya corregido en Fase 0.1 para Centro de Flota,
+# nunca replicado acá). Confirmado con datos reales: de 29 viajes
+# is_active=true, 26 eran multi-día, y sus 14 conductores resueltos eran
+# 100% invisibles para day_trips — aparecían "No asignado" con un viaje
+# activo real en curso. ──────────
+
+def test_recompute_sql_counts_multi_day_active_trip():
+    from app.routers.daily_closures import _RECOMPUTE_SQL
+    assert "t.planning_date < $1 AND t.is_active" in _RECOMPUTE_SQL
+
+
+def test_detail_sql_mismatch_trip_counts_multi_day_active_trip():
+    from app.routers.daily_closures import _DETAIL_SQL
+    assert "t.planning_date < dds.business_date AND t.is_active" in _DETAIL_SQL
+
+
 # ── GET /cuadratura ──────────────────────────────────────────────────────
 
 def test_get_daily_closure_status_returns_counts_and_drivers():

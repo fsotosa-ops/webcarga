@@ -66,6 +66,14 @@ WITH active_roster AS (
 -- trips.py) — la duplicación fue justo la causa del bug que esta misma
 -- ronda arregló acá (Ronda 38). Consolidada en app.v_trip_fleet_resolution
 -- (migración 20260722030000) para que no vuelva a divergir.
+-- FIX 2026-08-02 (mismo bug "ítem 16 de la minuta" ya corregido en Fase 0.1
+-- para Centro de Flota — nunca se replicó acá): planning_date = $1 exacto
+-- dejaba invisibles para la cuadratura del día a los conductores con un
+-- viaje multi-día abierto desde un día anterior. Confirmado con datos
+-- reales (2026-08-02): de 29 viajes is_active=true, 26 eran multi-día, y
+-- los 14 conductores resueltos en esos viajes eran 100% invisibles acá —
+-- aparecían como "No asignado" en la cuadratura pese a tener un viaje
+-- activo en curso ese mismo día.
 day_trips AS (
     SELECT
         t.id AS trip_id,
@@ -73,7 +81,7 @@ day_trips AS (
         vfr.resolved_carrier_id AS trip_carrier_id
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-    WHERE t.planning_date = $1
+    WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
 ),
 computed AS (
     SELECT
@@ -138,12 +146,15 @@ LEFT JOIN app.status_taxonomies sugg
 -- mismo criterio que _RECOMPUTE_SQL usa para marcar el estado (carrier nulo
 -- o distinto al del roster), pero a nivel de una fila puntual en vez de un
 -- bool_or agregado. El más reciente si hubo más de uno.
+-- FIX 2026-08-02: mismo criterio multi-día que day_trips arriba — si no,
+-- un MISMATCH detectado por un viaje de ayer (todavía is_active) quedaba
+-- con trip_id NULL acá (el link "Ver viaje" no encontraba nada).
 LEFT JOIN LATERAL (
     SELECT t.id AS trip_id
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE vfr.resolved_driver_id = dds.driver_id
-      AND t.planning_date = dds.business_date
+      AND (t.planning_date = dds.business_date OR (t.planning_date < dds.business_date AND t.is_active))
       AND (vfr.resolved_carrier_id IS NULL OR vfr.resolved_carrier_id IS DISTINCT FROM c.id)
     ORDER BY t.status_reported_at DESC NULLS LAST
     LIMIT 1
