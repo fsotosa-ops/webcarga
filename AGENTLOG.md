@@ -673,6 +673,24 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 #### Próximo paso exacto
 1. [ ] **(negocio, real, confirmado con datos en vivo)** Definir si "Equipos Completos" del Cierre del Día debe incluir RAMPLAS (o el conjunto tracto+rampla de una empresa) en vez de solo TRACTOCAMIONES con `fleet_service_type` Equipo Completo — hoy ese bloque queda siempre vacío/0% con datos reales, confirmado en staging.
 2. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query".
+
+### 2026-08-03 (cont.) — Ronda 83: corte de datos históricos en app.trips (solo viajes desde 2026-07-01)
+
+**Origen**: pedido explícito del usuario — "redeploy de la tabla app.trips... para que considere solo los viajes desde el 2026-07-01". Antes de ejecutar nada destructivo se confirmó alcance con el usuario (2 preguntas): (a) borrar permanentemente las filas viejas (no solo ocultarlas en frontend ni solo cambiar el filtro hacia adelante) — incluyendo limpiar `trip_stops`/`trip_notes`/`trip_fleet_links` para no dejar huérfanos; (b) el campo de corte es `planning_date`.
+
+**Hallazgo antes de tocar nada**: `dbts/app_trips_update.yaml` (comando que corre el bloque dbt de `app.trips` en Mage) ya pasaba `--vars '{"start_date": "2026-07-01"}'` — pero ese var era **vestigial**, no estaba wireado a ningún WHERE del modelo (confirmado con grep completo del proyecto dbt sincronizado vía `sync_project_to_local`). Coincidencia exacta con la fecha pedida — se reusó ese var en vez de hardcodear una fecha nueva.
+
+**Implementado**:
+1. `dbt/tms/models/app/trips.sql` (Mage, sincronizado via `sync_local_to_remote`): nueva CTE `filtered` entre `mapped` y el SELECT final — `WHERE planning_date >= '{{ var("start_date", "1900-01-01") }}'::date` (default defensivo si se corre el modelo fuera del comando de siempre). Aplica al branch TMS y al branch de viajes manuales (`app.trips_manual`, 0 filas afectadas hoy pero mismo criterio a futuro). Ajustada también la referencia `mapped.source_system` → `filtered.source_system` en el watermark incremental (la CTE ya no se llama `mapped` en el FROM final).
+2. Esto resuelve el corte **hacia adelante** (próxima corrida del pipeline, incremental o full-refresh, nunca vuelve a traer viajes anteriores a esa fecha) — pero un MERGE incremental normal no borra filas ya existentes que dejan de matchear, y disparar `--full-refresh` de `batch_tms_monitor_trips` por API es poco confiable (ver `reference_mage_run_block_broken.md`). Para el corte **inmediato** de las 2248 filas ya existentes se aplicó una migración SQL directa (`20260803040000_trips_cutoff_20260701.sql`): DELETE en cascada manual — `app.trip_stops` (7087 filas), `app.trip_notes` (6 filas), `app.trip_fleet_links` (1892 filas), luego `app.trips` (2248 filas) — sin FK declarada entre estas tablas y `trips` (confirmado con `information_schema`), así que el orden hijos→padre fue necesario para no dejar huérfanos.
+3. **Verificado**: `app.trips` pasó de 3327 → **1079 filas**, rango `2026-07-01` a `2026-08-03` (antes: `2025-06-11` a `2026-08-03`). No requiere redeploy de frontend/backend — leen `app.trips` directo, el efecto es inmediato.
+
+**Decisión de arquitectura**: no se intentó forzar `--full-refresh` vía `run_block`/`execute_pipeline` en `batch_tms_monitor_trips` (memoria: 500 NoResultFound reproducido en 4 rondas distintas, "no reintentar") — el DELETE directo logra el mismo estado final sin depender de un pipeline con triggers no confiables, y no toca PK/RLS/índices/trigger (no hay DROP+CREATE de por medio).
+
+#### Próximo paso exacto
+1. [ ] Verificación en vivo (Diario real) de que el Historial/vista de flota ya no muestra viajes previos a 2026-07-01.
+2. [ ] (heredado) Definir si "Equipos Completos" del Cierre del Día debe incluir RAMPLAS.
+3. [ ] Investigar (no bloqueante) `load_coverage_types_01`.
 4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
 5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
 6. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).
