@@ -5,7 +5,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Check, Loader2, XCircle } from 'lucide
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { getStopStates } from '@/lib/utils/stopState'
-import { normalizeUTC } from '@/lib/utils/datetime'
+import { normalizeUTC, fmtDate } from '@/lib/utils/datetime'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
@@ -372,7 +372,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                   Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} />
                   <span className="sr-only">, Abrir detalle</span>
                 </th>
-                <th onClick={() => onSort('planning_date')} className="px-3 py-2.5 text-left w-[72px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('planning_date')} className="px-3 py-2.5 text-left w-[92px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
                 <th onClick={() => onSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
                 <th onClick={() => onSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
@@ -460,11 +460,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     {/* FECHA */}
                     <td className="px-3 py-2.5">
                       <p className="text-[11px] text-gray-700 font-medium whitespace-nowrap">
-                        {trip.planning_date
-                          ? new Date(trip.planning_date + 'T12:00:00').toLocaleDateString('es-CL', {
-                              day: '2-digit', month: '2-digit',
-                            })
-                          : '—'}
+                        {fmtDate(trip.planning_date)}
                       </p>
                       {trip.status_reported_at && (
                         <p className="text-[9px] text-gray-300 whitespace-nowrap mt-0.5">

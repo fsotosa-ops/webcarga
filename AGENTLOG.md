@@ -691,6 +691,16 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 1. [ ] Verificación en vivo (Diario real) de que el Historial/vista de flota ya no muestra viajes previos a 2026-07-01.
 2. [ ] (heredado) Definir si "Equipos Completos" del Cierre del Día debe incluir RAMPLAS.
 3. [ ] Investigar (no bloqueante) `load_coverage_types_01`.
+
+### 2026-08-03 (cont.) — Ronda 84: columna "Fecha" del Diario sin año — bug real de ambigüedad
+
+**Origen**: pedido explícito del usuario tras el corte de la Ronda 83 — la columna "Fecha" (planning_date) del Diario solo mostraba día/mes, sin año, lo que puede confundir el seguimiento de viajes (más aún ahora que hay datos de varios meses/años en juego).
+
+**Causa**: `TripTable.tsx` formateaba `trip.planning_date` con un `toLocaleDateString` inline (`day: '2-digit', month: '2-digit'`, sin `year`), duplicando lógica en vez de reusar `fmtDate()` (`lib/utils/datetime.ts`) — que YA existe, YA incluye año, y ya se usa en otro lugar (`GestionPanel.tsx`, "Fecha planificación" del panel de gestión). Es decir, el detalle del viaje siempre mostró el año correctamente; solo la tabla principal del Diario tenía el bug.
+
+**Fix**: `TripTable.tsx` ahora llama a `fmtDate(trip.planning_date)` en vez de duplicar el formateo — formato resultante `DD-MM-AAAA` (es-CL usa guiones, no barras). Columna "Fecha" ensanchada de `72px` a `92px` para que el año no corte. 1 test nuevo. Verificado: frontend 638/638 vitest, `tsc --noEmit` limpio.
+
+**Fuera de alcance, no tocado**: `fmtDT()` (usado en la tabla técnica de paradas del detalle del viaje — GPS Llegada/Salida, Llegada/Salida TR, "Plan." por parada) tampoco incluye año — pero es un formato distinto, compartido por 6+ columnas de esa tabla, y el pedido del usuario apuntaba específicamente a la columna "Fecha" del listado principal. No se amplía el alcance sin que lo pidan.
 4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
 5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
 6. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).

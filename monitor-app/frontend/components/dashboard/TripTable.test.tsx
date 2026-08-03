@@ -18,6 +18,11 @@ function makeTrip(id: string, overrides: Partial<Trip> = {}): Trip {
 }
 
 describe('TripTable', () => {
+  it('shows the planning date with the year (not just day/month), to avoid ambiguity across years', () => {
+    render(<TripTable trips={[makeTrip('t1', { planning_date: '2026-07-02' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey="planning_date" sortDir="desc" onSort={vi.fn()} />)
+    expect(screen.getByText('02-07-2026')).toBeInTheDocument()
+  })
+
   it('calls onSelect directly when a row is clicked (no intermediate expand step)', () => {
     const onSelect = vi.fn()
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
