@@ -668,10 +668,11 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 
 **Corrección el mismo día**: el usuario notó "en el modal del cierre de viaje no se ve el tipo de vehículo" — la tabla de `EquipmentCloseDayDialog` (BLOQUE 1, Tractoreo) solo mostraba Patente/Empresa/Conductor/CD/Motivo, sin la columna nueva. Agregada: `_DETAIL_SQL` (`equipment_closures.py`) ahora trae `fleet_service_type_label`/`bg_color`/`text_color` por tracto (join a `app.status_taxonomies` vía `a.fleet_service_type_id`); columna "Tipo Vehículo" nueva en la tabla del diálogo, mismo chip de color que en Empresas, con fallback "Sin clasificar". 2 tests nuevos backend + 1 frontend. Verificado: backend 445/445, frontend 637/637, `tsc` limpio.
 
+**Push + deploy + verificación en vivo (Playwright, mismo día)**: commit `b04441e` pusheado a `dev`, ambos workflows verdes. Confirmado en staging real: el diálogo "Cerrar el día" ya muestra la columna "Tipo Vehículo" con el chip de color, valor "Tractoreo" visible en cada tracto real sin asignar.
+
 #### Próximo paso exacto
-1. [ ] Push a `dev` + deploy + verificación en vivo con Playwright de la columna nueva en el diálogo de Cierre del Día.
-2. [ ] **(negocio, real, confirmado con datos en vivo)** Definir si "Equipos Completos" del Cierre del Día debe incluir RAMPLAS (o el conjunto tracto+rampla de una empresa) en vez de solo TRACTOCAMIONES con `fleet_service_type` Equipo Completo — hoy ese bloque queda siempre vacío/0% con datos reales, confirmado en staging.
-3. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query".
+1. [ ] **(negocio, real, confirmado con datos en vivo)** Definir si "Equipos Completos" del Cierre del Día debe incluir RAMPLAS (o el conjunto tracto+rampla de una empresa) en vez de solo TRACTOCAMIONES con `fleet_service_type` Equipo Completo — hoy ese bloque queda siempre vacío/0% con datos reales, confirmado en staging.
+2. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query".
 4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
 5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
 6. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).
