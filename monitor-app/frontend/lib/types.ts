@@ -951,6 +951,11 @@ export type EquipmentDayStatusRow = {
   tractor_plate:           string
   carrier_id:              string | null
   carrier_name:            string | null
+  /** "Tipo Vehículo" — hoja Vehiculos_Equipos del SharePoint, mismo campo
+   *  que ya decide requires_motivo (ver abajo). null = sin clasificar. */
+  fleet_service_type_label:      string | null
+  fleet_service_type_bg_color:   string | null
+  fleet_service_type_text_color: string | null
   status:                  EquipmentDayStatusValue
   /** true = Tractoreo o Sin clasificar (cierre activo, exige motivo);
    *  false = Equipo Completo puro (cierre pasivo, nunca bloquea). */

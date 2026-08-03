@@ -661,11 +661,16 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 
 **Verificado**: backend 443/443 pytest (1 test actualizado, 1 test obsoleto eliminado), frontend 636/636 vitest (66 archivos, 2 tests obsoletos eliminados), `tsc --noEmit` limpio. Barrido completo (`grep -r carrier_fleet_service_types`) confirma cero referencias vivas fuera de comentarios explicativos y migraciones históricas.
 
-**Pendiente**: push a `dev` + verificación en vivo con Playwright (pedido explícito del usuario, en curso).
+**Push + deploy + verificación en vivo (Playwright, mismo día)**: commit `1ce506b` pusheado a `origin/dev`, ambos workflows (`Deploy Frontend`/`Deploy Monitor API`) verdes (`gh run watch`). Validado en staging real (`webcarga-frontend-dev`, sesión ya autenticada de Felipe):
+- Ficha de empresa "Transportes Bastian Walter Campos Riveros" (RUT 77686639-3, el mismo carrier real usado para diseñar el mapeo) → tarjeta del equipo `BDZT60` muestra **"Tracto" + "Tractoreo"** lado a lado; panel de detalle muestra ambos campos etiquetados ("Tipo de equipo: Tracto" / "Tipo Vehículo: Tractoreo").
+- Diálogo "Cerrar el día" → **Tractoreo: 81 total / 24 asignados / 57 sin asignar, 29.6% utilización** (ya no "Sin Clasificar") — clasificación real funcionando end-to-end.
+- **Confirma empíricamente la nota de diseño sin resolver**: "Equipos Completos — 0% utilización, Sin equipos completos hoy". Esperado y consistente con la hipótesis: `active_roster` solo mira `asset_type='TRACTOCAMION'`, y en los datos reales NINGÚN tractocamión trae un label "Equipo Completo X" (esos labels están todos en RAMPLAS, fuera del roster de este cierre). Bloque 2 queda funcionalmente vacío hasta que se resuelva la pregunta de producto pendiente (¿debería mirar ramplas en vez de/además de tractocamiones?).
+
+**Corrección el mismo día**: el usuario notó "en el modal del cierre de viaje no se ve el tipo de vehículo" — la tabla de `EquipmentCloseDayDialog` (BLOQUE 1, Tractoreo) solo mostraba Patente/Empresa/Conductor/CD/Motivo, sin la columna nueva. Agregada: `_DETAIL_SQL` (`equipment_closures.py`) ahora trae `fleet_service_type_label`/`bg_color`/`text_color` por tracto (join a `app.status_taxonomies` vía `a.fleet_service_type_id`); columna "Tipo Vehículo" nueva en la tabla del diálogo, mismo chip de color que en Empresas, con fallback "Sin clasificar". 2 tests nuevos backend + 1 frontend. Verificado: backend 445/445, frontend 637/637, `tsc` limpio.
 
 #### Próximo paso exacto
-1. [ ] Push a `origin/dev` + verificar deploy (frontend + monitor-api) + validar en vivo con Playwright (chips de Tipo Vehículo en Empresas, Cierre del Día ya no debería mostrar 100% Sin Clasificar).
-2. [ ] (opcional, negocio) Revisar la nota de diseño de arriba: ¿el "Bloque 2 Equipos Completos" del cierre debería incluir RAMPLAS de forma independiente, en vez de solo TRACTOCAMIONES con clasificación Equipo Completo?
+1. [ ] Push a `dev` + deploy + verificación en vivo con Playwright de la columna nueva en el diálogo de Cierre del Día.
+2. [ ] **(negocio, real, confirmado con datos en vivo)** Definir si "Equipos Completos" del Cierre del Día debe incluir RAMPLAS (o el conjunto tracto+rampla de una empresa) en vez de solo TRACTOCAMIONES con `fleet_service_type` Equipo Completo — hoy ese bloque queda siempre vacío/0% con datos reales, confirmado en staging.
 3. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query".
 4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
 5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).

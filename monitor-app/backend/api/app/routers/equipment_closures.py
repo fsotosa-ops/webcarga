@@ -84,6 +84,11 @@ ON CONFLICT (asset_id, business_date) DO UPDATE SET
 _DETAIL_SQL = """
 SELECT
     eds.asset_id, a.license_plate AS tractor_plate, c.id AS carrier_id, c.business_name AS carrier_name,
+    -- "Tipo Vehículo" (Ronda 80/82) — columna nueva del Excel de vehículos,
+    -- se muestra junto al tracto en la tabla de cierre para que el
+    -- coordinador vea la misma clasificación que ya decide el bloque.
+    st.label AS fleet_service_type_label, st.bg_color AS fleet_service_type_bg_color,
+    st.text_color AS fleet_service_type_text_color,
     eds.status, eds.requires_motivo, eds.unassigned_reason_id, ur.label AS unassigned_reason_label,
     eds.resolved_by, eds.resolved_at,
     -- Conductor habitual del equipo (sigue mostrándose junto al tracto,
@@ -97,6 +102,7 @@ FROM app.equipment_day_status eds
 JOIN public.assets a ON a.id = eds.asset_id
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = aa.carrier_id
+LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
 LEFT JOIN app.status_taxonomies ur ON ur.id = eds.unassigned_reason_id
 LEFT JOIN LATERAL (
     SELECT vda.driver_id, d.full_name

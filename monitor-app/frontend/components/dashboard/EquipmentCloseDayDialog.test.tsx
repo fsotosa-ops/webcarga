@@ -14,6 +14,7 @@ const REASONS: UnassignedReasonMeta[] = [{ id: 'panne', label: 'Panne' }]
 function tractoreoRow(overrides: Partial<EquipmentDayStatusRow> = {}): EquipmentDayStatusRow {
   return {
     asset_id: 'a1', tractor_plate: 'ABCD12', carrier_id: 'c1', carrier_name: 'Transportes Sur',
+    fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null,
     status: 'ASSIGNED', requires_motivo: true, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, driver_id: null, driver_name: null, last_known_origin: null,
     ...overrides,
@@ -75,6 +76,25 @@ describe('EquipmentCloseDayDialog', () => {
     expect(screen.queryByText('ABCD12')).not.toBeInTheDocument()
     // ZZZZ99 (UNASSIGNED, ya con motivo) tampoco
     expect(screen.queryByText('ZZZZ99')).not.toBeInTheDocument()
+  })
+
+  it('muestra el Tipo Vehículo de cada tracto, o "Sin clasificar" si no tiene', async () => {
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
+      ...STATUS,
+      tractoreo: {
+        ...STATUS.tractoreo,
+        equipment: [
+          tractoreoRow({
+            asset_id: 'a2', tractor_plate: 'WXYZ99', status: 'UNASSIGNED',
+            fleet_service_type_label: 'Tractoreo', fleet_service_type_bg_color: '#eff6ff', fleet_service_type_text_color: '#1d4ed8',
+          }),
+        ],
+      },
+    })
+    renderDialog()
+    await screen.findByText('WXYZ99')
+    expect(screen.getByText('Tractoreo')).toBeInTheDocument()
   })
 
   it('clickear "Sin asignar" muestra los tractos que ya tienen motivo, con su select', async () => {

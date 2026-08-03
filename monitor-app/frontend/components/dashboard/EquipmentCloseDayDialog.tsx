@@ -211,6 +211,7 @@ export function EquipmentCloseDayDialog({ open, fecha, canAdmin, unassignedReaso
                           <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
                             <th className="text-left px-3 py-2 w-8" />
                             <th className="text-left px-3 py-2">Patente</th>
+                            <th className="text-left px-3 py-2">Tipo Vehículo</th>
                             <th className="text-left px-3 py-2">Empresa</th>
                             <th className="text-left px-3 py-2">Conductor</th>
                             <th className="text-left px-3 py-2">CD de origen</th>
@@ -219,7 +220,7 @@ export function EquipmentCloseDayDialog({ open, fecha, canAdmin, unassignedReaso
                         </thead>
                         <tbody className="divide-y divide-border/60">
                           {displayedTractoreo.length === 0 && (
-                            <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos en esta categoría</td></tr>
+                            <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos en esta categoría</td></tr>
                           )}
                           {displayedTractoreo.map((e: EquipmentDayStatusRow) => (
                             <tr key={e.asset_id}>
@@ -234,6 +235,21 @@ export function EquipmentCloseDayDialog({ open, fecha, canAdmin, unassignedReaso
                                 )}
                               </td>
                               <td className="px-3 py-2 font-semibold text-text-primary">{e.tractor_plate}</td>
+                              <td className="px-3 py-2">
+                                {e.fleet_service_type_label ? (
+                                  <span
+                                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                                    style={{
+                                      backgroundColor: e.fleet_service_type_bg_color ?? undefined,
+                                      color: e.fleet_service_type_text_color ?? undefined,
+                                    }}
+                                  >
+                                    {e.fleet_service_type_label}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-300 italic">Sin clasificar</span>
+                                )}
+                              </td>
                               <td className="px-3 py-2">{e.carrier_name ?? '—'}</td>
                               <td className="px-3 py-2">{e.driver_name ?? <span className="text-gray-400">—</span>}</td>
                               <td className="px-3 py-2 text-gray-400">{e.last_known_origin ?? '—'}</td>

@@ -31,6 +31,7 @@ def make_client(pool, user=None):
 def _equipment_row(**overrides):
     base = {
         "asset_id": "a1", "tractor_plate": "ABCD12", "carrier_id": "c1", "carrier_name": "Transportes Sur",
+        "fleet_service_type_label": None, "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
         "status": "UNASSIGNED", "requires_motivo": True, "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None,
         "driver_id": None, "driver_name": None, "last_known_origin": None,
@@ -93,6 +94,28 @@ def test_recompute_sql_requires_motivo_trata_sin_clasificar_como_tractoreo():
     assert "asset_type = 'TRACTOCAMION'" in _RECOMPUTE_SQL
     assert "t.planning_date < $1 AND t.is_active" in _RECOMPUTE_SQL
     assert "sodimac" in _RECOMPUTE_SQL
+
+
+def test_detail_sql_incluye_tipo_vehiculo():
+    from app.routers.equipment_closures import _DETAIL_SQL
+    assert "fleet_service_type_label" in _DETAIL_SQL
+    assert "a.fleet_service_type_id" in _DETAIL_SQL
+
+
+def test_get_equipment_closure_status_incluye_tipo_vehiculo_por_tracto():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _equipment_row(asset_id="a1", fleet_service_type_label="Tractoreo",
+                       fleet_service_type_bg_color="#eff6ff", fleet_service_type_text_color="#1d4ed8"),
+    ]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/equipment-closures?fecha=2026-08-02")
+
+    row = res.json()["tractoreo"]["equipment"][0]
+    assert row["fleet_service_type_label"] == "Tractoreo"
+    assert row["fleet_service_type_bg_color"] == "#eff6ff"
 
 
 def test_set_batch_reason_actualiza_varios_equipos_en_un_llamado():
