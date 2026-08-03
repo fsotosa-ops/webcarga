@@ -21,8 +21,8 @@ interface Props {
 /** "Cerrar el día" — Fase 4, HU-03. Reemplaza a CloseDayDialog (cierre por
  *  conductor) como el flujo que la UI usa: el cierre ahora es por
  *  TRACTO/EQUIPO (confirmado contra HU_CierreDelDia_Diario2.md 30/07 — ver
- *  AGENTLOG.md). BLOQUE 1 (Tractoreo, incluye "Sin clasificar" mientras
- *  carrier_fleet_service_types no tenga ingesta real): cierre activo,
+ *  AGENTLOG.md). BLOQUE 1 (Tractoreo, incluye "Sin clasificar" mientras el
+ *  tracto no tenga fleet_service_type_id clasificado): cierre activo,
  *  motivo obligatorio, selección masiva con checkbox. BLOQUE 2 (Equipos
  *  Completos): cierre pasivo, solo resumen por empresa, nunca bloquea. El
  *  conductor se sigue mostrando junto a cada tracto (ya no es la unidad que

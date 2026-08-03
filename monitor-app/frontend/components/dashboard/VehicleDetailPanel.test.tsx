@@ -26,6 +26,8 @@ function renderWithClient(ui: React.ReactElement) {
 const ASSET: Asset = {
   id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION',
   operational_status: 'ACTIVE', manufacture_year: null, is_manual_override: false, created_at: null,
+  fleet_service_type_id: null, fleet_service_type_label: null,
+  fleet_service_type_bg_color: null, fleet_service_type_text_color: null,
   total_requirements: 1, last_document_update: null,
 }
 
@@ -78,6 +80,16 @@ describe('VehicleDetailPanel', () => {
     renderPanel(ASSET)
     expect(screen.getByText('ABCD12')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Padrón')).toBeInTheDocument())
+  })
+
+  it('shows the fleet service type (Tipo Vehículo) chip when present', () => {
+    renderPanel({ ...ASSET, fleet_service_type_label: 'Tractoreo', fleet_service_type_bg_color: '#eff6ff', fleet_service_type_text_color: '#1d4ed8' })
+    expect(screen.getByText('Tractoreo')).toBeInTheDocument()
+  })
+
+  it('does not render a fleet service type chip when there is none', () => {
+    renderPanel(ASSET)
+    expect(screen.queryByText('Tractoreo')).not.toBeInTheDocument()
   })
 
   it('calls complianceApi.uploadFile for a requires_file item', async () => {

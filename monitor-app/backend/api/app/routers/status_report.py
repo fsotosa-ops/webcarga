@@ -61,21 +61,13 @@ def _zone_bucket(operation_type: str | None) -> str:
 
 
 _ROSTER_SQL = """
-SELECT a.id AS asset_id, a.license_plate AS tractor_plate, aa.carrier_id, c.business_name AS carrier_name
+SELECT a.id AS asset_id, a.license_plate AS tractor_plate, aa.carrier_id, c.business_name AS carrier_name,
+       st.label AS fleet_service_type_label
 FROM public.assets a
 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
 WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
-"""
-
-_CARRIER_TYPES_SQL = """
-SELECT cfst.carrier_id,
-       bool_or(st.label = 'Tractoreo') AS is_tractoreo,
-       bool_or(st.label LIKE 'Equipo Completo%') AS is_equipo_completo
-FROM public.carrier_fleet_service_types cfst
-JOIN app.status_taxonomies st ON st.id = cfst.taxonomy_id
-WHERE cfst.status = 'ACTIVE'
-GROUP BY cfst.carrier_id
 """
 
 # "Con carga hoy" — mismo criterio de Fase 0.1/2/3/4 (multi-día activo,
@@ -125,8 +117,6 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     await _recompute(pool, business_date)
 
     roster_rows = await pool.fetch(_ROSTER_SQL)
-    carrier_type_rows = await pool.fetch(_CARRIER_TYPES_SQL)
-    carrier_types = {r["carrier_id"]: r for r in carrier_type_rows}
 
     trip_rows = await pool.fetch(_TODAY_TRIPS_SQL, business_date)
     trips_by_asset: dict[str, list] = {}
@@ -160,9 +150,9 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     rows = []
     for r in roster_rows:
         asset_id = r["asset_id"]
-        ct = carrier_types.get(r["carrier_id"])
-        is_tractoreo = bool(ct and ct["is_tractoreo"])
-        is_equipo_completo = bool(ct and ct["is_equipo_completo"])
+        fleet_label = r["fleet_service_type_label"]
+        is_tractoreo = fleet_label == "Tractoreo"
+        is_equipo_completo = bool(fleet_label) and fleet_label.startswith("Equipo Completo")
         categories = []
         if is_tractoreo:
             categories.append("TRACTOREO")

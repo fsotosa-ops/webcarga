@@ -573,6 +573,8 @@ async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends
     rows = await pool.fetch(
         f"""
         SELECT r.asset_id AS id, r.license_plate, r.asset_type, r.operational_status,
+               r.fleet_service_type_id, r.fleet_service_type_label,
+               r.fleet_service_type_bg_color, r.fleet_service_type_text_color,
                r.total_requirements, r.last_document_update,
                COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
                CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health
@@ -740,27 +742,6 @@ async def list_carrier_shippers(carrier_id: str, pool=Depends(get_pool), _=Depen
         JOIN public.shippers s ON s.id = cs.shipper_id
         WHERE cs.carrier_id = $1
         ORDER BY s.name
-        """,
-        carrier_id,
-    )
-    return [dict(r) for r in rows]
-
-
-# ── Tipo de operación (Fase 1, HU Cierre del Día §2.2) — public.carrier_
-# fleet_service_types M:N, mismo contrato "solo lectura por ahora" que
-# carrier_shippers arriba: la HU define esta columna como parte del mismo
-# Excel de empresas en SharePoint que ya alimenta carrier_shippers, así que
-# se puebla por el mismo canal externo, no por un POST/PATCH de esta API.
-
-@router.get("/{carrier_id}/fleet-service-types")
-async def list_carrier_fleet_service_types(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
-    rows = await pool.fetch(
-        """
-        SELECT st.id::text, st.label, cfst.status, cfst.start_date, cfst.end_date
-        FROM public.carrier_fleet_service_types cfst
-        JOIN app.status_taxonomies st ON st.id = cfst.taxonomy_id
-        WHERE cfst.carrier_id = $1
-        ORDER BY st.sort_order
         """,
         carrier_id,
     )

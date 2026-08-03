@@ -5,7 +5,10 @@ import type { CarrierAssetRosterItem } from '@/lib/types'
 
 const VEHICLE: CarrierAssetRosterItem = {
   id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION',
-  operational_status: 'ACTIVE', total_requirements: 6, last_document_update: '2026-06-01',
+  operational_status: 'ACTIVE',
+  fleet_service_type_id: null, fleet_service_type_label: null,
+  fleet_service_type_bg_color: null, fleet_service_type_text_color: null,
+  total_requirements: 6, last_document_update: '2026-06-01',
   pending_mandatory: 0, compliance_health: 'OK',
 }
 
@@ -33,5 +36,15 @@ describe('VehicleRosterCard', () => {
     render(<VehicleRosterCard vehicle={{ ...VEHICLE, compliance_health: 'PENDING', pending_mandatory: 3 }} onOpen={vi.fn()} />)
     expect(screen.getByText('3 pendientes')).toBeInTheDocument()
     expect(screen.queryByText('Al día')).not.toBeInTheDocument()
+  })
+
+  it('shows the fleet service type (Tipo Vehículo) chip when present', () => {
+    render(<VehicleRosterCard vehicle={{ ...VEHICLE, fleet_service_type_label: 'Tractoreo', fleet_service_type_bg_color: '#eff6ff', fleet_service_type_text_color: '#1d4ed8' }} onOpen={vi.fn()} />)
+    expect(screen.getByText('Tractoreo')).toBeInTheDocument()
+  })
+
+  it('does not render a fleet service type chip when there is none', () => {
+    render(<VehicleRosterCard vehicle={VEHICLE} onOpen={vi.fn()} />)
+    expect(screen.queryByText('Tractoreo')).not.toBeInTheDocument()
   })
 })

@@ -692,14 +692,18 @@ export type CarrierDriverRosterItem = {
 }
 
 export type CarrierAssetRosterItem = {
-  id:                    string
-  license_plate:         string
-  asset_type:            string
-  operational_status:    OperationalStatus
-  total_requirements:    number | null
-  last_document_update:  string | null
-  pending_mandatory:     number
-  compliance_health:     ComplianceHealth
+  id:                          string
+  license_plate:               string
+  asset_type:                  string
+  operational_status:          OperationalStatus
+  fleet_service_type_id:       string | null
+  fleet_service_type_label:    string | null
+  fleet_service_type_bg_color: string | null
+  fleet_service_type_text_color: string | null
+  total_requirements:          number | null
+  last_document_update:        string | null
+  pending_mandatory:           number
+  compliance_health:           ComplianceHealth
 }
 
 /** GET /carriers/{id}/shippers — generadores de carga (public.shippers) con
@@ -727,15 +731,22 @@ export type Driver = {
 }
 
 export type Asset = {
-  id:                    string
-  license_plate:         string
-  asset_type:            string
-  operational_status:    OperationalStatus
-  manufacture_year:      number | null
-  is_manual_override:    boolean
-  created_at:            string | null
-  total_requirements:    number | null
-  last_document_update:  string | null
+  id:                          string
+  license_plate:               string
+  asset_type:                  string
+  operational_status:          OperationalStatus
+  manufacture_year:            number | null
+  is_manual_override:          boolean
+  created_at:                  string | null
+  /** "Tipo Vehículo" — hoja Vehiculos_Equipos del SharePoint (columna nueva,
+   *  distinta de asset_type/"Tipo de Equipo"), mismo catálogo FLEET_SERVICE_TYPE
+   *  que HU §2.2 usa para clasificar el Cierre del Día. */
+  fleet_service_type_id:        string | null
+  fleet_service_type_label:     string | null
+  fleet_service_type_bg_color:  string | null
+  fleet_service_type_text_color: string | null
+  total_requirements:          number | null
+  last_document_update:        string | null
 }
 
 /** GET /assets/{id}/driver-assignment — conductor habitual asignado a este

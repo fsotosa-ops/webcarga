@@ -259,6 +259,22 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
                   className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
                 />
               </div>
+              <div className="space-y-1 col-span-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Tipo Vehículo</label>
+                {asset.fleet_service_type_label ? (
+                  <span
+                    className="inline-block text-xs font-semibold px-2 py-1 rounded-full"
+                    style={{
+                      backgroundColor: asset.fleet_service_type_bg_color ?? undefined,
+                      color: asset.fleet_service_type_text_color ?? undefined,
+                    }}
+                  >
+                    {asset.fleet_service_type_label}
+                  </span>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">Sin clasificar</p>
+                )}
+              </div>
             </div>
             {canEdit && (
               <button

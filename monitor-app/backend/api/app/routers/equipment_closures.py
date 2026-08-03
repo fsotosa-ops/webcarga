@@ -10,9 +10,15 @@ desde la UI.
 BLOQUE 1 (Tractoreo, activo): tractos SIN CARGA que exigen motivo antes de
 poder cerrar — incluye también "Sin clasificar" (decisión confirmada
 2026-08-02: más riguroso tratarlo como Tractoreo que dejarlo pasar en
-silencio mientras no haya ingesta real de carrier_fleet_service_types).
+silencio cuando el tracto no tiene `fleet_service_type_id` clasificado).
 BLOQUE 2 (Equipos Completos, pasivo): resumen por empresa, sin intervención
 requerida.
+
+Clasificación Tractoreo/Equipo Completo — corregida 2026-08-03 (Ronda 80):
+vive en `public.assets.fleet_service_type_id` (por TRACTO individual,
+poblado por Mage desde la columna "Tipo Vehiculo" del Excel de vehículos),
+no en `public.carrier_fleet_service_types` (a nivel empresa — esa tabla se
+eliminó, nunca tuvo una fuente de ingesta real).
 """
 from datetime import date as _date
 
@@ -39,20 +45,14 @@ def _parse_business_date(fecha: str) -> _date:
 # no resuelve tracto por la misma cadena, ver /available-assets).
 _RECOMPUTE_SQL = """
 WITH active_roster AS (
-    SELECT a.id AS asset_id, aa.carrier_id
+    SELECT a.id AS asset_id, aa.carrier_id,
+           st.label = 'Tractoreo' AS is_tractoreo,
+           st.label LIKE 'Equipo Completo%' AS is_equipo_completo
     FROM public.assets a
     JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
     JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+    LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
     WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
-),
-carrier_types AS (
-    SELECT cfst.carrier_id,
-           bool_or(st.label = 'Tractoreo') AS is_tractoreo,
-           bool_or(st.label LIKE 'Equipo Completo%') AS is_equipo_completo
-    FROM public.carrier_fleet_service_types cfst
-    JOIN app.status_taxonomies st ON st.id = cfst.taxonomy_id
-    WHERE cfst.status = 'ACTIVE'
-    GROUP BY cfst.carrier_id
 ),
 today_trips AS (
     SELECT DISTINCT vfr.resolved_tractor_asset_id AS asset_id
@@ -66,9 +66,8 @@ computed AS (
     SELECT
         ar.asset_id,
         CASE WHEN tt.asset_id IS NOT NULL THEN 'ASSIGNED' ELSE 'UNASSIGNED' END AS status,
-        NOT (COALESCE(ct.is_equipo_completo, false) AND NOT COALESCE(ct.is_tractoreo, false)) AS requires_motivo
+        NOT (COALESCE(ar.is_equipo_completo, false) AND NOT COALESCE(ar.is_tractoreo, false)) AS requires_motivo
     FROM active_roster ar
-    LEFT JOIN carrier_types ct ON ct.carrier_id = ar.carrier_id
     LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
 )
 INSERT INTO app.equipment_day_status (asset_id, business_date, status, requires_motivo, computed_at)

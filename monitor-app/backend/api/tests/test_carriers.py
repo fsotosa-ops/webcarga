@@ -577,21 +577,6 @@ def test_list_carrier_shippers():
     assert "FROM public.carrier_shippers" in sql
 
 
-def test_list_carrier_fleet_service_types():
-    pool = AsyncMock()
-    pool.fetch.return_value = [
-        {"id": "t1", "label": "Tractoreo", "status": "ACTIVE", "start_date": None, "end_date": None},
-    ]
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/c1/fleet-service-types")
-
-    assert res.status_code == 200
-    assert res.json()[0]["label"] == "Tractoreo"
-    sql = pool.fetch.call_args.args[0]
-    assert "FROM public.carrier_fleet_service_types" in sql
-
-
 def test_delete_carrier_404_when_missing():
     pool = AsyncMock()
     conn = AsyncMock()

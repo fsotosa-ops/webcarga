@@ -567,8 +567,108 @@ Frontend: `TripCard`/`TripTable`/`TripDetailView`/`kpis.ts` leen `trip.temp_stat
 3. [ ] Envío automático por mail al cerrar el día (criterio #5, Hito 4) — explícitamente fuera de alcance de Hito 3.
 4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
 5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
-6. [ ] (heredado) Definir cómo poblar `carrier_fleet_service_types` con datos reales — cada vez más urgente, ahora las 4 fases del roadmap dependen de esto.
+6. [x] Definir cómo poblar `carrier_fleet_service_types` con datos reales — ver Ronda 79 (plan + migración listos, bloque Mage pendiente de que Fabián agregue la columna).
 7. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
 8. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
 9. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
 10. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-03 — Ronda 79: ingesta de "Tipo de Operación" (carrier_fleet_service_types) — plan + migración aplicada, bloque Mage pendiente de la columna real
+
+**Origen**: usuario pidió revisar la DB y el pipeline `legacy_drivers_transporters` porque "la hoja de vehículos trae la columna tipo vehículo" y hay que respaldarla para alimentar Empresas/Diario y usarla en el cierre. Investigación (2 agentes Explore en paralelo + verificación directa contra SharePoint real vía MCP + lectura de `equipment_closures.py`/AGENTLOG) **descartó la hipótesis inicial**: `public.assets.asset_type` (tipo de vehículo individual, `Vehiculos_Equipos` → `tipo_de_equipo`) ya fluye end-to-end sin gaps desde hace tiempo (`load_assets_04.sql`). El campo real detrás del pedido, confirmado por el usuario en vivo, es **"Tipo de Operación" a nivel EMPRESA** (HU §2.2, multi-selector Tractoreo + 9 subtipos Equipo Completo) — la "columna D" que el usuario va a agregar a la hoja `Empresas` del mismo Excel SharePoint. Esto resulta ser exactamente el gap bloqueante repetido en el checklist desde la Ronda 73: `carrier_fleet_service_types` sigue vacía, con el 100% de las empresas cayendo en "Sin Clasificar" en HU-01/02/03/04 (todas ya implementadas y en producción).
+
+**Confirmado explícitamente con el usuario, fuera de alcance de esta ronda**: `asset_type` no se toca (ya funciona); mostrar tipo de vehículo en `TripDetailView`/`TripTable` del Diario "no aplica aún".
+
+**Hecho esta ronda**:
+1. Migración `20260803000000_carrier_fleet_service_types_manual_override.sql` — agrega `is_manual_override`/`overridden_by`/`overridden_at` a `public.carrier_fleet_service_types` (quedó fuera de la migración H1.6 original porque esa tabla se creó después, en la Ronda 78). **Aplicada y confirmada en producción** (`viclzoftiudkepqnhekv`, verificado vía `information_schema.columns`).
+2. Diseñado (no creado todavía en Mage) el bloque SQL nuevo `load_carrier_fleet_service_types_11.sql`, mismo patrón exacto que `load_carrier_shippers_05.sql`/`load_carriers_02.sql` ya en producción: `unnest(string_to_array(...))` sobre la columna nueva, join contra `public.carriers` vía `tax_id` (RUT+DV), join contra `app.status_taxonomies` (dominio `FLEET_SERVICE_TYPE`, ya sembrado con los 10 valores canónicos desde la Ronda 78) por texto normalizado, `ON CONFLICT (carrier_id, taxonomy_id) DO NOTHING`. Query completa lista en el plan de esta sesión (`/Users/usuario/.claude/plans/necesito-que-revises-la-iterative-sutherland.md`).
+
+**Por qué el bloque no se creó todavía**: la columna "Tipo de Operación" **no existe hoy** en `bronze.raw_centralizer_transporter` (confirmado con `information_schema.columns` en vivo — la hoja `Empresas` solo trae los campos de gobernanza/documentación, ningún campo de tipo de operación). Es responsabilidad de WebCarga (Fabián) agregarla al Excel — no es tarea de código. El nombre exacto que va a tomar la columna en `bronze` depende de cómo Fabián escriba el header (se normaliza a snake_case automáticamente, con o sin tilde según cómo lo tipee) y del formato del valor multi-selector (recomendado: una columna de texto con valores separados por coma, ej. `"Tractoreo, Equipo Completo Sider"` — a confirmar con Fabián antes de que cargue datos). Adivinar el nombre ahora habría significado escribir SQL contra una columna que no existe, sin forma de verificarlo.
+
+**Decisión de arquitectura**: ningún cambio en `equipment_closures.py`/`status_report.py`/`trips.py` — ya consultan `carrier_fleet_service_types` correctamente desde la Ronda 76-78; el único trabajo pendiente era de ingesta, no de lógica de negocio.
+
+**Corrección el mismo día (mismo hilo)**: el usuario aclaró "dentro de la app hay que desplegar lo que hay en la columna D" — la ingesta a la DB no alcanza, el dato tiene que verse en la app. Auditado: `GET /carriers/{id}/fleet-service-types` existía pero (a) no devolvía `bg_color`/`text_color` y (b) el frontend no lo consumía en ningún lado (cero referencias fuera de un comentario en `EquipmentCloseDayDialog.tsx`; ni la ficha de empresa ni ningún otro componente lo mostraban). **Implementado y verificado**:
+- Backend: `carriers.py` — el SELECT de `list_carrier_fleet_service_types` ahora trae `st.bg_color`/`st.text_color`. Test actualizado (`test_carriers.py::test_list_carrier_fleet_service_types`).
+- Frontend: `CarrierFleetServiceType` (tipo, `lib/types.ts`), `carriersApi.listFleetServiceTypes` (`lib/api/carriers.ts`), y chips de color en el header de la ficha de empresa (`carriers/[id]/page.tsx`), mismo lugar y mismo patrón visual que los chips de "Generador de Carga" ya existentes (`shippersQuery`) — reusa colores de `app.status_taxonomies` en vez de una paleta hardcodeada. 2 tests nuevos + 1 test de placeholder vacío.
+- Verificado: backend 444/444 pytest, frontend 634/634 vitest (66 archivos), `tsc --noEmit` limpio.
+
+#### Próximo paso exacto
+1. [ ] Confirmar con Fabián el formato del multi-selector (columna única separada por coma, recomendado) y que agregue "Tipo de Operación" a la hoja `Empresas` del Excel SharePoint.
+2. [ ] Una vez agregada: correr `centralizer_eett_sharepoint`→`raw_centralizer_eett` (bloques existentes, sin cambios) y confirmar en `bronze.raw_centralizer_transporter` el nombre exacto de la columna resultante — no asumir.
+3. [ ] Crear el bloque `load_carrier_fleet_service_types_11` en Mage con la query ya diseñada (ver plan de esta sesión), ajustando el nombre de columna verificado en el paso 2. Upstream: `raw_centralizer_eett` + `load_carriers_02` (mismo patrón que `load_carrier_shippers_05`).
+4. [ ] Sincronizar a Mage, correr el pipeline, confirmar que `carrier_fleet_service_types` deja de estar vacía y que la ficha de empresa (chips nuevos) + HU-01/03/04 muestran empresas clasificadas en Tractoreo/Equipos Completos en vez de 100% Sin Clasificar.
+5. [ ] Verificación en vivo (staging/producción) de los chips nuevos en la ficha de empresa — no se hizo click-through real esta ronda, solo tests.
+6. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+7. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
+8. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).
+9. [ ] (heredado) Envío automático por mail al cerrar el día (criterio #5, Hito 4) — explícitamente fuera de alcance de Hito 3.
+10. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+11. [ ] (heredado) Verificación en vivo contra staging de Rondas 67/68/69 — sigue a cargo del usuario.
+12. [ ] (heredado, no bloqueante) max-instances hardcodeado en `.github/workflows/deploy.yml` — ver Ronda 62.
+13. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-03 (cont.) — Ronda 80: CORRECCIÓN de la Ronda 79 — "Tipo Vehiculo" es un campo de ASSET, no de carrier; pipeline en producción estaba roto de verdad
+
+**El diagnóstico de la Ronda 79 estaba mal dirigido.** El usuario corrigió: "lo primero es replicar la columna D del sharepoint en la db de assets o en sus derivados" — no en `carriers`. Antes de seguir adivinando, se corrió el pipeline real (`mcp__mage-agent__execute_pipeline`, dos veces) en vez de razonar sobre lectura de código/Excel — y **apareció el error real de producción**:
+
+```
+psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_centralizer_vehicles" does not exist
+```
+
+**El Excel real (hoja `Vehiculos_Equipos`) YA tiene la columna nueva "Tipo Vehiculo"** (junto a "Tipo de Equipo", que ya existía) — el usuario tenía razón desde el primer mensaje de la sesión ("la hoja de vehículos trae la columna tipo vehiculo"). El pipeline `legacy_drivers_transporters` llevaba fallando en el bloque `raw_centralizer_eett` por este schema drift (Excel con columna nueva, `bronze` sin ella) — no era un campo "pendiente de agregar", ya estaba ahí rompiendo la ingesta cada corrida.
+
+**Valores reales de `tipo_vehiculo`** (confirmados con `execute_sql` tras arreglar el schema): coinciden EXACTO con los 10 valores canónicos de `FLEET_SERVICE_TYPE` (Tractoreo, Equipo Completo Furgón Seco, etc. — el mismo catálogo que la Ronda 78 sembró para HU §2.2) — pero a nivel de **vehículo individual**, no de empresa como decía la HU literalmente. Cada vehículo trae exactamente un valor (no es un multi-selector a este nivel).
+
+**Implementado y verificado con datos reales**:
+1. `ALTER TABLE bronze.raw_centralizer_vehicles ADD COLUMN tipo_vehiculo TEXT` — desbloquea el pipeline.
+2. Migración `20260803010000_asset_fleet_service_type.sql`: `public.assets.fleet_service_type_id UUID REFERENCES app.status_taxonomies(id)`.
+3. Bloque Mage `load_assets_04.sql` reescrito (con confirmación explícita del usuario, bloqueado primero por el clasificador de auto mode por tratarse de un pipeline de producción): ahora llena `fleet_service_type_id` uniendo `tipo_vehiculo` contra `app.status_taxonomies`, Y de paso corrige un bug real que ya tenía (`ON CONFLICT (license_plate) DO NOTHING` nunca actualizaba vehículos existentes) → pasa a `DO UPDATE ... WHERE NOT is_manual_override`.
+4. Bloque corrido en vivo (`run_block`): **116 de 118 vehículos reales quedaron clasificados** (80 Tractoreo, 20 Furgón Congelado/Refrigerado, 11 Furgón Seco, 5 Sider — 2 sin clasificar, uno de ellos protegido correctamente por `is_manual_override=true`).
+5. Migración `20260803020000_asset_fleet_service_type_views.sql`: `app.asset_compliance_status`/`app.carrier_asset_roster` (vistas materializadas) recreadas para exponer `fleet_service_type_id/label/bg_color/text_color`.
+6. Backend: `GET /assets/{id}` y `GET /carriers/{id}/assets` ahora devuelven estos 4 campos.
+7. Frontend: `Asset`/`CarrierAssetRosterItem` (types), chip de color en `VehicleDetailPanel.tsx` (panel de detalle) y `VehicleRosterCard.tsx` (roster de la ficha de empresa) — mismo patrón visual que los chips de Generador de Carga/Tipo de Operación de la Ronda 79.
+8. Verificado: backend 444/444 pytest, frontend 638/638 vitest (66 archivos), `tsc --noEmit` limpio.
+
+**Hallazgo colateral, no bloqueante**: el mismo run de pipeline reveló que `load_coverage_types_01` (cadena de seguros de vehículos, no relacionado) falla con `"can't execute an empty query"` — preexistente, fuera de alcance de esta ronda.
+
+**Decisión pendiente, no ejecutada todavía — requiere confirmación del usuario**: `equipment_closures.py`/`status_report.py`/`trips.py` (`fleet-daily-overview`) clasifican Tractoreo/Equipo Completo hoy vía `carrier_fleet_service_types` (a nivel EMPRESA, tabla que sigue vacía — la Ronda 79 construyó su ingesta pero nunca tuvo una fuente real de datos). Con `assets.fleet_service_type_id` ya poblado con datos reales, existe una fuente de verdad mucho más precisa (por vehículo, no por empresa agregada) que resolvería el "100% Sin Clasificar" inmediatamente. **No se tocó esta lógica todavía** porque cambia el comportamiento diario de una pantalla ya en producción que usa el equipo de operaciones — es una decisión de producto, no solo técnica. Ver checklist.
+
+**Memoria de proyecto actualizada** (`project_cierre_del_dia_roadmap.md`): corregido el mismo día para reflejar que el campo vive en `assets`, no en `carriers`.
+
+#### Próximo paso exacto
+1. [x] **Decisión del usuario, ejecutada el mismo día**: reconectar la clasificación Tractoreo/Equipo Completo a `assets.fleet_service_type_id` y eliminar `carrier_fleet_service_types` — ver Ronda 81.
+2. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query", pipeline de seguros de vehículos.
+3. [ ] Verificación en vivo (staging/producción) de los chips nuevos de "Tipo Vehículo" en Empresas y de la clasificación real del Cierre del Día — pendiente, ver Ronda 81.
+4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
+6. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).
+7. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+8. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-03 (cont.) — Ronda 81: eliminado `carrier_fleet_service_types`, Cierre del Día reconectado a `assets.fleet_service_type_id`
+
+**Origen**: pedido explícito del usuario tras la Ronda 80 — "necesito que la arquitectura sea mantenible, robusta, estructurada y ordenada" → confirmó eliminar la tabla muerta y reconectar los consumidores reales.
+
+**Eliminado**: `public.carrier_fleet_service_types` (migración `20260803030000_drop_carrier_fleet_service_types.sql`, DROP TABLE aplicado en producción) — 0 filas de datos reales, sin fuente de ingesta posible (el Excel de empresas nunca tuvo esa columna). Se elimina también el endpoint `GET /carriers/{id}/fleet-service-types` (`carriers.py`) y su consumo en frontend (`carriersApi.listFleetServiceTypes`, tipo `CarrierFleetServiceType`, chips en el header de `carriers/[id]/page.tsx`).
+
+**Reconectado a la fuente real (`public.assets.fleet_service_type_id`, por TRACTO individual)**:
+- `equipment_closures.py`: `_RECOMPUTE_SQL` — el CTE `active_roster` ahora calcula `is_tractoreo`/`is_equipo_completo` con un `LEFT JOIN app.status_taxonomies` directo sobre `a.fleet_service_type_id` (ya no hay CTE `carrier_types` ni join por `carrier_id`).
+- `status_report.py`: `_ROSTER_SQL` trae `fleet_service_type_label` directo del asset; se eliminó `_CARRIER_TYPES_SQL` y el diccionario `carrier_types` en Python.
+- `trips.py` (`/fleet-daily-overview`): mismo patrón que `equipment_closures.py` — `is_tractoreo`/`is_equipo_completo` calculados dentro de `active_roster`, sin CTE `carrier_types` aparte.
+- `pre_cierre.py`: la escalación Tipo B `SIN_TIPO_OPERACION` ya no chequea "¿la empresa tiene 0 filas en carrier_fleet_service_types?" — chequea `a.fleet_service_type_id IS NULL` sobre el tracto específico con viaje hoy (más preciso: apunta al vehículo exacto que falta clasificar, no a la empresa completa).
+
+**Nota de diseño encontrada en el camino, no resuelta — documentada para no perderla**: al mirar los datos reales, `tipo_de_equipo` (asset_type: TRACTOCAMION/RAMPLA) y `tipo_vehiculo` (fleet_service_type: Tractoreo/Equipo Completo X) correlacionan 1:1 hoy — todo TRACTOCAMION es "Tractoreo", toda RAMPLA trae un subtipo de "Equipo Completo". Esto sugiere que el modelo de negocio real (HU §1.1/1.2: Tractoreo = WebCarga pone la rampla; Equipo Completo = la empresa pone tracto Y rampla) podría no distinguirse hoy por el `asset_type` de un TRACTOCAMION sino por si ese tracto tiene o no una RAMPLA de la empresa asociada — el "Bloque 2" del cierre (Equipos Completos) sigue mirando solo TRACTOCAMIONES con clasificación Equipo Completo, nunca RAMPLAS de forma independiente. No se tocó esta pregunta de producto más profunda — fuera del alcance de "eliminar y reconectar" pedido, queda para una conversación de negocio aparte si hace falta revisarla.
+
+**Verificado**: backend 443/443 pytest (1 test actualizado, 1 test obsoleto eliminado), frontend 636/636 vitest (66 archivos, 2 tests obsoletos eliminados), `tsc --noEmit` limpio. Barrido completo (`grep -r carrier_fleet_service_types`) confirma cero referencias vivas fuera de comentarios explicativos y migraciones históricas.
+
+**Pendiente**: push a `dev` + verificación en vivo con Playwright (pedido explícito del usuario, en curso).
+
+#### Próximo paso exacto
+1. [ ] Push a `origin/dev` + verificar deploy (frontend + monitor-api) + validar en vivo con Playwright (chips de Tipo Vehículo en Empresas, Cierre del Día ya no debería mostrar 100% Sin Clasificar).
+2. [ ] (opcional, negocio) Revisar la nota de diseño de arriba: ¿el "Bloque 2 Equipos Completos" del cierre debería incluir RAMPLAS de forma independiente, en vez de solo TRACTOCAMIONES con clasificación Equipo Completo?
+3. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query".
+4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
+6. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).
+7. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+8. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.

@@ -89,7 +89,7 @@ def test_get_equipment_closure_status_pending_count_solo_cuenta_tractoreo_sin_mo
 
 def test_recompute_sql_requires_motivo_trata_sin_clasificar_como_tractoreo():
     from app.routers.equipment_closures import _RECOMPUTE_SQL
-    assert "NOT (COALESCE(ct.is_equipo_completo, false) AND NOT COALESCE(ct.is_tractoreo, false))" in _RECOMPUTE_SQL
+    assert "NOT (COALESCE(ar.is_equipo_completo, false) AND NOT COALESCE(ar.is_tractoreo, false))" in _RECOMPUTE_SQL
     assert "asset_type = 'TRACTOCAMION'" in _RECOMPUTE_SQL
     assert "t.planning_date < $1 AND t.is_active" in _RECOMPUTE_SQL
     assert "sodimac" in _RECOMPUTE_SQL

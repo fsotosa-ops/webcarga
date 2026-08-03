@@ -1274,20 +1274,17 @@ async def fleet_daily_overview(
     _=Depends(get_current_user),
 ):
     """HU-01 (Cierre del Día, "Vista de flota del día"): separa la flota
-    activa en TRACTOREO / EQUIPO_COMPLETO / SIN_CLASIFICAR (según el tipo de
-    operación de la empresa, public.carrier_fleet_service_types — Fase 1) y
-    cuenta CON CARGA / SIN CARGA hoy dentro de cada categoría, con %% de
-    utilización. Una empresa puede tener ambos tipos seleccionados (Tipo de
-    operación es multi-selector) — sus equipos cuentan en ambas categorías,
-    no se fuerza una sola.
+    activa en TRACTOREO / EQUIPO_COMPLETO / SIN_CLASIFICAR según
+    `public.assets.fleet_service_type_id` (Ronda 80 — por TRACTO individual,
+    poblado por Mage desde la columna "Tipo Vehiculo" del Excel de
+    vehículos; no es una clasificación a nivel empresa).
 
     "Equipo" = tractocamión activo (`asset_type='TRACTOCAMION'`) de una
     empresa ACTIVA, mismo criterio que `/available-assets`, excluyendo
-    ramplas (no son la unidad que un viaje resuelve/asigna). Empresas sin
-    ninguna fila en carrier_fleet_service_types todavía (la tabla es nueva,
-    Fase 1, sin ingesta real aún) caen en SIN_CLASIFICAR en vez de perderse
-    silenciosamente — HU-02 ya contempla esto como inconsistencia Tipo B
-    ("falta tipo de operación").
+    ramplas (no son la unidad que un viaje resuelve/asigna). Tractos sin
+    `fleet_service_type_id` todavía asignado caen en SIN_CLASIFICAR en vez
+    de perderse silenciosamente — HU-02 ya contempla esto como
+    inconsistencia Tipo B ("falta tipo de operación").
 
     "CON CARGA hoy" reusa el mismo criterio ya verificado en
     /available-drivers y /available-assets (ítem 16 de la minuta): viaje con
@@ -1316,20 +1313,14 @@ async def fleet_daily_overview(
         """
         WITH active_roster AS (
             SELECT a.id AS asset_id, a.license_plate AS tractor_plate,
-                   c.id AS carrier_id, c.business_name AS carrier_name
+                   c.id AS carrier_id, c.business_name AS carrier_name,
+                   st.label = 'Tractoreo' AS is_tractoreo,
+                   st.label LIKE 'Equipo Completo%' AS is_equipo_completo
             FROM public.assets a
             JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
             JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+            LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
             WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
-        ),
-        carrier_types AS (
-            SELECT cfst.carrier_id,
-                   bool_or(st.label = 'Tractoreo')              AS is_tractoreo,
-                   bool_or(st.label LIKE 'Equipo Completo%')     AS is_equipo_completo
-            FROM public.carrier_fleet_service_types cfst
-            JOIN app.status_taxonomies st ON st.id = cfst.taxonomy_id
-            WHERE cfst.status = 'ACTIVE'
-            GROUP BY cfst.carrier_id
         ),
         today_trips AS (
             SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
@@ -1349,11 +1340,10 @@ async def fleet_daily_overview(
         )
         SELECT
             ar.asset_id, ar.tractor_plate, ar.carrier_id, ar.carrier_name,
-            COALESCE(ct.is_tractoreo, false)      AS is_tractoreo,
-            COALESCE(ct.is_equipo_completo, false) AS is_equipo_completo,
+            COALESCE(ar.is_tractoreo, false)      AS is_tractoreo,
+            COALESCE(ar.is_equipo_completo, false) AS is_equipo_completo,
             tt.trip_id, tt.client_name, tt.origin_local
         FROM active_roster ar
-        LEFT JOIN carrier_types ct ON ct.carrier_id = ar.carrier_id
         LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
         """,
         day,
