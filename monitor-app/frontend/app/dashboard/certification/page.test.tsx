@@ -42,7 +42,15 @@ beforeEach(() => {
   vi.mocked(complianceApi.uploadFile).mockReset()
   vi.mocked(complianceApi.bulkUploadFile).mockReset()
   vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>)
-  vi.mocked(carriersApi.list).mockReset().mockResolvedValue({ data: [{ id: 'c2', business_name: 'Otra Spa', tax_id: '77.222.222-2' }], count: 1, page: 1, limit: 10 })
+  vi.mocked(carriersApi.list).mockReset().mockResolvedValue({
+    data: [{
+      id: 'c2', business_name: 'Otra Spa', tax_id: '77.222.222-2', country_code: 'CL',
+      operational_status: 'ACTIVE', total_requirements: 0, last_document_update: null,
+      pending_mandatory: 0, compliance_health: 'OK',
+    }],
+    count: 1, page: 1, limit: 10,
+    facets: { pending: 0, ok: 1, total: 1 },
+  })
   vi.mocked(carriersApi.create).mockReset()
 })
 
