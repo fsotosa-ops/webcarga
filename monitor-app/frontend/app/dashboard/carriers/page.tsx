@@ -4,9 +4,10 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus, Check, X } from 'lucide-react'
+import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus } from 'lucide-react'
 import type { CarrierListFacets, CarrierListItem, ComplianceHealth, OperationalStatus } from '@/lib/types'
-import { carriersApi } from '@/lib/api/carriers'
+import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
+import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { createClient } from '@/lib/supabase/client'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -74,12 +75,6 @@ function EmpresasTransportePageInner() {
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
   const [canEdit, setCanEdit]     = useState(false)
   const [addCarrierOpen, setAddCarrierOpen] = useState(searchParams.get('create') === '1')
-  const [carrierForm, setCarrierForm] = useState({
-    tax_id: '',
-    business_name: searchParams.get('business_name') ?? '',
-  })
-  const [creatingCarrier, setCreatingCarrier] = useState(false)
-  const [createErr, setCreateErr] = useState<string | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
 
   useEffect(() => {
@@ -93,30 +88,22 @@ function EmpresasTransportePageInner() {
   }, [])
 
   /** Alta manual de una empresa (distinta del bulk-load de Mage) — el
-   *  backend siembra los compliance_records MISSING automáticamente al
-   *  insertar. Redirige a la ficha recién creada: ahí ya existen los flujos
-   *  reales de alta de conductores/equipos/contactos/pólizas ("+ Conductor"/
-   *  "+ Equipo"/"+ Póliza"), no hace falta duplicarlos acá. */
-  async function handleAddCarrier() {
-    if (!carrierForm.tax_id || !carrierForm.business_name) return
-    setCreatingCarrier(true); setCreateErr(null)
-    try {
-      const created = await carriersApi.create(carrierForm)
-      // Ronda 43 (Hallazgo F): si venimos del flujo guiado de "Sin
-      // identificar", reenviar conductor/patente ya reportados por el TMS
-      // para pre-cargar "+ Conductor"/"+ Equipo" en la ficha recién creada.
-      const handoff = new URLSearchParams()
-      const driverName = searchParams.get('driver_name')
-      const tractorPlate = searchParams.get('tractor_plate')
-      if (driverName)   handoff.set('driver_name', driverName)
-      if (tractorPlate) handoff.set('tractor_plate', tractorPlate)
-      const qs = handoff.toString()
-      router.push(`/dashboard/carriers/${created.id}${qs ? `?${qs}` : ''}`)
-    } catch (e) {
-      setCreateErr(e instanceof Error ? e.message : 'Error al crear la empresa')
-    } finally {
-      setCreatingCarrier(false)
-    }
+   *  formulario en sí vive en NewCarrierPanel (reusado también desde
+   *  Certificación); acá solo se decide qué pasa después de crear: redirige
+   *  a la ficha recién creada, donde ya existen los flujos reales de alta
+   *  de conductores/equipos/contactos/pólizas ("+ Conductor"/"+ Equipo"/
+   *  "+ Póliza"), no hace falta duplicarlos acá. */
+  function handleCarrierCreated(created: CarrierCreateResult) {
+    // Ronda 43 (Hallazgo F): si venimos del flujo guiado de "Sin
+    // identificar", reenviar conductor/patente ya reportados por el TMS
+    // para pre-cargar "+ Conductor"/"+ Equipo" en la ficha recién creada.
+    const handoff = new URLSearchParams()
+    const driverName = searchParams.get('driver_name')
+    const tractorPlate = searchParams.get('tractor_plate')
+    if (driverName)   handoff.set('driver_name', driverName)
+    if (tractorPlate) handoff.set('tractor_plate', tractorPlate)
+    const qs = handoff.toString()
+    router.push(`/dashboard/carriers/${created.id}${qs ? `?${qs}` : ''}`)
   }
 
   const currentStatus = TABS.find(t => t.id === tab)!.status
@@ -183,37 +170,12 @@ function EmpresasTransportePageInner() {
         </div>
       </div>
 
-      {addCarrierOpen && (
-        <div className="bg-white border border-border rounded-2xl p-4 max-w-sm space-y-2">
-          <p className="text-xs font-bold text-text-primary mb-1">Nueva empresa</p>
-          <input
-            placeholder="Tax ID"
-            value={carrierForm.tax_id}
-            onChange={e => setCarrierForm(v => ({ ...v, tax_id: e.target.value }))}
-            className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
-          />
-          <input
-            placeholder="Razón social"
-            value={carrierForm.business_name}
-            onChange={e => setCarrierForm(v => ({ ...v, business_name: e.target.value }))}
-            className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
-          />
-          {createErr && <p className="text-xs text-red-500">{createErr}</p>}
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={handleAddCarrier}
-              disabled={creatingCarrier || !carrierForm.tax_id || !carrierForm.business_name}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
-            >
-              {creatingCarrier ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-              Crear y abrir ficha
-            </button>
-            <button onClick={() => { setAddCarrierOpen(false); setCreateErr(null) }} className="p-1.5 text-gray-400 hover:text-gray-600">
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      )}
+      <NewCarrierPanel
+        open={addCarrierOpen}
+        initialBusinessName={searchParams.get('business_name') ?? ''}
+        onClose={() => setAddCarrierOpen(false)}
+        onCreated={handleCarrierCreated}
+      />
 
       {/* ── Tabs Activas / Legacy — split principal, membresía mutuamente
          excluyente real, viene de operational_status ── */}
