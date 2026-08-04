@@ -1136,6 +1136,20 @@ export type VueltaRow = {
   vueltas:      number
 }
 
+/** Tarea 6 (plan 2.3) — fila plana por conductor Tractoreo no trabajando,
+ *  con el tipo de operación de su tracto habitual (puede diferir del
+ *  roster, que se arma a nivel empresa). El backend ya la devuelve desde
+ *  esa tarea, sin tipo en el frontend hasta la Tarea 14. */
+export type DriverDetailRow = {
+  driver_id:                 string
+  full_name:                 string
+  carrier_name:               string | null
+  cd_origen:                  string | null
+  unassigned_reason_label:    string | null
+  tractor_plate:               string | null
+  operation_type:              string | null
+}
+
 export type StatusReport = {
   business_date: string
   client_filter: string | null
@@ -1153,6 +1167,7 @@ export type StatusReport = {
   section4_tractoreo_no_trabajando: {
     por_cd:           MotivoCrossTab[]
     por_empresa_y_cd: MotivoCrossTab[]
+    driver_detail:    DriverDetailRow[]
   }
   section5_equipos_completos: EquipoCompletoResumen[]
   section6_resumen_general: {

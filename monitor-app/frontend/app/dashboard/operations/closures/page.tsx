@@ -2,14 +2,17 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
 import { ClipboardCheck, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
+import { shippersApi } from '@/lib/api/locations'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
 import { EquipoCompletoClosureSection } from '@/components/dashboard/sections/EquipoCompletoClosureSection'
 import { FleetOverviewSection } from '@/components/dashboard/sections/FleetOverviewSection'
 import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
+import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
 import { TractoreoDriverClosureSection } from '@/components/dashboard/sections/TractoreoDriverClosureSection'
 import type { TripsMeta } from '@/lib/types'
 
@@ -26,14 +29,6 @@ const SECTIONS = [
   { id: 'equipos-completos',  label: 'Cerrar Equipos Completos' },
   { id: 'reporte',            label: 'Confirmar cierre → Reporte' },
 ] as const
-
-function SectionPlaceholder({ nextTask }: { nextTask: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-border border-dashed px-4 py-8 text-center">
-      <p className="text-xs text-gray-400">Esta sección se construye en una tarea posterior del plan ({nextTask}).</p>
-    </div>
-  )
-}
 
 export default function ClosuresCenterPage() {
   return (
@@ -70,6 +65,12 @@ function ClosuresCenterPageInner() {
   useEffect(() => {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en la sección */ })
   }, [])
+
+  const shippersQuery = useQuery({
+    queryKey: ['shippers'],
+    queryFn: () => shippersApi.list(),
+    staleTime: 5 * 60_000,
+  })
 
   useEffect(() => {
     const supabase = createClient()
@@ -180,7 +181,7 @@ function ClosuresCenterPageInner() {
 
         <section id="reporte" className="space-y-3">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide">Confirmar cierre → Reporte</h2>
-          <SectionPlaceholder nextTask="Tarea 1.5" />
+          <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />
 
           {closeError && (
             <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{closeError}</p>
