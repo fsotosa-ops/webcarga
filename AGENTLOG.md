@@ -701,8 +701,37 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 **Fix**: `TripTable.tsx` ahora llama a `fmtDate(trip.planning_date)` en vez de duplicar el formateo — formato resultante `DD-MM-AAAA` (es-CL usa guiones, no barras). Columna "Fecha" ensanchada de `72px` a `92px` para que el año no corte. 1 test nuevo. Verificado: frontend 638/638 vitest, `tsc --noEmit` limpio.
 
 **Fuera de alcance, no tocado**: `fmtDT()` (usado en la tabla técnica de paradas del detalle del viaje — GPS Llegada/Salida, Llegada/Salida TR, "Plan." por parada) tampoco incluye año — pero es un formato distinto, compartido por 6+ columnas de esa tabla, y el pedido del usuario apuntaba específicamente a la columna "Fecha" del listado principal. No se amplía el alcance sin que lo pidan.
-4. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
-5. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
-6. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).
-7. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
-8. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+#### Próximo paso exacto
+1. [x] La nota de diseño pendiente ("¿Bloque 2 debería mirar RAMPLAS?") quedó **RESUELTA** — ver Ronda 85: no hacía falta mirar ramplas, faltaba la columna E del Excel.
+2. [ ] (heredado) Mostrar el resultado del pre-cierre (HU-02) dentro de `EquipmentCloseDayDialog`.
+3. [ ] (heredado) Atajo de viaje manual con conductor pre-cargado desde la pantalla de cierre (criterio #6 de HU-03).
+4. [ ] (heredado) Alerta de "A confirmar" con 3+ días consecutivos (§7.7 de la HU).
+5. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac (Fase 0.5).
+6. [ ] (heredado) Resto del backlog de Rondas 55-65 sigue documentado en `AGENTLOG_ARCHIVE.md`.
+
+### 2026-08-03 (cont.) — Ronda 85: corrige la Ronda 80/81 — la clasificación Tractoreo/Equipo Completo vive en una columna E nueva, no en la columna D ya mapeada
+
+**Origen**: el usuario avisó en vivo que el Excel de vehículos cambió de nuevo — los nombres de "Tipo Vehículo" (columna D) cambiaron y se agregó una **columna E nueva**, "Tipo de Operación WebCarga", que agrupa el tipo de operación de cada vehículo. Pidió ajustar el modelo, cruzando contra `HU_CierreDelDia_Diario2.md`.
+
+**Verificado corriendo el pipeline real** (no adivinando — mismo criterio que ya costó un error en la Ronda 80): `centralizer_eett_sharepoint` confirma que `Vehiculos_Equipos` ahora trae **`tipo_operacion_webcarga`**, con solo 2 valores reales: `"Tractoreo"` (44) y `"Equipo Completo"`/`"Equipo completo"` (75, variante de mayúscula). La columna D (`tipo_vehiculo`) sigue viva, con 4 filas ya en formato nuevo sin el prefijo "Equipo Completo" (`'Furgón Seco'` en vez de `'Equipo Completo Furgón Seco'`) — no era dato sucio, era WebCarga migrando al formato limpio.
+
+**Hallazgo crítico — la Ronda 80/81 había mapeado la columna equivocada para el Cierre del Día**: cruzando (`tipo_de_equipo`, `tipo_vehiculo`, `tipo_operacion_webcarga`) con datos reales, **36 de 80 tractocamiones activos y asignados son "Tractoreo" en la columna D pero "Equipo Completo" en la columna E**. Un tracto puede ser físicamente un tracto (rol "Tractoreo" en D) y aun así operar bajo un arreglo comercial "Equipo Completo" para WebCarga (columna E) — exactamente la pregunta de negocio que había quedado sin resolver en la Ronda 80 ("¿el Bloque 2 debería mirar ramplas?"). La respuesta real: no había que mirar ramplas, faltaba esta columna E.
+
+**Implementado**:
+1. `ALTER TABLE bronze.raw_centralizer_vehicles ADD COLUMN tipo_operacion_webcarga TEXT` — mismo patrón de schema drift que la Ronda 80.
+2. Migración `20260803050000_asset_webcarga_operation_type.sql`: dominio nuevo `WEBCARGA_OPERATION_TYPE` en `app.status_taxonomies` (solo 2 valores — a diferencia de `FLEET_SERVICE_TYPE`, que tiene 10) + `public.assets.webcarga_operation_type_id`.
+3. Migración `20260803060000_fleet_service_type_strip_equipo_completo_prefix.sql`: renombradas las 9 etiquetas de `FLEET_SERVICE_TYPE` que tenían el prefijo "Equipo Completo" pegado (ej. "Equipo Completo Furgón Seco" → "Furgón Seco") — ese prefijo ahora es conceptualmente parte de `WEBCARGA_OPERATION_TYPE`, no del subtipo del vehículo. "Tractoreo" no cambia. Pedido explícito del usuario, cruzado contra la HU antes de aplicar.
+4. `load_assets_04.sql` (Mage, confirmación explícita del usuario): llena `webcarga_operation_type_id` desde la columna E, y `fleet_service_type_id` desde la columna D normalizando el prefijo "Equipo Completo " si todavía viene pegado (`REGEXP_REPLACE` case-insensitive) — matchea filas viejas y nuevas del Excel por igual durante la transición.
+5. **`equipment_closures.py`/`status_report.py`/`trips.py`/`pre_cierre.py` reconectados**: Bloque 1/2 del Cierre del Día, las 6 secciones del Reporte de Estatus, `/fleet-daily-overview` y la escalación Tipo B "falta tipo de operación" ahora leen `webcarga_operation_type_id` (antes `fleet_service_type_id`, incorrecto desde la Ronda 80/81).
+6. Bloques corridos en vivo: `raw_centralizer_eett` (con `run_upstream_blocks=true` — sin ese flag reusa un output cacheado/vacío de `centralizer_eett_sharepoint` y VACÍA `tipo_vehiculo`/`tipo_operacion_webcarga` en bronze, encontrado en el momento y corregido) → `load_assets_04`. **Verificado con datos reales**: de 80 tractocamiones activos y asignados, 43 quedan Tractoreo (Bloque 1) y 36 Equipo Completo (Bloque 2) — ya no 100%/0%.
+
+**Verificado**: backend 445/445 pytest (sin tests nuevos — los mocks existentes ya cubrían la forma de la respuesta, no la fuente SQL exacta). Sin cambios de frontend en esta ronda — los chips de "Tipo Vehículo" en Empresas siguen mostrando `fleet_service_type_label`, ahora con el subtipo limpio sin el prefijo, sin tocar código de frontend.
+
+**Pendiente**: push a `dev` + deploy backend + verificación en vivo con Playwright.
+
+#### Próximo paso exacto
+1. [ ] Push a `origin/dev` + deploy backend + validar en vivo con Playwright: "Cerrar el día" debería mostrar Bloque 1 ~43 y Bloque 2 con datos reales (antes 0%).
+2. [ ] Confirmar visualmente en Empresas que los chips de "Tipo Vehículo" ahora muestran el subtipo limpio (ej. "Furgón Seco" en vez de "Equipo Completo Furgón Seco").
+3. [ ] (mejora futura, opcional) Mostrar también `webcarga_operation_type` en algún lugar del frontend — hoy solo vive en backend/DB, usado para clasificar pero no visible como campo propio en ninguna ficha.
+4. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query".

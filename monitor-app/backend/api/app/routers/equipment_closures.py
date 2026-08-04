@@ -10,15 +10,22 @@ desde la UI.
 BLOQUE 1 (Tractoreo, activo): tractos SIN CARGA que exigen motivo antes de
 poder cerrar — incluye también "Sin clasificar" (decisión confirmada
 2026-08-02: más riguroso tratarlo como Tractoreo que dejarlo pasar en
-silencio cuando el tracto no tiene `fleet_service_type_id` clasificado).
+silencio cuando el tracto no tiene `webcarga_operation_type_id` clasificado).
 BLOQUE 2 (Equipos Completos, pasivo): resumen por empresa, sin intervención
 requerida.
 
-Clasificación Tractoreo/Equipo Completo — corregida 2026-08-03 (Ronda 80):
-vive en `public.assets.fleet_service_type_id` (por TRACTO individual,
-poblado por Mage desde la columna "Tipo Vehiculo" del Excel de vehículos),
-no en `public.carrier_fleet_service_types` (a nivel empresa — esa tabla se
-eliminó, nunca tuvo una fuente de ingesta real).
+Clasificación Tractoreo/Equipo Completo — corregida 2026-08-03 (Ronda 85,
+sobre la Ronda 80 que había mapeado la columna equivocada): vive en
+`public.assets.webcarga_operation_type_id` (columna E del Excel de
+vehículos, "Tipo de Operación WebCarga", dominio `WEBCARGA_OPERATION_TYPE`
+con solo 2 valores: Tractoreo/Equipo Completo). NO es lo mismo que
+`fleet_service_type_id` (columna D, "Tipo Vehículo", dominio
+`FLEET_SERVICE_TYPE`, describe el SUBTIPO físico del vehículo — Furgón
+Seco/Sider/etc., sin el prefijo "Equipo Completo" desde la Ronda 85). Son
+conceptos hermanos: confirmado con datos reales que 36 TRACTOCAMIONES
+(rol físico "Tractoreo" en columna D) operan bajo un arreglo "Equipo
+Completo" de WebCarga (columna E) — un tracto puede ser físicamente un
+tracto y aun así contar como parte de un equipo completo para el negocio.
 """
 from datetime import date as _date
 
@@ -46,12 +53,12 @@ def _parse_business_date(fecha: str) -> _date:
 _RECOMPUTE_SQL = """
 WITH active_roster AS (
     SELECT a.id AS asset_id, aa.carrier_id,
-           st.label = 'Tractoreo' AS is_tractoreo,
-           st.label LIKE 'Equipo Completo%' AS is_equipo_completo
+           wot.label = 'Tractoreo' AS is_tractoreo,
+           wot.label = 'Equipo Completo' AS is_equipo_completo
     FROM public.assets a
     JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
     JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-    LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
+    LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
     WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
 ),
 today_trips AS (

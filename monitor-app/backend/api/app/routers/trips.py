@@ -1275,15 +1275,20 @@ async def fleet_daily_overview(
 ):
     """HU-01 (Cierre del Día, "Vista de flota del día"): separa la flota
     activa en TRACTOREO / EQUIPO_COMPLETO / SIN_CLASIFICAR según
-    `public.assets.fleet_service_type_id` (Ronda 80 — por TRACTO individual,
-    poblado por Mage desde la columna "Tipo Vehiculo" del Excel de
-    vehículos; no es una clasificación a nivel empresa).
+    `public.assets.webcarga_operation_type_id` (Ronda 85, corrige la Ronda
+    80 que usaba `fleet_service_type_id` — columna D, "Tipo Vehículo",
+    describe el SUBTIPO físico del vehículo, no el tipo de operación).
+    `webcarga_operation_type_id` viene de la columna E, "Tipo de Operación
+    WebCarga", dominio `WEBCARGA_OPERATION_TYPE` (solo 2 valores:
+    Tractoreo/Equipo Completo) — confirmado con datos reales que un tracto
+    puede ser físicamente "Tractoreo" (columna D) y aun así operar bajo un
+    arreglo "Equipo Completo" de WebCarga (columna E).
 
     "Equipo" = tractocamión activo (`asset_type='TRACTOCAMION'`) de una
     empresa ACTIVA, mismo criterio que `/available-assets`, excluyendo
     ramplas (no son la unidad que un viaje resuelve/asigna). Tractos sin
-    `fleet_service_type_id` todavía asignado caen en SIN_CLASIFICAR en vez
-    de perderse silenciosamente — HU-02 ya contempla esto como
+    `webcarga_operation_type_id` todavía asignado caen en SIN_CLASIFICAR en
+    vez de perderse silenciosamente — HU-02 ya contempla esto como
     inconsistencia Tipo B ("falta tipo de operación").
 
     "CON CARGA hoy" reusa el mismo criterio ya verificado en
@@ -1314,12 +1319,12 @@ async def fleet_daily_overview(
         WITH active_roster AS (
             SELECT a.id AS asset_id, a.license_plate AS tractor_plate,
                    c.id AS carrier_id, c.business_name AS carrier_name,
-                   st.label = 'Tractoreo' AS is_tractoreo,
-                   st.label LIKE 'Equipo Completo%' AS is_equipo_completo
+                   wot.label = 'Tractoreo' AS is_tractoreo,
+                   wot.label = 'Equipo Completo' AS is_equipo_completo
             FROM public.assets a
             JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
             JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-            LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
+            LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
             WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
         ),
         today_trips AS (

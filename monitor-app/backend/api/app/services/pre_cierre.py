@@ -258,10 +258,12 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                     {"carrier_id": str(r["carrier_id"]), "carrier_name": r["business_name"]}
                 )
 
-            # ── Tipo B — tracto activo sin "Tipo Vehículo" clasificado ──────
-            # (Ronda 80: fleet_service_type_id vive en el TRACTO individual,
-            # no a nivel empresa — public.carrier_fleet_service_types se
-            # eliminó, nunca tuvo una fuente de ingesta real.)
+            # ── Tipo B — tracto activo sin "Tipo de Operación WebCarga" ─────
+            # (Ronda 85, corrige la Ronda 80: el campo que decide Bloque 1/2
+            # del cierre es webcarga_operation_type_id, no
+            # fleet_service_type_id — viven en el TRACTO individual, no a
+            # nivel empresa; public.carrier_fleet_service_types se eliminó,
+            # nunca tuvo una fuente de ingesta real.)
             sin_tipo_rows = await conn.fetch(
                 """
                 SELECT DISTINCT c.id AS carrier_id, c.business_name
@@ -270,7 +272,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
                 JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
                 WHERE t.planning_date = $1
-                  AND a.fleet_service_type_id IS NULL
+                  AND a.webcarga_operation_type_id IS NULL
                 """,
                 business_date,
             )

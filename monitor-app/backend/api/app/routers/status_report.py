@@ -62,11 +62,13 @@ def _zone_bucket(operation_type: str | None) -> str:
 
 _ROSTER_SQL = """
 SELECT a.id AS asset_id, a.license_plate AS tractor_plate, aa.carrier_id, c.business_name AS carrier_name,
-       st.label AS fleet_service_type_label
+       st.label AS fleet_service_type_label,
+       wot.label AS webcarga_operation_type_label
 FROM public.assets a
 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
 LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
+LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
 WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
 """
 
@@ -150,9 +152,9 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     rows = []
     for r in roster_rows:
         asset_id = r["asset_id"]
-        fleet_label = r["fleet_service_type_label"]
-        is_tractoreo = fleet_label == "Tractoreo"
-        is_equipo_completo = bool(fleet_label) and fleet_label.startswith("Equipo Completo")
+        operation_label = r["webcarga_operation_type_label"]
+        is_tractoreo = operation_label == "Tractoreo"
+        is_equipo_completo = operation_label == "Equipo Completo"
         categories = []
         if is_tractoreo:
             categories.append("TRACTOREO")
