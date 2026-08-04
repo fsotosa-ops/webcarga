@@ -3,12 +3,15 @@
 import { Suspense, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
-import { Download, Loader2, X } from 'lucide-react'
+import { Download, Loader2, Plus, X } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { PendingDocumentsTable } from '@/components/dashboard/PendingDocumentsTable'
 import { BulkDocumentUploadModal } from '@/components/dashboard/BulkDocumentUploadModal'
 import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
+import { CertificationCompanyPanel } from '@/components/dashboard/CertificationCompanyPanel'
+import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import type { CarrierCreateResult } from '@/lib/api/carriers'
 import type { PendingComplianceRow } from '@/lib/types'
 
 type Tab = 'resumen' | 'pendientes' | 'sin-clasificar'
@@ -63,6 +66,8 @@ function CertificationPageInner() {
   const [carrierQuery, setCarrierQuery]   = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkCarrier, setBulkCarrier] = useState<{ id: string; name: string; taxId: string } | null>(null)
+  const [panelCarrierId, setPanelCarrierId] = useState<string | null>(null)
+  const [newCarrierOpen, setNewCarrierOpen] = useState(false)
 
   const qDebounced = useDebouncedValue(q, 300)
 
@@ -121,6 +126,12 @@ function CertificationPageInner() {
   function handleBulkSaved() {
     setSelected(new Set())
     invalidate()
+  }
+
+  function handleCarrierCreated(created: CarrierCreateResult) {
+    setNewCarrierOpen(false)
+    invalidate()
+    setPanelCarrierId(created.id)
   }
 
   return (
@@ -203,15 +214,30 @@ function CertificationPageInner() {
                 </button>
               </span>
             )}
-            <button
-              onClick={() => exportCsv(rows)}
-              disabled={rows.length === 0}
-              className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent/80 disabled:opacity-40 transition-colors"
-            >
-              <Download size={13} />
-              Exportar
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setNewCarrierOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-accent border border-accent/30 rounded-lg px-2.5 py-1.5 hover:bg-accent/5 transition-colors"
+              >
+                <Plus size={13} /> Nueva empresa
+              </button>
+              <button
+                onClick={() => exportCsv(rows)}
+                disabled={rows.length === 0}
+                className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent/80 disabled:opacity-40 transition-colors"
+              >
+                <Download size={13} />
+                Exportar
+              </button>
+            </div>
           </div>
+
+          <NewCarrierPanel
+            open={newCarrierOpen}
+            onClose={() => setNewCarrierOpen(false)}
+            onCreated={handleCarrierCreated}
+          />
 
           {pendingQuery.isPending && (
             <div className="flex items-center gap-2 text-xs text-gray-400 py-6 justify-center">
@@ -231,6 +257,7 @@ function CertificationPageInner() {
               onToggleAll={toggleAll}
               onUploadSingle={handleUploadSingle}
               onOpenBulkUpload={handleOpenBulkUpload}
+              onOpenCompanyPanel={setPanelCarrierId}
             />
           )}
         </>
@@ -247,6 +274,8 @@ function CertificationPageInner() {
           onSaved={handleBulkSaved}
         />
       )}
+
+      <CertificationCompanyPanel carrierId={panelCarrierId} onClose={() => setPanelCarrierId(null)} />
     </div>
   )
 }

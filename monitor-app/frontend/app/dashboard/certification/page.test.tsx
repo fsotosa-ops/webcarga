@@ -143,4 +143,24 @@ describe('CertificationPage', () => {
     expect(await screen.findByLabelText('Quitar filtro de empresa')).toBeInTheDocument()
     expect(screen.queryByLabelText('Buscar empresa transportista')).not.toBeInTheDocument()
   })
+
+  it('clicking a company name in the table opens its document panel', async () => {
+    renderPage()
+    await screen.findByText('Transportes Sur Spa')
+    fireEvent.click(screen.getByRole('button', { name: 'Transportes Sur Spa' }))
+    expect(await screen.findByRole('dialog', { name: /Documentos pendientes de Transportes Sur Spa/ })).toBeInTheDocument()
+  })
+
+  it('"+ Nueva empresa" opens the create panel, and creating one opens its document panel', async () => {
+    const created = { id: 'c9', tax_id: '76217085-K', country_code: 'CL', business_name: 'Nueva Spa', operational_status: 'ACTIVE' as const, created_at: null }
+    vi.mocked(carriersApi.create).mockResolvedValue(created)
+    renderPage()
+    await screen.findByText('Transportes Sur Spa')
+    fireEvent.click(screen.getByRole('button', { name: /Nueva empresa/ }))
+    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76217085-K' } })
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
+    await waitFor(() => expect(carriersApi.create).toHaveBeenCalled())
+    expect(await screen.findByRole('dialog', { name: /Documentos pendientes de/ })).toBeInTheDocument()
+  })
 })
