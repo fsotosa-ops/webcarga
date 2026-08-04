@@ -788,7 +788,32 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 3. [ ] (heredado, no bloqueante) Investigar `load_coverage_types_01` — "can't execute an empty query".
 4. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac.
 5. [x] Renombrar módulo a "Certificación" + sacar la carga de Empresas — ver Ronda 88, CERRADO.
-6. [ ] **Diseñar la pantalla "por empresa" dentro de Certificación** (Ronda 89, siguiente): el usuario quiere que Certificación sea el módulo GLOBAL (resumen pendiente/atrasado/vencido, filtros por empresa/tipo de operación/conductor/vehículo, carga individual y masiva) y que Empresas/Seguros funcionen como submódulos de detalle (documentos cargados por entidad) alcanzables desde ahí — sin perder el alta de empresas/conductores/equipos, que sigue viviendo en Empresas. Propuesta preliminar (no implementada): patrón master-detail tipo cola/caso (Certificación = cola global + KPIs de vencidos/por vencer, Empresas/Seguros = ficha de registro), NO fusionar el modelo de datos de Seguros (pólizas/cuotas) con `compliance_records` — sí fusionar la pantalla visualmente (dos fetches, una vista). Falta: dropdown de filtro por empresa (hoy solo hay búsqueda libre `q`), link de vuelta desde una fila de la sábana hacia la ficha de la empresa/entidad (drill-down inverso al que ya existe).
+6. [x] Panel por empresa + alta desde Certificación — ver Ronda 89, CERRADO.
+
+### 2026-08-04 (cont.) — Ronda 89: panel de documentos por empresa + alta desde Certificación
+
+**Origen**: uso real del módulo recién construido. El usuario pidió una experiencia "inmersiva, intuitiva, funcional, didáctica e interactiva": elegir una empresa y subir/actualizar sus documentos (individual o masivo) sin salir de Certificación, más poder dar de alta una empresa nueva desde ahí. Se armó vía `superpowers:brainstorming` (varias iteraciones de la idea con el usuario — desde "fusionar Empresas/Seguros adentro de Certificación" hasta la versión final acotada) → spec (`docs/superpowers/specs/2026-08-04-certificacion-por-empresa-design.md`) → plan TDD de 7 tareas (`docs/superpowers/plans/2026-08-04-certificacion-por-empresa.md`) → ejecución inline.
+
+**Decisión clave de alcance** (confirmada con el usuario vía `AskUserQuestion`, 3 rondas de preguntas): el drill-down profundo de una empresa sigue siendo la ficha de Empresas que ya existe (no se construye una ficha nueva); "actualizar información" desde Certificación es solo estado de documentos, no perfil de empresa; el enfoque de interacción es un panel lateral sobre la sábana actual (no un layout maestro-detalle de 2 columnas, no solo links que navegan afuera). Se investigó el código antes de diseñar: `TransporterSlideOver.tsx` ya implementaba exactamente el patrón de interacción buscado — se modeló el panel nuevo sobre ese mismo patrón visual (dialog centrado, focus trap, Escape).
+
+**Implementado**:
+1. `NewCarrierPanel.tsx` (nuevo) — extraído del panel de alta que vivía inline en `carriers/page.tsx` (formulario tax_id/business_name + `carriersApi.create`). El caller decide qué pasa después de crear vía `onCreated`: `carriers/page.tsx` sigue navegando a la ficha nueva (comportamiento sin cambios, incluido el handoff de conductor/patente de la Ronda 43); Certificación abre el panel de documentos de la empresa recién creada sin salir del módulo.
+2. `CertificationCompanyPanel.tsx` (nuevo) — se abre al clickear el nombre de una empresa en la sábana. Trae *todos* sus pendientes (`complianceApi.listPending({carrierId})`), sube individual por fila, botón "Subir masivo" abre `BulkDocumentUploadModal` sin modificarlo, y "Ver ficha completa →" navega a `/dashboard/carriers/{id}`.
+3. `PendingDocumentsTable.tsx` — el nombre de empresa pasa de texto plano a botón clickeable (`onOpenCompanyPanel`), coexiste con el checkbox de selección múltiple y el flujo de "Subir masivo" ya existente (dos entry points al mismo modal, no un reemplazo).
+4. `app/dashboard/certification/page.tsx` — filtro nuevo "Empresa" con `CarrierSearchPicker` (typeahead, ya existía, reusado sin cambios) que filtra la tabla por `carrier_id`; botón "+ Nueva empresa" que monta `NewCarrierPanel`; `CertificationCompanyPanel` montado al final del árbol.
+
+**Sin cambios de backend** — todos los endpoints necesarios ya existían y estaban probados.
+
+**Verificado**: frontend 678/678 vitest (71 archivos, sin flakiness esta vez), `tsc --noEmit` limpio, `npm run build` exitoso.
+
+**Push + deploy + verificación en vivo (Playwright, mismo día)**: 7 commits pusheados a `dev` (uno por tarea del plan + 1 fix de tipos en un mock de test), `Deploy Frontend` verde. Confirmado en staging real: clic en "Agrocapilla Ltda" en la sábana abre el panel con sus 10 documentos pendientes reales, "Subir masivo"/"Ver ficha completa" (`/dashboard/carriers/38b176ff-...`) correctos; botón "+ Nueva empresa" abre el formulario (no se creó ninguna empresa de prueba real, para no ensuciar datos de producción); filtro "Empresa" (typeahead) filtra la sábana correctamente y muestra el chip "Quitar filtro de empresa".
+
+#### Próximo paso exacto
+1. [ ] (diferido, decisión del usuario) Ajustar el Cierre del Día para que la unidad sea el conductor, no el tracto — revisar `equipment_closures.py`/HU-03.
+2. [ ] (diferido, decisión del usuario) Reporte de inconsistencias tracto/conductor por empresa (cruce patentes activas vs. conductores activos).
+3. [ ] (heredado, no bloqueante) Investigar `load_coverage_types_01` — "can't execute an empty query".
+4. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac.
+5. [ ] (mejora futura, opcional, sin pedir todavía) Mostrar pólizas de Seguros dentro del panel de Certificación — explícitamente fuera de alcance de la Ronda 89, sin fusionar el modelo de datos.
 
 ### 2026-08-04 (cont.) — Ronda 88: Certificación queda como único punto de carga de documentos, Empresas 100% solo-lectura + link de salida
 
