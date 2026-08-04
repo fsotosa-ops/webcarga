@@ -9,6 +9,7 @@ import type {
   CarrierShipper,
   ComplianceHealth,
   Contact,
+  FleetDriverGapRow,
   PolicyStatus,
 } from '@/lib/types'
 import { apiFetch, apiFetchBlob } from './client'
@@ -98,6 +99,11 @@ export const carriersApi = {
 
   get: (id: string) =>
     apiFetch<Carrier>(`/api/v1/carriers/${id}`),
+
+  /** Tarea 9 (plan 3.2) — inconsistencias de dotación tracto/conductor por
+   *  empresa, cálculo en vivo, solo empresas con desbalance. */
+  fleetDriverGap: () =>
+    apiFetch<{ rows: FleetDriverGapRow[] }>('/api/v1/carriers/fleet-driver-gap'),
 
   /** HU-08 (Fase 0): zip con toda la documentación cargada de la empresa —
    *  pedido explícito de Fabián en la reunión del 20/07. */

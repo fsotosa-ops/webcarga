@@ -719,6 +719,17 @@ export type Carrier = {
   compliance_records:  ComplianceRecord[]
 }
 
+/** Tarea 8 (plan 3.1, minuta 2026-08-03) — GET /carriers/fleet-driver-gap,
+ *  inconsistencias de dotación tracto/conductor, solo empresas con
+ *  desbalance (gap != 0). */
+export type FleetDriverGapRow = {
+  carrier_id:     string
+  business_name:  string
+  n_tractos:      number
+  n_conductores:  number
+  gap:            number
+}
+
 export type CarrierDriverRosterItem = {
   id:                    string
   tax_id:                string
