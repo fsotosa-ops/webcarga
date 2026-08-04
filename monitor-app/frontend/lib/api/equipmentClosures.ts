@@ -17,6 +17,14 @@ export const equipmentClosuresApi = {
   get: (fecha: string) =>
     apiFetch<EquipmentClosureStatus>(`/api/v1/equipment-closures?fecha=${encodeURIComponent(fecha)}`),
 
+  /** Paridad con dailyClosuresApi.setReason (2026-08-04) — motivo de UN
+   *  equipo, usado en la vista Equipo Completo de "Flota del día". */
+  setReason: (assetId: string, fecha: string, unassignedReasonId: string) =>
+    apiFetch<EquipmentDayStatusRow>(
+      `/api/v1/equipment-closures/${assetId}?fecha=${encodeURIComponent(fecha)}`,
+      { method: 'PATCH', body: JSON.stringify({ unassigned_reason_id: unassignedReasonId }) },
+    ),
+
   /** BLOQUE 1 de HU-03: selección masiva — un solo motivo para varios
    *  tractos en un clic (criterio de aceptación #2). */
   setReasonBatch: (fecha: string, assetIds: string[], unassignedReasonId: string) =>

@@ -35,6 +35,7 @@ def _equipment_row(**overrides):
         "status": "UNASSIGNED", "requires_motivo": True, "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None,
         "driver_id": None, "driver_name": None, "last_known_origin": None,
+        "trip_id": None,
     }
     base.update(overrides)
     return base
@@ -71,6 +72,10 @@ def test_get_equipment_closure_status_splits_tractoreo_y_equipos_completos():
     assert body["equipos_completos"]["by_carrier"] == [
         {"carrier_id": "c1", "carrier_name": "Equipo Sur", "enrolled": 2, "assigned": 1, "unassigned": 1},
     ]
+    # Paridad con Tractoreo (pedido explícito del usuario 2026-08-04):
+    # "Flota del día" necesita una fila plana por equipo, no solo el
+    # agregado por empresa, para mostrar conductor/estado editable.
+    assert [e["asset_id"] for e in body["equipos_completos"]["equipment"]] == ["a3", "a4"]
 
 
 def test_get_equipment_closure_status_pending_count_solo_cuenta_tractoreo_sin_motivo():
@@ -100,6 +105,14 @@ def test_detail_sql_incluye_tipo_vehiculo():
     from app.routers.equipment_closures import _DETAIL_SQL
     assert "fleet_service_type_label" in _DETAIL_SQL
     assert "a.fleet_service_type_id" in _DETAIL_SQL
+
+
+def test_detail_sql_incluye_trip_id_de_hoy():
+    """Paridad con Tractoreo — "Ver viaje" en una fila ASSIGNED de Equipo
+    Completo necesita el trip_id del viaje de hoy, no solo el origen."""
+    from app.routers.equipment_closures import _DETAIL_SQL
+    assert "today_trip.trip_id" in _DETAIL_SQL
+    assert "resolved_tractor_asset_id = eds.asset_id" in _DETAIL_SQL
 
 
 def test_get_equipment_closure_status_incluye_tipo_vehiculo_por_tracto():
@@ -161,6 +174,43 @@ def test_set_batch_reason_422_cuando_ya_tiene_carga():
         "/api/v1/equipment-closures/reason?fecha=2026-08-02",
         json={"asset_ids": ["a1"], "unassigned_reason_id": "r1"},
     )
+
+    assert res.status_code == 422
+
+
+# ── PATCH /equipment-closures/{asset_id} (paridad Equipo Completo, 2026-08-04) ──
+
+def test_patch_equipment_day_status_sets_reason():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "UNASSIGNED"}
+    pool.fetch.return_value = [
+        _equipment_row(asset_id="a1", status="UNASSIGNED", unassigned_reason_id="pana"),
+    ]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-08-04", json={"unassigned_reason_id": "pana"})
+
+    assert res.status_code == 200
+    update_sql = pool.execute.call_args_list[0].args[0]
+    assert "unassigned_reason_id = $1" in update_sql
+
+
+def test_patch_equipment_day_status_404_when_not_found():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-08-04", json={"unassigned_reason_id": "pana"})
+
+    assert res.status_code == 404
+
+
+def test_patch_equipment_day_status_422_when_not_unassigned():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "ASSIGNED"}
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-08-04", json={"unassigned_reason_id": "pana"})
 
     assert res.status_code == 422
 

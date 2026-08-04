@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import ADMIN_ROLES, get_current_user, require_editor
 from ..db import get_pool
-from ..schemas.equipment_closures import CloseEquipmentDayBody, EquipmentBatchReasonBody
+from ..schemas.equipment_closures import CloseEquipmentDayBody, EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
 from ..services.audit import log_change
 from ..services.pre_cierre import run_pre_cierre
 
@@ -104,7 +104,12 @@ SELECT
     -- "CD de origen" — no existe un CD habitual por equipo/empresa en el
     -- modelo hoy (mismo gap documentado en Fase 2); mejor esfuerzo: el
     -- origen de su viaje más reciente, sea de hoy o no.
-    last_origin.local AS last_known_origin
+    last_origin.local AS last_known_origin,
+    -- Viaje de HOY (Tarea de paridad Equipo Completo, 2026-08-04): mismo
+    -- criterio que day_trips en daily_closures.py — necesario para que
+    -- "Ver viaje" funcione en la fila de un equipo ASSIGNED, igual que ya
+    -- funciona para un conductor Tractoreo.
+    today_trip.trip_id
 FROM app.equipment_day_status eds
 JOIN public.assets a ON a.id = eds.asset_id
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
@@ -127,6 +132,16 @@ LEFT JOIN LATERAL (
     ORDER BY t.status_reported_at DESC NULLS LAST
     LIMIT 1
 ) last_origin ON true
+LEFT JOIN LATERAL (
+    SELECT t.id AS trip_id
+    FROM app.trips t
+    JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+    WHERE vfr.resolved_tractor_asset_id = eds.asset_id
+      AND (t.planning_date = eds.business_date OR (t.planning_date < eds.business_date AND t.is_active))
+      AND t.source_system != 'sodimac'
+    ORDER BY t.status_reported_at DESC NULLS LAST
+    LIMIT 1
+) today_trip ON true
 WHERE eds.business_date = $1
 ORDER BY a.license_plate
 """
@@ -192,6 +207,11 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
         "equipos_completos": {
             "summary": _summary(equipos_completos),
             "by_carrier": sorted(by_carrier.values(), key=lambda b: b["carrier_name"] or ""),
+            # Fila plana por equipo (paridad con tractoreo.equipment, pedido
+            # explícito del usuario 2026-08-04): "Flota del día" la necesita
+            # para mostrar conductor/equipo habitual/estado editable en la
+            # vista Equipo Completo con la misma estructura que Tractoreo.
+            "equipment": equipos_completos,
         },
         "pre_cierre": pre_cierre,
     }
@@ -228,6 +248,41 @@ async def set_batch_reason(
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     updated = [dict(r) for r in rows if str(r["asset_id"]) in found_ids]
+    return updated
+
+
+@router.patch("/{asset_id}")
+async def patch_equipment_day_status(
+    asset_id: str, fecha: str, body: EquipmentDayStatusPatchBody,
+    pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """Captura el motivo de un equipo individual — paridad con
+    patch_driver_day_status (daily_closures.py), pedida explícitamente para
+    que Equipo Completo tenga la misma funcionalidad de edición fila-por-
+    fila que Tractoreo en "Flota del día". Declarada DESPUÉS de /reason
+    (ruta literal debe ganarle a esta con path param, mismo cuidado que ya
+    aplica en daily_closures.py)."""
+    business_date = _parse_business_date(fecha)
+
+    row = await pool.fetchrow(
+        "SELECT status FROM app.equipment_day_status WHERE asset_id = $1 AND business_date = $2",
+        asset_id, business_date,
+    )
+    if not row:
+        raise HTTPException(404, "Equipo no encontrado en la cuadratura de ese día")
+    if row["status"] != "UNASSIGNED":
+        raise HTTPException(422, "Solo se puede registrar motivo para un equipo sin carga")
+
+    await pool.execute(
+        """
+        UPDATE app.equipment_day_status
+        SET unassigned_reason_id = $1, resolved_by = $2::uuid, resolved_at = now()
+        WHERE asset_id = $3 AND business_date = $4
+        """,
+        body.unassigned_reason_id, user["sub"], asset_id, business_date,
+    )
+    rows = await pool.fetch(_DETAIL_SQL, business_date)
+    updated = next((dict(r) for r in rows if r["asset_id"] == asset_id or str(r["asset_id"]) == asset_id), None)
     return updated
 
 

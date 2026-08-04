@@ -5,6 +5,14 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 
+class EquipmentDayStatusPatchBody(BaseModel):
+    """Captura el motivo de no asignación para UN equipo (paridad con
+    DriverDayStatusPatchBody de daily_closures.py — pedido explícito del
+    usuario 2026-08-04: "Flota del día" necesita la misma funcionalidad de
+    edición fila-por-fila para Equipo Completo que ya tiene Tractoreo)."""
+    unassigned_reason_id: str
+
+
 class EquipmentBatchReasonBody(BaseModel):
     """BLOQUE 1 de HU-03: selección masiva con checkbox — un solo motivo
     para varios tractos en un clic."""

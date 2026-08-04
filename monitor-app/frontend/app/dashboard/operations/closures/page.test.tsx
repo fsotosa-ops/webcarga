@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ClosuresCenterPage from './page'
-import type { DailyClosureStatus, FleetDailyOverviewResponse } from '@/lib/types'
+import type { DailyClosureStatus, EquipmentClosureStatus } from '@/lib/types'
 
 const EMPTY_PRE_CIERRE = {
   auto_resolved: [],
@@ -35,16 +35,12 @@ vi.mock('@/lib/api/dailyClosures', () => ({
 }))
 
 vi.mock('@/lib/api/equipmentClosures', () => ({
-  equipmentClosuresApi: { close: vi.fn() },
+  equipmentClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn(), close: vi.fn() },
   isEquipmentClosePendingError: () => false,
 }))
 
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
-}))
-
-vi.mock('@/lib/api/trips', () => ({
-  tripsApi: { fleetDailyOverview: vi.fn() },
 }))
 
 vi.mock('@/lib/api/locations', () => ({
@@ -61,14 +57,10 @@ const EMPTY_STATUS: DailyClosureStatus = {
   drivers: [], pre_cierre: EMPTY_PRE_CIERRE,
 }
 
-const EMPTY_FLEET: FleetDailyOverviewResponse = {
-  fecha: '2026-08-04',
-  categories: [
-    { category: 'TRACTOREO', assigned: 0, unassigned: 0, utilization_pct: 0 },
-    { category: 'EQUIPO_COMPLETO', assigned: 0, unassigned: 0, utilization_pct: 0 },
-    { category: 'SIN_CLASIFICAR', assigned: 0, unassigned: 0, utilization_pct: 0 },
-  ],
-  equipment: [],
+const EMPTY_EQUIPMENT: EquipmentClosureStatus = {
+  business_date: '2026-08-04', closed: false, closure: null,
+  tractoreo: { summary: { total: 0, assigned: 0, unassigned: 0, utilization_pct: 0 }, equipment: [], pending_count: 0 },
+  equipos_completos: { summary: { total: 0, assigned: 0, unassigned: 0, utilization_pct: 0 }, by_carrier: [], equipment: [] },
 }
 
 function renderPage() {
@@ -83,11 +75,10 @@ function renderPage() {
 beforeEach(async () => {
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
-  const { tripsApi } = await import('@/lib/api/trips')
   vi.mocked(dailyClosuresApi.get).mockReset().mockResolvedValue(EMPTY_STATUS)
   vi.mocked(dailyClosuresApi.close).mockReset()
+  vi.mocked(equipmentClosuresApi.get).mockReset().mockResolvedValue(EMPTY_EQUIPMENT)
   vi.mocked(equipmentClosuresApi.close).mockReset()
-  vi.mocked(tripsApi.fleetDailyOverview).mockReset().mockResolvedValue(EMPTY_FLEET)
   push.mockReset(); replace.mockReset()
 })
 

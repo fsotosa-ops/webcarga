@@ -35,7 +35,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
 
   async function invalidate() {
     await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
-    await queryClient.invalidateQueries({ queryKey: ['equipment-closure', fecha] })
+    await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
   }
 
   async function handleActivate(carrierId: string) {

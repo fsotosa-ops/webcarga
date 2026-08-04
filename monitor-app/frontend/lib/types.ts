@@ -1051,6 +1051,9 @@ export type EquipmentDayStatusRow = {
   /** Mejor esfuerzo — origen de su viaje más reciente, no un "CD habitual"
    *  real (ese dato no existe en el modelo hoy). null si nunca tuvo viaje. */
   last_known_origin:       string | null
+  /** Viaje de HOY, si el equipo está ASSIGNED — paridad con Tractoreo
+   *  (2026-08-04), necesario para "Ver viaje" en Flota del día. */
+  trip_id:                 string | null
 }
 
 export type EquipmentCategorySummary = {
@@ -1088,6 +1091,9 @@ export type EquipmentClosureStatus = {
   equipos_completos: {
     summary:     EquipmentCategorySummary
     by_carrier:  EquipmentByCarrierSummary[]
+    /** Fila plana por equipo — paridad con tractoreo.equipment (2026-08-04),
+     *  la usa Flota del día para la vista Equipo Completo. */
+    equipment:   EquipmentDayStatusRow[]
   }
 }
 
