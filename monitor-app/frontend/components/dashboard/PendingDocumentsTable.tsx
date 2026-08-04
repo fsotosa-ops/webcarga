@@ -15,6 +15,9 @@ interface Props {
   /** Habilitado solo si toda la selección es de UNA sola empresa (regla de
    *  negocio del diseño validado en Figma). */
   onOpenBulkUpload:  () => void
+  /** Abre el panel de documentos de esa empresa (Ronda 89) — clic en el
+   *  nombre de la fila, coexiste con el checkbox de selección múltiple. */
+  onOpenCompanyPanel: (carrierId: string) => void
 }
 
 /** Sábana de documentos pendientes — cruza toda la flota en una sola tabla,
@@ -23,7 +26,7 @@ interface Props {
  *  extiende TripTable.tsx (esa está acoplada a polling/sort que acá no
  *  hace falta) — tabla nueva, simple, orden ya viene resuelto del backend
  *  (empresa → categoría → sujeto). */
-export function PendingDocumentsTable({ rows, selected, onToggle, onToggleAll, onUploadSingle, onOpenBulkUpload }: Props) {
+export function PendingDocumentsTable({ rows, selected, onToggle, onToggleAll, onUploadSingle, onOpenBulkUpload, onOpenCompanyPanel }: Props) {
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const selectedRows = rows.filter(r => selected.has(r.id))
@@ -99,7 +102,13 @@ export function PendingDocumentsTable({ rows, selected, onToggle, onToggleAll, o
                   />
                 </td>
                 <td className="px-3 py-2">
-                  <p className="font-semibold text-text-primary whitespace-nowrap">{r.carrier_name}</p>
+                  <button
+                    type="button"
+                    onClick={() => onOpenCompanyPanel(r.carrier_id)}
+                    className="font-semibold text-text-primary hover:text-accent hover:underline whitespace-nowrap transition-colors"
+                  >
+                    {r.carrier_name}
+                  </button>
                   {r.carrier_operation_types.length > 0 && (
                     <div className="flex gap-1 mt-0.5">
                       {r.carrier_operation_types.map(t => (
