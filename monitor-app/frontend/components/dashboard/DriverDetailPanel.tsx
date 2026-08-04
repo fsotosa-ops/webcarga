@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Loader2, X, ArrowRightLeft, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { Check, Loader2, X, ArrowRightLeft, Trash2, ExternalLink } from 'lucide-react'
 import type { Driver } from '@/lib/types'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
-import { complianceApi } from '@/lib/api/compliance'
 import { contactsApi } from '@/lib/api/contacts'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
@@ -18,6 +18,7 @@ const DRIVER_CONTACT_ROLE_OPTIONS = ['PERSONAL', 'EMERGENCIA', 'OTRO']
 
 interface Props {
   driver:          Driver | null
+  carrierId:       string
   canEdit:         boolean
   canAdmin:        boolean
   onClose:         () => void
@@ -28,8 +29,10 @@ interface Props {
 
 /** Modal de detalle de un conductor — se abre al hacer click en su tarjeta
  *  del roster. El checklist de documentación se carga acá mismo (no lo trae
- *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records. */
-export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
+ *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records.
+ *  Solo lectura desde Ronda 88 — subir/editar documentos se hace en
+ *  Certificación, ver TransporterDocumentsPanel. */
+export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -37,7 +40,6 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [statusErr, setStatusErr] = useState<string | null>(null)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
 
   const complianceQuery = useQuery({
@@ -55,7 +57,7 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
   useEffect(() => {
     if (!driver) return
     setDraft({ full_name: driver.full_name })
-    setErr(null); setStatusErr(null)
+    setErr(null)
   }, [driver])
 
   useEffect(() => {
@@ -86,9 +88,6 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     }
   }, [open, onClose])
 
-  function invalidateCompliance() {
-    if (driver) queryClient.invalidateQueries({ queryKey: ['driver-compliance-records', driver.id] })
-  }
   function invalidateContacts() {
     if (driver) queryClient.invalidateQueries({ queryKey: ['driver-contacts', driver.id] })
   }
@@ -117,41 +116,6 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
     } finally {
       setSaving(false)
     }
-  }
-
-  async function handleStatusChange(recordId: string, status: Parameters<typeof complianceApi.patch>[1]['status']) {
-    setStatusErr(null)
-    try {
-      await complianceApi.patch(recordId, { status })
-      invalidateCompliance()
-    } catch (e) {
-      setStatusErr(e instanceof Error ? e.message : 'Error al guardar')
-    }
-  }
-
-  async function handleExpirationChange(recordId: string, expirationDate: string) {
-    setStatusErr(null)
-    try {
-      await complianceApi.patch(recordId, { expiration_date: expirationDate })
-      invalidateCompliance()
-    } catch (e) {
-      setStatusErr(e instanceof Error ? e.message : 'Error al guardar')
-    }
-  }
-
-  async function handleUpload(recordId: string, file: File) {
-    setStatusErr(null)
-    try {
-      await complianceApi.uploadFile(recordId, file)
-      invalidateCompliance()
-    } catch (e) {
-      setStatusErr(e instanceof Error ? e.message : 'Error al subir el archivo')
-    }
-  }
-
-  async function handleDelete(recordId: string) {
-    await complianceApi.deleteFile(recordId)
-    invalidateCompliance()
   }
 
   async function handleRemove() {
@@ -280,21 +244,20 @@ export function DriverDetailPanel({ driver, canEdit, canAdmin, onClose, onPatch,
           </div>
 
           <div className="flex-1 min-w-0 overflow-y-auto p-6">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">Documentación</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentación</p>
+              <Link
+                href={`/dashboard/certification?carrier_id=${carrierId}`}
+                className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent/80 transition-colors"
+              >
+                Subir en Certificación <ExternalLink size={11} />
+              </Link>
+            </div>
             {complianceQuery.isPending ? (
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
             ) : (
-              <DocumentChecklist
-                items={items}
-                canEdit={canEdit}
-                onStatusChange={handleStatusChange}
-                onExpirationChange={handleExpirationChange}
-                onUpload={handleUpload}
-                onDelete={handleDelete}
-                hideCounter
-              />
+              <DocumentChecklist items={items} canEdit={false} hideCounter />
             )}
-            {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
 
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 mt-6">Contactos</p>
             {contactsQuery.isPending ? (

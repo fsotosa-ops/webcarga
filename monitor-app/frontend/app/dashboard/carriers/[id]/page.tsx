@@ -596,8 +596,7 @@ function EmpresaDetailPageInner() {
             {exportErr && <p className="text-xs text-red-500 mb-2">{exportErr}</p>}
             <TransporterDocumentsPanel
               records={carrier.compliance_records}
-              canEdit={canEdit}
-              onChanged={invalidateCarrier}
+              carrierId={id}
             />
           </div>
         </>
@@ -890,6 +889,7 @@ function EmpresaDetailPageInner() {
 
       <DriverDetailPanel
         driver={selectedDriver}
+        carrierId={id}
         canEdit={canEdit}
         canAdmin={canAdmin}
         onClose={() => setSelectedDriverId(null)}
@@ -900,6 +900,7 @@ function EmpresaDetailPageInner() {
 
       <VehicleDetailPanel
         asset={selectedAsset}
+        carrierId={id}
         canEdit={canEdit}
         canAdmin={canAdmin}
         onClose={() => setSelectedAssetId(null)}

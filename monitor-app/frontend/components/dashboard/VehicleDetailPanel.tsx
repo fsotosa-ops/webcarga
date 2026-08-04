@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2, User, UserX } from 'lucide-react'
+import Link from 'next/link'
+import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2, User, UserX, ExternalLink } from 'lucide-react'
 import type { Asset } from '@/lib/types'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
-import { complianceApi } from '@/lib/api/compliance'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
@@ -18,6 +18,7 @@ const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
 
 interface Props {
   asset:           Asset | null
+  carrierId:       string
   canEdit:         boolean
   canAdmin:        boolean
   onClose:         () => void
@@ -34,8 +35,9 @@ interface Props {
 
 /** Modal de detalle de un equipo — mismo lenguaje inmersivo que
  *  DriverDetailPanel. La patente es inmutable (no está en AssetPatchBody);
- *  lo único editable acá es el tipo de equipo + estado operativo. */
-export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
+ *  lo único editable acá es el tipo de equipo + estado operativo. Documentos
+ *  solo lectura desde Ronda 88 — subir/editar se hace en Certificación. */
+export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
   const open = !!asset
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -44,7 +46,6 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
   const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string }>({ asset_type: 'OTRO', manufacture_year: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [statusErr, setStatusErr] = useState<string | null>(null)
   const [driverPick, setDriverPick] = useState('')
   const [assigningDriver, setAssigningDriver] = useState(false)
   const [driverErr, setDriverErr] = useState<string | null>(null)
@@ -64,7 +65,7 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
   useEffect(() => {
     if (!asset) return
     setDraft({ asset_type: asset.asset_type as AssetType, manufacture_year: asset.manufacture_year ? String(asset.manufacture_year) : '' })
-    setErr(null); setStatusErr(null)
+    setErr(null)
     setDriverPick(''); setDriverErr(null)
   }, [asset])
 
@@ -96,10 +97,6 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
     }
   }, [open, onClose])
 
-  function invalidateCompliance() {
-    if (asset) queryClient.invalidateQueries({ queryKey: ['asset-compliance-records', asset.id] })
-  }
-
   async function handleSaveDatos() {
     if (!asset) return
     setSaving(true); setErr(null)
@@ -113,41 +110,6 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
     } finally {
       setSaving(false)
     }
-  }
-
-  async function handleStatusChange(recordId: string, status: Parameters<typeof complianceApi.patch>[1]['status']) {
-    setStatusErr(null)
-    try {
-      await complianceApi.patch(recordId, { status })
-      invalidateCompliance()
-    } catch (e) {
-      setStatusErr(e instanceof Error ? e.message : 'Error al guardar')
-    }
-  }
-
-  async function handleExpirationChange(recordId: string, expirationDate: string) {
-    setStatusErr(null)
-    try {
-      await complianceApi.patch(recordId, { expiration_date: expirationDate })
-      invalidateCompliance()
-    } catch (e) {
-      setStatusErr(e instanceof Error ? e.message : 'Error al guardar')
-    }
-  }
-
-  async function handleUpload(recordId: string, file: File) {
-    setStatusErr(null)
-    try {
-      await complianceApi.uploadFile(recordId, file)
-      invalidateCompliance()
-    } catch (e) {
-      setStatusErr(e instanceof Error ? e.message : 'Error al subir el archivo')
-    }
-  }
-
-  async function handleDelete(recordId: string) {
-    await complianceApi.deleteFile(recordId)
-    invalidateCompliance()
   }
 
   async function handleRemove() {
@@ -389,21 +351,20 @@ export function VehicleDetailPanel({ asset, canEdit, canAdmin, onClose, onPatch,
           </div>
 
           <div className="flex-1 min-w-0 overflow-y-auto p-6">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">Documentación</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentación</p>
+              <Link
+                href={`/dashboard/certification?carrier_id=${carrierId}`}
+                className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent/80 transition-colors"
+              >
+                Subir en Certificación <ExternalLink size={11} />
+              </Link>
+            </div>
             {complianceQuery.isPending ? (
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
             ) : (
-              <DocumentChecklist
-                items={items}
-                canEdit={canEdit}
-                onStatusChange={handleStatusChange}
-                onExpirationChange={handleExpirationChange}
-                onUpload={handleUpload}
-                onDelete={handleDelete}
-                hideCounter
-              />
+              <DocumentChecklist items={items} canEdit={false} hideCounter />
             )}
-            {statusErr && <p className="text-xs text-red-500 mt-2">{statusErr}</p>}
           </div>
         </div>
       </div>

@@ -3,7 +3,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { VehicleDetailPanel } from './VehicleDetailPanel'
 import { assetsApi } from '@/lib/api/assets'
-import { complianceApi } from '@/lib/api/compliance'
 import type { Asset, ComplianceRecord } from '@/lib/types'
 
 vi.mock('@/lib/api/assets', () => ({
@@ -13,9 +12,6 @@ vi.mock('@/lib/api/assets', () => ({
     assignDriver: vi.fn(),
     unassignDriver: vi.fn(),
   },
-}))
-vi.mock('@/lib/api/compliance', () => ({
-  complianceApi: { patch: vi.fn(), uploadFile: vi.fn(), deleteFile: vi.fn() },
 }))
 
 function renderWithClient(ui: React.ReactElement) {
@@ -52,6 +48,7 @@ function renderPanel(asset: Asset | null, opts: {
   return renderWithClient(
     <VehicleDetailPanel
       asset={asset}
+      carrierId="c1"
       canEdit={opts.canEdit ?? true}
       canAdmin={opts.canAdmin ?? true}
       onClose={vi.fn()}
@@ -92,12 +89,18 @@ describe('VehicleDetailPanel', () => {
     expect(screen.queryByText('Tractoreo')).not.toBeInTheDocument()
   })
 
-  it('calls complianceApi.uploadFile for a requires_file item', async () => {
+  it('does not offer to upload — documents are read-only here, editing lives in Certificación', async () => {
     renderPanel(ASSET)
-    await waitFor(() => expect(screen.getByLabelText('Subir Padrón')).toBeInTheDocument())
-    const file = new File(['x'], 'padron.pdf', { type: 'application/pdf' })
-    fireEvent.change(screen.getByLabelText('Subir Padrón'), { target: { files: [file] } })
-    await waitFor(() => expect(complianceApi.uploadFile).toHaveBeenCalledWith('cr1', file))
+    await waitFor(() => expect(screen.getByText('Padrón')).toBeInTheDocument())
+    expect(screen.queryByLabelText('Subir Padrón')).not.toBeInTheDocument()
+  })
+
+  it('links out to Certificación, scoped to this carrier, to upload/edit documents', async () => {
+    renderPanel(ASSET)
+    await waitFor(() => expect(screen.getByText('Padrón')).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: /Subir en Certificación/ })).toHaveAttribute(
+      'href', '/dashboard/certification?carrier_id=c1',
+    )
   })
 
   it('saves the edited asset_type when "Guardar" is clicked', async () => {

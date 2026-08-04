@@ -1,15 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Loader2 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Download, Loader2, X } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { PendingDocumentsTable } from '@/components/dashboard/PendingDocumentsTable'
 import { BulkDocumentUploadModal } from '@/components/dashboard/BulkDocumentUploadModal'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { PendingComplianceRow } from '@/lib/types'
 
-type Tab = 'certificacion' | 'pendientes' | 'sin-clasificar'
+type Tab = 'resumen' | 'pendientes' | 'sin-clasificar'
 
 const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
 
@@ -26,38 +27,55 @@ function exportCsv(rows: PendingComplianceRow[]) {
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url; a.download = 'documentos_pendientes.csv'; a.click()
+  a.href = url; a.download = 'certificacion_pendiente.csv'; a.click()
   URL.revokeObjectURL(url)
 }
 
-/** Módulo Documentos (sábana) — cruza documentos pendientes de toda la
- *  flota en una sola pantalla, en vez de navegar empresa por empresa →
- *  conductor por conductor → tracto por tracto. Adapta el diseño validado
- *  en Figma (node-id=16-9949) al Compliance Engine ya construido — ver
- *  plan del módulo. Los tabs "CERTIFICACION"/"DOCUMENTOS SIN CLASIFICAR"
- *  quedan deshabilitados a propósito (sin criterios de aceptación
- *  definidos / requieren modelo de datos nuevo, ver plan). */
-export default function DocumentsPage() {
+export default function CertificationPage() {
+  return (
+    <Suspense fallback={null}>
+      <CertificationPageInner />
+    </Suspense>
+  )
+}
+
+/** Módulo Certificación (sábana) — cruza documentos de compliance
+ *  pendientes de toda la flota en una sola pantalla, en vez de navegar
+ *  empresa por empresa → conductor por conductor → tracto por tracto.
+ *  Adapta el diseño validado en Figma (node-id=16-9949) al Compliance
+ *  Engine ya construido — ver plan del módulo. Los tabs "RESUMEN"/
+ *  "DOCUMENTOS SIN CLASIFICAR" quedan deshabilitados a propósito (sin
+ *  criterios de aceptación definidos / requieren modelo de datos nuevo,
+ *  ver plan). Único punto de carga de documentos de la app — Empresas
+ *  (TransporterDocumentsPanel/DocumentChecklist) quedó en modo lectura
+ *  y enlaza acá vía `?carrier_id=` para no duplicar el entry point. */
+function CertificationPageInner() {
+  const searchParams = useSearchParams()
+  const carrierIdParam = searchParams.get('carrier_id')
+
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<Tab>('pendientes')
   const [category, setCategory] = useState<'' | 'CARRIER' | 'DRIVER' | 'ASSET'>('')
   const [operationType, setOperationType] = useState<'' | 'Tractoreo' | 'Equipo Completo'>('')
   const [q, setQ] = useState('')
+  const [carrierFilter, setCarrierFilter] = useState<string | null>(carrierIdParam)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkCarrier, setBulkCarrier] = useState<{ id: string; name: string; taxId: string } | null>(null)
 
   const qDebounced = useDebouncedValue(q, 300)
 
   const pendingQuery = useQuery({
-    queryKey: ['compliance-pending', category, operationType, qDebounced],
+    queryKey: ['compliance-pending', category, operationType, qDebounced, carrierFilter],
     queryFn: () => complianceApi.listPending({
       category: category || undefined,
       operationType: operationType || undefined,
       q: qDebounced || undefined,
+      carrierId: carrierFilter || undefined,
       limit: 200,
     }),
   })
   const rows = pendingQuery.data?.rows ?? []
+  const filteredCarrierName = rows[0]?.carrier_name
 
   const bulkSlotsQuery = useQuery({
     queryKey: ['compliance-pending-carrier', bulkCarrier?.id],
@@ -101,7 +119,7 @@ export default function DocumentsPage() {
   return (
     <div className="p-4 md:p-6 space-y-3">
       <div>
-        <h1 className="font-mulish font-bold text-xl text-text-primary">Documentos</h1>
+        <h1 className="font-mulish font-bold text-xl text-text-primary">Certificación</h1>
         <p className="text-xs text-gray-400 mt-0.5">
           Documentación pendiente de toda la flota en una sola pantalla — sin navegar empresa por empresa.
         </p>
@@ -110,11 +128,11 @@ export default function DocumentsPage() {
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
         <button
           disabled
-          aria-pressed={tab === 'certificacion'}
+          aria-pressed={tab === 'resumen'}
           title="Próximamente"
           className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-gray-300 cursor-not-allowed"
         >
-          Certificación
+          Resumen
         </button>
         <button
           onClick={() => setTab('pendientes')}
@@ -155,6 +173,19 @@ export default function DocumentsPage() {
               placeholder="Buscar por empresa, conductor o patente…"
               aria-label="Buscar" className={INPUT + ' w-64'}
             />
+            {carrierFilter && (
+              <span className="flex items-center gap-1 text-[11px] font-semibold bg-accent/10 text-accent rounded-full pl-2.5 pr-1.5 py-1">
+                {filteredCarrierName ?? 'Empresa'}
+                <button
+                  type="button"
+                  onClick={() => setCarrierFilter(null)}
+                  aria-label="Quitar filtro de empresa"
+                  className="hover:bg-accent/20 rounded-full p-0.5 transition-colors"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            )}
             <button
               onClick={() => exportCsv(rows)}
               disabled={rows.length === 0}

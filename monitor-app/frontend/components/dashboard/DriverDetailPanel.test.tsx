@@ -3,15 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DriverDetailPanel } from './DriverDetailPanel'
 import { driversApi } from '@/lib/api/drivers'
-import { complianceApi } from '@/lib/api/compliance'
 import { contactsApi } from '@/lib/api/contacts'
 import type { Driver, ComplianceRecord, Contact } from '@/lib/types'
 
 vi.mock('@/lib/api/drivers', () => ({
   driversApi: { listComplianceRecords: vi.fn(), listContacts: vi.fn(), createContact: vi.fn() },
-}))
-vi.mock('@/lib/api/compliance', () => ({
-  complianceApi: { patch: vi.fn(), uploadFile: vi.fn(), deleteFile: vi.fn() },
 }))
 vi.mock('@/lib/api/contacts', () => ({
   contactsApi: { patch: vi.fn(), delete: vi.fn() },
@@ -43,6 +39,7 @@ function renderPanel(driver: Driver | null, opts: {
   return renderWithClient(
     <DriverDetailPanel
       driver={driver}
+      carrierId="c1"
       canEdit={opts.canEdit ?? true}
       canAdmin={opts.canAdmin ?? true}
       onClose={vi.fn()}
@@ -79,17 +76,18 @@ describe('DriverDetailPanel', () => {
     await waitFor(() => expect(screen.getByText('EPP')).toBeInTheDocument())
   })
 
-  it('calls complianceApi.patch when a status select changes', async () => {
+  it('does not show a status select — documents are read-only here, editing lives in Certificación', async () => {
     renderPanel(DRIVER)
-    await waitFor(() => expect(screen.getByLabelText('Estado de EPP')).toBeInTheDocument())
-    fireEvent.change(screen.getByLabelText('Estado de EPP'), { target: { value: 'APPROVED' } })
-    await waitFor(() => expect(complianceApi.patch).toHaveBeenCalledWith('cr1', { status: 'APPROVED' }))
-  })
-
-  it('does not show the status select when canEdit is false', async () => {
-    renderPanel(DRIVER, { canEdit: false })
     await waitFor(() => expect(screen.getByText('EPP')).toBeInTheDocument())
     expect(screen.queryByLabelText('Estado de EPP')).not.toBeInTheDocument()
+  })
+
+  it('links out to Certificación, scoped to this carrier, to upload/edit documents', async () => {
+    renderPanel(DRIVER)
+    await waitFor(() => expect(screen.getByText('EPP')).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: /Subir en Certificación/ })).toHaveAttribute(
+      'href', '/dashboard/certification?carrier_id=c1',
+    )
   })
 
   it('saves the edited name when "Guardar" is clicked', async () => {
@@ -109,7 +107,7 @@ describe('DriverDetailPanel', () => {
     const onTransferClick = vi.fn()
     renderWithClient(
       <DriverDetailPanel
-        driver={DRIVER} canEdit={true} canAdmin={true}
+        driver={DRIVER} carrierId="c1" canEdit={true} canAdmin={true}
         onClose={vi.fn()} onPatch={vi.fn().mockResolvedValue(undefined)}
         onRemove={vi.fn().mockResolvedValue(undefined)}
         onTransferClick={onTransferClick}

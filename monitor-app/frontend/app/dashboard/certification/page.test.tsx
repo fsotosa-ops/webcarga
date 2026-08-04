@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import DocumentsPage from './page'
+import { useSearchParams } from 'next/navigation'
+import CertificationPage from './page'
 import { complianceApi } from '@/lib/api/compliance'
 import type { PendingComplianceRow } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: { listPending: vi.fn(), uploadFile: vi.fn(), bulkUploadFile: vi.fn() },
 }))
+
+vi.mock('next/navigation', () => ({ useSearchParams: vi.fn() }))
 
 function makeRow(overrides: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
   return {
@@ -24,7 +27,7 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <DocumentsPage />
+      <CertificationPage />
     </QueryClientProvider>,
   )
 }
@@ -33,14 +36,15 @@ beforeEach(() => {
   vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({ total: 1, rows: [makeRow()] })
   vi.mocked(complianceApi.uploadFile).mockReset()
   vi.mocked(complianceApi.bulkUploadFile).mockReset()
+  vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>)
 })
 
-describe('DocumentsPage', () => {
-  it('shows "Documentos Pendientes" active by default, with Certificación / Sin Clasificar disabled', async () => {
+describe('CertificationPage', () => {
+  it('shows "Documentos Pendientes" active by default, with Resumen / Sin Clasificar disabled', async () => {
     renderPage()
     expect(await screen.findByText('Transportes Sur Spa')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Documentos Pendientes' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Certificación' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Resumen' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Documentos Sin Clasificar' })).toBeDisabled()
   })
 
@@ -48,7 +52,7 @@ describe('DocumentsPage', () => {
     renderPage()
     await screen.findByText('Transportes Sur Spa')
     expect(complianceApi.listPending).toHaveBeenCalledWith({
-      category: undefined, operationType: undefined, q: undefined, limit: 200,
+      category: undefined, operationType: undefined, q: undefined, carrierId: undefined, limit: 200,
     })
   })
 
@@ -97,5 +101,20 @@ describe('DocumentsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Exportar/ }))
     expect(createObjectURL).toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+
+  it('reads ?carrier_id= from the URL, filters the query by it, and shows a removable chip', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams({ carrier_id: 'c1' }) as unknown as ReturnType<typeof useSearchParams>,
+    )
+    renderPage()
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
+      expect.objectContaining({ carrierId: 'c1' }),
+    ))
+    expect(await screen.findByLabelText('Quitar filtro de empresa')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Quitar filtro de empresa'))
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenLastCalledWith(
+      expect.objectContaining({ carrierId: undefined }),
+    ))
   })
 })
