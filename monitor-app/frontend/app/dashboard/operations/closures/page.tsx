@@ -8,6 +8,7 @@ import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
 import { FleetDriverGapCard } from '@/components/dashboard/FleetDriverGapCard'
+import { FleetOverviewSection } from '@/components/dashboard/sections/FleetOverviewSection'
 import { TractoreoDriverClosureSection } from '@/components/dashboard/sections/TractoreoDriverClosureSection'
 import type { TripsMeta } from '@/lib/types'
 
@@ -153,7 +154,7 @@ function ClosuresCenterPageInner() {
 
         <section id="resumen" className="space-y-3">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide">Resumen del día</h2>
-          <SectionPlaceholder nextTask="Tarea 1.2" />
+          <FleetOverviewSection fecha={fecha} onSelectTrip={handleSelectTrip} />
         </section>
 
         <section id="pendientes" className="space-y-3">
