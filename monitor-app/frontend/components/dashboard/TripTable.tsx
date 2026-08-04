@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ArrowUpDown, ArrowUp, ArrowDown, Check, Loader2, XCircle } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, Check } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { getStopStates } from '@/lib/utils/stopState'
@@ -140,40 +140,9 @@ interface Props {
   sortKey:            SortKey | null
   sortDir:            'asc' | 'desc'
   onSort:             (col: SortKey) => void
-  /** Selección masiva (pedido explícito del usuario, 2026-08-02): cerrar
-   *  varios viajes de una desde el Diario — mismo mecanismo que ya usa
-   *  IndicatorSwitches por viaje individual (is_active/is_working=false),
-   *  en lote. Opcional: si no se pasa, la tabla no muestra checkboxes. */
-  onBulkClose?:       (tripIds: string[]) => Promise<void>
 }
 
-export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort, onBulkClose }: Props) {
-  const [selectedForClose, setSelectedForClose] = useState<Set<string>>(new Set())
-  const [confirming, setConfirming] = useState(false)
-  const [closing, setClosing] = useState(false)
-  const [closeErr, setCloseErr] = useState<string | null>(null)
-
-  function toggleForClose(tripId: string) {
-    setSelectedForClose(prev => {
-      const next = new Set(prev)
-      if (next.has(tripId)) next.delete(tripId); else next.add(tripId)
-      return next
-    })
-  }
-
-  async function handleBulkClose() {
-    if (!onBulkClose || selectedForClose.size === 0) return
-    setClosing(true); setCloseErr(null)
-    try {
-      await onBulkClose(Array.from(selectedForClose))
-      setSelectedForClose(new Set())
-      setConfirming(false)
-    } catch (e) {
-      setCloseErr(e instanceof Error ? e.message : 'No se pudieron cerrar los viajes')
-    } finally {
-      setClosing(false)
-    }
-  }
+export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort }: Props) {
   // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): solo
   // Patente queda sticky (izquierda) — es fácil no notar que hay más
   // columnas fuera de vista sin scrollear. Sombra/gradiente en el borde que
@@ -181,24 +150,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
   // desaparece sola al llegar al final.
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollEdges, setScrollEdges] = useState({ left: false, right: false })
-
-  // Mismo criterio que otros drafts del proyecto (ver feedback_draft_resync_bug_class):
-  // una selección apuntando a viajes que ya no están en `trips` (cambió el
-  // filtro o la página) queda huérfana si no se poda acá. Depende del set
-  // de IDs (string estable), no de la referencia de `trips` — el polling
-  // de refetch (useTrips.ts, refetchInterval) genera un array nuevo cada
-  // pocos segundos con LOS MISMOS viajes, y resetear en cada referencia
-  // nueva borraba la selección de un coordinador a mitad de marcar varios
-  // viajes para cerrar (bug real encontrado en vivo, 2026-08-02).
-  const tripIdsKey = trips.map(t => t.id).join(',')
-  useEffect(() => {
-    const currentIds = new Set(trips.map(t => t.id))
-    setSelectedForClose(prev => {
-      const pruned = new Set([...prev].filter(id => currentIds.has(id)))
-      return pruned.size === prev.size ? prev : pruned
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripIdsKey])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -320,38 +271,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
         })}
       </div>
 
-      {onBulkClose && selectedForClose.size > 0 && (
-        <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-accent/5 border-b border-accent/20">
-          <span className="text-[11px] font-semibold text-text-primary">{selectedForClose.size} viaje(s) seleccionados</span>
-          {closeErr && <span className="text-[11px] text-red-500">{closeErr}</span>}
-          {confirming ? (
-            <>
-              <span className="text-[11px] text-gray-500">¿Cerrar {selectedForClose.size} viaje(s)?</span>
-              <button
-                type="button"
-                disabled={closing}
-                onClick={handleBulkClose}
-                className="text-[11px] font-semibold bg-red-600 text-white rounded-lg px-3 py-1 disabled:opacity-50 flex items-center gap-1"
-              >
-                {closing ? <Loader2 size={11} className="animate-spin" /> : <XCircle size={11} />}
-                Sí, cerrar
-              </button>
-              <button type="button" onClick={() => setConfirming(false)} className="text-[11px] text-gray-400 hover:text-gray-600">
-                Cancelar
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirming(true)}
-              className="text-[11px] font-semibold text-red-600 hover:text-red-700 flex items-center gap-1"
-            >
-              <XCircle size={11} /> Cerrar viajes seleccionados
-            </button>
-          )}
-        </div>
-      )}
-
       {/* ── Desktop: table ────────────────────────────────────────── */}
       <div className="hidden md:block relative">
         {scrollEdges.left && (
@@ -364,7 +283,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
           <table className="w-full text-sm" style={{ minWidth: 1080 }}>
             <thead>
               <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                {onBulkClose && <th className="px-2 py-2.5 w-8" />}
                 {/* ESTADO — columna fija (Hito 11, minuta 29/07 §4.3: "el
                     estado es lo primero que filtran"). Reemplaza a Patente
                     como única columna sticky al hacer scroll horizontal. */}
@@ -420,16 +338,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         : 'bg-white hover:bg-gray-50'
                     }`}
                   >
-                    {onBulkClose && (
-                      <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          aria-label={`Seleccionar viaje ${trip.source_system_trip_id ?? trip.id}`}
-                          checked={selectedForClose.has(trip.id)}
-                          onChange={() => toggleForClose(trip.id)}
-                        />
-                      </td>
-                    )}
                     {/* ESTADO — sticky: siempre visible al scrollear
                         horizontal (Hito 11, reemplaza a Patente). */}
                     <td className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5">

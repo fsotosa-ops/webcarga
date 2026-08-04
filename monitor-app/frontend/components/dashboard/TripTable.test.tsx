@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { TripTable } from './TripTable'
 import type { Trip } from '@/lib/types'
 
@@ -281,89 +281,14 @@ describe('DwellSeverityBadge in TripTable (Hito 14)', () => {
   })
 })
 
-// ── Selección masiva para cerrar viajes (pedido explícito del usuario,
-// 2026-08-02) — checkbox por fila + barra de acción cuando onBulkClose está
-// presente; sin onBulkClose, la tabla no muestra ningún checkbox. ──────────
-describe('TripTable — selección masiva para cerrar viajes', () => {
-  it('no muestra checkboxes cuando no se pasa onBulkClose', () => {
+// Tarea 15 (plan 1.6): el checkbox de cierre masivo se retiró de la tabla
+// principal — cerrar un viaje ahora es siempre consecuencia del flujo
+// estructurado del Centro de Cierre (/dashboard/operations/closures), no
+// una acción suelta sobre la sábana. Confirmamos que no queda ningún
+// checkbox en la tabla.
+describe('TripTable — sin checkbox de cierre masivo', () => {
+  it('nunca muestra checkboxes (el cierre masivo se retiró de la tabla, Tarea 1.6)', () => {
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-  })
-
-  it('seleccionar un checkbox no dispara onSelect (no abre el detalle del viaje)', () => {
-    const onSelect = vi.fn()
-    render(
-      <TripTable
-        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
-        selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null}
-        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
-      />,
-    )
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
-    expect(onSelect).not.toHaveBeenCalled()
-    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
-  })
-
-  it('pide confirmación antes de cerrar y llama a onBulkClose solo tras confirmar', async () => {
-    const onBulkClose = vi.fn().mockResolvedValue(undefined)
-    render(
-      <TripTable
-        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
-        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
-        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={onBulkClose}
-      />,
-    )
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Cerrar viajes seleccionados/ }))
-    expect(onBulkClose).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: /Sí, cerrar/ }))
-
-    await waitFor(() => expect(onBulkClose).toHaveBeenCalledWith(['t1']))
-  })
-
-  it('conserva la selección cuando el polling trae un array nuevo con los mismos viajes (bug real encontrado en vivo)', () => {
-    const { rerender } = render(
-      <TripTable
-        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
-        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
-        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
-      />,
-    )
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
-    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
-
-    // Mismo viaje, pero un array NUEVO (referencia distinta) — simula el
-    // refetch de refetchInterval en useTrips.ts con datos sin cambios.
-    rerender(
-      <TripTable
-        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
-        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
-        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
-      />,
-    )
-
-    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
-  })
-
-  it('limpia la selección cuando cambia la lista de viajes (evita seleccionar viajes que ya no están)', () => {
-    const { rerender } = render(
-      <TripTable
-        trips={[makeTrip('t1', { source_system_trip_id: '2000711' })]}
-        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
-        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
-      />,
-    )
-    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar viaje 2000711/ }))
-    expect(screen.getByText('1 viaje(s) seleccionados')).toBeInTheDocument()
-
-    rerender(
-      <TripTable
-        trips={[makeTrip('t2', { source_system_trip_id: '2000722' })]}
-        selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null}
-        sortKey={null} sortDir="asc" onSort={vi.fn()} onBulkClose={vi.fn()}
-      />,
-    )
-    expect(screen.queryByText(/seleccionados/)).not.toBeInTheDocument()
   })
 })

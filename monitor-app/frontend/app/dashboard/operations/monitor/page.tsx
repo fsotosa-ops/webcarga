@@ -3,8 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck, LayoutGrid, FileBarChart2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck } from 'lucide-react'
 import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
@@ -17,10 +16,7 @@ import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { FilterPopover } from '@/components/dashboard/FilterPopover'
 import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
-import { EquipmentCloseDayDialog } from '@/components/dashboard/EquipmentCloseDayDialog'
 import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
-import { FleetDailyOverviewDialog } from '@/components/dashboard/FleetDailyOverviewDialog'
-import { StatusReportDialog } from '@/components/dashboard/StatusReportDialog'
 import type { FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
@@ -34,7 +30,6 @@ import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
-const ADMIN_ROLES = new Set(['admin', 'owner'])
 
 const HISTORIAL_LIMIT = 100
 
@@ -91,12 +86,8 @@ export default function DiarioPage() {
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,      setShowCreate]      = useState(false)
   const [showBulkUpload,  setShowBulkUpload]  = useState(false)
-  const [showCloseDay,    setShowCloseDay]    = useState(false)
   const [showFleetCenter, setShowFleetCenter] = useState(false)
-  const [showFleetOverview, setShowFleetOverview] = useState(false)
-  const [showStatusReport, setShowStatusReport] = useState(false)
   const [prefillFleet,    setPrefillFleet]    = useState<FleetAssignValue | null>(null)
-  const [canAdmin,        setCanAdmin]        = useState(false)
   const [viewMode,        setViewMode]        = useState<ViewMode>('tabla')
 
   // Custom groups
@@ -264,17 +255,6 @@ export default function DiarioPage() {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en TripTable/TripSlideOver */ })
   }, [])
 
-  // Rol para el override de "Cerrar el día" (mismo patrón que Empresas/Seguros)
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return
-      const { data: profile } = await supabase
-        .from('profiles').select('role').eq('id', session.user.id).single()
-      if (profile && ADMIN_ROLES.has(profile.role)) setCanAdmin(true)
-    })
-  }, [])
-
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
     if (saved === 'tabla' || saved === 'tablero') setViewMode(saved)
@@ -308,33 +288,19 @@ export default function DiarioPage() {
     if (count > 0) queryClient.invalidateQueries({ queryKey: ['trips'] })
   }
 
-  // Selección masiva en el Diario (pedido explícito del usuario,
-  // 2026-08-02): cerrar/finalizar varios viajes de una — is_active/
-  // is_working=false en lote, mismo mecanismo que IndicatorSwitches por
-  // viaje individual.
-  async function handleBulkCloseTrips(tripIds: string[]) {
-    await tripsApi.bulkClose(tripIds)
-    await queryClient.invalidateQueries({ queryKey: ['trips'] })
-  }
-
-  function openFleetCenter() {
-    setShowCloseDay(false)
-    setShowFleetCenter(true)
-  }
-
+  // Tarea 15 (plan 1.6): el Centro de Cierre unificado reemplaza a
+  // EquipmentCloseDayDialog/FleetDailyOverviewDialog/StatusReportDialog —
+  // "Cerrar el día" desde Flota navega a la página nueva en vez de abrir
+  // otro diálogo local.
   function openCloseDayFromFleet() {
     setShowFleetCenter(false)
-    setShowCloseDay(true)
+    router.push('/dashboard/operations/closures')
   }
 
   // Compartido entre FleetCenterDialog (equipo "En viaje hoy") y
-  // FleetDailyOverviewDialog (equipo con carga) — ambos necesitan abrir un
-  // viaje real por id. EquipmentCloseDayDialog (Fase 4) no lo necesita: ya
-  // no hay concepto de MISMATCH a nivel de tracto.
+  // BitacoraFollowupBadge — ambos necesitan abrir un viaje real por id.
   function handleSelectTrip(tripId: string) {
-    setShowCloseDay(false)
     setShowFleetCenter(false)
-    setShowFleetOverview(false)
     router.push(`/dashboard/operations/monitor/trips/${tripId}`)
   }
 
@@ -437,28 +403,12 @@ export default function DiarioPage() {
             ) : <div />}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setShowFleetOverview(true)}
+                onClick={() => router.push('/dashboard/operations/closures')}
                 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
-                title="Vista de flota del día — Tractoreo / Equipos Completos, con carga / sin carga"
-              >
-                <LayoutGrid size={13} />
-                Vista de flota
-              </button>
-              <button
-                onClick={() => setShowStatusReport(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
-                title="Reporte de estatus del día — 6 secciones, filtrable por cliente"
-              >
-                <FileBarChart2 size={13} />
-                Reporte
-              </button>
-              <button
-                onClick={() => setShowCloseDay(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
-                title="Revisar pendientes y cerrar la cuadratura del día"
+                title="Centro de Cierre — resumen, pendientes, cerrar Tractoreo/Equipos Completos y reporte del día"
               >
                 <ClipboardCheck size={13} />
-                Cerrar día
+                Cerrar el día
               </button>
               <button
                 onClick={() => setShowFleetCenter(true)}
@@ -665,7 +615,6 @@ export default function DiarioPage() {
                   sortKey={f.sortKey}
                   sortDir={f.sortDir}
                   onSort={col => dispatch({ type: 'toggleSort', col })}
-                  onBulkClose={handleBulkCloseTrips}
                 />
               )}
             </div>
@@ -715,14 +664,6 @@ export default function DiarioPage() {
         onImported={handleBulkImported}
         meta={tripsMeta}
       />
-      <EquipmentCloseDayDialog
-        open={showCloseDay}
-        fecha={today}
-        canAdmin={canAdmin}
-        unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
-        onClose={() => setShowCloseDay(false)}
-        onOpenFleetCenter={openFleetCenter}
-      />
       <FleetCenterDialog
         open={showFleetCenter}
         fecha={today}
@@ -732,18 +673,6 @@ export default function DiarioPage() {
         onNewTrip={handleNewTripFromFleet}
         onImportCsv={handleImportCsvFromFleet}
         onSelectTrip={handleSelectTrip}
-      />
-      <FleetDailyOverviewDialog
-        open={showFleetOverview}
-        fecha={today}
-        onClose={() => setShowFleetOverview(false)}
-        onSelectTrip={handleSelectTrip}
-      />
-      <StatusReportDialog
-        open={showStatusReport}
-        fecha={today}
-        shippers={shippersQuery.data}
-        onClose={() => setShowStatusReport(false)}
       />
     </div>
   )
