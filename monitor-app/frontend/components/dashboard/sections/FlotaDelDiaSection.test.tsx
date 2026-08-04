@@ -88,6 +88,36 @@ beforeEach(async () => {
 })
 
 describe('FlotaDelDiaSection', () => {
+  it('la tabla de Tractoreo se muestra siempre, incluidos los nombres de conductores, aunque no haya pendientes', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      pending_count: 0,
+      mismatch_count: 0,
+      drivers: [
+        driverRow({ driver_id: 'd3', full_name: 'Juan Pérez', carrier_name: 'Transportes Sur', status: 'ASSIGNED' }),
+      ],
+    })
+    renderSection()
+    // Con category='' y sin pendientes, categoryFiltered queda vacío — la
+    // tabla igual debe renderizarse (misma estructura que Equipo Completo).
+    expect(await screen.findByText('Sin resultados en esta categoría')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Total'))
+
+    expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
+  })
+
+  it('los tiles de Tractoreo y Equipo Completo tienen la misma estructura de 3 líneas (label, conteos, % utilización)', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    const tractoreoTile = screen.getByRole('button', { name: /Tractoreo/ })
+    const equipoTile = screen.getByRole('button', { name: /Equipo Completo/ })
+    expect(within(tractoreoTile).getByText(/% utilización/)).toBeInTheDocument()
+    expect(within(equipoTile).getByText(/% utilización/)).toBeInTheDocument()
+  })
+
   it('por defecto muestra Tractoreo, con los pendientes (no asignados sin motivo + mismatch)', async () => {
     renderSection()
     expect(await screen.findByText('Ana Soto')).toBeInTheDocument()

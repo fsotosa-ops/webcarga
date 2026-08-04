@@ -187,12 +187,14 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-  const showTable = opType === 'EQUIPO_COMPLETO' || category !== '' || drivers.pending_count > 0 || qLower !== ''
 
   const totalCount = rows.length
   const assignedCount = rows.filter(r => r.statusLabel === 'Asignado').length
   const unassignedCount = rows.filter(r => r.statusLabel === 'No asignado').length
   const mismatchCount = rows.filter(r => r.statusLabel === 'Por regularizar').length
+  const tractoreoUtilizationPct = drivers.total_drivers
+    ? Math.round((drivers.assigned_count / drivers.total_drivers) * 1000) / 10
+    : 0
 
   return (
     <div className="space-y-4">
@@ -209,6 +211,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
           <p className="text-xs text-text-primary">
             <span className="font-bold">{drivers.assigned_count}</span> asignados / <span className="font-bold">{drivers.unassigned_count}</span> sin asignar
           </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{tractoreoUtilizationPct}% utilización</p>
           {drivers.mismatch_count > 0 && (
             <p className="text-[11px] text-red-500 mt-0.5">{drivers.mismatch_count} por regularizar</p>
           )}
@@ -274,124 +277,122 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         </div>
       )}
 
-      {showTable && (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                <th className="text-left px-3 py-2 w-8" />
-                <th className="text-left px-3 py-2">{opType === 'TRACTOREO' ? 'Conductor' : 'Patente'}</th>
-                <th className="text-left px-3 py-2">Empresa</th>
-                <th className="text-left px-3 py-2">{opType === 'TRACTOREO' ? 'Tracto habitual' : 'Cliente'}</th>
-                <th className="text-left px-3 py-2">Estado</th>
-                <th className="text-left px-3 py-2">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {paged.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-300 italic">Sin resultados en esta categoría</td></tr>
-              )}
-              {paged.map(r => (
-                <tr key={r.key}>
-                  <td className="px-3 py-2">
-                    {r.selectable && (
-                      <input
-                        type="checkbox"
-                        aria-label={`Seleccionar ${r.primary}`}
-                        checked={r.selected}
-                        onChange={() => toggleSelected(r.driverId!)}
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-2 font-medium text-text-primary">{r.primary}</td>
-                  <td className="px-3 py-2 text-gray-500">{r.carrierName ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    {opType === 'TRACTOREO' ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-gray-500">{r.secondary ?? 'Sin tracto reciente'}</span>
-                        {r.lastKnownOperationType && (
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${OPERATION_TYPE_CLS[r.lastKnownOperationType] ?? 'bg-gray-100 text-gray-500 border-transparent'}`}>
-                            {r.lastKnownOperationType}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-gray-500">{r.secondary ?? '—'}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${r.statusCls}`}>
-                      {r.statusLabel}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    {opType === 'TRACTOREO' && r.statusLabel === 'No asignado' && (
-                      <div className="space-y-1">
-                        <select
-                          value={r.unassignedReasonId ?? ''}
-                          disabled={savingReason === r.driverId}
-                          onChange={e => handleSetReason(r.driverId!, e.target.value)}
-                          className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
-                        >
-                          <option value="">— Sin especificar —</option>
-                          {unassignedReasons.map(reason => (
-                            <option key={reason.id} value={reason.id}>{reason.label}</option>
-                          ))}
-                        </select>
-                        {!r.unassignedReasonId && r.driverPendingDocsCritical && r.suggestedReasonId && (
-                          <button
-                            type="button"
-                            onClick={() => handleSetReason(r.driverId!, r.suggestedReasonId!)}
-                            className="block text-[10px] text-amber-600 hover:text-amber-800 hover:underline"
-                          >
-                            Sugerido: {unassignedReasons.find(reason => reason.id === r.suggestedReasonId)?.label ?? 'Documentación vencida'}
-                          </button>
-                        )}
+      <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+              <th className="text-left px-3 py-2 w-8" />
+              <th className="text-left px-3 py-2">{opType === 'TRACTOREO' ? 'Conductor' : 'Patente'}</th>
+              <th className="text-left px-3 py-2">Empresa</th>
+              <th className="text-left px-3 py-2">{opType === 'TRACTOREO' ? 'Tracto habitual' : 'Cliente'}</th>
+              <th className="text-left px-3 py-2">Estado</th>
+              <th className="text-left px-3 py-2">Acción</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60">
+            {paged.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-300 italic">Sin resultados en esta categoría</td></tr>
+            )}
+            {paged.map(r => (
+              <tr key={r.key}>
+                <td className="px-3 py-2">
+                  {r.selectable && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Seleccionar ${r.primary}`}
+                      checked={r.selected}
+                      onChange={() => toggleSelected(r.driverId!)}
+                    />
+                  )}
+                </td>
+                <td className="px-3 py-2 font-medium text-text-primary">{r.primary}</td>
+                <td className="px-3 py-2 text-gray-500">{r.carrierName ?? '—'}</td>
+                <td className="px-3 py-2">
+                  {opType === 'TRACTOREO' ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-500">{r.secondary ?? 'Sin tracto reciente'}</span>
+                      {r.lastKnownOperationType && (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${OPERATION_TYPE_CLS[r.lastKnownOperationType] ?? 'bg-gray-100 text-gray-500 border-transparent'}`}>
+                          {r.lastKnownOperationType}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-gray-500">{r.secondary ?? '—'}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${r.statusCls}`}>
+                    {r.statusLabel}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  {opType === 'TRACTOREO' && r.statusLabel === 'No asignado' && (
+                    <div className="space-y-1">
+                      <select
+                        value={r.unassignedReasonId ?? ''}
+                        disabled={savingReason === r.driverId}
+                        onChange={e => handleSetReason(r.driverId!, e.target.value)}
+                        className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
+                      >
+                        <option value="">— Sin especificar —</option>
+                        {unassignedReasons.map(reason => (
+                          <option key={reason.id} value={reason.id}>{reason.label}</option>
+                        ))}
+                      </select>
+                      {!r.unassignedReasonId && r.driverPendingDocsCritical && r.suggestedReasonId && (
                         <button
                           type="button"
-                          onClick={() => onCreateManualTrip(r.driverId!, r.primary)}
-                          className="flex items-center gap-1 text-[10px] text-accent hover:underline"
+                          onClick={() => handleSetReason(r.driverId!, r.suggestedReasonId!)}
+                          className="block text-[10px] text-amber-600 hover:text-amber-800 hover:underline"
                         >
-                          <FilePlus2 size={10} /> Crear viaje manual
+                          Sugerido: {unassignedReasons.find(reason => reason.id === r.suggestedReasonId)?.label ?? 'Documentación vencida'}
                         </button>
-                      </div>
-                    )}
-                    {opType === 'TRACTOREO' && r.statusLabel === 'Por regularizar' && (
-                      r.tripId ? (
-                        <button
-                          type="button"
-                          onClick={() => onSelectTrip(r.tripId!)}
-                          className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
-                        >
-                          <AlertTriangle size={11} /> Ver viaje
-                        </button>
-                      ) : (
-                        <a
-                          href={r.carrierId ? `/dashboard/carriers/${r.carrierId}` : '/dashboard/carriers'}
-                          className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
-                        >
-                          <AlertTriangle size={11} /> Revisar en Empresas
-                        </a>
-                      )
-                    )}
-                    {opType === 'EQUIPO_COMPLETO' && r.statusLabel === 'Asignado' && r.tripId && (
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onCreateManualTrip(r.driverId!, r.primary)}
+                        className="flex items-center gap-1 text-[10px] text-accent hover:underline"
+                      >
+                        <FilePlus2 size={10} /> Crear viaje manual
+                      </button>
+                    </div>
+                  )}
+                  {opType === 'TRACTOREO' && r.statusLabel === 'Por regularizar' && (
+                    r.tripId ? (
                       <button
                         type="button"
                         onClick={() => onSelectTrip(r.tripId!)}
-                        className="text-[11px] font-semibold text-accent hover:text-accent/80"
+                        className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
                       >
-                        Ver viaje
+                        <AlertTriangle size={11} /> Ver viaje
                       </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    ) : (
+                      <a
+                        href={r.carrierId ? `/dashboard/carriers/${r.carrierId}` : '/dashboard/carriers'}
+                        className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
+                      >
+                        <AlertTriangle size={11} /> Revisar en Empresas
+                      </a>
+                    )
+                  )}
+                  {opType === 'EQUIPO_COMPLETO' && r.statusLabel === 'Asignado' && r.tripId && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectTrip(r.tripId!)}
+                      className="text-[11px] font-semibold text-accent hover:text-accent/80"
+                    >
+                      Ver viaje
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      {showTable && filtered.length > 0 && (
+      {filtered.length > 0 && (
         <div className="flex items-center justify-between gap-3">
           <p className="text-[11px] text-gray-400">
             {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
