@@ -11,7 +11,13 @@ app.driver_day_status se recalcula en cada GET (mismo criterio "resolución
 en vivo" ya usado en trips.py — evita watermarks incrementales), pero
 preserva unassigned_reason_id/resolved_by/resolved_at ya capturados a mano
 mientras el conductor siga UNASSIGNED. El cierre (POST .../close) es lo
-único que persiste un snapshot inmutable."""
+único que persiste un snapshot inmutable.
+
+Tarea 4 (plan Tarea 2.1, minuta 2026-08-03): el roster de este router quedó
+acotado a conductores de empresas que operan Tractoreo (ver
+_TRACTOREO_ROSTER_CTE) — Equipo Completo NO entra a este cierre activo por
+conductor, se sigue cerrando aparte, de forma pasiva y por tracto, en
+equipment_closures.py."""
 from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,13 +58,30 @@ def _parse_business_date(fecha: str) -> _date:
 # (case-insensitive) con un conductor real del roster, se toma como
 # asignado — mismo nivel de confianza que ya usa trips.py para MOSTRAR ese
 # nombre en el Diario, no una regla nueva más laxa.
-_RECOMPUTE_SQL = """
-WITH active_roster AS (
-    SELECT d.id AS driver_id, da.carrier_id AS home_carrier_id
-    FROM public.drivers d
-    JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-    JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
-),
+
+# Roster de conductores que caen en el cierre ACTIVO de Tractoreo (minuta
+# 2026-08-03): conductor con asignación activa a una empresa ACTIVE que
+# opera al menos un tracto (TRACTOCAMION) clasificado como Tractoreo
+# (assets.webcarga_operation_type_id). Equipo Completo queda explícitamente
+# fuera de este cierre (sigue siendo pasivo por tracto, ver
+# equipment_closures.py) — una empresa puede operar ambos tipos, por eso el
+# filtro es "opera AL MENOS UN tracto Tractoreo", no "toda su flota es
+# Tractoreo". DISTINCT porque una empresa puede tener varios tractos
+# Tractoreo sin que el conductor se duplique.
+_TRACTOREO_ROSTER_CTE = """
+    active_roster AS (
+        SELECT DISTINCT d.id AS driver_id, da.carrier_id AS home_carrier_id
+        FROM public.drivers d
+        JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+        JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
+        JOIN public.asset_assignments aa ON aa.carrier_id = c.id AND aa.status = 'ACTIVE'
+        JOIN public.assets a ON a.id = aa.asset_id AND a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
+        JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND wot.label = 'Tractoreo'
+    )
+"""
+
+_RECOMPUTE_SQL = f"""
+WITH {_TRACTOREO_ROSTER_CTE},
 -- Fase B (ítem 5, feedback post-weekly 2026-07-22): la cadena de
 -- resolución (stored → auto por patente → auto por
 -- vehicle_driver_assignments → match exacto de nombre) vivía inline acá y
@@ -111,6 +134,7 @@ ON CONFLICT (driver_id, business_date) DO UPDATE SET
 """
 
 _DETAIL_SQL = f"""
+WITH {_TRACTOREO_ROSTER_CTE}
 SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name,
        dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        dds.resolved_by, dds.resolved_at,
@@ -119,6 +143,7 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        sugg.id AS suggested_reason_id,
        mismatch_trip.trip_id
 FROM app.driver_day_status dds
+JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
@@ -170,11 +195,13 @@ ORDER BY d.full_name
 # no fuerza el cálculo en vivo de días pasados. El pivot (filas/columnas/
 # filtros/granularidad de fecha) se arma 100% en el cliente sobre este
 # dataset — evita ida y vuelta al backend por cada cambio de la tabla dinámica.
-_REPORT_SQL = """
+_REPORT_SQL = f"""
+WITH {_TRACTOREO_ROSTER_CTE}
 SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name AS carrier_name,
        dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names
 FROM app.driver_day_status dds
+JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id

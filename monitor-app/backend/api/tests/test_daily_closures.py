@@ -86,6 +86,49 @@ def test_detail_sql_mismatch_trip_counts_multi_day_active_trip():
     assert "t.planning_date < dds.business_date AND t.is_active" in _DETAIL_SQL
 
 
+# ── Tarea 4 (minuta 2026-08-03): roster acotado a conductores de empresas
+# Tractoreo — Equipo Completo queda fuera de este cierre activo (pasivo por
+# tracto en equipment_closures.py). Las 3 queries deben compartir la MISMA
+# constante _TRACTOREO_ROSTER_CTE, no una copia divergente. ──────────
+
+def test_tractoreo_roster_cte_filters_by_operation_type_label():
+    from app.routers.daily_closures import _TRACTOREO_ROSTER_CTE
+    assert "app.status_taxonomies" in _TRACTOREO_ROSTER_CTE
+    assert "wot.label = 'Tractoreo'" in _TRACTOREO_ROSTER_CTE
+    assert "a.asset_type = 'TRACTOCAMION'" in _TRACTOREO_ROSTER_CTE
+
+
+def test_recompute_sql_uses_shared_tractoreo_roster_cte():
+    from app.routers.daily_closures import _RECOMPUTE_SQL, _TRACTOREO_ROSTER_CTE
+    assert _TRACTOREO_ROSTER_CTE in _RECOMPUTE_SQL
+    assert "app.status_taxonomies" in _RECOMPUTE_SQL
+    assert "wot.label = 'Tractoreo'" in _RECOMPUTE_SQL
+
+
+def test_detail_sql_uses_shared_tractoreo_roster_cte():
+    from app.routers.daily_closures import _DETAIL_SQL, _TRACTOREO_ROSTER_CTE
+    assert _TRACTOREO_ROSTER_CTE in _DETAIL_SQL
+    assert "wot.label = 'Tractoreo'" in _DETAIL_SQL
+    assert "JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _DETAIL_SQL
+
+
+def test_report_sql_uses_shared_tractoreo_roster_cte():
+    from app.routers.daily_closures import _REPORT_SQL, _TRACTOREO_ROSTER_CTE
+    assert _TRACTOREO_ROSTER_CTE in _REPORT_SQL
+    assert "wot.label = 'Tractoreo'" in _REPORT_SQL
+    assert "JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _REPORT_SQL
+
+
+def test_detail_sql_keeps_driver_assignments_and_carriers_as_left_join():
+    """El JOIN nuevo a active_roster ya restringe el roster — da/c deben
+    seguir siendo LEFT JOIN para no perder un conductor cuyo día ya quedó
+    calculado y después perdió su asignación activa antes del próximo
+    recompute (caso borde documentado en el brief de la Tarea 4)."""
+    from app.routers.daily_closures import _DETAIL_SQL
+    assert "LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'" in _DETAIL_SQL
+    assert "LEFT JOIN public.carriers c ON c.id = da.carrier_id" in _DETAIL_SQL
+
+
 # ── GET /cuadratura ──────────────────────────────────────────────────────
 
 def test_get_daily_closure_status_returns_counts_and_drivers():
