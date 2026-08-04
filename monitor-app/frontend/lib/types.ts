@@ -550,6 +550,12 @@ export type LocationPatchPayload = Partial<Omit<LocationCreatePayload, 'entity_t
 // ── Empresas (public.carriers/drivers/assets/contacts + vistas de H1) ──────
 
 export type OperationalStatus = 'ACTIVE' | 'INACTIVE' | 'LEGACY_INACTIVE'
+/** Solo para filas a nivel EMPRESA (Carrier/CarrierListItem/
+ *  CarrierInsuranceOverviewItem) — conductores/equipos no tienen concepto
+ *  de onboarding, siguen tipando contra OperationalStatus. Una empresa
+ *  creada sin tax_id queda en ONBOARDING (POST /carriers, tarea backend
+ *  previa) hasta completar el RUT. */
+export type CarrierOperationalStatus = OperationalStatus | 'ONBOARDING'
 export type EntityType = 'CARRIER' | 'DRIVER' | 'ASSET'
 export type RequirementLevel = 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
 
@@ -672,7 +678,7 @@ export type CarrierListItem = {
   tax_id:                string
   country_code:          string
   business_name:         string
-  operational_status:    OperationalStatus
+  operational_status:    CarrierOperationalStatus
   total_requirements:    number
   last_document_update:  string | null
   /** Requisitos LEGAL_MANDATORY MISSING/EXPIRED/REJECTED o vencidos por fecha —
@@ -701,7 +707,7 @@ export type Carrier = {
   tax_id:              string
   country_code:        string
   business_name:       string
-  operational_status:  OperationalStatus
+  operational_status:  CarrierOperationalStatus
   legacy_admin_id:     string | null
   erp_id:              string | null
   is_manual_override:  boolean
@@ -832,7 +838,7 @@ export type CarrierInsuranceOverviewItem = {
   carrier_id:                  string
   business_name:               string
   tax_id:                      string
-  operational_status:          OperationalStatus
+  operational_status:          CarrierOperationalStatus
   total_policies:              number
   total_overdue_installments:  number
   next_payment_date:           string | null

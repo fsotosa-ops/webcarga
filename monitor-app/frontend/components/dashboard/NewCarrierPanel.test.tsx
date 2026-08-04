@@ -22,13 +22,30 @@ describe('NewCarrierPanel', () => {
     expect(screen.getByLabelText('Razón social')).toHaveValue('Agrocapilla Ltda')
   })
 
-  it('disables the create button until both fields are filled', () => {
+  it('disables the create button until business_name is filled, tax_id is not required', () => {
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76217085-K' } })
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeEnabled()
+  })
+
+  it('enables the create button with only business_name filled (no tax_id)', () => {
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeEnabled()
+  })
+
+  it('shows the Onboarding hint when tax_id is empty', () => {
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    expect(screen.getByText('Se creará en estado Onboarding, pendiente de RUT.')).toBeInTheDocument()
+  })
+
+  it('hides the Onboarding hint once tax_id has content', () => {
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76217085-K' } })
+    expect(screen.queryByText('Se creará en estado Onboarding, pendiente de RUT.')).not.toBeInTheDocument()
   })
 
   it('creates the carrier and calls onCreated with the result', async () => {
@@ -40,6 +57,17 @@ describe('NewCarrierPanel', () => {
     fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
     fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
     await waitFor(() => expect(carriersApi.create).toHaveBeenCalledWith({ tax_id: '76217085-K', business_name: 'Nueva Spa' }))
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created))
+  })
+
+  it('creates the carrier without tax_id in the body when the field is empty (ONBOARDING)', async () => {
+    const created = { id: 'c10', tax_id: '', country_code: 'CL', business_name: 'Onboarding Spa', operational_status: 'ONBOARDING' as const, created_at: null }
+    vi.mocked(carriersApi.create).mockResolvedValue(created)
+    const onCreated = vi.fn()
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={onCreated} />)
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Onboarding Spa' } })
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
+    await waitFor(() => expect(carriersApi.create).toHaveBeenCalledWith({ business_name: 'Onboarding Spa' }))
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created))
   })
 

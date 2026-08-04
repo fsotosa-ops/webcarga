@@ -47,4 +47,12 @@ describe('TransporterCard', () => {
     render(<TransporterCard item={{ ...ITEM, operational_status: 'LEGACY_INACTIVE' }} onOpen={vi.fn()} />)
     expect(screen.getByText('Inactiva')).toBeInTheDocument()
   })
+
+  it('shows an amber Onboarding badge for companies created without tax_id', () => {
+    render(<TransporterCard item={{ ...ITEM, operational_status: 'ONBOARDING' }} onOpen={vi.fn()} />)
+    const badge = screen.getByText('Onboarding')
+    expect(badge).toBeInTheDocument()
+    expect(badge.className).toContain('bg-amber-50')
+    expect(badge.className).toContain('text-amber-700')
+  })
 })

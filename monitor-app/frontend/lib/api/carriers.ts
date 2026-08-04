@@ -4,33 +4,34 @@ import type {
   CarrierDriverRosterItem,
   CarrierInsuranceOverviewResponse,
   CarrierListResponse,
+  CarrierOperationalStatus,
   CarrierPolicyListItem,
   CarrierShipper,
   ComplianceHealth,
   Contact,
-  OperationalStatus,
   PolicyStatus,
 } from '@/lib/types'
 import { apiFetch, apiFetchBlob } from './client'
 
 export type CarrierListParams = {
   q?:                  string
-  operational_status?: OperationalStatus | ''
+  operational_status?: CarrierOperationalStatus | ''
   health?:             ComplianceHealth | ''
   page?:               number
   limit?:              number
 }
 
 export type CarrierCreateBody = {
-  tax_id:              string
+  tax_id?:              string
   country_code?:       string
   business_name:       string
-  operational_status?: OperationalStatus
+  operational_status?: CarrierOperationalStatus
 }
 
 export type CarrierPatchBody = {
   business_name?:       string
-  operational_status?:  OperationalStatus
+  tax_id?:              string
+  operational_status?:  CarrierOperationalStatus
   expected_updated_at?: string
 }
 
@@ -64,7 +65,7 @@ export type CarrierCreateResult = {
   tax_id:              string
   country_code:        string
   business_name:       string
-  operational_status:  OperationalStatus
+  operational_status:  CarrierOperationalStatus
   created_at:          string | null
 }
 

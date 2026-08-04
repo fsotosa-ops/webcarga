@@ -2,19 +2,22 @@
 
 import Link from 'next/link'
 import { ChevronRight, ShieldAlert, ShieldCheck } from 'lucide-react'
-import type { CarrierListItem, OperationalStatus } from '@/lib/types'
+import type { CarrierListItem, CarrierOperationalStatus } from '@/lib/types'
 
 /** El concepto expuesto al usuario es Activo/Inactivo, no Activo/Legacy
  *  (decisión explícita 2026-07-18) — INACTIVE (baja manual real, sin filas
  *  hoy) y LEGACY_INACTIVE (nunca onboardeada) comparten el mismo label
- *  visible aunque sigan siendo 2 valores distintos en la DB. */
-export const STATUS_LABELS: Record<OperationalStatus, string> = {
-  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Inactiva',
+ *  visible aunque sigan siendo 2 valores distintos en la DB. ONBOARDING
+ *  (empresa creada sin tax_id, tarea backend previa) es un tercer estado
+ *  propio de Carrier, con su propio label/color ámbar. */
+export const STATUS_LABELS: Record<CarrierOperationalStatus, string> = {
+  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Inactiva', ONBOARDING: 'Onboarding',
 }
-export const STATUS_CLS: Record<OperationalStatus, string> = {
+export const STATUS_CLS: Record<CarrierOperationalStatus, string> = {
   ACTIVE: 'bg-green-50 text-green-700 border-green-100',
   INACTIVE: 'bg-gray-100 text-gray-500 border-transparent',
   LEGACY_INACTIVE: 'bg-gray-100 text-gray-500 border-transparent',
+  ONBOARDING: 'bg-amber-50 text-amber-700 border-amber-100',
 }
 
 interface Props {

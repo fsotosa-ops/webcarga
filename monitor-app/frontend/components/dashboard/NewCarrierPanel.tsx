@@ -23,10 +23,13 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
   const [err, setErr]           = useState<string | null>(null)
 
   async function handleCreate() {
-    if (!form.tax_id || !form.business_name) return
+    if (!form.business_name) return
     setCreating(true); setErr(null)
     try {
-      const created = await carriersApi.create(form)
+      const created = await carriersApi.create({
+        ...form,
+        tax_id: form.tax_id.trim() || undefined,
+      })
       onCreated(created)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al crear la empresa')
@@ -52,6 +55,9 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
         onChange={e => setForm(v => ({ ...v, tax_id: e.target.value }))}
         className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
       />
+      {form.tax_id.trim() === '' && (
+        <p className="text-[11px] text-gray-400">Se creará en estado Onboarding, pendiente de RUT.</p>
+      )}
       <input
         placeholder="Razón social"
         aria-label="Razón social"
@@ -63,7 +69,7 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={handleCreate}
-          disabled={creating || !form.tax_id || !form.business_name}
+          disabled={creating || !form.business_name}
           className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
         >
           {creating ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}

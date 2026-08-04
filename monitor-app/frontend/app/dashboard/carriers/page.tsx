@@ -3,9 +3,9 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries } from '@tanstack/react-query'
 import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus } from 'lucide-react'
-import type { CarrierListFacets, CarrierListItem, ComplianceHealth, OperationalStatus } from '@/lib/types'
+import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus, ComplianceHealth } from '@/lib/types'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { createClient } from '@/lib/supabase/client'
@@ -19,7 +19,7 @@ import { updatedRelative } from '@/lib/compliance'
 
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 
-type TransporterTab = 'active' | 'legacy'
+type TransporterTab = 'active' | 'legacy' | 'onboarding'
 type HealthTab = '' | ComplianceHealth
 
 const LIMIT = 100
@@ -30,10 +30,12 @@ const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
  *  ACTIVE (38) y LEGACY_INACTIVE (208) en datos reales (INACTIVE es la baja
  *  manual de una empresa que sí llegó a operar, ver schemas/carrier.py,
  *  sin filas reales todavía). Filtrar server-side, no sobre una sola
- *  página — 208 > el límite de 100 por página del backend. */
-const TABS: { id: TransporterTab; label: string; status: OperationalStatus }[] = [
+ *  página — 208 > el límite de 100 por página del backend. ONBOARDING
+ *  (empresa creada sin tax_id, tarea backend previa) es la tercera tab. */
+const TABS: { id: TransporterTab; label: string; status: CarrierOperationalStatus }[] = [
   { id: 'active', label: 'Activas', status: 'ACTIVE' },
   { id: 'legacy', label: 'Inactivo', status: 'LEGACY_INACTIVE' },
+  { id: 'onboarding', label: 'Onboarding', status: 'ONBOARDING' },
 ]
 
 /** Segundo eje de filtrado, independiente de Activas/Inactivo — agrupa por
@@ -118,21 +120,29 @@ function EmpresasTransportePageInner() {
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando empresas') : null
 
-  // Conteos por tab independientes de la paginación (limit=1: solo interesa `count`).
-  const otherTabId = tab === 'active' ? 'legacy' : 'active'
-  const otherStatus = TABS.find(t => t.id === otherTabId)!.status
-  const otherCountQuery = useQuery({
-    queryKey: ['carriers-count', otherStatus, qDebounced],
-    queryFn: () => carriersApi.list({ q: qDebounced, operational_status: otherStatus, limit: 1 }),
+  // Conteos por tab independientes de la paginación (limit=1: solo interesa
+  // `count`) — derivados de TABS, no hardcodeados: agregar una tab nueva al
+  // array la suma automáticamente acá sin tocar este bloque.
+  const otherTabs = TABS.filter(t => t.id !== tab)
+  const otherCountQueries = useQueries({
+    queries: otherTabs.map(t => ({
+      queryKey: ['carriers-count', t.status, qDebounced],
+      queryFn: () => carriersApi.list({ q: qDebounced, operational_status: t.status, limit: 1 }),
+    })),
   })
   // healthFacets.total = conteo real de la tab actual sin el filtro de health
   // (a diferencia de tabTotal, que sí lo aplica) — así el badge de la tab no
   // cambia al clickear un health tab.
-  const tabCounts: Record<TransporterTab, number> = {
-    [tab]: healthFacets.total,
-    [otherTabId]: otherCountQuery.data?.count ?? 0,
-  } as Record<TransporterTab, number>
-  const grandTotal = tabCounts.active + tabCounts.legacy
+  const tabCounts: Record<TransporterTab, number> = TABS.reduce((acc, t) => {
+    if (t.id === tab) {
+      acc[t.id] = healthFacets.total
+    } else {
+      const idx = otherTabs.findIndex(ot => ot.id === t.id)
+      acc[t.id] = otherCountQueries[idx]?.data?.count ?? 0
+    }
+    return acc
+  }, {} as Record<TransporterTab, number>)
+  const grandTotal = TABS.reduce((sum, t) => sum + (tabCounts[t.id] ?? 0), 0)
 
   const totalPages = Math.max(1, Math.ceil(tabTotal / LIMIT))
 
@@ -146,7 +156,7 @@ function EmpresasTransportePageInner() {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, v)
   }
 
-  const emptyLabel = q ? 'Sin resultados' : `Sin empresas ${tab === 'active' ? 'activas' : 'inactivas'}`
+  const emptyLabel = q ? 'Sin resultados' : `Sin empresas en ${TABS.find(t => t.id === tab)!.label.toLowerCase()}`
 
   return (
     <div className="p-4 md:p-6 space-y-4">
