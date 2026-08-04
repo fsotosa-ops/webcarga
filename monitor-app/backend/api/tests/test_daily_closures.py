@@ -40,6 +40,7 @@ def _driver_row(**overrides):
         "resolved_by": None, "resolved_at": None, "client_names": [],
         "driver_pending_docs_critical": None, "suggested_reason_id": None,
         "trip_id": None,
+        "last_known_tractor_plate": None, "last_known_operation_type": None,
     }
     base.update(overrides)
     return base
@@ -188,6 +189,58 @@ def test_get_daily_closure_status_includes_trip_id_for_mismatch():
     detail_sql = pool.fetch.call_args_list[0].args[0]
     assert "mismatch_trip.trip_id" in detail_sql
     assert "app.v_trip_fleet_resolution" in detail_sql
+
+
+# ── Tarea 5 (plan 2.2, minuta 2026-08-03): "tracto habitual" y tipo de
+# operación por conductor — mejor esfuerzo, dato de contexto para el
+# coordinador, resuelto desde el lado del conductor vía
+# app.v_trip_fleet_resolution (mismo patrón que last_origin en
+# equipment_closures.py, pero desde el LATERAL de tracto). ──────────
+
+def test_detail_sql_resolves_last_known_tractor_for_driver():
+    from app.routers.daily_closures import _DETAIL_SQL
+    assert "vfr2.resolved_driver_id = dds.driver_id" in _DETAIL_SQL
+    assert "app.v_trip_fleet_resolution" in _DETAIL_SQL
+    assert "last_known_tractor_plate" in _DETAIL_SQL
+    assert "last_known_operation_type" in _DETAIL_SQL
+
+
+def test_get_daily_closure_status_includes_last_known_tractor():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row(
+        driver_id="d1",
+        last_known_tractor_plate="ABCD12",
+        last_known_operation_type="Tractoreo",
+    )]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures?fecha=2026-07-21")
+
+    assert res.status_code == 200
+    driver = res.json()["drivers"][0]
+    assert driver["last_known_tractor_plate"] == "ABCD12"
+    assert driver["last_known_operation_type"] == "Tractoreo"
+
+
+def test_get_daily_closure_status_last_known_tractor_null_when_no_history():
+    """Mejor esfuerzo: un conductor sin ningún viaje histórico resuelto no
+    debe romper el endpoint — los campos vienen null."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row(
+        driver_id="d1",
+        last_known_tractor_plate=None,
+        last_known_operation_type=None,
+    )]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/daily-closures?fecha=2026-07-21")
+
+    assert res.status_code == 200
+    driver = res.json()["drivers"][0]
+    assert driver["last_known_tractor_plate"] is None
+    assert driver["last_known_operation_type"] is None
 
 
 def test_get_daily_closure_status_pending_excludes_unassigned_with_reason():

@@ -141,7 +141,9 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
        dcomp.has_critical_pending AS driver_pending_docs_critical,
        sugg.id AS suggested_reason_id,
-       mismatch_trip.trip_id
+       mismatch_trip.trip_id,
+       last_tractor.tractor_plate AS last_known_tractor_plate,
+       last_tractor.operation_type AS last_known_operation_type
 FROM app.driver_day_status dds
 JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
@@ -184,6 +186,25 @@ LEFT JOIN LATERAL (
     ORDER BY t.status_reported_at DESC NULLS LAST
     LIMIT 1
 ) mismatch_trip ON true
+-- Tarea 5 (plan 2.2, minuta 2026-08-03): "tracto habitual" — mejor
+-- esfuerzo. El tracto que aparece acá es el del viaje más reciente
+-- resuelto para este conductor, no una asignación exclusiva confirmada;
+-- puede venir NULL si el conductor no tiene ningún viaje histórico
+-- resuelto. El tipo de operación es el de ESE tracto puntual, no el del
+-- roster de la empresa (una empresa Tractoreo puede tener conductores
+-- cuyo último viaje fue en un tracto clasificado Equipo Completo, si la
+-- empresa opera flota mixta). Alias con sufijo 2 (t2/vfr2/a2/wot2) para no
+-- colisionar con t/vfr/a ya usados en el LATERAL de mismatch_trip arriba.
+LEFT JOIN LATERAL (
+    SELECT a2.license_plate AS tractor_plate, wot2.label AS operation_type
+    FROM app.trips t2
+    JOIN app.v_trip_fleet_resolution vfr2 ON vfr2.trip_id = t2.id
+    LEFT JOIN public.assets a2 ON a2.id = vfr2.resolved_tractor_asset_id
+    LEFT JOIN app.status_taxonomies wot2 ON wot2.id = a2.webcarga_operation_type_id
+    WHERE vfr2.resolved_driver_id = dds.driver_id
+    ORDER BY t2.status_reported_at DESC NULLS LAST
+    LIMIT 1
+) last_tractor ON true
 WHERE dds.business_date = $1
 ORDER BY d.full_name
 """
