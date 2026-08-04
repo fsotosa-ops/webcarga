@@ -74,7 +74,8 @@ describe('ClosuresCenterPage', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Pendientes' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Cerrar Tractoreo' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Cerrar Equipos Completos' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Confirmar cierre → Reporte' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Reporte del día' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Confirmar cierre' })).toBeInTheDocument()
   })
 
   it('la navegación lateral apunta a las anclas correctas', async () => {
@@ -88,7 +89,8 @@ describe('ClosuresCenterPage', () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderPage()
     await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalledWith('2026-08-04'))
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Centro de Cierre — 2026-08-04')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Centro de Cierre del Día')
+    expect(screen.getByLabelText('Fecha del cierre')).toHaveValue('2026-08-04')
   })
 
   it('Confirmar cierre: si el cierre de Tractoreo tiene éxito, encadena el de Equipos Completos', async () => {

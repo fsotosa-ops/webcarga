@@ -3,10 +3,11 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, History } from 'lucide-react'
+import { Loader2, History, Printer, FileDown } from 'lucide-react'
 import { statusReportApi } from '@/lib/api/statusReport'
+import { carriersApi } from '@/lib/api/carriers'
 import type { Shipper } from '@/lib/api/locations'
-import type { MotivoCrossTab, ZoneCrossTab } from '@/lib/types'
+import type { MotivoCrossTab, StatusReport, ZoneCrossTab } from '@/lib/types'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 
 type Tab = 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -14,6 +15,66 @@ type Tab = 1 | 2 | 3 | 4 | 5 | 6 | 7
 interface Props {
   fecha:      string
   shippers?:  Shipper[]
+}
+
+function csvEscape(v: string | number | null | undefined): string {
+  const s = v == null ? '' : String(v)
+  return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+/** Excel/CSV con el detalle completo de las 6 secciones (para pivotar en
+ *  Excel) — pedido explícito del equipo de operaciones para compartir con
+ *  coordinación. Mismo patrón de exportCsv que ya usa Certificación:
+ *  bloques secuenciales con su propio encabezado, separados por línea en
+ *  blanco, un solo archivo. */
+function exportReportCsv(report: StatusReport, fecha: string) {
+  const lines: string[] = [`Reporte de Estatus del Día;${fecha}`, '']
+
+  lines.push('SECCIÓN 2 — Tractoreo asignado por empresa y CD')
+  lines.push(['CD', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total'].map(csvEscape).join(';'))
+  for (const r of report.section2_tractoreo_asignado.por_empresa_y_cd) {
+    lines.push([r.cd, r.carrier_name, r.RM, r.Z0, r['Región'], r['Sin clasificar'], r.total].map(csvEscape).join(';'))
+  }
+  lines.push('')
+
+  lines.push('SECCIÓN 3 — Segundas y terceras vueltas')
+  lines.push(['Empresa', 'CD de origen', 'Tipo de destino', 'Vueltas'].map(csvEscape).join(';'))
+  for (const v of report.section3_vueltas) {
+    lines.push([v.carrier_name, v.cd_origen, v.tipo_destino, v.vueltas].map(csvEscape).join(';'))
+  }
+  lines.push('')
+
+  lines.push('SECCIÓN 4 — Tractoreo no trabajando, detalle por conductor')
+  lines.push(['Conductor', 'Empresa', 'CD', 'Motivo', 'Tracto habitual', 'Tipo de operación'].map(csvEscape).join(';'))
+  for (const d of report.section4_tractoreo_no_trabajando.driver_detail) {
+    lines.push([d.full_name, d.carrier_name, d.cd_origen, d.unassigned_reason_label, d.tractor_plate, d.operation_type].map(csvEscape).join(';'))
+  }
+  lines.push('')
+
+  lines.push('SECCIÓN 5 — Equipos Completos por empresa')
+  lines.push(['Empresa', 'Enrolados', 'Asignados', 'No asignados', '% utilización'].map(csvEscape).join(';'))
+  for (const r of report.section5_equipos_completos) {
+    lines.push([r.carrier_name, r.enrolled, r.assigned, r.unassigned, r.utilization_pct].map(csvEscape).join(';'))
+  }
+  lines.push('')
+
+  lines.push('SECCIÓN 6 — Resumen general por CD')
+  lines.push(['CD', 'Enrolados', 'Asignados'].map(csvEscape).join(';'))
+  for (const c of report.section6_resumen_general.por_cd) {
+    lines.push([c.cd, c.enrolled, c.assigned].map(csvEscape).join(';'))
+  }
+  lines.push('')
+  lines.push('SECCIÓN 6 — Resumen general por cliente')
+  lines.push(['Cliente', 'Asignados'].map(csvEscape).join(';'))
+  for (const c of report.section6_resumen_general.por_cliente) {
+    lines.push([c.client_name, c.assigned].map(csvEscape).join(';'))
+  }
+
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `reporte_estatus_${fecha}.csv`; a.click()
+  URL.revokeObjectURL(url)
 }
 
 const ZONE_COLS: (keyof ZoneCrossTab)[] = ['RM', 'Z0', 'Región', 'Sin clasificar', 'total']
@@ -48,34 +109,112 @@ export function StatusReportSection({ fecha, shippers }: Props) {
     queryFn: () => statusReportApi.get(fecha, client || undefined),
   })
 
+  // Mismo queryKey que FleetDriverGapCard — cacheado, no duplica el fetch
+  // si el usuario ya visitó la tab 7. Se pide igual acá (independiente de
+  // qué tab esté activa) para que el PDF de una página siempre tenga el
+  // dato de inconsistencias disponible.
+  const gapQuery = useQuery({
+    queryKey: ['fleet-driver-gap'],
+    queryFn: () => carriersApi.fleetDriverGap(),
+  })
+
   const TABS: { id: Tab; label: string }[] = [
     { id: 1, label: '1. Resumen' },
-    { id: 2, label: '2. Tractoreo asignado' },
+    { id: 2, label: '2. Asignado' },
     { id: 3, label: '3. Vueltas' },
-    { id: 4, label: '4. Tractoreo sin trabajar' },
-    { id: 5, label: '5. Equipos Completos' },
-    { id: 6, label: '6. Resumen general' },
-    { id: 7, label: '7. Inconsistencias de dotación' },
+    { id: 4, label: '4. Sin trabajar' },
+    { id: 5, label: '5. Eq. Completos' },
+    { id: 6, label: '6. General' },
+    { id: 7, label: '7. Dotación' },
   ]
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1 overflow-x-auto">
+    <div className="space-y-4">
+      {data && (
+        <>
+          {/* Resumen imprimible de una página — visible solo al imprimir/
+              "Guardar como PDF" (Ctrl+P triggered por handlePrint acá
+              abajo). El resto de la página se oculta vía la regla global
+              de acá abajo, para que el PDF no arrastre nav/sidebar/otras
+              secciones del Centro de Cierre. */}
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #closures-print-summary, #closures-print-summary * { visibility: visible; }
+              #closures-print-summary { position: absolute; inset: 0; padding: 32px; }
+            }
+          `}</style>
+          <div id="closures-print-summary" className="hidden print:block text-sm">
+            <h1 className="text-xl font-bold mb-1">WebCarga — Reporte de Estatus del Día</h1>
+            <p className="text-gray-500 mb-6">{fecha}{client ? ` · ${client}` : ' · WebCarga consolidado'}</p>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="border border-gray-300 rounded-lg p-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase">Total equipos activos</p>
+                <p className="text-2xl font-bold">{data.section1_resumen.total_equipos_activos}</p>
+              </div>
+              <div className="border border-gray-300 rounded-lg p-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase">Tractoreo</p>
+                <p>{data.section1_resumen.tractoreo.assigned} asignados / {data.section1_resumen.tractoreo.unassigned} sin asignar</p>
+                <p className="font-bold">{data.section1_resumen.tractoreo.utilization_pct}% utilización</p>
+              </div>
+              <div className="border border-gray-300 rounded-lg p-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase">Equipos Completos</p>
+                <p>{data.section1_resumen.equipos_completos.assigned} asignados / {data.section1_resumen.equipos_completos.unassigned} sin asignar</p>
+                <p className="font-bold">{data.section1_resumen.equipos_completos.utilization_pct}% utilización</p>
+              </div>
+            </div>
+            <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">
+              Viajes multi-día activos ({data.section1_resumen.multi_dia_activos.total})
+            </p>
+            <p className="mb-6">
+              {Object.entries(data.section1_resumen.multi_dia_activos.por_dias_atras).map(([d, n]) => `${n} equipo(s) — ${d} día(s)`).join(' · ') || 'Ninguno'}
+            </p>
+            {gapQuery.data && gapQuery.data.rows.length > 0 && (
+              <>
+                <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">
+                  Inconsistencias de dotación ({gapQuery.data.rows.length} empresas)
+                </p>
+                <table className="w-full text-xs border-collapse mb-6">
+                  <thead>
+                    <tr className="border-b border-gray-300 text-left">
+                      <th className="py-1">Empresa</th><th className="py-1 text-right">Tractos</th><th className="py-1 text-right">Conductores</th><th className="py-1 text-right">Gap</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gapQuery.data.rows.map(r => (
+                      <tr key={r.carrier_id} className="border-b border-gray-100">
+                        <td className="py-1">{r.business_name}</td>
+                        <td className="py-1 text-right">{r.n_tractos}</td>
+                        <td className="py-1 text-right">{r.n_conductores}</td>
+                        <td className="py-1 text-right">{r.gap > 0 ? `Faltan ${r.gap}` : `${Math.abs(r.gap)} de más`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+            <p className="text-[10px] text-gray-400">Generado el {new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</p>
+          </div>
+        </>
+      )}
+
+      <div data-testid="report-body" className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto max-w-full">
           {TABS.map(t => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-t-lg whitespace-nowrap transition-colors ${
-                tab === t.id ? 'text-accent border-b-2 border-accent' : 'text-gray-400 hover:text-gray-600'
+              className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+                tab === t.id ? 'bg-white text-accent shadow-sm' : 'text-gray-500 hover:text-text-primary'
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <select
             aria-label="Filtrar por cliente"
             value={client}
@@ -85,6 +224,23 @@ export function StatusReportSection({ fecha, shippers }: Props) {
             <option value="">WebCarga consolidado</option>
             {(shippers ?? []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            disabled={!data}
+            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
+            title="Abre el diálogo de impresión — elegí 'Guardar como PDF' para descargarlo"
+          >
+            <Printer size={12} /> Descargar PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => data && exportReportCsv(data, fecha)}
+            disabled={!data}
+            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
+          >
+            <FileDown size={12} /> Descargar Excel
+          </button>
           <Link
             href="/dashboard/operations/closures/history"
             target="_blank"
@@ -322,6 +478,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
           )}
         </>
       )}
+      </div>
     </div>
   )
 }

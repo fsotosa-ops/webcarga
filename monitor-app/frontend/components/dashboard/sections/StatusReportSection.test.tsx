@@ -51,11 +51,15 @@ const REPORT: StatusReport = {
 
 function renderSection(props: Partial<Parameters<typeof StatusReportSection>[0]> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={client}>
       <StatusReportSection fecha="2026-08-02" {...props} />
     </QueryClientProvider>,
   )
+  // El resumen imprimible (Descargar PDF) duplica textos como "Total
+  // equipos activos"/"81"/nombres de empresa fuera de pantalla — todas las
+  // aserciones de interacción normal se scopean acá para no chocar con él.
+  return within(screen.getByTestId('report-body'))
 }
 
 beforeEach(() => {
@@ -64,72 +68,100 @@ beforeEach(() => {
 
 describe('StatusReportSection', () => {
   it('muestra la Sección 1 (resumen) por defecto', async () => {
-    renderSection()
-    expect(await screen.findByText('Total equipos activos')).toBeInTheDocument()
-    expect(screen.getByText('81')).toBeInTheDocument()
-    expect(screen.getByText(/29 asignados \/ 52 sin asignar/)).toBeInTheDocument()
-    expect(screen.getByText('3 equipo(s) — 1 día(s)')).toBeInTheDocument()
+    const body = renderSection()
+    expect(await body.findByText('Total equipos activos')).toBeInTheDocument()
+    expect(body.getByText('81')).toBeInTheDocument()
+    expect(body.getByText(/29 asignados \/ 52 sin asignar/)).toBeInTheDocument()
+    expect(body.getByText('3 equipo(s) — 1 día(s)')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 2 (tractoreo asignado) y muestra el cross-tab por CD', async () => {
-    renderSection()
-    await screen.findByText('Total equipos activos')
-    fireEvent.click(screen.getByRole('button', { name: '2. Tractoreo asignado' }))
-    expect((await screen.findAllByText('CD Lo Aguirre')).length).toBe(2)
-    expect(screen.getByText('Transportes Sur')).toBeInTheDocument()
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
+    expect((await body.findAllByText('CD Lo Aguirre')).length).toBe(2)
+    expect(body.getByText('Transportes Sur')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 3 (vueltas) y muestra los equipos con 2+ vueltas', async () => {
-    renderSection()
-    await screen.findByText('Total equipos activos')
-    fireEvent.click(screen.getByRole('button', { name: '3. Vueltas' }))
-    const row = (await screen.findByText('Transportes Sur')).closest('tr')!
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '3. Vueltas' }))
+    const row = (await body.findByText('Transportes Sur')).closest('tr')!
     expect(within(row).getByText('2')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 4 y muestra el cross-tab por motivo Y el detalle por conductor con tipo de operación', async () => {
-    renderSection()
-    await screen.findByText('Total equipos activos')
-    fireEvent.click(screen.getByRole('button', { name: '4. Tractoreo sin trabajar' }))
-    expect((await screen.findAllByText('CD El Peñón')).length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
-    expect(screen.getByText('ABCD12')).toBeInTheDocument()
-    expect(screen.getByText('Equipo Completo')).toBeInTheDocument()
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '4. Sin trabajar' }))
+    expect((await body.findAllByText('CD El Peñón')).length).toBeGreaterThanOrEqual(2)
+    expect(body.getByText('Juan Pérez')).toBeInTheDocument()
+    expect(body.getByText('ABCD12')).toBeInTheDocument()
+    expect(body.getByText('Equipo Completo')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 5 (equipos completos) y muestra el % de utilización', async () => {
-    renderSection()
-    await screen.findByText('Total equipos activos')
-    fireEvent.click(screen.getByRole('button', { name: '5. Equipos Completos' }))
-    expect(await screen.findByText('Equipos Sur')).toBeInTheDocument()
-    expect(screen.getByText('30%')).toBeInTheDocument()
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '5. Eq. Completos' }))
+    expect(await body.findByText('Equipos Sur')).toBeInTheDocument()
+    expect(body.getByText('30%')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 6 (resumen general) y muestra por CD y por cliente', async () => {
-    renderSection()
-    await screen.findByText('Total equipos activos')
-    fireEvent.click(screen.getByRole('button', { name: '6. Resumen general' }))
-    expect(await screen.findByText('Walmart')).toBeInTheDocument()
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '6. General' }))
+    expect(await body.findByText('Walmart')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 7 y muestra las inconsistencias de dotación (FleetDriverGapCard)', async () => {
-    renderSection()
-    await screen.findByText('Total equipos activos')
-    fireEvent.click(screen.getByRole('button', { name: '7. Inconsistencias de dotación' }))
-    expect(await screen.findByText('1 empresa con desbalance de dotación')).toBeInTheDocument()
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '7. Dotación' }))
+    expect(await body.findByText('1 empresa con desbalance de dotación')).toBeInTheDocument()
   })
 
   it('filtrar por cliente vuelve a pedir el reporte con ese cliente', async () => {
-    renderSection({ shippers: [{ id: 's1', name: 'Walmart', status: 'ACTIVE' }] })
-    await screen.findByText('Total equipos activos')
-    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Walmart' } })
+    const body = renderSection({ shippers: [{ id: 's1', name: 'Walmart', status: 'ACTIVE' }] })
+    await body.findByText('Total equipos activos')
+    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Walmart' } })
     expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', 'Walmart')
   })
 
   it('el link "Ver histórico" apunta a /dashboard/operations/closures/history', async () => {
-    renderSection()
-    await screen.findByText('Total equipos activos')
-    const link = screen.getByRole('link', { name: /Ver histórico/ })
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    const link = body.getByRole('link', { name: /Ver histórico/ })
     expect(link).toHaveAttribute('href', '/dashboard/operations/closures/history')
+  })
+
+  it('"Descargar PDF" llama a window.print', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: /Descargar PDF/ }))
+    expect(printSpy).toHaveBeenCalled()
+    printSpy.mockRestore()
+  })
+
+  it('"Descargar Excel" dispara la descarga del CSV con el detalle completo', async () => {
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    const clickSpy = vi.fn()
+    const originalCreateElement = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = originalCreateElement(tag)
+      if (tag === 'a') el.click = clickSpy
+      return el
+    })
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:mock')
+    URL.revokeObjectURL = vi.fn()
+
+    fireEvent.click(body.getByRole('button', { name: /Descargar Excel/ }))
+
+    expect(clickSpy).toHaveBeenCalled()
+    vi.mocked(document.createElement).mockRestore()
   })
 })
