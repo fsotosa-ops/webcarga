@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
+import { EquipoCompletoClosureSection } from '@/components/dashboard/sections/EquipoCompletoClosureSection'
 import { FleetOverviewSection } from '@/components/dashboard/sections/FleetOverviewSection'
 import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
 import { TractoreoDriverClosureSection } from '@/components/dashboard/sections/TractoreoDriverClosureSection'
@@ -174,7 +175,7 @@ function ClosuresCenterPageInner() {
 
         <section id="equipos-completos" className="space-y-3">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide">Cerrar Equipos Completos</h2>
-          <SectionPlaceholder nextTask="Tarea 1.4" />
+          <EquipoCompletoClosureSection fecha={fecha} />
         </section>
 
         <section id="reporte" className="space-y-3">
