@@ -759,8 +759,32 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 **Bug real encontrado verificando en vivo (mismo día)**: tras el rename, la ficha de empresa seguía mostrando "Tractoreo" en el chip de "Tipo Vehículo" del roster de equipos — no era caché de frontend. Causa real: `app.carrier_asset_roster`/`app.asset_compliance_status` (vistas materializadas, H1.5) se refrescan por trigger en `driver_assignments`/`asset_assignments`/`carriers`, pero **nunca en `public.assets` directo** — el `UPDATE` que hace `load_assets_04.sql` en cada sync de Mage nunca disparaba el refresh. Corregido con migración `20260804010000_refresh_carrier_view_on_assets_update.sql` (nuevo trigger `AFTER UPDATE ON public.assets`) + refresh manual una vez. Verificado en Playwright: `BDZT60 · Tracto · TRACTOCAMION` ✓. Este gap probablemente explica por qué cambios anteriores de `asset_type`/`fleet_service_type_id` vía Mage tardaban en reflejarse en Empresas sin que nadie lo notara.
 
 #### Próximo paso exacto
-1. [ ] Construir el módulo "Documentos" (sábana documental) según el plan ya aprobado y extendido — pedido explícito "si agregalo".
+1. [x] Construir el módulo "Documentos" (sábana documental) — ver Ronda 87, CERRADO.
 2. [ ] (diferido, decisión del usuario) Ajustar el Cierre del Día para que la unidad sea el conductor, no el tracto — revisar `equipment_closures.py`/HU-03.
 3. [ ] (diferido, decisión del usuario) Reporte de inconsistencias tracto/conductor por empresa (cruce patentes activas vs. conductores activos).
 4. [ ] (heredado, no bloqueante) Investigar `load_coverage_types_01`.
 5. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac.
+
+### 2026-08-04 (cont.) — Ronda 87: módulo "Documentos" construido, testeado y verificado en vivo — CERRADO
+
+**Origen**: pedido explícito del usuario ("si agregalo") de construir el módulo completo ya planeado en `/Users/usuario/.claude/plans/necesito-que-revises-la-iterative-sutherland.md` — sábana documental que cruza pendientes de toda la flota (empresa/chofer/equipo) en una sola pantalla, reemplazando el flujo actual de navegar empresa → conductor → tracto.
+
+**Backend** (`compliance.py`, sin cambios de esquema — reusa `compliance_requirements`/`compliance_records`):
+- `GET /compliance-records/pending`: sábana a nivel de fila (declarada antes de `/{record_id}` para no colisionar), con `carrier_operation_types` agregado por empresa (`array_agg(DISTINCT webcarga_operation_type)` desde `asset_assignments` ACTIVE — una empresa con flota mixta aparece con ambos valores, no se fuerza uno solo) y filtros `carrier_id`/`category`/`requirement_code`/`q`/`operation_type`.
+- `POST /compliance-records/bulk-file`: carga masiva hasta 30 archivos, por-archivo (no todo-o-nada — un MIME inválido no tumba el resto del lote), con defensa en profundidad server-side (cada `record_id` debe resolver al `carrier_id` recibido, no confía solo en que el frontend restrinja la selección a una empresa).
+- `_apply_compliance_upload` extraído como helper compartido entre el upload 1-a-1 existente y el nuevo batch.
+
+**Frontend**: `PendingDocumentsTable.tsx` (tabla + selección + botón masivo deshabilitado si la selección cruza empresas), `BulkDocumentUploadModal.tsx` (dropzone multi-archivo clonado de `TripBulkUpload.tsx`, auto-asigna archivos a slots libres, permite reasignar/quitar, éxito parcial visible sin cerrar el modal), `app/dashboard/documents/page.tsx` (filtros Categoría/Tipo de Operación/búsqueda con debounce, export CSV client-side, tabs Certificación/Sin Clasificar deshabilitados "Próximamente"), ítem "Documentos" agregado a `Sidebar.tsx` (`NAV_ITEMS`, icono `FileText`).
+
+**Verificado**: backend 456/456 pytest (21 tests nuevos). Frontend 664/664 vitest (1 falla intermitente de timeout en `FleetDailyOverviewDialog.test.tsx` al correr la suite completa, confirmado pre-existente y no relacionado — pasa 6/6 en aislado), `tsc --noEmit` limpio, `npm run build` exitoso (ruta `/dashboard/documents` presente en el manifest).
+
+**Push + deploy + verificación en vivo (Playwright, mismo día)**: commit `43e7d71` pusheado a `dev`, ambos workflows (`Deploy Frontend`/`Deploy Monitor API`) verdes. Confirmado en staging real con datos de producción: la sábana carga filas reales (ej. Agrocapilla Ltda — Póliza de Seguro Vigente, Certificado Mutual, etc., categoría EMPRESA/BASICA), seleccionar 2 filas de la misma empresa habilita "Subir masivo" y muestra "2 seleccionados", el modal abre correctamente scopeado a esa empresa ("Subir masivo — Empresa Agrocapilla Ltda") con GUARDAR deshabilitado hasta que haya archivos asignados. No se subió ningún archivo real de prueba (se canceló el modal) para no ensuciar datos de producción.
+
+**Fuera de alcance de esta ronda, documentado en el plan**: tabs "Certificación"/"Documentos Sin Clasificar" (sin criterios de aceptación definidos / requieren modelo de datos nuevo), notificaciones por email/in-app al subir (no existe infraestructura de email en el backend), categoría "Peonetas" (no existe el concepto en el modelo).
+
+#### Próximo paso exacto
+1. [ ] (diferido, decisión del usuario) Ajustar el Cierre del Día para que la unidad sea el conductor, no el tracto — revisar `equipment_closures.py`/HU-03.
+2. [ ] (diferido, decisión del usuario) Reporte de inconsistencias tracto/conductor por empresa (cruce patentes activas vs. conductores activos).
+3. [ ] (heredado, no bloqueante) Investigar `load_coverage_types_01` — "can't execute an empty query".
+4. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac.
+5. [ ] (mejora futura, opcional) Tabs "Certificación"/"Documentos Sin Clasificar" del módulo Documentos — sin spec todavía.
