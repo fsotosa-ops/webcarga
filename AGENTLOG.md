@@ -730,8 +730,35 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 
 **Pendiente**: push a `dev` + deploy backend + verificación en vivo con Playwright.
 
+**Push + deploy + verificación en vivo (Playwright, mismo día)**: commit `5c6a513` pusheado a `dev`, backend verde. Confirmado en staging real: diálogo "Cerrar el día" → **Tractoreo 48.9% utilización** (Bloque 1) / **Equipos Completos 13.9% utilización** (Bloque 2, ya no 0%).
+
 #### Próximo paso exacto
-1. [ ] Push a `origin/dev` + deploy backend + validar en vivo con Playwright: "Cerrar el día" debería mostrar Bloque 1 ~43 y Bloque 2 con datos reales (antes 0%).
-2. [ ] Confirmar visualmente en Empresas que los chips de "Tipo Vehículo" ahora muestran el subtipo limpio (ej. "Furgón Seco" en vez de "Equipo Completo Furgón Seco").
-3. [ ] (mejora futura, opcional) Mostrar también `webcarga_operation_type` en algún lugar del frontend — hoy solo vive en backend/DB, usado para clasificar pero no visible como campo propio en ninguna ficha.
+1. [x] Push + deploy + Playwright — Bloque 1/2 confirmados con datos reales en staging.
+2. [x] Chips de "Tipo Vehículo" en Empresas — ver Ronda 86 (etiqueta TRACTOCAMION corregida).
+3. [ ] (mejora futura, opcional) Mostrar también `webcarga_operation_type` en algún lugar del frontend — hoy solo vive en backend/DB, usado para clasificar pero no visible como campo propio en ninguna ficha. Nota Ronda 86: el filtro por Tipo de Operación a nivel empresa ya quedó incorporado al plan del módulo "Documentos".
 4. [ ] Investigar (no bloqueante) `load_coverage_types_01` — "can't execute an empty query".
+
+### 2026-08-04 — Ronda 86: minuta del 2026-08-03 valida varias decisiones + corrige la etiqueta "Tractoreo" en FLEET_SERVICE_TYPE
+
+**Origen**: el usuario abrió `monitor-app/docs/user-stories/20260803/minuta-20260803.md` (acta de reunión real del 2026-08-03) en el IDE. Contiene decisiones de negocio que validan y corrigen trabajo de esta sesión.
+
+**Validado por la minuta (sin cambios necesarios)**:
+- "tipo de operación es el paraguas (equipo completo vs. tractoreo), clasificación a nivel de patente, no de empresa; empresa define el default" — exactamente la arquitectura de la Ronda 85 (`webcarga_operation_type_id` por asset).
+- "Sacar la etiqueta 'equipo completo' del campo de tipo de vehículo" — ya hecho en la Ronda 85.
+- "Datos a analizar desde julio en adelante, excluir mayo y anteriores" — ya hecho en la Ronda 83 (corte `app.trips`).
+- "Felipe ajustará interfaz del directorio: menos clics, vista de documentación pendiente por empresa" — es exactamente el módulo "Documentos" recién planeado.
+
+**Bug real encontrado leyendo la minuta**: *"Tipo de vehículo debe decir 'tracto' o 'tractocamión', no 'tractoreo'"* — `FLEET_SERVICE_TYPE` seguía usando la etiqueta `"Tractoreo"` para tractocamiones, ambiguo ahora que ese nombre es exclusivo de `WEBCARGA_OPERATION_TYPE`. Corregido con instrucción explícita del usuario ("usa el mismo concepto que está en la columna C"): migración `20260804000000_fleet_service_type_tractocamion_label.sql` renombra la etiqueta a `"TRACTOCAMION"` (mismo texto que `asset_type`/columna C, no una etiqueta inventada). `load_assets_04.sql` ajustado para que, en filas TRACTOCAMION, el `fleet_service_type_id` se resuelva directo desde `tipo_de_equipo` (columna C, autoritativa) en vez de `tipo_vehiculo` (columna D, que ahí sigue diciendo "Tractoreo"). Corrido en vivo: **80/80 TRACTOCAMIONES** (antes 79, con 1 fila sucia sin matchear) ahora resuelven `fleet_service_type_id = "TRACTOCAMION"` limpio.
+
+**Pendiente, explícitamente diferido a otra ronda (decisión del usuario, opción 1 de 3)**: "Cierre se hace por conductor, no por patente" (cambio de fondo a `equipment_closures.py`/HU-03, hoy tracto-céntrico) y el reporte de inconsistencias tracto/conductor (empresa con 3 tractos y 2 conductores → alerta) — ambos anotados, no implementados. También quedan sin modelar: subtipo de tracto (6x4/4x2) y tamaño de rampla (53/48 pies).
+
+**Verificado**: backend 445/445 pytest (sin cambios de código Python — el fix es 100% de datos/taxonomía).
+
+**Además, pedido explícito del usuario**: el filtro "Tipo de Operación" (Tractoreo/Equipo Completo) a nivel EMPRESA, agregado desde los vehículos activos de cada empresa (`array_agg(DISTINCT webcarga_operation_type)`), se incorporó al plan ya escrito del módulo "Documentos" (`/Users/usuario/.claude/plans/necesito-que-revises-la-iterative-sutherland.md`) — todavía no implementado, el módulo completo sigue pendiente de construir.
+
+#### Próximo paso exacto
+1. [ ] Construir el módulo "Documentos" (sábana documental) según el plan ya aprobado y extendido — pedido explícito "si agregalo".
+2. [ ] (diferido, decisión del usuario) Ajustar el Cierre del Día para que la unidad sea el conductor, no el tracto — revisar `equipment_closures.py`/HU-03.
+3. [ ] (diferido, decisión del usuario) Reporte de inconsistencias tracto/conductor por empresa (cruce patentes activas vs. conductores activos).
+4. [ ] (heredado, no bloqueante) Investigar `load_coverage_types_01`.
+5. [ ] (heredado) Confirmar con Fabián el mapeo definitivo de estados Sodimac.
