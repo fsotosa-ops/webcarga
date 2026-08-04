@@ -30,6 +30,17 @@ todavía no llega (ver docs/casuistica-negocio-diario.md y AGENTLOG.md):
   - Una empresa con AMBOS tipos de operación seleccionados cuenta sus
     equipos en ambas secciones (Tractoreo y Equipos Completos) — mismo
     criterio que Fase 2/4, no se fuerza una sola categoría.
+
+Tarea 6 (plan 2.3, minuta 2026-08-03): la Sección 4 ("Tractoreo no
+trabajando") pasa a agruparse por CONDUCTOR, no por tracto — decisión de
+negocio confirmada por el usuario, porque el roster de Tractoreo (ver
+TRACTOREO_ROSTER_CTE) se arma a nivel EMPRESA, así que el conductor puede
+tener como tracto habitual uno clasificado Equipo Completo aunque él mismo
+esté en el roster de Tractoreo. Para no perder la forma de tabla cruzada
+CD×motivo de la HU-04 literal, la sección expone ambas cosas: los mismos
+`por_cd`/`por_empresa_y_cd` de siempre (ahora contando conductores) MÁS
+`driver_detail`, una fila plana por conductor con su tipo de operación.
+Las Secciones 1, 2, 3, 5, 6 siguen 100% tracto-céntricas — no cambian.
 """
 from datetime import date as _date
 
@@ -37,6 +48,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user
 from ..db import get_pool
+from ..services.driver_roster import TRACTOREO_ROSTER_CTE
+from .daily_closures import _recompute as _recompute_drivers
 from .equipment_closures import _recompute
 from .trips import _load_operation_type_buckets, _resolve_operation_type
 
@@ -106,6 +119,52 @@ JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
 JOIN app.trip_stops ts ON ts.trip_id = t.id AND ts.stop_type = 'ORIGIN'
 WHERE vfr.resolved_tractor_asset_id = ANY($1::uuid[])
 ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST
+"""
+
+
+# Tarea 6 (plan 2.3, minuta 2026-08-03): insumo para la Sección 4 por
+# CONDUCTOR — mismo roster Tractoreo que usa la cuadratura activa de
+# daily_closures.py (TRACTOREO_ROSTER_CTE), no una copia divergente.
+_DRIVER_ROSTER_SQL = f"""
+WITH {TRACTOREO_ROSTER_CTE}
+SELECT r.driver_id, d.full_name, r.home_carrier_id AS carrier_id, c.business_name AS carrier_name
+FROM active_roster r
+JOIN public.drivers d ON d.id = r.driver_id
+JOIN public.carriers c ON c.id = r.home_carrier_id
+"""
+
+_DRIVER_STATUS_SQL = """
+SELECT dds.driver_id, dds.status, ur.label AS unassigned_reason_label
+FROM app.driver_day_status dds
+LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
+WHERE dds.business_date = $1
+"""
+
+# CD de origen "mejor esfuerzo" para conductores SIN CARGA — mismo criterio
+# que _LAST_KNOWN_ORIGIN_SQL (equipo), pero resuelto por conductor.
+_LAST_KNOWN_ORIGIN_BY_DRIVER_SQL = """
+SELECT DISTINCT ON (vfr.resolved_driver_id)
+    vfr.resolved_driver_id AS driver_id, ts.local AS origin_cd
+FROM app.trips t
+JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+JOIN app.trip_stops ts ON ts.trip_id = t.id AND ts.stop_type = 'ORIGIN'
+WHERE vfr.resolved_driver_id = ANY($1::uuid[])
+ORDER BY vfr.resolved_driver_id, t.status_reported_at DESC NULLS LAST
+"""
+
+# Tracto habitual + tipo de operación de ESE tracto — mismo criterio
+# "mejor esfuerzo" que la Tarea 5 agregó a _DETAIL_SQL de daily_closures.py,
+# pero acá resuelto en batch para todo el roster (no es una fuente de
+# verdad de asignación exclusiva, ver docstring de esa tarea).
+_LAST_KNOWN_TRACTOR_BY_DRIVER_SQL = """
+SELECT DISTINCT ON (vfr.resolved_driver_id)
+    vfr.resolved_driver_id AS driver_id, a.license_plate AS tractor_plate, wot.label AS operation_type
+FROM app.trips t
+JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+LEFT JOIN public.assets a ON a.id = vfr.resolved_tractor_asset_id
+LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
+WHERE vfr.resolved_driver_id = ANY($1::uuid[])
+ORDER BY vfr.resolved_driver_id, t.status_reported_at DESC NULLS LAST
 """
 
 
@@ -193,6 +252,49 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             "unassigned_reason_label": status_row["unassigned_reason_label"] if status_row else None,
         })
     return rows
+
+
+async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
+    """Insumo de la Sección 4 (Tarea 6, plan 2.3): una fila por conductor
+    del roster Tractoreo (TRACTOREO_ROSTER_CTE) que hoy está UNASSIGNED —
+    ASSIGNED no entra (tiene carga) y MISMATCH tampoco (inconsistencia de
+    datos que se resuelve en Pendientes/pre-cierre, no es parte de este
+    reporte). con_carga queda fijo en False: es un campo "de compatibilidad"
+    para que _cross_tab_by_motivo (que ya filtra internamente con
+    `if r["con_carga"]: continue`) acepte todas las filas sin modificarla."""
+    await _recompute_drivers(pool, business_date)
+
+    roster_rows = await pool.fetch(_DRIVER_ROSTER_SQL)
+
+    status_rows = await pool.fetch(_DRIVER_STATUS_SQL, business_date)
+    status_by_driver = {r["driver_id"]: r for r in status_rows}
+
+    driver_ids = [r["driver_id"] for r in roster_rows]
+
+    origin_rows = await pool.fetch(_LAST_KNOWN_ORIGIN_BY_DRIVER_SQL, driver_ids) if driver_ids else []
+    origin_by_driver = {r["driver_id"]: r["origin_cd"] for r in origin_rows}
+
+    tractor_rows = await pool.fetch(_LAST_KNOWN_TRACTOR_BY_DRIVER_SQL, driver_ids) if driver_ids else []
+    tractor_by_driver = {r["driver_id"]: r for r in tractor_rows}
+
+    rows = []
+    for r in roster_rows:
+        driver_id = r["driver_id"]
+        status_row = status_by_driver.get(driver_id, {})
+        tractor_row = tractor_by_driver.get(driver_id, {})
+        rows.append({
+            "driver_id": driver_id,
+            "full_name": r["full_name"],
+            "carrier_name": r["carrier_name"],
+            "status": status_row.get("status"),
+            "unassigned_reason_label": status_row.get("unassigned_reason_label"),
+            "origin_cd": origin_by_driver.get(driver_id),
+            "tractor_plate": tractor_row.get("tractor_plate"),
+            "operation_type": tractor_row.get("operation_type"),
+            "con_carga": False,
+        })
+
+    return [r for r in rows if r["status"] == "UNASSIGNED"]
 
 
 def _filter_by_client(rows: list[dict], client: str | None) -> list[dict]:
@@ -290,15 +392,28 @@ def _cross_tab_by_motivo(rows: list[dict], key_fn) -> dict:
     return buckets
 
 
-def _section4_tractoreo_no_trabajando(rows: list[dict]) -> dict:
-    tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
-    por_cd = _cross_tab_by_motivo(tractoreo, lambda r: r["origin_cd"] or "Sin CD")
-    por_empresa_y_cd = _cross_tab_by_motivo(tractoreo, lambda r: (r["origin_cd"] or "Sin CD", r["carrier_name"]))
+def _section4_tractoreo_no_trabajando(driver_rows: list[dict]) -> dict:
+    """Tarea 6 (plan 2.3): agrupada por CONDUCTOR — el caller (_build_driver_rows)
+    ya acota a Tractoreo + UNASSIGNED por construcción, no se filtra de
+    nuevo acá. `driver_detail` es la lista plana que permite ver el tipo de
+    operación del tracto habitual de cada conductor (puede diferir del
+    roster, que se arma a nivel empresa)."""
+    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["origin_cd"] or "Sin CD")
+    por_empresa_y_cd = _cross_tab_by_motivo(driver_rows, lambda r: (r["origin_cd"] or "Sin CD", r["carrier_name"]))
+    driver_detail = [
+        {
+            "driver_id": str(r["driver_id"]), "full_name": r["full_name"], "carrier_name": r["carrier_name"],
+            "cd_origen": r["origin_cd"], "unassigned_reason_label": r["unassigned_reason_label"],
+            "tractor_plate": r["tractor_plate"], "operation_type": r["operation_type"],
+        }
+        for r in driver_rows
+    ]
     return {
         "por_cd": [{"cd": k, **v} for k, v in sorted(por_cd.items())],
         "por_empresa_y_cd": [
             {"cd": k[0], "carrier_name": k[1], **v} for k, v in sorted(por_empresa_y_cd.items())
         ],
+        "driver_detail": driver_detail,
     }
 
 
@@ -351,6 +466,13 @@ def _section6_resumen_general(rows: list[dict]) -> dict:
 async def get_status_report(fecha: str, client: str | None = None, pool=Depends(get_pool), _=Depends(get_current_user)):
     business_date = _parse_business_date(fecha)
     all_rows = await _build_asset_rows(pool, business_date)
+    # Tarea 6 (plan 2.3): la Sección 4 pasa a agruparse por conductor — su
+    # insumo es driver_rows, no rows/all_rows (tracto-céntrico). No se le
+    # aplica _filter_by_client: ese filtro es "asignado a ese cliente", y
+    # todo conductor de driver_rows es por definición UNASSIGNED (sin
+    # cliente) — mismo criterio que ya deja pasar siempre a los equipos
+    # idle en _filter_by_client.
+    driver_rows = await _build_driver_rows(pool, business_date)
     rows = _filter_by_client(all_rows, client)
 
     return {
@@ -359,7 +481,7 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
         "section1_resumen": _section1_resumen(rows),
         "section2_tractoreo_asignado": _section2_tractoreo_asignado(rows),
         "section3_vueltas": _section3_vueltas(rows),
-        "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(rows),
+        "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(driver_rows),
         "section5_equipos_completos": _section5_equipos_completos(rows),
         "section6_resumen_general": _section6_resumen_general(rows),
     }
