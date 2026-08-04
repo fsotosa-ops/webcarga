@@ -4,6 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ClosuresCenterPage from './page'
 import type { DailyClosureStatus } from '@/lib/types'
 
+const EMPTY_PRE_CIERRE = {
+  auto_resolved: [],
+  escalations: {
+    PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+    EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+  },
+}
+
 const push = vi.fn()
 const replace = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -38,7 +46,7 @@ vi.mock('@/lib/api/carriers', () => ({
 const EMPTY_STATUS: DailyClosureStatus = {
   business_date: '2026-08-04', closed: false, closure: null,
   total_drivers: 0, assigned_count: 0, unassigned_count: 0, mismatch_count: 0, pending_count: 0,
-  drivers: [],
+  drivers: [], pre_cierre: EMPTY_PRE_CIERRE,
 }
 
 function renderPage() {

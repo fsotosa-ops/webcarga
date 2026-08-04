@@ -11,6 +11,14 @@ vi.mock('@/lib/api/dailyClosures', () => ({
 
 const REASONS: UnassignedReasonMeta[] = [{ id: 'pana', label: 'Pana' }]
 
+const EMPTY_PRE_CIERRE = {
+  auto_resolved: [],
+  escalations: {
+    PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+    EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+  },
+}
+
 const STATUS: DailyClosureStatus = {
   business_date: '2026-07-21',
   closed: false,
@@ -20,6 +28,7 @@ const STATUS: DailyClosureStatus = {
   unassigned_count: 1,
   mismatch_count: 1,
   pending_count: 2,
+  pre_cierre: EMPTY_PRE_CIERRE,
   drivers: [
     { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null, last_known_tractor_plate: null, last_known_operation_type: null },
     { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null, last_known_tractor_plate: null, last_known_operation_type: null },
@@ -169,7 +178,7 @@ describe('CloseDayDialog', () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       business_date: '2026-07-22', closed: false, closure: null,
-      total_drivers: 1, assigned_count: 0, unassigned_count: 1, mismatch_count: 0, pending_count: 1,
+      total_drivers: 1, assigned_count: 0, unassigned_count: 1, mismatch_count: 0, pending_count: 1, pre_cierre: EMPTY_PRE_CIERRE,
       drivers: [{
         driver_id: 'd1', full_name: 'Juan Pérez', tax_id: null, carrier_id: null, carrier_name: null,
         status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,
@@ -191,7 +200,7 @@ describe('CloseDayDialog', () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       business_date: '2026-07-22', closed: false, closure: null,
-      total_drivers: 1, assigned_count: 0, unassigned_count: 1, mismatch_count: 0, pending_count: 1,
+      total_drivers: 1, assigned_count: 0, unassigned_count: 1, mismatch_count: 0, pending_count: 1, pre_cierre: EMPTY_PRE_CIERRE,
       drivers: [{
         driver_id: 'd1', full_name: 'Juan Pérez', tax_id: null, carrier_id: null, carrier_name: null,
         status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,

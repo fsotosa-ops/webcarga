@@ -972,6 +972,26 @@ export type DailyClosureInfo = {
   override_count: number
 }
 
+/** HU-02 (pre-cierre) — Tarea 12 (plan 1.3): corre siempre antes de
+ *  recalcular la cuadratura/cierre de equipos, viene en el payload de
+ *  GET /daily-closures y GET /equipment-closures desde que HU-02 se
+ *  implementó, pero sin UI propia hasta esta tarea. */
+export type PreCierreAutoResolved = {
+  type:    string
+  message: string
+}
+export type PreCierreEscalations = {
+  PATENTE_NO_REGISTRADA:   { tractor_plate: string; reason: string }[]
+  EMPRESA_NO_RECONOCIDA:   { tractor_plate: string; tms_carrier_name: string; directory_carrier_name: string }[]
+  CONDUCTOR_NO_REGISTRADO: { driver_rut: string }[]
+  EMPRESA_ONBOARDING:      { carrier_id: string; carrier_name: string }[]
+  SIN_TIPO_OPERACION:      { carrier_id: string; carrier_name: string }[]
+}
+export type PreCierreResult = {
+  auto_resolved: PreCierreAutoResolved[]
+  escalations:   PreCierreEscalations
+}
+
 export type DailyClosureStatus = {
   business_date:    string
   closed:           boolean
@@ -982,6 +1002,7 @@ export type DailyClosureStatus = {
   mismatch_count:   number
   pending_count:    number
   drivers:          DriverDayStatusRow[]
+  pre_cierre:       PreCierreResult
 }
 
 export type CloseDayPending = {

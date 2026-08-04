@@ -7,8 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
-import { FleetDriverGapCard } from '@/components/dashboard/FleetDriverGapCard'
 import { FleetOverviewSection } from '@/components/dashboard/sections/FleetOverviewSection'
+import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
 import { TractoreoDriverClosureSection } from '@/components/dashboard/sections/TractoreoDriverClosureSection'
 import type { TripsMeta } from '@/lib/types'
 
@@ -159,8 +159,7 @@ function ClosuresCenterPageInner() {
 
         <section id="pendientes" className="space-y-3">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide">Pendientes</h2>
-          <SectionPlaceholder nextTask="Tarea 1.3" />
-          <FleetDriverGapCard />
+          <PreCierrePendingSection fecha={fecha} />
         </section>
 
         <section id="tractoreo" className="space-y-3">

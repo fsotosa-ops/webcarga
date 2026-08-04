@@ -29,6 +29,13 @@ const STATUS: DailyClosureStatus = {
   unassigned_count: 1,
   mismatch_count: 1,
   pending_count: 2,
+  pre_cierre: {
+    auto_resolved: [],
+    escalations: {
+      PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+      EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+    },
+  },
   drivers: [
     driverRow({ driver_id: 'd1', full_name: 'Ana Soto', status: 'UNASSIGNED', last_known_tractor_plate: 'ABCD12', last_known_operation_type: 'Tractoreo' }),
     driverRow({ driver_id: 'd2', full_name: 'Luis Rojas', status: 'MISMATCH', trip_id: 't1' }),
