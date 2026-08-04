@@ -17,8 +17,8 @@ interface Props {
  *  primera UI real del pre-cierre (corre desde HU-02/Fase 3, pero sin
  *  pantalla propia hasta esta tarea). Consume `pre_cierre` del payload de
  *  GET /daily-closures (mismo query key ['daily-closure', fecha] que ya
- *  usa TractoreoDriverClosureSection en esta misma página — React Query
- *  cachea, no duplica el fetch). Equipment_closures.py devuelve el mismo
+ *  usa FlotaDelDiaSection en esta misma página — React Query cachea, no
+ *  duplica el fetch). Equipment_closures.py devuelve el mismo
  *  pre_cierre (misma corrida de run_pre_cierre) — no hace falta leerlo dos
  *  veces. */
 export function PreCierrePendingSection({ fecha }: Props) {

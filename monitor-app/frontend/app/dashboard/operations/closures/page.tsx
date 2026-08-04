@@ -5,18 +5,16 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ChevronRight, ClipboardCheck, LayoutGrid, AlertTriangle, Truck, Package, FileBarChart2, Loader2,
+  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Loader2,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { shippersApi } from '@/lib/api/locations'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
-import { EquipoCompletoClosureSection } from '@/components/dashboard/sections/EquipoCompletoClosureSection'
-import { FleetOverviewSection } from '@/components/dashboard/sections/FleetOverviewSection'
+import { FlotaDelDiaSection } from '@/components/dashboard/sections/FlotaDelDiaSection'
 import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
 import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
-import { TractoreoDriverClosureSection } from '@/components/dashboard/sections/TractoreoDriverClosureSection'
 import type { TripsMeta } from '@/lib/types'
 
 const ADMIN_ROLES = new Set(['admin', 'owner'])
@@ -25,30 +23,12 @@ function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
 }
 
-const SECTIONS = [
-  { id: 'resumen',            label: 'Resumen del día',              icon: LayoutGrid },
-  { id: 'pendientes',         label: 'Pendientes',                   icon: AlertTriangle },
-  { id: 'tractoreo',          label: 'Cerrar Tractoreo',             icon: Truck },
-  { id: 'equipos-completos',  label: 'Cerrar Equipos Completos',     icon: Package },
-  { id: 'reporte',            label: 'Reporte',                      icon: FileBarChart2 },
+const TABS = [
+  { id: 'flota',       label: 'Flota del día',  icon: Truck },
+  { id: 'pendientes',  label: 'Pendientes',     icon: AlertTriangle },
+  { id: 'reporte',     label: 'Reporte',        icon: FileBarChart2 },
 ] as const
-
-/** Card contenedora consistente con el resto del producto (Certificación,
- *  ficha de Empresa): bg blanco + borde + sombra + radio grande — cada
- *  sección del Centro de Cierre vive en la suya, en vez de flotar
- *  directamente sobre el canvas gris del layout (feedback explícito del
- *  usuario: "como si fuese el lienzo gris y se escribió sobre él"). */
-function SectionCard({ id, title, meta, children }: { id: string; title: string; meta?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section id={id} className="scroll-mt-6 bg-white rounded-2xl border border-border shadow-sm p-5 sm:p-6">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <h2 className="text-sm font-bold text-text-primary">{title}</h2>
-        {meta}
-      </div>
-      {children}
-    </section>
-  )
-}
+type TabId = (typeof TABS)[number]['id']
 
 export default function ClosuresCenterPage() {
   return (
@@ -59,19 +39,18 @@ export default function ClosuresCenterPage() {
 }
 
 /** Centro de Cierre del Día unificado (Bloque 1) — fusiona lo que antes eran
- *  4 diálogos independientes en una sola página de secciones ancladas.
- *  Rediseño visual (feedback del usuario, 2026-08-04): cada sección pasa a
- *  vivir en su propia card blanca (mismo lenguaje que Certificación/ficha de
- *  Empresa — header en card, tabs tipo pill, sombra+borde consistentes),
- *  con nav lateral con estado activo por scroll y un ancho de contenido que
- *  ya no se angosta con un max-w innecesario para una página de tablas.
+ *  4 diálogos independientes en una sola página. Rediseño (feedback del
+ *  usuario, 2026-08-04): funciona como un navtab de verdad — un solo lienzo
+ *  (una card) con un tab bar arriba, y solo la sección activa se renderiza
+ *  en el panel de abajo, en vez de apilar las 5 secciones en una columna
+ *  larga con scroll y anclas. "Confirmar cierre" queda fijo al pie del
+ *  mismo lienzo, visible sin importar qué tab esté activa — es la acción
+ *  primaria de la página, no algo que dependa de estar en "Reporte".
  *
- *  "Confirmar cierre" vive en su propia card al final (no dentro de
- *  "Reporte") porque encadena 2 llamados: primero Tractoreo
- *  (dailyClosuresApi.close, bloquea si hay pendientes — motivo obligatorio,
- *  HU-03), y solo si ese tuvo éxito, Equipos Completos
- *  (equipmentClosuresApi.close, nunca bloquea — cierre pasivo). Si el
- *  primero falla, el segundo no se llama. */
+ *  Encadena 2 llamados: primero Tractoreo (dailyClosuresApi.close, bloquea
+ *  si hay pendientes — motivo obligatorio, HU-03), y solo si ese tuvo
+ *  éxito, Equipos Completos (equipmentClosuresApi.close, nunca bloquea —
+ *  cierre pasivo). Si el primero falla, el segundo no se llama. */
 function ClosuresCenterPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -84,7 +63,7 @@ function ClosuresCenterPageInner() {
   const [overridePending, setOverridePending] = useState(false)
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [overrideNote, setOverrideNote] = useState('')
-  const [activeSection, setActiveSection] = useState<string>(SECTIONS[0].id)
+  const [tab, setTab] = useState<TabId>('flota')
 
   useEffect(() => {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en la sección */ })
@@ -104,28 +83,6 @@ function ClosuresCenterPageInner() {
         .from('profiles').select('role').eq('id', session.user.id).single()
       if (profile && ADMIN_ROLES.has(profile.role)) setCanAdmin(true)
     })
-  }, [])
-
-  // Nav lateral con estado activo por scroll — misma idea que un scrollspy
-  // de docs: la sección visible más arriba en el viewport marca el ítem
-  // activo, sin depender de que el usuario haga click en el nav primero.
-  // Guard de IntersectionObserver: no existe en jsdom (tests) ni en
-  // navegadores muy viejos — sin él el nav simplemente no resalta la
-  // sección activa, degradación aceptable.
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return
-    const observer = new IntersectionObserver(
-      entries => {
-        const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible[0]) setActiveSection(visible[0].target.id)
-      },
-      { rootMargin: '-72px 0px -70% 0px', threshold: 0 },
-    )
-    SECTIONS.forEach(s => {
-      const el = document.getElementById(s.id)
-      if (el) observer.observe(el)
-    })
-    return () => observer.disconnect()
   }, [])
 
   function setFecha(next: string) {
@@ -201,97 +158,88 @@ function ClosuresCenterPageInner() {
         </label>
       </div>
 
-      <div className="flex gap-6 items-start">
-        <nav className="w-56 shrink-0 sticky top-6 self-start bg-white rounded-2xl border border-border shadow-sm p-2 space-y-0.5">
-          {SECTIONS.map(s => {
-            const Icon = s.icon
-            const isActive = activeSection === s.id
+      {/* Un solo lienzo: tab bar arriba, panel de contenido abajo (solo la
+          tab activa se renderiza), "Confirmar cierre" fijo al pie. */}
+      <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div role="tablist" className="flex items-center gap-1 bg-gray-50 border-b border-border px-3 py-2 overflow-x-auto">
+          {TABS.map(t => {
+            const Icon = t.icon
+            const isActive = tab === t.id
             return (
-              <a
-                key={s.id}
-                href={`#${s.id}`}
-                className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-xl transition-colors ${
-                  isActive ? 'bg-accent/10 text-accent' : 'text-gray-500 hover:text-text-primary hover:bg-gray-50'
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl whitespace-nowrap transition-colors ${
+                  isActive ? 'bg-white text-accent shadow-sm' : 'text-gray-500 hover:text-text-primary hover:bg-white/60'
                 }`}
               >
                 <Icon size={14} className="shrink-0" />
-                {s.label}
-              </a>
+                {t.label}
+              </button>
             )
           })}
-        </nav>
+        </div>
 
-        <div className="flex-1 min-w-0 space-y-6">
-          <SectionCard id="resumen" title="Resumen del día">
-            <FleetOverviewSection fecha={fecha} onSelectTrip={handleSelectTrip} />
-          </SectionCard>
-
-          <SectionCard id="pendientes" title="Pendientes">
-            <PreCierrePendingSection fecha={fecha} />
-          </SectionCard>
-
-          <SectionCard id="tractoreo" title="Cerrar Tractoreo">
-            <TractoreoDriverClosureSection
+        <div className="p-5 sm:p-6">
+          {tab === 'flota' && (
+            <FlotaDelDiaSection
               fecha={fecha}
               unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
               onSelectTrip={handleSelectTrip}
               onCreateManualTrip={handleCreateManualTrip}
             />
-          </SectionCard>
+          )}
+          {tab === 'pendientes' && <PreCierrePendingSection fecha={fecha} />}
+          {tab === 'reporte' && <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />}
+        </div>
 
-          <SectionCard id="equipos-completos" title="Cerrar Equipos Completos">
-            <EquipoCompletoClosureSection fecha={fecha} />
-          </SectionCard>
+        <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3">
+          <div>
+            <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Cierra Tractoreo (requiere motivo en todos los pendientes) y, si eso tiene éxito, Equipos Completos (nunca bloquea).
+            </p>
+          </div>
 
-          <SectionCard id="reporte" title="Reporte del día">
-            <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />
-          </SectionCard>
-
-          <section className="bg-accent/5 rounded-2xl border border-accent/20 p-5 sm:p-6 space-y-3">
-            <div>
-              <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Cierra Tractoreo (requiere motivo en todos los pendientes) y, si eso tiene éxito, Equipos Completos (nunca bloquea).
-              </p>
-            </div>
-
-            {closeError && (
-              <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{closeError}</p>
-            )}
-            {overridePending && canAdmin && !overrideOpen && (
-              <button type="button" onClick={() => setOverrideOpen(true)} className="block text-[11px] font-semibold text-amber-700 underline">
-                Forzar cierre con override
-              </button>
-            )}
-            {overrideOpen && (
-              <div className="space-y-2">
-                <textarea
-                  value={overrideNote}
-                  onChange={e => setOverrideNote(e.target.value)}
-                  placeholder="Comentario de justificación (obligatorio)"
-                  className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-white"
-                  rows={2}
-                />
-                <button
-                  type="button"
-                  disabled={closing || !overrideNote.trim()}
-                  onClick={() => handleConfirmClose(true)}
-                  className="text-xs font-semibold bg-amber-600 text-white rounded-lg px-3 py-1.5 disabled:opacity-50"
-                >
-                  {closing ? 'Cerrando…' : 'Confirmar override y cerrar'}
-                </button>
-              </div>
-            )}
-            <button
-              type="button"
-              disabled={closing}
-              onClick={() => handleConfirmClose(false)}
-              className="text-sm font-semibold bg-accent text-white rounded-lg px-4 py-2.5 disabled:opacity-40 flex items-center gap-2 hover:bg-accent/90 transition-colors"
-            >
-              {closing ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
-              Confirmar cierre
+          {closeError && (
+            <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{closeError}</p>
+          )}
+          {overridePending && canAdmin && !overrideOpen && (
+            <button type="button" onClick={() => setOverrideOpen(true)} className="block text-[11px] font-semibold text-amber-700 underline">
+              Forzar cierre con override
             </button>
-          </section>
+          )}
+          {overrideOpen && (
+            <div className="space-y-2">
+              <textarea
+                value={overrideNote}
+                onChange={e => setOverrideNote(e.target.value)}
+                placeholder="Comentario de justificación (obligatorio)"
+                className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-white"
+                rows={2}
+              />
+              <button
+                type="button"
+                disabled={closing || !overrideNote.trim()}
+                onClick={() => handleConfirmClose(true)}
+                className="text-xs font-semibold bg-amber-600 text-white rounded-lg px-3 py-1.5 disabled:opacity-50"
+              >
+                {closing ? 'Cerrando…' : 'Confirmar override y cerrar'}
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={closing}
+            onClick={() => handleConfirmClose(false)}
+            className="text-sm font-semibold bg-accent text-white rounded-lg px-4 py-2.5 disabled:opacity-40 flex items-center gap-2 hover:bg-accent/90 transition-colors"
+          >
+            {closing ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+            Confirmar cierre
+          </button>
         </div>
       </div>
     </div>

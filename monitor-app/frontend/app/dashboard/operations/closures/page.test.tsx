@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ClosuresCenterPage from './page'
-import type { DailyClosureStatus } from '@/lib/types'
+import type { DailyClosureStatus, FleetDailyOverviewResponse } from '@/lib/types'
 
 const EMPTY_PRE_CIERRE = {
   auto_resolved: [],
@@ -43,10 +43,32 @@ vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
 }))
 
+vi.mock('@/lib/api/trips', () => ({
+  tripsApi: { fleetDailyOverview: vi.fn() },
+}))
+
+vi.mock('@/lib/api/locations', () => ({
+  shippersApi: { list: vi.fn().mockResolvedValue([]) },
+}))
+
+vi.mock('@/lib/api/statusReport', () => ({
+  statusReportApi: { get: vi.fn() },
+}))
+
 const EMPTY_STATUS: DailyClosureStatus = {
   business_date: '2026-08-04', closed: false, closure: null,
   total_drivers: 0, assigned_count: 0, unassigned_count: 0, mismatch_count: 0, pending_count: 0,
   drivers: [], pre_cierre: EMPTY_PRE_CIERRE,
+}
+
+const EMPTY_FLEET: FleetDailyOverviewResponse = {
+  fecha: '2026-08-04',
+  categories: [
+    { category: 'TRACTOREO', assigned: 0, unassigned: 0, utilization_pct: 0 },
+    { category: 'EQUIPO_COMPLETO', assigned: 0, unassigned: 0, utilization_pct: 0 },
+    { category: 'SIN_CLASIFICAR', assigned: 0, unassigned: 0, utilization_pct: 0 },
+  ],
+  equipment: [],
 }
 
 function renderPage() {
@@ -61,36 +83,49 @@ function renderPage() {
 beforeEach(async () => {
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  const { tripsApi } = await import('@/lib/api/trips')
   vi.mocked(dailyClosuresApi.get).mockReset().mockResolvedValue(EMPTY_STATUS)
   vi.mocked(dailyClosuresApi.close).mockReset()
   vi.mocked(equipmentClosuresApi.close).mockReset()
+  vi.mocked(tripsApi.fleetDailyOverview).mockReset().mockResolvedValue(EMPTY_FLEET)
   push.mockReset(); replace.mockReset()
 })
 
 describe('ClosuresCenterPage', () => {
-  it('monta las 5 secciones', async () => {
+  it('muestra las 3 tabs, con "Flota del día" activa por defecto', () => {
     renderPage()
-    expect(await screen.findByRole('heading', { level: 2, name: 'Resumen del día' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Pendientes' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Cerrar Tractoreo' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Cerrar Equipos Completos' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Reporte del día' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Confirmar cierre' })).toBeInTheDocument()
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map(t => t.textContent)).toEqual(['Flota del día', 'Pendientes', 'Reporte'])
+    expect(screen.getByRole('tab', { name: 'Flota del día' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Pendientes' })).toHaveAttribute('aria-selected', 'false')
   })
 
-  it('la navegación lateral apunta a las anclas correctas', async () => {
+  it('clickear una tab la activa — solo un lienzo, sin scroll por anclas', () => {
     renderPage()
-    await screen.findByRole('heading', { level: 2, name: 'Resumen del día' })
-    const link = screen.getByRole('link', { name: 'Cerrar Tractoreo' })
-    expect(link).toHaveAttribute('href', '#tractoreo')
+    expect(screen.getByRole('tab', { name: 'Pendientes' })).toHaveAttribute('aria-selected', 'false')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Pendientes' }))
+
+    expect(screen.getByRole('tab', { name: 'Pendientes' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Flota del día' })).toHaveAttribute('aria-selected', 'false')
   })
 
-  it('lee la fecha del query param y se la pasa a TractoreoDriverClosureSection', async () => {
+  it('lee la fecha del query param y se la pasa a FlotaDelDiaSection', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderPage()
-    await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalledWith('2026-08-04'))
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Centro de Cierre del Día')
     expect(screen.getByLabelText('Fecha del cierre')).toHaveValue('2026-08-04')
+
+    await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalledWith('2026-08-04'))
+  })
+
+  it('"Confirmar cierre" está siempre visible, sin importar qué tab esté activa', () => {
+    renderPage()
+    expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Reporte' }))
+
+    expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeInTheDocument()
   })
 
   it('Confirmar cierre: si el cierre de Tractoreo tiene éxito, encadena el de Equipos Completos', async () => {
@@ -99,7 +134,6 @@ describe('ClosuresCenterPage', () => {
     vi.mocked(dailyClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-08-04', overridden: 0 })
     vi.mocked(equipmentClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-08-04', overridden: 0 })
     renderPage()
-    await screen.findByRole('heading', { level: 2, name: 'Resumen del día' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
 
@@ -118,7 +152,6 @@ describe('ClosuresCenterPage', () => {
       (e: unknown): e is never => e === pendingError,
     )
     renderPage()
-    await screen.findByRole('heading', { level: 2, name: 'Resumen del día' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
 
@@ -126,9 +159,8 @@ describe('ClosuresCenterPage', () => {
     expect(equipmentClosuresApi.close).not.toHaveBeenCalled()
   })
 
-  it('cambiar el selector de fecha actualiza la URL', async () => {
+  it('cambiar el selector de fecha actualiza la URL', () => {
     renderPage()
-    await screen.findByRole('heading', { level: 2, name: 'Resumen del día' })
 
     fireEvent.change(screen.getByLabelText('Fecha del cierre'), { target: { value: '2026-08-05' } })
 
