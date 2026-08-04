@@ -756,6 +756,8 @@ psycopg2.errors.UndefinedColumn: column "tipo_vehiculo" of relation "raw_central
 
 **Además, pedido explícito del usuario**: el filtro "Tipo de Operación" (Tractoreo/Equipo Completo) a nivel EMPRESA, agregado desde los vehículos activos de cada empresa (`array_agg(DISTINCT webcarga_operation_type)`), se incorporó al plan ya escrito del módulo "Documentos" (`/Users/usuario/.claude/plans/necesito-que-revises-la-iterative-sutherland.md`) — todavía no implementado, el módulo completo sigue pendiente de construir.
 
+**Bug real encontrado verificando en vivo (mismo día)**: tras el rename, la ficha de empresa seguía mostrando "Tractoreo" en el chip de "Tipo Vehículo" del roster de equipos — no era caché de frontend. Causa real: `app.carrier_asset_roster`/`app.asset_compliance_status` (vistas materializadas, H1.5) se refrescan por trigger en `driver_assignments`/`asset_assignments`/`carriers`, pero **nunca en `public.assets` directo** — el `UPDATE` que hace `load_assets_04.sql` en cada sync de Mage nunca disparaba el refresh. Corregido con migración `20260804010000_refresh_carrier_view_on_assets_update.sql` (nuevo trigger `AFTER UPDATE ON public.assets`) + refresh manual una vez. Verificado en Playwright: `BDZT60 · Tracto · TRACTOCAMION` ✓. Este gap probablemente explica por qué cambios anteriores de `asset_type`/`fleet_service_type_id` vía Mage tardaban en reflejarse en Empresas sin que nadie lo notara.
+
 #### Próximo paso exacto
 1. [ ] Construir el módulo "Documentos" (sábana documental) según el plan ya aprobado y extendido — pedido explícito "si agregalo".
 2. [ ] (diferido, decisión del usuario) Ajustar el Cierre del Día para que la unidad sea el conductor, no el tracto — revisar `equipment_closures.py`/HU-03.
