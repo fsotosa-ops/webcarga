@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Building2, Users, LogOut,
-  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, BarChart3, Receipt,
+  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, BarChart3, Receipt, FileText,
 } from 'lucide-react'
 
 // "Operaciones" agrupa Monitor + Cierres bajo un solo item expandible —
@@ -25,9 +25,10 @@ const MONITOR_GROUP = {
 }
 
 const NAV_ITEMS = [
-  { href: '/dashboard/carriers',       label: 'Empresas',  icon: Building2 },
-  { href: '/dashboard/insurance',      label: 'Seguros',   icon: Shield },
-  { href: '/dashboard/pricing',        label: 'Tarifario', icon: Receipt },
+  { href: '/dashboard/carriers',       label: 'Empresas',   icon: Building2 },
+  { href: '/dashboard/insurance',      label: 'Seguros',    icon: Shield },
+  { href: '/dashboard/pricing',        label: 'Tarifario',  icon: Receipt },
+  { href: '/dashboard/documents',      label: 'Documentos', icon: FileText },
 ]
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahí, se listan

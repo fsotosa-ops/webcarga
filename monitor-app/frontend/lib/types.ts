@@ -618,6 +618,39 @@ export type DocumentVersion = {
   is_current:    boolean
 }
 
+/** Módulo Documentos (sábana) — GET /compliance-records/pending. Un
+ *  compliance_record pendiente por fila, con la empresa/sujeto ya
+ *  resueltos (cruza toda la flota en vez de navegar empresa por empresa). */
+export type PendingComplianceRow = {
+  id:                      string
+  carrier_id:              string
+  carrier_name:            string
+  carrier_tax_id:          string
+  /** Tipo de Operación (Tractoreo/Equipo Completo) agregado desde los
+   *  vehículos activos de la empresa — puede traer ambos si la flota es
+   *  mixta, no se fuerza un solo valor. */
+  carrier_operation_types: string[]
+  certification_type:      'BASICA' | 'ADICIONAL'
+  category:                'EMPRESA' | 'CHOFER' | 'EQUIPO'
+  entity_type:              EntityType
+  entity_id:                string
+  subject_name:              string | null
+  requirement_code:          string
+  document_name:              string
+  status:                    ComplianceStatus
+  expiration_date:            string | null
+}
+
+export type PendingComplianceListResponse = {
+  total: number
+  rows:  PendingComplianceRow[]
+}
+
+export type BulkUploadResult = {
+  uploaded: { record_id: string; status: string; file_name: string; storage_path: string; mime_type: string; size_bytes: number }[]
+  errors:   { record_id: string; file_name: string | null; error: string }[]
+}
+
 /** contact_role no tiene CHECK constraint en DB — string abierto (valores
  *  documentados: 'LEGAL_REP', 'OPERATIONS', etc., ver schemas/contact.py). */
 export type Contact = {

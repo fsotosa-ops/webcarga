@@ -10,12 +10,13 @@ un valor válido del CHECK constraint (datos legacy), pero nada nuevo lo
 setea.
 """
 import json
+from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
-from ..schemas.compliance import ComplianceRecordPatchBody
+from ..schemas.compliance import ComplianceRecordPatchBody, PendingComplianceListResponse
 from ..services.audit import record_manual_edit
 from ..utils.document_storage import (
     delete_document_version, get_document_history, log_document_replacement, resolve_signed_url,
@@ -23,6 +24,12 @@ from ..utils.document_storage import (
 )
 
 router = APIRouter(prefix="/compliance-records", tags=["compliance"])
+
+_CATEGORY_BY_ENTITY_TYPE = {"CARRIER": "EMPRESA", "DRIVER": "CHOFER", "ASSET": "EQUIPO"}
+
+
+def _certification_type(requirement_level: str) -> str:
+    return "BASICA" if requirement_level == "LEGAL_MANDATORY" else "ADICIONAL"
 
 
 async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
@@ -97,6 +104,111 @@ async def get_pending_summary(pool=Depends(get_pool), _=Depends(get_current_user
     }
 
 
+_PENDING_ROWS_SQL = """
+WITH pending AS (
+    SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+           req.requirement_code, req.name AS document_name, req.requirement_level
+    FROM public.compliance_records cr
+    JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+    WHERE cr.is_current = true AND cr.status IN ('MISSING', 'EXPIRED')
+),
+resolved AS (
+    SELECT p.*,
+        CASE p.entity_type
+            WHEN 'CARRIER' THEN p.entity_id
+            WHEN 'DRIVER'  THEN da.carrier_id
+            WHEN 'ASSET'   THEN aa.carrier_id
+        END AS resolved_carrier_id,
+        CASE p.entity_type
+            WHEN 'DRIVER' THEN d.full_name
+            WHEN 'ASSET'  THEN a.license_plate
+            ELSE NULL
+        END AS subject_name
+    FROM pending p
+    LEFT JOIN public.driver_assignments da
+        ON p.entity_type = 'DRIVER' AND da.driver_id = p.entity_id AND da.status = 'ACTIVE'
+    LEFT JOIN public.asset_assignments aa
+        ON p.entity_type = 'ASSET' AND aa.asset_id = p.entity_id AND aa.status = 'ACTIVE'
+    LEFT JOIN public.drivers d ON p.entity_type = 'DRIVER' AND d.id = p.entity_id
+    LEFT JOIN public.assets a ON p.entity_type = 'ASSET' AND a.id = p.entity_id
+),
+-- Tipo de Operación (Tractoreo/Equipo Completo) a nivel EMPRESA: no existe
+-- como columna propia de carriers — se agrega desde los vehículos activos
+-- de la empresa (public.assets.webcarga_operation_type_id). Una empresa
+-- con flota mixta aparece con ambos valores, no se fuerza uno solo
+-- (confirmado con datos reales, Ronda 85 de AGENTLOG: 36 de 80
+-- tractocamiones son "Equipo Completo" mientras el resto de la empresa
+-- puede ser "Tractoreo").
+carrier_operation_types AS (
+    SELECT aa.carrier_id, array_agg(DISTINCT wot.label) AS operation_types
+    FROM public.asset_assignments aa
+    JOIN public.assets a ON a.id = aa.asset_id
+    JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
+    WHERE aa.status = 'ACTIVE'
+    GROUP BY aa.carrier_id
+)
+SELECT
+    r.id::text, r.entity_type, r.entity_id::text, r.subject_name,
+    r.requirement_code, r.document_name, r.requirement_level, r.status, r.expiration_date,
+    c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
+    COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
+    count(*) OVER() AS total_count
+FROM resolved r
+JOIN public.carriers c ON c.id = r.resolved_carrier_id
+LEFT JOIN carrier_operation_types cot ON cot.carrier_id = c.id
+WHERE ($1::uuid IS NULL OR c.id = $1)
+  AND ($2::text IS NULL OR r.entity_type = $2)
+  AND ($3::text IS NULL OR r.requirement_code = $3)
+  AND ($4::text IS NULL OR c.business_name ILIKE '%' || $4 || '%' OR r.subject_name ILIKE '%' || $4 || '%')
+  AND ($5::text IS NULL OR $5 = ANY(COALESCE(cot.operation_types, ARRAY[]::text[])))
+ORDER BY c.business_name, r.entity_type, r.subject_name
+LIMIT $6 OFFSET $7
+"""
+
+
+@router.get("/pending", response_model=PendingComplianceListResponse)
+async def list_pending_compliance_records(
+    carrier_id: Optional[str] = Query(None),
+    category: Optional[Literal["CARRIER", "DRIVER", "ASSET"]] = Query(None),
+    requirement_code: Optional[str] = Query(None),
+    q: str = Query(""),
+    operation_type: Optional[Literal["Tractoreo", "Equipo Completo"]] = Query(None),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Módulo Documentos (sábana) — un `compliance_record` pendiente por
+    fila, cruzando toda la flota en vez de navegar empresa por empresa. Ver
+    docs/superpowers/plans (plan del módulo). Reusa el mismo criterio de
+    atribución DRIVER/ASSET→empresa que `pending-summary`, a nivel de fila."""
+    rows = await pool.fetch(
+        _PENDING_ROWS_SQL,
+        carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
+    )
+    total = rows[0]["total_count"] if rows else 0
+    result_rows = [
+        {
+            "id": r["id"],
+            "carrier_id": r["carrier_id"],
+            "carrier_name": r["carrier_name"],
+            "carrier_tax_id": r["carrier_tax_id"],
+            "carrier_operation_types": list(r["carrier_operation_types"]),
+            "certification_type": _certification_type(r["requirement_level"]),
+            "category": _CATEGORY_BY_ENTITY_TYPE[r["entity_type"]],
+            "entity_type": r["entity_type"],
+            "entity_id": r["entity_id"],
+            "subject_name": r["subject_name"],
+            "requirement_code": r["requirement_code"],
+            "document_name": r["document_name"],
+            "status": r["status"],
+            "expiration_date": r["expiration_date"],
+        }
+        for r in rows
+    ]
+    return {"total": total, "rows": result_rows}
+
+
 @router.get("/{record_id}")
 async def get_compliance_record(
     record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
@@ -149,14 +261,11 @@ async def patch_compliance_record(
     return await _fetch_record(record_id, pool, supabase)
 
 
-@router.post("/{record_id}/file", status_code=201)
-async def upload_compliance_file(
-    record_id: str,
-    file: UploadFile = File(...),
-    pool=Depends(get_pool),
-    supabase=Depends(get_supabase),
-    user=Depends(require_editor),
-):
+async def _apply_compliance_upload(record_id: str, file: UploadFile, pool, supabase, user) -> dict:
+    """Extraído de upload_compliance_file (endpoint singular) para reusar
+    exactamente la misma lógica de status/metadata/auditoría desde el
+    endpoint de carga masiva (POST /bulk-file) — un solo lugar que decide
+    qué pasa cuando se sube un archivo a un compliance_record."""
     current = await pool.fetchrow(
         "SELECT entity_id, entity_type, status, expiration_date, metadata FROM public.compliance_records "
         "WHERE id = $1 AND is_current = true",
@@ -208,6 +317,90 @@ async def upload_compliance_file(
                 )
 
     return {"status": "APPROVED_MANUAL", **uploaded}
+
+
+@router.post("/{record_id}/file", status_code=201)
+async def upload_compliance_file(
+    record_id: str,
+    file: UploadFile = File(...),
+    pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
+    user=Depends(require_editor),
+):
+    return await _apply_compliance_upload(record_id, file, pool, supabase, user)
+
+
+_BULK_UPLOAD_MAX_FILES = 30
+
+
+@router.post("/bulk-file")
+async def bulk_upload_compliance_files(
+    carrier_id: str = Form(...),
+    record_ids: list[str] = Form(...),
+    files: list[UploadFile] = File(...),
+    pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
+    user=Depends(require_editor),
+):
+    """Módulo Documentos — carga masiva restringida a UNA empresa por vez
+    (regla de negocio del diseño validado en Figma: "no es posible subir
+    masivamente archivos de varias empresas"). `record_ids`/`files` son dos
+    arrays paralelos por índice — el emparejamiento archivo↔record_id lo
+    hace el usuario en el modal (arrastra cada archivo a su fila del
+    checklist), no hay auto-matching por nombre de archivo (sin precedente
+    confiable para eso en esta app). Procesamiento por archivo, NO
+    todo-o-nada: un archivo con MIME inválido no tumba el resto del lote —
+    mismo criterio que el riesgo documentado en el diseño validado
+    ("si el documento se sube en un formato no reconocido, se rechaza y no
+    avanza de status", no dice "se rechaza todo el lote")."""
+    if len(files) != len(record_ids):
+        raise HTTPException(422, "record_ids y files deben tener la misma cantidad de elementos")
+    if not files:
+        raise HTTPException(422, "No se envió ningún archivo")
+    if len(files) > _BULK_UPLOAD_MAX_FILES:
+        raise HTTPException(422, f"Máximo {_BULK_UPLOAD_MAX_FILES} archivos por carga masiva")
+    if len(set(record_ids)) != len(record_ids):
+        raise HTTPException(422, "record_ids duplicados en la misma carga")
+
+    # Defensa en profundidad de "una sola empresa": no confiar solo en que
+    # el frontend deshabilite el botón — cada record_id debe resolver al
+    # carrier_id recibido (mismo criterio de atribución que /pending).
+    owner_rows = await pool.fetch(
+        """
+        SELECT cr.id::text AS record_id,
+            CASE cr.entity_type
+                WHEN 'CARRIER' THEN cr.entity_id
+                WHEN 'DRIVER'  THEN da.carrier_id
+                WHEN 'ASSET'   THEN aa.carrier_id
+            END AS resolved_carrier_id
+        FROM public.compliance_records cr
+        LEFT JOIN public.driver_assignments da
+            ON cr.entity_type = 'DRIVER' AND da.driver_id = cr.entity_id AND da.status = 'ACTIVE'
+        LEFT JOIN public.asset_assignments aa
+            ON cr.entity_type = 'ASSET' AND aa.asset_id = cr.entity_id AND aa.status = 'ACTIVE'
+        WHERE cr.id = ANY($1::uuid[])
+        """,
+        record_ids,
+    )
+    owner_by_record = {r["record_id"]: r["resolved_carrier_id"] for r in owner_rows}
+    mismatched = [
+        rid for rid in record_ids
+        if str(owner_by_record.get(rid)) != carrier_id
+    ]
+    if mismatched:
+        raise HTTPException(
+            422,
+            f"Estos registros no pertenecen a la empresa {carrier_id}, no se puede subir en el mismo lote: {mismatched}",
+        )
+
+    uploaded, errors = [], []
+    for record_id, file in zip(record_ids, files):
+        try:
+            result = await _apply_compliance_upload(record_id, file, pool, supabase, user)
+            uploaded.append({"record_id": record_id, **result})
+        except HTTPException as e:
+            errors.append({"record_id": record_id, "file_name": file.filename, "error": str(e.detail)})
+    return {"uploaded": uploaded, "errors": errors}
 
 
 @router.delete("/{record_id}/file")

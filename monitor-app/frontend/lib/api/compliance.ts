@@ -1,5 +1,18 @@
-import type { ComplianceRecordDetail, ComplianceStatus, DocumentVersion } from '@/lib/types'
+import type {
+  BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, DocumentVersion,
+  PendingComplianceListResponse,
+} from '@/lib/types'
 import { apiFetch } from './client'
+
+export type ListPendingParams = {
+  carrierId?:       string
+  category?:        'CARRIER' | 'DRIVER' | 'ASSET'
+  requirementCode?: string
+  q?:               string
+  operationType?:   'Tractoreo' | 'Equipo Completo'
+  limit?:           number
+  offset?:          number
+}
 
 export type ComplianceRecordPatchBody = {
   status?:           ComplianceStatus
@@ -40,4 +53,31 @@ export const complianceApi = {
     apiFetch<ComplianceRecordDetail>(`/api/v1/compliance-records/${id}/file`, {
       method: 'DELETE',
     }),
+
+  // ── Módulo Documentos (sábana) ─────────────────────────────────────────
+
+  listPending: (params: ListPendingParams = {}) => {
+    const qs = new URLSearchParams()
+    if (params.carrierId)       qs.set('carrier_id', params.carrierId)
+    if (params.category)        qs.set('category', params.category)
+    if (params.requirementCode) qs.set('requirement_code', params.requirementCode)
+    if (params.q)                qs.set('q', params.q)
+    if (params.operationType)    qs.set('operation_type', params.operationType)
+    if (params.limit != null)    qs.set('limit', String(params.limit))
+    if (params.offset != null)   qs.set('offset', String(params.offset))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return apiFetch<PendingComplianceListResponse>(`/api/v1/compliance-records/pending${suffix}`)
+  },
+
+  bulkUploadFile: (carrierId: string, pairs: { recordId: string; file: File }[]) => {
+    const form = new FormData()
+    form.append('carrier_id', carrierId)
+    for (const { recordId, file } of pairs) {
+      form.append('record_ids', recordId)
+      form.append('files', file)
+    }
+    return apiFetch<BulkUploadResult>('/api/v1/compliance-records/bulk-file', {
+      method: 'POST', body: form,
+    })
+  },
 }
