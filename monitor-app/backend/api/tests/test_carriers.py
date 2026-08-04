@@ -871,3 +871,34 @@ def test_export_carrier_documents_skips_records_without_file():
     assert res.status_code == 200
     zf = zipfile.ZipFile(BytesIO(res.content))
     assert len(zf.namelist()) == 1
+
+
+# ── GET /carriers/fleet-driver-gap (Tarea 8, plan 3.1) ──────────────────
+
+def test_get_fleet_driver_gap_devuelve_rows():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"carrier_id": "c1", "business_name": "Transportes Sur", "n_tractos": 3, "n_conductores": 2, "gap": 1},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/fleet-driver-gap")
+
+    assert res.status_code == 200
+    assert res.json() == {"rows": [
+        {"carrier_id": "c1", "business_name": "Transportes Sur", "n_tractos": 3, "n_conductores": 2, "gap": 1},
+    ]}
+
+
+def test_get_fleet_driver_gap_no_colisiona_con_ruta_carrier_id():
+    """La ruta literal /fleet-driver-gap debe resolver antes que /{carrier_id}
+    — si colisionara, este GET intentaría tratar 'fleet-driver-gap' como un
+    carrier_id real y llamaría a _assemble_carrier_detail en su lugar."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers/fleet-driver-gap")
+
+    assert res.status_code == 200
+    assert res.json() == {"rows": []}

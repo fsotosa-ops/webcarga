@@ -14,6 +14,7 @@ from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
+from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
 
 router = APIRouter(prefix="/carriers", tags=["carriers"])
@@ -297,6 +298,15 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
         "contacts": [dict(c) for c in contacts],
         "compliance_records": compliance_records,
     }
+
+
+@router.get("/fleet-driver-gap")
+async def get_fleet_driver_gap(pool=Depends(get_pool), _=Depends(get_current_user)):
+    """Tarea 8 (plan 3.1, minuta 2026-08-03): inconsistencias de dotación
+    tracto/conductor por empresa Tractoreo — solo lectura, cálculo en vivo.
+    Declarada ANTES de /{carrier_id} (ruta literal debe ganarle a la ruta
+    con path param, mismo cuidado que /insurance-overview arriba)."""
+    return {"rows": await compute_fleet_driver_gap(pool)}
 
 
 @router.get("/{carrier_id}")
