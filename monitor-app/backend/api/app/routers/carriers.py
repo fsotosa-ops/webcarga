@@ -173,7 +173,7 @@ _INSURANCE_OVERVIEW_AGG = """
 async def list_carriers_insurance_overview(
     q: str = Query("", description="Buscar por nombre o tax_id"),
     health: str = Query("", description="EXPIRED|EXPIRING_SOON|VALID|CANCELLED|NONE — filtra por worst_policy_health"),
-    operational_status: str = Query("", description="ACTIVE|INACTIVE|LEGACY_INACTIVE — filtra por estado de la empresa, mismo eje que /carriers"),
+    operational_status: str = Query("", description="ACTIVE|INACTIVE|LEGACY_INACTIVE|ONBOARDING — filtra por estado de la empresa, mismo eje que /carriers"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
@@ -380,7 +380,7 @@ async def patch_carrier(
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
-                "SELECT updated_at, business_name, operational_status FROM public.carriers WHERE id = $1",
+                "SELECT updated_at, business_name, operational_status, tax_id FROM public.carriers WHERE id = $1",
                 carrier_id,
             )
             if not current:
@@ -392,15 +392,26 @@ async def patch_carrier(
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
 
+            if body.operational_status == "ACTIVE" and not body.tax_id and not current["tax_id"]:
+                raise HTTPException(422, "No se puede activar una empresa sin RUT/tax_id")
+
+            if body.tax_id:
+                dup = await conn.fetchval(
+                    "SELECT id FROM public.carriers WHERE tax_id = $1 AND id != $2", body.tax_id, carrier_id,
+                )
+                if dup:
+                    raise HTTPException(409, f"Ya existe una empresa con tax_id {body.tax_id}")
+
             await conn.execute(
                 """
                 UPDATE public.carriers SET
                     business_name = COALESCE($2, business_name),
                     operational_status = COALESCE($3, operational_status),
+                    tax_id = COALESCE($4, tax_id),
                     updated_at = NOW()
                 WHERE id = $1
                 """,
-                carrier_id, body.business_name, body.operational_status,
+                carrier_id, body.business_name, body.operational_status, body.tax_id,
             )
             for field in touched:
                 await record_manual_edit(

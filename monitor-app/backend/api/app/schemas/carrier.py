@@ -4,7 +4,7 @@ country_code en vez de rut/dv), sin los sub-recursos jsonb legacy."""
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 # Verificado contra datos reales (2026-07-16): public.carriers.operational_status
 # no tiene CHECK constraint, y los valores en uso hoy son 'ACTIVE' (38) y
@@ -12,7 +12,20 @@ from pydantic import BaseModel, field_validator
 # migrados a cuenta operativa real). 'INACTIVE' se agrega para la baja
 # manual de una empresa que sí llegó a estar ACTIVE (distinto de "nunca
 # migrada") — todavía no hay datos reales con ese valor.
-OperationalStatus = Literal["ACTIVE", "INACTIVE", "LEGACY_INACTIVE"]
+# 'ONBOARDING' (Tarea 2, plan Cierre del Día 4.1): empresa recién creada sin
+# RUT todavía, no operativa, no entra en cierres — distinta de 'INACTIVE'
+# (fue ACTIVE y se dio de baja) y de 'LEGACY_INACTIVE' (dato heredado nunca
+# migrado).
+OperationalStatus = Literal["ACTIVE", "INACTIVE", "LEGACY_INACTIVE", "ONBOARDING"]
+
+
+def _clean_tax_id_value(v):
+    """Normaliza tax_id: recorta espacios y pasa a mayúsculas; un string
+    vacío o solo espacios se normaliza a None en vez de quedar como ''."""
+    if not isinstance(v, str):
+        return v
+    cleaned = v.strip().upper()
+    return cleaned or None
 
 
 class CarrierCreateBody(BaseModel):
@@ -20,10 +33,10 @@ class CarrierCreateBody(BaseModel):
     bulk-load de Mage desde el Excel EETT. Ver context_carriers.md §4.1: el
     endpoint debe además sembrar compliance_records MISSING en la misma
     transacción (H2.2)."""
-    tax_id: str
+    tax_id: Optional[str] = None
     country_code: str = "CL"
     business_name: str
-    operational_status: OperationalStatus = "ACTIVE"
+    operational_status: Optional[OperationalStatus] = None
 
     @field_validator("business_name", mode="before")
     @classmethod
@@ -33,17 +46,26 @@ class CarrierCreateBody(BaseModel):
     @field_validator("tax_id", mode="before")
     @classmethod
     def _clean_tax_id(cls, v):
-        return v.strip().upper() if isinstance(v, str) else v
+        return _clean_tax_id_value(v)
 
     @field_validator("country_code", mode="before")
     @classmethod
     def _upper_country(cls, v):
         return v.strip().upper() if isinstance(v, str) else v
 
+    @model_validator(mode="after")
+    def _default_status_from_tax_id(self):
+        if self.operational_status is None:
+            self.operational_status = "ACTIVE" if self.tax_id is not None else "ONBOARDING"
+        elif self.operational_status == "ACTIVE" and self.tax_id is None:
+            raise ValueError("No se puede crear una empresa ACTIVA sin RUT/tax_id — use ONBOARDING")
+        return self
+
 
 class CarrierPatchBody(BaseModel):
     business_name: Optional[str] = None
     operational_status: Optional[OperationalStatus] = None
+    tax_id: Optional[str] = None
     expected_updated_at: Optional[datetime] = None  # optimistic lock, mismo patrón que transporter_relational
 
     @field_validator("business_name", mode="before")
@@ -51,12 +73,19 @@ class CarrierPatchBody(BaseModel):
     def _normalize_name(cls, v):
         return v.strip().title() if isinstance(v, str) and v else v
 
+    @field_validator("tax_id", mode="before")
+    @classmethod
+    def _clean_tax_id(cls, v):
+        return _clean_tax_id_value(v)
+
     def sent_fields(self) -> list[str]:
         touched = []
         if self.business_name is not None:
             touched.append("business_name")
         if self.operational_status is not None:
             touched.append("operational_status")
+        if self.tax_id is not None:
+            touched.append("tax_id")
         return touched
 
 

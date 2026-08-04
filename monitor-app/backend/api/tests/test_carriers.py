@@ -260,6 +260,62 @@ def test_create_carrier_inserts_and_logs():
     assert "INSERT INTO public.audit_log" in audit_sql
 
 
+# ── Tarea 2 (plan 4.1): tax_id opcional + estado ONBOARDING + guard de activación ──
+
+def test_create_carrier_without_tax_id_defaults_onboarding():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": "c1", "tax_id": None, "country_code": "CL",
+        "business_name": "Acme Sin Rut", "operational_status": "ONBOARDING", "created_at": None,
+    }
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers", json={"business_name": "acme sin rut"})
+
+    assert res.status_code == 201
+    assert res.json()["operational_status"] == "ONBOARDING"
+    assert res.json()["tax_id"] is None
+    insert_params = conn.fetchrow.call_args.args
+    assert insert_params[1] is None  # tax_id
+    assert insert_params[4] == "ONBOARDING"  # operational_status
+
+
+def test_create_carrier_active_without_tax_id_rejected():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/carriers",
+        json={"business_name": "Acme", "operational_status": "ACTIVE"},
+    )
+
+    assert res.status_code == 422
+    body = res.json()
+    assert any("ONBOARDING" in err.get("msg", "") for err in body["detail"])
+
+
+def test_create_carrier_with_tax_id_defaults_active():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": "c1", "tax_id": "1-9", "country_code": "CL",
+        "business_name": "Acme", "operational_status": "ACTIVE", "created_at": None,
+    }
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers", json={"tax_id": "1-9", "business_name": "Acme"})
+
+    assert res.status_code == 201
+    assert res.json()["operational_status"] == "ACTIVE"
+    insert_params = conn.fetchrow.call_args.args
+    assert insert_params[4] == "ACTIVE"  # operational_status
+
+
 def test_patch_carrier_404_when_missing():
     pool = AsyncMock()
     conn = AsyncMock()
@@ -318,6 +374,65 @@ def test_patch_carrier_sets_manual_override_and_returns_detail():
     assert res.status_code == 200
     override_sql = conn.execute.call_args_list[1].args[0]
     assert "is_manual_override = true" in override_sql
+
+
+def test_patch_carrier_activate_without_tax_id_422():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "updated_at": None, "business_name": "A", "operational_status": "ONBOARDING", "tax_id": None,
+    }
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
+
+    assert res.status_code == 422
+    assert "RUT" in res.json()["detail"] or "tax_id" in res.json()["detail"]
+
+
+def test_patch_carrier_sets_tax_id_and_activates():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "updated_at": None, "business_name": "A", "operational_status": "ONBOARDING", "tax_id": None,
+    }
+    conn.fetchval.return_value = None  # sin duplicado de tax_id
+    pool.fetchrow.return_value = {
+        "id": "c1", "tax_id": "1-9", "country_code": "CL", "business_name": "A",
+        "operational_status": "ACTIVE", "legacy_admin_id": None, "erp_id": None,
+        "is_manual_override": True, "overridden_by": USER["sub"], "overridden_at": None,
+        "created_at": None, "updated_at": None,
+    }
+    pool.fetch.side_effect = [[], []]
+    client = make_client(pool)
+
+    res = client.patch(
+        "/api/v1/carriers/c1", json={"tax_id": "1-9", "operational_status": "ACTIVE"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["operational_status"] == "ACTIVE"
+    update_call = conn.execute.call_args_list[0]
+    update_sql = update_call.args[0]
+    assert "tax_id" in update_sql
+    assert "1-9" in update_call.args
+
+
+def test_patch_carrier_rejects_duplicate_tax_id():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "updated_at": None, "business_name": "A", "operational_status": "ONBOARDING", "tax_id": None,
+    }
+    conn.fetchval.return_value = "other-carrier-id"
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/carriers/c1", json={"tax_id": "1-9"})
+
+    assert res.status_code == 409
 
 
 def test_list_carrier_drivers_includes_pending_mandatory():
