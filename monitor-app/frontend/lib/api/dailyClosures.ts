@@ -22,6 +22,14 @@ export const dailyClosuresApi = {
       { method: 'PATCH', body: JSON.stringify({ unassigned_reason_id: unassignedReasonId }) },
     ),
 
+  /** Tarea 7 (plan 2.4) — selección masiva con checkbox, un motivo para
+   *  varios conductores en un clic (HU-03 #2). */
+  setReasonBatch: (fecha: string, driverIds: string[], unassignedReasonId: string) =>
+    apiFetch<DriverDayStatusRow[]>(
+      `/api/v1/daily-closures/reason?fecha=${encodeURIComponent(fecha)}`,
+      { method: 'PATCH', body: JSON.stringify({ driver_ids: driverIds, unassigned_reason_id: unassignedReasonId }) },
+    ),
+
   close: (fecha: string, override?: boolean, overrideNote?: string) =>
     apiFetch<{ ok: boolean; business_date: string; overridden: number }>(
       `/api/v1/daily-closures/close?fecha=${encodeURIComponent(fecha)}`,

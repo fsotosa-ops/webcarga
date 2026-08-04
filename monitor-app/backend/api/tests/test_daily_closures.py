@@ -420,6 +420,66 @@ def test_patch_driver_day_status_422_when_not_unassigned():
     assert res.status_code == 422
 
 
+# ── PATCH /cuadratura/reason (Tarea 7, plan 2.4) ────────────────────────
+
+def test_set_batch_reason_actualiza_varios_conductores_en_un_llamado():
+    pool = AsyncMock()
+    pool.fetch.side_effect = [
+        [{"driver_id": "d1", "status": "UNASSIGNED"}, {"driver_id": "d2", "status": "UNASSIGNED"}],
+        [_driver_row(driver_id="d1"), _driver_row(driver_id="d2")],
+    ]
+    client = make_client(pool)
+
+    res = client.patch(
+        "/api/v1/daily-closures/reason?fecha=2026-08-02",
+        json={"driver_ids": ["d1", "d2"], "unassigned_reason_id": "r1"},
+    )
+
+    assert res.status_code == 200
+    assert len(res.json()) == 2
+    update_sql = pool.execute.call_args_list[-1].args[0]
+    assert "unassigned_reason_id = $1" in update_sql
+    assert pool.execute.call_args_list[-1].args[-1] == ["d1", "d2"]
+
+
+def test_set_batch_reason_404_cuando_falta_un_conductor():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{"driver_id": "d1", "status": "UNASSIGNED"}]
+    client = make_client(pool)
+
+    res = client.patch(
+        "/api/v1/daily-closures/reason?fecha=2026-08-02",
+        json={"driver_ids": ["d1", "d2"], "unassigned_reason_id": "r1"},
+    )
+
+    assert res.status_code == 404
+
+
+def test_set_batch_reason_422_cuando_ya_esta_asignado():
+    pool = AsyncMock()
+    pool.fetch.return_value = [{"driver_id": "d1", "status": "ASSIGNED"}]
+    client = make_client(pool)
+
+    res = client.patch(
+        "/api/v1/daily-closures/reason?fecha=2026-08-02",
+        json={"driver_ids": ["d1"], "unassigned_reason_id": "r1"},
+    )
+
+    assert res.status_code == 422
+
+
+def test_set_batch_reason_422_cuando_driver_ids_vacio():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.patch(
+        "/api/v1/daily-closures/reason?fecha=2026-08-02",
+        json={"driver_ids": [], "unassigned_reason_id": "r1"},
+    )
+
+    assert res.status_code == 422
+
+
 # ── POST /cuadratura/close ───────────────────────────────────────────────
 
 def test_close_day_succeeds_when_nothing_pending():

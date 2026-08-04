@@ -944,6 +944,13 @@ export type DriverDayStatusRow = {
    *  — null para ASSIGNED/UNASSIGNED. Reemplaza el link genérico a Empresas
    *  en CloseDayDialog por un link directo al viaje. */
   trip_id:                     string | null
+  /** Tarea 5 (plan 2.2) — tracto habitual del conductor, mejor esfuerzo vía
+   *  el viaje más reciente resuelto para él; puede ser null si no tiene
+   *  ninguno. */
+  last_known_tractor_plate:    string | null
+  /** Tipo de operación (Tractoreo/Equipo Completo) de ESE tracto puntual —
+   *  no el del roster de la empresa, que puede operar ambos tipos. */
+  last_known_operation_type:   string | null
 }
 
 export type DailyClosureInfo = {
@@ -975,7 +982,11 @@ export type CloseDayPending = {
 // ── Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md) ──
 // Fila plana por conductor×día — sin agregar, el pivot se arma en el cliente.
 export type DailyClosureReportRow = Omit<
-  DriverDayStatusRow, 'resolved_by' | 'resolved_at' | 'driver_pending_docs_critical' | 'suggested_reason_id' | 'trip_id'
+  DriverDayStatusRow,
+  | 'resolved_by' | 'resolved_at' | 'driver_pending_docs_critical' | 'suggested_reason_id' | 'trip_id'
+  // Tarea 7 (plan 2.4): _REPORT_SQL (backend) no trae estos 2 campos —
+  // solo _DETAIL_SQL (GET /daily-closures) los expone.
+  | 'last_known_tractor_plate' | 'last_known_operation_type'
 > & {
   business_date: string
 }

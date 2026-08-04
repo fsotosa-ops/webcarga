@@ -21,10 +21,10 @@ const STATUS: DailyClosureStatus = {
   mismatch_count: 1,
   pending_count: 2,
   drivers: [
-    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
-    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
-    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
-    { driver_id: 'd4', full_name: 'Carla Díaz', tax_id: '44444444-4', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', resolved_by: 'admin', resolved_at: '2026-07-21T10:00:00Z', client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null },
+    { driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null, last_known_tractor_plate: null, last_known_operation_type: null },
+    { driver_id: 'd2', full_name: 'Ana Soto', tax_id: '22222222-2', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null, last_known_tractor_plate: null, last_known_operation_type: null },
+    { driver_id: 'd3', full_name: 'Luis Rojas', tax_id: '33333333-3', carrier_id: 'c3', carrier_name: 'Rios Ltda', status: 'MISMATCH', unassigned_reason_id: null, unassigned_reason_label: null, resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null, last_known_tractor_plate: null, last_known_operation_type: null },
+    { driver_id: 'd4', full_name: 'Carla Díaz', tax_id: '44444444-4', carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', resolved_by: 'admin', resolved_at: '2026-07-21T10:00:00Z', client_names: [], driver_pending_docs_critical: null, suggested_reason_id: null, trip_id: null, last_known_tractor_plate: null, last_known_operation_type: null },
   ],
 }
 
@@ -175,6 +175,7 @@ describe('CloseDayDialog', () => {
         status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,
         resolved_by: null, resolved_at: null, client_names: [],
         driver_pending_docs_critical: true, suggested_reason_id: 'r-doc-vencida', trip_id: null,
+        last_known_tractor_plate: null, last_known_operation_type: null,
       }],
     })
     renderDialog({
@@ -196,6 +197,7 @@ describe('CloseDayDialog', () => {
         status: 'UNASSIGNED', unassigned_reason_id: null, unassigned_reason_label: null,
         resolved_by: null, resolved_at: null, client_names: [],
         driver_pending_docs_critical: false, suggested_reason_id: null, trip_id: null,
+        last_known_tractor_plate: null, last_known_operation_type: null,
       }],
     })
     renderDialog({ fecha: '2026-07-22', unassignedReasons: [] })

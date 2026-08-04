@@ -23,7 +23,7 @@ from datetime import date as _date
 from fastapi import APIRouter, Depends, HTTPException
 from ..auth import ADMIN_ROLES, get_current_user, require_editor
 from ..db import get_pool
-from ..schemas.daily_closures import CloseDayBody, DriverDayStatusPatchBody
+from ..schemas.daily_closures import CloseDayBody, DriverBatchReasonBody, DriverDayStatusPatchBody
 from ..services.audit import log_change
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from ..services.pre_cierre import run_pre_cierre
@@ -285,6 +285,41 @@ async def get_daily_closures_report(
         "fecha_hasta": hasta.isoformat(),
         "rows": [dict(r) for r in rows],
     }
+
+
+@router.patch("/reason")
+async def set_batch_reason(
+    body: DriverBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """BLOQUE 1 de HU-03 (conductor, Tarea 7 plan 2.4): selección masiva con
+    checkbox — mismo motivo para varios conductores en un clic (criterio de
+    aceptación #2). Declarada ANTES de PATCH /{driver_id} — ruta literal
+    debe ganarle a la ruta con path param, mismo cuidado que ya resuelve
+    equipment_closures.py entre /reason y /{asset_id}."""
+    business_date = _parse_business_date(fecha)
+
+    rows = await pool.fetch(
+        "SELECT driver_id, status FROM app.driver_day_status WHERE business_date = $1 AND driver_id = ANY($2::uuid[])",
+        business_date, body.driver_ids,
+    )
+    found_ids = {str(r["driver_id"]) for r in rows}
+    missing = [did for did in body.driver_ids if did not in found_ids]
+    if missing:
+        raise HTTPException(404, f"Conductor(es) no encontrados en la cuadratura de ese día: {missing}")
+    not_unassigned = [str(r["driver_id"]) for r in rows if r["status"] != "UNASSIGNED"]
+    if not_unassigned:
+        raise HTTPException(422, f"Solo se puede registrar motivo para conductores no asignados: {not_unassigned}")
+
+    await pool.execute(
+        """
+        UPDATE app.driver_day_status
+        SET unassigned_reason_id = $1, resolved_by = $2::uuid, resolved_at = now()
+        WHERE business_date = $3 AND driver_id = ANY($4::uuid[])
+        """,
+        body.unassigned_reason_id, user["sub"], business_date, body.driver_ids,
+    )
+    rows = await pool.fetch(_DETAIL_SQL, business_date)
+    return [dict(r) for r in rows if str(r["driver_id"]) in found_ids]
 
 
 @router.patch("/{driver_id}")
