@@ -417,10 +417,16 @@ def _section4_tractoreo_no_trabajando(driver_rows: list[dict]) -> dict:
     }
 
 
-def _section5_equipos_completos(rows: list[dict]) -> list[dict]:
-    equipos_completos = [r for r in rows if "EQUIPO_COMPLETO" in r["categories"]]
+def _carrier_utilization_table(rows: list[dict], category: str) -> list[dict]:
+    """Tabla Empresa/Enrolados/Asignados/No asignados/% utilización para una
+    categoría (TRACTOREO o EQUIPO_COMPLETO) — mismo shape para ambas
+    (paridad pedida por el usuario 2026-08-04: la tab "por empresa" solo
+    existía para Equipo Completo, Sección 5; Tractoreo no tenía
+    equivalente pese a tener tabs 2/4 organizadas por CD/motivo, no por
+    empresa así de simple)."""
+    items = [r for r in rows if category in r["categories"]]
     by_carrier: dict = {}
-    for r in equipos_completos:
+    for r in items:
         b = by_carrier.setdefault(r["carrier_name"], {"carrier_name": r["carrier_name"], "enrolled": 0, "assigned": 0, "unassigned": 0})
         b["enrolled"] += 1
         b["assigned" if r["con_carga"] else "unassigned"] += 1
@@ -429,6 +435,14 @@ def _section5_equipos_completos(rows: list[dict]) -> list[dict]:
         pct = round(b["assigned"] / b["enrolled"] * 100, 1) if b["enrolled"] else 0.0
         result.append({**b, "utilization_pct": pct})
     return sorted(result, key=lambda b: b["utilization_pct"], reverse=True)
+
+
+def _section5_equipos_completos(rows: list[dict]) -> list[dict]:
+    return _carrier_utilization_table(rows, "EQUIPO_COMPLETO")
+
+
+def _section_tractoreo_por_empresa(rows: list[dict]) -> list[dict]:
+    return _carrier_utilization_table(rows, "TRACTOREO")
 
 
 def _section6_resumen_general(rows: list[dict]) -> dict:
@@ -482,6 +496,7 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
         "section2_tractoreo_asignado": _section2_tractoreo_asignado(rows),
         "section3_vueltas": _section3_vueltas(rows),
         "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(driver_rows),
+        "section_tractoreo_por_empresa": _section_tractoreo_por_empresa(rows),
         "section5_equipos_completos": _section5_equipos_completos(rows),
         "section6_resumen_general": _section6_resumen_general(rows),
     }

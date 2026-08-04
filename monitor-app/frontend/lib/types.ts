@@ -1127,7 +1127,10 @@ export type MotivoCrossTab = {
   total: number
 }
 
-export type EquipoCompletoResumen = {
+/** Tabla Empresa/Enrolados/Asignados/No asignados/% utilización — mismo
+ *  shape para Tractoreo y Equipo Completo (paridad pedida por el usuario
+ *  2026-08-04: la tab "por empresa" solo existía para Equipo Completo). */
+export type CarrierUtilizationRow = {
   carrier_name:     string
   enrolled:         number
   assigned:         number
@@ -1175,7 +1178,8 @@ export type StatusReport = {
     por_empresa_y_cd: MotivoCrossTab[]
     driver_detail:    DriverDetailRow[]
   }
-  section5_equipos_completos: EquipoCompletoResumen[]
+  section_tractoreo_por_empresa: CarrierUtilizationRow[]
+  section5_equipos_completos: CarrierUtilizationRow[]
   section6_resumen_general: {
     tractoreo:          EquipmentCategorySummary
     equipos_completos:  EquipmentCategorySummary

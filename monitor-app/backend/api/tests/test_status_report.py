@@ -19,6 +19,7 @@ from app.routers.status_report import (
     _section4_tractoreo_no_trabajando,
     _section5_equipos_completos,
     _section6_resumen_general,
+    _section_tractoreo_por_empresa,
     _summary,
     _zone_bucket,
     router,
@@ -194,6 +195,24 @@ def test_section5_equipos_completos_ordena_desc_por_utilizacion():
     assert result[1]["utilization_pct"] == 0.0
 
 
+def test_section_tractoreo_por_empresa_ordena_desc_por_utilizacion():
+    """Paridad con Sección 5 (pedido explícito del usuario 2026-08-04): la
+    tab "por empresa" ahora existe también para Tractoreo, mismo shape."""
+    rows = [
+        _row(asset_id="a1", categories=["TRACTOREO"], carrier_name="Baja Utilización", con_carga=False),
+        _row(asset_id="a2", categories=["TRACTOREO"], carrier_name="Baja Utilización", con_carga=False),
+        _row(asset_id="a3", categories=["TRACTOREO"], carrier_name="Alta Utilización", con_carga=True),
+        # Un equipo Equipo Completo no debe colarse en la tabla de Tractoreo
+        _row(asset_id="a4", categories=["EQUIPO_COMPLETO"], carrier_name="Alta Utilización", con_carga=False),
+    ]
+    result = _section_tractoreo_por_empresa(rows)
+    assert result[0]["carrier_name"] == "Alta Utilización"
+    assert result[0]["utilization_pct"] == 100.0
+    assert result[0]["enrolled"] == 1
+    assert result[1]["carrier_name"] == "Baja Utilización"
+    assert result[1]["utilization_pct"] == 0.0
+
+
 def test_section6_resumen_general_por_cd_y_por_cliente():
     rows = [
         _row(asset_id="a1", categories=["TRACTOREO"], origin_cd="CD Lo Aguirre", client_name="Walmart", con_carga=True),
@@ -235,7 +254,7 @@ def test_get_status_report_requires_valid_fecha():
     assert res.status_code == 422
 
 
-def test_get_status_report_returns_all_6_sections_with_empty_roster():
+def test_get_status_report_returns_all_sections_with_empty_roster():
     pool = AsyncMock()
     conn = AsyncMock()
     conn.fetch.return_value = []
@@ -254,7 +273,8 @@ def test_get_status_report_returns_all_6_sections_with_empty_roster():
     assert set(body.keys()) == {
         "business_date", "client_filter",
         "section1_resumen", "section2_tractoreo_asignado", "section3_vueltas",
-        "section4_tractoreo_no_trabajando", "section5_equipos_completos", "section6_resumen_general",
+        "section4_tractoreo_no_trabajando", "section_tractoreo_por_empresa",
+        "section5_equipos_completos", "section6_resumen_general",
     }
     assert body["section1_resumen"]["total_equipos_activos"] == 0
 

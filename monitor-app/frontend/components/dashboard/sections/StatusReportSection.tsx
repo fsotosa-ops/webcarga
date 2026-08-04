@@ -7,10 +7,10 @@ import { Loader2, History, Printer, FileDown } from 'lucide-react'
 import { statusReportApi } from '@/lib/api/statusReport'
 import { carriersApi } from '@/lib/api/carriers'
 import type { Shipper } from '@/lib/api/locations'
-import type { MotivoCrossTab, StatusReport, ZoneCrossTab } from '@/lib/types'
+import type { CarrierUtilizationRow, MotivoCrossTab, StatusReport, ZoneCrossTab } from '@/lib/types'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 
-type Tab = 1 | 2 | 3 | 4 | 5 | 6 | 7
+type Tab = 'resumen' | 'asignado' | 'vueltas' | 'sin_trabajar' | 'tractoreo_empresa' | 'eq_completos' | 'general' | 'dotacion'
 
 interface Props {
   fecha:      string
@@ -51,20 +51,27 @@ function exportReportCsv(report: StatusReport, fecha: string) {
   }
   lines.push('')
 
-  lines.push('SECCIÓN 5 — Equipos Completos por empresa')
+  lines.push('SECCIÓN 5 — Tractoreo por empresa')
+  lines.push(['Empresa', 'Enrolados', 'Asignados', 'No asignados', '% utilización'].map(csvEscape).join(';'))
+  for (const r of report.section_tractoreo_por_empresa) {
+    lines.push([r.carrier_name, r.enrolled, r.assigned, r.unassigned, r.utilization_pct].map(csvEscape).join(';'))
+  }
+  lines.push('')
+
+  lines.push('SECCIÓN 6 — Equipos Completos por empresa')
   lines.push(['Empresa', 'Enrolados', 'Asignados', 'No asignados', '% utilización'].map(csvEscape).join(';'))
   for (const r of report.section5_equipos_completos) {
     lines.push([r.carrier_name, r.enrolled, r.assigned, r.unassigned, r.utilization_pct].map(csvEscape).join(';'))
   }
   lines.push('')
 
-  lines.push('SECCIÓN 6 — Resumen general por CD')
+  lines.push('SECCIÓN 7 — Resumen general por CD')
   lines.push(['CD', 'Enrolados', 'Asignados'].map(csvEscape).join(';'))
   for (const c of report.section6_resumen_general.por_cd) {
     lines.push([c.cd, c.enrolled, c.assigned].map(csvEscape).join(';'))
   }
   lines.push('')
-  lines.push('SECCIÓN 6 — Resumen general por cliente')
+  lines.push('SECCIÓN 7 — Resumen general por cliente')
   lines.push(['Cliente', 'Asignados'].map(csvEscape).join(';'))
   for (const c of report.section6_resumen_general.por_cliente) {
     lines.push([c.client_name, c.assigned].map(csvEscape).join(';'))
@@ -101,7 +108,7 @@ function Pct({ value }: { value: number }) {
  *  identificarlo por fila). El botón "Confirmar cierre" vive a nivel de
  *  página (Tarea 1.1), no acá — esta sección es solo de lectura. */
 export function StatusReportSection({ fecha, shippers }: Props) {
-  const [tab, setTab] = useState<Tab>(1)
+  const [tab, setTab] = useState<Tab>('resumen')
   const [client, setClient] = useState('')
 
   const { data, isLoading } = useQuery({
@@ -119,13 +126,14 @@ export function StatusReportSection({ fecha, shippers }: Props) {
   })
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 1, label: '1. Resumen' },
-    { id: 2, label: '2. Asignado' },
-    { id: 3, label: '3. Vueltas' },
-    { id: 4, label: '4. Sin trabajar' },
-    { id: 5, label: '5. Eq. Completos' },
-    { id: 6, label: '6. General' },
-    { id: 7, label: '7. Dotación' },
+    { id: 'resumen', label: '1. Resumen' },
+    { id: 'asignado', label: '2. Asignado' },
+    { id: 'vueltas', label: '3. Vueltas' },
+    { id: 'sin_trabajar', label: '4. Sin trabajar' },
+    { id: 'tractoreo_empresa', label: '5. Tractoreo — Empresas' },
+    { id: 'eq_completos', label: '6. Eq. Completos' },
+    { id: 'general', label: '7. General' },
+    { id: 'dotacion', label: '8. Dotación' },
   ]
 
   return (
@@ -251,7 +259,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
         </div>
       </div>
 
-      {tab === 7 ? (
+      {tab === 'dotacion' ? (
         <FleetDriverGapCard />
       ) : isLoading || !data ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -259,7 +267,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
         </div>
       ) : (
         <>
-          {tab === 1 && (
+          {tab === 'resumen' && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-white rounded-xl border border-border p-3">
@@ -299,14 +307,14 @@ export function StatusReportSection({ fecha, shippers }: Props) {
             </div>
           )}
 
-          {tab === 2 && (
+          {tab === 'asignado' && (
             <div className="space-y-4">
               <ZoneTable title="Por CD de origen" rows={data.section2_tractoreo_asignado.por_cd} />
               <ZoneTable title="Por empresa dentro de cada CD" rows={data.section2_tractoreo_asignado.por_empresa_y_cd} showCarrier />
             </div>
           )}
 
-          {tab === 3 && (
+          {tab === 'vueltas' && (
             <div className="bg-white rounded-xl border border-border overflow-hidden">
               <table className="w-full text-xs">
                 <thead>
@@ -334,7 +342,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
             </div>
           )}
 
-          {tab === 4 && (
+          {tab === 'sin_trabajar' && (
             <div className="space-y-4">
               <MotivoTable title="Por CD" rows={data.section4_tractoreo_no_trabajando.por_cd} />
               <MotivoTable title="Por empresa dentro de cada CD" rows={data.section4_tractoreo_no_trabajando.por_empresa_y_cd} showCarrier />
@@ -380,37 +388,15 @@ export function StatusReportSection({ fecha, shippers }: Props) {
             </div>
           )}
 
-          {tab === 5 && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-                    <th className="text-left px-3 py-2">Empresa</th>
-                    <th className="text-right px-3 py-2">Enrolados</th>
-                    <th className="text-right px-3 py-2">Asignados</th>
-                    <th className="text-right px-3 py-2">No asignados</th>
-                    <th className="text-right px-3 py-2">% utilización</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {data.section5_equipos_completos.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos completos</td></tr>
-                  )}
-                  {data.section5_equipos_completos.map(r => (
-                    <tr key={r.carrier_name}>
-                      <td className="px-3 py-2 font-medium">{r.carrier_name}</td>
-                      <td className="px-3 py-2 text-right">{r.enrolled}</td>
-                      <td className="px-3 py-2 text-right text-green-700">{r.assigned}</td>
-                      <td className="px-3 py-2 text-right text-gray-400">{r.unassigned}</td>
-                      <td className="px-3 py-2 text-right"><Pct value={r.utilization_pct} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {tab === 'tractoreo_empresa' && (
+            <CarrierUtilizationTable rows={data.section_tractoreo_por_empresa} emptyLabel="Sin Tractoreo" />
           )}
 
-          {tab === 6 && (
+          {tab === 'eq_completos' && (
+            <CarrierUtilizationTable rows={data.section5_equipos_completos} emptyLabel="Sin equipos completos" />
+          )}
+
+          {tab === 'general' && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-xl border border-border p-3">
@@ -479,6 +465,43 @@ export function StatusReportSection({ fecha, shippers }: Props) {
         </>
       )}
       </div>
+    </div>
+  )
+}
+
+/** Empresa/Enrolados/Asignados/No asignados/% utilización — usada tanto
+ *  por Tractoreo (Sección 5) como por Equipo Completo (Sección 6), mismo
+ *  componente y misma estructura visual para ambas (paridad pedida
+ *  explícitamente por el usuario 2026-08-04: la tab "por empresa" solo
+ *  existía para Equipo Completo). */
+function CarrierUtilizationTable({ rows, emptyLabel }: { rows: CarrierUtilizationRow[]; emptyLabel: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
+            <th className="text-left px-3 py-2">Empresa</th>
+            <th className="text-right px-3 py-2">Enrolados</th>
+            <th className="text-right px-3 py-2">Asignados</th>
+            <th className="text-right px-3 py-2">No asignados</th>
+            <th className="text-right px-3 py-2">% utilización</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/60">
+          {rows.length === 0 && (
+            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">{emptyLabel}</td></tr>
+          )}
+          {rows.map(r => (
+            <tr key={r.carrier_name}>
+              <td className="px-3 py-2 font-medium">{r.carrier_name}</td>
+              <td className="px-3 py-2 text-right">{r.enrolled}</td>
+              <td className="px-3 py-2 text-right text-green-700">{r.assigned}</td>
+              <td className="px-3 py-2 text-right text-gray-400">{r.unassigned}</td>
+              <td className="px-3 py-2 text-right"><Pct value={r.utilization_pct} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

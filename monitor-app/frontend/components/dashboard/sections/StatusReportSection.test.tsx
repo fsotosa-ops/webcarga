@@ -38,6 +38,9 @@ const REPORT: StatusReport = {
       },
     ],
   },
+  section_tractoreo_por_empresa: [
+    { carrier_name: 'Transportes Sur', enrolled: 5, assigned: 2, unassigned: 3, utilization_pct: 40.0 },
+  ],
   section5_equipos_completos: [
     { carrier_name: 'Equipos Sur', enrolled: 10, assigned: 3, unassigned: 7, utilization_pct: 30.0 },
   ],
@@ -101,25 +104,33 @@ describe('StatusReportSection', () => {
     expect(body.getByText('Equipo Completo')).toBeInTheDocument()
   })
 
-  it('cambia a la Sección 5 (equipos completos) y muestra el % de utilización', async () => {
+  it('cambia a la Sección 5 (Tractoreo por empresa) y muestra el % de utilización — mismo componente que Equipo Completo', async () => {
     const body = renderSection()
     await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '5. Eq. Completos' }))
+    fireEvent.click(body.getByRole('button', { name: /5\. Tractoreo/ }))
+    expect(await body.findByText('Transportes Sur')).toBeInTheDocument()
+    expect(body.getByText('40%')).toBeInTheDocument()
+  })
+
+  it('cambia a la Sección 6 (equipos completos) y muestra el % de utilización', async () => {
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '6. Eq. Completos' }))
     expect(await body.findByText('Equipos Sur')).toBeInTheDocument()
     expect(body.getByText('30%')).toBeInTheDocument()
   })
 
-  it('cambia a la Sección 6 (resumen general) y muestra por CD y por cliente', async () => {
+  it('cambia a la Sección 7 (resumen general) y muestra por CD y por cliente', async () => {
     const body = renderSection()
     await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '6. General' }))
+    fireEvent.click(body.getByRole('button', { name: '7. General' }))
     expect(await body.findByText('Walmart')).toBeInTheDocument()
   })
 
-  it('cambia a la Sección 7 y muestra las inconsistencias de dotación (FleetDriverGapCard)', async () => {
+  it('cambia a la Sección 8 y muestra las inconsistencias de dotación (FleetDriverGapCard)', async () => {
     const body = renderSection()
     await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '7. Dotación' }))
+    fireEvent.click(body.getByRole('button', { name: '8. Dotación' }))
     expect(await body.findByText('1 empresa con desbalance de dotación')).toBeInTheDocument()
   })
 
