@@ -4,10 +4,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import CertificationPage from './page'
 import { complianceApi } from '@/lib/api/compliance'
+import { carriersApi } from '@/lib/api/carriers'
 import type { PendingComplianceRow } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: { listPending: vi.fn(), uploadFile: vi.fn(), bulkUploadFile: vi.fn() },
+}))
+
+vi.mock('@/lib/api/carriers', () => ({
+  carriersApi: { list: vi.fn(), create: vi.fn() },
 }))
 
 vi.mock('next/navigation', () => ({ useSearchParams: vi.fn() }))
@@ -37,6 +42,8 @@ beforeEach(() => {
   vi.mocked(complianceApi.uploadFile).mockReset()
   vi.mocked(complianceApi.bulkUploadFile).mockReset()
   vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>)
+  vi.mocked(carriersApi.list).mockReset().mockResolvedValue({ data: [{ id: 'c2', business_name: 'Otra Spa', tax_id: '77.222.222-2' }], count: 1, page: 1, limit: 10 })
+  vi.mocked(carriersApi.create).mockReset()
 })
 
 describe('CertificationPage', () => {
@@ -116,5 +123,24 @@ describe('CertificationPage', () => {
     await waitFor(() => expect(complianceApi.listPending).toHaveBeenLastCalledWith(
       expect.objectContaining({ carrierId: undefined }),
     ))
+  })
+
+  it('picking a company from the Empresa filter re-queries listPending with its carrierId', async () => {
+    renderPage()
+    await screen.findByText('Transportes Sur Spa')
+    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Otra' } })
+    fireEvent.click(await screen.findByText('Otra Spa'))
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenLastCalledWith(
+      expect.objectContaining({ carrierId: 'c2' }),
+    ))
+  })
+
+  it('after picking a company, shows a removable chip instead of the picker', async () => {
+    renderPage()
+    await screen.findByText('Transportes Sur Spa')
+    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Otra' } })
+    fireEvent.click(await screen.findByText('Otra Spa'))
+    expect(await screen.findByLabelText('Quitar filtro de empresa')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Buscar empresa transportista')).not.toBeInTheDocument()
   })
 })

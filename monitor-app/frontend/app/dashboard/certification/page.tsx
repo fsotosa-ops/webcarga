@@ -7,6 +7,7 @@ import { Download, Loader2, X } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { PendingDocumentsTable } from '@/components/dashboard/PendingDocumentsTable'
 import { BulkDocumentUploadModal } from '@/components/dashboard/BulkDocumentUploadModal'
+import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { PendingComplianceRow } from '@/lib/types'
 
@@ -59,6 +60,7 @@ function CertificationPageInner() {
   const [operationType, setOperationType] = useState<'' | 'Tractoreo' | 'Equipo Completo'>('')
   const [q, setQ] = useState('')
   const [carrierFilter, setCarrierFilter] = useState<string | null>(carrierIdParam)
+  const [carrierQuery, setCarrierQuery]   = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkCarrier, setBulkCarrier] = useState<{ id: string; name: string; taxId: string } | null>(null)
 
@@ -102,6 +104,11 @@ function CertificationPageInner() {
   async function handleUploadSingle(recordId: string, file: File) {
     await complianceApi.uploadFile(recordId, file)
     invalidate()
+  }
+
+  function handleCarrierPicked(c: CarrierSearchResult) {
+    setCarrierFilter(c.id)
+    setCarrierQuery(c.business_name)
   }
 
   function handleOpenBulkUpload() {
@@ -170,15 +177,25 @@ function CertificationPageInner() {
             </select>
             <input
               value={q} onChange={e => setQ(e.target.value)}
-              placeholder="Buscar por empresa, conductor o patente…"
+              placeholder="Buscar por conductor o patente…"
               aria-label="Buscar" className={INPUT + ' w-64'}
             />
-            {carrierFilter && (
+            {!carrierFilter ? (
+              <div className="w-56 shrink-0">
+                <CarrierSearchPicker
+                  query={carrierQuery}
+                  onQueryChange={setCarrierQuery}
+                  onPick={handleCarrierPicked}
+                  placeholder="Buscar empresa…"
+                  size="sm"
+                />
+              </div>
+            ) : (
               <span className="flex items-center gap-1 text-[11px] font-semibold bg-accent/10 text-accent rounded-full pl-2.5 pr-1.5 py-1">
                 {filteredCarrierName ?? 'Empresa'}
                 <button
                   type="button"
-                  onClick={() => setCarrierFilter(null)}
+                  onClick={() => { setCarrierFilter(null); setCarrierQuery('') }}
                   aria-label="Quitar filtro de empresa"
                   className="hover:bg-accent/20 rounded-full p-0.5 transition-colors"
                 >
