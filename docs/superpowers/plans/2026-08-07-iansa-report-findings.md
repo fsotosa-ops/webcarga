@@ -28,6 +28,20 @@ Estructura de menú confirmada para el tenant IANSA:
 | Modulo Tendering | Carga Excel Conductores, Conductores, Reporte Historial, Solicitudes |
 | **Reportes** | **Reporte Detalle** ← el que queremos, Reporte Reportabilidad |
 
+## Gotcha: `client_name` es el TENANT, no una etiqueta
+
+En QAnalytics, `client_name` se escribe literalmente en el campo `ClienteT`
+del formulario de login (`QAnalyticsExtractor._login`), o sea **identifica el
+tenant**. No es una etiqueta libre como en Sodimac.
+
+Un valor inválido no falla en el login: QAnalytics acepta la credencial y
+aterriza en la home genérica (`inicioQMGPS.aspx`), que no tiene el menú
+"Reportes" → el extractor muere recién al buscar el menú, con un
+`Timeout 30000ms exceeded` que no dice nada del verdadero problema.
+(Reproducido: un smoke test con `client_name="smoketest-iansa"` falló así.)
+
+Para este extractor el único valor válido es **`iansa`**.
+
 ## Selectores confirmados
 
 | Función | Selector | Nota |
