@@ -55,7 +55,7 @@ def _parse_timestamptz(s: str | None) -> datetime | None:
 
 _TRIP_STOP_FIELDS = (
     "stop_id, trip_id, stop_order, stop_type, local, destination_city, destination_region, "
-    "on_time_status, milestone_status, s2s, temperature, planning_date, "
+    "on_time_status, milestone_status, s2s, delivery_numbers, temperature, planning_date, "
     "arrival_date, departure_date, departure_date_prog, gps_arrival_date, "
     "gps_departure_date, unload_start, unload_end, desc_inicio_manual, desc_fin_manual, "
     "arrival_date_manual, departure_date_manual, "
@@ -706,7 +706,16 @@ async def list_trips(
         "OR c.business_name ILIKE '%'||$1||'%' "
         "OR t.fleet->>'transporter_name_tms' ILIKE '%'||$1||'%' "
         "OR t.client_name ILIKE '%'||$1||'%' "
-        "OR t.source_system_trip_id ILIKE '%'||$1||'%')"
+        "OR t.source_system_trip_id ILIKE '%'||$1||'%' "
+        # Nº de entrega (IANSA): Facturación y Operaciones arrancan desde el
+        # número de entrega, no desde el viaje — buscarlo es el flujo de
+        # entrada real, no un extra. Vive en app.trip_stops como text[] (una
+        # parada puede tener varias), por eso el EXISTS en vez de una columna
+        # de t. array_to_string permite match parcial igual que los demás ILIKE.
+        # El guard `$1 = ''` de arriba cortocircuita esto cuando no hay búsqueda.
+        "OR EXISTS (SELECT 1 FROM app.trip_stops ts_q "
+        "WHERE ts_q.trip_id = t.id "
+        "AND array_to_string(ts_q.delivery_numbers, ',') ILIKE '%'||$1||'%'))"
     ]
     params: list = [q]
 
@@ -1491,7 +1500,7 @@ MAPPED_TMS_IDS = {t["id"] for t in _TMS_META if t["id"] != "manual"}
 # el mismo shape con null en lo que no aplica
 _STOP_NULL_KEYS = [
     "destination_city", "destination_region", "on_time_status", "milestone_status",
-    "s2s", "temperature", "arrival_date", "departure_date", "departure_date_prog",
+    "s2s", "delivery_numbers", "temperature", "arrival_date", "departure_date", "departure_date_prog",
     "gps_arrival_date", "gps_departure_date", "unload_start", "unload_end",
 ]
 

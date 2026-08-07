@@ -473,7 +473,7 @@ export default function DiarioPage() {
               <input
                 value={f.q}
                 onChange={e => dispatch({ type: 'patch', patch: { q: e.target.value } })}
-                placeholder="Tracto, conductor, EETT, cliente, ID…"
+                placeholder="Tracto, conductor, EETT, cliente, ID, entrega…"
                 className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 bg-white placeholder:text-gray-400 transition-all"
               />
             </div>

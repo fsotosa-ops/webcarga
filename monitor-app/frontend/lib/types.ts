@@ -327,6 +327,12 @@ export type TripStop = {
   destination_city:    string | null
   destination_region:  string | null
   s2s:                 string | null
+  /** Nº de entrega de la parada. Una parada puede tener varias entregas al
+   *  mismo local, por eso es un array. Opcional (no `null` obligatorio) por
+   *  la misma razón que temp_status/desc_manual: hoy solo lo reporta IANSA,
+   *  y las paradas manuales ni siquiera traen la clave. Lo usan Operaciones
+   *  y Facturación. */
+  delivery_numbers?:   string[] | null
   temperature:         number | null
   milestone_status:    string | null  // per-stop, distinct from Trip.milestone_status (trip-level)
   /** true si unload_start/unload_end vienen de un override manual (Desc.

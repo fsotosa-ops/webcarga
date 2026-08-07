@@ -55,6 +55,17 @@ export function StopTimeline({ stops }: Props) {
                     </span>
                   )}
                 </p>
+                {/* Nº de entrega: dato de Facturación/Operaciones. Se lista
+                    completo (no truncado) porque el caso de uso es cruzarlo
+                    contra un documento — un "+2" obligaría a abrir otra vista. */}
+                {stop.delivery_numbers && stop.delivery_numbers.length > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    <span className="text-gray-400">
+                      {stop.delivery_numbers.length === 1 ? 'Entrega: ' : 'Entregas: '}
+                    </span>
+                    <span className="font-mono">{stop.delivery_numbers.join(' · ')}</span>
+                  </p>
+                )}
               </div>
             </div>
             {/* Conector + tránsito entre paradas */}

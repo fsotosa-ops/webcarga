@@ -10,6 +10,7 @@ function makeStop(overrides: Partial<TripStop>): TripStop {
     unload_start: null, unload_end: null,
     gps_arrival_date: null, gps_departure_date: null, on_time_status: null,
     destination_city: null, destination_region: null, s2s: null,
+    delivery_numbers: null,
     temperature: null, milestone_status: null,
     ...overrides,
   }
@@ -148,5 +149,40 @@ describe('StopTimeline — temperatura fuera de rango', () => {
     const { container } = render(<StopTimeline stops={stops} />)
     expect(container.querySelector('.text-red-600')).toBeNull()
     expect(container.textContent).toContain('-20°C')
+  })
+})
+
+describe('StopTimeline — nº de entrega (IANSA)', () => {
+  it('lista TODAS las entregas de una parada, sin truncar', () => {
+    // Caso real IA153281: 3 entregas al mismo local. Facturación las cruza
+    // contra un documento, así que un "+2" obligaría a abrir otra vista.
+    const stops = [makeStop({
+      stop_id: 'a', local: 'Local Centro de Distribución',
+      delivery_numbers: ['5240211343', '5240211342', '5240211341'],
+    })]
+    const { container } = render(<StopTimeline stops={stops} />)
+    expect(container.textContent).toContain('5240211343')
+    expect(container.textContent).toContain('5240211342')
+    expect(container.textContent).toContain('5240211341')
+    expect(container.textContent).toContain('Entregas')
+  })
+
+  it('usa singular cuando hay una sola entrega', () => {
+    const stops = [makeStop({ stop_id: 'a', delivery_numbers: ['5240210974'] })]
+    const { container } = render(<StopTimeline stops={stops} />)
+    expect(container.textContent).toContain('Entrega')
+    expect(container.textContent).not.toContain('Entregas')
+  })
+
+  it('no renderiza nada cuando la TMS no reporta entregas (null)', () => {
+    const stops = [makeStop({ stop_id: 'a', delivery_numbers: null })]
+    const { container } = render(<StopTimeline stops={stops} />)
+    expect(container.textContent).not.toContain('Entrega')
+  })
+
+  it('no renderiza nada cuando el array viene vacío', () => {
+    const stops = [makeStop({ stop_id: 'a', delivery_numbers: [] })]
+    const { container } = render(<StopTimeline stops={stops} />)
+    expect(container.textContent).not.toContain('Entrega')
   })
 })

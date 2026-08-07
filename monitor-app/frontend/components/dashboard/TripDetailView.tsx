@@ -262,6 +262,21 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                                   {stop.destination_city}{stop.destination_region ? `, ${stop.destination_region}` : ''}
                                 </p>
                               )}
+                              {/* Nº de entrega: va acá y no en una columna
+                                  propia porque (a) pertenece a este destino,
+                                  no es un dato independiente, y (b) esta celda
+                                  es sticky — Facturación lo ve sin scrollear
+                                  una tabla que ya tiene 10 columnas. Se listan
+                                  todas: el caso de uso es cruzarlas contra un
+                                  documento, un "+2" obligaría a otra vista. */}
+                              {stop.delivery_numbers && stop.delivery_numbers.length > 0 && (
+                                <p className="text-[9px] text-gray-500 mt-0.5">
+                                  <span className="text-gray-400">
+                                    {stop.delivery_numbers.length === 1 ? 'Entrega ' : 'Entregas '}
+                                  </span>
+                                  <span className="font-mono">{stop.delivery_numbers.join(' · ')}</span>
+                                </p>
+                              )}
                             </td>
                             <td className="px-3 py-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
                             {/* GPS Llegada/GPS Salida: inamovibles (minuta 29/07 §4.2, dato
