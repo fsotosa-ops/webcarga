@@ -294,3 +294,34 @@ describe('TripTable — sin checkbox de cierre masivo', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 })
+
+// Bug 2.3 — en Historial la alerta de temperatura nunca salía en rojo: el
+// badge se coloreaba con `trip.temp_status` (nivel viaje), que el backend
+// apaga a null en cuanto `cargo_delivered=true` — o sea, casi todo Historial.
+// `temp` y `tempStatus` ahora salen de la MISMA parada (getLatestTempStop).
+describe('TripTable — temperatura coloreada por la parada, no por el viaje', () => {
+  const outOfRangeStop: Trip['stops'] = [{
+    stop_id: 's1', local: 'Parada 1', planning_date: null, arrival_date: '2026-07-02 10:00:00',
+    departure_date: '2026-07-02 11:00:00', departure_date_prog: null, unload_start: null, unload_end: null,
+    gps_arrival_date: null, gps_departure_date: null, on_time_status: null, destination_city: null,
+    destination_region: null, s2s: null, temperature: 11, milestone_status: null,
+    temp_status: 'out_of_range',
+  }]
+
+  it('marca en rojo un viaje ya entregado cuya parada quedó fuera de rango, aunque trip.temp_status esté apagado', () => {
+    const trip = makeTrip('t1', { cargo_type: 'CONGELADO', cargo_delivered: true, temp_status: null, stops: outOfRangeStop })
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    const badges = screen.getAllByText('11°C')
+    expect(badges.length).toBeGreaterThan(0)
+    badges.forEach(b => expect(b.className).toContain('text-red-700'))
+  })
+
+  it('no marca en rojo cuando la parada está OK, aunque trip.temp_status diga out_of_range', () => {
+    const stops: Trip['stops'] = [{ ...outOfRangeStop[0], temperature: -20, temp_status: 'ok' }]
+    const trip = makeTrip('t1', { cargo_type: 'CONGELADO', temp_status: 'out_of_range', stops })
+    render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    const badges = screen.getAllByText('-20°C')
+    expect(badges.length).toBeGreaterThan(0)
+    badges.forEach(b => expect(b.className).not.toContain('text-red-700'))
+  })
+})

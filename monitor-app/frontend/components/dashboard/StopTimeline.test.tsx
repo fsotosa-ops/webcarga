@@ -130,3 +130,23 @@ describe('StopTimeline', () => {
     expect(destRow?.querySelector('.animate-pulse')).not.toBeNull()
   })
 })
+
+// Bug 2.3 — la temperatura por parada ya venía calculada del backend
+// (_annotate_stop_temp_status, sin gating por cargo_delivered) pero acá se
+// mostraba siempre en gris: una lectura fuera de rango pasaba desapercibida.
+describe('StopTimeline — temperatura fuera de rango', () => {
+  it('colorea en rojo la lectura de una parada visitada con temp_status out_of_range', () => {
+    const stops = [makeStop({ stop_id: 'a', local: 'Parada A', arrival_date: '2026-07-02 10:00:00', temperature: 11, temp_status: 'out_of_range' })]
+    const { container } = render(<StopTimeline stops={stops} />)
+    const flagged = container.querySelector('.text-red-600')
+    expect(flagged).not.toBeNull()
+    expect(flagged?.textContent).toContain('11°C')
+  })
+
+  it('no colorea la lectura cuando la parada está dentro de rango', () => {
+    const stops = [makeStop({ stop_id: 'a', local: 'Parada A', arrival_date: '2026-07-02 10:00:00', temperature: -20, temp_status: 'ok' })]
+    const { container } = render(<StopTimeline stops={stops} />)
+    expect(container.querySelector('.text-red-600')).toBeNull()
+    expect(container.textContent).toContain('-20°C')
+  })
+})

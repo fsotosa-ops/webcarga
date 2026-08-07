@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown, Check } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
-import { getLatestTemp, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
+import { getLatestTempStop, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { getStopStates } from '@/lib/utils/stopState'
 import { normalizeUTC, fmtDate } from '@/lib/utils/datetime'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -221,8 +221,13 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {(() => {
-                    const temp = getLatestTemp(trip.stops ?? [])
-                    const tempStatus = trip.temp_status
+                    // temp y tempStatus salen de LA MISMA parada: trip.temp_status
+                    // es de nivel viaje y el backend lo apaga al entregarse la
+                    // carga, así que en Historial nunca marcaba rojo aunque la
+                    // lectura de la parada estuviera fuera de rango.
+                    const tempStop = getLatestTempStop(trip.stops ?? [])
+                    const temp = tempStop?.temperature ?? null
+                    const tempStatus = tempStop?.temp_status ?? null
                     return temp != null
                       ? <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                       : null
@@ -489,8 +494,12 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     {/* TEMP */}
                     <td className="px-3 py-2.5 text-center">
                       {(() => {
-                        const temp = getLatestTemp(trip.stops ?? [])
-                        const tempStatus = trip.temp_status
+                        // Misma parada para temp y tempStatus (ver comentario
+                        // en la card mobile) — trip.temp_status se apaga al
+                        // entregarse la carga y ocultaba el rojo en Historial.
+                        const tempStop = getLatestTempStop(trip.stops ?? [])
+                        const temp = tempStop?.temperature ?? null
+                        const tempStatus = tempStop?.temp_status ?? null
                         return temp != null
                           ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                           : <span className="text-gray-300 text-xs">—</span>
