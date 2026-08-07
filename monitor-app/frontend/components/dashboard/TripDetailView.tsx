@@ -27,7 +27,7 @@ interface Props {
 export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = false }: Props) {
   const notesRef                      = useRef<HTMLElement>(null)
   const [stopSaving, setStopSaving]   = useState<string | null>(null)
-  const [copiedField, setCopiedField] = useState<'external' | 'internal' | null>(null)
+  const [copiedField, setCopiedField] = useState<'external' | null>(null)
   const notesQuery = useTripNotes(trip.id)
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
     }
   }
 
-  function handleCopy(field: 'external' | 'internal', value: string) {
+  function handleCopy(field: 'external', value: string) {
     navigator.clipboard.writeText(value).then(() => {
       setCopiedField(field)
       setTimeout(() => setCopiedField(null), 2000)
@@ -118,17 +118,13 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
             </button>
           </span>
         )}
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className="font-mono text-[10px] text-white/30 truncate">{trip.id}</span>
-          <button
-            type="button"
-            onClick={() => handleCopy('internal', trip.id)}
-            title="Copiar ID interno"
-            className="text-white/40 hover:text-white/80 transition-colors shrink-0"
-          >
-            {copiedField === 'internal' ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-          </button>
-        </span>
+        {/* El UUID interno del viaje ya NO se muestra acá (2026-08-07, pedido
+            de Operaciones): es una clave surrogada que no significa nada para
+            quien opera — ellos identifican el viaje por su número de TMS, que
+            es el que sí queda arriba. Para soporte/debug no se pierde nada:
+            este mismo id es el segmento final de la URL
+            (/operations/monitor/trips/[id]), copiable desde la barra de
+            direcciones. */}
 
         <span className="flex items-center gap-1.5 shrink-0">
           <Truck size={13} className="text-white/40" />

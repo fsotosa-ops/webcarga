@@ -46,19 +46,30 @@ export function describeStopTiming(stop: TripStop): string | null {
   // que en realidad es la salida planificada (Fase 1, origen como parada
   // 0, 2026-07-18).
   if (stop.stop_type === 'ORIGIN') {
-    if (stop.departure_date) return `salió ${fmtShort(stop.departure_date)}`
+    // Mismo fallback declarada→medida que en los destinos, ver abajo.
+    const leftAt = stop.departure_date ?? stop.gps_departure_date
+    if (leftAt) return `salió ${fmtShort(leftAt)}`
     if (stop.planning_date) return `sale ~${fmtShort(stop.planning_date)}`
     return null
   }
 
-  const arrival = stop.arrival_date
-    ? `llegó ${fmtShort(stop.arrival_date)}`
+  // Llegada/salida efectivas: la declarada por el transportista si existe,
+  // si no la medida por GPS. Hay TMS que solo reportan una de las dos —
+  // IANSA, por ejemplo, solo entrega horas medidas (van a las columnas GPS
+  // por definición de negocio). Sin este fallback, una parada de IANSA ya
+  // visitada mostraba "llega ~" con su hora planificada en vez de "llegó"
+  // con la real. `stopWasVisited` acá abajo ya usaba este mismo criterio.
+  const arrivedAt   = stop.arrival_date   ?? stop.gps_arrival_date
+  const departedAt  = stop.departure_date ?? stop.gps_departure_date
+
+  const arrival = arrivedAt
+    ? `llegó ${fmtShort(arrivedAt)}`
     : stop.planning_date
     ? `llega ~${fmtShort(stop.planning_date)}`
     : null
 
-  const departure = stop.departure_date
-    ? `salió ${fmtShort(stop.departure_date)}`
+  const departure = departedAt
+    ? `salió ${fmtShort(departedAt)}`
     : stop.departure_date_prog
     ? `sale ~${fmtShort(stop.departure_date_prog)}`
     : null

@@ -144,12 +144,20 @@ describe('TripDetailView — header (IDs unificados + link a TMS)', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('2000711')
   })
 
-  it('shows the internal uuid in the header with its own copy button', () => {
-    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
+  // 2026-08-07 (pedido de Operaciones): el UUID interno se sacó del header.
+  // Es una clave surrogada sin significado para quien opera — identifican el
+  // viaje por su número de TMS. Para soporte no se pierde: es el último
+  // segmento de la URL (/operations/monitor/trips/[id]).
+  it('does NOT show the internal uuid in the header', () => {
     renderDetailView(baseTrip)
-    expect(screen.getByText('t1')).toBeInTheDocument()
-    fireEvent.click(screen.getByTitle('Copiar ID interno'))
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('t1')
+    expect(screen.queryByText('t1')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Copiar ID interno')).not.toBeInTheDocument()
+  })
+
+  it('still shows the TMS trip number, which is what operations identifies by', () => {
+    renderDetailView(baseTrip)
+    expect(screen.getByText('2000711')).toBeInTheDocument()
+    expect(screen.getByTitle('Copiar ID externo')).toBeInTheDocument()
   })
 
   it('the TMS chip links to the public login page for a TMS-sourced trip', () => {

@@ -98,3 +98,59 @@ describe('getLatestTempStop', () => {
     expect(getLatestTemp([stop])).toBe(3)
   })
 })
+
+// 2026-08-07 (definición de negocio): hay TMS que solo reportan horas MEDIDAS
+// (van a las columnas GPS), no declaradas por el transportista. IANSA es el
+// caso: su Reporte Detalle es de cumplimiento. Sin fallback, una parada ya
+// visitada mostraba "llega ~" con la hora planificada en vez de la real.
+describe('describeStopTiming — fallback a horas GPS cuando no hay declaradas', () => {
+  function stop(overrides: Partial<TripStop>): TripStop {
+    return {
+      stop_id: 's', local: 'L', planning_date: null, arrival_date: null,
+      departure_date: null, departure_date_prog: null, unload_start: null,
+      unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null,
+      s2s: null, temperature: null, milestone_status: null, ...overrides,
+    }
+  }
+
+  it('un destino con solo llegada GPS dice "llegó", no "llega ~"', () => {
+    const s = stop({
+      planning_date: '2026-08-01 00:37:00',
+      gps_arrival_date: '2026-08-01 08:28:47',
+    })
+    const out = describeStopTiming(s)
+    expect(out).toContain('llegó')
+    expect(out).not.toContain('llega ~')
+  })
+
+  it('un destino con solo salida GPS dice "salió"', () => {
+    const s = stop({
+      gps_arrival_date: '2026-08-01 08:28:47',
+      gps_departure_date: '2026-08-01 12:20:37',
+    })
+    expect(describeStopTiming(s)).toContain('salió')
+  })
+
+  it('la hora declarada por el transportista sigue teniendo precedencia', () => {
+    // Se compara contra el render de "solo GPS" en vez de hardcodear una
+    // hora: fmtShort convierte a hora de Chile, así que una constante acá
+    // ataría el test al huso horario del entorno.
+    const gps = '2026-08-01 08:28:47'
+    const conDeclarada = describeStopTiming(stop({ arrival_date: '2026-08-01 09:00:00', gps_arrival_date: gps }))
+    const soloGps      = describeStopTiming(stop({ gps_arrival_date: gps }))
+    expect(conDeclarada).toContain('llegó')
+    expect(soloGps).toContain('llegó')
+    expect(conDeclarada).not.toEqual(soloGps)
+  })
+
+  it('un origen con solo salida GPS dice "salió"', () => {
+    const s = stop({ stop_type: 'ORIGIN', gps_departure_date: '2026-07-31 21:00:00' })
+    expect(describeStopTiming(s)).toContain('salió')
+  })
+
+  it('sin ninguna hora real, sigue cayendo a la planificada', () => {
+    const s = stop({ planning_date: '2026-08-01 02:46:00' })
+    expect(describeStopTiming(s)).toContain('llega ~')
+  })
+})
