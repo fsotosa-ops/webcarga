@@ -94,10 +94,17 @@ class SodimacExtractor(BaseTMSExtractor):
                 headless=settings.BROWSER_HEADLESS,
                 args=["--no-sandbox", "--disable-dev-shm-usage"],
             )
+            # `timezone_id` explícito es OBLIGATORIO: el portal de Sodimac
+            # (Angular) renderiza fecha/hora de la cita del lado del cliente
+            # (JS `Date`/`Intl`), y el scraper lee `cell.textContent` — o sea,
+            # el texto ya formateado. Sin esto, el Chromium headless de Cloud Run
+            # usa el TZ del contenedor (UTC) y captura 11:00 AM donde un operador
+            # en Chile ve 7:00 AM (+4h sistemático en todo el histórico).
             context = await browser.new_context(
                 viewport={"width": 1366, "height": 768},
                 accept_downloads=True,
                 ignore_https_errors=True,
+                timezone_id="America/Santiago",
             )
             page = await context.new_page()
 
