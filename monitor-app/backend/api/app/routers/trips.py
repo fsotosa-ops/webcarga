@@ -646,11 +646,6 @@ _TRIP_FROM = """
 """ + _compliance_alert_lateral("dcomp", "DRIVER", "vfr.resolved_driver_id", _DRIVER_CRITICAL_DOC_CODES) \
     + _compliance_alert_lateral("tcomp", "ASSET", "vfr.resolved_tractor_asset_id") \
     + _compliance_alert_lateral("ccomp", "CARRIER", "vfr.resolved_carrier_id") + """
-    -- "Vuelta N" (driver_leg_number, ver _TRIP_SELECT): orden cronológico de
-    -- los viajes de un conductor en el día, basado en cuándo salió del
-    -- origen — trae solo la fila ORIGIN de trip_stops (a lo sumo 1 por viaje,
-    -- ver assert_trip_stops_at_most_one_origin_per_trip, Ronda 21).
-    LEFT JOIN app.trip_stops ots ON ots.trip_id = t.id AND ots.stop_type = 'ORIGIN'
     -- Cliente/shipper real, resuelto en vivo (Ronda 26, Fase 2) — mismo
     -- patrón "resolución en vivo" que driver_id/carrier_id/tractor_asset_id
     -- (Rondas 18-19), sin tocar el pipeline dbt. client_name va a estar
@@ -671,6 +666,7 @@ _TRIP_FROM = """
 _SORTABLE_COLUMNS = {
     "planning_date", "tractor_plate", "driver_name", "carrier_name",
     "client_name", "current_status", "source_system_trip_id",
+    "status_reported_at",
 }
 
 
@@ -758,10 +754,13 @@ async def list_trips(
         tms_list = [t.strip() for t in tms.split(',') if t.strip()]
         add("t.source_system = ANY(?)", tms_list)
     if client:
-        # Lista (multi-select en la UI), no ILIKE parcial — coincide exacto
-        # con los nombres del catálogo public.shippers (2026-08-02).
-        client_list = [c.strip() for c in client.split(',') if c.strip()]
-        add("t.client_name = ANY(?)", client_list)
+        # Lista (multi-select en la UI), normalizada con lower(trim(...))
+        # igual que el JOIN de sh (líneas 660-661): el client_name crudo del
+        # TMS no garantiza casing/whitespace estable contra el nombre
+        # canónico del shipper (bug 5.1, confirmado contra datos reales:
+        # ~100% de los viajes tienen client_name en minúsculas).
+        client_list = [c.strip().lower() for c in client.split(',') if c.strip()]
+        add("lower(trim(t.client_name)) = ANY(?)", client_list)
     if cargo_type:
         cargo_type_list = [c.strip() for c in cargo_type.split(',') if c.strip()]
         add("t.cargo_type = ANY(?)", cargo_type_list)
@@ -796,7 +795,11 @@ async def list_trips(
     offset = (page - 1) * limit
     sort_col = sort_by if sort_by in _SORTABLE_COLUMNS else "planning_date"
     sort_dir_sql = "ASC" if sort_dir == "asc" else "DESC"
-    order_clause = f"{sort_col} {sort_dir_sql} NULLS LAST, t.updated_at DESC"
+    # Tie-break con status_reported_at (última vez que el TMS reportó el
+    # viaje), no t.updated_at — ese campo se pisa también con ediciones
+    # manuales del usuario (edited_at = NOW(), updated_at = NOW()), no es un
+    # proxy limpio de "hubo novedad real del TMS" (bug 5.6).
+    order_clause = f"{sort_col} {sort_dir_sql} NULLS LAST, status_reported_at DESC NULLS LAST"
 
     rows = await pool.fetch(
         f"SELECT {_TRIP_SELECT} {_TRIP_FROM} {where} "
@@ -958,6 +961,11 @@ class OperationTypeMeta(BaseModel):
     text_color: str
 
 
+class ClientMeta(BaseModel):
+    id:   str
+    name: str
+
+
 class TripsMeta(BaseModel):
     statuses:            list[StatusMeta]
     tms_sources:         list[TmsSourceMeta]
@@ -967,6 +975,7 @@ class TripsMeta(BaseModel):
     temperature_ranges:  list[TemperatureRangeMeta]
     unassigned_reasons:  list[UnassignedReasonMeta]
     operation_types:     list[OperationTypeMeta]
+    clients:             list[ClientMeta]
     monitor_alert_rules: Optional[MonitorAlertRulesMeta] = None
 
 
@@ -1002,6 +1011,20 @@ async def get_trips_meta(pool=Depends(get_pool)):
         "SELECT id::text, label FROM app.status_taxonomies "
         "WHERE domain = 'DRIVER_REASON' AND active = true ORDER BY sort_order"
     )
+    # Bug 5.2: dinámico según quién realmente tiene viajes en el Diario, no
+    # el catálogo completo de public.shippers (que incluye clientes
+    # históricos sin actividad — confirmado contra datos reales 2026-08-07:
+    # 11 shippers ACTIVE en el catálogo, solo 3-5 con viajes reales). Mismo
+    # patrón de normalización lower(trim(...)) que el filtro de cliente
+    # (bug 5.1) y el JOIN de _TRIP_FROM — si un cliente vuelve a tener
+    # viajes reales, aparece solo, sin tocar código.
+    client_rows = await pool.fetch(
+        "SELECT DISTINCT sh.id::text, sh.name "
+        "FROM app.trips t "
+        "JOIN public.shippers sh "
+        "  ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE' "
+        "ORDER BY sh.name"
+    )
     return TripsMeta(
         statuses=[StatusMeta(**dict(r)) for r in status_rows],
         tms_sources=[TmsSourceMeta(**t) for t in _TMS_META],
@@ -1011,6 +1034,7 @@ async def get_trips_meta(pool=Depends(get_pool)):
         temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
         unassigned_reasons=[UnassignedReasonMeta(**dict(r)) for r in unassigned_reason_rows],
         operation_types=[OperationTypeMeta(**t) for t in _OPERATION_TYPE_META],
+        clients=[ClientMeta(**dict(r)) for r in client_rows],
         monitor_alert_rules=MonitorAlertRulesMeta(**dict(alert_rules_row)) if alert_rules_row else None,
     )
 

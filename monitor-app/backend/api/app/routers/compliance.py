@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
+from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
 from ..schemas.compliance import ComplianceRecordPatchBody, PendingComplianceListResponse
 from ..services.audit import record_manual_edit
 from ..utils.document_storage import (
@@ -64,7 +65,8 @@ async def get_pending_summary(pool=Depends(get_pool), _=Depends(get_current_user
     Los pendientes de DRIVER/ASSET se atribuyen a la empresa vía su
     asignación ACTIVE vigente (mismo criterio que el resto del roster) — sin
     asignación activa, ese pendiente queda fuera del agregado (no hay a qué
-    empresa cargárselo)."""
+    empresa cargárselo). Solo empresas activas (bug 5.4) — mismo criterio que
+    /pending."""
     rows = await pool.fetch(
         """
         WITH pending AS (
@@ -91,10 +93,11 @@ async def get_pending_summary(pool=Depends(get_pool), _=Depends(get_current_user
                count(*) AS pending_count,
                count(*) FILTER (WHERE a.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory
         FROM attributed a
-        JOIN public.carriers c ON c.id = a.carrier_id
+        JOIN public.carriers c ON c.id = a.carrier_id AND c.operational_status = $1
         GROUP BY c.id, c.business_name, c.operational_status
         ORDER BY pending_count DESC
-        """
+        """,
+        ACTIVE_OPERATIONAL_STATUS,
     )
     carriers = [dict(r) for r in rows]
     return {
@@ -156,7 +159,8 @@ SELECT
 FROM resolved r
 JOIN public.carriers c ON c.id = r.resolved_carrier_id
 LEFT JOIN carrier_operation_types cot ON cot.carrier_id = c.id
-WHERE ($1::uuid IS NULL OR c.id = $1)
+WHERE c.operational_status = $8
+  AND ($1::uuid IS NULL OR c.id = $1)
   AND ($2::text IS NULL OR r.entity_type = $2)
   AND ($3::text IS NULL OR r.requirement_code = $3)
   AND ($4::text IS NULL OR c.business_name ILIKE '%' || $4 || '%' OR r.subject_name ILIKE '%' || $4 || '%')
@@ -181,10 +185,14 @@ async def list_pending_compliance_records(
     """Módulo Documentos (sábana) — un `compliance_record` pendiente por
     fila, cruzando toda la flota en vez de navegar empresa por empresa. Ver
     docs/superpowers/plans (plan del módulo). Reusa el mismo criterio de
-    atribución DRIVER/ASSET→empresa que `pending-summary`, a nivel de fila."""
+    atribución DRIVER/ASSET→empresa que `pending-summary`, a nivel de fila.
+    Solo empresas activas (bug 5.4): antes traía también LEGACY_INACTIVE/
+    INACTIVE/ONBOARDING — confirmado contra datos reales que eran más de la
+    mitad del volumen mostrado."""
     rows = await pool.fetch(
         _PENDING_ROWS_SQL,
         carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
+        ACTIVE_OPERATIONAL_STATUS,
     )
     total = rows[0]["total_count"] if rows else 0
     result_rows = [

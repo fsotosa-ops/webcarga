@@ -63,6 +63,7 @@ describe('TripBoard', () => {
       statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
       operational_states: [{ id: 'op-uuid-1', label: 'En panne confirmada', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
       tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
+      clients: [],
     }
     const trip = { ...makeTrip('a', 'ORIGEN'), manual_status: 'op-uuid-1' }
     render(<TripBoard trips={[trip]} groups={groups} meta={meta} onSaved={vi.fn()} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} />)

@@ -72,6 +72,7 @@ describe('TripTable', () => {
       statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
       temperature_ranges: [], unassigned_reasons: [],
       operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
+      clients: [],
     }
     render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={meta} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByText('RM').length).toBeGreaterThan(0)
@@ -152,6 +153,7 @@ describe('TripTable — estado manual resuelto contra estados operacionales', ()
       statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
       operational_states: [{ id: 'op-uuid-1', label: 'Confirmado en panne', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
       tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
+      clients: [],
     }
     const trip = makeTrip('t1', { manual_status: 'op-uuid-1' })
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={meta} sortKey={null} sortDir="asc" onSort={vi.fn()} />)

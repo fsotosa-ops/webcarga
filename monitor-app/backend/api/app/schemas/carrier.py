@@ -18,6 +18,11 @@ from pydantic import BaseModel, field_validator, model_validator
 # migrado).
 OperationalStatus = Literal["ACTIVE", "INACTIVE", "LEGACY_INACTIVE", "ONBOARDING"]
 
+# Única fuente de verdad para "empresa activa" en filtros que deben excluir
+# inactivas/legacy/onboarding (ej. Certificación, bug 5.4) — evita duplicar
+# el literal 'ACTIVE' como texto SQL en múltiples routers.
+ACTIVE_OPERATIONAL_STATUS: OperationalStatus = "ACTIVE"
+
 
 def _clean_tax_id_value(v):
     """Normaliza tax_id: recorta espacios y pasa a mayúsculas; un string

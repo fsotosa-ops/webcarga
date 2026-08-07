@@ -559,14 +559,15 @@ def test_attach_origin_none_for_empty_stops():
 
 
 # ── driver_leg_number — "vuelta N" calculada, no is_first_leg manual ────────
-
-def test_trip_from_joins_origin_stop_for_leg_number_ordering():
-    pool = make_pool()
-    client = make_client(pool)
-    client.get("/api/v1/trips/trip-1")
-    query = pool.fetchrow.call_args.args[0]
-    assert "LEFT JOIN app.trip_stops ots" in query
-    assert "ots.stop_type = 'ORIGIN'" in query
+#
+# El LEFT JOIN app.trip_stops ots (que este archivo testeaba hasta el bug
+# 5.5) quedó vestigial de antes de que driver_leg_number se resolviera por
+# subquery contra app.v_driver_daily_trip_legs (ver test de abajo) — nunca
+# se referenciaba en ningún otro lado de _TRIP_SELECT/_TRIP_FROM. Se
+# eliminó (2026-08-07): con un viaje que tuviera 2 filas ORIGIN en
+# app.trip_stops (dato real confirmado — mismo bug de hash inestable de
+# dbt documentado en _load_trip_stops), ese JOIN sin dedup duplicaba
+# silenciosamente la fila del viaje en el listado de /trips.
 
 
 def test_get_trip_endpoint_returns_driver_leg_number():

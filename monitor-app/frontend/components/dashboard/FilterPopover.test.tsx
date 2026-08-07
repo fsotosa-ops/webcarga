@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { FilterPopover } from './FilterPopover'
 import { useDiarioFilters } from '@/hooks/useDiarioFilters'
 import type { TripsMeta } from '@/lib/types'
-import type { Shipper } from '@/lib/api/locations'
+import type { FilterGroup } from '@/lib/api/filterGroups'
 
 vi.mock('@/lib/api/locations', async importOriginal => ({
   ...(await importOriginal<typeof import('@/lib/api/locations')>()),
@@ -30,21 +30,39 @@ const meta: TripsMeta = {
     { id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' },
     { id: 'ZONA_CERO', label: 'Zona Cero', bg_color: '#fef3e8', text_color: '#a35b00' },
   ],
+  clients: [],
 }
 
-const shippers: Shipper[] = [
-  { id: '1', name: 'Walmart', status: 'ACTIVE' },
-  { id: '2', name: 'Sodimac', status: 'ACTIVE' },
+// Bug 5.2: Estado (grupos default + custom) se movió al popover — mismo
+// shape que ya resuelve page.tsx (defaultGroups useMemo).
+const defaultGroups = [
+  { id: 'en_ruta', statuses: ['RUTA'], label: 'En Ruta', on: 'bg-blue-500', off: 'text-blue-600' },
+]
+const customGroups: FilterGroup[] = [
+  { id: 'g1', name: 'Mis urgentes', color: 'red', statuses: ['CANCELADO'] } as FilterGroup,
 ]
 
-function Harness({ onDispatch }: { onDispatch?: ReturnType<typeof useDiarioFilters>[1] }) {
+function Harness({
+  onDispatch, statusParam = '', onEditGroup = vi.fn(), onCreateGroup = vi.fn(), onSaveAsGroup = vi.fn(),
+}: {
+  onDispatch?: ReturnType<typeof useDiarioFilters>[1]
+  statusParam?: string
+  onEditGroup?: (g: FilterGroup) => void
+  onCreateGroup?: () => void
+  onSaveAsGroup?: () => void
+}) {
   const [filters, dispatch] = useDiarioFilters()
   return (
     <FilterPopover
       filters={filters}
       dispatch={onDispatch ?? dispatch}
       meta={meta}
-      shippers={shippers}
+      defaultGroups={defaultGroups}
+      customGroups={customGroups}
+      statusParam={statusParam}
+      onEditGroup={onEditGroup}
+      onCreateGroup={onCreateGroup}
+      onSaveAsGroup={onSaveAsGroup}
     />
   )
 }
@@ -76,30 +94,43 @@ describe('FilterPopover', () => {
   it('shows the filter count badge including active operation_type selections', () => {
     function CountHarness() {
       const [filters, dispatch] = useDiarioFilters()
-      return <FilterPopover filters={{ ...filters, fOperationType: ['RM'] }} dispatch={dispatch} meta={meta} />
+      return (
+        <FilterPopover
+          filters={{ ...filters, fOperationType: ['RM'] }}
+          dispatch={dispatch}
+          meta={meta}
+          defaultGroups={defaultGroups}
+          customGroups={customGroups}
+          statusParam=""
+          onEditGroup={vi.fn()}
+          onCreateGroup={vi.fn()}
+          onSaveAsGroup={vi.fn()}
+        />
+      )
     }
     renderWithQueryClient(<CountHarness />)
     expect(screen.getByText('1')).toBeInTheDocument()
   })
 
-  // 2026-08-02: filtros nuevos — Cliente, Tipo de carga, Origen
-  it('shows a "Cliente" chip per shipper and dispatches toggleClient on click', () => {
-    const dispatch = vi.fn()
-    renderWithQueryClient(<Harness onDispatch={dispatch} />)
-    fireEvent.click(screen.getByText('Filtros'))
-    expect(screen.getByText('Cliente')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Walmart'))
-    expect(dispatch).toHaveBeenCalledWith({ type: 'toggleClient', id: 'Walmart' })
-  })
-
-  it('does not render the Cliente section when no shippers are given', () => {
-    function NoShippersHarness() {
+  it('shows the filter count badge including an active Estado group', () => {
+    function CountHarness() {
       const [filters, dispatch] = useDiarioFilters()
-      return <FilterPopover filters={filters} dispatch={dispatch} meta={meta} />
+      return (
+        <FilterPopover
+          filters={{ ...filters, activeGroup: 'default:en_ruta' }}
+          dispatch={dispatch}
+          meta={meta}
+          defaultGroups={defaultGroups}
+          customGroups={customGroups}
+          statusParam=""
+          onEditGroup={vi.fn()}
+          onCreateGroup={vi.fn()}
+          onSaveAsGroup={vi.fn()}
+        />
+      )
     }
-    renderWithQueryClient(<NoShippersHarness />)
-    fireEvent.click(screen.getByText('Filtros'))
-    expect(screen.queryByText('Cliente')).not.toBeInTheDocument()
+    renderWithQueryClient(<CountHarness />)
+    expect(screen.getByText('1')).toBeInTheDocument()
   })
 
   it('shows a "Tipo de carga" chip per temperature range and dispatches toggleCargoType on click', () => {
@@ -120,6 +151,12 @@ describe('FilterPopover', () => {
           filters={{ ...filters, fOrigin: ['CD Quilicura'] }}
           dispatch={dispatch}
           meta={meta}
+          defaultGroups={defaultGroups}
+          customGroups={customGroups}
+          statusParam=""
+          onEditGroup={vi.fn()}
+          onCreateGroup={vi.fn()}
+          onSaveAsGroup={vi.fn()}
         />
       )
     }
@@ -128,5 +165,47 @@ describe('FilterPopover', () => {
     expect(screen.getByText('CD Quilicura')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Quitar origen CD Quilicura'))
     expect(dispatch).toHaveBeenCalledWith({ type: 'toggleOrigin', id: 'CD Quilicura' })
+  })
+
+  // Bug 5.2: Estado se movió acá desde la barra principal — mismo
+  // comportamiento (toggleGroup, crear/guardar grupo) que tenía en page.tsx.
+  it('shows an "Estado" section with default groups and dispatches toggleGroup on click', () => {
+    const dispatch = vi.fn()
+    renderWithQueryClient(<Harness onDispatch={dispatch} />)
+    fireEvent.click(screen.getByText('Filtros'))
+    expect(screen.getByText('Estado')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('En Ruta'))
+    expect(dispatch).toHaveBeenCalledWith({ type: 'toggleGroup', key: 'default:en_ruta' })
+  })
+
+  it('shows custom groups and calls onEditGroup when the pencil icon is clicked', () => {
+    const onEditGroup = vi.fn()
+    renderWithQueryClient(<Harness onEditGroup={onEditGroup} />)
+    fireEvent.click(screen.getByText('Filtros'))
+    expect(screen.getByText('Mis urgentes')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Editar grupo Mis urgentes'))
+    expect(onEditGroup).toHaveBeenCalledWith(customGroups[0])
+  })
+
+  it('calls onCreateGroup when "Grupo" is clicked', () => {
+    const onCreateGroup = vi.fn()
+    renderWithQueryClient(<Harness onCreateGroup={onCreateGroup} />)
+    fireEvent.click(screen.getByText('Filtros'))
+    fireEvent.click(screen.getByText('Grupo'))
+    expect(onCreateGroup).toHaveBeenCalled()
+  })
+
+  it('only shows "Guardar como grupo" when statusParam is set, and calls onSaveAsGroup', () => {
+    const onSaveAsGroup = vi.fn()
+    renderWithQueryClient(<Harness statusParam="RUTA" onSaveAsGroup={onSaveAsGroup} />)
+    fireEvent.click(screen.getByText('Filtros'))
+    fireEvent.click(screen.getByText('Guardar como grupo'))
+    expect(onSaveAsGroup).toHaveBeenCalled()
+  })
+
+  it('does not show "Guardar como grupo" when statusParam is empty', () => {
+    renderWithQueryClient(<Harness statusParam="" />)
+    fireEvent.click(screen.getByText('Filtros'))
+    expect(screen.queryByText('Guardar como grupo')).not.toBeInTheDocument()
   })
 })

@@ -36,6 +36,7 @@ def test_meta_exposes_active_unassigned_reasons_ordered_by_sort_order():
     pool.fetch.side_effect = [
         [], [], [], [],
         [{"id": "pana", "label": "Pana"}, {"id": "sin_conductor", "label": "Sin conductor"}],
+        [],  # clients (bug 5.2)
     ]
     pool.fetchrow.return_value = None
     client = make_client(pool)
@@ -47,7 +48,7 @@ def test_meta_exposes_active_unassigned_reasons_ordered_by_sort_order():
     assert body["unassigned_reasons"] == [
         {"id": "pana", "label": "Pana"}, {"id": "sin_conductor", "label": "Sin conductor"},
     ]
-    reasons_call = pool.fetch.call_args_list[-1]
+    reasons_call = pool.fetch.call_args_list[4]
     assert "app.status_taxonomies" in reasons_call.args[0]
     assert "DRIVER_REASON" in reasons_call.args[0]
     assert "active = true" in reasons_call.args[0]
@@ -84,6 +85,7 @@ def test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxono
         [],  # alert_thresholds
         [],  # temperature_ranges
         [{"id": "uuid-2", "label": "Documentación vencida"}],  # unassigned_reasons
+        [],  # clients (bug 5.2)
     ]
     pool.fetchrow.return_value = None  # monitor_alert_rules (optional)
     client = make_client(pool)
@@ -103,3 +105,28 @@ def test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxono
     assert "OPERATIONAL_STATE" in op_query, f"Expected OPERATIONAL_STATE domain filter in op_query, got: {op_query}"
     assert "app.status_taxonomies" in reason_query, f"Expected app.status_taxonomies in reason_query, got: {reason_query}"
     assert "DRIVER_REASON" in reason_query, f"Expected DRIVER_REASON domain filter in reason_query, got: {reason_query}"
+
+
+def test_meta_exposes_clients_from_trips_with_normalized_shipper_join():
+    """Bug 5.2: Cliente en la barra principal debe ser dinámico (solo
+    shippers con viajes reales), no el catálogo completo de
+    public.shippers — y debe normalizar lower(trim(...)) igual que el
+    filtro de cliente (bug 5.1), no comparar exacto."""
+    pool = AsyncMock()
+    pool.fetch.side_effect = [
+        [], [], [], [], [],
+        [{"id": "s1", "name": "Walmart"}, {"id": "s2", "name": "Sodimac"}],  # clients
+    ]
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/trips/meta")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["clients"] == [{"id": "s1", "name": "Walmart"}, {"id": "s2", "name": "Sodimac"}]
+
+    clients_query = pool.fetch.call_args_list[5].args[0]
+    assert "lower(trim(sh.name)) = lower(trim(t.client_name))" in clients_query
+    assert "sh.status = 'ACTIVE'" in clients_query
+    assert "DISTINCT" in clients_query

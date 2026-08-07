@@ -495,7 +495,7 @@ def test_list_trips_sort_by_defaults_to_desc_when_sort_dir_invalid():
 
 def test_list_trips_ignores_invalid_sort_by_falls_back_to_planning_date():
     """Allow-list real — nunca interpola sort_by directo en el SQL (un
-    nombre de columna arbitrario, que no sea uno de los 7 permitidos, cae
+    nombre de columna arbitrario, que no sea uno de los 8 permitidos, cae
     al default en vez de romper la query o filtrarse sin validar)."""
     pool = AsyncMock()
     pool.fetchval.return_value = 0
@@ -506,6 +506,36 @@ def test_list_trips_ignores_invalid_sort_by_falls_back_to_planning_date():
     query = pool.fetch.call_args_list[0].args[0]
     assert "ORDER BY planning_date DESC NULLS LAST" in query
     assert "some_unknown_column" not in query
+
+
+def test_list_trips_sort_by_status_reported_at_is_allowed():
+    """Bug 5.6: Operaciones quiere el viaje más recientemente reportado por
+    el TMS primero — status_reported_at pasa a ser sorteable y es también el
+    tie-break (reemplaza a t.updated_at, que se pisa con ediciones
+    manuales)."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial&sort_by=status_reported_at&sort_dir=desc")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    assert "ORDER BY status_reported_at DESC NULLS LAST, status_reported_at DESC NULLS LAST" in query
+
+
+def test_list_trips_default_sort_falls_back_to_planning_date_when_no_sort_by_sent():
+    """El backend no cambia su default (planning_date) si no viene sort_by —
+    el default nuevo (status_reported_at) es decisión del frontend
+    (useDiarioFilters.ts), no del backend, para no romper otros consumidores
+    del endpoint que dependan del default actual."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    assert "ORDER BY planning_date DESC NULLS LAST, status_reported_at DESC NULLS LAST" in query
 
 
 # ── list_trips — client como lista (multi-select), cargo_type, origin
@@ -520,8 +550,26 @@ def test_list_trips_client_filters_as_list():
     assert res.status_code == 200
     query = pool.fetch.call_args_list[0].args[0]
     params = pool.fetch.call_args_list[0].args[1:]
-    assert "t.client_name = ANY(" in query
-    assert ["Walmart", "Sodimac"] in params
+    assert "lower(trim(t.client_name)) = ANY(" in query
+    assert ["walmart", "sodimac"] in params
+
+
+def test_list_trips_client_filter_normalizes_case_and_whitespace():
+    """Root cause del bug 5.1: t.client_name viene crudo del TMS (casing/
+    espacios no garantizados, confirmado contra datos reales — ~100% de los
+    viajes tienen client_name en minúsculas) — el filtro debe normalizar
+    igual que el JOIN con public.shippers (líneas 660-661), no comparar
+    exacto."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client_test = make_client(pool, router=trips_router)
+    res = client_test.get("/api/v1/trips/?view=historial&client=%20Walmart%20,SODIMAC")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    params = pool.fetch.call_args_list[0].args[1:]
+    assert "lower(trim(t.client_name)) = ANY(" in query
+    assert ["walmart", "sodimac"] in params
 
 
 def test_list_trips_cargo_type_filters_as_list():

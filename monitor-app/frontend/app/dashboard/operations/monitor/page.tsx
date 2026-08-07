@@ -3,17 +3,17 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Loader2, ChevronLeft, ChevronRight, X, Plus, PenLine, ClipboardCheck, Truck } from 'lucide-react'
-import { filterGroupsApi, type FilterGroup, type GroupColor } from '@/lib/api/filterGroups'
+import { Search, Loader2, X, ClipboardCheck, Truck } from 'lucide-react'
+import { filterGroupsApi, type FilterGroup } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
-import { shippersApi } from '@/lib/api/locations'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
 import { TripBoard } from '@/components/dashboard/TripBoard'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { FilterPopover } from '@/components/dashboard/FilterPopover'
+import { PaginationControls } from '@/components/dashboard/PaginationControls'
 import { TripAssignDialog } from '@/components/dashboard/TripAssignDialog'
 import { TripBulkUpload } from '@/components/dashboard/TripBulkUpload'
 import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
@@ -31,8 +31,6 @@ import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
-const HISTORIAL_LIMIT = 100
-
 // ── Group display config (labels + chip colors only — membership comes from meta.statuses) ──
 const GROUP_DISPLAY: Record<string, { label: string; on: string; off: string }> = {
   en_ruta:    { label: 'En Ruta',    on: 'bg-blue-500   border-blue-500   text-white', off: 'text-blue-600   border-blue-200   bg-blue-50/70   hover:border-blue-300'   },
@@ -44,19 +42,6 @@ const GROUP_DISPLAY: Record<string, { label: string; on: string; off: string }> 
 }
 
 const GROUP_ORDER = ['en_ruta', 'en_local', 'retornando', 'cerrado', 'problema', 'otro']
-
-// ── Custom group color classes ─────────────────────────────────────────────────
-const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
-  blue:   { on: 'bg-blue-500   border-blue-500   text-white', off: 'text-blue-700   border-blue-300   bg-blue-50   hover:border-blue-400'   },
-  green:  { on: 'bg-green-500  border-green-500  text-white', off: 'text-green-700  border-green-300  bg-green-50  hover:border-green-400'  },
-  orange: { on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-700 border-orange-300 bg-orange-50 hover:border-orange-400' },
-  purple: { on: 'bg-purple-500 border-purple-500 text-white', off: 'text-purple-700 border-purple-300 bg-purple-50 hover:border-purple-400' },
-  red:    { on: 'bg-red-500    border-red-500    text-white', off: 'text-red-700    border-red-300    bg-red-50    hover:border-red-400'    },
-  teal:   { on: 'bg-teal-500   border-teal-500   text-white', off: 'text-teal-700   border-teal-300   bg-teal-50   hover:border-teal-400'   },
-  amber:  { on: 'bg-amber-500  border-amber-500  text-white', off: 'text-amber-700  border-amber-300  bg-amber-50  hover:border-amber-400'  },
-  pink:   { on: 'bg-pink-500   border-pink-500   text-white', off: 'text-pink-700   border-pink-300   bg-pink-50   hover:border-pink-400'   },
-  slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
-}
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
@@ -89,6 +74,9 @@ export default function DiarioPage() {
   const [showFleetCenter, setShowFleetCenter] = useState(false)
   const [prefillFleet,    setPrefillFleet]    = useState<FleetAssignValue | null>(null)
   const [viewMode,        setViewMode]        = useState<ViewMode>('tabla')
+  // Bug 5.5: preferencia de visualización, no un filtro — no entra al
+  // reducer de useDiarioFilters (no debe contarse en countActiveFilters/clear).
+  const [historialPageSize, setHistorialPageSize] = useState(100)
 
   // Custom groups
   const [customGroups,      setCustomGroups]      = useState<FilterGroup[]>([])
@@ -145,7 +133,11 @@ export default function DiarioPage() {
     ...(f.activeSignals.includes('assigned')        ? { is_assigned:      true } : {}),
     ...(f.activeSignals.includes('second_leg_plus') ? { second_leg_plus:  true } : {}),
   }
-  const sortParams = { sort_by: f.sortKey ?? 'planning_date', sort_dir: f.sortDir }
+  // Default: viaje más recientemente reportado por el TMS primero (bug
+  // 5.6) — aplica a En Curso e Historial por igual, confirmado con el
+  // usuario. El backend sigue defaulteando a planning_date si no viene
+  // sort_by (contrato sin cambios), este default nuevo vive acá.
+  const sortParams = { sort_by: f.sortKey ?? 'status_reported_at', sort_dir: f.sortDir }
   const catalogFilterParams = {
     client:     f.fClient.join(','),
     cargo_type: f.fCargoType.join(','),
@@ -161,7 +153,7 @@ export default function DiarioPage() {
           tms: f.fTms.join(','), ...catalogFilterParams, ...sortParams, limit: 200 }
       : { view: 'historial', q: qDebounced, fecha_desde: f.fechaDesde, fecha_hasta: f.fechaHasta,
           status: statusParam, tms: f.fTms.join(','), ...catalogFilterParams, ...sortParams,
-          limit: HISTORIAL_LIMIT, page: f.page, ...boolParams }
+          limit: historialPageSize, page: f.page, ...boolParams }
 
   const queryClient = useQueryClient()
   const router       = useRouter()
@@ -221,13 +213,6 @@ export default function DiarioPage() {
     enabled: f.tab === 'en_curso',
   })
 
-  // Catálogo de clientes/shippers para el filtro de Cliente (2026-08-02) —
-  // lista corta y estable, sin necesidad de refetch periódico.
-  const shippersQuery = useQuery({
-    queryKey: ['shippers'],
-    queryFn: () => shippersApi.list(),
-    staleTime: 5 * 60_000,
-  })
   const fleetAvailableCount = fleetAvailableQuery.data?.items.length ?? 0
 
   // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
@@ -341,7 +326,7 @@ export default function DiarioPage() {
     if (f.activeGroup === `custom:${id}`) dispatch({ type: 'patch', patch: { activeGroup: null } })
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / HISTORIAL_LIMIT))
+  const totalPages = Math.max(1, Math.ceil(total / historialPageSize))
 
   return (
     <div className="flex h-full overflow-hidden relative">
@@ -481,7 +466,7 @@ export default function DiarioPage() {
             </div>
           )}
 
-          {/* ── Barra de filtros compacta: búsqueda + Estado + popover ── */}
+          {/* ── Barra de filtros compacta: búsqueda + Cliente + popover ── */}
           <div className="bg-white border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
             <div className="relative shrink-0">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -493,78 +478,35 @@ export default function DiarioPage() {
               />
             </div>
 
-            {/* Estado: grupos default + custom */}
-            {defaultGroups.map(g => {
-              const key = `default:${g.id}`
-              const active = f.activeGroup === key
+            {/* Cliente — dinámico según quién realmente tiene viajes en el
+                Diario (bug 5.2, GET /trips/meta), no el catálogo completo
+                de public.shippers. Estado (antes acá) se movió al popover
+                "Filtros" — Operaciones pidió Cliente visible de entrada. */}
+            {(tripsMeta?.clients ?? []).map(c => {
+              const active = f.fClient.includes(c.name)
               return (
                 <button
-                  key={g.id}
-                  onClick={() => dispatch({ type: 'toggleGroup', key })}
+                  key={c.id}
+                  onClick={() => dispatch({ type: 'toggleClient', id: c.name })}
                   aria-pressed={active}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${active ? g.on : g.off}`}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                    active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                  }`}
                 >
-                  {g.label}
-                  {active && g.statuses.length > 1 && (
-                    <span className="ml-1 opacity-70 text-[9px]">·{g.statuses.length}</span>
-                  )}
+                  {c.name}
                 </button>
               )
             })}
 
-            {customGroups.length > 0 && <span className="text-gray-200 text-sm">·</span>}
-
-            {customGroups.map(g => {
-              const key = `custom:${g.id}`
-              const active = f.activeGroup === key
-              const cls = COLOR_CLS[g.color] ?? COLOR_CLS.blue
-              return (
-                <span key={g.id} className={`inline-flex items-center rounded-full border transition-all ${active ? cls.on : cls.off}`}>
-                  <button
-                    onClick={() => dispatch({ type: 'toggleGroup', key })}
-                    aria-pressed={active}
-                    className="text-[11px] font-semibold pl-2.5 pr-1 py-1"
-                  >
-                    {g.name}
-                    {active && g.statuses.length > 1 && (
-                      <span className="opacity-70 text-[9px] ml-1">·{g.statuses.length}</span>
-                    )}
-                  </button>
-                  {/* Edición siempre visible (antes solo-hover: invisible en touch) */}
-                  <button
-                    onClick={e => { e.stopPropagation(); setEditingGroup(g); setShowBuilder(true) }}
-                    aria-label={`Editar grupo ${g.name}`}
-                    className="pr-2 pl-0.5 py-1 opacity-60 hover:opacity-100 transition-opacity"
-                  >
-                    <PenLine size={9} />
-                  </button>
-                </span>
-              )
-            })}
-
-            <button
-              onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(false); setShowBuilder(true) }}
-              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-accent hover:text-accent transition-all"
-              title="Crear grupo personalizado"
-            >
-              <Plus size={11} />
-              Grupo
-            </button>
-
-            {statusParam && (
-              <button
-                onClick={() => { setEditingGroup(undefined); setPrefillFromFilter(true); setShowBuilder(true) }}
-                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-accent/40 text-accent hover:border-accent hover:bg-accent/5 transition-all"
-                title="Guardar el filtro de estado actual como grupo"
-              >
-                <Plus size={11} />
-                Guardar como grupo
-              </button>
-            )}
-
-            {/* Filtros ocasionales (Fuente, Indicadores, fechas) + Limpiar */}
+            {/* Filtros ocasionales (Estado, Fuente, Indicadores, fechas) + Limpiar */}
             <div className="flex items-center gap-2 ml-auto">
-              <FilterPopover filters={f} dispatch={dispatch} meta={tripsMeta} shippers={shippersQuery.data} />
+              <FilterPopover
+                filters={f} dispatch={dispatch} meta={tripsMeta}
+                defaultGroups={defaultGroups} customGroups={customGroups} statusParam={statusParam}
+                onEditGroup={g => { setEditingGroup(g); setShowBuilder(true) }}
+                onCreateGroup={() => { setEditingGroup(undefined); setPrefillFromFilter(false); setShowBuilder(true) }}
+                onSaveAsGroup={() => { setEditingGroup(undefined); setPrefillFromFilter(true); setShowBuilder(true) }}
+              />
               {activeCount > 0 && (
                 <button onClick={() => dispatch({ type: 'clear' })}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors">
@@ -622,29 +564,17 @@ export default function DiarioPage() {
 
           {/* Historial pagination */}
           {f.tab === 'historial' && !loading && total > 0 && (
-            <div className="flex items-center justify-between pt-2 pb-1">
-              <button
-                onClick={() => dispatch({ type: 'patch', patch: { page: Math.max(1, f.page - 1) } })}
-                disabled={f.page === 1}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
-              >
-                <ChevronLeft size={13} /> Anterior
-              </button>
-              <p className="text-xs text-gray-500">
-                {total > HISTORIAL_LIMIT ? (
-                  <>Página <span className="font-semibold text-gray-700">{f.page}</span> de <span className="font-semibold text-gray-700">{totalPages}</span><span className="text-gray-400 ml-2">· {total.toLocaleString('es-CL')} viajes</span></>
-                ) : (
-                  <span className="text-gray-400">{total.toLocaleString('es-CL')} viaje{total !== 1 ? 's' : ''}</span>
-                )}
-              </p>
-              <button
-                onClick={() => dispatch({ type: 'patch', patch: { page: Math.min(totalPages, f.page + 1) } })}
-                disabled={f.page >= totalPages}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
-              >
-                Siguiente <ChevronRight size={13} />
-              </button>
-            </div>
+            <PaginationControls
+              page={f.page}
+              totalPages={totalPages}
+              total={total}
+              pageSize={historialPageSize}
+              onPageChange={p => dispatch({ type: 'patch', patch: { page: p } })}
+              onPageSizeChange={size => {
+                setHistorialPageSize(size)
+                dispatch({ type: 'patch', patch: { page: 1 } })
+              }}
+            />
           )}
 
         </div>

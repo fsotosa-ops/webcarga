@@ -25,6 +25,7 @@ const meta: TripsMeta = {
     { id: 'manual', label: 'Manual', bg_color: '#fff', text_color: '#000' },
   ],
   operational_states: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
+  clients: [],
 }
 
 function renderCreate(props: Partial<Parameters<typeof TripAssignDialog>[0]> = {}) {

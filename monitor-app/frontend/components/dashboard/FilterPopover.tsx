@@ -1,28 +1,58 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { SlidersHorizontal, X } from 'lucide-react'
+import { SlidersHorizontal, X, Plus, PenLine } from 'lucide-react'
 import type { TripsMeta } from '@/lib/types'
-import type { Shipper } from '@/lib/api/locations'
+import type { FilterGroup, GroupColor } from '@/lib/api/filterGroups'
 import type { DiarioFilters, DiarioFiltersAction } from '@/hooks/useDiarioFilters'
 import { countPopoverFilters } from '@/hooks/useDiarioFilters'
 import { LocationPicker } from './LocationPicker'
 
+interface DefaultGroup {
+  id:       string
+  statuses: string[]
+  label:    string
+  on:       string
+  off:      string
+}
+
 interface Props {
-  filters:  DiarioFilters
-  dispatch: React.Dispatch<DiarioFiltersAction>
-  meta?:    TripsMeta | null
-  /** Catálogo de clientes/shippers (public.shippers) para el filtro de
-   *  Cliente — 2026-08-02, ver AGENTLOG (filtros del Diario). */
-  shippers?: Shipper[]
+  filters:       DiarioFilters
+  dispatch:      React.Dispatch<DiarioFiltersAction>
+  meta?:         TripsMeta | null
+  /** Estado (bug 5.2, 2026-08-07): se movió acá desde la barra principal —
+   *  Cliente ocupó su lugar. Membership/labels ya resueltos por el padre
+   *  (page.tsx), este componente solo renderiza. */
+  defaultGroups: DefaultGroup[]
+  customGroups:  FilterGroup[]
+  statusParam:   string
+  onEditGroup:   (g: FilterGroup) => void
+  onCreateGroup: () => void
+  onSaveAsGroup: () => void
+}
+
+// ── Custom group color classes (movido desde page.tsx, bug 5.2) ─────────────
+const COLOR_CLS: Record<GroupColor, { on: string; off: string }> = {
+  blue:   { on: 'bg-blue-500   border-blue-500   text-white', off: 'text-blue-700   border-blue-300   bg-blue-50   hover:border-blue-400'   },
+  green:  { on: 'bg-green-500  border-green-500  text-white', off: 'text-green-700  border-green-300  bg-green-50  hover:border-green-400'  },
+  orange: { on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-700 border-orange-300 bg-orange-50 hover:border-orange-400' },
+  purple: { on: 'bg-purple-500 border-purple-500 text-white', off: 'text-purple-700 border-purple-300 bg-purple-50 hover:border-purple-400' },
+  red:    { on: 'bg-red-500    border-red-500    text-white', off: 'text-red-700    border-red-300    bg-red-50    hover:border-red-400'    },
+  teal:   { on: 'bg-teal-500   border-teal-500   text-white', off: 'text-teal-700   border-teal-300   bg-teal-50   hover:border-teal-400'   },
+  amber:  { on: 'bg-amber-500  border-amber-500  text-white', off: 'text-amber-700  border-amber-300  bg-amber-50  hover:border-amber-400'  },
+  pink:   { on: 'bg-pink-500   border-pink-500   text-white', off: 'text-pink-700   border-pink-300   bg-pink-50   hover:border-pink-400'   },
+  slate:  { on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-700  border-slate-300  bg-slate-50  hover:border-slate-400'  },
 }
 
 /**
- * Filtros de uso ocasional (Fuente TMS, Tipo de operación, rango de fechas)
- * fuera de la barra principal — reduce la carga visual del monitor de ~25 a
- * ~10 controles.
+ * Filtros de uso ocasional (Estado, Fuente TMS, Tipo de operación, rango de
+ * fechas) fuera de la barra principal — reduce la carga visual del monitor.
+ * Cliente vive en la barra principal desde el bug 5.2 (2026-08-07).
  */
-export function FilterPopover({ filters: f, dispatch, meta, shippers }: Props) {
+export function FilterPopover({
+  filters: f, dispatch, meta,
+  defaultGroups, customGroups, statusParam, onEditGroup, onCreateGroup, onSaveAsGroup,
+}: Props) {
   const [open, setOpen] = useState(false)
   const panelRef  = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -86,6 +116,85 @@ export function FilterPopover({ filters: f, dispatch, meta, shippers }: Props) {
             </button>
           </div>
 
+          {/* Estado: grupos default + custom (movido desde la barra
+              principal, bug 5.2 — Cliente ocupó su lugar acá afuera). */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Estado</p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {defaultGroups.map(g => {
+                const key = `default:${g.id}`
+                const active = f.activeGroup === key
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => dispatch({ type: 'toggleGroup', key })}
+                    aria-pressed={active}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${active ? g.on : g.off}`}
+                  >
+                    {g.label}
+                    {active && g.statuses.length > 1 && (
+                      <span className="ml-1 opacity-70 text-[9px]">·{g.statuses.length}</span>
+                    )}
+                  </button>
+                )
+              })}
+
+              {customGroups.length > 0 && <span className="text-gray-200 text-sm">·</span>}
+
+              {customGroups.map(g => {
+                const key = `custom:${g.id}`
+                const active = f.activeGroup === key
+                const cls = COLOR_CLS[g.color] ?? COLOR_CLS.blue
+                return (
+                  <span key={g.id} className={`inline-flex items-center rounded-full border transition-all ${active ? cls.on : cls.off}`}>
+                    <button
+                      type="button"
+                      onClick={() => dispatch({ type: 'toggleGroup', key })}
+                      aria-pressed={active}
+                      className="text-[11px] font-semibold pl-2.5 pr-1 py-1"
+                    >
+                      {g.name}
+                      {active && g.statuses.length > 1 && (
+                        <span className="opacity-70 text-[9px] ml-1">·{g.statuses.length}</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onEditGroup(g) }}
+                      aria-label={`Editar grupo ${g.name}`}
+                      className="pr-2 pl-0.5 py-1 opacity-60 hover:opacity-100 transition-opacity"
+                    >
+                      <PenLine size={9} />
+                    </button>
+                  </span>
+                )
+              })}
+
+              <button
+                type="button"
+                onClick={onCreateGroup}
+                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-accent hover:text-accent transition-all"
+                title="Crear grupo personalizado"
+              >
+                <Plus size={11} />
+                Grupo
+              </button>
+
+              {statusParam && (
+                <button
+                  type="button"
+                  onClick={onSaveAsGroup}
+                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border border-dashed border-accent/40 text-accent hover:border-accent hover:bg-accent/5 transition-all"
+                  title="Guardar el filtro de estado actual como grupo"
+                >
+                  <Plus size={11} />
+                  Guardar como grupo
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Fuente TMS */}
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Fuente</p>
@@ -142,32 +251,6 @@ export function FilterPopover({ filters: f, dispatch, meta, shippers }: Props) {
               })}
             </div>
           </div>
-
-          {/* Cliente (shipper) — server-side, mismo patrón de chips que
-              Fuente/Tipo de operación (2026-08-02). */}
-          {shippers && shippers.length > 0 && (
-            <div>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Cliente</p>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {shippers.map(sh => {
-                  const active = f.fClient.includes(sh.name)
-                  return (
-                    <button
-                      key={sh.id}
-                      type="button"
-                      onClick={() => dispatch({ type: 'toggleClient', id: sh.name })}
-                      aria-pressed={active}
-                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                        active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                    >
-                      {sh.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
 
           {/* Tipo de carga — catálogo de app.temperature_ranges (ya
               disponible en meta, sin fetch nuevo). */}

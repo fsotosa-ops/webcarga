@@ -122,6 +122,13 @@ export type OperationTypeMeta = {
   text_color: string
 }
 
+/** Cliente (shipper) con viajes reales en el Diario — dinámico, no el
+ *  catálogo completo de public.shippers (bug 5.2, 2026-08-07). */
+export type ClientMeta = {
+  id:   string
+  name: string
+}
+
 /** Shape común mínimo entre AvailableDriver y DriverSearchResult — lo que
  *  DriverSearchPicker necesita para autocompletar empresa/vehículo al
  *  elegir un conductor, sin importar si vino de la lista sugerida (hoy
@@ -233,6 +240,7 @@ export type TripsMeta = {
   temperature_ranges:  TemperatureRangeMeta[]
   unassigned_reasons:  UnassignedReasonMeta[]
   operation_types:     OperationTypeMeta[]
+  clients:             ClientMeta[]
   monitor_alert_rules?: MonitorAlertRules | null
 }
 

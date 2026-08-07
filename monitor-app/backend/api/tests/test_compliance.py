@@ -339,6 +339,36 @@ def test_pending_rows_passes_filters_to_query():
     assert args[5] == "Tractoreo"
     assert args[6] == 10
     assert args[7] == 5
+    assert args[8] == "ACTIVE"
+
+
+def test_pending_rows_excludes_inactive_carriers_from_query():
+    """Bug 5.4: antes de este fix, /pending traía documentación pendiente de
+    empresas LEGACY_INACTIVE/INACTIVE/ONBOARDING también — confirmado contra
+    datos reales que eran más de la mitad del volumen mostrado."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending")
+
+    query = pool.fetch.call_args.args[0]
+    args = pool.fetch.call_args.args
+    assert "c.operational_status = $8" in query
+    assert args[8] == "ACTIVE"
+
+
+def test_pending_summary_excludes_inactive_carriers_from_query():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending-summary")
+
+    query = pool.fetch.call_args.args[0]
+    args = pool.fetch.call_args.args
+    assert "c.operational_status = $1" in query
+    assert args[1] == "ACTIVE"
 
 
 def test_bulk_upload_422_when_files_and_record_ids_length_mismatch():

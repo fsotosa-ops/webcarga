@@ -11,6 +11,7 @@ export type Tab = 'en_curso' | 'historial'
 export type SortKey =
   | 'planning_date' | 'tractor_plate' | 'driver_name' | 'carrier_name'
   | 'client_name' | 'current_status' | 'source_system_trip_id'
+  | 'status_reported_at'
 
 export interface DiarioFilters {
   tab:            Tab
@@ -139,13 +140,15 @@ export function countActiveFilters(f: DiarioFilters): number {
     + f.fClient.length + f.fCargoType.length + f.fOrigin.length
 }
 
-/** Filtros que viven dentro del popover "Filtros" (para su badge contador) */
+/** Filtros que viven dentro del popover "Filtros" (para su badge contador).
+ *  Bug 5.2: Estado (activeGroup) se movió acá adentro; Cliente (fClient)
+ *  salió — ahora vive en la barra principal. */
 export function countPopoverFilters(f: DiarioFilters): number {
   return [
-    f.fechaDesde, f.fechaHasta,
+    f.fechaDesde, f.fechaHasta, f.activeGroup,
   ].filter(v => v !== '' && v !== null).length
     + f.fTms.length + f.fOperationType.length
-    + f.fClient.length + f.fCargoType.length + f.fOrigin.length
+    + f.fCargoType.length + f.fOrigin.length
 }
 
 export function useDiarioFilters() {
@@ -153,6 +156,9 @@ export function useDiarioFilters() {
     tab: 'en_curso', q: '', fechaDesde: '', fechaHasta: '',
     activeGroup: null, activeSignals: [], fTms: [], fOperationType: [],
     fClient: [], fCargoType: [], fOrigin: [],
-    sortKey: null, sortDir: 'asc', page: 1,
+    // sortKey null → page.tsx defaultea a status_reported_at (bug 5.6:
+    // viaje más recientemente reportado por el TMS primero), sortDir desc
+    // acompaña ese default — "más reciente arriba", no "más viejo arriba".
+    sortKey: null, sortDir: 'desc', page: 1,
   } satisfies DiarioFilters)
 }
