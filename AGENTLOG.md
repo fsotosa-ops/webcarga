@@ -38,7 +38,7 @@
 11. [ ] Tarea 9 de status_taxonomies (DROP tablas legacy) — diferida, gated por tiempo en producción + confirmación explícita del usuario.
 12. [ ] Ítem 1b — pendiente de que el usuario confirme el rol de los usuarios que no pueden subir documentación.
 13. [ ] (no bloqueante) Reescribir `/deploy` y `/check-env` (`monitor-app/.claude/commands/`) para reflejar Cloud Run.
-14. [ ] (no bloqueante) Confirmar si `webcarga-frontend-prod` ya tuvo un primer deploy a `main`.
+14. [x] (heredado) ¿`webcarga-frontend-prod` tuvo un primer deploy a `main`? — **SÍ, confirmado (Ronda 94)**: corre la imagen `frontend:9e7f5ba6…`, que es un commit de `main`. En la Ronda 94 se le forzó además la revisión 00002 para que tomara el secret corregido de la API. Ojo: esa imagen es del 2026-08-01, o sea `main` está muy por detrás de `dev`.
 15. [ ] (heredado) Evaluar si vale la pena versionar el proyecto dbt real en git.
 16. [ ] (heredado) Decidir si se retiran del pipeline `legacy_drivers_transporters` los bloques `snapshot_transporters_data`/`webapp_transporter_porfiles`.
 17. [ ] (heredado) `ops.pipeline_rejects`/`ops.pipeline_runs` — sin auditar, no bloqueante.
@@ -960,9 +960,9 @@ Ver ítem 6 del checklist de arriba (Ronda 89 — diseño de la pantalla "por em
 #### Próximo paso exacto
 1. [x] Verificación post-corrida natural de Mage — CERRADO, ver arriba.
 2. [x] Commit + push + deploy de `extraction_service/app/tms/sodimac/scraper.py` (1.1B) — CERRADO, ver arriba.
-3. [ ] `TripTable.tsx`/`StopTimeline.tsx` + tests (2.3) siguen sin commitear — el usuario no lo pidió todavía (solo pidió el scraper).
+3. [x] `TripTable.tsx`/`StopTimeline.tsx` + tests (2.3) — **COMMITEADOS Y DESPLEGADOS** (commit `fc9b8c7`, workflow Deploy Frontend en verde).
 4. [ ] Habilitar el permiso o aplicar en la UI de Mage el `DELETE` de paradas huérfanas ya diseñado y verificado (1197 filas, 0 ediciones manuales, 650 viajes) — bloqueado por el clasificador, no por falta de autorización del usuario.
-5. [ ] Decidir si se backfillea también la duplicación de `planning_date` en destino para los ~48 viajes Sodimac legacy que ya no se re-mergean (no se limpian solos) — igual que se decidió backfillear temperatura en 2.3. No asumido, no pedido explícitamente todavía.
+5. [x] Duplicación de `planning_date` en destino de los Sodimac legacy — **BACKFILLEADA** (Ronda 94): 27 destinos anulados junto con la corrección de huso horario de los 19 viajes congelados. Ver el detalle y el riesgo residual en la Ronda 94.
 6. [x] **Tabla de auditoría del backfill de temperatura — VALIDADA Y DROPEADA** (2026-08-07). Antes de soltarla se cruzó fila por fila contra `app.trip_stops`: **291/291 coinciden exactamente** con el valor final que el backfill dejó registrado, 0 divergencias — nada se sobrescribió ni derivó en el mes transcurrido, lo que confirma en la práctica la durabilidad que se había razonado en teoría. 54 filas usaron el fallback a hora de llegada y 77 quedaron en `NULL` (irreconstruibles, política confirmada por el usuario). `ops` ya no tiene tablas de backfill.
 7. [ ] Investigar el hallazgo lateral de filas DESTINATION duplicadas en `app.trip_stops` (137/167 pares con >1 fila, más los 3 nuevos huérfanos de 1.1A) — se resuelve solo si se aplica el ítem 4.
 8. [ ] Revisar `cargo_type` del viaje `2003266` (probable error de clasificación FRIO/CONGELADO, hallazgo lateral de 2.3).
@@ -1039,4 +1039,24 @@ Ver ítem 6 del checklist de arriba (Ronda 89 — diseño de la pantalla "por em
    - **v1 (el placeholder) deshabilitada**, para que un rollback no pueda devolver la URL falsa.
    - **Revisión nueva forzada** (`gcloud run services update --update-secrets`, misma imagen — solo re-resuelve secrets): la revisión que corría resolvió el secret al arrancar y se habría quedado con el valor viejo. Antes de forzarla se auditaron los otros 3 secrets del servicio (upstash url/token, supabase service role) para no provocar una revisión que no arranque: los tres bien configurados.
    **Verificación end-to-end**: `webcarga-frontend-prod-00002-moj` sirve el 100% del tráfico, `/login` 200, y el proxy `/api/v1/trips/meta` devuelve **200 con datos reales** — con el placeholder habría sido un error de conexión.
-5. [ ] (backlog de hardening post-MVP/Hito 4, pedido explícito) Migrar `qanalytics_agg_nro_sap_transformer.py` (Walmart) a `TENANT_COLUMN_MAPS`, y evaluar consolidar las 5 cadenas de bloques Mage duplicadas por tenant.
+
+---
+
+### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
+
+Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual.
+
+**Deuda técnica comprometida**
+1. [ ] (hardening post-MVP/Hito 4, pedido explícito del usuario) Migrar `qanalytics_agg_nro_sap_transformer.py` (Walmart) a `TENANT_COLUMN_MAPS`, y evaluar consolidar las 5 cadenas de bloques Mage duplicadas por tenant (scraper→loader→transformer→tabla temp→insert repetidas íntegras entre Walmart e IANSA). La mitad del camino ya está hecha: la URL de extracción y el POST/polling salieron a `utils/extraction_client.py`, y el mapeo de columnas a `utils/qanalytics_tenant_column_maps.py`.
+2. [ ] `main` está muy por detrás de `dev`: `webcarga-frontend-prod` corre una imagen del 2026-08-01 y nada del trabajo de las Rondas 92-94 está promovido. Decidir cuándo se hace la promoción.
+
+**Riesgos conocidos, aceptados y documentados**
+3. [ ] Un `--full-refresh` de `app.trip_stops` reintroduciría el huso horario viejo (11:00) en los 18 viajes Sodimac congelados — su valor correcto ya no existe en ninguna fuente viva (ni portal ni bronze) y la tabla de respaldo se dropeó. El proyecto ya evita el full-refresh por una razón peor (borra ediciones manuales de Operaciones), así que el riesgo es teórico, pero si ocurre hay que rehacer la corrección a mano.
+
+**Heredado de la Ronda 93, sin resolver**
+4. [ ] `DELETE` de paradas huérfanas en `app.trip_stops` (1197 filas, 0 con edición manual, 650 viajes) — diseñado y verificado independientemente, pero el push a Mage lo bloquea el clasificador de permisos del sistema. Necesita que el usuario habilite el permiso o lo aplique en la UI de Mage.
+5. [ ] Filas DESTINATION duplicadas en `app.trip_stops` (137/167 pares) — se resuelve solo al aplicar el ítem 4.
+6. [ ] Revisar `cargo_type` del viaje `2003266` (probable error de clasificación FRIO/CONGELADO).
+7. [ ] Evaluar si `qanalytics/scraper.py` y `wingsuite/scraper.py` necesitan el mismo `timezone_id` que se le puso a Sodimac — ninguno lo especifica; no hay evidencia de que sus portales rendericen del lado del cliente, pero si aparece un desfase de horas, revisar esto primero.
+
+**Heredado de rondas anteriores** (sin cambios, ver los checklists de las Rondas 55 y 93 más arriba): HU-20/HU-24 (decisiones de negocio), spec de `app.equipment_day_status`, Centro de Flota como módulo de primer nivel, bloques de Mage sin conectar/en `failed`, Tarea 9 de `status_taxonomies`, reescritura de `/deploy` y `/check-env`, y la normalización a inglés de los valores de `?tab=`.
