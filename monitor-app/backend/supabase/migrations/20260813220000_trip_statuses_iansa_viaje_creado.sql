@@ -1,0 +1,32 @@
+-- FIX 2026-08-13 (Ronda 96, incidente "IANSA no reporta los viajes de hoy ni
+-- los de mañana"): `VIAJE CREADO` es el estado que usa el Reporte Detalle de
+-- IANSA para un viaje planificado que todavía no arranca, y no tenía fila en
+-- app.trip_statuses.
+--
+-- Por qué recién ahora: el bloque scraper de IANSA pedía la ventana
+-- `hoy-7 → hoy`, y el portal aplica ese `date_to` como
+-- `FH Carga <= date_to 00:00:00` — o sea los viajes futuros NUNCA entraban al
+-- pipeline. Los 98 viajes IANSA que había en la base estaban todos en estado
+-- terminal (CERRADO FINALIZADO / CANCELADO / CERRADO INCOMPLETO). Al corregir
+-- la ventana a `hoy-7 → hoy+7` apareció el primer viaje futuro real
+-- (IA154212, FH Carga 14/08/2026 09:00) y con él este estado.
+--
+-- Consecuencias de no tener la fila (mismas que documentó la migración
+-- 20260802020000 para los 8 estados de Sodimac/QAnalytics):
+--   - _valid_status_ids (trips.py) rechaza crear/editar un viaje a mano con
+--     ese estado.
+--   - El badge del Diario cae al gris neutro de fallback (StatusBadge.tsx) y
+--     groupOfTrip (TripBoard.tsx) lo manda al catch-all "otro" sin que eso
+--     sea una decisión, sino la ausencia de una.
+--   - El estado no aparece en el filtro por estado del Monitor.
+--
+-- group_id = 'otro': mismo criterio y mismo par de colores que Creada /
+-- Aceptada / Control de salida de Sodimac — gestión previa a que el viaje
+-- esté realmente en curso. Se reusa el catch-all existente en vez de inventar
+-- un grupo nuevo, por la misma razón que en 20260802020000: un grupo dedicado
+-- exigiría extender VALID_GROUP_IDS (config.py) + el selector de
+-- Configuración, y no hay confirmación de negocio de que ese sea el nombre
+-- definitivo.
+INSERT INTO app.trip_statuses (id, label, bg_color, text_color, group_id, sort_order, active) VALUES
+  ('VIAJE CREADO', 'Viaje Creado', '#f1f5f9', '#475569', 'otro', 25, true)
+ON CONFLICT (id) DO NOTHING;
