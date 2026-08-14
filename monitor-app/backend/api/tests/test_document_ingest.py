@@ -135,7 +135,9 @@ def test_classify_applies_the_file_to_the_requirement():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchrow.side_effect = [_item_row(), _record_row()]
+    # 3er fetchrow: lo que lee _apply_stored_document para detectar si el
+    # requisito ya tenia archivo (sin archivo previo en este caso).
+    conn.fetchrow.side_effect = [_item_row(), _record_row(), {"metadata": {}, "expiration_date": None}]
     client = make_client(pool)
 
     res = client.post(
@@ -161,7 +163,9 @@ def test_same_file_can_cover_several_requirements():
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     # El item YA fue clasificado antes (COMMITTED), no UNMATCHED
-    conn.fetchrow.side_effect = [_item_row("COMMITTED"), _record_row("rec-2")]
+    conn.fetchrow.side_effect = [
+        _item_row("COMMITTED"), _record_row("rec-2"), {"metadata": {}, "expiration_date": None},
+    ]
     conn.fetchval.return_value = False   # el requisito no exige vencimiento
     client = make_client(pool)
 

@@ -358,7 +358,29 @@ async def _apply_stored_document(
 
     Recibe `conn` en vez de `pool` porque el llamador ya está dentro de una
     transacción (marcar el item y aplicar el documento tienen que ser atómicos).
+
+    Si el requisito YA tenía un archivo, registra el reemplazo en audit_log
+    antes de pisarlo — igual que `_apply_compliance_upload`. Sin esto el
+    puntero al archivo anterior se pierde: el blob sigue en storage (nunca se
+    sobrescribe) pero nada permite volver a encontrarlo.
     """
+    current = await conn.fetchrow(
+        "SELECT metadata, expiration_date FROM public.compliance_records WHERE id = $1",
+        record_id,
+    )
+    old_metadata = (current["metadata"] if current else None) or {}
+    if isinstance(old_metadata, str):
+        old_metadata = json.loads(old_metadata)
+    old_storage_path = old_metadata.get("storage_path")
+    if old_storage_path:
+        await log_document_replacement(
+            conn, entity_type=entity_type, entity_id=entity_id,
+            doc_name=f"compliance_record:{record_id}",
+            old_status=old_status,
+            old_expiry_date=current["expiration_date"] if current else None,
+            old_storage_path=old_storage_path, actor=actor,
+        )
+
     metadata = {
         "storage_path": storage_path, "file_name": file_name,
         "mime_type": mime_type, "size_bytes": size_bytes,
