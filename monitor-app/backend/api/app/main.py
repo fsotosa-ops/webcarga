@@ -8,6 +8,7 @@ from .db import close_pool, init_pool
 from .middleware.cache import CacheMiddleware
 from .routers.assets import router as assets_router
 from .routers.carriers import router as carriers_router
+from .routers.compliance import requirements_router as compliance_requirements_router
 from .routers.compliance import router as compliance_router
 from .routers.config import router as config_router
 from .routers.contacts import router as contacts_router
@@ -71,6 +72,7 @@ app.include_router(assets_router,              prefix="/api/v1")
 app.include_router(contacts_router,            prefix="/api/v1")
 app.include_router(policies_router,            prefix="/api/v1")
 app.include_router(compliance_router,          prefix="/api/v1")
+app.include_router(compliance_requirements_router, prefix="/api/v1")
 app.include_router(coverage_types_router,      prefix="/api/v1")
 # Catálogo de locales por generador de carga (H2.6, fase "catálogo de locales")
 app.include_router(locations_router,           prefix="/api/v1")

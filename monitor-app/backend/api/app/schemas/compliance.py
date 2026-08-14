@@ -42,3 +42,14 @@ class PendingComplianceRow(BaseModel):
 class PendingComplianceListResponse(BaseModel):
     total: int
     rows: list[PendingComplianceRow]
+
+
+class RequirementOption(BaseModel):
+    """Una fila del catálogo de tipos de documento. La consume el desplegable
+    de clasificación de la bandeja de sin clasificar."""
+    id: str
+    target_entity: Literal["CARRIER", "DRIVER", "ASSET"]
+    requirement_code: str
+    name: str
+    requirement_level: Literal["LEGAL_MANDATORY", "SHIPPER_REQUIRED", "CONDITIONAL_OPTIONAL"]
+    has_expiration: bool
