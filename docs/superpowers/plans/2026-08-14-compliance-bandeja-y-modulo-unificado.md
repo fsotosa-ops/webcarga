@@ -619,6 +619,10 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ## Task 5: Lista de archivos con casillas y teclado
 
+> **HECHA, y luego SUPERADA por la revisión del 2026-08-14.** `TriageFileList`
+> se retira en la Task 14, que la reemplaza por `TriageFileTable` (tabla con
+> columnas y selección por rango). Se deja acá como registro de lo construido.
+
 El panel izquierdo de la bandeja. Se construye aislado porque concentra toda la interacción de teclado.
 
 **Files:**
@@ -1232,6 +1236,13 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ## Task 7: Armar la bandeja y retirar los modales
 
+> **HECHA PARCIALMENTE — el resto quedó SUPERADO por la revisión del 2026-08-14
+> (ver el final de este documento).** Se construyó `TriageWorkbench` con sus
+> tests; **NO se ejecutó** el montaje en `app/dashboard/compliance/page.tsx` ni
+> el borrado de `ClassifyDocumentModal`. La bandeja no se monta en esa página:
+> vive en `/dashboard/compliance/inbox` (Task 16), y los borrados pasaron a la
+> Task 17. El `TriageWorkbench` de acá **se reescribe** en la Task 16.
+
 **Files:**
 - Create: `components/compliance/TriageWorkbench.tsx`, `TriageWorkbench.test.tsx`
 - Modify: `app/dashboard/compliance/page.tsx`
@@ -1827,8 +1838,11 @@ import { CarrierDocumentsTab } from './CarrierDocumentsTab'
 
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: {
-    listTray: vi.fn().mockResolvedValue([]), upload: vi.fn(),
-    remove: vi.fn(), classifyBatch: vi.fn(), moveItems: vi.fn(),
+    // Revisión 2026-08-14: `listTray` se retira en la Task 17. Si esta tarea
+    // se ejecuta después de la Task 13, mockear `listQueue` y `previewUrl`.
+    listQueue: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
+    previewUrl: vi.fn().mockResolvedValue({ preview_url: null }),
+    upload: vi.fn(), remove: vi.fn(), classifyBatch: vi.fn(), moveItems: vi.fn(),
   },
 }))
 vi.mock('@/lib/api/compliance', () => ({
@@ -1985,3 +1999,1658 @@ Recorrido a verificar:
 - **Absorber Seguros** como sección de la ficha: la HU-04 lo contempla, pero excede este plan y no bloquea nada.
 - **Cablear `document_matcher.py`** — es la etapa del agente, acordada como posterior.
 - Descomponer los otros 5 tabs de la ficha: sólo se extrae Documentos, que es el que recibe superficie nueva.
+
+---
+
+# Revisión de diseño — 2026-08-14 (aprobada por el usuario)
+
+La Task 7 dejó abierto **dónde se monta la bandeja**, y al resolverlo el usuario
+pidió que la pantalla opere como un SaaS enterprise, no como un cliente de
+correo. Esta sección **reemplaza** esa decisión pendiente y agrega las Tasks
+12-17. Las Tasks 1-6 y 8 quedan como están; sus componentes se reusan.
+
+## Qué se decidió, y por qué
+
+**La bandeja es un destino con nombre propio, no un tab ni un panel.**
+Ítem del sidebar `Bandeja`, con contador. Un tab dice "otra vista del mismo
+reporte"; un ítem de navegación con contador dice "esto es trabajo tuyo
+pendiente". Ruta `/dashboard/compliance/inbox` — etiqueta en español, ruta en
+inglés, igual que el resto del módulo. Va **al mismo nivel** que Certificación y
+no colgando de ella: ver el motivo en la Task 16, Step 5 — anidarla obligaba a
+duplicar 55 líneas de markup o a generalizar el Sidebar entero.
+
+**La cola es global, no por empresa.** Se entra y el trabajo está ahí, agrupado
+por empresa; la empresa es un filtro, no un requisito previo. Una bandeja que
+arranca vacía y te pide adivinar una empresa es un buscador, no una bandeja.
+
+**La lista es una tabla con columnas** — archivo, empresa, subido, sugerencia —
+ordenable. Una columna única de nombres de archivo no se escanea ni se ordena, y
+sin eso no hay trabajo masivo posible.
+
+**Barra contextual al seleccionar**, con `Clasificar · Mover · Descartar ·
+Deseleccionar`, en vez de acciones siempre presentes. Es el estándar de Gmail,
+Linear, Airtable y Salesforce Lightning, y es donde pasan a vivir *mover* y
+*descartar*, hoy escondidos en el panel derecho.
+
+**`⇧`+click selecciona rango.** Marcar de a uno cuarenta archivos es la misma
+tortura con otra ropa.
+
+**La columna Sugerencia se construye ahora, aunque hoy esté vacía.** El esquema
+ya tiene `match_status`, `confidence` y `candidates`, y la HU dice que el agente
+de clasificación llega después. Ningún producto de esta categoría hace clasificar
+desde cero: propone y la persona confirma. Sin el lugar reservado, cuando llegue
+el agente hay que rehacer fila y barra de acciones.
+
+## Dos hallazgos del código que condicionan el diseño
+
+**1 · `resolve_signed_url` es una llamada HTTP por ítem, secuencial.**
+`app/utils/document_storage.py:121`, invocada dentro de un list comprehension en
+`list_tray`. Con 20 documentos son 20 llamadas; con una cola global de 2.000 son
+2.000 llamadas secuenciales en un request — minutos y timeout. **La corrección de
+raíz no es paginar más fino: es no firmar en el listado.** La vista previa se
+mira de a un archivo por vez, así que la firma pasa a un endpoint aparte que se
+llama al enfocar. El listado deja de firmar nada. La paginación se mantiene igual,
+pero por peso de render, no por esto.
+
+**2 · Ninguna de las dos acciones destructivas se puede deshacer, y eso cambia
+el patrón.** El diseño aprobado pedía "deshacer en vez de confirmar". Al ir al
+código, ninguna de las dos operaciones lo permite:
+
+- `classify_batch` llama a `_apply_stored_document`, que escribe **una versión
+  nueva en `compliance_records`**. Revertir eso es tocar el historial documental,
+  no borrar una fila. Revertir una clasificación ya aplicada **es la parte
+  abierta de la HU-03** ("mover un documento ya clasificado"), que ya figura en
+  Fuera de alcance — ahí es donde corresponde, con su propio diseño.
+- `delete_item` (`document_ingest.py:196`) marca `DISCARDED` sin borrar la fila,
+  **pero llama a `delete_document_version`, que elimina el blob de staging**. El
+  archivo deja de existir: no hay nada que restaurar.
+
+Entonces el patrón correcto no es "deshacer" sino:
+
+| Acción | Qué se hace |
+|---|---|
+| Clasificar | Se aplica y el toast **confirma** cuántos y cuántos quedan. Es constructiva y la corrige la HU-03 |
+| Mover | Se aplica directo. **Sí es reversible** — se mueve de vuelta |
+| Descartar | **Confirmación en línea dentro de la barra**, nunca un modal. Es irreversible y borra el archivo |
+
+Prometer un "Deshacer" que no puede cumplirse sería peor que pedir confirmación.
+Hacer que descartar fuera reversible implica postergar el borrado del blob y
+sumarle una retención — decisión propia, no la toma este plan.
+
+## Qué se reusa y qué se retira de lo ya construido
+
+| Componente | Destino |
+|---|---|
+| `TriageClassifyForm` (Task 6) | **Se reusa sin cambios.** Ya aplica a N y ya deriva los sujetos del sujeto elegido |
+| `TriagePreview` (Task 6) | **Se reusa**, con la URL firmada llegando por prop en vez de venir en el ítem |
+| `MoveToCarrierBar` (Task 8) | **Se reusa**, pero su disparador se muda a la barra contextual |
+| `TriageFileList` (Task 5) | **Se retira**: lo reemplaza `TriageFileTable`. La lógica de teclado se conserva y se le suma el rango |
+| `UnclassifiedTray`, `ClassifyDocumentModal` | **Se borran** (Task 17) |
+
+---
+
+## Task 12: La cola global, sin firmar URLs en el listado
+
+**Files:**
+- Modify: `monitor-app/backend/api/app/routers/document_ingest.py`
+- Modify: `monitor-app/backend/api/app/schemas/document_ingest.py`
+- Modify: `monitor-app/backend/api/tests/test_document_ingest.py`
+
+**Interfaces:**
+- Produces:
+  - `GET /api/v1/document-ingest/items?carrier_id=&limit=&offset=` → `TrayPage`
+  - `GET /api/v1/document-ingest/items/{item_id}/preview-url` → `{"preview_url": str | None}`
+
+- [ ] **Step 1: Escribir los tests que fallan**
+
+En `tests/test_document_ingest.py`:
+
+```python
+@pytest.mark.asyncio
+async def test_list_queue_devuelve_total_y_empresa(client, pool):
+    """La cola global agrupa por empresa, asi que cada fila trae su empresa."""
+    pool.fetchval.return_value = 2
+    pool.fetch.return_value = [
+        {
+            "id": "i1", "file_name": "IMG_9001.png", "mime_type": "image/png",
+            "size_bytes": 10, "storage_path": "s/1", "match_status": "UNMATCHED",
+            "created_at": datetime(2026, 8, 14, tzinfo=timezone.utc),
+            "carrier_id": "c1", "carrier_name": "ACME S.A.",
+            "confidence": None, "suggested_requirement_name": None, "candidate_count": 0,
+        }
+    ]
+    r = await client.get("/api/v1/document-ingest/items")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 2
+    assert body["rows"][0]["carrier_name"] == "ACME S.A."
+
+
+@pytest.mark.asyncio
+async def test_list_queue_no_firma_urls(client, pool, supabase):
+    """Firmar en el listado es una llamada HTTP por item: con 2.000 no termina."""
+    pool.fetchval.return_value = 1
+    pool.fetch.return_value = [
+        {
+            "id": "i1", "file_name": "a.png", "mime_type": "image/png",
+            "size_bytes": 10, "storage_path": "s/1", "match_status": "UNMATCHED",
+            "created_at": datetime(2026, 8, 14, tzinfo=timezone.utc),
+            "carrier_id": "c1", "carrier_name": "ACME S.A.",
+            "confidence": None, "suggested_requirement_name": None, "candidate_count": 0,
+        }
+    ]
+    await client.get("/api/v1/document-ingest/items")
+    supabase.storage.from_.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_list_queue_filtra_por_empresa(client, pool):
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    await client.get("/api/v1/document-ingest/items?carrier_id=c1")
+    sql, *params = pool.fetch.call_args[0]
+    assert "c1" in params
+
+
+@pytest.mark.asyncio
+async def test_preview_url_se_firma_de_a_uno(client, pool, supabase):
+    pool.fetchval.return_value = "staging/x/foto.png"
+    r = await client.get("/api/v1/document-ingest/items/i1/preview-url")
+    assert r.status_code == 200
+    assert r.json()["preview_url"] is not None
+
+
+@pytest.mark.asyncio
+async def test_preview_url_404_si_no_existe(client, pool):
+    pool.fetchval.return_value = None
+    r = await client.get("/api/v1/document-ingest/items/nope/preview-url")
+    assert r.status_code == 404
+```
+
+- [ ] **Step 2: Correr y verificar que fallan**
+
+```bash
+cd monitor-app/backend/api && venv/bin/python -m pytest tests/test_document_ingest.py -k "queue or preview_url" -v
+```
+
+Esperado: FAIL — las rutas no existen (404).
+
+- [ ] **Step 3: Agregar los schemas**
+
+En `app/schemas/document_ingest.py`:
+
+```python
+class QueueRow(BaseModel):
+    """Fila de la cola global. Trae su empresa porque la cola las mezcla, y
+    trae la sugerencia porque el agente de clasificacion la va a llenar sobre
+    este mismo contrato — la columna existe desde ahora para no rehacer la
+    pantalla cuando llegue."""
+    id: str
+    file_name: str
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    storage_path: str
+    match_status: MatchStatus
+    created_at: datetime
+    carrier_id: Optional[str] = None
+    carrier_name: Optional[str] = None
+    confidence: Optional[float] = None
+    suggested_requirement_name: Optional[str] = None
+    candidate_count: int = 0
+
+
+class TrayPage(BaseModel):
+    total: int
+    rows: list[QueueRow]
+```
+
+Agregar `from datetime import date, datetime` al import existente.
+
+- [ ] **Step 4: Implementar las rutas**
+
+En `app/routers/document_ingest.py`, **antes** de `@router.get("/{carrier_id}/items")`
+(si no, `/items` cae en el path param y nunca se alcanza):
+
+```python
+@router.get("/items", response_model=TrayPage)
+async def list_queue(
+    carrier_id: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """La cola global de documentos sin clasificar, agrupada por empresa.
+
+    NO firma URLs. Firmar es una llamada HTTP a Storage por archivo: con los
+    2.000 pendientes el request no termina. La vista previa se mira de a un
+    archivo por vez, asi que se firma en /items/{id}/preview-url.
+    """
+    limit = max(1, min(limit, 500))
+    where = """
+        WHERE i.match_status = 'UNMATCHED'
+          AND ($1::uuid IS NULL OR COALESCE(i.carrier_id, b.carrier_id) = $1::uuid)
+    """
+    total = await pool.fetchval(
+        f"""
+        SELECT count(*)
+        FROM public.document_ingest_items i
+        JOIN public.document_ingest_batches b ON b.id = i.batch_id
+        {where}
+        """,
+        carrier_id,
+    )
+    rows = await pool.fetch(
+        f"""
+        SELECT i.id::text, i.file_name, i.mime_type, i.size_bytes,
+               i.storage_path, i.match_status, i.created_at,
+               COALESCE(i.carrier_id, b.carrier_id)::text AS carrier_id,
+               c.business_name                            AS carrier_name,
+               i.confidence,
+               r.name                                     AS suggested_requirement_name,
+               jsonb_array_length(i.candidates)           AS candidate_count
+        FROM public.document_ingest_items i
+        JOIN public.document_ingest_batches b ON b.id = i.batch_id
+        LEFT JOIN public.carriers c
+               ON c.id = COALESCE(i.carrier_id, b.carrier_id)
+        LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
+        {where}
+        ORDER BY c.business_name NULLS LAST, i.created_at
+        LIMIT $2 OFFSET $3
+        """,
+        carrier_id, limit, offset,
+    )
+    return {"total": total or 0, "rows": [dict(r) for r in rows]}
+
+
+@router.get("/items/{item_id}/preview-url")
+async def get_preview_url(
+    item_id: str,
+    pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
+    _=Depends(get_current_user),
+):
+    """Firma la URL de un solo archivo, al enfocarlo en la bandeja."""
+    storage_path = await pool.fetchval(
+        "SELECT storage_path FROM public.document_ingest_items WHERE id = $1",
+        item_id,
+    )
+    if not storage_path:
+        raise HTTPException(404, "Documento no encontrado")
+    return {"preview_url": resolve_signed_url(supabase, storage_path)}
+```
+
+Importar `TrayPage` y `QueueRow` desde los schemas.
+
+**`GET /{carrier_id}/items` queda como está** — todavía la usa `UnclassifiedTray`.
+Se retira en la Task 17, cuando no le quede ningún llamador.
+
+- [ ] **Step 5: Verificar contra la base real**
+
+El SQL es nuevo; los mocks no detectan una columna inexistente (ya pasó dos
+veces en este proyecto). Correr vía MCP de Supabase:
+
+```sql
+SELECT i.id::text, i.file_name, COALESCE(i.carrier_id, b.carrier_id)::text AS carrier_id,
+       c.business_name AS carrier_name, i.confidence,
+       r.name AS suggested_requirement_name,
+       jsonb_array_length(i.candidates) AS candidate_count
+FROM public.document_ingest_items i
+JOIN public.document_ingest_batches b ON b.id = i.batch_id
+LEFT JOIN public.carriers c ON c.id = COALESCE(i.carrier_id, b.carrier_id)
+LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
+WHERE i.match_status = 'UNMATCHED'
+ORDER BY c.business_name NULLS LAST, i.created_at
+LIMIT 5;
+```
+
+Esperado: corre sin error y devuelve `carrier_name` poblado.
+
+- [ ] **Step 6: Correr los tests**
+
+```bash
+cd monitor-app/backend/api && venv/bin/python -m pytest tests/ -v
+```
+
+Esperado: todo verde, 5 tests nuevos.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add monitor-app/backend/api
+git commit -m "feat(compliance): cola global de sin clasificar, sin firmar en el listado
+
+Firmar la URL de cada archivo en el listado es una llamada HTTP por item:
+con los 2.000 pendientes el request no termina. La vista previa se mira de
+a uno, asi que la firma pasa a /items/{id}/preview-url.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 13: Cliente y tipos de la cola global
+
+**Files:**
+- Modify: `monitor-app/frontend/lib/types.ts`
+- Modify: `monitor-app/frontend/lib/api/documentIngest.ts`
+- Modify: `monitor-app/frontend/lib/api/documentIngest.test.ts`
+
+**Interfaces:**
+- Produces:
+```ts
+export type QueueRow = {
+  id: string; file_name: string; mime_type: string | null
+  size_bytes: number | null; storage_path: string
+  match_status: IngestMatchStatus; created_at: string
+  carrier_id: string | null; carrier_name: string | null
+  confidence: number | null; suggested_requirement_name: string | null
+  candidate_count: number
+}
+export type TrayPage = { total: number; rows: QueueRow[] }
+
+documentIngestApi.listQueue(params?: { carrierId?: string; limit?: number; offset?: number }): Promise<TrayPage>
+documentIngestApi.previewUrl(itemId: string): Promise<{ preview_url: string | null }>
+```
+
+- [ ] **Step 1: Escribir el test que falla**
+
+En `lib/api/documentIngest.test.ts`:
+
+```ts
+it('listQueue arma el query string solo con lo que viene', async () => {
+  const spy = vi.mocked(apiFetch).mockResolvedValue({ total: 0, rows: [] })
+  await documentIngestApi.listQueue({ carrierId: 'c1', limit: 50 })
+  expect(spy).toHaveBeenCalledWith('/api/v1/document-ingest/items?carrier_id=c1&limit=50')
+})
+
+it('listQueue sin parámetros pide la cola completa', async () => {
+  const spy = vi.mocked(apiFetch).mockResolvedValue({ total: 0, rows: [] })
+  await documentIngestApi.listQueue()
+  expect(spy).toHaveBeenCalledWith('/api/v1/document-ingest/items')
+})
+
+it('previewUrl firma un solo archivo', async () => {
+  const spy = vi.mocked(apiFetch).mockResolvedValue({ preview_url: 'https://x/1' })
+  await documentIngestApi.previewUrl('i1')
+  expect(spy).toHaveBeenCalledWith('/api/v1/document-ingest/items/i1/preview-url')
+})
+```
+
+- [ ] **Step 2: Correr y verificar que falla**
+
+```bash
+cd monitor-app/frontend && npx vitest run lib/api/documentIngest.test.ts
+```
+
+Esperado: FAIL — `listQueue` no existe.
+
+- [ ] **Step 3: Implementar**
+
+En `lib/types.ts`, junto a `TrayItem`:
+
+```ts
+/** Fila de la cola global. `carrier_name` viene del servidor porque la cola
+ *  mezcla empresas y se agrupa por ese valor. Los campos de sugerencia hoy
+ *  llegan vacios: los llena el agente de clasificacion cuando exista. */
+export type QueueRow = {
+  id:                         string
+  file_name:                  string
+  mime_type:                  string | null
+  size_bytes:                 number | null
+  storage_path:               string
+  match_status:               IngestMatchStatus
+  created_at:                 string
+  carrier_id:                 string | null
+  carrier_name:               string | null
+  confidence:                 number | null
+  suggested_requirement_name: string | null
+  candidate_count:            number
+}
+
+export type TrayPage = { total: number; rows: QueueRow[] }
+```
+
+En `lib/api/documentIngest.ts`:
+
+```ts
+  /** La cola global de sin clasificar. Sin `carrierId` trae todas las empresas. */
+  listQueue: (params: { carrierId?: string; limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.carrierId) qs.set('carrier_id', params.carrierId)
+    if (params.limit != null)  qs.set('limit',  String(params.limit))
+    if (params.offset != null) qs.set('offset', String(params.offset))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return apiFetch<TrayPage>(`/api/v1/document-ingest/items${suffix}`)
+  },
+
+  /** Firma la vista previa de un archivo. Se pide al enfocarlo, no al listar. */
+  previewUrl: (itemId: string) =>
+    apiFetch<{ preview_url: string | null }>(
+      `/api/v1/document-ingest/items/${itemId}/preview-url`,
+    ),
+```
+
+- [ ] **Step 4: Verificar**
+
+```bash
+cd monitor-app/frontend && npx vitest run lib/api/documentIngest.test.ts && npx tsc --noEmit
+```
+
+Esperado: PASS y `tsc` limpio.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add monitor-app/frontend/lib
+git commit -m "feat(compliance): cliente de la cola global y de la firma diferida
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 14: La tabla de la bandeja
+
+Reemplaza a `TriageFileList`. Columnas, agrupación por empresa, rango con `⇧`,
+y la columna Sugerencia que hoy muestra un guion.
+
+**Files:**
+- Create: `monitor-app/frontend/components/compliance/TriageFileTable.tsx`
+- Create: `monitor-app/frontend/components/compliance/TriageFileTable.test.tsx`
+- Delete: `components/compliance/TriageFileList.tsx` y su test
+
+**Interfaces:**
+- Produces:
+```ts
+export function TriageFileTable(props: {
+  rows:        QueueRow[]
+  focusedId:   string | null
+  selectedIds: Set<string>
+  onFocus:     (id: string) => void
+  onToggle:    (id: string, opts?: { range?: boolean }) => void
+  onToggleAll: () => void
+}): JSX.Element
+```
+
+`onDiscard` sale de la fila: descartar pasa a la barra contextual (Task 15).
+
+- [ ] **Step 1: Escribir el test que falla**
+
+```tsx
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ComponentProps } from 'react'
+import { TriageFileTable } from './TriageFileTable'
+
+const row = (id: string, carrier: string, over: Record<string, unknown> = {}) => ({
+  id, file_name: `${id}.png`, mime_type: 'image/png', size_bytes: 10,
+  storage_path: `s/${id}`, match_status: 'UNMATCHED' as const,
+  created_at: '2026-08-14T10:00:00Z',
+  carrier_id: carrier.toLowerCase(), carrier_name: carrier,
+  confidence: null, suggested_requirement_name: null, candidate_count: 0,
+  ...over,
+})
+
+const ROWS = [row('i1', 'ACME'), row('i2', 'ACME'), row('i3', 'NORTE')]
+
+function setup(over: Record<string, unknown> = {}) {
+  const props = {
+    rows: ROWS, focusedId: 'i1', selectedIds: new Set<string>(),
+    onFocus: vi.fn(), onToggle: vi.fn(), onToggleAll: vi.fn(),
+    ...over,
+  }
+  render(<TriageFileTable {...(props as unknown as ComponentProps<typeof TriageFileTable>)} />)
+  return props
+}
+
+describe('TriageFileTable', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('agrupa las filas por empresa', () => {
+    setup()
+    expect(screen.getByText(/ACME — 2 sin clasificar/i)).toBeInTheDocument()
+    expect(screen.getByText(/NORTE — 1 sin clasificar/i)).toBeInTheDocument()
+  })
+
+  it('muestra las columnas de la tabla', () => {
+    setup()
+    expect(screen.getByRole('columnheader', { name: /archivo/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /subido/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /sugerencia/i })).toBeInTheDocument()
+  })
+
+  it('sin agente, la sugerencia es un guion', () => {
+    setup()
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  it('muestra la sugerencia cuando el agente la dejo', () => {
+    setup({ rows: [row('i1', 'ACME', {
+      match_status: 'SUGGESTED', suggested_requirement_name: 'Padrón', confidence: 0.91,
+    })] })
+    expect(screen.getByText(/Padrón/)).toBeInTheDocument()
+    expect(screen.getByText(/91%/)).toBeInTheDocument()
+  })
+
+  it('avisa cuantas alternativas hay si es ambiguo', () => {
+    setup({ rows: [row('i1', 'ACME', { match_status: 'AMBIGUOUS', candidate_count: 3 })] })
+    expect(screen.getByText(/3 posibles/i)).toBeInTheDocument()
+  })
+
+  it('shift+click selecciona el rango', () => {
+    const p = setup()
+    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar i3/ }), { shiftKey: true })
+    expect(p.onToggle).toHaveBeenCalledWith('i3', { range: true })
+  })
+
+  it('mueve el foco con las flechas', () => {
+    const p = setup()
+    fireEvent.keyDown(screen.getByRole('table'), { key: 'ArrowDown' })
+    expect(p.onFocus).toHaveBeenCalledWith('i2')
+  })
+
+  it('marca con la barra espaciadora', () => {
+    const p = setup()
+    fireEvent.keyDown(screen.getByRole('table'), { key: ' ' })
+    expect(p.onToggle).toHaveBeenCalledWith('i1', undefined)
+  })
+
+  it('avisa cuando no queda nada por clasificar', () => {
+    setup({ rows: [] })
+    expect(screen.getByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 2: Correr y verificar que falla**
+
+```bash
+cd monitor-app/frontend && npx vitest run components/compliance/TriageFileTable.test.tsx
+```
+
+Esperado: FAIL — el módulo no existe.
+
+- [ ] **Step 3: Implementar**
+
+```tsx
+'use client'
+
+import { FileQuestion } from 'lucide-react'
+import type { QueueRow } from '@/lib/types'
+
+interface Props {
+  rows:        QueueRow[]
+  focusedId:   string | null
+  selectedIds: Set<string>
+  onFocus:     (id: string) => void
+  onToggle:    (id: string, opts?: { range?: boolean }) => void
+  onToggleAll: () => void
+}
+
+/** Panel izquierdo de la bandeja: la cola, como tabla.
+ *
+ *  Es tabla y no lista porque una columna de nombres de archivo no se escanea
+ *  ni se ordena, y sin eso no hay trabajo masivo posible. La columna
+ *  Sugerencia hoy muestra un guion: la llena el agente de clasificacion
+ *  cuando exista, sobre el mismo contrato. */
+export function TriageFileTable({
+  rows, focusedId, selectedIds, onFocus, onToggle, onToggleAll,
+}: Props) {
+  function handleKey(e: React.KeyboardEvent) {
+    if (!rows.length) return
+    const i = rows.findIndex(r => r.id === focusedId)
+    const cur = i < 0 ? 0 : i
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      onFocus(rows[Math.min(cur + 1, rows.length - 1)].id)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      onFocus(rows[Math.max(cur - 1, 0)].id)
+    } else if (e.key === ' ') {
+      e.preventDefault()
+      onToggle(rows[cur].id, e.shiftKey ? { range: true } : undefined)
+    }
+  }
+
+  if (!rows.length) {
+    return (
+      <div className="p-6 text-center">
+        <FileQuestion size={20} className="mx-auto text-gray-300 mb-2" />
+        <p className="text-xs text-gray-400">No hay documentos sin clasificar</p>
+      </div>
+    )
+  }
+
+  const allSelected = rows.every(r => selectedIds.has(r.id))
+
+  // Las filas ya vienen ordenadas por empresa desde el servidor, asi que el
+  // encabezado de grupo se emite cuando cambia el nombre.
+  const counts = new Map<string, number>()
+  for (const r of rows) {
+    const k = r.carrier_name ?? 'Sin empresa'
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+
+  let lastCarrier: string | null = null
+
+  return (
+    <table
+      className="w-full text-left focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-lg"
+      tabIndex={0}
+      onKeyDown={handleKey}
+    >
+      <thead>
+        <tr className="border-b border-border">
+          <th scope="col" className="p-1.5 w-8">
+            <input
+              type="checkbox"
+              aria-label="Seleccionar todos"
+              checked={allSelected}
+              onChange={onToggleAll}
+            />
+          </th>
+          <th scope="col" className="p-1.5 text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Archivo</th>
+          <th scope="col" className="p-1.5 text-[10px] uppercase tracking-wide text-gray-400 font-semibold w-16">Subido</th>
+          <th scope="col" className="p-1.5 text-[10px] uppercase tracking-wide text-gray-400 font-semibold w-32">Sugerencia</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(r => {
+          const carrier = r.carrier_name ?? 'Sin empresa'
+          const header = carrier !== lastCarrier ? carrier : null
+          lastCarrier = carrier
+          const focused = r.id === focusedId
+          const checked = selectedIds.has(r.id)
+
+          return (
+            <>
+              {header && (
+                <tr key={`g-${carrier}`} className="bg-gray-50">
+                  <td colSpan={4} className="px-1.5 py-1 text-[10px] font-semibold text-gray-500 tracking-wide">
+                    {carrier} — {counts.get(carrier)} sin clasificar
+                  </td>
+                </tr>
+              )}
+              <tr
+                key={r.id}
+                onClick={() => onFocus(r.id)}
+                aria-selected={checked}
+                className={`cursor-pointer transition-colors ${
+                  focused ? 'bg-accent/10' : 'hover:bg-gray-50'
+                }`}
+              >
+                <td className="p-1.5">
+                  <input
+                    type="checkbox"
+                    aria-label={`Seleccionar ${r.file_name}`}
+                    checked={checked}
+                    onChange={() => {}}
+                    onClick={e => {
+                      e.stopPropagation()
+                      onToggle(r.id, e.shiftKey ? { range: true } : undefined)
+                    }}
+                  />
+                </td>
+                <td className="p-1.5 text-[11px] font-mono truncate max-w-0">{r.file_name}</td>
+                <td className="p-1.5 text-[11px] text-gray-400">
+                  {new Date(r.created_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })}
+                </td>
+                <td className="p-1.5 text-[11px]">
+                  <Suggestion row={r} />
+                </td>
+              </tr>
+            </>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+/** Hoy siempre devuelve un guion: ningun item llega con match. El lugar existe
+ *  desde ahora para que la llegada del agente no obligue a rehacer la fila. */
+function Suggestion({ row }: { row: QueueRow }) {
+  if (row.match_status === 'AMBIGUOUS' && row.candidate_count > 0) {
+    return <span className="text-amber-600">{row.candidate_count} posibles</span>
+  }
+  if (row.suggested_requirement_name) {
+    return (
+      <span className="text-green-700">
+        {row.suggested_requirement_name}
+        {row.confidence != null && (
+          <span className="text-gray-400 ml-1">{Math.round(row.confidence * 100)}%</span>
+        )}
+      </span>
+    )
+  }
+  return <span className="text-gray-300">—</span>
+}
+```
+
+**Nota para quien implemente**: el `<>…</>` dentro de `.map()` necesita
+`key` en el fragmento — usar `<Fragment key={r.id}>` importando `Fragment`
+de `react`, no el atajo `<>`. `tsc` lo marca si se olvida.
+
+- [ ] **Step 4: Borrar el componente que reemplaza**
+
+```bash
+git rm monitor-app/frontend/components/compliance/TriageFileList.tsx \
+       monitor-app/frontend/components/compliance/TriageFileList.test.tsx
+```
+
+- [ ] **Step 5: Verificar**
+
+```bash
+cd monitor-app/frontend && npx vitest run components/compliance/TriageFileTable.test.tsx && npx tsc --noEmit
+```
+
+Esperado: 9 tests PASS. `tsc` va a fallar en `TriageWorkbench` porque todavía
+importa `TriageFileList` — se arregla en la Task 16, que es la que lo reescribe.
+Si preferís no dejar el árbol roto entre tareas, hacé las Tasks 14-16 en una
+sola sesión y commiteá al final de la 16.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A monitor-app/frontend/components/compliance
+git commit -m "feat(compliance): la cola es una tabla con columnas y rango con shift
+
+Una columna unica de nombres de archivo no se escanea ni se ordena. La
+columna Sugerencia queda construida aunque hoy muestre un guion: el esquema
+ya tiene match_status/confidence/candidates y el agente los va a llenar.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 15: La barra contextual de acciones
+
+**Files:**
+- Create: `monitor-app/frontend/components/compliance/TriageBulkBar.tsx`
+- Create: `monitor-app/frontend/components/compliance/TriageBulkBar.test.tsx`
+
+**Interfaces:**
+- Consumes: `MoveToCarrierBar` (Task 8).
+- Produces:
+```ts
+export function TriageBulkBar(props: {
+  selectedCount:    number
+  targetIds:        string[]
+  currentCarrierId: string | null
+  onDiscard:        () => void
+  onClear:          () => void
+  onMoved:          () => void
+}): JSX.Element | null
+```
+
+- [ ] **Step 1: Escribir el test que falla**
+
+```tsx
+import { render, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { describe, it, expect, vi } from 'vitest'
+import { TriageBulkBar } from './TriageBulkBar'
+
+vi.mock('@/lib/api/documentIngest', () => ({
+  documentIngestApi: { moveItems: vi.fn().mockResolvedValue({ moved: 2 }) },
+}))
+vi.mock('@/lib/api/carriers', () => ({
+  carriersApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
+}))
+
+function setup(over: Record<string, unknown> = {}) {
+  const props = {
+    selectedCount: 3, targetIds: ['i1', 'i2', 'i3'], currentCarrierId: 'c1',
+    onDiscard: vi.fn(), onClear: vi.fn(), onMoved: vi.fn(), ...over,
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TriageBulkBar {...(props as never)} />
+    </QueryClientProvider>,
+  )
+  return props
+}
+
+describe('TriageBulkBar', () => {
+  it('no aparece sin seleccion', () => {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TriageBulkBar
+          selectedCount={0} targetIds={[]} currentCarrierId={null}
+          onDiscard={vi.fn()} onClear={vi.fn()} onMoved={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('dice cuantos hay seleccionados', () => {
+    setup()
+    expect(screen.getByText(/3 seleccionados/i)).toBeInTheDocument()
+  })
+
+  it('descartar pide confirmacion en la barra, no en un modal', () => {
+    const p = setup()
+    fireEvent.click(screen.getByRole('button', { name: /^descartar$/i }))
+    expect(p.onDiscard).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText(/se borran definitivamente/i)).toBeInTheDocument()
+  })
+
+  it('descarta al confirmar', () => {
+    const p = setup()
+    fireEvent.click(screen.getByRole('button', { name: /^descartar$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /si, descartar 3/i }))
+    expect(p.onDiscard).toHaveBeenCalled()
+  })
+
+  it('se puede arrepentir', () => {
+    const p = setup()
+    fireEvent.click(screen.getByRole('button', { name: /^descartar$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }))
+    expect(p.onDiscard).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /^descartar$/i })).toBeInTheDocument()
+  })
+
+  it('deselecciona', () => {
+    const p = setup()
+    fireEvent.click(screen.getByRole('button', { name: /deseleccionar/i }))
+    expect(p.onClear).toHaveBeenCalled()
+  })
+
+  it('ofrece mover cuando la seleccion es de una sola empresa', () => {
+    setup()
+    expect(screen.getByRole('button', { name: /mover 3 a otra empresa/i })).toBeInTheDocument()
+  })
+
+  it('no ofrece mover si la seleccion cruza empresas', () => {
+    setup({ currentCarrierId: null })
+    expect(screen.queryByRole('button', { name: /mover/i })).not.toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 2: Correr y verificar que falla**
+
+```bash
+cd monitor-app/frontend && npx vitest run components/compliance/TriageBulkBar.test.tsx
+```
+
+Esperado: FAIL — el módulo no existe.
+
+- [ ] **Step 3: Implementar**
+
+```tsx
+'use client'
+
+import { useState } from 'react'
+import { Trash2, X } from 'lucide-react'
+import { MoveToCarrierBar } from './MoveToCarrierBar'
+
+interface Props {
+  selectedCount:    number
+  targetIds:        string[]
+  /** null = la seleccion cruza empresas; mover exige un origen unico. */
+  currentCarrierId: string | null
+  onDiscard:        () => void
+  onClear:          () => void
+  onMoved:          () => void
+}
+
+/** Barra contextual: aparece al seleccionar y dice cuantos son.
+ *
+ *  Es el estandar de Gmail, Linear, Airtable y Salesforce Lightning, y es
+ *  donde viven mover y descartar — antes escondidos en el panel derecho. */
+export function TriageBulkBar({
+  selectedCount, targetIds, currentCarrierId, onDiscard, onClear, onMoved,
+}: Props) {
+  const [confirming, setConfirming] = useState(false)
+
+  if (!selectedCount) return null
+
+  return (
+    <div className="flex items-center gap-3 flex-wrap bg-accent text-white rounded-lg px-3 py-2">
+      <span className="text-xs font-bold bg-white/20 rounded px-2 py-0.5">
+        {selectedCount} seleccionados
+      </span>
+
+      {currentCarrierId && !confirming && (
+        <MoveToCarrierBar
+          targetIds={targetIds}
+          currentCarrierId={currentCarrierId}
+          onMoved={onMoved}
+        />
+      )}
+
+      {/* Descartar borra el blob de staging: no hay nada que restaurar
+          despues. Por eso confirma — pero en la barra, no en un modal, que
+          es lo que haria insoportable vaciar una bandeja de dos mil. */}
+      {confirming ? (
+        <>
+          <span className="text-[11px]">Se borran definitivamente</span>
+          <button
+            type="button"
+            onClick={() => { setConfirming(false); onDiscard() }}
+            className="text-[11px] font-bold bg-white text-accent rounded px-2 py-0.5"
+          >
+            Sí, descartar {selectedCount}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="text-[11px] font-semibold opacity-75 hover:opacity-100 transition-opacity"
+          >
+            Cancelar
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="flex items-center gap-1.5 text-[11px] font-semibold hover:opacity-80 transition-opacity"
+        >
+          <Trash2 size={12} /> Descartar
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={onClear}
+        className="flex items-center gap-1.5 text-[11px] font-semibold ml-auto opacity-75 hover:opacity-100 transition-opacity"
+      >
+        <X size={12} /> Deseleccionar
+      </button>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 4: Verificar**
+
+```bash
+cd monitor-app/frontend && npx vitest run components/compliance/TriageBulkBar.test.tsx
+```
+
+Esperado: 6 tests PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add monitor-app/frontend/components/compliance
+git commit -m "feat(compliance): barra contextual de acciones en lote
+
+Aparece al seleccionar y dice cuantos son. Mover y descartar salen del panel
+derecho, que es donde estaban escondidos.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 16: La bandeja en su lugar definitivo
+
+Reescribe `TriageWorkbench` sobre la cola global y la monta en
+`/dashboard/compliance/inbox`, con su ítem de sidebar y contador.
+
+**Files:**
+- Modify: `monitor-app/frontend/components/compliance/TriageWorkbench.tsx`
+- Modify: `monitor-app/frontend/components/compliance/TriageWorkbench.test.tsx`
+- Create: `monitor-app/frontend/app/dashboard/compliance/inbox/page.tsx`
+- Create: `monitor-app/frontend/app/dashboard/compliance/inbox/page.test.tsx`
+- Modify: `monitor-app/frontend/components/dashboard/Sidebar.tsx`
+
+**Interfaces:**
+- Consumes: `documentIngestApi.listQueue`, `documentIngestApi.previewUrl`,
+  `TriageFileTable`, `TriageBulkBar`, `TriageClassifyForm`, `TriagePreview`.
+- Produces:
+```ts
+export function TriageWorkbench(props: {
+  /** Sin empresa = cola global (la bandeja). Con empresa = acotada (la ficha, Task 10). */
+  carrierId?:   string
+  carrierName?: string
+}): JSX.Element
+```
+
+- [ ] **Step 1: Escribir los tests que fallan**
+
+Reemplazar `TriageWorkbench.test.tsx` por:
+
+```tsx
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { TriageWorkbench } from './TriageWorkbench'
+
+vi.mock('@/lib/api/documentIngest', () => ({
+  documentIngestApi: {
+    listQueue: vi.fn(), previewUrl: vi.fn(), upload: vi.fn(),
+    remove: vi.fn(), classifyBatch: vi.fn(), moveItems: vi.fn(),
+  },
+}))
+vi.mock('@/lib/api/compliance', () => ({
+  complianceApi: { listPending: vi.fn(), listRequirements: vi.fn() },
+}))
+vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+import { documentIngestApi } from '@/lib/api/documentIngest'
+import { complianceApi } from '@/lib/api/compliance'
+
+const row = (id: string, carrier: string) => ({
+  id, file_name: `${id}.png`, mime_type: 'image/png', size_bytes: 10,
+  storage_path: `s/${id}`, match_status: 'UNMATCHED' as const,
+  created_at: '2026-08-14T10:00:00Z',
+  carrier_id: carrier.toLowerCase(), carrier_name: carrier,
+  confidence: null, suggested_requirement_name: null, candidate_count: 0,
+})
+
+function setup(props: Record<string, unknown> = {}) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={qc}>
+      <TriageWorkbench {...(props as never)} />
+    </QueryClientProvider>,
+  )
+}
+
+beforeEach(() => {
+  vi.mocked(documentIngestApi.listQueue).mockReset().mockResolvedValue({
+    total: 2, rows: [row('i1', 'ACME'), row('i2', 'NORTE')],
+  })
+  vi.mocked(documentIngestApi.previewUrl).mockReset()
+    .mockResolvedValue({ preview_url: 'https://x/1' })
+  vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({
+    total: 1,
+    rows: [{
+      id: 'r1', carrier_id: 'acme', carrier_name: 'ACME', carrier_tax_id: '1-9',
+      carrier_operation_types: [], certification_type: 'BASICA', category: 'EQUIPO',
+      entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55',
+      requirement_code: 'PADRON', document_name: 'Padrón',
+      status: 'MISSING', expiration_date: null,
+    }],
+  })
+  vi.mocked(complianceApi.listRequirements).mockReset().mockResolvedValue([])
+})
+
+describe('TriageWorkbench', () => {
+  it('sin empresa pide la cola completa', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    expect(documentIngestApi.listQueue).toHaveBeenCalledWith(
+      expect.objectContaining({ carrierId: undefined }),
+    )
+  })
+
+  it('con empresa acota la cola a esa empresa', async () => {
+    setup({ carrierId: 'acme', carrierName: 'ACME' })
+    await screen.findByText('i1.png')
+    expect(documentIngestApi.listQueue).toHaveBeenCalledWith(
+      expect.objectContaining({ carrierId: 'acme' }),
+    )
+  })
+
+  it('no abre ningun modal', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('la barra contextual aparece al seleccionar', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+    expect(await screen.findByText(/1 seleccionados/i)).toBeInTheDocument()
+  })
+
+  it('marcar un archivo de otra empresa reemplaza la seleccion', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /i2\.png/ }))
+
+    // El formulario aplica un requisito de UNA entidad: mezclar empresas
+    // dejaria la eleccion de sujeto sin sentido.
+    expect(await screen.findByText(/1 seleccionados/i)).toBeInTheDocument()
+  })
+
+  it('pide la url firmada solo del archivo enfocado', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    fireEvent.click(screen.getByText('i1.png'))
+    await waitFor(() => {
+      expect(documentIngestApi.previewUrl).toHaveBeenCalledWith('i1')
+    })
+    expect(documentIngestApi.previewUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it('deriva los sujetos de la empresa de la seleccion', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+    await waitFor(() => {
+      expect(complianceApi.listPending).toHaveBeenCalledWith(
+        expect.objectContaining({ carrierId: 'acme' }),
+      )
+    })
+  })
+})
+```
+
+- [ ] **Step 2: Correr y verificar que falla**
+
+```bash
+cd monitor-app/frontend && npx vitest run components/compliance/TriageWorkbench.test.tsx
+```
+
+Esperado: FAIL — sigue usando `listTray` y `TriageFileList`.
+
+- [ ] **Step 3: Reescribir `TriageWorkbench.tsx`**
+
+```tsx
+'use client'
+
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Loader2, UploadCloud } from 'lucide-react'
+import { complianceApi } from '@/lib/api/compliance'
+import { documentIngestApi } from '@/lib/api/documentIngest'
+import { useCanEdit } from '@/hooks/useCanEdit'
+import { TriageBulkBar } from './TriageBulkBar'
+import { TriageClassifyForm } from './TriageClassifyForm'
+import { TriageFileTable } from './TriageFileTable'
+import { TriagePreview } from './TriagePreview'
+
+interface Props {
+  /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
+   *  empresa (la ficha). Es una sola prop opcional, no dos modos. */
+  carrierId?:   string
+  carrierName?: string
+}
+
+const QUEUE_PAGE = 200
+
+export function TriageWorkbench({ carrierId, carrierName }: Props) {
+  const qc = useQueryClient()
+  const canEdit = useCanEdit()
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [dragging, setDragging] = useState(false)
+  const [errors, setErrors] = useState<{ file_name: string; error: string }[]>([])
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const queueKey = ['ingest-queue', carrierId ?? 'all']
+  const queueQuery = useQuery({
+    queryKey: queueKey,
+    queryFn: () => documentIngestApi.listQueue({ carrierId, limit: QUEUE_PAGE }),
+  })
+
+  const rows = queueQuery.data?.rows ?? []
+  const total = queueQuery.data?.total ?? 0
+
+  // La empresa de la seleccion. El formulario aplica un requisito de UNA
+  // entidad, asi que una seleccion que cruza empresas no tiene sentido: al
+  // marcar un archivo de otra empresa la seleccion se reemplaza.
+  const selectedCarrierId = useMemo(() => {
+    const sel = rows.filter(r => selectedIds.has(r.id))
+    if (!sel.length) return null
+    const first = sel[0].carrier_id
+    return sel.every(r => r.carrier_id === first) ? first : null
+  }, [rows, selectedIds])
+
+  const subjectCarrierId = selectedCarrierId
+    ?? (focusedId ? rows.find(r => r.id === focusedId)?.carrier_id ?? null : null)
+
+  const pendingQuery = useQuery({
+    queryKey: ['compliance-pending-carrier-panel', subjectCarrierId],
+    queryFn: () => complianceApi.listPending({ carrierId: subjectCarrierId!, limit: 200 }),
+    enabled: !!subjectCarrierId,
+  })
+
+  const subjects = useMemo(() => {
+    const seen = new Map<string, { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }>()
+    for (const r of pendingQuery.data?.rows ?? []) {
+      const key = `${r.entity_type}:${r.entity_id}`
+      if (!seen.has(key)) {
+        seen.set(key, {
+          entity_type: r.entity_type as 'CARRIER' | 'DRIVER' | 'ASSET',
+          entity_id: r.entity_id,
+          label: r.subject_name ?? r.carrier_name,
+        })
+      }
+    }
+    return Array.from(seen.values())
+  }, [pendingQuery.data])
+
+  // Con nada marcado, el formulario opera sobre el archivo enfocado.
+  const targetIds = selectedIds.size > 0
+    ? rows.filter(r => selectedIds.has(r.id)).map(r => r.id)
+    : (focusedId ? [focusedId] : [])
+
+  // La vista previa se firma de a una, al enfocar — firmar el listado entero
+  // es una llamada HTTP por archivo.
+  const previewQuery = useQuery({
+    queryKey: ['ingest-preview', focusedId],
+    queryFn: () => documentIngestApi.previewUrl(focusedId!),
+    enabled: !!focusedId && targetIds.length === 1,
+  })
+
+  const previewItems = rows
+    .filter(r => targetIds.includes(r.id))
+    .map(r => ({
+      id: r.id, file_name: r.file_name, mime_type: r.mime_type,
+      size_bytes: r.size_bytes, storage_path: r.storage_path,
+      match_status: r.match_status,
+      preview_url: r.id === focusedId ? previewQuery.data?.preview_url ?? null : null,
+    }))
+
+  const uploadMutation = useMutation({
+    mutationFn: (files: File[]) => documentIngestApi.upload(carrierId!, files),
+    onSuccess: res => { setErrors(res.errors); qc.invalidateQueries({ queryKey: queueKey }) },
+  })
+  const discardMutation = useMutation({
+    mutationFn: (ids: string[]) => Promise.all(ids.map(id => documentIngestApi.remove(id))),
+    onSuccess: (_r, ids) => {
+      setNotice(`${ids.length} descartados`)
+      clearSelection()
+      qc.invalidateQueries({ queryKey: queueKey })
+    },
+  })
+
+  function clearSelection() {
+    setSelectedIds(new Set())
+    setFocusedId(null)
+  }
+
+  function handleFiles(list: FileList | null) {
+    const files = Array.from(list ?? [])
+    if (files.length) uploadMutation.mutate(files)
+  }
+
+  function handleToggle(id: string, opts?: { range?: boolean }) {
+    setSelectedIds(prev => {
+      const rowCarrier = rows.find(r => r.id === id)?.carrier_id ?? null
+      const current = rows.filter(r => prev.has(r.id))
+      const crossesCarrier = current.length > 0 && current.some(r => r.carrier_id !== rowCarrier)
+
+      // Cruzar empresas reemplaza la seleccion en vez de sumarse.
+      if (crossesCarrier) return new Set([id])
+
+      if (opts?.range && focusedId) {
+        const a = rows.findIndex(r => r.id === focusedId)
+        const b = rows.findIndex(r => r.id === id)
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a]
+          const next = new Set(prev)
+          for (const r of rows.slice(lo, hi + 1)) {
+            if (r.carrier_id === rowCarrier) next.add(r.id)
+          }
+          return next
+        }
+      }
+
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setFocusedId(id)
+  }
+
+  function handleApplied(appliedIds: string[]) {
+    setNotice(`${appliedIds.length} clasificados · ${Math.max(total - appliedIds.length, 0)} restantes`)
+    clearSelection()
+    qc.invalidateQueries({ queryKey: queueKey })
+    qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', subjectCarrierId] })
+    qc.invalidateQueries({ queryKey: ['compliance-pending'] })
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Subir exige una empresa: la cola global no sabe a quien atribuir el
+          archivo. Desde la ficha (con carrierId) siempre esta disponible. */}
+      {canEdit && carrierId && (
+        <label
+          onDragOver={e => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files) }}
+          className={`flex items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 cursor-pointer transition-colors ${
+            dragging ? 'border-accent bg-accent/5' : 'border-border hover:border-accent/50'
+          }`}
+        >
+          {uploadMutation.isPending
+            ? <Loader2 size={16} className="animate-spin text-accent" />
+            : <UploadCloud size={16} className="text-gray-400" />}
+          <span className="text-[11px] text-gray-500">
+            Arrastrá acá los documentos de {carrierName}
+          </span>
+          <input
+            type="file" multiple className="hidden"
+            aria-label={`Arrastrá acá los documentos de ${carrierName}`}
+            onChange={e => handleFiles(e.target.files)}
+          />
+        </label>
+      )}
+
+      {errors.map(e => (
+        <p key={e.file_name} className="text-[10px] text-red-500">{e.file_name}: {e.error}</p>
+      ))}
+
+      {canEdit && (
+        <TriageBulkBar
+          selectedCount={selectedIds.size}
+          targetIds={targetIds}
+          currentCarrierId={selectedCarrierId}
+          onDiscard={() => discardMutation.mutate(targetIds)}
+          onClear={clearSelection}
+          onMoved={() => { setNotice('Documentos movidos'); clearSelection() }}
+        />
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-3">
+        <div className="border border-border rounded-lg overflow-y-auto max-h-[58vh]">
+          {queueQuery.isPending ? (
+            <p className="text-[11px] text-gray-400 p-3 flex items-center gap-1.5">
+              <Loader2 size={11} className="animate-spin" /> Cargando…
+            </p>
+          ) : (
+            <TriageFileTable
+              rows={rows}
+              focusedId={focusedId}
+              selectedIds={selectedIds}
+              onFocus={setFocusedId}
+              onToggle={handleToggle}
+              onToggleAll={() => setSelectedIds(prev =>
+                prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id)),
+              )}
+            />
+          )}
+        </div>
+
+        <div className="border border-border rounded-lg p-3 space-y-3">
+          <TriageClassifyForm
+            targetIds={canEdit ? targetIds : []}
+            subjects={subjects}
+            onApplied={handleApplied}
+          />
+          <TriagePreview items={previewItems} />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-[10px] text-gray-400 font-mono">
+          ↑↓ mover · space marcar · ⇧+click rango · ↵ aplicar
+        </p>
+        {rows.length < total && (
+          <p className="text-[10px] text-gray-400">
+            Mostrando {rows.length} de {total}
+          </p>
+        )}
+      </div>
+
+      {notice && (
+        <div className="inline-flex items-center gap-3 bg-gray-900 text-white text-[11px] rounded-lg px-3 py-1.5">
+          {notice}
+          <button type="button" onClick={() => setNotice(null)} className="opacity-70 hover:opacity-100">
+            Cerrar
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+- [ ] **Step 4: Crear la página de la bandeja**
+
+`app/dashboard/compliance/inbox/page.tsx`:
+
+```tsx
+'use client'
+
+import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
+
+/** La bandeja de documentos sin clasificar — destino propio, no un tab.
+ *
+ *  Es la cola de trabajo de la HU-04: se entra y el trabajo esta ahi,
+ *  agrupado por empresa. La empresa es un filtro de la tabla, no un requisito
+ *  previo — una bandeja que arranca vacia es un buscador. */
+export default function ComplianceInboxPage() {
+  return (
+    <div className="p-4 md:p-6 space-y-3">
+      <div>
+        <h1 className="font-mulish font-bold text-xl text-text-primary">Bandeja</h1>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Documentos cargados que todavía no están asignados a un requisito.
+        </p>
+      </div>
+      <TriageWorkbench />
+    </div>
+  )
+}
+```
+
+`app/dashboard/compliance/inbox/page.test.tsx`:
+
+```tsx
+import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { describe, it, expect, vi } from 'vitest'
+import ComplianceInboxPage from './page'
+
+vi.mock('@/lib/api/documentIngest', () => ({
+  documentIngestApi: {
+    listQueue: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
+    previewUrl: vi.fn(), upload: vi.fn(), remove: vi.fn(),
+    classifyBatch: vi.fn(), moveItems: vi.fn(),
+  },
+}))
+vi.mock('@/lib/api/compliance', () => ({
+  complianceApi: {
+    listPending: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
+    listRequirements: vi.fn().mockResolvedValue([]),
+  },
+}))
+vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+
+describe('ComplianceInboxPage', () => {
+  it('muestra la bandeja vacia con un mensaje util', async () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ComplianceInboxPage />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 5: Agregar `Bandeja` al sidebar, con contador**
+
+**Va como ítem de primer nivel en `NAV_ITEMS`, no como sub-ítem de
+Certificación.** El motivo es concreto: `MONITOR_GROUP` es el único grupo del
+Sidebar y su render son ~55 líneas de markup especializado (`Sidebar.tsx:139-186`)
+con estado propio (`monitorOpen`, `monitorActiveHref`). Un segundo grupo obliga a
+duplicar esas 55 líneas o a generalizar el Sidebar entero — refactor que no pide
+nadie. Y de paso, primer nivel dice más fuerte lo que se quería decir: la bandeja
+de Gmail tampoco cuelga de un módulo. `NAV_ITEMS` ya se renderiza en un `.map`,
+así que el badge sale con un cambio chico.
+
+En `Sidebar.tsx`, agregar el ítem con su badge opcional:
+
+```tsx
+const NAV_ITEMS: {
+  href: string; label: string; icon: LucideIcon; badge?: 'inbox'
+}[] = [
+  { href: '/dashboard/carriers',        label: 'Empresas',      icon: Building2 },
+  { href: '/dashboard/insurance',       label: 'Seguros',       icon: Shield },
+  { href: '/dashboard/pricing',         label: 'Tarifario',     icon: Receipt },
+  { href: '/dashboard/compliance',      label: 'Certificación', icon: BadgeCheck },
+  // La cola de sin clasificar es trabajo pendiente, no una vista del modulo:
+  // por eso va al mismo nivel y con contador.
+  { href: '/dashboard/compliance/inbox', label: 'Bandeja', icon: Inbox, badge: 'inbox' },
+]
+```
+
+Importar `Inbox` de `lucide-react` y `LucideIcon` como tipo.
+
+**Cuidado con el orden de `activeHref`**: ya resuelve el match más específico
+primero (`.sort((a, b) => b.length - a.length)`), así que
+`/dashboard/compliance/inbox` gana sobre `/dashboard/compliance` sin tocar nada.
+
+Dentro del componente, el contador:
+
+```tsx
+  // El total de la cola. Se pide con limit=1: solo interesa `total`.
+  const inboxCount = useQuery({
+    queryKey: ['ingest-queue-count'],
+    queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
+    staleTime: 60_000,
+  }).data?.total ?? 0
+```
+
+Y en el `.map` de `NAV_ITEMS`, después del `<span>` de la etiqueta:
+
+```tsx
+{badge === 'inbox' && inboxCount > 0 && !collapsed && (
+  <span className="ml-auto bg-red-500 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5">
+    {inboxCount}
+  </span>
+)}
+```
+
+desestructurando `badge` junto a `href, label, icon: Icon`.
+
+- [ ] **Step 5b: Test del sidebar**
+
+En `components/dashboard/Sidebar.test.tsx` (crearlo si no existe, mockeando
+`next/navigation` como hacen los tests de página del proyecto):
+
+```tsx
+it('muestra el contador de la bandeja', async () => {
+  vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 2000, rows: [] })
+  renderSidebar()
+  expect(await screen.findByText('2000')).toBeInTheDocument()
+})
+
+it('sin cola pendiente no muestra contador', async () => {
+  vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+  renderSidebar()
+  expect(await screen.findByText('Bandeja')).toBeInTheDocument()
+  expect(screen.queryByText('0')).not.toBeInTheDocument()
+})
+```
+
+- [ ] **Step 6: Verificar**
+
+```bash
+cd monitor-app/frontend && npx vitest run && npx tsc --noEmit && npm run build
+```
+
+Esperado: todo verde y `/dashboard/compliance/inbox` en el manifest del build.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A monitor-app/frontend
+git commit -m "feat(compliance): la bandeja pasa a ser un destino con contador propio
+
+Cola global agrupada por empresa, con la empresa como filtro y no como
+requisito previo. La seleccion se acota a una empresa: el formulario aplica
+un requisito de UNA entidad. La vista previa se firma al enfocar.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 17: Retirar lo que quedó sin uso
+
+**Files:**
+- Delete: `components/dashboard/UnclassifiedTray.tsx` y su test
+- Delete: `components/dashboard/ClassifyDocumentModal.tsx` y su test
+- Modify: `components/dashboard/CertificationCompanyPanel.tsx` y su test
+- Modify: `monitor-app/backend/api/app/routers/document_ingest.py`
+
+- [ ] **Step 1: Sacar la bandeja del panel de empresa**
+
+En `CertificationCompanyPanel.tsx`, borrar el import y el uso de
+`UnclassifiedTray` y de `ClassifyDocumentModal`, junto con el estado
+`classifying` y el `useMemo` de `subjects` que sólo alimentaba al modal. El
+panel queda con lo suyo: pendientes, fecha de vencimiento, subir de a uno,
+subir masivo y el link a la ficha. En su test, borrar los casos que cubrían la
+bandeja — esa superficie se mudó a `TriageWorkbench`.
+
+- [ ] **Step 2: Borrar los componentes**
+
+```bash
+git rm monitor-app/frontend/components/dashboard/UnclassifiedTray.tsx \
+       monitor-app/frontend/components/dashboard/UnclassifiedTray.test.tsx \
+       monitor-app/frontend/components/dashboard/ClassifyDocumentModal.tsx \
+       monitor-app/frontend/components/dashboard/ClassifyDocumentModal.test.tsx
+```
+
+- [ ] **Step 3: Confirmar que no quedan llamadores de la ruta vieja**
+
+```bash
+cd monitor-app/frontend && grep -rn "listTray" app components lib
+```
+
+Esperado: sin resultados. Si aparece alguno, migrarlo a `listQueue` antes de
+seguir.
+
+- [ ] **Step 4: Retirar `GET /{carrier_id}/items` y `listTray`**
+
+Borrar la ruta en `document_ingest.py` y la función `listTray` en
+`lib/api/documentIngest.ts`, con sus tests. `GET /items?carrier_id=` la cubre
+por completo.
+
+- [ ] **Step 5: Verificar**
+
+```bash
+cd monitor-app/backend/api && venv/bin/python -m pytest tests/ -v
+cd monitor-app/frontend && npx vitest run && npx tsc --noEmit && npm run build
+```
+
+Esperado: todo verde.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "refactor(compliance): retira la bandeja vieja y su endpoint
+
+UnclassifiedTray y ClassifyDocumentModal quedaron sin uso al mudarse la
+superficie a TriageWorkbench. GET /{carrier_id}/items lo cubre por completo
+GET /items?carrier_id=.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Verificación final de la revisión
+
+- [ ] `venv/bin/python -m pytest tests/ -v` en el backend: verde.
+- [ ] `npx vitest run && npx tsc --noEmit && npm run build` en el frontend: verde.
+- [ ] Click-through en vivo, **eligiendo por SQL una empresa sin documentos
+      cargados** antes de abrir el navegador (ya se pisó un documento real por
+      elegir a ojo del desplegable):
+  - [ ] La bandeja abre con la cola completa y el contador del sidebar coincide
+        con `SELECT count(*) FROM public.document_ingest_items WHERE match_status='UNMATCHED'`.
+  - [ ] `⇧`+click selecciona un rango dentro de una empresa y no lo cruza.
+  - [ ] Marcar un archivo de otra empresa reemplaza la selección.
+  - [ ] Clasificar en lote baja el contador y el toast dice cuántos quedan.
+  - [ ] Mover a otra empresa saca las filas del grupo de origen.
+  - [ ] El recorrido completo se puede hacer sólo con teclado.
+  - [ ] Limpiar lo cargado en la prueba y confirmar con un conteo global.
+
+## Fuera de alcance de esta revisión
+
+- **Revertir una clasificación ya aplicada** — toca el versionado de
+  `compliance_records`; es la parte abierta de la HU-03, ya listada arriba.
+- **El agente de clasificación automática** — la columna Sugerencia queda
+  construida y vacía, esperándolo.
+- **Filtros persistidos en la URL** de la bandeja.
+- **Scroll virtual**: con `LIMIT 200` y "Mostrando N de M" alcanza; si la cola
+  crece mucho más, ahí se evalúa.
