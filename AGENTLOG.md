@@ -1256,6 +1256,8 @@ Todos cerrados en la Ronda 100, abajo.
 | | Antes | Después |
 |---|---|---|
 | `public.drivers` | 147 | **80** (79 con RUT + 1 sin) |
+
+El conductor que queda con `tax_id` NULL **es correcto y se deja así** (confirmado por el usuario): es una persona real cuyo RUT tampoco está en bronze — es justamente la fila incompleta de origen que disparaba el bug. No es deuda pendiente.
 | `compliance_records` de conductor | 1.764 | **960** |
 | `compliance_records` totales | 5.794 | **4.990** |
 
