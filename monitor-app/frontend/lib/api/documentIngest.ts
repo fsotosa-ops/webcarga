@@ -1,4 +1,4 @@
-import type { IngestUploadResult, TrayItem } from '@/lib/types'
+import type { IngestUploadResult, TrayItem, TrayPage } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type ClassifyBody = {
@@ -33,6 +33,25 @@ export const documentIngestApi = {
 
   listTray: (carrierId: string) =>
     apiFetch<TrayItem[]>(`/api/v1/document-ingest/${carrierId}/items`),
+
+  /** La cola global de sin clasificar. Sin `carrierId` trae todas las empresas:
+   *  una bandeja que obliga a elegir empresa antes de mostrar algo es un
+   *  buscador, no una bandeja. */
+  listQueue: (params: { carrierId?: string; limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.carrierId) qs.set('carrier_id', params.carrierId)
+    if (params.limit  != null) qs.set('limit',  String(params.limit))
+    if (params.offset != null) qs.set('offset', String(params.offset))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return apiFetch<TrayPage>(`/api/v1/document-ingest/items${suffix}`)
+  },
+
+  /** Firma la vista previa de un archivo. Se pide al enfocarlo, no al listar:
+   *  firmar el listado entero es una llamada HTTP por archivo. */
+  previewUrl: (itemId: string) =>
+    apiFetch<{ preview_url: string | null }>(
+      `/api/v1/document-ingest/items/${itemId}/preview-url`,
+    ),
 
   classify: (itemId: string, body: ClassifyBody) =>
     apiFetch<{ compliance_record_id: string }>(

@@ -1220,6 +1220,30 @@ export type TrayItem = {
   preview_url:  string | null
 }
 
+/** Fila de la cola global de sin clasificar.
+ *
+ *  `carrier_name` viene del servidor porque la cola mezcla empresas y la tabla
+ *  se agrupa por ese valor. Los campos de sugerencia hoy llegan vacios: los
+ *  llena el agente de clasificacion cuando exista, sobre este mismo contrato.
+ *
+ *  No trae `preview_url`: se pide con `previewUrl(id)` al enfocar el archivo. */
+export type QueueRow = {
+  id:                         string
+  file_name:                  string
+  mime_type:                  string | null
+  size_bytes:                 number | null
+  storage_path:               string
+  match_status:               IngestMatchStatus
+  created_at:                 string
+  carrier_id:                 string | null
+  carrier_name:               string | null
+  confidence:                 number | null
+  suggested_requirement_name: string | null
+  candidate_count:            number
+}
+
+export type TrayPage = { total: number; rows: QueueRow[] }
+
 export type IngestUploadResult = {
   batch_id: string
   items:    TrayItem[]
