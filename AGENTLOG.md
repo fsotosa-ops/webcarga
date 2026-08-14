@@ -1222,14 +1222,33 @@ Evidencia decisiva para la corrección: **8 de esos requisitos ya tienen `compli
 
 **Dos bugs propios detectados y corregidos durante la ejecución**: un `useMemo` que quedó detrás de un early return (violación de las reglas de hooks), y dos tests que fallaban por mocks mal armados (`conn.fetchval` truthy por defecto simulando `has_expiration=true`; y un `fireEvent.change` sobre un `<select>` cuyas opciones aún no habían cargado, que React descarta en silencio).
 
-**Validación del catálogo al cierre** (pedida por el usuario): la migración `20260814140000_fix_has_expiration_catalog.sql` sigue **sin aplicar**, y el estado en la base es el mismo que al detectarla — 2 correctos (`SEGURO_CARGA`, `INSURANCE_POLICY`), 8 del Grupo 1 y 11 del Grupo 2 todavía en `false`.
+**MIGRACIONES APLICADAS A PRODUCCIÓN** (autorizadas explícitamente por el usuario, las 3 no destructivas):
+
+| Migración | Resultado verificado |
+|---|---|
+| `20260814130000_document_ingest_model` | 3 tablas creadas |
+| `20260814130100_seed_requirement_filename_aliases` | 79 alias, cubriendo los 37 requisitos |
+| `20260814140000_fix_has_expiration_catalog` | requisitos con vencimiento: **2 → 21** |
+
+`compliance_records` quedó **intacto**: 5.794 registros, 24 con archivo, ninguno modificado. Suites re-corridas después de aplicar: backend 524, frontend 738, todo verde.
+
+**El Grupo 2 del catálogo lo validó el usuario**: *"esos 11 documentos tienen fecha de vencimiento"*. Ya no requiere consulta a Pablo/Fabián.
+
+**`20260814120000_dedupe_drivers_sin_rut.sql` sigue SIN aplicar** — es la destructiva (borra 67 conductores + 804 records) y está bloqueada por el fix de Mage: sin él los duplicados reaparecen en la corrida de las 6 horas siguientes.
+
+**Refinamiento de HU-05 a partir del planteamiento del usuario** (*"el usuario debería definir cuáles son opcionales y obligatorias según el shipper y la reglamentación legal donde opera webcarga (Chile)"*): el modelo **ya soporta** esa distinción (`requirement_level` con 3 valores + `shipper_id`), pero el catálogo no la usa. Estado verificado:
+- **31** requisitos como `LEGAL_MANDATORY` sin shipper, o sea "lo exige la ley chilena a todos".
+- **0** usos de `SHIPPER_REQUIRED` — el nivel existe y nunca se usó.
+- **2** con `shipper_id` marcados `LEGAL_MANDATORY` (`ANEXO_GC_CONDUCTOR`, `ANEXO_REPLEG`), que se contradice: si lo exige un cliente puntual, no lo manda la ley.
+- Varios de los 31 claramente no son ley chilena: `CONTRATO_WEBCARGA` (contrato con Webcarga), `CUENTA_BANCARIA` (operativo de pago), `PTS_CONTRATISTA`/`DAS_ODI`/`ENTREGA_EPP`/`CAPACITACION_EPP`/`PLAN_EMERGENCIA` (gestión de contratistas del mandante), `CERTIFICADO_GPS`.
+
+La HU-05 se actualizó con esto: la pantalla no es un CRUD de tipos de documento, es donde se declara **el fundamento** de cada exigencia (ley / cliente / condicional) y a quién aplica. La reclasificación del catálogo es decisión de negocio con base normativa — la HU entrega la herramienta, el contenido lo define Webcarga.
 
 #### Próximo paso exacto
-1. [ ] **Aplicar `20260814130000_document_ingest_model.sql` + su seed de alias.** Sin esas tablas la bandeja no funciona contra la base real: los tests pasan con mocks, pero los endpoints nuevos fallarían. Es el bloqueante para probar HU-01 en vivo.
-2. [ ] **Validar con Pablo/Fabián el Grupo 2** de `20260814140000_fix_has_expiration_catalog.sql` (11 requisitos; cuáles vencen es decisión de negocio). El Grupo 1 (8) no necesita validación: los usuarios ya les cargaron fecha en producción.
-3. [ ] Click-through en dev de HU-01 + HU-02 con una empresa real (2-3 archivos, clasificar uno, verificar que sale de la bandeja y aparece en el requisito con su fecha).
-4. [ ] Pendientes heredados de la Ronda 97: fix de Mage (`load_drivers_03.sql`) y las otras migraciones sin aplicar.
-5. [ ] Revisar la épica y las 6 HUs; confirmar la nomenclatura del módulo (**"Red de Transporte"**, a confirmar). HU-03 a HU-06 siguen sin implementar.
+1. [ ] **Click-through en dev de HU-01 + HU-02** con una empresa real: arrastrar 2-3 archivos, clasificar uno con vista previa, verificar que sale de la bandeja y aparece en el requisito con su fecha. Ya no hay bloqueante: las tablas existen.
+2. [ ] **Implementar HU-05** (decisión del usuario: antes que HU-03/04/06) — CRUD de `compliance_requirements` con el fundamento de cada exigencia, para que Webcarga reclasifique los 37 requisitos desde la app en vez de por migración.
+3. [ ] **Fix de Mage** (`load_drivers_03.sql`, descomentar el `WHERE`) y recién después aplicar `20260814120000_dedupe_drivers_sin_rut.sql`. El pipeline sigue generando 2-3 conductores duplicados por día.
+4. [ ] Confirmar la nomenclatura del módulo (**"Red de Transporte"**, propuesto). HU-03, HU-04 y HU-06 siguen sin implementar.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
