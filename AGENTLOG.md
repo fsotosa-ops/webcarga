@@ -1276,11 +1276,34 @@ El conductor que queda con `tax_id` NULL **es correcto y se deja así** (confirm
 **Gap detectado por el usuario y documentado en HU-03**: mover archivos **sin clasificar** entre empresas no lo cubría ninguna HU. `document_ingest_items` no tiene `carrier_id` propio, lo hereda del lote — hoy hay que borrarlos y volver a subirlos. Es el error más probable en el uso real: soltar 40 archivos en la empresa equivocada. Se resuelve como una acción en lote más dentro de la bandeja nueva. Las otras dos variantes de "mover" ya están resueltas: transferir un conductor/vehículo a otro carrier **ya funciona** (los documentos viajan con la entidad), y mover un documento ya clasificado es la HU-03.
 
 #### Próximo paso exacto
-1. [ ] **HU-01 revisada + HU-04 juntas** (decisión del usuario): rehacer la interfaz de clasificación como bandeja de trabajo con selección múltiple, ya en su lugar definitivo dentro del módulo unificado. La revisión de diseño está en `01-hu-carga-y-clasificacion-por-empresa.md`.
-2. [ ] Cubrir ahí la cuarta variante de "mover" (archivos sin clasificar entre empresas).
-3. [ ] Confirmar la nomenclatura del módulo (**"Red de Transporte"**, propuesto).
-4. [ ] Adaptar las descripciones de las skills `mockups` y `qa-testing`: dicen "in suma-scout" y referencian rutas de ese proyecto.
-5. [ ] HU-05 (administración de requisitos con el fundamento legal/cliente), HU-03 y HU-06 siguen pendientes.
+Ver la Ronda 101, abajo — la ejecución arrancó en esta misma sesión.
+
+### 2026-08-14 (cont.) — Ronda 101: arranca HU-01 revisada + HU-04 — 4 de 11 tareas hechas
+
+**Nomenclatura decidida por el usuario**: el módulo **se sigue llamando "Certificación"** y la ruta pasa a **`/dashboard/compliance`**. Se descartó "Red de Transporte" — el equipo ya dice Certificación y renombrar lo que la gente ya nombra no lo paga este cambio. La ruta en inglés es coherente con el dominio real (`compliance_records`/`compliance_requirements`). La épica se renombró a `00-epica-certificacion-unificada.md` y los 7 documentos se actualizaron sin dejar enlaces rotos.
+
+**Skills instaladas y versionadas** (`ecdc35f`, 47 archivos): `ui-ux-pro-max`, `mockups`, `frontend-patterns`, `qa-testing`, copiadas de suma-scout. Se usó `ui-ux-pro-max` para decidir el patrón de UI — sus reglas *Bulk Actions* y *Keyboard Navigation* (severidad alta) son las que fundamentan el rediseño.
+
+**Decisión de UX documentada en `01-hu-carga-y-clasificacion-por-empresa.md`**: la interfaz actual son dos modales apilados, 8 pasos y ~5 clics por documento — 10.000 clics para los 2.000 pendientes. Se evaluaron 3 patrones (comparativa con mockups en el artifact "Clasificar 2.000 documentos") y se eligió la **bandeja de trabajo con selección múltiple**. La clave: *la selección múltiple no necesita pantalla propia* — con un archivo marcado se clasifica ese, con quince el mismo formulario aplica a los quince. Eso elimina la necesidad de una vista de planilla aparte.
+
+**Plan de implementación**: `docs/superpowers/plans/2026-08-14-compliance-bandeja-y-modulo-unificado.md`, 11 tareas con TDD.
+
+**Hecho (Tasks 1-4)**:
+1. `64e7f8c` — ruta movida a `/dashboard/compliance`; `/dashboard/certification` queda como **redirección permanente que preserva el query string** (`?carrier_id=` es contrato en uso desde la Ronda 88). 7 archivos actualizados. Gotcha resuelto: el componente de redirect necesita `return redirect(...)` — sin el `return` queda tipado como `void` y `tsc` lo rechaza como componente JSX.
+2. Migración `ingest_items_carrier_override` **aplicada**: `document_ingest_items.carrier_id` nullable (NULL = hereda del lote). El listado de la bandeja lo respeta vía `COALESCE(i.carrier_id, b.carrier_id)`.
+3. `30b89cc` — `POST /items/classify-batch` (mismo requisito a N archivos) y `POST /items/move` (N archivos a otra empresa **en un solo UPDATE**; un bucle serían N refreshes de la vista materializada).
+4. Cliente HTTP `classifyBatch` / `moveItems`.
+
+**Verificado**: backend **529 passed** (5 nuevos), frontend **740 passed** (2 nuevos), `tsc --noEmit` limpio, `npm run build` con ambas rutas en el manifest. SQL del listado verificado contra la base real.
+
+**Descuido propio, detectado y corregido**: al crear el test del redirect sobrescribí `app/dashboard/certification/page.test.tsx`, que ya existía con 12 tests. Se detectó por un ` D page.test.tsx` en `git status` y se restauró con `git checkout HEAD --`. No se perdió nada, pero conviene mirar `git status` antes de escribir un archivo de test con nombre "obvio".
+
+#### Próximo paso exacto
+1. [ ] **Tasks 5-8 del plan — la bandeja**: `TriageFileList` (lista con casillas y teclado: ↑↓ mover, espacio marcar, Delete descartar), `TriagePreview` (vista previa de uno / resumen de varios), `TriageClassifyForm` (aplica a N), `TriageWorkbench` (los tres paneles), `MoveToCarrierBar`. Al final se elimina `ClassifyDocumentModal.tsx`. **El plan tiene el código completo de cada componente y sus tests.**
+2. [ ] **Tasks 9-10** — descomponer `carriers/[id]/page.tsx` (971 líneas) extrayendo el tab Documentos, y devolverle la carga usando el mismo `TriageWorkbench` (criterio "una sola implementación" de la HU-04).
+3. [ ] **Task 11** — adaptar `mockups` y `qa-testing`: sus descripciones dicen "in suma-scout" y referencian rutas de ese proyecto.
+4. [ ] Click-through final: **elegir por SQL una empresa sin documentos cargados antes de abrir el navegador** (el plan trae la consulta), probar la clasificación en lote, el movimiento entre empresas y el recorrido sólo con teclado. Limpiar al terminar y confirmar con un conteo global.
+5. [ ] HU-05, HU-03 (mover documentos ya clasificados) y HU-06 siguen pendientes.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
