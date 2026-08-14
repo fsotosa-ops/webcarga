@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Upload, Loader2, ArrowRight } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
+import { useCanEdit } from '@/hooks/useCanEdit'
 import { BulkDocumentUploadModal } from './BulkDocumentUploadModal'
+import { ExpirationDateCell } from './ExpirationDateCell'
 
 interface Props {
   carrierId: string | null
@@ -21,6 +23,7 @@ export function CertificationCompanyPanel({ carrierId, onClose }: Props) {
   const open = !!carrierId
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
+  const canEdit = useCanEdit()
   const [bulkOpen, setBulkOpen] = useState(false)
 
   const query = useQuery({
@@ -119,16 +122,27 @@ export function CertificationCompanyPanel({ carrierId, onClose }: Props) {
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-text-primary truncate">{r.document_name}</p>
                   <p className="text-[10px] text-gray-400">{r.subject_name ?? r.category}</p>
-                </div>
-                <label className="flex items-center gap-1 text-[11px] font-semibold text-accent border border-dashed border-accent/40 rounded-md px-2 py-1 hover:bg-accent/5 transition-colors cursor-pointer shrink-0">
-                  <Upload size={11} /> Subir
-                  <input
-                    type="file"
-                    className="hidden"
-                    aria-label={`Subir ${r.document_name}`}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadSingle(r.id, f) }}
+                  {/* La fecha se puede declarar sin adjuntar el archivo: el
+                      requisito sigue pendiente, pero ya alimenta las alertas. */}
+                  <ExpirationDateCell
+                    recordId={r.id}
+                    value={r.expiration_date ?? null}
+                    required={false}
+                    canEdit={canEdit}
+                    onSaved={() => invalidate()}
                   />
-                </label>
+                </div>
+                {canEdit && (
+                  <label className="flex items-center gap-1 text-[11px] font-semibold text-accent border border-dashed border-accent/40 rounded-md px-2 py-1 hover:bg-accent/5 transition-colors cursor-pointer shrink-0">
+                    <Upload size={11} /> Subir
+                    <input
+                      type="file"
+                      className="hidden"
+                      aria-label={`Subir ${r.document_name}`}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadSingle(r.id, f) }}
+                    />
+                  </label>
+                )}
               </div>
             ))}
           </div>

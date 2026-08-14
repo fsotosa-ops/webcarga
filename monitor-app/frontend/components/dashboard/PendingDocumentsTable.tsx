@@ -3,6 +3,7 @@
 import { useRef } from 'react'
 import { Upload } from 'lucide-react'
 import type { PendingComplianceRow } from '@/lib/types'
+import { expiryRelative, formatExpiry } from '@/lib/compliance'
 
 interface Props {
   rows:              PendingComplianceRow[]
@@ -80,6 +81,7 @@ export function PendingDocumentsTable({ rows, selected, onToggle, onToggleAll, o
               <th className="px-3 py-2.5 text-left">Categoría</th>
               <th className="px-3 py-2.5 text-left">Sub categoría</th>
               <th className="px-3 py-2.5 text-left">Tipo de documento</th>
+              <th className="px-3 py-2.5 text-left">Vencimiento</th>
               <th className="px-3 py-2.5 text-left w-16">Acción</th>
             </tr>
           </thead>
@@ -123,6 +125,18 @@ export function PendingDocumentsTable({ rows, selected, onToggle, onToggleAll, o
                 <td className="px-3 py-2 whitespace-nowrap">{r.category}</td>
                 <td className="px-3 py-2 whitespace-nowrap">{r.subject_name ?? '—'}</td>
                 <td className="px-3 py-2 whitespace-nowrap">{r.document_name}</td>
+                {/* El campo ya venia en el payload de /pending y no se
+                    renderizaba: sin el no hay forma de ver que esta por vencer. */}
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {r.expiration_date ? (
+                    <span className="flex flex-col leading-tight">
+                      <span>{formatExpiry(r.expiration_date)}</span>
+                      <span className="text-[9px] text-gray-400">
+                        {expiryRelative(r.expiration_date, false)}
+                      </span>
+                    </span>
+                  ) : <span className="text-gray-300">—</span>}
+                </td>
                 <td className="px-3 py-2">
                   <button
                     type="button"

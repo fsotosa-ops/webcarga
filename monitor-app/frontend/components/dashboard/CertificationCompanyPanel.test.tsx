@@ -6,8 +6,12 @@ import { complianceApi } from '@/lib/api/compliance'
 import type { PendingComplianceRow } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({
-  complianceApi: { listPending: vi.fn(), uploadFile: vi.fn(), bulkUploadFile: vi.fn() },
+  complianceApi: {
+    listPending: vi.fn(), uploadFile: vi.fn(), bulkUploadFile: vi.fn(), patch: vi.fn(),
+  },
 }))
+
+vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 
 function makeRow(overrides: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
   return {
@@ -45,6 +49,30 @@ describe('CertificationCompanyPanel', () => {
     expect(await screen.findByText('Agrocapilla Ltda')).toBeInTheDocument()
     expect(screen.getByText('76217085-K')).toBeInTheDocument()
     expect(screen.getByText('Póliza de Seguro Vigente')).toBeInTheDocument()
+  })
+
+  // ── HU-02: vencimiento visible y editable sin adjuntar archivo ──────────
+
+  it('muestra el vencimiento ya declarado de un requisito', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({
+      total: 1, rows: [makeRow({ expiration_date: '2027-03-31' })],
+    })
+    renderPanel('c1')
+    expect(await screen.findByRole('button', { name: /editar vencimiento/i })).toBeInTheDocument()
+  })
+
+  it('permite declarar el vencimiento de un requisito sin archivo', async () => {
+    vi.mocked(complianceApi.patch).mockResolvedValue({} as never)
+    renderPanel('c1')
+
+    fireEvent.click(await screen.findByRole('button', { name: /agregar vencimiento/i }))
+    const input = screen.getByLabelText(/fecha de vencimiento/i)
+    fireEvent.change(input, { target: { value: '2027-03-31' } })
+    fireEvent.blur(input)
+
+    await waitFor(() => {
+      expect(complianceApi.patch).toHaveBeenCalledWith('r1', { expiration_date: '2027-03-31' })
+    })
   })
 
   it('fetches all pending rows for that carrier via listPending', async () => {

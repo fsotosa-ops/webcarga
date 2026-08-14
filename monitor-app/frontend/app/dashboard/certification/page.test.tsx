@@ -17,6 +17,10 @@ vi.mock('@/lib/api/carriers', () => ({
 
 vi.mock('next/navigation', () => ({ useSearchParams: vi.fn() }))
 
+// CertificationCompanyPanel gatea sus acciones con useCanEdit, que instancia el
+// cliente de Supabase y necesita env vars que no existen en el entorno de test.
+vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+
 function makeRow(overrides: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
   return {
     id: 'r1', carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', carrier_tax_id: '76.111.111-1',
