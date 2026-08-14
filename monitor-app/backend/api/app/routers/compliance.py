@@ -10,6 +10,7 @@ un valor válido del CHECK constraint (datos legacy), pero nada nuevo lo
 setea.
 """
 import json
+from datetime import date
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -269,11 +270,19 @@ async def patch_compliance_record(
     return await _fetch_record(record_id, pool, supabase)
 
 
-async def _apply_compliance_upload(record_id: str, file: UploadFile, pool, supabase, user) -> dict:
+async def _apply_compliance_upload(
+    record_id: str, file: UploadFile, pool, supabase, user,
+    expiration_date: date | None = None,
+) -> dict:
     """Extraído de upload_compliance_file (endpoint singular) para reusar
     exactamente la misma lógica de status/metadata/auditoría desde el
     endpoint de carga masiva (POST /bulk-file) — un solo lugar que decide
-    qué pasa cuando se sube un archivo a un compliance_record."""
+    qué pasa cuando se sube un archivo a un compliance_record.
+
+    `expiration_date` es opcional y se aplica con COALESCE: si no viene, se
+    preserva la que ya estuviera declarada. Antes esta función no la escribía
+    nunca, así que un documento subido quedaba con la fecha en NULL y — como
+    /pending filtra por status — desaparecía de pendientes para siempre."""
     current = await pool.fetchrow(
         "SELECT entity_id, entity_type, status, expiration_date, metadata FROM public.compliance_records "
         "WHERE id = $1 AND is_current = true",
@@ -305,10 +314,12 @@ async def _apply_compliance_upload(record_id: str, file: UploadFile, pool, supab
                     status = 'APPROVED_MANUAL',
                     file_url = $2,
                     metadata = $3::jsonb,
+                    expiration_date = COALESCE($4, expiration_date),
                     updated_at = NOW()
                 WHERE id = $1
                 """,
                 record_id, uploaded["storage_path"], json.dumps(new_metadata),
+                expiration_date,
             )
             await record_manual_edit(
                 conn, table="compliance_records", where={"id": record_id}, actor=user["sub"],
@@ -331,11 +342,12 @@ async def _apply_compliance_upload(record_id: str, file: UploadFile, pool, supab
 async def upload_compliance_file(
     record_id: str,
     file: UploadFile = File(...),
+    expiration_date: Optional[date] = Form(None),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
     user=Depends(require_editor),
 ):
-    return await _apply_compliance_upload(record_id, file, pool, supabase, user)
+    return await _apply_compliance_upload(record_id, file, pool, supabase, user, expiration_date)
 
 
 _BULK_UPLOAD_MAX_FILES = 30

@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
@@ -523,3 +524,54 @@ def test_list_compliance_files_includes_current_version_never_replaced():
     assert body[0]["storage_path"] == "carrier/c1/r1/x.pdf"
     assert body[0]["is_current"] is True
     assert body[0]["url"] == "https://signed.example/current"
+
+
+# ── expiration_date en el upload (HU-02) ───────────────────────────────────
+# Antes de esto el upload solo escribia status/file_url/metadata: un documento
+# cargado quedaba con expiration_date NULL y, como /pending filtra por status,
+# desaparecia de pendientes para siempre aunque el papel real venciera.
+
+def test_upload_persists_expiration_date_when_provided():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {
+        "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
+        "expiration_date": None, "metadata": {},
+    }
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/compliance-records/r1/file",
+        files={"file": ("poliza.pdf", b"contenido", "application/pdf")},
+        data={"expiration_date": "2027-03-31"},
+    )
+
+    assert res.status_code == 201
+    update_call = conn.execute.call_args_list[0]
+    assert "expiration_date" in update_call.args[0]
+    assert date(2027, 3, 31) in update_call.args
+
+
+def test_upload_without_expiration_date_leaves_it_untouched():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {
+        "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
+        "expiration_date": None, "metadata": {},
+    }
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/compliance-records/r1/file",
+        files={"file": ("contrato.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 201
+    # COALESCE preserva la fecha ya declarada cuando el upload no trae una.
+    assert "COALESCE" in conn.execute.call_args_list[0].args[0].upper()
