@@ -1298,12 +1298,40 @@ Ver la Ronda 101, abajo — la ejecución arrancó en esta misma sesión.
 
 **Descuido propio, detectado y corregido**: al crear el test del redirect sobrescribí `app/dashboard/certification/page.test.tsx`, que ya existía con 12 tests. Se detectó por un ` D page.test.tsx` en `git status` y se restauró con `git checkout HEAD --`. No se perdió nada, pero conviene mirar `git status` antes de escribir un archivo de test con nombre "obvio".
 
+### 2026-08-14 (cont.) — Ronda 102: Tasks 5, 6 y 8 hechas + la Task 7 destapó una decisión de UX que reabrió el diseño
+
+**Hecho y comiteado** (`1d4a886`, `f584a75`, `4f750c7`): `TriageFileList`, `TriagePreview`, `TriageClassifyForm`, `TriageWorkbench` y `MoveToCarrierBar`, con **22 tests** y `tsc --noEmit` limpio.
+
+**Dos errores del plan, encontrados al ejecutarlo** (el plan traía el código, y el código traía los bugs):
+1. El test de `TriageFileList` spreadeaba `props as never` — `tsc` rechaza spreadear `never` (TS2698). Se castea a `ComponentProps<typeof …>`.
+2. El test de `MoveToCarrierBar` mockeaba `carriersApi.list` devolviendo `{ rows }`, pero el contrato real es `{ data }`. Con la clave equivocada el picker no lista nada y el test **pasaba por la razón incorrecta**.
+
+**La Task 7 quedó trabada en una contradicción del propio plan**: decía "reemplazar `CertificationCompanyPanel` por `TriageWorkbench`" y dos pasos después "actualizar el test de ese panel", que sólo tiene sentido si el panel sobrevive. Se resolvió preguntando en vez de adivinar.
+
+**Rediseño aprobado por el usuario, con el visual companion de `brainstorming`** (`.superpowers/brainstorm/`, ignorado por git). El usuario pidió explícitamente el estándar de la industria, la menor carga cognitiva posible y **nada de frankenstein ni deuda**. Decisiones:
+- **La bandeja es un destino propio** (`/dashboard/compliance/inbox`, ítem de sidebar con contador), no un tab ni un panel.
+- **La cola es global**, agrupada por empresa; la empresa es un filtro, no un requisito previo. Una bandeja que arranca vacía es un buscador.
+- **La lista es una tabla con columnas** (archivo, empresa, subido, sugerencia), no una lista de casillas.
+- **Barra contextual al seleccionar** — es donde pasan a vivir mover y descartar.
+- **`⇧`+click selecciona rango**, y la selección **no cruza empresas** (el formulario aplica un requisito de UNA entidad).
+- **La columna Sugerencia se construye ahora, vacía**: el esquema ya tiene `match_status`/`confidence`/`candidates` y el agente de clasificación llega después. Sin el lugar reservado, cuando llegue hay que rehacer la fila.
+
+**Tres hallazgos del código que corrigieron el diseño aprobado** — ninguno era visible desde el plan:
+1. **`resolve_signed_url` es una llamada HTTP a Storage por ítem, secuencial** (`document_storage.py:121`, dentro de un list comprehension en `list_tray`). Con 2.000 documentos el request no termina. **Corrección de raíz**: el listado deja de firmar y la vista previa se firma de a una en `GET /items/{id}/preview-url` — no paginar más fino.
+2. **Ni clasificar ni descartar se pueden deshacer.** `classify_batch` escribe una versión nueva en `compliance_records`; `delete_item` marca `DISCARDED` **pero borra el blob de staging**. Así que el "deshacer en vez de confirmar" que se había aprobado no es implementable: descartar **confirma dentro de la barra** (nunca un modal) y clasificar se corrige por la HU-03.
+3. **El Sidebar tiene ~55 líneas de markup especializado para un solo grupo** (`Sidebar.tsx:139-186`, con `monitorOpen`/`monitorActiveHref`). Anidar `Bandeja` bajo Certificación obligaba a duplicarlas o a generalizar el Sidebar entero, así que **va al primer nivel** — que además es el patrón real (la bandeja de Gmail tampoco cuelga de un módulo).
+
+**Plan extendido** (`5fc6cd1`): Tasks 12-17 en el mismo documento, con el código completo. Las Tasks 5 y 7 quedaron marcadas como superadas donde corresponde, y el mock de `listTray` de la Task 10 se corrigió a `listQueue`.
+
 #### Próximo paso exacto
-1. [ ] **Tasks 5-8 del plan — la bandeja**: `TriageFileList` (lista con casillas y teclado: ↑↓ mover, espacio marcar, Delete descartar), `TriagePreview` (vista previa de uno / resumen de varios), `TriageClassifyForm` (aplica a N), `TriageWorkbench` (los tres paneles), `MoveToCarrierBar`. Al final se elimina `ClassifyDocumentModal.tsx`. **El plan tiene el código completo de cada componente y sus tests.**
-2. [ ] **Tasks 9-10** — descomponer `carriers/[id]/page.tsx` (971 líneas) extrayendo el tab Documentos, y devolverle la carga usando el mismo `TriageWorkbench` (criterio "una sola implementación" de la HU-04).
-3. [ ] **Task 11** — adaptar `mockups` y `qa-testing`: sus descripciones dicen "in suma-scout" y referencian rutas de ese proyecto.
-4. [ ] Click-through final: **elegir por SQL una empresa sin documentos cargados antes de abrir el navegador** (el plan trae la consulta), probar la clasificación en lote, el movimiento entre empresas y el recorrido sólo con teclado. Limpiar al terminar y confirmar con un conteo global.
-5. [ ] HU-05, HU-03 (mover documentos ya clasificados) y HU-06 siguen pendientes.
+1. [ ] **Task 12** — `GET /items` (cola global paginada, sin firmar) + `GET /items/{id}/preview-url`. **Verificar el SQL contra la base real vía MCP antes de confiar en los `AsyncMock`** — el plan trae la consulta.
+2. [ ] **Tasks 13-15** — cliente `listQueue`/`previewUrl`, `TriageFileTable` (reemplaza a `TriageFileList`) y `TriageBulkBar`.
+3. [ ] **Task 16** — reescribir `TriageWorkbench` sobre la cola global (`carrierId` pasa a **opcional**: sin empresa = bandeja, con empresa = ficha), la página `/dashboard/compliance/inbox` y el ítem de sidebar con contador.
+4. [ ] **Task 17** — retirar `UnclassifiedTray`, `ClassifyDocumentModal`, `GET /{carrier_id}/items` y `listTray`.
+5. [ ] **Tasks 9-10** — descomponer `carriers/[id]/page.tsx` (971 líneas) extrayendo el tab Documentos, y devolverle la carga con el mismo `TriageWorkbench` (criterio "una sola implementación" de la HU-04).
+6. [ ] **Task 11** — adaptar `mockups` y `qa-testing`: sus descripciones dicen "in suma-scout" y referencian rutas de ese proyecto. **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — revisar de paso.
+7. [ ] Click-through final: **elegir por SQL una empresa sin documentos cargados antes de abrir el navegador**. Probar rango con `⇧`, que la selección no cruce empresas, el lote, el movimiento y el recorrido sólo con teclado. Limpiar y confirmar con un conteo global.
+8. [ ] HU-05, HU-03 (mover documentos ya clasificados) y HU-06 siguen pendientes.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
