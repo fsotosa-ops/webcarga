@@ -6,17 +6,22 @@ import { Loader2, UploadCloud } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
-import { MoveToCarrierBar } from './MoveToCarrierBar'
+import { TriageBulkBar } from './TriageBulkBar'
 import { TriageClassifyForm } from './TriageClassifyForm'
-import { TriageFileList } from './TriageFileList'
+import { TriageFileTable } from './TriageFileTable'
 import { TriagePreview } from './TriagePreview'
 
 interface Props {
-  carrierId:   string
-  carrierName: string
+  /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
+   *  empresa (la ficha). Es una sola prop opcional, no dos modos. */
+  carrierId?:   string
+  carrierName?: string
 }
 
-/** La bandeja de trabajo: tres paneles, cero modales.
+const QUEUE_PAGE = 200
+
+/** La bandeja de trabajo: tabla, barra contextual y panel de detalle. Cero
+ *  modales.
  *
  *  Reemplaza al par panel + modal de clasificación, que costaba ~5 clics por
  *  documento. Acá el formulario aplica a todo lo marcado: con un archivo
@@ -28,20 +33,39 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [dragging, setDragging] = useState(false)
   const [errors, setErrors] = useState<{ file_name: string; error: string }[]>([])
+  const [notice, setNotice] = useState<string | null>(null)
 
-  const trayKey = ['ingest-tray', carrierId]
-  const trayQuery = useQuery({ queryKey: trayKey, queryFn: () => documentIngestApi.listTray(carrierId) })
-  const pendingQuery = useQuery({
-    queryKey: ['compliance-pending-carrier-panel', carrierId],
-    queryFn: () => complianceApi.listPending({ carrierId, limit: 200 }),
+  const queueKey = ['ingest-queue', carrierId ?? 'all']
+  const queueQuery = useQuery({
+    queryKey: queueKey,
+    queryFn: () => documentIngestApi.listQueue({ carrierId, limit: QUEUE_PAGE }),
   })
 
-  const items = trayQuery.data ?? []
-  const rows = pendingQuery.data?.rows ?? []
+  const rows = queueQuery.data?.rows ?? []
+  const total = queueQuery.data?.total ?? 0
+
+  // La empresa de la selección. El formulario aplica un requisito de UNA
+  // entidad, así que una selección que cruza empresas no tiene sentido: al
+  // marcar un archivo de otra empresa la selección se reemplaza.
+  const selectedCarrierId = useMemo(() => {
+    const sel = rows.filter(r => selectedIds.has(r.id))
+    if (!sel.length) return null
+    const first = sel[0].carrier_id
+    return sel.every(r => r.carrier_id === first) ? first : null
+  }, [rows, selectedIds])
+
+  const subjectCarrierId = selectedCarrierId
+    ?? (focusedId ? rows.find(r => r.id === focusedId)?.carrier_id ?? null : null)
+
+  const pendingQuery = useQuery({
+    queryKey: ['compliance-pending-carrier-panel', subjectCarrierId],
+    queryFn: () => complianceApi.listPending({ carrierId: subjectCarrierId!, limit: 200 }),
+    enabled: !!subjectCarrierId,
+  })
 
   const subjects = useMemo(() => {
     const seen = new Map<string, { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }>()
-    for (const r of rows) {
+    for (const r of pendingQuery.data?.rows ?? []) {
       const key = `${r.entity_type}:${r.entity_id}`
       if (!seen.has(key)) {
         seen.set(key, {
@@ -52,40 +76,97 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
       }
     }
     return Array.from(seen.values())
-  }, [rows])
+  }, [pendingQuery.data])
 
-  // Con nada marcado, el formulario opera sobre el archivo enfocado: así se
-  // clasifica de a uno sin obligar a marcar primero.
+  // Con nada marcado, el formulario opera sobre el archivo enfocado.
   const targetIds = selectedIds.size > 0
-    ? items.filter(i => selectedIds.has(i.id)).map(i => i.id)
+    ? rows.filter(r => selectedIds.has(r.id)).map(r => r.id)
     : (focusedId ? [focusedId] : [])
-  const previewItems = items.filter(i => targetIds.includes(i.id))
+
+  // La vista previa se firma de a una, al enfocar — firmar el listado entero
+  // es una llamada HTTP por archivo.
+  const previewQuery = useQuery({
+    queryKey: ['ingest-preview', focusedId],
+    queryFn: () => documentIngestApi.previewUrl(focusedId!),
+    enabled: !!focusedId && targetIds.length === 1,
+  })
+
+  const previewItems = rows
+    .filter(r => targetIds.includes(r.id))
+    .map(r => ({
+      id: r.id, file_name: r.file_name, mime_type: r.mime_type,
+      size_bytes: r.size_bytes, storage_path: r.storage_path,
+      match_status: r.match_status,
+      preview_url: r.id === focusedId ? previewQuery.data?.preview_url ?? null : null,
+    }))
 
   const uploadMutation = useMutation({
-    mutationFn: (files: File[]) => documentIngestApi.upload(carrierId, files),
-    onSuccess: res => { setErrors(res.errors); qc.invalidateQueries({ queryKey: trayKey }) },
+    mutationFn: (files: File[]) => documentIngestApi.upload(carrierId!, files),
+    onSuccess: res => { setErrors(res.errors); qc.invalidateQueries({ queryKey: queueKey }) },
   })
-  const removeMutation = useMutation({
-    mutationFn: (id: string) => documentIngestApi.remove(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: trayKey }),
+  const discardMutation = useMutation({
+    mutationFn: (ids: string[]) => Promise.all(ids.map(id => documentIngestApi.remove(id))),
+    onSuccess: (_r, ids) => {
+      setNotice(`${ids.length} descartados`)
+      clearSelection()
+      qc.invalidateQueries({ queryKey: queueKey })
+    },
   })
+
+  function clearSelection() {
+    setSelectedIds(new Set())
+    setFocusedId(null)
+  }
 
   function handleFiles(list: FileList | null) {
     const files = Array.from(list ?? [])
     if (files.length) uploadMutation.mutate(files)
   }
 
-  function handleApplied() {
-    setSelectedIds(new Set())
-    setFocusedId(null)
-    qc.invalidateQueries({ queryKey: trayKey })
-    qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', carrierId] })
+  function handleToggle(id: string, opts?: { range?: boolean }) {
+    setSelectedIds(prev => {
+      const rowCarrier = rows.find(r => r.id === id)?.carrier_id ?? null
+      const current = rows.filter(r => prev.has(r.id))
+      const crossesCarrier = current.length > 0 && current.some(r => r.carrier_id !== rowCarrier)
+
+      // Cruzar empresas reemplaza la selección en vez de sumarse.
+      if (crossesCarrier) return new Set([id])
+
+      if (opts?.range && focusedId) {
+        const a = rows.findIndex(r => r.id === focusedId)
+        const b = rows.findIndex(r => r.id === id)
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a]
+          const next = new Set(prev)
+          for (const r of rows.slice(lo, hi + 1)) {
+            if (r.carrier_id === rowCarrier) next.add(r.id)
+          }
+          return next
+        }
+      }
+
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setFocusedId(id)
+  }
+
+  function handleApplied(appliedIds: string[]) {
+    setNotice(`${appliedIds.length} clasificados · ${Math.max(total - appliedIds.length, 0)} restantes`)
+    clearSelection()
+    qc.invalidateQueries({ queryKey: queueKey })
+    qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', subjectCarrierId] })
     qc.invalidateQueries({ queryKey: ['compliance-pending'] })
+    qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
   }
 
   return (
     <div className="space-y-3">
-      {canEdit && (
+      {/* Subir exige una empresa: la cola global no sabe a quién atribuir el
+          archivo. Desde la ficha (con carrierId) siempre está disponible. */}
+      {canEdit && carrierId && (
         <label
           onDragOver={e => { e.preventDefault(); setDragging(true) }}
           onDragLeave={() => setDragging(false)}
@@ -112,34 +193,35 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
         <p key={e.file_name} className="text-[10px] text-red-500">{e.file_name}: {e.error}</p>
       ))}
 
-      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_240px] gap-3">
-        <div className="border border-border rounded-lg overflow-y-auto max-h-[52vh]">
-          {trayQuery.isPending ? (
+      {canEdit && (
+        <TriageBulkBar
+          selectedCount={selectedIds.size}
+          targetIds={targetIds}
+          currentCarrierId={selectedCarrierId}
+          onDiscard={() => discardMutation.mutate(targetIds)}
+          onClear={clearSelection}
+          onMoved={() => { setNotice('Documentos movidos'); clearSelection() }}
+        />
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-3">
+        <div className="border border-border rounded-lg overflow-y-auto max-h-[58vh]">
+          {queueQuery.isPending ? (
             <p className="text-[11px] text-gray-400 p-3 flex items-center gap-1.5">
               <Loader2 size={11} className="animate-spin" /> Cargando…
             </p>
           ) : (
-            <TriageFileList
-              items={items}
+            <TriageFileTable
+              rows={rows}
               focusedId={focusedId}
               selectedIds={selectedIds}
               onFocus={setFocusedId}
-              onToggle={id => setSelectedIds(prev => {
-                const next = new Set(prev)
-                if (next.has(id)) next.delete(id)
-                else next.add(id)
-                return next
-              })}
+              onToggle={handleToggle}
               onToggleAll={() => setSelectedIds(prev =>
-                prev.size === items.length ? new Set() : new Set(items.map(i => i.id)),
+                prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id)),
               )}
-              onDiscard={id => removeMutation.mutate(id)}
             />
           )}
-        </div>
-
-        <div className="border border-border rounded-lg p-3">
-          <TriagePreview items={previewItems} />
         </div>
 
         <div className="border border-border rounded-lg p-3 space-y-3">
@@ -148,17 +230,29 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
             subjects={subjects}
             onApplied={handleApplied}
           />
-          <MoveToCarrierBar
-            targetIds={canEdit ? targetIds : []}
-            currentCarrierId={carrierId}
-            onMoved={() => { setSelectedIds(new Set()); setFocusedId(null) }}
-          />
+          <TriagePreview items={previewItems} />
         </div>
       </div>
 
-      <p className="text-[10px] text-gray-400 font-mono">
-        ↑↓ mover · space marcar · ↵ aplicar · ⌫ descartar
-      </p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-[10px] text-gray-400 font-mono">
+          ↑↓ mover · space marcar · ⇧+click rango · ↵ aplicar
+        </p>
+        {rows.length < total && (
+          <p className="text-[10px] text-gray-400">
+            Mostrando {rows.length} de {total}
+          </p>
+        )}
+      </div>
+
+      {notice && (
+        <div className="inline-flex items-center gap-3 bg-gray-900 text-white text-[11px] rounded-lg px-3 py-1.5">
+          {notice}
+          <button type="button" onClick={() => setNotice(null)} className="opacity-70 hover:opacity-100">
+            Cerrar
+          </button>
+        </div>
+      )}
     </div>
   )
 }

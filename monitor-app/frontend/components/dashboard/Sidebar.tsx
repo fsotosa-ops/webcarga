@@ -6,9 +6,12 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
-  Truck, Building2, Users, LogOut,
+  Truck, Building2, Users, LogOut, Inbox,
   ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { documentIngestApi } from '@/lib/api/documentIngest'
 
 // "Operaciones" agrupa Monitor bajo un solo item expandible —
 // Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
@@ -26,11 +29,16 @@ const MONITOR_GROUP = {
   ],
 }
 
-const NAV_ITEMS = [
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; badge?: 'inbox' }[] = [
   { href: '/dashboard/carriers',       label: 'Empresas',      icon: Building2 },
   { href: '/dashboard/insurance',      label: 'Seguros',       icon: Shield },
   { href: '/dashboard/pricing',        label: 'Tarifario',     icon: Receipt },
   { href: '/dashboard/compliance',  label: 'Certificación', icon: BadgeCheck },
+  // La cola de sin clasificar es trabajo pendiente, no una vista del módulo:
+  // por eso va al mismo nivel y con contador. Anidarla bajo Certificación
+  // obligaba a duplicar las ~55 líneas del grupo Operaciones o a generalizar
+  // el Sidebar entero.
+  { href: '/dashboard/compliance/inbox', label: 'Bandeja', icon: Inbox, badge: 'inbox' },
 ]
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahí, se listan
@@ -77,6 +85,14 @@ export default function Sidebar({ role }: SidebarProps) {
     .map(i => i.href)
     .filter(href => pathname.startsWith(href))
     .sort((a, b) => b.length - a.length)[0]
+
+  // Cuánto trabajo hay esperando en la bandeja. Se pide con limit=1: de la
+  // respuesta solo interesa `total`.
+  const inboxCount = useQuery({
+    queryKey: ['ingest-queue-count'],
+    queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
+    staleTime: 60_000,
+  }).data?.total ?? 0
 
   useEffect(() => {
     if (localStorage.getItem('sidebar-collapsed') === 'true') setCollapsed(true)
@@ -187,7 +203,7 @@ export default function Sidebar({ role }: SidebarProps) {
             </div>
           )}
 
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {NAV_ITEMS.map(({ href, label, icon: Icon, badge }) => {
             const active = href === activeHref
             return (
               <Link
@@ -207,6 +223,11 @@ export default function Sidebar({ role }: SidebarProps) {
                 <Icon size={16} className={`shrink-0 ${active ? 'text-accent' : 'group-hover:text-white/70'}`} />
                 {!collapsed && (
                   <span className={`font-medium truncate ${active ? 'text-white' : ''}`}>{label}</span>
+                )}
+                {badge === 'inbox' && inboxCount > 0 && !collapsed && (
+                  <span className="ml-auto bg-red-500 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5">
+                    {inboxCount}
+                  </span>
                 )}
               </Link>
             )
