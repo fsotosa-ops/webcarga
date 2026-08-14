@@ -342,6 +342,47 @@ async def _apply_compliance_upload(
     return {"status": "APPROVED_MANUAL", **uploaded}
 
 
+async def _apply_stored_document(
+    conn, record_id: str, *, storage_path: str, file_name: str,
+    mime_type: str | None, size_bytes: int | None,
+    expiration_date: date | None, actor: str, entity_type: str, entity_id: str,
+    old_status: str,
+) -> None:
+    """Aplica a un compliance_record un archivo que YA está en storage.
+
+    Contraparte de _apply_compliance_upload para el flujo de la bandeja de sin
+    clasificar: ahí el archivo se sube antes de saber a qué requisito
+    pertenece, así que cuando se decide ya no hay un UploadFile que leer, solo
+    un storage_path. El efecto sobre el record es idéntico (mismo UPDATE,
+    misma auditoría) — no se duplica el blob, se referencia el existente.
+
+    Recibe `conn` en vez de `pool` porque el llamador ya está dentro de una
+    transacción (marcar el item y aplicar el documento tienen que ser atómicos).
+    """
+    metadata = {
+        "storage_path": storage_path, "file_name": file_name,
+        "mime_type": mime_type, "size_bytes": size_bytes,
+    }
+    await conn.execute(
+        """
+        UPDATE public.compliance_records SET
+            status = 'APPROVED_MANUAL',
+            file_url = $2,
+            metadata = $3::jsonb,
+            expiration_date = COALESCE($4, expiration_date),
+            updated_at = NOW()
+        WHERE id = $1
+        """,
+        record_id, storage_path, json.dumps(metadata), expiration_date,
+    )
+    await record_manual_edit(
+        conn, table="compliance_records", where={"id": record_id}, actor=actor,
+        entity_type=entity_type, entity_id=entity_id,
+        action="document_upload", field="status",
+        old_value=old_status, new_value="APPROVED_MANUAL",
+    )
+
+
 @router.post("/{record_id}/file", status_code=201)
 async def upload_compliance_file(
     record_id: str,
