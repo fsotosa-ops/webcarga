@@ -49,3 +49,22 @@ class ClassifyBody(BaseModel):
     entity_id: str
     requirement_id: str
     expiration_date: Optional[date] = None
+
+
+class ClassifyBatchBody(BaseModel):
+    """Aplica el mismo requisito a N archivos de la bandeja.
+
+    Con un item equivale a clasificar de a uno; con quince ahorra catorce
+    repeticiones de la misma elección.
+    """
+    item_ids: list[str]
+    entity_type: EntityType
+    entity_id: str
+    requirement_id: str
+    expiration_date: Optional[date] = None
+
+
+class MoveItemsBody(BaseModel):
+    """Reasigna archivos sin clasificar a otra empresa."""
+    item_ids: list[str]
+    carrier_id: str

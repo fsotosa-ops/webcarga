@@ -266,3 +266,97 @@ def test_delete_item_404_when_missing():
     res = client.delete("/api/v1/document-ingest/items/nope")
 
     assert res.status_code == 404
+
+
+# ── Operaciones en lote ────────────────────────────────────────────────────
+# Son las que hacen viable clasificar 2.000 documentos: el mismo requisito
+# aplicado a N archivos, y N archivos movidos de empresa en un solo statement.
+
+def test_classify_batch_applies_to_every_selected_item():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [
+        {"id": "i1", "storage_path": "s/1.png", "file_name": "1.png",
+         "mime_type": "image/png", "size_bytes": 9, "match_status": "UNMATCHED"},
+        {"id": "i2", "storage_path": "s/2.png", "file_name": "2.png",
+         "mime_type": "image/png", "size_bytes": 9, "match_status": "UNMATCHED"},
+    ]
+    conn.fetchrow.side_effect = [
+        _record_row(),
+        {"metadata": {}, "expiration_date": None},
+        {"metadata": {}, "expiration_date": None},
+    ]
+    conn.fetchval.return_value = False
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1", "i2"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["applied"] == ["i1", "i2"]
+
+
+def test_classify_batch_rejects_an_empty_selection():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": [], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 422
+
+
+def test_classify_batch_404_when_the_entity_lacks_that_requirement():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [
+        {"id": "i1", "storage_path": "s/1.png", "file_name": "1.png",
+         "mime_type": "image/png", "size_bytes": 9, "match_status": "UNMATCHED"},
+    ]
+    conn.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "no-existe"},
+    )
+
+    assert res.status_code == 404
+
+
+def test_move_items_reassigns_the_carrier_in_one_statement():
+    """Un solo UPDATE: mover 40 archivos en bucle serian 40 statements."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.execute.return_value = "UPDATE 3"
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/move",
+        json={"item_ids": ["i1", "i2", "i3"], "carrier_id": "c2"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["moved"] == 3
+    assert conn.execute.call_count == 1
+    assert "carrier_id" in conn.execute.call_args.args[0]
+
+
+def test_move_items_rejects_an_empty_selection():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.post("/api/v1/document-ingest/items/move",
+                      json={"item_ids": [], "carrier_id": "c2"})
+
+    assert res.status_code == 422

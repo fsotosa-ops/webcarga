@@ -9,6 +9,19 @@ export type ClassifyBody = {
 }
 
 /** Bandeja de documentos sin clasificar de una empresa (HU-01). */
+export type ClassifyBatchBody = {
+  item_ids:         string[]
+  entity_type:      'CARRIER' | 'DRIVER' | 'ASSET'
+  entity_id:        string
+  requirement_id:   string
+  expiration_date?: string
+}
+
+export type ClassifyBatchResult = {
+  applied: string[]
+  errors:  { item_id: string; error: string }[]
+}
+
 export const documentIngestApi = {
   upload: (carrierId: string, files: File[]) => {
     const form = new FormData()
@@ -26,6 +39,18 @@ export const documentIngestApi = {
       `/api/v1/document-ingest/items/${itemId}/classify`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
+
+  /** Aplica el mismo requisito a N archivos de una vez. */
+  classifyBatch: (body: ClassifyBatchBody) =>
+    apiFetch<ClassifyBatchResult>('/api/v1/document-ingest/items/classify-batch', {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+
+  /** Reasigna archivos sin clasificar a otra empresa. */
+  moveItems: (itemIds: string[], carrierId: string) =>
+    apiFetch<{ moved: number }>('/api/v1/document-ingest/items/move', {
+      method: 'POST', body: JSON.stringify({ item_ids: itemIds, carrier_id: carrierId }),
+    }),
 
   remove: (itemId: string) =>
     apiFetch<void>(`/api/v1/document-ingest/items/${itemId}`, { method: 'DELETE' }),

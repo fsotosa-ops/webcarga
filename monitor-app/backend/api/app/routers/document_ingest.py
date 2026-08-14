@@ -15,7 +15,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..routers.compliance import _apply_stored_document
-from ..schemas.document_ingest import ClassifyBody, IngestUploadResult, TrayItem
+from ..schemas.document_ingest import (
+    ClassifyBatchBody, ClassifyBody, IngestUploadResult, MoveItemsBody, TrayItem,
+)
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
 )
@@ -105,7 +107,7 @@ async def list_tray(
                i.storage_path, i.match_status
         FROM public.document_ingest_items i
         JOIN public.document_ingest_batches b ON b.id = i.batch_id
-        WHERE b.carrier_id = $1 AND i.match_status = 'UNMATCHED'
+        WHERE COALESCE(i.carrier_id, b.carrier_id) = $1 AND i.match_status = 'UNMATCHED'
         ORDER BY i.created_at
         """,
         carrier_id,
@@ -217,3 +219,108 @@ async def delete_item(
             )
     delete_document_version(supabase, item["storage_path"])
     return None
+
+
+@router.post("/items/classify-batch")
+async def classify_batch(
+    body: ClassifyBatchBody,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Aplica el mismo requisito a N archivos de la bandeja.
+
+    Es la operación que hace viable clasificar 2.000 documentos: con un archivo
+    seleccionado equivale a clasificar de a uno, con quince aplica a los quince
+    sin que la persona repita la elección.
+    """
+    if not body.item_ids:
+        raise HTTPException(422, "Se requiere al menos un documento")
+
+    applied: list[str] = []
+    errors: list[dict] = []
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            items = await conn.fetch(
+                "SELECT id::text, storage_path, file_name, mime_type, size_bytes, match_status "
+                "FROM public.document_ingest_items WHERE id = ANY($1::uuid[])",
+                body.item_ids,
+            )
+            if not items:
+                raise HTTPException(404, "Ningún documento encontrado en la bandeja")
+
+            record = await conn.fetchrow(
+                """
+                SELECT id::text, entity_id::text, entity_type, status, expiration_date
+                FROM public.compliance_records
+                WHERE entity_id = $1 AND requirement_id = $2 AND is_current = true
+                """,
+                body.entity_id, body.requirement_id,
+            )
+            if not record:
+                raise HTTPException(
+                    404,
+                    "Esa entidad no tiene ese requisito. Verificá la categoría y el tipo de documento.",
+                )
+
+            if body.expiration_date is None:
+                needs_date = await conn.fetchval(
+                    "SELECT COALESCE(has_expiration, false) "
+                    "FROM public.compliance_requirements WHERE id = $1",
+                    body.requirement_id,
+                )
+                if needs_date:
+                    raise HTTPException(422, "Este documento requiere fecha de vencimiento")
+
+            for item in items:
+                if item["match_status"] == "DISCARDED":
+                    errors.append({"item_id": item["id"], "error": "Fue eliminado de la bandeja"})
+                    continue
+                await _apply_stored_document(
+                    conn, record["id"],
+                    storage_path=item["storage_path"], file_name=item["file_name"],
+                    mime_type=item["mime_type"], size_bytes=item["size_bytes"],
+                    expiration_date=body.expiration_date, actor=user["sub"],
+                    entity_type=record["entity_type"], entity_id=record["entity_id"],
+                    old_status=record["status"],
+                )
+                applied.append(item["id"])
+
+            if applied:
+                await conn.execute(
+                    """
+                    UPDATE public.document_ingest_items SET
+                        match_status = 'COMMITTED',
+                        entity_type = $2, entity_id = $3, requirement_id = $4,
+                        compliance_record_id = $5, expiration_date = $6, updated_at = NOW()
+                    WHERE id = ANY($1::uuid[])
+                    """,
+                    applied, body.entity_type, body.entity_id, body.requirement_id,
+                    record["id"], body.expiration_date,
+                )
+
+    return {"applied": applied, "errors": errors}
+
+
+@router.post("/items/move")
+async def move_items(
+    body: MoveItemsBody,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Reasigna archivos sin clasificar a otra empresa.
+
+    Un solo UPDATE a propósito: mover cuarenta archivos en un bucle serían
+    cuarenta statements. No toca compliance_records — estos archivos todavía
+    no están aplicados a ningún requisito.
+    """
+    if not body.item_ids:
+        raise HTTPException(422, "Se requiere al menos un documento")
+
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE public.document_ingest_items SET carrier_id = $2, updated_at = NOW() "
+            "WHERE id = ANY($1::uuid[])",
+            body.item_ids, body.carrier_id,
+        )
+    return {"moved": int(str(result).rsplit(" ", 1)[-1])}
