@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ComponentProps } from 'react'
 import { TriageFileList } from './TriageFileList'
 
 const ITEMS = [
@@ -15,7 +16,7 @@ function setup(over: Record<string, unknown> = {}) {
     onFocus: vi.fn(), onToggle: vi.fn(), onToggleAll: vi.fn(), onDiscard: vi.fn(),
     ...over,
   }
-  render(<TriageFileList {...(props as never)} />)
+  render(<TriageFileList {...(props as unknown as ComponentProps<typeof TriageFileList>)} />)
   return props
 }
 
