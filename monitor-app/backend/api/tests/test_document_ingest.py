@@ -4,6 +4,7 @@ El archivo entra sin declarar a qué requisito pertenece y espera en staging
 hasta que una persona lo clasifica. La invariante que estos tests protegen:
 NADA toca public.compliance_records hasta la clasificación explícita.
 """
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
@@ -113,6 +114,95 @@ def test_list_tray_returns_only_unclassified_with_preview_url():
     assert res.status_code == 200
     assert res.json()[0]["preview_url"] == "https://x/y"
     assert "UNMATCHED" in pool.fetch.call_args.args[0]
+
+
+# ── Bandeja: la cola global ────────────────────────────────────────────────
+
+def _queue_row(item_id="i1", carrier_name="ACME S.A.", **over):
+    row = {
+        "id": item_id, "file_name": f"{item_id}.png", "mime_type": "image/png",
+        "size_bytes": 10, "storage_path": f"staging/b1/{item_id}.png",
+        "match_status": "UNMATCHED", "created_at": datetime(2026, 8, 14, tzinfo=timezone.utc),
+        "carrier_id": "c1", "carrier_name": carrier_name,
+        "confidence": None, "suggested_requirement_name": None, "candidate_count": 0,
+    }
+    row.update(over)
+    return row
+
+
+def test_list_queue_returns_total_and_carrier():
+    """La cola global agrupa por empresa, asi que cada fila trae la suya."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 2
+    pool.fetch.return_value = [_queue_row()]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/document-ingest/items")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total"] == 2
+    assert body["rows"][0]["carrier_name"] == "ACME S.A."
+
+
+def test_list_queue_does_not_sign_urls():
+    """Firmar en el listado es una llamada HTTP por archivo: con 2.000 no termina."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 1
+    pool.fetch.return_value = [_queue_row()]
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    res = client.get("/api/v1/document-ingest/items")
+
+    assert res.status_code == 200
+    supabase.storage.from_.assert_not_called()
+
+
+def test_list_queue_filters_by_carrier():
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/document-ingest/items?carrier_id=c1")
+
+    assert "c1" in pool.fetch.call_args.args
+
+
+def test_list_queue_without_carrier_passes_none():
+    """Sin empresa el filtro viaja como NULL, no como cadena vacia."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/document-ingest/items")
+
+    assert pool.fetch.call_args.args[1] is None
+
+
+def test_preview_url_is_signed_one_at_a_time():
+    pool = AsyncMock()
+    pool.fetchval.return_value = "staging/b1/foto.png"
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.create_signed_url.return_value = {"signedURL": "https://x/y"}
+    client = make_client(pool, supabase=supabase)
+
+    res = client.get("/api/v1/document-ingest/items/i1/preview-url")
+
+    assert res.status_code == 200
+    assert res.json()["preview_url"] == "https://x/y"
+
+
+def test_preview_url_404_when_missing():
+    pool = AsyncMock()
+    pool.fetchval.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/document-ingest/items/nope/preview-url")
+
+    assert res.status_code == 404
 
 
 # ── Bandeja: clasificar ────────────────────────────────────────────────────

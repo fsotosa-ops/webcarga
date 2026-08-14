@@ -17,6 +17,7 @@ from ..db import get_pool
 from ..routers.compliance import _apply_stored_document
 from ..schemas.document_ingest import (
     ClassifyBatchBody, ClassifyBody, IngestUploadResult, MoveItemsBody, TrayItem,
+    TrayPage,
 )
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
@@ -87,6 +88,78 @@ async def upload_to_tray(
             )
 
     return {"batch_id": batch_id, "items": items, "errors": errors}
+
+
+@router.get("/items", response_model=TrayPage)
+async def list_queue(
+    carrier_id: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """La cola global de documentos sin clasificar, agrupada por empresa.
+
+    Sin `carrier_id` devuelve la cola completa: una bandeja que obliga a elegir
+    una empresa antes de mostrar algo es un buscador, no una bandeja.
+
+    NO firma URLs. Firmar es una llamada HTTP a Storage por archivo, y con los
+    2.000 pendientes el request no termina. La vista previa se mira de a un
+    archivo por vez, así que se firma en /items/{id}/preview-url.
+    """
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+    where = """
+        WHERE i.match_status = 'UNMATCHED'
+          AND ($1::uuid IS NULL OR COALESCE(i.carrier_id, b.carrier_id) = $1::uuid)
+    """
+    total = await pool.fetchval(
+        f"""
+        SELECT count(*)
+        FROM public.document_ingest_items i
+        JOIN public.document_ingest_batches b ON b.id = i.batch_id
+        {where}
+        """,
+        carrier_id,
+    )
+    rows = await pool.fetch(
+        f"""
+        SELECT i.id::text, i.file_name, i.mime_type, i.size_bytes,
+               i.storage_path, i.match_status, i.created_at,
+               COALESCE(i.carrier_id, b.carrier_id)::text AS carrier_id,
+               c.business_name                            AS carrier_name,
+               i.confidence,
+               r.name                                     AS suggested_requirement_name,
+               jsonb_array_length(i.candidates)           AS candidate_count
+        FROM public.document_ingest_items i
+        JOIN public.document_ingest_batches b ON b.id = i.batch_id
+        LEFT JOIN public.carriers c
+               ON c.id = COALESCE(i.carrier_id, b.carrier_id)
+        LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
+        {where}
+        ORDER BY c.business_name NULLS LAST, i.created_at
+        LIMIT $2 OFFSET $3
+        """,
+        carrier_id, limit, offset,
+    )
+    return {"total": total or 0, "rows": [dict(r) for r in rows]}
+
+
+@router.get("/items/{item_id}/preview-url")
+async def get_preview_url(
+    item_id: str,
+    pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
+    _=Depends(get_current_user),
+):
+    """Firma la URL de un solo archivo, al enfocarlo en la bandeja."""
+    storage_path = await pool.fetchval(
+        "SELECT storage_path FROM public.document_ingest_items WHERE id = $1",
+        item_id,
+    )
+    if not storage_path:
+        raise HTTPException(404, "Documento no encontrado")
+    return {"preview_url": resolve_signed_url(supabase, storage_path)}
 
 
 @router.get("/{carrier_id}/items", response_model=list[TrayItem])

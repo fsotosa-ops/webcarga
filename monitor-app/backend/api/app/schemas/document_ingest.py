@@ -5,7 +5,7 @@ ningún compliance_record. Los campos de match (`confidence`, `match_evidence`,
 `candidates`) quedan vacíos en esta etapa: son los que llenará el agente de
 clasificación automática cuando llegue, sobre este mismo modelo.
 """
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel
@@ -31,6 +31,36 @@ class TrayItem(IngestItem):
     qué es cada archivo.
     """
     preview_url: Optional[str] = None
+
+
+class QueueRow(BaseModel):
+    """Fila de la cola global de sin clasificar.
+
+    Trae su empresa porque la cola las mezcla y la tabla se agrupa por ese
+    valor. Trae los campos de sugerencia porque el agente de clasificación los
+    va a llenar sobre este mismo contrato: la columna existe desde ahora para
+    no rehacer la pantalla cuando llegue.
+
+    NO trae `preview_url`: firmarla es una llamada HTTP a Storage por archivo
+    y el listado devuelve cientos. Se pide en /items/{id}/preview-url.
+    """
+    id: str
+    file_name: str
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    storage_path: str
+    match_status: MatchStatus
+    created_at: datetime
+    carrier_id: Optional[str] = None
+    carrier_name: Optional[str] = None
+    confidence: Optional[float] = None
+    suggested_requirement_name: Optional[str] = None
+    candidate_count: int = 0
+
+
+class TrayPage(BaseModel):
+    total: int
+    rows: list[QueueRow]
 
 
 class IngestUploadError(BaseModel):
