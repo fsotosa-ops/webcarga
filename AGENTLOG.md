@@ -1245,10 +1245,40 @@ Evidencia decisiva para la corrección: **8 de esos requisitos ya tienen `compli
 La HU-05 se actualizó con esto: la pantalla no es un CRUD de tipos de documento, es donde se declara **el fundamento** de cada exigencia (ley / cliente / condicional) y a quién aplica. La reclasificación del catálogo es decisión de negocio con base normativa — la HU entrega la herramienta, el contenido lo define Webcarga.
 
 #### Próximo paso exacto
-1. [ ] **Click-through en dev de HU-01 + HU-02** con una empresa real: arrastrar 2-3 archivos, clasificar uno con vista previa, verificar que sale de la bandeja y aparece en el requisito con su fecha. Ya no hay bloqueante: las tablas existen.
-2. [ ] **Implementar HU-05** (decisión del usuario: antes que HU-03/04/06) — CRUD de `compliance_requirements` con el fundamento de cada exigencia, para que Webcarga reclasifique los 37 requisitos desde la app en vez de por migración.
-3. [ ] **Fix de Mage** (`load_drivers_03.sql`, descomentar el `WHERE`) y recién después aplicar `20260814120000_dedupe_drivers_sin_rut.sql`. El pipeline sigue generando 2-3 conductores duplicados por día.
-4. [ ] Confirmar la nomenclatura del módulo (**"Red de Transporte"**, propuesto). HU-03, HU-04 y HU-06 siguen sin implementar.
+Todos cerrados en la Ronda 100, abajo.
+
+### 2026-08-14 (cont.) — Ronda 100: CERRADO el bug del pipeline de conductores + click-through en vivo
+
+**Fix aplicado en Mage** (`custom/load_drivers_03.sql`, vía `sync_local_to_remote`, `files_pushed: 1`, verificado leyendo el bloque desde remoto): se restauró el `WHERE` que descarta RUTs vacíos, con **tres mejoras** sobre el comentado original — se agregó el chequeo de `dv_conductor` (el `tax_id` se arma como `rut || '-' || dv`; si falta el DV también da NULL), `NULLIF(TRIM(...), '')` para cubrir NULL y cadena vacía en una sola expresión, y un comentario prominente explicando por qué el filtro no es opcional. Dry-run previo contra la base: 79 filas pasan el filtro, 0 con `tax_id` NULL.
+
+**Limpieza aplicada** (migración `dedupe_drivers_sin_rut`), con dry-run previo que confirmó que las 67 filas no tenían NINGUNA referencia (0 en `driver_assignments`, `app.trip_fleet_links`, `app.driver_day_status`, `vehicle_driver_assignments`):
+
+| | Antes | Después |
+|---|---|---|
+| `public.drivers` | 147 | **80** (79 con RUT + 1 sin) |
+| `compliance_records` de conductor | 1.764 | **960** |
+| `compliance_records` totales | 5.794 | **4.990** |
+
+**Red de seguridad verificada en vivo**: se creó `idx_drivers_sin_rut_nombre_unico` (único parcial sobre nombre normalizado cuando `tax_id IS NULL`) y se probó insertando un duplicado a propósito — lo bloqueó con `unique_violation`. Si alguien vuelve a comentar el filtro, el pipeline falla ruidosamente en vez de acumular basura durante semanas.
+
+**Click-through de HU-01 + HU-02 en staging con datos reales** — verificado: columna Vencimiento en la sábana, carga masiva de 4 archivos en un solo lote, la invariante de que nada toca `compliance_records` hasta clasificar, vista previa, desplegable poblado por el endpoint nuevo, **validación de fecha obligatoria disparada por la migración de `has_expiration` aplicada el mismo día**, y **"Clasificar y seguir"**: un archivo cubriendo dos requisitos apuntando al mismo blob, sin duplicarlo.
+
+**Bug encontrado y corregido gracias al click-through** (`cf1da75`): `_apply_stored_document` pisaba el archivo anterior **sin llamar a `log_document_replacement`**, a diferencia de `_apply_compliance_upload`. El blob viejo sobrevive (storage nunca sobrescribe) pero se perdía el puntero — hubo que listar el bucket a mano para restaurar un documento real que se pisó durante la prueba. Los 12 tests con mocks no lo detectaban.
+
+**Falso positivo descartado**: se reportó que la edición inline de fecha no guardaba. **Funciona** — el `PATCH` sale con 200 y persiste. La verificación era la equivocada: filtraba por `entity_id = carrier_id`, pero los requisitos editados eran de un vehículo, cuyo `entity_id` es el del asset.
+
+**Datos de prueba limpiados por completo**: 24 documentos con archivo, bandeja vacía, cero residuos.
+
+**Decisión de UX (con `ui-ux-pro-max`, recién instalada desde suma-scout junto a `mockups`, `frontend-patterns` y `qa-testing`)**: la interfaz actual de clasificación son **dos modales apilados, 8 pasos y ~5 clics por documento** — 10.000 clics para los 2.000 pendientes. Rompe *Bulk Actions* (*"editar de a uno es tedioso"*) y *Keyboard Navigation* (severidad alta). Se evaluaron 3 patrones y se eligió la **bandeja de trabajo con selección múltiple**: una sola superficie, sin modales; con un archivo marcado se clasifica ese, con quince el mismo formulario aplica a los quince. **La selección múltiple no necesita pantalla propia** — eso elimina la necesidad de una vista de planilla aparte. Comparativa con mockups en el artifact "Clasificar 2.000 documentos".
+
+**Gap detectado por el usuario y documentado en HU-03**: mover archivos **sin clasificar** entre empresas no lo cubría ninguna HU. `document_ingest_items` no tiene `carrier_id` propio, lo hereda del lote — hoy hay que borrarlos y volver a subirlos. Es el error más probable en el uso real: soltar 40 archivos en la empresa equivocada. Se resuelve como una acción en lote más dentro de la bandeja nueva. Las otras dos variantes de "mover" ya están resueltas: transferir un conductor/vehículo a otro carrier **ya funciona** (los documentos viajan con la entidad), y mover un documento ya clasificado es la HU-03.
+
+#### Próximo paso exacto
+1. [ ] **HU-01 revisada + HU-04 juntas** (decisión del usuario): rehacer la interfaz de clasificación como bandeja de trabajo con selección múltiple, ya en su lugar definitivo dentro del módulo unificado. La revisión de diseño está en `01-hu-carga-y-clasificacion-por-empresa.md`.
+2. [ ] Cubrir ahí la cuarta variante de "mover" (archivos sin clasificar entre empresas).
+3. [ ] Confirmar la nomenclatura del módulo (**"Red de Transporte"**, propuesto).
+4. [ ] Adaptar las descripciones de las skills `mockups` y `qa-testing`: dicen "in suma-scout" y referencian rutas de ese proyecto.
+5. [ ] HU-05 (administración de requisitos con el fundamento legal/cliente), HU-03 y HU-06 siguen pendientes.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
