@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CertificationCompanyPanel } from './CertificationCompanyPanel'
 import { complianceApi } from '@/lib/api/compliance'
+import { documentIngestApi } from '@/lib/api/documentIngest'
 import type { PendingComplianceRow } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({
@@ -12,6 +13,12 @@ vi.mock('@/lib/api/compliance', () => ({
 }))
 
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+
+vi.mock('@/lib/api/documentIngest', () => ({
+  documentIngestApi: {
+    listTray: vi.fn(), upload: vi.fn(), remove: vi.fn(), classify: vi.fn(),
+  },
+}))
 
 function makeRow(overrides: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
   return {
@@ -36,6 +43,12 @@ function renderPanel(carrierId: string | null, onClose = vi.fn()) {
 beforeEach(() => {
   vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({ total: 1, rows: [makeRow()] })
   vi.mocked(complianceApi.uploadFile).mockReset()
+  vi.mocked(documentIngestApi.listTray).mockReset().mockResolvedValue([
+    {
+      id: 'i1', file_name: 'IMG_4905.PNG', mime_type: 'image/png', size_bytes: 10,
+      storage_path: 's/x', match_status: 'UNMATCHED', preview_url: 'https://x/y',
+    },
+  ])
 })
 
 describe('CertificationCompanyPanel', () => {
@@ -121,5 +134,20 @@ describe('CertificationCompanyPanel', () => {
     await screen.findByText('Póliza de Seguro Vigente')
     fireEvent.click(screen.getByLabelText('Cerrar'))
     expect(onClose).toHaveBeenCalled()
+  })
+})
+
+describe('CertificationCompanyPanel — bandeja de sin clasificar (HU-01)', () => {
+  it('muestra los documentos sin clasificar de la empresa', async () => {
+    renderPanel('c1')
+    expect(await screen.findByText('IMG_4905.PNG')).toBeInTheDocument()
+    expect(screen.getByText(/1 sin clasificar/i)).toBeInTheDocument()
+  })
+
+  it('abre el modal de clasificacion al elegir un documento', async () => {
+    renderPanel('c1')
+    fireEvent.click(await screen.findByRole('button', { name: /clasificar/i }))
+
+    expect(await screen.findByRole('dialog', { name: /clasificar IMG_4905/i })).toBeInTheDocument()
   })
 })

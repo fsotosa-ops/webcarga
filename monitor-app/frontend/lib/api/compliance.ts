@@ -1,6 +1,6 @@
 import type {
   BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, DocumentVersion,
-  PendingComplianceListResponse,
+  PendingComplianceListResponse, RequirementOption,
 } from '@/lib/types'
 import { apiFetch } from './client'
 
@@ -38,13 +38,20 @@ export const complianceApi = {
       method: 'PATCH', body: JSON.stringify(body),
     }),
 
-  uploadFile: (id: string, file: File) => {
+  uploadFile: (id: string, file: File, expirationDate?: string) => {
     const form = new FormData()
     form.append('file', file)
+    if (expirationDate) form.append('expiration_date', expirationDate)
     return apiFetch<ComplianceFileUploadResult>(`/api/v1/compliance-records/${id}/file`, {
       method: 'POST', body: form,
     })
   },
+
+  /** Catalogo de tipos de documento, para el desplegable de clasificacion. */
+  listRequirements: (targetEntity?: 'CARRIER' | 'DRIVER' | 'ASSET') =>
+    apiFetch<RequirementOption[]>(
+      `/api/v1/compliance-requirements${targetEntity ? `?target_entity=${targetEntity}` : ''}`,
+    ),
 
   listFiles: (id: string) =>
     apiFetch<DocumentVersion[]>(`/api/v1/compliance-records/${id}/files`),

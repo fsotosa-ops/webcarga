@@ -1201,3 +1201,36 @@ export type StatusReport = {
     por_cliente: { client_name: string; assigned: number }[]
   }
 }
+
+// ── Bandeja de documentos sin clasificar (HU-01) ──────────────────────────
+// Un item es un archivo ya subido que todavia no pertenece a ningun
+// compliance_record. Los campos de match quedan vacios en esta etapa: son los
+// que llenara el agente de clasificacion automatica cuando llegue.
+
+export type IngestMatchStatus =
+  | 'AUTO' | 'SUGGESTED' | 'AMBIGUOUS' | 'UNMATCHED' | 'COMMITTED' | 'DISCARDED'
+
+export type TrayItem = {
+  id:           string
+  file_name:    string
+  mime_type:    string | null
+  size_bytes:   number | null
+  storage_path: string
+  match_status: IngestMatchStatus
+  preview_url:  string | null
+}
+
+export type IngestUploadResult = {
+  batch_id: string
+  items:    TrayItem[]
+  errors:   { file_name: string; error: string }[]
+}
+
+export type RequirementOption = {
+  id:                string
+  target_entity:     'CARRIER' | 'DRIVER' | 'ASSET'
+  requirement_code:  string
+  name:              string
+  requirement_level: 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
+  has_expiration:    boolean
+}
