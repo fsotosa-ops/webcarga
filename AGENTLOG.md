@@ -1199,9 +1199,37 @@ Evidencia decisiva para la corrección: **8 de esos requisitos ya tienen `compli
 `52fde63` — migración `20260814140000_fix_has_expiration_catalog.sql` **escrita, NO aplicada**, en dos grupos: **Grupo 1 (8)** confirmados por evidencia; **Grupo 2 (11)** por vigencia legal chilena, marcados explícitamente para **validar con Pablo/Fabián** antes de aplicar. Excluidos por dudosos: `CAPACITACION_EPP`, `ENTREGA_EPP`, `CERTIFICADO_GPS`, `CONTRATO_TRABAJO`. Dry-run verificado: los 19 códigos resuelven, el catálogo pasaría de 2 a 21 requisitos con vencimiento; no toca ningún `compliance_record`.
 
 #### Próximo paso exacto
-1. [ ] **Validar con Pablo/Fabián el Grupo 2** de `20260814140000_fix_has_expiration_catalog.sql` (cuáles documentos vencen es decisión de negocio) y aplicar la migración.
-2. [ ] **Implementar HU-01** — Tasks 5-11 del plan: bandeja de sin clasificar (migración simplificada, endpoints de ingesta, dropzone, clasificación con vista previa). Requiere aplicar `20260814130000_document_ingest_model.sql`, sin la cual los endpoints nuevos fallan contra la base real.
-3. [ ] Pendientes heredados de la Ronda 97: fix de Mage (`load_drivers_03.sql`) y las otras 3 migraciones sin aplicar.
+**HU-01 también implementada, misma sesión** — ver el bloque de cierre abajo.
+
+### 2026-08-14 (cont.) — Ronda 99 (cierre): HU-01 implementada — bandeja de documentos sin clasificar
+
+**Plan ejecutado completo**: las 11 tareas de `docs/superpowers/plans/2026-08-14-certificacion-carga-y-fechas.md`, inline y con TDD. 11 commits en `dev`.
+
+**Backend** (`bae13ba`, `e3577be`):
+- `app/routers/document_ingest.py` + `app/schemas/document_ingest.py` — `POST /{carrier_id}/files` (hasta 50 archivos, éxito parcial), `GET /{carrier_id}/items` (solo UNMATCHED, con `preview_url` firmada), `POST /items/{id}/classify`, `DELETE /items/{id}` (marca DISCARDED y borra el blob de staging).
+- `_apply_stored_document` en `compliance.py` — contraparte de `_apply_compliance_upload` para un archivo **que ya está en storage**: en la bandeja el archivo se sube antes de saber a qué requisito va, así que al clasificar ya no hay `UploadFile` que leer. Mismo UPDATE y misma auditoría; **no duplica el blob, lo referencia**.
+- **Invariante protegida por test**: nada toca `compliance_records` hasta la clasificación explícita.
+- **Un item COMMITTED se puede volver a clasificar** — es el caso del PDF unificado que Pablo mostró en pantalla (padrón + permiso + revisión en un archivo). Solo DISCARDED da 409.
+- Clasificar **busca** el `compliance_record` por `(entity_id, requirement_id)`, no lo crea: ya lo sembró el template.
+
+**Frontend** (`7a5804b`):
+- `UnclassifiedTray.tsx` (6 tests) — dropzone + lista de pendientes de clasificar, con errores del backend visibles y gating por `canEdit`.
+- `ClassifyDocumentModal.tsx` (6 tests) — vista previa (imagen o iframe) + sujeto + tipo + fecha. Botón **"Clasificar y seguir"** para el PDF unificado, que limpia solo el tipo y mantiene archivo y sujeto.
+- `CertificationCompanyPanel.tsx` — monta la bandeja arriba de los pendientes y el modal al final; `subjects` se derivan de las filas ya cargadas (sin consulta extra).
+- `lib/api/documentIngest.ts` + tipos.
+
+**Verificado**: backend **524 passed** (12 nuevos), frontend **738 passed** (14 nuevos), `tsc --noEmit` limpio, `npm run build` exitoso.
+
+**Dos bugs propios detectados y corregidos durante la ejecución**: un `useMemo` que quedó detrás de un early return (violación de las reglas de hooks), y dos tests que fallaban por mocks mal armados (`conn.fetchval` truthy por defecto simulando `has_expiration=true`; y un `fireEvent.change` sobre un `<select>` cuyas opciones aún no habían cargado, que React descarta en silencio).
+
+**Validación del catálogo al cierre** (pedida por el usuario): la migración `20260814140000_fix_has_expiration_catalog.sql` sigue **sin aplicar**, y el estado en la base es el mismo que al detectarla — 2 correctos (`SEGURO_CARGA`, `INSURANCE_POLICY`), 8 del Grupo 1 y 11 del Grupo 2 todavía en `false`.
+
+#### Próximo paso exacto
+1. [ ] **Aplicar `20260814130000_document_ingest_model.sql` + su seed de alias.** Sin esas tablas la bandeja no funciona contra la base real: los tests pasan con mocks, pero los endpoints nuevos fallarían. Es el bloqueante para probar HU-01 en vivo.
+2. [ ] **Validar con Pablo/Fabián el Grupo 2** de `20260814140000_fix_has_expiration_catalog.sql` (11 requisitos; cuáles vencen es decisión de negocio). El Grupo 1 (8) no necesita validación: los usuarios ya les cargaron fecha en producción.
+3. [ ] Click-through en dev de HU-01 + HU-02 con una empresa real (2-3 archivos, clasificar uno, verificar que sale de la bandeja y aparece en el requisito con su fecha).
+4. [ ] Pendientes heredados de la Ronda 97: fix de Mage (`load_drivers_03.sql`) y las otras migraciones sin aplicar.
+5. [ ] Revisar la épica y las 6 HUs; confirmar la nomenclatura del módulo (**"Red de Transporte"**, a confirmar). HU-03 a HU-06 siguen sin implementar.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
