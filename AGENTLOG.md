@@ -1117,6 +1117,92 @@ La evidencia calzó sin una sola excepción en los 10 viajes más recientes: `IA
 
 Plan completo: `/Users/usuario/.claude/plans/viajes-de-iansa-no-refactored-mochi.md` (local, no versionado).
 
+### 2026-08-14 — Ronda 97: carga masiva de documentos con match automático (Certificación) — Fases 0-2 hechas, 3-4 pendientes
+
+**Origen**: pedido del usuario — poder cargar documentos masivamente en Certificación con match automático a empresa/conductor/vehículo, más la pregunta de fondo *"¿cuál es el estándar de la industria y cómo se logra ese match?"*. Se armó vía `superpowers:brainstorming` (clasificado arquitectural) → plan aprobado (`~/.claude/plans/feature-de-carga-masiva-ethereal-sunset.md`, local).
+
+**Respuesta de arquitectura**: el estándar es un *inbox con cascada de matching y confirmación humana* — staging donde nada toca `compliance_records`, motor que puntúa confianza, auto-commit solo con identificador fuerte + candidato único, y bandeja para lo que no matchea. Decidido con el usuario: **sin IA en v1**, instrumentado para decidir después con datos reales del propio backfill.
+
+**Evidencia medida que definió el diseño** (contra `webcarga-core-db` y SharePoint reales, no estimada):
+- 5.794 `compliance_records`, **solo 24 con archivo**. En las 39 empresas ACTIVE (alcance acordado): **2.368 pendientes** (424 empresa / 939 conductor / 1.005 vehículo).
+- **2.094 archivos** esperando en SharePoint, **todos planos** en la raíz de "Documentos compartidos" — sin jerarquía. La ruta no aporta señal hoy.
+- El nombre de archivo predice el **tipo** (~70%) pero casi nunca la **entidad** (1 de 24 traía RUT). Son `.jpeg` sin capa de texto. Patrón dominante `{TIPO} {Nombre Apellido}`, con typos reales (`Abrhama`/`Abraham`) y nombres de pila sueltos (`Felipe`).
+- `Estatus_Cumplimiento_Gobernanza_Dropdowns.xlsx` **no sirve como manifiesto**: son estados de cumplimiento, no un mapeo archivo→entidad, y está congelado desde 2026-05-29.
+
+**BUG REAL ENCONTRADO Y DIAGNOSTICADO (Fase 0)** — `custom/load_drivers_03.sql` en Mage (pipeline `legacy_drivers_transporters`): el `WHERE` que descarta RUTs vacíos **está comentado** (líneas 14-16). Hay 1 fila en `bronze.raw_centralizer_drivers` con nombre pero sin `rut_conductor`; para ella `tax_id = NULL || '-' || dv` → NULL, y `ON CONFLICT (tax_id)` no dispara con NULL. Resultado: **68 de las 147 filas de `public.drivers` son la misma persona duplicada**, con 2-3 altas nuevas por día (schedule cada 6h: 00:01/06:01/12:01/18:01), arrastrando **816 `compliance_records` fantasma** vía `load_compliance_records_08`. Los 68 son huérfanos totales (0 asignaciones, 0 `trip_fleet_links`, 0 `audit_log`), por eso no ensucian la sábana. Descartados por evidencia: backend (`POST /drivers` exige tax_id y audita), triggers y funciones de DB. Gotcha confirmado: `rut_conductor` viene como float serializado (`"13858540.0"`).
+
+**Entregado (nada aplicado a producción, todo escrito y verificado)**:
+1. `migrations/20260814120000_dedupe_drivers_sin_rut.sql` — dry-run contra prod: borra 67 drivers + 804 records, conserva 1 + sus 12, deja `public.drivers` en 80 filas. Incluye índice único parcial preventivo. **El fix de Mage va ANTES** (si no, el índice rompe el pipeline en cada corrida). El `tax_id` NO se puede completar: el conductor tampoco tiene RUT en bronze.
+2. `migrations/20260814130000_document_ingest_model.sql` — `document_ingest_batches`, `document_ingest_items` (con `content_sha256` para idempotencia, `match_evidence`/`candidates` jsonb, contadores de instrumentación), `requirement_filename_aliases`.
+3. `migrations/20260814130100_seed_requirement_filename_aliases.sql` — 79 alias derivados de nombres reales. Verificado: los 37 `requirement_code` resuelven, ningún requisito queda sin alias.
+4. `app/services/document_matcher.py` + 12 tests vía TDD estricto (RED verificado en cada ciclo). Función **pura sin I/O** — decisión deliberada por el precedente de bugs que los `AsyncMock` no detectaron. Cascada: manifiesto (1.0) → RUT con DV módulo 11 (0.95) → patente contra diccionario cerrado (0.95) → alias por prioridad → fuzzy de nombre (0.60-0.89, nunca auto-commit). `classify_match` → AUTO/SUGGESTED/AMBIGUOUS/UNMATCHED. **507 passed**, sin regresiones.
+
+**Decisiones de arquitectura tomadas con el usuario**:
+- Estructura canónica de directorio (de `monitor-app/docs/user-stories/20260814/carga-masiva-compliance.md`): `compliance/carriers/{RUT} - {Nombre}/{empresa|drivers/{RUT}|vehicles/{PATENTE}}/`. Nivel **carrier** (no shipper), clave **RUT** (no nombre), carpeta explícita `empresa/`. `vehicles/` es hermano de `drivers/`.
+- **El árbol no es prerrequisito manual: es el producto del primer backfill.** La app propone la ruta de cada archivo, un humano confirma, y recién ahí se escribe el árbol y se aplican los records.
+- Destino **Supabase Storage**, con SharePoint en convivencia temporal y **apagado al final**. La sync es one-way y descartable — no invertir en reconciliación bidireccional.
+- Alias como **catálogo en tabla**, no hardcodeados (mismo criterio que HU-18-24).
+
+#### Próximo paso exacto
+**Superado parcialmente por la Ronda 98** (ver abajo): las Fases 3 y 4 se redefinieron a partir de la reunión del 14/08. El motor de match y las 3 migraciones se conservan; el matcher **no se cablea** en la etapa actual.
+1. [ ] **Fix de Mage** (`load_drivers_03.sql`, descomentar el WHERE) — pendiente de decisión del usuario; el proyecto está sincronizado en el scratchpad de la sesión.
+2. [ ] Aplicar las 3 migraciones (el usuario pidió explícitamente escribirlas sin aplicar). El fix de Mage va ANTES de la de dedupe.
+
+### 2026-08-14 (cont.) — Ronda 98: reunión con Pablo/Fabián redefine el alcance — épica "Red de Transporte" + 6 HUs escritas
+
+**Origen**: pedido del usuario de analizar la reunión Webcarga 2.0 del 2026-08-14 (Pablo Abumohor, Fabián Méndez, Felipe Soto) y el requerimiento de ordenar las certificaciones, con la hipótesis de que *"se ve más simple de lo que estábamos haciendo"*. Confirmada: lo pedido es más simple, y el match automático quedó explícitamente como etapa posterior.
+
+**Lo que dijo la reunión** (transcripción de Granola, citas textuales en los documentos):
+- Pablo sobre por qué el módulo no se adopta: *"si le digo a la Karen 'úsalo', se va a volver loca […] tenés una empresa, **no veo la parte cargar**"*. El síntoma es de navegación, no de funcionalidad.
+- El flujo que sí usaría: crear empresa → arrastrar documentos → quedan **"sin clasificar"** por empresa → vista previa → clasificar a mano. *"Ahí lo dejé cargado y yo fui agregando la subcategoría a mano."*
+- Sobre el backfill: *"subir toda la documentación no tiene sentido, es mucha pega y es imposible, más encima la mayoría debería estar vencida. **Lo que sí haría es subir de alguna forma las fechas**"*.
+- Match automático acordado como etapa posterior: Felipe *"lo que vos estás diciendo es el primer paso, la etapa cero"* → Pablo *"Sí, tal cual."*
+
+**Decisiones del usuario** (vía `AskUserQuestion`, 2 rondas): todo unificado **dentro de la app** con drag & drop y clasificación en la misma pantalla, sin ida y vuelta a Excel (*"así no se hace doble trabajo"*); **grilla editable** en vez del Excel que Pablo prefería; **un módulo, dos superficies** (registro + bandeja); **Seguros entra en la navegación pero NO se fusiona el modelo de datos**; **template de requisitos configurable** desde administración; entrega como **épica + HUs hijas**.
+
+**Hallazgos verificados contra la base y el código** (varios corrigen supuestos previos):
+- **Los documentos ya viajan con la entidad**: `compliance_records.entity_id` apunta al conductor/vehículo y **no existe columna `carrier_id`**. Transferir un conductor conserva sus documentos intactos — confirmado sobre la transferencia real ya ejecutada (1 conductor, asignación previa cerrada, 0 entidades en dos empresas a la vez). Lo que falta es reasignar un archivo mal cargado, que hoy sólo se puede resolver con `DELETE` (borra el blob).
+- **La ficha de empresa ya es un 360** (6 tabs). No hay que construirla: la Ronda 88 le amputó la carga y hay que devolvérsela.
+- **El puente Seguros↔Compliance ya existe y ya tiene drift**: `INSURANCE_POLICY` es un `compliance_requirement` con 248 records; 23 empresas tienen póliza real pero sólo 22 records aprobados → **1 empresa con póliza vigente figura como MISSING** (4% de drift con sólo 33 pólizas).
+- **El template es código, no dato**: cero endpoints de escritura sobre `compliance_requirements`, cero UI. **33 de los 37 `requirement_code` no están en el repo** (cargados directo a la base).
+- **Bug latente de `shipper_id`**: `reconcile_new_carrier` filtra por `shipper_id IS NULL`, pero `reconcile_new_driver`/`_asset` **no**. Un requisito de conductor para un cliente puntual se sembraría a los 147 conductores. Hoy inofensivo (el único shipper con requisitos propios los tiene todos a nivel CARRIER).
+- *Falso positivo descartado*: un subagente reportó que `ON CONFLICT (driver_id, carrier_id)` no tenía índice único de respaldo. **Verificado contra la base: existe** (`driver_assignments_driver_carrier_key`), aunque entró fuera de las migraciones del repo.
+
+**Entregado** — 7 documentos (1.374 líneas) en `monitor-app/docs/user-stories/20260814/`, enlaces internos verificados y sin PII:
+`00-epica-red-de-transporte.md` (visión, estándar de industria, decisiones, mapa de HUs, deuda), `01-hu-carga-y-clasificacion-por-empresa.md` (**máxima prioridad**, el pedido literal), `02-hu-fechas-sin-archivo.md`, `03-hu-reasignar-documento.md`, `04-hu-modulo-unificado.md`, `05-hu-administracion-de-requisitos.md`, `06-hu-seguros-proyectado-a-compliance.md`.
+
+**Decisión de arquitectura central**: el estándar de la industria (ISNetworld, Avetta, Veriforce; Samsara, Fleetio) no organiza por módulo-por-concepto sino en dos superficies — **Registro** (ficha 360) y **Bandeja de trabajo** (cola transversal) — con la carga de documentos como **capacidad**, no como módulo. Y la razón de fondo para que la clasificación manual viva en la app: **es exactamente la operación que después ejecutará el agente**, así que el agente futuro sólo pre-llena los mismos campos sobre la misma pantalla.
+
+**Revierte deliberadamente** dos decisiones de la Ronda 89 (`docs/superpowers/specs/2026-08-04-certificacion-por-empresa-design.md`): que el drill-down profundo seguiría exclusivamente en Empresas, y que Certificación no editaría perfil. **Se mantiene** la de no fusionar el modelo de datos de Seguros.
+
+#### Próximo paso exacto
+**HU-02 implementada y commiteada en la Ronda 99** (ver abajo).
+1. [ ] Revisar la épica y las 6 HUs; confirmar la nomenclatura del módulo (**"Red de Transporte"** propuesto, marcado como a confirmar).
+2. [ ] Pendientes heredados de la Ronda 97: fix de Mage y aplicación de las 3 migraciones.
+
+### 2026-08-14 (cont.) — Ronda 99: HU-02 implementada (vencimientos sin archivo) + bug real del catálogo `has_expiration`
+
+**Origen**: ejecución inline del plan `docs/superpowers/plans/2026-08-14-certificacion-carga-y-fechas.md` (escrito con `superpowers:writing-plans`, 11 tareas TDD para HU-01 + HU-02). Se completaron las **Tasks 1-4 = HU-02 entera**; HU-01 (Tasks 5-11, bandeja de sin clasificar) queda pendiente.
+
+**Implementado, todo vía ciclo RED→GREEN verificado** (5 commits en `dev`):
+1. `e4c24eb` — **`_apply_compliance_upload` persiste `expiration_date`** con `COALESCE($4, expiration_date)`. Corrige el bug de fondo: un documento cargado quedaba con la fecha en NULL y, como `/pending` filtra por `status`, desaparecía de pendientes para siempre. `COALESCE` preserva la fecha ya declarada cuando el upload no trae una.
+2. `6f60405` — **`GET /compliance-requirements`** (router aparte `requirements_router`, registrado en `main.py`). El catálogo existía desde el inicio y ningún endpoint lo listaba. Verificado contra la base: 37 requisitos (15 CARRIER / 12 DRIVER / 10 ASSET).
+3. `b2e3298` — **`ExpirationDateCell.tsx`** — celda editable en línea, 4 tests, incluido el de regresión del bug de draft sin resincronizar (clase ya vista 3 veces en este frontend: el botón que ABRE edición resetea desde el prop).
+4. `b2a8897` — vencimiento **editable en el panel de empresa** y **visible en la sábana** (`PendingDocumentsTable`, columna nueva). El campo ya venía en el payload de `/pending` y no se renderizaba. Se gateó con `useCanEdit()`, que **ningún componente de Certificación usaba** — un viewer veía los botones y recibía 403.
+
+**Verificado**: backend **512 passed** (5 nuevos), frontend **724 passed** (6 nuevos), `tsc --noEmit` limpio, `npm run build` exitoso. Regresión propia detectada y corregida en el camino: `useCanEdit` instancia el cliente de Supabase y rompió los 12 tests de `certification/page.test.tsx` hasta agregar el mock del hook.
+
+**BUG REAL ENCONTRADO al verificar contra la base** (no estaba en el plan ni lo pidió la reunión): **35 de los 37 requisitos tenían `has_expiration = false`**, incluidos `LICENCIA_CONDUCIR`, `REVISION_TECNICA`, `SOAP` y `PERMISO_CIRCULACION`. Solo `SEGURO_CARGA` e `INSURANCE_POLICY` estaban bien. La columna existe desde la migración inicial y **ningún query del backend la leía**, así que el dato incorrecto nunca molestó — hasta ahora, que es la que decide si se exige la fecha al cargar.
+
+Evidencia decisiva para la corrección: **8 de esos requisitos ya tienen `compliance_records` con `expiration_date` cargada a mano por usuarios en producción**, o sea el dato real contradice al catálogo. No hizo falta opinar sobre ellos.
+
+`52fde63` — migración `20260814140000_fix_has_expiration_catalog.sql` **escrita, NO aplicada**, en dos grupos: **Grupo 1 (8)** confirmados por evidencia; **Grupo 2 (11)** por vigencia legal chilena, marcados explícitamente para **validar con Pablo/Fabián** antes de aplicar. Excluidos por dudosos: `CAPACITACION_EPP`, `ENTREGA_EPP`, `CERTIFICADO_GPS`, `CONTRATO_TRABAJO`. Dry-run verificado: los 19 códigos resuelven, el catálogo pasaría de 2 a 21 requisitos con vencimiento; no toca ningún `compliance_record`.
+
+#### Próximo paso exacto
+1. [ ] **Validar con Pablo/Fabián el Grupo 2** de `20260814140000_fix_has_expiration_catalog.sql` (cuáles documentos vencen es decisión de negocio) y aplicar la migración.
+2. [ ] **Implementar HU-01** — Tasks 5-11 del plan: bandeja de sin clasificar (migración simplificada, endpoints de ingesta, dropzone, clasificación con vista previa). Requiere aplicar `20260814130000_document_ingest_model.sql`, sin la cual los endpoints nuevos fallan contra la base real.
+3. [ ] Pendientes heredados de la Ronda 97: fix de Mage (`load_drivers_03.sql`) y las otras 3 migraciones sin aplicar.
+
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual. (Ver también los 4 pendientes nuevos de la Ronda 95, arriba.)
