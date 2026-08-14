@@ -134,7 +134,7 @@ export function TransporterDocumentsPanel({ records, carrierId }: Props) {
           {records.length === 0 ? 'Sin datos' : `${approvedCount} de ${records.length} completos`}
         </p>
         <Link
-          href={`/dashboard/certification?carrier_id=${carrierId}`}
+          href={`/dashboard/compliance?carrier_id=${carrierId}`}
           className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent/80 transition-colors"
         >
           Subir en Certificación <ExternalLink size={11} />

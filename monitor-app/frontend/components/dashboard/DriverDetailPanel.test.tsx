@@ -86,7 +86,7 @@ describe('DriverDetailPanel', () => {
     renderPanel(DRIVER)
     await waitFor(() => expect(screen.getByText('EPP')).toBeInTheDocument())
     expect(screen.getByRole('link', { name: /Subir en Certificación/ })).toHaveAttribute(
-      'href', '/dashboard/certification?carrier_id=c1',
+      'href', '/dashboard/compliance?carrier_id=c1',
     )
   })
 

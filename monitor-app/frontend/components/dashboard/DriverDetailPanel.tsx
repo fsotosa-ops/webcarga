@@ -247,7 +247,7 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentación</p>
               <Link
-                href={`/dashboard/certification?carrier_id=${carrierId}`}
+                href={`/dashboard/compliance?carrier_id=${carrierId}`}
                 className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent/80 transition-colors"
               >
                 Subir en Certificación <ExternalLink size={11} />

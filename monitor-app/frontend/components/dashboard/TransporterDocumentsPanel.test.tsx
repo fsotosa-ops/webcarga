@@ -39,7 +39,7 @@ describe('TransporterDocumentsPanel', () => {
   it('links out to Certificación, scoped to this carrier, instead of offering to upload here', () => {
     render(<TransporterDocumentsPanel records={RECORDS} carrierId="c1" />)
     const link = screen.getByRole('link', { name: /Subir en Certificación/ })
-    expect(link).toHaveAttribute('href', '/dashboard/certification?carrier_id=c1')
+    expect(link).toHaveAttribute('href', '/dashboard/compliance?carrier_id=c1')
     expect(screen.queryByRole('button', { name: /Subir documento/ })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^Estado de/)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^Fecha de vencimiento de/)).not.toBeInTheDocument()

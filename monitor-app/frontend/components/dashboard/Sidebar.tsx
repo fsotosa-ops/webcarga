@@ -30,7 +30,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/carriers',       label: 'Empresas',      icon: Building2 },
   { href: '/dashboard/insurance',      label: 'Seguros',       icon: Shield },
   { href: '/dashboard/pricing',        label: 'Tarifario',     icon: Receipt },
-  { href: '/dashboard/certification',  label: 'Certificación', icon: BadgeCheck },
+  { href: '/dashboard/compliance',  label: 'Certificación', icon: BadgeCheck },
 ]
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahí, se listan
