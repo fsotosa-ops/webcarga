@@ -48,7 +48,7 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
   return (
     <div className="space-y-2">
       <p className="text-[11px] font-semibold text-gray-600">
-        Le falta {rows.length === 1 ? '1 documento' : `${rows.length} documentos`}
+        {rows.length === 1 ? 'Le falta 1 documento' : `Le faltan ${rows.length} documentos`}
       </p>
 
       <div className="max-h-56 overflow-y-auto -mx-1 px-1 space-y-2">
