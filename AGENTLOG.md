@@ -1599,6 +1599,142 @@ el contenedor, que existe desde el primer render, en vez del contenido.
    pares de sinónimos que el loader absorbe en silencio. Otro workstream.
 7. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
 
+### 2026-08-15 (cont.) — Ronda 113: Tramo 3 — la regla de a quién se le exige cada documento deja de ser código y pasa a ser dato
+
+**6 tareas del plan + 2 arreglos de la revisión de rama, 15 commits en `dev`.** Backend **624
+tests**, frontend **872**. Cinco migraciones aplicadas a producción, **una escrita y sin aplicar**
+(ver Próximo paso 1).
+
+**En todo el tramo no se movió un solo `compliance_record`**: la huella de control
+`md5(string_agg(id))` sobre los 4.990 registros vigentes es idéntica antes y después —
+`3def4798fd3561d97eefab19412d3e1d`. Se cambió el mecanismo sin tocar el dato.
+
+#### El problema que resuelve
+
+Los triggers de siembra decidían con esto:
+
+```sql
+requirement_level = 'LEGAL_MANDATORY'
+OR (requirement_code IN ('MANTENCION_FRIO','RESOLUCION_SANITARIA') AND NEW.asset_type = 'RAMPLA')
+```
+
+`requirement_level` es una etiqueta de **severidad** — la que muestra "BÁSICA"/"ADICIONAL" — y
+hacía de interruptor de siembra a escondidas: cambiar una etiqueta visual habría cambiado qué
+documentos se exigen. Y los códigos estaban escritos a mano dentro del trigger, así que agregar un
+tercer documento condicional pedía una migración.
+
+Ahora son tres columnas explícitas de `public.compliance_requirements` — `is_active`,
+`applies_to_fleet_service_type_ids`, `applies_to_management_types` — editables desde
+**Administración → Configuración → Condiciones**.
+
+#### Decisiones de arquitectura
+
+**El plan decía tres vías de siembra. Son CINCO.** `reconcile_new_asset`, `reconcile_new_carrier`,
+`reconcile_new_driver`, `reconcile_new_requirement` y `reconcile_carrier_shipper_link`. Las cinco
+leen las columnas nuevas; ninguna mira ya `requirement_level` ni `asset_type`. Un barrido de
+`pg_proc` confirmó que no hay una sexta.
+
+**La misma regla vive en dos lenguajes y ése es el riesgo central del tramo**: en las funciones de
+Postgres que siembran, y en el servicio Python que calcula la vista previa
+(`app/services/requirement_conditions.py`). Si divergen, **la vista previa miente** y "Aplicar"
+borra en firme sobre una tabla sin historial. La revisión de rama las comparó rama por rama contra
+el `prosrc` real: coinciden.
+
+**Guardar la regla y aplicarla son dos actos distintos.** El `PATCH` de condiciones **no** siembra
+—los triggers son `AFTER INSERT`—, así que hace falta un recálculo explícito, siempre precedido de
+una vista previa que dice cuántos registros se crean, se quitan y **cuántos no se pueden quitar**.
+
+**D13 — el recálculo nunca borra trabajo hecho.** Un registro con archivo, con edición manual, o
+fuera de `MISSING`, se lista aparte como bloqueado. La guarda se repite **dentro del propio
+`DELETE`**, no se confía en los IDs de la vista previa: el invariante no depende del reloj. Y se
+reportan las filas realmente borradas, no las planeadas.
+
+**Una sola definición de "tipo de gestión de una empresa"** (`public.carrier_management_types`),
+usada por la pantalla, las cuatro ramas de siembra y la vista previa. Ver abajo por qué.
+
+#### El Crítico que sólo la revisión de rama podía ver
+
+Las cinco revisiones por tarea pasaron limpias. La de conjunto encontró que **el módulo tenía dos
+definiciones del mismo concepto**: la pantalla de Certificación *muestra* el tipo de gestión
+derivado de la flota (`COALESCE(derivada, declarada)`), y la regla nueva *evaluaba* sólo la columna
+declarada — **vacía en las 248 empresas**, porque se creó el día anterior y sólo la puebla el alta.
+
+Medido: 39 empresas activas, **36 con gestión derivada, 0 con declarada**. Como `NULL && ARRAY[…]`
+da `NULL`, marcar cualquier gestión dejaba el conjunto vacío y mandaba **todo** a "quitar": 247
+registros en un solo requisito, por 15 requisitos de empresa.
+
+**Por qué ninguna revisión por tarea podía verlo: el invariante se sostenía.** Trigger y servicio
+leían la misma columna y coincidían perfectamente. Lo que fallaba era la premisa — que esa columna
+fuera la que el resto del módulo usa para decir lo mismo. Un invariante local correcto sobre una
+premisa global equivocada.
+
+Se arregló con **una sola definición**, no poblando la columna: poblarla sería una desnormalización
+sin dueño, que habría que mantener sincronizada con la flota para siempre. La columna declarada
+conserva su razón original —al crear una empresa todavía no tiene vehículos— y con `COALESCE` las
+dos conviven: misma expresión, distinto dato según el momento. Tras el arreglo, aplican **24**
+empresas (las que tienen Tractoreo entre las 39 activas) en vez de 0.
+
+#### Lo que sólo se vio mutando el código, no leyéndolo
+
+Los revisores mutaron la implementación en copias fuera del repo. Encontraron **cinco tests que
+pasaban sin probar nada**, incluidos dos que el propio implementador cazó en su trabajo:
+
+- Un test de texto sobre D13 dejaba pasar un `NOT` agregado a uno de los tres términos: quedaba
+  verde con la regla invertida. Se cerró comparando el texto normalizado completo, no con `in`.
+- El test de "si se cancela la confirmación, no aplica nada" afirmaba antes de que la promesa
+  resolviera: pasaba igual con la confirmación ignorada.
+- Se podía hacer que "Aplicar" apareciera **sin vista previa** —romper el principio de diseño del
+  tramo— con los seis tests en verde.
+
+#### Dos veces el mismo patrón: arreglar la raíz destapa lo que la raíz tapaba
+
+Sacar el `COALESCE` del `PATCH` (que era el defecto) destapó un 500 que ese `COALESCE`
+neutralizaba. Sacar el autoguardado por clic (que era el defecto) se llevó una línea que impedía
+por accidente aplicar con cambios sin guardar. **Las dos veces el arreglo correcto abrió una
+regresión**, y las dos se cazaron en la re-revisión, no en la revisión.
+
+#### Restricción operativa nueva
+
+**La migración `20260816050000` tiene que aplicarse ANTES de desplegar la API.** Si sale al revés,
+`GET /compliance-records/status` responde 500 y con eso la pantalla de Certificación entera. El
+workflow `deploy-monitor-api.yml` **no corre migraciones**, así que hoy el orden es una nota, no un
+paso del pipeline.
+
+#### Próximo paso exacto
+
+1. [x] **`20260816050000_carrier_management_types_single_definition.sql` — APLICADA** (2026-08-15,
+   con autorización explícita del usuario). Verificado después de aplicar: la función existe, las
+   empresas activas con tipo de gestión pasan de **0 a 36** (24 con Tractoreo), y la huella de
+   control sigue en `4990` / `3def4798fd3561d97eefab19412d3e1d` — aplicarla **no movió un solo
+   registro**. Backend 625 tests en verde contra el esquema nuevo.
+2. [ ] **Click-through en staging con Playwright** — no hecho: `dev` está 16 commits adelante de
+   `origin/dev` y nada está desplegado. Empujar dispara el despliegue, así que necesita decisión
+   del usuario. **El login lo escribe el usuario a mano.** Ojo: la pantalla usa `window.confirm`
+   antes de aplicar, y eso **bloquea Playwright** si no se registra un manejador de diálogo antes
+   de apretar el botón.
+3. [ ] **`/code-review` sobre la rama** — lo dispara el usuario; el agente no puede lanzarlo.
+4. [ ] **Cuatro preguntas para WebCarga**, todas de la misma naturaleza: reglas que el sistema ya
+   aplica sin que nadie las haya definido.
+   - ¿Qué tipo de rampla es `KDKP93`? Es el único vehículo sin subtipo, y por eso el recálculo
+     propone quitarle dos requisitos legales. Se resuelve clasificándolo, no tocando código.
+   - ¿A qué ramplas les corresponde cámara de frío? Hoy se les exige a 16 que no pueden tenerla
+     (furgones secos y Siders).
+   - ¿El anexo de conductor de Walmart corresponde a los 80 conductores, o sólo a los de empresas
+     que trabajan con Walmart? El trigger no filtra por cliente y el servicio lo copia a propósito.
+   - ¿Una condición de gestión debe alcanzar al catálogo histórico? De los 223 registros que
+     dejarían de aplicar, **209 son de empresas inactivas sin flota**.
+5. [ ] **Fragilidad anotada**: el mapeo etiqueta → código de tipo de gestión sigue siendo por
+   etiqueta, porque `app.status_taxonomies` no tiene columna `code`. Ahora está en un solo lugar,
+   pero **un renombre de etiqueta haría caer todo a la columna declarada en silencio** — y el
+   proyecto tuvo dos renombres en dos días durante el Tramo 2.
+6. [ ] **Deuda de infraestructura de testing, no de este tramo**: ningún test del tramo ejecuta
+   SQL. El pool está mockeado y la sandbox no llega a Postgres directo, así que el servicio, los
+   endpoints y las cinco funciones de siembra sólo se verificaron a mano contra la base. Cubrirlo
+   pide un Postgres de prueba que el proyecto no tiene.
+7. [ ] **Fuera de alcance por decisión** (spec §7): el historial de versiones como filas (0
+   reemplazos en producción, y toca estos mismos triggers), las pilas agrupadas, conectar
+   `document_matcher.py`, y la importación desde OneDrive con spec propio.
+
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual. (Ver también los 4 pendientes nuevos de la Ronda 95, arriba.)
