@@ -1244,12 +1244,19 @@ export type QueueRow = {
 
 export type TrayPage = { total: number; rows: QueueRow[] }
 
-/** Fila de la vista "Por empresa" del módulo Certificación: las dos mitades
- *  del trabajo — lo que falta y lo que llegó sin clasificar — juntas. */
-export type CarrierCertificationRow = {
-  carrier_id:         string
-  carrier_name:       string
-  operational_status: string
+export type CertificationGroup = 'carrier' | 'driver' | 'asset'
+
+/** Fila del módulo Certificación, agrupada por empresa, conductor o vehículo.
+ *
+ *  `carrier_*` viaja siempre: un conductor o un vehículo sin la empresa a la
+ *  que pertenece no dice nada. Agrupando por empresa, la entidad y la empresa
+ *  son la misma. */
+export type CertificationStatusRow = {
+  entity_id:          string
+  entity_name:        string
+  carrier_id:         string | null
+  carrier_name:       string | null
+  operational_status: string | null
   total_count:        number
   satisfied_count:    number
   pending_count:      number
@@ -1257,10 +1264,10 @@ export type CarrierCertificationRow = {
   unclassified_count: number
 }
 
-export type CarrierCertificationStatus = {
+export type CertificationStatus = {
   total_pending:      number
   total_unclassified: number
-  rows:               CarrierCertificationRow[]
+  rows:               CertificationStatusRow[]
 }
 
 export type IngestUploadResult = {

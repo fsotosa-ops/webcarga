@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({
 }))
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: {
-    listCarrierStatus: vi.fn(),
+    listStatus: vi.fn(),
     listPending: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
     listRequirements: vi.fn().mockResolvedValue([]),
   },
@@ -33,6 +33,7 @@ import { complianceApi } from '@/lib/api/compliance'
 import CertificationPage from './page'
 
 const FILA = {
+  entity_id: 'c1', entity_name: 'Test Empresa Webcarga',
   carrier_id: 'c1', carrier_name: 'Test Empresa Webcarga', operational_status: 'ACTIVE',
   total_count: 12, satisfied_count: 9, pending_count: 3, pending_mandatory: 1,
   unclassified_count: 3,
@@ -49,7 +50,7 @@ function setup() {
 beforeEach(() => {
   vi.clearAllMocks()
   params = new URLSearchParams()
-  vi.mocked(complianceApi.listCarrierStatus).mockResolvedValue({
+  vi.mocked(complianceApi.listStatus).mockResolvedValue({
     total_pending: 3, total_unclassified: 3, rows: [FILA],
   })
 })
@@ -61,7 +62,7 @@ describe('Certificación — una lista, dos vistas', () => {
     setup()
     expect(await screen.findByText('Test Empresa Webcarga')).toBeInTheDocument()
     expect(screen.getByText('9 de 12')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Por empresa' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Empresas' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('muestra en la misma fila lo que falta y lo que llegó sin clasificar', async () => {
@@ -75,7 +76,7 @@ describe('Certificación — una lista, dos vistas', () => {
   it('la vista viaja en la URL, así volver del detalle no pierde el lugar', async () => {
     setup()
     await screen.findByText('Test Empresa Webcarga')
-    fireEvent.click(screen.getByRole('button', { name: 'Por documento' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Documentos' }))
     expect(replace).toHaveBeenCalledWith('/dashboard/compliance?vista=documentos')
   })
 
@@ -83,25 +84,51 @@ describe('Certificación — una lista, dos vistas', () => {
     params = new URLSearchParams('vista=documentos')
     setup()
     expect(await screen.findByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Por documento' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Documentos' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('busca empresas sin recargar la vista', async () => {
     setup()
     await screen.findByText('Test Empresa Webcarga')
-    fireEvent.change(screen.getByLabelText(/buscar empresa/i), { target: { value: 'quilquen' } })
+    fireEvent.change(screen.getByPlaceholderText(/buscar empresa/i), { target: { value: 'quilquen' } })
 
     await waitFor(() => {
-      expect(complianceApi.listCarrierStatus).toHaveBeenCalledWith(
-        expect.objectContaining({ q: 'quilquen' }),
+      expect(complianceApi.listStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ q: 'quilquen', group: 'carrier' }),
       )
     }, { timeout: 2000 })
   })
 
-  it('no pide el estado de empresas cuando estás en la cola', async () => {
+  it('agrupa por conductor y muestra la empresa de cada uno', async () => {
+    params = new URLSearchParams('vista=conductores')
+    vi.mocked(complianceApi.listStatus).mockResolvedValue({
+      total_pending: 3, total_unclassified: 0,
+      rows: [{ ...FILA, entity_id: 'd1', entity_name: 'Juan Pérez',
+               carrier_id: 'c9', carrier_name: 'Transportes Sur Spa' }],
+    })
+    setup()
+
+    expect(await screen.findByText('Juan Pérez')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Transportes Sur Spa' })).toBeInTheDocument()
+    expect(complianceApi.listStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ group: 'driver' }),
+    )
+  })
+
+  it('agrupa por vehículo', async () => {
+    params = new URLSearchParams('vista=vehiculos')
+    setup()
+    await waitFor(() => {
+      expect(complianceApi.listStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ group: 'asset' }),
+      )
+    })
+  })
+
+  it('no pide el estado cuando estás en la cola', async () => {
     params = new URLSearchParams('vista=documentos')
     setup()
     await screen.findByText(/no hay documentos sin clasificar/i)
-    expect(complianceApi.listCarrierStatus).not.toHaveBeenCalled()
+    expect(complianceApi.listStatus).not.toHaveBeenCalled()
   })
 })

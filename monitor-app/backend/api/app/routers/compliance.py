@@ -60,26 +60,92 @@ async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
     return record
 
 
-@router.get("/carrier-status")
-async def get_carrier_certification_status(
+# Cada agrupación cambia sólo dos cosas: por qué entidad se agrupa y de dónde
+# sale su nombre. El resto de la consulta es idéntico, así que se parametriza en
+# vez de escribir tres consultas que después divergen.
+_STATUS_GROUPS = {
+    "carrier": {
+        "entity_type": "CARRIER",
+        "table": "public.carriers",
+        "name_col": "business_name",
+    },
+    "driver": {
+        "entity_type": "DRIVER",
+        "table": "public.drivers",
+        "name_col": "full_name",
+    },
+    "asset": {
+        "entity_type": "ASSET",
+        "table": "public.assets",
+        "name_col": "license_plate",
+    },
+}
+
+
+@router.get("/status")
+async def get_certification_status(
+    group: Literal["carrier", "driver", "asset"] = Query("carrier"),
     q: str = Query(""),
     limit: int = Query(200, le=500),
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
-    """Cómo va cada empresa: cuánto tiene cubierto y cuánto llegó sin clasificar.
+    """Cómo va la certificación, agrupada por empresa, conductor o vehículo.
 
-    Es la vista "Por empresa" del módulo (HU-04). Las dos mitades del trabajo
-    viven en la misma fila a propósito: tenerlas en dos listas hermanas obliga
-    a cruzarlas de memoria.
+    Es la misma lista mirada de tres maneras (HU-04). Un conductor o un vehículo
+    sin la empresa a la que pertenece no dice nada, así que **la fila siempre
+    trae su empresa** — cuando se agrupa por empresa, es ella misma.
 
-    Incluye empresas **inactivas que tengan documentos esperando** — si no, la
-    cola mostraría archivos de una empresa que esta lista niega. Los pendientes
-    de DRIVER/ASSET se atribuyen a la empresa por su asignación ACTIVE vigente,
-    mismo criterio que el resto del roster.
+    Los documentos sin clasificar sólo se cuentan agrupando por empresa: un
+    archivo en la bandeja pertenece a una empresa, no a un conductor.
     """
-    rows = await pool.fetch(
+    cfg = _STATUS_GROUPS[group]
+
+    if group == "carrier":
+        # La empresa suma lo suyo y lo de sus conductores y vehículos activos,
+        # mismo criterio de atribución que el resto del roster.
+        entity_join = """
+            LEFT JOIN attributed a ON a.carrier_id = e.id
+            LEFT JOIN docs d       ON d.carrier_id = e.id
         """
+        entity_where = "(e.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)"
+        carrier_cols = "e.id::text AS carrier_id, e.business_name AS carrier_name, e.operational_status"
+        group_by = "e.id, e.business_name, e.operational_status, d.unclassified"
+        unclassified = "COALESCE(d.unclassified, 0)::int"
+        # Sólo agrupando por empresa hay algo que ordenar por acá.
+        orden_cola = "COALESCE(d.unclassified, 0) DESC, "
+        extra_cte = """,
+        docs AS (
+            SELECT COALESCE(i.carrier_id, b.carrier_id) AS carrier_id, count(*) AS unclassified
+            FROM public.document_ingest_items i
+            JOIN public.document_ingest_batches b ON b.id = i.batch_id
+            WHERE i.match_status = 'UNMATCHED'
+            GROUP BY 1
+        )"""
+    else:
+        asignacion = "driver_assignments" if group == "driver" else "asset_assignments"
+        columna = "driver_id" if group == "driver" else "asset_id"
+        entity_join = f"""
+            LEFT JOIN records r ON r.entity_type = '{cfg["entity_type"]}' AND r.entity_id = e.id
+            LEFT JOIN public.{asignacion} asg
+                   ON asg.{columna} = e.id AND asg.status = 'ACTIVE'
+            LEFT JOIN public.carriers c ON c.id = asg.carrier_id
+        """
+        entity_where = "r.entity_id IS NOT NULL"
+        carrier_cols = "c.id::text AS carrier_id, c.business_name AS carrier_name, c.operational_status"
+        group_by = "e.id, e.{name_col}, c.id, c.business_name, c.operational_status".format(**cfg)
+        unclassified = "0"
+        # OJO: un literal en ORDER BY lo interpreta Postgres como POSICIÓN
+        # ordinal ("ORDER BY 0" es un error), así que acá no va.
+        orden_cola = ""
+        extra_cte = ""
+
+    # Agrupando por empresa el agregado sale de `attributed`; en las otras dos,
+    # de las filas del propio conductor o vehículo.
+    fuente = "a" if group == "carrier" else "r"
+
+    rows = await pool.fetch(
+        f"""
         WITH records AS (
             SELECT cr.entity_type, cr.entity_id, cr.status, req.requirement_level
             FROM public.compliance_records cr
@@ -98,32 +164,23 @@ async def get_carrier_certification_status(
                 ON r.entity_type = 'DRIVER' AND da.driver_id = r.entity_id AND da.status = 'ACTIVE'
             LEFT JOIN public.asset_assignments aa
                 ON r.entity_type = 'ASSET' AND aa.asset_id = r.entity_id AND aa.status = 'ACTIVE'
-        ),
-        docs AS (
-            SELECT COALESCE(i.carrier_id, b.carrier_id) AS carrier_id, count(*) AS unclassified
-            FROM public.document_ingest_items i
-            JOIN public.document_ingest_batches b ON b.id = i.batch_id
-            WHERE i.match_status = 'UNMATCHED'
-            GROUP BY 1
-        )
-        SELECT c.id::text AS carrier_id, c.business_name AS carrier_name,
-               c.operational_status,
-               count(a.carrier_id)                                        AS total_count,
-               count(*) FILTER (WHERE a.status IS NOT NULL
-                                  AND a.status NOT IN ('MISSING','EXPIRED')) AS satisfied_count,
-               count(*) FILTER (WHERE a.status IN ('MISSING','EXPIRED'))     AS pending_count,
-               count(*) FILTER (WHERE a.status IN ('MISSING','EXPIRED')
-                                  AND a.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory,
-               COALESCE(d.unclassified, 0)::int                           AS unclassified_count
-        FROM public.carriers c
-        LEFT JOIN attributed a ON a.carrier_id = c.id
-        LEFT JOIN docs d       ON d.carrier_id = c.id
-        WHERE (c.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)
-          AND ($2::text IS NULL OR c.business_name ILIKE '%' || $2 || '%'
-                                OR c.tax_id ILIKE '%' || $2 || '%')
-        GROUP BY c.id, c.business_name, c.operational_status, d.unclassified
+        ){extra_cte}
+        SELECT e.id::text AS entity_id, e.{cfg["name_col"]} AS entity_name,
+               {carrier_cols},
+               count({fuente}.status)                                              AS total_count,
+               count(*) FILTER (WHERE {fuente}.status IS NOT NULL
+                                  AND {fuente}.status NOT IN ('MISSING','EXPIRED')) AS satisfied_count,
+               count(*) FILTER (WHERE {fuente}.status IN ('MISSING','EXPIRED'))     AS pending_count,
+               count(*) FILTER (WHERE {fuente}.status IN ('MISSING','EXPIRED')
+                                  AND {fuente}.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory,
+               {unclassified}                                                      AS unclassified_count
+        FROM {cfg["table"]} e
+        {entity_join}
+        WHERE {entity_where}
+          AND ($2::text IS NULL OR e.{cfg["name_col"]} ILIKE '%' || $2 || '%')
+        GROUP BY {group_by}
         -- Primero donde hay trabajo esperando, después lo más incompleto.
-        ORDER BY COALESCE(d.unclassified, 0) DESC, pending_count DESC, c.business_name
+        ORDER BY {orden_cola}pending_count DESC, e.{cfg["name_col"]}
         LIMIT $3
         """,
         ACTIVE_OPERATIONAL_STATUS, q or None, limit,

@@ -1,5 +1,5 @@
 import type {
-  CarrierCertificationStatus,
+  CertificationGroup, CertificationStatus,
   BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, DocumentVersion,
   PendingComplianceListResponse, RequirementOption,
 } from '@/lib/types'
@@ -64,14 +64,15 @@ export const complianceApi = {
 
   // ── Módulo Documentos (sábana) ─────────────────────────────────────────
 
-  /** Cómo va cada empresa: cubierto vs. pendiente, y cuánto llegó sin
-   *  clasificar. Es la vista por defecto del módulo. */
-  listCarrierStatus: (params: { q?: string; limit?: number } = {}) => {
+  /** Cómo va la certificación, agrupada por empresa, conductor o vehículo.
+   *  Es la lista del módulo; el conmutador sólo cambia `group`. */
+  listStatus: (params: { group?: CertificationGroup; q?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams()
+    if (params.group) qs.set('group', params.group)
     if (params.q)     qs.set('q', params.q)
     if (params.limit != null) qs.set('limit', String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''
-    return apiFetch<CarrierCertificationStatus>(`/api/v1/compliance-records/carrier-status${suffix}`)
+    return apiFetch<CertificationStatus>(`/api/v1/compliance-records/status${suffix}`)
   },
 
   listPending: (params: ListPendingParams = {}) => {

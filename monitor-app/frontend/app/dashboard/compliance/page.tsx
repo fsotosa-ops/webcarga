@@ -5,13 +5,22 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Download, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
-import { CarrierCertificationTable } from '@/components/compliance/CarrierCertificationTable'
+import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
+import type { CertificationGroup } from '@/lib/types'
 
-type Vista = 'empresas' | 'documentos'
+type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'documentos'
+
+// Las tres primeras son la misma lista agrupada distinto; la cuarta es la cola.
+const VISTAS: { id: Vista; label: string; group?: CertificationGroup }[] = [
+  { id: 'empresas',    label: 'Empresas',    group: 'carrier' },
+  { id: 'conductores', label: 'Conductores', group: 'driver' },
+  { id: 'vehiculos',   label: 'Vehículos',   group: 'asset' },
+  { id: 'documentos',  label: 'Documentos' },
+]
 
 function csvEscape(v: string) {
   return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
@@ -57,21 +66,23 @@ function CertificationPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const vista: Vista = searchParams.get('vista') === 'documentos' ? 'documentos' : 'empresas'
+  const param = searchParams.get('vista')
+  const vista: Vista = VISTAS.some(v => v.id === param) ? (param as Vista) : 'empresas'
+  const group = VISTAS.find(v => v.id === vista)?.group
   const [q, setQ] = useState('')
   const [newCarrierOpen, setNewCarrierOpen] = useState(false)
   const [exportando, setExportando] = useState(false)
   const qDebounced = useDebouncedValue(q, 300)
 
   const statusQuery = useQuery({
-    queryKey: ['carrier-certification-status', qDebounced],
-    queryFn: () => complianceApi.listCarrierStatus({ q: qDebounced || undefined, limit: 200 }),
-    enabled: vista === 'empresas',
+    queryKey: ['certification-status', group, qDebounced],
+    queryFn: () => complianceApi.listStatus({ group, q: qDebounced || undefined, limit: 200 }),
+    enabled: !!group,
   })
 
   function cambiarVista(v: Vista) {
     // La vista viaja en la URL: volver del detalle no pierde dónde estabas.
-    router.replace(v === 'documentos' ? '/dashboard/compliance?vista=documentos' : '/dashboard/compliance')
+    router.replace(v === 'empresas' ? '/dashboard/compliance' : `/dashboard/compliance?vista=${v}`)
   }
 
   function handleCarrierCreated(created: CarrierCreateResult) {
@@ -93,7 +104,7 @@ function CertificationPageInner() {
 
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-          {([['empresas', 'Por empresa'], ['documentos', 'Por documento']] as const).map(([v, label]) => (
+          {VISTAS.map(({ id: v, label }) => (
             <button
               key={v}
               onClick={() => cambiarVista(v)}
@@ -107,16 +118,18 @@ function CertificationPageInner() {
           ))}
         </div>
 
-        {vista === 'empresas' && (
+        {group && (
           <>
             <input
               value={q}
               onChange={e => setQ(e.target.value)}
-              placeholder="Buscar empresa o RUT…"
-              aria-label="Buscar empresa"
+              placeholder={group === 'carrier' ? 'Buscar empresa…'
+                : group === 'driver' ? 'Buscar conductor…' : 'Buscar patente…'}
+              aria-label="Buscar"
               className={INPUT + ' w-64'}
             />
             <div className="ml-auto flex items-center gap-2">
+              {group === 'carrier' && (<>
               <button
                 type="button"
                 onClick={async () => {
@@ -138,6 +151,7 @@ function CertificationPageInner() {
               >
                 <Plus size={13} /> Nueva empresa
               </button>
+              </>)}
             </div>
           </>
         )}
@@ -149,18 +163,20 @@ function CertificationPageInner() {
         onCreated={handleCarrierCreated}
       />
 
-      {vista === 'documentos' ? (
+      {!group ? (
         <TriageWorkbench />
       ) : (
         <div className="border border-border rounded-xl bg-white overflow-hidden">
           <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
             <span className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
-              {statusQuery.data?.total_unclassified ?? 0}
+              {statusQuery.data?.total_pending ?? 0}
             </span>
-            <span className="text-xs text-gray-500">sin clasificar</span>
-            <span className="text-xs text-gray-400">
-              · {statusQuery.data?.total_pending ?? 0} documentos por cubrir
-            </span>
+            <span className="text-xs text-gray-500">documentos por cubrir</span>
+            {group === 'carrier' && (statusQuery.data?.total_unclassified ?? 0) > 0 && (
+              <span className="text-xs text-gray-400">
+                · {statusQuery.data?.total_unclassified} sin clasificar
+              </span>
+            )}
           </div>
 
           {statusQuery.isPending && (
@@ -170,12 +186,12 @@ function CertificationPageInner() {
           )}
           {statusQuery.error && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 m-3">
-              No se pudo cargar el estado de las empresas
+              No se pudo cargar el estado de la certificación
             </p>
           )}
           {!statusQuery.isPending && !statusQuery.error && (
             <div className="overflow-y-auto max-h-[64vh]">
-              <CarrierCertificationTable rows={rows} />
+              <CertificationStatusTable rows={rows} group={group} />
             </div>
           )}
         </div>

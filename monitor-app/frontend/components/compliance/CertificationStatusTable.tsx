@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { AlertTriangle, Building2, Check } from 'lucide-react'
-import type { CarrierCertificationRow } from '@/lib/types'
+import type { CertificationGroup, CertificationStatusRow } from '@/lib/types'
 
 interface Props {
-  rows: CarrierCertificationRow[]
+  rows:  CertificationStatusRow[]
+  group: CertificationGroup
 }
 
 /** La vista por defecto del módulo: cómo va cada empresa.
@@ -13,12 +14,15 @@ interface Props {
  *  Las dos mitades del trabajo viven en la misma fila — lo que falta y lo que
  *  llegó sin clasificar. Tenerlas en dos listas hermanas obligaba a cruzarlas
  *  de memoria, que es exactamente lo que hacía al módulo confuso. */
-export function CarrierCertificationTable({ rows }: Props) {
+export function CertificationStatusTable({ rows, group }: Props) {
+  const porEmpresa = group === 'carrier'
+  const etiqueta = porEmpresa ? 'empresas' : group === 'driver' ? 'conductores' : 'vehículos'
+
   if (!rows.length) {
     return (
       <div className="p-8 text-center">
         <Building2 size={20} className="mx-auto text-gray-300 mb-2" />
-        <p className="text-xs text-gray-500">No hay empresas que coincidan</p>
+        <p className="text-xs text-gray-500">No hay {etiqueta} que coincidan</p>
       </div>
     )
   }
@@ -27,9 +31,17 @@ export function CarrierCertificationTable({ rows }: Props) {
     <table className="w-full text-left">
       <thead className="sticky top-0 z-10 bg-white">
         <tr className="border-b border-border">
-          <th scope="col" className="py-2 pl-3 pr-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Empresa</th>
+          <th scope="col" className="py-2 pl-3 pr-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+            {porEmpresa ? 'Empresa' : group === 'driver' ? 'Conductor' : 'Vehículo'}
+          </th>
+          {/* Un conductor o un vehículo sin su empresa no dice nada. */}
+          {!porEmpresa && (
+            <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-56">Empresa</th>
+          )}
           <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-56">Documentación</th>
-          <th scope="col" className="py-2 pl-2 pr-3 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-32">Sin clasificar</th>
+          {porEmpresa && (
+            <th scope="col" className="py-2 pl-2 pr-3 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-32">Sin clasificar</th>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -38,18 +50,39 @@ export function CarrierCertificationTable({ rows }: Props) {
           const alDia = r.total_count > 0 && r.pending_count === 0
 
           return (
-            <tr key={r.carrier_id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+            <tr key={r.entity_id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
               <td className="py-2 pl-3 pr-2">
-                <Link
-                  href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
-                  className="text-xs font-medium text-slate-800 hover:text-accent transition-colors"
-                >
-                  {r.carrier_name}
-                </Link>
-                {r.operational_status !== 'ACTIVE' && (
+                {porEmpresa ? (
+                  <Link
+                    href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
+                    className="text-xs font-medium text-slate-800 hover:text-accent transition-colors"
+                  >
+                    {r.entity_name}
+                  </Link>
+                ) : (
+                  <span className="text-xs font-medium text-slate-800">{r.entity_name}</span>
+                )}
+                {porEmpresa && r.operational_status !== 'ACTIVE' && (
                   <span className="ml-2 text-[10px] text-gray-500">no activa</span>
                 )}
               </td>
+
+              {!porEmpresa && (
+                <td className="py-2 px-2">
+                  {r.carrier_id ? (
+                    <Link
+                      href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
+                      className="text-[11px] text-gray-600 hover:text-accent transition-colors"
+                    >
+                      {r.carrier_name}
+                    </Link>
+                  ) : (
+                    <span className="text-[11px] text-amber-700" title="Sin asignación activa a una empresa">
+                      sin empresa
+                    </span>
+                  )}
+                </td>
+              )}
 
               <td className="py-2 px-2">
                 <div className="flex items-center gap-2">
@@ -73,6 +106,7 @@ export function CarrierCertificationTable({ rows }: Props) {
                 </div>
               </td>
 
+              {porEmpresa && (
               <td className="py-2 pl-2 pr-3">
                 {r.unclassified_count > 0 ? (
                   <span className="inline-flex items-center rounded-full bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 text-[10px] font-bold tabular-nums">
@@ -86,6 +120,7 @@ export function CarrierCertificationTable({ rows }: Props) {
                   <span className="text-[11px] text-gray-400">—</span>
                 )}
               </td>
+              )}
             </tr>
           )
         })}

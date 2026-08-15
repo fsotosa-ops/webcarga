@@ -212,6 +212,7 @@ def test_delete_file_resets_to_missing_and_removes_from_storage():
 
 def _carrier_status_row(**over):
     row = {
+        "entity_id": "c1", "entity_name": "Transportes Sur Spa",
         "carrier_id": "c1", "carrier_name": "Transportes Sur Spa",
         "operational_status": "ACTIVE", "total_count": 12, "satisfied_count": 9,
         "pending_count": 3, "pending_mandatory": 1, "unclassified_count": 0,
@@ -232,7 +233,7 @@ def test_carrier_status_reports_progress_and_unclassified():
     ]
     client = make_client(pool)
 
-    res = client.get("/api/v1/compliance-records/carrier-status")
+    res = client.get("/api/v1/compliance-records/status")
 
     assert res.status_code == 200
     body = res.json()
@@ -249,7 +250,7 @@ def test_carrier_status_includes_inactive_carriers_that_have_documents():
     pool.fetch.return_value = []
     client = make_client(pool)
 
-    client.get("/api/v1/compliance-records/carrier-status")
+    client.get("/api/v1/compliance-records/status")
 
     query = pool.fetch.call_args.args[0]
     assert "unclassified" in query
@@ -261,7 +262,7 @@ def test_carrier_status_empty():
     pool.fetch.return_value = []
     client = make_client(pool)
 
-    res = client.get("/api/v1/compliance-records/carrier-status")
+    res = client.get("/api/v1/compliance-records/status")
 
     assert res.status_code == 200
     assert res.json() == {"total_pending": 0, "total_unclassified": 0, "rows": []}
@@ -274,7 +275,7 @@ def test_carrier_status_route_does_not_collide_with_record_id_path():
     pool.fetch.return_value = []
     client = make_client(pool)
 
-    res = client.get("/api/v1/compliance-records/carrier-status")
+    res = client.get("/api/v1/compliance-records/status")
 
     assert res.status_code == 200
 
@@ -389,11 +390,11 @@ def test_carrier_status_filters_by_active_but_not_only():
     pool.fetch.return_value = []
     client = make_client(pool)
 
-    client.get("/api/v1/compliance-records/carrier-status")
+    client.get("/api/v1/compliance-records/status")
 
     query = pool.fetch.call_args.args[0]
     args = pool.fetch.call_args.args
-    assert "c.operational_status = $1" in query
+    assert "e.operational_status = $1" in query
     assert "COALESCE(d.unclassified, 0) > 0" in query
     assert args[1] == "ACTIVE"
 
@@ -651,3 +652,74 @@ def test_list_requirements_rejects_unknown_entity():
     res = client.get("/api/v1/compliance-requirements?target_entity=PERSONA")
 
     assert res.status_code == 422
+
+
+# La misma lista, agrupada por el objeto que uno quiere mirar. Un conductor o un
+# vehiculo sin la empresa a la que pertenece no dice nada: la fila la trae.
+def test_status_groups_by_driver_and_carries_its_carrier():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_carrier_status_row(
+        entity_id="d1", entity_name="Juan Pérez",
+        carrier_id="c1", carrier_name="Transportes Sur Spa",
+        total_count=5, satisfied_count=2, pending_count=3,
+    )]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/status?group=driver")
+
+    assert res.status_code == 200
+    fila = res.json()["rows"][0]
+    assert fila["entity_name"] == "Juan Pérez"
+    assert fila["carrier_name"] == "Transportes Sur Spa"
+    query = pool.fetch.call_args.args[0]
+    assert "public.drivers" in query
+
+
+def test_status_groups_by_asset():
+    pool = AsyncMock()
+    pool.fetch.return_value = [_carrier_status_row(
+        entity_id="a1", entity_name="HKXW55", carrier_name="Rios Ltda",
+    )]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/status?group=asset")
+
+    assert res.status_code == 200
+    assert res.json()["rows"][0]["entity_name"] == "HKXW55"
+    assert "public.assets" in pool.fetch.call_args.args[0]
+
+
+def test_status_rejects_unknown_grouping():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/status?group=galaxias")
+
+    assert res.status_code == 422
+
+
+def test_status_only_counts_unclassified_when_grouping_by_carrier():
+    """Los documentos sin clasificar pertenecen a una empresa, no a un
+    conductor: en las otras agrupaciones la columna no aplica."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status?group=driver")
+
+    assert "document_ingest_items" not in pool.fetch.call_args.args[0]
+
+
+def test_status_never_orders_by_a_literal():
+    """BUG REAL (2026-08-15, encontrado corriendo el SQL contra la base): al
+    agrupar por conductor/vehiculo la columna de sin clasificar es el literal 0,
+    y 'ORDER BY 0' Postgres lo interpreta como POSICION ordinal — la consulta
+    reventaba con 42P10. Los AsyncMock no lo ven porque nunca ejecutan el SQL."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    for grupo in ("driver", "asset"):
+        client.get(f"/api/v1/compliance-records/status?group={grupo}")
+        orden = pool.fetch.call_args.args[0].split("ORDER BY")[1]
+        assert not orden.strip().startswith("0")
