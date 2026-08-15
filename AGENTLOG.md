@@ -1353,7 +1353,25 @@ La vista viaja en la URL (`?vista=documentos`); `/dashboard/compliance/inbox` re
 
 #### Próximo paso exacto
 1. [ ] **Los 2.000 documentos de la HU todavía no entraron al sistema.** Definir cómo entran (¿carga manual desde la ficha? ¿backfill desde SharePoint?) — sin eso la bandeja está construida pero ociosa. **Es el bloqueante real para que esto sirva.**
-2. [ ] **Revisar la vista "Por empresa" con datos reales**: los totales son grandes (`1 de 383`) porque incluyen los requisitos de cada conductor y cada vehículo atribuidos a la empresa. Es correcto según la regla de atribución, pero hay que confirmar que es la cifra que el negocio quiere ver, o si conviene separar empresa / conductores / equipos.
+2. [x] ~~Revisar la vista "Por empresa": los totales grandes (`1 de 383`)~~ — **RESUELTO en la Ronda 106** separando las agrupaciones.
+
+### 2026-08-15 (cont.) — Ronda 106: la lista se agrupa por empresa, conductor o vehículo
+
+**Pedido del usuario**: poder mirar por empresas / conductores / vehículos / documentos, y que al ver un conductor o un vehículo **se sepa a qué empresa pertenece**.
+
+El conmutador pasa a **Empresas · Conductores · Vehículos · Documentos**. Las tres primeras son la misma lista agrupada distinto; la cuarta es la cola. La fila **siempre trae su empresa**, enlazada a la ficha, y avisa "sin empresa" cuando no hay asignación activa. Los sin clasificar sólo se cuentan por empresa: un archivo de la bandeja pertenece a una empresa, no a un conductor.
+
+De paso **resuelve el `1 de 383`** que había quedado marcado: agrupando por empresa el total suma los requisitos de todos sus conductores y vehículos; ahora se miran por separado (`0 de 12` por conductor, `0 de 10` por vehículo).
+
+**Backend**: `/carrier-status` se generalizó a `/status?group=carrier|driver|asset` — una consulta parametrizada por entidad, no tres que después divergen.
+
+**Dos bugs reales que los `AsyncMock` no podían ver**, ambos encontrados ejecutando de verdad:
+1. **`ORDER BY 0`**: agrupando por conductor/vehículo la columna de sin clasificar es el literal `0`, y Postgres interpreta un literal en `ORDER BY` como **posición ordinal** → `42P10`. Encontrado corriendo el SQL contra la base.
+2. **`IndeterminateDatatypeError`**: el patrón `($n::text IS NULL OR col ILIKE '%' || $n || '%')` deja la segunda referencia sin tipo. **Mi verificación contra la base había sustituido `$1` por `NULL` literal, así que probé el SQL pero no la versión parametrizada** — el bug sólo apareció en vivo. Se quitó la rama de NULL: la cadena vacía ya hace match con todo, y queda una sola referencia casteada.
+
+Se agregó un test que **cuenta los placeholders del SQL contra los argumentos** en las tres agrupaciones — verificado que falla con el bug puesto. Es la defensa barata contra esta clase de error, porque los mocks aceptan cualquier cantidad de argumentos.
+
+**Verificado en vivo** las cuatro vistas: Empresas, Conductores (951 por cubrir, con empresa), Vehículos (1013 por cubrir) y Documentos.
 2. [ ] Promover a `main`: `dev` acumuló toda la bandeja + los dos bugs de 204 que afectan a toda la app. `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
 3. [ ] Decidir si `CertificationCompanyPanel` sigue teniendo sentido: perdió la bandeja y se solapa con la ficha, que ya carga documentos.
 4. [ ] **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — crearlo o sacar la referencia.
