@@ -108,6 +108,13 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
       qc.invalidateQueries({ queryKey: ['compliance-pending-drawer'] })
     },
   })
+  // Sin esto, un POST /recalc que falla (el DELETE físico sobre
+  // compliance_records) apaga el spinner y no deja rastro: quien confirmó
+  // el diálogo cree que aplicó. `useMutation` ya trackea el error solo;
+  // basta con leerlo en el render (ver más abajo).
+  const errorAplicar = aplicar.isError
+    ? (aplicar.error instanceof Error ? aplicar.error.message : 'Error al aplicar la regla')
+    : null
 
   function confirmarAplicar() {
     const crear = preview.data?.crear ?? 0
@@ -208,7 +215,7 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
             <button
               type="button"
               onClick={confirmarAplicar}
-              disabled={aplicar.isPending}
+              disabled={dirty || aplicar.isPending}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1 text-[11.5px] font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
             >
               {aplicar.isPending ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
@@ -223,6 +230,9 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
       )}
       {fb.errors[requisito.id] && (
         <p className="text-[10.5px] text-red-600">{fb.errors[requisito.id]}</p>
+      )}
+      {errorAplicar && (
+        <p className="text-[10.5px] text-red-600">{errorAplicar}</p>
       )}
 
       {verPreview && preview.isPending && (

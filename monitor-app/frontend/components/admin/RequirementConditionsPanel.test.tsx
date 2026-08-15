@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -48,6 +48,20 @@ function setup(over = {}) {
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <Harness over={over} />
     </QueryClientProvider>,
+  )
+}
+
+// A diferencia de Harness (que sólo actualiza el prop vía onSaved, como
+// resultado de un guardado de ESTE panel), este simula una recarga externa
+// de la lista -- "Reintentar" en LoadState, otra pestaña, otro usuario --
+// que cambia `requisito` sin que el panel haya iniciado nada.
+function HarnessExterno({ inicial, actualizado }: { inicial: RequirementConditions; actualizado: RequirementConditions }) {
+  const [requisito, setRequisito] = useState(inicial)
+  return (
+    <div>
+      <button type="button" onClick={() => setRequisito(actualizado)}>Recargar</button>
+      <RequirementConditionsPanel requisito={requisito} subtipos={SUBTIPOS} />
+    </div>
   )
 }
 
@@ -131,14 +145,62 @@ describe('RequirementConditionsPanel', () => {
     await screen.findByText(/se quitan 16/i)
     fireEvent.click(screen.getByRole('button', { name: /aplicar/i }))
 
-    // Espera real (no una asercion inmediata): si `aplicar.mutate()` se
-    // hubiera disparado iguel que si `window.confirm` nunca se hubiera
-    // consultado, para acá ya habria resuelto. onSuccess de la mutacion
-    // esconde la vista previa (`setVerPreview(false)`), asi que la prueba
-    // mas fuerte de que NO se disparo es que la vista previa siga ahi.
-    await new Promise(resolve => setTimeout(resolve, 50))
+    // No es una asercion inmediata: si `aplicar.mutate()` se hubiera
+    // disparado igual que si `window.confirm` nunca se hubiera consultado,
+    // `recalc` arranca dentro de la cadena de microtareas del click. `act`
+    // drena esa cola pendiente antes de que sigamos -- no es una espera de
+    // reloj, es "dejar correr lo que ya esta encolado". onSuccess de la
+    // mutacion esconde la vista previa (`setVerPreview(false)`), asi que la
+    // prueba mas fuerte de que NO se disparo es que la vista previa siga ahi.
+    await act(async () => {})
     expect(requirementsApi.recalc).not.toHaveBeenCalled()
     expect(screen.getByText(/se quitan 16/i)).toBeInTheDocument()
+  })
+
+  it('tildar una casilla tras ver la vista previa deja aplicar deshabilitado', async () => {
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
+    await screen.findByText(/se quitan 16/i)
+
+    fireEvent.click(screen.getByLabelText('Furgón Seco'))
+
+    expect(screen.getByRole('button', { name: /aplicar/i })).toBeDisabled()
+  })
+
+  it('si aplicar falla se ve el error', async () => {
+    vi.mocked(requirementsApi.recalc).mockRejectedValueOnce(new Error('fallo del recalculo'))
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
+    await screen.findByText(/se quitan 16/i)
+    fireEvent.click(screen.getByRole('button', { name: /aplicar/i }))
+
+    expect(await screen.findByText(/fallo del recalculo/i)).toBeInTheDocument()
+  })
+
+  it('guardar refresca la vista previa si estaba abierta', async () => {
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
+    await screen.findByText(/se quitan 16/i)
+    expect(requirementsApi.recalcPreview).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByLabelText('Furgón Seco'))
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(requirementsApi.recalcPreview).toHaveBeenCalledTimes(2))
+  })
+
+  it('si la lista se recarga externamente, las casillas reflejan el dato nuevo', () => {
+    const actualizado: RequirementConditions = { ...REQ, applies_to_fleet_service_type_ids: ['t1'] }
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <HarnessExterno inicial={REQ} actualizado={actualizado} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByLabelText('Furgón Congelado / Refrigerado')).not.toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: /recargar/i }))
+
+    expect(screen.getByLabelText('Furgón Congelado / Refrigerado')).toBeChecked()
   })
 
   it('si guardar falla se ve el error y el boton no pasa a guardado', async () => {
