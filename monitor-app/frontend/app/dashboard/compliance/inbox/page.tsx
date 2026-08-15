@@ -12,7 +12,7 @@ export default function ComplianceInboxPage() {
     <div className="p-4 md:p-6 space-y-3">
       <div>
         <h1 className="font-mulish font-bold text-xl text-text-primary">Bandeja</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
+        <p className="text-xs text-gray-500 mt-0.5">
           Documentos cargados que todavía no están asignados a un requisito.
         </p>
       </div>

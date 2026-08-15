@@ -70,7 +70,7 @@ export function MoveToCarrierBar({ targetIds, currentCarrierId, onMoved }: Props
       <button
         type="button"
         onClick={() => { setOpen(false); setError(null) }}
-        className="text-[10px] text-gray-400 hover:text-gray-600"
+        className="text-[10px] text-gray-500 hover:text-gray-600"
       >
         Cancelar
       </button>

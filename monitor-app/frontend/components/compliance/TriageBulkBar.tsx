@@ -78,7 +78,7 @@ export function TriageBulkBar({
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className="flex items-center gap-1.5 text-[11px] font-semibold text-white/80 hover:text-white transition-colors"
+          className="flex items-center gap-1.5 text-[11px] font-semibold text-white/80 hover:text-white transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40 rounded px-1"
         >
           <Trash2 size={12} /> Descartar
         </button>
@@ -89,7 +89,7 @@ export function TriageBulkBar({
         onClick={onClear}
         aria-label="Deseleccionar"
         title="Deseleccionar"
-        className="ml-auto shrink-0 p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+        className="ml-auto shrink-0 p-1 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40"
       >
         <X size={13} />
       </button>

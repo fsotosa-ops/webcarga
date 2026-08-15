@@ -180,7 +180,7 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
           }`}
         >
           {uploadMutation.isPending
-            ? <Loader2 size={16} className="animate-spin text-accent" />
+            ? <Loader2 size={16} className="motion-safe:animate-spin text-accent" />
             : <UploadCloud size={16} className="text-gray-400" />}
           <span className="text-[11px] text-gray-500">
             Arrastrá acá los documentos de {carrierName}
@@ -205,7 +205,7 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
           <span className="text-2xl font-bold text-slate-800 tabular-nums leading-none">{total}</span>
           <span className="text-xs text-gray-500">sin clasificar</span>
           {grupos > 0 && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-500">
               · {grupos === 1 ? '1 empresa' : `${grupos} empresas`}
             </span>
           )}
@@ -230,8 +230,8 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
 
             <div className="overflow-y-auto max-h-[54vh]">
               {queueQuery.isPending ? (
-                <p className="text-[11px] text-gray-400 p-3 flex items-center gap-1.5">
-                  <Loader2 size={11} className="animate-spin" /> Cargando…
+                <p className="text-[11px] text-gray-500 p-3 flex items-center gap-1.5">
+                  <Loader2 size={11} className="motion-safe:animate-spin" /> Cargando…
                 </p>
               ) : (
                 <TriageFileTable

@@ -44,7 +44,7 @@ export function TriageFileTable({
     return (
       <div className="p-6 text-center">
         <FileQuestion size={20} className="mx-auto text-gray-300 mb-2" />
-        <p className="text-xs text-gray-400">No hay documentos sin clasificar</p>
+        <p className="text-xs text-gray-500">No hay documentos sin clasificar</p>
       </div>
     )
   }
@@ -75,6 +75,7 @@ export function TriageFileTable({
               aria-label="Seleccionar todos"
               checked={allSelected}
               onChange={onToggleAll}
+              className="cursor-pointer accent-accent focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
             />
           </th>
           <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Archivo</th>
@@ -118,6 +119,7 @@ export function TriageFileTable({
                     aria-label={`Seleccionar ${r.file_name}`}
                     checked={checked}
                     onChange={() => {}}
+                    className="cursor-pointer accent-accent focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
                     onClick={e => {
                       e.stopPropagation()
                       onToggle(r.id, e.shiftKey ? { range: true } : undefined)
@@ -160,5 +162,5 @@ function Suggestion({ row }: { row: QueueRow }) {
       </span>
     )
   }
-  return <span className="text-gray-400" title="Sin sugerencia — el clasificador automático todavía no está conectado">—</span>
+  return <span className="text-gray-500" title="Sin sugerencia — el clasificador automático todavía no está conectado">—</span>
 }

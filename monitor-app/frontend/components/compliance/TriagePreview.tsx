@@ -13,7 +13,7 @@ export function TriagePreview({ items }: { items: TrayItem[] }) {
   if (!items.length) {
     return (
       <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center">
-        <p className="text-[11px] text-gray-400">Elegí un documento para verlo</p>
+        <p className="text-[11px] text-gray-500">Elegí un documento para verlo</p>
       </div>
     )
   }
@@ -44,7 +44,7 @@ export function TriagePreview({ items }: { items: TrayItem[] }) {
         {item.preview_url && !isImage && (
           <iframe src={item.preview_url} title={item.file_name} className="w-full h-full" />
         )}
-        {!item.preview_url && <p className="text-[11px] text-gray-400">Sin vista previa</p>}
+        {!item.preview_url && <p className="text-[11px] text-gray-500">Sin vista previa</p>}
       </div>
       <figcaption className="text-[10px] text-gray-500 font-mono truncate" title={item.file_name}>
         {item.file_name}

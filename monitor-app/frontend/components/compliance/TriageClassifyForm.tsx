@@ -74,7 +74,7 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabe
         <p className="text-xs font-medium text-gray-500">
           Elegí uno o más documentos de la lista
         </p>
-        <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+        <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
           Con uno marcado clasificás ese. Con quince, el mismo formulario los
           clasifica a los quince.
         </p>
@@ -154,7 +154,7 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabe
         disabled={!canApply}
         className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
       >
-        {saving && <Loader2 size={14} className="animate-spin" />}
+        {saving && <Loader2 size={14} className="motion-safe:animate-spin" />}
         {targetIds.length === 1 ? 'Clasificar' : `Clasificar los ${targetIds.length}`}
       </button>
     </div>
