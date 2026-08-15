@@ -9,9 +9,11 @@ interface Props {
   /** No hay archivos esperando. La zona pasa a ocupar la pantalla. */
   vacia:      boolean
   subiendo:   boolean
-  /** Cuántos archivos tiene la tanda en vuelo. No hay avance parcial: es un
-   *  solo request con N archivos y el navegador no informa cuántos van. */
+  /** Cuántos archivos tiene la tanda en vuelo. */
   enVuelo?:   number
+  /** Cuántos ya subieron. La tanda va en lotes encadenados, así que el avance
+   *  entre lotes es real; dentro de un lote no hay nada que informar. */
+  subidos?:   number
   errores:    { file_name: string; error: string }[]
   onArchivos: (files: FileList | File[]) => void
 }
@@ -24,7 +26,7 @@ interface Props {
  *  encoge a una barra y le deja el espacio a la lista — pero no desaparece.
  */
 export function TriageDropzone({
-  carrierName, vacia, subiendo, enVuelo, errores, onArchivos,
+  carrierName, vacia, subiendo, enVuelo, subidos = 0, errores, onArchivos,
 }: Props) {
   const [encima, setEncima] = useState(false)
 
@@ -41,9 +43,9 @@ export function TriageDropzone({
             {cuantos === 1 ? 'archivo' : 'archivos'}
           </span>
         </div>
-        {/* Barra indeterminada: es un solo request con N archivos y el
+        {/* Barra indeterminada: dentro de un lote es un solo request y el
             navegador no informa cuantos van. Una barra que se llena seria un
-            dato inventado. */}
+            dato inventado. El avance real, el de lote a lote, va en texto. */}
         <div
           role="progressbar"
           aria-label="Subiendo archivos"
@@ -51,6 +53,11 @@ export function TriageDropzone({
         >
           <span className="block h-full w-1/3 bg-accent rounded-full motion-safe:animate-pulse" />
         </div>
+        {cuantos > 1 && (
+          <p className="mt-2 text-[11px] text-gray-500 tabular-nums">
+            {subidos.toLocaleString('es-CL')} de {cuantos.toLocaleString('es-CL')} listos
+          </p>
+        )}
         <p className="mt-2.5 text-[11px] text-gray-500 leading-relaxed">
           Puedes cerrar esta pestaña. El proceso sigue y al volver vas a encontrar
           los archivos en la bandeja.
@@ -75,9 +82,13 @@ export function TriageDropzone({
           <p className="mt-2.5 text-sm font-semibold text-text-primary">
             Arrastra aquí {deQuien}
           </p>
+          {/* Dice sólo lo que hoy es cierto: el input no tiene
+              `webkitdirectory`, un drop de carpeta no entrega su contenido y
+              el ZIP no está entre los MIME permitidos. Prometer carpetas hacía
+              que la persona soltara una y no pasara nada. */}
           <p className="mt-1 text-xs text-gray-500 leading-relaxed max-w-md mx-auto">
-            Puedes soltar carpetas enteras. Se agrupan por empresa o por tipo y tú
-            confirmas: nada queda certificado hasta que lo confirmes.
+            Puedes soltar varios archivos a la vez. Se agrupan por empresa o por
+            tipo y tú confirmas: nada queda certificado hasta que lo confirmes.
           </p>
           <p className="mt-3 text-[11px] text-accent font-semibold">
             o elige archivos desde tu computador
@@ -88,9 +99,12 @@ export function TriageDropzone({
           Suelta archivos en cualquier parte de esta pantalla para agregarlos a la bandeja
         </span>
       )}
+      {/* La etiqueta accesible sigue al texto visible: encogida, la zona ya no
+          dice "Arrastra aquí" y anunciarlo así mandaba a quien usa lector de
+          pantalla a buscar un recuadro que no existe. */}
       <input
         type="file" multiple className="hidden"
-        aria-label={`Arrastra aquí ${deQuien}`}
+        aria-label={vacia ? `Arrastra aquí ${deQuien}` : `Agrega ${deQuien} a la bandeja`}
         onChange={e => onArchivos(e.target.files ?? [])}
       />
     </label>

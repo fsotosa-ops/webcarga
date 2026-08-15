@@ -27,7 +27,7 @@ const PENDIENTE = {
   status: 'MISSING', expiration_date: null,
 }
 
-function setup(targetIds = ['i1', 'i2'], onApplied = vi.fn()) {
+function setup(targetIds = ['i1'], onApplied = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
@@ -48,26 +48,64 @@ async function elegir(reqName = 'Padrón') {
 beforeEach(() => {
   vi.mocked(complianceApi.listRequirements).mockReset().mockResolvedValue([REQ, REQ_FECHA])
   vi.mocked(documentIngestApi.classifyBatch).mockReset()
-    .mockResolvedValue({ applied: ['i1', 'i2'], errors: [] })
+    .mockResolvedValue({ applied: ['i1'], errors: [] })
 })
 
 describe('TriageClassifyForm', () => {
   it('anuncia a cuántos documentos va a aplicar', () => {
-    setup()
+    setup(['i1', 'i2'])
     expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeInTheDocument()
   })
 
-  it('aplica a toda la selección de una vez', async () => {
+  it('aplica el documento elegido', async () => {
     const onApplied = setup()
     await elegir()
-    fireEvent.click(screen.getByRole('button', { name: /clasificar los 2/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
 
     await waitFor(() => {
       expect(documentIngestApi.classifyBatch).toHaveBeenCalledWith({
-        item_ids: ['i1', 'i2'], entity_type: 'ASSET',
+        item_ids: ['i1'], entity_type: 'ASSET',
         entity_id: 'a1', requirement_id: 'req-1',
       })
-      expect(onApplied).toHaveBeenCalledWith(['i1', 'i2'])
+      expect(onApplied).toHaveBeenCalledWith(['i1'], [])
+    })
+  })
+
+  // Diseño §7, no negociable: en un lote una coordenada se comparte y la otra
+  // tiene que ser distinta en cada archivo. Este formulario fija las dos, así
+  // que aplicar N archivos mandaba N veces al MISMO compliance_record y cada
+  // uno pisaba al anterior: sobrevivía el último y los N-1 quedaban invisibles
+  // e irrecuperables desde la interfaz.
+  it('no deja aplicar dos archivos al mismo requisito', async () => {
+    setup(['i1', 'i2'])
+    await elegir()
+
+    expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeDisabled()
+    expect(screen.getByText(/cada archivo necesita un requisito distinto/i)).toBeInTheDocument()
+    expect(documentIngestApi.classifyBatch).not.toHaveBeenCalled()
+  })
+
+  it('con dos marcados avisa antes del clic, no después del error', () => {
+    setup(['i1', 'i2'])
+    expect(screen.getByText(/no puede compartir el sujeto y el tipo de documento/i))
+      .toBeInTheDocument()
+  })
+
+  // "10 clasificados" cuando se marcaron 12 es peor que un error: nadie va a
+  // buscar los 2 que faltan.
+  it('muestra los errores por ítem que devuelve el backend', async () => {
+    vi.mocked(documentIngestApi.classifyBatch).mockResolvedValue({
+      applied: [], errors: [{ item_id: 'i1', error: 'Fue eliminado de la bandeja' }],
+    })
+    const onApplied = setup()
+    await elegir()
+    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
+
+    expect(await screen.findByText(/fue eliminado de la bandeja/i)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(onApplied).toHaveBeenCalledWith(
+        [], [{ item_id: 'i1', error: 'Fue eliminado de la bandeja' }],
+      )
     })
   })
 
@@ -87,7 +125,7 @@ describe('TriageClassifyForm', () => {
     vi.mocked(documentIngestApi.classifyBatch).mockRejectedValue(new Error('Esa entidad no tiene ese requisito'))
     setup()
     await elegir()
-    fireEvent.click(screen.getByRole('button', { name: /clasificar los 2/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
 
     expect(await screen.findByText(/no tiene ese requisito/i)).toBeInTheDocument()
   })
@@ -101,7 +139,7 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
     render(
       <QueryClientProvider client={qc}>
         <TriageClassifyForm
-          targetIds={['i1', 'i2']}
+          targetIds={['i1']}
           subjects={SUBJECTS}
           pendingRows={[PENDIENTE] as never}
           onApplied={onApplied}
@@ -122,9 +160,9 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
     fireEvent.click(screen.getByRole('button', { name: /Padrón/ }))
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /clasificar/i })).toBeEnabled()
     })
-    fireEvent.click(screen.getByRole('button', { name: /clasificar los 2/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
 
     await waitFor(() => {
       expect(documentIngestApi.classifyBatch).toHaveBeenCalledWith(

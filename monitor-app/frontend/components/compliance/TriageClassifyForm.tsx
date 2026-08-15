@@ -10,10 +10,20 @@ import type { PendingComplianceRow } from '@/lib/types'
 
 type Subject = { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }
 
+/** La regla del lote (diseño §7): en una tanda una coordenada se comparte y la
+ *  otra tiene que ser distinta en cada archivo. Este formulario fija las dos
+ *  —el sujeto y el requisito—, así que aplica a un archivo. Marcar 31 licencias
+ *  y mandarlas al mismo conductor destruía 30: ese conductor tiene UNA ranura
+ *  de Licencia de Conducir. El backend también lo rechaza; acá se avisa antes
+ *  de que la persona haga clic. */
+export const MENSAJE_LOTE_INVALIDO =
+  'Un lote no puede compartir el sujeto y el tipo de documento a la vez: '
+  + 'cada archivo necesita un requisito distinto'
+
 interface Props {
   targetIds: string[]
   subjects:  Subject[]
-  onApplied: (appliedIds: string[]) => void
+  onApplied: (appliedIds: string[], errores?: { item_id: string; error: string }[]) => void
   /** Empresa de la selección — se muestra en el encabezado para que quede
    *  claro sobre quién se está actuando cuando hay varios marcados. */
   carrierLabel?: string | null
@@ -60,11 +70,12 @@ export function TriageClassifyForm({
   const requisitoElegido = requirementId || slot?.requirement_id || ''
   const selected = requirements.find(r => r.id === requisitoElegido) ?? null
   const needsDate = selected?.has_expiration ?? false
-  const canApply = targetIds.length > 0 && !!subject && !!requisitoElegido
+  const loteInvalido = targetIds.length > 1
+  const canApply = targetIds.length > 0 && !loteInvalido && !!subject && !!requisitoElegido
     && (!needsDate || !!expiration) && !saving
 
   async function apply() {
-    if (!subject) return
+    if (!subject || loteInvalido) return
     setSaving(true)
     setError(null)
     try {
@@ -78,7 +89,13 @@ export function TriageClassifyForm({
       setRequirementId('')
       setExpiration('')
       setSlot(null)
-      onApplied(res.applied)
+      // Los errores por ítem viajan hacia arriba: descartarlos hacía que la
+      // pantalla dijera "10 clasificados" cuando se habían marcado 12.
+      if (res.errors.length) {
+        setError(`${res.errors.length === 1 ? '1 documento no se pudo clasificar' : `${res.errors.length} documentos no se pudieron clasificar`}: `
+          + Array.from(new Set(res.errors.map(x => x.error))).join(' · '))
+      }
+      onApplied(res.applied, res.errors)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo clasificar')
     } finally {
@@ -94,8 +111,8 @@ export function TriageClassifyForm({
           Selecciona uno o más documentos de la lista
         </p>
         <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
-          Con uno marcado clasificas ese. Con quince, el mismo formulario los
-          clasifica a los quince.
+          Clasificar es de a un archivo: cada uno va a un requisito distinto.
+          Marcar varios sirve para moverlos o descartarlos en lote.
         </p>
       </div>
     )
@@ -111,6 +128,12 @@ export function TriageClassifyForm({
         </span>
         {carrierLabel && <span> · {carrierLabel}</span>}
       </p>
+
+      {loteInvalido && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
+          {MENSAJE_LOTE_INVALIDO}. Deja marcado un solo archivo para clasificarlo.
+        </p>
+      )}
 
       {/* Lo que le falta a la empresa, que es la pregunta real: clasificar es
           cubrir un hueco concreto, no describir el archivo en abstracto. */}

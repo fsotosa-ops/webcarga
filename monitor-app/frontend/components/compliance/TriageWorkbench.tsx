@@ -1,11 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, X } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
+import type { IngestUploadResult } from '@/lib/types'
 import { TriageBulkBar } from './TriageBulkBar'
 import { TriageClassifyForm } from './TriageClassifyForm'
 import { TriageDropzone } from './TriageDropzone'
@@ -25,6 +26,40 @@ interface Props {
 
 const QUEUE_PAGE = 200
 
+/** El backend corta en 50 archivos por request (`_MAX_FILES_PER_UPLOAD`) y
+ *  devuelve 422. Soltar la carpeta de 120 documentos —el caso de uso que
+ *  justifica toda la bandeja— mandaba los 120 en una sola tanda y no subía
+ *  nada. Se parte acá, del lado del cliente, y los lotes van encadenados. */
+const LOTE_DE_SUBIDA = 50
+
+/** Todo lo que una operación de la bandeja deja obsoleto.
+ *
+ *  Una sola lista para las cinco mutaciones (subir, clasificar, descartar,
+ *  mover, deshacer): cada una invalidaba un conjunto distinto, así que subir
+ *  desde la bandeja refrescaba la lista pero dejaba el contador del sidebar
+ *  (`staleTime: 60_000`) contradiciéndola durante un minuto.
+ *
+ *  `['ingest-queue']` va por prefijo a propósito: la cola se cachea como
+ *  `['ingest-queue', <empresa|'all'>]` y mover archivos cambia el grupo de
+ *  origen Y el de destino. */
+export const CLAVES_DE_LA_BANDEJA: readonly string[][] = [
+  ['ingest-queue'],
+  ['ingest-queue-count'],
+  ['compliance-pending'],
+  ['compliance-pending-carrier-panel'],
+  ['certification-status'],
+]
+
+function mensajeDe(e: unknown, porDefecto: string) {
+  return e instanceof Error && e.message ? e.message : porDefecto
+}
+
+/** Los motivos distintos que devolvió el backend, sin repetirlos: 30 errores
+ *  iguales son un motivo, no treinta líneas. */
+function motivosDe(errores: { error: string }[]) {
+  return Array.from(new Set(errores.map(e => e.error))).join(' · ')
+}
+
 /** La bandeja de trabajo: tabla, barra contextual y panel de detalle. Cero
  *  modales.
  *
@@ -38,6 +73,9 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [errors, setErrors] = useState<{ file_name: string; error: string }[]>([])
   const [notice, setNotice] = useState<string | null>(null)
+  // Cuántos archivos de la tanda ya se subieron. El avance es por lote, no
+  // dentro del lote: fingir un porcentaje dentro de un request sería inventarlo.
+  const [subidos, setSubidos] = useState(0)
   // El ultimo lote aplicado, para poder revertirlo. No hace falta un registro
   // de operaciones: quien deshace es quien acaba de aplicar.
   const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
@@ -111,39 +149,86 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
       preview_url: r.id === focusedId ? previewQuery.data?.preview_url ?? null : null,
     }))
 
+  /** Lo que toda operación de la bandeja deja obsoleto, en un solo lugar. */
+  function refrescarBandeja() {
+    for (const queryKey of CLAVES_DE_LA_BANDEJA) qc.invalidateQueries({ queryKey })
+  }
+
   const uploadMutation = useMutation({
-    mutationFn: (files: File[]) => documentIngestApi.upload(carrierId, files),
-    onSuccess: res => { setErrors(res.errors); qc.invalidateQueries({ queryKey: queueKey }) },
+    mutationFn: async (files: File[]) => {
+      const items: IngestUploadResult['items'] = []
+      const errores: IngestUploadResult['errors'] = []
+      setSubidos(0)
+      for (let i = 0; i < files.length; i += LOTE_DE_SUBIDA) {
+        const lote = files.slice(i, i + LOTE_DE_SUBIDA)
+        // Encadenados, no en paralelo: cada lote sube sus archivos a Storage y
+        // lanzar tres tandas de 50 a la vez es pelearle ancho de banda a las
+        // otras dos.
+        const res = await documentIngestApi.upload(carrierId, lote)
+        items.push(...res.items)
+        errores.push(...res.errors)
+        // Se publican mientras avanza: si un lote posterior falla, lo que ya
+        // se sabe no se pierde con el throw.
+        setErrors([...errores])
+        setSubidos(i + lote.length)
+      }
+      return { items, errors: errores }
+    },
+    onSuccess: res => { setErrors(res.errors); refrescarBandeja() },
+    onError: e => {
+      // Sin esto la zona volvía al estado vacío, sin un solo mensaje, y quien
+      // soltó 120 archivos se quedaba creyendo que se subieron.
+      setNotice(`No se pudieron subir todos los archivos. ${mensajeDe(e, 'Intenta de nuevo.')}`)
+      refrescarBandeja()
+    },
   })
   const undoMutation = useMutation({
     mutationFn: (ids: string[]) => documentIngestApi.undoClassify(ids),
-    onSuccess: res => {
-      setUltimoLote(null)
+    onSuccess: (res, ids) => {
       // Deshacer es la operación inversa de aplicar: invalida el mismo
-      // conjunto que handleApplied (más certification-status) para que el
-      // contador del sidebar no quede contradiciendo a la lista hasta que
-      // venza su staleTime.
-      qc.invalidateQueries({ queryKey: queueKey })
-      qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', subjectCarrierId] })
-      qc.invalidateQueries({ queryKey: ['compliance-pending'] })
-      qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
-      qc.invalidateQueries({ queryKey: ['certification-status'] })
-      if (res.errors.length) {
-        setNotice(
-          `No se pudieron revertir ${res.errors.length}: el requisito ya tenía un documento anterior`,
-        )
+      // conjunto, para que el contador del sidebar no quede contradiciendo a
+      // la lista hasta que venza su staleTime.
+      refrescarBandeja()
+      if (!res.errors.length) {
+        setUltimoLote(null)
+        setNotice(res.reverted.length === 1
+          ? '1 archivo volvió a la bandeja'
+          : `${res.reverted.length} archivos volvieron a la bandeja`)
+        return
       }
+      // Con errores el aviso NO se cierra: cerrarlo pierde los ids y con ellos
+      // el segundo intento. Se queda con los que siguen pendientes y con el
+      // motivo real, que no siempre es "ya tenía un documento anterior".
+      const pendientes = res.errors.map(e => e.item_id).filter(id => ids.includes(id))
+      setUltimoLote({
+        ids: pendientes.length ? pendientes : ids,
+        mensaje: `No se pudieron revertir ${res.errors.length} de ${ids.length}: ${motivosDe(res.errors)}`,
+      })
     },
+    onError: e => setNotice(`No se pudo deshacer. ${mensajeDe(e, 'Intenta de nuevo.')}`),
   })
   const discardMutation = useMutation({
-    mutationFn: (ids: string[]) => Promise.all(ids.map(id => documentIngestApi.remove(id))),
-    onSuccess: (_r, ids) => {
-      setNotice(ids.length === 1 ? '1 descartado' : `${ids.length} descartados`)
+    // allSettled y no all: con `all` una baja que falla rechaza el conjunto,
+    // no se invalida nada, no se muestra nada, y los que sí se borraron siguen
+    // en pantalla.
+    mutationFn: async (ids: string[]) => {
+      const res = await Promise.allSettled(ids.map(id => documentIngestApi.remove(id)))
+      return { ids, fallidos: ids.filter((_, i) => res[i].status === 'rejected') }
+    },
+    onSuccess: ({ ids, fallidos }) => {
+      const ok = ids.length - fallidos.length
+      setNotice(
+        fallidos.length
+          ? `${ok} de ${ids.length} descartados · `
+            + (fallidos.length === 1 ? '1 no se pudo descartar' : `${fallidos.length} no se pudieron descartar`)
+          : ok === 1 ? '1 descartado' : `${ok} descartados`,
+      )
       clearSelection()
-      qc.invalidateQueries({ queryKey: queueKey })
-      qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
+      refrescarBandeja()
     },
   })
+
+  const { mutate: subirArchivos } = uploadMutation
 
   function clearSelection() {
     setSelectedIds(new Set())
@@ -152,8 +237,27 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
 
   function handleFiles(list: FileList | File[]) {
     const files = Array.from(list)
-    if (files.length) uploadMutation.mutate(files)
+    if (files.length) subirArchivos(files)
   }
+
+  // Soltar un archivo FUERA del recuadro hacía que el navegador navegara al
+  // archivo y sacara a la persona de la aplicación. Con esto, soltar en
+  // cualquier parte de la pantalla lo encamina a la bandeja.
+  useEffect(() => {
+    if (!canEdit) return
+    const prevenir = (e: DragEvent) => e.preventDefault()
+    const soltar = (e: DragEvent) => {
+      e.preventDefault()
+      const files = e.dataTransfer?.files
+      if (files?.length) subirArchivos(Array.from(files))
+    }
+    window.addEventListener('dragover', prevenir)
+    window.addEventListener('drop', soltar)
+    return () => {
+      window.removeEventListener('dragover', prevenir)
+      window.removeEventListener('drop', soltar)
+    }
+  }, [canEdit, subirArchivos])
 
   function handleToggle(id: string, opts?: { range?: boolean }) {
     setSelectedIds(prev => {
@@ -185,26 +289,33 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
     setFocusedId(id)
   }
 
-  function handleApplied(appliedIds: string[]) {
+  function handleApplied(appliedIds: string[], errores: { item_id: string; error: string }[] = []) {
     const quedan = Math.max(total - appliedIds.length, 0)
-    setNotice(
-      `${appliedIds.length === 1 ? '1 clasificado' : `${appliedIds.length} clasificados`}`
-      + ` · ${quedan === 1 ? 'queda 1' : `quedan ${quedan}`}`,
-    )
     clearSelection()
-    qc.invalidateQueries({ queryKey: queueKey })
-    qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', subjectCarrierId] })
-    qc.invalidateQueries({ queryKey: ['compliance-pending'] })
-    qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
+    refrescarBandeja()
 
-    if (appliedIds.length) {
-      setUltimoLote({
-        ids: appliedIds,
-        mensaje: appliedIds.length === 1
-          ? '1 archivo clasificado'
-          : `${appliedIds.length} archivos clasificados`,
-      })
+    // Sin nada aplicado no hay nada que deshacer: el aviso de abajo, que es el
+    // que se reserva para lo que no tiene vuelta atrás.
+    if (!appliedIds.length) {
+      setNotice(errores.length
+        ? `No se clasificó ningún documento: ${motivosDe(errores)}`
+        : 'No se clasificó ningún documento')
+      return
     }
+
+    // Un solo aviso para un solo evento. El conteo restante se pliega acá
+    // dentro en vez de abrir un segundo cartel abajo que dice lo mismo.
+    const partes = [
+      appliedIds.length === 1 ? '1 archivo clasificado' : `${appliedIds.length} archivos clasificados`,
+      quedan === 1 ? 'queda 1 sin clasificar' : `quedan ${quedan} sin clasificar`,
+    ]
+    if (errores.length) {
+      partes.push(
+        `${errores.length === 1 ? '1 no se pudo' : `${errores.length} no se pudieron`}`
+        + `: ${motivosDe(errores)}`,
+      )
+    }
+    setUltimoLote({ ids: appliedIds, mensaje: partes.join(' · ') })
   }
 
   return (
@@ -217,6 +328,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
           // React Query conserva las variables de la mutación en vuelo: es de
           // donde sale cuántos archivos tiene la tanda que se está subiendo.
           enVuelo={uploadMutation.variables?.length}
+          subidos={subidos}
           errores={errors}
           onArchivos={handleFiles}
         />
@@ -258,7 +370,11 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
                 currentCarrierId={selectedCarrierId}
                 onDiscard={() => discardMutation.mutate(targetIds)}
                 onClear={clearSelection}
-                onMoved={() => { setNotice('Documentos movidos'); clearSelection() }}
+                onMoved={n => {
+                  setNotice(n === 1 ? '1 archivo movido' : `${n} archivos movidos`)
+                  clearSelection()
+                  refrescarBandeja()
+                }}
               />
             )}
 
@@ -315,8 +431,14 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
         </div>
       </div>
 
+      {/* El aviso sin deshacer. El tono oscuro es el mismo token que el aviso
+          de deshacer (`bg-text-primary`): eran dos negros distintos para dos
+          carteles que la persona ve juntos. */}
       {notice && (
-        <div className="inline-flex items-center gap-3 bg-slate-800 text-white text-[11px] rounded-lg pl-3 pr-2 py-1.5 shadow-sm">
+        <div
+          data-testid="triage-notice"
+          className="inline-flex items-center gap-3 bg-text-primary text-white text-[11px] rounded-lg pl-3 pr-2 py-1.5 shadow-sm"
+        >
           <span>{notice}</span>
           <button
             type="button"

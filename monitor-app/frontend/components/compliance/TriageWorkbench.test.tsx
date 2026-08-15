@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { TriageWorkbench } from './TriageWorkbench'
@@ -42,6 +42,8 @@ beforeEach(() => {
   })
   vi.mocked(documentIngestApi.previewUrl).mockReset()
     .mockResolvedValue({ preview_url: 'https://x/1' })
+  vi.mocked(documentIngestApi.upload).mockReset()
+  vi.mocked(documentIngestApi.remove).mockReset()
   vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({
     total: 1,
     rows: [{
@@ -103,9 +105,20 @@ describe('TriageWorkbench', () => {
     expect(await screen.findByTestId('triage-dropzone')).toBeInTheDocument()
   })
 
+  // La bandeja de ACME tiene archivos, así que la zona está encogida: la
+  // etiqueta accesible tiene que decir lo mismo que el texto visible, no
+  // "Arrastra aquí" a un recuadro que ya no existe.
   it('desde la ficha si se puede subir', async () => {
     setup({ carrierId: 'acme', carrierName: 'ACME' })
-    expect(await screen.findByLabelText(/arrastra aquí los documentos de ACME/i)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/agrega los documentos de ACME a la bandeja/i))
+      .toBeInTheDocument()
+  })
+
+  it('vacía, la etiqueta accesible sí dice "arrastra aquí"', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup({ carrierId: 'acme', carrierName: 'ACME' })
+    expect(await screen.findByLabelText(/arrastra aquí los documentos de ACME/i))
+      .toBeInTheDocument()
   })
 
   it('pide la url firmada solo del archivo enfocado', async () => {
@@ -127,5 +140,139 @@ describe('TriageWorkbench', () => {
         expect.objectContaining({ carrierId: 'acme' }),
       )
     })
+  })
+})
+
+// El caso de uso que justifica toda la bandeja: soltar la carpeta de 120
+// documentos. El backend corta en 50 por request y devuelve 422; mandarlos
+// todos juntos no subía NADA y la pantalla no decía una palabra.
+describe('TriageWorkbench — soltar más de 50 archivos', () => {
+  const archivos = (n: number) =>
+    Array.from({ length: n }, (_, i) => new File(['x'], `d${i}.pdf`, { type: 'application/pdf' }))
+
+  function subida(files: File[]) {
+    return {
+      batch_id: 'b1',
+      items: files.map((f, i) => ({
+        id: `n${i}`, file_name: f.name, mime_type: f.type, size_bytes: 1,
+        storage_path: `s/${f.name}`, match_status: 'UNMATCHED' as const,
+        preview_url: null,
+      })),
+      errors: [] as { file_name: string; error: string }[],
+    }
+  }
+
+  async function zona() {
+    return screen.findByLabelText(/agrega los documentos a la bandeja/i)
+  }
+
+  it('parte la tanda en lotes de 50 y los encadena de a uno', async () => {
+    let enVuelo = 0
+    let maxEnVuelo = 0
+    vi.mocked(documentIngestApi.upload).mockImplementation(async (_c, files) => {
+      enVuelo += 1
+      maxEnVuelo = Math.max(maxEnVuelo, enVuelo)
+      await new Promise(r => setTimeout(r, 0))
+      enVuelo -= 1
+      return subida(files)
+    })
+    setup()
+
+    fireEvent.change(await zona(), { target: { files: archivos(120) } })
+
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledTimes(3))
+    expect(vi.mocked(documentIngestApi.upload).mock.calls.map(c => c[1].length))
+      .toEqual([50, 50, 20])
+    // Son subidas a Storage: encadenadas, nunca tres tandas simultáneas.
+    expect(maxEnVuelo).toBe(1)
+  })
+
+  it('con 50 o menos sigue siendo un solo request', async () => {
+    vi.mocked(documentIngestApi.upload).mockImplementation(async (_c, files) => subida(files))
+    setup()
+
+    fireEvent.change(await zona(), { target: { files: archivos(50) } })
+
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledTimes(1))
+  })
+
+  it('acumula los errores de cada lote', async () => {
+    vi.mocked(documentIngestApi.upload).mockImplementation(async (_c, files) => ({
+      ...subida(files),
+      errors: [{ file_name: `${files[0].name}`, error: 'Tipo no permitido' }],
+    }))
+    setup()
+
+    fireEvent.change(await zona(), { target: { files: archivos(120) } })
+
+    // Uno por lote: los tres tienen que sobrevivir, no sólo el último.
+    await waitFor(() => expect(screen.getAllByText(/tipo no permitido/i)).toHaveLength(3))
+  })
+
+  it('si la subida falla, lo dice en vez de volver al estado vacío', async () => {
+    vi.mocked(documentIngestApi.upload)
+      .mockRejectedValue(new Error('Máximo 50 archivos por carga'))
+    setup()
+
+    fireEvent.change(await zona(), { target: { files: archivos(120) } })
+
+    expect(await screen.findByText(/no se pudieron subir todos los archivos/i))
+      .toBeInTheDocument()
+    expect(screen.getByText(/máximo 50 archivos por carga/i)).toBeInTheDocument()
+  })
+
+  // Soltar fuera del recuadro hacía que el navegador NAVEGARA al archivo y
+  // sacara a la persona de la aplicación.
+  it('soltar en cualquier parte de la pantalla no navega al archivo', async () => {
+    vi.mocked(documentIngestApi.upload).mockImplementation(async (_c, files) => subida(files))
+    setup()
+    await screen.findByText('i1.png')
+
+    const evento = createEvent.drop(window, { dataTransfer: { files: archivos(2) } })
+    fireEvent(window, evento)
+
+    expect(evento.defaultPrevented).toBe(true)
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('TriageWorkbench — descartar en lote', () => {
+  beforeEach(() => {
+    // Dos archivos de la MISMA empresa: la selección no puede cruzarlas.
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({
+      total: 2, rows: [row('i1', 'ACME'), row('i2', 'ACME')],
+    })
+  })
+
+  async function descartarLosDos() {
+    setup()
+    await screen.findByText('i1.png')
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /i2\.png/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /descartar los 2/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sí, descartar 2/i }))
+  }
+
+  // Con `Promise.all` una baja que falla rechazaba el conjunto: no se
+  // invalidaba nada, no se mostraba nada, y los ya borrados seguían en
+  // pantalla. Con la barra ofreciendo "Descartar los 200" eso es grave.
+  it('una baja que falla no se lleva puesto al resto', async () => {
+    vi.mocked(documentIngestApi.remove).mockImplementation(id =>
+      id === 'i2' ? Promise.reject(new Error('boom')) : Promise.resolve(undefined as never),
+    )
+
+    await descartarLosDos()
+
+    expect(await screen.findByText(/1 de 2 descartados · 1 no se pudo descartar/i))
+      .toBeInTheDocument()
+    expect(documentIngestApi.remove).toHaveBeenCalledTimes(2)
+  })
+
+  it('sin fallas dice cuántos se descartaron', async () => {
+    vi.mocked(documentIngestApi.remove).mockResolvedValue(undefined as never)
+
+    await descartarLosDos()
+
+    expect(await screen.findByText(/^2 descartados$/i)).toBeInTheDocument()
   })
 })

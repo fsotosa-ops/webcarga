@@ -42,14 +42,21 @@ describe('MoveToCarrierBar', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('anuncia cuántos documentos va a mover', () => {
+  // Misma formula que el boton vecino de descartar: convivian "Mover 3 a otra
+  // empresa" y "Descartar los 3".
+  it('anuncia cuántos documentos va a mover, con la misma fórmula que descartar', () => {
     setup()
-    expect(screen.getByRole('button', { name: /mover 2 a otra empresa/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /mover los 2 a otra empresa/i })).toBeInTheDocument()
+  })
+
+  it('con un solo archivo concuerda en singular', () => {
+    setup(['i1'])
+    expect(screen.getByRole('button', { name: /mover 1 archivo a otra empresa/i })).toBeInTheDocument()
   })
 
   it('mueve la selección a la empresa elegida', async () => {
     const onMoved = setup()
-    fireEvent.click(screen.getByRole('button', { name: /mover 2 a otra empresa/i }))
+    fireEvent.click(screen.getByRole('button', { name: /mover los 2 a otra empresa/i }))
     fireEvent.change(await screen.findByPlaceholderText(/buscar empresa/i), {
       target: { value: 'Otra' },
     })
@@ -57,29 +64,27 @@ describe('MoveToCarrierBar', () => {
 
     await waitFor(() => {
       expect(documentIngestApi.moveItems).toHaveBeenCalledWith(['i1', 'i2'], 'c2')
-      expect(onMoved).toHaveBeenCalled()
+      // Avisa cuántos movió: el aviso lo escribe el Workbench.
+      expect(onMoved).toHaveBeenCalledWith(2)
     })
   })
 
-  // BUG REAL encontrado en el click-through del 2026-08-14: invalidaba
-  // ['ingest-tray', …], clave que dejó de existir al renombrarse la cola a
-  // ['ingest-queue', …]. El backend movía bien, pero la lista quedaba stale y
-  // el grupo de origen seguía mostrando los documentos ya movidos.
-  it('refresca la cola después de mover, no solo el origen', async () => {
+  // El refresco lo hace el Workbench, con la MISMA lista de claves que usan
+  // subir, clasificar, descartar y deshacer. Acá vivía un conjunto propio de
+  // dos claves — cinco mutaciones con cinco conjuntos distintos es justo el
+  // patrón que dejaba el contador del sidebar contradiciendo a la lista.
+  it('delega el refresco en vez de tener su propio conjunto de claves', async () => {
     const spy = vi.fn()
-    setup()
+    const onMoved = setup()
     lastClient.invalidateQueries = spy
 
-    fireEvent.click(screen.getByRole('button', { name: /mover 2 a otra empresa/i }))
+    fireEvent.click(screen.getByRole('button', { name: /mover los 2 a otra empresa/i }))
     fireEvent.change(await screen.findByPlaceholderText(/buscar empresa/i), {
       target: { value: 'Otra' },
     })
     fireEvent.click(await screen.findByText('Otra Empresa'))
 
-    await waitFor(() => {
-      const claves = spy.mock.calls.map(c => JSON.stringify(c[0].queryKey))
-      expect(claves).toContain('["ingest-queue"]')
-      expect(claves).toContain('["ingest-queue-count"]')
-    })
+    await waitFor(() => expect(onMoved).toHaveBeenCalled())
+    expect(spy).not.toHaveBeenCalled()
   })
 })

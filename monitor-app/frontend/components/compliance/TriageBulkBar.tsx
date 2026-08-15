@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Trash2, X } from 'lucide-react'
 import { MoveToCarrierBar } from './MoveToCarrierBar'
+import { cuantos } from '@/lib/utils/cuantos'
 
 interface Props {
   selectedCount:    number
@@ -11,15 +12,7 @@ interface Props {
   currentCarrierId: string | null
   onDiscard:        () => void
   onClear:          () => void
-  onMoved:          () => void
-}
-
-/** "1 archivo" / "los 38". El boton tiene que nombrar la cantidad exacta:
- *  con un filtro puesto, "seleccionados" no dice si son los 40 que ves o los
- *  2.000 que calzan, y esa ambiguedad es la causa numero uno de asignaciones
- *  masivas erroneas. */
-function cuantos(n: number) {
-  return n === 1 ? '1 archivo' : `los ${n}`
+  onMoved:          (moved: number) => void
 }
 
 /** Barra contextual: aparece al seleccionar y dice cuántos son.
@@ -40,14 +33,14 @@ export function TriageBulkBar({
         <span className="font-medium text-gray-400">Ninguno seleccionado</span>
         <span className="text-gray-300" aria-hidden="true">·</span>
         <span>
-          marca con la casilla o la barra espaciadora para clasificar, mover o descartar en lote
+          marca con la casilla o la barra espaciadora para mover o descartar en lote
         </span>
       </div>
     )
   }
 
   return (
-    <div className="flex items-center gap-4 flex-wrap bg-slate-800 text-white px-3 py-2 shadow-sm">
+    <div className="flex items-center gap-4 flex-wrap bg-text-primary text-white px-3 py-2 shadow-sm">
       <span className="text-[11px] font-semibold tabular-nums">
         {selectedCount === 1 ? '1 seleccionado' : `${selectedCount} seleccionados`}
       </span>

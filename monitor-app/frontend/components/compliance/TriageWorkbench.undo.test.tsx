@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { TriageWorkbench } from './TriageWorkbench'
+import { TriageWorkbench, CLAVES_DE_LA_BANDEJA } from './TriageWorkbench'
 
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: {
@@ -29,6 +29,7 @@ vi.mock('./TriageClassifyForm', () => ({
 
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { complianceApi } from '@/lib/api/compliance'
+import { carriersApi } from '@/lib/api/carriers'
 
 const row = (id: string, carrier: string) => ({
   id, file_name: `${id}.png`, mime_type: 'image/png', size_bytes: 10,
@@ -54,6 +55,9 @@ beforeEach(() => {
   vi.mocked(documentIngestApi.previewUrl).mockReset()
     .mockResolvedValue({ preview_url: 'https://x/1' })
   vi.mocked(documentIngestApi.undoClassify).mockReset()
+  vi.mocked(documentIngestApi.upload).mockReset()
+  vi.mocked(documentIngestApi.remove).mockReset()
+  vi.mocked(documentIngestApi.moveItems).mockReset()
   vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({
     total: 1,
     rows: [{
@@ -85,30 +89,149 @@ describe('TriageWorkbench — deshacer un lote', () => {
     )
   })
 
-  // Regresión: deshacer refrescaba la lista pero no el contador del sidebar
-  // (ingest-queue-count), que se queda hasta 60s contradiciendo a la lista.
-  // Deshacer es la operación inversa de aplicar y tiene que invalidar el
-  // mismo conjunto.
-  it('deshacer invalida el contador de la bandeja, igual que aplicar un lote', async () => {
-    vi.mocked(documentIngestApi.undoClassify).mockResolvedValue({ reverted: ['i1', 'i2'], errors: [] })
+  // C3 · setUltimoLote(null) era incondicional, antes de mirar res.errors: el
+  // aviso desaparecía aunque no se hubiera revertido nada, los ids se perdían
+  // y no había segundo intento.
+  it('si no revirtió nada, el aviso se queda con los ids pendientes', async () => {
+    vi.mocked(documentIngestApi.undoClassify).mockResolvedValue({
+      reverted: [],
+      errors: [
+        { item_id: 'i1', error: 'No estaba clasificado' },
+        { item_id: 'i2', error: 'No estaba clasificado' },
+      ],
+    })
+    setup({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
+    fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
+
+    expect(await screen.findByText(/no se pudieron revertir 2 de 2/i)).toBeInTheDocument()
+    // Y el botón sigue ahí: hay segundo intento.
+    fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
+    await waitFor(() =>
+      expect(documentIngestApi.undoClassify).toHaveBeenLastCalledWith(['i1', 'i2']),
+    )
+  })
+
+  // El mensaje afirmaba siempre "el requisito ya tenía un documento anterior",
+  // pero el backend también devuelve "No estaba clasificado".
+  it('muestra el motivo real que devolvió el backend', async () => {
+    vi.mocked(documentIngestApi.undoClassify).mockResolvedValue({
+      reverted: ['i1'],
+      errors: [{ item_id: 'i2', error: 'No estaba clasificado' }],
+    })
+    setup({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
+    fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
+
+    expect(await screen.findByText(/no estaba clasificado/i)).toBeInTheDocument()
+    expect(screen.queryByText(/documento anterior/i)).not.toBeInTheDocument()
+  })
+
+  it('revertido entero, el aviso sí se cierra', async () => {
+    vi.mocked(documentIngestApi.undoClassify).mockResolvedValue({
+      reverted: ['i1', 'i2'], errors: [],
+    })
+    setup({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
+    fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^deshacer$/i })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByText(/2 archivos volvieron a la bandeja/i)).toBeInTheDocument()
+  })
+
+  it('si el deshacer falla por red, lo dice', async () => {
+    vi.mocked(documentIngestApi.undoClassify).mockRejectedValue(new Error('Failed to fetch'))
+    setup({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
+    fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
+
+    expect(await screen.findByText(/no se pudo deshacer/i)).toBeInTheDocument()
+  })
+
+  // I7 · convivían el aviso de deshacer arriba ("2 archivos clasificados") y
+  // un toast abajo ("2 clasificados · quedan 5"), con dos fondos oscuros
+  // distintos y dos botones de cerrar, para el mismo evento.
+  it('aplicar un lote deja UN aviso, con el conteo restante adentro', async () => {
+    setup({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
+    fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
+
+    const aviso = await screen.findByRole('status')
+    expect(aviso).toHaveTextContent(/2 archivos clasificados/)
+    expect(aviso).toHaveTextContent(/quedan 0 sin clasificar/)
+    expect(screen.queryByTestId('triage-notice')).not.toBeInTheDocument()
+  })
+})
+
+// I2 · Convivían cinco conjuntos de invalidación distintos para las cinco
+// mutaciones de la bandeja. Subir sólo invalidaba la cola, así que el badge
+// del sidebar (staleTime 60s) quedaba contradiciendo la lista. Este test
+// compara cada mutación contra la MISMA lista, en vez de repartir aserciones
+// sueltas por los archivos.
+describe('TriageWorkbench — todas las operaciones refrescan lo mismo', () => {
+  const ESPERADO = [...CLAVES_DE_LA_BANDEJA]
+    .map(k => JSON.stringify(k)).sort()
+
+  it('las cinco mutaciones invalidan el mismo conjunto de claves', async () => {
+    vi.mocked(documentIngestApi.upload).mockResolvedValue({
+      batch_id: 'b1', items: [], errors: [],
+    })
+    vi.mocked(documentIngestApi.remove).mockResolvedValue(undefined as never)
+    vi.mocked(documentIngestApi.undoClassify).mockResolvedValue({
+      reverted: ['i1', 'i2'], errors: [],
+    })
+    vi.mocked(documentIngestApi.moveItems).mockResolvedValue({ moved: 1 })
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c2', business_name: 'Otra Empresa', tax_id: '76000000-0' }],
+    } as never)
+
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries')
+    const spy = vi.spyOn(qc, 'invalidateQueries')
     render(
       <QueryClientProvider client={qc}>
-        <TriageWorkbench carrierId="c1" carrierName="Transportes Charlotte Spa" />
+        <TriageWorkbench />
       </QueryClientProvider>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
-    invalidateSpy.mockClear()
-    fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
-    await waitFor(() => expect(documentIngestApi.undoClassify).toHaveBeenCalled())
-    await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ queryKey: ['ingest-queue-count'] }),
-      )
+    await screen.findByText('i1.png')
+
+    async function clavesDe(que: string, operar: () => void | Promise<void>) {
+      spy.mockClear()
+      await operar()
+      await waitFor(() => expect(spy).toHaveBeenCalled())
+      const claves = Array.from(
+        new Set(spy.mock.calls.map(c => JSON.stringify(c[0]?.queryKey))),
+      ).sort()
+      expect(claves, `la operación "${que}" no refresca el mismo conjunto`).toEqual(ESPERADO)
+    }
+
+    await clavesDe('subir', () => {
+      fireEvent.change(screen.getByLabelText(/agrega los documentos a la bandeja/i), {
+        target: { files: [new File(['x'], 'd.pdf', { type: 'application/pdf' })] },
+      })
     })
-    expect(invalidateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: ['compliance-pending'] }),
-    )
+
+    await clavesDe('aplicar un lote', () => {
+      fireEvent.click(screen.getByRole('button', { name: /simular lote aplicado/i }))
+    })
+
+    await clavesDe('deshacer', () => {
+      fireEvent.click(screen.getByRole('button', { name: /^deshacer$/i }))
+    })
+
+    await clavesDe('descartar', async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+      fireEvent.click(await screen.findByRole('button', { name: /descartar 1 archivo/i }))
+      fireEvent.click(await screen.findByRole('button', { name: /sí, descartar 1/i }))
+    })
+
+    await clavesDe('mover a otra empresa', async () => {
+      fireEvent.click(screen.getByRole('checkbox', { name: /i2\.png/ }))
+      fireEvent.click(await screen.findByRole('button', { name: /mover 1 archivo a otra empresa/i }))
+      fireEvent.change(await screen.findByPlaceholderText(/buscar empresa/i), {
+        target: { value: 'Otra' },
+      })
+      fireEvent.click(await screen.findByText('Otra Empresa'))
+    })
   })
 })

@@ -78,7 +78,15 @@ describe('TriageBulkBar', () => {
 
   it('ofrece mover cuando la seleccion es de una sola empresa', () => {
     setup()
-    expect(screen.getByRole('button', { name: /mover 3 a otra empresa/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /mover los 3 a otra empresa/i })).toBeInTheDocument()
+  })
+
+  // Los dos botones vecinos nombran la cantidad con la MISMA formula: convivian
+  // "Mover 3 a otra empresa" y "Descartar los 3".
+  it('mover y descartar nombran la cantidad igual', () => {
+    setup()
+    expect(screen.getByRole('button', { name: /mover los 3/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /descartar los 3/i })).toBeInTheDocument()
   })
 
   it('no ofrece mover si la seleccion cruza empresas', () => {
