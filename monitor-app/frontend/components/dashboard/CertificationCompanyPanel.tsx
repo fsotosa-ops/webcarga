@@ -1,16 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Upload, Loader2, ArrowRight } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { BulkDocumentUploadModal } from './BulkDocumentUploadModal'
-import { ClassifyDocumentModal } from './ClassifyDocumentModal'
 import { ExpirationDateCell } from './ExpirationDateCell'
-import { UnclassifiedTray } from './UnclassifiedTray'
-import type { TrayItem } from '@/lib/types'
 
 interface Props {
   carrierId: string | null
@@ -28,7 +25,6 @@ export function CertificationCompanyPanel({ carrierId, onClose }: Props) {
   const queryClient = useQueryClient()
   const canEdit = useCanEdit()
   const [bulkOpen, setBulkOpen] = useState(false)
-  const [classifying, setClassifying] = useState<TrayItem | null>(null)
 
   const query = useQuery({
     queryKey: ['compliance-pending-carrier-panel', carrierId],
@@ -83,26 +79,6 @@ export function CertificationCompanyPanel({ carrierId, onClose }: Props) {
   const carrierName = rows[0]?.carrier_name ?? ''
   const carrierTaxId = rows[0]?.carrier_tax_id ?? ''
 
-  // Sujetos a los que se puede asignar un documento: la empresa misma, sus
-  // conductores y sus vehículos. Salen de las filas de pendientes, que ya
-  // traen entidad y nombre — no hace falta una consulta aparte.
-  // Va ANTES del return condicional: es un hook y no puede quedar detrás de un
-  // early return.
-  const subjects = useMemo(() => {
-    const seen = new Map<string, { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }>()
-    for (const r of rows) {
-      const key = `${r.entity_type}:${r.entity_id}`
-      if (!seen.has(key)) {
-        seen.set(key, {
-          entity_type: r.entity_type as 'CARRIER' | 'DRIVER' | 'ASSET',
-          entity_id: r.entity_id,
-          label: r.subject_name ?? r.carrier_name,
-        })
-      }
-    }
-    return Array.from(seen.values())
-  }, [rows])
-
   if (!open) return null
 
   return (
@@ -130,14 +106,8 @@ export function CertificationCompanyPanel({ carrierId, onClose }: Props) {
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 p-5 space-y-3">
-            {/* Los documentos llegan en bloque y con nombres que no dicen nada,
-                así que primero se cargan y después se clasifican. */}
-            <UnclassifiedTray
-              carrierId={carrierId!}
-              canEdit={canEdit}
-              onClassify={setClassifying}
-            />
-
+            {/* La bandeja de sin clasificar se mudó a /dashboard/compliance/inbox:
+                es una cola de trabajo propia, no un accesorio de este panel. */}
             {query.isPending && (
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
             )}
@@ -209,17 +179,6 @@ export function CertificationCompanyPanel({ carrierId, onClose }: Props) {
           onSaved={handleBulkSaved}
         />
       )}
-
-      <ClassifyDocumentModal
-        item={classifying}
-        subjects={subjects}
-        onClose={() => setClassifying(null)}
-        onClassified={() => {
-          setClassifying(null)
-          invalidate()
-          queryClient.invalidateQueries({ queryKey: ['ingest-tray', carrierId] })
-        }}
-      />
     </>
   )
 }

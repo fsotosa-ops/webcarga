@@ -97,25 +97,6 @@ def test_upload_requires_at_least_one_file():
     assert res.status_code == 422
 
 
-# ── Bandeja: listar ────────────────────────────────────────────────────────
-
-def test_list_tray_returns_only_unclassified_with_preview_url():
-    pool = AsyncMock()
-    pool.fetch.return_value = [{
-        "id": "item-1", "file_name": "IMG_4905.PNG", "mime_type": "image/png",
-        "size_bytes": 9, "storage_path": "staging/b1/x.png", "match_status": "UNMATCHED",
-    }]
-    supabase = MagicMock()
-    supabase.storage.from_.return_value.create_signed_url.return_value = {"signedURL": "https://x/y"}
-    client = make_client(pool, supabase=supabase)
-
-    res = client.get("/api/v1/document-ingest/c1/items")
-
-    assert res.status_code == 200
-    assert res.json()[0]["preview_url"] == "https://x/y"
-    assert "UNMATCHED" in pool.fetch.call_args.args[0]
-
-
 # ── Bandeja: la cola global ────────────────────────────────────────────────
 
 def _queue_row(item_id="i1", carrier_name="ACME S.A.", **over):

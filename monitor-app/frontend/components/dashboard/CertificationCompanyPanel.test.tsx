@@ -16,7 +16,7 @@ vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: {
-    listTray: vi.fn(), upload: vi.fn(), remove: vi.fn(), classify: vi.fn(),
+    upload: vi.fn(), remove: vi.fn(), classify: vi.fn(),
   },
 }))
 
@@ -43,12 +43,6 @@ function renderPanel(carrierId: string | null, onClose = vi.fn()) {
 beforeEach(() => {
   vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({ total: 1, rows: [makeRow()] })
   vi.mocked(complianceApi.uploadFile).mockReset()
-  vi.mocked(documentIngestApi.listTray).mockReset().mockResolvedValue([
-    {
-      id: 'i1', file_name: 'IMG_4905.PNG', mime_type: 'image/png', size_bytes: 10,
-      storage_path: 's/x', match_status: 'UNMATCHED', preview_url: 'https://x/y',
-    },
-  ])
 })
 
 describe('CertificationCompanyPanel', () => {
@@ -137,17 +131,5 @@ describe('CertificationCompanyPanel', () => {
   })
 })
 
-describe('CertificationCompanyPanel — bandeja de sin clasificar (HU-01)', () => {
-  it('muestra los documentos sin clasificar de la empresa', async () => {
-    renderPanel('c1')
-    expect(await screen.findByText('IMG_4905.PNG')).toBeInTheDocument()
-    expect(screen.getByText(/1 sin clasificar/i)).toBeInTheDocument()
-  })
-
-  it('abre el modal de clasificacion al elegir un documento', async () => {
-    renderPanel('c1')
-    fireEvent.click(await screen.findByRole('button', { name: /clasificar/i }))
-
-    expect(await screen.findByRole('dialog', { name: /clasificar IMG_4905/i })).toBeInTheDocument()
-  })
-})
+// La bandeja de sin clasificar dejo de vivir en este panel: se mudo a
+// /dashboard/compliance/inbox, y sus tests viven en TriageWorkbench.test.tsx.

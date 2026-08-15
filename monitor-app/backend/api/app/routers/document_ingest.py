@@ -16,8 +16,7 @@ from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..routers.compliance import _apply_stored_document
 from ..schemas.document_ingest import (
-    ClassifyBatchBody, ClassifyBody, IngestUploadResult, MoveItemsBody, TrayItem,
-    TrayPage,
+    ClassifyBatchBody, ClassifyBody, IngestUploadResult, MoveItemsBody, TrayPage,
 )
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
@@ -160,35 +159,6 @@ async def get_preview_url(
     if not storage_path:
         raise HTTPException(404, "Documento no encontrado")
     return {"preview_url": resolve_signed_url(supabase, storage_path)}
-
-
-@router.get("/{carrier_id}/items", response_model=list[TrayItem])
-async def list_tray(
-    carrier_id: str,
-    pool=Depends(get_pool),
-    supabase=Depends(get_supabase),
-    _=Depends(get_current_user),
-):
-    """Documentos que esperan clasificación en esta empresa.
-
-    Cada uno viene con su URL firmada: el bucket no es público y la vista
-    previa es lo que permite decidir qué es el archivo.
-    """
-    rows = await pool.fetch(
-        """
-        SELECT i.id::text, i.file_name, i.mime_type, i.size_bytes,
-               i.storage_path, i.match_status
-        FROM public.document_ingest_items i
-        JOIN public.document_ingest_batches b ON b.id = i.batch_id
-        WHERE COALESCE(i.carrier_id, b.carrier_id) = $1 AND i.match_status = 'UNMATCHED'
-        ORDER BY i.created_at
-        """,
-        carrier_id,
-    )
-    return [
-        {**dict(r), "preview_url": resolve_signed_url(supabase, r["storage_path"])}
-        for r in rows
-    ]
 
 
 @router.post("/items/{item_id}/classify")

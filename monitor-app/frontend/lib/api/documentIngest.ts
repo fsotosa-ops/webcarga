@@ -1,4 +1,4 @@
-import type { IngestUploadResult, TrayItem, TrayPage } from '@/lib/types'
+import type { IngestUploadResult, TrayPage } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type ClassifyBody = {
@@ -30,9 +30,6 @@ export const documentIngestApi = {
       method: 'POST', body: form,
     })
   },
-
-  listTray: (carrierId: string) =>
-    apiFetch<TrayItem[]>(`/api/v1/document-ingest/${carrierId}/items`),
 
   /** La cola global de sin clasificar. Sin `carrierId` trae todas las empresas:
    *  una bandeja que obliga a elegir empresa antes de mostrar algo es un
