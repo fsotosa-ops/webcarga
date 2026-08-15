@@ -6,6 +6,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+from .common import ManagementType
+
 ComplianceStatus = Literal[
     "MISSING", "PENDING_REVIEW", "APPROVED_MANUAL", "APPROVED",
     "REJECTED", "EXPIRED", "ARCHIVED",
@@ -60,10 +62,16 @@ class PendingComplianceListResponse(BaseModel):
 
 class RequirementOption(BaseModel):
     """Una fila del catálogo de tipos de documento. La consume el desplegable
-    de clasificación de la bandeja de sin clasificar."""
+    de clasificación de la bandeja de sin clasificar, y —desde el Tramo 3—
+    la pantalla de condiciones configurables (Task 5), que necesita saber el
+    estado ACTUAL de cada requisito (vigente o no, a qué está restringido)
+    para dibujarlo, no solo su nombre y nivel."""
     id: str
     target_entity: Literal["CARRIER", "DRIVER", "ASSET"]
     requirement_code: str
     name: str
     requirement_level: Literal["LEGAL_MANDATORY", "SHIPPER_REQUIRED", "CONDITIONAL_OPTIONAL"]
     has_expiration: bool
+    is_active: bool
+    applies_to_fleet_service_type_ids: Optional[list[str]] = None
+    applies_to_management_types: Optional[list[ManagementType]] = None

@@ -40,7 +40,8 @@ def test_list_requirements_returns_catalog():
     pool.fetch.return_value = [{
         "id": "req-1", "target_entity": "DRIVER", "requirement_id": "req-1", "requirement_code": "LICENCIA_CONDUCIR",
         "name": "Licencia de Conducir", "requirement_level": "LEGAL_MANDATORY",
-        "has_expiration": True,
+        "has_expiration": True, "is_active": True,
+        "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None,
     }]
     client = make_client(pool)
 
@@ -50,6 +51,31 @@ def test_list_requirements_returns_catalog():
     body = res.json()
     assert body[0]["requirement_code"] == "LICENCIA_CONDUCIR"
     assert body[0]["has_expiration"] is True
+
+
+def test_list_requirements_returns_current_conditions():
+    """La pantalla de condiciones (Tramo 3, Task 5) necesita saber el estado
+    ACTUAL de cada requisito para dibujarlo -- si esta vigente y a que
+    subtipos/gestiones esta restringido -- no solo su nombre y nivel. Sin
+    esto la pantalla no puede distinguir "sin restriccion" de "restringido
+    a estos 2 subtipos", y mostraria todo como vigente y sin restriccion
+    aunque la base diga lo contrario (ver MANTENCION_FRIO / SEGURO_EETT)."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": "req-1", "target_entity": "ASSET", "requirement_id": "req-1", "requirement_code": "MANTENCION_FRIO",
+        "name": "Mantención Cámara de Frío", "requirement_level": "CONDITIONAL_OPTIONAL",
+        "has_expiration": True, "is_active": True,
+        "applies_to_fleet_service_type_ids": ["ft-1", "ft-2"], "applies_to_management_types": None,
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-requirements")
+
+    assert res.status_code == 200
+    body = res.json()[0]
+    assert body["is_active"] is True
+    assert body["applies_to_fleet_service_type_ids"] == ["ft-1", "ft-2"]
+    assert body["applies_to_management_types"] is None
 
 
 def test_list_requirements_filters_by_target_entity():

@@ -15,6 +15,7 @@ import { complianceApi } from '@/lib/api/compliance'
 const REQ = {
   id: 'req-1', target_entity: 'ASSET' as const, requirement_code: 'PADRON',
   name: 'Padrón', requirement_level: 'LEGAL_MANDATORY' as const, has_expiration: false,
+  is_active: true, applies_to_fleet_service_type_ids: null, applies_to_management_types: null,
 }
 const REQ_FECHA = { ...REQ, id: 'req-2', name: 'SOAP', has_expiration: true }
 const SUBJECTS = [{ entity_type: 'ASSET' as const, entity_id: 'a1', label: 'HKXW55' }]

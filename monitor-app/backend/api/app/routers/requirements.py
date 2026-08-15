@@ -38,11 +38,17 @@ async def list_compliance_requirements(
 ):
     """Tipos de documento del catálogo, opcionalmente acotados a un tipo de
     entidad. Solo lectura: administrar el catálogo requiere migración (ver
-    HU-05 de la épica Red de Transporte)."""
+    HU-05 de la épica Red de Transporte).
+
+    Incluye is_active/applies_to_* (Tramo 3): la pantalla de condiciones
+    (Task 5) los pinta directo desde esta lista, no hay un segundo endpoint
+    "de detalle" para el catálogo."""
     rows = await pool.fetch(
         """
         SELECT id::text, target_entity, requirement_code, name,
-               requirement_level, COALESCE(has_expiration, false) AS has_expiration
+               requirement_level, COALESCE(has_expiration, false) AS has_expiration,
+               is_active, applies_to_fleet_service_type_ids::text[] AS applies_to_fleet_service_type_ids,
+               applies_to_management_types
         FROM public.compliance_requirements
         WHERE ($1::text IS NULL OR target_entity = $1)
         ORDER BY target_entity, name

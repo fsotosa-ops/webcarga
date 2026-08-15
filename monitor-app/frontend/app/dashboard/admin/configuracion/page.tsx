@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { EstadosTmsTab, EstadosOperacionalesTab, EstadosEquipoTab } from './estados-tabs'
 import { AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab } from './umbrales-tabs'
+import { CondicionesDocumentosTab } from './condiciones-tab'
 
-type Tab = 'estados_tms' | 'estados_op' | 'estados_equipo' | 'alertas_monitor' | 'alertas' | 'rangos_temperatura'
+type Tab = 'estados_tms' | 'estados_op' | 'estados_equipo' | 'alertas_monitor' | 'alertas' | 'rangos_temperatura' | 'condiciones'
 
 const TABS: { key: Tab; label: string; desc: string }[] = [
   { key: 'estados_tms',        label: 'Estados TMS',            desc: 'Colores y columna del tablero' },
@@ -13,6 +14,7 @@ const TABS: { key: Tab; label: string; desc: string }[] = [
   { key: 'alertas_monitor',    label: 'Alertas del Monitor',    desc: 'Umbrales operacionales' },
   { key: 'alertas',            label: 'Alertas de Vencimiento', desc: 'Documentos, en días' },
   { key: 'rangos_temperatura', label: 'Rangos de Temperatura',  desc: 'Por tipo de carga' },
+  { key: 'condiciones',        label: 'Condiciones de Documentos', desc: 'A quién se le exige cada uno' },
 ]
 
 export default function ConfiguracionPage() {
@@ -52,6 +54,7 @@ export default function ConfiguracionPage() {
           {tab === 'alertas_monitor'    && <AlertasMonitorTab />}
           {tab === 'alertas'            && <AlertasVencimientoTab />}
           {tab === 'rangos_temperatura' && <RangosTemperaturaTab />}
+          {tab === 'condiciones'        && <CondicionesDocumentosTab />}
         </div>
       </div>
     </div>

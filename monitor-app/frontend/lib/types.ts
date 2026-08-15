@@ -1315,4 +1315,29 @@ export type RequirementOption = {
   name:              string
   requirement_level: 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
   has_expiration:    boolean
+  /** Tramo 3: la regla de a quién se le exige este documento es dato del
+   *  catálogo, no código. `null` en los dos `applies_to_*` significa "sin
+   *  restricción" (aplica a todos), no "no cargado". */
+  is_active:                         boolean
+  applies_to_fleet_service_type_ids: string[] | null
+  applies_to_management_types:       ManagementType[] | null
+}
+
+/** Lo que necesita `RequirementConditionsPanel` para dibujar un requisito:
+ *  un subconjunto de `RequirementOption` sin `requirement_level` ni
+ *  `has_expiration`, que el panel no usa. */
+export type RequirementConditions = Pick<RequirementOption,
+  'id' | 'requirement_code' | 'name' | 'target_entity' |
+  'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>
+
+export type RecalcPreview = {
+  crear:      number
+  quitar:     number
+  bloqueados: number
+}
+
+export type RecalcResult = {
+  creados:    number
+  quitados:   number
+  bloqueados: number
 }
