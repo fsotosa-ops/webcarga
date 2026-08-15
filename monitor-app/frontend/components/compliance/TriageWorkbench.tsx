@@ -159,7 +159,11 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
   }
 
   function handleApplied(appliedIds: string[]) {
-    setNotice(`${appliedIds.length} clasificados · ${Math.max(total - appliedIds.length, 0)} restantes`)
+    const quedan = Math.max(total - appliedIds.length, 0)
+    setNotice(
+      `${appliedIds.length === 1 ? '1 clasificado' : `${appliedIds.length} clasificados`}`
+      + ` · ${quedan === 1 ? 'queda 1' : `quedan ${quedan}`}`,
+    )
     clearSelection()
     qc.invalidateQueries({ queryKey: queueKey })
     qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', subjectCarrierId] })
