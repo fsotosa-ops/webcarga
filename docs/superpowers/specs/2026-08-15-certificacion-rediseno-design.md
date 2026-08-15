@@ -133,8 +133,10 @@ Un solo componente que recibe o no un `carrier_id`.
 
 **Estados obligatorios:**
 
-- **Vacía** — la zona de arrastre *es* la pantalla. Acepta carpetas y ZIP. Dice explícitamente que nada
-  queda certificado hasta confirmar. Es el estado real de hoy: 0 items.
+- **Vacía** — la zona de arrastre *es* la pantalla. Dice explícitamente que nada queda certificado
+  hasta confirmar. Es el estado real de hoy: 0 items. **Carpetas y ZIP quedan pendientes** (falta
+  `webkitdirectory`, leer el contenido de un drop de carpeta, y el MIME del ZIP): hasta que existan,
+  el texto de la zona no los promete.
 - **Cargando** — barra, conteo, tiempo estimado, y las etapas separadas (recibidos → leyendo y agrupando
   → armando pilas). Debe decir que se puede cerrar la pestaña.
 - **Con archivos** — la zona se encoge a una barra; toda la pantalla sigue aceptando que suelten encima.
@@ -295,8 +297,22 @@ Si todo tiene color, el color deja de avisar.
 | Deshacer en lote | No existe | Revertir una operación completa |
 | Empresa del alta | No se guarda la gestión | Persistir la elección |
 
-Ya existen y se conservan: `classify`, `classify-batch`, `items/move`, `preview-url`,
-`compliance-records/status?group=&carrier_id=`, `reassign`, y `document_matcher.py` completo.
+Ya existen y se conservan: `classify-batch`, `items/move`, `preview-url`,
+`compliance-records/status?group=&carrier_id=` y `reassign`. El `classify` de a uno **se
+eliminó** en el tramo 1 (commit `5351d35`): la carga desde la ficha pasa por la misma puerta
+que la bandeja (`upload` + `classify-batch` con un ítem), que es lo que exige D4.
+
+> **`document_matcher.py` está escrito pero NO conectado a ningún router.** Nada del sistema
+> lo importa: no hay una sola escritura de `AUTO`, `SUGGESTED` ni `AMBIGUOUS` en
+> `document_ingest_items`, y todo lo que entra queda en `UNMATCHED`. El §7 lo da por operativo
+> y esa suposición es lo que hacía latente la divergencia entre las dos definiciones de "sin
+> clasificar" (hoy resuelta con `schemas/document_ingest.unclassified_predicate()`, usada por
+> la cola y por el conteo por empresa). Engancharlo es trabajo del tramo 3.
+
+**Regla del lote, ya implementada (tramo 1):** `classify-batch` fija las dos coordenadas
+—`entity_id` y `requirement_id`—, así que admite **un solo archivo** y rechaza con 422 si se
+le piden más. Sin ese límite los N archivos entraban en un loop sobre el mismo
+`compliance_record` y cada uno pisaba al anterior.
 
 ## 11. Fuera de alcance
 
