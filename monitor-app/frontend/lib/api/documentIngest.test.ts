@@ -32,3 +32,24 @@ describe('documentIngestApi.previewUrl', () => {
     expect(apiFetch).toHaveBeenCalledWith('/api/v1/document-ingest/items/i1/preview-url')
   })
 })
+
+describe('documentIngestApi.upload', () => {
+  it('sin empresa pega a la puerta global', async () => {
+    await documentIngestApi.upload(undefined, [new File(['x'], 'doc1.pdf')])
+    expect(vi.mocked(apiFetch).mock.calls[0][0]).toBe('/api/v1/document-ingest/files')
+  })
+
+  it('con empresa pega a la puerta de esa empresa', async () => {
+    await documentIngestApi.upload('c1', [new File(['x'], 'doc1.pdf')])
+    expect(vi.mocked(apiFetch).mock.calls[0][0]).toBe('/api/v1/document-ingest/c1/files')
+  })
+})
+
+describe('documentIngestApi.undoClassify', () => {
+  it('manda los ids del lote que se acaba de aplicar', async () => {
+    await documentIngestApi.undoClassify(['a', 'b'])
+    const [url, init] = vi.mocked(apiFetch).mock.calls[0]
+    expect(url).toBe('/api/v1/document-ingest/items/undo-classify')
+    expect(JSON.parse(init!.body as string)).toEqual({ item_ids: ['a', 'b'] })
+  })
+})

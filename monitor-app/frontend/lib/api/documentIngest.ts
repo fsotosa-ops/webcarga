@@ -22,13 +22,22 @@ export type ClassifyBatchResult = {
   errors:  { item_id: string; error: string }[]
 }
 
+export type UndoClassifyResult = {
+  reverted: string[]
+  errors:   { item_id: string; error: string }[]
+}
+
 export const documentIngestApi = {
-  upload: (carrierId: string, files: File[]) => {
+  /** Sube archivos a la bandeja. Sin `carrierId` van a la bandeja global —
+   *  la tanda que llega por correo mezcla empresas y quien carga todavía no
+   *  sabe de quién es nada. */
+  upload: (carrierId: string | undefined, files: File[]) => {
     const form = new FormData()
     for (const f of files) form.append('files', f)
-    return apiFetch<IngestUploadResult>(`/api/v1/document-ingest/${carrierId}/files`, {
-      method: 'POST', body: form,
-    })
+    const url = carrierId
+      ? `/api/v1/document-ingest/${carrierId}/files`
+      : '/api/v1/document-ingest/files'
+    return apiFetch<IngestUploadResult>(url, { method: 'POST', body: form })
   },
 
   /** La cola global de sin clasificar. Sin `carrierId` trae todas las empresas:
@@ -102,4 +111,12 @@ export const documentIngestApi = {
 
   remove: (itemId: string) =>
     apiFetch<void>(`/api/v1/document-ingest/items/${itemId}`, { method: 'DELETE' }),
+
+  /** Revierte una clasificación en lote: vacía los requisitos y devuelve los
+   *  archivos a la bandeja. Se le pasan los mismos ids que `classifyBatch`
+   *  devolvió en `applied`. */
+  undoClassify: (itemIds: string[]) =>
+    apiFetch<UndoClassifyResult>('/api/v1/document-ingest/items/undo-classify', {
+      method: 'POST', body: JSON.stringify({ item_ids: itemIds }),
+    }),
 }
