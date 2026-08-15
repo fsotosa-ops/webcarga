@@ -519,3 +519,67 @@ def test_move_items_rejects_an_empty_selection():
                       json={"item_ids": [], "carrier_id": "c2"})
 
     assert res.status_code == 422
+
+
+# ── Deshacer en lote ───────────────────────────────────────────────────────
+
+def _committed_item(item_id="item-1", record_id="rec-1"):
+    return {
+        "id": item_id, "compliance_record_id": record_id,
+        "match_status": "COMMITTED", "metadata": {},
+    }
+
+
+def test_undo_returns_the_files_to_the_tray_and_empties_the_requirement():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_committed_item()]
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/undo-classify",
+        json={"item_ids": ["item-1"]},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["reverted"] == ["item-1"]
+
+    sql_ejecutado = " ".join(str(c.args[0]) for c in conn.execute.await_args_list)
+    # El requisito vuelve a estar vacío...
+    assert "compliance_records" in sql_ejecutado
+    assert "'MISSING'" in sql_ejecutado
+    # ...y el archivo vuelve a la bandeja, no se pierde.
+    assert "'UNMATCHED'" in sql_ejecutado
+
+
+def test_undo_refuses_when_the_requirement_had_a_previous_document():
+    """Sin historial de versiones no se puede restaurar lo que se piso.
+
+    Devolverlo como error es honesto; revertir a MISSING borraria un documento
+    que era valido antes de la operacion.
+    """
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [{
+        "id": "item-1", "compliance_record_id": "rec-1", "match_status": "COMMITTED",
+        "metadata": {"replaced_storage_path": "docs/rec-1/anterior.pdf"},
+    }]
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/undo-classify",
+        json={"item_ids": ["item-1"]},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["reverted"] == []
+    assert "documento anterior" in res.json()["errors"][0]["error"]
+
+
+def test_undo_rejects_an_empty_selection():
+    pool = AsyncMock()
+    client = make_client(pool)
+    res = client.post("/api/v1/document-ingest/items/undo-classify", json={"item_ids": []})
+    assert res.status_code == 422

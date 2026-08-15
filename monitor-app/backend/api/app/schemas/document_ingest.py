@@ -98,3 +98,23 @@ class MoveItemsBody(BaseModel):
     """Reasigna archivos sin clasificar a otra empresa."""
     item_ids: list[str]
     carrier_id: str
+
+
+class UndoClassifyBody(BaseModel):
+    """Revierte una clasificación en lote.
+
+    Se identifica por los mismos item_ids que devolvió `classify-batch` en
+    `applied`. No hace falta un registro de operaciones: quien deshace es
+    quien acaba de aplicar, y tiene los ids a mano.
+    """
+    item_ids: list[str]
+
+
+class UndoClassifyItemError(BaseModel):
+    item_id: str
+    error: str
+
+
+class UndoClassifyResult(BaseModel):
+    reverted: list[str]
+    errors: list[UndoClassifyItemError]

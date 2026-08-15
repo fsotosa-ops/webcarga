@@ -620,6 +620,11 @@ async def _apply_stored_document(
         "storage_path": storage_path, "file_name": file_name,
         "mime_type": mime_type, "size_bytes": size_bytes,
     }
+    # Deja rastro de que este documento piso a otro. Sin esta marca, deshacer
+    # la clasificacion volveria el requisito a MISSING y borraria un documento
+    # que era valido antes de la operacion.
+    if old_storage_path:
+        metadata["replaced_storage_path"] = old_storage_path
     await conn.execute(
         """
         UPDATE public.compliance_records SET

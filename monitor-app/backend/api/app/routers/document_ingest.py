@@ -10,6 +10,8 @@ public.compliance_records hasta que una persona lo clasifica explícitamente.
 Ningún archivo se descarta solo: lo que no se clasifica queda en la bandeja
 de esa empresa hasta que alguien lo resuelva o lo elimine.
 """
+import json
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_editor
@@ -17,6 +19,7 @@ from ..db import get_pool
 from ..routers.compliance import _apply_stored_document
 from ..schemas.document_ingest import (
     ClassifyBatchBody, ClassifyBody, IngestUploadResult, MoveItemsBody, TrayPage,
+    UndoClassifyBody, UndoClassifyResult,
 )
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
@@ -408,3 +411,91 @@ async def move_items(
             body.item_ids, body.carrier_id,
         )
     return {"moved": int(str(result).rsplit(" ", 1)[-1])}
+
+
+@router.post("/items/undo-classify", response_model=UndoClassifyResult)
+async def undo_classify(
+    body: UndoClassifyBody,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Revierte una clasificación en lote: vacía el requisito y devuelve el
+    archivo a la bandeja.
+
+    Sin esto no se puede entregar la asignación en lote: hoy corregir es de a
+    uno, y 200 archivos en la empresa equivocada no tendrían vuelta atrás.
+
+    NO revierte cuando el requisito ya tenía un documento antes: restaurarlo
+    exige el historial de versiones, que todavía no existe. Esos casos vuelven
+    en `errors` en vez de dejar el registro a medias — revertir a MISSING
+    borraría un documento que era válido antes de la operación.
+
+    El blob de staging NO se borra: el archivo vuelve a la bandeja y tiene que
+    seguir siendo visible y clasificable.
+    """
+    if not body.item_ids:
+        raise HTTPException(422, "Se requiere al menos un documento")
+
+    reverted: list[str] = []
+    errors: list[dict] = []
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            items = await conn.fetch(
+                """
+                SELECT i.id::text, i.compliance_record_id::text, i.match_status,
+                       cr.metadata
+                FROM public.document_ingest_items i
+                LEFT JOIN public.compliance_records cr ON cr.id = i.compliance_record_id
+                WHERE i.id = ANY($1::uuid[])
+                """,
+                body.item_ids,
+            )
+            if not items:
+                raise HTTPException(404, "Ningún documento encontrado en la bandeja")
+
+            for item in items:
+                if item["match_status"] != "COMMITTED":
+                    errors.append({"item_id": item["id"], "error": "No estaba clasificado"})
+                    continue
+                if not item["compliance_record_id"]:
+                    errors.append({"item_id": item["id"], "error": "No estaba clasificado"})
+                    continue
+
+                metadata = item["metadata"] or {}
+                if isinstance(metadata, str):
+                    metadata = json.loads(metadata)
+                # Si el requisito tenia un documento anterior, la aplicacion
+                # lo piso y restaurarlo exige el historial de versiones.
+                if metadata.get("replaced_storage_path"):
+                    errors.append({
+                        "item_id": item["id"],
+                        "error": "El requisito tenía un documento anterior; no se puede revertir sin historial",
+                    })
+                    continue
+
+                await conn.execute(
+                    """
+                    UPDATE public.compliance_records SET
+                        status = 'MISSING', file_url = NULL, metadata = '{}'::jsonb,
+                        expiration_date = NULL, updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    item["compliance_record_id"],
+                )
+                reverted.append(item["id"])
+
+            if reverted:
+                await conn.execute(
+                    """
+                    UPDATE public.document_ingest_items SET
+                        match_status = 'UNMATCHED',
+                        entity_type = NULL, entity_id = NULL, requirement_id = NULL,
+                        compliance_record_id = NULL, expiration_date = NULL,
+                        updated_at = NOW()
+                    WHERE id = ANY($1::uuid[])
+                    """,
+                    reverted,
+                )
+
+    return {"reverted": reverted, "errors": errors}
