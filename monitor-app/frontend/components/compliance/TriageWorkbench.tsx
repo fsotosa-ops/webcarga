@@ -111,9 +111,10 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
   const discardMutation = useMutation({
     mutationFn: (ids: string[]) => Promise.all(ids.map(id => documentIngestApi.remove(id))),
     onSuccess: (_r, ids) => {
-      setNotice(`${ids.length} descartados`)
+      setNotice(ids.length === 1 ? '1 descartado' : `${ids.length} descartados`)
       clearSelection()
       qc.invalidateQueries({ queryKey: queueKey })
+      qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
     },
   })
 

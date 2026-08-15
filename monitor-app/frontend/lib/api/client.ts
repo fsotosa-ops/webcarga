@@ -41,6 +41,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     const e = new ApiError(message, res.status, detail)
     throw e
   }
+
+  // 204/205/304 no traen cuerpo: res.json() lanza SyntaxError y hace fallar
+  // una operación que en realidad salió bien. Le pasaba a todo DELETE — al
+  // descartar un documento, el backend lo descartaba y la interfaz mostraba
+  // un error y no refrescaba.
+  if (res.status === 204 || res.status === 205 || res.status === 304) {
+    return undefined as T
+  }
+
   return res.json() as Promise<T>
 }
 
