@@ -36,15 +36,21 @@ async def test_bloqueado_predicate_text_is_exactly_d13_combined_with_or():
     manual, O un estado distinto de MISSING -- cualquiera de las tres
     alcanza. El predicado vive en SQL (no en Python; ver el docstring del
     modulo), y `pool` acá está mockeado: `pool.fetch` no ejecuta la consulta
-    contra Postgres, asi que esto NO evalua filas reales, solo confirma que
-    el TEXTO de la clausula sigue siendo D13 y no, por ejemplo, un AND (que
-    dejaria pasar un registro con archivo pero sin override y en MISSING) o
-    una condicion invertida. La evaluacion contra datos reales de esta
-    clausula se hizo a mano vía MCP de Supabase (ver reporte de la Ronda de
-    arreglo 1: MANTENCION_FRIO con bloqueados=0 y, por la revision,
-    REVISION_TECNICA con bloqueados=2 sobre datos reales) -- no hay forma de
-    ejercitarla con pytest sin una conexion real a Postgres, que este
-    sandbox no tiene (ver AGENTLOG / reference_sandbox_cannot_reach_supabase_db_directly)."""
+    contra Postgres, asi que esto NO evalua filas reales -- solo confirma
+    que el TEXTO de la clausula sigue siendo D13, con una comparacion exacta
+    (espacios colapsados) contra el texto esperado, no un `in` por termino.
+    Un `in` por termino dejaba pasar un `NOT` de mas delante de cualquiera
+    de los tres (probado a mano: mutar `cr.is_manual_override` a
+    `NOT cr.is_manual_override` seguia pasando con `in`, D13 invertido y
+    test en verde -- Ronda de arreglo 2). La comparacion exacta cierra ese
+    hueco: cualquier mutacion del texto -- invertir una condicion, agregar
+    un NOT, cambiar OR por AND, cambiar `<>`/`IS DISTINCT FROM` -- lo hace
+    fallar. La evaluacion contra datos reales de esta clausula se hizo a
+    mano vía MCP de Supabase (ver reportes de las Rondas de arreglo 1 y 2:
+    MANTENCION_FRIO con bloqueados=0, REVISION_TECNICA con bloqueados=2) --
+    no hay forma de ejercitarla con pytest sin una conexion real a Postgres,
+    que este sandbox no tiene (ver AGENTLOG /
+    reference_sandbox_cannot_reach_supabase_db_directly)."""
     pool = AsyncMock()
     pool.fetchrow.return_value = {"target_entity": "ASSET"}
     pool.fetch.return_value = []
@@ -54,13 +60,9 @@ async def test_bloqueado_predicate_text_is_exactly_d13_combined_with_or():
     sobran_sql = pool.fetch.call_args_list[1].args[0]
     clause_start = sobran_sql.index("(cr.file_url")
     clause_end = sobran_sql.index("AS bloqueado")
-    clause = sobran_sql[clause_start:clause_end]
+    clause_normalized = " ".join(sobran_sql[clause_start:clause_end].split())
 
-    assert "cr.file_url IS NOT NULL" in clause
-    assert "cr.is_manual_override" in clause
-    assert "cr.status <> 'MISSING'" in clause
-    # las tres deben estar unidas por OR: si alguna vez se cambia a AND, un
-    # registro con archivo pero sin override y en MISSING dejaria de
-    # bloquearse -- exactamente lo que D13 prohibe.
-    assert clause.count(" OR ") == 2
-    assert " AND " not in clause
+    assert clause_normalized == (
+        "(cr.file_url IS NOT NULL OR cr.is_manual_override "
+        "OR cr.status IS DISTINCT FROM 'MISSING')"
+    )

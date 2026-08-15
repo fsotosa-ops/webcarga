@@ -86,6 +86,73 @@ def test_patch_conditions_rechaza_una_gestion_inventada():
     assert res.status_code == 422
 
 
+def test_patch_conditions_rejects_explicit_null_for_is_active():
+    """Ronda de arreglo 2, punto 1: regresion del punto 1 de la ronda
+    anterior. `is_active` es NOT NULL en la base -- ahi `null` explicito no
+    es 'sacar la restriccion' (como en los otros dos campos), no significa
+    nada. Sin este rechazo, `SET is_active = $2` con None llega a Postgres y
+    explota como not_null_violation -> 500. El test pasa por el endpoint real
+    (TestClient), no solo por el validador de Pydantic en aislado -- el
+    hallazgo original fue justamente que un test de Pydantic solo no
+    detectaba el 500 del endpoint."""
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions",
+                       json={"is_active": None})
+
+    assert res.status_code == 422
+    # nunca debe haber llegado a abrir una transaccion de escritura
+    pool.acquire.assert_not_called()
+
+
+def test_patch_conditions_rejects_mixed_types_in_fleet_service_type_ids():
+    """Ronda de arreglo 2, punto 2: `normalize_nonempty_list` corria en
+    mode="before" y `sorted()` reventaba con `TypeError` (no `ValueError`,
+    que Pydantic v2 no convierte en 422) ante una lista de tipos mixtos --
+    reproducido antes como 500 sin manejar. Movido a mode="after": Pydantic
+    ya valido `list[str]` antes de que el normalizador corra, asi que el
+    422 nativo de Pydantic pasa a cubrir este caso. Via TestClient, no solo
+    contra el validador en aislado."""
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions",
+                       json={"applies_to_fleet_service_type_ids": [1, "a"]})
+
+    assert res.status_code == 422
+    pool.acquire.assert_not_called()
+
+
+def test_patch_conditions_empty_list_resets_fleet_service_type_ids_to_null_not_500():
+    """Ronda de arreglo 2, punto 5: sub-punto 1.e (el mismo reset a NULL,
+    aplicado a applies_to_fleet_service_type_ids en vez de management_types)
+    habia quedado sin test propio."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [
+        {"id": "r1", "is_active": True,
+         "applies_to_fleet_service_type_ids": ["f4ee2299-c2a7-4a4b-94c1-6d868ca1216b"],
+         "applies_to_management_types": None},  # SELECT current
+        {"id": "r1", "requirement_code": "MANTENCION_FRIO", "is_active": True,
+         "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None},  # UPDATE RETURNING
+    ]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions",
+                       json={"applies_to_fleet_service_type_ids": []})
+
+    assert res.status_code == 200
+    assert res.json()["applies_to_fleet_service_type_ids"] is None
+
+    update_call = conn.fetchrow.call_args_list[1]
+    update_sql = update_call.args[0]
+    assert "applies_to_fleet_service_type_ids" in update_sql
+    assert "COALESCE" not in update_sql
+    assert update_call.args[-1] is None
+
+
 def test_patch_conditions_empty_list_resets_condition_to_null_not_500():
     """Ronda de arreglo 1, punto 1: [] es una forma legitima de decir 'sin
     restriccion' (vuelve NULL), no una omision. Antes escribia '{}' y
@@ -251,10 +318,16 @@ def test_recalc_nunca_borra_un_registro_con_documento():
     borrado = [c for c in conn.fetch.call_args_list if "DELETE" in c.args[0].upper()]
     assert len(borrado) == 1
     assert borrado[0].args[1] == ["rec-libre"]
-    # D13 vuelve a comprobarse en el propio DELETE, no solo en la vista previa
-    assert "file_url IS NULL" in borrado[0].args[0]
-    assert "NOT is_manual_override" in borrado[0].args[0]
-    assert "status = 'MISSING'" in borrado[0].args[0]
+    # D13 vuelve a comprobarse en el propio DELETE, no solo en la vista
+    # previa. Comparacion exacta (no "in" por termino): un "in" deja pasar
+    # un NOT de mas delante de cualquiera de las tres condiciones sin que
+    # el assert lo note (ver el mismo hallazgo en
+    # test_requirement_conditions.py, Ronda de arreglo 2).
+    where_clause = " ".join(borrado[0].args[0][borrado[0].args[0].index("WHERE"):].split())
+    assert where_clause == (
+        "WHERE id = ANY($1::uuid[]) AND file_url IS NULL AND NOT is_manual_override "
+        "AND status IS NOT DISTINCT FROM 'MISSING' RETURNING id"
+    )
 
 
 def test_recalc_creates_missing_records_for_newly_matching_entities():

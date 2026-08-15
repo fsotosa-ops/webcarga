@@ -51,7 +51,7 @@ class CarrierCreateBody(BaseModel):
     operational_status: Optional[OperationalStatus] = None
     management_types: Optional[list[ManagementType]] = None
 
-    @field_validator("management_types", mode="before")
+    @field_validator("management_types", mode="after")
     @classmethod
     def _normalize_management(cls, v):
         return normalize_management_types(v)
@@ -87,7 +87,7 @@ class CarrierPatchBody(BaseModel):
     management_types: Optional[list[ManagementType]] = None
     expected_updated_at: Optional[datetime] = None  # optimistic lock, mismo patrón que transporter_relational
 
-    @field_validator("management_types", mode="before")
+    @field_validator("management_types", mode="after")
     @classmethod
     def _normalize_management(cls, v):
         return normalize_management_types(v)

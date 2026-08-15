@@ -37,23 +37,34 @@ def normalize_management_types(v):
     """Ordena y quita duplicados; el arreglo vacío se vuelve None.
 
     NULL y [] no pueden significar los dos "no declarado" — la base rechaza el
-    vacío justamente para que exista una sola representación."""
+    vacío justamente para que exista una sola representación.
+
+    SIEMPRE como field_validator(mode="after"), nunca "before": para cuando
+    esto corre, Pydantic ya validó cada elemento contra el Literal del
+    dominio (y devolvió un 422 legible si no matcheaba) — acá solo hay que
+    ordenar/deduplicar valores que ya son válidos. Con "before" recibía la
+    lista cruda sin tipar (Ronda de arreglo 2, hallazgo relacionado: la
+    misma clase de bug que revienta `normalize_nonempty_list` con tipos
+    mixtos, ver abajo)."""
     if not isinstance(v, list):
         return v
     if not v:
         return None
-    vistos = [t for t in _MANAGEMENT_TYPE_ORDER if t in v]
-    # Lo que no esté en el orden canónico se deja pasar tal cual para que lo
-    # rechace el Literal con un error legible, en vez de desaparecer acá.
-    desconocidos = [t for t in v if t not in _MANAGEMENT_TYPE_ORDER]
-    return vistos + desconocidos
+    return [t for t in _MANAGEMENT_TYPE_ORDER if t in v]
 
 
 def normalize_nonempty_list(v):
     """Mismo principio que `normalize_management_types` para listas sin un
     orden canónico propio (ej. IDs de catálogo): arreglo vacío -> None,
     dedupe, y orden estable (alfabético) para que el mismo conjunto se
-    guarde siempre igual sin importar el orden de entrada."""
+    guarde siempre igual sin importar el orden de entrada.
+
+    SIEMPRE como field_validator(mode="after"), nunca "before": `sorted()`
+    revienta con `TypeError` (no `ValueError`, que Pydantic v2 no convierte
+    en 422) si ve una lista de tipos mixtos. Con "before" eso pasaba de
+    verdad (Ronda de arreglo 2, hallazgo real, reproducido con el
+    TestClient); con "after" Pydantic ya validó `list[str]` antes de que
+    esto corra, así que acá nunca hay nada que no sea `str`."""
     if not isinstance(v, list):
         return v
     if not v:

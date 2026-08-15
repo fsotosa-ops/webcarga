@@ -164,7 +164,8 @@ async def recalc(
                     """
                     DELETE FROM public.compliance_records
                      WHERE id = ANY($1::uuid[])
-                       AND file_url IS NULL AND NOT is_manual_override AND status = 'MISSING'
+                       AND file_url IS NULL AND NOT is_manual_override
+                       AND status IS NOT DISTINCT FROM 'MISSING'
                     RETURNING id
                     """,
                     d["quitar"],

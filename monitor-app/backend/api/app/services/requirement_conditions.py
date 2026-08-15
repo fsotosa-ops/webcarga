@@ -57,6 +57,14 @@ async def calcular_diferencias(pool, requirement_id: str) -> dict:
     un documento cargado porque cambió una regla de catálogo sería destruir
     trabajo real (D13).
 
+    `status` es NULLABLE (aunque hoy no hay filas con ese valor): el
+    predicado usa `IS DISTINCT FROM 'MISSING'`, no `<>`, para que un NULL
+    caiga del lado bloqueado en vez de la lógica de tres valores de SQL
+    (`NULL <> 'MISSING'` da NULL, ni true ni false) — el `DELETE` guardado de
+    `app/routers/requirements.py` usa el operador espejo
+    (`IS NOT DISTINCT FROM`), así que los dos lados tratan un NULL exactamente
+    igual y la vista previa nunca promete un borrado que el DELETE no hace.
+
     Devuelve también `target_entity` (None si el requisito no existe) para
     que quien llama pueda decidir el 404 sin repetir este mismo `fetchrow`."""
     req = await pool.fetchrow(
@@ -81,7 +89,7 @@ async def calcular_diferencias(pool, requirement_id: str) -> dict:
         WITH aplican AS ({aplican})
         SELECT cr.id::text, cr.entity_id::text,
                (cr.file_url IS NOT NULL OR cr.is_manual_override
-                OR cr.status <> 'MISSING') AS bloqueado
+                OR cr.status IS DISTINCT FROM 'MISSING') AS bloqueado
         FROM public.compliance_records cr
         WHERE cr.requirement_id = $1 AND cr.is_current
           AND cr.entity_id NOT IN (SELECT id FROM aplican)
