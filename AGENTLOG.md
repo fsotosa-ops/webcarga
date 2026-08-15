@@ -1323,15 +1323,31 @@ Ver la Ronda 101, abajo — la ejecución arrancó en esta misma sesión.
 
 **Plan extendido** (`5fc6cd1`): Tasks 12-17 en el mismo documento, con el código completo. Las Tasks 5 y 7 quedaron marcadas como superadas donde corresponde, y el mock de `listTray` de la Task 10 se corrigió a `listQueue`.
 
+### 2026-08-14 (cont.) — Ronda 103: Tasks 12-17 completas — la bandeja ya vive en `/dashboard/compliance/inbox`
+
+**Todo el rediseño implementado y comiteado** (`0b67558`, `156f445`, `295f555`, `5a47f66`, `2b0a278`, `0b5f7d2`). Verificado: **backend 534 passed**, **frontend 774 passed**, `tsc --noEmit` limpio, `npm run build` con `/dashboard/compliance/inbox` en el manifest.
+
+- **Task 12** — `GET /items` (cola global paginada, `carrier_id` opcional, agrupada por empresa, con los campos de sugerencia) + `GET /items/{id}/preview-url`. **El listado ya no firma ninguna URL.**
+- **Task 13** — `listQueue` / `previewUrl` + tipos `QueueRow` / `TrayPage`.
+- **Task 14** — `TriageFileTable` reemplaza a `TriageFileList`: columnas, agrupación por empresa, `⇧`+click, columna Sugerencia.
+- **Task 15** — `TriageBulkBar`, con la **confirmación de descarte dentro de la barra**.
+- **Task 16** — `TriageWorkbench` reescrito sobre la cola global (`carrierId` **opcional**), página `/dashboard/compliance/inbox`, ítem `Bandeja` en el sidebar con contador (+ `Sidebar.test.tsx`, que no existía).
+- **Task 17** — retirados `UnclassifiedTray`, `ClassifyDocumentModal`, `GET /{carrier_id}/items` y `listTray`. El panel de empresa conserva pendientes, vencimiento, subir de a uno, masivo y el link a la ficha.
+
+**Verificación del SQL contra la base real (MCP)**: la consulta corre sin error y los tipos del JOIN son `uuid = uuid`, `candidates` es `jsonb`, `created_at` es `timestamptz`. **Pero `document_ingest_items` y `document_ingest_batches` están VACÍAS en producción (0 filas)** — así que no se pudo confirmar que `carrier_name` se pueble con datos reales, y **la bandeja va a mostrar 0 hasta que alguien suba documentos**. Los 2.000 pendientes de la HU todavía no entraron al sistema.
+
+**Cuatro errores más del plan, encontrados al ejecutarlo** (van 6 en total entre las Rondas 102 y 103):
+1. Los tests de la Task 12 estaban escritos como `async def` con fixtures `client`/`pool`; el archivo real usa funciones sync con `AsyncMock` + `make_client`.
+2. El test de `TriageBulkBar` reintrodujo el mismo `props as never` que ya se había corregido en la Ronda 102.
+3. El regex `/si, descartar 3/i` no matchea "Sí, descartar 3" — el flag `i` no normaliza tildes.
+4. Desvío deliberado: el plan mandaba borrar `TriageFileList` en la Task 14, lo que dejaba `tsc` roto hasta la 16. Se borró en la 16, cuando dejó de tener importadores, para que ningún commit quede en rojo.
+
 #### Próximo paso exacto
-1. [ ] **Task 12** — `GET /items` (cola global paginada, sin firmar) + `GET /items/{id}/preview-url`. **Verificar el SQL contra la base real vía MCP antes de confiar en los `AsyncMock`** — el plan trae la consulta.
-2. [ ] **Tasks 13-15** — cliente `listQueue`/`previewUrl`, `TriageFileTable` (reemplaza a `TriageFileList`) y `TriageBulkBar`.
-3. [ ] **Task 16** — reescribir `TriageWorkbench` sobre la cola global (`carrierId` pasa a **opcional**: sin empresa = bandeja, con empresa = ficha), la página `/dashboard/compliance/inbox` y el ítem de sidebar con contador.
-4. [ ] **Task 17** — retirar `UnclassifiedTray`, `ClassifyDocumentModal`, `GET /{carrier_id}/items` y `listTray`.
-5. [ ] **Tasks 9-10** — descomponer `carriers/[id]/page.tsx` (971 líneas) extrayendo el tab Documentos, y devolverle la carga con el mismo `TriageWorkbench` (criterio "una sola implementación" de la HU-04).
-6. [ ] **Task 11** — adaptar `mockups` y `qa-testing`: sus descripciones dicen "in suma-scout" y referencian rutas de ese proyecto. **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — revisar de paso.
-7. [ ] Click-through final: **elegir por SQL una empresa sin documentos cargados antes de abrir el navegador**. Probar rango con `⇧`, que la selección no cruce empresas, el lote, el movimiento y el recorrido sólo con teclado. Limpiar y confirmar con un conteo global.
-8. [ ] HU-05, HU-03 (mover documentos ya clasificados) y HU-06 siguen pendientes.
+1. [ ] **Tasks 9-10** — descomponer `carriers/[id]/page.tsx` (971 líneas) extrayendo el tab Documentos, y devolverle la carga con el mismo `TriageWorkbench` (ya acepta `carrierId`, así que es pasarle la prop). **Ojo**: el test de la Task 10 en el plan mockea `listTray`, que ya no existe — usar `listQueue` + `previewUrl`.
+2. [ ] **Task 11** — adaptar `mockups` y `qa-testing`: sus descripciones dicen "in suma-scout" y referencian rutas de ese proyecto. **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — revisar de paso.
+3. [ ] Click-through: **no se puede hacer contra datos reales todavía** porque la bandeja está vacía. Hay que subir documentos de prueba primero (**elegir por SQL una empresa sin documentos cargados**), y después probar rango con `⇧`, que la selección no cruce empresas, el lote, el movimiento y el recorrido sólo con teclado. Limpiar y confirmar con un conteo global.
+4. [ ] Decidir si `CertificationCompanyPanel` sigue teniendo sentido: perdió la bandeja y ahora se solapa bastante con la ficha de empresa.
+5. [ ] HU-05, HU-03 (mover documentos ya clasificados) y HU-06 siguen pendientes.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
