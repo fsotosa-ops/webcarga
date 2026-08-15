@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Download, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
+import { CertificationFunnel } from '@/components/compliance/CertificationFunnel'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -74,10 +75,23 @@ function CertificationPageInner() {
   const [exportando, setExportando] = useState(false)
   const qDebounced = useDebouncedValue(q, 300)
 
+  const [catalogoAbierto, setCatalogoAbierto] = useState(false)
+
   const statusQuery = useQuery({
     queryKey: ['certification-status', group, qDebounced],
     queryFn: () => complianceApi.listStatus({ group, q: qDebounced || undefined, limit: 200 }),
     enabled: !!group,
+  })
+
+  /** "Resto del catálogo" son 209 empresas sin actividad. Se piden recién al
+   *  desplegar el grupo: traerlas siempre cuesta una consulta que casi nadie
+   *  lee, y juntas con las activas no caben en el límite de 200. */
+  const catalogQuery = useQuery({
+    queryKey: ['certification-status-catalog', qDebounced],
+    queryFn: () => complianceApi.listStatus({
+      group: 'carrier', scope: 'catalog', q: qDebounced || undefined, limit: 300,
+    }),
+    enabled: group === 'carrier' && catalogoAbierto,
   })
 
   function cambiarVista(v: Vista) {
@@ -191,7 +205,18 @@ function CertificationPageInner() {
           )}
           {!statusQuery.isPending && !statusQuery.error && (
             <div className="overflow-y-auto max-h-[64vh]">
-              <CertificationStatusTable rows={rows} group={group} />
+              {group === 'carrier' ? (
+                // Agrupando por empresa la lista es el embudo de certificación:
+                // el usuario mueve empresas por etapas, no vigila un tablero.
+                <CertificationFunnel
+                  rows={rows}
+                  catalogRows={catalogQuery.data?.rows ?? []}
+                  catalogLoading={catalogQuery.isPending && catalogoAbierto}
+                  onExpandCatalog={() => setCatalogoAbierto(true)}
+                />
+              ) : (
+                <CertificationStatusTable rows={rows} group={group} />
+              )}
             </div>
           )}
         </div>

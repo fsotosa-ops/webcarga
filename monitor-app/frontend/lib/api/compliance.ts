@@ -1,5 +1,5 @@
 import type {
-  CertificationGroup, CertificationStatus,
+  CertificationGroup, CertificationScope, CertificationStatus,
   BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, DocumentVersion,
   PendingComplianceListResponse, RequirementOption,
 } from '@/lib/types'
@@ -73,10 +73,14 @@ export const complianceApi = {
   /** Cómo va la certificación, agrupada por empresa, conductor o vehículo.
    *  Es la lista del módulo; el conmutador sólo cambia `group`. */
   listStatus: (params: {
-    group?: CertificationGroup; carrierId?: string; q?: string; limit?: number
+    group?: CertificationGroup; scope?: CertificationScope
+    carrierId?: string; q?: string; limit?: number
   } = {}) => {
     const qs = new URLSearchParams()
     if (params.group) qs.set('group', params.group)
+    // Sólo se manda cuando NO es el default: el backend ya asume 'active', y
+    // mandarlo igual ensucia la clave de caché de React Query sin necesidad.
+    if (params.scope && params.scope !== 'active') qs.set('scope', params.scope)
     if (params.carrierId) qs.set('carrier_id', params.carrierId)
     if (params.q)     qs.set('q', params.q)
     if (params.limit != null) qs.set('limit', String(params.limit))

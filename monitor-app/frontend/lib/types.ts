@@ -1245,13 +1245,37 @@ export type QueueRow = {
 
 export type TrayPage = { total: number; rows: QueueRow[] }
 
-export type CertificationGroup = 'carrier' | 'driver' | 'asset'
+export type CertificationGroup = 'carrier' | 'driver' | 'asset' | 'requirement'
 
-/** Fila del módulo Certificación, agrupada por empresa, conductor o vehículo.
+/** Las dos mitades del catálogo de empresas, disjuntas y exhaustivas: `active`
+ *  son las operativas más cualquiera con documentos esperando, y `catalog` es
+ *  exactamente su complemento. Se piden por separado porque juntas no caben en
+ *  el límite, y el catálogo va plegado. */
+export type CertificationScope = 'active' | 'catalog'
+
+/** Las etapas del embudo (spec §4). Las decide el backend en SQL, de una sola
+ *  definición: calcularlas acá obligaría a repetir el criterio en el conteo del
+ *  encabezado y en el orden. */
+export type FunnelGroup =
+  | 'sin_documentos'
+  | 'en_proceso'
+  | 'renovar'
+  | 'al_dia'
+  | 'catalogo'
+
+/** Códigos del tipo de gestión. La API habla códigos y no las etiquetas del
+ *  catálogo, que se renombraron dos veces en dos días. */
+export type ManagementType = 'TRACTOREO' | 'EQUIPO_COMPLETO'
+
+/** Fila del módulo Certificación, agrupada por empresa, conductor, vehículo o
+ *  requisito.
  *
- *  `carrier_*` viaja siempre: un conductor o un vehículo sin la empresa a la
- *  que pertenece no dice nada. Agrupando por empresa, la entidad y la empresa
- *  son la misma. */
+ *  `carrier_*` viaja siempre salvo agrupando por requisito, que cruza todas las
+ *  empresas: un conductor o un vehículo sin la empresa a la que pertenece no
+ *  dice nada. Agrupando por empresa, la entidad y la empresa son la misma.
+ *
+ *  Los cuatro campos del embudo llegan **sólo** agrupando por empresa: un
+ *  conductor no tiene etapa de certificación propia. */
 export type CertificationStatusRow = {
   entity_id:          string
   entity_name:        string
@@ -1263,6 +1287,10 @@ export type CertificationStatusRow = {
   pending_count:      number
   pending_mandatory:  number
   unclassified_count: number
+  expired_count?:     number
+  management_types?:  ManagementType[] | null
+  trips_30d?:         number
+  funnel_group?:      FunnelGroup
 }
 
 export type CertificationStatus = {

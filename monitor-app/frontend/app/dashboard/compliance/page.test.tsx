@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -30,6 +30,7 @@ vi.mock('@/lib/api/carriers', () => ({
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 
 import { complianceApi } from '@/lib/api/compliance'
+import type { CertificationStatusRow } from '@/lib/types'
 import CertificationPage from './page'
 
 const FILA = {
@@ -37,7 +38,12 @@ const FILA = {
   carrier_id: 'c1', carrier_name: 'Test Empresa Webcarga', operational_status: 'ACTIVE',
   total_count: 12, satisfied_count: 9, pending_count: 3, pending_mandatory: 1,
   unclassified_count: 3,
-}
+  // Agrupando por empresa la lista es el embudo, y el embudo ubica cada fila
+  // por su etapa: sin `funnel_group` la fila no pertenece a ningun grupo y no
+  // se dibuja en ninguna parte.
+  expired_count: 0, management_types: ['TRACTOREO'], trips_30d: 0,
+  funnel_group: 'en_proceso',
+} satisfies CertificationStatusRow
 
 function setup() {
   render(
@@ -67,10 +73,13 @@ describe('Certificación — una lista, dos vistas', () => {
 
   it('muestra en la misma fila lo que falta y lo que llegó sin clasificar', async () => {
     setup()
-    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('tr')!
+    // El embudo dejo de ser una tabla: la fila es el contenedor con role=button
+    // que se abre hacia abajo. La intencion del test no cambia — las dos
+    // mitades del trabajo tienen que estar juntas, porque tenerlas en dos
+    // listas hermanas obligaba a cruzarlas de memoria.
+    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('[role="button"]')!
     expect(fila).toHaveTextContent('9 de 12')
-    // El contador de sin clasificar, en la misma fila que el avance.
-    expect(fila.querySelector('.bg-red-50')).toHaveTextContent('3')
+    expect(within(fila as HTMLElement).getByTestId('espera-c1')).toHaveTextContent('3')
   })
 
   it('la vista viaja en la URL, así volver del detalle no pierde el lugar', async () => {
