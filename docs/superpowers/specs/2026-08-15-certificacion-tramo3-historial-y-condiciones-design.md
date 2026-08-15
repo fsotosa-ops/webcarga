@@ -1,29 +1,42 @@
-# Certificación · Tramo 3 — Historial de versiones y condiciones configurables
+# Certificación · Tramo 3 — Condiciones configurables
 
-**Fecha:** 2026-08-15
+**Fecha:** 2026-08-15 · **revisado el mismo día**, ver §1.1
 **Estado:** aprobado en brainstorming, pendiente de plan de implementación
 **Antecede:** `2026-08-15-certificacion-rediseno-design.md` (§7 y §8) y el plan del Tramo 1
-**Alcance recortado respecto del spec original** — ver §7.
+**Alcance recortado dos veces respecto del spec original** — ver §7.
 
 ---
 
 ## 1. Qué resuelve
 
-Dos problemas que hoy no tienen solución en el producto y que comparten la misma pieza de
-infraestructura: los tres triggers `reconcile_new_*`.
+**La regla de a quién se le exige cada documento vive en código de base**, y WebCarga descubre esas
+reglas **reclutando y certificando**, no antes. Cambiar una hoy exige un desarrollador y una
+migración.
 
-**Cargar un documento borra el anterior.** No hay historial. Si en agosto llega el F30 nuevo, el de
-julio desaparece y no se puede demostrar qué estaba vigente el mes pasado. Para un módulo cuyo
-trabajo es *certificar*, no poder mostrar el estado histórico es una carencia de fondo.
+El daño está medido: **16 vehículos sin cámara de frío** (11 Furgón Seco + 5 Sider) cargan
+"Mantención Cámara de Frío", un certificado que no pueden obtener nunca. Son 16 pendientes que
+nadie puede cerrar, inflando el contador de sus empresas en la pantalla que el Tramo 2 acaba de
+construir.
 
-**La regla de a quién se le exige cada documento vive en código de base.** El trigger
-`reconcile_new_asset` tiene escrito literalmente `requirement_code IN ('MANTENCION_FRIO',
-'RESOLUCION_SANITARIA') AND NEW.asset_type = 'RAMPLA'`. Cambiarla exige un desarrollador y una
-migración — y WebCarga descubre esas reglas **reclutando y certificando**, no antes.
+### 1.1 Corrección: el historial sale de este tramo
 
-Los dos van en el mismo tramo porque tocan los mismos tres triggers, y hacerlo por separado
-significa intervenir dos veces la parte del esquema donde un error rompe el alta de empresas,
-conductores y vehículos.
+La primera versión de este spec incluía el historial de versiones y afirmaba que *"cargar el F30 de
+agosto borra el de julio"*. **Eso es falso**, verificado en el código y en los datos:
+
+- Al reemplazar, `upload_document_version` escribe una **ruta nueva con timestamp** y
+  `log_document_replacement` registra la anterior en `audit_log`. **El blob viejo no se borra** —
+  sólo se borra en el `DELETE` explícito de un archivo.
+- `GET /{record_id}/files` ya devuelve el historial con las versiones previas.
+- Y nunca se ejerció: hay **28 `document_upload` y 0 `document_replace`** en `audit_log`. Con 95
+  documentos cargados sobre 4.990 registros, nadie renovó nada todavía.
+
+Eliminar el índice incondicional sigue siendo deseable —convierte el historial de un *log* en
+*filas consultables*, y `is_current` deja de ser una columna muerta que siempre vale `true`— pero
+es una **mejora de modelo, no una capacidad nueva**, para un problema que todavía no le ocurrió a
+nadie. Se difiere hasta que exista una renovación real.
+
+Con eso, este tramo **no toca el índice único** y los tres triggers se reescriben por una sola
+razón: sacarles la regla de negocio de adentro.
 
 ## 2. Evidencia medida
 
@@ -31,82 +44,103 @@ Contra `viclzoftiudkepqnhekv`, 2026-08-15:
 
 | Dato | Valor | Implicancia |
 |---|---|---|
-| `idx_unique_current_compliance` | **Ya existe**, parcial `WHERE is_current = true` | La infraestructura del historial está puesta; falta usarla |
-| `compliance_records_entity_id_requirement_id_key` | Único **sin condición** sobre `(entity_id, requirement_id)` | Es lo que impide físicamente el historial |
-| Filas con `is_current = false` | **0** | No hay datos que migrar |
-| Triggers con `ON CONFLICT (entity_id, requirement_id)` | **3**: `reconcile_new_asset`, `_carrier`, `_driver` | Dependen del índice a eliminar. `reconcile_new_requirement` no |
 | Requisitos `LEGAL_MANDATORY` | **33 de 37** | Aplican a todos: no necesitan condición |
 | Requisitos `CONDITIONAL_OPTIONAL` | **4** | Todo el mecanismo configurable sirve a 4 filas |
 | `MANTENCION_FRIO` sembrado hoy | 20 Furgón Congelado + **11 Furgón Seco + 5 Sider** + 1 sin subtipo | 16 vehículos cargan un certificado que no pueden obtener |
 | `SEGURO_RC_EMPRESA` / `SEGURO_EETT` | **0 y 1** registros | La condición nunca se escribió, así que no se siembran |
+| Funciones que siembran `compliance_records` | **5** | Sólo 3 llevan la regla adentro: `reconcile_new_asset`, `_carrier`, `_driver`. `reconcile_new_requirement` y `reconcile_carrier_shipper_link` usan `NOT EXISTS` y no la tienen |
+| Subtipos de vehículo en el catálogo | **10**, de los cuales 4 con vehículos | La condición de frío se expresa sobre subtipos, no sobre `asset_type` |
 
 ## 3. Decisiones
 
 | # | Decisión | Quién |
 |---|---|---|
-| D10 | El historial se habilita eliminando el índice incondicional, **no** agregando tablas | Diseño |
+| D10 | **Una sola regla de siembra**: se saca `requirement_level` y los códigos escritos a mano de los tres triggers | Diseño |
 | D11 | Las condiciones son **dato en el catálogo**, no código en el trigger | Usuario |
 | D12 | Toda configuración va con **recalcular y vista previa**; sin eso la configuración miente | Diseño |
 | D13 | El recalcular **nunca borra** un registro con archivo o con edición manual | Diseño |
-| D14 | Las pilas y el matcher salen de este tramo — ver §7 | Usuario |
+| D14 | Las pilas, el matcher **y el historial de versiones** salen de este tramo — ver §1.1 y §7 | Usuario |
+| D15 | La migración es **behavior-preserving**: no crea ni borra un solo `compliance_record` | Diseño |
 
-## 4. Historial de versiones
+## 4. Una sola regla de siembra
 
-**El cambio de esquema es una eliminación, no una creación.** `is_current` ya existe con default
-`true`, y el índice parcial que lo acompaña ya está creado. Lo único que sobra es el índice
-incondicional.
-
-```sql
-DROP INDEX public.compliance_records_entity_id_requirement_id_key;
-```
-
-**Los tres triggers se reescriben en la MISMA migración.** Su `ON CONFLICT (entity_id,
-requirement_id)` necesita exactamente ese índice para inferir el destino; sin él, Postgres falla con
-*"no unique or exclusion constraint matching the ON CONFLICT specification"* y se rompe el alta de
-cualquier empresa, conductor o vehículo. Pasan a inferir el índice parcial:
+**El problema no es que falte una condición: es que hoy hay dos reglas pegadas.**
 
 ```sql
-ON CONFLICT (entity_id, requirement_id) WHERE is_current = true DO NOTHING
+-- reconcile_new_asset, hoy
+WHERE req.target_entity = 'ASSET'
+  AND (req.requirement_level = 'LEGAL_MANDATORY'
+       OR (req.requirement_code IN ('MANTENCION_FRIO','RESOLUCION_SANITARIA')
+           AND NEW.asset_type = 'RAMPLA'))
 ```
 
-**La renovación.** Al aplicar un documento sobre un requisito que ya tiene uno vigente, el registro
-anterior pasa a `is_current = false` y el nuevo entra como vigente. El anterior queda consultable:
-ya existen `get_document_history` y `log_document_replacement` en `utils/document_storage.py`, y el
-tipo `DocumentVersion` en el frontend.
+Dos cosas están mal ahí, y las dos son deuda, no características:
 
-**Frente y reverso de un mismo documento** entran como dos versiones del mismo requisito. Es
-semánticamente imperfecto —no son versiones, son dos caras— pero no se pierde nada y es reversible.
-Decisión heredada del spec del rediseño; si al usarlo molesta, se revisa entonces.
+1. **`requirement_level` hace de interruptor de siembra a escondidas.** Es una etiqueta de
+   *severidad* — se usa para mostrar "BÁSICA" o "ADICIONAL" en la lista de pendientes
+   (`_certification_type`). Que además decida quién recibe qué documento es un segundo significado
+   que nadie declaró.
+2. **La regla de negocio está escrita como una lista de códigos** dentro de una función de base de
+   datos, y mezcla el hecho físico (`asset_type`) con el comercial — justo lo que la migración
+   `20260803050000` separó a propósito.
 
-## 5. Condiciones configurables
-
-**Dónde vive la regla.** Dos columnas en `public.compliance_requirements`, ambas nullable —
-*nulo significa "aplica a todos"*, que es el caso de los 33 obligatorios:
-
-- `applies_to_fleet_service_type_ids UUID[]` — a qué subtipos de vehículo
-- `applies_to_management_types TEXT[]` — a qué tipos de gestión de empresa
-
-**Por qué columnas de arreglo y no una tabla de reglas.** Hay 4 requisitos condicionales y dos
-dimensiones. Un motor genérico de condiciones sería especulativo, y este proyecto ya rechazó una vez
-un modelo relacional construido por anticipado. La forma espeja la decisión D9 de `management_types`
-—conjunto, por id, sin tabla nueva— y migra a tabla el día que aparezca una tercera dimensión.
-
-**Los triggers leen la columna** en vez de tener la regla escrita:
+**La versión limpia es una sola regla, con una columna por significado:**
 
 ```sql
 WHERE req.target_entity = 'ASSET'
-  AND (req.requirement_level = 'LEGAL_MANDATORY'
-       OR req.applies_to_fleet_service_type_ids IS NULL
+  AND req.is_active
+  AND (req.applies_to_fleet_service_type_ids IS NULL
        OR NEW.fleet_service_type_id = ANY(req.applies_to_fleet_service_type_ids))
 ```
 
-**Qué desaparece:** el literal `NEW.asset_type = 'RAMPLA'`. Y con él, la confusión que arrastraba —
-la migración `20260803050000` separó a propósito el hecho físico (tracto/rampla) del comercial, y el
-trigger los volvía a mezclar.
+Sin `requirement_level`, sin códigos escritos a mano, sin `asset_type`. La misma forma sirve para
+los tres triggers, cambiando sólo la dimensión que cada uno mira.
 
-**La pantalla** vive en Administración: por requisito, marcar a qué subtipos y a qué gestiones
-aplica. Es una rebanada angosta de la HU-05, que se retiró del backlog: configura *cuándo* aplica un
-requisito, no administra el catálogo.
+**Las tres columnas nuevas en `compliance_requirements`:**
+
+| Columna | Significado | Nulo significa |
+|---|---|---|
+| `is_active BOOLEAN NOT NULL DEFAULT true` | ¿Este requisito está vigente? | — (no admite nulo) |
+| `applies_to_fleet_service_type_ids UUID[]` | A qué subtipos de vehículo | sin restricción por subtipo |
+| `applies_to_management_types TEXT[]` | A qué tipos de gestión de empresa | sin restricción por gestión |
+
+`is_active` dice explícitamente lo que hoy se dice de contrabando: los dos seguros de D8 **no están
+vigentes**. Antes eso se lograba por omisión —eran `CONDITIONAL_OPTIONAL` y el trigger sólo miraba
+`LEGAL_MANDATORY`—, que es exactamente la clase de comportamiento implícito que hace ilegible un
+sistema.
+
+### 4.1 La migración no cambia comportamiento
+
+Es condición de aceptación: aplicar esta migración **no debe crear ni borrar un solo
+`compliance_record`**. El cambio de conducta llega después, desde la pantalla, hecho por una
+persona.
+
+| Requisitos | `is_active` | Condiciones | Resultado |
+|---|---|---|---|
+| Los 33 `LEGAL_MANDATORY` | `true` | ambas nulas | Se siembran a todos — **igual que hoy** |
+| `MANTENCION_FRIO`, `RESOLUCION_SANITARIA` | `true` | los **9 subtipos de remolque** | Se siembran a toda rampla — **igual que hoy** |
+| `SEGURO_EETT`, `SEGURO_RC_EMPRESA` | `false` | — | No se siembran — **igual que hoy** |
+
+**La única diferencia**, y va declarada: hoy la condición es `asset_type = 'RAMPLA'` y pasa a ser
+"el subtipo está en la lista". El vehículo con `asset_type = 'RAMPLA'` y **subtipo nulo** (hay 1)
+deja de recibir esos dos requisitos. Es lo correcto —un remolque sin clasificar no puede exigir
+cámara de frío— pero es un cambio y se verifica explícitamente.
+
+## 5. Por qué arreglos y no una tabla de reglas
+
+Hay **4 requisitos condicionales y dos dimensiones**. Un motor genérico de condiciones —tabla de
+reglas con atributo, operador y valores— sería especulativo: este proyecto ya rechazó una vez un
+modelo relacional construido por anticipado, y las tres tablas puente que existen cargan nueve
+columnas de ciclo de vida que nadie usó nunca.
+
+La forma espeja la decisión **D9** de `management_types`, tomada en el Tramo 2: conjunto, por id,
+sin tabla nueva. Si algún día aparece una tercera dimensión —"sólo para vehículos de más de N años",
+"sólo para empresas de tal cliente"— migrar a tabla es una migración directa. Antes de eso, sería
+construir maquinaria para un caso que nadie pidió.
+
+**La pantalla** vive en Administración: por requisito, marcar si está vigente y a qué subtipos y
+gestiones aplica. Es una rebanada angosta de la HU-05, que se retiró del backlog — configura
+*cuándo* aplica un requisito, no administra el catálogo ni permite crear requisitos nuevos.
 
 ### 5.1 Cuando el atributo llega después que la entidad
 
@@ -159,6 +193,13 @@ guardar la regla: guardar y aplicar son dos actos distintos.
 
 ## 7. Fuera de alcance
 
+**El historial de versiones como filas.** Ver §1.1: la capacidad visible ya existe y el problema no
+le ocurrió a nadie todavía —0 reemplazos en producción—. Entra cuando exista una renovación real,
+y entonces es una migración chica: eliminar `compliance_records_entity_id_requirement_id_key` y
+reapuntar el `ON CONFLICT` de los tres triggers a `idx_unique_current_compliance`, que ya existe
+como parcial `WHERE is_current = true`. **Ese día hay que tocar los mismos tres triggers de este
+tramo** — conviene recordarlo para no diseñarlos de una forma que lo dificulte.
+
 **Las pilas agrupadas con desambiguación por sujeto.** Agrupan lo que el matcher resolvió, y hoy no
 hay nada en la bandeja para agrupar: los documentos los sube el equipo de negocio y todavía no
 entraron. El spec del rediseño ya anticipaba que este tramo "es lo que más se beneficia de haber
@@ -200,7 +241,7 @@ entrega el mecanismo para que la escriban sin desarrollo de por medio.
 
 | Riesgo | Mitigación |
 |---|---|
-| Eliminar el índice rompe los tres triggers | Se reescriben en la **misma** migración. Test que da de alta empresa, conductor y vehículo después del cambio |
+| Reescribir los tres triggers rompe el alta | Es el modo de falla más grave: un trigger roto impide crear empresas, conductores y vehículos. Test que da de alta los tres **después** de la migración, y verificación de que siembran lo mismo que antes |
 | El recalcular borra trabajo real | D13: nunca toca registros con archivo, con override o fuera de `MISSING`. Vista previa antes de aplicar |
 | La configuración queda linda pero no se usa | La pantalla nace con el caso real cargado: la regla de cámara de frío que hoy afecta a 16 vehículos |
 | Nadie dispara el recalcular y las reglas quedan desincronizadas de los datos | La lista de empresas con atributos cambiados desde su último recálculo es visible, no hay que acordarse. Ver §5.1 |
@@ -210,10 +251,11 @@ entrega el mecanismo para que la escriban sin desarrollo de por medio.
 
 1. **Contra la base real, no sólo mocks.** Correr el SQL nuevo con `PREPARE`/`EXECUTE` — parámetros
    reales, no literales sustituidos. Es el criterio que ya cazó dos bugs de Postgres en este módulo.
-2. **El alta sigue funcionando tras el DROP**: crear empresa, conductor y vehículo, y confirmar que
-   se siembran sus `compliance_records`. Es el modo de falla más grave del tramo.
-3. **La renovación conserva el anterior**: aplicar dos documentos al mismo requisito y verificar que
-   quedan dos filas, una con `is_current = true` y otra en `false`.
+2. **El alta sigue funcionando tras reescribir los triggers**: crear empresa, conductor y vehículo,
+   y confirmar que se siembran sus `compliance_records`. Es el modo de falla más grave del tramo.
+3. **La migración no movió nada**: contar `compliance_records` por requisito antes y después de
+   aplicarla. Deben ser idénticos salvo los 2 del vehículo sin subtipo, que se verifican aparte
+   (§4.1).
 4. **La vista previa dice la verdad**: comparar lo que anuncia contra lo que efectivamente cambia.
 5. **Click-through en staging** con Playwright, mirando la pantalla y no sólo los tests. En este
    módulo, mirar encontró lo que 841 tests no podían.
