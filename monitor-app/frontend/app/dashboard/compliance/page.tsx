@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Download, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
+import { EntityDetailPanel, type Seleccion } from '@/components/compliance/EntityDetailPanel'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -72,6 +73,17 @@ function CertificationPageInner() {
   const [q, setQ] = useState('')
   const [newCarrierOpen, setNewCarrierOpen] = useState(false)
   const [exportando, setExportando] = useState(false)
+
+  // La selección viaja en la URL: el enlace se comparte y el botón atrás
+  // funciona. (El `?driver=` anterior era un parche porque abría un MODAL;
+  // acá el estado en la URL es justamente lo correcto.)
+  // Gana el nivel MÁS PROFUNDO: con ?empresa=…&conductor=… se está mirando al
+  // conductor, y la empresa es sólo el contexto de dónde se venía.
+  const seleccion: Seleccion | null =
+    searchParams.get('conductor') ? { tipo: 'DRIVER',  id: searchParams.get('conductor')! }
+    : searchParams.get('vehiculo') ? { tipo: 'ASSET',   id: searchParams.get('vehiculo')! }
+    : searchParams.get('empresa')  ? { tipo: 'CARRIER', id: searchParams.get('empresa')! }
+    : null
   const qDebounced = useDebouncedValue(q, 300)
 
   const statusQuery = useQuery({
@@ -81,8 +93,18 @@ function CertificationPageInner() {
   })
 
   function cambiarVista(v: Vista) {
-    // La vista viaja en la URL: volver del detalle no pierde dónde estabas.
+    // Cambiar de vista limpia la selección: el detalle abierto pertenece a la
+    // vista anterior.
     router.replace(v === 'empresas' ? '/dashboard/compliance' : `/dashboard/compliance?vista=${v}`)
+  }
+
+  function seleccionar(sel: Seleccion | null) {
+    const qs = new URLSearchParams()
+    if (vista !== 'empresas') qs.set('vista', vista)
+    if (sel) {
+      qs.set(sel.tipo === 'CARRIER' ? 'empresa' : sel.tipo === 'DRIVER' ? 'conductor' : 'vehiculo', sel.id)
+    }
+    router.replace(`/dashboard/compliance${qs.toString() ? `?${qs}` : ''}`)
   }
 
   function handleCarrierCreated(created: CarrierCreateResult) {
@@ -166,6 +188,7 @@ function CertificationPageInner() {
       {!group ? (
         <TriageWorkbench />
       ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-3 items-start">
         <div className="border border-border rounded-xl bg-white overflow-hidden">
           <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
             <span className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
@@ -191,9 +214,19 @@ function CertificationPageInner() {
           )}
           {!statusQuery.isPending && !statusQuery.error && (
             <div className="overflow-y-auto max-h-[64vh]">
-              <CertificationStatusTable rows={rows} group={group} />
+              <CertificationStatusTable
+                rows={rows}
+                group={group}
+                seleccionadoId={seleccion?.id ?? null}
+                onSeleccionar={seleccionar}
+              />
             </div>
           )}
+        </div>
+
+        <div className="border border-border rounded-xl bg-white overflow-y-auto max-h-[72vh]">
+          <EntityDetailPanel seleccion={seleccion} onSeleccionar={seleccionar} />
+        </div>
         </div>
       )}
     </div>

@@ -13,6 +13,16 @@ import type { ComplianceRecord } from '@/lib/types'
 
 export type Seleccion = { tipo: 'CARRIER' | 'DRIVER' | 'ASSET'; id: string }
 
+/** Lo que el panel necesita de un conductor o de un vehículo. */
+type DetalleComun = {
+  full_name?:    string
+  license_plate?: string
+  tax_id?:       string | null
+  asset_type?:   string | null
+  carrier_id:    string | null
+  carrier_name:  string | null
+}
+
 interface Props {
   seleccion:     Seleccion | null
   onSeleccionar: (sel: Seleccion | null) => void
@@ -81,7 +91,7 @@ function DetalleEmpresa({ id, onSeleccionar }: { id: string; onSeleccionar: (s: 
   if (empresa.isPending) return <Cargando />
   if (empresa.error || !empresa.data) return <NoSePudo />
 
-  const registros = empresa.data.compliance_records ?? []
+  const registros = (empresa.data.compliance_records ?? []) as ComplianceRecord[]
   const { cubiertos, total } = cuenta(registros)
 
   const flota: Hijo[] = [
@@ -130,9 +140,13 @@ function DetalleEntidad({ tipo, id, onSeleccionar }: {
 }) {
   const esConductor = tipo === 'DRIVER'
 
-  const entidad = useQuery({
+  // El tipo de retorno difiere entre conductor y vehículo; lo que este panel
+  // necesita es el subconjunto común, así que se unifica acá.
+  const entidad = useQuery<DetalleComun>({
     queryKey: [esConductor ? 'driver-detail' : 'asset-detail', id],
-    queryFn: () => (esConductor ? driversApi.get(id) : assetsApi.get(id)),
+    queryFn: async () => (esConductor
+      ? await driversApi.get(id)
+      : await assetsApi.get(id)) as unknown as DetalleComun,
   })
   const documentos = useQuery({
     queryKey: [esConductor ? 'driver-compliance-records' : 'asset-compliance-records', id],
@@ -144,10 +158,7 @@ function DetalleEntidad({ tipo, id, onSeleccionar }: {
   if (entidad.isPending) return <Cargando />
   if (entidad.error || !entidad.data) return <NoSePudo />
 
-  const datos = entidad.data as unknown as {
-    full_name?: string; license_plate?: string; tax_id?: string | null
-    asset_type?: string | null; carrier_id: string | null; carrier_name: string | null
-  }
+  const datos = entidad.data
   const titulo = (esConductor ? datos.full_name : datos.license_plate) ?? '—'
   const registros = (documentos.data ?? []) as ComplianceRecord[]
   const { cubiertos, total } = cuenta(registros)
