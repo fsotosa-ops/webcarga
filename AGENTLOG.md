@@ -1558,16 +1558,109 @@ app cada prefetch cuesta una ejecución del layout del dashboard, y el layout ha
 `gh run rerun --failed`. Si vuelve a pasar, reintentar antes de investigar.
 
 #### Próximo paso exacto
-1. [ ] **Click-through en vivo del Tramo 1** en `https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app`.
-   No se pudo hacer autónomo: `DEMO_PASSWORD` en `.env.local` sigue siendo el placeholder `changeme`.
-   Probar en particular: la zona de carga sin elegir empresa, que soltar sobre ella no duplique, y que
-   marcar dos archivos para el mismo requisito quede impedido.
-2. [ ] **Los 2.000 documentos** — el Tramo 1 abrió la puerta; ahora sí pueden entrar.
-3. [ ] **Tramo 2** (el embudo, el cajón que se abre hacia abajo, el alta con tipo de gestión, el sistema
-   visual) y **Tramo 3** (pilas agrupadas, migración del índice único, historial de versiones).
-4. [ ] **Regla de negocio pendiente**: ¿*Seguro EETT* y *Seguro RC Empresa* dependen de tractoreo contra
-   equipo completo? Sin eso no se siembran.
-5. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
+**Superado por la Ronda 111** (ver abajo): el click-through se hizo y encontró un bug bloqueante,
+ya corregido y verificado.
+
+### 2026-08-15 (cont.) — Ronda 111: el click-through del Tramo 1 destapa un bug bloqueante + plan del Tramo 2
+
+**Origen**: pedido de revisar el desarrollo de los Tramos 1-3 y preparar las tareas de lo que sigue.
+
+#### El Tramo 1 estaba desplegado pero su caso de uso central no funcionaba
+
+Click-through en vivo con **Playwright** contra staging (la sesión ya estaba autenticada; no hizo
+falta `DEMO_PASSWORD`). Seis de siete verificaciones pasaron:
+
+| Prueba | Resultado |
+|---|---|
+| Carga global sin elegir empresa | 3 archivos entran bajo "Sin empresa" |
+| Sin duplicación al soltar (`e0c1e2f`) | Exactamente **3**, no 6 |
+| Más de 50 archivos | **58 = 3 + 55**, encadenó 50 + 5, cero pérdidas |
+| Estado "Cargando" | Barra, "0 de 55 listos", aviso de cerrar pestaña |
+| Regla del lote | "Clasificar los 2" deshabilitado, con el motivo |
+| Botones nombran cantidad | "Descartar los 2", "Mover los 58" |
+| Invariante del tramo | **0 `compliance_records`** tocados por la carga |
+
+**El bug**: un archivo que entraba por la puerta global **no se podía mover a una empresa ni
+clasificar**. La única acción era Descartar, que borra el blob. Los 2.000 documentos habrían
+entrado a un callejón sin salida.
+
+Causa: `selectedCarrierId` (`TriageWorkbench.tsx:95-100`) usaba `null` como centinela de **dos
+estados distintos** — "la selección cruza empresas" (ambiguo) y "los archivos todavía no tienen
+empresa" (unánime) — y `TriageBulkBar.tsx:49` escondía `MoveToCarrierBar` para los dos. El primero
+es además **inalcanzable**: `handleToggle` reemplaza la selección al marcar un archivo de otra
+empresa, así que la selección siempre es homogénea.
+
+Es la **segunda vez** que este módulo tropieza con un valor haciendo dos trabajos: la revisión de
+rama del Tramo 1 ya había encontrado dos definiciones de "sin clasificar" conviviendo.
+
+**Y había un test fijando el defecto** — `'no ofrece mover si la seleccion cruza empresas'`, escrito
+sobre la misma lectura equivocada. No protegía: blindaba el bug. Se reemplazó por el caso real.
+
+El backend no participaba: `POST /items/move` asigna `carrier_id` por id sin mirar el previo. El
+arreglo fue sólo de frontend — `48644ad`, 810 tests, `tsc` limpio, build y deploy en verde.
+
+Defecto menor del mismo pase: con un archivo sin empresa el panel decía *"Esta empresa no tiene
+requisitos pendientes… Suele pasar cuando la empresa no está activa"*, describiendo una situación
+que no era la que ocurría. Ahora distingue las dos causas de la lista vacía y nombra la salida.
+
+**Verificado end-to-end tras el redespliegue**, contra la base: mover (`PRUEBA-T1-1.pdf` →
+Transportes Charlotte Spa, sigue `UNMATCHED` — *mover encamina, no termina*), clasificar
+(`APPROVED_MANUAL` + fecha + archivo, item a `COMMITTED`) y **deshacer** (vuelve a `MISSING`, sin
+fecha ni archivo, item a `UNMATCHED` conservando la empresa). Los 58 archivos de prueba se
+limpiaron por el `DELETE` de la app; quedan 0 `compliance_records` tocados.
+
+**Nota de infraestructura**: `webcarga-frontend-dev` **escribe en la base de producción**
+(`viclzoftiudkepqnhekv`). No hay entorno de datos separado. El usuario lo dio por aceptable
+("aún estamos con solución de prueba"), pero conviene saberlo antes de cualquier prueba destructiva.
+
+#### Plan del Tramo 2 escrito, con tres decisiones tomadas contra datos reales
+
+Plan en `~/.claude/plans/ethereal-chasing-dijkstra.md` (local). **El embudo de 5 grupos se corrió
+contra producción antes de escribirlo**: reparte 1 / 30 / 8 / 0 / 209, o sea discrimina.
+
+**D9 — el tipo de gestión declarado va en `carriers.management_types TEXT[]`**, no en tabla puente
+ni como escalar con un valor `AMBAS`. Dos descartes con evidencia:
+- *Tabla puente*: las tres que ya existen (`carrier_shippers`, `driver_assignments`,
+  `asset_assignments`) cargan `status`+`start_date`+`end_date` y entre **241 filas hay 3 no-ACTIVE y
+  cero `end_date`**. Nueve columnas de ciclo de vida jamás usadas. La nº 25 del esquema serviría a 2 filas.
+- *`AMBAS`*: colapsa un conjunto en un escalar y obliga a que toda consulta recuerde
+  `IN ('TRACTOREO','AMBAS')`. Olvidarlo deja afuera a la empresa mixta **en silencio**. Además el
+  lado observado ya es un conjunto (`array_agg`), así que declarado y observado quedan con la misma forma.
+
+El CHECK se probó contra Postgres real, 9 casos. **Gotcha encontrado al probarlo**:
+`array_length(ARRAY[]::text[], 1)` devuelve `NULL`, no `0`, así que el arreglo vacío pasaba y
+quedaban dos maneras de decir "no declarado". Se usa `cardinality()`.
+
+**Auditoría `asset_type` ↔ `fleet_service_type`** (pedida explícitamente): la redundancia es real
+—`asset_type` es 100% derivable del subtipo en los 118 vehículos— y **nace en el Excel de origen**,
+que trae tres columnas (C `tipo_de_equipo`, D `tipo_vehiculo`, E `tipo_operacion_webcarga`). El
+origen está sin normalizar en **tres pares de sinónimos** (`Equipo Completo`/`Equipo completo`,
+`Equipo Completo Furgón Seco`/`Furgón Seco`, `Tractoreo`/`TRACTOCAMION`) que el loader absorbe en
+silencio. **Conclusión: no eliminar `asset_type`** — es un hecho físico y derivarlo cambiaría una
+columna almacenada por un mapeo almacenado. Lo que falta es protegerlo.
+
+**Hallazgos que van al plan y NO se tocan sin decisión**:
+- **H1**: `reconcile_new_asset` siembra `MANTENCION_FRIO`/`RESOLUCION_SANITARIA` por
+  `asset_type='RAMPLA'`, no por subtipo → **16 remolques sin cámara de frío** (11 Furgón Seco +
+  5 Sider) cargan ese requisito. Decisión de negocio, junto a D8.
+- **H2, mina para el Tramo 3**: `reconcile_new_asset`, `_carrier` y `_driver` usan
+  `ON CONFLICT (entity_id, requirement_id)`, que necesita **exactamente el índice único que el
+  Tramo 3 va a eliminar** para habilitar el historial. Hay que reescribir los tres triggers en la
+  misma migración que hace el DROP, o el alta de empresas/conductores/vehículos se rompe.
+- Los valores `CAMION`/`FURGON`/`OTRO` de `AssetType` son **placeholders** anteriores a la taxonomía
+  (commit `5955c5f`, contra migraciones `20260802`–`20260804`), **se ofrecen hoy en dos selectores**
+  y ningún vehículo los usa. Al ponerles CHECK hay que retirarlos antes de las 4 declaraciones, o
+  elegir "Camión" en pantalla da un 500.
+- Renombrar la etiqueta `TRACTOCAMION` → `Tractocamión` exige **refrescar las dos vistas
+  materializadas** (`app.carrier_asset_roster` guarda la etiqueta desnormalizada en 78 de 116 filas)
+  porque su trigger escucha cambios en `assets`, no en la taxonomía.
+
+#### Próximo paso exacto
+1. [ ] **Tramo 2, Tarea 1**: migración `carriers.management_types TEXT[]` (escribir, no aplicar sin
+   autorización). Después Tareas 2-14 del plan.
+2. [ ] **Los 2.000 documentos** — ahora sí la puerta está abierta de verdad.
+3. [ ] **Decisiones de negocio**: H1 (los 16 remolques) y D8 (*Seguro EETT* / *Seguro RC Empresa*).
+4. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
