@@ -2,6 +2,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+/** Estados que la especificacion HTTP define sin cuerpo. */
+const NULL_BODY_STATUS = new Set([204, 205, 304])
+
 const BACKEND = (process.env.FASTAPI_URL ?? 'http://localhost:8001').trim()
 
 async function getServerToken(): Promise<string> {
@@ -41,6 +44,15 @@ async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {
 
   try {
     const res = await fetch(url, init)
+
+    // 204/205/304 no admiten cuerpo: construir una Response con body (aunque
+    // sea '') lanza TypeError, caía en el catch de abajo y el navegador veía
+    // un 502 aunque el backend hubiera respondido bien. Afectaba a TODO
+    // DELETE de la app — visto en vivo al descartar en la bandeja.
+    if (NULL_BODY_STATUS.has(res.status)) {
+      return new NextResponse(null, { status: res.status })
+    }
+
     const body = await res.text()
     return new NextResponse(body, {
       status: res.status,
