@@ -723,3 +723,25 @@ def test_status_never_orders_by_a_literal():
         client.get(f"/api/v1/compliance-records/status?group={grupo}")
         orden = pool.fetch.call_args.args[0].split("ORDER BY")[1]
         assert not orden.strip().startswith("0")
+
+
+def test_status_binds_exactly_the_parameters_it_references():
+    """BUG REAL (2026-08-15): agrupando por conductor el SQL no referenciaba $1
+    pero se seguian pasando 3 parametros, y Postgres rechaza la sentencia. Los
+    AsyncMock nunca lo ven — aceptan cualquier cantidad de argumentos — asi que
+    la unica defensa barata es contar los placeholders contra los argumentos."""
+    import re
+
+    for grupo in ("carrier", "driver", "asset"):
+        pool = AsyncMock()
+        pool.fetch.return_value = []
+        client = make_client(pool)
+
+        client.get(f"/api/v1/compliance-records/status?group={grupo}")
+
+        sql, *args = pool.fetch.call_args.args
+        referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+        assert referenciados == set(range(1, len(args) + 1)), (
+            f"group={grupo}: el SQL referencia {sorted(referenciados)} "
+            f"pero se pasan {len(args)} parametros"
+        )
