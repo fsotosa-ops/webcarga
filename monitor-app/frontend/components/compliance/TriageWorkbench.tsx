@@ -91,6 +91,8 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
     enabled: !!focusedId && targetIds.length === 1,
   })
 
+  const grupos = new Set(rows.map(r => r.carrier_id)).size
+
   const carrierLabel = rows.find(r => r.carrier_id === (selectedCarrierId ?? subjectCarrierId))?.carrier_name ?? null
 
   const previewItems = rows
@@ -195,61 +197,84 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
         <p key={e.file_name} className="text-[10px] text-red-500">{e.file_name}: {e.error}</p>
       ))}
 
-      {canEdit && (
-        <TriageBulkBar
-          selectedCount={selectedIds.size}
-          targetIds={targetIds}
-          currentCarrierId={selectedCarrierId}
-          onDiscard={() => discardMutation.mutate(targetIds)}
-          onClear={clearSelection}
-          onMoved={() => { setNotice('Documentos movidos'); clearSelection() }}
-        />
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.7fr)] gap-3 items-start">
-        <div className="space-y-1.5 min-w-0">
-        <div className="border border-border rounded-lg overflow-y-auto max-h-[58vh] bg-white">
-          {queueQuery.isPending ? (
-            <p className="text-[11px] text-gray-400 p-3 flex items-center gap-1.5">
-              <Loader2 size={11} className="animate-spin" /> Cargando…
-            </p>
-          ) : (
-            <TriageFileTable
-              rows={rows}
-              focusedId={focusedId}
-              selectedIds={selectedIds}
-              onFocus={setFocusedId}
-              onToggle={handleToggle}
-              onToggleAll={() => setSelectedIds(prev =>
-                prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id)),
-              )}
-            />
+      {/* Un solo lienzo con dos regiones rotuladas, no dos tarjetas sueltas: la
+          pantalla tiene que decir sola que el orden es elegir y despues
+          clasificar. */}
+      <div className="border border-border rounded-xl bg-white overflow-hidden">
+        <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
+          <span className="text-2xl font-bold text-slate-800 tabular-nums leading-none">{total}</span>
+          <span className="text-xs text-gray-500">sin clasificar</span>
+          {grupos > 0 && (
+            <span className="text-xs text-gray-400">
+              · {grupos === 1 ? '1 empresa' : `${grupos} empresas`}
+            </span>
           )}
         </div>
 
-        {/* Los atajos van pegados a la tabla, que es donde se usan. */}
-        <div className="flex items-center justify-between flex-wrap gap-2 px-0.5">
-          <p className="text-[10px] text-gray-500">
-            <kbd className="font-sans">↑↓</kbd> mover ·{' '}
-            <kbd className="font-sans">space</kbd> marcar ·{' '}
-            <kbd className="font-sans">⇧+click</kbd> rango
-          </p>
-          <p className="text-[10px] text-gray-500 tabular-nums">
-            {rows.length < total
-              ? `Mostrando ${rows.length} de ${total}`
-              : `${total} sin clasificar`}
-          </p>
-        </div>
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,0.7fr)]">
+          <section aria-label="Elegí documentos" className="min-w-0 lg:border-r border-border">
+            <h2 className="px-3 pt-2.5 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              <span className="text-accent">1</span> · Elegí documentos
+            </h2>
 
-        <div className="border border-border rounded-lg p-3 space-y-3 bg-white">
-          <TriageClassifyForm
-            targetIds={canEdit ? targetIds : []}
-            subjects={subjects}
-            carrierLabel={carrierLabel}
-            onApplied={handleApplied}
-          />
-          <TriagePreview items={previewItems} />
+            {canEdit && (
+              <TriageBulkBar
+                selectedCount={selectedIds.size}
+                targetIds={targetIds}
+                currentCarrierId={selectedCarrierId}
+                onDiscard={() => discardMutation.mutate(targetIds)}
+                onClear={clearSelection}
+                onMoved={() => { setNotice('Documentos movidos'); clearSelection() }}
+              />
+            )}
+
+            <div className="overflow-y-auto max-h-[54vh]">
+              {queueQuery.isPending ? (
+                <p className="text-[11px] text-gray-400 p-3 flex items-center gap-1.5">
+                  <Loader2 size={11} className="animate-spin" /> Cargando…
+                </p>
+              ) : (
+                <TriageFileTable
+                  rows={rows}
+                  focusedId={focusedId}
+                  selectedIds={selectedIds}
+                  onFocus={setFocusedId}
+                  onToggle={handleToggle}
+                  onToggleAll={() => setSelectedIds(prev =>
+                    prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id)),
+                  )}
+                />
+              )}
+            </div>
+
+            <div className="flex items-center justify-between flex-wrap gap-2 px-3 py-2 border-t border-border bg-gray-50/60">
+              <p className="text-[10px] text-gray-500">
+                <kbd className="font-sans">↑↓</kbd> mover ·{' '}
+                <kbd className="font-sans">space</kbd> marcar ·{' '}
+                <kbd className="font-sans">⇧+click</kbd> rango
+              </p>
+              {rows.length < total && (
+                <p className="text-[10px] text-gray-500 tabular-nums">
+                  Mostrando {rows.length} de {total}
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section aria-label="Clasificá" className="min-w-0 border-t lg:border-t-0 border-border">
+            <h2 className="px-3 pt-2.5 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              <span className="text-accent">2</span> · Clasificá
+            </h2>
+            <div className="p-3 pt-1 space-y-3">
+              <TriageClassifyForm
+                targetIds={canEdit ? targetIds : []}
+                subjects={subjects}
+                carrierLabel={carrierLabel}
+                onApplied={handleApplied}
+              />
+              {targetIds.length > 0 && <TriagePreview items={previewItems} />}
+            </div>
+          </section>
         </div>
       </div>
 

@@ -136,7 +136,10 @@ async def list_queue(
                ON c.id = COALESCE(i.carrier_id, b.carrier_id)
         LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
         {where}
-        ORDER BY c.business_name NULLS LAST, i.created_at
+        -- file_name desempata: una carga masiva entra con el mismo created_at
+        -- y sin desempate el orden queda arbitrario entre recargas. En una cola
+        -- donde se selecciona por rango, eso hace que marques otra cosa.
+        ORDER BY c.business_name NULLS LAST, i.created_at, i.file_name
         LIMIT $2 OFFSET $3
         """,
         carrier_id, limit, offset,

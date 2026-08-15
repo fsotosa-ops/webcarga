@@ -25,8 +25,11 @@ function setup(over: Record<string, unknown> = {}) {
 }
 
 describe('TriageBulkBar', () => {
-  it('no aparece sin seleccion', () => {
-    const { container } = render(
+  // En reposo la barra no desaparece: enseña que existe la selección múltiple.
+  // Si solo apareciera al marcar algo, la capacidad sería invisible hasta que
+  // alguien la descubra por accidente.
+  it('sin seleccion explica como marcar, en vez de esconderse', () => {
+    render(
       <QueryClientProvider client={new QueryClient()}>
         <TriageBulkBar
           selectedCount={0} targetIds={[]} currentCarrierId={null}
@@ -34,7 +37,9 @@ describe('TriageBulkBar', () => {
         />
       </QueryClientProvider>,
     )
-    expect(container).toBeEmptyDOMElement()
+    expect(screen.getByText(/ninguno seleccionado/i)).toBeInTheDocument()
+    expect(screen.getByText(/barra espaciadora/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /descartar/i })).not.toBeInTheDocument()
   })
 
   it('dice cuantos hay seleccionados', () => {

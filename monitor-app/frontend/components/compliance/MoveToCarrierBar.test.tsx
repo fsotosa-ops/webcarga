@@ -15,8 +15,11 @@ vi.mock('@/lib/api/carriers', () => ({
 }))
 import { documentIngestApi } from '@/lib/api/documentIngest'
 
+let lastClient: QueryClient
+
 function setup(targetIds = ['i1', 'i2'], onMoved = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  lastClient = qc
   render(
     <QueryClientProvider client={qc}>
       <MoveToCarrierBar targetIds={targetIds} currentCarrierId="c1" onMoved={onMoved} />
@@ -55,6 +58,28 @@ describe('MoveToCarrierBar', () => {
     await waitFor(() => {
       expect(documentIngestApi.moveItems).toHaveBeenCalledWith(['i1', 'i2'], 'c2')
       expect(onMoved).toHaveBeenCalled()
+    })
+  })
+
+  // BUG REAL encontrado en el click-through del 2026-08-14: invalidaba
+  // ['ingest-tray', …], clave que dejó de existir al renombrarse la cola a
+  // ['ingest-queue', …]. El backend movía bien, pero la lista quedaba stale y
+  // el grupo de origen seguía mostrando los documentos ya movidos.
+  it('refresca la cola después de mover, no solo el origen', async () => {
+    const spy = vi.fn()
+    setup()
+    lastClient.invalidateQueries = spy
+
+    fireEvent.click(screen.getByRole('button', { name: /mover 2 a otra empresa/i }))
+    fireEvent.change(await screen.findByPlaceholderText(/buscar empresa/i), {
+      target: { value: 'Otra' },
+    })
+    fireEvent.click(await screen.findByText('Otra Empresa'))
+
+    await waitFor(() => {
+      const claves = spy.mock.calls.map(c => JSON.stringify(c[0].queryKey))
+      expect(claves).toContain('["ingest-queue"]')
+      expect(claves).toContain('["ingest-queue-count"]')
     })
   })
 })

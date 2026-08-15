@@ -46,13 +46,13 @@ beforeEach(() => {
 describe('TriageClassifyForm', () => {
   it('anuncia a cuántos documentos va a aplicar', () => {
     setup()
-    expect(screen.getByRole('button', { name: /aplicar a los 2/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeInTheDocument()
   })
 
   it('aplica a toda la selección de una vez', async () => {
     const onApplied = setup()
     await elegir()
-    fireEvent.click(screen.getByRole('button', { name: /aplicar a los 2/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clasificar los 2/i }))
 
     await waitFor(() => {
       expect(documentIngestApi.classifyBatch).toHaveBeenCalledWith({
@@ -67,7 +67,7 @@ describe('TriageClassifyForm', () => {
     setup()
     await elegir('SOAP')
     expect(screen.getByLabelText(/fecha de vencimiento/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /aplicar/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /clasificar/i })).toBeDisabled()
   })
 
   it('no deja aplicar sin selección', () => {
@@ -79,7 +79,7 @@ describe('TriageClassifyForm', () => {
     vi.mocked(documentIngestApi.classifyBatch).mockRejectedValue(new Error('Esa entidad no tiene ese requisito'))
     setup()
     await elegir()
-    fireEvent.click(screen.getByRole('button', { name: /aplicar a los 2/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clasificar los 2/i }))
 
     expect(await screen.findByText(/no tiene ese requisito/i)).toBeInTheDocument()
   })

@@ -23,10 +23,23 @@ export function TriageBulkBar({
 }: Props) {
   const [confirming, setConfirming] = useState(false)
 
-  if (!selectedCount) return null
+  // Barra siempre presente: si solo apareciera al seleccionar, la persona no
+  // sabria que existe hasta descubrirla por accidente. En reposo enseña como
+  // marcar; con seleccion, actua.
+  if (!selectedCount) {
+    return (
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[11px] text-gray-500">
+        <span className="font-medium text-gray-400">Ninguno seleccionado</span>
+        <span className="text-gray-300" aria-hidden="true">·</span>
+        <span>
+          marcá con la casilla o la barra espaciadora para clasificar, mover o descartar en lote
+        </span>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex items-center gap-4 flex-wrap bg-slate-800 text-white rounded-lg pl-3 pr-2 py-1.5 shadow-sm">
+    <div className="flex items-center gap-4 flex-wrap bg-slate-800 text-white px-3 py-2 shadow-sm">
       <span className="text-[11px] font-semibold tabular-nums">
         {selectedCount === 1 ? '1 seleccionado' : `${selectedCount} seleccionados`}
       </span>

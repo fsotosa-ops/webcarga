@@ -31,8 +31,11 @@ export function MoveToCarrierBar({ targetIds, currentCarrierId, onMoved }: Props
       await documentIngestApi.moveItems(targetIds, carrierId)
       setOpen(false)
       setQuery('')
-      qc.invalidateQueries({ queryKey: ['ingest-tray', currentCarrierId] })
-      qc.invalidateQueries({ queryKey: ['ingest-tray', carrierId] })
+      // Por prefijo: la cola se cachea como ['ingest-queue', <empresa|'all'>] y
+      // un movimiento cambia el grupo de origen Y el de destino. Invalidar
+      // claves puntuales dejaba la lista stale — se vio en el click-through.
+      qc.invalidateQueries({ queryKey: ['ingest-queue'] })
+      qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
       onMoved()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo mover')
