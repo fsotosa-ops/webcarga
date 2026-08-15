@@ -1,5 +1,6 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { TransporterAlertBanner } from '@/components/dashboard/TransporterAlertBanner'
@@ -23,6 +24,8 @@ interface Props {
 export function CarrierDocumentsTab({
   carrierId, carrierName, records, onExport, exporting, exportError,
 }: Props) {
+  const queryClient = useQueryClient()
+
   return (
     <>
       <TransporterAlertBanner records={records} />
@@ -52,7 +55,10 @@ export function CarrierDocumentsTab({
           </button>
         </div>
         {exportError && <p className="text-xs text-red-500 mb-2">{exportError}</p>}
-        <TransporterDocumentsPanel records={records} />
+        <TransporterDocumentsPanel
+          records={records}
+          onChanged={() => queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })}
+        />
       </div>
     </>
   )

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { TransporterDocumentsPanel } from './TransporterDocumentsPanel'
 import { complianceApi } from '@/lib/api/compliance'
+
+vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 import type { ComplianceRecord } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({
@@ -47,9 +49,12 @@ describe('TransporterDocumentsPanel', () => {
     expect(screen.queryByLabelText(/^Fecha de vencimiento de/)).not.toBeInTheDocument()
   })
 
-  it('labels the expiration date so it is clear what it means', () => {
+  // HU-02: el vencimiento se declara desde acá, con o sin archivo adjunto. La
+  // celda editable reemplazó al texto "Vence:" de solo lectura — el panel había
+  // quedado sin ningún punto de entrada al retirarse CertificationCompanyPanel.
+  it('permite declarar el vencimiento sin adjuntar archivo', () => {
     render(<TransporterDocumentsPanel records={RECORDS} />)
-    expect(screen.getByText('Vence:')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /vencimiento/i }).length).toBeGreaterThan(0)
   })
 
   it('shows a "Ver archivo" trigger when file_url is set', () => {

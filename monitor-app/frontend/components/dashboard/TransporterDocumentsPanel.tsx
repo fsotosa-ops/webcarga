@@ -7,6 +7,8 @@ import type { ComplianceRecord, DocumentVersion } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { complianceAlertStatus, formatExpiry } from '@/lib/compliance'
+import { useCanEdit } from '@/hooks/useCanEdit'
+import { ExpirationDateCell } from './ExpirationDateCell'
 
 // ── Una fila por compliance_record — solo lectura. La carga/edición real
 //    vive en el módulo Certificación (Ronda 88): acá se ve el estado, se
@@ -15,7 +17,8 @@ import { complianceAlertStatus, formatExpiry } from '@/lib/compliance'
 //    duplicar el entry point. "Ver historial" queda disponible para
 //    cualquiera (es lectura, no edición — antes estaba atado sin motivo
 //    a canEdit). ──────────────────────────────────────────────────────
-function DocumentRow({ record }: { record: ComplianceRecord }) {
+function DocumentRow({ record, onChanged }: { record: ComplianceRecord; onChanged?: () => void }) {
+  const canEdit = useCanEdit()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [versions, setVersions] = useState<DocumentVersion[] | null>(null)
@@ -53,13 +56,18 @@ function DocumentRow({ record }: { record: ComplianceRecord }) {
         </span>
         <span className="text-xs font-semibold text-text-primary flex-1 truncate">{record.name}</span>
 
-        {record.expiration_date && (
-          <span className="flex items-center gap-1.5 shrink-0 text-[10px] text-gray-500">
-            <span className="text-gray-400">Vence:</span>
-            <span className="font-mono">{formatExpiry(record.expiration_date)}</span>
-            <ComplianceBadge status={alert} compact />
-          </span>
-        )}
+        {/* HU-02: el vencimiento se puede declarar SIN adjuntar el archivo — el
+            requisito sigue pendiente, pero ya alimenta las alertas. */}
+        <span className="flex items-center gap-1.5 shrink-0 text-[10px] text-gray-500">
+          <ExpirationDateCell
+            recordId={record.id}
+            value={record.expiration_date ?? null}
+            required={false}
+            canEdit={canEdit}
+            onSaved={() => onChanged?.()}
+          />
+          {record.expiration_date && <ComplianceBadge status={alert} compact />}
+        </span>
 
         {record.file_url && (
           <button
@@ -115,6 +123,8 @@ function DocumentRow({ record }: { record: ComplianceRecord }) {
 
 interface Props {
   records: ComplianceRecord[]
+  /** Avisa que hay que releer la ficha: se declaró un vencimiento (HU-02). */
+  onChanged?: () => void
 }
 
 /** Documentos de la empresa — sección siempre visible de la ficha, solo
@@ -122,7 +132,7 @@ interface Props {
  *  gestiona entidades — baja/transferir/asignar —, Certificación es el
  *  único lugar para subir/editar documentación, evita el entry point
  *  duplicado que existía antes). */
-export function TransporterDocumentsPanel({ records }: Props) {
+export function TransporterDocumentsPanel({ records, onChanged }: Props) {
   const approvedCount = records.filter(r => r.status === 'APPROVED' || r.status === 'APPROVED_MANUAL').length
 
   return (
@@ -137,7 +147,7 @@ export function TransporterDocumentsPanel({ records }: Props) {
       {records.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {records.map(record => (
-            <DocumentRow key={record.id} record={record} />
+            <DocumentRow key={record.id} record={record} onChanged={onChanged} />
           ))}
         </div>
       )}
