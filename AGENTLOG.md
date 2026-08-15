@@ -1379,6 +1379,30 @@ Se agregó un test que **cuenta los placeholders del SQL contra los argumentos**
 6. [ ] El **agente de clasificación automática** sigue sin cablearse (`document_matcher.py`). La columna Sugerencia ya está construida y esperándolo.
 7. [ ] HU-05, HU-03 y HU-06 siguen pendientes.
 
+### 2026-08-15 (cont.) — Ronda 107: HU-03 completa + carga por conductor/vehículo + un 429 en producción
+
+**Pedido**: poder elegir un conductor o vehículo para cargarle documentación, y terminar la HU-03.
+
+**Por qué no dejaba cargar** — dos cosas: en las vistas Conductores/Vehículos el nombre era texto plano, y sus paneles pasaban `canEdit={false}` sin `onUpload`. La capacidad **ya existía** en `DocumentChecklist`; quedó apagada en la Ronda 88 cuando la carga se centralizó en Certificación, que es justo lo que la HU-04 revierte. Ahora el nombre lleva a la ficha con esa entidad abierta (`?driver=` / `?asset=`).
+
+**Un frankenstein que el usuario frenó a tiempo**: mi primer intento enganchó el checklist a `POST /compliance-records/{id}/file`, o sea un **segundo camino de carga** — exactamente lo que la HU-04 prohíbe (*"una sola implementación: el mismo componente y el mismo endpoint"*), criterio que yo había dado por cumplido. Corregido con `uploadAndClassify`, que usa la **misma puerta** que la bandeja (`upload` + `classifyBatch`) con el requisito ya conocido; si la clasificación falla, el archivo queda visible en la bandeja en vez de perderse. Al quedar todo por una puerta se retiraron `BulkDocumentUploadModal` y los métodos `uploadFile`/`bulkUploadFile`: **de tres caminos de carga quedó uno**.
+
+**HU-03 completa.** `POST /compliance-records/{id}/reassign` + `ReassignDocument`, que reusa `PendingSlotPicker` — elegir destino es la misma operación que clasificar. Las cuatro variantes:
+| Variante | Cómo |
+|---|---|
+| Otro requisito de la misma entidad | Elegir el hueco |
+| Otra entidad | Elegir el hueco |
+| Otra empresa | Devolver a la bandeja + mover (ya existía) |
+| Devolver a sin clasificar | Acción propia |
+
+**El archivo nunca se copia ni se borra**: viaja la referencia. Verificado en vivo con un documento real: pasó de Rol SII a F30 Multas (origen a `MISSING`, mismo `storage_path`), y después volvió a la bandeja como `UNMATCHED`. Producción quedó limpia.
+
+**INCIDENTE EN VIVO — 429 "Many requests" al abrir un conductor.** Causa raíz: el proxy `/api/v1` llamaba a `getUser()` en **cada** request, y `getUser()` sale por red contra `/auth/v1/user` de Supabase. Una ficha dispara decenas de consultas en paralelo → límite de Auth. Es un bug **preexistente** que este módulo amplificó al sumar consultas. Ahora `getSession()` lee la cookie y sólo se sale a la red cuando faltan menos de 2 minutos para el vencimiento. Con test.
+
+**Simplificación de paso**: las filas de pendientes traen `requirement_id`. Traducir el código a id contra el catálogo era un paso frágil repetido en cada consumidor; con el id en la fila desaparece.
+
+**Estado de la épica**: HU-01 ✔, HU-02 ✔ (se había caído al borrar el panel de empresa, restaurada), HU-03 ✔, HU-04 ✔. **Quedan HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento, que es lo que sacaría a Seguros del primer nivel).
+
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual. (Ver también los 4 pendientes nuevos de la Ronda 95, arriba.)
