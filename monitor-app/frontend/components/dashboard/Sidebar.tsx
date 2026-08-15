@@ -21,30 +21,43 @@ import { documentIngestApi } from '@/lib/api/documentIngest'
 // "Cierres" (ex-Reportería, ahora en /operations/closures/history) se sacó
 // del Sidebar — /dashboard/operations/closures pasará a ser el Centro de
 // Cierre del Día (tarea futura), que todavía no tiene link de nav propio.
-const MONITOR_GROUP = {
-  label: 'Operaciones',
-  icon:  Truck,
-  items: [
-    { href: '/dashboard/operations/monitor',  label: 'Monitor' },
-  ],
-}
+type NavLeaf  = { href: string; label: string; badge?: 'inbox' }
+type NavGroupDef = { label: string; icon: LucideIcon; items: NavLeaf[] }
 
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; badge?: 'inbox' }[] = [
-  { href: '/dashboard/carriers',       label: 'Empresas',      icon: Building2 },
-  { href: '/dashboard/insurance',      label: 'Seguros',       icon: Shield },
-  { href: '/dashboard/pricing',        label: 'Tarifario',     icon: Receipt },
-  { href: '/dashboard/compliance',  label: 'Certificación', icon: BadgeCheck },
-  // La cola de sin clasificar es trabajo pendiente, no una vista del módulo:
-  // por eso va al mismo nivel y con contador. Anidarla bajo Certificación
-  // obligaba a duplicar las ~55 líneas del grupo Operaciones o a generalizar
-  // el Sidebar entero.
-  { href: '/dashboard/compliance/inbox', label: 'Bandeja', icon: Inbox, badge: 'inbox' },
+// Un modulo por objeto de trabajo, con sus vistas adentro (HU-04). La
+// certificacion de una empresa se resuelve sin saltar entre modulos: la cola
+// transversal, la sabana de pendientes y la ficha viven bajo el mismo techo.
+const NAV_GROUPS: NavGroupDef[] = [
+  {
+    label: 'Operaciones',
+    icon:  Truck,
+    items: [
+      { href: '/dashboard/operations/monitor', label: 'Monitor' },
+    ],
+  },
+  {
+    label: 'Certificación',
+    icon:  BadgeCheck,
+    items: [
+      { href: '/dashboard/compliance/inbox', label: 'Bandeja', badge: 'inbox' },
+      { href: '/dashboard/compliance',       label: 'Pendientes' },
+      { href: '/dashboard/carriers',         label: 'Empresas' },
+    ],
+  },
 ]
 
-// Solo para el bottom nav mobile — sin concepto de dropdown ahí, se listan
-// los items de Operaciones ya aplanados junto a los demás.
+// Seguros sigue en primer nivel: pasarlo a seccion de la ficha es la HU-06.
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/dashboard/insurance', label: 'Seguros',   icon: Shield },
+  { href: '/dashboard/pricing',   label: 'Tarifario', icon: Receipt },
+]
+
+// Solo para el bottom nav mobile — sin concepto de dropdown ahi, se listan
+// los items de los grupos ya aplanados junto a los demas.
 const MOBILE_NAV_ITEMS = [
-  { href: MONITOR_GROUP.items[0].href, label: MONITOR_GROUP.items[0].label, icon: Truck },
+  { href: '/dashboard/operations/monitor', label: 'Monitor',  icon: Truck },
+  { href: '/dashboard/compliance/inbox',   label: 'Bandeja',  icon: Inbox },
+  { href: '/dashboard/carriers',           label: 'Empresas', icon: Building2 },
   ...NAV_ITEMS,
 ]
 
@@ -54,6 +67,106 @@ const ROLE_BADGE: Record<string, string> = {
   editor: 'bg-teal-500/20 text-teal-300',
   writer: 'bg-blue-500/20 text-blue-300',
   viewer: 'bg-white/10 text-white/50',
+}
+
+/** Grupo expandible del sidebar. Existe una sola vez: antes el bloque estaba
+ *  escrito a mano para Operaciones, y sumar un segundo grupo obligaba a
+ *  duplicar ~55 lineas — que fue exactamente la razon equivocada por la que la
+ *  Bandeja termino colgando del primer nivel en vez de vivir dentro de
+ *  Certificacion, como manda la HU-04. */
+function NavGroup({
+  group, pathname, collapsed, inboxCount,
+}: {
+  group:      NavGroupDef
+  pathname:   string
+  collapsed:  boolean
+  inboxCount: number
+}) {
+  // Match mas especifico primero: /dashboard/compliance/inbox gana sobre
+  // /dashboard/compliance, que es su prefijo.
+  const activeHref = group.items
+    .map(i => i.href)
+    .filter(href => pathname.startsWith(href))
+    .sort((a, b) => b.length - a.length)[0]
+  const groupActive = !!activeHref
+
+  const [open, setOpen] = useState(groupActive)
+  // Si navegan directo a una sub-ruta (deep-link, back/forward), el submenu se
+  // abre solo para mostrar donde estan.
+  useEffect(() => {
+    if (groupActive) setOpen(true)
+  }, [groupActive])
+
+  const Icon = group.icon
+  const pending = group.items.some(i => i.badge === 'inbox') ? inboxCount : 0
+
+  if (collapsed) {
+    return (
+      <Link
+        href={group.items[0].href}
+        title={group.label}
+        className={`group relative flex items-center justify-center h-10 w-10 mx-auto rounded-xl text-[13px] transition-all duration-150 ${
+          groupActive ? 'bg-white/12 text-white' : 'text-white/45 hover:bg-white/6 hover:text-white/80'
+        }`}
+      >
+        {groupActive && (
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
+        )}
+        <Icon size={16} className={groupActive ? 'text-accent' : 'group-hover:text-white/70'} />
+        {pending > 0 && (
+          <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500" />
+        )}
+      </Link>
+    )
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all duration-150 ${
+          groupActive ? 'bg-white/12 text-white' : 'text-white/45 hover:bg-white/6 hover:text-white/80'
+        }`}
+      >
+        {groupActive && (
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
+        )}
+        <Icon size={16} className={`shrink-0 ${groupActive ? 'text-accent' : 'group-hover:text-white/70'}`} />
+        <span className={`font-medium truncate flex-1 text-left ${groupActive ? 'text-white' : ''}`}>{group.label}</span>
+        {pending > 0 && !open && (
+          <span className="shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
+            {pending}
+          </span>
+        )}
+        <ChevronDown size={13} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="mt-0.5 ml-3 pl-3.5 border-l border-white/8 flex flex-col gap-0.5">
+          {group.items.map(({ href, label, badge }) => {
+            const active = href === activeHref
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`relative flex items-center gap-2 rounded-lg text-[12.5px] px-2.5 py-2 transition-colors ${
+                  active ? 'bg-white/12 text-white font-medium' : 'text-white/40 hover:bg-white/6 hover:text-white/75'
+                }`}
+              >
+                <span className="truncate">{label}</span>
+                {badge === 'inbox' && inboxCount > 0 && (
+                  <span className="ml-auto shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
+                    {inboxCount}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface SidebarProps {
@@ -66,21 +179,8 @@ export default function Sidebar({ role }: SidebarProps) {
   const supabase = createClient()
   const [collapsed, setCollapsed] = useState(false)
 
-  const monitorActiveHref = [...MONITOR_GROUP.items]
-    .map(i => i.href)
-    .filter(href => pathname.startsWith(href))
-    .sort((a, b) => b.length - a.length)[0]
-  const monitorGroupActive = !!monitorActiveHref
-
-  const [monitorOpen, setMonitorOpen] = useState(monitorGroupActive)
-  // Si navegan directo a una sub-ruta de Monitor de Viajes (deep-link,
-  // back/forward), el submenú se abre solo para mostrar dónde están.
-  useEffect(() => {
-    if (monitorGroupActive) setMonitorOpen(true)
-  }, [monitorGroupActive])
-
-  // Match más específico primero (ej. /dashboard/operations/closures no debe
-  // también resaltar /dashboard/operations/monitor) — evita 2 items activos a la vez.
+  // Match más específico primero (ej. /dashboard/compliance/inbox no debe
+  // también resaltar /dashboard/compliance) — evita 2 items activos a la vez.
   const activeHref = [...NAV_ITEMS]
     .map(i => i.href)
     .filter(href => pathname.startsWith(href))
@@ -151,59 +251,17 @@ export default function Sidebar({ role }: SidebarProps) {
 
         {/* ── Main nav ── */}
         <nav className="flex-1 flex flex-col px-2.5 py-3 gap-0.5 overflow-hidden">
-          {/* Monitor de Viajes — grupo expandible (Diario + Cuadratura) */}
-          {collapsed ? (
-            <Link
-              href={MONITOR_GROUP.items[0].href}
-              title={MONITOR_GROUP.label}
-              className={`group relative flex items-center justify-center h-10 w-10 mx-auto rounded-xl text-[13px] transition-all duration-150 ${
-                monitorGroupActive ? 'bg-white/12 text-white' : 'text-white/45 hover:bg-white/6 hover:text-white/80'
-              }`}
-            >
-              {monitorGroupActive && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
-              )}
-              <Truck size={16} className={monitorGroupActive ? 'text-accent' : 'group-hover:text-white/70'} />
-            </Link>
-          ) : (
-            <div>
-              <button
-                type="button"
-                onClick={() => setMonitorOpen(v => !v)}
-                aria-expanded={monitorOpen}
-                className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all duration-150 ${
-                  monitorGroupActive ? 'bg-white/12 text-white' : 'text-white/45 hover:bg-white/6 hover:text-white/80'
-                }`}
-              >
-                {monitorGroupActive && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
-                )}
-                <Truck size={16} className={`shrink-0 ${monitorGroupActive ? 'text-accent' : 'group-hover:text-white/70'}`} />
-                <span className={`font-medium truncate flex-1 text-left ${monitorGroupActive ? 'text-white' : ''}`}>{MONITOR_GROUP.label}</span>
-                <ChevronDown size={13} className={`shrink-0 transition-transform ${monitorOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {monitorOpen && (
-                <div className="mt-0.5 ml-3 pl-3.5 border-l border-white/8 flex flex-col gap-0.5">
-                  {MONITOR_GROUP.items.map(({ href, label }) => {
-                    const active = href === monitorActiveHref
-                    return (
-                      <Link
-                        key={href}
-                        href={href}
-                        className={`relative rounded-lg text-[12.5px] px-2.5 py-2 transition-colors ${
-                          active ? 'bg-white/12 text-white font-medium' : 'text-white/40 hover:bg-white/6 hover:text-white/75'
-                        }`}
-                      >
-                        {label}
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          {NAV_GROUPS.map(group => (
+            <NavGroup
+              key={group.label}
+              group={group}
+              pathname={pathname}
+              collapsed={collapsed}
+              inboxCount={inboxCount}
+            />
+          ))}
 
-          {NAV_ITEMS.map(({ href, label, icon: Icon, badge }) => {
+          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = href === activeHref
             return (
               <Link
@@ -223,11 +281,6 @@ export default function Sidebar({ role }: SidebarProps) {
                 <Icon size={16} className={`shrink-0 ${active ? 'text-accent' : 'group-hover:text-white/70'}`} />
                 {!collapsed && (
                   <span className={`font-medium truncate ${active ? 'text-white' : ''}`}>{label}</span>
-                )}
-                {badge === 'inbox' && inboxCount > 0 && !collapsed && (
-                  <span className="ml-auto bg-red-500 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5">
-                    {inboxCount}
-                  </span>
                 )}
               </Link>
             )

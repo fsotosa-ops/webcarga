@@ -67,9 +67,9 @@ export function TriageFileTable({
       tabIndex={0}
       onKeyDown={handleKey}
     >
-      <thead>
+      <thead className="sticky top-0 z-10 bg-white">
         <tr className="border-b border-border">
-          <th scope="col" className="p-1.5 w-8">
+          <th scope="col" className="py-2 pl-3 pr-1 w-9">
             <input
               type="checkbox"
               aria-label="Seleccionar todos"
@@ -77,9 +77,9 @@ export function TriageFileTable({
               onChange={onToggleAll}
             />
           </th>
-          <th scope="col" className="p-1.5 text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Archivo</th>
-          <th scope="col" className="p-1.5 text-[10px] uppercase tracking-wide text-gray-400 font-semibold w-16">Subido</th>
-          <th scope="col" className="p-1.5 text-[10px] uppercase tracking-wide text-gray-400 font-semibold w-32">Sugerencia</th>
+          <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Archivo</th>
+          <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-20 text-right">Subido</th>
+          <th scope="col" className="py-2 pl-2 pr-3 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-40">Sugerencia</th>
         </tr>
       </thead>
       <tbody>
@@ -93,20 +93,26 @@ export function TriageFileTable({
           return (
             <Fragment key={r.id}>
               {header && (
-                <tr className="bg-gray-50">
-                  <td colSpan={4} className="px-1.5 py-1 text-[10px] font-semibold text-gray-500 tracking-wide">
-                    {carrier} — {counts.get(carrier)} sin clasificar
+                <tr className="bg-slate-100/80">
+                  <td colSpan={4} className="px-3 py-1.5 border-y border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-700">{carrier}</span>
+                    <span className="text-[10px] text-slate-500 ml-2 tabular-nums">
+                      {counts.get(carrier)} sin clasificar
+                    </span>
                   </td>
                 </tr>
               )}
               <tr
                 onClick={() => onFocus(r.id)}
                 aria-selected={checked}
-                className={`cursor-pointer transition-colors ${
-                  focused ? 'bg-accent/10' : 'hover:bg-gray-50'
+                className={`cursor-pointer transition-colors border-b border-gray-100 ${
+                  checked ? 'bg-accent/10' : focused ? 'bg-slate-100' : 'hover:bg-gray-50'
                 }`}
               >
-                <td className="p-1.5">
+                <td className="py-1.5 pl-3 pr-1 relative">
+                  {focused && (
+                    <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent" aria-hidden="true" />
+                  )}
                   <input
                     type="checkbox"
                     aria-label={`Seleccionar ${r.file_name}`}
@@ -118,11 +124,11 @@ export function TriageFileTable({
                     }}
                   />
                 </td>
-                <td className="p-1.5 text-[11px] font-mono truncate max-w-0">{r.file_name}</td>
-                <td className="p-1.5 text-[11px] text-gray-400">
+                <td className="py-1.5 px-2 text-[11px] font-mono text-slate-700 truncate max-w-0">{r.file_name}</td>
+                <td className="py-1.5 px-2 text-[11px] text-gray-500 text-right tabular-nums whitespace-nowrap">
                   {new Date(r.created_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })}
                 </td>
-                <td className="p-1.5 text-[11px]">
+                <td className="py-1.5 pl-2 pr-3 text-[11px]">
                   <Suggestion row={r} />
                 </td>
               </tr>
@@ -138,17 +144,21 @@ export function TriageFileTable({
  *  desde ahora para que la llegada del agente no obligue a rehacer la fila. */
 function Suggestion({ row }: { row: QueueRow }) {
   if (row.match_status === 'AMBIGUOUS' && row.candidate_count > 0) {
-    return <span className="text-amber-600">{row.candidate_count} posibles</span>
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium">
+        {row.candidate_count} posibles
+      </span>
+    )
   }
   if (row.suggested_requirement_name) {
     return (
-      <span className="text-green-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-medium">
         {row.suggested_requirement_name}
         {row.confidence != null && (
-          <span className="text-gray-400 ml-1">{Math.round(row.confidence * 100)}%</span>
+          <span className="text-emerald-600 tabular-nums">{Math.round(row.confidence * 100)}%</span>
         )}
       </span>
     )
   }
-  return <span className="text-gray-300">—</span>
+  return <span className="text-gray-400" title="Sin sugerencia — el clasificador automático todavía no está conectado">—</span>
 }

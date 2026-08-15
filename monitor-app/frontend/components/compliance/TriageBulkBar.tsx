@@ -26,10 +26,11 @@ export function TriageBulkBar({
   if (!selectedCount) return null
 
   return (
-    <div className="flex items-center gap-3 flex-wrap bg-accent text-white rounded-lg px-3 py-2">
-      <span className="text-xs font-bold bg-white/20 rounded px-2 py-0.5">
-        {selectedCount} seleccionados
+    <div className="flex items-center gap-4 flex-wrap bg-slate-800 text-white rounded-lg pl-3 pr-2 py-1.5 shadow-sm">
+      <span className="text-[11px] font-semibold tabular-nums">
+        {selectedCount === 1 ? '1 seleccionado' : `${selectedCount} seleccionados`}
       </span>
+      <span className="h-3.5 w-px bg-white/20" aria-hidden="true" />
 
       {currentCarrierId && !confirming && (
         <MoveToCarrierBar
@@ -44,18 +45,18 @@ export function TriageBulkBar({
           lo que haría insoportable vaciar una bandeja de dos mil. */}
       {confirming ? (
         <>
-          <span className="text-[11px]">Se borran definitivamente</span>
+          <span className="text-[11px] text-amber-200">Se borran definitivamente</span>
           <button
             type="button"
             onClick={() => { setConfirming(false); onDiscard() }}
-            className="text-[11px] font-bold bg-white text-accent rounded px-2 py-0.5"
+            className="text-[11px] font-bold bg-red-500 hover:bg-red-400 text-white rounded px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
           >
             Sí, descartar {selectedCount}
           </button>
           <button
             type="button"
             onClick={() => setConfirming(false)}
-            className="text-[11px] font-semibold opacity-75 hover:opacity-100 transition-opacity"
+            className="text-[11px] font-semibold text-white/60 hover:text-white transition-colors"
           >
             Cancelar
           </button>
@@ -64,7 +65,7 @@ export function TriageBulkBar({
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className="flex items-center gap-1.5 text-[11px] font-semibold hover:opacity-80 transition-opacity"
+          className="flex items-center gap-1.5 text-[11px] font-semibold text-white/80 hover:text-white transition-colors"
         >
           <Trash2 size={12} /> Descartar
         </button>
@@ -73,9 +74,11 @@ export function TriageBulkBar({
       <button
         type="button"
         onClick={onClear}
-        className="flex items-center gap-1.5 text-[11px] font-semibold ml-auto opacity-75 hover:opacity-100 transition-opacity"
+        aria-label="Deseleccionar"
+        title="Deseleccionar"
+        className="ml-auto shrink-0 p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
       >
-        <X size={12} /> Deseleccionar
+        <X size={13} />
       </button>
     </div>
   )

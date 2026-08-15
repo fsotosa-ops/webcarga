@@ -29,8 +29,14 @@ describe('TriageFileTable', () => {
 
   it('agrupa las filas por empresa', () => {
     setup()
-    expect(screen.getByText(/ACME — 2 sin clasificar/i)).toBeInTheDocument()
-    expect(screen.getByText(/NORTE — 1 sin clasificar/i)).toBeInTheDocument()
+    // El nombre y el conteo son dos elementos: el nombre pesa, el conteo
+    // acompaña. La fila del grupo se lee como separador, no como una fila más.
+    const acme = screen.getByText('ACME').closest('tr')
+    expect(acme).toHaveTextContent('ACME')
+    expect(acme).toHaveTextContent('2 sin clasificar')
+
+    const norte = screen.getByText('NORTE').closest('tr')
+    expect(norte).toHaveTextContent('1 sin clasificar')
   })
 
   it('muestra las columnas de la tabla', () => {

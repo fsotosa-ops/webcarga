@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, UploadCloud } from 'lucide-react'
+import { Loader2, UploadCloud, X } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
@@ -90,6 +90,8 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
     queryFn: () => documentIngestApi.previewUrl(focusedId!),
     enabled: !!focusedId && targetIds.length === 1,
   })
+
+  const carrierLabel = rows.find(r => r.carrier_id === (selectedCarrierId ?? subjectCarrierId))?.carrier_name ?? null
 
   const previewItems = rows
     .filter(r => targetIds.includes(r.id))
@@ -204,8 +206,9 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-3">
-        <div className="border border-border rounded-lg overflow-y-auto max-h-[58vh]">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.7fr)] gap-3 items-start">
+        <div className="space-y-1.5 min-w-0">
+        <div className="border border-border rounded-lg overflow-y-auto max-h-[58vh] bg-white">
           {queueQuery.isPending ? (
             <p className="text-[11px] text-gray-400 p-3 flex items-center gap-1.5">
               <Loader2 size={11} className="animate-spin" /> Cargando…
@@ -224,32 +227,42 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
           )}
         </div>
 
-        <div className="border border-border rounded-lg p-3 space-y-3">
+        {/* Los atajos van pegados a la tabla, que es donde se usan. */}
+        <div className="flex items-center justify-between flex-wrap gap-2 px-0.5">
+          <p className="text-[10px] text-gray-500">
+            <kbd className="font-sans">↑↓</kbd> mover ·{' '}
+            <kbd className="font-sans">space</kbd> marcar ·{' '}
+            <kbd className="font-sans">⇧+click</kbd> rango
+          </p>
+          <p className="text-[10px] text-gray-500 tabular-nums">
+            {rows.length < total
+              ? `Mostrando ${rows.length} de ${total}`
+              : `${total} sin clasificar`}
+          </p>
+        </div>
+        </div>
+
+        <div className="border border-border rounded-lg p-3 space-y-3 bg-white">
           <TriageClassifyForm
             targetIds={canEdit ? targetIds : []}
             subjects={subjects}
+            carrierLabel={carrierLabel}
             onApplied={handleApplied}
           />
           <TriagePreview items={previewItems} />
         </div>
       </div>
 
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-[10px] text-gray-400 font-mono">
-          ↑↓ mover · space marcar · ⇧+click rango · ↵ aplicar
-        </p>
-        {rows.length < total && (
-          <p className="text-[10px] text-gray-400">
-            Mostrando {rows.length} de {total}
-          </p>
-        )}
-      </div>
-
       {notice && (
-        <div className="inline-flex items-center gap-3 bg-gray-900 text-white text-[11px] rounded-lg px-3 py-1.5">
-          {notice}
-          <button type="button" onClick={() => setNotice(null)} className="opacity-70 hover:opacity-100">
-            Cerrar
+        <div className="inline-flex items-center gap-3 bg-slate-800 text-white text-[11px] rounded-lg pl-3 pr-2 py-1.5 shadow-sm">
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="Cerrar aviso"
+            className="p-0.5 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X size={12} />
           </button>
         </div>
       )}

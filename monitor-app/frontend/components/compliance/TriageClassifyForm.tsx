@@ -12,13 +12,16 @@ interface Props {
   targetIds: string[]
   subjects:  Subject[]
   onApplied: (appliedIds: string[]) => void
+  /** Empresa de la selección — se muestra en el encabezado para que quede
+   *  claro sobre quién se está actuando cuando hay varios marcados. */
+  carrierLabel?: string | null
 }
 
 /** Panel derecho: a quién pertenece y qué es.
  *
  *  El mismo formulario sirve para uno o para quince — la selección múltiple no
  *  necesita una pantalla propia. */
-export function TriageClassifyForm({ targetIds, subjects, onApplied }: Props) {
+export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabel }: Props) {
   const [subjectKey, setSubjectKey] = useState('')
   const [requirementId, setRequirementId] = useState('')
   const [expiration, setExpiration] = useState('')
@@ -66,21 +69,30 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied }: Props) {
 
   if (!targetIds.length) {
     return (
-      <p className="text-xs text-gray-400 p-2">
-        Elegí uno o más documentos de la lista para clasificarlos.
-      </p>
+      <div className="rounded-lg border border-dashed border-gray-200 py-6 px-3 text-center">
+        <p className="text-[11px] text-gray-400">
+          Elegí uno o más documentos de la lista para clasificarlos.
+        </p>
+      </div>
     )
   }
 
+  const SELECT = 'w-full mt-1 text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all disabled:bg-gray-50 disabled:text-gray-400'
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+        {targetIds.length === 1 ? '1 documento' : `${targetIds.length} documentos`}
+        {carrierLabel && <span className="text-gray-400 normal-case tracking-normal"> · {carrierLabel}</span>}
+      </p>
+
       <label className="block">
         <span className="text-[11px] font-semibold text-gray-600">Sujeto</span>
         <select
           aria-label="Sujeto"
           value={subjectKey}
           onChange={e => { setSubjectKey(e.target.value); setRequirementId(''); setExpiration('') }}
-          className="w-full mt-1 text-xs border border-border rounded-lg px-2 py-1.5"
+          className={SELECT}
         >
           <option value="">— Seleccionar —</option>
           {subjects.map(s => (
@@ -91,6 +103,13 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied }: Props) {
         </select>
       </label>
 
+      {!subjects.length && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+          Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele
+          pasar cuando no está activa.
+        </p>
+      )}
+
       {subject && (
         <label className="block">
           <span className="text-[11px] font-semibold text-gray-600">Tipo de documento</span>
@@ -99,7 +118,7 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied }: Props) {
             value={requirementId}
             onChange={e => { setRequirementId(e.target.value); setExpiration('') }}
             disabled={requirementsQuery.isPending}
-            className="w-full mt-1 text-xs border border-border rounded-lg px-2 py-1.5"
+            className={SELECT}
           >
             <option value="">— Seleccionar —</option>
             {requirements.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -115,7 +134,7 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied }: Props) {
             aria-label="Fecha de vencimiento"
             value={expiration}
             onChange={e => setExpiration(e.target.value)}
-            className="w-full mt-1 text-xs border border-border rounded-lg px-2 py-1.5"
+            className={SELECT}
           />
         </label>
       )}
@@ -126,7 +145,7 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied }: Props) {
         type="button"
         onClick={apply}
         disabled={!canApply}
-        className="w-full flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 disabled:opacity-40 transition-colors"
+        className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
       >
         {saving && <Loader2 size={14} className="animate-spin" />}
         {targetIds.length === 1 ? 'Aplicar' : `Aplicar a los ${targetIds.length}`}

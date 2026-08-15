@@ -82,7 +82,7 @@ describe('TriageWorkbench', () => {
     setup()
     await screen.findByText('i1.png')
     fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
-    expect(await screen.findByText(/1 seleccionados/i)).toBeInTheDocument()
+    expect(await screen.findByText(/^1 seleccionado$/i)).toBeInTheDocument()
   })
 
   it('marcar un archivo de otra empresa reemplaza la seleccion', async () => {
@@ -93,7 +93,7 @@ describe('TriageWorkbench', () => {
 
     // El formulario aplica un requisito de UNA entidad: mezclar empresas
     // dejaria la eleccion de sujeto sin sentido.
-    expect(await screen.findByText(/1 seleccionados/i)).toBeInTheDocument()
+    expect(await screen.findByText(/^1 seleccionado$/i)).toBeInTheDocument()
   })
 
   it('subir solo se ofrece con una empresa definida', async () => {

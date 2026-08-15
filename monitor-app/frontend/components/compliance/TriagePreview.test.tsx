@@ -20,8 +20,10 @@ describe('TriagePreview', () => {
   })
 
   it('usa un visor embebido para lo que no es imagen', () => {
-    render(<TriagePreview items={[mk('i1', 'application/pdf')]} />)
-    expect(screen.getByTitle('i1.png')).toBeInTheDocument()
+    const { container } = render(<TriagePreview items={[mk('i1', 'application/pdf')]} />)
+    const frame = container.querySelector('iframe')
+    expect(frame).toHaveAttribute('title', 'i1.png')
+    expect(frame).toHaveAttribute('src', 'https://x/i1')
   })
 
   it('invita a elegir algo cuando no hay nada', () => {

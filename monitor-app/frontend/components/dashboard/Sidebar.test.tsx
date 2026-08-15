@@ -42,10 +42,48 @@ describe('Sidebar — la bandeja', () => {
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
-  it('la bandeja es un destino propio, no un tab de Certificación', async () => {
+  it('apunta a la ruta de la bandeja', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
     const links = await screen.findAllByRole('link', { name: /bandeja/i })
     expect(links[0]).toHaveAttribute('href', '/dashboard/compliance/inbox')
+  })
+})
+
+// HU-04: un módulo por objeto de trabajo. Bandeja, Pendientes y Empresas son
+// vistas DE Certificación, no módulos hermanos — tenerlas sueltas en el primer
+// nivel es la fragmentación que la HU viene a resolver.
+describe('Sidebar — Certificación es un módulo, no un ítem suelto', () => {
+  beforeEach(() => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+  })
+
+  it('agrupa Bandeja, Pendientes y Empresas bajo Certificación', async () => {
+    setup()
+    const grupo = await screen.findByRole('button', { name: /certificación/i })
+    expect(grupo).toHaveAttribute('aria-expanded', 'true')
+
+    for (const [label, href] of [
+      ['Bandeja', '/dashboard/compliance/inbox'],
+      ['Pendientes', '/dashboard/compliance'],
+      ['Empresas', '/dashboard/carriers'],
+    ] as const) {
+      const links = await screen.findAllByRole('link', { name: new RegExp(`^${label}$`, 'i') })
+      expect(links[0]).toHaveAttribute('href', href)
+    }
+  })
+
+  it('Empresas ya no es un módulo de primer nivel', async () => {
+    setup()
+    await screen.findByRole('button', { name: /certificación/i })
+    // Si siguiera suelto, habría un botón de grupo propio para Empresas.
+    expect(screen.queryByRole('button', { name: /^empresas$/i })).not.toBeInTheDocument()
+  })
+
+  it('el grupo se abre solo cuando estás dentro de una de sus vistas', async () => {
+    setup()
+    // pathname mockeado = /dashboard/carriers, que ahora vive en el grupo.
+    const grupo = await screen.findByRole('button', { name: /certificación/i })
+    expect(grupo).toHaveAttribute('aria-expanded', 'true')
   })
 })
