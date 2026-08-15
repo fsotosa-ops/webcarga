@@ -1417,9 +1417,13 @@ Se agregó un test que **cuenta los placeholders del SQL contra los argumentos**
 
 **Otro**: hay **dos componentes distintos** para listar documentos (`TransporterDocumentsPanel` para empresa, `DocumentChecklist` para conductor/vehículo). Sin unificarlos, "la misma gramática en cada nivel" es una frase, no un hecho.
 
-**Plan escrito, NO implementado**: `docs/superpowers/plans/2026-08-15-zoom-empresa-conductor-vehiculo.md`, 8 tareas con TDD y código completo. El usuario eligió la opción A (los tres niveles) sobre mockups, y pidió dejarlo escrito para implementarlo después.
+**Plan escrito y aprobado, NO implementado**: `docs/superpowers/plans/2026-08-15-zoom-empresa-conductor-vehiculo.md`, 8 tareas y 44 pasos con TDD y código completo.
 
-Orden de las tareas: (1) el detalle de conductor/vehículo devuelve su empresa — hoy `GET /drivers/{id}` no la trae, así que sin eso no hay migas; (2) `DocumentList` único; (3) `ZoomHeader` con migas y avance; (4-5) las páginas de conductor y vehículo; (6) mueren los modales y el `?driver=`; (7) la ficha plana, que es la tarea más grande — 959 líneas y 6 tabs a redistribuir sin perder ninguna acción; (8) retirar los listados viejos.
+**Corrección del usuario sobre la primera versión del plan**: *"que sea una sola página, como si no tuviera que salir de ahí (embebida), y si es muy grande la flota con paginación"*. Se cayó lo de **páginas propias** para conductor y vehículo: es **lista a la izquierda y panel de detalle embebido a la derecha**, y bajar de nivel **cambia el panel, no la página**. La selección viaja en la URL (`?empresa=`, `?conductor=`, `?vehiculo=`) para que el enlace se comparta y el botón atrás funcione — el `?driver=` anterior era un parche **porque abría un modal**, no por estar en la URL.
+
+**Lo que el plan deja explícito que NO cambia**: la carga masiva y la clasificación posterior (la bandeja) siguen intactas, en la vista **Documentos**, a todo el ancho y sin panel, con un test que lo fija para que nadie la meta dentro de la grilla al refactorizar.
+
+Orden de las tareas: (1) el detalle de conductor/vehículo devuelve su empresa — hoy `GET /drivers/{id}` no la trae, así que sin eso no hay migas; (2) `DocumentList` único; (3) `ZoomHeader` con migas y avance; (4) `ChildrenList`, la flota paginada a 20; (5) `EntityDetailPanel`, el detalle embebido para los tres niveles; (6) montarlo en la página con la selección en la URL; (7) traer lo que vivía en la ficha —959 líneas y 6 tabs, con inventario fila por fila— y dejar la ruta vieja como redirección; (8) retirar los listados viejos.
 
 #### Próximo paso exacto
 1. [ ] **Implementar el plan del zoom** (8 tareas). La Task 7 es la más riesgosa: el plan trae el inventario tab por tab para que nada se pierda.
