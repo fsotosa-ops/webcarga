@@ -1244,6 +1244,25 @@ export type QueueRow = {
 
 export type TrayPage = { total: number; rows: QueueRow[] }
 
+/** Fila de la vista "Por empresa" del módulo Certificación: las dos mitades
+ *  del trabajo — lo que falta y lo que llegó sin clasificar — juntas. */
+export type CarrierCertificationRow = {
+  carrier_id:         string
+  carrier_name:       string
+  operational_status: string
+  total_count:        number
+  satisfied_count:    number
+  pending_count:      number
+  pending_mandatory:  number
+  unclassified_count: number
+}
+
+export type CarrierCertificationStatus = {
+  total_pending:      number
+  total_unclassified: number
+  rows:               CarrierCertificationRow[]
+}
+
 export type IngestUploadResult = {
   batch_id: string
   items:    TrayItem[]

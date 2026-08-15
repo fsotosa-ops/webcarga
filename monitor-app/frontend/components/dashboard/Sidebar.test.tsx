@@ -28,7 +28,14 @@ beforeEach(() => {
   vi.mocked(documentIngestApi.listQueue).mockReset()
 })
 
-describe('Sidebar — la bandeja', () => {
+// HU-04: un módulo por objeto de trabajo. Certificación es UNA entrada con el
+// contador del trabajo pendiente; Bandeja y Pendientes dejaron de ser ítems
+// del menú y pasaron a ser dos vistas de la misma pantalla.
+describe('Sidebar — Certificación es una sola entrada', () => {
+  beforeEach(() => {
+    vi.mocked(documentIngestApi.listQueue).mockReset()
+  })
+
   it('muestra el contador de trabajo pendiente', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 2000, rows: [] })
     setup()
@@ -38,52 +45,22 @@ describe('Sidebar — la bandeja', () => {
   it('sin cola pendiente no muestra un cero al pedo', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
-    expect(await screen.findAllByText('Bandeja')).not.toHaveLength(0)
+    expect(await screen.findAllByText('Certificación')).not.toHaveLength(0)
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
-  it('apunta a la ruta de la bandeja', async () => {
+  it('apunta al módulo, no a un submódulo', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
-    const links = await screen.findAllByRole('link', { name: /bandeja/i })
-    expect(links[0]).toHaveAttribute('href', '/dashboard/compliance/inbox')
+    const links = await screen.findAllByRole('link', { name: /certificación/i })
+    expect(links[0]).toHaveAttribute('href', '/dashboard/compliance')
   })
-})
 
-// HU-04: un módulo por objeto de trabajo. Bandeja, Pendientes y Empresas son
-// vistas DE Certificación, no módulos hermanos — tenerlas sueltas en el primer
-// nivel es la fragmentación que la HU viene a resolver.
-describe('Sidebar — Certificación es un módulo, no un ítem suelto', () => {
-  beforeEach(() => {
+  it('no quedan Bandeja ni Pendientes como entradas propias', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
-  })
-
-  it('agrupa Bandeja, Pendientes y Empresas bajo Certificación', async () => {
     setup()
-    const grupo = await screen.findByRole('button', { name: /certificación/i })
-    expect(grupo).toHaveAttribute('aria-expanded', 'true')
-
-    for (const [label, href] of [
-      ['Bandeja', '/dashboard/compliance/inbox'],
-      ['Pendientes', '/dashboard/compliance'],
-      ['Empresas', '/dashboard/carriers'],
-    ] as const) {
-      const links = await screen.findAllByRole('link', { name: new RegExp(`^${label}$`, 'i') })
-      expect(links[0]).toHaveAttribute('href', href)
-    }
-  })
-
-  it('Empresas ya no es un módulo de primer nivel', async () => {
-    setup()
-    await screen.findByRole('button', { name: /certificación/i })
-    // Si siguiera suelto, habría un botón de grupo propio para Empresas.
-    expect(screen.queryByRole('button', { name: /^empresas$/i })).not.toBeInTheDocument()
-  })
-
-  it('el grupo se abre solo cuando estás dentro de una de sus vistas', async () => {
-    setup()
-    // pathname mockeado = /dashboard/carriers, que ahora vive en el grupo.
-    const grupo = await screen.findByRole('button', { name: /certificación/i })
-    expect(grupo).toHaveAttribute('aria-expanded', 'true')
+    await screen.findAllByText('Certificación')
+    expect(screen.queryByRole('link', { name: /^bandeja$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^pendientes$/i })).not.toBeInTheDocument()
   })
 })

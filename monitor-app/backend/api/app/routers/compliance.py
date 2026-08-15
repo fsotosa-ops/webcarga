@@ -60,55 +60,79 @@ async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
     return record
 
 
-@router.get("/pending-summary")
-async def get_pending_summary(pool=Depends(get_pool), _=Depends(get_current_user)):
-    """HU-08 (Fase 0, 2026-07-21): vista consolidada de documentos pendientes
-    — hoy solo existía el conteo por empresa dentro de su propia ficha
-    (`app.carrier_compliance_status`); Pablo pidió explícitamente en la
-    reunión del 20/07 poder ver el total agregado y, desde ahí, ir directo a
-    la empresa que le falta, "sin necesidad de entrar empresa por empresa".
-    Los pendientes de DRIVER/ASSET se atribuyen a la empresa vía su
-    asignación ACTIVE vigente (mismo criterio que el resto del roster) — sin
-    asignación activa, ese pendiente queda fuera del agregado (no hay a qué
-    empresa cargárselo). Solo empresas activas (bug 5.4) — mismo criterio que
-    /pending."""
+@router.get("/carrier-status")
+async def get_carrier_certification_status(
+    q: str = Query(""),
+    limit: int = Query(200, le=500),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Cómo va cada empresa: cuánto tiene cubierto y cuánto llegó sin clasificar.
+
+    Es la vista "Por empresa" del módulo (HU-04). Las dos mitades del trabajo
+    viven en la misma fila a propósito: tenerlas en dos listas hermanas obliga
+    a cruzarlas de memoria.
+
+    Incluye empresas **inactivas que tengan documentos esperando** — si no, la
+    cola mostraría archivos de una empresa que esta lista niega. Los pendientes
+    de DRIVER/ASSET se atribuyen a la empresa por su asignación ACTIVE vigente,
+    mismo criterio que el resto del roster.
+    """
     rows = await pool.fetch(
         """
-        WITH pending AS (
-            SELECT cr.entity_type, cr.entity_id, req.requirement_level
+        WITH records AS (
+            SELECT cr.entity_type, cr.entity_id, cr.status, req.requirement_level
             FROM public.compliance_records cr
             JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-            WHERE cr.is_current = true AND cr.status IN ('MISSING', 'EXPIRED')
+            WHERE cr.is_current = true
         ),
         attributed AS (
-            SELECT
-                p.requirement_level,
-                CASE p.entity_type
-                    WHEN 'CARRIER' THEN p.entity_id
+            SELECT r.status, r.requirement_level,
+                CASE r.entity_type
+                    WHEN 'CARRIER' THEN r.entity_id
                     WHEN 'DRIVER'  THEN da.carrier_id
                     WHEN 'ASSET'   THEN aa.carrier_id
                 END AS carrier_id
-            FROM pending p
+            FROM records r
             LEFT JOIN public.driver_assignments da
-                ON p.entity_type = 'DRIVER' AND da.driver_id = p.entity_id AND da.status = 'ACTIVE'
+                ON r.entity_type = 'DRIVER' AND da.driver_id = r.entity_id AND da.status = 'ACTIVE'
             LEFT JOIN public.asset_assignments aa
-                ON p.entity_type = 'ASSET' AND aa.asset_id = p.entity_id AND aa.status = 'ACTIVE'
+                ON r.entity_type = 'ASSET' AND aa.asset_id = r.entity_id AND aa.status = 'ACTIVE'
+        ),
+        docs AS (
+            SELECT COALESCE(i.carrier_id, b.carrier_id) AS carrier_id, count(*) AS unclassified
+            FROM public.document_ingest_items i
+            JOIN public.document_ingest_batches b ON b.id = i.batch_id
+            WHERE i.match_status = 'UNMATCHED'
+            GROUP BY 1
         )
-        SELECT c.id AS carrier_id, c.business_name AS carrier_name, c.operational_status,
-               count(*) AS pending_count,
-               count(*) FILTER (WHERE a.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory
-        FROM attributed a
-        JOIN public.carriers c ON c.id = a.carrier_id AND c.operational_status = $1
-        GROUP BY c.id, c.business_name, c.operational_status
-        ORDER BY pending_count DESC
+        SELECT c.id::text AS carrier_id, c.business_name AS carrier_name,
+               c.operational_status,
+               count(a.carrier_id)                                        AS total_count,
+               count(*) FILTER (WHERE a.status IS NOT NULL
+                                  AND a.status NOT IN ('MISSING','EXPIRED')) AS satisfied_count,
+               count(*) FILTER (WHERE a.status IN ('MISSING','EXPIRED'))     AS pending_count,
+               count(*) FILTER (WHERE a.status IN ('MISSING','EXPIRED')
+                                  AND a.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory,
+               COALESCE(d.unclassified, 0)::int                           AS unclassified_count
+        FROM public.carriers c
+        LEFT JOIN attributed a ON a.carrier_id = c.id
+        LEFT JOIN docs d       ON d.carrier_id = c.id
+        WHERE (c.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)
+          AND ($2::text IS NULL OR c.business_name ILIKE '%' || $2 || '%'
+                                OR c.tax_id ILIKE '%' || $2 || '%')
+        GROUP BY c.id, c.business_name, c.operational_status, d.unclassified
+        -- Primero donde hay trabajo esperando, después lo más incompleto.
+        ORDER BY COALESCE(d.unclassified, 0) DESC, pending_count DESC, c.business_name
+        LIMIT $3
         """,
-        ACTIVE_OPERATIONAL_STATUS,
+        ACTIVE_OPERATIONAL_STATUS, q or None, limit,
     )
-    carriers = [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
     return {
-        "total_pending": sum(c["pending_count"] for c in carriers),
-        "total_pending_mandatory": sum(c["pending_mandatory"] for c in carriers),
-        "carriers": carriers,
+        "total_pending": sum(r["pending_count"] for r in result),
+        "total_unclassified": sum(r["unclassified_count"] for r in result),
+        "rows": result,
     }
 
 

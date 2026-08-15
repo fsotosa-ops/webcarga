@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
-  Truck, Building2, Users, LogOut, Inbox,
+  Truck, Users, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -35,29 +35,22 @@ const NAV_GROUPS: NavGroupDef[] = [
       { href: '/dashboard/operations/monitor', label: 'Monitor' },
     ],
   },
-  {
-    label: 'Certificación',
-    icon:  BadgeCheck,
-    items: [
-      { href: '/dashboard/compliance/inbox', label: 'Bandeja', badge: 'inbox' },
-      { href: '/dashboard/compliance',       label: 'Pendientes' },
-      { href: '/dashboard/carriers',         label: 'Empresas' },
-    ],
-  },
 ]
 
-// Seguros sigue en primer nivel: pasarlo a seccion de la ficha es la HU-06.
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: '/dashboard/insurance', label: 'Seguros',   icon: Shield },
-  { href: '/dashboard/pricing',   label: 'Tarifario', icon: Receipt },
+// Un modulo por objeto de trabajo. Certificacion es UNA lista de empresas con
+// dos maneras de mirarla (por empresa / por documento), no tres submodulos:
+// tenerlos separados obligaba a cruzar de memoria listas del mismo objeto.
+// Seguros sigue aparte: pasarlo a seccion de la ficha es la HU-06.
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; badge?: 'inbox' }[] = [
+  { href: '/dashboard/compliance', label: 'Certificación', icon: BadgeCheck, badge: 'inbox' },
+  { href: '/dashboard/insurance',  label: 'Seguros',       icon: Shield },
+  { href: '/dashboard/pricing',    label: 'Tarifario',     icon: Receipt },
 ]
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahi, se listan
 // los items de los grupos ya aplanados junto a los demas.
 const MOBILE_NAV_ITEMS = [
-  { href: '/dashboard/operations/monitor', label: 'Monitor',  icon: Truck },
-  { href: '/dashboard/compliance/inbox',   label: 'Bandeja',  icon: Inbox },
-  { href: '/dashboard/carriers',           label: 'Empresas', icon: Building2 },
+  { href: '/dashboard/operations/monitor', label: 'Monitor', icon: Truck },
   ...NAV_ITEMS,
 ]
 
@@ -261,7 +254,7 @@ export default function Sidebar({ role }: SidebarProps) {
             />
           ))}
 
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {NAV_ITEMS.map(({ href, label, icon: Icon, badge }) => {
             const active = href === activeHref
             return (
               <Link
@@ -281,6 +274,11 @@ export default function Sidebar({ role }: SidebarProps) {
                 <Icon size={16} className={`shrink-0 ${active ? 'text-accent' : 'group-hover:text-white/70'}`} />
                 {!collapsed && (
                   <span className={`font-medium truncate ${active ? 'text-white' : ''}`}>{label}</span>
+                )}
+                {badge === 'inbox' && inboxCount > 0 && !collapsed && (
+                  <span className="ml-auto shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
+                    {inboxCount}
+                  </span>
                 )}
               </Link>
             )

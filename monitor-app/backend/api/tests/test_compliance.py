@@ -210,51 +210,73 @@ def test_delete_file_resets_to_missing_and_removes_from_storage():
     assert "is_manual_override = true" in override_sql
 
 
-def test_pending_summary_aggregates_by_carrier():
+def _carrier_status_row(**over):
+    row = {
+        "carrier_id": "c1", "carrier_name": "Transportes Sur Spa",
+        "operational_status": "ACTIVE", "total_count": 12, "satisfied_count": 9,
+        "pending_count": 3, "pending_mandatory": 1, "unclassified_count": 0,
+    }
+    row.update(over)
+    return row
+
+
+def test_carrier_status_reports_progress_and_unclassified():
+    """La vista 'Por empresa' necesita las dos mitades en la misma fila: cuanto
+    lleva cubierto y cuanto llego sin clasificar."""
     pool = AsyncMock()
     pool.fetch.return_value = [
-        {"carrier_id": "c1", "carrier_name": "Transportes Sur Spa", "operational_status": "ACTIVE",
-         "pending_count": 12, "pending_mandatory": 5},
-        {"carrier_id": "c2", "carrier_name": "Rios Ltda", "operational_status": "ACTIVE",
-         "pending_count": 3, "pending_mandatory": 0},
+        _carrier_status_row(unclassified_count=3),
+        _carrier_status_row(carrier_id="c2", carrier_name="Rios Ltda",
+                            total_count=12, satisfied_count=12, pending_count=0,
+                            pending_mandatory=0, unclassified_count=0),
     ]
     client = make_client(pool)
 
-    res = client.get("/api/v1/compliance-records/pending-summary")
+    res = client.get("/api/v1/compliance-records/carrier-status")
 
     assert res.status_code == 200
     body = res.json()
-    assert body["total_pending"] == 15
-    assert body["total_pending_mandatory"] == 5
-    assert len(body["carriers"]) == 2
+    assert body["total_pending"] == 3
+    assert body["total_unclassified"] == 3
+    assert body["rows"][0]["satisfied_count"] == 9
+    assert body["rows"][1]["pending_count"] == 0
+
+
+def test_carrier_status_includes_inactive_carriers_that_have_documents():
+    """Si una empresa inactiva tiene documentos esperando, tiene que aparecer:
+    si no, la cola muestra archivos de una empresa que la lista niega."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/carrier-status")
+
     query = pool.fetch.call_args.args[0]
-    assert "status IN ('MISSING', 'EXPIRED')" in query
+    assert "unclassified" in query
+    assert "OR" in query and "operational_status" in query
 
 
-def test_pending_summary_empty_when_nothing_pending():
+def test_carrier_status_empty():
     pool = AsyncMock()
     pool.fetch.return_value = []
     client = make_client(pool)
 
-    res = client.get("/api/v1/compliance-records/pending-summary")
+    res = client.get("/api/v1/compliance-records/carrier-status")
 
     assert res.status_code == 200
-    assert res.json() == {"total_pending": 0, "total_pending_mandatory": 0, "carriers": []}
+    assert res.json() == {"total_pending": 0, "total_unclassified": 0, "rows": []}
 
 
-def test_pending_summary_route_does_not_collide_with_record_id_path():
-    """La ruta fija /pending-summary debe declararse antes de /{record_id} —
-    si no, FastAPI la matchearía como record_id='pending-summary' y llamaría
-    a get_compliance_record en su lugar."""
+def test_carrier_status_route_does_not_collide_with_record_id_path():
+    """La ruta fija debe declararse antes de /{record_id} — si no, FastAPI la
+    matchearia como record_id='carrier-status'."""
     pool = AsyncMock()
     pool.fetch.return_value = []
     client = make_client(pool)
 
-    res = client.get("/api/v1/compliance-records/pending-summary")
+    res = client.get("/api/v1/compliance-records/carrier-status")
 
     assert res.status_code == 200
-    assert "carriers" in res.json()
-    pool.fetchrow.assert_not_called()
 
 
 def _pending_row(**overrides):
@@ -359,16 +381,20 @@ def test_pending_rows_excludes_inactive_carriers_from_query():
     assert args[8] == "ACTIVE"
 
 
-def test_pending_summary_excludes_inactive_carriers_from_query():
+def test_carrier_status_filters_by_active_but_not_only():
+    """Antes /pending-summary excluia a secas las no ACTIVE. Ahora el filtro es
+    'activa O con documentos esperando': una empresa inactiva con archivos en la
+    cola tiene que aparecer, porque si no la lista contradice a la bandeja."""
     pool = AsyncMock()
     pool.fetch.return_value = []
     client = make_client(pool)
 
-    client.get("/api/v1/compliance-records/pending-summary")
+    client.get("/api/v1/compliance-records/carrier-status")
 
     query = pool.fetch.call_args.args[0]
     args = pool.fetch.call_args.args
     assert "c.operational_status = $1" in query
+    assert "COALESCE(d.unclassified, 0) > 0" in query
     assert args[1] == "ACTIVE"
 
 

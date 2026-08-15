@@ -1,4 +1,5 @@
 import type {
+  CarrierCertificationStatus,
   BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, DocumentVersion,
   PendingComplianceListResponse, RequirementOption,
 } from '@/lib/types'
@@ -62,6 +63,16 @@ export const complianceApi = {
     }),
 
   // ── Módulo Documentos (sábana) ─────────────────────────────────────────
+
+  /** Cómo va cada empresa: cubierto vs. pendiente, y cuánto llegó sin
+   *  clasificar. Es la vista por defecto del módulo. */
+  listCarrierStatus: (params: { q?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.q)     qs.set('q', params.q)
+    if (params.limit != null) qs.set('limit', String(params.limit))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return apiFetch<CarrierCertificationStatus>(`/api/v1/compliance-records/carrier-status${suffix}`)
+  },
 
   listPending: (params: ListPendingParams = {}) => {
     const qs = new URLSearchParams()
