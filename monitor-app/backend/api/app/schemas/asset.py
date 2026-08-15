@@ -6,7 +6,13 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 OperationalStatus = Literal["ACTIVE", "INACTIVE"]
-AssetType = Literal["TRACTOCAMION", "RAMPLA", "CAMION", "FURGON", "OTRO"]
+# Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
+# placeholders del commit 5955c5f (Empresas/Seguros), ANTERIORES a la taxonomía
+# real de vehículos (migraciones 20260802–20260804): nunca describieron el
+# negocio y cero de los 118 vehículos los usa. Se retiran antes de poner el
+# CHECK en la base — al revés, elegir "Camión" en un selector todavía vivo
+# habría dado un 500 en vez de un 422.
+AssetType = Literal["TRACTOCAMION", "RAMPLA"]
 
 
 class AssetCreateBody(BaseModel):

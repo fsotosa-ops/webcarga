@@ -27,9 +27,13 @@ describe('VehicleRosterCard', () => {
     expect(onOpen).toHaveBeenCalled()
   })
 
+  // Este test DECIA probar el fallback pero probaba el mapa: 'OTRO' estaba
+  // mapeado a 'Otro', asi que nunca ejercitaba el camino sin etiqueta. Con los
+  // placeholders retirados, ahora si. El fallback sigue importando porque la
+  // ingesta podria traer un valor viejo antes de que el CHECK lo impida.
   it('falls back to the raw asset_type when there is no label mapped', () => {
-    render(<VehicleRosterCard vehicle={{ ...VEHICLE, asset_type: 'OTRO' }} onOpen={vi.fn()} />)
-    expect(screen.getByText('Otro')).toBeInTheDocument()
+    render(<VehicleRosterCard vehicle={{ ...VEHICLE, asset_type: 'LEGADO' }} onOpen={vi.fn()} />)
+    expect(screen.getByText('LEGADO')).toBeInTheDocument()
   })
 
   it('shows a red pending pill with the count when compliance_health is PENDING', () => {

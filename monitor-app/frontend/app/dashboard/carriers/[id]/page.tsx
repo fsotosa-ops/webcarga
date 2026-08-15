@@ -41,7 +41,6 @@ type Tab = 'resumen' | 'documentos' | 'conductores' | 'equipos' | 'seguros' | 'c
 const OPERATIONAL_STATUS_OPTIONS: OperationalStatus[] = ['ACTIVE', 'INACTIVE', 'LEGACY_INACTIVE']
 const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
   { value: 'TRACTOCAMION', label: 'Tracto' }, { value: 'RAMPLA', label: 'Rampla' },
-  { value: 'CAMION', label: 'Camión' }, { value: 'FURGON', label: 'Furgón' }, { value: 'OTRO', label: 'Otro' },
 ]
 const CONTACT_ROLE_OPTIONS = ['LEGAL_REP', 'OPERATIONS', 'FINANCE', 'DOCUMENTS']
 

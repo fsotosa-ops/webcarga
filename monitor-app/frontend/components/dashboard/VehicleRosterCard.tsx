@@ -5,7 +5,7 @@ import { Truck, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { CarrierAssetRosterItem } from '@/lib/types'
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
-  TRACTOCAMION: 'Tracto', RAMPLA: 'Rampla', CAMION: 'Camión', FURGON: 'Furgón', OTRO: 'Otro',
+  TRACTOCAMION: 'Tracto', RAMPLA: 'Rampla',
 }
 
 interface Props {

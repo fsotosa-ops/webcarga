@@ -14,7 +14,6 @@ import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceCheckli
 
 const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
   { value: 'TRACTOCAMION', label: 'Tracto' }, { value: 'RAMPLA', label: 'Rampla' },
-  { value: 'CAMION', label: 'Camión' }, { value: 'FURGON', label: 'Furgón' }, { value: 'OTRO', label: 'Otro' },
 ]
 
 interface Props {
@@ -44,7 +43,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
   const queryClient = useQueryClient()
   const [removing, setRemoving] = useState(false)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
-  const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string }>({ asset_type: 'OTRO', manufacture_year: '' })
+  const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string }>({ asset_type: 'TRACTOCAMION', manufacture_year: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [driverPick, setDriverPick] = useState('')
