@@ -49,7 +49,7 @@ describe('TriageBulkBar', () => {
 
   it('descartar pide confirmacion en la barra, no en un modal', () => {
     const p = setup()
-    fireEvent.click(screen.getByRole('button', { name: /^descartar$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /descartar los 3/i }))
     expect(p.onDiscard).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.getByText(/se borran definitivamente/i)).toBeInTheDocument()
@@ -57,17 +57,17 @@ describe('TriageBulkBar', () => {
 
   it('descarta al confirmar', () => {
     const p = setup()
-    fireEvent.click(screen.getByRole('button', { name: /^descartar$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /descartar los 3/i }))
     fireEvent.click(screen.getByRole('button', { name: /sí, descartar 3/i }))
     expect(p.onDiscard).toHaveBeenCalled()
   })
 
   it('se puede arrepentir', () => {
     const p = setup()
-    fireEvent.click(screen.getByRole('button', { name: /^descartar$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /descartar los 3/i }))
     fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }))
     expect(p.onDiscard).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: /^descartar$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /descartar los 3/i })).toBeInTheDocument()
   })
 
   it('deselecciona', () => {
@@ -84,5 +84,40 @@ describe('TriageBulkBar', () => {
   it('no ofrece mover si la seleccion cruza empresas', () => {
     setup({ currentCarrierId: null })
     expect(screen.queryByRole('button', { name: /mover/i })).not.toBeInTheDocument()
+  })
+
+  // Con un filtro puesto, "todo" es ambiguo: es la causa numero uno de
+  // asignaciones masivas erroneas.
+  it('los botones dicen la cantidad exacta, nunca "seleccionados"', () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TriageBulkBar
+          selectedCount={3}
+          targetIds={['a', 'b', 'c']}
+          currentCarrierId="c1"
+          onDiscard={vi.fn()}
+          onClear={vi.fn()}
+          onMoved={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole('button', { name: /descartar los 3/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^descartar$/i })).not.toBeInTheDocument()
+  })
+
+  it('con un solo archivo concuerda en singular', () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TriageBulkBar
+          selectedCount={1}
+          targetIds={['a']}
+          currentCarrierId="c1"
+          onDiscard={vi.fn()}
+          onClear={vi.fn()}
+          onMoved={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole('button', { name: /descartar 1 archivo/i })).toBeInTheDocument()
   })
 })

@@ -14,6 +14,14 @@ interface Props {
   onMoved:          () => void
 }
 
+/** "1 archivo" / "los 38". El boton tiene que nombrar la cantidad exacta:
+ *  con un filtro puesto, "seleccionados" no dice si son los 40 que ves o los
+ *  2.000 que calzan, y esa ambiguedad es la causa numero uno de asignaciones
+ *  masivas erroneas. */
+function cuantos(n: number) {
+  return n === 1 ? '1 archivo' : `los ${n}`
+}
+
 /** Barra contextual: aparece al seleccionar y dice cuántos son.
  *
  *  Es el estándar de Gmail, Linear, Airtable y Salesforce Lightning, y es
@@ -80,7 +88,7 @@ export function TriageBulkBar({
           onClick={() => setConfirming(true)}
           className="flex items-center gap-1.5 text-[11px] font-semibold text-white/80 hover:text-white transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40 rounded px-1"
         >
-          <Trash2 size={12} /> Descartar
+          <Trash2 size={12} /> Descartar {cuantos(selectedCount)}
         </button>
       )}
 
