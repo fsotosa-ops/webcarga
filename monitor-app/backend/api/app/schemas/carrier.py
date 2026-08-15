@@ -23,6 +23,36 @@ OperationalStatus = Literal["ACTIVE", "INACTIVE", "LEGACY_INACTIVE", "ONBOARDING
 # el literal 'ACTIVE' como texto SQL en múltiples routers.
 ACTIVE_OPERATIONAL_STATUS: OperationalStatus = "ACTIVE"
 
+# Tipo de gestión DECLARADO en el alta (D7/D9). Códigos propios, no las
+# etiquetas de app.status_taxonomies: ésas se renombraron dos veces en dos días
+# (20260803060000, 20260804000000) y una FK textual se habría roto en silencio.
+#
+# Es un CONJUNTO, no un escalar con un tercer valor 'AMBAS': marcar los dos ES
+# el caso mixto. 'AMBAS' obligaría a que toda consulta futura recuerde
+# IN ('TRACTOREO','AMBAS') y olvidarlo deja afuera a la empresa mixta sin dar
+# error. Espeja la columna public.carriers.management_types (20260815160000).
+ManagementType = Literal["TRACTOREO", "EQUIPO_COMPLETO"]
+
+# Orden canónico de escritura: el CHECK de la base acepta cualquier orden, así
+# que sin normalizar dos filas equivalentes no son iguales por `=`.
+_MANAGEMENT_TYPE_ORDER = ["TRACTOREO", "EQUIPO_COMPLETO"]
+
+
+def _normalize_management_types(v):
+    """Ordena y quita duplicados; el arreglo vacío se vuelve None.
+
+    NULL y [] no pueden significar los dos "no declarado" — la base rechaza el
+    vacío justamente para que exista una sola representación."""
+    if not isinstance(v, list):
+        return v
+    if not v:
+        return None
+    vistos = [t for t in _MANAGEMENT_TYPE_ORDER if t in v]
+    # Lo que no esté en el orden canónico se deja pasar tal cual para que lo
+    # rechace el Literal con un error legible, en vez de desaparecer acá.
+    desconocidos = [t for t in v if t not in _MANAGEMENT_TYPE_ORDER]
+    return vistos + desconocidos
+
 
 def _clean_tax_id_value(v):
     """Normaliza tax_id: recorta espacios y pasa a mayúsculas; un string
@@ -42,6 +72,12 @@ class CarrierCreateBody(BaseModel):
     country_code: str = "CL"
     business_name: str
     operational_status: Optional[OperationalStatus] = None
+    management_types: Optional[list[ManagementType]] = None
+
+    @field_validator("management_types", mode="before")
+    @classmethod
+    def _normalize_management(cls, v):
+        return _normalize_management_types(v)
 
     @field_validator("business_name", mode="before")
     @classmethod
@@ -71,7 +107,13 @@ class CarrierPatchBody(BaseModel):
     business_name: Optional[str] = None
     operational_status: Optional[OperationalStatus] = None
     tax_id: Optional[str] = None
+    management_types: Optional[list[ManagementType]] = None
     expected_updated_at: Optional[datetime] = None  # optimistic lock, mismo patrón que transporter_relational
+
+    @field_validator("management_types", mode="before")
+    @classmethod
+    def _normalize_management(cls, v):
+        return _normalize_management_types(v)
 
     @field_validator("business_name", mode="before")
     @classmethod
@@ -91,6 +133,8 @@ class CarrierPatchBody(BaseModel):
             touched.append("operational_status")
         if self.tax_id is not None:
             touched.append("tax_id")
+        if self.management_types is not None:
+            touched.append("management_types")
         return touched
 
 

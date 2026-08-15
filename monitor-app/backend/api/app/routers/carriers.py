@@ -369,11 +369,14 @@ async def create_carrier(
 
             row = await conn.fetchrow(
                 """
-                INSERT INTO public.carriers (tax_id, country_code, business_name, operational_status)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, tax_id, country_code, business_name, operational_status, created_at
+                INSERT INTO public.carriers
+                    (tax_id, country_code, business_name, operational_status, management_types)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, tax_id, country_code, business_name, operational_status,
+                          created_at, management_types
                 """,
                 body.tax_id, body.country_code, body.business_name, body.operational_status,
+                body.management_types,
             )
             await log_change(
                 conn, actor=user["sub"], entity_type="CARRIER", entity_id=row["id"],
@@ -389,8 +392,12 @@ async def patch_carrier(
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # `management_types` va en el SELECT porque el bucle de auditoría de
+            # más abajo lee `current[field]` para cada campo tocado: sin traerla,
+            # patchear la gestión revienta con KeyError en vez de guardar.
             current = await conn.fetchrow(
-                "SELECT updated_at, business_name, operational_status, tax_id FROM public.carriers WHERE id = $1",
+                "SELECT updated_at, business_name, operational_status, tax_id, management_types "
+                "FROM public.carriers WHERE id = $1",
                 carrier_id,
             )
             if not current:
@@ -418,10 +425,12 @@ async def patch_carrier(
                     business_name = COALESCE($2, business_name),
                     operational_status = COALESCE($3, operational_status),
                     tax_id = COALESCE($4, tax_id),
+                    management_types = COALESCE($5, management_types),
                     updated_at = NOW()
                 WHERE id = $1
                 """,
                 carrier_id, body.business_name, body.operational_status, body.tax_id,
+                body.management_types,
             )
             for field in touched:
                 await record_manual_edit(

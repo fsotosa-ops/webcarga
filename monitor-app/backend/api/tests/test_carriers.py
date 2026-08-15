@@ -376,6 +376,62 @@ def test_patch_carrier_sets_manual_override_and_returns_detail():
     assert "is_manual_override = true" in override_sql
 
 
+def test_create_carrier_persists_management_types():
+    """D7/D9: la gestión declarada en el alta. Cubre a la empresa que todavía
+    no tiene flota — las 37 que sí la tienen derivan la marca de sus vehículos."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": "c1", "tax_id": "1-9", "country_code": "CL",
+        "business_name": "Transportes Acme Spa", "operational_status": "ACTIVE",
+        "created_at": None, "management_types": ["TRACTOREO"],
+    }
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers", json={
+        "tax_id": "1-9", "business_name": "transportes acme spa",
+        "management_types": ["EQUIPO_COMPLETO", "TRACTOREO"],
+    })
+
+    assert res.status_code == 201
+    insert_sql = conn.fetchrow.call_args.args[0]
+    assert "management_types" in insert_sql
+    # Normalizado al orden canónico: sin eso, dos filas equivalentes no son
+    # iguales por `=` porque el CHECK de la base acepta cualquier orden.
+    assert conn.fetchrow.call_args.args[5] == ["TRACTOREO", "EQUIPO_COMPLETO"]
+
+
+def test_patch_carrier_management_types_audits_without_keyerror():
+    """El bucle de auditoría lee `current[field]` para cada campo tocado, así
+    que la columna nueva TIENE que venir en el SELECT previo. Si no, patchear
+    la gestión revienta con KeyError en vez de guardar."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "updated_at": None, "business_name": "Viejo", "operational_status": "ACTIVE",
+        "tax_id": "1-9", "management_types": None,
+    }
+    pool.fetchrow.return_value = {
+        "id": "c1", "tax_id": "1-9", "country_code": "CL", "business_name": "Viejo",
+        "operational_status": "ACTIVE", "legacy_admin_id": None, "erp_id": None,
+        "is_manual_override": True, "overridden_by": USER["sub"], "overridden_at": None,
+        "created_at": None, "updated_at": None,
+    }
+    pool.fetch.side_effect = [[], []]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/carriers/c1", json={"management_types": ["TRACTOREO"]})
+
+    assert res.status_code == 200
+    select_sql = conn.fetchrow.call_args_list[0].args[0]
+    assert "management_types" in select_sql
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "management_types" in update_sql
+
+
 def test_patch_carrier_activate_without_tax_id_422():
     pool = AsyncMock()
     conn = AsyncMock()
