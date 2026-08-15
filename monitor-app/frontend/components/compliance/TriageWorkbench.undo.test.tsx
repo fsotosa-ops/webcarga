@@ -84,4 +84,31 @@ describe('TriageWorkbench — deshacer un lote', () => {
       expect(documentIngestApi.undoClassify).toHaveBeenCalledWith(['i1', 'i2']),
     )
   })
+
+  // Regresión: deshacer refrescaba la lista pero no el contador del sidebar
+  // (ingest-queue-count), que se queda hasta 60s contradiciendo a la lista.
+  // Deshacer es la operación inversa de aplicar y tiene que invalidar el
+  // mismo conjunto.
+  it('deshacer invalida el contador de la bandeja, igual que aplicar un lote', async () => {
+    vi.mocked(documentIngestApi.undoClassify).mockResolvedValue({ reverted: ['i1', 'i2'], errors: [] })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries')
+    render(
+      <QueryClientProvider client={qc}>
+        <TriageWorkbench carrierId="c1" carrierName="Transportes Charlotte Spa" />
+      </QueryClientProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
+    invalidateSpy.mockClear()
+    fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
+    await waitFor(() => expect(documentIngestApi.undoClassify).toHaveBeenCalled())
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: ['ingest-queue-count'] }),
+      )
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ['compliance-pending'] }),
+    )
+  })
 })

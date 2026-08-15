@@ -119,7 +119,14 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
     mutationFn: (ids: string[]) => documentIngestApi.undoClassify(ids),
     onSuccess: res => {
       setUltimoLote(null)
+      // Deshacer es la operación inversa de aplicar: invalida el mismo
+      // conjunto que handleApplied (más certification-status) para que el
+      // contador del sidebar no quede contradiciendo a la lista hasta que
+      // venza su staleTime.
       qc.invalidateQueries({ queryKey: queueKey })
+      qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', subjectCarrierId] })
+      qc.invalidateQueries({ queryKey: ['compliance-pending'] })
+      qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
       qc.invalidateQueries({ queryKey: ['certification-status'] })
       if (res.errors.length) {
         setNotice(
