@@ -841,3 +841,37 @@ def test_reassign_fails_when_the_record_has_no_file():
     res = client.post("/api/v1/compliance-records/rec-1/reassign", json={"to_tray": True})
 
     assert res.status_code == 422
+
+
+def test_status_can_be_scoped_to_one_carrier():
+    """El panel de detalle usa la MISMA consulta que la lista, acotada a la
+    empresa: asi el "N de M" de un conductor es identico desde los dos lados."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status?group=driver&carrier_id=c1")
+
+    sql, *args = pool.fetch.call_args.args
+    assert "asg.carrier_id" in sql
+    assert "c1" in args
+
+
+def test_status_scoped_to_carrier_still_binds_every_placeholder():
+    """Mismo control que el resto: agregar el filtro no puede dejar un \$n
+    sin argumento."""
+    import re
+
+    for grupo in ("carrier", "driver", "asset"):
+        pool = AsyncMock()
+        pool.fetch.return_value = []
+        client = make_client(pool)
+
+        client.get(f"/api/v1/compliance-records/status?group={grupo}&carrier_id=c1")
+
+        sql, *args = pool.fetch.call_args.args
+        referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+        assert referenciados == set(range(1, len(args) + 1)), (
+            f"group={grupo}: el SQL referencia {sorted(referenciados)} "
+            f"pero se pasan {len(args)} parametros"
+        )

@@ -72,9 +72,12 @@ export const complianceApi = {
 
   /** Cómo va la certificación, agrupada por empresa, conductor o vehículo.
    *  Es la lista del módulo; el conmutador sólo cambia `group`. */
-  listStatus: (params: { group?: CertificationGroup; q?: string; limit?: number } = {}) => {
+  listStatus: (params: {
+    group?: CertificationGroup; carrierId?: string; q?: string; limit?: number
+  } = {}) => {
     const qs = new URLSearchParams()
     if (params.group) qs.set('group', params.group)
+    if (params.carrierId) qs.set('carrier_id', params.carrierId)
     if (params.q)     qs.set('q', params.q)
     if (params.limit != null) qs.set('limit', String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''

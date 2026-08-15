@@ -86,6 +86,7 @@ _STATUS_GROUPS = {
 @router.get("/status")
 async def get_certification_status(
     group: Literal["carrier", "driver", "asset"] = Query("carrier"),
+    carrier_id: str | None = Query(None),
     q: str = Query(""),
     limit: int = Query(200, le=500),
     pool=Depends(get_pool),
@@ -99,6 +100,10 @@ async def get_certification_status(
 
     Los documentos sin clasificar sólo se cuentan agrupando por empresa: un
     archivo en la bandeja pertenece a una empresa, no a un conductor.
+
+    Con `carrier_id` se acota a la flota de una empresa. Es lo que usa el panel
+    de detalle, y a propósito por la misma consulta: así el "N de M" de un
+    conductor es idéntico mirándolo desde la lista o desde su empresa.
     """
     cfg = _STATUS_GROUPS[group]
 
@@ -109,12 +114,22 @@ async def get_certification_status(
             LEFT JOIN attributed a ON a.carrier_id = e.id
             LEFT JOIN docs d       ON d.carrier_id = e.id
         """
-        entity_where = "(e.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)"
+        if carrier_id:
+            # Acotado a una empresa, el filtro por estado operativo sobra: la
+            # pidieron por id. Y dejar un $n sin referenciar hace que Postgres
+            # rechace la sentencia entera, asi que se renumera.
+            entity_where = "e.id = $3::uuid"
+        else:
+            entity_where = "(e.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)"
         # Sólo esta agrupación filtra por estado operativo, así que sólo ella
         # recibe ese parámetro. Numerar de más deja un $1 sin referenciar y
         # Postgres rechaza la sentencia entera.
-        params: list = [ACTIVE_OPERATIONAL_STATUS, q, limit]
-        p_q, p_limit = "$2", "$3"
+        if carrier_id:
+            params: list = [q, limit, carrier_id]
+            p_q, p_limit = "$1", "$2"
+        else:
+            params = [ACTIVE_OPERATIONAL_STATUS, q, limit]
+            p_q, p_limit = "$2", "$3"
         carrier_cols = "e.id::text AS carrier_id, e.business_name AS carrier_name, e.operational_status"
         group_by = "e.id, e.business_name, e.operational_status, d.unclassified"
         unclassified = "COALESCE(d.unclassified, 0)::int"
@@ -147,6 +162,9 @@ async def get_certification_status(
         extra_cte = ""
         params = [q, limit]
         p_q, p_limit = "$1", "$2"
+        if carrier_id:
+            entity_where += " AND asg.carrier_id = $3::uuid"
+            params.append(carrier_id)
 
     # Agrupando por empresa el agregado sale de `attributed`; en las otras dos,
     # de las filas del propio conductor o vehículo.
