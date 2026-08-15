@@ -1,6 +1,11 @@
 # CLAUDE CONTEXT MEMORY
 > Proyecto: webcarga
 > Histórico completo en AGENTLOG_ARCHIVE.md — no es el histórico completo.
+> **`AGENTLOG_ARCHIVE.md` NO está en git, y es a propósito** (decisión del usuario, 2026-08-15):
+> el histórico no ensucia el repo ni los diffs. Consecuencia asumida: archivar mueve contenido
+> fuera de control de versiones. El respaldo real son los commits viejos de `AGENTLOG.md`, que sí
+> está trackeado — el `.gitignore` lo lista pero no lo afecta, porque ya lo estaba desde antes.
+> No "arreglar" esto con `git add -f`.
 > (Rondas 51-54 — Centro de Flota, feedback post-deploy, auto-clasificación de zona, HU-18/24 — archivadas al cerrar la Ronda 55.)
 > (Ronda 66 — casuística de negocio + promoción dev→main — archivada al cerrar la Ronda 67.)
 > (Ronda 90 — Centro de Cierre del Día unificado, plan de 16 tareas/4 bloques — archivada al cerrar la Ronda 91.)
