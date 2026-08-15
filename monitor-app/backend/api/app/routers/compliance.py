@@ -178,8 +178,8 @@ async def get_certification_status(
             entity_where = es_activa
         carrier_cols = "e.id::text AS carrier_id, e.business_name AS carrier_name, e.operational_status"
         group_by = (
-            "e.id, e.business_name, e.operational_status, e.management_types, "
-            "d.unclassified, g.operation_types, v.trips_30d"
+            "e.id, e.business_name, e.operational_status, "
+            "d.unclassified, g.management_types, v.trips_30d"
         )
         unclassified = "COALESCE(d.unclassified, 0)::int"
         # Sólo agrupando por empresa hay algo que ordenar por acá.
@@ -196,23 +196,22 @@ async def get_certification_status(
             WHERE {unclassified_predicate('i')}
             GROUP BY 1
         ),
-        -- Tipo de gestión OBSERVADO: sale de la flota, que es lo que manda
-        -- cuando existe (37 de 39 empresas activas). Se devuelven CÓDIGOS, no
+        -- Tipo de gestión de la empresa: la flota manda cuando existe (36 de
+        -- 39 empresas activas), lo declarado cubre el hueco. La expresión NO
+        -- se escribe acá: vive en public.carrier_management_types() (migración
+        -- 20260816050000), que es la ÚNICA definición del concepto y la que
+        -- también leen las cuatro ramas CARRIER de siembra y la vista previa
+        -- del recalcular (app/services/requirement_conditions.py). Antes esta
+        -- pantalla tenía su propia copia y la condición nueva leía sólo la
+        -- columna declarada: dos definiciones del mismo concepto, una que se
+        -- mostraba y otra que se aplicaba (defecto C1). Devuelve CÓDIGOS, no
         -- las etiquetas del catálogo, para que la respuesta hable el mismo
         -- vocabulario que acepta POST /carriers y para que un renombre de
         -- etiqueta —hubo dos en dos días— no cambie el contrato de la API.
         gestion AS (
-            SELECT aa.carrier_id,
-                   array_agg(DISTINCT CASE t.label
-                       WHEN 'Tractoreo'       THEN 'TRACTOREO'
-                       WHEN 'Equipo Completo' THEN 'EQUIPO_COMPLETO'
-                   END) FILTER (WHERE t.label IN ('Tractoreo','Equipo Completo'))
-                       AS operation_types
-            FROM public.asset_assignments aa
-            JOIN public.assets a ON a.id = aa.asset_id
-            JOIN app.status_taxonomies t ON t.id = a.webcarga_operation_type_id
-            WHERE aa.status = 'ACTIVE'
-            GROUP BY 1
+            SELECT c.id AS carrier_id,
+                   public.carrier_management_types(c.id) AS management_types
+            FROM public.carriers c
         ),
         -- Actividad reciente. Es una MARCA dentro del grupo, no un criterio de
         -- orden: hoy no hay viajes futuros vinculados (0), así que usarla para
@@ -305,7 +304,7 @@ async def get_certification_status(
         # mismo dato.
         funnel_cols = f"""
                count(*) FILTER (WHERE {vencido})                                   AS expired_count,
-               COALESCE(g.operation_types, e.management_types)                     AS management_types,
+               g.management_types                                                   AS management_types,
                COALESCE(v.trips_30d, 0)::int                                       AS trips_30d,
                CASE
                    WHEN NOT (e.operational_status = ANY($1)

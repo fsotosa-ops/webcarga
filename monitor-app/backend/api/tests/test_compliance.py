@@ -770,8 +770,16 @@ def test_status_expired_counts_by_date_not_only_by_status():
 
 
 def test_status_management_types_prefers_the_fleet_over_the_declared():
-    """La flota manda cuando existe (37 de 39 empresas); lo declarado en el
-    alta cubre a las 2 que todavia no tienen vehiculos."""
+    """La flota manda cuando existe (36 de 39 empresas); lo declarado en el
+    alta cubre a las 3 que todavia no tienen vehiculos.
+
+    Esa preferencia ya NO se escribe aca: vive en
+    public.carrier_management_types() (migracion 20260816050000), la unica
+    definicion del concepto, y la llaman tambien las cuatro ramas CARRIER de
+    siembra y la vista previa del recalcular. Tenerla escrita dos veces era
+    el defecto C1: la pantalla mostraba la gestion derivada de la flota
+    mientras la condicion nueva evaluaba solo la columna declarada, que esta
+    vacia."""
     pool = AsyncMock()
     pool.fetch.return_value = []
     client = make_client(pool)
@@ -779,9 +787,8 @@ def test_status_management_types_prefers_the_fleet_over_the_declared():
     client.get("/api/v1/compliance-records/status")
 
     sql = pool.fetch.call_args.args[0]
-    assert "webcarga_operation_type_id" in sql
-    assert "management_types" in sql
-    assert "COALESCE" in sql
+    assert "public.carrier_management_types(c.id)" in sql
+    assert "COALESCE(g.operation_types, e.management_types)" not in sql
 
 
 def test_status_trips_join_uses_fleet_link_id():

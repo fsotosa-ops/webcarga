@@ -1,6 +1,50 @@
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock
 
+import pytest
+
 from app.services.requirement_conditions import SQL_ENTIDADES_QUE_APLICAN, calcular_diferencias
+
+MIGRACIONES = Path(__file__).resolve().parents[2] / "supabase" / "migrations"
+
+# Las vias de siembra que miran el tipo de gestion de una empresa, y cuantas
+# veces lo miran cada una. Son las cuatro ramas CARRIER: la general
+# (reconcile_new_carrier), la de cliente puntual (reconcile_carrier_shipper_link)
+# y las dos de reconcile_new_requirement (general + cliente puntual).
+VIAS_DE_SIEMBRA_CARRIER = {
+    "reconcile_new_carrier": 1,
+    "reconcile_carrier_shipper_link": 1,
+    "reconcile_new_requirement": 2,
+}
+
+
+def _ultima_definicion(nombre: str) -> str:
+    """El cuerpo vigente de una funcion, segun la ULTIMA migracion que la
+    define. Mirar solo la migracion del arreglo dejaria pasar que una
+    migracion posterior la reescriba y vuelva a leer la columna declarada."""
+    for path in sorted(MIGRACIONES.glob("*.sql"), reverse=True):
+        texto = path.read_text(encoding="utf-8")
+        inicio = texto.find(f"FUNCTION public.{nombre}(")
+        if inicio == -1:
+            continue
+        cuerpo_inicio = texto.index("AS $function$", inicio) + len("AS $function$")
+        cuerpo_fin = texto.index("$function$;", cuerpo_inicio)
+        return texto[cuerpo_inicio:cuerpo_fin]
+    raise AssertionError(f"Ninguna migracion define public.{nombre}()")
+
+
+def _predicados_de_gestion(sql: str) -> list[str]:
+    """Las lineas donde se decide si el tipo de gestion de una empresa entra
+    en la condicion del requisito, normalizadas para poder compararlas entre
+    el trigger (NEW.applies_to_...) y el servicio (req.applies_to_...)."""
+    lineas = [
+        " ".join(linea.split())
+        for linea in sql.splitlines()
+        if "&&" in linea and "applies_to_management_types" in linea
+    ]
+    return [linea.replace("NEW.applies_to_management_types", "req.applies_to_management_types")
+            for linea in lineas]
 
 
 def test_la_regla_no_menciona_requirement_level_ni_codigos():
@@ -29,6 +73,71 @@ def test_la_regla_de_empresa_contempla_los_requisitos_de_cliente_puntual():
     sql = SQL_ENTIDADES_QUE_APLICAN["CARRIER"]
     assert "shipper_id" in sql
     assert "carrier_shippers" in sql
+
+
+def test_la_gestion_de_una_empresa_no_se_lee_de_la_columna_declarada():
+    """Defecto C1. `public.carriers.management_types` es lo DECLARADO al crear
+    la empresa, y esta en NULL en las 248 empresas: la poblo el alta de
+    empresas nuevas, ninguna migracion la relleno. Leerla a secas hacia que
+    `NULL && ARRAY['TRACTOREO']` diera NULL, que el conjunto de empresas que
+    aplican quedara vacio y que TODOS los registros vigentes del requisito
+    pasaran a "quitar" (medido contra produccion: CARPETA_TRIBUTARIA con
+    TRACTOREO marcado daba quitar 247, y el DELETE es fisico).
+
+    El tipo de gestion sale de public.carrier_management_types(): la flota
+    manda cuando existe, lo declarado cubre el hueco. Es la misma definicion
+    que muestra la pantalla de Certificacion. Si alguien vuelve a leer la
+    columna declarada, este test muere."""
+    sql = SQL_ENTIDADES_QUE_APLICAN["CARRIER"]
+
+    assert "public.carrier_management_types(e.id)" in sql
+    assert not re.search(r"\be\.management_types\b", sql), (
+        "la regla volvio a leer la columna declarada de carriers"
+    )
+
+    predicados = _predicados_de_gestion(sql)
+    assert predicados == [
+        "OR public.carrier_management_types(e.id) && req.applies_to_management_types)"
+    ]
+
+
+@pytest.mark.parametrize("funcion", sorted(VIAS_DE_SIEMBRA_CARRIER))
+def test_las_vias_de_siembra_leen_la_misma_gestion_que_la_vista_previa(funcion):
+    """EL INVARIANTE DEL TRAMO: la regla de los triggers y la del servicio
+    tienen que coincidir. Si divergen, la vista previa miente sobre lo que va
+    a pasar y el boton "Aplicar" borra en firme.
+
+    Se compara contra la ULTIMA migracion que define cada funcion, no contra
+    la del arreglo: una migracion posterior que reescriba el trigger y vuelva
+    a `c.management_types &&` tiene que hacer fallar esto."""
+    cuerpo = _ultima_definicion(funcion)
+    predicados = _predicados_de_gestion(cuerpo)
+
+    assert len(predicados) == VIAS_DE_SIEMBRA_CARRIER[funcion], (
+        f"{funcion}() dejo de mirar el tipo de gestion, o lo mira de mas"
+    )
+    for predicado in predicados:
+        assert predicado.startswith("OR public.carrier_management_types("), (
+            f"{funcion}() lee el tipo de gestion de otra fuente: {predicado}"
+        )
+        assert predicado.endswith(") && req.applies_to_management_types)"), (
+            f"{funcion}() compara contra otra cosa: {predicado}"
+        )
+
+
+def test_la_definicion_del_tipo_de_gestion_esta_escrita_una_sola_vez():
+    """La flota manda cuando existe, lo declarado cubre el hueco. Esa frase
+    se escribe UNA vez, en la funcion de base, y la llaman los tres lados: lo
+    que se muestra (app/routers/compliance.py), lo que siembra (los cuatro
+    triggers) y lo que calcula la vista previa (este servicio). Si vuelve a
+    haber una copia del COALESCE en el SQL de la API, este test muere."""
+    from app.routers import compliance
+
+    fuente = Path(compliance.__file__).read_text(encoding="utf-8")
+    assert "public.carrier_management_types(c.id)" in fuente
+    assert "COALESCE(g.operation_types, e.management_types)" not in fuente, (
+        "la pantalla volvio a tener su propia copia de la definicion"
+    )
 
 
 async def test_bloqueado_predicate_text_is_exactly_d13_combined_with_or():

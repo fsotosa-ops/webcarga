@@ -3,6 +3,16 @@
 El trigger la aplica al insertar una entidad; este servicio la aplica sobre
 las entidades que YA existen, para el recalcular. Son el mismo criterio y por
 eso viven juntos: si divergen, la vista previa miente.
+
+REFERENCIA CRUZADA: el tipo de gestión de una empresa NO se lee de
+`public.carriers.management_types`. Se lee de `public.carrier_management_types()`
+(migración `20260816050000_carrier_management_types_single_definition.sql`), que
+es la ÚNICA definición del concepto: la flota manda cuando existe, lo declarado
+cubre el hueco. La misma función la llaman las cuatro ramas CARRIER de siembra y
+la pantalla de Certificación (`app/routers/compliance.py`). Leer la columna
+declarada a secas es el defecto C1: hoy está en NULL en las 248 empresas, así
+que cualquier condición de gestión dejaba `aplican` vacío y proponía borrar
+TODOS los registros vigentes del requisito.
 """
 from __future__ import annotations
 
@@ -19,12 +29,16 @@ SQL_ENTIDADES_QUE_APLICAN = {
     # reconcile_new_requirement(). Sin esta segunda rama, recalcular un
     # requisito de cliente puntual (p.ej. ANEXO_REPLEG) trataría "aplica a
     # 0 empresas" y propondría borrar todos sus registros legítimos.
+    #
+    # `public.carrier_management_types(e.id)`: misma expresión que las cuatro
+    # ramas CARRIER de siembra. Si cambia una, cambia la otra — pero cambian
+    # juntas porque las dos llaman a la MISMA función de base.
     "CARRIER": """
         SELECT e.id
         FROM public.carriers e, public.compliance_requirements req
         WHERE req.id = $1 AND req.is_active
           AND (req.applies_to_management_types IS NULL
-               OR e.management_types && req.applies_to_management_types)
+               OR public.carrier_management_types(e.id) && req.applies_to_management_types)
           AND (
               req.shipper_id IS NULL
               OR EXISTS (
