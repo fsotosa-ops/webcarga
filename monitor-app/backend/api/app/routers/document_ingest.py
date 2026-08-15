@@ -18,7 +18,7 @@ from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..routers.compliance import _apply_stored_document
 from ..schemas.document_ingest import (
-    ClassifyBatchBody, ClassifyBody, IngestUploadResult, MoveItemsBody, TrayPage,
+    ClassifyBatchBody, IngestUploadResult, MoveItemsBody, TrayPage,
     UndoClassifyBody, UndoClassifyResult,
 )
 from ..utils.document_storage import (
@@ -203,81 +203,6 @@ async def get_preview_url(
     if not storage_path:
         raise HTTPException(404, "Documento no encontrado")
     return {"preview_url": resolve_signed_url(supabase, storage_path)}
-
-
-@router.post("/items/{item_id}/classify")
-async def classify_item(
-    item_id: str,
-    body: ClassifyBody,
-    pool=Depends(get_pool),
-    user=Depends(require_editor),
-):
-    """Asigna un archivo de la bandeja a un requisito concreto.
-
-    El compliance_record ya existe — lo sembró el template al crear la entidad
-    — así que se busca por (entity_id, requirement_id), no se crea.
-
-    Un item ya clasificado SE PUEDE volver a clasificar: es el caso del PDF
-    que contiene padrón, permiso de circulación y revisión técnica en un solo
-    archivo. Se asigna el mismo archivo a otro requisito sin duplicar el blob.
-    """
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            item = await conn.fetchrow(
-                "SELECT storage_path, file_name, mime_type, size_bytes, match_status "
-                "FROM public.document_ingest_items WHERE id = $1",
-                item_id,
-            )
-            if not item:
-                raise HTTPException(404, "Documento no encontrado en la bandeja")
-            if item["match_status"] == "DISCARDED":
-                raise HTTPException(409, "Este documento fue eliminado de la bandeja")
-
-            record = await conn.fetchrow(
-                """
-                SELECT id::text, entity_id::text, entity_type, status, expiration_date
-                FROM public.compliance_records
-                WHERE entity_id = $1 AND requirement_id = $2 AND is_current = true
-                """,
-                body.entity_id, body.requirement_id,
-            )
-            if not record:
-                raise HTTPException(
-                    404,
-                    "Esa entidad no tiene ese requisito. Verificá la categoría y el tipo de documento.",
-                )
-
-            if body.expiration_date is None:
-                needs_date = await conn.fetchval(
-                    "SELECT COALESCE(has_expiration, false) "
-                    "FROM public.compliance_requirements WHERE id = $1",
-                    body.requirement_id,
-                )
-                if needs_date:
-                    raise HTTPException(422, "Este documento requiere fecha de vencimiento")
-
-            await _apply_stored_document(
-                conn, record["id"],
-                storage_path=item["storage_path"], file_name=item["file_name"],
-                mime_type=item["mime_type"], size_bytes=item["size_bytes"],
-                expiration_date=body.expiration_date, actor=user["sub"],
-                entity_type=record["entity_type"], entity_id=record["entity_id"],
-                old_status=record["status"],
-            )
-
-            await conn.execute(
-                """
-                UPDATE public.document_ingest_items SET
-                    match_status = 'COMMITTED',
-                    entity_type = $2, entity_id = $3, requirement_id = $4,
-                    compliance_record_id = $5, expiration_date = $6, updated_at = NOW()
-                WHERE id = $1
-                """,
-                item_id, body.entity_type, body.entity_id, body.requirement_id,
-                record["id"], body.expiration_date,
-            )
-
-    return {"compliance_record_id": record["id"]}
 
 
 @router.delete("/items/{item_id}", status_code=204)

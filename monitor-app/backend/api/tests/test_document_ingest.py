@@ -274,130 +274,6 @@ def test_preview_url_404_when_missing():
     assert res.status_code == 404
 
 
-# ── Bandeja: clasificar ────────────────────────────────────────────────────
-
-def _item_row(match_status="UNMATCHED"):
-    return {
-        "storage_path": "staging/b1/x.png", "file_name": "IMG_4905.PNG",
-        "mime_type": "image/png", "size_bytes": 9, "match_status": match_status,
-    }
-
-
-def _record_row(record_id="rec-1"):
-    return {
-        "id": record_id, "entity_id": "a1", "entity_type": "ASSET",
-        "status": "MISSING", "expiration_date": None,
-    }
-
-
-def test_classify_applies_the_file_to_the_requirement():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    # 3er fetchrow: lo que lee _apply_stored_document para detectar si el
-    # requisito ya tenia archivo (sin archivo previo en este caso).
-    conn.fetchrow.side_effect = [_item_row(), _record_row(), {"metadata": {}, "expiration_date": None}]
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/document-ingest/items/item-1/classify",
-        json={"entity_type": "ASSET", "entity_id": "a1",
-              "requirement_id": "req-1", "expiration_date": "2027-03-31"},
-    )
-
-    assert res.status_code == 200
-    assert res.json()["compliance_record_id"] == "rec-1"
-    all_sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
-    assert "compliance_records" in all_sql
-    assert "COMMITTED" in all_sql
-
-
-def test_same_file_can_cover_several_requirements():
-    """Caso real del PDF unificado: padron + permiso + revision en un archivo.
-
-    Pablo lo mostro en pantalla: 'puedo pedir que lo desunifiquen, o cargar
-    tres veces el mismo archivo'. Se resuelve sin duplicar el blob.
-    """
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    # El item YA fue clasificado antes (COMMITTED), no UNMATCHED
-    conn.fetchrow.side_effect = [
-        _item_row("COMMITTED"), _record_row("rec-2"), {"metadata": {}, "expiration_date": None},
-    ]
-    conn.fetchval.return_value = False   # el requisito no exige vencimiento
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/document-ingest/items/item-1/classify",
-        json={"entity_type": "ASSET", "entity_id": "a1", "requirement_id": "req-2"},
-    )
-
-    assert res.status_code == 200
-    assert res.json()["compliance_record_id"] == "rec-2"
-
-
-def test_classify_409_when_item_was_discarded():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = _item_row("DISCARDED")
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/document-ingest/items/item-1/classify",
-        json={"entity_type": "ASSET", "entity_id": "a1", "requirement_id": "req-1"},
-    )
-
-    assert res.status_code == 409
-
-
-def test_classify_404_when_item_missing():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = None
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/document-ingest/items/nope/classify",
-        json={"entity_type": "ASSET", "entity_id": "a1", "requirement_id": "req-1"},
-    )
-
-    assert res.status_code == 404
-
-
-def test_classify_404_when_entity_lacks_that_requirement():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.side_effect = [_item_row(), None]
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/document-ingest/items/item-1/classify",
-        json={"entity_type": "ASSET", "entity_id": "a1", "requirement_id": "req-inexistente"},
-    )
-
-    assert res.status_code == 404
-
-
-def test_classify_422_when_requirement_needs_expiration_and_none_given():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.side_effect = [_item_row(), _record_row()]
-    conn.fetchval.return_value = True   # has_expiration
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/document-ingest/items/item-1/classify",
-        json={"entity_type": "ASSET", "entity_id": "a1", "requirement_id": "req-1"},
-    )
-
-    assert res.status_code == 422
-
-
 # ── Bandeja: eliminar ──────────────────────────────────────────────────────
 
 def test_delete_item_marks_discarded_and_removes_the_blob():
@@ -430,6 +306,13 @@ def test_delete_item_404_when_missing():
 # ── Operaciones en lote ────────────────────────────────────────────────────
 # Son las que hacen viable clasificar 2.000 documentos: el mismo requisito
 # aplicado a N archivos, y N archivos movidos de empresa en un solo statement.
+
+def _record_row(record_id="rec-1"):
+    return {
+        "id": record_id, "entity_id": "a1", "entity_type": "ASSET",
+        "status": "MISSING", "expiration_date": None,
+    }
+
 
 def test_classify_batch_applies_to_every_selected_item():
     pool = AsyncMock()

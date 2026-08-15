@@ -74,13 +74,6 @@ class IngestUploadResult(BaseModel):
     errors: list[IngestUploadError]
 
 
-class ClassifyBody(BaseModel):
-    entity_type: EntityType
-    entity_id: str
-    requirement_id: str
-    expiration_date: Optional[date] = None
-
-
 class ClassifyBatchBody(BaseModel):
     """Aplica el mismo requisito a N archivos de la bandeja.
 
