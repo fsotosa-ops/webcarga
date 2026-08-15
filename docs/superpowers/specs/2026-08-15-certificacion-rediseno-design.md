@@ -303,7 +303,9 @@ Ya existen y se conservan: `classify`, `classify-batch`, `items/move`, `preview-
 - Reconocimiento por **contenido** del archivo (OCR). El matcher lee el **nombre**. Ampliarlo es otro
   proyecto.
 - Vincular certificación con viajes futuros. No hay datos que lo sostengan (0 viajes futuros vinculados).
-- HU-05 (administración de requisitos) y HU-06 (Seguros proyectado a cumplimiento).
+- HU-05 (administración de requisitos) y HU-06 (Seguros proyectado a cumplimiento) se retiran
+  del backlog por decisión del usuario (2026-08-15). No estaban implementadas; sólo figuraban
+  como notas de alcance en planes ya superados, que se eliminan junto con esta decisión.
 - Renombrar los valores de `?tab=` de la ficha de carrier.
 
 ## 12. Riesgos
