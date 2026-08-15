@@ -295,8 +295,10 @@ def test_preview_no_escribe_nada():
     """La vista previa es de sólo lectura. Si escribe, el usuario no puede
     mirar antes de decidir — que es todo el punto."""
     pool = AsyncMock()
-    pool.fetchrow.return_value = {"target_entity": "ASSET"}
-    pool.fetch.return_value = []
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetch.return_value = []
     client = make_client(pool)
 
     res = client.get("/api/v1/compliance-requirements/r1/recalc-preview")
@@ -304,13 +306,17 @@ def test_preview_no_escribe_nada():
     assert res.status_code == 200
     assert res.json() == {"crear": 0, "quitar": 0, "bloqueados": 0}
     # ni un INSERT, UPDATE o DELETE en todo el camino
-    for c in pool.execute.call_args_list:
+    for c in list(pool.execute.call_args_list) + list(conn.execute.call_args_list):
         assert not re.search(r"\b(INSERT|UPDATE|DELETE)\b", c.args[0], re.I)
+    # M3: solo lectura de verdad -- transaccion readonly, no una de escritura
+    conn.transaction.assert_called_once_with(readonly=True)
 
 
 def test_recalc_preview_404_when_requirement_missing():
     pool = AsyncMock()
-    pool.fetchrow.return_value = None
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = None
     client = make_client(pool)
 
     res = client.get("/api/v1/compliance-requirements/does-not-exist/recalc-preview")
@@ -327,14 +333,14 @@ def test_recalc_nunca_borra_un_registro_con_documento():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    pool.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
     # uno sin tocar, uno con archivo
-    pool.fetch.side_effect = [
+    conn.fetch.side_effect = [
         [],  # crear
         [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False},
-         {"id": "rec-con-doc", "entity_id": "a2", "bloqueado": True}],
+         {"id": "rec-con-doc", "entity_id": "a2", "bloqueado": True}],  # sobran
+        [{"id": "rec-libre"}],  # DELETE ... RETURNING id
     ]
-    conn.fetch.return_value = [{"id": "rec-libre"}]  # DELETE ... RETURNING id
     client = make_client(pool)
 
     res = client.post("/api/v1/compliance-requirements/r1/recalc")
@@ -363,12 +369,12 @@ def test_recalc_creates_missing_records_for_newly_matching_entities():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    pool.fetchrow.return_value = {"target_entity": "ASSET"}
-    pool.fetch.side_effect = [
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetch.side_effect = [
         [{"id": "a-nuevo"}],  # crear
         [],  # sobran
+        [{"id": "cr-nuevo-1"}],  # INSERT ... RETURNING id
     ]
-    conn.fetch.return_value = [{"id": "cr-nuevo-1"}]  # INSERT ... RETURNING id
     client = make_client(pool)
 
     res = client.post("/api/v1/compliance-requirements/r1/recalc")
@@ -389,13 +395,13 @@ def test_recalc_reports_rows_actually_deleted_not_the_planned_count():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    pool.fetchrow.return_value = {"target_entity": "ASSET"}
-    pool.fetch.side_effect = [
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetch.side_effect = [
         [],
         [{"id": "rec-1", "entity_id": "a1", "bloqueado": False},
          {"id": "rec-2", "entity_id": "a2", "bloqueado": False}],
+        [{"id": "rec-1"}],  # el DELETE guardado solo se llevo uno
     ]
-    conn.fetch.return_value = [{"id": "rec-1"}]  # el DELETE guardado solo se llevo uno
     client = make_client(pool)
 
     res = client.post("/api/v1/compliance-requirements/r1/recalc")
@@ -410,12 +416,10 @@ def test_recalc_audits_created_and_deleted_ids():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    pool.fetchrow.return_value = {"target_entity": "ASSET"}
-    pool.fetch.side_effect = [
-        [{"id": "a-nuevo"}],
-        [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False}],
-    ]
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
     conn.fetch.side_effect = [
+        [{"id": "a-nuevo"}],  # crear
+        [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False}],  # sobran
         [{"id": "cr-nuevo-1"}],  # INSERT RETURNING id
         [{"id": "rec-libre"}],   # DELETE RETURNING id
     ]
@@ -435,7 +439,9 @@ def test_recalc_audits_created_and_deleted_ids():
 
 def test_recalc_404_when_requirement_missing():
     pool = AsyncMock()
-    pool.fetchrow.return_value = None
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = None
     client = make_client(pool)
 
     res = client.post("/api/v1/compliance-requirements/does-not-exist/recalc")

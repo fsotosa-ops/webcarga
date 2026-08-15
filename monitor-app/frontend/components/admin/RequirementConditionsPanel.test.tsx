@@ -240,11 +240,85 @@ describe('RequirementConditionsPanel', () => {
     expect(screen.queryByLabelText('Furgón Congelado / Refrigerado')).not.toBeInTheDocument()
   })
 
-  it('un requisito de conductor no tiene casillas ni bloque de acciones', () => {
+  it('un requisito de conductor no tiene casillas de condicion, pero si bloque de vigencia', () => {
+    // I1 + su consecuencia directa: is_active paso a ser editable, y por eso
+    // los requisitos de conductor (cuya UNICA regla es is_active) necesitan
+    // el mismo bloque de vista previa/aplicar que los demas -- si no, se
+    // podrian apagar desde la pantalla sin ninguna via para reconciliar los
+    // registros que dejan de corresponder.
     setup({ target_entity: 'DRIVER' })
     expect(screen.getByText(/todos los conductores/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /ver qué cambia/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /aplicar/i })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Furgón Congelado / Refrigerado')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Tractoreo')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Vigente')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /ver qué cambia/i })).toBeInTheDocument()
+  })
+
+  it('apagar la vigencia de un requisito de conductor lo deja guardable, y guardar manda solo is_active', async () => {
+    setup({ target_entity: 'DRIVER' })
     expect(screen.queryByRole('button', { name: /guardar/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Vigente'))
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalledWith(
+      'r1', { is_active: false }))
+  })
+
+  it('tildar la vigencia ensucia el panel igual que una condicion', () => {
+    setup({ target_entity: 'ASSET' })
+    expect(screen.queryByRole('button', { name: /guardar/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Vigente'))
+
+    expect(screen.getByRole('button', { name: /guardar/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /ver qué cambia/i })).toBeDisabled()
+  })
+
+  it('guardar con vigencia Y condicion tocadas manda las dos claves en el mismo PATCH', async () => {
+    setup({ target_entity: 'ASSET' })
+    fireEvent.click(screen.getByLabelText('Vigente'))
+    fireEvent.click(screen.getByLabelText('Furgón Seco'))
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalledWith(
+      'r1', { applies_to_fleet_service_type_ids: ['t2'], is_active: false }))
+  })
+
+  it('guardar sin tocar la vigencia no la incluye en el body', async () => {
+    setup({ target_entity: 'ASSET' })
+    fireEvent.click(screen.getByLabelText('Furgón Seco'))
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalledWith(
+      'r1', { applies_to_fleet_service_type_ids: ['t2'] }))
+    const bodySent = vi.mocked(requirementsApi.patchConditions).mock.calls[0][1]
+    expect('is_active' in bodySent).toBe(false)
+  })
+
+  it('un no admin no puede tocar la casilla de vigencia', async () => {
+    vi.resetModules()
+    vi.doMock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => false }))
+    const { RequirementConditionsPanel: SoloLectura } = await import('./RequirementConditionsPanel')
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SoloLectura requisito={REQ} subtipos={SUBTIPOS} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByLabelText('Vigente')).toBeDisabled()
+  })
+
+  it('si el prop se recarga externamente, la casilla de vigencia refleja el dato nuevo', () => {
+    const actualizado: RequirementConditions = { ...REQ, is_active: false }
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <HarnessExterno inicial={REQ} actualizado={actualizado} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByLabelText('Vigente')).toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: /recargar/i }))
+
+    expect(screen.getByLabelText('Vigente')).not.toBeChecked()
   })
 })

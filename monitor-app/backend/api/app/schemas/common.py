@@ -45,12 +45,28 @@ def normalize_management_types(v):
     ordenar/deduplicar valores que ya son válidos. Con "before" recibía la
     lista cruda sin tipar (Ronda de arreglo 2, hallazgo relacionado: la
     misma clase de bug que revienta `normalize_nonempty_list` con tipos
-    mixtos, ver abajo)."""
+    mixtos, ver abajo).
+
+    Los tres usos de hoy (CarrierCreateBody, CarrierPatchBody,
+    RequirementConditionsPatchBody) son `Optional[list[ManagementType]]`, así
+    que a esta altura nunca hay nada fuera de `_MANAGEMENT_TYPE_ORDER` — pero
+    la función es compartida (perdió el guion bajo que tenía como privada de
+    `carrier.py`) y el primer campo `list[str]` sin ese `Literal` que la use
+    va a pasar valores desconocidos. Por eso, a diferencia de un simple
+    filtro, los desconocidos NO se descartan: se devuelven al final (deduped,
+    en orden de aparición) para que algo más adelante en la cadena — el
+    `Literal` de turno, o quien llame a esto directo — los rechace con un
+    error legible en vez de perderlos en silencio (M1, Ronda de arreglo 3)."""
     if not isinstance(v, list):
         return v
     if not v:
         return None
-    return [t for t in _MANAGEMENT_TYPE_ORDER if t in v]
+    conocidos = [t for t in _MANAGEMENT_TYPE_ORDER if t in v]
+    desconocidos: list = []
+    for item in v:
+        if item not in _MANAGEMENT_TYPE_ORDER and item not in desconocidos:
+            desconocidos.append(item)
+    return conocidos + desconocidos
 
 
 def normalize_nonempty_list(v):

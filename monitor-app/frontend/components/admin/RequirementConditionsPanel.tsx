@@ -53,6 +53,15 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
     requisito.applies_to_fleet_service_type_ids ?? [])
   const [marcadosGestiones, setMarcadosGestiones] = useState<ManagementType[]>(
     requisito.applies_to_management_types ?? [])
+  // I1: la vigencia es la tercera columna que este tramo introdujo como
+  // "dato del catálogo, editable desde la app" -- las otras dos (las
+  // condiciones de arriba) ya lo eran, ésta había quedado como una etiqueta
+  // de sólo lectura aunque el backend, el schema y el cliente HTTP ya la
+  // soportaban. Sin esto, apagar SEGURO_EETT/SEGURO_RC_EMPRESA en el
+  // backfill (20260816000000_requirement_conditions.sql) fue una puerta sin
+  // picaporte: para volver a encenderlos hacía falta otra migración, que es
+  // justo lo que este tramo vino a eliminar.
+  const [marcadoActivo, setMarcadoActivo] = useState(requisito.is_active)
   const [verPreview, setVerPreview] = useState(false)
 
   // Si el prop cambia -- ya sea porque el guardado de ESTE panel propagó la
@@ -63,17 +72,27 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
   useEffect(() => {
     setMarcadosSubtipos(requisito.applies_to_fleet_service_type_ids ?? [])
     setMarcadosGestiones(requisito.applies_to_management_types ?? [])
-  }, [requisito.id, requisito.applies_to_fleet_service_type_ids, requisito.applies_to_management_types])
+    setMarcadoActivo(requisito.is_active)
+  }, [requisito.id, requisito.applies_to_fleet_service_type_ids,
+      requisito.applies_to_management_types, requisito.is_active])
 
   const esAsset   = requisito.target_entity === 'ASSET'
   const esCarrier = requisito.target_entity === 'CARRIER'
   const tieneCondicionEditable = esAsset || esCarrier
+  const activoSucio = marcadoActivo !== requisito.is_active
 
-  const dirty = esAsset
+  // Consecuencia directa de hacer editable `is_active` (I1): los 12
+  // requisitos de conductor no tenían bloque de acciones, y eso era
+  // coherente SÓLO porque su única regla es `is_active` y `is_active` no se
+  // podía editar -- no había nada que reconciliar. Ahora sí lo hay: un
+  // conductor puede apagarse/prenderse igual que cualquier otro, así que
+  // también necesita vista previa y aplicar, aunque no tenga casillas de
+  // condición que mostrar.
+  const dirty = activoSucio || (esAsset
     ? !mismoConjunto(marcadosSubtipos, requisito.applies_to_fleet_service_type_ids ?? [])
     : esCarrier
     ? !mismoConjunto(marcadosGestiones, requisito.applies_to_management_types ?? [])
-    : false
+    : false)
 
   // GET /config/taxonomies filtra active=true: un subtipo dado de baja que
   // siga en la condición guardada no aparece como casilla, y la regla se
@@ -84,9 +103,15 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
 
   async function guardar() {
     await fb.run(requisito.id, async () => {
-      const body = esAsset
-        ? { applies_to_fleet_service_type_ids: marcadosSubtipos }
-        : { applies_to_management_types: marcadosGestiones }
+      // `is_active` sólo viaja si de verdad cambió: nunca manda `null` (el
+      // backend lo rechaza con 422 a propósito, la columna es NOT NULL) y
+      // así se evita un UPDATE + entrada de auditoría sin efecto cuando lo
+      // único sucio fue una condición.
+      const body: Partial<Pick<RequirementConditions,
+        'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>> = {}
+      if (esAsset) body.applies_to_fleet_service_type_ids = marcadosSubtipos
+      if (esCarrier) body.applies_to_management_types = marcadosGestiones
+      if (activoSucio) body.is_active = marcadoActivo
       const patch = await requirementsApi.patchConditions(requisito.id, body)
       onSaved?.(patch)
       qc.invalidateQueries({ queryKey: ['recalc-preview', requisito.id] })
@@ -129,9 +154,20 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
 
   return (
     <div className="border border-border rounded-xl bg-white p-4 space-y-2.5">
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-baseline gap-3 flex-wrap">
         <span className="text-[13.5px] font-semibold text-text-primary">{requisito.name}</span>
-        {!requisito.is_active && (
+        <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            aria-label="Vigente"
+            disabled={!canEdit}
+            checked={marcadoActivo}
+            onChange={() => setMarcadoActivo(a => !a)}
+            className="accent-accent cursor-pointer"
+          />
+          Vigente
+        </label>
+        {!marcadoActivo && (
           <span className="text-[10.5px] text-gray-500">no está vigente</span>
         )}
       </div>
@@ -199,7 +235,7 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
         <p className="text-[11px] text-gray-500">Se exige a todos los conductores.</p>
       )}
 
-      {canEdit && tieneCondicionEditable && (
+      {canEdit && (
         <div className="flex items-center gap-2 pt-1 flex-wrap">
           <SaveRowButton dirty={dirty} saving={fb.saving === requisito.id}
             saved={!!fb.savedAt[requisito.id]} onClick={guardar} />
@@ -225,7 +261,7 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
         </div>
       )}
 
-      {canEdit && tieneCondicionEditable && dirty && (
+      {canEdit && dirty && (
         <p className="text-[10.5px] text-gray-400">Guarda la regla antes de ver qué cambia.</p>
       )}
       {fb.errors[requisito.id] && (

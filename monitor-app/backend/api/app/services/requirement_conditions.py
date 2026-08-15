@@ -80,34 +80,45 @@ async def calcular_diferencias(pool, requirement_id: str) -> dict:
     igual y la vista previa nunca promete un borrado que el DELETE no hace.
 
     Devuelve también `target_entity` (None si el requisito no existe) para
-    que quien llama pueda decidir el 404 sin repetir este mismo `fetchrow`."""
-    req = await pool.fetchrow(
-        "SELECT target_entity FROM public.compliance_requirements WHERE id = $1",
-        requirement_id,
-    )
-    if not req:
-        return {"crear": [], "quitar": [], "bloqueados": [], "target_entity": None}
+    que quien llama pueda decidir el 404 sin repetir este mismo `fetchrow`.
 
-    aplican = SQL_ENTIDADES_QUE_APLICAN[req["target_entity"]]
+    Las tres lecturas van en una sola conexión y una transacción de sólo
+    lectura (`conn.transaction(readonly=True)`), no sueltas sobre `pool`: cada
+    `pool.fetch*` puede tomar una conexión distinta del pool y por lo tanto un
+    snapshot distinto, así que `crear` y `sobran` de una misma vista previa
+    podían no ser mutuamente coherentes entre sí (M3). El daño estaba acotado
+    porque el `DELETE` de `app/routers/requirements.py` revalida D13 por su
+    cuenta, pero son los números que alguien mira antes de confirmar un
+    borrado irreversible."""
+    async with pool.acquire() as conn:
+        async with conn.transaction(readonly=True):
+            req = await conn.fetchrow(
+                "SELECT target_entity FROM public.compliance_requirements WHERE id = $1",
+                requirement_id,
+            )
+            if not req:
+                return {"crear": [], "quitar": [], "bloqueados": [], "target_entity": None}
 
-    crear = await pool.fetch(f"""
-        WITH aplican AS ({aplican})
-        SELECT a.id::text FROM aplican a
-        WHERE NOT EXISTS (
-            SELECT 1 FROM public.compliance_records cr
-            WHERE cr.entity_id = a.id AND cr.requirement_id = $1 AND cr.is_current
-        )
-    """, requirement_id)
+            aplican = SQL_ENTIDADES_QUE_APLICAN[req["target_entity"]]
 
-    sobran = await pool.fetch(f"""
-        WITH aplican AS ({aplican})
-        SELECT cr.id::text, cr.entity_id::text,
-               (cr.file_url IS NOT NULL OR cr.is_manual_override
-                OR cr.status IS DISTINCT FROM 'MISSING') AS bloqueado
-        FROM public.compliance_records cr
-        WHERE cr.requirement_id = $1 AND cr.is_current
-          AND cr.entity_id NOT IN (SELECT id FROM aplican)
-    """, requirement_id)
+            crear = await conn.fetch(f"""
+                WITH aplican AS ({aplican})
+                SELECT a.id::text FROM aplican a
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM public.compliance_records cr
+                    WHERE cr.entity_id = a.id AND cr.requirement_id = $1 AND cr.is_current
+                )
+            """, requirement_id)
+
+            sobran = await conn.fetch(f"""
+                WITH aplican AS ({aplican})
+                SELECT cr.id::text, cr.entity_id::text,
+                       (cr.file_url IS NOT NULL OR cr.is_manual_override
+                        OR cr.status IS DISTINCT FROM 'MISSING') AS bloqueado
+                FROM public.compliance_records cr
+                WHERE cr.requirement_id = $1 AND cr.is_current
+                  AND cr.entity_id NOT IN (SELECT id FROM aplican)
+            """, requirement_id)
 
     return {
         "crear":      [r["id"] for r in crear],

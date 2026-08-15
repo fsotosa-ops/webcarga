@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.services.requirement_conditions import SQL_ENTIDADES_QUE_APLICAN, calcular_diferencias
+from tests.conftest import wire_transactional_conn
 
 MIGRACIONES = Path(__file__).resolve().parents[2] / "supabase" / "migrations"
 
@@ -161,12 +162,14 @@ async def test_bloqueado_predicate_text_is_exactly_d13_combined_with_or():
     que este sandbox no tiene (ver AGENTLOG /
     reference_sandbox_cannot_reach_supabase_db_directly)."""
     pool = AsyncMock()
-    pool.fetchrow.return_value = {"target_entity": "ASSET"}
-    pool.fetch.return_value = []
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetch.return_value = []
 
     await calcular_diferencias(pool, "req-1")
 
-    sobran_sql = pool.fetch.call_args_list[1].args[0]
+    sobran_sql = conn.fetch.call_args_list[1].args[0]
     clause_start = sobran_sql.index("(cr.file_url")
     clause_end = sobran_sql.index("AS bloqueado")
     clause_normalized = " ".join(sobran_sql[clause_start:clause_end].split())
@@ -175,3 +178,28 @@ async def test_bloqueado_predicate_text_is_exactly_d13_combined_with_or():
         "(cr.file_url IS NOT NULL OR cr.is_manual_override "
         "OR cr.status IS DISTINCT FROM 'MISSING')"
     )
+
+
+async def test_calcular_diferencias_lee_las_tres_consultas_en_una_sola_transaccion_de_lectura():
+    """M3: `target_entity`, `crear` y `sobran` van sobre LA MISMA conexion
+    adquirida del pool, dentro de una transaccion de solo lectura -- no
+    sueltas contra `pool` (donde cada `pool.fetch*` puede tomar una conexion
+    distinta y por lo tanto ver un snapshot distinto). Sin esto, `crear` y
+    `quitar` de una misma vista previa podian no ser mutuamente coherentes
+    entre si -- son los numeros que alguien mira antes de confirmar un
+    borrado irreversible."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetch.return_value = []
+
+    await calcular_diferencias(pool, "req-1")
+
+    pool.acquire.assert_called_once()
+    conn.transaction.assert_called_once_with(readonly=True)
+    assert conn.fetchrow.call_count == 1
+    assert conn.fetch.call_count == 2
+    # las tres lecturas nunca deberian haber ido sueltas contra el pool
+    pool.fetchrow.assert_not_called()
+    pool.fetch.assert_not_called()

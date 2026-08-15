@@ -35,7 +35,15 @@ UPDATE public.compliance_requirements
  WHERE requirement_code IN ('SEGURO_EETT', 'SEGURO_RC_EMPRESA');
 
 -- Los dos de vehículo se sembraban a toda RAMPLA. Se expresa como "todos los
--- subtipos que NO son el tracto", que es lo mismo en los datos actuales.
+-- subtipos que NO son el tracto", que equivale a la regla vieja PARA TODO
+-- VEHÍCULO QUE YA TIENE fleet_service_type_id CARGADO -- no para todos los
+-- datos actuales: hay 1 vehículo RAMPLA sin subtipo cargado
+-- (fleet_service_type_id NULL) que queda fuera, porque
+-- `NULL = ANY(applies_to_fleet_service_type_ids)` da NULL, no true, y la
+-- fila no se siembra (I2, Ronda de arreglo 3). El remedio es cargarle el
+-- subtipo a ese vehículo, no volver a mirar asset_type acá: esa decisión ya
+-- se tomó a propósito y sigue en pie, ver
+-- 20260816010000_reconcile_reads_conditions.sql:9-11.
 UPDATE public.compliance_requirements
    SET applies_to_fleet_service_type_ids = (
         SELECT array_agg(id) FROM app.status_taxonomies
