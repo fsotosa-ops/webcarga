@@ -99,12 +99,12 @@ describe('TriageWorkbench', () => {
   it('subir solo se ofrece con una empresa definida', async () => {
     setup()
     await screen.findByText('i1.png')
-    expect(screen.queryByLabelText(/arrastrá acá/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/arrastra aquí/i)).not.toBeInTheDocument()
   })
 
   it('desde la ficha si se puede subir', async () => {
     setup({ carrierId: 'acme', carrierName: 'ACME' })
-    expect(await screen.findByLabelText(/arrastrá acá los documentos de ACME/i)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/arrastra aquí los documentos de ACME/i)).toBeInTheDocument()
   })
 
   it('pide la url firmada solo del archivo enfocado', async () => {

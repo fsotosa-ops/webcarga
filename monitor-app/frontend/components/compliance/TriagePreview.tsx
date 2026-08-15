@@ -13,7 +13,7 @@ export function TriagePreview({ items }: { items: TrayItem[] }) {
   if (!items.length) {
     return (
       <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center">
-        <p className="text-[11px] text-gray-500">Elegí un documento para verlo</p>
+        <p className="text-[11px] text-gray-500">Selecciona un documento para verlo</p>
       </div>
     )
   }

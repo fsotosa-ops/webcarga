@@ -66,8 +66,11 @@ Inventar el número es peor que no tenerlo.
 - **Cero emojis.** Solo `lucide-react`. Es una decisión explícita del usuario, y
   al tocar un componente que tenga emojis viejos, se reemplazan.
 - **Etiqueta en español, ruta en inglés** (`Certificación` → `/dashboard/compliance`).
-- **Español neutral**: nunca `vosotros`. El voseo rioplatense sí se usa en esta
-  app ("Arrastrá", "Elegí") — es consistente con el resto de la UI.
+- **Español neutral, sin voseo**: "Arrastra", "Elige", "Selecciona" — nunca
+  "Arrastrá"/"Elegí", y nunca `vosotros`. Es un requisito explícito del
+  usuario; el producto opera en Chile y el equipo no es rioplatense.
+- **Nombrar las cosas por el trabajo, no por el modelo de datos**: "¿A quién
+  pertenece?", no "Sujeto"; "¿Qué documento es?", no "requirement_id".
 - **Selección múltiple antes que acciones por fila** cuando el volumen es alto,
   y **barra contextual** que aparece al seleccionar.
 - **Todo accesible por teclado** — `ui-ux-pro-max` marca *Keyboard Navigation*

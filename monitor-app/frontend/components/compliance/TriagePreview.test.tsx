@@ -28,6 +28,6 @@ describe('TriagePreview', () => {
 
   it('invita a elegir algo cuando no hay nada', () => {
     render(<TriagePreview items={[]} />)
-    expect(screen.getByText(/elegí un documento/i)).toBeInTheDocument()
+    expect(screen.getByText(/selecciona un documento/i)).toBeInTheDocument()
   })
 })

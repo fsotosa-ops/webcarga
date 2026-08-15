@@ -184,11 +184,11 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
             ? <Loader2 size={16} className="motion-safe:animate-spin text-accent" />
             : <UploadCloud size={16} className="text-gray-400" />}
           <span className="text-[11px] text-gray-500">
-            Arrastrá acá los documentos de {carrierName}
+            Arrastra aquí los documentos de {carrierName}
           </span>
           <input
             type="file" multiple className="hidden"
-            aria-label={`Arrastrá acá los documentos de ${carrierName}`}
+            aria-label={`Arrastra aquí los documentos de ${carrierName}`}
             onChange={e => handleFiles(e.target.files)}
           />
         </label>
@@ -213,9 +213,9 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,0.7fr)]">
-          <section aria-label="Elegí documentos" className="min-w-0 lg:border-r border-border">
+          <section aria-label="Elige los documentos" className="min-w-0 lg:border-r border-border">
             <h2 className="px-3 pt-2.5 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              <span className="text-accent">1</span> · Elegí documentos
+              <span className="text-accent">1</span> · Elige los documentos
             </h2>
 
             {canEdit && (
@@ -262,15 +262,16 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
             </div>
           </section>
 
-          <section aria-label="Clasificá" className="min-w-0 border-t lg:border-t-0 border-border">
+          <section aria-label="Indica qué son" className="min-w-0 border-t lg:border-t-0 border-border">
             <h2 className="px-3 pt-2.5 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              <span className="text-accent">2</span> · Clasificá
+              <span className="text-accent">2</span> · Indica qué son
             </h2>
             <div className="p-3 pt-1 space-y-3">
               <TriageClassifyForm
                 targetIds={canEdit ? targetIds : []}
                 subjects={subjects}
                 carrierLabel={carrierLabel}
+                pendingRows={pendingQuery.data?.rows ?? []}
                 onApplied={handleApplied}
               />
               {targetIds.length > 0 && <TriagePreview items={previewItems} />}

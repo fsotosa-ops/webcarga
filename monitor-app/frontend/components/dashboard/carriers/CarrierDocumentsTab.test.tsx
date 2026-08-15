@@ -41,7 +41,7 @@ describe('CarrierDocumentsTab', () => {
 
   it('permite cargar documentos sin salir de la ficha', async () => {
     setup()
-    expect(await screen.findByLabelText(/arrastrá acá los documentos de ACME/i)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/arrastra aquí los documentos de ACME/i)).toBeInTheDocument()
   })
 
   it('ya no manda a otro módulo para cargar', () => {
@@ -51,7 +51,7 @@ describe('CarrierDocumentsTab', () => {
 
   it('usa la misma bandeja, acotada a esta empresa', async () => {
     setup()
-    await screen.findByLabelText(/arrastrá acá/i)
+    await screen.findByLabelText(/arrastra aquí/i)
     expect(documentIngestApi.listQueue).toHaveBeenCalledWith(
       expect.objectContaining({ carrierId: 'c1' }),
     )

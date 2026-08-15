@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
+import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
+import type { PendingComplianceRow } from '@/lib/types'
 
 type Subject = { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }
 
@@ -15,18 +17,25 @@ interface Props {
   /** Empresa de la selección — se muestra en el encabezado para que quede
    *  claro sobre quién se está actuando cuando hay varios marcados. */
   carrierLabel?: string | null
+  /** Lo que le falta a esa empresa. Es el dato que responde "¿qué tengo
+   *  pendiente acá?" sin salir de la pantalla, y el atajo para clasificar. */
+  pendingRows?: PendingComplianceRow[]
 }
 
 /** Panel derecho: a quién pertenece y qué es.
  *
  *  El mismo formulario sirve para uno o para quince — la selección múltiple no
  *  necesita una pantalla propia. */
-export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabel }: Props) {
+export function TriageClassifyForm({
+  targetIds, subjects, onApplied, carrierLabel, pendingRows = [],
+}: Props) {
   const [subjectKey, setSubjectKey] = useState('')
   const [requirementId, setRequirementId] = useState('')
   const [expiration, setExpiration] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [slot, setSlot] = useState<Slot | null>(null)
+  const [manual, setManual] = useState(false)
 
   const subject = useMemo(
     () => subjects.find(s => `${s.entity_type}:${s.entity_id}` === subjectKey) ?? null,
@@ -40,9 +49,21 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabe
   })
 
   const requirements = requirementsQuery.data ?? []
-  const selected = requirements.find(r => r.id === requirementId) ?? null
+
+  function pickSlot(s: Slot) {
+    setSlot(s)
+    setError(null)
+    setExpiration('')
+    setSubjectKey(`${s.entity_type}:${s.entity_id}`)
+    // El requisito llega por código; el id sale del catálogo de ese tipo de
+    // entidad, que la query de abajo trae al cambiar el sujeto.
+    setRequirementId('')
+  }
+  const porCodigo = slot ? requirements.find(r => r.requirement_code === slot.requirement_code) : null
+  const requisitoElegido = requirementId || porCodigo?.id || ''
+  const selected = requirements.find(r => r.id === requisitoElegido) ?? null
   const needsDate = selected?.has_expiration ?? false
-  const canApply = targetIds.length > 0 && !!subject && !!requirementId
+  const canApply = targetIds.length > 0 && !!subject && !!requisitoElegido
     && (!needsDate || !!expiration) && !saving
 
   async function apply() {
@@ -54,11 +75,12 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabe
         item_ids: targetIds,
         entity_type: subject.entity_type,
         entity_id: subject.entity_id,
-        requirement_id: requirementId,
+        requirement_id: requisitoElegido,
         ...(expiration ? { expiration_date: expiration } : {}),
       })
       setRequirementId('')
       setExpiration('')
+      setSlot(null)
       onApplied(res.applied)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo clasificar')
@@ -72,10 +94,10 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabe
     return (
       <div className="px-3 py-6 text-center">
         <p className="text-xs font-medium text-gray-500">
-          Elegí uno o más documentos de la lista
+          Selecciona uno o más documentos de la lista
         </p>
         <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
-          Con uno marcado clasificás ese. Con quince, el mismo formulario los
+          Con uno marcado clasificas ese. Con quince, el mismo formulario los
           clasifica a los quince.
         </p>
       </div>
@@ -93,44 +115,73 @@ export function TriageClassifyForm({ targetIds, subjects, onApplied, carrierLabe
         {carrierLabel && <span> · {carrierLabel}</span>}
       </p>
 
-      <label className="block">
-        <span className="text-[11px] font-semibold text-gray-600">Sujeto</span>
-        <select
-          aria-label="Sujeto"
-          value={subjectKey}
-          onChange={e => { setSubjectKey(e.target.value); setRequirementId(''); setExpiration('') }}
-          className={SELECT}
-        >
-          <option value="">— Seleccionar —</option>
-          {subjects.map(s => (
-            <option key={`${s.entity_type}:${s.entity_id}`} value={`${s.entity_type}:${s.entity_id}`}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {!subjects.length && (
-        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-          Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele
-          pasar cuando no está activa.
-        </p>
+      {/* Lo que le falta a la empresa, que es la pregunta real: clasificar es
+          cubrir un hueco concreto, no describir el archivo en abstracto. */}
+      {!manual && pendingRows.length > 0 && (
+        <>
+          <PendingSlotPicker rows={pendingRows} selected={slot} onPick={pickSlot} />
+          <button
+            type="button"
+            onClick={() => { setManual(true); setSlot(null) }}
+            className="text-[10px] text-gray-500 hover:text-accent underline cursor-pointer"
+          >
+            No está en la lista
+          </button>
+        </>
       )}
 
-      {subject && (
-        <label className="block">
-          <span className="text-[11px] font-semibold text-gray-600">Tipo de documento</span>
-          <select
-            aria-label="Tipo de documento"
-            value={requirementId}
-            onChange={e => { setRequirementId(e.target.value); setExpiration('') }}
-            disabled={requirementsQuery.isPending}
-            className={SELECT}
-          >
-            <option value="">— Seleccionar —</option>
-            {requirements.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        </label>
+      {(manual || !pendingRows.length) && (
+        <>
+          <label className="block">
+            <span className="text-[11px] font-semibold text-gray-600">¿A quién pertenece?</span>
+            <select
+              aria-label="¿A quién pertenece?"
+              value={subjectKey}
+              onChange={e => { setSubjectKey(e.target.value); setRequirementId(''); setExpiration('') }}
+              className={SELECT}
+            >
+              <option value="">— Seleccionar —</option>
+              {subjects.map(s => (
+                <option key={`${s.entity_type}:${s.entity_id}`} value={`${s.entity_type}:${s.entity_id}`}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {!subjects.length && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+              Esta empresa no tiene requisitos pendientes que se puedan asignar.
+              Suele pasar cuando la empresa no está activa.
+            </p>
+          )}
+
+          {subject && (
+            <label className="block">
+              <span className="text-[11px] font-semibold text-gray-600">¿Qué documento es?</span>
+              <select
+                aria-label="¿Qué documento es?"
+                value={requirementId}
+                onChange={e => { setRequirementId(e.target.value); setExpiration('') }}
+                disabled={requirementsQuery.isPending}
+                className={SELECT}
+              >
+                <option value="">— Seleccionar —</option>
+                {requirements.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </label>
+          )}
+
+          {manual && pendingRows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setManual(false); setRequirementId('') }}
+              className="text-[10px] text-gray-500 hover:text-accent underline cursor-pointer"
+            >
+              Volver a los pendientes
+            </button>
+          )}
+        </>
       )}
 
       {needsDate && (

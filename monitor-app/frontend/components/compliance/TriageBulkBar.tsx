@@ -32,7 +32,7 @@ export function TriageBulkBar({
         <span className="font-medium text-gray-400">Ninguno seleccionado</span>
         <span className="text-gray-300" aria-hidden="true">·</span>
         <span>
-          marcá con la casilla o la barra espaciadora para clasificar, mover o descartar en lote
+          marca con la casilla o la barra espaciadora para clasificar, mover o descartar en lote
         </span>
       </div>
     )

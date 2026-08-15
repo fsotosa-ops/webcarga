@@ -19,6 +19,14 @@ const REQ = {
 const REQ_FECHA = { ...REQ, id: 'req-2', name: 'SOAP', has_expiration: true }
 const SUBJECTS = [{ entity_type: 'ASSET' as const, entity_id: 'a1', label: 'HKXW55' }]
 
+const PENDIENTE = {
+  id: 'r1', carrier_id: 'c1', carrier_name: 'ACME', carrier_tax_id: '1-9',
+  carrier_operation_types: [], certification_type: 'BASICA', category: 'EQUIPO',
+  entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55',
+  requirement_code: 'PADRON', document_name: 'Padrón',
+  status: 'MISSING', expiration_date: null,
+}
+
 function setup(targetIds = ['i1', 'i2'], onApplied = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -30,9 +38,9 @@ function setup(targetIds = ['i1', 'i2'], onApplied = vi.fn()) {
 }
 
 async function elegir(reqName = 'Padrón') {
-  fireEvent.change(screen.getByLabelText(/sujeto/i), { target: { value: 'ASSET:a1' } })
+  fireEvent.change(screen.getByLabelText(/a quién pertenece/i), { target: { value: 'ASSET:a1' } })
   await screen.findByRole('option', { name: reqName })
-  fireEvent.change(screen.getByLabelText(/tipo de documento/i), {
+  fireEvent.change(screen.getByLabelText(/qué documento es/i), {
     target: { value: reqName === 'Padrón' ? 'req-1' : 'req-2' },
   })
 }
@@ -72,7 +80,7 @@ describe('TriageClassifyForm', () => {
 
   it('no deja aplicar sin selección', () => {
     setup([])
-    expect(screen.getByText(/elegí uno o más documentos/i)).toBeInTheDocument()
+    expect(screen.getByText(/selecciona uno o más documentos/i)).toBeInTheDocument()
   })
 
   it('muestra el error del backend sin perder la selección', async () => {
@@ -82,5 +90,53 @@ describe('TriageClassifyForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /clasificar los 2/i }))
 
     expect(await screen.findByText(/no tiene ese requisito/i)).toBeInTheDocument()
+  })
+})
+
+// El usuario no sabe de memoria qué le falta a cada empresa. Antes el panel
+// pedía "Sujeto" y "Tipo" en dos desplegables genéricos y había que adivinar.
+describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
+  function setupConPendientes(onApplied = vi.fn()) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <TriageClassifyForm
+          targetIds={['i1', 'i2']}
+          subjects={SUBJECTS}
+          pendingRows={[PENDIENTE] as never}
+          onApplied={onApplied}
+        />
+      </QueryClientProvider>,
+    )
+    return onApplied
+  }
+
+  it('lista los documentos que faltan, no un desplegable en abstracto', () => {
+    setupConPendientes()
+    expect(screen.getByText(/le falta 1 documento/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Padrón/ })).toBeInTheDocument()
+  })
+
+  it('clasificar es elegir el hueco: un clic resuelve entidad y requisito', async () => {
+    const onApplied = setupConPendientes()
+    fireEvent.click(screen.getByRole('button', { name: /Padrón/ }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeEnabled()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /clasificar los 2/i }))
+
+    await waitFor(() => {
+      expect(documentIngestApi.classifyBatch).toHaveBeenCalledWith(
+        expect.objectContaining({ entity_type: 'ASSET', entity_id: 'a1', requirement_id: 'req-1' }),
+      )
+      expect(onApplied).toHaveBeenCalled()
+    })
+  })
+
+  it('deja salir a la vía manual si el documento no está en la lista', () => {
+    setupConPendientes()
+    fireEvent.click(screen.getByRole('button', { name: /no está en la lista/i }))
+    expect(screen.getByLabelText(/a quién pertenece/i)).toBeInTheDocument()
   })
 })
