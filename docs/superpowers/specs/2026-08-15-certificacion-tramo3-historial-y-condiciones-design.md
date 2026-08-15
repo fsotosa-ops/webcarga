@@ -157,9 +157,13 @@ siembra "por las dudas": sembrar de más es exactamente el problema que este tra
 y un pendiente que nadie puede cerrar es peor que uno que falta.
 
 **La reconciliación de esos casos es el mismo recalcular de §6**, disparado por el cambio de
-atributo en vez de por el cambio de regla. En la práctica significa que el recalcular no es una
-acción de la pantalla de administración solamente: también hay que poder pedirlo **para una
-empresa**, desde su ficha, cuando su flota o su gestión cambiaron.
+atributo en vez de por el cambio de regla — y **el recalcular por requisito ya lo cubre**: correr
+`MANTENCION_FRIO` crea los registros de los vehículos que la ingesta clasificó después de haberse
+creado.
+
+Un recalcular **por empresa**, desde su ficha, sería más cómodo pero no agrega ninguna capacidad, y
+hoy no tiene uso del lado de empresa: los dos requisitos con condición de gestión están inactivos
+por D8. Se difiere hasta que exista al menos una regla de gestión vigente.
 
 Alternativa descartada: recalcular automáticamente en un trigger `AFTER UPDATE` sobre `assets` y
 `carriers`. Sembraría y borraría registros sin que nadie lo vea, que es justo lo que D12 y D13
