@@ -1278,52 +1278,17 @@ El conductor que queda con `tax_id` NULL **es correcto y se deja así** (confirm
 #### Próximo paso exacto
 Ver la Ronda 101, abajo — la ejecución arrancó en esta misma sesión.
 
-### 2026-08-14 (cont.) — Ronda 101: arranca HU-01 revisada + HU-04 — 4 de 11 tareas hechas
+### 2026-08-14 (cont.) — Ronda 103: **plan de la bandeja COMPLETO — las 17 tareas cerradas**
 
-**Nomenclatura decidida por el usuario**: el módulo **se sigue llamando "Certificación"** y la ruta pasa a **`/dashboard/compliance`**. Se descartó "Red de Transporte" — el equipo ya dice Certificación y renombrar lo que la gente ya nombra no lo paga este cambio. La ruta en inglés es coherente con el dominio real (`compliance_records`/`compliance_requirements`). La épica se renombró a `00-epica-certificacion-unificada.md` y los 7 documentos se actualizaron sin dejar enlaces rotos.
+> (Rondas 101-102 — arranque del plan, construcción de los componentes y rediseño de UX aprobado — archivadas al cerrar esta ronda.)
 
-**Skills instaladas y versionadas** (`ecdc35f`, 47 archivos): `ui-ux-pro-max`, `mockups`, `frontend-patterns`, `qa-testing`, copiadas de suma-scout. Se usó `ui-ux-pro-max` para decidir el patrón de UI — sus reglas *Bulk Actions* y *Keyboard Navigation* (severidad alta) son las que fundamentan el rediseño.
+**Cierre**: se completaron las Tasks 9, 10 y 11, que quedaban del plan original, además de las 12-17 del rediseño. Verificado al final: **backend 534 passed**, **frontend 778 passed**, `tsc --noEmit` limpio, `npm run build` con `/dashboard/compliance` y `/dashboard/compliance/inbox` en el manifest.
 
-**Decisión de UX documentada en `01-hu-carga-y-clasificacion-por-empresa.md`**: la interfaz actual son dos modales apilados, 8 pasos y ~5 clics por documento — 10.000 clics para los 2.000 pendientes. Se evaluaron 3 patrones (comparativa con mockups en el artifact "Clasificar 2.000 documentos") y se eligió la **bandeja de trabajo con selección múltiple**. La clave: *la selección múltiple no necesita pantalla propia* — con un archivo marcado se clasifica ese, con quince el mismo formulario aplica a los quince. Eso elimina la necesidad de una vista de planilla aparte.
+- **Task 9** (`edf4f8d`) — `CarrierDocumentsTab` extraído de `carriers/[id]/page.tsx`. Refactor sin cambio funcional: **los mismos 23 tests pasan antes y después**, 971 → 954 líneas.
+- **Task 10** (`12d2ce9`) — la ficha vuelve a poder cargar documentos, con **el mismo `TriageWorkbench`** acotado por `carrierId` (criterio "una sola implementación" de la HU-04). Se retiró el link "Subir en Certificación" de `TransporterDocumentsPanel` y, con él, la prop `carrierId` que quedaba muerta. **Los links equivalentes de conductor y vehículo NO se tocaron**: no son la ficha de empresa.
+- **Task 11** (`849ec32`) — `mockups` y `qa-testing` adaptadas. `qa-testing` se reescribió sobre incidentes reales de este proyecto (SQL contra `AsyncMock`, mocks con la forma equivocada, huso horario, drift del `Dockerfile`) en vez de conservar el dominio de suma-scout (LLM, PDF, cohortes) que acá no aplica. `mockups` apunta a las HU como fuente de verdad.
 
-**Plan de implementación**: `docs/superpowers/plans/2026-08-14-compliance-bandeja-y-modulo-unificado.md`, 11 tareas con TDD.
 
-**Hecho (Tasks 1-4)**:
-1. `64e7f8c` — ruta movida a `/dashboard/compliance`; `/dashboard/certification` queda como **redirección permanente que preserva el query string** (`?carrier_id=` es contrato en uso desde la Ronda 88). 7 archivos actualizados. Gotcha resuelto: el componente de redirect necesita `return redirect(...)` — sin el `return` queda tipado como `void` y `tsc` lo rechaza como componente JSX.
-2. Migración `ingest_items_carrier_override` **aplicada**: `document_ingest_items.carrier_id` nullable (NULL = hereda del lote). El listado de la bandeja lo respeta vía `COALESCE(i.carrier_id, b.carrier_id)`.
-3. `30b89cc` — `POST /items/classify-batch` (mismo requisito a N archivos) y `POST /items/move` (N archivos a otra empresa **en un solo UPDATE**; un bucle serían N refreshes de la vista materializada).
-4. Cliente HTTP `classifyBatch` / `moveItems`.
-
-**Verificado**: backend **529 passed** (5 nuevos), frontend **740 passed** (2 nuevos), `tsc --noEmit` limpio, `npm run build` con ambas rutas en el manifest. SQL del listado verificado contra la base real.
-
-**Descuido propio, detectado y corregido**: al crear el test del redirect sobrescribí `app/dashboard/certification/page.test.tsx`, que ya existía con 12 tests. Se detectó por un ` D page.test.tsx` en `git status` y se restauró con `git checkout HEAD --`. No se perdió nada, pero conviene mirar `git status` antes de escribir un archivo de test con nombre "obvio".
-
-### 2026-08-14 (cont.) — Ronda 102: Tasks 5, 6 y 8 hechas + la Task 7 destapó una decisión de UX que reabrió el diseño
-
-**Hecho y comiteado** (`1d4a886`, `f584a75`, `4f750c7`): `TriageFileList`, `TriagePreview`, `TriageClassifyForm`, `TriageWorkbench` y `MoveToCarrierBar`, con **22 tests** y `tsc --noEmit` limpio.
-
-**Dos errores del plan, encontrados al ejecutarlo** (el plan traía el código, y el código traía los bugs):
-1. El test de `TriageFileList` spreadeaba `props as never` — `tsc` rechaza spreadear `never` (TS2698). Se castea a `ComponentProps<typeof …>`.
-2. El test de `MoveToCarrierBar` mockeaba `carriersApi.list` devolviendo `{ rows }`, pero el contrato real es `{ data }`. Con la clave equivocada el picker no lista nada y el test **pasaba por la razón incorrecta**.
-
-**La Task 7 quedó trabada en una contradicción del propio plan**: decía "reemplazar `CertificationCompanyPanel` por `TriageWorkbench`" y dos pasos después "actualizar el test de ese panel", que sólo tiene sentido si el panel sobrevive. Se resolvió preguntando en vez de adivinar.
-
-**Rediseño aprobado por el usuario, con el visual companion de `brainstorming`** (`.superpowers/brainstorm/`, ignorado por git). El usuario pidió explícitamente el estándar de la industria, la menor carga cognitiva posible y **nada de frankenstein ni deuda**. Decisiones:
-- **La bandeja es un destino propio** (`/dashboard/compliance/inbox`, ítem de sidebar con contador), no un tab ni un panel.
-- **La cola es global**, agrupada por empresa; la empresa es un filtro, no un requisito previo. Una bandeja que arranca vacía es un buscador.
-- **La lista es una tabla con columnas** (archivo, empresa, subido, sugerencia), no una lista de casillas.
-- **Barra contextual al seleccionar** — es donde pasan a vivir mover y descartar.
-- **`⇧`+click selecciona rango**, y la selección **no cruza empresas** (el formulario aplica un requisito de UNA entidad).
-- **La columna Sugerencia se construye ahora, vacía**: el esquema ya tiene `match_status`/`confidence`/`candidates` y el agente de clasificación llega después. Sin el lugar reservado, cuando llegue hay que rehacer la fila.
-
-**Tres hallazgos del código que corrigieron el diseño aprobado** — ninguno era visible desde el plan:
-1. **`resolve_signed_url` es una llamada HTTP a Storage por ítem, secuencial** (`document_storage.py:121`, dentro de un list comprehension en `list_tray`). Con 2.000 documentos el request no termina. **Corrección de raíz**: el listado deja de firmar y la vista previa se firma de a una en `GET /items/{id}/preview-url` — no paginar más fino.
-2. **Ni clasificar ni descartar se pueden deshacer.** `classify_batch` escribe una versión nueva en `compliance_records`; `delete_item` marca `DISCARDED` **pero borra el blob de staging**. Así que el "deshacer en vez de confirmar" que se había aprobado no es implementable: descartar **confirma dentro de la barra** (nunca un modal) y clasificar se corrige por la HU-03.
-3. **El Sidebar tiene ~55 líneas de markup especializado para un solo grupo** (`Sidebar.tsx:139-186`, con `monitorOpen`/`monitorActiveHref`). Anidar `Bandeja` bajo Certificación obligaba a duplicarlas o a generalizar el Sidebar entero, así que **va al primer nivel** — que además es el patrón real (la bandeja de Gmail tampoco cuelga de un módulo).
-
-**Plan extendido** (`5fc6cd1`): Tasks 12-17 en el mismo documento, con el código completo. Las Tasks 5 y 7 quedaron marcadas como superadas donde corresponde, y el mock de `listTray` de la Task 10 se corrigió a `listQueue`.
-
-### 2026-08-14 (cont.) — Ronda 103: Tasks 12-17 completas — la bandeja ya vive en `/dashboard/compliance/inbox`
 
 **Todo el rediseño implementado y comiteado** (`0b67558`, `156f445`, `295f555`, `5a47f66`, `2b0a278`, `0b5f7d2`). Verificado: **backend 534 passed**, **frontend 774 passed**, `tsc --noEmit` limpio, `npm run build` con `/dashboard/compliance/inbox` en el manifest.
 
@@ -1343,11 +1308,13 @@ Ver la Ronda 101, abajo — la ejecución arrancó en esta misma sesión.
 4. Desvío deliberado: el plan mandaba borrar `TriageFileList` en la Task 14, lo que dejaba `tsc` roto hasta la 16. Se borró en la 16, cuando dejó de tener importadores, para que ningún commit quede en rojo.
 
 #### Próximo paso exacto
-1. [ ] **Tasks 9-10** — descomponer `carriers/[id]/page.tsx` (971 líneas) extrayendo el tab Documentos, y devolverle la carga con el mismo `TriageWorkbench` (ya acepta `carrierId`, así que es pasarle la prop). **Ojo**: el test de la Task 10 en el plan mockea `listTray`, que ya no existe — usar `listQueue` + `previewUrl`.
-2. [ ] **Task 11** — adaptar `mockups` y `qa-testing`: sus descripciones dicen "in suma-scout" y referencian rutas de ese proyecto. **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — revisar de paso.
-3. [ ] Click-through: **no se puede hacer contra datos reales todavía** porque la bandeja está vacía. Hay que subir documentos de prueba primero (**elegir por SQL una empresa sin documentos cargados**), y después probar rango con `⇧`, que la selección no cruce empresas, el lote, el movimiento y el recorrido sólo con teclado. Limpiar y confirmar con un conteo global.
-4. [ ] Decidir si `CertificationCompanyPanel` sigue teniendo sentido: perdió la bandeja y ahora se solapa bastante con la ficha de empresa.
-5. [ ] HU-05, HU-03 (mover documentos ya clasificados) y HU-06 siguen pendientes.
+1. [ ] **Click-through — es lo único que falta para dar la HU por cerrada, y HOY NO SE PUEDE HACER**: `document_ingest_items` y `document_ingest_batches` están **vacías en producción (0 filas)**, así que la bandeja muestra 0. Hay que subir documentos de prueba primero (**elegir por SQL una empresa sin documentos cargados**), y recién ahí probar: rango con `⇧`, que la selección no cruce empresas, la clasificación en lote, el movimiento entre empresas, la confirmación de descarte y el recorrido sólo con teclado. Limpiar al terminar y confirmar con un conteo global.
+2. [ ] **Los 2.000 documentos de la HU todavía no entraron al sistema.** Definir cómo entran (¿carga manual desde la ficha? ¿backfill desde SharePoint?) — sin eso la bandeja está construida pero ociosa.
+3. [ ] Decidir si `CertificationCompanyPanel` sigue teniendo sentido: perdió la bandeja y ahora se solapa bastante con la ficha de empresa, que ya carga documentos.
+4. [ ] **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — o se crea o se saca la referencia.
+5. [ ] Deuda que dejó el rediseño, documentada a propósito en el plan: **revertir una clasificación ya aplicada** no existe (toca el versionado de `compliance_records`) — es la parte abierta de la **HU-03**. Y **descartar es irreversible** porque borra el blob de staging; hacerlo reversible implica postergar ese borrado y sumar una retención.
+6. [ ] El **agente de clasificación automática** sigue sin cablearse (`document_matcher.py`). La columna Sugerencia ya está construida y esperándolo.
+7. [ ] HU-05, HU-03 y HU-06 siguen pendientes.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
