@@ -8,7 +8,6 @@ from .db import close_pool, init_pool
 from .middleware.cache import CacheMiddleware
 from .routers.assets import router as assets_router
 from .routers.carriers import router as carriers_router
-from .routers.compliance import requirements_router as compliance_requirements_router
 from .routers.compliance import router as compliance_router
 from .routers.config import router as config_router
 from .routers.document_ingest import router as document_ingest_router
@@ -20,6 +19,7 @@ from .routers.equipment_closures import router as equipment_closures_router
 from .routers.filter_groups import router as filter_groups_router
 from .routers.locations import router as locations_router
 from .routers.policies import router as policies_router
+from .routers.requirements import requirements_router as compliance_requirements_router
 from .routers.roles import router as roles_router
 from .routers.shippers import router as shippers_router
 from .routers.status_report import router as status_report_router

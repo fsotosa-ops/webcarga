@@ -27,7 +27,6 @@ from ..schemas.compliance import (
     ReassignBody,
     ComplianceRecordPatchBody,
     PendingComplianceListResponse,
-    RequirementOption,
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
@@ -949,34 +948,3 @@ async def list_compliance_files(
         current_updated_at=current["updated_at"],
         current_actor=current["overridden_by"],
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Catálogo de requisitos
-# ══════════════════════════════════════════════════════════════════════════
-# Router aparte: el catálogo describe QUÉ se exige, no el estado de un
-# compliance_record concreto, así que no cuelga de /compliance-records.
-
-requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compliance"])
-
-
-@requirements_router.get("", response_model=list[RequirementOption])
-async def list_compliance_requirements(
-    target_entity: Optional[Literal["CARRIER", "DRIVER", "ASSET"]] = None,
-    pool=Depends(get_pool),
-    _=Depends(get_current_user),
-):
-    """Tipos de documento del catálogo, opcionalmente acotados a un tipo de
-    entidad. Solo lectura: administrar el catálogo requiere migración (ver
-    HU-05 de la épica Red de Transporte)."""
-    rows = await pool.fetch(
-        """
-        SELECT id::text, target_entity, requirement_code, name,
-               requirement_level, COALESCE(has_expiration, false) AS has_expiration
-        FROM public.compliance_requirements
-        WHERE ($1::text IS NULL OR target_entity = $1)
-        ORDER BY target_entity, name
-        """,
-        target_entity,
-    )
-    return [dict(r) for r in rows]

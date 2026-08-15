@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
-from app.routers.compliance import requirements_router, router
+from app.routers.compliance import router
 from tests.conftest import USER, wire_transactional_conn
 
 
@@ -606,55 +606,9 @@ def test_upload_without_expiration_date_leaves_it_untouched():
     assert "COALESCE" in conn.execute.call_args_list[0].args[0].upper()
 
 
-# ── Catalogo de requisitos (GET /compliance-requirements) ──────────────────
-# Lo consume el desplegable de clasificacion de la bandeja de sin clasificar.
-# La tabla existia desde el inicio pero ningun endpoint la listaba.
-
-def make_requirements_client(pool):
-    app = FastAPI()
-    app.include_router(requirements_router, prefix="/api/v1")
-    app.dependency_overrides[get_pool] = lambda: pool
-    app.dependency_overrides[get_current_user] = lambda: USER
-    return TestClient(app)
-
-
-def test_list_requirements_returns_catalog():
-    pool = AsyncMock()
-    pool.fetch.return_value = [{
-        "id": "req-1", "target_entity": "DRIVER", "requirement_id": "req-1", "requirement_code": "LICENCIA_CONDUCIR",
-        "name": "Licencia de Conducir", "requirement_level": "LEGAL_MANDATORY",
-        "has_expiration": True,
-    }]
-    client = make_requirements_client(pool)
-
-    res = client.get("/api/v1/compliance-requirements")
-
-    assert res.status_code == 200
-    body = res.json()
-    assert body[0]["requirement_code"] == "LICENCIA_CONDUCIR"
-    assert body[0]["has_expiration"] is True
-
-
-def test_list_requirements_filters_by_target_entity():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    client = make_requirements_client(pool)
-
-    res = client.get("/api/v1/compliance-requirements?target_entity=ASSET")
-
-    assert res.status_code == 200
-    assert "target_entity" in pool.fetch.call_args.args[0]
-    assert "ASSET" in pool.fetch.call_args.args
-
-
-def test_list_requirements_rejects_unknown_entity():
-    pool = AsyncMock()
-    client = make_requirements_client(pool)
-
-    res = client.get("/api/v1/compliance-requirements?target_entity=PERSONA")
-
-    assert res.status_code == 422
-
+# Nota: el catálogo de requisitos (GET /compliance-requirements) y sus
+# condiciones configurables viven en app/routers/requirements.py — ver
+# tests/test_requirements.py.
 
 # La misma lista, agrupada por el objeto que uno quiere mirar. Un conductor o un
 # vehiculo sin la empresa a la que pertenece no dice nada: la fila la trae.
