@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { describe, it, expect } from 'vitest'
 import { CertificationStatusTable } from './CertificationStatusTable'
 import type { CertificationStatusRow } from '@/lib/types'
 
@@ -33,18 +33,10 @@ describe('CertificationStatusTable', () => {
     expect(screen.getByTitle(/4 obligatorios por ley/i)).toBeInTheDocument()
   })
 
-  // Seleccionar NO navega: abre el panel de al lado, en la misma página.
-  it('elegir una empresa avisa la selección, sin navegar', () => {
-    const onSeleccionar = vi.fn()
-    render(<CertificationStatusTable rows={[fila()]} group="carrier" onSeleccionar={onSeleccionar} />)
-    fireEvent.click(screen.getByRole('button', { name: /Test Empresa Webcarga/ }))
-    expect(onSeleccionar).toHaveBeenCalledWith({ tipo: 'CARRIER', id: 'c1' })
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
-  })
-
-  it('marca cuál está abierta en el panel', () => {
-    render(<CertificationStatusTable rows={[fila()]} group="carrier" seleccionadoId="c1" />)
-    expect(screen.getByRole('button', { name: /Test Empresa Webcarga/ })).toHaveClass('font-bold')
+  it('la empresa lleva a su ficha, en el tab de documentos', () => {
+    render(<CertificationStatusTable rows={[fila()]} group="carrier" />)
+    expect(screen.getByRole('link', { name: /Test Empresa Webcarga/ }))
+      .toHaveAttribute('href', '/dashboard/carriers/c1?tab=documentos')
   })
 
   it('señala cuando la empresa no está activa', () => {
@@ -65,14 +57,12 @@ describe('CertificationStatusTable — agrupada por conductor o vehículo', () =
     carrier_id: 'c9', carrier_name: 'Transportes Sur Spa',
   })
 
-  it('muestra a qué empresa pertenece el conductor, y deja abrirla', () => {
-    const onSeleccionar = vi.fn()
-    render(<CertificationStatusTable rows={[conductor]} group="driver" onSeleccionar={onSeleccionar} />)
+  it('muestra a qué empresa pertenece el conductor', () => {
+    render(<CertificationStatusTable rows={[conductor]} group="driver" />)
     expect(screen.getByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Transportes Sur Spa' }))
-    expect(onSeleccionar).toHaveBeenCalledWith({ tipo: 'CARRIER', id: 'c9' })
+    expect(screen.getByRole('link', { name: 'Transportes Sur Spa' }))
+      .toHaveAttribute('href', '/dashboard/carriers/c9?tab=documentos')
   })
 
   it('avisa cuando el conductor no tiene empresa asignada', () => {

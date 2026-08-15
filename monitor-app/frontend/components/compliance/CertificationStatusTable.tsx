@@ -1,15 +1,12 @@
 'use client'
 
+import Link from 'next/link'
 import { AlertTriangle, Building2, Check } from 'lucide-react'
 import type { CertificationGroup, CertificationStatusRow } from '@/lib/types'
 
 interface Props {
   rows:  CertificationStatusRow[]
   group: CertificationGroup
-  /** Fila abierta en el panel de detalle. */
-  seleccionadoId?: string | null
-  /** Seleccionar NO navega: cambia el panel de al lado. */
-  onSeleccionar?: (sel: { tipo: 'CARRIER' | 'DRIVER' | 'ASSET'; id: string }) => void
 }
 
 /** La vista por defecto del módulo: cómo va cada empresa.
@@ -17,11 +14,8 @@ interface Props {
  *  Las dos mitades del trabajo viven en la misma fila — lo que falta y lo que
  *  llegó sin clasificar. Tenerlas en dos listas hermanas obligaba a cruzarlas
  *  de memoria, que es exactamente lo que hacía al módulo confuso. */
-export function CertificationStatusTable({ rows, group, seleccionadoId, onSeleccionar }: Props) {
+export function CertificationStatusTable({ rows, group }: Props) {
   const porEmpresa = group === 'carrier'
-  const tipo = group === 'carrier' ? 'CARRIER' as const
-             : group === 'driver'  ? 'DRIVER'  as const
-             : 'ASSET' as const
   const etiqueta = porEmpresa ? 'empresas' : group === 'driver' ? 'conductores' : 'vehículos'
 
   if (!rows.length) {
@@ -56,19 +50,29 @@ export function CertificationStatusTable({ rows, group, seleccionadoId, onSelecc
           const alDia = r.total_count > 0 && r.pending_count === 0
 
           return (
-            <tr key={r.entity_id} className={`border-b border-gray-100 transition-colors ${
-              seleccionadoId === r.entity_id ? 'bg-accent/10' : 'hover:bg-gray-50'
-            }`}>
+            <tr key={r.entity_id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
               <td className="py-2 pl-3 pr-2">
-                <button
-                  type="button"
-                  onClick={() => onSeleccionar?.({ tipo, id: r.entity_id })}
-                  className={`text-xs text-left hover:text-accent transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 rounded ${
-                    seleccionadoId === r.entity_id ? 'font-bold text-accent' : 'font-medium text-slate-800'
-                  }`}
-                >
-                  {r.entity_name}
-                </button>
+                {porEmpresa ? (
+                  <Link
+                    href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
+                    className="text-xs font-medium text-slate-800 hover:text-accent transition-colors"
+                  >
+                    {r.entity_name}
+                  </Link>
+                ) : r.carrier_id ? (
+                  // Abre su panel dentro de la ficha: ahí se carga y clasifica
+                  // su documentación sin salir del contexto de la empresa.
+                  <Link
+                    href={`/dashboard/carriers/${r.carrier_id}?tab=${group === 'driver' ? 'conductores' : 'equipos'}&${group === 'driver' ? 'driver' : 'asset'}=${r.entity_id}`}
+                    className="text-xs font-medium text-slate-800 hover:text-accent transition-colors"
+                  >
+                    {r.entity_name}
+                  </Link>
+                ) : (
+                  <span className="text-xs font-medium text-slate-800" title="Sin empresa activa: no se le puede cargar documentación">
+                    {r.entity_name}
+                  </span>
+                )}
                 {porEmpresa && r.operational_status !== 'ACTIVE' && (
                   <span className="ml-2 text-[10px] text-gray-500">no activa</span>
                 )}
@@ -77,13 +81,12 @@ export function CertificationStatusTable({ rows, group, seleccionadoId, onSelecc
               {!porEmpresa && (
                 <td className="py-2 px-2">
                   {r.carrier_id ? (
-                    <button
-                      type="button"
-                      onClick={() => onSeleccionar?.({ tipo: 'CARRIER', id: r.carrier_id! })}
-                      className="text-[11px] text-gray-600 hover:text-accent transition-colors cursor-pointer"
+                    <Link
+                      href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
+                      className="text-[11px] text-gray-600 hover:text-accent transition-colors"
                     >
                       {r.carrier_name}
-                    </button>
+                    </Link>
                   ) : (
                     <span className="text-[11px] text-amber-700" title="Sin asignación activa a una empresa">
                       sin empresa
