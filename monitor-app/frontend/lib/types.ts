@@ -1330,6 +1330,14 @@ export type RequirementConditions = Pick<RequirementOption,
   'id' | 'requirement_code' | 'name' | 'target_entity' |
   'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>
 
+/** `PATCH /conditions` devuelve solo las columnas de su propio `RETURNING`
+ *  (ver `app/routers/requirements.py`) — NO el `name` ni el `target_entity`.
+ *  Tiparlo como `RequirementConditions` completo sería mentir sobre lo que
+ *  realmente vuelve del backend. */
+export type RequirementConditionsPatchResult = Pick<RequirementConditions,
+  'id' | 'requirement_code' | 'is_active' |
+  'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>
+
 export type RecalcPreview = {
   crear:      number
   quitar:     number

@@ -18,7 +18,7 @@ const GRUPOS: RequirementOption['target_entity'][] = ['CARRIER', 'DRIVER', 'ASSE
 export function CondicionesDocumentosTab() {
   const requisitosFetcher = useCallback(() => complianceApi.listRequirements(), [])
   const {
-    items: requisitos, loading: loadingReq, error: errorReq, reload: reloadReq,
+    items: requisitos, setItems: setRequisitos, loading: loadingReq, error: errorReq, reload: reloadReq,
   } = useConfigList<RequirementOption>(requisitosFetcher)
 
   const subtiposFetcher = useCallback(() => taxonomiesApi.list('FLEET_SERVICE_TYPE'), [])
@@ -33,9 +33,9 @@ export function CondicionesDocumentosTab() {
   return (
     <div className="p-4 md:p-5 space-y-5">
       <p className="text-xs text-gray-400">
-        A quién se le exige cada documento del catálogo. Marcar o desmarcar un vehículo guarda la
-        regla de inmediato; aplicarla sobre los registros existentes es un paso aparte, con vista
-        previa antes de confirmar.
+        A quién se le exige cada documento del catálogo. Guarda la regla con el botón de cada
+        tarjeta; aplicarla sobre los registros existentes es un paso aparte, con vista previa antes
+        de confirmar.
       </p>
       <LoadState loading={loading} error={error} onRetry={() => { reloadReq(); reloadSub() }} />
       {!loading && !error && GRUPOS.map(entity => {
@@ -48,7 +48,13 @@ export function CondicionesDocumentosTab() {
             </h2>
             <div className="space-y-2">
               {rows.map(r => (
-                <RequirementConditionsPanel key={r.id} requisito={r} subtipos={subtipos} />
+                <RequirementConditionsPanel
+                  key={r.id}
+                  requisito={r}
+                  subtipos={subtipos}
+                  onSaved={patch => setRequisitos(items =>
+                    items.map(item => (item.id === patch.id ? { ...item, ...patch } : item)))}
+                />
               ))}
             </div>
           </div>

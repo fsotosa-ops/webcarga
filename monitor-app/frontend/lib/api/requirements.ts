@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { RequirementConditions, RecalcPreview, RecalcResult } from '@/lib/types'
+import type { RequirementConditions, RequirementConditionsPatchResult, RecalcPreview, RecalcResult } from '@/lib/types'
 
 const BASE = '/api/v1/compliance-requirements'
 
@@ -9,7 +9,7 @@ export const requirementsApi = {
    *  NULL) — el backend lo rechaza con 422. */
   patchConditions: (id: string, body: Partial<Pick<RequirementConditions,
     'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>>) =>
-    apiFetch<RequirementConditions>(`${BASE}/${id}/conditions`, {
+    apiFetch<RequirementConditionsPatchResult>(`${BASE}/${id}/conditions`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
 
