@@ -6,6 +6,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from .common import ManagementType, normalize_management_types
+
 # Verificado contra datos reales (2026-07-16): public.carriers.operational_status
 # no tiene CHECK constraint, y los valores en uso hoy son 'ACTIVE' (38) y
 # 'LEGACY_INACTIVE' (208 — carriers heredados del sistema viejo, nunca
@@ -23,35 +25,10 @@ OperationalStatus = Literal["ACTIVE", "INACTIVE", "LEGACY_INACTIVE", "ONBOARDING
 # el literal 'ACTIVE' como texto SQL en múltiples routers.
 ACTIVE_OPERATIONAL_STATUS: OperationalStatus = "ACTIVE"
 
-# Tipo de gestión DECLARADO en el alta (D7/D9). Códigos propios, no las
-# etiquetas de app.status_taxonomies: ésas se renombraron dos veces en dos días
-# (20260803060000, 20260804000000) y una FK textual se habría roto en silencio.
-#
-# Es un CONJUNTO, no un escalar con un tercer valor 'AMBAS': marcar los dos ES
-# el caso mixto. 'AMBAS' obligaría a que toda consulta futura recuerde
-# IN ('TRACTOREO','AMBAS') y olvidarlo deja afuera a la empresa mixta sin dar
-# error. Espeja la columna public.carriers.management_types (20260815160000).
-ManagementType = Literal["TRACTOREO", "EQUIPO_COMPLETO"]
-
-# Orden canónico de escritura: el CHECK de la base acepta cualquier orden, así
-# que sin normalizar dos filas equivalentes no son iguales por `=`.
-_MANAGEMENT_TYPE_ORDER = ["TRACTOREO", "EQUIPO_COMPLETO"]
-
-
-def _normalize_management_types(v):
-    """Ordena y quita duplicados; el arreglo vacío se vuelve None.
-
-    NULL y [] no pueden significar los dos "no declarado" — la base rechaza el
-    vacío justamente para que exista una sola representación."""
-    if not isinstance(v, list):
-        return v
-    if not v:
-        return None
-    vistos = [t for t in _MANAGEMENT_TYPE_ORDER if t in v]
-    # Lo que no esté en el orden canónico se deja pasar tal cual para que lo
-    # rechace el Literal con un error legible, en vez de desaparecer acá.
-    desconocidos = [t for t in v if t not in _MANAGEMENT_TYPE_ORDER]
-    return vistos + desconocidos
+# ManagementType, su orden canónico y su normalización viven en
+# app/schemas/common.py — public.compliance_requirements comparte el mismo
+# dominio (applies_to_management_types) y no hay razón para tener el Literal
+# ni la función de normalización duplicados en dos schemas.
 
 
 def _clean_tax_id_value(v):
@@ -77,7 +54,7 @@ class CarrierCreateBody(BaseModel):
     @field_validator("management_types", mode="before")
     @classmethod
     def _normalize_management(cls, v):
-        return _normalize_management_types(v)
+        return normalize_management_types(v)
 
     @field_validator("business_name", mode="before")
     @classmethod
@@ -113,7 +90,7 @@ class CarrierPatchBody(BaseModel):
     @field_validator("management_types", mode="before")
     @classmethod
     def _normalize_management(cls, v):
-        return _normalize_management_types(v)
+        return normalize_management_types(v)
 
     @field_validator("business_name", mode="before")
     @classmethod

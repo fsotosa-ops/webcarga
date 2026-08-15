@@ -55,13 +55,16 @@ async def calcular_diferencias(pool, requirement_id: str) -> dict:
     `bloqueados` son los que la regla ya no incluye pero NO se pueden quitar:
     tienen archivo, o edición manual, o un estado distinto de MISSING. Borrar
     un documento cargado porque cambió una regla de catálogo sería destruir
-    trabajo real (D13)."""
+    trabajo real (D13).
+
+    Devuelve también `target_entity` (None si el requisito no existe) para
+    que quien llama pueda decidir el 404 sin repetir este mismo `fetchrow`."""
     req = await pool.fetchrow(
         "SELECT target_entity FROM public.compliance_requirements WHERE id = $1",
         requirement_id,
     )
     if not req:
-        return {"crear": [], "quitar": [], "bloqueados": []}
+        return {"crear": [], "quitar": [], "bloqueados": [], "target_entity": None}
 
     aplican = SQL_ENTIDADES_QUE_APLICAN[req["target_entity"]]
 
@@ -88,4 +91,5 @@ async def calcular_diferencias(pool, requirement_id: str) -> dict:
         "crear":      [r["id"] for r in crear],
         "quitar":     [r["id"] for r in sobran if not r["bloqueado"]],
         "bloqueados": [r["id"] for r in sobran if r["bloqueado"]],
+        "target_entity": req["target_entity"],
     }

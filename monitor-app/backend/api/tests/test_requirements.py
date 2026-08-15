@@ -1,10 +1,11 @@
+import json
 import re
 from unittest.mock import AsyncMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth import get_current_user, require_editor
+from app.auth import get_current_user, require_admin
 from app.db import get_pool
 from app.routers.requirements import requirements_router
 from tests.conftest import USER, wire_transactional_conn
@@ -15,7 +16,18 @@ def make_client(pool):
     app.include_router(requirements_router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_editor] = lambda: USER
+    app.dependency_overrides[require_admin] = lambda: USER
+    return TestClient(app)
+
+
+def make_client_without_admin_override(pool):
+    """Sin overridear require_admin: ejercita la dependencia real, con
+    USER (role 'editor') resuelto vía get_current_user. Sirve para probar
+    que el rol se exige de verdad, no solo que el mock lo deja pasar."""
+    app = FastAPI()
+    app.include_router(requirements_router, prefix="/api/v1")
+    app.dependency_overrides[get_pool] = lambda: pool
+    app.dependency_overrides[get_current_user] = lambda: USER
     return TestClient(app)
 
 
@@ -61,11 +73,130 @@ def test_list_requirements_rejects_unknown_entity():
     assert res.status_code == 422
 
 
-# ── Condiciones configurables + recalculo (Tramo 3) ─────────────────────────
+# ── Condiciones configurables (PATCH /conditions) ───────────────────────────
 # Guardar la regla y aplicarla son dos actos distintos: PATCH /conditions solo
 # cambia el catalogo, GET /recalc-preview mira sin escribir, POST /recalc
-# aplica. D13: el recalculo nunca borra un registro con documento, con
-# edicion manual o fuera de MISSING.
+# aplica.
+
+def test_patch_conditions_rechaza_una_gestion_inventada():
+    pool = AsyncMock()
+    client = make_client(pool)
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions",
+                       json={"applies_to_management_types": ["SIDER"]})
+    assert res.status_code == 422
+
+
+def test_patch_conditions_empty_list_resets_condition_to_null_not_500():
+    """Ronda de arreglo 1, punto 1: [] es una forma legitima de decir 'sin
+    restriccion' (vuelve NULL), no una omision. Antes escribia '{}' y
+    violaba el CHECK -> 500; ahora el UPDATE de ancho variable solo toca la
+    columna enviada, con el valor normalizado (None) por placeholder."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [
+        {"id": "r1", "is_active": True, "applies_to_fleet_service_type_ids": None,
+         "applies_to_management_types": ["TRACTOREO"]},  # SELECT current (para el audit)
+        {"id": "r1", "requirement_code": "MANTENCION_FRIO", "is_active": True,
+         "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None},  # UPDATE RETURNING
+    ]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions",
+                       json={"applies_to_management_types": []})
+
+    assert res.status_code == 200
+    assert res.json()["applies_to_management_types"] is None
+
+    update_call = conn.fetchrow.call_args_list[1]
+    update_sql = update_call.args[0]
+    assert "applies_to_management_types" in update_sql
+    assert "COALESCE" not in update_sql
+    # el valor que se ligo por placeholder es el normalizado (None), no `[]`
+    assert update_call.args[-1] is None
+
+
+def test_patch_conditions_ignores_input_order_when_persisting():
+    """El orden de entrada no cambia lo que se guarda: la normalizacion
+    ordena canonicamente antes de que el valor llegue al placeholder."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [
+        {"id": "r1", "is_active": True, "applies_to_fleet_service_type_ids": None,
+         "applies_to_management_types": None},
+        {"id": "r1", "requirement_code": "X", "is_active": True,
+         "applies_to_fleet_service_type_ids": None,
+         "applies_to_management_types": ["TRACTOREO", "EQUIPO_COMPLETO"]},
+    ]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions",
+                       json={"applies_to_management_types": ["EQUIPO_COMPLETO", "TRACTOREO", "TRACTOREO"]})
+
+    assert res.status_code == 200
+    update_call = conn.fetchrow.call_args_list[1]
+    # orden canonico (TRACTOREO antes que EQUIPO_COMPLETO) y sin duplicado,
+    # sin importar que el body haya llegado en otro orden y repetido
+    assert update_call.args[-1] == ["TRACTOREO", "EQUIPO_COMPLETO"]
+
+
+def test_patch_conditions_happy_path_returns_updated_row_and_audits_field():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [
+        {"id": "r1", "is_active": True, "applies_to_fleet_service_type_ids": None,
+         "applies_to_management_types": None},
+        {"id": "r1", "requirement_code": "MANTENCION_FRIO", "is_active": False,
+         "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None},
+    ]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions", json={"is_active": False})
+
+    assert res.status_code == 200
+    assert res.json() == {
+        "id": "r1", "requirement_code": "MANTENCION_FRIO", "is_active": False,
+        "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None,
+    }
+    audit_calls = [c for c in conn.execute.call_args_list if "audit_log" in c.args[0]]
+    assert len(audit_calls) == 1
+    _, actor, entity_type, entity_id, action, field, old_value, new_value, source = audit_calls[0].args
+    assert entity_type == "REQUIREMENT"
+    assert entity_id == "r1"
+    assert action == "update"
+    assert field == "is_active"
+    assert json.loads(old_value) is True
+    assert json.loads(new_value) is False
+
+
+def test_patch_conditions_404_when_requirement_missing():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/does-not-exist/conditions",
+                       json={"is_active": False})
+
+    assert res.status_code == 404
+
+
+def test_patch_conditions_requires_admin_not_editor():
+    """Ronda de arreglo 1, punto 2: el brief pedia require_editor, corregido
+    a require_admin -- misma altura de permiso que el resto de la
+    configuracion de catalogo del backend."""
+    pool = AsyncMock()
+    client = make_client_without_admin_override(pool)
+
+    res = client.patch("/api/v1/compliance-requirements/r1/conditions", json={"is_active": False})
+
+    assert res.status_code == 403
+
+
+# ── Vista previa (GET /recalc-preview) ──────────────────────────────────────
 
 def test_preview_no_escribe_nada():
     """La vista previa es de sólo lectura. Si escribe, el usuario no puede
@@ -84,9 +215,22 @@ def test_preview_no_escribe_nada():
         assert not re.search(r"\b(INSERT|UPDATE|DELETE)\b", c.args[0], re.I)
 
 
+def test_recalc_preview_404_when_requirement_missing():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-requirements/does-not-exist/recalc-preview")
+
+    assert res.status_code == 404
+
+
+# ── Aplicar el recalculo (POST /recalc) ─────────────────────────────────────
+
 def test_recalc_nunca_borra_un_registro_con_documento():
     """D13. Borrar un documento cargado porque cambio una regla de catalogo
-    seria destruir trabajo real."""
+    seria destruir trabajo real. El DELETE ademas repite el predicado (no
+    confia ciegamente en los IDs que trajo la vista previa)."""
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
@@ -97,20 +241,113 @@ def test_recalc_nunca_borra_un_registro_con_documento():
         [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False},
          {"id": "rec-con-doc", "entity_id": "a2", "bloqueado": True}],
     ]
+    conn.fetch.return_value = [{"id": "rec-libre"}]  # DELETE ... RETURNING id
     client = make_client(pool)
 
     res = client.post("/api/v1/compliance-requirements/r1/recalc")
 
     assert res.status_code == 200
     assert res.json() == {"creados": 0, "quitados": 1, "bloqueados": 1}
-    borrado = [c for c in conn.execute.call_args_list if "DELETE" in c.args[0].upper()]
+    borrado = [c for c in conn.fetch.call_args_list if "DELETE" in c.args[0].upper()]
     assert len(borrado) == 1
     assert borrado[0].args[1] == ["rec-libre"]
+    # D13 vuelve a comprobarse en el propio DELETE, no solo en la vista previa
+    assert "file_url IS NULL" in borrado[0].args[0]
+    assert "NOT is_manual_override" in borrado[0].args[0]
+    assert "status = 'MISSING'" in borrado[0].args[0]
 
 
-def test_patch_conditions_rechaza_una_gestion_inventada():
+def test_recalc_creates_missing_records_for_newly_matching_entities():
+    """La rama `crear` del recalculo: un asset que ahora matchea la
+    condicion pero todavia no tiene compliance_record. No estaba ejercitada
+    en ningun test de la suite (Ronda de arreglo 1, punto 6)."""
     pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {"target_entity": "ASSET"}
+    pool.fetch.side_effect = [
+        [{"id": "a-nuevo"}],  # crear
+        [],  # sobran
+    ]
+    conn.fetch.return_value = [{"id": "cr-nuevo-1"}]  # INSERT ... RETURNING id
     client = make_client(pool)
-    res = client.patch("/api/v1/compliance-requirements/r1/conditions",
-                       json={"applies_to_management_types": ["SIDER"]})
-    assert res.status_code == 422
+
+    res = client.post("/api/v1/compliance-requirements/r1/recalc")
+
+    assert res.status_code == 200
+    assert res.json() == {"creados": 1, "quitados": 0, "bloqueados": 0}
+    inserts = [c for c in conn.fetch.call_args_list if "INSERT" in c.args[0].upper()]
+    assert len(inserts) == 1
+    assert inserts[0].args[1] == ["a-nuevo"]
+    assert inserts[0].args[2] == "ASSET"
+
+
+def test_recalc_reports_rows_actually_deleted_not_the_planned_count():
+    """Ventana D13: si entre el calculo y el DELETE algo protegio un
+    registro (ej. se subio un archivo), el numero que ve el usuario es el
+    ejecutado, no el planeado. Se simula devolviendo del DELETE una sola
+    fila aunque la vista previa habia calculado dos."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {"target_entity": "ASSET"}
+    pool.fetch.side_effect = [
+        [],
+        [{"id": "rec-1", "entity_id": "a1", "bloqueado": False},
+         {"id": "rec-2", "entity_id": "a2", "bloqueado": False}],
+    ]
+    conn.fetch.return_value = [{"id": "rec-1"}]  # el DELETE guardado solo se llevo uno
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-requirements/r1/recalc")
+
+    assert res.status_code == 200
+    assert res.json()["quitados"] == 1
+
+
+def test_recalc_audits_created_and_deleted_ids():
+    """compliance_records no tiene tabla de historial y el DELETE es fisico:
+    el unico rastro forense es lo que quede en audit_log."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {"target_entity": "ASSET"}
+    pool.fetch.side_effect = [
+        [{"id": "a-nuevo"}],
+        [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False}],
+    ]
+    conn.fetch.side_effect = [
+        [{"id": "cr-nuevo-1"}],  # INSERT RETURNING id
+        [{"id": "rec-libre"}],   # DELETE RETURNING id
+    ]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-requirements/r1/recalc")
+
+    assert res.status_code == 200
+    audit_calls = [c for c in conn.execute.call_args_list if "audit_log" in c.args[0]]
+    assert len(audit_calls) == 1
+    _, actor, entity_type, entity_id, action, field, old_value, new_value, source = audit_calls[0].args
+    assert action == "recalc"
+    assert field == "compliance_records"
+    assert json.loads(old_value) == ["rec-libre"]   # quitados
+    assert json.loads(new_value) == ["cr-nuevo-1"]  # creados
+
+
+def test_recalc_404_when_requirement_missing():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-requirements/does-not-exist/recalc")
+
+    assert res.status_code == 404
+
+
+def test_recalc_requires_admin_not_editor():
+    pool = AsyncMock()
+    client = make_client_without_admin_override(pool)
+
+    res = client.post("/api/v1/compliance-requirements/r1/recalc")
+
+    assert res.status_code == 403
