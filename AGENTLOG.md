@@ -1460,6 +1460,84 @@ El plan `docs/superpowers/plans/2026-08-15-zoom-empresa-conductor-vehiculo.md` *
 3. [ ] **HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento).
 4. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
 
+### 2026-08-15 (cont.) — Ronda 110: rediseño de Certificación — spec, plan y Tramo 1 desplegado
+
+**Qué se hizo**: sesión completa de brainstorming con siete pantallas de mockups verificadas contra
+producción, spec, plan, y ejecución del primer tramo con subagentes. **19 commits pusheados a `dev`**
+(`ad8b2d0..e0c1e2f`), ambos despliegues en verde.
+
+**Documentos**: `docs/superpowers/specs/2026-08-15-certificacion-rediseno-design.md` y
+`docs/superpowers/plans/2026-08-15-certificacion-tramo1-la-puerta.md`.
+
+#### Los datos que ordenaron el diseño (medidos contra `viclzoftiudkepqnhekv`)
+
+| Dato | Valor | Implicancia |
+|---|---|---|
+| Registros de cumplimiento | 4.990, de los cuales **4.895 en MISSING** | 1,9% cargado |
+| Nivel legal | **33 de 37 son `LEGAL_MANDATORY`** | El nivel no prioriza nada |
+| Conductores / vehículos por empresa | **promedio 2 y 3**, máximos 12 y 25 | Fijada la empresa, elegir sujeto es un clic |
+| Empresas | 248 total, **39 activas**, 26 con viajes | Tres círculos que la lista no usaba |
+| Tipo de operación | Equipo Completo 73 · Tractoreo 43 | **23 empresas sólo tractoreo, 12 sólo equipo completo, 1 mixta** |
+| Viajes futuros vinculados | **0** | No hay alerta anticipada posible hoy |
+
+**El error del diseño anterior, ahora explicado**: ordenar por "cuánto le falta a cada empresa" no
+discrimina nada — las 39 activas tienen el mismo denominador y entre 1 y 3 documentos cubiertos.
+
+#### Decisiones del usuario
+
+Régimen y no arranque · eje por empresa con agrupación por requisito como secundaria · **una sola puerta
+de carga** · **con historial de versiones** al renovar · el tipo de gestión se elige al crear y condiciona
+la plantilla · *Seguro EETT* y *Seguro RC Empresa* quedan **pendientes de negocio** y no se siembran.
+
+**HU-05 y HU-06 retiradas del backlog** por decisión del usuario, junto con los planes superados.
+
+#### Tramo 1 — desplegado y verificado en staging
+
+Backend 562 tests, frontend 808, `tsc` limpio, `npm run build` exitoso. Smoke test contra
+`webcarga-monitor-api-dev`: `POST /document-ingest/files` → 401 (existe), `POST /items/undo-classify` →
+401, `POST /items/{id}/classify` → **404** (borrado), `POST /{carrier_id}/files` → 401 (intacto).
+
+Lo entregado: carga global sin elegir empresa (era el bloqueo real para meter los 2.000 documentos);
+la cola deja de filtrar sólo `UNMATCHED`; deshacer en lote; zona de carga con sus cuatro estados;
+botones que nombran la cantidad exacta; y el retiro de `documentIngestApi.classify` con su endpoint.
+
+#### Los tres bugs críticos que sólo vio la revisión de conjunto
+
+Las nueve revisiones por tarea pasaron limpias. La revisión de rama completa encontró:
+
+1. **Soltar más de 50 archivos fallaba en silencio.** El backend corta en 50; el frontend mandaba todo
+   junto sin `onError`. El caso de uso que justifica el tramo no funcionaba y no avisaba.
+2. **N archivos al mismo requisito destruían N-1.** El spec lo declara no negociable y no estaba impedido
+   en ninguna capa. Agravado por este mismo tramo: como la cola ahora oculta los `COMMITTED`, los
+   archivos perdidos dejaban de aparecer en cualquier pantalla.
+3. **El aviso de deshacer se evaporaba** aunque no hubiera revertido nada, perdiendo los ids.
+
+Más siete importantes, entre ellos **dos definiciones distintas de "sin clasificar"** conviviendo
+(`NOT IN (COMMITTED,DISCARDED)` contra `= UNMATCHED`), latente sólo porque `document_matcher.py` no está
+conectado a ningún router.
+
+**Y la corrección introdujo su propia regresión**: el handler global de drop convivía mal con la zona de
+arrastre —el evento burbujeaba— y **cada archivo se subía dos veces**. Había tests de los dos lados y
+ninguno cubría el cruce. Corregido en `e0c1e2f` con un test que monta las dos piezas juntas.
+
+#### Lección de proceso, para no repetirla
+
+**Estar en el repositorio no es estar en git.** Se autorizó borrar tres planes superados afirmando que
+git conservaba el historial; uno de los tres (`2026-08-14-certificacion-carga-y-fechas.md`) nunca estuvo
+trackeado y **se perdió**. Antes de autorizar cualquier borrado: `git ls-files --error-unmatch <ruta>`.
+
+#### Próximo paso exacto
+1. [ ] **Click-through en vivo del Tramo 1** en `https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app`.
+   No se pudo hacer autónomo: `DEMO_PASSWORD` en `.env.local` sigue siendo el placeholder `changeme`.
+   Probar en particular: la zona de carga sin elegir empresa, que soltar sobre ella no duplique, y que
+   marcar dos archivos para el mismo requisito quede impedido.
+2. [ ] **Los 2.000 documentos** — el Tramo 1 abrió la puerta; ahora sí pueden entrar.
+3. [ ] **Tramo 2** (el embudo, el cajón que se abre hacia abajo, el alta con tipo de gestión, el sistema
+   visual) y **Tramo 3** (pilas agrupadas, migración del índice único, historial de versiones).
+4. [ ] **Regla de negocio pendiente**: ¿*Seguro EETT* y *Seguro RC Empresa* dependen de tractoreo contra
+   equipo completo? Sin eso no se siembran.
+5. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
+
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual. (Ver también los 4 pendientes nuevos de la Ronda 95, arriba.)
