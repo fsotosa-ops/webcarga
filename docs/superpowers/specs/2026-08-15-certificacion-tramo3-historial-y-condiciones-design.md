@@ -179,9 +179,19 @@ Resumen de lo medido, para que no se pierda:
   empresas que la app no conoce. El alcance acordado es **sólo las del Monitor**.
 - Escala real: WMT 19,3 GB · IANSA 4,7 GB · CCU 1,6 GB · Sodimac 1,2 GB. La Ronda 97 midió 2.094
   archivos planos: no estaba mal, miraba otro lugar de la misma biblioteca.
-- `sharepoint_client.py` ya existe con credenciales de Graph, pero **no lo llama ningún router** y
-  sus permisos **nunca se ejercieron**. Verificar si alcanzan para *listar* carpetas es el primer
-  paso de ese proyecto, junto con un **censo**.
+- `sharepoint_client.py` ya existe con credenciales de Graph, pero **no lo llama ningún router**.
+  **Permisos verificados el 2026-08-15**: el app registration tiene `Sites.Read.All` +
+  `Files.Read.All` y **listar carpetas funciona**. Cero trabajo de Azure pendiente.
+- **Censo sobre 12 de las 39 empresas activas**: sólo **5 tienen carpeta propia** de verdad. Y el
+  dato que más importa — de las 8 que un cruce por nombre daba por encontradas, **3 eran falsos
+  positivos**: dos apuntaban a un *conductor* (`GARAVITO AGUILERA…` para "Transportes Aguilera") y
+  una a una carpeta de *seguros*. El cruce automático por nombre no falla callado: **apunta con
+  confianza a la carpeta equivocada.**
+- La variación de nombres es el obstáculo real, no la ausencia: "Sociedad De Transportes Parras Spa"
+  existe como `SOCIEDAD DE TRANSPORTES PARRA 'S SPA`, con espacio y apóstrofo.
+- Consecuencia de diseño para ese proyecto: la reconciliación **tiene** que ser confirmada por una
+  persona, y el selector debe mostrar **la ruta completa**, no sólo el nombre de la carpeta — es lo
+  único que permite descartar de un vistazo que la coincidencia sea un conductor o una póliza.
 
 **Las decisiones de negocio.** La regla concreta de H1 y D8 sigue siendo de negocio; este tramo
 entrega el mecanismo para que la escriban sin desarrollo de por medio.
