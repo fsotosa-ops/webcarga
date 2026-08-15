@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight, PenLine, Check, X,
-  Loader2, Search, Users, Truck, ShieldCheck, FileText, Download,
+  Loader2, Search, Users, Truck, ShieldCheck, FileText,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { carriersApi } from '@/lib/api/carriers'
@@ -17,8 +17,7 @@ import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/t
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCard'
-import { TransporterDocumentsPanel } from '@/components/dashboard/TransporterDocumentsPanel'
-import { TransporterAlertBanner } from '@/components/dashboard/TransporterAlertBanner'
+import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
 import { DriverRosterCard } from '@/components/dashboard/DriverRosterCard'
 import { VehicleRosterCard } from '@/components/dashboard/VehicleRosterCard'
 import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
@@ -577,29 +576,13 @@ function EmpresaDetailPageInner() {
 
       {/* ── Documentos ── */}
       {activeTab === 'documentos' && (
-        <>
-          <TransporterAlertBanner records={carrier.compliance_records} />
-          <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Documentos de la Empresa</h3>
-              <button
-                type="button"
-                onClick={handleExportDocuments}
-                disabled={exportingDocs}
-                title="Descargar toda la documentación cargada en un .zip"
-                className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-accent border border-border/80 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-50"
-              >
-                {exportingDocs ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                Exportar todo
-              </button>
-            </div>
-            {exportErr && <p className="text-xs text-red-500 mb-2">{exportErr}</p>}
-            <TransporterDocumentsPanel
-              records={carrier.compliance_records}
-              carrierId={id}
-            />
-          </div>
-        </>
+        <CarrierDocumentsTab
+          carrierId={id}
+          records={carrier.compliance_records}
+          onExport={handleExportDocuments}
+          exporting={exportingDocs}
+          exportError={exportErr}
+        />
       )}
 
       {/* ── Contactos ── */}
