@@ -89,18 +89,12 @@ describe('VehicleDetailPanel', () => {
     expect(screen.queryByText('Tractoreo')).not.toBeInTheDocument()
   })
 
-  it('does not offer to upload — documents are read-only here, editing lives in Certificación', async () => {
+  // HU-04: la ficha vuelve a poder cargar; el link de salida ya no existe.
+  it('permite cargar la documentación del vehículo sin salir de la ficha', async () => {
     renderPanel(ASSET)
     await waitFor(() => expect(screen.getByText('Padrón')).toBeInTheDocument())
-    expect(screen.queryByLabelText('Subir Padrón')).not.toBeInTheDocument()
-  })
-
-  it('links out to Certificación, scoped to this carrier, to upload/edit documents', async () => {
-    renderPanel(ASSET)
-    await waitFor(() => expect(screen.getByText('Padrón')).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: /Subir en Certificación/ })).toHaveAttribute(
-      'href', '/dashboard/compliance?carrier_id=c1',
-    )
+    expect(screen.queryByRole('link', { name: /Subir en Certificación/ })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Subir Padrón')).toBeInTheDocument()
   })
 
   it('saves the edited asset_type when "Guardar" is clicked', async () => {

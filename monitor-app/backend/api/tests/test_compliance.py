@@ -745,3 +745,99 @@ def test_status_binds_exactly_the_parameters_it_references():
             f"group={grupo}: el SQL referencia {sorted(referenciados)} "
             f"pero se pasan {len(args)} parametros"
         )
+
+
+# ── HU-03: corregir un documento cargado en el lugar equivocado ─────────────
+
+def _record_with_file(record_id="rec-1", **over):
+    row = {
+        "id": record_id, "entity_type": "ASSET", "entity_id": "a1",
+        "status": "APPROVED_MANUAL", "expiration_date": None,
+        "file_url": "staging/b1/x.png",
+        "metadata": {"file_name": "x.png", "mime_type": "image/png", "size_bytes": 9},
+    }
+    row.update(over)
+    return row
+
+
+def test_reassign_moves_the_file_to_another_requirement():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    # 1) el registro origen, 2) el registro destino, 3) lo que lee _apply_stored_document
+    conn.fetchrow.side_effect = [
+        _record_with_file(),
+        {"id": "rec-2", "entity_id": "a1", "entity_type": "ASSET", "status": "MISSING", "expiration_date": None},
+        {"metadata": {}, "expiration_date": None},
+    ]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={
+        "target_entity_type": "ASSET", "target_entity_id": "a1",
+        "target_requirement_id": "req-2",
+    })
+
+    assert res.status_code == 200
+    todo_sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
+    # El origen queda sin archivo y vuelve a faltar.
+    assert "file_url = NULL" in todo_sql
+    assert "MISSING" in todo_sql
+
+
+def test_reassign_never_deletes_the_blob():
+    """El archivo es lo unico irrecuperable: reasignar mueve la referencia, no
+    toca storage."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [
+        _record_with_file(),
+        {"id": "rec-2", "entity_id": "d1", "entity_type": "DRIVER", "status": "MISSING", "expiration_date": None},
+        {"metadata": {}, "expiration_date": None},
+    ]
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    client.post("/api/v1/compliance-records/rec-1/reassign", json={
+        "target_entity_type": "DRIVER", "target_entity_id": "d1",
+        "target_requirement_id": "req-9",
+    })
+
+    supabase.storage.from_.return_value.remove.assert_not_called()
+
+
+def test_reassign_to_tray_returns_it_unclassified():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [_record_with_file()]
+    conn.fetchval.return_value = "batch-9"
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={"to_tray": True})
+
+    assert res.status_code == 200
+    todo_sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
+    assert "document_ingest_items" in todo_sql
+    assert "UNMATCHED" in todo_sql
+
+
+def test_reassign_requires_a_destination():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={})
+
+    assert res.status_code == 422
+
+
+def test_reassign_fails_when_the_record_has_no_file():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [_record_with_file(file_url=None)]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={"to_tray": True})
+
+    assert res.status_code == 422

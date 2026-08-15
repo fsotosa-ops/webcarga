@@ -1,5 +1,6 @@
 'use client'
 
+import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -353,17 +354,30 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
           <div className="flex-1 min-w-0 overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentación</p>
-              <Link
-                href={`/dashboard/compliance?carrier_id=${carrierId}`}
-                className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent/80 transition-colors"
-              >
-                Subir en Certificación <ExternalLink size={11} />
-              </Link>
             </div>
             {complianceQuery.isPending ? (
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
             ) : (
-              <DocumentChecklist items={items} canEdit={false} hideCounter />
+              /* HU-04: la ficha vuelve a poder cargar. La capacidad ya estaba
+                 en DocumentChecklist — quedó apagada en la Ronda 88, cuando la
+                 carga se centralizó en Certificación. */
+              <DocumentChecklist
+                items={items}
+                canEdit={canEdit}
+                hideCounter
+                onUpload={async (recordId, file) => {
+                  const item = items.find(i => i.id === recordId)
+                  if (!item) return
+                  await documentIngestApi.uploadAndClassify({
+                    carrierId,
+                    entityType:    'ASSET',
+                    entityId:      asset.id,
+                    requirementId: item.requirement_id,
+                    file,
+                  })
+                  await complianceQuery.refetch()
+                }}
+              />
             )}
           </div>
         </div>

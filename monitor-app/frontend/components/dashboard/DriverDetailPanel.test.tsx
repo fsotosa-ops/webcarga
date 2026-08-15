@@ -82,12 +82,18 @@ describe('DriverDetailPanel', () => {
     expect(screen.queryByLabelText('Estado de EPP')).not.toBeInTheDocument()
   })
 
-  it('links out to Certificación, scoped to this carrier, to upload/edit documents', async () => {
+  // HU-04: la ficha vuelve a poder cargar. El link "Subir en Certificación"
+  // se retiró — apuntaba a una vista que dejó de existir al unificar el módulo.
+  it('permite cargar la documentación del conductor sin salir de la ficha', async () => {
+    // EPP no exige archivo; para probar la carga hace falta uno que sí.
+    vi.mocked(driversApi.listComplianceRecords).mockResolvedValue([
+      { ...RECORDS[0], id: 'cr2', requirement_code: 'LICENCIA', name: 'Licencia',
+        requires_file: true },
+    ])
     renderPanel(DRIVER)
-    await waitFor(() => expect(screen.getByText('EPP')).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: /Subir en Certificación/ })).toHaveAttribute(
-      'href', '/dashboard/compliance?carrier_id=c1',
-    )
+    await waitFor(() => expect(screen.getByText('Licencia')).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: /Subir en Certificación/ })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Subir Licencia')).toBeInTheDocument()
   })
 
   it('saves the edited name when "Guardar" is clicked', async () => {

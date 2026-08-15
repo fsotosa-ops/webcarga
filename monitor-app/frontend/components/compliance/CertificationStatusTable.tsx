@@ -59,8 +59,19 @@ export function CertificationStatusTable({ rows, group }: Props) {
                   >
                     {r.entity_name}
                   </Link>
+                ) : r.carrier_id ? (
+                  // Abre su panel dentro de la ficha: ahí se carga y clasifica
+                  // su documentación sin salir del contexto de la empresa.
+                  <Link
+                    href={`/dashboard/carriers/${r.carrier_id}?tab=${group === 'driver' ? 'conductores' : 'equipos'}&${group === 'driver' ? 'driver' : 'asset'}=${r.entity_id}`}
+                    className="text-xs font-medium text-slate-800 hover:text-accent transition-colors"
+                  >
+                    {r.entity_name}
+                  </Link>
                 ) : (
-                  <span className="text-xs font-medium text-slate-800">{r.entity_name}</span>
+                  <span className="text-xs font-medium text-slate-800" title="Sin empresa activa: no se le puede cargar documentación">
+                    {r.entity_name}
+                  </span>
                 )}
                 {porEmpresa && r.operational_status !== 'ACTIVE' && (
                   <span className="ml-2 text-[10px] text-gray-500">no activa</span>

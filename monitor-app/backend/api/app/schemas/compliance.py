@@ -20,6 +20,19 @@ class ComplianceRecordPatchBody(BaseModel):
     expiration_date: Optional[date] = None
 
 
+class ReassignBody(BaseModel):
+    """Corrige un documento cargado en el lugar equivocado (HU-03).
+
+    O bien se indica el destino —otro requisito, de la misma entidad o de
+    otra— o bien `to_tray`, que lo devuelve a la bandeja de sin clasificar.
+    El archivo NUNCA se copia ni se borra: viaja el mismo storage_path.
+    """
+    target_entity_type: Optional[Literal["CARRIER", "DRIVER", "ASSET"]] = None
+    target_entity_id: Optional[str] = None
+    target_requirement_id: Optional[str] = None
+    to_tray: bool = False
+
+
 class PendingComplianceRow(BaseModel):
     """Módulo Documentos (sábana) — un compliance_record pendiente por fila,
     con la empresa/sujeto ya resueltos. Ver GET /compliance-records/pending."""

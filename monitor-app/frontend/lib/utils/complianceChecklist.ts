@@ -9,6 +9,8 @@ import type { ComplianceRecord } from '@/lib/types'
 export function complianceRecordsToChecklistItems(records: ComplianceRecord[]): ChecklistItem[] {
   return records.map(r => ({
     id:                r.id,
+    // Necesario para cargar contra el requisito correcto desde la ficha.
+    requirement_id:    r.requirement_id,
     requirement_code:  r.requirement_code,
     label:             r.name,
     status:            r.status,

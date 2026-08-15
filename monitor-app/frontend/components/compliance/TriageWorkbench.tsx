@@ -16,6 +16,9 @@ interface Props {
    *  empresa (la ficha). Es una sola prop opcional, no dos modos. */
   carrierId?:   string
   carrierName?: string
+  /** Acota el panel a un conductor o vehículo concreto: entrando desde su
+   *  ficha, lo único que interesa es lo que le falta a él. */
+  subject?: { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string }
 }
 
 const QUEUE_PAGE = 200
@@ -26,7 +29,7 @@ const QUEUE_PAGE = 200
  *  Reemplaza al par panel + modal de clasificación, que costaba ~5 clics por
  *  documento. Acá el formulario aplica a todo lo marcado: con un archivo
  *  clasifica ese, con quince aplica a los quince. */
-export function TriageWorkbench({ carrierId, carrierName }: Props) {
+export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   const qc = useQueryClient()
   const canEdit = useCanEdit()
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -275,7 +278,9 @@ export function TriageWorkbench({ carrierId, carrierName }: Props) {
                 targetIds={canEdit ? targetIds : []}
                 subjects={subjects}
                 carrierLabel={carrierLabel}
-                pendingRows={pendingQuery.data?.rows ?? []}
+                pendingRows={(pendingQuery.data?.rows ?? []).filter(
+                  r => !subject || (r.entity_type === subject.entity_type && r.entity_id === subject.entity_id),
+                )}
                 onApplied={handleApplied}
               />
               {targetIds.length > 0 && <TriagePreview items={previewItems} />}

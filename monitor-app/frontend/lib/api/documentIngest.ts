@@ -62,6 +62,38 @@ export const documentIngestApi = {
       method: 'POST', body: JSON.stringify(body),
     }),
 
+  /** Carga un documento cuyo destino YA se conoce (la ficha de una empresa,
+   *  un conductor o un vehículo).
+   *
+   *  Usa la MISMA puerta que la bandeja —`upload` + `classifyBatch`— en vez de
+   *  un endpoint aparte: una sola implementación de carga es criterio de
+   *  aceptación de la HU-04, y dos caminos distintos para lo mismo terminan
+   *  divergiendo. La única diferencia es que acá el requisito ya se sabe.
+   *
+   *  Si la clasificación falla, el archivo queda visible en la bandeja de la
+   *  empresa en vez de perderse. */
+  uploadAndClassify: async (params: {
+    carrierId:       string
+    entityType:      'CARRIER' | 'DRIVER' | 'ASSET'
+    entityId:        string
+    requirementId:   string
+    file:            File
+    expirationDate?: string
+  }) => {
+    const subida = await documentIngestApi.upload(params.carrierId, [params.file])
+    const item = subida.items[0]
+    if (!item) {
+      throw new Error(subida.errors[0]?.error ?? 'No se pudo subir el archivo')
+    }
+    return documentIngestApi.classifyBatch({
+      item_ids:      [item.id],
+      entity_type:   params.entityType,
+      entity_id:     params.entityId,
+      requirement_id: params.requirementId,
+      ...(params.expirationDate ? { expiration_date: params.expirationDate } : {}),
+    })
+  },
+
   /** Reasigna archivos sin clasificar a otra empresa. */
   moveItems: (itemIds: string[], carrierId: string) =>
     apiFetch<{ moved: number }>('/api/v1/document-ingest/items/move', {

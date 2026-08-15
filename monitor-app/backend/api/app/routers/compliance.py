@@ -19,11 +19,12 @@ from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
 from ..schemas.compliance import (
+    ReassignBody,
     ComplianceRecordPatchBody,
     PendingComplianceListResponse,
     RequirementOption,
 )
-from ..services.audit import record_manual_edit
+from ..services.audit import log_change, record_manual_edit
 from ..utils.document_storage import (
     delete_document_version, get_document_history, log_document_replacement, resolve_signed_url,
     upload_document_version,
@@ -315,6 +316,132 @@ async def get_compliance_record(
     record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
 ):
     return await _fetch_record(record_id, pool, supabase)
+
+
+@router.post("/{record_id}/reassign")
+async def reassign_compliance_document(
+    record_id: str,
+    body: ReassignBody,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Corrige un documento cargado en el lugar equivocado (HU-03).
+
+    Dos operaciones que cubren las cuatro variantes de la HU:
+    - con destino → lo mueve a otro requisito, de la misma entidad o de otra;
+    - con `to_tray` → lo devuelve a la bandeja de sin clasificar.
+
+    "A otra empresa" se compone: devolver a la bandeja y después mover el item,
+    que es la operación que ya existe.
+
+    **El archivo nunca se copia ni se borra**: viaja el mismo `storage_path`.
+    Es lo único irrecuperable del sistema, así que reasignar mueve la
+    referencia y nada más.
+    """
+    tiene_destino = bool(body.target_entity_type and body.target_entity_id and body.target_requirement_id)
+    if not tiene_destino and not body.to_tray:
+        raise HTTPException(422, "Indicá un destino o devolvelo a sin clasificar")
+    if tiene_destino and body.to_tray:
+        raise HTTPException(422, "O se reasigna a un requisito o se devuelve a la bandeja, no ambos")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            origen = await conn.fetchrow(
+                "SELECT id::text, entity_type, entity_id::text, status, expiration_date, "
+                "file_url, metadata FROM public.compliance_records "
+                "WHERE id = $1 AND is_current = true",
+                record_id,
+            )
+            if not origen:
+                raise HTTPException(404, "Registro de cumplimiento no encontrado")
+            if not origen["file_url"]:
+                raise HTTPException(422, "Ese requisito no tiene ningún archivo que reasignar")
+
+            storage_path = origen["file_url"]
+            meta = origen["metadata"] or {}
+            if isinstance(meta, str):
+                meta = json.loads(meta)
+
+            if body.to_tray:
+                # Vuelve a la bandeja de la empresa a la que pertenece hoy.
+                carrier_id = await conn.fetchval(
+                    """
+                    SELECT CASE $2::text
+                        WHEN 'CARRIER' THEN $1::uuid
+                        WHEN 'DRIVER'  THEN (SELECT carrier_id FROM public.driver_assignments
+                                             WHERE driver_id = $1::uuid AND status = 'ACTIVE' LIMIT 1)
+                        WHEN 'ASSET'   THEN (SELECT carrier_id FROM public.asset_assignments
+                                             WHERE asset_id = $1::uuid AND status = 'ACTIVE' LIMIT 1)
+                    END
+                    """,
+                    origen["entity_id"], origen["entity_type"],
+                )
+                if not carrier_id:
+                    raise HTTPException(
+                        422,
+                        "No se puede devolver a la bandeja: la entidad no tiene una empresa activa asignada",
+                    )
+                batch_id = await conn.fetchval(
+                    """
+                    INSERT INTO public.document_ingest_batches
+                        (carrier_id, source, status, created_by, total_files, unmatched)
+                    VALUES ($1, 'UPLOAD', 'REVIEW', $2, 1, 1)
+                    RETURNING id::text
+                    """,
+                    carrier_id, user["sub"],
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO public.document_ingest_items
+                        (batch_id, storage_path, file_name, mime_type, size_bytes, match_status)
+                    VALUES ($1::uuid, $2, $3, $4, $5, 'UNMATCHED')
+                    """,
+                    batch_id, storage_path,
+                    meta.get("file_name") or storage_path.rsplit("/", 1)[-1],
+                    meta.get("mime_type"), meta.get("size_bytes"),
+                )
+            else:
+                destino = await conn.fetchrow(
+                    """
+                    SELECT id::text, entity_id::text, entity_type, status, expiration_date
+                    FROM public.compliance_records
+                    WHERE entity_id = $1 AND requirement_id = $2 AND is_current = true
+                    """,
+                    body.target_entity_id, body.target_requirement_id,
+                )
+                if not destino:
+                    raise HTTPException(
+                        404,
+                        "Esa entidad no tiene ese requisito. Verificá la categoría y el tipo de documento.",
+                    )
+                await _apply_stored_document(
+                    conn, destino["id"],
+                    storage_path=storage_path,
+                    file_name=meta.get("file_name") or storage_path.rsplit("/", 1)[-1],
+                    mime_type=meta.get("mime_type"), size_bytes=meta.get("size_bytes"),
+                    expiration_date=origen["expiration_date"], actor=user["sub"],
+                    entity_type=destino["entity_type"], entity_id=destino["entity_id"],
+                    old_status=destino["status"],
+                )
+
+            # El origen queda como estaba antes de la carga equivocada.
+            await conn.execute(
+                """
+                UPDATE public.compliance_records SET
+                    status = 'MISSING', file_url = NULL, metadata = '{}'::jsonb,
+                    expiration_date = NULL, updated_at = NOW()
+                WHERE id = $1
+                """,
+                record_id,
+            )
+            await log_change(
+                conn, actor=user["sub"], entity_type=origen["entity_type"],
+                entity_id=origen["entity_id"], action="document_reassign",
+                field="file_url", old_value=storage_path,
+                new_value="bandeja" if body.to_tray else body.target_requirement_id,
+            )
+
+    return {"ok": True, "to_tray": body.to_tray}
 
 
 @router.patch("/{record_id}")

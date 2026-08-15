@@ -142,6 +142,10 @@ function EmpresaDetailPageInner() {
   const handoffDriverName   = searchParams.get('driver_name')
   const handoffTractorPlate = searchParams.get('tractor_plate')
   const requestedTab        = searchParams.get('tab') as Tab | null
+  // Deep-link desde Certificación: abre directo el panel de ese conductor o
+  // vehículo, que es donde se carga su documentación.
+  const requestedDriverId   = searchParams.get('driver')
+  const requestedAssetId    = searchParams.get('asset')
   const [canEdit, setCanEdit]     = useState(false)
   const [canAdmin, setCanAdmin]   = useState(false)
   const [editOpen, setEditOpen]   = useState(false)
@@ -151,8 +155,8 @@ function EmpresaDetailPageInner() {
   const [exportingDocs, setExportingDocs] = useState(false)
   const [exportErr, setExportErr]         = useState<string | null>(null)
 
-  const [selectedDriverId,  setSelectedDriverId]  = useState<string | null>(null)
-  const [selectedAssetId,   setSelectedAssetId]   = useState<string | null>(null)
+  const [selectedDriverId,  setSelectedDriverId]  = useState<string | null>(requestedDriverId)
+  const [selectedAssetId,   setSelectedAssetId]   = useState<string | null>(requestedAssetId)
   const [driverQ,  setDriverQ]  = useState('')
   const [driverHealthFilter, setDriverHealthFilter] = useState<ComplianceHealth | ''>('')
   const [driverShowAll, setDriverShowAll] = useState(false)

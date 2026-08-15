@@ -39,19 +39,25 @@ export const complianceApi = {
       method: 'PATCH', body: JSON.stringify(body),
     }),
 
-  uploadFile: (id: string, file: File, expirationDate?: string) => {
-    const form = new FormData()
-    form.append('file', file)
-    if (expirationDate) form.append('expiration_date', expirationDate)
-    return apiFetch<ComplianceFileUploadResult>(`/api/v1/compliance-records/${id}/file`, {
-      method: 'POST', body: form,
-    })
-  },
 
   /** Catalogo de tipos de documento, para el desplegable de clasificacion. */
   listRequirements: (targetEntity?: 'CARRIER' | 'DRIVER' | 'ASSET') =>
     apiFetch<RequirementOption[]>(
       `/api/v1/compliance-requirements${targetEntity ? `?target_entity=${targetEntity}` : ''}`,
+    ),
+
+  /** HU-03: corrige un documento cargado en el lugar equivocado. Con destino
+   *  lo reasigna; con `to_tray` lo devuelve a la bandeja. El archivo no se
+   *  copia ni se borra — viaja la referencia. */
+  reassign: (id: string, body: {
+    target_entity_type?: 'CARRIER' | 'DRIVER' | 'ASSET'
+    target_entity_id?: string
+    target_requirement_id?: string
+    to_tray?: boolean
+  }) =>
+    apiFetch<{ ok: boolean; to_tray: boolean }>(
+      `/api/v1/compliance-records/${id}/reassign`,
+      { method: 'POST', body: JSON.stringify(body) },
     ),
 
   listFiles: (id: string) =>
@@ -88,15 +94,4 @@ export const complianceApi = {
     return apiFetch<PendingComplianceListResponse>(`/api/v1/compliance-records/pending${suffix}`)
   },
 
-  bulkUploadFile: (carrierId: string, pairs: { recordId: string; file: File }[]) => {
-    const form = new FormData()
-    form.append('carrier_id', carrierId)
-    for (const { recordId, file } of pairs) {
-      form.append('record_ids', recordId)
-      form.append('files', file)
-    }
-    return apiFetch<BulkUploadResult>('/api/v1/compliance-records/bulk-file', {
-      method: 'POST', body: form,
-    })
-  },
 }

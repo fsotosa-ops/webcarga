@@ -23,6 +23,8 @@ describe('complianceRecordsToChecklistItems', () => {
   it('maps compliance_records fields onto ChecklistItem 1:1', () => {
     expect(complianceRecordsToChecklistItems([RECORD])).toEqual([{
       id: 'cr1',
+      // Se arrastra para poder cargar contra el requisito correcto desde la ficha.
+      requirement_id: 'req1',
       requirement_code: 'F30_MULTAS',
       label: 'F30 Multas',
       status: 'APPROVED',

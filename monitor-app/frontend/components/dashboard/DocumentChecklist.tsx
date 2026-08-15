@@ -10,6 +10,8 @@ import type { ComplianceStatus } from '@/lib/types'
  *  (ver lib/utils/complianceChecklist.ts), no un catálogo hardcodeado. */
 export type ChecklistItem = {
   id:                string  // compliance_records.id — llave para las acciones
+  /** El requisito que cubre. Necesario para cargar contra el correcto. */
+  requirement_id:    string
   requirement_code:  string
   label:             string  // compliance_requirements.name
   status:            ComplianceStatus
