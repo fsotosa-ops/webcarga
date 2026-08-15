@@ -115,9 +115,16 @@ export function CertificationFunnel({
                     {vencidos === 1 ? '1 documento vencido' : `${vencidos} documentos vencidos`}
                   </span>
                 )}
-                {catalogLoading && id === 'catalogo' && !plegado
+                {/* El catálogo se pide recién al desplegarlo, así que antes de
+                 *  eso no sabemos cuántas son. Mostrar "0" sería un número con
+                 *  dos significados —"ninguna" y "todavía no pregunté"— y el
+                 *  primero invita a no abrir el grupo: 209 empresas quedarían
+                 *  invisibles detrás de un cero. Sin dato, sin número. */}
+                {id === 'catalogo' && catalogLoading
                   ? <Loader2 size={11} className="motion-safe:animate-spin" />
-                  : deEstaEtapa.length}
+                  : id === 'catalogo' && deEstaEtapa.length === 0
+                    ? null
+                    : deEstaEtapa.length}
               </span>
             </button>
 

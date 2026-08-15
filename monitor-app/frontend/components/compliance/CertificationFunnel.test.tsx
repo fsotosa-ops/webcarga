@@ -122,6 +122,26 @@ describe('CertificationFunnel', () => {
     expect(p.onExpandCatalog).toHaveBeenCalled()
   })
 
+  it('el catalogo plegado no muestra un cero: todavia no sabe cuantas son', () => {
+    setup()
+
+    // Un "0" al lado de un grupo plegado se lee como "aca no hay nada", y
+    // entonces nadie lo abre: las 209 empresas del catalogo quedan invisibles
+    // detras de un numero que significa "todavia no pregunte".
+    expect(screen.getByTestId('grupo-catalogo')).not.toHaveTextContent('0')
+  })
+
+  it('con el catalogo ya cargado si muestra su conteo', () => {
+    setup({
+      catalogRows: [fila({
+        funnel_group: 'catalogo', entity_id: 'x', entity_name: 'Vieja Ltda',
+        operational_status: 'LEGACY_INACTIVE',
+      })],
+    })
+
+    expect(screen.getByTestId('grupo-catalogo')).toHaveTextContent('1')
+  })
+
   it('al abrir el catalogo muestra sus filas', () => {
     setup({
       catalogRows: [fila({
