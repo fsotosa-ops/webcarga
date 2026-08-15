@@ -2,14 +2,16 @@
 
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, UploadCloud, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { TriageBulkBar } from './TriageBulkBar'
 import { TriageClassifyForm } from './TriageClassifyForm'
+import { TriageDropzone } from './TriageDropzone'
 import { TriageFileTable } from './TriageFileTable'
 import { TriagePreview } from './TriagePreview'
+import { TriageUndoNotice } from './TriageUndoNotice'
 
 interface Props {
   /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
@@ -34,9 +36,11 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   const canEdit = useCanEdit()
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [dragging, setDragging] = useState(false)
   const [errors, setErrors] = useState<{ file_name: string; error: string }[]>([])
   const [notice, setNotice] = useState<string | null>(null)
+  // El ultimo lote aplicado, para poder revertirlo. No hace falta un registro
+  // de operaciones: quien deshace es quien acaba de aplicar.
+  const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
 
   const queueKey = ['ingest-queue', carrierId ?? 'all']
   const queueQuery = useQuery({
@@ -108,8 +112,21 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
     }))
 
   const uploadMutation = useMutation({
-    mutationFn: (files: File[]) => documentIngestApi.upload(carrierId!, files),
+    mutationFn: (files: File[]) => documentIngestApi.upload(carrierId, files),
     onSuccess: res => { setErrors(res.errors); qc.invalidateQueries({ queryKey: queueKey }) },
+  })
+  const undoMutation = useMutation({
+    mutationFn: (ids: string[]) => documentIngestApi.undoClassify(ids),
+    onSuccess: res => {
+      setUltimoLote(null)
+      qc.invalidateQueries({ queryKey: queueKey })
+      qc.invalidateQueries({ queryKey: ['certification-status'] })
+      if (res.errors.length) {
+        setNotice(
+          `No se pudieron revertir ${res.errors.length}: el requisito ya tenía un documento anterior`,
+        )
+      }
+    },
   })
   const discardMutation = useMutation({
     mutationFn: (ids: string[]) => Promise.all(ids.map(id => documentIngestApi.remove(id))),
@@ -126,8 +143,8 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
     setFocusedId(null)
   }
 
-  function handleFiles(list: FileList | null) {
-    const files = Array.from(list ?? [])
+  function handleFiles(list: FileList | File[]) {
+    const files = Array.from(list)
     if (files.length) uploadMutation.mutate(files)
   }
 
@@ -172,38 +189,40 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
     qc.invalidateQueries({ queryKey: ['compliance-pending-carrier-panel', subjectCarrierId] })
     qc.invalidateQueries({ queryKey: ['compliance-pending'] })
     qc.invalidateQueries({ queryKey: ['ingest-queue-count'] })
+
+    if (appliedIds.length) {
+      setUltimoLote({
+        ids: appliedIds,
+        mensaje: appliedIds.length === 1
+          ? '1 archivo clasificado'
+          : `${appliedIds.length} archivos clasificados`,
+      })
+    }
   }
 
   return (
     <div className="space-y-3">
-      {/* Subir exige una empresa: la cola global no sabe a quién atribuir el
-          archivo. Desde la ficha (con carrierId) siempre está disponible. */}
-      {canEdit && carrierId && (
-        <label
-          onDragOver={e => { e.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={e => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files) }}
-          className={`flex items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 cursor-pointer transition-colors ${
-            dragging ? 'border-accent bg-accent/5' : 'border-border hover:border-accent/50'
-          }`}
-        >
-          {uploadMutation.isPending
-            ? <Loader2 size={16} className="motion-safe:animate-spin text-accent" />
-            : <UploadCloud size={16} className="text-gray-400" />}
-          <span className="text-[11px] text-gray-500">
-            Arrastra aquí los documentos de {carrierName}
-          </span>
-          <input
-            type="file" multiple className="hidden"
-            aria-label={`Arrastra aquí los documentos de ${carrierName}`}
-            onChange={e => handleFiles(e.target.files)}
-          />
-        </label>
+      {canEdit && (
+        <TriageDropzone
+          carrierName={carrierName}
+          vacia={!queueQuery.isPending && total === 0}
+          subiendo={uploadMutation.isPending}
+          // React Query conserva las variables de la mutación en vuelo: es de
+          // donde sale cuántos archivos tiene la tanda que se está subiendo.
+          enVuelo={uploadMutation.variables?.length}
+          errores={errors}
+          onArchivos={handleFiles}
+        />
       )}
 
-      {errors.map(e => (
-        <p key={e.file_name} className="text-[10px] text-red-500">{e.file_name}: {e.error}</p>
-      ))}
+      {ultimoLote && (
+        <TriageUndoNotice
+          mensaje={ultimoLote.mensaje}
+          deshaciendo={undoMutation.isPending}
+          onDeshacer={() => undoMutation.mutate(ultimoLote.ids)}
+          onCerrar={() => setUltimoLote(null)}
+        />
+      )}
 
       {/* Un solo lienzo con dos regiones rotuladas, no dos tarjetas sueltas: la
           pantalla tiene que decir sola que el orden es elegir y despues

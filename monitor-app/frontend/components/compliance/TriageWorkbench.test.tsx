@@ -96,10 +96,11 @@ describe('TriageWorkbench', () => {
     expect(await screen.findByText(/^1 seleccionado$/i)).toBeInTheDocument()
   })
 
-  it('subir solo se ofrece con una empresa definida', async () => {
+  // El bloqueo real para meter los 2.000 documentos: sin empresa no habia
+  // forma de soltar archivos.
+  it('sin empresa igual se pueden cargar archivos', async () => {
     setup()
-    await screen.findByText('i1.png')
-    expect(screen.queryByLabelText(/arrastra aquí/i)).not.toBeInTheDocument()
+    expect(await screen.findByTestId('triage-dropzone')).toBeInTheDocument()
   })
 
   it('desde la ficha si se puede subir', async () => {
