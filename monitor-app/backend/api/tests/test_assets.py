@@ -125,3 +125,42 @@ def test_list_asset_compliance_records():
     assert res.json()[0]["requirement_code"] == "PADRON"
     sql = pool.fetch.call_args.args[0]
     assert "entity_type = 'ASSET'" in sql
+
+
+def test_asset_detail_carries_its_carrier():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "id": "a1", "license_plate": "HKXW55", "asset_type": "TRACTO",
+        "operational_status": "ACTIVE", "manufacture_year": 2020,
+        "is_manual_override": False, "created_at": None,
+        "fleet_service_type_id": None, "fleet_service_type_label": None,
+        "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
+        "total_requirements": 10, "last_document_update": None,
+        "carrier_id": "c1", "carrier_name": "Transportes Sur Spa",
+    }
+    client = make_client(pool)
+
+    res = client.get("/api/v1/assets/a1")
+
+    assert res.status_code == 200
+    assert res.json()["carrier_name"] == "Transportes Sur Spa"
+    assert "asset_assignments" in pool.fetchrow.call_args.args[0]
+
+
+def test_asset_detail_without_active_assignment():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "id": "a1", "license_plate": "SINASIG", "asset_type": None,
+        "operational_status": "ACTIVE", "manufacture_year": None,
+        "is_manual_override": False, "created_at": None,
+        "fleet_service_type_id": None, "fleet_service_type_label": None,
+        "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
+        "total_requirements": 0, "last_document_update": None,
+        "carrier_id": None, "carrier_name": None,
+    }
+    client = make_client(pool)
+
+    res = client.get("/api/v1/assets/a1")
+
+    assert res.status_code == 200
+    assert res.json()["carrier_id"] is None

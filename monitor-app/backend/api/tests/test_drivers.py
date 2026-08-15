@@ -262,3 +262,43 @@ def test_fuzzy_match_drivers_requires_min_length_after_cleaning():
     assert res.status_code == 200
     assert res.json() == []
     pool.fetch.assert_not_called()
+
+
+def test_driver_detail_carries_its_carrier():
+    """Un conductor sin la empresa a la que pertenece no se puede mostrar en su
+    propio panel: no habria migas ni contexto."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "id": "d1", "tax_id": "11111111-1", "country_code": "CL",
+        "full_name": "Juan Perez", "operational_status": "ACTIVE",
+        "is_manual_override": False, "created_at": None,
+        "total_requirements": 12, "last_document_update": None,
+        "carrier_id": "c1", "carrier_name": "Transportes Sur Spa",
+    }
+    client = make_client(pool)
+
+    res = client.get("/api/v1/drivers/d1")
+
+    assert res.status_code == 200
+    assert res.json()["carrier_name"] == "Transportes Sur Spa"
+    assert "driver_assignments" in pool.fetchrow.call_args.args[0]
+
+
+def test_driver_detail_without_active_assignment():
+    """Sin asignacion activa la empresa viaja en null: el LEFT JOIN no puede
+    hacer desaparecer al conductor."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "id": "d1", "tax_id": None, "country_code": "CL",
+        "full_name": "Sin Asignar", "operational_status": "ACTIVE",
+        "is_manual_override": False, "created_at": None,
+        "total_requirements": 0, "last_document_update": None,
+        "carrier_id": None, "carrier_name": None,
+    }
+    client = make_client(pool)
+
+    res = client.get("/api/v1/drivers/d1")
+
+    assert res.status_code == 200
+    assert res.json()["carrier_id"] is None
+    assert "LEFT JOIN public.carriers" in pool.fetchrow.call_args.args[0]

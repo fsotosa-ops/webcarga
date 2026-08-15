@@ -19,9 +19,15 @@ async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(get_current
                a.is_manual_override, a.created_at,
                a.fleet_service_type_id, acs.fleet_service_type_label,
                acs.fleet_service_type_bg_color, acs.fleet_service_type_text_color,
-               acs.total_requirements, acs.last_document_update
+               acs.total_requirements, acs.last_document_update,
+               -- Ver el comentario equivalente en routers/drivers.py.
+               c.id::text      AS carrier_id,
+               c.business_name AS carrier_name
         FROM public.assets a
         LEFT JOIN app.asset_compliance_status acs ON acs.asset_id = a.id
+        LEFT JOIN public.asset_assignments aa
+               ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+        LEFT JOIN public.carriers c ON c.id = aa.carrier_id
         WHERE a.id = $1
         """,
         asset_id,

@@ -128,9 +128,18 @@ async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(get_curre
         """
         SELECT d.id, d.tax_id, d.country_code, d.full_name, d.operational_status,
                d.is_manual_override, d.created_at,
-               dcs.total_requirements, dcs.last_document_update
+               dcs.total_requirements, dcs.last_document_update,
+               -- La empresa a la que pertenece hoy, por su asignación ACTIVE
+               -- (mismo criterio que el resto del roster). Sin ella no hay
+               -- migas ni contexto en su panel de detalle. LEFT JOIN: un
+               -- conductor sin asignación tiene que seguir apareciendo.
+               c.id::text      AS carrier_id,
+               c.business_name AS carrier_name
         FROM public.drivers d
         LEFT JOIN app.driver_compliance_status dcs ON dcs.driver_id = d.id
+        LEFT JOIN public.driver_assignments da
+               ON da.driver_id = d.id AND da.status = 'ACTIVE'
+        LEFT JOIN public.carriers c ON c.id = da.carrier_id
         WHERE d.id = $1
         """,
         driver_id,
