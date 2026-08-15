@@ -1526,6 +1526,37 @@ ninguno cubría el cruce. Corregido en `e0c1e2f` con un test que monta las dos p
 git conservaba el historial; uno de los tres (`2026-08-14-certificacion-carga-y-fechas.md`) nunca estuvo
 trackeado y **se perdió**. Antes de autorizar cualquier borrado: `git ls-files --error-unmatch <ruta>`.
 
+#### El 429 "Many requests" — causa real encontrada, y NO era el proxy
+
+Reapareció al abrir staging tras el despliegue. **El arreglo del proxy de la Ronda 107 estaba intacto y
+no era el culpable.** Diagnóstico con evidencia de dos fuentes:
+
+- **Logs de Auth de Supabase**: **104 llamadas a `/user` en un solo minuto** (06:18), 71 en el siguiente,
+  57 a las 05:28. En ráfagas, con el usuario sin hacer clics.
+- **Logs de Cloud Run del frontend** en la misma ventana: decenas de fichas de empresa **distintas**
+  pedidas entre 7 y 24 veces cada una. Eso es **prefetch de Next.js**, no navegación humana.
+
+Dos causas que se multiplicaban:
+
+1. **`CertificationStatusTable` tenía 3 enlaces a `/dashboard/carriers/{id}` sin `prefetch={false}`**,
+   aunque sus hermanos `TransporterCard` y la lista de Empresas **sí lo llevan, puestos por este mismo
+   motivo**. Esa tabla muestra hasta 200 filas y Next prefetchea todas las visibles.
+2. **Cada prefetch ejecuta el layout del dashboard, que llamaba a Auth dos veces**: una en
+   `layout.tsx` y otra en `Topbar.tsx`, que además repetía la consulta a `profiles`. El Topbar ahora
+   recibe los datos por props.
+
+Corregido en `becd00d`, con un guardarraíl: el prop no llega al DOM, así que un test de DOM no puede
+verlo y sin test alguien lo borra por parecer decorativo. Se verifica sobre el módulo y se comprobó que
+falla al quitar un solo `prefetch={false}`.
+
+**Regla para el futuro**: cualquier `<Link>` dentro de una lista larga va con `prefetch={false}`. En esta
+app cada prefetch cuesta una ejecución del layout del dashboard, y el layout habla con Auth.
+
+**Nota de infraestructura**: el primer intento de despliegue de ese arreglo falló con
+`Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'`. Es intermitente —
+`npm ci` con lockfile fijo en Next 16.2.6, la misma imagen compiló bien 15 minutos antes. Se resolvió con
+`gh run rerun --failed`. Si vuelve a pasar, reintentar antes de investigar.
+
 #### Próximo paso exacto
 1. [ ] **Click-through en vivo del Tramo 1** en `https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app`.
    No se pudo hacer autónomo: `DEMO_PASSWORD` en `.env.local` sigue siendo el placeholder `changeme`.
