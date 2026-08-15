@@ -6,7 +6,7 @@ import { Check, ChevronDown, ChevronRight, Loader2, Upload } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
-import { TriageWorkbench } from './TriageWorkbench'
+import { TriageWorkbench, CLAVES_DE_LA_BANDEJA } from './TriageWorkbench'
 import type { PendingComplianceRow } from '@/lib/types'
 
 interface Props {
@@ -48,6 +48,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
    *  revirtió en la Ronda 109. Plegados, el mismo cajón mide ~720px. */
   const [abiertos, setAbiertos] = useState<Set<string>>(() => new Set())
   const [subiendo, setSubiendo] = useState<string | null>(null)
+  const [errorSubida, setErrorSubida] = useState<string | null>(null)
 
   /** Una sola consulta para todo "lo que falta": `/pending` ya trae la
    *  categoría, el sujeto, el requisito y el estado de cada fila, así que no
@@ -91,8 +92,23 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
     })
   }
 
+  /** Todo lo que queda obsoleto al aplicar un documento. Las claves salen de
+   *  CLAVES_DE_LA_BANDEJA —la lista compartida— más la del propio cajón, que
+   *  NO está cubierta por el prefijo `compliance-pending`: React Query compara
+   *  elemento por elemento y 'compliance-pending' ≠ 'compliance-pending-drawer'.
+   *  Antes acá había un `['document-ingest-items']` que no existe en ninguna
+   *  parte del repo, así que la bandeja de arriba del cajón no se refrescaba. */
+  async function invalidarTodo() {
+    await Promise.all([
+      ...CLAVES_DE_LA_BANDEJA.map(queryKey => queryClient.invalidateQueries({ queryKey })),
+      queryClient.invalidateQueries({ queryKey: ['compliance-pending-drawer', carrierId] }),
+      queryClient.invalidateQueries({ queryKey: ['certification-status-catalog'] }),
+    ])
+  }
+
   async function subir(fila: PendingComplianceRow, file: File) {
     setSubiendo(fila.id)
+    setErrorSubida(null)
     try {
       // La MISMA puerta que la bandeja (`upload` + `classify-batch`), no un
       // camino aparte: dos implementaciones de lo mismo terminan divergiendo,
@@ -106,11 +122,12 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
       })
       // Lo que queda obsoleto al aplicar un documento: lo que falta acá, el
       // avance de la fila en el embudo y el conteo de la bandeja.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['compliance-pending-drawer', carrierId] }),
-        queryClient.invalidateQueries({ queryKey: ['certification-status'] }),
-        queryClient.invalidateQueries({ queryKey: ['document-ingest-items'] }),
-      ])
+      await invalidarTodo()
+    } catch (e) {
+      // Sin esto el spinner se apagaba, no cambiaba nada en pantalla y el
+      // archivo podia quedar huerfano en la bandeja sin que nadie se entere.
+      setErrorSubida(e instanceof Error ? e.message : 'No se pudo subir el documento')
+      await invalidarTodo()
     } finally {
       setSubiendo(null)
     }
@@ -128,6 +145,12 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
         <p className="text-[10px] font-semibold uppercase tracking-[.11em] text-gray-500 pb-1.5">
           Lo que falta{rows.length > 0 && <> · {rows.length} documentos</>}
         </p>
+
+        {errorSubida && (
+          <p role="alert" className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5 mb-1.5">
+            {errorSubida}
+          </p>
+        )}
 
         {pendingQuery.isPending && (
           <p className="text-[11px] text-gray-500 flex items-center gap-1.5 py-1">

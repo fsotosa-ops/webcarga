@@ -81,15 +81,6 @@ export function CertificationFunnel({
     })
   }
 
-  if (!rows.length && !catalogRows.length) {
-    return (
-      <div className="p-8 text-center">
-        <Building2 size={20} className="mx-auto text-gray-300 mb-2" />
-        <p className="text-xs text-gray-500">No hay empresas que coincidan</p>
-      </div>
-    )
-  }
-
   return (
     <div>
       {ETAPAS.map(({ id, titulo, icono: Icono, tono }) => {
@@ -129,6 +120,12 @@ export function CertificationFunnel({
                   : deEstaEtapa.length}
               </span>
             </button>
+
+            {!plegado && !deEstaEtapa.length && (
+              <p className="px-4 py-2 text-[11px] text-gray-400 border-b border-gray-100">
+                {id === 'catalogo' && catalogLoading ? 'Cargando…' : 'Ninguna acá'}
+              </p>
+            )}
 
             {!plegado && deEstaEtapa.map(r => (
               <FilaEmpresa

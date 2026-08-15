@@ -394,9 +394,11 @@ def test_carrier_status_filters_by_active_but_not_only():
 
     query = pool.fetch.call_args.args[0]
     args = pool.fetch.call_args.args
-    assert "e.operational_status = $1" in query
+    # El estado dejo de ser un valor suelto y paso a ser un conjunto: ONBOARDING
+    # tambien esta "en juego" (una empresa recien creada sin RUT queda ahi).
+    assert "e.operational_status = ANY($1)" in query
     assert "COALESCE(d.unclassified, 0) > 0" in query
-    assert args[1] == "ACTIVE"
+    assert args[1] == ["ACTIVE", "ONBOARDING"]
 
 
 def test_bulk_upload_422_when_files_and_record_ids_length_mismatch():
@@ -1112,3 +1114,24 @@ def test_status_scoped_to_carrier_still_binds_every_placeholder():
             f"group={grupo}: el SQL referencia {sorted(referenciados)} "
             f"pero se pasan {len(args)} parametros"
         )
+
+
+def test_status_active_scope_includes_newly_created_companies():
+    """REGRESION (revision de rama, 2026-08-15): una empresa creada SIN RUT
+    queda en ONBOARDING —lo hace el propio validador de CarrierCreateBody— y
+    ONBOARDING no es ACTIVE, asi que caia en "Resto del catalogo": plegado, al
+    fondo, detras de 209 empresas. Es exactamente el flujo para el que se
+    construyo el embudo, y la empresa nueva terminaba donde nadie la ve.
+
+    NewCarrierPanel ofrece crear sin RUT de forma explicita ("Se creara en
+    estado Onboarding, pendiente de RUT")."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status")
+
+    sql, *args = pool.fetch.call_args.args
+    assert "ONBOARDING" in sql or "ANY($1" in sql, (
+        "el alcance activo tiene que incluir a las empresas recien creadas"
+    )

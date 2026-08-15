@@ -16,7 +16,15 @@ interface Props {
  *  de memoria, que es exactamente lo que hacía al módulo confuso. */
 export function CertificationStatusTable({ rows, group }: Props) {
   const porEmpresa = group === 'carrier'
-  const etiqueta = porEmpresa ? 'empresas' : group === 'driver' ? 'conductores' : 'vehículos'
+  // Agrupando por REQUISITO la fila es un tipo de documento, no una entidad
+  // con dueño: no tiene empresa (el backend manda NULL a proposito, porque un
+  // requisito cruza todas). Sin esta rama la tabla lo dibujaba como vehiculo,
+  // con el encabezado "Vehículo" y el aviso ámbar "sin empresa" en TODAS las
+  // filas.
+  const porRequisito = group === 'requirement'
+  const etiqueta = porEmpresa ? 'empresas'
+    : group === 'driver' ? 'conductores'
+    : porRequisito ? 'requisitos' : 'vehículos'
 
   if (!rows.length) {
     return (
@@ -32,10 +40,12 @@ export function CertificationStatusTable({ rows, group }: Props) {
       <thead className="sticky top-0 z-10 bg-white">
         <tr className="border-b border-border">
           <th scope="col" className="py-2 pl-3 pr-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
-            {porEmpresa ? 'Empresa' : group === 'driver' ? 'Conductor' : 'Vehículo'}
+            {porEmpresa ? 'Empresa'
+              : group === 'driver' ? 'Conductor'
+              : porRequisito ? 'Documento' : 'Vehículo'}
           </th>
           {/* Un conductor o un vehículo sin su empresa no dice nada. */}
-          {!porEmpresa && (
+          {!porEmpresa && !porRequisito && (
             <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-56">Empresa</th>
           )}
           <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-56">Documentación</th>
@@ -66,6 +76,8 @@ export function CertificationStatusTable({ rows, group }: Props) {
                   >
                     {r.entity_name}
                   </Link>
+                ) : porRequisito ? (
+                  <span className="text-xs font-medium text-slate-800">{r.entity_name}</span>
                 ) : r.carrier_id ? (
                   // Abre su panel dentro de la ficha: ahí se carga y clasifica
                   // su documentación sin salir del contexto de la empresa.
@@ -86,7 +98,7 @@ export function CertificationStatusTable({ rows, group }: Props) {
                 )}
               </td>
 
-              {!porEmpresa && (
+              {!porEmpresa && !porRequisito && (
                 <td className="py-2 px-2">
                   {r.carrier_id ? (
                     <Link

@@ -142,9 +142,23 @@ describe('CertificationFunnel', () => {
     expect(onToggle).toHaveBeenCalledWith('c1')
   })
 
-  it('sin empresas lo dice', () => {
+  // REGRESION (revision de rama, 2026-08-15): antes, con `rows` vacio se
+  // devolvia un estado vacio ANTES de dibujar los encabezados. Como el
+  // catalogo solo se carga al desplegarlo —y ese desplegable vivia dentro del
+  // arbol recien cortocircuitado—, buscar el nombre de cualquiera de las 209
+  // empresas no activas daba "no hay empresas" SIN forma de llegar a ellas.
+  // Contradecia el contrato de alcances "disjuntos y exhaustivos".
+  it('sin coincidencias activas, el catalogo sigue siendo alcanzable', () => {
+    const p = setup({ rows: [] })
+
+    expect(screen.getByTestId('grupo-catalogo')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('grupo-catalogo'))
+    expect(p.onExpandCatalog).toHaveBeenCalled()
+  })
+
+  it('un grupo desplegado y vacio lo dice, en vez de quedar mudo', () => {
     setup({ rows: [] })
-    expect(screen.getByText(/no hay empresas/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/ninguna acá/i).length).toBeGreaterThan(0)
   })
 
   // La fila se abre HACIA ABAJO: sin panel lateral, sin modal, sin pagina

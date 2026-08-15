@@ -281,3 +281,36 @@ def test_create_asset_rejects_the_retired_placeholder_types():
     for tipo in ("CAMION", "FURGON", "OTRO"):
         res = client.post("/api/v1/assets", json={"license_plate": "ABCD12", "asset_type": tipo})
         assert res.status_code == 422, f"{tipo} deberia dar 422 de Pydantic, no {res.status_code}"
+
+
+def test_patch_asset_audits_uuid_columns_without_blowing_up():
+    """REGRESION (revision de rama, 2026-08-15): las columnas de clasificacion
+    son uuid, asi que asyncpg devuelve uuid.UUID y json.dumps reventaba con
+    TypeError — la transaccion entera se caia con un 500. Todas las columnas
+    auditadas hasta ahora eran text o int, por eso nunca habia pasado.
+    Escenario real: 81 de 118 vehiculos YA tienen fleet_service_type_id, asi
+    que reclasificar cualquiera de ellos fallaba."""
+    import uuid as _uuid
+
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "asset_type": "TRACTOCAMION", "operational_status": "ACTIVE",
+        "manufacture_year": None,
+        "fleet_service_type_id": _uuid.uuid4(),          # ya clasificado
+        "webcarga_operation_type_id": None,
+    }
+    pool.fetchrow.return_value = {
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "operational_status": "ACTIVE", "manufacture_year": None,
+        "is_manual_override": True, "created_at": None,
+        "total_requirements": 3, "last_document_update": None,
+    }
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/assets/a1", json={
+        "fleet_service_type_id": str(_uuid.uuid4()),
+    })
+
+    assert res.status_code == 200

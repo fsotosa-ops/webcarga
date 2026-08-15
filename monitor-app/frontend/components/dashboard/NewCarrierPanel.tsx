@@ -59,7 +59,13 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
   }
 
   function handleClose() {
+    // El panel NO se desmonta al cerrar (`if (!open) return null` sólo deja de
+    // renderizar), asi que sin limpiar acá la gestión marcada para una empresa
+    // se arrastraba a la siguiente y se guardaba sin que nadie la eligiera.
+    // Misma clase que el bug de draft sin resincronizar de ContactCard.
     setErr(null)
+    setForm({ tax_id: '', business_name: initialBusinessName })
+    setGestiones([])
     onClose()
   }
 

@@ -191,7 +191,8 @@ function CertificationPageInner() {
               value={q}
               onChange={e => setQ(e.target.value)}
               placeholder={group === 'carrier' ? 'Buscar empresa…'
-                : group === 'driver' ? 'Buscar conductor…' : 'Buscar patente…'}
+                : group === 'driver' ? 'Buscar conductor…'
+                : group === 'requirement' ? 'Buscar documento…' : 'Buscar patente…'}
               aria-label="Buscar"
               className={INPUT + ' w-64'}
             />

@@ -44,8 +44,13 @@ async def log_change(
         VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::jsonb, $7::jsonb, $8)
         """,
         str(actor) if actor else None, entity_type, str(entity_id), action, field,
-        json.dumps(old_value) if old_value is not None else None,
-        json.dumps(new_value) if new_value is not None else None,
+        # `default=str` porque los valores auditados ya no son sólo texto y
+        # números: al auditar columnas uuid (assets.fleet_service_type_id,
+        # webcarga_operation_type_id) asyncpg devuelve uuid.UUID, que json no
+        # sabe serializar y hacía reventar la transacción entera con un 500.
+        # Vale igual para date/datetime, que es el próximo tipo que va a caer.
+        json.dumps(old_value, default=str) if old_value is not None else None,
+        json.dumps(new_value, default=str) if new_value is not None else None,
         source,
     )
 

@@ -18,6 +18,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
+
+# Los estados que el embudo considera "en juego". ONBOARDING es una empresa
+# recién creada sin RUT todavía: pertenece a "Recién creadas · sin documentos",
+# no al catálogo del fondo.
+FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
 from ..schemas.compliance import (
     ReassignBody,
     ComplianceRecordPatchBody,
@@ -65,6 +70,22 @@ async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
 # Cada agrupación cambia sólo dos cosas: por qué entidad se agrupa y de dónde
 # sale su nombre. El resto de la consulta es idéntico, así que se parametriza en
 # vez de escribir tres consultas que después divergen.
+# UNA definición de "pendiente", usada por el embudo y por /pending.
+#
+# Un registro cuenta como pendiente por CUALQUIERA de las dos vías: que su
+# estado lo diga, o que su fecha ya haya pasado aunque nadie recalculó el
+# estado. Verificado contra producción: los 9 registros vencidos por fecha
+# tienen status APPROVED_MANUAL, así que mirando sólo el estado el embudo
+# mandaba 8 empresas a "Hay que renovar" mientras el cajón de cada una decía
+# "No le falta ningún documento" — se pedía renovar algo que la interfaz se
+# negaba a nombrar.
+def pendiente_predicate(alias: str = "cr") -> str:
+    return (
+        f"({alias}.status IN ('MISSING','EXPIRED') "
+        f"OR ({alias}.expiration_date IS NOT NULL AND {alias}.expiration_date < CURRENT_DATE))"
+    )
+
+
 _STATUS_GROUPS = {
     "carrier": {
         "entity_type": "CARRIER",
@@ -139,11 +160,16 @@ async def get_certification_status(
         # cae en "Resto del catálogo". Antes se omitía en ese caso y había que
         # renumerar todo lo demás — de ahí salió el bug de placeholders que
         # cubre test_status_binds_exactly_the_parameters_it_references.
-        params: list = [ACTIVE_OPERATIONAL_STATUS, q, limit]
+        params: list = [list(FUNNEL_ACTIVE_STATUSES), q, limit]
         p_q, p_limit = "$2", "$3"
         # El complemento se escribe negando la MISMA expresión, no repitiendo
         # el criterio invertido a mano: así no pueden divergir.
-        es_activa = "(e.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)"
+        # ONBOARDING entra en el alcance activo. Una empresa creada sin RUT
+        # queda en ese estado —lo fija el validador de CarrierCreateBody— y
+        # dejarla fuera la mandaba a "Resto del catálogo": plegado, al fondo,
+        # detrás de 209 empresas. Es el flujo exacto que el embudo vino a
+        # servir: crear una empresa y verla arriba, en "Recién creadas".
+        es_activa = "(e.operational_status = ANY($1) OR COALESCE(d.unclassified, 0) > 0)"
         if carrier_id:
             params.append(carrier_id)
             entity_where = "e.id = $4::uuid"
@@ -263,11 +289,15 @@ async def get_certification_status(
     # Un registro cuenta como vencido por CUALQUIERA de las dos vías: que
     # alguien lo haya marcado EXPIRED, o que su fecha ya pasó aunque el estado
     # todavía no se haya recalculado. Mirar sólo el estado subreporta.
+    # Vencido y pendiente salen de UNA definición compartida con /pending. Si
+    # el embudo cuenta la fecha y /pending no, el embudo manda a renovar
+    # documentos que el cajón se niega a nombrar.
+    pendiente = pendiente_predicate(fuente)
     vencido = (
         f"({fuente}.status = 'EXPIRED' OR ({fuente}.expiration_date IS NOT NULL "
         f"AND {fuente}.expiration_date < CURRENT_DATE))"
     )
-    cubierto = f"({fuente}.status IS NOT NULL AND {fuente}.status NOT IN ('MISSING','EXPIRED'))"
+    cubierto = f"({fuente}.status IS NOT NULL AND NOT {pendiente})"
 
     if group == "carrier":
         # El embudo decide la etapa en SQL, de UNA definición. Calcularlo en el
@@ -279,7 +309,7 @@ async def get_certification_status(
                COALESCE(g.operation_types, e.management_types)                     AS management_types,
                COALESCE(v.trips_30d, 0)::int                                       AS trips_30d,
                CASE
-                   WHEN NOT (e.operational_status = $1
+                   WHEN NOT (e.operational_status = ANY($1)
                              OR COALESCE(d.unclassified, 0) > 0)      THEN 'catalogo'
                    WHEN count(*) FILTER (WHERE {vencido}) > 0          THEN 'renovar'
                    WHEN count({fuente}.status) > 0
@@ -319,8 +349,8 @@ async def get_certification_status(
                {carrier_cols},{funnel_cols}
                count({fuente}.status)                                              AS total_count,
                count(*) FILTER (WHERE {cubierto})                                   AS satisfied_count,
-               count(*) FILTER (WHERE {fuente}.status IN ('MISSING','EXPIRED'))     AS pending_count,
-               count(*) FILTER (WHERE {fuente}.status IN ('MISSING','EXPIRED')
+               count(*) FILTER (WHERE {pendiente})                                   AS pending_count,
+               count(*) FILTER (WHERE {pendiente}
                                   AND {fuente}.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory,
                {unclassified}                                                      AS unclassified_count
         FROM {cfg["table"]} e
@@ -342,14 +372,14 @@ async def get_certification_status(
     }
 
 
-_PENDING_ROWS_SQL = """
+_PENDING_ROWS_SQL = f"""
 WITH pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
            req.id AS requirement_id,
            req.requirement_code, req.name AS document_name, req.requirement_level
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-    WHERE cr.is_current = true AND cr.status IN ('MISSING', 'EXPIRED')
+    WHERE cr.is_current = true AND {pendiente_predicate()}
 ),
 resolved AS (
     SELECT p.*,
