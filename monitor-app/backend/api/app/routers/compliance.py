@@ -112,7 +112,7 @@ async def get_certification_status(
         # Sólo esta agrupación filtra por estado operativo, así que sólo ella
         # recibe ese parámetro. Numerar de más deja un $1 sin referenciar y
         # Postgres rechaza la sentencia entera.
-        params: list = [ACTIVE_OPERATIONAL_STATUS, q or None, limit]
+        params: list = [ACTIVE_OPERATIONAL_STATUS, q, limit]
         p_q, p_limit = "$2", "$3"
         carrier_cols = "e.id::text AS carrier_id, e.business_name AS carrier_name, e.operational_status"
         group_by = "e.id, e.business_name, e.operational_status, d.unclassified"
@@ -144,7 +144,7 @@ async def get_certification_status(
         # ordinal ("ORDER BY 0" es un error), así que acá no va.
         orden_cola = ""
         extra_cte = ""
-        params = [q or None, limit]
+        params = [q, limit]
         p_q, p_limit = "$1", "$2"
 
     # Agrupando por empresa el agregado sale de `attributed`; en las otras dos,
@@ -184,7 +184,7 @@ async def get_certification_status(
         FROM {cfg["table"]} e
         {entity_join}
         WHERE {entity_where}
-          AND ({p_q}::text IS NULL OR e.{cfg["name_col"]} ILIKE '%' || {p_q} || '%')
+          AND e.{cfg["name_col"]} ILIKE '%' || {p_q}::text || '%'
         GROUP BY {group_by}
         -- Primero donde hay trabajo esperando, después lo más incompleto.
         ORDER BY {orden_cola}pending_count DESC, e.{cfg["name_col"]}
