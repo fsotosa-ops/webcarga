@@ -2,32 +2,66 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Que Empresas deje de sentirse como un módulo que duplica Certificación y pase a ser lo que realmente es —**un nivel de zoom del mismo recorrido**—, con la misma gramática en los tres niveles y una página propia para conductores y vehículos.
+**Goal:** Que Empresas deje de sentirse como un módulo que duplica Certificación y pase a ser lo que realmente es —**un nivel de zoom del mismo recorrido**—, resuelto en **una sola página** de la que no hace falta salir.
 
-**Architecture:** Un mismo objeto mirado a tres distancias. En cada nivel la pantalla dice lo mismo con la misma gramática: **quién es · cuánto le falta · qué tiene adentro · qué documentos son suyos**. Los tabs de la ficha existían para separar "lo de adentro" de "lo mío", que con esta gramática son dos secciones, no seis pestañas.
+**Architecture:** Lista a la izquierda, **detalle embebido a la derecha**. Bajar de nivel cambia el panel, no la página. En cada nivel el detalle usa la misma gramática: **quién es · cuánto le falta · qué tiene adentro · qué documentos son suyos**. Los tabs de la ficha existían para separar "lo de adentro" de "lo mío", que con esta gramática son dos secciones del mismo panel.
 
 ```
-/dashboard/compliance          Todas las empresas (o conductores, o vehículos)
-        ↓
-/dashboard/carriers/[id]       Una empresa · su flota · sus documentos
-        ↓
-/dashboard/drivers/[id]        Un conductor · sus documentos
-/dashboard/assets/[id]         Un vehículo  · sus documentos
+┌ /dashboard/compliance ─────────────────────────────────────────┐
+│ [Empresas] [Conductores] [Vehículos] [Documentos]   buscar…    │
+├──────────────────┬─────────────────────────────────────────────┤
+│ LISTA            │ DETALLE (embebido)                          │
+│ ▸ Transportes Sur│ Certificación › Transportes Sur             │
+│   Hasa Spa       │ Transportes Sur   ▓▓▓░ 9 de 12              │
+│   Logística Norte│                                             │
+│                  │ SU FLOTA (20)              ‹ 1 de 3 ›       │
+│                  │  Juan Pérez     0 de 12  →                  │
+│                  │  HKXW55         5 de 10  →                  │
+│                  │ SUS DOCUMENTOS                              │
+│                  │  Rol SII      cargado · reasignar           │
+│                  │ SEGUROS · CONTACTOS · DATOS  (plegados)     │
+└──────────────────┴─────────────────────────────────────────────┘
 ```
+
+Clic en un conductor **no navega**: el panel pasa a ser el del conductor, con migas `Certificación › Transportes Sur › Juan Pérez` para volver. La lista de la izquierda no se mueve.
+
+**La selección viaja en la URL** (`?empresa=…&conductor=…`), así el enlace se comparte y el botón atrás funciona. Nota: el `?driver=` que existía se llamó "parche" porque abría **un modal**; acá el estado en la URL es exactamente lo correcto.
 
 **Tech Stack:** Next.js 14 App Router, React Query, Tailwind, lucide-react (frontend); FastAPI + asyncpg (backend); vitest + pytest; Playwright para el click-through.
 
 **Spec:**
 - `monitor-app/docs/user-stories/20260814/04-hu-modulo-unificado.md` — "el lugar donde mirás la empresa es el lugar donde actuás sobre ella"
 - `monitor-app/docs/user-stories/20260814/00-epica-certificacion-unificada.md`
-- Mockups: `.superpowers/brainstorm/64757-1786756707/content/zoom.html` (aprobado por el usuario el 2026-08-15)
+- Mockups aprobados: `.superpowers/brainstorm/64757-1786756707/content/una-pagina.html` (2026-08-15)
+
+## Lo que NO cambia
+
+**La carga masiva y la clasificación posterior quedan intactas.** Es la vista
+**Documentos** del conmutador: se sueltan N archivos sin saber de quién son ni
+qué son, y después se clasifican en lote contra el hueco que corresponda
+(HU-01). Ese flujo es el que justifica todo el módulo y **este plan no lo
+toca**.
+
+Las cuatro vistas del conmutador quedan así:
+
+| Vista | Qué muestra | Forma |
+|---|---|---|
+| **Empresas** | lista de empresas | lista + panel de detalle |
+| **Conductores** | lista de conductores, con su empresa | lista + panel de detalle |
+| **Vehículos** | lista de vehículos, con su empresa | lista + panel de detalle |
+| **Documentos** | la cola de sin clasificar | `TriageWorkbench`, **a todo el ancho** (no lleva panel: la selección de archivos ya es su propia columna) |
+
+Y **la puerta de carga sigue siendo una sola**: `documentIngestApi.uploadAndClassify`
+para el caso "ya sé a qué requisito va" (desde el panel de detalle), y
+`upload` + `classifyBatch` para el caso "llegaron en bloque" (la bandeja). Los
+dos usan los mismos dos endpoints.
 
 ## El problema, en concreto
 
-1. **Conductores y vehículos no tienen página propia en ninguna parte de la app.** Existen sólo como modal dentro de un tab dentro de la ficha. No hay link que compartir, el botón atrás no vuelve, y adentro del modal hay otra sección de documentación — cuarto nivel de anidamiento.
-2. Por ese hueco, Certificación no podía llevar a un conductor: se inventó `?driver=` / `?asset=` para abrir ese modal. Es un parche sobre un problema estructural.
-3. La ficha tiene **959 líneas y 6 tabs**, y su tab Documentos es Certificación acotada a una empresa → la duplicación que el usuario reporta.
-4. Hay **dos componentes distintos** para listar documentos: `TransporterDocumentsPanel` (empresa) y `DocumentChecklist` (conductor/vehículo). Sin unificarlos, "la misma gramática" es una frase, no un hecho.
+1. **Conductores y vehículos no tienen detalle propio en ninguna parte de la app.** Existen sólo como modal dentro de un tab dentro de la ficha. Por ese hueco se inventó `?driver=` para abrir ese modal.
+2. La ficha tiene **959 líneas y 6 tabs**, y su tab Documentos es Certificación acotada a una empresa → la duplicación que el usuario reporta.
+3. Hay **dos componentes distintos** para listar documentos: `TransporterDocumentsPanel` (empresa) y `DocumentChecklist` (conductor/vehículo). Sin unificarlos, "la misma gramática" es una frase, no un hecho.
+4. Navegar entre módulos y modales rompe el hilo del trabajo. **No debería hacer falta salir de la pantalla.**
 
 ## Global Constraints
 
@@ -60,16 +94,16 @@
 | Archivo | Responsabilidad |
 |---|---|
 | `components/compliance/DocumentList.tsx` | CREAR: **el** listado de documentos, único para los tres niveles |
-| `components/compliance/ZoomHeader.tsx` | CREAR: migas + nombre + avance, la cabecera común |
-| `components/compliance/ChildrenList.tsx` | CREAR: "lo que tiene adentro", con su avance |
-| `app/dashboard/drivers/[id]/page.tsx` | CREAR: nivel 2 — conductor |
-| `app/dashboard/assets/[id]/page.tsx` | CREAR: nivel 2 — vehículo |
-| `app/dashboard/carriers/[id]/page.tsx` | MODIFICAR: página plana, sin tabs |
-| `components/dashboard/DriverDetailPanel.tsx` | BORRAR: lo reemplaza la página |
+| `components/compliance/ZoomHeader.tsx` | CREAR: migas + nombre + avance, la cabecera del panel |
+| `components/compliance/ChildrenList.tsx` | CREAR: "lo que tiene adentro", paginado |
+| `components/compliance/EntityDetailPanel.tsx` | CREAR: el detalle embebido — empresa, conductor o vehículo |
+| `app/dashboard/compliance/page.tsx` | MODIFICAR: lista + panel, con la selección en la URL |
+| `app/dashboard/carriers/[id]/page.tsx` | REEMPLAZAR por una redirección a `?empresa=` |
+| `components/dashboard/DriverDetailPanel.tsx` | BORRAR: lo reemplaza el panel embebido |
 | `components/dashboard/VehicleDetailPanel.tsx` | BORRAR: idem |
 | `components/dashboard/TransporterDocumentsPanel.tsx` | BORRAR: lo reemplaza `DocumentList` |
 | `components/dashboard/DocumentChecklist.tsx` | BORRAR: idem |
-| `components/compliance/CertificationStatusTable.tsx` | MODIFICAR: enlaza a las páginas nuevas, sin `?driver=` |
+| `components/dashboard/carriers/CarrierDocumentsTab.tsx` | BORRAR: el tab deja de existir |
 
 ---
 
@@ -408,90 +442,212 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Task 4: Página del conductor
+## Task 4: La flota, paginada
 
-El nivel que hoy no existe. Reemplaza al modal.
+Lo que la empresa "tiene adentro". Se pagina porque una empresa con veinte o más estiraría el panel sin límite.
 
 **Files:**
-- Create: `app/dashboard/drivers/[id]/page.tsx`, `page.test.tsx`
+- Create: `components/compliance/ChildrenList.tsx`, `ChildrenList.test.tsx`
 
 **Interfaces:**
-- Consumes: `driversApi.get`, `driversApi.listComplianceRecords`, `ZoomHeader`, `DocumentList`.
+- Produces:
+```ts
+export function ChildrenList(props: {
+  titulo:   string
+  filas:    { id: string; nombre: string; tipo: 'DRIVER' | 'ASSET'
+              cubiertos: number; total: number }[]
+  porPagina?: number            // 20 por defecto
+  onAbrir:  (tipo: 'DRIVER' | 'ASSET', id: string) => void
+}): JSX.Element
+```
 
 - [ ] **Step 1: Escribir el test que falla**
 
 ```tsx
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { ChildrenList } from './ChildrenList'
+
+const filas = (n: number) => Array.from({ length: n }, (_, i) => ({
+  id: `d${i}`, nombre: `Conductor ${i}`, tipo: 'DRIVER' as const,
+  cubiertos: 0, total: 12,
+}))
+
+describe('ChildrenList', () => {
+  it('muestra el avance de cada uno', () => {
+    render(<ChildrenList titulo="Su flota" filas={filas(2)} onAbrir={vi.fn()} />)
+    expect(screen.getAllByText('0 de 12')).toHaveLength(2)
+  })
+
+  it('con flota grande pagina en vez de estirar el panel', () => {
+    render(<ChildrenList titulo="Su flota" filas={filas(45)} onAbrir={vi.fn()} />)
+    expect(screen.getAllByRole('button', { name: /Conductor/ })).toHaveLength(20)
+    expect(screen.getByText(/1 de 3/)).toBeInTheDocument()
+  })
+
+  it('avanza de página sin salir de la pantalla', () => {
+    render(<ChildrenList titulo="Su flota" filas={filas(45)} onAbrir={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /siguiente/i }))
+    expect(screen.getByText(/2 de 3/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Conductor 20' })).toBeInTheDocument()
+  })
+
+  it('con flota chica no muestra controles de paginación', () => {
+    render(<ChildrenList titulo="Su flota" filas={filas(3)} onAbrir={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /siguiente/i })).not.toBeInTheDocument()
+  })
+
+  it('abrir uno avisa a quién, sin navegar', () => {
+    const onAbrir = vi.fn()
+    render(<ChildrenList titulo="Su flota" filas={filas(2)} onAbrir={onAbrir} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Conductor 1' }))
+    expect(onAbrir).toHaveBeenCalledWith('DRIVER', 'd1')
+  })
+
+  it('sin flota lo dice, en vez de una lista vacía', () => {
+    render(<ChildrenList titulo="Su flota" filas={[]} onAbrir={vi.fn()} />)
+    expect(screen.getByText(/todavía no tiene/i)).toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 2: Correr y verificar que falla**
+
+```bash
+cd monitor-app/frontend && npx vitest run components/compliance/ChildrenList.test.tsx
+```
+
+- [ ] **Step 3: Implementar**
+
+Filas con el mismo lenguaje visual que `CertificationStatusTable` —nombre + barra + `N de M`— para que el nivel 0 y el detalle se lean igual. Cada fila es un `<button>`, no un enlace: **no navega**, cambia el panel. Los controles de paginación sólo aparecen si hay más de una página.
+
+- [ ] **Step 4: Verificar**
+
+```bash
+cd monitor-app/frontend && npx vitest run components/compliance/ChildrenList.test.tsx && npx tsc --noEmit
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add monitor-app/frontend/components/compliance
+git commit -m "feat(compliance): la flota del detalle, paginada
+
+Cada fila cambia el panel en vez de navegar: la idea es no salir de la
+pantalla. Se pagina a 20 para que una empresa grande no la estire.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 5: El panel de detalle embebido
+
+El corazón del cambio: un panel que sirve para los tres niveles.
+
+**Files:**
+- Create: `components/compliance/EntityDetailPanel.tsx`, `EntityDetailPanel.test.tsx`
+
+**Interfaces:**
+- Consumes: `ZoomHeader`, `ChildrenList`, `DocumentList`, `carriersApi.get`, `driversApi.get`, `assetsApi.get`, `driversApi.listComplianceRecords`, `assetsApi.listComplianceRecords`.
+- Produces:
+```ts
+export function EntityDetailPanel(props: {
+  seleccion: { tipo: 'CARRIER' | 'DRIVER' | 'ASSET'; id: string } | null
+  /** Empresa del contexto, para las migas al bajar a un conductor. */
+  empresaContexto: { id: string; nombre: string } | null
+  onSeleccionar: (sel: { tipo: 'CARRIER' | 'DRIVER' | 'ASSET'; id: string } | null) => void
+}): JSX.Element
+```
+
+- [ ] **Step 1: Escribir el test que falla**
+
+```tsx
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { EntityDetailPanel } from './EntityDetailPanel'
 
-vi.mock('next/navigation', () => ({ useParams: () => ({ id: 'd1' }) }))
+vi.mock('@/lib/api/carriers', () => ({ carriersApi: { get: vi.fn() } }))
 vi.mock('@/lib/api/drivers', () => ({
   driversApi: { get: vi.fn(), listComplianceRecords: vi.fn() },
+}))
+vi.mock('@/lib/api/assets', () => ({
+  assetsApi: { get: vi.fn(), listComplianceRecords: vi.fn() },
 }))
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: { listFiles: vi.fn().mockResolvedValue([]), listPending: vi.fn(), reassign: vi.fn() },
 }))
-vi.mock('@/lib/api/documentIngest', () => ({
-  documentIngestApi: { uploadAndClassify: vi.fn() },
-}))
+vi.mock('@/lib/api/documentIngest', () => ({ documentIngestApi: { uploadAndClassify: vi.fn() } }))
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 
+import { carriersApi } from '@/lib/api/carriers'
 import { driversApi } from '@/lib/api/drivers'
-import DriverPage from './page'
 
+const EMPRESA = {
+  id: 'c1', business_name: 'Transportes Sur', tax_id: '76.000-0',
+  operational_status: 'ACTIVE', compliance_records: [], contacts: [],
+}
 const CONDUCTOR = {
-  id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1',
-  operational_status: 'ACTIVE', carrier_id: 'c1', carrier_name: 'Transportes Sur',
+  id: 'd1', full_name: 'Juan Pérez', tax_id: '1-9',
+  carrier_id: 'c1', carrier_name: 'Transportes Sur',
 }
 
-function setup() {
+function setup(props: Record<string, unknown> = {}) {
+  const onSeleccionar = vi.fn()
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <DriverPage />
+      <EntityDetailPanel
+        seleccion={{ tipo: 'CARRIER', id: 'c1' }}
+        empresaContexto={null}
+        onSeleccionar={onSeleccionar}
+        {...props}
+      />
     </QueryClientProvider>,
   )
+  return onSeleccionar
 }
 
 beforeEach(() => {
+  vi.mocked(carriersApi.get).mockReset().mockResolvedValue(EMPRESA as never)
   vi.mocked(driversApi.get).mockReset().mockResolvedValue(CONDUCTOR as never)
   vi.mocked(driversApi.listComplianceRecords).mockReset().mockResolvedValue([] as never)
 })
 
-describe('Página del conductor', () => {
-  it('es una página con URL propia, no un modal', async () => {
+describe('EntityDetailPanel', () => {
+  it('sin selección invita a elegir, no queda en blanco', () => {
+    setup({ seleccion: null })
+    expect(screen.getByText(/selecciona una empresa/i)).toBeInTheDocument()
+  })
+
+  it('de una empresa muestra su flota y sus documentos', async () => {
     setup()
+    expect(await screen.findByText('Transportes Sur')).toBeInTheDocument()
+    expect(screen.getByText(/su flota/i)).toBeInTheDocument()
+    expect(screen.getByText(/sus documentos/i)).toBeInTheDocument()
+  })
+
+  it('bajar a un conductor cambia el panel, no la página', async () => {
+    const onSeleccionar = setup({ seleccion: { tipo: 'DRIVER', id: 'd1' },
+                                  empresaContexto: { id: 'c1', nombre: 'Transportes Sur' } })
     expect(await screen.findByText('Juan Pérez')).toBeInTheDocument()
+    // Nunca un modal: el detalle está embebido.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // Y se vuelve por las migas, sin navegar.
+    fireEvent.click(screen.getByRole('button', { name: 'Transportes Sur' }))
+    expect(onSeleccionar).toHaveBeenCalledWith({ tipo: 'CARRIER', id: 'c1' })
   })
 
-  it('dice a qué empresa pertenece y deja volver', async () => {
-    setup()
-    expect(await screen.findByRole('link', { name: 'Transportes Sur' }))
-      .toHaveAttribute('href', '/dashboard/carriers/c1')
-  })
-
-  it('sin empresa asignada lo dice, en vez de mostrar una miga rota', async () => {
+  it('un conductor sin empresa lo dice y no ofrece cargar', async () => {
     vi.mocked(driversApi.get).mockResolvedValue({ ...CONDUCTOR, carrier_id: null, carrier_name: null } as never)
-    setup()
+    setup({ seleccion: { tipo: 'DRIVER', id: 'd1' }, empresaContexto: null })
     expect(await screen.findByText(/sin empresa asignada/i)).toBeInTheDocument()
   })
 
-  it('muestra sus documentos', async () => {
-    vi.mocked(driversApi.listComplianceRecords).mockResolvedValue([{
-      id: 'cr1', requirement_id: 'req1', requirement_code: 'LICENCIA', name: 'Licencia',
-      requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'MISSING',
-      expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-      is_expired: false, is_expiring_soon: false, updated_at: null,
-    }] as never)
+  it('avisa si la entidad no existe', async () => {
+    vi.mocked(carriersApi.get).mockRejectedValue(new Error('no encontrada'))
     setup()
-    expect(await screen.findByText('Licencia')).toBeInTheDocument()
-  })
-
-  it('avisa si el conductor no existe', async () => {
-    vi.mocked(driversApi.get).mockRejectedValue(new Error('Conductor no encontrado'))
-    setup()
-    expect(await screen.findByText(/no encontrado/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no se pudo cargar/i)).toBeInTheDocument()
   })
 })
 ```
@@ -499,205 +655,179 @@ describe('Página del conductor', () => {
 - [ ] **Step 2: Correr y verificar que falla**
 
 ```bash
-cd monitor-app/frontend && npx vitest run app/dashboard/drivers
+cd monitor-app/frontend && npx vitest run components/compliance/EntityDetailPanel.test.tsx
 ```
 
 - [ ] **Step 3: Implementar**
 
-Página plana: `ZoomHeader` (migas `Certificación › Empresa › Conductor`, avance calculado de los `compliance_records`) + `DocumentList` acotado a `entityType='DRIVER'`. Los datos editables del conductor (nombre, RUT) y las acciones de roster —transferir, quitar— se traen del modal **en la Task 6**, cuando se retire; en esta tarea la página ya sirve para lo que se necesita: ver y cargar su documentación.
+Un solo componente con tres formas de la misma gramática:
+
+| Nivel | Cabecera | Adentro | Documentos | Además |
+|---|---|---|---|---|
+| Empresa | `ZoomHeader` migas `Certificación › X` | `ChildrenList` con su flota | `DocumentList` `entityType='CARRIER'` | Seguros, Contactos y Datos, en secciones plegables |
+| Conductor | migas `Certificación › Empresa › X` | — | `DocumentList` `entityType='DRIVER'` | Contactos del conductor |
+| Vehículo | migas `Certificación › Empresa › Patente` | — | `DocumentList` `entityType='ASSET'` | — |
+
+Las migas son **botones**, no enlaces: llaman a `onSeleccionar` y no navegan. La empresa del contexto sale de `empresaContexto` o, si se entró directo a un conductor, de su propio `carrier_id` (Task 1).
 
 - [ ] **Step 4: Verificar**
 
 ```bash
-cd monitor-app/frontend && npx vitest run app/dashboard/drivers && npx tsc --noEmit && npm run build
+cd monitor-app/frontend && npx vitest run components/compliance/EntityDetailPanel.test.tsx && npx tsc --noEmit
 ```
-
-Esperado: `/dashboard/drivers/[id]` en el manifest.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add monitor-app/frontend/app/dashboard/drivers
-git commit -m "feat(roster): el conductor pasa a tener pagina propia
+git add monitor-app/frontend/components/compliance
+git commit -m "feat(compliance): panel de detalle embebido para los tres niveles
 
-Existia solo como modal dentro de un tab dentro de la ficha: sin URL, el boton
-atras no volvia, y su documentacion quedaba a cuatro niveles de anidamiento.
+Misma gramatica en los tres: quien es, cuanto le falta, que tiene adentro y
+que documentos son suyos. Bajar de nivel cambia el panel, no la pagina.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-## Task 5: Página del vehículo
-
-Idéntica a la Task 4, con `assetsApi` y `license_plate` como título. **Repetir el código de la Task 4 adaptado — no referenciarlo**: quien implemente esta tarea puede no haber leído la anterior.
+## Task 6: Montar el panel en la página, con la selección en la URL
 
 **Files:**
-- Create: `app/dashboard/assets/[id]/page.tsx`, `page.test.tsx`
+- Modify: `app/dashboard/compliance/page.tsx`, `page.test.tsx`
+- Modify: `components/compliance/CertificationStatusTable.tsx`
 
 - [ ] **Step 1: Escribir el test que falla**
 
-Mismo archivo que la Task 4 cambiando: `useParams: () => ({ id: 'a1' })`, `assetsApi` en vez de `driversApi`, y el vehículo:
-
 ```tsx
-const VEHICULO = {
-  id: 'a1', license_plate: 'HKXW55', asset_type: 'TRACTO',
-  operational_status: 'ACTIVE', carrier_id: 'c1', carrier_name: 'Transportes Sur',
-}
-```
+it('elegir una fila abre su detalle sin salir de la página', async () => {
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: /Test Empresa Webcarga/ }))
+  expect(replace).toHaveBeenCalledWith('/dashboard/compliance?empresa=c1')
+})
 
-Los cinco casos son los mismos: página sin modal, empresa enlazada, sin empresa asignada, sus documentos, y no encontrado.
+it('la selección se lee de la URL, así el enlace se comparte', async () => {
+  params = new URLSearchParams('empresa=c1')
+  setup()
+  expect(await screen.findByRole('heading', { name: 'Test Empresa Webcarga' })).toBeInTheDocument()
+})
+
+it('bajar a un conductor queda en la URL', async () => {
+  params = new URLSearchParams('empresa=c1&conductor=d1')
+  setup()
+  await waitFor(() => expect(driversApi.get).toHaveBeenCalledWith('d1'))
+})
+
+it('la vista Documentos sigue siendo la bandeja a todo el ancho', async () => {
+  params = new URLSearchParams('vista=documentos')
+  setup()
+  // Sin panel de detalle: la cola tiene su propia grilla de tres regiones.
+  expect(await screen.findByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
+  expect(screen.queryByText(/selecciona una empresa/i)).not.toBeInTheDocument()
+})
+
+it('la lista no se pierde al abrir un detalle', async () => {
+  params = new URLSearchParams('empresa=c1')
+  setup()
+  // Sigue estando la lista de la izquierda.
+  expect(await screen.findAllByRole('button', { name: /Test Empresa Webcarga/ })).not.toHaveLength(0)
+})
+```
 
 - [ ] **Step 2: Correr y verificar que falla**
 
 ```bash
-cd monitor-app/frontend && npx vitest run app/dashboard/assets
+cd monitor-app/frontend && npx vitest run app/dashboard/compliance
 ```
 
 - [ ] **Step 3: Implementar**
 
-`ZoomHeader` con migas `Certificación › Empresa › Patente` + `DocumentList` con `entityType='ASSET'`.
+**Sólo las tres vistas de entidades usan lista + panel.** La vista **Documentos**
+sigue siendo `TriageWorkbench` a todo el ancho, sin panel de detalle — no se
+toca. Un test lo fija para que nadie la meta dentro de la grilla al refactorizar.
+
+Para las otras tres, la página pasa a `grid-cols-[minmax(240px,320px)_1fr]`: lista y panel. `CertificationStatusTable` deja de enlazar y pasa a avisar la selección (`onSeleccionar`), porque **no se navega**. La selección se refleja en la URL con `router.replace` — `?empresa=`, `?conductor=`, `?vehiculo=` — y se lee de ahí al montar.
+
+En pantalla angosta no hay dos columnas: con selección se muestra el panel y un botón "Volver a la lista".
 
 - [ ] **Step 4: Verificar**
 
 ```bash
-cd monitor-app/frontend && npx vitest run app/dashboard/assets && npx tsc --noEmit && npm run build
+cd monitor-app/frontend && npx vitest run && npx tsc --noEmit && npm run build
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add monitor-app/frontend/app/dashboard/assets
-git commit -m "feat(roster): el vehiculo pasa a tener pagina propia
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
-```
-
----
-
-## Task 6: Retirar los modales y enlazar a las páginas
-
-**Files:**
-- Delete: `components/dashboard/DriverDetailPanel.tsx` y su test, `VehicleDetailPanel.tsx` y su test
-- Modify: `app/dashboard/carriers/[id]/page.tsx`, `components/dashboard/DriverRosterCard.tsx`, `VehicleRosterCard.tsx`
-- Modify: `components/compliance/CertificationStatusTable.tsx`
-
-- [ ] **Step 1: Mover a las páginas lo que sólo vivía en los modales**
-
-Antes de borrar, inventariar qué hace cada modal y que no se pierda nada: edición de nombre/RUT (`onPatch`), quitar del roster (`onRemove`), transferir a otra empresa (`onTransferClick`), y la lista de contactos del conductor. Todo eso pasa a la página del nivel 2, como acciones de la cabecera (`ZoomHeader acciones`) y una sección de contactos.
-
-- [ ] **Step 2: Los rosters enlazan a las páginas**
-
-En `DriverRosterCard` y `VehicleRosterCard`, la tarjeta pasa a ser un `<Link>` a `/dashboard/drivers/{id}` y `/dashboard/assets/{id}`. Se retiran `onSelect`/`selectedId` y el estado `selectedDriverId` / `selectedAssetId` de la ficha.
-
-- [ ] **Step 3: Certificación enlaza directo**
-
-En `CertificationStatusTable`, la fila de conductor/vehículo apunta a su página en vez de a `/dashboard/carriers/{carrierId}?tab=…&driver=…`. Se retiran los parámetros `?driver=` / `?asset=` de la ficha: eran el parche que compensaba la falta de página propia.
-
-- [ ] **Step 4: Borrar los modales**
-
-```bash
-git rm monitor-app/frontend/components/dashboard/DriverDetailPanel.tsx \
-       monitor-app/frontend/components/dashboard/DriverDetailPanel.test.tsx \
-       monitor-app/frontend/components/dashboard/VehicleDetailPanel.tsx \
-       monitor-app/frontend/components/dashboard/VehicleDetailPanel.test.tsx
-```
-
-- [ ] **Step 5: Verificar**
-
-```bash
-cd monitor-app/frontend && grep -rn "DriverDetailPanel\|VehicleDetailPanel\|?driver=\|?asset=" app components | grep -v node_modules
-npx vitest run && npx tsc --noEmit && npm run build
-```
-
-Esperado: sin resultados en el grep, y todo verde.
-
-- [ ] **Step 6: Commit**
-
-```bash
 git add -A monitor-app/frontend
-git commit -m "refactor(roster): mueren los modales de conductor y vehiculo
+git commit -m "feat(compliance): lista y detalle en una sola pagina
 
-El roster y Certificacion enlazan a las paginas. Se retira el ?driver= que
-existia solo para abrir un modal que no tenia URL propia.
+La seleccion viaja en la URL, asi el enlace se comparte y el boton atras
+funciona. La lista no se mueve al abrir un detalle.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-## Task 7: La ficha de empresa, plana
+## Task 7: Traer lo que vivía en la ficha y retirarla
 
-Sin tabs. Es el trabajo más grande: hay que redistribuir 959 líneas sin perder ninguna acción.
+La ficha tiene **959 líneas y 6 tabs**. Nada puede perderse.
 
 **Files:**
-- Modify: `app/dashboard/carriers/[id]/page.tsx`
-- Create: `components/compliance/ChildrenList.tsx` y su test
-- Create: `components/dashboard/carriers/CarrierInsuranceSection.tsx`, `CarrierContactsSection.tsx`
+- Modify: `components/compliance/EntityDetailPanel.tsx`
+- Replace: `app/dashboard/carriers/[id]/page.tsx` por una redirección
+- Delete: `components/dashboard/DriverDetailPanel.tsx`, `VehicleDetailPanel.tsx`, `carriers/CarrierDocumentsTab.tsx` y sus tests
 
-- [ ] **Step 1: Inventariar lo que hoy vive en cada tab**
+- [ ] **Step 1: Inventariar y ubicar cada cosa**
 
-| Tab | Qué contiene | A dónde va |
-|---|---|---|
-| Resumen (:523) | `CompletionRing`, obligatorios pendientes, `AlertStatTiles`, `ComplianceHealth` | A la cabecera y a la sección Certificación |
-| Documentos (:582) | `CarrierDocumentsTab` (carga + listado) | Sección **Sus documentos** |
-| Contactos (:594) | `ContactCard`, `AddContactForm` | Sección **Contactos** |
-| Conductores (:616) | `DriverRosterCard`, `TransferModal`, `BajaReasonModal` | Sección **Su flota** |
-| Equipos (:706) | `VehicleRosterCard` | Sección **Su flota** |
-| Seguros (:818) | `InsuranceSummaryCard`, `PolicyCreateForm`, `InsurancePolicyModal` | Sección **Seguros** |
+| Hoy | Dónde queda |
+|---|---|
+| Resumen (:523): `CompletionRing`, obligatorios pendientes, `AlertStatTiles`, `ComplianceHealth` | Cabecera del panel + sección Certificación |
+| Documentos (:582): `CarrierDocumentsTab` | Sección **Sus documentos** (`DocumentList`) |
+| Contactos (:594): `ContactCard`, `AddContactForm` | Sección plegable **Contactos** |
+| Conductores (:616) y Equipos (:706): rosters | Sección **Su flota** (`ChildrenList`) |
+| Seguros (:818): `InsuranceSummaryCard`, `PolicyCreateForm`, `InsurancePolicyModal` | Sección plegable **Seguros** |
+| Acciones: editar, dar de baja, eliminar, transferir | Acciones de la cabecera del panel |
+| Modales de conductor/vehículo: editar nombre/RUT, quitar del roster, transferir, contactos | Panel de detalle del nivel 2 |
 
-Las acciones de la empresa —editar, dar de baja, eliminar, transferir— pasan a la cabecera.
+- [ ] **Step 2: La ruta vieja redirige**
 
-- [ ] **Step 2: Escribir el test que falla**
+`/dashboard/carriers/[id]` queda como redirección a `/dashboard/compliance?empresa=<id>` — está en enlaces guardados, en el historial y en `CertificationStatusTable`.
 
 ```tsx
-it('muestra todo el estado de la empresa sin navegar por tabs', async () => {
-  setup()
-  expect(await screen.findByText('Transportes Sur')).toBeInTheDocument()
-  // Las cuatro secciones, todas presentes a la vez.
-  for (const s of ['Certificación', 'Su flota', 'Seguros', 'Contactos']) {
-    expect(screen.getByRole('heading', { name: new RegExp(s, 'i') })).toBeInTheDocument()
-  }
-  expect(screen.queryByRole('button', { name: 'Resumen' })).not.toBeInTheDocument()
-})
+import { redirect } from 'next/navigation'
 
-it('cada conductor y vehículo lleva a su página', async () => {
-  setup()
-  expect(await screen.findByRole('link', { name: /Juan Pérez/ }))
-    .toHaveAttribute('href', '/dashboard/drivers/d1')
-})
-
-it('conserva las acciones de la empresa', async () => {
-  setup()
-  for (const a of [/editar empresa/i, /dar de baja/i, /eliminar/i]) {
-    expect(await screen.findByRole('button', { name: a })).toBeInTheDocument()
-  }
-})
+/** La ficha dejó de ser una página propia: es el panel de detalle de
+ *  Certificación. La ruta se conserva porque quedó en enlaces guardados. */
+export default async function CarrierRedirect({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return redirect(`/dashboard/compliance?empresa=${id}`)
+}
 ```
 
-- [ ] **Step 3: Implementar**
+- [ ] **Step 3: Borrar lo que quedó sin uso**
 
-Una columna con secciones ancladas y un índice al costado (`<nav>` con enlaces `#certificacion`, `#flota`, `#seguros`, `#contactos`). `ChildrenList` renderiza la flota con el mismo lenguaje visual que `CertificationStatusTable`: nombre + barra + `N de M`, enlazando a la página de cada uno.
-
-**Con flota grande la página se hace larga**: la sección **Su flota** se pagina a 20 y ofrece "Ver todos" que lleva a Certificación filtrado por esa empresa. Es el mismo dato, en la vista que ya existe para recorrerlo.
+```bash
+git rm monitor-app/frontend/components/dashboard/DriverDetailPanel.tsx        monitor-app/frontend/components/dashboard/DriverDetailPanel.test.tsx        monitor-app/frontend/components/dashboard/VehicleDetailPanel.tsx        monitor-app/frontend/components/dashboard/VehicleDetailPanel.test.tsx        monitor-app/frontend/components/dashboard/carriers/CarrierDocumentsTab.tsx        monitor-app/frontend/components/dashboard/carriers/CarrierDocumentsTab.test.tsx
+```
 
 - [ ] **Step 4: Verificar que no se perdió nada**
 
 ```bash
-cd monitor-app/frontend && npx vitest run app/dashboard/carriers && npx tsc --noEmit && npm run build
+cd monitor-app/frontend && grep -rn "DriverDetailPanel\|VehicleDetailPanel\|CarrierDocumentsTab\|?driver=\|?asset=\|activeTab" app components | grep -v node_modules
+npx vitest run && npx tsc --noEmit && npm run build
 ```
 
-Comparar contra el inventario del Step 1: cada fila tiene que tener destino.
+Esperado: sin resultados en el grep. Recorrer el inventario del Step 1 y confirmar que cada fila tiene destino **en la pantalla**, no sólo en el código.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add -A monitor-app/frontend
-git commit -m "refactor(empresas): la ficha pasa a ser una pagina plana
+git commit -m "refactor(empresas): la ficha se disuelve en el panel de detalle
 
-Los seis tabs existian para separar 'lo de adentro' de 'lo mio', que con la
-gramatica del zoom son dos secciones. Para saber como esta una empresa ya no
-hay que recorrer cuatro pestanas.
+Los seis tabs existian para separar 'lo de adentro' de 'lo mio', que son dos
+secciones del mismo panel. La ruta vieja redirige: quedo en enlaces guardados.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
@@ -708,7 +838,6 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Files:**
 - Delete: `components/dashboard/TransporterDocumentsPanel.tsx`, `DocumentChecklist.tsx` y sus tests
-- Modify: los consumidores que queden
 
 - [ ] **Step 1: Confirmar que no quedan consumidores**
 
@@ -721,10 +850,7 @@ Si aparece alguno, migrarlo a `DocumentList` antes de seguir.
 - [ ] **Step 2: Borrar**
 
 ```bash
-git rm monitor-app/frontend/components/dashboard/TransporterDocumentsPanel.tsx \
-       monitor-app/frontend/components/dashboard/TransporterDocumentsPanel.test.tsx \
-       monitor-app/frontend/components/dashboard/DocumentChecklist.tsx \
-       monitor-app/frontend/components/dashboard/DocumentChecklist.test.tsx
+git rm monitor-app/frontend/components/dashboard/TransporterDocumentsPanel.tsx        monitor-app/frontend/components/dashboard/TransporterDocumentsPanel.test.tsx        monitor-app/frontend/components/dashboard/DocumentChecklist.tsx        monitor-app/frontend/components/dashboard/DocumentChecklist.test.tsx
 ```
 
 - [ ] **Step 3: Verificar y commitear**
@@ -743,11 +869,13 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ## Verificación final
 
 - [ ] `venv/bin/python -m pytest tests/ -q` en el backend: verde.
-- [ ] `npx vitest run && npx tsc --noEmit && npm run build` en el frontend: verde, con `/dashboard/drivers/[id]` y `/dashboard/assets/[id]` en el manifest.
+- [ ] `npx vitest run && npx tsc --noEmit && npm run build` en el frontend: verde.
 - [ ] **Pasada de diseño**: correr `ui-ux-pro-max --design-system` y su checklist sobre las tres páginas. Contraste 4.5:1, `cursor-pointer`, foco visible, `prefers-reduced-motion`, y responsive a 375 / 768 / 1024 / 1440.
-- [ ] **Mirar las tres pantallas renderizadas** con Playwright, en escritorio y en teléfono. No dar por lista ninguna sin haberla abierto.
+- [ ] **Mirar la pantalla renderizada** con Playwright en los tres niveles, en escritorio y en teléfono (en angosto no hay dos columnas). No darla por lista sin haberla abierto.
 - [ ] Click-through del recorrido completo, **con datos de prueba sembrados y borrados después**:
-  - [ ] Certificación → una empresa → un conductor, y volver con las migas y con el botón atrás.
+  - [ ] Certificación → una empresa → un conductor **sin que cambie la página**, y volver con las migas y con el botón atrás.
+  - [ ] Una empresa con más de 20 en su flota: la paginación funciona y el panel no se estira.
+  - [ ] Copiar la URL con un conductor abierto, pegarla en otra pestaña y llegar al mismo lugar.
   - [ ] Cargar un documento desde cada uno de los tres niveles.
   - [ ] Reasignar desde cada nivel.
   - [ ] Un conductor **sin empresa asignada**: la página no rompe y explica por qué no se puede cargar.
@@ -756,5 +884,5 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ## Fuera de alcance
 
 - **HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento). HU-06 es la que sacaría a Seguros del primer nivel y lo dejaría como sección de la empresa — encaja con este plan, pero es una HU propia.
-- **El nivel 3, el documento**, como página con su historial. Hoy el historial de versiones vive dentro de la fila y alcanza.
+- **El nivel 3, el documento**, con su propio panel. Hoy el historial de versiones vive dentro de la fila y alcanza.
 - **Los 2.000 documentos** siguen sin entrar al sistema. Este plan no los trae; sigue siendo el bloqueante para que todo esto sirva.
