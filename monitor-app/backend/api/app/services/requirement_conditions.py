@@ -10,12 +10,29 @@ from __future__ import annotations
 # ojo contra la del trigger. Dos lenguajes distintos para la misma regla es
 # exactamente cómo divergen.
 SQL_ENTIDADES_QUE_APLICAN = {
+    # CARRIER tiene dos casos, igual que las dos ramas CARRIER de
+    # reconcile_new_requirement(): un requisito sin shipper_id es general y
+    # aplica a toda empresa (filtrada solo por management_types); uno CON
+    # shipper_id es de un cliente puntual y aplica solo a las empresas
+    # vinculadas a ese cliente vía carrier_shippers (ACTIVE) — lo mismo que
+    # siembran reconcile_carrier_shipper_link y la rama con shipper de
+    # reconcile_new_requirement(). Sin esta segunda rama, recalcular un
+    # requisito de cliente puntual (p.ej. ANEXO_REPLEG) trataría "aplica a
+    # 0 empresas" y propondría borrar todos sus registros legítimos.
     "CARRIER": """
         SELECT e.id
         FROM public.carriers e, public.compliance_requirements req
-        WHERE req.id = $1 AND req.is_active AND req.shipper_id IS NULL
+        WHERE req.id = $1 AND req.is_active
           AND (req.applies_to_management_types IS NULL
                OR e.management_types && req.applies_to_management_types)
+          AND (
+              req.shipper_id IS NULL
+              OR EXISTS (
+                  SELECT 1 FROM public.carrier_shippers cs
+                  WHERE cs.carrier_id = e.id AND cs.shipper_id = req.shipper_id
+                    AND cs.status = 'ACTIVE'
+              )
+          )
     """,
     "DRIVER": """
         SELECT e.id

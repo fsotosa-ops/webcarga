@@ -18,3 +18,12 @@ def test_hay_una_regla_por_tipo_de_entidad():
 def test_las_tres_reglas_filtran_por_is_active():
     for entidad, sql in SQL_ENTIDADES_QUE_APLICAN.items():
         assert "is_active" in sql, entidad
+
+
+def test_la_regla_de_empresa_contempla_los_requisitos_de_cliente_puntual():
+    """Un requisito con shipper_id aplica a las empresas vinculadas a ese
+    cliente, no a ninguna. Sin esta rama, recalcular ANEXO_REPLEG proponia
+    borrar sus 35 registros legitimos."""
+    sql = SQL_ENTIDADES_QUE_APLICAN["CARRIER"]
+    assert "shipper_id" in sql
+    assert "carrier_shippers" in sql
