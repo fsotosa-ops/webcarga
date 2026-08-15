@@ -22,6 +22,11 @@
 - Backend: correr pytest con `monitor-app/backend/api/venv`, no `.venv` ni anaconda.
 - Al agregar una dependencia a `pyproject.toml`, editar también el `Dockerfile` en el mismo commit. Este tramo no agrega ninguna.
 - Trabajar sobre la rama `dev`. No promover a `main`.
+- **El código muerto se borra en el mismo commit que lo deja muerto.** Si una tarea deja un
+  componente, un método de cliente, un endpoint, un tipo o un test sin ningún llamador, se elimina
+  ahí mismo — no se deja "por si acaso" ni se difiere a una limpieza posterior. Verificar con
+  `grep -rn "<nombre>" --include="*.ts" --include="*.tsx" --include="*.py"` antes de borrar: un
+  nombre que parece sin uso puede estar referenciado con otra grafía.
 
 ---
 
@@ -1541,6 +1546,83 @@ gh run watch --exit-status
 ```
 
 El push a `dev` dispara `deploy-frontend.yml` y el deploy de la Monitor API. Verificar que ambos terminan en verde.
+
+---
+
+## Task 10: Limpieza — retirar la puerta de clasificación de a uno
+
+`documentIngestApi.classify` **no tiene ningún llamador** en el frontend, y su endpoint
+`POST /items/{item_id}/classify` sigue vivo en el backend. Quedó superado por `classifyBatch`, que
+con un archivo hace exactamente lo mismo. Dos caminos para la misma operación terminan divergiendo,
+y ya pasó una vez en este módulo.
+
+**Verificar antes de borrar**, no confiar en este párrafo:
+
+```bash
+cd monitor-app/frontend && grep -rn "\.classify(" --include="*.tsx" --include="*.ts" app components lib hooks
+```
+
+Si aparece algún llamador, **no borrar** y reportarlo: significa que algo cambió desde que se escribió
+este plan.
+
+**Files:**
+- Modify: `monitor-app/frontend/lib/api/documentIngest.ts` (quitar `classify` y el tipo `ClassifyBody` si queda sin uso)
+- Modify: `monitor-app/backend/api/app/routers/document_ingest.py` (quitar `classify_item`)
+- Modify: `monitor-app/backend/api/app/schemas/document_ingest.py` (quitar `ClassifyBody` si queda sin uso)
+- Modify: `monitor-app/backend/api/tests/test_document_ingest.py` (quitar sus tests)
+
+**Interfaces:**
+- Consumes: nada.
+- Produces: nada. Es una resta.
+
+- [ ] **Step 1: Verificar que no hay llamadores**
+
+Correr el `grep` de arriba, más el del backend:
+
+```bash
+cd monitor-app/backend/api && grep -rn "classify_item" app/ tests/ --include="*.py" | grep -v __pycache__
+```
+
+Esperado: sólo su propia definición y sus tests.
+
+- [ ] **Step 2: Borrar el método del cliente**
+
+En `lib/api/documentIngest.ts`, quitar el método `classify` completo. Si `ClassifyBody` queda sin
+ninguna referencia, quitar también el tipo. Verificar con `grep -rn "ClassifyBody" --include="*.ts" --include="*.tsx" .`
+antes de quitarlo: `ClassifyBatchBody` es otro tipo y sí se usa.
+
+- [ ] **Step 3: Borrar el endpoint y sus tests**
+
+En `app/routers/document_ingest.py`, quitar la función `classify_item` y su decorador
+`@router.post("/items/{item_id}/classify")`. En `tests/test_document_ingest.py`, quitar los tests que
+peguen a esa ruta. En `app/schemas/document_ingest.py`, quitar `ClassifyBody` **sólo si** queda sin
+referencias — `ClassifyBatchBody` es distinto y se conserva.
+
+- [ ] **Step 4: Correr las dos suites**
+
+```bash
+cd monitor-app/backend/api && ./venv/bin/python -m pytest tests/ -q
+cd monitor-app/frontend && npx tsc --noEmit && npx vitest run
+```
+
+Esperado: verde en ambas. Si `tsc` reclama por `ClassifyBody`, es que sí tenía uso: restaurar el tipo
+y dejar sólo el endpoint borrado.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add monitor-app/frontend/lib/api/documentIngest.ts \
+        monitor-app/backend/api/app/routers/document_ingest.py \
+        monitor-app/backend/api/app/schemas/document_ingest.py \
+        monitor-app/backend/api/tests/test_document_ingest.py
+git commit -m "refactor(ingesta): retira la puerta de clasificacion de a uno
+
+classify quedo sin llamadores cuando classifyBatch paso a cubrir tambien
+el caso de un archivo. Dos caminos para la misma operacion terminan
+divergiendo, y en este modulo ya paso una vez.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
 
 ---
 
