@@ -37,7 +37,16 @@ type Sujeto = {
 export function CarrierDrawer({ carrierId, carrierName }: Props) {
   const canEdit = useCanEdit()
   const queryClient = useQueryClient()
-  const [plegados, setPlegados] = useState<Set<string>>(() => new Set())
+  /** Se guardan los ABIERTOS, no los plegados, para que el default —conjunto
+   *  vacío— sea "todo plegado" sin depender de que lleguen los datos.
+   *
+   *  Medido en staging: con los sujetos abiertos el cajón de una empresa con
+   *  9 sujetos y 91 requisitos medía **3.159px**, contra 633px de lista
+   *  visible. Cinco pantallas. Eso contradice la razón de ser del cajón —"no
+   *  achica nada y nunca saca al usuario de donde estaba"—: para volver a la
+   *  lista había que subir cinco pantallas, peor que el panel lateral que se
+   *  revirtió en la Ronda 109. Plegados, el mismo cajón mide ~720px. */
+  const [abiertos, setAbiertos] = useState<Set<string>>(() => new Set())
   const [subiendo, setSubiendo] = useState<string | null>(null)
 
   /** Una sola consulta para todo "lo que falta": `/pending` ya trae la
@@ -74,7 +83,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
   }, [rows])
 
   function alternar(clave: string) {
-    setPlegados(prev => {
+    setAbiertos(prev => {
       const next = new Set(prev)
       if (next.has(clave)) next.delete(clave)
       else next.add(clave)
@@ -133,18 +142,18 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
         )}
 
         {sujetos.map(s => {
-          const plegado = plegados.has(s.clave)
+          const abierto = abiertos.has(s.clave)
           return (
             <div key={s.clave} className="border-t border-sky-100 first:border-t-0">
               <button
                 type="button"
                 onClick={() => alternar(s.clave)}
-                aria-expanded={!plegado}
+                aria-expanded={abierto}
                 className="w-full flex items-center gap-1.5 py-1.5 text-left cursor-pointer group"
               >
-                {plegado
-                  ? <ChevronRight size={11} className="text-gray-400" aria-hidden="true" />
-                  : <ChevronDown size={11} className="text-gray-400" aria-hidden="true" />}
+                {abierto
+                  ? <ChevronDown size={11} className="text-gray-400" aria-hidden="true" />
+                  : <ChevronRight size={11} className="text-gray-400" aria-hidden="true" />}
                 {/* El sujeto es lo que se escanea: va en tinta y en semibold. */}
                 <span className="text-[12.5px] font-semibold text-text-primary group-hover:text-accent transition-colors">
                   {s.titulo}
@@ -154,7 +163,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
                 </span>
               </button>
 
-              {!plegado && s.pendientes.map(p => (
+              {abierto && s.pendientes.map(p => (
                 <div
                   key={p.id}
                   className="flex items-center gap-2 py-1 pl-5 border-b border-sky-100/70 last:border-b-0"

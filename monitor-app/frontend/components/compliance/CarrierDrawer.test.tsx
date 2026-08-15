@@ -88,7 +88,8 @@ describe('CarrierDrawer', () => {
 
   it('subir un documento usa la misma puerta que la bandeja', async () => {
     setup([pendiente({ entity_type: 'CARRIER', entity_id: 'c1', requirement_id: 'r1' })])
-    await screen.findByText('F30')
+    // Los sujetos arrancan plegados para que el cajon quepa en la pantalla.
+    fireEvent.click(await screen.findByText('De la empresa'))
 
     const input = screen.getByTestId('subir-p1') as HTMLInputElement
     fireEvent.change(input, {
@@ -103,16 +104,35 @@ describe('CarrierDrawer', () => {
       ))
   })
 
-  it('un sujeto se puede plegar', async () => {
+  // MEDIDO EN STAGING (2026-08-15): con los sujetos abiertos, el cajon de
+  // Transportes Charlotte media 3.159px — 9 sujetos, 91 lineas de requisito —
+  // contra 633px de lista visible. Cinco pantallas. Eso contradice la razon de
+  // ser del cajon: "no achica nada y nunca saca al usuario de donde estaba".
+  // Para volver a la lista habia que subir cinco pantallas, peor que el panel
+  // lateral que se revirtio. El mockup ya lo preveia: muestra unos pocos
+  // requisitos y pliega el resto.
+  it('los sujetos arrancan plegados: el cajon tiene que caber en la pantalla', async () => {
     setup([
       pendiente({ id: 'p2', category: 'CHOFER', entity_type: 'DRIVER',
                   entity_id: 'd1', subject_name: 'Juan Pérez', document_name: 'Licencia' }),
     ])
     await screen.findByText('Juan Pérez')
-    expect(screen.getByText('Licencia')).toBeInTheDocument()
+
+    expect(screen.queryByText('Licencia')).not.toBeInTheDocument()
+    // Pero el encabezado ya dice cuanto le falta, asi que se puede decidir
+    // sin desplegar.
+    expect(screen.getByText(/faltan 1$/)).toBeInTheDocument()
+  })
+
+  it('un sujeto se despliega al tocarlo', async () => {
+    setup([
+      pendiente({ id: 'p2', category: 'CHOFER', entity_type: 'DRIVER',
+                  entity_id: 'd1', subject_name: 'Juan Pérez', document_name: 'Licencia' }),
+    ])
+    await screen.findByText('Juan Pérez')
 
     fireEvent.click(screen.getByText('Juan Pérez'))
-    expect(screen.queryByText('Licencia')).not.toBeInTheDocument()
+    expect(screen.getByText('Licencia')).toBeInTheDocument()
   })
 
   it('sin pendientes lo celebra en vez de mostrar una lista vacia', async () => {
@@ -122,7 +142,8 @@ describe('CarrierDrawer', () => {
 
   it('un vencido se distingue de un faltante', async () => {
     setup([pendiente({ status: 'EXPIRED', expiration_date: '2026-01-01' })])
-    expect(await screen.findByText(/vencido/i)).toBeInTheDocument()
+    fireEvent.click(await screen.findByText('De la empresa'))
+    expect(screen.getByText(/vencido/i)).toBeInTheDocument()
   })
 })
 
@@ -141,7 +162,8 @@ describe('CarrierDrawer sin permiso de edición', () => {
       </QueryClientProvider>,
     )
 
-    await screen.findByText('F30')
+    fireEvent.click(await screen.findByText('De la empresa'))
+    expect(screen.getByText('F30')).toBeInTheDocument()
     expect(screen.queryByTestId('subir-p1')).not.toBeInTheDocument()
   })
 })
