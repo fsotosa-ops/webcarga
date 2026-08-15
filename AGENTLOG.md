@@ -1553,10 +1553,22 @@ mapeado, así que nunca ejercitó el camino sin etiqueta; y dos tests míos eran
 el contenedor, que existe desde el primer render, en vez del contenido.
 
 #### Próximo paso exacto
-1. [ ] **Los 2.000 documentos.** La puerta está abierta y verificada de punta a punta.
-2. [ ] **Decisiones de negocio pendientes**: H1 (16 remolques sin cámara de frío cargan
-   `MANTENCION_FRIO`, sembrado por `asset_type='RAMPLA'`) y D8 (*Seguro EETT* / *Seguro RC
-   Empresa*, sin sembrar).
+1. [ ] **La carga de documentos la hace el equipo de negocio de WebCarga, no desarrollo**
+   (aclarado por el usuario, 2026-08-15). Los "2.000 documentos" que figuraban como pendiente
+   nuestro desde la Ronda 97 eran archivos en SharePoint, no una tarea de este equipo. Lo que sí
+   era nuestro —que la puerta funcione— está entregado y verificado de punta a punta.
+2. [ ] **Decisiones de negocio pendientes.** Ninguna bloquea el módulo; las dos son reglas que
+   nadie definió y que el sistema está aplicando igual:
+   - **H1** — `reconcile_new_asset` siembra `MANTENCION_FRIO` y `RESOLUCION_SANITARIA` por
+     `asset_type='RAMPLA'`, o sea a TODA rampla. Hoy eso exige cámara de frío a **11 Furgón Seco y
+     5 Sider** (37 registros por requisito, todos en MISSING): un certificado que esos vehículos no
+     pueden obtener nunca, inflando el pendiente de sus empresas. Falta la regla: ¿sólo furgones
+     refrigerados, o hay excepciones?
+   - **D8** — *Seguro EETT* y *Seguro RC Empresa* son `CONDITIONAL_OPTIONAL` y **la condición nunca
+     se escribió**, así que no se siembran: `SEGURO_RC_EMPRESA` tiene 0 registros y `SEGURO_EETT`
+     tiene 1, probablemente manual. La hipótesis abierta era si dependen del tipo de gestión
+     (Tractoreo vs Equipo Completo), pero podría ser volumen o cliente. Sin la regla siguen
+     apagados.
 3. [ ] **Tramo 3** — pilas agrupadas, historial de versiones y la migración del índice único.
    **Ojo con H2**: `reconcile_new_asset`, `_carrier` y `_driver` usan
    `ON CONFLICT (entity_id, requirement_id)`, que necesita **exactamente** el índice que hay que
