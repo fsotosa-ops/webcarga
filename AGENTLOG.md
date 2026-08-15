@@ -1455,212 +1455,116 @@ Los tres quedan sin consumidor en el frontend por ahora; son correctos y el redi
 El plan `docs/superpowers/plans/2026-08-15-zoom-empresa-conductor-vehiculo.md` **se conserva como registro de la intención**, con la advertencia de arriba: el marco del zoom-out sigue siendo correcto; lo que falló fue construirlo de a parches.
 
 #### Próximo paso exacto
-1. [ ] **Rediseñar la pantalla de una, antes de escribir código.** Definir jerarquía completa —qué se ve primero, qué se pliega, cómo entra la carga masiva— partiendo de la pregunta única *"qué falta y cómo lo cierro"*. Con `frontend-design` + `ui-ux-pro-max --design-system` (MUST del usuario) y presentado antes de implementar. No retomar las Tasks 5-8 del plan del zoom tal como están.
-2. [ ] **Los 2.000 documentos siguen sin entrar al sistema** — sigue siendo el bloqueante real.
-3. [ ] **HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento).
-4. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
+**Cerrado por las Rondas 110-112** (archivadas en `AGENTLOG_ARCHIVE.md` salvo la 112, abajo). El
+rediseño se hizo con spec + plan y los tres tramos; HU-05 y HU-06 se retiraron del backlog por
+decisión del usuario. Lo que sigue abierto está consolidado en el checkpoint de la Ronda 112.
 
-### 2026-08-15 (cont.) — Ronda 110: rediseño de Certificación — spec, plan y Tramo 1 desplegado
+### 2026-08-15 (cont.) — Ronda 112: Tramo 2 completo — el embudo, el cajón y la propiedad de la clasificación
 
-**Qué se hizo**: sesión completa de brainstorming con siete pantallas de mockups verificadas contra
-producción, spec, plan, y ejecución del primer tramo con subagentes. **19 commits pusheados a `dev`**
-(`ad8b2d0..e0c1e2f`), ambos despliegues en verde.
+**14 tareas del plan, 9 commits en `dev`, todo desplegado en verde.** Backend **590 tests**,
+frontend **848**, dos migraciones aplicadas y verificadas contra producción.
 
-**Documentos**: `docs/superpowers/specs/2026-08-15-certificacion-rediseno-design.md` y
-`docs/superpowers/plans/2026-08-15-certificacion-tramo1-la-puerta.md`.
+#### Lo entregado
 
-#### Los datos que ordenaron el diseño (medidos contra `viclzoftiudkepqnhekv`)
+La lista por empresa deja de ordenarse por "cuánto le falta" y pasa a ser un **embudo de
+certificación** de cinco etapas. El motivo está medido y era el error del diseño anterior: las 39
+empresas activas tienen el **mismo denominador** y entre 1 y 3 documentos cubiertos, así que
+ordenar por completitud no discrimina — entre la primera fila y la trigésima hay un documento.
 
-| Dato | Valor | Implicancia |
-|---|---|---|
-| Registros de cumplimiento | 4.990, de los cuales **4.895 en MISSING** | 1,9% cargado |
-| Nivel legal | **33 de 37 son `LEGAL_MANDATORY`** | El nivel no prioriza nada |
-| Conductores / vehículos por empresa | **promedio 2 y 3**, máximos 12 y 25 | Fijada la empresa, elegir sujeto es un clic |
-| Empresas | 248 total, **39 activas**, 26 con viajes | Tres círculos que la lista no usaba |
-| Tipo de operación | Equipo Completo 73 · Tractoreo 43 | **23 empresas sólo tractoreo, 12 sólo equipo completo, 1 mixta** |
-| Viajes futuros vinculados | **0** | No hay alerta anticipada posible hoy |
+La fila **se abre hacia abajo**. Sin panel lateral, sin modal, sin página nueva: es exactamente lo
+que se revirtió en la Ronda 109. La bandeja del cajón es **el mismo `TriageWorkbench`** con
+`carrierId`, no una bandeja paralela.
 
-**El error del diseño anterior, ahora explicado**: ordenar por "cuánto le falta a cada empresa" no
-discrimina nada — las 39 activas tienen el mismo denominador y entre 1 y 3 documentos cubiertos.
+Cuatro agrupaciones (Empresa · Conductor · Vehículo · **Requisito**) que miran los **mismos**
+pendientes, y la bandeja detrás de su propio botón con contador — no es una quinta agrupación.
 
-#### Decisiones del usuario
+#### Decisiones de arquitectura
 
-Régimen y no arranque · eje por empresa con agrupación por requisito como secundaria · **una sola puerta
-de carga** · **con historial de versiones** al renovar · el tipo de gestión se elige al crear y condiciona
-la plantilla · *Seguro EETT* y *Seguro RC Empresa* quedan **pendientes de negocio** y no se siembran.
+**D9 — `carriers.management_types TEXT[]`, no tabla puente y no un valor `AMBAS`.** Las tres tablas
+puente existentes cargan `status`+`start_date`+`end_date` y entre **241 filas reales hay 3
+no-ACTIVE y cero `end_date`**: nueve columnas de ciclo de vida jamás usadas. Y `'AMBAS'` colapsaría
+un conjunto en un escalar, obligando a que toda consulta recuerde `IN ('TRACTOREO','AMBAS')` —
+olvidarlo deja afuera a la empresa mixta **en silencio**.
 
-**HU-05 y HU-06 retiradas del backlog** por decisión del usuario, junto con los planes superados.
+**La app toma propiedad de la clasificación de vehículos.** `fleet_service_type_id` y
+`webcarga_operation_type_id` salían **sólo** de Mage: un vehículo creado en la app nacía sin
+clasificar. La primera solución propuesta —preseleccionar `asset_type` desde la gestión— **se
+descartó por parche**: la migración `20260803050000` separó a propósito el hecho físico del
+comercial, y deducir uno del otro los vuelve a mezclar. Habilitado por evidencia: `HKXW55` está en
+bronze, tiene `is_manual_override` y es **el único sin clasificar de 120** — o sea la ingesta
+respeta el flag. El flag se marca **sólo si una persona declaró algo**.
 
-#### Tramo 1 — desplegado y verificado en staging
+**Una sola definición de "pendiente"**, compartida por el embudo y `/pending`
+(`pendiente_predicate()`), y una sola de "sin clasificar" (`unclassified_predicate()`, de la Ronda
+110). Los alcances `active`/`catalog` son **el mismo predicado negado**, no dos criterios paralelos.
 
-Backend 562 tests, frontend 808, `tsc` limpio, `npm run build` exitoso. Smoke test contra
-`webcarga-monitor-api-dev`: `POST /document-ingest/files` → 401 (existe), `POST /items/undo-classify` →
-401, `POST /items/{id}/classify` → **404** (borrado), `POST /{carrier_id}/files` → 401 (intacto).
+**Tres tokens de color** en `globals.css` (`--espera`, `--accion`, `--resuelto`). `--espera` vale lo
+mismo que el `--status-incidente` que ya existía pero se declara aparte: comparten valor, no
+significado.
 
-Lo entregado: carga global sin elegir empresa (era el bloqueo real para meter los 2.000 documentos);
-la cola deja de filtrar sólo `UNMATCHED`; deshacer en lote; zona de carga con sus cuatro estados;
-botones que nombran la cantidad exacta; y el retiro de `documentIngestApi.classify` con su endpoint.
+#### Verificado contra la base, no sólo con mocks
 
-#### Los tres bugs críticos que sólo vio la revisión de conjunto
+Embudo **1 / 30 / 8 / 0 / 209**; los dos alcances suman **248 sin solapamiento**; la agrupación por
+requisito devuelve los **mismos 2.360** pendientes que la de empresa (424 CARRIER + 939 DRIVER +
+997 ASSET); el CHECK de `asset_type` rechaza `CAMION`; el renombre de etiqueta se propagó a las
+**78 filas** de `app.carrier_asset_roster`.
 
-Las nueve revisiones por tarea pasaron limpias. La revisión de rama completa encontró:
+#### Lo que sólo se vio MIRÁNDOLO, no con tests
 
-1. **Soltar más de 50 archivos fallaba en silencio.** El backend corta en 50; el frontend mandaba todo
-   junto sin `onError`. El caso de uso que justifica el tramo no funcionaba y no avisaba.
-2. **N archivos al mismo requisito destruían N-1.** El spec lo declara no negociable y no estaba impedido
-   en ninguna capa. Agravado por este mismo tramo: como la cola ahora oculta los `COMMITTED`, los
-   archivos perdidos dejaban de aparecer en cualquier pantalla.
-3. **El aviso de deshacer se evaporaba** aunque no hubiera revertido nada, perdiendo los ids.
+**El cajón medía 3.159px — cinco pantallas de lista.** 9 sujetos con 91 líneas de requisito, todas
+abiertas. Los 841 tests pasaban porque ninguno mide altura. Contradecía la razón de ser del cajón:
+para volver a la lista había que subir cinco pantallas, peor que el panel que vino a reemplazar. El
+mockup ya lo preveía —muestra unos pocos requisitos y pliega el resto— y no se aplicó. Con los
+sujetos plegados: **806px**, verificado en staging.
 
-Más siete importantes, entre ellos **dos definiciones distintas de "sin clasificar"** conviviendo
-(`NOT IN (COMMITTED,DISCARDED)` contra `= UNMATCHED`), latente sólo porque `document_matcher.py` no está
-conectado a ningún router.
+#### La revisión de rama: 11 hallazgos, y uno era falso positivo
 
-**Y la corrección introdujo su propia regresión**: el handler global de drop convivía mal con la zona de
-arrastre —el evento burbujeaba— y **cada archivo se subía dos veces**. Había tests de los dos lados y
-ninguno cubría el cruce. Corregido en `e0c1e2f` con un test que monta las dos piezas juntas.
+**El falso positivo destapó un bug real distinto.** Decía que una empresa con `operational_status`
+NULL desaparecía de los dos alcances; el mecanismo no existe (`_default_status_from_tax_id` lo
+impide, y hay 0 filas con NULL). Pero al verificarlo apareció lo de verdad: una empresa creada
+**sin RUT** queda en `ONBOARDING`, que no es `ACTIVE`, así que caía en "Resto del catálogo" —
+plegado, al fondo. El flujo exacto para el que se construyó el embudo. **ONBOARDING entra al
+alcance activo.**
 
-#### Lección de proceso, para no repetirla
+Los dos graves confirmados:
+1. **`PATCH /assets` daba 500 al reclasificar.** Las columnas nuevas son `uuid`, asyncpg devuelve
+   `uuid.UUID` y `json.dumps` no lo serializa: la transacción entera caía. Afectaba a los **81 de
+   118** vehículos ya clasificados. Corregido en la **raíz** (`log_change` con `default=str`), así
+   cubre también `date`/`datetime`.
+2. **El embudo mandaba a renovar documentos que ninguna pantalla podía mostrar.** Contaba el
+   vencimiento por fecha pero `/pending` sólo por estado, y los 9 vencidos tienen
+   `APPROVED_MANUAL`: 8 empresas en "Hay que renovar · 9 documentos vencidos" con el cajón diciendo
+   "No le falta ningún documento". Pendientes: 2.360 → **2.369**.
 
-**Estar en el repositorio no es estar en git.** Se autorizó borrar tres planes superados afirmando que
-git conservaba el historial; uno de los tres (`2026-08-14-certificacion-carga-y-fechas.md`) nunca estuvo
-trackeado y **se perdió**. Antes de autorizar cualquier borrado: `git ls-files --error-unmatch <ruta>`.
+Más: la agrupación por Requisito se dibujaba como lista de vehículos; buscar dejaba el catálogo
+**inalcanzable**; el cajón invalidaba una clave inexistente; una subida fallida no decía nada; y la
+gestión marcada se filtraba entre empresas.
 
-#### El 429 "Many requests" — causa real encontrada, y NO era el proxy
+#### Tres tests que afirmaban lo contrario de lo que decían
 
-Reapareció al abrir staging tras el despliegue. **El arreglo del proxy de la Ronda 107 estaba intacto y
-no era el culpable.** Diagnóstico con evidencia de dos fuentes:
-
-- **Logs de Auth de Supabase**: **104 llamadas a `/user` en un solo minuto** (06:18), 71 en el siguiente,
-  57 a las 05:28. En ráfagas, con el usuario sin hacer clics.
-- **Logs de Cloud Run del frontend** en la misma ventana: decenas de fichas de empresa **distintas**
-  pedidas entre 7 y 24 veces cada una. Eso es **prefetch de Next.js**, no navegación humana.
-
-Dos causas que se multiplicaban:
-
-1. **`CertificationStatusTable` tenía 3 enlaces a `/dashboard/carriers/{id}` sin `prefetch={false}`**,
-   aunque sus hermanos `TransporterCard` y la lista de Empresas **sí lo llevan, puestos por este mismo
-   motivo**. Esa tabla muestra hasta 200 filas y Next prefetchea todas las visibles.
-2. **Cada prefetch ejecuta el layout del dashboard, que llamaba a Auth dos veces**: una en
-   `layout.tsx` y otra en `Topbar.tsx`, que además repetía la consulta a `profiles`. El Topbar ahora
-   recibe los datos por props.
-
-Corregido en `becd00d`, con un guardarraíl: el prop no llega al DOM, así que un test de DOM no puede
-verlo y sin test alguien lo borra por parecer decorativo. Se verifica sobre el módulo y se comprobó que
-falla al quitar un solo `prefetch={false}`.
-
-**Regla para el futuro**: cualquier `<Link>` dentro de una lista larga va con `prefetch={false}`. En esta
-app cada prefetch cuesta una ejecución del layout del dashboard, y el layout habla con Auth.
-
-**Nota de infraestructura**: el primer intento de despliegue de ese arreglo falló con
-`Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'`. Es intermitente —
-`npm ci` con lockfile fijo en Next 16.2.6, la misma imagen compiló bien 15 minutos antes. Se resolvió con
-`gh run rerun --failed`. Si vuelve a pasar, reintentar antes de investigar.
+Aparecieron en esta ronda y vale registrarlo como clase: `'no ofrece mover si la seleccion cruza
+empresas'` **blindaba** el bug del Tramo 1; el del fallback de etiqueta usaba `'OTRO'`, que estaba
+mapeado, así que nunca ejercitó el camino sin etiqueta; y dos tests míos eran carreras — esperaban
+el contenedor, que existe desde el primer render, en vez del contenido.
 
 #### Próximo paso exacto
-**Superado por la Ronda 111** (ver abajo): el click-through se hizo y encontró un bug bloqueante,
-ya corregido y verificado.
-
-### 2026-08-15 (cont.) — Ronda 111: el click-through del Tramo 1 destapa un bug bloqueante + plan del Tramo 2
-
-**Origen**: pedido de revisar el desarrollo de los Tramos 1-3 y preparar las tareas de lo que sigue.
-
-#### El Tramo 1 estaba desplegado pero su caso de uso central no funcionaba
-
-Click-through en vivo con **Playwright** contra staging (la sesión ya estaba autenticada; no hizo
-falta `DEMO_PASSWORD`). Seis de siete verificaciones pasaron:
-
-| Prueba | Resultado |
-|---|---|
-| Carga global sin elegir empresa | 3 archivos entran bajo "Sin empresa" |
-| Sin duplicación al soltar (`e0c1e2f`) | Exactamente **3**, no 6 |
-| Más de 50 archivos | **58 = 3 + 55**, encadenó 50 + 5, cero pérdidas |
-| Estado "Cargando" | Barra, "0 de 55 listos", aviso de cerrar pestaña |
-| Regla del lote | "Clasificar los 2" deshabilitado, con el motivo |
-| Botones nombran cantidad | "Descartar los 2", "Mover los 58" |
-| Invariante del tramo | **0 `compliance_records`** tocados por la carga |
-
-**El bug**: un archivo que entraba por la puerta global **no se podía mover a una empresa ni
-clasificar**. La única acción era Descartar, que borra el blob. Los 2.000 documentos habrían
-entrado a un callejón sin salida.
-
-Causa: `selectedCarrierId` (`TriageWorkbench.tsx:95-100`) usaba `null` como centinela de **dos
-estados distintos** — "la selección cruza empresas" (ambiguo) y "los archivos todavía no tienen
-empresa" (unánime) — y `TriageBulkBar.tsx:49` escondía `MoveToCarrierBar` para los dos. El primero
-es además **inalcanzable**: `handleToggle` reemplaza la selección al marcar un archivo de otra
-empresa, así que la selección siempre es homogénea.
-
-Es la **segunda vez** que este módulo tropieza con un valor haciendo dos trabajos: la revisión de
-rama del Tramo 1 ya había encontrado dos definiciones de "sin clasificar" conviviendo.
-
-**Y había un test fijando el defecto** — `'no ofrece mover si la seleccion cruza empresas'`, escrito
-sobre la misma lectura equivocada. No protegía: blindaba el bug. Se reemplazó por el caso real.
-
-El backend no participaba: `POST /items/move` asigna `carrier_id` por id sin mirar el previo. El
-arreglo fue sólo de frontend — `48644ad`, 810 tests, `tsc` limpio, build y deploy en verde.
-
-Defecto menor del mismo pase: con un archivo sin empresa el panel decía *"Esta empresa no tiene
-requisitos pendientes… Suele pasar cuando la empresa no está activa"*, describiendo una situación
-que no era la que ocurría. Ahora distingue las dos causas de la lista vacía y nombra la salida.
-
-**Verificado end-to-end tras el redespliegue**, contra la base: mover (`PRUEBA-T1-1.pdf` →
-Transportes Charlotte Spa, sigue `UNMATCHED` — *mover encamina, no termina*), clasificar
-(`APPROVED_MANUAL` + fecha + archivo, item a `COMMITTED`) y **deshacer** (vuelve a `MISSING`, sin
-fecha ni archivo, item a `UNMATCHED` conservando la empresa). Los 58 archivos de prueba se
-limpiaron por el `DELETE` de la app; quedan 0 `compliance_records` tocados.
-
-**Nota de infraestructura**: `webcarga-frontend-dev` **escribe en la base de producción**
-(`viclzoftiudkepqnhekv`). No hay entorno de datos separado. El usuario lo dio por aceptable
-("aún estamos con solución de prueba"), pero conviene saberlo antes de cualquier prueba destructiva.
-
-#### Plan del Tramo 2 escrito, con tres decisiones tomadas contra datos reales
-
-Plan en `~/.claude/plans/ethereal-chasing-dijkstra.md` (local). **El embudo de 5 grupos se corrió
-contra producción antes de escribirlo**: reparte 1 / 30 / 8 / 0 / 209, o sea discrimina.
-
-**D9 — el tipo de gestión declarado va en `carriers.management_types TEXT[]`**, no en tabla puente
-ni como escalar con un valor `AMBAS`. Dos descartes con evidencia:
-- *Tabla puente*: las tres que ya existen (`carrier_shippers`, `driver_assignments`,
-  `asset_assignments`) cargan `status`+`start_date`+`end_date` y entre **241 filas hay 3 no-ACTIVE y
-  cero `end_date`**. Nueve columnas de ciclo de vida jamás usadas. La nº 25 del esquema serviría a 2 filas.
-- *`AMBAS`*: colapsa un conjunto en un escalar y obliga a que toda consulta recuerde
-  `IN ('TRACTOREO','AMBAS')`. Olvidarlo deja afuera a la empresa mixta **en silencio**. Además el
-  lado observado ya es un conjunto (`array_agg`), así que declarado y observado quedan con la misma forma.
-
-El CHECK se probó contra Postgres real, 9 casos. **Gotcha encontrado al probarlo**:
-`array_length(ARRAY[]::text[], 1)` devuelve `NULL`, no `0`, así que el arreglo vacío pasaba y
-quedaban dos maneras de decir "no declarado". Se usa `cardinality()`.
-
-**Auditoría `asset_type` ↔ `fleet_service_type`** (pedida explícitamente): la redundancia es real
-—`asset_type` es 100% derivable del subtipo en los 118 vehículos— y **nace en el Excel de origen**,
-que trae tres columnas (C `tipo_de_equipo`, D `tipo_vehiculo`, E `tipo_operacion_webcarga`). El
-origen está sin normalizar en **tres pares de sinónimos** (`Equipo Completo`/`Equipo completo`,
-`Equipo Completo Furgón Seco`/`Furgón Seco`, `Tractoreo`/`TRACTOCAMION`) que el loader absorbe en
-silencio. **Conclusión: no eliminar `asset_type`** — es un hecho físico y derivarlo cambiaría una
-columna almacenada por un mapeo almacenado. Lo que falta es protegerlo.
-
-**Hallazgos que van al plan y NO se tocan sin decisión**:
-- **H1**: `reconcile_new_asset` siembra `MANTENCION_FRIO`/`RESOLUCION_SANITARIA` por
-  `asset_type='RAMPLA'`, no por subtipo → **16 remolques sin cámara de frío** (11 Furgón Seco +
-  5 Sider) cargan ese requisito. Decisión de negocio, junto a D8.
-- **H2, mina para el Tramo 3**: `reconcile_new_asset`, `_carrier` y `_driver` usan
-  `ON CONFLICT (entity_id, requirement_id)`, que necesita **exactamente el índice único que el
-  Tramo 3 va a eliminar** para habilitar el historial. Hay que reescribir los tres triggers en la
-  misma migración que hace el DROP, o el alta de empresas/conductores/vehículos se rompe.
-- Los valores `CAMION`/`FURGON`/`OTRO` de `AssetType` son **placeholders** anteriores a la taxonomía
-  (commit `5955c5f`, contra migraciones `20260802`–`20260804`), **se ofrecen hoy en dos selectores**
-  y ningún vehículo los usa. Al ponerles CHECK hay que retirarlos antes de las 4 declaraciones, o
-  elegir "Camión" en pantalla da un 500.
-- Renombrar la etiqueta `TRACTOCAMION` → `Tractocamión` exige **refrescar las dos vistas
-  materializadas** (`app.carrier_asset_roster` guarda la etiqueta desnormalizada en 78 de 116 filas)
-  porque su trigger escucha cambios en `assets`, no en la taxonomía.
-
-#### Próximo paso exacto
-1. [ ] **Tramo 2, Tarea 1**: migración `carriers.management_types TEXT[]` (escribir, no aplicar sin
-   autorización). Después Tareas 2-14 del plan.
-2. [ ] **Los 2.000 documentos** — ahora sí la puerta está abierta de verdad.
-3. [ ] **Decisiones de negocio**: H1 (los 16 remolques) y D8 (*Seguro EETT* / *Seguro RC Empresa*).
-4. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
+1. [ ] **Los 2.000 documentos.** La puerta está abierta y verificada de punta a punta.
+2. [ ] **Decisiones de negocio pendientes**: H1 (16 remolques sin cámara de frío cargan
+   `MANTENCION_FRIO`, sembrado por `asset_type='RAMPLA'`) y D8 (*Seguro EETT* / *Seguro RC
+   Empresa*, sin sembrar).
+3. [ ] **Tramo 3** — pilas agrupadas, historial de versiones y la migración del índice único.
+   **Ojo con H2**: `reconcile_new_asset`, `_carrier` y `_driver` usan
+   `ON CONFLICT (entity_id, requirement_id)`, que necesita **exactamente** el índice que hay que
+   eliminar. Los tres triggers se reescriben en la misma migración que hace el DROP, o se rompe el
+   alta de empresas, conductores y vehículos.
+4. [ ] **Refinamiento visual del cajón**: la zona de arrastre usa su estado "vacío", diseñado para
+   ser la pantalla completa en la bandeja global. Dentro del cajón queda sobredimensionada.
+5. [ ] **Dos hallazgos menores sin arreglar**: un `management_types` declarado por error no se puede
+   des-declarar (`COALESCE` no escribe NULL; hoy sólo por SQL), y `catalogoAbierto` nunca vuelve a
+   `false` al plegar el grupo.
+6. [ ] **Normalización del loader de Mage** (tabla de sinónimos): el Excel de origen tiene tres
+   pares de sinónimos que el loader absorbe en silencio. Otro workstream.
+7. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
