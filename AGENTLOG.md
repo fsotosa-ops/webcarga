@@ -1569,11 +1569,27 @@ el contenedor, que existe desde el primer render, en vez del contenido.
      tiene 1, probablemente manual. La hipótesis abierta era si dependen del tipo de gestión
      (Tractoreo vs Equipo Completo), pero podría ser volumen o cliente. Sin la regla siguen
      apagados.
-3. [ ] **Tramo 3** — pilas agrupadas, historial de versiones y la migración del índice único.
-   **Ojo con H2**: `reconcile_new_asset`, `_carrier` y `_driver` usan
-   `ON CONFLICT (entity_id, requirement_id)`, que necesita **exactamente** el índice que hay que
-   eliminar. Los tres triggers se reescriben en la misma migración que hace el DROP, o se rompe el
-   alta de empresas, conductores y vehículos.
+3. [ ] **Tramo 3 + condiciones configurables, en un solo spec** (decisión del usuario,
+   2026-08-15). Van juntos porque tocan **los mismos tres triggers**, y hacerlo por separado
+   significa intervenir dos veces la parte más delicada del esquema.
+   - **Tramo 3**: pilas agrupadas, historial de versiones y la migración del índice único.
+     **Ojo con H2**: `reconcile_new_asset`, `_carrier` y `_driver` usan
+     `ON CONFLICT (entity_id, requirement_id)`, que necesita **exactamente** el índice que hay que
+     eliminar. Se reescriben en la misma migración que hace el DROP, o se rompe el alta de
+     empresas, conductores y vehículos.
+   - **Condiciones configurables (H1 + D8)**: hoy la regla vive en código de base — el trigger
+     tiene escrito `requirement_code IN ('MANTENCION_FRIO','RESOLUCION_SANITARIA') AND
+     NEW.asset_type = 'RAMPLA'`. Cambiarla exige desarrollador y migración, y **WebCarga va a
+     descubrir la regla reclutando**, no antes. El alcance es chico: de 37 requisitos **33 son
+     LEGAL_MANDATORY** (aplican a todos) y sólo **4** son condicionales, con dos preguntas —a qué
+     subtipos de vehículo, y a qué tipos de gestión de empresa—.
+   - **Lo difícil no es la pantalla, es el recalcular.** Cambiar la regla tiene que reconciliar lo
+     ya sembrado: hoy sobran 16 registros de cámara de frío, y ampliar una regla exigiría crear los
+     que faltan. Necesita vista previa de qué se crea y qué se borra antes de aplicar; sin eso la
+     configuración miente.
+   - Es una rebanada angosta de la **HU-05**, que el usuario había retirado del backlog el mismo
+     día: configurar *cuándo* aplica un requisito, no administrar el catálogo entero.
+   - Arranca con `superpowers:brainstorming`, no con código.
 4. [ ] **Refinamiento visual del cajón**: la zona de arrastre usa su estado "vacío", diseñado para
    ser la pantalla completa en la bandeja global. Dentro del cajón queda sobredimensionada.
 5. [ ] **Dos hallazgos menores sin arreglar**: un `management_types` declarado por error no se puede
