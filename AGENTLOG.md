@@ -1307,12 +1307,57 @@ Ver la Ronda 101, abajo — la ejecución arrancó en esta misma sesión.
 3. El regex `/si, descartar 3/i` no matchea "Sí, descartar 3" — el flag `i` no normaliza tildes.
 4. Desvío deliberado: el plan mandaba borrar `TriageFileList` en la Task 14, lo que dejaba `tsc` roto hasta la 16. Se borró en la 16, cuando dejó de tener importadores, para que ningún commit quede en rojo.
 
+### 2026-08-15 — Ronda 104: click-through en vivo + la estructura de la HU-04, que estaba mal
+
+**Desplegado a dev y probado en el navegador con Playwright**, con datos de prueba reales sembrados y borrados después. Producción quedó **exactamente como estaba** (verificado: 0 items, 0 lotes, 0 registros alterados, 0 filas de auditoría del ensayo).
+
+**El error estructural que corrigió el usuario**: la Bandeja había quedado como ítem de **primer nivel** del sidebar. O sea que la HU-04, que existe para *unificar*, terminó agregando un **tercer módulo** sobre el mismo objeto. El motivo que yo había registrado en el plan era el costo de duplicar ~55 líneas de markup — dejar que la implementación decida la arquitectura de información. **Corregido**: el Sidebar se generalizó a N grupos (componente `NavGroup` único) y **Certificación** ahora contiene **Bandeja · Pendientes · Empresas**. Empresas dejó el primer nivel. Seguros sigue arriba porque es HU-06.
+
+**Y el mockup aprobado no se había respetado**: rotulaba las tres regiones y la implementación no rotulaba ninguna, así que la pantalla no se explicaba sola. Ahora: un solo lienzo, regiones numeradas `1 · Elegí documentos` / `2 · Clasificá`, la barra de acciones visible desde el arranque en estado de reposo ("Ninguno seleccionado — marcá con la casilla o la barra espaciadora"), y el vacío como instrucción.
+
+**Se corrió el checklist de `ui-ux-pro-max --design-system`**, que nunca se había usado: contraste (`text-gray-400` sobre blanco da ~2.8:1 y se usaba para contenido real → `gray-500`), `cursor-pointer`, anillo de foco y `prefers-reduced-motion`.
+
+**Cuatro bugs reales que sólo aparecieron al usar la pantalla:**
+1. **`apiFetch` trataba como error toda respuesta 204** (`res.json()` sin excepción → `SyntaxError`). **Afectaba a todo `DELETE` de la app**: el backend descartaba el documento y la interfaz mostraba un fallo sin refrescar.
+2. **El proxy `/api/v1` convertía cualquier 204 en 502** (`new NextResponse(body, {status:204})` lanza; el `catch` devolvía 502). **También afectaba a toda la app.** Los dos tenían cero tests; ahora tienen.
+3. **`MoveToCarrierBar` invalidaba `['ingest-tray', …]`**, clave que dejó de existir al renombrarse a `['ingest-queue', …]` en la Task 16. El backend movía bien y la lista quedaba stale.
+4. **Orden inestable**: sin desempate en el `ORDER BY`, una carga masiva (mismo `created_at`) quedaba en orden arbitrario entre recargas — peligroso justamente en una cola donde se selecciona por rango. Desempata `file_name`.
+
+**Y un hallazgo de producto**: la bandeja lista documentos de **empresas inactivas**, que no se pueden clasificar porque `listPending` filtra sólo activas. El desplegable de Sujeto quedaba vacío sin explicar nada. Ahora lo dice explícitamente.
+
+**Verificado en vivo**: rango con `⇧`, selección que no cruza empresas, mover entre empresas, clasificar en lote (con el contador del sidebar bajando solo), confirmación de descarte dentro de la barra sin modal, recorrido con teclado, y el estado vacío al final.
+
+### 2026-08-15 (cont.) — Ronda 105: el módulo se unifica de verdad (opción B), y tres rondas de feedback de diseño
+
+**El usuario rechazó la interfaz tres veces seguidas**, y cada rechazo destapó un error mío distinto:
+
+1. *"UX/UI fea, no pro, no aplicas ui-ux-pro-max"* → había invocado `frontend-design` sola y consultado `ui-ux-pro-max` con dos queries genéricas al dominio `ux`. **Nunca corrí `--design-system`**, que trae paleta, tipografía y un **checklist de pre-entrega** con ítems verificables. Al correrlo: contraste `text-gray-400` sobre blanco = ~2.8:1 usado para contenido real, `cursor-pointer` faltante, sin `prefers-reduced-motion`.
+2. *"El módulo no está unificado"* → la Bandeja había quedado en **primer nivel** del sidebar: la HU-04, que existe para unificar, terminó agregando un **tercer** módulo sobre el mismo objeto. El motivo registrado en el plan era el costo de duplicar 55 líneas de markup.
+3. *"Es un desorden tener un submódulo de bandeja y uno de pendientes"* → aun anidadas, seguían siendo **dos listas hermanas del mismo objeto**. Seguí agregando superficies en vez de fusionarlas.
+
+**Estructura definitiva (opción B, elegida por el usuario sobre mockups):** Certificación es **una entrada del menú y una lista**, con un conmutador:
+- **Por empresa** (por defecto): cada empresa con su avance (`9 de 12`), los obligatorios por ley sin cubrir y cuántos documentos llegaron sin clasificar, **en la misma fila**. Clic → su ficha.
+- **Por documento**: la cola transversal, para cuando llega una tanda grande.
+
+La vista viaja en la URL (`?vista=documentos`); `/dashboard/compliance/inbox` redirige. **Desaparecen del menú Bandeja, Pendientes y Empresas.**
+
+**Backend**: se reemplazó `/pending-summary` —que no consumía nadie— por `/carrier-status`. Incluye **empresas inactivas que tengan documentos esperando**: si no, la lista contradice a la cola. SQL verificado contra la base real.
+
+**Se retiraron** `PendingDocumentsTable` y `CertificationCompanyPanel`, sin uso. La exportación de pendientes, única capacidad que sólo vivía en la sábana, se conservó como acción de la vista por empresa.
+
+**Otro hueco que el usuario señaló y estaba de fondo**: *"¿cómo sé qué tengo pendiente por empresa?"*. El panel pedía "Sujeto" y "Tipo de documento" en dos desplegables genéricos — había que saber de memoria qué faltaba. **El dato ya estaba cargado** y sólo se usaba para armar el desplegable. Ahora se lista lo que falta y clasificar es elegir el hueco: un clic resuelve entidad y requisito.
+
+**Idioma**: toda la copy pasó a **español neutral, sin voseo** (era una suposición mía; hasta lo había escrito en la skill `mockups`, corregido ahí también).
+
+**Verificado**: backend **535 passed**, frontend **765 passed**, `tsc` limpio, build OK, y click-through en vivo del conmutador y de la redirección.
+
 #### Próximo paso exacto
-1. [ ] **Click-through — es lo único que falta para dar la HU por cerrada, y HOY NO SE PUEDE HACER**: `document_ingest_items` y `document_ingest_batches` están **vacías en producción (0 filas)**, así que la bandeja muestra 0. Hay que subir documentos de prueba primero (**elegir por SQL una empresa sin documentos cargados**), y recién ahí probar: rango con `⇧`, que la selección no cruce empresas, la clasificación en lote, el movimiento entre empresas, la confirmación de descarte y el recorrido sólo con teclado. Limpiar al terminar y confirmar con un conteo global.
-2. [ ] **Los 2.000 documentos de la HU todavía no entraron al sistema.** Definir cómo entran (¿carga manual desde la ficha? ¿backfill desde SharePoint?) — sin eso la bandeja está construida pero ociosa.
-3. [ ] Decidir si `CertificationCompanyPanel` sigue teniendo sentido: perdió la bandeja y ahora se solapa bastante con la ficha de empresa, que ya carga documentos.
-4. [ ] **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — o se crea o se saca la referencia.
-5. [ ] Deuda que dejó el rediseño, documentada a propósito en el plan: **revertir una clasificación ya aplicada** no existe (toca el versionado de `compliance_records`) — es la parte abierta de la **HU-03**. Y **descartar es irreversible** porque borra el blob de staging; hacerlo reversible implica postergar ese borrado y sumar una retención.
+1. [ ] **Los 2.000 documentos de la HU todavía no entraron al sistema.** Definir cómo entran (¿carga manual desde la ficha? ¿backfill desde SharePoint?) — sin eso la bandeja está construida pero ociosa. **Es el bloqueante real para que esto sirva.**
+2. [ ] **Revisar la vista "Por empresa" con datos reales**: los totales son grandes (`1 de 383`) porque incluyen los requisitos de cada conductor y cada vehículo atribuidos a la empresa. Es correcto según la regla de atribución, pero hay que confirmar que es la cifra que el negocio quiere ver, o si conviene separar empresa / conductores / equipos.
+2. [ ] Promover a `main`: `dev` acumuló toda la bandeja + los dos bugs de 204 que afectan a toda la app. `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
+3. [ ] Decidir si `CertificationCompanyPanel` sigue teniendo sentido: perdió la bandeja y se solapa con la ficha, que ya carga documentos.
+4. [ ] **`monitor-app/frontend/CLAUDE.md` referencia un `@AGENTS.md` que no existe** — crearlo o sacar la referencia.
+5. [ ] Deuda documentada a propósito: **revertir una clasificación** no existe (toca el versionado de `compliance_records`) — es la parte abierta de la **HU-03**. **Descartar es irreversible** porque borra el blob; hacerlo reversible implica postergar ese borrado y sumar retención.
 6. [ ] El **agente de clasificación automática** sigue sin cablearse (`document_matcher.py`). La columna Sugerencia ya está construida y esperándolo.
 7. [ ] HU-05, HU-03 y HU-06 siguen pendientes.
 
