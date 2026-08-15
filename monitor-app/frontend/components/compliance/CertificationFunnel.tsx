@@ -17,6 +17,12 @@ interface Props {
   catalogLoading:   boolean
   onExpandCatalog:  () => void
   onToggleRow?:     (carrierId: string) => void
+  /** La fila abierta. Sólo una a la vez: el cajón es alto y dos abiertos
+   *  obligan a desplazarse para comparar, que es justo lo que se quería evitar. */
+  openRowId?:       string | null
+  /** El cajón de esa fila. Lo dibuja el padre para que el embudo no dependa de
+   *  las consultas del detalle. */
+  renderDrawer?:    (row: CertificationStatusRow) => React.ReactNode
 }
 
 /** El embudo de certificación.
@@ -52,6 +58,7 @@ function etiquetaGestion(tipos?: ManagementType[] | null): string | null {
 
 export function CertificationFunnel({
   rows, catalogRows, catalogLoading, onExpandCatalog, onToggleRow,
+  openRowId, renderDrawer,
 }: Props) {
   // Los dos grupos del fondo arrancan plegados: uno está vacío y el otro son
   // 209 empresas sin actividad. Ninguno es el trabajo de hoy.
@@ -124,7 +131,13 @@ export function CertificationFunnel({
             </button>
 
             {!plegado && deEstaEtapa.map(r => (
-              <FilaEmpresa key={r.entity_id} row={r} onToggle={onToggleRow} />
+              <FilaEmpresa
+                key={r.entity_id}
+                row={r}
+                onToggle={onToggleRow}
+                abierta={openRowId === r.entity_id}
+                drawer={renderDrawer}
+              />
             ))}
           </section>
         )
@@ -134,10 +147,12 @@ export function CertificationFunnel({
 }
 
 function FilaEmpresa({
-  row, onToggle,
+  row, onToggle, abierta, drawer,
 }: {
   row:       CertificationStatusRow
   onToggle?: (carrierId: string) => void
+  abierta?:  boolean
+  drawer?:   (row: CertificationStatusRow) => React.ReactNode
 }) {
   const pct = row.total_count > 0
     ? Math.round((row.satisfied_count / row.total_count) * 100)
@@ -146,16 +161,24 @@ function FilaEmpresa({
   const gestion = etiquetaGestion(row.management_types)
 
   return (
-    <div
+    <>
+      <div
         role="button"
         tabIndex={0}
         onClick={() => onToggle?.(row.entity_id)}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle?.(row.entity_id) }
         }}
-        className="flex items-center gap-2.5 px-4 py-2 border-b border-gray-100 cursor-pointer transition-colors hover:bg-gray-50"
+        aria-expanded={abierta}
+        className={`flex items-center gap-2.5 px-4 py-2 border-b border-gray-100 cursor-pointer transition-colors ${
+          abierta ? 'bg-sky-50/60' : 'hover:bg-gray-50'
+        }`}
       >
-        <ChevronRight size={12} className="text-gray-400 shrink-0" aria-hidden="true" />
+        <ChevronRight
+          size={12}
+          className={`text-gray-400 shrink-0 transition-transform ${abierta ? 'rotate-90' : ''}`}
+          aria-hidden="true"
+        />
         {/* El sujeto es lo más fuerte de la fila: es lo que se escanea (§9). */}
         <span className="flex-1 min-w-0 truncate text-[13.5px] font-semibold text-text-primary">
           {row.entity_name}
@@ -199,6 +222,9 @@ function FilaEmpresa({
             {row.unclassified_count}
           </span>
         )}
-    </div>
+      </div>
+
+      {abierta && drawer?.(row)}
+    </>
   )
 }

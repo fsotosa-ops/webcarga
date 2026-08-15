@@ -7,6 +7,7 @@ import { Download, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
 import { CertificationFunnel } from '@/components/compliance/CertificationFunnel'
+import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -76,6 +77,9 @@ function CertificationPageInner() {
   const qDebounced = useDebouncedValue(q, 300)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)
+  /** Una sola fila abierta a la vez: el cajón es alto y dos abiertos obligan a
+   *  desplazarse para comparar, que es justo lo que el cajón vino a evitar. */
+  const [filaAbierta, setFilaAbierta] = useState<string | null>(null)
 
   const statusQuery = useQuery({
     queryKey: ['certification-status', group, qDebounced],
@@ -213,6 +217,11 @@ function CertificationPageInner() {
                   catalogRows={catalogQuery.data?.rows ?? []}
                   catalogLoading={catalogQuery.isPending && catalogoAbierto}
                   onExpandCatalog={() => setCatalogoAbierto(true)}
+                  openRowId={filaAbierta}
+                  onToggleRow={id => setFilaAbierta(prev => (prev === id ? null : id))}
+                  renderDrawer={r => (
+                    <CarrierDrawer carrierId={r.entity_id} carrierName={r.entity_name} />
+                  )}
                 />
               ) : (
                 <CertificationStatusTable rows={rows} group={group} />

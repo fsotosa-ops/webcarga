@@ -146,4 +146,30 @@ describe('CertificationFunnel', () => {
     setup({ rows: [] })
     expect(screen.getByText(/no hay empresas/i)).toBeInTheDocument()
   })
+
+  // La fila se abre HACIA ABAJO: sin panel lateral, sin modal, sin pagina
+  // nueva. El panel lateral del intento anterior apretaba la lista a media
+  // pantalla y se revirtio entero en la Ronda 109.
+  it('la fila abierta despliega su cajon debajo, en la misma lista', () => {
+    setup({
+      openRowId: 'c1',
+      renderDrawer: (r: CertificationStatusRow) =>
+        <div data-testid="cajon">cajón de {r.entity_name}</div>,
+    })
+
+    expect(screen.getByTestId('cajon')).toHaveTextContent('cajón de Transportes Charlotte Spa')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('las filas cerradas no montan su cajon', () => {
+    setup({
+      rows: [fila({ entity_id: 'c1' }), fila({ entity_id: 'c2', entity_name: 'Otra' })],
+      openRowId: 'c1',
+      renderDrawer: (r: CertificationStatusRow) =>
+        <div data-testid={`cajon-${r.entity_id}`} />,
+    })
+
+    expect(screen.getByTestId('cajon-c1')).toBeInTheDocument()
+    expect(screen.queryByTestId('cajon-c2')).not.toBeInTheDocument()
+  })
 })
