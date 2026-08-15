@@ -24,6 +24,7 @@ from ..schemas.compliance import (
     PendingComplianceListResponse,
     RequirementOption,
 )
+from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
 from ..utils.document_storage import (
     delete_document_version, get_document_history, log_document_replacement, resolve_signed_url,
@@ -135,12 +136,16 @@ async def get_certification_status(
         unclassified = "COALESCE(d.unclassified, 0)::int"
         # Sólo agrupando por empresa hay algo que ordenar por acá.
         orden_cola = "COALESCE(d.unclassified, 0) DESC, "
-        extra_cte = """,
+        # Mismo predicado que la cola de la bandeja, de una sola definición: si
+        # acá dice 'UNMATCHED' y allá 'NOT IN (COMMITTED, DISCARDED)', esta
+        # pestaña muestra "0 sin clasificar" para una empresa cuya bandeja
+        # tiene 12 en cuanto alguien escriba AUTO o SUGGESTED.
+        extra_cte = f""",
         docs AS (
             SELECT COALESCE(i.carrier_id, b.carrier_id) AS carrier_id, count(*) AS unclassified
             FROM public.document_ingest_items i
             JOIN public.document_ingest_batches b ON b.id = i.batch_id
-            WHERE i.match_status = 'UNMATCHED'
+            WHERE {unclassified_predicate('i')}
             GROUP BY 1
         )"""
     else:

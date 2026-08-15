@@ -19,8 +19,9 @@ from ..db import get_pool
 from ..routers.compliance import _apply_stored_document
 from ..schemas.document_ingest import (
     ClassifyBatchBody, IngestUploadResult, MoveItemsBody, TrayPage,
-    UndoClassifyBody, UndoClassifyResult,
+    UndoClassifyBody, UndoClassifyResult, unclassified_predicate,
 )
+from ..services.audit import log_change
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
 )
@@ -149,8 +150,11 @@ async def list_queue(
     # AUTO, SUGGESTED y AMBIGUOUS son trabajo pendiente: el clasificador los
     # resolvio pero nadie los confirmo todavia. Filtrar solo UNMATCHED los
     # dejaba sin ninguna superficie que los muestre.
-    where = """
-        WHERE i.match_status NOT IN ('COMMITTED', 'DISCARDED')
+    #
+    # El predicado sale de unclassified_predicate() y no se escribe a mano: es
+    # el mismo que cuenta el "sin clasificar" por empresa en compliance.py.
+    where = f"""
+        WHERE {unclassified_predicate('i')}
           AND ($1::uuid IS NULL OR COALESCE(i.carrier_id, b.carrier_id) = $1::uuid)
     """
     total = await pool.fetchval(
@@ -233,20 +237,36 @@ async def delete_item(
     return None
 
 
+_UN_SOLO_ARCHIVO_POR_SLOT = (
+    "Un lote no puede compartir el sujeto y el tipo de documento a la vez: "
+    "cada archivo necesita un requisito distinto"
+)
+
+
 @router.post("/items/classify-batch")
 async def classify_batch(
     body: ClassifyBatchBody,
     pool=Depends(get_pool),
     user=Depends(require_editor),
 ):
-    """Aplica el mismo requisito a N archivos de la bandeja.
+    """Aplica un archivo de la bandeja a un requisito concreto.
 
-    Es la operación que hace viable clasificar 2.000 documentos: con un archivo
-    seleccionado equivale a clasificar de a uno, con quince aplica a los quince
-    sin que la persona repita la elección.
+    **Regla del lote (diseño §7):** en una tanda una coordenada se comparte y
+    la otra tiene que ser distinta en cada archivo; nunca las dos. Este
+    endpoint fija las dos —`entity_id` y `requirement_id`—, así que admite un
+    solo archivo.
+
+    Sin ese límite, N archivos entraban en un loop sobre el mismo
+    `compliance_record` y cada uno pisaba al anterior: quedaba el último y los
+    N-1 restantes se volvían invisibles (marcados COMMITTED, excluidos de la
+    cola) y además irreversibles, porque a partir del segundo
+    `_apply_stored_document` escribe `replaced_storage_path` y el deshacer los
+    rechaza. Marcar 31 licencias y asignarlas al mismo conductor destruía 30.
     """
     if not body.item_ids:
         raise HTTPException(422, "Se requiere al menos un documento")
+    if len(set(body.item_ids)) > 1:
+        raise HTTPException(422, _UN_SOLO_ARCHIVO_POR_SLOT)
 
     applied: list[str] = []
     errors: list[dict] = []
@@ -369,7 +389,8 @@ async def undo_classify(
             items = await conn.fetch(
                 """
                 SELECT i.id::text, i.compliance_record_id::text, i.match_status,
-                       cr.metadata
+                       cr.metadata, cr.entity_type, cr.entity_id::text AS entity_id,
+                       cr.file_url
                 FROM public.document_ingest_items i
                 LEFT JOIN public.compliance_records cr ON cr.id = i.compliance_record_id
                 WHERE i.id = ANY($1::uuid[])
@@ -407,6 +428,16 @@ async def undo_classify(
                     WHERE id = $1
                     """,
                     item["compliance_record_id"],
+                )
+                # Deja rastro, igual que sus operaciones hermanas: aplicar
+                # registra `document_upload` y reasignar `document_reassign`.
+                # Sin esto la reversión vacía un registro de producción
+                # (APPROVED_MANUAL → MISSING, y adiós file_url) sin que nada
+                # permita saber después quién lo hizo ni qué archivo había.
+                await log_change(
+                    conn, actor=user["sub"], entity_type=item["entity_type"],
+                    entity_id=item["entity_id"], action="document_undo_classify",
+                    field="file_url", old_value=item["file_url"], new_value="bandeja",
                 )
                 reverted.append(item["id"])
 

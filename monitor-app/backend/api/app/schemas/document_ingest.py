@@ -13,6 +13,26 @@ from pydantic import BaseModel
 MatchStatus = Literal["AUTO", "SUGGESTED", "AMBIGUOUS", "UNMATCHED", "COMMITTED", "DISCARDED"]
 EntityType = Literal["CARRIER", "DRIVER", "ASSET"]
 
+# Un archivo deja de estar "sin clasificar" sólo cuando alguien lo confirmó
+# (COMMITTED) o lo descartó (DISCARDED). AUTO, SUGGESTED y AMBIGUOUS son
+# trabajo pendiente: el clasificador los resolvió pero nadie los confirmó.
+_CLASSIFIED_MATCH_STATUSES: tuple[str, ...] = ("COMMITTED", "DISCARDED")
+
+
+def unclassified_predicate(alias: str = "i") -> str:
+    """El predicado de "sin clasificar", en un solo lugar.
+
+    Lo usan la cola de la bandeja (`GET /document-ingest/items`) y el conteo
+    por empresa de `GET /compliance-records/status`. Tenerlo escrito dos veces
+    ya había divergido: la cola miraba `NOT IN ('COMMITTED','DISCARDED')` y el
+    conteo seguía en `= 'UNMATCHED'`. Hoy coinciden sólo porque nadie escribe
+    AUTO/SUGGESTED todavía; el día que se conecte `document_matcher.py` la
+    pestaña Empresas diría "0 sin clasificar" para una empresa cuya bandeja
+    muestra 12.
+    """
+    lista = ", ".join(f"'{s}'" for s in _CLASSIFIED_MATCH_STATUSES)
+    return f"{alias}.match_status NOT IN ({lista})"
+
 
 class IngestItem(BaseModel):
     id: str

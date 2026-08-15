@@ -698,6 +698,28 @@ def test_status_rejects_unknown_grouping():
     assert res.status_code == 422
 
 
+def test_status_counts_unclassified_with_the_same_predicate_as_the_tray():
+    """Una sola definición de "sin clasificar" para las dos consultas.
+
+    Convivían dos: la cola de la bandeja miraba NOT IN ('COMMITTED','DISCARDED')
+    y este conteo seguía en = 'UNMATCHED'. Coincidían por accidente, porque
+    nadie escribe AUTO/SUGGESTED todavía. En cuanto se conecte
+    `document_matcher.py`, esta pestaña diría "0 sin clasificar" para una
+    empresa cuya bandeja muestra 12.
+    """
+    from app.schemas.document_ingest import unclassified_predicate
+
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status")
+
+    query = pool.fetch.call_args.args[0]
+    assert unclassified_predicate("i") in query
+    assert "match_status = 'UNMATCHED'" not in query
+
+
 def test_status_only_counts_unclassified_when_grouping_by_carrier():
     """Los documentos sin clasificar pertenecen a una empresa, no a un
     conductor: en las otras agrupaciones la columna no aplica."""

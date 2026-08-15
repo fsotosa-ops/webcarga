@@ -229,6 +229,21 @@ def test_queue_shows_files_that_already_have_a_suggestion():
     assert "match_status = 'UNMATCHED'" not in sql
 
 
+def test_queue_uses_the_shared_unclassified_predicate():
+    """El mismo predicado que cuenta el "sin clasificar" por empresa en
+    /compliance-records/status. Escrito dos veces, ya había divergido."""
+    from app.schemas.document_ingest import unclassified_predicate
+
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/document-ingest/items")
+
+    assert unclassified_predicate("i") in pool.fetch.await_args.args[0]
+
+
 def test_queue_binds_exactly_the_parameters_it_references():
     """Guarda contra el bug recurrente: sustituir $n a mano no prueba el binding.
 
@@ -314,16 +329,51 @@ def _record_row(record_id="rec-1"):
     }
 
 
-def test_classify_batch_applies_to_every_selected_item():
+def _tray_item(item_id="i1", **over):
+    row = {
+        "id": item_id, "storage_path": f"s/{item_id}.png", "file_name": f"{item_id}.png",
+        "mime_type": "image/png", "size_bytes": 9, "match_status": "UNMATCHED",
+    }
+    row.update(over)
+    return row
+
+
+def test_classify_batch_applies_the_selected_item():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetch.return_value = [
-        {"id": "i1", "storage_path": "s/1.png", "file_name": "1.png",
-         "mime_type": "image/png", "size_bytes": 9, "match_status": "UNMATCHED"},
-        {"id": "i2", "storage_path": "s/2.png", "file_name": "2.png",
-         "mime_type": "image/png", "size_bytes": 9, "match_status": "UNMATCHED"},
+    conn.fetch.return_value = [_tray_item()]
+    conn.fetchrow.side_effect = [
+        _record_row(),
+        {"metadata": {}, "expiration_date": None},
     ]
+    conn.fetchval.return_value = False
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["applied"] == ["i1"]
+
+
+def test_classify_batch_refuses_two_files_for_the_same_slot():
+    """La regla del lote (diseño §7): nunca se comparten las dos coordenadas.
+
+    Sin este límite los N archivos entraban en un loop sobre el MISMO
+    compliance_record y cada uno pisaba al anterior: sobrevivía el último y los
+    N-1 quedaban COMMITTED —fuera de la cola, invisibles en toda superficie— y
+    además irreversibles, porque desde el segundo `_apply_stored_document`
+    escribe `replaced_storage_path` y el deshacer los rechaza. Marcar 31
+    licencias y asignarlas al mismo conductor destruía 30.
+    """
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_tray_item("i1"), _tray_item("i2")]
     conn.fetchrow.side_effect = [
         _record_row(),
         {"metadata": {}, "expiration_date": None},
@@ -338,8 +388,97 @@ def test_classify_batch_applies_to_every_selected_item():
               "entity_id": "a1", "requirement_id": "req-1"},
     )
 
+    assert res.status_code == 422
+    assert "requisito distinto" in res.json()["detail"]
+    # Y no llega a tocar compliance_records: el rechazo es previo, no un
+    # rollback después de haber pisado el registro.
+    sql = " ".join(str(c.args[0]) for c in conn.execute.await_args_list)
+    assert "compliance_records" not in sql
+
+
+def test_classify_batch_still_serves_the_single_file_door():
+    """`uploadAndClassify` (la carga desde la ficha, en producción) manda
+    exactamente un item. La regla del lote no puede romper ese camino."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_tray_item()]
+    conn.fetchrow.side_effect = [
+        _record_row(),
+        {"metadata": {}, "expiration_date": None},
+    ]
+    conn.fetchval.return_value = False
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1"], "entity_type": "ASSET", "entity_id": "a1",
+              "requirement_id": "req-1", "expiration_date": "2027-01-01"},
+    )
+
     assert res.status_code == 200
-    assert res.json()["applied"] == ["i1", "i2"]
+    assert res.json()["applied"] == ["i1"]
+
+
+def test_classify_batch_requires_the_expiration_date_when_the_requirement_has_one():
+    """Cobertura que se perdió al borrar el endpoint de a uno: sin fecha, un
+    requisito con vencimiento entraría como vigente para siempre."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_tray_item()]
+    conn.fetchrow.return_value = _record_row()
+    conn.fetchval.return_value = True  # has_expiration
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 422
+    assert "fecha de vencimiento" in res.json()["detail"]
+
+
+def test_classify_batch_skips_a_discarded_item_instead_of_applying_it():
+    """Un archivo ya descartado no vuelve a entrar por la puerta de atrás: su
+    blob de staging está borrado, aplicarlo dejaría un file_url roto."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_tray_item(match_status="DISCARDED")]
+    conn.fetchrow.return_value = _record_row()
+    conn.fetchval.return_value = False
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["applied"] == []
+    assert res.json()["errors"][0]["error"] == "Fue eliminado de la bandeja"
+
+
+def test_classify_batch_404_when_no_document_is_found():
+    """Cobertura restaurada: ids que ya no existen en la bandeja."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["fantasma"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 404
+    assert "Ningún documento encontrado" in res.json()["detail"]
 
 
 def test_classify_batch_rejects_an_empty_selection():
@@ -406,11 +545,15 @@ def test_move_items_rejects_an_empty_selection():
 
 # ── Deshacer en lote ───────────────────────────────────────────────────────
 
-def _committed_item(item_id="item-1", record_id="rec-1"):
-    return {
+def _committed_item(item_id="item-1", record_id="rec-1", **over):
+    row = {
         "id": item_id, "compliance_record_id": record_id,
         "match_status": "COMMITTED", "metadata": {},
+        "entity_type": "ASSET", "entity_id": "a1",
+        "file_url": "staging/b1/patente.pdf",
     }
+    row.update(over)
+    return row
 
 
 def test_undo_returns_the_files_to_the_tray_and_empties_the_requirement():
@@ -434,6 +577,52 @@ def test_undo_returns_the_files_to_the_tray_and_empties_the_requirement():
     assert "'MISSING'" in sql_ejecutado
     # ...y el archivo vuelve a la bandeja, no se pierde.
     assert "'UNMATCHED'" in sql_ejecutado
+
+
+def test_undo_leaves_an_audit_trail():
+    """Deshacer vacía un registro de producción (APPROVED_MANUAL → MISSING, y
+    adiós file_url) igual que sus operaciones hermanas, que sí registran:
+    aplicar llama record_manual_edit/log_document_replacement y reasignar
+    log_change. Sin rastro no hay forma de saber después quién lo hizo ni qué
+    archivo estaba puesto."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_committed_item()]
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/undo-classify",
+        json={"item_ids": ["item-1"]},
+    )
+
+    assert res.status_code == 200
+    auditoria = [
+        c for c in conn.execute.await_args_list if "public.audit_log" in str(c.args[0])
+    ]
+    assert len(auditoria) == 1, "la reversión no dejó rastro en audit_log"
+    assert "document_undo_classify" in auditoria[0].args
+    # Con el puntero al archivo que se soltó: es lo único que permite volver a
+    # encontrar el blob después.
+    assert '"staging/b1/patente.pdf"' in auditoria[0].args
+
+
+def test_undo_does_not_audit_what_it_did_not_revert():
+    """Un item que no estaba clasificado no genera un registro de auditoría
+    de algo que no pasó."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_committed_item(match_status="UNMATCHED")]
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/undo-classify",
+        json={"item_ids": ["item-1"]},
+    )
+
+    assert res.json()["reverted"] == []
+    assert not [c for c in conn.execute.await_args_list if "public.audit_log" in str(c.args[0])]
 
 
 def test_undo_refuses_when_the_requirement_had_a_previous_document():
