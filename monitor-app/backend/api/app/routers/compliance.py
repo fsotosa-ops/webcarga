@@ -81,12 +81,21 @@ _STATUS_GROUPS = {
         "table": "public.assets",
         "name_col": "license_plate",
     },
+    # La cuarta agrupación no es por entidad sino por TIPO de documento (D2):
+    # responde "qué requisito falta más", que mirando empresa por empresa no se
+    # ve. Cruza todas las empresas, así que no tiene empresa propia ni etapa de
+    # embudo.
+    "requirement": {
+        "entity_type": None,
+        "table": "public.compliance_requirements",
+        "name_col": "name",
+    },
 }
 
 
 @router.get("/status")
 async def get_certification_status(
-    group: Literal["carrier", "driver", "asset"] = Query("carrier"),
+    group: Literal["carrier", "driver", "asset", "requirement"] = Query("carrier"),
     scope: Literal["active", "catalog"] = Query("active"),
     carrier_id: str | None = Query(None),
     q: str = Query(""),
@@ -193,6 +202,36 @@ async def get_certification_status(
               AND t.planning_date >= CURRENT_DATE - 30
             GROUP BY 1
         )"""
+    elif group == "requirement":
+        # Se apoya en `attributed`, igual que la agrupación por empresa, para
+        # mirar EXACTAMENTE el mismo universo: los pendientes de las empresas
+        # activas. Verificado contra la base — 424 CARRIER + 939 DRIVER + 997
+        # ASSET = 2.360, el mismo total que devuelve agrupando por empresa. Sin
+        # el filtro daría 4.895 y cambiar de pestaña cambiaría el total sin
+        # ninguna explicación visible, que es justo lo que el spec §4 prohíbe
+        # ("el control de agrupación no crea vistas nuevas").
+        entity_join = """
+            LEFT JOIN attributed a
+                   ON a.requirement_id = e.id
+                  AND a.carrier_id IN (
+                      SELECT id FROM public.carriers WHERE operational_status = $1
+                  )
+        """
+        entity_where = "a.requirement_id IS NOT NULL"
+        params = [ACTIVE_OPERATIONAL_STATUS, q, limit]
+        p_q, p_limit = "$2", "$3"
+        if carrier_id:
+            entity_where += " AND a.carrier_id = $4::uuid"
+            params.append(carrier_id)
+        # Un requisito cruza todas las empresas: no tiene una sola.
+        carrier_cols = (
+            "NULL::text AS carrier_id, NULL::text AS carrier_name, "
+            "NULL::text AS operational_status"
+        )
+        group_by = "e.id, e.name"
+        unclassified = "0"
+        orden_cola = ""
+        extra_cte = ""
     else:
         asignacion = "driver_assignments" if group == "driver" else "asset_assignments"
         columna = "driver_id" if group == "driver" else "asset_id"
@@ -216,9 +255,10 @@ async def get_certification_status(
             entity_where += " AND asg.carrier_id = $3::uuid"
             params.append(carrier_id)
 
-    # Agrupando por empresa el agregado sale de `attributed`; en las otras dos,
-    # de las filas del propio conductor o vehículo.
-    fuente = "a" if group == "carrier" else "r"
+    # Por empresa y por requisito el agregado sale de `attributed` —las dos
+    # necesitan la atribución a empresa—; por conductor y por vehículo, de las
+    # filas de la propia entidad.
+    fuente = "a" if group in ("carrier", "requirement") else "r"
 
     # Un registro cuenta como vencido por CUALQUIERA de las dos vías: que
     # alguien lo haya marcado EXPIRED, o que su fecha ya pasó aunque el estado
@@ -257,13 +297,13 @@ async def get_certification_status(
         f"""
         WITH records AS (
             SELECT cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
-                   req.requirement_level
+                   cr.requirement_id, req.requirement_level
             FROM public.compliance_records cr
             JOIN public.compliance_requirements req ON req.id = cr.requirement_id
             WHERE cr.is_current = true
         ),
         attributed AS (
-            SELECT r.status, r.requirement_level, r.expiration_date,
+            SELECT r.status, r.requirement_level, r.expiration_date, r.requirement_id,
                 CASE r.entity_type
                     WHEN 'CARRIER' THEN r.entity_id
                     WHEN 'DRIVER'  THEN da.carrier_id

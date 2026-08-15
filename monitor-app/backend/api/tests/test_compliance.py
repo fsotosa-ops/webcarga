@@ -908,6 +908,82 @@ def test_status_binds_every_placeholder_in_every_scope():
         )
 
 
+# ── Tramo 2, Tarea 4: cuarta agrupacion, por requisito ─────────────────────
+
+def test_status_groups_by_requirement():
+    """D2: por requisito es la agrupacion secundaria — responde "que tipo de
+    documento falta mas", que por empresa no se ve."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "entity_id": "req-1", "entity_name": "Licencia de Conducir",
+        "carrier_id": None, "carrier_name": None, "operational_status": None,
+        "total_count": 80, "satisfied_count": 3, "pending_count": 77,
+        "pending_mandatory": 77, "unclassified_count": 0,
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/status?group=requirement")
+
+    assert res.status_code == 200
+    assert res.json()["rows"][0]["entity_name"] == "Licencia de Conducir"
+    sql = pool.fetch.call_args.args[0]
+    assert "compliance_requirements e" in sql
+    assert "a.requirement_id = e.id" in sql
+
+
+def test_status_by_requirement_looks_at_the_same_universe_as_by_carrier():
+    """El conmutador de agrupacion NO crea vistas nuevas (spec §4): las cuatro
+    miran los mismos pendientes agrupados distinto. Verificado contra la base:
+    424 CARRIER + 939 DRIVER + 997 ASSET = 2.360, el mismo total que devuelve
+    la agrupacion por empresa. Si esta no filtrara por empresa activa daria
+    4.895 y cambiar de pestaña cambiaria el total sin explicacion."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status?group=requirement")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "operational_status = $1" in sql
+
+
+def test_status_by_requirement_has_no_carrier_and_no_funnel():
+    """Un requisito cruza todas las empresas: no tiene una sola empresa ni una
+    etapa de certificacion propia."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status?group=requirement")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "NULL::text AS carrier_id" in sql
+    assert "funnel_group" not in sql
+    assert "trips_30d" not in sql
+
+
+def test_status_by_requirement_binds_every_placeholder():
+    import re
+
+    for url in (
+        "/api/v1/compliance-records/status?group=requirement",
+        "/api/v1/compliance-records/status?group=requirement&q=licencia",
+        "/api/v1/compliance-records/status?group=requirement&carrier_id=c1",
+    ):
+        pool = AsyncMock()
+        pool.fetch.return_value = []
+        client = make_client(pool)
+
+        client.get(url)
+
+        sql, *args = pool.fetch.call_args.args
+        referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+        assert referenciados == set(range(1, len(args) + 1)), (
+            f"{url}: el SQL referencia {sorted(referenciados)} "
+            f"pero se pasan {len(args)} parametros"
+        )
+
+
 # ── HU-03: corregir un documento cargado en el lugar equivocado ─────────────
 
 def _record_with_file(record_id="rec-1", **over):
