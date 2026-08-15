@@ -8,7 +8,10 @@ import { cuantos } from '@/lib/utils/cuantos'
 
 interface Props {
   targetIds:        string[]
-  currentCarrierId: string
+  /** Empresa actual, sólo para excluirla del selector de destino. `null`
+   *  cuando los archivos todavía no tienen empresa —lo normal en la bandeja
+   *  global—: ahí no hay nada que excluir y se ofrecen todas. */
+  currentCarrierId: string | null
   /** Recibe cuántos se movieron. Refrescar la bandeja es responsabilidad del
    *  Workbench, que tiene la lista completa de claves que quedan obsoletas. */
   onMoved:          (moved: number) => void
@@ -61,7 +64,7 @@ export function MoveToCarrierBar({ targetIds, currentCarrierId, onMoved }: Props
         query={query}
         onQueryChange={setQuery}
         onPick={c => move(c.id)}
-        excludeId={currentCarrierId}
+        excludeId={currentCarrierId ?? undefined}
         placeholder="Buscar empresa…"
         size="sm"
         autoFocus

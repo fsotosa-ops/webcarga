@@ -8,7 +8,13 @@ import { cuantos } from '@/lib/utils/cuantos'
 interface Props {
   selectedCount:    number
   targetIds:        string[]
-  /** null = la selección cruza empresas; mover exige un origen único. */
+  /** Empresa de origen de la selección, o `null` si los archivos todavía no
+   *  tienen empresa — que es como llega TODO lo que entra por la puerta global.
+   *
+   *  `null` NO significa "selección ambigua": `handleToggle` (TriageWorkbench)
+   *  reemplaza la selección al marcar un archivo de otra empresa, así que la
+   *  selección siempre es homogénea. Sólo se usa para no ofrecer como destino
+   *  la empresa en la que los archivos ya están. */
   currentCarrierId: string | null
   onDiscard:        () => void
   onClear:          () => void
@@ -46,7 +52,10 @@ export function TriageBulkBar({
       </span>
       <span className="h-3.5 w-px bg-white/20" aria-hidden="true" />
 
-      {currentCarrierId && !confirming && (
+      {/* Mover se ofrece SIEMPRE que haya selección, tenga empresa o no. Un
+          archivo sin empresa es precisamente el que más necesita moverse: es
+          como entra todo lo que se suelta en la bandeja global. */}
+      {!confirming && (
         <MoveToCarrierBar
           targetIds={targetIds}
           currentCarrierId={currentCarrierId}

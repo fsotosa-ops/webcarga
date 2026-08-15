@@ -89,9 +89,19 @@ describe('TriageBulkBar', () => {
     expect(screen.getByRole('button', { name: /descartar los 3/i })).toBeInTheDocument()
   })
 
-  it('no ofrece mover si la seleccion cruza empresas', () => {
+  // REGRESION (verificado en vivo, 2026-08-15): los archivos que entran por la
+  // puerta global no tienen empresa, asi que llegan con carrier_id = null. El
+  // guard `currentCarrierId &&` los trataba como "seleccion ambigua" y escondia
+  // Mover, dejandolos sin ninguna salida salvo Descartar, que borra el blob.
+  // Era el caso de uso que justifica el tramo entero.
+  //
+  // El caso "la seleccion cruza empresas" que este guard decia proteger es
+  // inalcanzable: handleToggle (TriageWorkbench) REEMPLAZA la seleccion al
+  // marcar un archivo de otra empresa, asi que la seleccion siempre es
+  // homogenea y null solo puede significar "todavia sin empresa".
+  it('ofrece mover los archivos que todavia no tienen empresa', () => {
     setup({ currentCarrierId: null })
-    expect(screen.queryByRole('button', { name: /mover/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /mover los 3 a otra empresa/i })).toBeInTheDocument()
   })
 
   // Con un filtro puesto, "todo" es ambiguo: es la causa numero uno de

@@ -169,10 +169,15 @@ export function TriageClassifyForm({
             </select>
           </label>
 
+          {/* Dos causas distintas para la misma lista vacía, y confundirlas
+              dejaba al usuario sin saber qué hacer: un archivo recién soltado
+              en la bandeja global no tiene empresa todavía, y el camino es
+              moverlo (diseño §7: mover encamina, no termina). */}
           {!subjects.length && (
             <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-              Esta empresa no tiene requisitos pendientes que se puedan asignar.
-              Suele pasar cuando la empresa no está activa.
+              {carrierLabel
+                ? 'Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.'
+                : 'Este documento todavía no tiene empresa. Muévelo a una con el botón de la barra de selección y después elige a qué corresponde.'}
             </p>
           )}
 

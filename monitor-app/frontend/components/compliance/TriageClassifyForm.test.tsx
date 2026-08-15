@@ -52,6 +52,22 @@ beforeEach(() => {
 })
 
 describe('TriageClassifyForm', () => {
+  // Un archivo que entra por la puerta global no tiene empresa todavia, asi
+  // que `subjects` viene vacio. El aviso hablaba de "esta empresa" y de que
+  // "no esta activa" — describia una situacion que no es la que ocurre, y no
+  // decia lo unico que hay que hacer: moverlo a una empresa primero.
+  it('sin empresa dice que hay que moverlo, no que la empresa este inactiva', () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TriageClassifyForm
+          targetIds={['i1']} subjects={[]} onApplied={vi.fn()} carrierLabel={null}
+        />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByText(/todavía no tiene empresa/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no está activa/i)).not.toBeInTheDocument()
+  })
+
   it('anuncia a cuántos documentos va a aplicar', () => {
     setup(['i1', 'i2'])
     expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeInTheDocument()
