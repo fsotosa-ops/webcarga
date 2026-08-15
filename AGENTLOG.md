@@ -1431,6 +1431,35 @@ Orden de las tareas: (1) el detalle de conductor/vehículo devuelve su empresa �
 3. [ ] **HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento, que sacaría a Seguros del primer nivel y cerraría la unificación).
 4. [ ] Promover a `main`: `dev` acumuló toda la épica más dos bugs que afectaban a toda la app (el 204 y el 429 de Auth). `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
 
+### 2026-08-15 (cont.) — Ronda 109: el panel embebido se revierte — cinco rondas de parches no son un diseño
+
+**Qué pasó**: se implementaron las Tasks 1-6 del plan del zoom y se pushearon a `dev`. El usuario rechazó el resultado dos veces —*"se ve horrible, no cumple con nada de lo que dijimos"*, *"y estás haciendo puros parches!!"*— y tenía razón en el diagnóstico, no sólo en el veredicto.
+
+**La causa, dicha sin adorno**: cada rechazo se contestó con un ajuste puntual —achicar la lista, mover la zona de arrastre, agregar una sección, unificar un número— en vez de rediseñar la pantalla. Cinco iteraciones de eso no convergen. El estado que quedó desplegado era peor que cualquiera de los dos extremos: **el panel nuevo conviviendo con la ficha vieja**, que la Task 7 (retirar `/dashboard/carriers/[id]`) nunca alcanzó a cerrar.
+
+**El error de fondo, para no repetirlo**: el panel se armó como una **pila de secciones del mismo peso** —flota, documentos, cargar, seguros, contactos—. El trabajo real es uno solo, *cerrar huecos de documentación*, y la pantalla nunca lo dijo. Cualquier rediseño futuro tiene que arrancar por ahí, no por el inventario de lo que la ficha vieja tenía.
+
+**Decisión del usuario: opción A — volver al último estado sano** (`170ed8e`), en vez de seguir ajustando.
+
+Se retira (commit `addb278`): `EntityDetailPanel`, `ZoomHeader`, `ChildrenList`, `DocumentList` y sus tests; la página partida en lista + detalle; `CertificationStatusTable` con selección. Vuelve el módulo de **cuatro vistas a ancho completo** (Empresas / Conductores / Vehículos / Documentos), que es lo último que el usuario no había rechazado.
+
+Se conserva a propósito, porque no es UI y no estaba en discusión:
+- `7506438` — `GET /drivers/{id}` y `GET /assets/{id}` devuelven `carrier_id`/`carrier_name` vía `LEFT JOIN` sobre la asignación activa.
+- La parte backend de `879963e` — filtro `carrier_id` en `GET /compliance-records/status`, con su test de binding.
+- Los dos bugs que afectaban a toda la app: el 204 con cuerpo (proxy + `apiFetch`) y el 429 por pegarle a la API de Auth en cada request.
+
+Los tres quedan sin consumidor en el frontend por ahora; son correctos y el rediseño los va a necesitar.
+
+**Verificación**: frontend 769/769 (85 archivos) + `tsc --noEmit` limpio; backend 552/552.
+
+El plan `docs/superpowers/plans/2026-08-15-zoom-empresa-conductor-vehiculo.md` **se conserva como registro de la intención**, con la advertencia de arriba: el marco del zoom-out sigue siendo correcto; lo que falló fue construirlo de a parches.
+
+#### Próximo paso exacto
+1. [ ] **Rediseñar la pantalla de una, antes de escribir código.** Definir jerarquía completa —qué se ve primero, qué se pliega, cómo entra la carga masiva— partiendo de la pregunta única *"qué falta y cómo lo cierro"*. Con `frontend-design` + `ui-ux-pro-max --design-system` (MUST del usuario) y presentado antes de implementar. No retomar las Tasks 5-8 del plan del zoom tal como están.
+2. [ ] **Los 2.000 documentos siguen sin entrar al sistema** — sigue siendo el bloqueante real.
+3. [ ] **HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento).
+4. [ ] Promover a `main`: `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
+
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual. (Ver también los 4 pendientes nuevos de la Ronda 95, arriba.)
