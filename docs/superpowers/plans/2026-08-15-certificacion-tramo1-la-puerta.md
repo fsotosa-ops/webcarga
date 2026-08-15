@@ -1329,39 +1329,58 @@ Une las piezas: la zona de carga funciona sin empresa, el lote aplicado deja su 
 
 Agregar a `components/compliance/TriageWorkbench.test.tsx`:
 
+Primero, agregar `undoClassify: vi.fn()` al `vi.mock('@/lib/api/documentIngest', …)` de la cabecera
+del archivo — sin eso el mock no expone el método y el test falla con `undefined is not a function`.
+
+El helper de render del archivo se llama **`setup(props)`**. No hay helper para aplicar un lote, así
+que los tests llaman a `handleApplied` a través de su ruta real: `TriageClassifyForm` recibe
+`onApplied` y lo invoca con los ids aplicados. Para no depender de la interacción completa del
+formulario —que exige elegir sujeto y requisito— se lo mockea:
+
+```tsx
+// TriageClassifyForm hace la llamada a classifyBatch y reporta hacia arriba
+// con onApplied. Acá interesa qué hace el Workbench con ese aviso, no volver
+// a probar el formulario, que tiene sus propios tests.
+vi.mock('./TriageClassifyForm', () => ({
+  TriageClassifyForm: ({ onApplied }: { onApplied: (ids: string[]) => void }) => (
+    <button type="button" onClick={() => onApplied(['i1', 'i2'])}>simular lote aplicado</button>
+  ),
+}))
+```
+
+Y los tres tests:
+
 ```tsx
 // El bloqueo real para meter los 2.000 documentos: sin empresa no habia
 // forma de soltar archivos.
 it('sin empresa igual se pueden cargar archivos', async () => {
-  renderWorkbench({})   // helper existente del archivo, sin carrierId
+  setup()
   expect(await screen.findByTestId('triage-dropzone')).toBeInTheDocument()
 })
 
 it('aplicar un lote deja el aviso de deshacer', async () => {
-  vi.mocked(documentIngestApi.classifyBatch).mockResolvedValue({
-    applied: ['i1', 'i2'], errors: [],
-  })
-  renderWorkbench({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
-  await aplicarLote()   // helper existente del archivo
+  setup({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
+  fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
   expect(await screen.findByRole('status')).toHaveTextContent(/2 archivos/)
   expect(screen.getByRole('button', { name: /deshacer/i })).toBeInTheDocument()
 })
 
 it('deshacer revierte exactamente el lote que se acaba de aplicar', async () => {
-  vi.mocked(documentIngestApi.classifyBatch).mockResolvedValue({
-    applied: ['i1', 'i2'], errors: [],
-  })
   vi.mocked(documentIngestApi.undoClassify).mockResolvedValue({ reverted: ['i1', 'i2'], errors: [] })
-  renderWorkbench({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
-  await aplicarLote()
-  fireEvent.click(await screen.findByRole('button', { name: /deshacer/i }))
+  setup({ carrierId: 'c1', carrierName: 'Transportes Charlotte Spa' })
+  fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /^deshacer$/i }))
   await waitFor(() =>
     expect(documentIngestApi.undoClassify).toHaveBeenCalledWith(['i1', 'i2']),
   )
 })
 ```
 
-Agregar `undoClassify: vi.fn()` al `vi.mock('@/lib/api/documentIngest', …)` del archivo.
+Mockear `TriageClassifyForm` va a romper tests existentes de este archivo que dependan del formulario
+real. Si eso pasa, **no** borrarlos: mover el `vi.mock` a un archivo nuevo
+`TriageWorkbench.undo.test.tsx` con su propia cabecera de mocks, y dejar
+`TriageWorkbench.test.tsx` intacto salvo por el primer test (`sin empresa igual se pueden cargar
+archivos`), que no necesita el mock.
 
 - [ ] **Step 2: Correr y verificar que fallan**
 
@@ -1417,17 +1436,23 @@ Agregar el estado junto a los otros `useState` del componente:
   const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
 ```
 
-En el `onSuccess` de la mutación que llama a `classifyBatch`, agregar:
+**`TriageWorkbench` no llama a `classifyBatch`** — esa llamada vive en `TriageClassifyForm`, que
+reporta hacia arriba con la prop `onApplied`, ya cableada a `handleApplied` (línea ~164). Ahí va el
+cambio. Agregar al **final** de `handleApplied`, conservando todo lo que ya hace:
 
 ```tsx
-      if (res.applied.length) {
-        setUltimoLote({
-          ids: res.applied,
-          mensaje: res.applied.length === 1
-            ? '1 archivo clasificado'
-            : `${res.applied.length} archivos clasificados`,
-        })
-      }
+  function handleApplied(appliedIds: string[]) {
+    // …todo lo existente: setNotice, clearSelection, invalidateQueries…
+
+    if (appliedIds.length) {
+      setUltimoLote({
+        ids: appliedIds,
+        mensaje: appliedIds.length === 1
+          ? '1 archivo clasificado'
+          : `${appliedIds.length} archivos clasificados`,
+      })
+    }
+  }
 ```
 
 Agregar la mutación de deshacer:
@@ -1594,9 +1619,23 @@ antes de quitarlo: `ClassifyBatchBody` es otro tipo y sí se usa.
 - [ ] **Step 3: Borrar el endpoint y sus tests**
 
 En `app/routers/document_ingest.py`, quitar la función `classify_item` y su decorador
-`@router.post("/items/{item_id}/classify")`. En `tests/test_document_ingest.py`, quitar los tests que
-peguen a esa ruta. En `app/schemas/document_ingest.py`, quitar `ClassifyBody` **sólo si** queda sin
-referencias — `ClassifyBatchBody` es distinto y se conserva.
+`@router.post("/items/{item_id}/classify")`.
+
+**Y quitar `ClassifyBody` del bloque de imports de ese mismo archivo.** La Tarea 3 lo dejó en la
+línea `from ..schemas.document_ingest import (…)`; si se borra el schema sin tocar el import, el
+módulo revienta con `ImportError` al arrancar y ningún test unitario lo ve hasta que falla la carga
+de la app. Debe quedar así:
+
+```python
+from ..schemas.document_ingest import (
+    ClassifyBatchBody, IngestUploadResult, MoveItemsBody, TrayPage,
+    UndoClassifyBody, UndoClassifyResult,
+)
+```
+
+En `tests/test_document_ingest.py`, quitar los tests que peguen a esa ruta. En
+`app/schemas/document_ingest.py`, quitar `ClassifyBody` **sólo si** queda sin referencias —
+`ClassifyBatchBody` es distinto y se conserva.
 
 - [ ] **Step 4: Correr las dos suites**
 
