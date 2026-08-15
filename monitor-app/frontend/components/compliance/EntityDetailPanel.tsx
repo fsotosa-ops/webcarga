@@ -1,11 +1,16 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, Loader2 } from 'lucide-react'
 import { assetsApi } from '@/lib/api/assets'
 import { carriersApi } from '@/lib/api/carriers'
 import { complianceApi } from '@/lib/api/compliance'
 import { driversApi } from '@/lib/api/drivers'
+import { contactsApi } from '@/lib/api/contacts'
+import { AddContactForm, ContactCard } from '@/components/dashboard/ContactCard'
+import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCard'
+import { useCanEdit } from '@/hooks/useCanEdit'
 import { ChildrenList, type Hijo } from './ChildrenList'
 import { DocumentList } from './DocumentList'
 import { ZoomHeader, type Miga } from './ZoomHeader'
@@ -73,7 +78,10 @@ function cuenta(records: ComplianceRecord[]) {
   return { cubiertos, total: records.length }
 }
 
+const ROLES_CONTACTO = ['LEGAL_REP', 'OPERATIONS', 'FINANCE', 'DOCUMENTS']
+
 function DetalleEmpresa({ id, onSeleccionar }: { id: string; onSeleccionar: (s: Seleccion | null) => void }) {
+  const canEdit = useCanEdit()
   const empresa = useQuery({ queryKey: ['carrier-detail', id], queryFn: () => carriersApi.get(id) })
 
   // La flota sale de la MISMA consulta que la lista transversal, acotada a
@@ -131,7 +139,56 @@ function DetalleEmpresa({ id, onSeleccionar }: { id: string; onSeleccionar: (s: 
           onChanged={() => empresa.refetch()}
         />
       </section>
+
+      {/* Seguros y Contactos eran dos tabs de la ficha. Son "lo suyo", igual
+          que los documentos, así que van como secciones del mismo panel —
+          plegadas, porque no son el trabajo diario. */}
+      <Plegable titulo="Seguros">
+        <InsuranceSummaryCard carrierId={id} taxId={empresa.data.tax_id} />
+      </Plegable>
+
+      <Plegable titulo={`Contactos (${empresa.data.contacts?.length ?? 0})`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {(empresa.data.contacts ?? []).map(c => (
+            <ContactCard
+              key={c.id}
+              contact={c}
+              canEdit={canEdit}
+              onSaved={async patch => { await contactsApi.patch(c.id, patch); empresa.refetch() }}
+              onDeleted={async () => { await contactsApi.delete(c.id); empresa.refetch() }}
+            />
+          ))}
+          {canEdit && (
+            <AddContactForm
+              roleOptions={ROLES_CONTACTO}
+              onAdd={async body => { await carriersApi.createContact(id, body); empresa.refetch() }}
+            />
+          )}
+          {!(empresa.data.contacts ?? []).length && !canEdit && (
+            <p className="text-[11px] text-gray-500">Sin contactos registrados</p>
+          )}
+        </div>
+      </Plegable>
     </div>
+  )
+}
+
+/** Secciones que no son el trabajo diario: están, pero no ocupan la vista. */
+function Plegable({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  const [abierto, setAbierto] = useState(false)
+  return (
+    <section className="border-t border-border pt-3">
+      <button
+        type="button"
+        onClick={() => setAbierto(v => !v)}
+        aria-expanded={abierto}
+        className="w-full flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-accent transition-colors cursor-pointer"
+      >
+        <ChevronDown size={12} className={`transition-transform ${abierto ? 'rotate-180' : ''}`} />
+        {titulo}
+      </button>
+      {abierto && <div className="mt-2">{children}</div>}
+    </section>
   )
 }
 

@@ -19,6 +19,10 @@ vi.mock('@/lib/api/compliance', () => ({
   },
 }))
 vi.mock('@/lib/api/documentIngest', () => ({ documentIngestApi: { uploadAndClassify: vi.fn() } }))
+vi.mock('@/lib/api/contacts', () => ({ contactsApi: { patch: vi.fn(), delete: vi.fn() } }))
+vi.mock('@/lib/api/policies', () => ({
+  policiesApi: { listByCarrier: vi.fn().mockResolvedValue([]), summary: vi.fn() },
+}))
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 
 import { carriersApi } from '@/lib/api/carriers'
@@ -96,6 +100,22 @@ describe('EntityDetailPanel', () => {
 
     expect(await screen.findByText(/sin empresa asignada/i)).toBeInTheDocument()
     expect(screen.queryByLabelText('Subir Licencia')).not.toBeInTheDocument()
+  })
+
+  // Seguros y Contactos eran dos tabs: ahora son secciones del mismo panel,
+  // plegadas porque no son el trabajo diario.
+  it('trae Seguros y Contactos como secciones, no como tabs', async () => {
+    setup()
+    await screen.findByRole('heading', { name: 'Transportes Sur' })
+    expect(screen.getByRole('button', { name: /seguros/i })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: /contactos/i })).toBeInTheDocument()
+  })
+
+  it('las secciones plegadas se abren en su sitio', async () => {
+    setup()
+    await screen.findByRole('heading', { name: 'Transportes Sur' })
+    fireEvent.click(screen.getByRole('button', { name: /contactos/i }))
+    expect(screen.getByRole('button', { name: /contactos/i })).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('avisa si la entidad no existe', async () => {
