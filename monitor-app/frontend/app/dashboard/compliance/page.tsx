@@ -3,8 +3,9 @@
 import { Suspense, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Download, Loader2, Plus } from 'lucide-react'
+import { Download, Inbox, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
+import { documentIngestApi } from '@/lib/api/documentIngest'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
 import { CertificationFunnel } from '@/components/compliance/CertificationFunnel'
 import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
@@ -14,15 +15,23 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
 import type { CertificationGroup } from '@/lib/types'
 
-type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'documentos'
+type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos' | 'documentos'
 
-// Las tres primeras son la misma lista agrupada distinto; la cuarta es la cola.
-const VISTAS: { id: Vista; label: string; group?: CertificationGroup }[] = [
-  { id: 'empresas',    label: 'Empresas',    group: 'carrier' },
-  { id: 'conductores', label: 'Conductores', group: 'driver' },
-  { id: 'vehiculos',   label: 'Vehículos',   group: 'asset' },
-  { id: 'documentos',  label: 'Documentos' },
+/** Las cuatro agrupaciones miran los MISMOS pendientes, agrupados distinto: el
+ *  control no crea vistas nuevas y no hay dos listas que sincronizar (§4).
+ *
+ *  `documentos` no está acá a propósito: la bandeja no es una quinta
+ *  agrupación. Son archivos que todavía no pertenecen a nada, así que vive
+ *  detrás de su propio botón, con contador. Sigue viajando en `?vista=` para
+ *  no romper los enlaces que ya existen. */
+const AGRUPACIONES: { id: Vista; label: string; group: CertificationGroup }[] = [
+  { id: 'empresas',    label: 'Empresa',   group: 'carrier' },
+  { id: 'conductores', label: 'Conductor', group: 'driver' },
+  { id: 'vehiculos',   label: 'Vehículo',  group: 'asset' },
+  { id: 'requisitos',  label: 'Requisito', group: 'requirement' },
 ]
+
+const VISTA_BANDEJA: Vista = 'documentos'
 
 function csvEscape(v: string) {
   return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
@@ -69,8 +78,9 @@ function CertificationPageInner() {
   const router = useRouter()
 
   const param = searchParams.get('vista')
-  const vista: Vista = VISTAS.some(v => v.id === param) ? (param as Vista) : 'empresas'
-  const group = VISTAS.find(v => v.id === vista)?.group
+  const esVistaConocida = param === VISTA_BANDEJA || AGRUPACIONES.some(v => v.id === param)
+  const vista: Vista = esVistaConocida ? (param as Vista) : 'empresas'
+  const group = AGRUPACIONES.find(v => v.id === vista)?.group
   const [q, setQ] = useState('')
   const [newCarrierOpen, setNewCarrierOpen] = useState(false)
   const [exportando, setExportando] = useState(false)
@@ -98,6 +108,15 @@ function CertificationPageInner() {
     enabled: group === 'carrier' && catalogoAbierto,
   })
 
+  /** Cuántos archivos esperan que los ubiquen. Se pide con `limit: 1` — de la
+   *  respuesta sólo interesa `total` — y comparte clave con el contador del
+   *  Sidebar, así los dos se invalidan juntos y no pueden contradecirse. */
+  const sinClasificar = useQuery({
+    queryKey: ['ingest-queue-count'],
+    queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
+    staleTime: 60_000,
+  }).data?.total ?? 0
+
   function cambiarVista(v: Vista) {
     // La vista viaja en la URL: volver del detalle no pierde dónde estabas.
     router.replace(v === 'empresas' ? '/dashboard/compliance' : `/dashboard/compliance?vista=${v}`)
@@ -121,8 +140,13 @@ function CertificationPageInner() {
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-          {VISTAS.map(({ id: v, label }) => (
+        <span className="text-[11px] text-gray-500">Agrupar por</span>
+        <div
+          role="group"
+          aria-label="Agrupar por"
+          className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit"
+        >
+          {AGRUPACIONES.map(({ id: v, label }) => (
             <button
               key={v}
               onClick={() => cambiarVista(v)}
@@ -135,6 +159,32 @@ function CertificationPageInner() {
             </button>
           ))}
         </div>
+
+        {/* La bandeja vive detrás de su propio botón, con contador: no es una
+            agrupación más. El rojo #b00020 con su único significado — hay
+            archivos esperando (§9). Sin archivos no se dibuja un cero: un cero
+            en rojo pediría atención sobre nada. */}
+        <button
+          type="button"
+          onClick={() => cambiarVista(VISTA_BANDEJA)}
+          aria-pressed={vista === VISTA_BANDEJA}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+            vista === VISTA_BANDEJA
+              ? 'border-accent/40 bg-accent/5 text-text-primary'
+              : 'border-border bg-white text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          <Inbox size={13} />
+          Sin clasificar
+          {sinClasificar > 0 && (
+            <span
+              className="rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums text-white"
+              style={{ backgroundColor: '#b00020' }}
+            >
+              {sinClasificar}
+            </span>
+          )}
+        </button>
 
         {group && (
           <>

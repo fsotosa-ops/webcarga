@@ -30,6 +30,7 @@ vi.mock('@/lib/api/carriers', () => ({
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 
 import { complianceApi } from '@/lib/api/compliance'
+import { documentIngestApi } from '@/lib/api/documentIngest'
 import type { CertificationStatusRow } from '@/lib/types'
 import CertificationPage from './page'
 
@@ -68,7 +69,7 @@ describe('Certificación — una lista, dos vistas', () => {
     setup()
     expect(await screen.findByText('Test Empresa Webcarga')).toBeInTheDocument()
     expect(screen.getByText('9 de 12')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Empresas' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Empresa' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('muestra en la misma fila lo que falta y lo que llegó sin clasificar', async () => {
@@ -85,7 +86,7 @@ describe('Certificación — una lista, dos vistas', () => {
   it('la vista viaja en la URL, así volver del detalle no pierde el lugar', async () => {
     setup()
     await screen.findByText('Test Empresa Webcarga')
-    fireEvent.click(screen.getByRole('button', { name: 'Documentos' }))
+    fireEvent.click(screen.getByRole('button', { name: /sin clasificar/i }))
     expect(replace).toHaveBeenCalledWith('/dashboard/compliance?vista=documentos')
   })
 
@@ -93,7 +94,56 @@ describe('Certificación — una lista, dos vistas', () => {
     params = new URLSearchParams('vista=documentos')
     setup()
     expect(await screen.findByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Documentos' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /sin clasificar/i })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // Spec §4: las cuatro opciones miran los mismos pendientes agrupados
+  // distinto. La bandeja NO es una quinta: son archivos que todavia no
+  // pertenecen a nada, asi que vive detras de su propio boton.
+  it('el conmutador agrupa de cuatro maneras, y por requisito es una de ellas', async () => {
+    setup()
+    await screen.findByText('Test Empresa Webcarga')
+
+    const agrupador = screen.getByRole('group', { name: /agrupar por/i })
+    const opciones = within(agrupador).getAllByRole('button').map(b => b.textContent)
+    expect(opciones).toEqual(['Empresa', 'Conductor', 'Vehículo', 'Requisito'])
+  })
+
+  it('la bandeja no esta entre las agrupaciones', async () => {
+    setup()
+    await screen.findByText('Test Empresa Webcarga')
+
+    const agrupador = screen.getByRole('group', { name: /agrupar por/i })
+    expect(within(agrupador).queryByText(/sin clasificar/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sin clasificar/i })).toBeInTheDocument()
+  })
+
+  it('el boton de la bandeja dice cuantos archivos esperan', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 23, rows: [] })
+    setup()
+
+    // Se espera el CONTEO, no el boton: el boton existe desde el primer render
+    // y esperarlo a el deja pasar el test antes de que llegue el dato.
+    const contador = await screen.findByText('23')
+    expect(contador.closest('button')).toHaveAccessibleName(/sin clasificar/i)
+  })
+
+  it('sin archivos esperando el boton no inventa un cero rojo', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+
+    const boton = await screen.findByRole('button', { name: /sin clasificar/i })
+    expect(boton.textContent).not.toMatch(/\b0\b/)
+  })
+
+  it('agrupa por requisito', async () => {
+    params = new URLSearchParams('vista=requisitos')
+    setup()
+    await waitFor(() => {
+      expect(complianceApi.listStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ group: 'requirement' }),
+      )
+    })
   })
 
   it('busca empresas sin recargar la vista', async () => {
