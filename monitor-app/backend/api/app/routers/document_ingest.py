@@ -143,8 +143,11 @@ async def list_queue(
     """
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
+    # AUTO, SUGGESTED y AMBIGUOUS son trabajo pendiente: el clasificador los
+    # resolvio pero nadie los confirmo todavia. Filtrar solo UNMATCHED los
+    # dejaba sin ninguna superficie que los muestre.
     where = """
-        WHERE i.match_status = 'UNMATCHED'
+        WHERE i.match_status NOT IN ('COMMITTED', 'DISCARDED')
           AND ($1::uuid IS NULL OR COALESCE(i.carrier_id, b.carrier_id) = $1::uuid)
     """
     total = await pool.fetchval(

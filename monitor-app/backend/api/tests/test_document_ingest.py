@@ -210,6 +210,47 @@ def test_list_queue_without_carrier_passes_none():
     assert pool.fetch.call_args.args[1] is None
 
 
+def test_queue_shows_files_that_already_have_a_suggestion():
+    """AUTO, SUGGESTED y AMBIGUOUS son trabajo pendiente, no trabajo hecho.
+
+    Filtrar solo UNMATCHED los dejaba sin ninguna superficie que los muestre:
+    el clasificador los resuelve, la bandeja los esconde y nadie los confirma.
+    """
+    pool = AsyncMock()
+    pool.fetchval.return_value = 4
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/document-ingest/items")
+
+    assert res.status_code == 200
+    sql = pool.fetch.await_args.args[0]
+    assert "COMMITTED" in sql and "DISCARDED" in sql
+    assert "match_status = 'UNMATCHED'" not in sql
+
+
+def test_queue_binds_exactly_the_parameters_it_references():
+    """Guarda contra el bug recurrente: sustituir $n a mano no prueba el binding.
+
+    Si el SQL referencia $3 pero se pasan 2 argumentos, Postgres tira
+    IndeterminateDatatypeError en vivo y ningun AsyncMock lo detecta.
+    """
+    import re
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/document-ingest/items?carrier_id=c1&limit=10&offset=5")
+
+    for call in (pool.fetch.await_args, pool.fetchval.await_args):
+        sql, args = call.args[0], call.args[1:]
+        referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+        assert referenciados == set(range(1, len(args) + 1)), (
+            f"SQL referencia {sorted(referenciados)} pero recibe {len(args)} argumentos"
+        )
+
+
 def test_preview_url_is_signed_one_at_a_time():
     pool = AsyncMock()
     pool.fetchval.return_value = "staging/b1/foto.png"
