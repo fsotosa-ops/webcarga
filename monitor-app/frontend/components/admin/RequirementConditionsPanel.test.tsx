@@ -107,7 +107,7 @@ describe('RequirementConditionsPanel', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /ver qué cambia/i })).not.toBeDisabled())
 
     fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
-    expect(await screen.findByText(/se quitan 16/i)).toBeInTheDocument()
+    expect(await screen.findByText(/dejan de exigirse 16/i)).toBeInTheDocument()
     expect(requirementsApi.recalc).not.toHaveBeenCalled()
   })
 
@@ -118,7 +118,7 @@ describe('RequirementConditionsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
     expect(screen.queryByRole('button', { name: /aplicar/i })).not.toBeInTheDocument()
 
-    await screen.findByText(/se quitan 16/i)
+    await screen.findByText(/dejan de exigirse 16/i)
     expect(screen.getByRole('button', { name: /aplicar/i })).toBeInTheDocument()
   })
 
@@ -131,18 +131,44 @@ describe('RequirementConditionsPanel', () => {
   it('aplicar recien despues de la vista previa, y pide confirmacion', async () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
-    await screen.findByText(/se quitan 16/i)
+    await screen.findByText(/dejan de exigirse 16/i)
     fireEvent.click(screen.getByRole('button', { name: /aplicar/i }))
 
     expect(window.confirm).toHaveBeenCalled()
     await waitFor(() => expect(requirementsApi.recalc).toHaveBeenCalledWith('r1'))
   })
 
+  it('la vista previa no dice que se quita nada: los registros dejan de exigirse', async () => {
+    // El recalculo dejo de borrar (apaga is_current en vez de hacer un
+    // DELETE fisico). "Se quitan" describia el comportamiento viejo y le
+    // haria creer a quien mira que el registro y su documento desaparecen.
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
+
+    expect(await screen.findByText(/dejan de exigirse 16/i)).toBeInTheDocument()
+    expect(screen.queryByText(/se quitan/i)).not.toBeInTheDocument()
+  })
+
+  it('la confirmacion dice que no se borra nada, no que sea irreversible', async () => {
+    // El texto viejo prometia "no se puede deshacer", que era cierto con el
+    // DELETE fisico y ahora es falso: apagar un registro es reversible.
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
+    await screen.findByText(/dejan de exigirse 16/i)
+    fireEvent.click(screen.getByRole('button', { name: /aplicar/i }))
+
+    const texto = vi.mocked(window.confirm).mock.calls[0][0] as string
+    expect(texto).toMatch(/dejan de exigirse/i)
+    expect(texto).not.toMatch(/quitar/i)
+    expect(texto).not.toMatch(/no se puede deshacer/i)
+    expect(texto).toMatch(/no se borra/i)
+  })
+
   it('si se cancela la confirmacion, no aplica nada', async () => {
     vi.mocked(window.confirm).mockReturnValue(false)
     setup()
     fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
-    await screen.findByText(/se quitan 16/i)
+    await screen.findByText(/dejan de exigirse 16/i)
     fireEvent.click(screen.getByRole('button', { name: /aplicar/i }))
 
     // No es una asercion inmediata: si `aplicar.mutate()` se hubiera
@@ -154,13 +180,13 @@ describe('RequirementConditionsPanel', () => {
     // prueba mas fuerte de que NO se disparo es que la vista previa siga ahi.
     await act(async () => {})
     expect(requirementsApi.recalc).not.toHaveBeenCalled()
-    expect(screen.getByText(/se quitan 16/i)).toBeInTheDocument()
+    expect(screen.getByText(/dejan de exigirse 16/i)).toBeInTheDocument()
   })
 
   it('tildar una casilla tras ver la vista previa deja aplicar deshabilitado', async () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
-    await screen.findByText(/se quitan 16/i)
+    await screen.findByText(/dejan de exigirse 16/i)
 
     fireEvent.click(screen.getByLabelText('Furgón Seco'))
 
@@ -171,7 +197,7 @@ describe('RequirementConditionsPanel', () => {
     vi.mocked(requirementsApi.recalc).mockRejectedValueOnce(new Error('fallo del recalculo'))
     setup()
     fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
-    await screen.findByText(/se quitan 16/i)
+    await screen.findByText(/dejan de exigirse 16/i)
     fireEvent.click(screen.getByRole('button', { name: /aplicar/i }))
 
     expect(await screen.findByText(/fallo del recalculo/i)).toBeInTheDocument()
@@ -180,7 +206,7 @@ describe('RequirementConditionsPanel', () => {
   it('guardar refresca la vista previa si estaba abierta', async () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
-    await screen.findByText(/se quitan 16/i)
+    await screen.findByText(/dejan de exigirse 16/i)
     expect(requirementsApi.recalcPreview).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByLabelText('Furgón Seco'))

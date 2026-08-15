@@ -66,18 +66,27 @@ SQL_ENTIDADES_QUE_APLICAN = {
 async def calcular_diferencias(pool, requirement_id: str) -> dict:
     """Qué cambiaría si se recalculara este requisito ahora.
 
-    `bloqueados` son los que la regla ya no incluye pero NO se pueden quitar:
-    tienen archivo, o edición manual, o un estado distinto de MISSING. Borrar
-    un documento cargado porque cambió una regla de catálogo sería destruir
-    trabajo real (D13).
+    `crear` incluye tanto entidades sin registro como entidades con uno
+    APAGADO: el `NOT EXISTS (... AND cr.is_current)` no distingue los dos
+    casos, y no tiene por qué — para la regla, un registro apagado es "no lo
+    tiene". Quien aplica (`app/routers/requirements.py`) resuelve la
+    diferencia con `ON CONFLICT ... DO UPDATE SET is_current = true`, porque
+    el índice único (entity_id, requirement_id) es TOTAL y la fila apagada
+    sigue ocupando el lugar.
+
+    `bloqueados` son los que la regla ya no incluye pero NO se pueden apagar:
+    tienen archivo, o edición manual, o un estado distinto de MISSING. Apagar
+    un registro con documento cargado lo sacaría de todas las pantallas
+    (todas filtran `is_current`), que para quien mira es lo mismo que haberlo
+    perdido (D13).
 
     `status` es NULLABLE (aunque hoy no hay filas con ese valor): el
     predicado usa `IS DISTINCT FROM 'MISSING'`, no `<>`, para que un NULL
     caiga del lado bloqueado en vez de la lógica de tres valores de SQL
-    (`NULL <> 'MISSING'` da NULL, ni true ni false) — el `DELETE` guardado de
+    (`NULL <> 'MISSING'` da NULL, ni true ni false) — el `UPDATE` guardado de
     `app/routers/requirements.py` usa el operador espejo
     (`IS NOT DISTINCT FROM`), así que los dos lados tratan un NULL exactamente
-    igual y la vista previa nunca promete un borrado que el DELETE no hace.
+    igual y la vista previa nunca promete un apagado que el UPDATE no hace.
 
     Devuelve también `target_entity` (None si el requisito no existe) para
     que quien llama pueda decidir el 404 sin repetir este mismo `fetchrow`.
@@ -87,9 +96,9 @@ async def calcular_diferencias(pool, requirement_id: str) -> dict:
     `pool.fetch*` puede tomar una conexión distinta del pool y por lo tanto un
     snapshot distinto, así que `crear` y `sobran` de una misma vista previa
     podían no ser mutuamente coherentes entre sí (M3). El daño estaba acotado
-    porque el `DELETE` de `app/routers/requirements.py` revalida D13 por su
-    cuenta, pero son los números que alguien mira antes de confirmar un
-    borrado irreversible."""
+    porque el `UPDATE` de `app/routers/requirements.py` revalida D13 por su
+    cuenta, pero son los números que alguien mira antes de confirmar el
+    cambio."""
     async with pool.acquire() as conn:
         async with conn.transaction(readonly=True):
             req = await conn.fetchrow(

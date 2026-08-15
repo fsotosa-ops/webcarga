@@ -326,9 +326,41 @@ def test_recalc_preview_404_when_requirement_missing():
 
 # ── Aplicar el recalculo (POST /recalc) ─────────────────────────────────────
 
-def test_recalc_nunca_borra_un_registro_con_documento():
-    """D13. Borrar un documento cargado porque cambio una regla de catalogo
-    seria destruir trabajo real. El DELETE ademas repite el predicado (no
+def _sql_normalizado(sql: str) -> str:
+    return " ".join(sql.split())
+
+
+def test_recalc_apaga_en_vez_de_borrar():
+    """El recalculo no borra: marca que el requisito dejo de exigirse.
+
+    compliance_records no tiene tabla de historial, asi que un DELETE fisico
+    es irreversible por definicion. El proyecto ya resuelve esto en otro lado
+    (reconcile_carrier_shipper_link apaga con is_current = false en vez de
+    borrar); el recalculo simplemente no lo usaba. Este test fija que no
+    quede NINGUN borrado fisico en el camino, no solo que exista el UPDATE."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetch.side_effect = [
+        [],  # crear
+        [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False}],  # sobran
+        [{"id": "rec-libre"}],  # UPDATE ... RETURNING id
+    ]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-requirements/r1/recalc")
+
+    assert res.status_code == 200
+    todo_el_sql = [c.args[0] for c in
+                   list(conn.fetch.call_args_list) + list(conn.execute.call_args_list)]
+    assert not any(re.search(r"\bDELETE\b", s, re.I) for s in todo_el_sql)
+
+
+def test_recalc_nunca_apaga_un_registro_con_documento():
+    """D13. Apagar un requisito con documento cargado lo sacaria de todas
+    las pantallas (todas filtran is_current), que para quien mira es lo
+    mismo que haberlo perdido. El UPDATE ademas repite el predicado (no
     confia ciegamente en los IDs que trajo la vista previa)."""
     pool = AsyncMock()
     conn = AsyncMock()
@@ -339,7 +371,7 @@ def test_recalc_nunca_borra_un_registro_con_documento():
         [],  # crear
         [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False},
          {"id": "rec-con-doc", "entity_id": "a2", "bloqueado": True}],  # sobran
-        [{"id": "rec-libre"}],  # DELETE ... RETURNING id
+        [{"id": "rec-libre"}],  # UPDATE ... RETURNING id
     ]
     client = make_client(pool)
 
@@ -347,17 +379,22 @@ def test_recalc_nunca_borra_un_registro_con_documento():
 
     assert res.status_code == 200
     assert res.json() == {"creados": 0, "quitados": 1, "bloqueados": 1}
-    borrado = [c for c in conn.fetch.call_args_list if "DELETE" in c.args[0].upper()]
-    assert len(borrado) == 1
-    assert borrado[0].args[1] == ["rec-libre"]
-    # D13 vuelve a comprobarse en el propio DELETE, no solo en la vista
+    apagado = [c for c in conn.fetch.call_args_list if "UPDATE" in c.args[0].upper()]
+    assert len(apagado) == 1
+    assert apagado[0].args[1] == ["rec-libre"]
+    sql = _sql_normalizado(apagado[0].args[0])
+    # Apaga el interruptor y NADA mas: si el UPDATE tocara tambien status o
+    # file_url, "dejo de exigirse" pasaria a ser "se vacio el registro".
+    set_clause = sql[sql.index("SET"):sql.index("WHERE")].strip()
+    assert set_clause == "SET is_current = false"
+    # D13 vuelve a comprobarse en el propio UPDATE, no solo en la vista
     # previa. Comparacion exacta (no "in" por termino): un "in" deja pasar
     # un NOT de mas delante de cualquiera de las tres condiciones sin que
     # el assert lo note (ver el mismo hallazgo en
     # test_requirement_conditions.py, Ronda de arreglo 2).
-    where_clause = " ".join(borrado[0].args[0][borrado[0].args[0].index("WHERE"):].split())
-    assert where_clause == (
-        "WHERE id = ANY($1::uuid[]) AND file_url IS NULL AND NOT is_manual_override "
+    assert sql[sql.index("WHERE"):] == (
+        "WHERE id = ANY($1::uuid[]) AND is_current "
+        "AND file_url IS NULL AND NOT is_manual_override "
         "AND status IS NOT DISTINCT FROM 'MISSING' RETURNING id"
     )
 
@@ -387,10 +424,43 @@ def test_recalc_creates_missing_records_for_newly_matching_entities():
     assert inserts[0].args[2] == "ASSET"
 
 
-def test_recalc_reports_rows_actually_deleted_not_the_planned_count():
-    """Ventana D13: si entre el calculo y el DELETE algo protegio un
+def test_recalc_vuelve_a_encender_un_registro_apagado_sin_pisarle_el_documento():
+    """El indice unico (entity_id, requirement_id) es TOTAL, no parcial: un
+    registro apagado sigue ocupando el lugar, asi que un INSERT puro contra
+    una entidad que YA tuvo este requisito o explota o lo saltea el
+    ON CONFLICT DO NOTHING -- y el endpoint reportaria "creados: N" sin haber
+    creado nada. El DO UPDATE enciende el interruptor y NO toca status,
+    file_url, metadata ni expiration_date: un registro apagado puede tener
+    documento cargado (lo pudo apagar el trigger del vinculo empresa-cliente,
+    que no mira D13), y resucitarlo pisandole el archivo seria destruir
+    trabajo real -- exactamente lo que este cambio vino a evitar."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"target_entity": "ASSET"}
+    conn.fetch.side_effect = [
+        [{"id": "a-que-vuelve"}],  # crear
+        [],  # sobran
+        [{"id": "cr-reencendido"}],  # INSERT ... ON CONFLICT DO UPDATE RETURNING id
+    ]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/compliance-requirements/r1/recalc")
+
+    assert res.status_code == 200
+    assert res.json()["creados"] == 1
+    sql = _sql_normalizado(
+        [c.args[0] for c in conn.fetch.call_args_list if "INSERT" in c.args[0].upper()][0])
+    assert sql[sql.index("ON CONFLICT"):] == (
+        "ON CONFLICT (entity_id, requirement_id) DO UPDATE SET is_current = true "
+        "RETURNING id"
+    )
+
+
+def test_recalc_reports_rows_actually_turned_off_not_the_planned_count():
+    """Ventana D13: si entre el calculo y el UPDATE algo protegio un
     registro (ej. se subio un archivo), el numero que ve el usuario es el
-    ejecutado, no el planeado. Se simula devolviendo del DELETE una sola
+    ejecutado, no el planeado. Se simula devolviendo del UPDATE una sola
     fila aunque la vista previa habia calculado dos."""
     pool = AsyncMock()
     conn = AsyncMock()
@@ -400,7 +470,7 @@ def test_recalc_reports_rows_actually_deleted_not_the_planned_count():
         [],
         [{"id": "rec-1", "entity_id": "a1", "bloqueado": False},
          {"id": "rec-2", "entity_id": "a2", "bloqueado": False}],
-        [{"id": "rec-1"}],  # el DELETE guardado solo se llevo uno
+        [{"id": "rec-1"}],  # el UPDATE guardado solo apago uno
     ]
     client = make_client(pool)
 
@@ -411,8 +481,9 @@ def test_recalc_reports_rows_actually_deleted_not_the_planned_count():
 
 
 def test_recalc_audits_created_and_deleted_ids():
-    """compliance_records no tiene tabla de historial y el DELETE es fisico:
-    el unico rastro forense es lo que quede en audit_log."""
+    """compliance_records no tiene tabla de historial: aunque apagar ya no
+    sea destructivo, el audit_log sigue siendo lo unico que dice QUE fila
+    toco cada recalculo."""
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
@@ -421,7 +492,7 @@ def test_recalc_audits_created_and_deleted_ids():
         [{"id": "a-nuevo"}],  # crear
         [{"id": "rec-libre", "entity_id": "a1", "bloqueado": False}],  # sobran
         [{"id": "cr-nuevo-1"}],  # INSERT RETURNING id
-        [{"id": "rec-libre"}],   # DELETE RETURNING id
+        [{"id": "rec-libre"}],   # UPDATE RETURNING id
     ]
     client = make_client(pool)
 

@@ -133,20 +133,24 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
       qc.invalidateQueries({ queryKey: ['compliance-pending-drawer'] })
     },
   })
-  // Sin esto, un POST /recalc que falla (el DELETE físico sobre
-  // compliance_records) apaga el spinner y no deja rastro: quien confirmó
-  // el diálogo cree que aplicó. `useMutation` ya trackea el error solo;
-  // basta con leerlo en el render (ver más abajo).
+  // Sin esto, un POST /recalc que falla apaga el spinner y no deja rastro:
+  // quien confirmó el diálogo cree que aplicó. `useMutation` ya trackea el
+  // error solo; basta con leerlo en el render (ver más abajo).
   const errorAplicar = aplicar.isError
     ? (aplicar.error instanceof Error ? aplicar.error.message : 'Error al aplicar la regla')
     : null
 
+  // El recálculo dejó de borrar: los registros que ya no corresponden se
+  // marcan como "no vigentes" (is_current = false) y conservan su documento.
+  // Por eso el texto ya no habla de quitar ni promete que no se puede
+  // deshacer — las dos cosas describían el DELETE físico anterior.
   function confirmarAplicar() {
     const crear = preview.data?.crear ?? 0
     const quitar = preview.data?.quitar ?? 0
     const ok = window.confirm(
-      `¿Aplicar esta regla? Se van a crear ${crear} y quitar ${quitar} registros de cumplimiento. `
-      + 'Esta acción no se puede deshacer.',
+      `¿Aplicar esta regla? Se van a agregar ${crear} registros de cumplimiento `
+      + `y ${quitar} dejan de exigirse. No se borra nada: los que dejan de exigirse `
+      + 'conservan su documento y se vuelven a exigir si la regla cambia.',
     )
     if (!ok) return
     aplicar.mutate()
@@ -279,7 +283,7 @@ export function RequirementConditionsPanel({ requisito, subtipos, onSaved }: Pro
 
       {verPreview && preview.data && (
         <div className="rounded-lg border border-border bg-gray-50 px-3 py-2 text-[11.5px] space-y-1">
-          <p>Se agregan {preview.data.crear} · <b>se quitan {preview.data.quitar}</b></p>
+          <p>Se agregan {preview.data.crear} · <b>dejan de exigirse {preview.data.quitar}</b></p>
           {preview.data.bloqueados > 0 && (
             <p className="flex items-start gap-1.5 text-amber-700">
               <AlertTriangle size={12} className="mt-0.5 shrink-0" />
