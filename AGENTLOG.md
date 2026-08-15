@@ -1403,6 +1403,30 @@ Se agregó un test que **cuenta los placeholders del SQL contra los argumentos**
 
 **Estado de la épica**: HU-01 ✔, HU-02 ✔ (se había caído al borrar el panel de empresa, restaurada), HU-03 ✔, HU-04 ✔. **Quedan HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento, que es lo que sacaría a Seguros del primer nivel).
 
+### 2026-08-15 (cont.) — Ronda 108: "Empresas es un zoom-out" — plan escrito, sin implementar
+
+**El marco lo puso el usuario en una frase**, y ordena el problema mejor que lo que yo traía: no hay tres módulos ni tabs que replicar, hay **un mismo objeto mirado a tres distancias**. En cada nivel la pantalla dice lo mismo con la misma gramática: *quién es · cuánto le falta · qué tiene adentro · qué documentos son suyos*.
+
+```
+/dashboard/compliance      todas          →  /dashboard/carriers/[id]   una empresa
+                                          →  /dashboard/drivers/[id]    un conductor
+                                          →  /dashboard/assets/[id]     un vehículo
+```
+
+**El hallazgo estructural**: **conductores y vehículos no tienen página propia en ninguna parte de la app.** Existen sólo como modal dentro de un tab dentro de la ficha — sin URL, el botón atrás no vuelve, y su documentación queda a cuatro niveles de anidamiento. Por ese hueco tuve que inventar `?driver=` para que Certificación pudiera abrirlos: era un parche sobre un problema estructural, no una decisión.
+
+**Otro**: hay **dos componentes distintos** para listar documentos (`TransporterDocumentsPanel` para empresa, `DocumentChecklist` para conductor/vehículo). Sin unificarlos, "la misma gramática en cada nivel" es una frase, no un hecho.
+
+**Plan escrito, NO implementado**: `docs/superpowers/plans/2026-08-15-zoom-empresa-conductor-vehiculo.md`, 8 tareas con TDD y código completo. El usuario eligió la opción A (los tres niveles) sobre mockups, y pidió dejarlo escrito para implementarlo después.
+
+Orden de las tareas: (1) el detalle de conductor/vehículo devuelve su empresa — hoy `GET /drivers/{id}` no la trae, así que sin eso no hay migas; (2) `DocumentList` único; (3) `ZoomHeader` con migas y avance; (4-5) las páginas de conductor y vehículo; (6) mueren los modales y el `?driver=`; (7) la ficha plana, que es la tarea más grande — 959 líneas y 6 tabs a redistribuir sin perder ninguna acción; (8) retirar los listados viejos.
+
+#### Próximo paso exacto
+1. [ ] **Implementar el plan del zoom** (8 tareas). La Task 7 es la más riesgosa: el plan trae el inventario tab por tab para que nada se pierda.
+2. [ ] **Los 2.000 documentos siguen sin entrar al sistema** — sigue siendo el bloqueante real para que todo esto sirva.
+3. [ ] **HU-05** (administración de requisitos) y **HU-06** (Seguros proyectado a cumplimiento, que sacaría a Seguros del primer nivel y cerraría la unificación).
+4. [ ] Promover a `main`: `dev` acumuló toda la épica más dos bugs que afectaban a toda la app (el 204 y el 429 de Auth). `webcarga-frontend-prod` sigue con una imagen del 2026-08-01.
+
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual. (Ver también los 4 pendientes nuevos de la Ronda 95, arriba.)
