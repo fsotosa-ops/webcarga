@@ -27,6 +27,85 @@ router = APIRouter(prefix="/document-ingest", tags=["document-ingest"])
 _MAX_FILES_PER_UPLOAD = 50
 
 
+async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
+    """Sube N archivos a staging y los deja en la bandeja, sin clasificarlos.
+
+    `carrier_id` puede ser None: la tanda que llega por correo mezcla empresas
+    y quien carga todavía no sabe de quién es nada. Obligarlo a elegir una
+    empresa antes de soltar los archivos convierte la bandeja en un buscador.
+
+    Procesamiento por archivo, no todo-o-nada: un MIME inválido no tumba el
+    resto del lote (mismo criterio que POST /compliance-records/bulk-file).
+    """
+    items: list[dict] = []
+    errors: list[dict] = []
+
+    batch_id = await conn.fetchval(
+        """
+        INSERT INTO public.document_ingest_batches
+            (carrier_id, source, status, created_by, total_files)
+        VALUES ($1, 'UPLOAD', 'REVIEW', $2, $3)
+        RETURNING id::text
+        """,
+        carrier_id, actor, len(files),
+    )
+
+    for file in files:
+        try:
+            uploaded = await upload_document_version(
+                supabase, key_prefix=f"staging/{batch_id}", file=file,
+            )
+        except HTTPException as exc:
+            errors.append({"file_name": file.filename or "archivo", "error": str(exc.detail)})
+            continue
+
+        row = await conn.fetchrow(
+            """
+            INSERT INTO public.document_ingest_items
+                (batch_id, storage_path, file_name, mime_type, size_bytes, match_status)
+            VALUES ($1, $2, $3, $4, $5, 'UNMATCHED')
+            RETURNING id::text, file_name, mime_type, size_bytes, storage_path, match_status
+            """,
+            batch_id, uploaded["storage_path"], uploaded["file_name"],
+            uploaded["mime_type"], uploaded["size_bytes"],
+        )
+        items.append(dict(row))
+
+    await conn.execute(
+        "UPDATE public.document_ingest_batches SET unmatched = $2 WHERE id = $1",
+        batch_id, len(items),
+    )
+    return batch_id, items, errors
+
+
+def _check_upload_size(files: list[UploadFile]) -> None:
+    if not files:
+        raise HTTPException(422, "Se requiere al menos un archivo")
+    if len(files) > _MAX_FILES_PER_UPLOAD:
+        raise HTTPException(422, f"Máximo {_MAX_FILES_PER_UPLOAD} archivos por carga")
+
+
+@router.post("/files", status_code=201, response_model=IngestUploadResult)
+async def upload_to_global_tray(
+    files: list[UploadFile] = File(...),
+    pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
+    user=Depends(require_editor),
+):
+    """Sube N archivos a la bandeja global, sin empresa y sin clasificar.
+
+    Es la puerta de la tanda mezclada. El archivo queda con carrier_id NULL
+    hasta que alguien lo mueve a una empresa o lo clasifica directo.
+    """
+    _check_upload_size(files)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            batch_id, items, errors = await _ingest_files(
+                conn, supabase, carrier_id=None, files=files, actor=user["sub"],
+            )
+    return {"batch_id": batch_id, "items": items, "errors": errors}
+
+
 @router.post("/{carrier_id}/files", status_code=201, response_model=IngestUploadResult)
 async def upload_to_tray(
     carrier_id: str,
@@ -35,57 +114,13 @@ async def upload_to_tray(
     supabase=Depends(get_supabase),
     user=Depends(require_editor),
 ):
-    """Sube N archivos a la bandeja de una empresa, sin clasificarlos.
-
-    Procesamiento por archivo, no todo-o-nada: un MIME inválido no tumba el
-    resto del lote (mismo criterio que POST /compliance-records/bulk-file).
-    """
-    if not files:
-        raise HTTPException(422, "Se requiere al menos un archivo")
-    if len(files) > _MAX_FILES_PER_UPLOAD:
-        raise HTTPException(422, f"Máximo {_MAX_FILES_PER_UPLOAD} archivos por carga")
-
-    items: list[dict] = []
-    errors: list[dict] = []
-
+    """Sube N archivos a la bandeja de una empresa, sin clasificarlos."""
+    _check_upload_size(files)
     async with pool.acquire() as conn:
         async with conn.transaction():
-            batch_id = await conn.fetchval(
-                """
-                INSERT INTO public.document_ingest_batches
-                    (carrier_id, source, status, created_by, total_files)
-                VALUES ($1, 'UPLOAD', 'REVIEW', $2, $3)
-                RETURNING id::text
-                """,
-                carrier_id, user["sub"], len(files),
+            batch_id, items, errors = await _ingest_files(
+                conn, supabase, carrier_id=carrier_id, files=files, actor=user["sub"],
             )
-
-            for file in files:
-                try:
-                    uploaded = await upload_document_version(
-                        supabase, key_prefix=f"staging/{batch_id}", file=file,
-                    )
-                except HTTPException as exc:
-                    errors.append({"file_name": file.filename or "archivo", "error": str(exc.detail)})
-                    continue
-
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO public.document_ingest_items
-                        (batch_id, storage_path, file_name, mime_type, size_bytes, match_status)
-                    VALUES ($1, $2, $3, $4, $5, 'UNMATCHED')
-                    RETURNING id::text, file_name, mime_type, size_bytes, storage_path, match_status
-                    """,
-                    batch_id, uploaded["storage_path"], uploaded["file_name"],
-                    uploaded["mime_type"], uploaded["size_bytes"],
-                )
-                items.append(dict(row))
-
-            await conn.execute(
-                "UPDATE public.document_ingest_batches SET unmatched = $2 WHERE id = $1",
-                batch_id, len(items),
-            )
-
     return {"batch_id": batch_id, "items": items, "errors": errors}
 
 

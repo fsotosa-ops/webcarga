@@ -60,6 +60,53 @@ def test_upload_lands_files_in_tray_without_touching_compliance():
     assert "compliance_records" not in all_sql
 
 
+def test_upload_without_carrier_lands_in_the_global_tray():
+    """La tanda mezclada que llega por correo no tiene una empresa todavía.
+
+    Obligar a elegir una antes de poder soltar los archivos es justo lo que
+    impide cargar los 2.000 pendientes: quien carga no sabe de quién es nada.
+    """
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = "batch-global"
+    conn.fetchrow.return_value = {
+        "id": "item-1", "file_name": "doc1.pdf", "mime_type": "application/pdf",
+        "size_bytes": 12, "storage_path": "staging/batch-global/x_doc1.pdf",
+        "match_status": "UNMATCHED",
+    }
+    client = make_client(pool, supabase=_storage_ok())
+
+    res = client.post(
+        "/api/v1/document-ingest/files",
+        files=[("files", ("doc1.pdf", b"contenido", "application/pdf"))],
+    )
+
+    assert res.status_code == 201
+    assert res.json()["batch_id"] == "batch-global"
+    assert len(res.json()["items"]) == 1
+
+    # El lote se crea con carrier_id NULL: el archivo entra sin dueño.
+    insert = next(c for c in conn.fetchval.await_args_list
+                  if "document_ingest_batches" in c.args[0])
+    assert insert.args[1] is None
+
+
+def test_global_upload_respects_the_file_limit():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    client = make_client(pool, supabase=_storage_ok())
+
+    res = client.post(
+        "/api/v1/document-ingest/files",
+        files=[("files", (f"d{i}.pdf", b"x", "application/pdf")) for i in range(51)],
+    )
+
+    assert res.status_code == 422
+    assert "50" in res.json()["detail"]
+
+
 def test_upload_rejects_invalid_mime_without_dropping_the_rest():
     """Exito parcial: un archivo invalido no tumba el resto del lote."""
     pool = AsyncMock()
