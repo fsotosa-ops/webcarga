@@ -4,11 +4,14 @@ import { Building2, Truck, User } from 'lucide-react'
 import type { PendingComplianceRow } from '@/lib/types'
 
 export type Slot = {
-  entity_type:      'CARRIER' | 'DRIVER' | 'ASSET'
-  entity_id:        string
-  subject_label:    string
-  requirement_code: string
-  document_name:    string
+  entity_type:    'CARRIER' | 'DRIVER' | 'ASSET'
+  entity_id:      string
+  subject_label:  string
+  /** El id, no el código: traducirlo después contra el catálogo era un paso
+   *  frágil que había que repetir en cada consumidor. */
+  requirement_id: string
+  record_id:      string
+  document_name:  string
 }
 
 interface Props {
@@ -64,18 +67,18 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
               </p>
               <ul className="space-y-0.5">
                 {items.map(r => {
-                  const activo = selected?.entity_id === r.entity_id
-                    && selected?.requirement_code === r.requirement_code
+                  const activo = selected?.record_id === r.id
                   return (
                     <li key={r.id}>
                       <button
                         type="button"
                         onClick={() => onPick({
-                          entity_type:      r.entity_type as 'CARRIER' | 'DRIVER' | 'ASSET',
-                          entity_id:        r.entity_id,
-                          subject_label:    r.subject_name ?? r.carrier_name,
-                          requirement_code: r.requirement_code,
-                          document_name:    r.document_name,
+                          entity_type:    r.entity_type as 'CARRIER' | 'DRIVER' | 'ASSET',
+                          entity_id:      r.entity_id,
+                          subject_label:  r.subject_name ?? r.carrier_name,
+                          requirement_id: r.requirement_id,
+                          record_id:      r.id,
+                          document_name:  r.document_name,
                         })}
                         aria-pressed={activo}
                         className={`w-full text-left rounded-md px-2 py-1.5 text-[11px] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 ${

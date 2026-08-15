@@ -204,6 +204,7 @@ async def get_certification_status(
 _PENDING_ROWS_SQL = """
 WITH pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+           req.id AS requirement_id,
            req.requirement_code, req.name AS document_name, req.requirement_level
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
@@ -246,7 +247,7 @@ carrier_operation_types AS (
 )
 SELECT
     r.id::text, r.entity_type, r.entity_id::text, r.subject_name,
-    r.requirement_code, r.document_name, r.requirement_level, r.status, r.expiration_date,
+    r.requirement_id, r.requirement_code, r.document_name, r.requirement_level, r.status, r.expiration_date,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
     count(*) OVER() AS total_count
@@ -301,6 +302,7 @@ async def list_pending_compliance_records(
             "entity_type": r["entity_type"],
             "entity_id": r["entity_id"],
             "subject_name": r["subject_name"],
+            "requirement_id": str(r["requirement_id"]),
             "requirement_code": r["requirement_code"],
             "document_name": r["document_name"],
             "status": r["status"],

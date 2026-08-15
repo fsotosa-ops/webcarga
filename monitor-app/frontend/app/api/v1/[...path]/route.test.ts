@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const getUser = vi.fn(async () => ({ data: { user: { id: 'u1' } } }))
+let expiresAt = Math.floor(Date.now() / 1000) + 3600
+
 vi.mock('@supabase/ssr', () => ({
   createServerClient: () => ({
     auth: {
-      getUser: async () => ({ data: { user: { id: 'u1' } } }),
-      getSession: async () => ({ data: { session: { access_token: 'tok' } } }),
+      getUser,
+      getSession: async () => ({ data: { session: { access_token: 'tok', expires_at: expiresAt } } }),
     },
   }),
 }))
@@ -56,5 +59,31 @@ describe('proxy /api/v1 — respuestas sin cuerpo', () => {
     const res = await GET(req('GET'), { params })
 
     expect(res.status).toBe(502)
+  })
+})
+
+
+// INCIDENTE REAL (2026-08-15): el proxy llamaba a getUser() en CADA request, y
+// getUser() sale a la red contra la API de Auth de Supabase. Una ficha dispara
+// decenas de llamadas en paralelo, asi que se alcanzaba el limite y la
+// aplicacion devolvia 429 ("Many requests") al abrir un conductor.
+describe('proxy /api/v1 — no golpea Auth en cada request', () => {
+  beforeEach(() => {
+    getUser.mockClear()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })))
+  })
+
+  it('con el token vigente lee la cookie y no sale a la red', async () => {
+    expiresAt = Math.floor(Date.now() / 1000) + 3600
+    await GET(req('GET'), { params })
+    expect(getUser).not.toHaveBeenCalled()
+  })
+
+  it('cerca del vencimiento sí refresca', async () => {
+    expiresAt = Math.floor(Date.now() / 1000) + 30
+    await GET(req('GET'), { params })
+    expect(getUser).toHaveBeenCalledTimes(1)
   })
 })

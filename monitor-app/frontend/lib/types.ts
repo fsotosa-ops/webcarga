@@ -655,6 +655,7 @@ export type PendingComplianceRow = {
   entity_type:              EntityType
   entity_id:                string
   subject_name:              string | null
+  requirement_id:            string
   requirement_code:          string
   document_name:              string
   status:                    ComplianceStatus

@@ -55,12 +55,9 @@ export function TriageClassifyForm({
     setError(null)
     setExpiration('')
     setSubjectKey(`${s.entity_type}:${s.entity_id}`)
-    // El requisito llega por código; el id sale del catálogo de ese tipo de
-    // entidad, que la query de abajo trae al cambiar el sujeto.
     setRequirementId('')
   }
-  const porCodigo = slot ? requirements.find(r => r.requirement_code === slot.requirement_code) : null
-  const requisitoElegido = requirementId || porCodigo?.id || ''
+  const requisitoElegido = requirementId || slot?.requirement_id || ''
   const selected = requirements.find(r => r.id === requisitoElegido) ?? null
   const needsDate = selected?.has_expiration ?? false
   const canApply = targetIds.length > 0 && !!subject && !!requisitoElegido

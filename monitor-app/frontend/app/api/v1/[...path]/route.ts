@@ -2,6 +2,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+/** Margen antes del vencimiento en el que sí conviene ir a refrescar. */
+const TOKEN_REFRESH_MARGIN_S = 120
+
 /** Estados que la especificacion HTTP define sin cuerpo. */
 const NULL_BODY_STATUS = new Set([204, 205, 304])
 
@@ -19,10 +22,22 @@ async function getServerToken(): Promise<string> {
       },
     }
   )
-  // getUser() refreshes the access token if expired before reading session
-  await supabase.auth.getUser()
+  // getSession() lee la cookie sin salir a la red. getUser(), en cambio, va a
+  // la API de Auth de Supabase EN CADA request — y una ficha dispara decenas
+  // de llamadas en paralelo, así que alcanzaba el límite y devolvía 429
+  // ("Many requests", visto en producción al abrir un conductor).
+  //
+  // Sólo se sale a la red cuando el token está por vencer, que es lo único
+  // para lo que hacía falta: ahí getUser() dispara el refresco.
   const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token ?? ''
+  if (!session) return ''
+
+  const quedan = (session.expires_at ?? 0) - Math.floor(Date.now() / 1000)
+  if (quedan > TOKEN_REFRESH_MARGIN_S) return session.access_token
+
+  await supabase.auth.getUser()
+  const { data: { session: renovada } } = await supabase.auth.getSession()
+  return renovada?.access_token ?? session.access_token
 }
 
 async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {

@@ -46,6 +46,7 @@ class PendingComplianceRow(BaseModel):
     entity_type: str
     entity_id: str
     subject_name: Optional[str] = None
+    requirement_id: str
     requirement_code: str
     document_name: str
     status: ComplianceStatus

@@ -49,7 +49,7 @@ def test_patch_record_approves_manually_and_sets_override():
     conn.fetchrow.return_value = {"entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING", "expiration_date": None}
     pool.fetchrow.return_value = {
         "id": "r1", "entity_id": "c1", "entity_type": "CARRIER", "requirement_id": "req1",
-        "requirement_code": "F30_MULTAS", "name": "F30", "requirement_level": "LEGAL_MANDATORY",
+        "requirement_id": "req-1", "requirement_code": "F30_MULTAS", "name": "F30", "requirement_level": "LEGAL_MANDATORY",
         "requires_file": True, "status": "APPROVED_MANUAL", "expiration_date": None, "file_url": None,
         "metadata": {}, "is_manual_override": True, "created_at": None, "updated_at": None,
     }
@@ -189,7 +189,7 @@ def test_delete_file_resets_to_missing_and_removes_from_storage():
     }
     pool.fetchrow.return_value = {
         "id": "r1", "entity_id": "c1", "entity_type": "CARRIER", "requirement_id": "req1",
-        "requirement_code": "F30_MULTAS", "name": "F30", "requirement_level": "LEGAL_MANDATORY",
+        "requirement_id": "req-1", "requirement_code": "F30_MULTAS", "name": "F30", "requirement_level": "LEGAL_MANDATORY",
         "requires_file": True, "status": "MISSING", "expiration_date": None, "file_url": None,
         "metadata": {}, "is_manual_override": True, "created_at": None, "updated_at": None,
     }
@@ -283,7 +283,7 @@ def test_carrier_status_route_does_not_collide_with_record_id_path():
 def _pending_row(**overrides):
     base = {
         "id": "r1", "entity_type": "DRIVER", "entity_id": "d1", "subject_name": "Juan Perez",
-        "requirement_code": "LICENCIA_CONDUCIR", "document_name": "Licencia conducir",
+        "requirement_id": "req-1", "requirement_code": "LICENCIA_CONDUCIR", "document_name": "Licencia conducir",
         "requirement_level": "LEGAL_MANDATORY", "status": "MISSING", "expiration_date": None,
         "carrier_id": "c1", "carrier_name": "Transportes Sur Spa", "carrier_tax_id": "76.111.111-1",
         "carrier_operation_types": ["Tractoreo"], "total_count": 1,
@@ -619,7 +619,7 @@ def make_requirements_client(pool):
 def test_list_requirements_returns_catalog():
     pool = AsyncMock()
     pool.fetch.return_value = [{
-        "id": "req-1", "target_entity": "DRIVER", "requirement_code": "LICENCIA_CONDUCIR",
+        "id": "req-1", "target_entity": "DRIVER", "requirement_id": "req-1", "requirement_code": "LICENCIA_CONDUCIR",
         "name": "Licencia de Conducir", "requirement_level": "LEGAL_MANDATORY",
         "has_expiration": True,
     }]
