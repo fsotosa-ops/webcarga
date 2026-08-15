@@ -178,8 +178,7 @@ function CertificationPageInner() {
           Sin clasificar
           {sinClasificar > 0 && (
             <span
-              className="rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums text-white"
-              style={{ backgroundColor: '#b00020' }}
+              className="rounded-full bg-espera px-1.5 py-px text-[10px] font-bold tabular-nums text-white"
             >
               {sinClasificar}
             </span>

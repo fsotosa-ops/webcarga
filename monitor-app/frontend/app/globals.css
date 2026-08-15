@@ -11,6 +11,18 @@
   --bg-main: #e5e5e5;
   --text-primary: #192a3e;
   --border-color: #dfe0eb;
+
+  /* Los tres roles del sistema visual de Certificación (spec §9). El color
+     separa QUÉ SE PUEDE HACER; el peso y la familia separan qué es cada cosa.
+     Si todo tiene color, el color deja de avisar.
+
+     `--espera` vale lo mismo que `--status-incidente` por coincidencia, no
+     por parentesco: uno marca un incidente de viaje y el otro archivos
+     esperando que los ubiquen. Comparten valor, no significado, así que
+     cambiar uno no debe arrastrar al otro. */
+  --espera: #b00020;   /* UN solo significado: hay archivos esperando */
+  --accion: #0d7ea6;   /* el único azul de la fila: si hay azul, se puede hacer clic */
+  --resuelto: #12a150; /* sólo cuando algo quedó cerrado, nunca para "va bien" */
 }
 
 @theme inline {
@@ -24,6 +36,9 @@
   --color-bg-main: var(--bg-main);
   --color-text-primary: var(--text-primary);
   --color-border: var(--border-color);
+  --color-espera: var(--espera);
+  --color-accion: var(--accion);
+  --color-resuelto: var(--resuelto);
   --font-sans: var(--font-roboto), system-ui, sans-serif;
   --font-mulish: var(--font-mulish), system-ui, sans-serif;
 }

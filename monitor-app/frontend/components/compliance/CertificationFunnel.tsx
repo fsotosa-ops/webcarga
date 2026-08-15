@@ -216,8 +216,7 @@ function FilaEmpresa({
           <span
             data-testid={`espera-${row.entity_id}`}
             title={`${row.unclassified_count} archivos esperando que los ubiques`}
-            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums text-white shrink-0"
-            style={{ backgroundColor: '#b00020' }}
+            className="inline-flex items-center rounded-full bg-espera px-2 py-0.5 text-[10px] font-bold tabular-nums text-white shrink-0"
           >
             {row.unclassified_count}
           </span>

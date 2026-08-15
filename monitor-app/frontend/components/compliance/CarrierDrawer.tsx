@@ -136,7 +136,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
         )}
 
         {!pendingQuery.isPending && !rows.length && (
-          <p className="text-[11.5px] text-emerald-700 flex items-center gap-1.5 py-1">
+          <p className="text-[11.5px] text-resuelto flex items-center gap-1.5 py-1">
             <Check size={12} /> No le falta ningún documento
           </p>
         )}
@@ -182,8 +182,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
 
                   {canEdit && (
                     <label
-                      className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold cursor-pointer transition-opacity hover:opacity-70"
-                      style={{ color: '#0d7ea6' }}
+                      className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-accion cursor-pointer transition-opacity hover:opacity-70"
                     >
                       {subiendo === p.id
                         ? <Loader2 size={11} className="motion-safe:animate-spin" />
