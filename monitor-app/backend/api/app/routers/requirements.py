@@ -207,10 +207,20 @@ async def recalc(
             # Rastro forense: compliance_records no tiene tabla de historial,
             # así que aunque apagar ya no destruya nada, esto sigue siendo lo
             # único que dice QUÉ filas tocó cada recálculo.
+            #
+            # OJO con los nombres: `old_value` NO son filas borradas — son las
+            # que se APAGARON (is_current = false), y siguen en la tabla con su
+            # documento intacto. `new_value` incluye tanto filas nuevas como
+            # filas que estaban apagadas y se volvieron a encender. Los nombres
+            # vienen del contrato viejo (cuando esto sí borraba) y se conservan
+            # a propósito para no partir a los consumidores en el mismo commit.
             await log_change(
                 conn, actor=user["sub"], entity_type="REQUIREMENT", entity_id=requirement_id,
                 action="recalc", field="compliance_records",
                 old_value=quitados_ids, new_value=creados_ids, source="api",
             )
+    # `quitados` = apagados, `creados` = creados o re-encendidos. Ver el
+    # comentario del log_change de arriba: los nombres son del contrato
+    # anterior al recálculo reversible; ninguna fila se borra acá.
     return {"creados": len(creados_ids), "quitados": len(quitados_ids),
             "bloqueados": len(d["bloqueados"])}
