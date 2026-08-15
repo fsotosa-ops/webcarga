@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { CertificationStatusTable } from './CertificationStatusTable'
@@ -82,5 +83,30 @@ describe('CertificationStatusTable — agrupada por conductor o vehículo', () =
   it('no muestra la columna de sin clasificar fuera de empresas', () => {
     render(<CertificationStatusTable rows={[conductor]} group="driver" />)
     expect(screen.queryByRole('columnheader', { name: /sin clasificar/i })).not.toBeInTheDocument()
+  })
+})
+
+// ── Guardarraíl del 429 ────────────────────────────────────────────────────
+
+// Esta tabla muestra hasta 200 filas. Sin `prefetch={false}`, Next.js
+// prefetchea cada enlace que entra al viewport, cada prefetch ejecuta el
+// layout del dashboard —que va a la API de Auth— y Supabase responde 429
+// ("Many requests"). Medido en staging el 2026-08-15: 104 llamadas a /user
+// en un solo minuto, con el usuario sin hacer un clic.
+//
+// El prop no llega al DOM, así que se verifica sobre el módulo: es la única
+// forma de que su borrado accidental haga ruido.
+describe('CertificationStatusTable · prefetch', () => {
+  it('ningún enlace a una ficha de empresa prefetchea', async () => {
+    const fuente = await readFile(
+      'components/compliance/CertificationStatusTable.tsx', 'utf-8',
+    )
+    const enlaces = fuente.split('<Link').slice(1)
+    expect(enlaces.length).toBeGreaterThan(0)
+    for (const enlace of enlaces) {
+      const props = enlace.slice(0, enlace.indexOf('>'))
+      expect(props, `un <Link> quedó sin prefetch={false}: ${props.trim().slice(0, 80)}`)
+        .toContain('prefetch={false}')
+    }
   })
 })

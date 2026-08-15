@@ -53,8 +53,15 @@ export function CertificationStatusTable({ rows, group }: Props) {
             <tr key={r.entity_id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
               <td className="py-2 pl-3 pr-2">
                 {porEmpresa ? (
+                  // prefetch=false, igual que TransporterCard y la lista de
+                  // Empresas: esta tabla muestra hasta 200 filas y Next.js
+                  // prefetchea todas las que entran al viewport. Cada prefetch
+                  // ejecuta el layout del dashboard, que va a la API de Auth,
+                  // y Supabase responde 429 ("Many requests"). Medido en
+                  // staging: 104 llamadas a /user en un solo minuto.
                   <Link
                     href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
+                    prefetch={false}
                     className="text-xs font-medium text-slate-800 hover:text-accent transition-colors"
                   >
                     {r.entity_name}
@@ -64,6 +71,7 @@ export function CertificationStatusTable({ rows, group }: Props) {
                   // su documentación sin salir del contexto de la empresa.
                   <Link
                     href={`/dashboard/carriers/${r.carrier_id}?tab=${group === 'driver' ? 'conductores' : 'equipos'}&${group === 'driver' ? 'driver' : 'asset'}=${r.entity_id}`}
+                    prefetch={false}
                     className="text-xs font-medium text-slate-800 hover:text-accent transition-colors"
                   >
                     {r.entity_name}
@@ -83,6 +91,7 @@ export function CertificationStatusTable({ rows, group }: Props) {
                   {r.carrier_id ? (
                     <Link
                       href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
+                      prefetch={false}
                       className="text-[11px] text-gray-600 hover:text-accent transition-colors"
                     >
                       {r.carrier_name}

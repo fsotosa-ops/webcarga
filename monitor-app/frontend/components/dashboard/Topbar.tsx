@@ -1,15 +1,17 @@
-import { createClient } from '@/lib/supabase/server'
+interface Props {
+  /** Nombre ya resuelto por el layout. */
+  displayName: string
+  role?: string | null
+}
 
-export default async function Topbar() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, role')
-    .eq('id', user?.id ?? '')
-    .single()
-
-  const displayName = profile?.full_name ?? user?.email?.split('@')[0] ?? 'Usuario'
+/** Recibe los datos del layout en vez de volver a pedirlos.
+ *
+ *  Antes llamaba a `getUser()` y consultaba `profiles` por su cuenta, y el
+ *  layout que lo envuelve hacía exactamente lo mismo: dos llamadas a la API de
+ *  Auth por cada render del dashboard. Con el prefetch de Next.js sobre una
+ *  lista larga eso son cientos de llamadas por minuto y Supabase responde 429
+ *  ("Many requests") — medido: 104 llamadas a /user en un solo minuto. */
+export default function Topbar({ displayName, role }: Props) {
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
@@ -35,7 +37,7 @@ export default async function Topbar() {
           </div>
           <div className="hidden sm:block">
             <p className="text-sm font-medium text-text-primary leading-tight">{displayName}</p>
-            <p className="text-xs text-gray-400 capitalize">{profile?.role ?? 'operador'}</p>
+            <p className="text-xs text-gray-400 capitalize">{role ?? 'operador'}</p>
           </div>
         </div>
       </div>
