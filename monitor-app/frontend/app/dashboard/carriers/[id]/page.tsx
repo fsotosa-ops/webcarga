@@ -578,6 +578,7 @@ function EmpresaDetailPageInner() {
       {activeTab === 'documentos' && (
         <CarrierDocumentsTab
           carrierId={id}
+          carrierName={carrier.business_name}
           records={carrier.compliance_records}
           onExport={handleExportDocuments}
           exporting={exportingDocs}

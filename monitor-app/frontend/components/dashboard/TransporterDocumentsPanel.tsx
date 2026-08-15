@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import { Check, Eye, FileText, Loader2, ExternalLink } from 'lucide-react'
+import { Check, Eye, FileText, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import type { ComplianceRecord, DocumentVersion } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
@@ -115,8 +114,7 @@ function DocumentRow({ record }: { record: ComplianceRecord }) {
 }
 
 interface Props {
-  records:   ComplianceRecord[]
-  carrierId: string
+  records: ComplianceRecord[]
 }
 
 /** Documentos de la empresa — sección siempre visible de la ficha, solo
@@ -124,7 +122,7 @@ interface Props {
  *  gestiona entidades — baja/transferir/asignar —, Certificación es el
  *  único lugar para subir/editar documentación, evita el entry point
  *  duplicado que existía antes). */
-export function TransporterDocumentsPanel({ records, carrierId }: Props) {
+export function TransporterDocumentsPanel({ records }: Props) {
   const approvedCount = records.filter(r => r.status === 'APPROVED' || r.status === 'APPROVED_MANUAL').length
 
   return (
@@ -133,12 +131,8 @@ export function TransporterDocumentsPanel({ records, carrierId }: Props) {
         <p className="text-xs text-gray-400">
           {records.length === 0 ? 'Sin datos' : `${approvedCount} de ${records.length} completos`}
         </p>
-        <Link
-          href={`/dashboard/compliance?carrier_id=${carrierId}`}
-          className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent/80 transition-colors"
-        >
-          Subir en Certificación <ExternalLink size={11} />
-        </Link>
+        {/* El link de salida a Certificación se retiró: la carga vive ahora
+            en esta misma ficha (CarrierDocumentsTab). */}
       </div>
       {records.length > 0 && (
         <div className="flex flex-col gap-1.5">

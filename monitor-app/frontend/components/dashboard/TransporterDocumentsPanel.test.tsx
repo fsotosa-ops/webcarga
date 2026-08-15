@@ -31,34 +31,36 @@ beforeEach(() => {
 
 describe('TransporterDocumentsPanel', () => {
   it('shows every record as a row, always visible (no collapse toggle)', () => {
-    render(<TransporterDocumentsPanel records={RECORDS} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={RECORDS} />)
     expect(screen.getByText('Rol SII')).toBeInTheDocument()
     expect(screen.getByText('F30')).toBeInTheDocument()
   })
 
-  it('links out to Certificación, scoped to this carrier, instead of offering to upload here', () => {
-    render(<TransporterDocumentsPanel records={RECORDS} carrierId="c1" />)
-    const link = screen.getByRole('link', { name: /Subir en Certificación/ })
-    expect(link).toHaveAttribute('href', '/dashboard/compliance?carrier_id=c1')
+  // El link "Subir en Certificación" se retiró: la carga volvió a la ficha
+  // (CarrierDocumentsTab monta la bandeja acotada a la empresa), asi que ya no
+  // hay que salir del módulo. Este panel sigue siendo solo lectura.
+  it('sigue siendo solo lectura, y ya no manda a otro módulo', () => {
+    render(<TransporterDocumentsPanel records={RECORDS} />)
+    expect(screen.queryByRole('link', { name: /Subir en Certificación/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Subir documento/ })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^Estado de/)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^Fecha de vencimiento de/)).not.toBeInTheDocument()
   })
 
   it('labels the expiration date so it is clear what it means', () => {
-    render(<TransporterDocumentsPanel records={RECORDS} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={RECORDS} />)
     expect(screen.getByText('Vence:')).toBeInTheDocument()
   })
 
   it('shows a "Ver archivo" trigger when file_url is set', () => {
     const withLink = [{ ...RECORDS[0], file_url: 'https://example.com/doc.pdf' }]
-    render(<TransporterDocumentsPanel records={withLink} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={withLink} />)
     expect(screen.getByRole('button', { name: /Ver archivo/ })).toBeInTheDocument()
   })
 
   it('opens the preview modal when clicking "Ver archivo", without a delete option', () => {
     const withLink = [{ ...RECORDS[0], file_url: 'https://example.com/doc.pdf' }]
-    render(<TransporterDocumentsPanel records={withLink} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={withLink} />)
     fireEvent.click(screen.getByRole('button', { name: /Ver archivo/ }))
     expect(screen.getByLabelText('Cerrar')).toBeInTheDocument()
     expect(screen.queryByLabelText(/Eliminar/)).not.toBeInTheDocument()
@@ -76,7 +78,7 @@ describe('TransporterDocumentsPanel', () => {
         is_current: false,
       },
     ])
-    render(<TransporterDocumentsPanel records={RECORDS} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={RECORDS} />)
     fireEvent.click(screen.getAllByTitle('Ver historial de versiones')[0])
     await waitFor(() => expect(complianceApi.listFiles).toHaveBeenCalledWith('cr1'))
     const entry = await screen.findByText(/REJECTED · reemplazado/)
@@ -96,7 +98,7 @@ describe('TransporterDocumentsPanel', () => {
         is_current: true,
       },
     ])
-    render(<TransporterDocumentsPanel records={RECORDS} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={RECORDS} />)
     fireEvent.click(screen.getAllByTitle('Ver historial de versiones')[0])
     await waitFor(() => expect(complianceApi.listFiles).toHaveBeenCalledWith('cr1'))
     const entry = await screen.findByText(/APPROVED_MANUAL · vigente/)
@@ -105,12 +107,12 @@ describe('TransporterDocumentsPanel', () => {
 
   it('does not show the version history trigger for records that do not require a file', () => {
     const noFile = [{ ...RECORDS[0], requires_file: false }]
-    render(<TransporterDocumentsPanel records={noFile} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={noFile} />)
     expect(screen.queryByTitle('Ver historial de versiones')).not.toBeInTheDocument()
   })
 
   it('shows "Sin datos" when there are no records', () => {
-    render(<TransporterDocumentsPanel records={[]} carrierId="c1" />)
+    render(<TransporterDocumentsPanel records={[]} />)
     expect(screen.getByText('Sin datos')).toBeInTheDocument()
   })
 })

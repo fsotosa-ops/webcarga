@@ -1,12 +1,14 @@
 'use client'
 
 import { Download, Loader2 } from 'lucide-react'
+import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { TransporterAlertBanner } from '@/components/dashboard/TransporterAlertBanner'
 import { TransporterDocumentsPanel } from '@/components/dashboard/TransporterDocumentsPanel'
 import type { ComplianceRecord } from '@/lib/types'
 
 interface Props {
   carrierId:    string
+  carrierName:  string
   records:      ComplianceRecord[]
   onExport:     () => void
   exporting:    boolean
@@ -19,11 +21,22 @@ interface Props {
  *  es el tab que va a recibir superficie nueva (la carga de documentos, HU-04):
  *  sumarle más sin descomponerla primero la vuelve inmanejable. */
 export function CarrierDocumentsTab({
-  carrierId, records, onExport, exporting, exportError,
+  carrierId, carrierName, records, onExport, exporting, exportError,
 }: Props) {
   return (
     <>
       <TransporterAlertBanner records={records} />
+
+      {/* La carga vuelve a la ficha (HU-04): el lugar donde mirás la empresa
+          es el lugar donde actuás sobre ella. Es el MISMO componente que la
+          bandeja, acotado a esta empresa — no una segunda implementación. */}
+      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">
+          Cargar y clasificar
+        </h3>
+        <TriageWorkbench carrierId={carrierId} carrierName={carrierName} />
+      </div>
+
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Documentos de la Empresa</h3>
@@ -39,10 +52,7 @@ export function CarrierDocumentsTab({
           </button>
         </div>
         {exportError && <p className="text-xs text-red-500 mb-2">{exportError}</p>}
-        <TransporterDocumentsPanel
-          records={records}
-          carrierId={carrierId}
-        />
+        <TransporterDocumentsPanel records={records} />
       </div>
     </>
   )
