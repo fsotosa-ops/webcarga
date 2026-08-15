@@ -11,6 +11,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
+import { taxonomiesApi } from '@/lib/api/config'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
@@ -168,7 +169,29 @@ function EmpresaDetailPageInner() {
   const [addDriverOpen,  setAddDriverOpen]  = useState(!!handoffDriverName)
   const [driverForm,     setDriverForm]     = useState({ tax_id: '', full_name: handoffDriverName ?? '' })
   const [addAssetOpen,   setAddAssetOpen]   = useState(!!handoffTractorPlate)
-  const [assetForm,      setAssetForm]      = useState<{ asset_type: AssetType; license_plate: string }>({ asset_type: 'TRACTOCAMION', license_plate: handoffTractorPlate ?? '' })
+  /** Los dos catálogos de clasificación de vehículos. Sólo se piden cuando el
+   *  formulario de alta está abierto: son datos de un caso puntual, no de la
+   *  ficha. */
+  const subtiposQuery = useQuery({
+    queryKey: ['taxonomias', 'FLEET_SERVICE_TYPE'],
+    queryFn: () => taxonomiesApi.list('FLEET_SERVICE_TYPE'),
+    enabled: addAssetOpen,
+    staleTime: 5 * 60_000,
+  })
+  const gestionesQuery = useQuery({
+    queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
+    queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
+    enabled: addAssetOpen,
+    staleTime: 5 * 60_000,
+  })
+
+  const [assetForm,      setAssetForm]      = useState<{
+    asset_type: AssetType; license_plate: string
+    fleet_service_type_id: string; webcarga_operation_type_id: string
+  }>({
+    asset_type: 'TRACTOCAMION', license_plate: handoffTractorPlate ?? '',
+    fleet_service_type_id: '', webcarga_operation_type_id: '',
+  })
   const [addPolicyOpen,  setAddPolicyOpen]  = useState(false)
   const [policyForm,     setPolicyForm]     = useState<PolicyFormState>({
     insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
@@ -193,6 +216,24 @@ function EmpresaDetailPageInner() {
   }, [])
 
   const carrierQuery = useQuery({ queryKey: ['carrier-detail', id], queryFn: () => carriersApi.get(id) })
+
+  /** D7 aterrizado donde corresponde: la gestión que la empresa declaró al
+   *  crearse preselecciona la del primer vehículo. No se toca el SUBTIPO —
+   *  son conceptos hermanos y deducir uno del otro volvería a mezclar lo que
+   *  la migración 20260803050000 separó: hay 37 tractocamiones con gestión
+   *  "Equipo Completo". Es una propuesta, no una restricción: el selector
+   *  sigue ofreciendo todas las opciones. */
+  useEffect(() => {
+    if (!addAssetOpen) return
+    const declaradas = carrierQuery.data?.management_types
+    if (declaradas?.length !== 1) return
+    const propuesta = (gestionesQuery.data ?? [])
+      .find(t => t.label === (declaradas[0] === 'TRACTOREO' ? 'Tractoreo' : 'Equipo Completo'))
+    if (propuesta) {
+      setAssetForm(v => (v.webcarga_operation_type_id ? v : { ...v, webcarga_operation_type_id: propuesta.id }))
+    }
+  }, [addAssetOpen, carrierQuery.data?.management_types, gestionesQuery.data])
+
   const driversQuery = useQuery({ queryKey: ['carrier-drivers', id], queryFn: () => carriersApi.listDrivers(id) })
   const assetsQuery  = useQuery({ queryKey: ['carrier-assets-roster', id], queryFn: () => carriersApi.listAssets(id) })
   const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
@@ -266,9 +307,18 @@ function EmpresaDetailPageInner() {
     if (!assetForm.license_plate) return
     setSubmitting(true)
     try {
-      const created = await assetsApi.create(assetForm)
+      // Las cadenas vacias no viajan: la columna es uuid, y "" no es "sin
+      // declarar". Ademas is_manual_override solo se marca si se declaro algo.
+      const created = await assetsApi.create({
+        asset_type: assetForm.asset_type,
+        license_plate: assetForm.license_plate,
+        ...(assetForm.fleet_service_type_id
+          ? { fleet_service_type_id: assetForm.fleet_service_type_id } : {}),
+        ...(assetForm.webcarga_operation_type_id
+          ? { webcarga_operation_type_id: assetForm.webcarga_operation_type_id } : {}),
+      })
       await carriersApi.assignAsset(id, created.id)
-      setAssetForm({ asset_type: 'TRACTOCAMION', license_plate: '' })
+      setAssetForm({ asset_type: 'TRACTOCAMION', license_plate: '', fleet_service_type_id: '', webcarga_operation_type_id: '' })
       setAddAssetOpen(false)
       invalidateAssets()
     } finally { setSubmitting(false) }
@@ -770,6 +820,34 @@ function EmpresaDetailPageInner() {
               className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-36 bg-white"
             >
               {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            {/* Subtipo y gestion son conceptos HERMANOS, no lo mismo: la
+                migracion 20260803050000 los separo a proposito — 37
+                tractocamiones tienen gestion "Equipo Completo" aunque el
+                vehiculo sea un tracto. Por eso son dos selectores y ninguno
+                se deduce del otro. Ambos opcionales: si se dejan vacios los
+                completa la ingesta. */}
+            <select
+              aria-label="Subtipo"
+              value={assetForm.fleet_service_type_id}
+              onChange={e => setAssetForm(v => ({ ...v, fleet_service_type_id: e.target.value }))}
+              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-44 bg-white"
+            >
+              <option value="">Subtipo (opcional)</option>
+              {(subtiposQuery.data ?? []).map(t => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+            <select
+              aria-label="Tipo de gestión"
+              value={assetForm.webcarga_operation_type_id}
+              onChange={e => setAssetForm(v => ({ ...v, webcarga_operation_type_id: e.target.value }))}
+              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-44 bg-white"
+            >
+              <option value="">Gestión (opcional)</option>
+              {(gestionesQuery.data ?? []).map(t => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
             </select>
             <input
               placeholder="Patente"

@@ -723,6 +723,9 @@ export type Carrier = {
   country_code:        string
   business_name:       string
   operational_status:  CarrierOperationalStatus
+  /** Gestión DECLARADA en el alta. La flota manda cuando existe; esto cubre a
+   *  la empresa sin vehículos y preselecciona la gestión del primero. */
+  management_types:    ManagementType[] | null
   legacy_admin_id:     string | null
   erp_id:              string | null
   is_manual_override:  boolean

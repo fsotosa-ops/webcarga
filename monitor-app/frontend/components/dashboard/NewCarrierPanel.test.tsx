@@ -82,6 +82,59 @@ describe('NewCarrierPanel', () => {
     expect(onCreated).not.toHaveBeenCalled()
   })
 
+  // D7/D9: la gestion se elige al crear. Son DOS marcas independientes, no un
+  // desplegable de tres opciones: marcar las dos ES el caso mixto, y no existe
+  // un valor 'AMBAS' que haya que recordar en cada consulta futura.
+  it('ofrece las dos gestiones como marcas independientes', () => {
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    expect(screen.getByLabelText('Tractoreo')).toHaveAttribute('type', 'checkbox')
+    expect(screen.getByLabelText('Equipo Completo')).toHaveAttribute('type', 'checkbox')
+  })
+
+  it('manda la gestion elegida', async () => {
+    vi.mocked(carriersApi.create).mockResolvedValue({ id: 'c1' } as never)
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.click(screen.getByLabelText('Tractoreo'))
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
+
+    await waitFor(() => expect(carriersApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({ management_types: ['TRACTOREO'] })))
+  })
+
+  it('marcar las dos manda las dos, en el orden canonico', async () => {
+    vi.mocked(carriersApi.create).mockResolvedValue({ id: 'c1' } as never)
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Mixta Spa' } })
+    // A proposito en el orden inverso: el backend normaliza, pero mandar el
+    // orden canonico evita que dos filas equivalentes difieran por `=`.
+    fireEvent.click(screen.getByLabelText('Equipo Completo'))
+    fireEvent.click(screen.getByLabelText('Tractoreo'))
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
+
+    await waitFor(() => expect(carriersApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({ management_types: ['TRACTOREO', 'EQUIPO_COMPLETO'] })))
+  })
+
+  // La gestion es opcional: la flota manda cuando existe, y 37 de 39 empresas
+  // la responden desde sus vehiculos. Exigirla en el alta seria pedir un dato
+  // que el sistema ya sabe deducir.
+  it('sin gestion elegida no manda el campo', async () => {
+    vi.mocked(carriersApi.create).mockResolvedValue({ id: 'c1' } as never)
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Sin Gestion Spa' } })
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
+
+    await waitFor(() => expect(carriersApi.create).toHaveBeenCalled())
+    expect(vi.mocked(carriersApi.create).mock.calls[0][0]).not.toHaveProperty('management_types')
+  })
+
+  it('la gestion no bloquea el alta', () => {
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeEnabled()
+  })
+
   it('calls onClose when Cancelar is clicked', () => {
     const onClose = vi.fn()
     render(<NewCarrierPanel open onClose={onClose} onCreated={vi.fn()} />)

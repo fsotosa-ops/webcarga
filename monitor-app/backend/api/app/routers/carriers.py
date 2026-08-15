@@ -254,7 +254,7 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
         """
         SELECT id, tax_id, country_code, business_name, operational_status,
                legacy_admin_id, erp_id, is_manual_override, overridden_by, overridden_at,
-               created_at, updated_at
+               created_at, updated_at, management_types
         FROM public.carriers WHERE id = $1
         """,
         carrier_id,

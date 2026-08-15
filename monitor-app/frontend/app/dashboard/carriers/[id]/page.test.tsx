@@ -56,6 +56,7 @@ const CARRIER: Carrier = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
+  management_types: null,
   contacts: [],
   compliance_records: [{
     id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',

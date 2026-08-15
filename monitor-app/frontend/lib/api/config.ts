@@ -61,7 +61,12 @@ export const configApi = {
 // Reemplaza el CRUD de operational-states — mismo endpoint genérico sirve
 // también EQUIPMENT_STATE (Tarea 7) y DRIVER_REASON (usado solo de lectura
 // hoy, vía GET /trips/meta).
-export type TaxonomyDomain = 'OPERATIONAL_STATE' | 'DRIVER_REASON' | 'EQUIPMENT_STATE'
+export type TaxonomyDomain =
+  | 'OPERATIONAL_STATE' | 'DRIVER_REASON' | 'EQUIPMENT_STATE'
+  // Los dos de clasificación de vehículos. Existen en la base desde
+  // 20260802030000 / 20260803050000 pero el tipo nunca los nombró, porque
+  // hasta el Tramo 2 la app sólo los leía.
+  | 'FLEET_SERVICE_TYPE' | 'WEBCARGA_OPERATION_TYPE'
 export type TaxonomyRow = OperationalStateMeta & { sort_order: number; active: boolean }
 
 export const taxonomiesApi = {

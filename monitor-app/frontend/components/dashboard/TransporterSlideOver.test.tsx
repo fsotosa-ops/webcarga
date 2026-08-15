@@ -19,6 +19,7 @@ const CARRIER: Carrier = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
+  management_types: null,
   contacts: [{ id: 'ct1', contact_role: 'OPERATIONS', first_name: 'Juan', last_name: 'Pérez', job_title: null, email: 'juan@test.cl', phone: '+56911112222', is_primary: true, is_active: true }],
   compliance_records: [
     { id: 'd1', requirement_id: 'r1', requirement_code: 'D1', name: 'Doc 1', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED', expiration_date: null, file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, updated_at: null },

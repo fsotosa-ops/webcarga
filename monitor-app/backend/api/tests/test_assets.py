@@ -164,3 +164,107 @@ def test_asset_detail_without_active_assignment():
 
     assert res.status_code == 200
     assert res.json()["carrier_id"] is None
+
+
+# ── Tramo 2, Tarea 10: la app toma propiedad de la clasificacion ───────────
+#
+# Hasta ahora fleet_service_type_id y webcarga_operation_type_id salian SOLO de
+# la ingesta de Mage: un vehiculo creado en la app nacia sin clasificar y se
+# quedaba asi hasta que Mage lo alcanzara. Verificado contra produccion que la
+# ingesta respeta is_manual_override (HKXW55 esta en bronze, tiene el flag, y
+# es el unico sin clasificar de 120), asi que la app puede declarar la
+# clasificacion sin que se la pisen.
+
+def test_create_asset_accepts_its_classification():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "operational_status": "ACTIVE", "manufacture_year": None, "created_at": None,
+        "fleet_service_type_id": "t1", "webcarga_operation_type_id": "t2",
+        "is_manual_override": True,
+    }
+    client = make_client(pool)
+
+    res = client.post("/api/v1/assets", json={
+        "license_plate": "abcd12", "asset_type": "TRACTOCAMION",
+        "fleet_service_type_id": "t1", "webcarga_operation_type_id": "t2",
+    })
+
+    assert res.status_code == 201
+    insert_sql = conn.fetchrow.call_args.args[0]
+    assert "fleet_service_type_id" in insert_sql
+    assert "webcarga_operation_type_id" in insert_sql
+
+
+def test_create_asset_with_classification_protects_it_from_the_ingestion():
+    """Lo que declara una persona no lo pisa Mage. Es la misma convencion que
+    usa el resto del esquema, no una regla nueva."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "operational_status": "ACTIVE", "manufacture_year": None, "created_at": None,
+        "fleet_service_type_id": "t1", "webcarga_operation_type_id": None,
+        "is_manual_override": True,
+    }
+    client = make_client(pool)
+
+    client.post("/api/v1/assets", json={
+        "license_plate": "abcd12", "asset_type": "TRACTOCAMION",
+        "fleet_service_type_id": "t1",
+    })
+
+    assert conn.fetchrow.call_args.args[5] is True   # is_manual_override
+
+
+def test_create_asset_without_classification_leaves_it_to_the_ingestion():
+    """El flag protege lo que declaro una persona, NADA mas. Marcarlo siempre
+    dejaria a Mage sin poder clasificar los vehiculos que nadie clasifico."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = {
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "operational_status": "ACTIVE", "manufacture_year": None, "created_at": None,
+        "fleet_service_type_id": None, "webcarga_operation_type_id": None,
+        "is_manual_override": False,
+    }
+    client = make_client(pool)
+
+    client.post("/api/v1/assets", json={"license_plate": "abcd12", "asset_type": "TRACTOCAMION"})
+
+    assert conn.fetchrow.call_args.args[5] is False
+
+
+def test_patch_asset_can_reclassify():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "asset_type": "TRACTOCAMION", "operational_status": "ACTIVE",
+        "manufacture_year": None, "fleet_service_type_id": None,
+        "webcarga_operation_type_id": None,
+    }
+    pool.fetchrow.return_value = {
+        "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+        "operational_status": "ACTIVE", "manufacture_year": None,
+        "is_manual_override": True, "created_at": None,
+        "total_requirements": 3, "last_document_update": None,
+    }
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/assets/a1", json={"webcarga_operation_type_id": "t2"})
+
+    assert res.status_code == 200
+    # La columna nueva TIENE que venir en el SELECT previo: el bucle de
+    # auditoria lee current[field] por cada campo tocado.
+    select_sql = conn.fetchrow.call_args_list[0].args[0]
+    assert "webcarga_operation_type_id" in select_sql
+    update_sql = conn.execute.call_args_list[0].args[0]
+    assert "webcarga_operation_type_id" in update_sql

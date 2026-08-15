@@ -1,5 +1,6 @@
 import type {
   Carrier,
+  ManagementType,
   CarrierAssetRosterItem,
   CarrierDriverRosterItem,
   CarrierInsuranceOverviewResponse,
@@ -27,6 +28,10 @@ export type CarrierCreateBody = {
   country_code?:       string
   business_name:       string
   operational_status?: CarrierOperationalStatus
+  /** Tipo de gestión DECLARADO en el alta. Se omite cuando nadie eligió: la
+   *  flota manda cuando existe, y un arreglo vacío sería una tercera manera
+   *  de decir "no declarado" — la base lo rechaza por eso. */
+  management_types?:   ManagementType[]
 }
 
 export type CarrierPatchBody = {
