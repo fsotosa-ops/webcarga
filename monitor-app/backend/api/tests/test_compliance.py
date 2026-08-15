@@ -769,6 +769,145 @@ def test_status_binds_exactly_the_parameters_it_references():
         )
 
 
+# ── Tramo 2, Tarea 3: lo que el embudo de certificacion necesita ───────────
+
+def test_status_returns_the_funnel_fields_per_carrier():
+    """El embudo (§4 del spec) agrupa por etapa, no por "cuanto le falta": las
+    39 activas tienen el mismo denominador y entre 1 y 3 documentos cubiertos,
+    asi que ordenar por completitud no discrimina nada."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status")
+
+    sql = pool.fetch.call_args.args[0]
+    for campo in ("expired_count", "management_types", "trips_30d", "funnel_group"):
+        assert campo in sql, f"falta {campo} en el SQL del embudo"
+
+
+def test_status_funnel_group_is_decided_in_sql():
+    """Los grupos salen de UNA definicion. Calcularlos en el frontend obligaria
+    a repetir el criterio en el conteo del encabezado y en el orden, que es
+    exactamente como divergen dos superficies del mismo dato."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "CASE" in sql and "funnel_group" in sql
+
+
+def test_status_expired_counts_by_date_not_only_by_status():
+    """Un registro vencido puede estar en EXPIRED o tener expiration_date
+    pasada sin que nadie haya corrido el recalculo. Las dos cuentan."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "expiration_date" in sql and "CURRENT_DATE" in sql
+
+
+def test_status_management_types_prefers_the_fleet_over_the_declared():
+    """La flota manda cuando existe (37 de 39 empresas); lo declarado en el
+    alta cubre a las 2 que todavia no tienen vehiculos."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "webcarga_operation_type_id" in sql
+    assert "management_types" in sql
+    assert "COALESCE" in sql
+
+
+def test_status_trips_join_uses_fleet_link_id():
+    """app.trips se une por fleet_link_id -> trip_fleet_links.id. NO existe
+    trips.trip_id: escribirlo asi hace que Postgres rechace la sentencia."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "fleet_link_id" in sql
+    assert "t.trip_id" not in sql
+
+
+def test_status_catalog_scope_is_the_complement_of_the_active_one():
+    """'Resto del catalogo' son 209 empresas y no caben junto a las activas en
+    el limite de 200, asi que se piden aparte. Los dos alcances tienen que ser
+    disjuntos y exhaustivos: si no, una empresa queda invisible o contada dos
+    veces."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    def where_de(sql):
+        # El CASE del embudo tambien contiene "NOT (", asi que mirar el SQL
+        # entero no probaria nada: hay que aislar el WHERE.
+        cuerpo = sql.split("FROM public.carriers e", 1)[1]
+        return cuerpo.split("WHERE", 1)[1].split("GROUP BY", 1)[0]
+
+    client.get("/api/v1/compliance-records/status?scope=catalog")
+    where_catalogo = where_de(pool.fetch.call_args.args[0])
+
+    client.get("/api/v1/compliance-records/status")
+    where_activo = where_de(pool.fetch.call_args.args[0])
+
+    assert where_catalogo.strip().startswith("NOT ")
+    # Complemento exacto: el mismo predicado negado, no un criterio reescrito
+    # a mano que pueda divergir.
+    assert where_activo.strip() in where_catalogo
+
+
+def test_status_funnel_fields_absent_when_grouping_by_driver():
+    """El embudo es de empresas. Un conductor no tiene etapa de certificacion
+    propia, y devolver el campo en null invitaria a dibujarlo igual."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/status?group=driver")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "trips_30d" not in sql
+    assert "funnel_group" not in sql
+
+
+def test_status_binds_every_placeholder_in_every_scope():
+    """Mismo guardarrail que test_status_binds_exactly_the_parameters_it_
+    references, extendido al alcance nuevo: agregar un filtro y olvidar el
+    parametro es como se rompio esto la vez anterior."""
+    import re
+
+    for url in (
+        "/api/v1/compliance-records/status?scope=catalog",
+        "/api/v1/compliance-records/status?scope=catalog&q=sur",
+        "/api/v1/compliance-records/status?scope=active&carrier_id=c1",
+    ):
+        pool = AsyncMock()
+        pool.fetch.return_value = []
+        client = make_client(pool)
+
+        client.get(url)
+
+        sql, *args = pool.fetch.call_args.args
+        referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+        assert referenciados == set(range(1, len(args) + 1)), (
+            f"{url}: el SQL referencia {sorted(referenciados)} "
+            f"pero se pasan {len(args)} parametros"
+        )
+
+
 # ── HU-03: corregir un documento cargado en el lugar equivocado ─────────────
 
 def _record_with_file(record_id="rec-1", **over):

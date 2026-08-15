@@ -87,6 +87,7 @@ _STATUS_GROUPS = {
 @router.get("/status")
 async def get_certification_status(
     group: Literal["carrier", "driver", "asset"] = Query("carrier"),
+    scope: Literal["active", "catalog"] = Query("active"),
     carrier_id: str | None = Query(None),
     q: str = Query(""),
     limit: int = Query(200, le=500),
@@ -105,6 +106,13 @@ async def get_certification_status(
     Con `carrier_id` se acota a la flota de una empresa. Es lo que usa el panel
     de detalle, y a propósito por la misma consulta: así el "N de M" de un
     conductor es idéntico mirándolo desde la lista o desde su empresa.
+
+    `scope` parte el universo de empresas en dos mitades **disjuntas y
+    exhaustivas**: `active` son las operativas más cualquiera con documentos
+    esperando, y `catalog` es exactamente su complemento (209 empresas hoy). Se
+    piden por separado porque juntas no caben en el `limit`, y el embudo muestra
+    el catálogo plegado. Que sean complemento y no dos filtros independientes es
+    lo que garantiza que ninguna empresa quede invisible ni contada dos veces.
     """
     cfg = _STATUS_GROUPS[group]
 
@@ -114,25 +122,31 @@ async def get_certification_status(
         entity_join = """
             LEFT JOIN attributed a ON a.carrier_id = e.id
             LEFT JOIN docs d       ON d.carrier_id = e.id
+            LEFT JOIN gestion g    ON g.carrier_id = e.id
+            LEFT JOIN viajes v     ON v.carrier_id = e.id
         """
+        # `$1` (el estado ACTIVE) se pasa SIEMPRE en esta agrupación, incluso
+        # acotada a una empresa: el embudo lo referencia para decidir si la fila
+        # cae en "Resto del catálogo". Antes se omitía en ese caso y había que
+        # renumerar todo lo demás — de ahí salió el bug de placeholders que
+        # cubre test_status_binds_exactly_the_parameters_it_references.
+        params: list = [ACTIVE_OPERATIONAL_STATUS, q, limit]
+        p_q, p_limit = "$2", "$3"
+        # El complemento se escribe negando la MISMA expresión, no repitiendo
+        # el criterio invertido a mano: así no pueden divergir.
+        es_activa = "(e.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)"
         if carrier_id:
-            # Acotado a una empresa, el filtro por estado operativo sobra: la
-            # pidieron por id. Y dejar un $n sin referenciar hace que Postgres
-            # rechace la sentencia entera, asi que se renumera.
-            entity_where = "e.id = $3::uuid"
+            params.append(carrier_id)
+            entity_where = "e.id = $4::uuid"
+        elif scope == "catalog":
+            entity_where = f"NOT {es_activa}"
         else:
-            entity_where = "(e.operational_status = $1 OR COALESCE(d.unclassified, 0) > 0)"
-        # Sólo esta agrupación filtra por estado operativo, así que sólo ella
-        # recibe ese parámetro. Numerar de más deja un $1 sin referenciar y
-        # Postgres rechaza la sentencia entera.
-        if carrier_id:
-            params: list = [q, limit, carrier_id]
-            p_q, p_limit = "$1", "$2"
-        else:
-            params = [ACTIVE_OPERATIONAL_STATUS, q, limit]
-            p_q, p_limit = "$2", "$3"
+            entity_where = es_activa
         carrier_cols = "e.id::text AS carrier_id, e.business_name AS carrier_name, e.operational_status"
-        group_by = "e.id, e.business_name, e.operational_status, d.unclassified"
+        group_by = (
+            "e.id, e.business_name, e.operational_status, e.management_types, "
+            "d.unclassified, g.operation_types, v.trips_30d"
+        )
         unclassified = "COALESCE(d.unclassified, 0)::int"
         # Sólo agrupando por empresa hay algo que ordenar por acá.
         orden_cola = "COALESCE(d.unclassified, 0) DESC, "
@@ -146,6 +160,37 @@ async def get_certification_status(
             FROM public.document_ingest_items i
             JOIN public.document_ingest_batches b ON b.id = i.batch_id
             WHERE {unclassified_predicate('i')}
+            GROUP BY 1
+        ),
+        -- Tipo de gestión OBSERVADO: sale de la flota, que es lo que manda
+        -- cuando existe (37 de 39 empresas activas). Se devuelven CÓDIGOS, no
+        -- las etiquetas del catálogo, para que la respuesta hable el mismo
+        -- vocabulario que acepta POST /carriers y para que un renombre de
+        -- etiqueta —hubo dos en dos días— no cambie el contrato de la API.
+        gestion AS (
+            SELECT aa.carrier_id,
+                   array_agg(DISTINCT CASE t.label
+                       WHEN 'Tractoreo'       THEN 'TRACTOREO'
+                       WHEN 'Equipo Completo' THEN 'EQUIPO_COMPLETO'
+                   END) FILTER (WHERE t.label IN ('Tractoreo','Equipo Completo'))
+                       AS operation_types
+            FROM public.asset_assignments aa
+            JOIN public.assets a ON a.id = aa.asset_id
+            JOIN app.status_taxonomies t ON t.id = a.webcarga_operation_type_id
+            WHERE aa.status = 'ACTIVE'
+            GROUP BY 1
+        ),
+        -- Actividad reciente. Es una MARCA dentro del grupo, no un criterio de
+        -- orden: hoy no hay viajes futuros vinculados (0), así que usarla para
+        -- priorizar prometería una anticipación que los datos no tienen.
+        -- OJO: app.trips se une por fleet_link_id -> trip_fleet_links.id.
+        -- No existe trips.trip_id.
+        viajes AS (
+            SELECT l.carrier_id, count(*) AS trips_30d
+            FROM app.trips t
+            JOIN app.trip_fleet_links l ON l.id = t.fleet_link_id
+            WHERE l.carrier_id IS NOT NULL
+              AND t.planning_date >= CURRENT_DATE - 30
             GROUP BY 1
         )"""
     else:
@@ -175,16 +220,50 @@ async def get_certification_status(
     # de las filas del propio conductor o vehículo.
     fuente = "a" if group == "carrier" else "r"
 
+    # Un registro cuenta como vencido por CUALQUIERA de las dos vías: que
+    # alguien lo haya marcado EXPIRED, o que su fecha ya pasó aunque el estado
+    # todavía no se haya recalculado. Mirar sólo el estado subreporta.
+    vencido = (
+        f"({fuente}.status = 'EXPIRED' OR ({fuente}.expiration_date IS NOT NULL "
+        f"AND {fuente}.expiration_date < CURRENT_DATE))"
+    )
+    cubierto = f"({fuente}.status IS NOT NULL AND {fuente}.status NOT IN ('MISSING','EXPIRED'))"
+
+    if group == "carrier":
+        # El embudo decide la etapa en SQL, de UNA definición. Calcularlo en el
+        # frontend obligaría a repetir el criterio en el conteo del encabezado y
+        # en el orden — que es exactamente como divergen dos superficies del
+        # mismo dato.
+        funnel_cols = f"""
+               count(*) FILTER (WHERE {vencido})                                   AS expired_count,
+               COALESCE(g.operation_types, e.management_types)                     AS management_types,
+               COALESCE(v.trips_30d, 0)::int                                       AS trips_30d,
+               CASE
+                   WHEN NOT (e.operational_status = $1
+                             OR COALESCE(d.unclassified, 0) > 0)      THEN 'catalogo'
+                   WHEN count(*) FILTER (WHERE {vencido}) > 0          THEN 'renovar'
+                   WHEN count({fuente}.status) > 0
+                        AND count(*) FILTER (WHERE {cubierto})
+                            = count({fuente}.status)                   THEN 'al_dia'
+                   WHEN count(*) FILTER (WHERE {cubierto}) = 0         THEN 'sin_documentos'
+                   ELSE                                                     'en_proceso'
+               END                                                                 AS funnel_group,"""
+    else:
+        # El embudo es de empresas. Un conductor no tiene etapa de certificación
+        # propia, y devolver el campo en null invitaría a dibujarlo igual.
+        funnel_cols = ""
+
     rows = await pool.fetch(
         f"""
         WITH records AS (
-            SELECT cr.entity_type, cr.entity_id, cr.status, req.requirement_level
+            SELECT cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+                   req.requirement_level
             FROM public.compliance_records cr
             JOIN public.compliance_requirements req ON req.id = cr.requirement_id
             WHERE cr.is_current = true
         ),
         attributed AS (
-            SELECT r.status, r.requirement_level,
+            SELECT r.status, r.requirement_level, r.expiration_date,
                 CASE r.entity_type
                     WHEN 'CARRIER' THEN r.entity_id
                     WHEN 'DRIVER'  THEN da.carrier_id
@@ -197,10 +276,9 @@ async def get_certification_status(
                 ON r.entity_type = 'ASSET' AND aa.asset_id = r.entity_id AND aa.status = 'ACTIVE'
         ){extra_cte}
         SELECT e.id::text AS entity_id, e.{cfg["name_col"]} AS entity_name,
-               {carrier_cols},
+               {carrier_cols},{funnel_cols}
                count({fuente}.status)                                              AS total_count,
-               count(*) FILTER (WHERE {fuente}.status IS NOT NULL
-                                  AND {fuente}.status NOT IN ('MISSING','EXPIRED')) AS satisfied_count,
+               count(*) FILTER (WHERE {cubierto})                                   AS satisfied_count,
                count(*) FILTER (WHERE {fuente}.status IN ('MISSING','EXPIRED'))     AS pending_count,
                count(*) FILTER (WHERE {fuente}.status IN ('MISSING','EXPIRED')
                                   AND {fuente}.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory,
