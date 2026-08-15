@@ -23,7 +23,7 @@ const PENDIENTE = {
   id: 'r1', carrier_id: 'c1', carrier_name: 'ACME', carrier_tax_id: '1-9',
   carrier_operation_types: [], certification_type: 'BASICA', category: 'EQUIPO',
   entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55',
-  requirement_code: 'PADRON', document_name: 'Padrón',
+  requirement_id: 'req-1', requirement_code: 'PADRON', document_name: 'Padrón',
   status: 'MISSING', expiration_date: null,
 }
 

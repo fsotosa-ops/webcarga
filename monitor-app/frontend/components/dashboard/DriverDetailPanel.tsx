@@ -270,6 +270,8 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
                   })
                   await complianceQuery.refetch()
                 }}
+                carrierId={carrierId}
+                onReassigned={() => complianceQuery.refetch()}
               />
             )}
 

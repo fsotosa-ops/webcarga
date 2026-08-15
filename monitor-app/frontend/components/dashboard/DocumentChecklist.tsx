@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, Circle, AlertTriangle, Upload, Eye } from 'lucide-react'
 import { COMPLIANCE_STATUS_CONFIG, expiryRelative, formatExpiry } from '@/lib/compliance'
+import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import type { ComplianceStatus } from '@/lib/types'
 
@@ -30,6 +31,10 @@ interface Props {
   onExpirationChange?: (recordId: string, expirationDate: string) => void
   onDelete?:           (recordId: string) => Promise<void>
   hideCounter?:        boolean
+  /** Habilita corregir un documento mal cargado (HU-03). Necesita la empresa
+   *  para ofrecerle sus huecos como destino. */
+  carrierId?:          string
+  onReassigned?:       () => void
 }
 
 /** PENDING_REVIEW excluido a propósito, mismo criterio que
@@ -59,13 +64,15 @@ export function checklistCompletion(items: ChecklistItem[]): { ok: number; total
   return { ok: items.filter(item => nodeState(item) === 'ok').length, total: items.length }
 }
 
-function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationChange, onDelete }: {
+function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationChange, onDelete, carrierId, onReassigned }: {
   item: ChecklistItem
   canEdit: boolean
   onUpload?: (recordId: string, file: File) => void
   onStatusChange?: (recordId: string, status: ComplianceStatus) => void
   onExpirationChange?: (recordId: string, expirationDate: string) => void
   onDelete?: (recordId: string) => Promise<void>
+  carrierId?: string
+  onReassigned?: () => void
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const state = nodeState(item)
@@ -135,6 +142,14 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
           />
         </label>
       )}
+      {/* HU-03: el archivo está, pero puede estar en el lugar equivocado. */}
+      {canEdit && item.file_url && carrierId && (
+        <ReassignDocument
+          recordId={item.id}
+          carrierId={carrierId}
+          onDone={() => onReassigned?.()}
+        />
+      )}
       {canEdit && item.requires_file && item.file_url && onUpload && (
         <label
           title="Reemplazar archivo"
@@ -179,7 +194,7 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
  *  `item.requires_file` (subir archivo vs. cambiar estado a mano) — no por
  *  cuál callback pasó el llamador, porque un mismo carrier/driver/asset
  *  mezcla requisitos con y sin archivo en el mismo checklist. */
-export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, onExpirationChange, onDelete, hideCounter }: Props) {
+export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, onExpirationChange, onDelete, hideCounter, carrierId, onReassigned }: Props) {
   const { ok: okCount } = checklistCompletion(items)
 
   return (
@@ -197,6 +212,8 @@ export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, on
             onStatusChange={onStatusChange}
             onExpirationChange={onExpirationChange}
             onDelete={onDelete}
+            carrierId={carrierId}
+            onReassigned={onReassigned}
           />
         ))}
       </div>
