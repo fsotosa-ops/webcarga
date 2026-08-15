@@ -126,6 +126,87 @@ def test_las_vias_de_siembra_leen_la_misma_gestion_que_la_vista_previa(funcion):
         )
 
 
+# ── Qué DEVUELVE la definición ────────────────────────────────────────────
+#
+# Los tests de arriba prueban quién LLAMA a public.carrier_management_types().
+# Ninguno prueba qué devuelve, y esa diferencia importa: vaciarle el cuerpo
+# para que entregue sólo `carriers.management_types` reintroduce el defecto C1
+# completo —la columna declarada está en NULL en las 248 empresas de
+# producción— y deja a todos los demás en verde.
+#
+# Lo correcto sería EJECUTAR la función. No se puede desde esta suite: no hay
+# un servidor de Postgres al que llegar (ver el reporte del arreglo). Así que
+# lo que sigue fija el TEXTO de la definición, con dos aserciones de distinta
+# naturaleza a propósito, porque cada una tapa el agujero de la otra.
+
+# La definición, palabra por palabra. La comparación es EXACTA (espacios
+# colapsados, comentarios afuera), no un `in`: en este mismo tramo un test con
+# aserciones `in` dejó pasar un `NOT` agregado a uno de los términos y quedó
+# verde con la regla invertida.
+DEFINICION_ESPERADA = (
+    "SELECT COALESCE( ( SELECT array_agg(DISTINCT CASE t.label "
+    "WHEN 'Tractoreo' THEN 'TRACTOREO' "
+    "WHEN 'Equipo Completo' THEN 'EQUIPO_COMPLETO' END) "
+    "FILTER (WHERE t.label IN ('Tractoreo', 'Equipo Completo')) "
+    "FROM public.asset_assignments aa "
+    "JOIN public.assets a ON a.id = aa.asset_id "
+    "JOIN app.status_taxonomies t ON t.id = a.webcarga_operation_type_id "
+    "WHERE aa.carrier_id = p_carrier_id AND aa.status = 'ACTIVE' ), "
+    "(SELECT c.management_types FROM public.carriers c WHERE c.id = p_carrier_id) );"
+)
+
+
+def _cuerpo_normalizado(nombre: str) -> str:
+    """El cuerpo de la función sin comentarios y con los espacios colapsados."""
+    cuerpo = _ultima_definicion(nombre)
+    sin_comentarios = "\n".join(
+        linea for linea in cuerpo.splitlines() if not linea.strip().startswith("--")
+    )
+    return " ".join(sin_comentarios.split())
+
+
+def test_la_definicion_del_tipo_de_gestion_deriva_de_la_flota():
+    """LA FLOTA MANDA CUANDO EXISTE, LO DECLARADO CUBRE EL HUECO.
+
+    Esto protege la CONDUCTA de public.carrier_management_types(), no sus
+    llamadores. Sin él, vaciar el cuerpo de la función para que devuelva sólo
+    la columna declarada reintroduce el defecto C1 con toda la suite en verde:
+    la pantalla de Certificación seguiría mostrando la gestión derivada de la
+    flota mientras la condición de los requisitos evalúa una columna vacía, y
+    marcar cualquier tipo de gestión propondría borrar todos los registros
+    vigentes del requisito (medido contra producción: quitar 247).
+
+    Se afirma en dos niveles, y hacen falta los dos:
+
+    1. El ORDEN del COALESCE. Sobrevive a que alguien reformatee la función y
+       muere si la invierte o si le saca la parte derivada. Es la aserción que
+       de verdad dice "la flota manda".
+    2. El texto completo, exacto. Es frágil ante un reformateo —y ahí está su
+       trampa: quien lo vea fallar puede "arreglarlo" pegando el texto nuevo
+       sin mirar si el nuevo está bien. Por eso no va solo. Vale por lo que
+       atrapa: cualquier cambio de la definición obliga a mirarla.
+
+    Lo que NINGUNA de las dos hace es ejecutar la función: si alguien la
+    reescribe con otro texto que compile y devuelva otra cosa, esto no lo ve.
+    La cobertura real de eso pide un Postgres al que la suite pueda llegar."""
+    cuerpo = _cuerpo_normalizado("carrier_management_types")
+
+    # 1. La flota se consulta ANTES que la columna declarada. Ese orden ES la
+    #    regla: en un COALESCE, primero es quien manda.
+    assert "public.asset_assignments" in cuerpo, (
+        "la definicion dejo de derivar de la flota: esto es el defecto C1"
+    )
+    assert "c.management_types" in cuerpo, (
+        "la definicion dejo de cubrir el hueco con lo declarado en el alta"
+    )
+    assert cuerpo.index("public.asset_assignments") < cuerpo.index("c.management_types"), (
+        "el COALESCE quedo invertido: manda lo declarado y no la flota"
+    )
+
+    # 2. Y es exactamente esta definicion, no una parecida.
+    assert cuerpo == DEFINICION_ESPERADA
+
+
 def test_la_definicion_del_tipo_de_gestion_esta_escrita_una_sola_vez():
     """La flota manda cuando existe, lo declarado cubre el hueco. Esa frase
     se escribe UNA vez, en la funcion de base, y la llaman los tres lados: lo
