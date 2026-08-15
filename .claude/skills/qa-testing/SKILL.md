@@ -1,55 +1,77 @@
 ---
 name: qa-testing
-description: Use when writing tests, deciding what level to test at, or before claiming work is done in suma-scout. Covers the DI pattern, what belongs in integration tests vs fakes, how to evaluate model output, and the defects tests structurally cannot catch.
+description: Use when writing tests, deciding what level to test at, or before claiming work is done in webcarga. Covers what mocked tests structurally cannot catch, when to verify against the real database, and the commands that count as evidence.
 ---
 
-# QA y testing en Suma Scout
+# QA y testing en webcarga
 
-## Qué se prueba y a qué nivel
+## Los comandos, y dónde vive cada suite
 
-**Unitario, con fakes.** Toda dependencia externa es interfaz + fake + adaptador real. La lógica se prueba contra el fake; el adaptador real no lleva test propio. Es lo que permitió que el cambio de plataforma no tocara la lógica de negocio.
+```bash
+# Backend (monitor-app/backend/api) — el venv correcto es `venv`, NO .venv ni anaconda
+cd monitor-app/backend/api && venv/bin/python -m pytest tests/ -v
 
-Un fake que solo devuelve valores fijos no prueba nada: tiene que **guardar lo que se le escribió**, para que el test pueda afirmar *qué* se escribió y no solo que no lanzó excepción.
+# Frontend (monitor-app/frontend)
+cd monitor-app/frontend && npx vitest run && npx tsc --noEmit && npm run build
 
-**Integración, contra Postgres real.** Los fakes no ven migraciones, RLS, restricciones de unicidad ni consultas de agregación. Todo eso se prueba contra la base:
+# extraction_service
+cd extraction_service && python -m pytest tests/ -v
+```
 
-- Que la unicidad la garantice la restricción y no el código.
-- Que la agregación de cohorte **no devuelva nada por debajo de 4 diagnósticos**, y sí devuelva a partir de 4.
-- Que las políticas RLS bloqueen lo que deben bloquear — probar el caso denegado, no solo el permitido.
+**Correr el comando y mirar la salida.** Una afirmación de que algo pasa sin la
+salida del comando es una hipótesis, no un resultado.
 
-**De punta a punta, poco y sobre el embudo.** Caros y lentos. Reservarlos para el camino que produce el activo del negocio: llegar por el link, conversar, cerrar, ver el reporte.
+`npm run build` no es opcional cuando se agregó una ruta: es lo único que
+confirma que la página entró al manifest de Next.
 
-## El borde entre `web` y `agentes`
+## Lo que los tests con mocks estructuralmente no ven
 
-Ningún test unitario lo cubre, porque cada lado usa su propio fake. Lo cubre **el CI regenerando `packages/contracts` y fallando ante un diff**. Ese paso *es* el test de esa frontera; tratarlo como opcional reintroduce la clase de bug que cortó el embudo tres veces en el proyecto anterior.
+El backend testea con `AsyncMock`, así que **el mock nunca contradice al SQL**.
+Dos bugs reales que pasaron los tests y reventaron contra Postgres: un
+`max(uuid)` que Postgres no soporta, y una columna que no existía.
 
-## Lo que devuelve el modelo no se prueba con asserts
+**Regla**: todo SQL nuevo se corre contra la base real (MCP de Supabase) antes
+de confiar en que el test verde significa algo. Si la tabla está vacía, la
+consulta al menos prueba que las columnas y los casts existen — decilo así, no
+como "verificado".
 
-Un test no puede afirmar que un OKR es bueno. Lo que **sí** se prueba de forma determinística:
+## Un mock con la forma equivocada hace pasar el test por la razón incorrecta
 
-- Que la salida valide contra su esquema, y que **una salida inválida no tumbe el workflow** — que reintente o degrade.
-- Que se escriba el rastro en `agent_turns`, con los fragmentos usados.
-- Que el idioma de la respuesta sea el del diagnóstico.
-- Que la dosis de estantes recuperados responda al `interventionMode`.
+Caso real (Ronda 102): un test mockeaba `carriersApi.list` devolviendo
+`{ rows: [...] }`, pero el contrato real es `{ data: [...] }`. El componente
+filtraba sobre `data`, encontraba una lista vacía, y el test pasaba igual
+porque no afirmaba sobre el resultado sino sobre el efecto.
 
-**La calidad se evalúa, no se testea**: un set fijo de transcripts con su resultado esperado, corrido contra cambios de prompt. Hoy no existe — es `TECH_DEBT.md` 1.2, y depende de `agent_turns`.
+**Antes de mockear una función, abrir su definición y copiar la forma real de
+lo que devuelve.** No inferirla del nombre.
 
-## Lo que los tests estructuralmente no ven
+## Lo que solo se detecta mirando
 
-Nada de esto da error. Da un resultado plausible y equivocado, y solo se detecta **mirando**:
+Nada de esto da error. Da un resultado plausible y equivocado:
 
-- **El PDF.** Colores que no se parsean, texto del color del fondo, interlineado que se estira, títulos que quedan huérfanos al pie. Los cuatro casos concretos están en `AGENTLOG.md`. Para verificarlo: archivo temporal que llame a `renderToBuffer` y escriba a una ruta, correrlo, **abrir el archivo**, y borrar el temporal al terminar.
-- **La jerarquía editorial del reporte.** El criterio es documento editorial, no pantalla exportada.
-- **El voseo** en texto visible y en prompts. Pasa lint y typecheck sin problema. Grepear antes de cerrar.
-- **Los links impresos en el PDF.** Un dominio que no resuelve es lo único del documento que puede estar mal y que nadie detecta hasta que alguien lo abre.
+- **Huso horario**: un `datetime` naive escrito a `timestamptz` toma el TZ del
+  sistema operativo del proceso, no el de Postgres. Los scrapers de Playwright
+  sin `timezone_id` capturan la hora del contenedor, no la de Chile.
+- **Emojis en la UI**: prohibidos por decisión explícita del usuario, solo
+  `lucide-react`. Pasa lint y typecheck.
+- **Drafts sin resincronizar** (visto 4 veces): el botón que ABRE la edición
+  debe resetear el borrador desde el prop. Un `useState` inicial se queda con
+  el valor viejo y el test que solo abre una vez no lo ve.
+- **Dependencias del backend**: el `Dockerfile` tiene las deps hardcodeadas y
+  **no lee `pyproject.toml`**. Agregar una dep sin tocar el Dockerfile pasa
+  todos los tests y rompe el deploy.
+
+## El click-through, cuando toca datos reales
+
+Los desplegables listan **todo el catálogo**, no solo lo pendiente. Ya se pisó
+un documento real por elegir a ojo.
+
+**Elegir por SQL una entidad sin datos cargados antes de abrir el navegador**,
+limpiar al terminar, y confirmar con un conteo global.
 
 ## Antes de decir que algo está listo
 
-```bash
-pnpm -r typecheck && pnpm -r lint && pnpm -r test
-cd apps/agents && uv run mypy . && uv run ruff check . && uv run pytest
-```
-
-**Correr el comando y mirar la salida.** Una afirmación de que algo pasa sin evidencia del comando es una hipótesis.
-
-Y si el trabajo tocó algo visual o el documento, **abrirlo**. El typecheck atrapa lo que los tests no; los ojos atrapan lo que ninguno de los dos.
+1. ¿Corriste los comandos y miraste la salida?
+2. ¿El SQL nuevo se probó contra la base real?
+3. ¿Los mocks devuelven la forma real del contrato?
+4. Si tocaste algo visual, ¿lo abriste?
