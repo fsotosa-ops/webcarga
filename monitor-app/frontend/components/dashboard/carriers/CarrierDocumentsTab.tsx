@@ -57,6 +57,7 @@ export function CarrierDocumentsTab({
         {exportError && <p className="text-xs text-red-500 mb-2">{exportError}</p>}
         <TransporterDocumentsPanel
           records={records}
+          carrierId={carrierId}
           onChanged={() => queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })}
         />
       </div>

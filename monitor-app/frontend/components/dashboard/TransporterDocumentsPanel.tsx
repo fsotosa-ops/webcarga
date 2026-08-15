@@ -8,6 +8,7 @@ import { ComplianceBadge } from './ComplianceBadge'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { complianceAlertStatus, formatExpiry } from '@/lib/compliance'
 import { useCanEdit } from '@/hooks/useCanEdit'
+import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { ExpirationDateCell } from './ExpirationDateCell'
 
 // ── Una fila por compliance_record — solo lectura. La carga/edición real
@@ -17,7 +18,9 @@ import { ExpirationDateCell } from './ExpirationDateCell'
 //    duplicar el entry point. "Ver historial" queda disponible para
 //    cualquiera (es lectura, no edición — antes estaba atado sin motivo
 //    a canEdit). ──────────────────────────────────────────────────────
-function DocumentRow({ record, onChanged }: { record: ComplianceRecord; onChanged?: () => void }) {
+function DocumentRow({ record, carrierId, onChanged }: {
+  record: ComplianceRecord; carrierId?: string; onChanged?: () => void
+}) {
   const canEdit = useCanEdit()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
@@ -68,6 +71,16 @@ function DocumentRow({ record, onChanged }: { record: ComplianceRecord; onChange
           />
           {record.expiration_date && <ComplianceBadge status={alert} compact />}
         </span>
+
+        {/* HU-03: el archivo está cargado, pero puede estar en el requisito
+            equivocado. */}
+        {canEdit && record.file_url && carrierId && (
+          <ReassignDocument
+            recordId={record.id}
+            carrierId={carrierId}
+            onDone={() => onChanged?.()}
+          />
+        )}
 
         {record.file_url && (
           <button
@@ -123,6 +136,8 @@ function DocumentRow({ record, onChanged }: { record: ComplianceRecord; onChange
 
 interface Props {
   records: ComplianceRecord[]
+  /** Habilita corregir un documento mal cargado (HU-03). */
+  carrierId?: string
   /** Avisa que hay que releer la ficha: se declaró un vencimiento (HU-02). */
   onChanged?: () => void
 }
@@ -132,7 +147,7 @@ interface Props {
  *  gestiona entidades — baja/transferir/asignar —, Certificación es el
  *  único lugar para subir/editar documentación, evita el entry point
  *  duplicado que existía antes). */
-export function TransporterDocumentsPanel({ records, onChanged }: Props) {
+export function TransporterDocumentsPanel({ records, carrierId, onChanged }: Props) {
   const approvedCount = records.filter(r => r.status === 'APPROVED' || r.status === 'APPROVED_MANUAL').length
 
   return (
@@ -147,7 +162,7 @@ export function TransporterDocumentsPanel({ records, onChanged }: Props) {
       {records.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {records.map(record => (
-            <DocumentRow key={record.id} record={record} onChanged={onChanged} />
+            <DocumentRow key={record.id} record={record} carrierId={carrierId} onChanged={onChanged} />
           ))}
         </div>
       )}

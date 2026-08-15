@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TransporterDocumentsPanel } from './TransporterDocumentsPanel'
 import { complianceApi } from '@/lib/api/compliance'
 
@@ -119,5 +120,27 @@ describe('TransporterDocumentsPanel', () => {
   it('shows "Sin datos" when there are no records', () => {
     render(<TransporterDocumentsPanel records={[]} />)
     expect(screen.getByText('Sin datos')).toBeInTheDocument()
+  })
+})
+
+// HU-03: el archivo está cargado, pero puede estar en el requisito equivocado.
+describe('TransporterDocumentsPanel — corregir un documento mal cargado', () => {
+  // ReassignDocument consulta los huecos de la empresa, así que necesita cliente.
+  function renderConCliente(records: ComplianceRecord[]) {
+    return render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TransporterDocumentsPanel records={records} carrierId="c1" />
+      </QueryClientProvider>,
+    )
+  }
+
+  it('ofrece reasignar sobre los documentos que tienen archivo', () => {
+    renderConCliente([{ ...RECORDS[0], file_url: 'https://example.com/doc.pdf' }])
+    expect(screen.getByRole('button', { name: /reasignar/i })).toBeInTheDocument()
+  })
+
+  it('no ofrece reasignar lo que todavía no tiene archivo', () => {
+    renderConCliente(RECORDS)
+    expect(screen.queryByRole('button', { name: /reasignar/i })).not.toBeInTheDocument()
   })
 })
