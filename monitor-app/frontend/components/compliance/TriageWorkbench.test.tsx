@@ -234,6 +234,29 @@ describe('TriageWorkbench — soltar más de 50 archivos', () => {
     expect(evento.defaultPrevented).toBe(true)
     await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledTimes(1))
   })
+
+  // EL CRUCE, que es donde vivía la falla: la zona de carga atiende el drop y
+  // el evento sigue burbujeando hasta el listener de `window`. Los dos tests
+  // que ya existían cubrían un lado cada uno —TriageDropzone.test.tsx suelta
+  // sobre la zona sin listener global, y el de arriba suelta sobre `window`
+  // sin pasar por la zona—, así que ninguno veía que corrieran los dos
+  // caminos y cada archivo entrara DUPLICADO a la bandeja.
+  it('soltar SOBRE la zona de carga sube los archivos una sola vez', async () => {
+    vi.mocked(documentIngestApi.upload).mockImplementation(async (_c, files) => subida(files))
+    setup()
+    await screen.findByText('i1.png')
+
+    fireEvent.drop(screen.getByTestId('triage-dropzone'), {
+      dataTransfer: { files: archivos(2) },
+    })
+
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalled())
+    // Un tick más: la segunda subida saldría en el mismo dispatch, así que si
+    // waitFor se conformara con la primera igual la veríamos acá.
+    await new Promise(r => setTimeout(r, 0))
+    expect(documentIngestApi.upload).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(documentIngestApi.upload).mock.calls[0][1]).toHaveLength(2)
+  })
 })
 
 describe('TriageWorkbench — descartar en lote', () => {

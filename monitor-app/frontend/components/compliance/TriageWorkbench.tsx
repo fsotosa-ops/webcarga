@@ -247,6 +247,18 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
     if (!canEdit) return
     const prevenir = (e: DragEvent) => e.preventDefault()
     const soltar = (e: DragEvent) => {
+      // NO BORRAR. Este listener está en `window`, así que también recibe el
+      // drop que ya atendió la zona de carga cuando burbujea hasta acá: sin
+      // esta guarda, soltar SOBRE el recuadro —el gesto más probable de
+      // todos— corría los dos caminos y subía cada archivo DOS VECES, a la
+      // bandeja global y a la ficha de empresa por igual.
+      //
+      // Se mira `defaultPrevented` en vez de cortar la burbuja desde la zona
+      // (`stopPropagation`) porque acá protege a cualquier superficie de drop
+      // que exista hoy o se agregue después: le basta con hacer
+      // `preventDefault`, que igual está obligada a hacer para que el
+      // navegador no navegue al archivo.
+      if (e.defaultPrevented) return
       e.preventDefault()
       const files = e.dataTransfer?.files
       if (files?.length) subirArchivos(Array.from(files))
