@@ -14,7 +14,12 @@ interface Props {
   rows:             CertificationStatusRow[]
   /** El complemento, que se pide recién al desplegar el grupo. */
   catalogRows:      CertificationStatusRow[]
-  catalogLoading:   boolean
+  /** Los cuatro estados del catálogo, NOMBRADOS. Antes se deducían de un
+   *  booleano más el largo del arreglo, y eso dejaba "no pedí", "vino vacío" y
+   *  "falló" indistinguibles: los tres se dibujaban igual y un error se veía
+   *  como un catálogo vacío. Es la misma clase de defecto —un valor con varios
+   *  significados— que este componente ya tuvo con el "0". */
+  catalogEstado:    'sin-pedir' | 'cargando' | 'listo' | 'error'
   onExpandCatalog:  () => void
   onToggleRow?:     (carrierId: string) => void
   /** La fila abierta. Sólo una a la vez: el cajón es alto y dos abiertos
@@ -57,7 +62,7 @@ function etiquetaGestion(tipos?: ManagementType[] | null): string | null {
 }
 
 export function CertificationFunnel({
-  rows, catalogRows, catalogLoading, onExpandCatalog, onToggleRow,
+  rows, catalogRows, catalogEstado, onExpandCatalog, onToggleRow,
   openRowId, renderDrawer,
 }: Props) {
   // Los dos grupos del fondo arrancan plegados: uno está vacío y el otro son
@@ -115,22 +120,29 @@ export function CertificationFunnel({
                     {vencidos === 1 ? '1 documento vencido' : `${vencidos} documentos vencidos`}
                   </span>
                 )}
-                {/* El catálogo se pide recién al desplegarlo, así que antes de
-                 *  eso no sabemos cuántas son. Mostrar "0" sería un número con
-                 *  dos significados —"ninguna" y "todavía no pregunté"— y el
-                 *  primero invita a no abrir el grupo: 209 empresas quedarían
-                 *  invisibles detrás de un cero. Sin dato, sin número. */}
-                {id === 'catalogo' && catalogLoading
-                  ? <Loader2 size={11} className="motion-safe:animate-spin" />
-                  : id === 'catalogo' && deEstaEtapa.length === 0
-                    ? null
-                    : deEstaEtapa.length}
+                {/* Cada estado del catálogo se dibuja distinto, porque decir lo
+                 *  mismo para todos fue el defecto anterior: "0" mientras no se
+                 *  había pedido invitaba a no abrir el grupo, y 209 empresas
+                 *  quedaban invisibles detrás de ese cero. El conteo sólo
+                 *  aparece cuando de verdad hay dato que contar. */}
+                {id !== 'catalogo'
+                  ? deEstaEtapa.length
+                  : catalogEstado === 'cargando'
+                    ? <Loader2 size={11} className="motion-safe:animate-spin" />
+                    : catalogEstado === 'error'
+                      ? <span className="text-[--accion] font-normal">No se pudo cargar · reintentar</span>
+                      : catalogEstado === 'listo'
+                        ? deEstaEtapa.length
+                        : null}
               </span>
             </button>
 
             {!plegado && !deEstaEtapa.length && (
               <p className="px-4 py-2 text-[11px] text-gray-400 border-b border-gray-100">
-                {id === 'catalogo' && catalogLoading ? 'Cargando…' : 'Ninguna acá'}
+                {id !== 'catalogo' ? 'Ninguna acá'
+                  : catalogEstado === 'cargando' ? 'Cargando…'
+                  : catalogEstado === 'error'    ? 'No se pudo cargar el catálogo. Vuelve a desplegar el grupo para reintentar.'
+                  : 'Ninguna acá'}
               </p>
             )}
 

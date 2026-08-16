@@ -22,7 +22,7 @@ function setup(over: Partial<Props> = {}) {
   const props: Props = {
     rows: [fila()],
     catalogRows: [],
-    catalogLoading: false,
+    catalogEstado: 'sin-pedir' as const,
     onExpandCatalog: vi.fn(),
     ...over,
   }
@@ -133,6 +133,7 @@ describe('CertificationFunnel', () => {
 
   it('con el catalogo ya cargado si muestra su conteo', () => {
     setup({
+      catalogEstado: 'listo',
       catalogRows: [fila({
         funnel_group: 'catalogo', entity_id: 'x', entity_name: 'Vieja Ltda',
         operational_status: 'LEGACY_INACTIVE',
@@ -140,6 +141,31 @@ describe('CertificationFunnel', () => {
     })
 
     expect(screen.getByTestId('grupo-catalogo')).toHaveTextContent('1')
+  })
+
+  // Cargado y de verdad vacio es distinto de "todavia no pregunte": aca el cero
+  // SI informa, porque hay dato detras.
+  it('cargado y realmente vacio si dice cero', () => {
+    setup({ catalogEstado: 'listo', catalogRows: [] })
+    expect(screen.getByTestId('grupo-catalogo')).toHaveTextContent('0')
+  })
+
+  // Un fallo de red se dibujaba igual que un catalogo vacio: sin numero, sin
+  // aviso, y el cuerpo desplegado decia "Ninguna aca". El usuario concluia que
+  // no habia empresas cuando en realidad la consulta habia fallado.
+  it('si el catalogo falla lo dice, en vez de parecer vacio', () => {
+    setup({ catalogEstado: 'error', catalogRows: [] })
+
+    const encabezado = screen.getByTestId('grupo-catalogo')
+    expect(encabezado).toHaveTextContent(/no se pudo cargar/i)
+    expect(encabezado).not.toHaveTextContent('0')
+  })
+
+  it('el cuerpo del catalogo fallado no dice "ninguna aca"', () => {
+    setup({ catalogEstado: 'error', catalogRows: [] })
+
+    fireEvent.click(screen.getByTestId('grupo-catalogo'))
+    expect(screen.getByText(/no se pudo cargar el catálogo/i)).toBeInTheDocument()
   })
 
   it('al abrir el catalogo muestra sus filas', () => {

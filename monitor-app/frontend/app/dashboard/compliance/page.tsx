@@ -265,8 +265,20 @@ function CertificationPageInner() {
                 <CertificationFunnel
                   rows={rows}
                   catalogRows={catalogQuery.data?.rows ?? []}
-                  catalogLoading={catalogQuery.isPending && catalogoAbierto}
-                  onExpandCatalog={() => setCatalogoAbierto(true)}
+                  catalogEstado={
+                    !catalogoAbierto        ? 'sin-pedir'
+                      : catalogQuery.isError  ? 'error'
+                      : catalogQuery.isPending ? 'cargando'
+                      : 'listo'
+                  }
+                  // Volver a desplegar el grupo tras un error tiene que
+                  // reintentar de verdad: `setCatalogoAbierto(true)` cuando ya
+                  // está en `true` no dispara nada, así que el usuario quedaba
+                  // sin forma de recuperarse salvo recargar la página.
+                  onExpandCatalog={() => {
+                    setCatalogoAbierto(true)
+                    if (catalogQuery.isError) catalogQuery.refetch()
+                  }}
                   openRowId={filaAbierta}
                   onToggleRow={id => setFilaAbierta(prev => (prev === id ? null : id))}
                   renderDrawer={r => (
