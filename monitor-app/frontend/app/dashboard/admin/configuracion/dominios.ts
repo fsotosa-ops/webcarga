@@ -7,6 +7,7 @@ import {
 } from './umbrales-tabs'
 import { CondicionesDocumentosTab } from './condiciones-tab'
 import { SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab } from './flota-tabs'
+import { UsuariosTab } from './usuarios-tab'
 
 export interface Seccion {
   clave:     string
@@ -76,7 +77,15 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Tractoreo y equipo completo', Panel: TiposOperacionTab },
     ],
   },
-  // Personas y accesos (Task 6) se agrega aca cuando su componente exista.
+  {
+    clave: 'personas',
+    titulo: 'Personas y accesos',
+    proposito: 'Quién entra y qué puede hacer',
+    secciones: [
+      { clave: 'usuarios', titulo: 'Usuarios',
+        proposito: 'Quién tiene cuenta y con qué rol', Panel: UsuariosTab },
+    ],
+  },
   {
     clave: 'facturacion',
     titulo: 'Facturación',

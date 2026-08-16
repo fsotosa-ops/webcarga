@@ -64,3 +64,16 @@ describe('Sidebar — Certificación es una sola entrada', () => {
     expect(screen.queryByRole('link', { name: /^pendientes$/i })).not.toBeInTheDocument()
   })
 })
+
+// Usuarios se mudo a Configuracion > Personas y accesos (Task 6): ya no es
+// una entrada propia del menu, Configuracion queda como unica puerta a
+// Administracion.
+describe('Sidebar — Usuarios se mudo a Configuracion', () => {
+  it('Usuarios ya no es una entrada propia del menu', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+    await screen.findAllByText('Certificación')
+    expect(screen.queryByRole('link', { name: /usuarios/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /configuración/i })).toBeInTheDocument()
+  })
+})
