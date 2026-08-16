@@ -1962,6 +1962,103 @@ silencio. No pasó —verificado— pero el riesgo lo creó el controlador por n
 4. [ ] **Nombre que miente**: `quitados` en `RecalcResult` y `audit_log` significa "apagados".
    Comentado en el código; renombrarlo es pendiente.
 
+### 2026-08-16 (cont.) — Ronda 116: Configuración deja de ser pestañas y pasa a ser dominios
+
+**Spec 1 + Plan 1, 7 tareas, ejecutadas con subagentes.** Frontend 917, backend 654.
+
+El módulo era siete navtabs planas. Ahora es una **portada de inventario** (5 dominios, con el
+conteo real de cada uno) y un interior con secciones. El registro de dominios
+(`app/dashboard/admin/settings/dominios.ts`) es **la única fuente**: la portada, la barra lateral
+del interior y la validación salen de ahí.
+
+- **Slugs en inglés, etiquetas en español** (corrección explícita del usuario a mitad de camino:
+  se habían escrito redirects en español). `certification` · `operations` · `fleet` · `people` ·
+  `billing`. Las rutas viejas (`/admin/configuracion`, `/admin/usuarios`) redirigen.
+- **La sección viaja en la URL** (`?section=`), con `replace`: recorrer seis secciones no cuesta
+  seis "atrás" para salir de la pantalla.
+- **Un solo endpoint para los conteos**: `GET /config/inventario`, una query con las 12 cuentas.
+  No 12 llamadas ni un contador por tarjeta.
+
+#### Dos bugs que ningún test podía ver
+
+1. **`params` es una `Promise` en Next 16.** Los cinco dominios devolvían 404. Pasaron 909 tests,
+   `tsc` y el build — porque **el tipo que yo escribí mentía**. Lo encontró el click-through, no
+   la suite. Corregido con `use(params)` y un test que pasa una Promise de verdad.
+2. **`WEBCARGA_OPERATION_TYPE` faltaba en `VALID_DOMAINS` de Python** → Flota reventaba con 422.
+   Misma clase que C1 del Tramo 3: **dos definiciones del mismo catálogo**. No se parchó
+   agregando el valor: se **borró la constante** y la validación pasó a consultar la tabla.
+
+#### El fondo gris, tercera vez
+
+El usuario lo marcó dos veces. La causa: la pantalla vieja tenía `bg-white border rounded-2xl` y
+**yo lo saqué al reescribir**. Medido: Certificación 78% de superficie blanca, mi pantalla 28%.
+Va con [[feedback_read_before_rewriting]] — leer lo que ya está resuelto al lado antes de
+reescribirlo.
+
+### 2026-08-16 (cont.) — Ronda 117: las listas de configuración — tabla que se lee, panel que edita
+
+**Spec 2 + Plan 2, 8 tareas, subagentes.** Frontend **1001**, backend **658**. 11 commits
+(`917660b..18cda89`), 35 archivos, +2835/−880.
+
+El spec 2 se escribió **después** del click-through del marco, a propósito (decisión de la Ronda
+115). Bien: el alto real y la densidad al lado de la barra de dominios no se sabían, se dibujaban.
+
+**Piezas compartidas primero** (`components/ui/`): `useOrden` + `EncabezadoOrdenable` +
+`OrdenIcono`, `ChipsDeFiltro`, `PanelLateral`. `useOrden` ordena con `localeCompare` en español
+(la Ñ entre N y O, no después de la Z) y **copia antes de ordenar** — `sort` muta, y el arreglo
+venía de la caché de react-query.
+
+**Lo que se midió, que era el punto:**
+
+| | Antes | Ahora |
+|---|---|---|
+| Condiciones | 5.849 px · 167 casillas · 37 formularios abiertos | 2.059 px · **0** casillas · 37 filas |
+| Estados del tablero | ~300 controles · 250 botones de color | 33 controles · **0** botones de color |
+
+**La regla se enuncia, no se dibuja.** La frase ("9 de 10 subtipos · 36 de 118") se **deriva del
+dato** en `frase-de-la-regla.ts`; el total sale del catálogo de subtipos, así que dar de alta un
+subtipo corrige la frase sola.
+
+#### Hallazgos de la revisión de rama
+
+- **H1 · funcionalidad perdida**: la lista vieja de Estados tenía flechas de reordenamiento; la
+  tabla nueva dejó `sort_order` de sólo lectura. Se recuperó **en el panel**, como intercambio
+  con el vecino (no renumeración: los 25 números están curados a mano).
+- **H2/H6 · el foco y el borrador**: el efecto de foco de `PanelLateral` dependía de `[onCerrar]`
+  —una flecha inline, o sea cualquier render del padre robaba el foco—; y el `useMemo` de
+  `CondicionPanel` dependía de la **identidad** del arreglo, así que un refetch con datos
+  idénticos borraba el borrador. **Cuarta aparición** de
+  [[feedback_draft_resync_bug_class]].
+- **H4 · una "extracción" que era una copia**: `OrdenIcono` duplicaba el `SortIcon` privado de
+  `TripTable`, que seguía ahí. El mensaje del commit afirmaba una extracción que no ocurrió.
+
+#### Un deploy que falló por cómo se hizo `git add`
+
+`git add` enumerando rutas dejó tres archivos de `components/` fuera del commit. El build local
+pasó **porque el árbol estaba sucio** y CI falló. Se verificó clonando la rama limpia.
+
+#### `/verify` — click-through de cierre, PASS
+
+Nueve pasos contra la revisión desplegada, cinco de ellos sondas. Lo que salió:
+- `?section=inventada` **deja el valor inválido en la URL** aunque dibuje la primera sección.
+- El contador del chip **ignora la búsqueda activa**: con "seguro" escrito, "Con condición 2"
+  lleva a "Ningún documento coincide".
+- Un slug de dominio desconocido (`/settings/facturacion`, justo el que teclearía quien recuerda
+  las rutas en español) cae en el 404 pelado de Next, sin la app alrededor ni vuelta a
+  Configuración.
+
+#### Próximo paso exacto
+
+1. [ ] Los tres roces de `/verify` de arriba — ninguno rompe nada, los tres son de una línea.
+2. [ ] **Plan 3 del spec 1**: el registro de revisión y la búsqueda.
+3. [ ] **Las cuatro preguntas para WebCarga** (Ronda 113, punto 4) — sigue abierto.
+4. [ ] Deuda declarada: `shared.tsx` vive en Configuración pero lo importan Tarifario, Requisitos
+   y Ubicaciones; los dos `PATCH` del reordenamiento **no son transaccionales** (si el segundo
+   falla queda un empate de `sort_order`); el mapeo etiqueta→código de gestión es **por
+   etiqueta**, así que un rename cae al respaldo en silencio.
+5. [ ] Hallazgos diferidos de la revisión de rama: H7 (el panel no atrapa el Tab), H8, H10, H11,
+   H13.
+
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear entre rondas. Ninguno bloquea el funcionamiento actual. (Ver también los 4 pendientes nuevos de la Ronda 95, arriba.)
