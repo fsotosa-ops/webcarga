@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Pencil } from 'lucide-react'
 import type { Location } from '@/lib/types'
 import { locationsApi } from '@/lib/api/locations'
-import { INPUT, SaveRowButton, useRowFeedback } from '@/app/dashboard/admin/configuracion/shared'
+import { INPUT, SaveRowButton, useRowFeedback } from '@/app/dashboard/admin/settings/shared'
 
 const OPERATION_TYPE_OPTIONS = ['RM', 'Z0', 'Region Norte', 'Region Sur']
 

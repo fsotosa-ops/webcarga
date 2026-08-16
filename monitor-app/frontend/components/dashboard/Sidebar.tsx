@@ -204,7 +204,7 @@ export default function Sidebar({ role }: SidebarProps) {
   }
 
   const isAdmin       = pathname.startsWith('/dashboard/admin')
-  const isConfig      = pathname.startsWith('/dashboard/admin/configuracion')
+  const isConfig      = pathname.startsWith('/dashboard/admin/settings')
   const canAdmin      = role === 'admin' || role === 'owner'
   const roleBadge = ROLE_BADGE[role ?? 'viewer'] ?? ROLE_BADGE.viewer
 
@@ -292,7 +292,7 @@ export default function Sidebar({ role }: SidebarProps) {
                 </p>
               )}
               <Link
-                href="/dashboard/admin/configuracion"
+                href="/dashboard/admin/settings"
                 title={collapsed ? 'Configuración' : undefined}
                 className={`group relative flex items-center rounded-xl text-[13px] transition-all duration-150 ${
                   collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
@@ -349,7 +349,7 @@ export default function Sidebar({ role }: SidebarProps) {
 
         {canAdmin && (
           <Link
-            href="/dashboard/admin/configuracion"
+            href="/dashboard/admin/settings"
             prefetch={false}
             className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
               isAdmin ? 'text-white' : 'text-white/40 hover:text-white/70'

@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { requirementsApi } from '@/lib/api/requirements'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
-import { useRowFeedback, SaveRowButton } from '@/app/dashboard/admin/configuracion/shared'
+import { useRowFeedback, SaveRowButton } from '@/app/dashboard/admin/settings/shared'
 import type { RequirementConditions, RequirementConditionsPatchResult, ManagementType } from '@/lib/types'
 
 interface Props {
