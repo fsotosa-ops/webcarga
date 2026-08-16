@@ -6,7 +6,7 @@ vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => true }))
 import type { TripStatusRow } from '@/lib/api/config'
 
 vi.mock('@/lib/api/config', () => ({
-  configApi: { getStatuses: vi.fn(), patchStatus: vi.fn() },
+  configApi: { getStatuses: vi.fn(), patchStatus: vi.fn(), moveStatus: vi.fn() },
 }))
 
 // El estado abierto VIAJA EN LA URL, como un documento de Condiciones: cada
@@ -48,6 +48,8 @@ beforeEach(() => {
   vi.mocked(configApi.getStatuses).mockResolvedValue(ESTADOS)
   vi.mocked(configApi.patchStatus).mockReset()
   vi.mocked(configApi.patchStatus).mockResolvedValue(ESTADOS[0])
+  vi.mocked(configApi.moveStatus).mockReset()
+  vi.mocked(configApi.moveStatus).mockResolvedValue(ESTADOS)
 })
 
 describe('EstadosTabla', () => {
@@ -183,9 +185,11 @@ describe('EstadosTabla', () => {
     montar()
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /en local/i }))
+    // Sigue diciendo 2 de 3 con el filtro puesto: la posición es del tablero,
+    // no de lo que hay en pantalla. Y por eso Subir sigue habilitado.
+    expect(screen.getByText('2 de 3')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /subir/i }))
-    await waitFor(() => expect(configApi.patchStatus).toHaveBeenCalledWith('EN_DESTINO', { sort_order: 1 }))
-    expect(configApi.patchStatus).toHaveBeenCalledWith('ASIGNADO', { sort_order: 2 })
+    await waitFor(() => expect(configApi.moveStatus).toHaveBeenCalledWith('EN_DESTINO', 'up'))
   })
 
   // Una columna sin nombre accesible es una columna que un lector de pantalla

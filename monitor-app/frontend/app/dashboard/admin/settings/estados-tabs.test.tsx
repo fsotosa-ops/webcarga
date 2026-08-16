@@ -4,23 +4,58 @@ import { TaxonomyTab } from './estados-tabs'
 import { taxonomiesApi } from '@/lib/api/config'
 
 vi.mock('@/lib/api/config', () => ({
-  taxonomiesApi: { list: vi.fn(), create: vi.fn(), patch: vi.fn(), deactivate: vi.fn() },
+  taxonomiesApi: { list: vi.fn(), create: vi.fn(), patch: vi.fn(), deactivate: vi.fn(), move: vi.fn() },
 }))
 
 beforeEach(() => {
   vi.mocked(taxonomiesApi.list).mockReset()
   vi.mocked(taxonomiesApi.create).mockReset()
   vi.mocked(taxonomiesApi.deactivate).mockReset()
+  vi.mocked(taxonomiesApi.move).mockReset()
   // jsdom no implementa window.confirm: sin este doble devuelve undefined y el
   // handler corta antes de llamar a la API, con lo que el test verde no
   // probaria nada.
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
+const UNO = { id: 't1', label: 'Uno', bg_color: '#fff', text_color: '#000', sort_order: 1, active: true, code: null }
+const DOS = { id: 't2', label: 'Dos', bg_color: '#fff', text_color: '#000', sort_order: 2, active: true, code: null }
+
 describe('TaxonomyTab', () => {
+  // Antes esto eran DOS patch seguidos con un sort_order calculado acá: si el
+  // segundo no llegaba, las dos filas quedaban con el mismo número. Ahora se
+  // manda la dirección y el orden lo decide —y lo devuelve— el servidor.
+  it('mover manda la dirección, no un número calculado acá', async () => {
+    vi.mocked(taxonomiesApi.list).mockResolvedValue([UNO, DOS])
+    vi.mocked(taxonomiesApi.move).mockResolvedValue([DOS, UNO])
+    render(<TaxonomyTab domain="EQUIPMENT_STATE" title="t" hint="hint" newLabel="estado" />)
+    await screen.findByDisplayValue('Uno')
+
+    fireEvent.click(screen.getByRole('button', { name: /subir dos/i }))
+
+    await waitFor(() => expect(taxonomiesApi.move).toHaveBeenCalledWith('t2', 'up'))
+    expect(taxonomiesApi.patch).not.toHaveBeenCalled()
+  })
+
+  // El servidor devuelve el dominio completo ya ordenado: la pantalla lo toma
+  // tal cual en vez de recalcularlo, que es de donde salían las dos verdades.
+  it('la lista queda en el orden que devolvió el servidor', async () => {
+    vi.mocked(taxonomiesApi.list).mockResolvedValue([UNO, DOS])
+    vi.mocked(taxonomiesApi.move).mockResolvedValue([DOS, UNO])
+    render(<TaxonomyTab domain="EQUIPMENT_STATE" title="t" hint="hint" newLabel="estado" />)
+    await screen.findByDisplayValue('Uno')
+
+    fireEvent.click(screen.getByRole('button', { name: /subir dos/i }))
+
+    await waitFor(() => {
+      const campos = screen.getAllByRole('textbox').map(i => (i as HTMLInputElement).value)
+      expect(campos).toEqual(['Dos', 'Uno'])
+    })
+  })
+
   it('lists rows for the given domain and hides the board-column select for non-OPERATIONAL_STATE domains', async () => {
     vi.mocked(taxonomiesApi.list).mockResolvedValue([
-      { id: 't1', label: 'Disponible', bg_color: '#f0fdf4', text_color: '#166534', sort_order: 1, active: true },
+      { id: 't1', label: 'Disponible', bg_color: '#f0fdf4', text_color: '#166534', sort_order: 1, active: true, code: null },
     ])
     render(<TaxonomyTab domain="EQUIPMENT_STATE" title="Estados de Equipo" hint="hint" newLabel="estado de equipo" />)
     expect(await screen.findByDisplayValue('Disponible')).toBeInTheDocument()
@@ -31,7 +66,7 @@ describe('TaxonomyTab', () => {
   it('creates a new row scoped to the domain', async () => {
     vi.mocked(taxonomiesApi.list).mockResolvedValue([])
     vi.mocked(taxonomiesApi.create).mockResolvedValue({
-      id: 't2', label: 'En Pana', bg_color: '#fef2f2', text_color: '#b91c1c', sort_order: 3, active: true,
+      id: 't2', label: 'En Pana', bg_color: '#fef2f2', text_color: '#b91c1c', sort_order: 3, active: true, code: null,
     })
     render(<TaxonomyTab domain="EQUIPMENT_STATE" title="Estados de Equipo" hint="hint" newLabel="estado de equipo" />)
     fireEvent.click(await screen.findByText('Nuevo estado de equipo'))
@@ -44,7 +79,7 @@ describe('TaxonomyTab', () => {
 
   it('shows the board-column select for OPERATIONAL_STATE domain', async () => {
     vi.mocked(taxonomiesApi.list).mockResolvedValue([
-      { id: 't1', label: 'En bodega', bg_color: '#f3f4f6', text_color: '#374151', sort_order: 1, active: true, group: 'otro' },
+      { id: 't1', label: 'En bodega', bg_color: '#f3f4f6', text_color: '#374151', sort_order: 1, active: true, group: 'otro', code: null },
     ])
     render(<TaxonomyTab domain="OPERATIONAL_STATE" title="Estados Operacionales" hint="hint" newLabel="estado operacional" />)
     expect(await screen.findByDisplayValue('En bodega')).toBeInTheDocument()
@@ -59,7 +94,7 @@ describe('TaxonomyTab', () => {
 describe('TaxonomyTab — aviso al desactivar un valor en uso', () => {
   const FURGON = {
     id: 'f4ee2299', label: 'Furgón Seco',
-    bg_color: '#f3f4f6', text_color: '#374151', sort_order: 1, active: true,
+    bg_color: '#f3f4f6', text_color: '#374151', sort_order: 1, active: true, code: null,
   }
 
   function renderSubtipos() {

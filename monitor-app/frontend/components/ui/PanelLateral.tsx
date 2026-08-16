@@ -40,6 +40,37 @@ export function PanelLateral({
     return () => document.removeEventListener('keydown', alTeclear)
   }, [onCerrar])
 
+  // `aria-modal="true"` es una PROMESA: le dice al lector de pantalla que el
+  // resto de la pagina no existe mientras esto esta abierto. Sin atrapar el
+  // Tab, la promesa es falsa — tres tabulaciones y quien navega con teclado
+  // esta escribiendo en la tabla de atras, que el lector ya declaro ausente,
+  // sin ninguna senal de haberse ido.
+  //
+  // Se calcula en cada Tab y no una sola vez al abrir: el contenido del panel
+  // cambia mientras esta abierto (la paleta de color aparece al abrirla, el
+  // boton Guardar solo existe con cambios sin guardar), asi que una lista
+  // capturada al montar se queda vieja.
+  function atraparTab(e: React.KeyboardEvent) {
+    if (e.key !== 'Tab' || !panel.current) return
+    const focoables = panel.current.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+      + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )
+    if (!focoables.length) return
+    const primero = focoables[0]
+    const ultimo = focoables[focoables.length - 1]
+    const activo = document.activeElement
+    // El propio panel tiene tabIndex -1 y recibe el foco al abrir: desde ahi,
+    // Tab hacia atras tiene que ir al ultimo del panel, no salirse.
+    if (e.shiftKey && (activo === primero || activo === panel.current)) {
+      e.preventDefault()
+      ultimo.focus()
+    } else if (!e.shiftKey && activo === ultimo) {
+      e.preventDefault()
+      primero.focus()
+    }
+  }
+
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onCerrar} aria-hidden="true" />
@@ -49,6 +80,7 @@ export function PanelLateral({
         aria-modal="true"
         aria-label={typeof titulo === 'string' ? titulo : undefined}
         tabIndex={-1}
+        onKeyDown={atraparTab}
         className="fixed right-0 top-0 z-50 h-full w-full max-w-md bg-white shadow-xl
                    flex flex-col focus-visible:outline-none"
       >

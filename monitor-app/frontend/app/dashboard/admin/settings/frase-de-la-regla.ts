@@ -6,9 +6,20 @@ const UNIVERSO: Record<string, string> = {
   DRIVER:  'Todos los conductores',
 }
 
-const GESTION: Record<string, string> = {
-  TRACTOREO:       'Tractoreo',
-  EQUIPO_COMPLETO: 'Equipo Completo',
+/** Cómo se nombra cada dimensión de la condición, y cuántos valores tiene.
+ *
+ *  Las etiquetas VIENEN DEL CATÁLOGO, no de un mapa escrito acá. El de tipos
+ *  de gestión estaba copiado en tres lugares del frontend más la función de
+ *  Postgres, y renombrar uno en Configuración dejaba las cuatro copias
+ *  diciendo cosas distintas — la de Postgres, además, en silencio y cambiando
+ *  a qué empresas alcanzaba la regla. */
+export interface Vocabulario {
+  /** Etiqueta de un subtipo de vehículo, por su id. */
+  subtipo:        (id: string) => string
+  totalSubtipos:  number
+  /** Etiqueta de un tipo de gestión, por su CÓDIGO estable. */
+  gestion:        (code: string) => string
+  totalGestiones: number
 }
 
 /** La regla, en una frase que se lee de un vistazo.
@@ -23,27 +34,30 @@ const GESTION: Record<string, string> = {
 export function fraseDeLaRegla(
   r: Pick<RequirementOption,
     'target_entity' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>,
-  etiquetaSubtipo: (id: string) => string,
-  totalSubtipos: number,
+  vocabulario: Vocabulario,
 ): string {
   const subtipos = r.applies_to_fleet_service_type_ids
   const gestiones = r.applies_to_management_types
 
   if (subtipos?.length) {
-    if (subtipos.length === 1) return `Sólo ${etiquetaSubtipo(subtipos[0])}`
+    if (subtipos.length === 1) return `Sólo ${vocabulario.subtipo(subtipos[0])}`
     // "Sólo 9" cuando el catálogo tiene 10 SUBESTIMA: se lee como una
     // restricción fuerte y en realidad excluye uno solo. Con el total a la
     // vista la fila se lee igual que la columna de al lado ("36 de 118").
     // Sin catálogo cargado no hay total que enunciar: "9 de 0" seria peor que
     // no decirlo.
-    return totalSubtipos > 0
-      ? `${subtipos.length} de ${totalSubtipos} subtipos`
+    return vocabulario.totalSubtipos > 0
+      ? `${subtipos.length} de ${vocabulario.totalSubtipos} subtipos`
       : `Sólo ${subtipos.length} subtipos`
   }
   if (gestiones?.length) {
-    return gestiones.length === 1
-      ? `Sólo ${GESTION[gestiones[0]] ?? gestiones[0]}`
-      : 'Tractoreo y Equipo Completo'
+    // Mismo par de formas que los subtipos, por la misma razón: una regla que
+    // marca todas las gestiones menos una no es una restricción fuerte, y
+    // "Sólo 1" tiene que decir cuál.
+    if (gestiones.length === 1) return `Sólo ${vocabulario.gestion(gestiones[0])}`
+    return vocabulario.totalGestiones > 0
+      ? `${gestiones.length} de ${vocabulario.totalGestiones} tipos de gestión`
+      : `Sólo ${gestiones.length} tipos de gestión`
   }
   return UNIVERSO[r.target_entity] ?? 'Todas'
 }
@@ -65,10 +79,9 @@ export function celdaSeExigeA(
   r: Pick<RequirementOption,
     'target_entity' | 'is_active' | 'alcance' |
     'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>,
-  etiquetaSubtipo: (id: string) => string,
-  totalSubtipos: number,
+  vocabulario: Vocabulario,
 ): { regla: string; alcance: string } {
   const cuenta = `${r.alcance.alcanzadas} de ${r.alcance.universo}`
   if (!r.is_active) return { regla: 'No se exige', alcance: `Alcanzaría a ${cuenta}` }
-  return { regla: fraseDeLaRegla(r, etiquetaSubtipo, totalSubtipos), alcance: cuenta }
+  return { regla: fraseDeLaRegla(r, vocabulario), alcance: cuenta }
 }

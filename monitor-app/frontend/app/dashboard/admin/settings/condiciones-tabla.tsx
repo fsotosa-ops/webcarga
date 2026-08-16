@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { taxonomiesApi } from '@/lib/api/config'
-import { EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
+import { CABECERA, EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { CondicionPanel } from './CondicionPanel'
@@ -20,7 +20,6 @@ const ENTIDAD: Record<string, { texto: string; clase: string }> = {
   DRIVER:  { texto: 'CONDUCTOR', clase: 'bg-emerald-50 text-emerald-700' },
 }
 
-const CABECERA = 'px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[.08em] text-gray-400'
 
 function tieneCondicion(r: RequirementOption): boolean {
   return Boolean(r.applies_to_fleet_service_type_ids?.length || r.applies_to_management_types?.length)
@@ -40,6 +39,14 @@ export function CondicionesTabla() {
   const tax = useQuery({
     queryKey: ['taxonomias', 'FLEET_SERVICE_TYPE'],
     queryFn: () => taxonomiesApi.list('FLEET_SERVICE_TYPE'),
+  })
+  // Los tipos de gestión salen del MISMO catálogo que los subtipos, no de una
+  // lista escrita al lado. Estaban copiados en tres lugares del frontend
+  // (acá, el panel y la frase) más la función de Postgres: renombrar uno en
+  // Configuración dejaba las cuatro copias diciendo cosas distintas.
+  const gestionesTax = useQuery({
+    queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
+    queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
   })
   const { orden, ordenarPor, comparar } = useOrden({ columna: 'entidad', direccion: 'asc' })
   const [filtro, setFiltro] = useState<string | null>(null)
@@ -86,6 +93,30 @@ export function CondicionesTabla() {
     return (id: string) => mapa.get(id) ?? 'un subtipo dado de baja'
   }, [tax.data])
 
+  // Los tipos de gestión se identifican por su CÓDIGO, no por su nombre
+  // visible: es el mismo código que guardan las reglas y `carriers`, y es lo
+  // que permite renombrar la etiqueta sin cambiar a quién alcanza nada.
+  const gestiones = useMemo(
+    () => (gestionesTax.data ?? [])
+      .filter(g => g.code)
+      .map(g => ({ id: g.code as string, label: g.label })),
+    [gestionesTax.data],
+  )
+
+  const etiquetaGestion = useMemo(() => {
+    const mapa = new Map(gestiones.map(g => [g.id, g.label]))
+    return (code: string) => mapa.get(code) ?? 'un tipo de gestión que ya no existe'
+  }, [gestiones])
+
+  // Las dos dimensiones de la condición, en una sola forma: la frase no
+  // necesita saber cuál de las dos está mirando.
+  const vocabulario = useMemo(() => ({
+    subtipo: etiquetaSubtipo,
+    totalSubtipos: subtipos.length,
+    gestion: etiquetaGestion,
+    totalGestiones: gestiones.length,
+  }), [etiquetaSubtipo, subtipos.length, etiquetaGestion, gestiones.length])
+
   const todos = useMemo(() => req.data ?? [], [req.data])
 
   // La búsqueda se aplica ANTES que los chips, y los chips cuentan sobre su
@@ -128,8 +159,11 @@ export function CondicionesTabla() {
     ? 'No se pudo cargar el catálogo de documentos'
     : tax.isError
     ? 'No se pudieron cargar los subtipos de vehículo'
+    : gestionesTax.isError
+    ? 'No se pudieron cargar los tipos de gestión'
     : null
-  const cargando = !errorDeCarga && (req.isPending || tax.isPending)
+  const cargando = !errorDeCarga
+    && (req.isPending || tax.isPending || gestionesTax.isPending)
 
   if (cargando || errorDeCarga) {
     return (
@@ -137,7 +171,7 @@ export function CondicionesTabla() {
         <LoadState
           loading={cargando}
           error={errorDeCarga}
-          onRetry={() => { req.refetch(); tax.refetch() }}
+          onRetry={() => { req.refetch(); tax.refetch(); gestionesTax.refetch() }}
         />
       </div>
     )
@@ -172,7 +206,7 @@ export function CondicionesTabla() {
             // El total sale del catálogo de subtipos, no de un número escrito
             // a mano: si mañana se da de alta un subtipo, la frase se corrige
             // sola.
-            const celda = celdaSeExigeA(r, etiquetaSubtipo, subtipos.length)
+            const celda = celdaSeExigeA(r, vocabulario)
             return (
               <tr key={r.id} className="border-b border-border/70 hover:bg-gray-50/60">
                 <td className="px-3 py-2.5">
@@ -220,6 +254,7 @@ export function CondicionesTabla() {
           key={requisitoAbierto.id}
           requisito={requisitoAbierto}
           subtipos={subtipos}
+          gestiones={gestiones}
           onCerrar={() => abrir(null)}
         />
       )}

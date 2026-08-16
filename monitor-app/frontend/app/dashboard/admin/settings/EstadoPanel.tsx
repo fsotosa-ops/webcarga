@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
-import { configApi, type TripStatusRow } from '@/lib/api/config'
+import { configApi, type Direccion, type TripStatusRow } from '@/lib/api/config'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { GROUP_OPTIONS, INPUT, SwatchPicker } from './shared'
 
@@ -76,22 +76,15 @@ export function EstadoPanel({
     },
   })
 
-  // Reordenar es INTERCAMBIO con el vecino, no renumeración: los 25 estados
-  // tienen su propio número, curado a mano, y mover uno no puede reescribir el
-  // de los otros 24. El empate —dos estados con el mismo número, que hoy no
-  // ocurre— se rompe dándoles la posición que ocupan en la lista.
+  // Reordenar lo resuelve el SERVIDOR, en una sola transacción. Acá había dos
+  // PATCH seguidos —uno con el número del vecino, otro con el propio— y si el
+  // segundo no llegaba los dos quedaban con el mismo número, un empate que
+  // esta pantalla no sabía deshacer. Ahora se manda la dirección y el destino
+  // lo decide la lista. Ver backend services/reordenamiento.py.
   const posicion = hermanos.findIndex(s => s.id === estado.id)
 
   const mover = useMutation({
-    mutationFn: async (direccion: -1 | 1) => {
-      const vecino = hermanos[posicion + direccion]
-      if (!vecino) return
-      const empate = estado.sort_order === vecino.sort_order
-      const mio  = empate ? posicion + direccion + 1 : vecino.sort_order
-      const suyo = empate ? posicion + 1 : estado.sort_order
-      await configApi.patchStatus(estado.id, { sort_order: mio })
-      await configApi.patchStatus(vecino.id, { sort_order: suyo })
-    },
+    mutationFn: (direccion: Direccion) => configApi.moveStatus(estado.id, direccion),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tms-statuses'] })
     },
@@ -123,6 +116,14 @@ export function EstadoPanel({
       ) : null}
     >
       <p className="text-[11px] text-gray-400 font-mono">{estado.id}</p>
+      {/* La lista vieja lo decía arriba de todo y se perdió al rediseñarla.
+          Va acá y no en la lista porque es la respuesta a la pregunta que se
+          hace parado frente a un estado: por qué no hay dónde crear ni
+          borrar. */}
+      <p className="mt-1 text-[10.5px] text-gray-500">
+        Este nombre lo define el TMS. Acá se ajusta cómo se ve y dónde aparece;
+        los estados no se crean ni se borran desde la app.
+      </p>
 
       <label className="mt-3 block text-xs text-gray-700">
         Nombre visible
@@ -170,6 +171,11 @@ export function EstadoPanel({
           {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
         </select>
       </label>
+      {/* Era un `title` sobre el encabezado de la lista vieja: invisible para
+          quien no pasa el mouse por encima, y perdido al sacar la columna. */}
+      <p className="mt-1 text-[10.5px] text-gray-500">
+        Define en qué columna del tablero aparecen los viajes con este estado.
+      </p>
 
       <div className="mt-4">
         <span className="block text-xs text-gray-700 mb-1">Orden en el tablero</span>
@@ -179,7 +185,7 @@ export function EstadoPanel({
           </span>
           <button
             type="button"
-            onClick={() => mover.mutate(-1)}
+            onClick={() => mover.mutate('up')}
             disabled={!puedeEditar || posicion <= 0 || mover.isPending}
             className={BOTON_ORDEN}
           >
@@ -187,7 +193,7 @@ export function EstadoPanel({
           </button>
           <button
             type="button"
-            onClick={() => mover.mutate(1)}
+            onClick={() => mover.mutate('down')}
             disabled={!puedeEditar || posicion < 0 || posicion >= hermanos.length - 1 || mover.isPending}
             className={BOTON_ORDEN}
           >

@@ -19,14 +19,17 @@ const ALGUNOS: Record<string, string> = {
   CARRIER: 'Sólo a algunos tipos de gestión',
 }
 
+/** Qué es lo que quedó marcado y ya no se ve. Decía "subtipo dado de baja"
+ *  también en una regla de empresa, donde lo oculto sería un tipo de gestión:
+ *  el aviso nombraba mal justo la cosa que nadie puede ver. */
+const OCULTO: Record<string, string> = {
+  ASSET:   'un subtipo dado de baja',
+  CARRIER: 'un tipo de gestión que ya no existe',
+}
+
 /** Separador de la clave de contenido de la condición: el separador de unidad
  *  de ASCII, que ningún id de subtipo ni de tipo de gestión contiene. */
 const SEPARADOR = '\u001f'
-
-const GESTIONES: { id: string; label: string }[] = [
-  { id: 'TRACTOREO',       label: 'Tractoreo' },
-  { id: 'EQUIPO_COMPLETO', label: 'Equipo Completo' },
-]
 
 /** Comparación por conjunto: el orden en que se eligieron las opciones no es
  *  significativo, así que comparar por índice daría falsos "sucio". */
@@ -46,10 +49,15 @@ function mismoConjunto(a: string[], b: string[]) {
  *  Tramo 3: cambiar una condición puede crear o dejar de exigir cientos de
  *  registros, y nadie debería descubrirlo después. */
 export function CondicionPanel({
-  requisito, subtipos, onCerrar,
+  requisito, subtipos, gestiones, onCerrar,
 }: {
   requisito: RequirementOption
   subtipos:  { id: string; label: string }[]
+  /** Los tipos de gestión del catálogo, identificados por su CÓDIGO estable.
+   *  Estaban escritos acá adentro: renombrar "Equipo Completo" en
+   *  Configuración dejaba esta casilla con el nombre viejo, justo en la
+   *  pantalla desde la que se renombra. */
+  gestiones: { id: string; label: string }[]
   onCerrar:  () => void
 }) {
   const canEdit = useCanAdmin()
@@ -57,7 +65,7 @@ export function CondicionPanel({
 
   const esAsset   = requisito.target_entity === 'ASSET'
   const esCarrier = requisito.target_entity === 'CARRIER'
-  const opciones  = esAsset ? subtipos : esCarrier ? GESTIONES : []
+  const opciones  = esAsset ? subtipos : esCarrier ? gestiones : []
 
   // La condición guardada se memoiza por su CONTENIDO, no por la identidad del
   // arreglo que la trae. El catálogo llega de react-query: con
@@ -95,7 +103,12 @@ export function CondicionPanel({
     setAlcance(guardadas.length ? 'algunos' : 'todos')
     setElegidos(guardadas)
     setMarcadoActivo(requisito.is_active)
-    setVerPreview(false)
+    // La vista previa NO se cierra acá. Este efecto corre también después de
+    // guardar —el guardado propaga la fila nueva—, y cerrarla ahí obligaba a
+    // volver a apretar "Ver qué cambia" justo cuando el número recién pasaba
+    // a ser interesante. `guardar` invalida ['recalc-preview', id], así que si
+    // está abierta se recalcula sola. Cambiar de documento no necesita
+    // limpieza: la lista monta el panel con `key={id}`, o sea uno nuevo.
   }, [requisito.id, requisito.is_active, guardadas])
 
   const elegidosEfectivos = alcance === 'todos' ? [] : elegidos
@@ -156,6 +169,9 @@ export function CondicionPanel({
     aplicar.mutate()
   }
 
+  // La regla ya está aplicada: no hay registros que agregar ni que apagar.
+  const sinCambios = !!preview.data && preview.data.crear === 0 && preview.data.quitar === 0
+
   const errorGuardar = guardar.isError
     ? (guardar.error instanceof Error ? guardar.error.message : 'Error al guardar la regla')
     : null
@@ -196,7 +212,10 @@ export function CondicionPanel({
             <button
               type="button"
               onClick={confirmarAplicar}
-              disabled={sucio || aplicar.isPending}
+              // Con la vista previa en 0 y 0 no hay nada que aplicar: el botón
+              // habilitado invitaba a una escritura que no cambia nada y se
+              // leía como "queda algo pendiente".
+              disabled={sucio || aplicar.isPending || sinCambios}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accion px-3 py-1.5 text-xs
                          font-semibold text-white disabled:opacity-50 focus-visible:outline-none
                          focus-visible:ring-2 focus-visible:ring-accent/40"
@@ -259,8 +278,8 @@ export function CondicionPanel({
               ))}
               {ocultos > 0 && (
                 <p className="text-[10.5px] text-amber-700 pt-1">
-                  +{ocultos} marca{ocultos > 1 ? 's' : ''} de un subtipo dado de baja, no visible acá.
-                  Se conserva al guardar.
+                  +{ocultos} marca{ocultos > 1 ? 's' : ''} de {OCULTO[requisito.target_entity]},
+                  no visible acá. Se conserva al guardar.
                 </p>
               )}
             </div>
@@ -297,7 +316,11 @@ export function CondicionPanel({
 
       {verPreview && preview.data && (
         <div className="mt-3 rounded-lg border border-border bg-gray-50 px-3 py-2 text-[11.5px] space-y-1">
-          <p>Se agregan {preview.data.crear} · <b>dejan de exigirse {preview.data.quitar}</b></p>
+          {sinCambios ? (
+            <p className="text-gray-600">La regla ya está aplicada: no hay nada que agregar ni que dejar de exigir.</p>
+          ) : (
+            <p>Se agregan {preview.data.crear} · <b>dejan de exigirse {preview.data.quitar}</b></p>
+          )}
           {preview.data.bloqueados > 0 && (
             <p className="flex items-start gap-1.5 text-amber-700">
               <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />

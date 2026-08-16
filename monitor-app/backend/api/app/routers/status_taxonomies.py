@@ -4,10 +4,26 @@ from ..auth import require_admin
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..schemas.status_taxonomy import StatusTaxonomyBody, StatusTaxonomyPatch
+from ..services.reordenamiento import TAXONOMIAS, MovimientoBody, mover_una_posicion
 
 router = APIRouter(prefix="/config/taxonomies", tags=["config"])
 
-_FIELDS = 'id::text, domain, label, bg_color, text_color, group_id AS "group", sort_order, active'
+# `code` viaja pero NO se crea ni se edita desde la app: es el identificador
+# estable con el que OTRAS tablas apuntan a un valor del catalogo
+# (carriers.management_types, compliance_requirements.applies_to_management_types),
+# y darle un codigo a un vocabulario es una decision de esquema, no un campo de
+# formulario. Ver 20260816090000_status_taxonomies_code.sql.
+_FIELDS = (
+    'id::text, domain, code, label, bg_color, text_color, '
+    'group_id AS "group", sort_order, active'
+)
+
+# El mismo orden contra el que se mueve (TAXONOMIAS.orden). Si divergieran, la
+# lista que se ve y la lista contra la que se mueve serian dos.
+_SQL_LISTA = (
+    f"SELECT {_FIELDS} FROM app.status_taxonomies "
+    f"WHERE domain = $1 AND active = true ORDER BY {TAXONOMIAS.orden}"
+)
 
 
 async def _exigir_dominio_conocido(domain: str, pool) -> None:
@@ -32,11 +48,7 @@ async def _exigir_dominio_conocido(domain: str, pool) -> None:
 @router.get("")
 async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool)):
     await _exigir_dominio_conocido(domain, pool)
-    rows = await pool.fetch(
-        f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE domain = $1 AND active = true ORDER BY sort_order, created_at",
-        domain,
-    )
-    return [dict(r) for r in rows]
+    return [dict(r) for r in await pool.fetch(_SQL_LISTA, domain)]
 
 
 @router.post("")
@@ -74,6 +86,25 @@ async def patch_taxonomy(
     row = await pool.fetchrow(f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
     await invalidate_trips_meta_cache()
     return dict(row)
+
+
+@router.post("/{taxonomy_id}/move")
+async def move_taxonomy(
+    taxonomy_id: str,
+    body: MovimientoBody,
+    pool=Depends(get_pool),
+    _=Depends(require_admin),
+):
+    """Sube o baja un valor una posicion dentro de SU dominio, en una sola
+    transaccion. Devuelve el dominio completo ya ordenado."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await mover_una_posicion(conn, TAXONOMIAS, taxonomy_id, body.direction)
+    dominio = await pool.fetchval(
+        "SELECT domain FROM app.status_taxonomies WHERE id = $1::uuid", taxonomy_id
+    )
+    await invalidate_trips_meta_cache()
+    return [dict(r) for r in await pool.fetch(_SQL_LISTA, dominio)]
 
 
 @router.delete("/{taxonomy_id}")

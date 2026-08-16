@@ -30,6 +30,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
+import asyncpg
 import pytest
 
 from app.routers.requirements import SQL_CATALOGO, recalc
@@ -722,3 +723,50 @@ async def test_el_union_de_typescript_coincide_con_los_dominios_de_la_tabla(cone
         f"sólo en TypeScript: {en_typescript - en_la_tabla} · "
         f"sólo en la tabla: {en_la_tabla - en_typescript}"
     )
+
+
+@pytest.mark.integracion
+@pytest.mark.asyncio
+async def test_renombrar_el_tipo_de_gestion_no_cambia_a_quien_alcanza(conexion_revertida):
+    """La prueba de que el codigo estable sirve para algo.
+
+    `carrier_management_types()` reconocia el tipo de gestion POR SU NOMBRE
+    VISIBLE. Renombrar 'Equipo Completo' desde Configuracion -- que es
+    exactamente lo que la pantalla ofrece hacer -- dejaba de reconocerlo: la
+    funcion caia a lo declarado en `carriers.management_types` (NULL en las 248)
+    y las reglas por gestion pasaban a alcanzar a otras empresas, sin error y
+    sin registro.
+
+    Se renombra de verdad, adentro de la transaccion revertida, y se compara la
+    respuesta de la funcion para TODAS las empresas."""
+    conn = conexion_revertida
+
+    antes = await conn.fetch(
+        "SELECT id::text AS id, public.carrier_management_types(id) AS g "
+        "FROM public.carriers ORDER BY id"
+    )
+    con_gestion = [r for r in antes if r["g"]]
+    assert con_gestion, "sin ninguna empresa con gestion derivada el test no probaria nada"
+
+    await conn.execute(
+        "UPDATE app.status_taxonomies SET label = 'Equipo Completo (renombrado)' "
+        "WHERE domain = 'WEBCARGA_OPERATION_TYPE' AND code = 'EQUIPO_COMPLETO'"
+    )
+
+    despues = await conn.fetch(
+        "SELECT id::text AS id, public.carrier_management_types(id) AS g "
+        "FROM public.carriers ORDER BY id"
+    )
+    assert [dict(r) for r in antes] == [dict(r) for r in despues]
+
+
+@pytest.mark.integracion
+@pytest.mark.asyncio
+async def test_el_codigo_de_gestion_es_unico_dentro_de_su_vocabulario(conexion_revertida):
+    """Dos filas con el mismo codigo volverian a dejar la resolucion a criterio
+    del plan de Postgres, que es el problema que el codigo vino a sacar."""
+    with pytest.raises(asyncpg.exceptions.UniqueViolationError):
+        await conexion_revertida.execute(
+            "INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, code) "
+            "VALUES ('WEBCARGA_OPERATION_TYPE', 'ZZ Prueba', '#fff', '#000', 'TRACTOREO')"
+        )

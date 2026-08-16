@@ -4,6 +4,15 @@ import type { ReactNode } from 'react'
 import { OrdenIcono } from './OrdenIcono'
 import type { Orden } from './useOrden'
 
+/** El estilo de UN encabezado de tabla, en un solo lugar.
+ *
+ *  Estaba escrito tres veces —acá, en condiciones-tabla y en estados-tabla—,
+ *  así que cambiar el aspecto del encabezado exigía acordarse de los tres.
+ *  Vive junto al encabezado ordenable porque el que ordena y el que no tienen
+ *  que verse igual: si divergen, la tabla se lee como dos tablas. */
+export const CABECERA =
+  'px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[.08em] text-gray-400'
+
 /** El `<th>` que ordena.
  *
  *  El boton adentro del th, y no el th clicable, para que el orden de
@@ -24,7 +33,7 @@ export function EncabezadoOrdenable({
     <th
       scope="col"
       aria-sort={activo ? (orden!.direccion === 'asc' ? 'ascending' : 'descending') : 'none'}
-      className={`px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[.08em] text-gray-400 ${className}`}
+      className={`${CABECERA} ${className}`}
     >
       <button
         type="button"

@@ -143,11 +143,16 @@ def test_las_vias_de_siembra_leen_la_misma_gestion_que_la_vista_previa(funcion):
 # colapsados, comentarios afuera), no un `in`: en este mismo tramo un test con
 # aserciones `in` dejó pasar un `NOT` agregado a uno de los términos y quedó
 # verde con la regla invertida.
+# El tipo de gestión se reconoce por su CÓDIGO ESTABLE (`t.code`), no por su
+# nombre visible. Mientras dependía de la etiqueta, renombrar "Equipo Completo"
+# desde Configuración —lo que esa pantalla ofrece hacer— dejaba de reconocerlo:
+# la función caía a lo declarado (NULL en las 248 empresas) y las reglas por
+# gestión pasaban a alcanzar a otras. Medido contra producción antes de
+# cambiarlo: con la definición vieja, renombrar la etiqueta cambiaba la gestión
+# derivada de 13 de las 39 empresas activas; con ésta, de ninguna.
+# Ver 20260816090000_status_taxonomies_code.sql.
 DEFINICION_ESPERADA = (
-    "SELECT COALESCE( ( SELECT array_agg(DISTINCT CASE t.label "
-    "WHEN 'Tractoreo' THEN 'TRACTOREO' "
-    "WHEN 'Equipo Completo' THEN 'EQUIPO_COMPLETO' END) "
-    "FILTER (WHERE t.label IN ('Tractoreo', 'Equipo Completo')) "
+    "SELECT COALESCE( ( SELECT array_agg(DISTINCT t.code) FILTER (WHERE t.code IS NOT NULL) "
     "FROM public.asset_assignments aa "
     "JOIN public.assets a ON a.id = aa.asset_id "
     "JOIN app.status_taxonomies t ON t.id = a.webcarga_operation_type_id "

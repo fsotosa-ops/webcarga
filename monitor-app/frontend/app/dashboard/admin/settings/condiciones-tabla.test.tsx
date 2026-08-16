@@ -53,6 +53,10 @@ const REQS: RequirementOption[] = [
     target_entity: 'ASSET', is_active: true,
     applies_to_fleet_service_type_ids: ['t1', 't2'], applies_to_management_types: null,
     alcance: { alcanzadas: 60, universo: 118 } },
+  { ...BASE, id: 'r5', requirement_code: 'SEGURO_EETT_TRACTO', name: 'Seguro EETT Tracto',
+    target_entity: 'CARRIER', is_active: true,
+    applies_to_fleet_service_type_ids: null, applies_to_management_types: ['TRACTOREO'],
+    alcance: { alcanzadas: 24, universo: 248 } },
   // Apagado y sin condición: el backend informa 248 de 248 porque `alcanzadas`
   // cuenta la condición, no la vigencia.
   { ...BASE, id: 'r3', requirement_code: 'SEGURO_EETT', name: 'Seguro EETT',
@@ -61,10 +65,18 @@ const REQS: RequirementOption[] = [
     alcance: { alcanzadas: 248, universo: 248 } },
 ]
 
+// Los tipos de gestión salen del MISMO catálogo, identificados por su CÓDIGO
+// estable: la etiqueta es sólo el nombre visible, y renombrarla no puede
+// cambiar a quién alcanza una regla.
+const GESTIONES = [
+  { id: 'g1', label: 'Tractoreo', bg_color: '#fff', text_color: '#000', sort_order: 1, active: true, code: 'TRACTOREO' },
+  { id: 'g2', label: 'Equipo Completo', bg_color: '#fff', text_color: '#000', sort_order: 2, active: true, code: 'EQUIPO_COMPLETO' },
+]
+
 const SUBTIPOS = [
-  { id: 't1', label: 'Furgón Congelado', bg_color: '#fff', text_color: '#000', sort_order: 1, active: true },
-  { id: 't2', label: 'Sider', bg_color: '#fff', text_color: '#000', sort_order: 2, active: true },
-  { id: 't3', label: 'Rampla Plana', bg_color: '#fff', text_color: '#000', sort_order: 3, active: true },
+  { id: 't1', label: 'Furgón Congelado', bg_color: '#fff', text_color: '#000', sort_order: 1, active: true, code: null },
+  { id: 't2', label: 'Sider', bg_color: '#fff', text_color: '#000', sort_order: 2, active: true, code: null },
+  { id: 't3', label: 'Rampla Plana', bg_color: '#fff', text_color: '#000', sort_order: 3, active: true, code: null },
 ]
 
 function montar() {
@@ -82,7 +94,10 @@ beforeEach(() => {
   vi.mocked(complianceApi.listRequirements).mockReset()
   vi.mocked(complianceApi.listRequirements).mockResolvedValue(REQS)
   vi.mocked(taxonomiesApi.list).mockReset()
-  vi.mocked(taxonomiesApi.list).mockResolvedValue(SUBTIPOS)
+  // Por dominio, no una respuesta única: la pantalla pide dos vocabularios
+  // distintos y devolverle el mismo a los dos esconde cuál está usando.
+  vi.mocked(taxonomiesApi.list).mockImplementation(async d =>
+    (d === 'WEBCARGA_OPERATION_TYPE' ? GESTIONES : SUBTIPOS))
 })
 
 describe('CondicionesTabla', () => {
@@ -106,6 +121,19 @@ describe('CondicionesTabla', () => {
   it('una regla de varios subtipos dice cuántos de cuántos', async () => {
     montar()
     await waitFor(() => expect(screen.getByText('2 de 3 subtipos')).toBeInTheDocument())
+  })
+
+  // La etiqueta del tipo de gestión sale del CATÁLOGO, no de un mapa escrito
+  // en el frontend. Estaba copiada en tres lugares más la función de Postgres:
+  // renombrarla en Configuración dejaba a las cuatro diciendo cosas distintas.
+  it('la frase nombra el tipo de gestión con la etiqueta del catálogo', async () => {
+    vi.mocked(taxonomiesApi.list).mockImplementation(async d => (
+      d === 'WEBCARGA_OPERATION_TYPE'
+        ? [{ ...GESTIONES[0], label: 'Tractoreo (renombrado)' }, GESTIONES[1]]
+        : SUBTIPOS))
+    montar()
+    await waitFor(() =>
+      expect(screen.getByText('Sólo Tractoreo (renombrado)')).toBeInTheDocument())
   })
 
   it('la entidad es una columna, no un encabezado de grupo', async () => {
@@ -169,7 +197,7 @@ describe('CondicionesTabla', () => {
   it('el contador del chip cuenta sobre lo buscado, no sobre el catálogo entero', async () => {
     montar()
     await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /con condición/i }).textContent).toBe('Con condición2')
+    expect(screen.getByRole('button', { name: /con condición/i }).textContent).toBe('Con condición3')
     expect(screen.getByRole('button', { name: /sin vigencia/i }).textContent).toBe('Sin vigencia1')
 
     fireEvent.change(screen.getByLabelText(/buscar documento/i), { target: { value: 'FRIO' } })

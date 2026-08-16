@@ -6,6 +6,9 @@ from pydantic import BaseModel, field_validator, model_validator
 from ..auth import require_admin
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
+from ..services.reordenamiento import (
+    ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
+)
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -15,11 +18,14 @@ VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class TripStatusPatch(BaseModel):
+    # `sort_order` NO se puede escribir acá: se mueve con POST .../move, que es
+    # atómico. Mientras un cliente pueda mandar un número arbitrario, dos
+    # estados pueden terminar con el mismo y la lista queda con un empate que
+    # la pantalla no sabe deshacer. Ver services/reordenamiento.py.
     label:      Optional[str] = None
     bg_color:   Optional[str] = None
     text_color: Optional[str] = None
     group_id:   Optional[str] = None
-    sort_order: Optional[int] = None
 
     @field_validator("group_id")
     @classmethod
@@ -113,16 +119,21 @@ class TemperatureRangePatch(BaseModel):
 
 # ── Trip statuses (TMS-defined IDs, only presentation editable) ──────────────
 
+# El orden del ORDER BY es el mismo que usa el reordenamiento
+# (ESTADOS_DEL_TABLERO.orden). Si divergieran, la lista que se ve y la lista
+# contra la que se mueve serían dos listas distintas.
+_SQL_ESTADOS = (
+    'SELECT id, label, bg_color, text_color, group_id AS "group", sort_order '
+    f"FROM app.trip_statuses WHERE active = true ORDER BY {ESTADOS_DEL_TABLERO.orden}"
+)
+
+
 @router.get("/statuses")
 async def list_statuses(pool=Depends(get_pool)):
     # group_id AS "group": el frontend (StatusMeta) usa la key `group` — antes
     # este endpoint devolvía group_id crudo y el select de Grupo en Configuración
     # nunca mostraba el valor guardado (bug de auditoría 2026-07-06)
-    rows = await pool.fetch(
-        'SELECT id, label, bg_color, text_color, group_id AS "group", sort_order '
-        "FROM app.trip_statuses WHERE active = true ORDER BY sort_order"
-    )
-    return [dict(r) for r in rows]
+    return [dict(r) for r in await pool.fetch(_SQL_ESTADOS)]
 
 
 @router.patch("/statuses/{status_id}")
@@ -157,6 +168,25 @@ async def patch_status(
     )
     await invalidate_trips_meta_cache()
     return dict(row)
+
+
+@router.post("/statuses/{status_id}/move")
+async def move_status(
+    status_id: str,
+    body: MovimientoBody,
+    pool=Depends(get_pool),
+    _=Depends(require_admin),
+):
+    """Sube o baja un estado una posición, en una sola transacción.
+
+    Devuelve la lista completa ya ordenada: mover es un cambio sobre el
+    conjunto, no sobre una fila, y devolver sólo la fila movida obligaría al
+    llamador a adivinar qué pasó con la otra."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await mover_una_posicion(conn, ESTADOS_DEL_TABLERO, status_id, body.direction)
+    await invalidate_trips_meta_cache()
+    return [dict(r) for r in await pool.fetch(_SQL_ESTADOS)]
 
 
 # ── Alert thresholds ─────────────────────────────────────────────────────────

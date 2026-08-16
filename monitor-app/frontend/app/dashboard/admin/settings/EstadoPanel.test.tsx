@@ -6,7 +6,7 @@ vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => true }))
 import type { TripStatusRow } from '@/lib/api/config'
 
 vi.mock('@/lib/api/config', () => ({
-  configApi: { getStatuses: vi.fn(), patchStatus: vi.fn() },
+  configApi: { getStatuses: vi.fn(), patchStatus: vi.fn(), moveStatus: vi.fn() },
 }))
 
 import { configApi } from '@/lib/api/config'
@@ -46,6 +46,8 @@ function montarPanel(
 beforeEach(() => {
   vi.mocked(configApi.patchStatus).mockReset()
   vi.mocked(configApi.patchStatus).mockResolvedValue(estado())
+  vi.mocked(configApi.moveStatus).mockReset()
+  vi.mocked(configApi.moveStatus).mockResolvedValue(CATALOGO)
 })
 
 describe('EstadoPanel', () => {
@@ -55,6 +57,22 @@ describe('EstadoPanel', () => {
     montarPanel()
     expect(screen.getByText('ASIGNADO')).toBeInTheDocument()
     expect(screen.queryByLabelText(/nombre en el tms/i)).not.toBeInTheDocument()
+  })
+
+  // La lista vieja explicaba arriba de todo que los estados los define el TMS
+  // y no se crean ni se borran. Se perdió al rediseñarla, y es justo la
+  // respuesta a lo que uno se pregunta parado frente a un estado.
+  it('explica por qué no hay dónde crear ni borrar un estado', () => {
+    montarPanel()
+    expect(screen.getByText(/lo define el TMS/i)).toBeInTheDocument()
+    expect(screen.getByText(/no se crean ni se borran/i)).toBeInTheDocument()
+  })
+
+  // Era un `title` sobre el encabezado de una columna que ya no existe:
+  // invisible para quien no pasa el mouse por encima.
+  it('dice para qué sirve la columna del tablero, sin tener que pasar el mouse', () => {
+    montarPanel()
+    expect(screen.getByText(/en qué columna del tablero aparecen los viajes/i)).toBeInTheDocument()
   })
 
   it('el panel se cierra con Escape', () => {
@@ -138,20 +156,22 @@ describe('EstadoPanel', () => {
       expect(screen.getByText('2 de 3')).toBeInTheDocument()
     })
 
-    // Intercambio con el vecino, no renumeración: mover uno no puede
-    // reescribir el número de los otros 24.
-    it('bajar intercambia el orden con el estado siguiente', async () => {
+    // El panel manda la DIRECCIÓN, no un número. Calcular el sort_order acá
+    // era lo que obligaba a dos llamadas, y con ellas al empate cuando la
+    // segunda no llegaba.
+    it('bajar pide un lugar hacia abajo, sin calcular ningún número', async () => {
       montarPanel()
       fireEvent.click(screen.getByRole('button', { name: /bajar/i }))
-      await waitFor(() => expect(configApi.patchStatus).toHaveBeenCalledWith('ASIGNADO', { sort_order: 2 }))
-      expect(configApi.patchStatus).toHaveBeenCalledWith('EN_DESTINO', { sort_order: 1 })
+      await waitFor(() => expect(configApi.moveStatus).toHaveBeenCalledWith('ASIGNADO', 'down'))
+      expect(configApi.moveStatus).toHaveBeenCalledTimes(1)
+      expect(configApi.patchStatus).not.toHaveBeenCalled()
     })
 
-    it('subir intercambia el orden con el estado anterior', async () => {
+    it('subir pide un lugar hacia arriba', async () => {
       montarPanel(estado({ id: 'EN_BODEGA', label: 'En bodega', sort_order: 3 }))
       fireEvent.click(screen.getByRole('button', { name: /subir/i }))
-      await waitFor(() => expect(configApi.patchStatus).toHaveBeenCalledWith('EN_BODEGA', { sort_order: 2 }))
-      expect(configApi.patchStatus).toHaveBeenCalledWith('EN_DESTINO', { sort_order: 3 })
+      await waitFor(() => expect(configApi.moveStatus).toHaveBeenCalledWith('EN_BODEGA', 'up'))
+      expect(configApi.moveStatus).toHaveBeenCalledTimes(1)
     })
 
     it('el primero no puede subir', () => {
@@ -166,7 +186,7 @@ describe('EstadoPanel', () => {
     })
 
     it('si falla el reordenamiento, lo dice', async () => {
-      vi.mocked(configApi.patchStatus).mockRejectedValue(new Error('sin red'))
+      vi.mocked(configApi.moveStatus).mockRejectedValue(new Error('sin red'))
       montarPanel()
       fireEvent.click(screen.getByRole('button', { name: /bajar/i }))
       await waitFor(() => expect(screen.getByText('sin red')).toBeInTheDocument())

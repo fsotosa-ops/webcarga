@@ -5,13 +5,12 @@ import { useQuery } from '@tanstack/react-query'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import { configApi, type TripStatusRow } from '@/lib/api/config'
-import { EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
+import { CABECERA, EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { EstadoPanel } from './EstadoPanel'
 import { GROUP_OPTIONS, LoadState } from './shared'
 
-const CABECERA = 'px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[.08em] text-gray-400'
 
 // Las columnas del tablero salen del propio dato, no de una lista escrita a
 // mano: si mañana se agrega una columna nueva, el chip aparece solo. Sólo se

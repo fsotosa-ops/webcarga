@@ -86,6 +86,44 @@ describe('PanelLateral', () => {
     })
   })
 
+  // `aria-modal="true"` le dice al lector de pantalla que el resto de la
+  // pagina no existe. Sin atrapar el Tab la promesa es falsa: tres
+  // tabulaciones y el foco esta en la tabla de atras, que el lector ya declaro
+  // ausente. jsdom no mueve el foco solo con Tab, asi que lo que se comprueba
+  // es que el panel lo mueva EL — que es justamente lo que hace el arreglo.
+  it('Tab en el ultimo vuelve al primero, no se va de la pagina', () => {
+    montar()
+    const guardar = screen.getByRole('button', { name: /guardar/i })
+    guardar.focus()
+
+    fireEvent.keyDown(guardar, { key: 'Tab' })
+
+    expect(screen.getByRole('button', { name: /cerrar/i })).toHaveFocus()
+  })
+
+  it('Shift+Tab desde el panel recien abierto va al ultimo del panel', () => {
+    montar()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true })
+    expect(screen.getByRole('button', { name: /guardar/i })).toHaveFocus()
+  })
+
+  // La otra mitad: atrapar de mas seria robarle el Tab a quien esta en el
+  // medio del panel y quiere pasar al control siguiente.
+  it('Tab en el medio del panel no lo intercepta', () => {
+    render(
+      <PanelLateral titulo="X" onCerrar={vi.fn()} pie={<button>Guardar</button>}>
+        <input aria-label="Nombre visible" />
+      </PanelLateral>,
+    )
+    const campo = screen.getByLabelText(/nombre visible/i)
+    campo.focus()
+
+    const interceptado = !fireEvent.keyDown(campo, { key: 'Tab' })
+
+    expect(interceptado).toBe(false)
+    expect(campo).toHaveFocus()
+  })
+
   it('al cerrar devuelve el foco a donde estaba', () => {
     const disparador = document.createElement('button')
     document.body.appendChild(disparador)

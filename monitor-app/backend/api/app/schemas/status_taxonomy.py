@@ -44,10 +44,13 @@ class StatusTaxonomyBody(BaseModel):
 
 
 class StatusTaxonomyPatch(BaseModel):
+    # `sort_order` NO se puede escribir aca: se mueve con POST .../move, que es
+    # atomico. Mientras un cliente pueda mandar un numero arbitrario, dos filas
+    # del mismo dominio pueden terminar con el mismo y la lista queda con un
+    # empate que la pantalla no sabe deshacer. Ver services/reordenamiento.py.
     label:      Optional[str] = None
     bg_color:   Optional[str] = None
     text_color: Optional[str] = None
-    sort_order: Optional[int] = None
     active:     Optional[bool] = None
     group_id:   Optional[str] = None
 

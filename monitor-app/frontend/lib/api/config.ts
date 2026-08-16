@@ -4,15 +4,28 @@ import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta, TemperatureR
 
 export type TripStatusRow = StatusMeta & { sort_order: number }
 
+/** Una posición arriba o una abajo. El destino lo decide la lista, no el
+ *  cliente: mandar un `sort_order` calculado acá es lo que dejaba dos filas
+ *  con el mismo número cuando la segunda llamada no llegaba. */
+export type Direccion = 'up' | 'down'
+
 export const configApi = {
   // ── TMS Statuses (edit only — IDs are fixed by TMS) ──────────────────────
   getStatuses: () =>
     apiFetch<TripStatusRow[]>('/api/v1/config/statuses'),
 
-  patchStatus: (id: string, body: Partial<Pick<StatusMeta, 'label' | 'bg_color' | 'text_color' | 'group'>> & { sort_order?: number }) =>
+  patchStatus: (id: string, body: Partial<Pick<StatusMeta, 'label' | 'bg_color' | 'text_color' | 'group'>>) =>
     apiFetch<TripStatusRow>(`/api/v1/config/statuses/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
+    }),
+
+  // Devuelve la lista completa ya ordenada: mover cambia el conjunto, no una
+  // fila, y el servidor lo hace en UNA transacción.
+  moveStatus: (id: string, direction: Direccion) =>
+    apiFetch<TripStatusRow[]>(`/api/v1/config/statuses/${encodeURIComponent(id)}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ direction }),
     }),
 
   // ── Alert thresholds ──────────────────────────────────────────────────────
@@ -67,7 +80,16 @@ export type TaxonomyDomain =
   // 20260802030000 / 20260803050000 pero el tipo nunca los nombró, porque
   // hasta el Tramo 2 la app sólo los leía.
   | 'FLEET_SERVICE_TYPE' | 'WEBCARGA_OPERATION_TYPE'
-export type TaxonomyRow = OperationalStateMeta & { sort_order: number; active: boolean }
+/** `code` es el identificador ESTABLE de un valor del catálogo, separado del
+ *  nombre visible. Lo tienen sólo los vocabularios a los que otras tablas
+ *  apuntan por texto —hoy WEBCARGA_OPERATION_TYPE— y por eso es opcional. Es
+ *  lo que permite renombrar "Equipo Completo" sin cambiar a qué empresas
+ *  alcanza una regla. */
+export type TaxonomyRow = OperationalStateMeta & {
+  sort_order: number
+  active: boolean
+  code: string | null
+}
 
 export const taxonomiesApi = {
   list: (domain: TaxonomyDomain) =>
@@ -79,10 +101,18 @@ export const taxonomiesApi = {
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
     }),
 
-  patch: (id: string, body: Partial<{ label: string; bg_color: string; text_color: string; sort_order: number; active: boolean; group: string }>) =>
+  patch: (id: string, body: Partial<{ label: string; bg_color: string; text_color: string; active: boolean; group: string }>) =>
     apiFetch<TaxonomyRow>(`/api/v1/config/taxonomies/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
+    }),
+
+  // Mueve dentro de SU dominio, en una sola transacción. Devuelve el dominio
+  // completo ya ordenado.
+  move: (id: string, direction: Direccion) =>
+    apiFetch<TaxonomyRow[]>(`/api/v1/config/taxonomies/${id}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ direction }),
     }),
 
   // Devuelve cuántas condiciones de documento seguían apuntando al valor. El

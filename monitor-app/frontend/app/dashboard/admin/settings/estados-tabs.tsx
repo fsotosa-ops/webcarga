@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react'
-import { taxonomiesApi, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
+import { taxonomiesApi, type Direccion, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
 import {
   GROUP_OPTIONS, INPUT, useConfigList, LoadState, useRowFeedback,
   SaveRowButton, SwatchPicker, SortArrows,
@@ -70,18 +70,16 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
     })
   }
 
-  async function move(idx: number, dir: -1 | 1) {
-    const j = idx + dir
-    const a = visibles[idx], b = visibles[j]
-    if (!a || !b) return
-    const aOrder = a.sort_order === b.sort_order ? j + 1 : b.sort_order
-    const bOrder = a.sort_order === b.sort_order ? idx + 1 : a.sort_order
-    setItems(prev => prev.map(r =>
-      r.id === a.id ? { ...r, sort_order: aOrder } : r.id === b.id ? { ...r, sort_order: bOrder } : r,
-    ).sort((x, y) => x.sort_order - y.sort_order))
-    await fb.run(a.id, async () => {
-      await taxonomiesApi.patch(a.id, { sort_order: aOrder })
-      await taxonomiesApi.patch(b.id, { sort_order: bOrder })
+  // Mover lo resuelve el SERVIDOR, en una sola transacción. Acá había dos
+  // PATCH seguidos y si el segundo no llegaba las dos filas quedaban con el
+  // mismo número — un empate que esta pantalla no sabía deshacer. Ahora se
+  // manda la dirección y vuelve el dominio completo ya ordenado, así que
+  // tampoco hace falta recalcular el orden del lado del navegador.
+  async function move(idx: number, direccion: Direccion) {
+    const quien = visibles[idx]
+    if (!quien) return
+    await fb.run(quien.id, async () => {
+      setItems(await taxonomiesApi.move(quien.id, direccion))
     })
   }
 
@@ -145,7 +143,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                   return (
                     <tr key={row.id} className={isDirty(row) ? 'bg-accent/[0.03]' : ''}>
                       <td className="py-2 pr-2">
-                        <SortArrows name={row.label} onUp={() => move(idx, -1)} onDown={() => move(idx, 1)}
+                        <SortArrows name={row.label} onUp={() => move(idx, 'up')} onDown={() => move(idx, 'down')}
                           disabledUp={idx === 0} disabledDown={idx === visibles.length - 1} />
                       </td>
                       <td className="py-2 pr-3"><Badge label={m.label} bg={m.bg_color} text={m.text_color} /></td>

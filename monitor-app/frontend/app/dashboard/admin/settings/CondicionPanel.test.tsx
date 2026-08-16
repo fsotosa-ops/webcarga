@@ -12,6 +12,13 @@ vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => puedeAdministrar() })
 import { requirementsApi } from '@/lib/api/requirements'
 import { CondicionPanel } from './CondicionPanel'
 
+// Vienen del catálogo, identificados por su CÓDIGO estable: el panel ya no
+// los tiene escritos adentro.
+const GESTIONES = [
+  { id: 'TRACTOREO', label: 'Tractoreo' },
+  { id: 'EQUIPO_COMPLETO', label: 'Equipo Completo' },
+]
+
 const SUBTIPOS = [
   { id: 't1', label: 'Furgón Congelado' },
   { id: 't2', label: 'Sider' },
@@ -38,14 +45,14 @@ function montarPanel(r: RequirementOption = requisito(), onCerrar = vi.fn()) {
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const vista = render(
     <QueryClientProvider client={cliente}>
-      <CondicionPanel requisito={r} subtipos={SUBTIPOS} onCerrar={onCerrar} />
+      <CondicionPanel requisito={r} subtipos={SUBTIPOS} gestiones={GESTIONES} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   // Volver a dibujar con OTRO objeto requisito, como hace react-query cuando
   // refetchea el catálogo: mismo cliente, mismo panel montado.
   const redibujar = (otro: RequirementOption) => vista.rerender(
     <QueryClientProvider client={cliente}>
-      <CondicionPanel requisito={otro} subtipos={SUBTIPOS} onCerrar={onCerrar} />
+      <CondicionPanel requisito={otro} subtipos={SUBTIPOS} gestiones={GESTIONES} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   return { onCerrar, vista, redibujar }
@@ -208,6 +215,42 @@ describe('CondicionPanel', () => {
     fireEvent.click(screen.getByRole('radio', { name: /a todos los vehículos/i }))
     redibujar(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
     expect(screen.getByRole('radio', { name: /a todos los vehículos/i })).toBeChecked()
+  })
+
+  // Guardar CIERRA la vista previa era una capacidad menos: el número recién
+  // pasa a ser interesante después de guardar, y había que volver a pedirlo.
+  it('guardar no cierra la vista previa, la deja recalcular', async () => {
+    const { redibujar } = montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
+    fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
+    await screen.findByText(/se agregan 4/i)
+
+    // Lo que hace react-query después de guardar: el catálogo se refetchea y
+    // el panel se vuelve a dibujar con la fila nueva.
+    redibujar(requisito({ applies_to_fleet_service_type_ids: ['t2'], is_active: false }))
+
+    expect(screen.getByText(/se agregan 4/i)).toBeInTheDocument()
+  })
+
+  // Con la vista previa en 0 y 0 no hay nada que aplicar: el botón habilitado
+  // invitaba a una escritura que no cambia nada.
+  it('sin cambios que aplicar, el botón no se puede apretar', async () => {
+    vi.mocked(requirementsApi.recalcPreview).mockResolvedValue({ crear: 0, quitar: 0, bloqueados: 0 })
+    montarPanel()
+    fireEvent.click(screen.getByRole('button', { name: /ver qué cambia/i }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /aplicar/i })).toBeDisabled())
+    expect(screen.getByText(/ya está aplicada/i)).toBeInTheDocument()
+  })
+
+  // El aviso nombraba mal justo la cosa que nadie puede ver: en una regla de
+  // empresa lo oculto es un tipo de gestión, no un subtipo de vehículo.
+  it('lo oculto se nombra según la entidad de la regla', () => {
+    montarPanel(requisito({
+      target_entity: 'CARRIER',
+      applies_to_management_types: ['TRACTOREO', 'YA_NO_EXISTE'] as never,
+    }))
+    expect(screen.getByText(/tipo de gestión que ya no existe/i)).toBeInTheDocument()
+    expect(screen.queryByText(/subtipo dado de baja/i)).not.toBeInTheDocument()
   })
 
   // Un requisito de empresa guarda la condición en OTRO campo: el arreglo que
