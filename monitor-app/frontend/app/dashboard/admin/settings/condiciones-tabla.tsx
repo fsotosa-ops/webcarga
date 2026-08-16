@@ -88,24 +88,31 @@ export function CondicionesTabla() {
 
   const todos = useMemo(() => req.data ?? [], [req.data])
 
+  // La búsqueda se aplica ANTES que los chips, y los chips cuentan sobre su
+  // resultado. Contando sobre el catálogo entero, el número prometía filas que
+  // la búsqueda ya había descartado: con "seguro" escrito, "Con condición 2"
+  // llevaba a "Ningún documento coincide". El chip no se desactiva en cero —
+  // el activo quedaría atrapado, sin forma de apagarlo.
+  const buscados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    if (!q) return todos
+    return todos.filter(r => `${r.name} ${r.requirement_code}`.toLowerCase().includes(q))
+  }, [todos, busqueda])
+
   const filtros = useMemo(() => [
-    { id: 'con-condicion', etiqueta: 'Con condición', n: todos.filter(tieneCondicion).length },
-    { id: 'sin-vigencia',  etiqueta: 'Sin vigencia',  n: todos.filter(r => !r.is_active).length },
-  ], [todos])
+    { id: 'con-condicion', etiqueta: 'Con condición', n: buscados.filter(tieneCondicion).length },
+    { id: 'sin-vigencia',  etiqueta: 'Sin vigencia',  n: buscados.filter(r => !r.is_active).length },
+  ], [buscados])
 
   const filas = useMemo(() => {
-    let f = todos
+    let f = buscados
     if (filtro === 'con-condicion') f = f.filter(tieneCondicion)
     if (filtro === 'sin-vigencia') f = f.filter(r => !r.is_active)
-    if (busqueda.trim()) {
-      const q = busqueda.trim().toLowerCase()
-      f = f.filter(r => `${r.name} ${r.requirement_code}`.toLowerCase().includes(q))
-    }
     return comparar(f, r => (orden?.columna === 'documento' ? r.name : r.target_entity))
     // `comparar` se recrea en cada render y no aporta identidad estable; el
     // orden que importa ya viaja en `orden`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todos, filtro, busqueda, orden])
+  }, [buscados, filtro, orden])
 
   // El panel se dibuja desde el dato del catalogo, no desde la fila clicada:
   // asi recargar con `?doc=` en la URL lo abre igual, sin haber pasado por la

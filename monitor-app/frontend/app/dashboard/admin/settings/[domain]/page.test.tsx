@@ -104,6 +104,22 @@ describe('página de dominio', () => {
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/fleet')
   })
 
+  // Degradar a la primera seccion esta bien; dejar el valor invalido en la
+  // barra de direcciones no, porque ese enlace se marca y se comparte.
+  it('una seccion inventada no se queda en la URL', async () => {
+    seccionEnLaUrl = 'section=inventada'
+    await montar('fleet')
+    expect(screen.getByText('panel subtipos')).toBeInTheDocument()
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/fleet')
+  })
+
+  // La otra mitad: corregir de mas seria reescribir la URL en cada visita.
+  it('una seccion valida no reescribe la URL', async () => {
+    seccionEnLaUrl = 'section=operation-types'
+    await montar('fleet')
+    expect(reemplazar).not.toHaveBeenCalled()
+  })
+
   // Sin esto la unica salida era el navegador o la barra lateral, que lleva a
   // OTRO dominio y no al inventario.
   it('ofrece la vuelta al inventario de configuracion', async () => {

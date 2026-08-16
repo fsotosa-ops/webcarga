@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, use } from 'react'
+import { Suspense, use, useEffect } from 'react'
 import Link from 'next/link'
 import { notFound, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
@@ -46,6 +46,17 @@ function DominioInterior({ dominio }: { dominio: Dominio }) {
     // por defecto.
     router.replace(clave === dominio.secciones[0].clave ? base : `${base}?section=${clave}`)
   }
+
+  // Una seccion inventada degrada a la primera —eso esta bien— pero dejaba el
+  // valor invalido en la barra de direcciones: lo que se ve y lo que dice la
+  // URL no eran lo mismo, y ese enlace se puede marcar y compartir. Se corrige
+  // la direccion para que digan lo mismo. `replace` y no `push`: la URL
+  // invalida no merece una entrada en el historial.
+  useEffect(() => {
+    if (pedida && pedida !== actual.clave) irA(actual.clave)
+    // `irA` se recrea en cada render; lo que decide es la seccion pedida.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedida, actual.clave])
 
   return (
     <div className="p-4 md:p-6 flex-1 overflow-y-auto">

@@ -164,6 +164,35 @@ describe('CondicionesTabla', () => {
     expect(screen.queryByText('Seguro EETT')).not.toBeInTheDocument()
   })
 
+  // El número del chip prometía filas que la búsqueda ya había descartado: con
+  // "FRIO" escrito, "Con condición 2" llevaba a "Ningún documento coincide".
+  it('el contador del chip cuenta sobre lo buscado, no sobre el catálogo entero', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /con condición/i }).textContent).toBe('Con condición2')
+    expect(screen.getByRole('button', { name: /sin vigencia/i }).textContent).toBe('Sin vigencia1')
+
+    fireEvent.change(screen.getByLabelText(/buscar documento/i), { target: { value: 'FRIO' } })
+
+    expect(screen.getByRole('button', { name: /con condición/i }).textContent).toBe('Con condición1')
+    expect(screen.getByRole('button', { name: /sin vigencia/i }).textContent).toBe('Sin vigencia0')
+  })
+
+  // El chip en cero sigue apretable: si se desactivara, el que está encendido
+  // cuando la búsqueda lo deja en cero quedaría atrapado, sin forma de apagarlo.
+  it('el chip en cero no queda deshabilitado', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /sin vigencia/i }))
+    fireEvent.change(screen.getByLabelText(/buscar documento/i), { target: { value: 'FRIO' } })
+
+    const chip = screen.getByRole('button', { name: /sin vigencia/i })
+    expect(chip.textContent).toBe('Sin vigencia0')
+    expect(chip).toBeEnabled()
+    fireEvent.click(chip)
+    expect(screen.getByText('Mantención Cámara de Frío')).toBeInTheDocument()
+  })
+
   it('sin coincidencias lo dice, en vez de mostrar una tabla vacía', async () => {
     montar()
     await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
