@@ -9,6 +9,20 @@ vi.mock('@/lib/api/compliance', () => ({
 vi.mock('@/lib/api/config', () => ({
   taxonomiesApi: { list: vi.fn() },
 }))
+vi.mock('@/lib/api/requirements', () => ({
+  requirementsApi: { patchConditions: vi.fn(), recalcPreview: vi.fn(), recalc: vi.fn() },
+}))
+vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => true }))
+
+// El documento abierto VIAJA EN LA URL, como un viaje del Monitor: cada test
+// elige qué trae.
+let urlActual = ''
+const reemplazar = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: reemplazar }),
+  usePathname: () => '/dashboard/admin/settings/certification',
+  useSearchParams: () => new URLSearchParams(urlActual),
+}))
 
 import { complianceApi } from '@/lib/api/compliance'
 import { taxonomiesApi } from '@/lib/api/config'
@@ -55,6 +69,8 @@ function montar() {
 }
 
 beforeEach(() => {
+  urlActual = ''
+  reemplazar.mockClear()
   vi.mocked(complianceApi.listRequirements).mockReset()
   vi.mocked(complianceApi.listRequirements).mockResolvedValue(REQS)
   vi.mocked(taxonomiesApi.list).mockReset()
@@ -155,6 +171,47 @@ describe('CondicionesTabla', () => {
     montar()
     await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: /revisión técnica/i })).toBeInTheDocument()
+  })
+
+  // El panel abre con URL propia, como abre un viaje: editar una regla es
+  // enlazable, y recargar no te devuelve a la lista.
+  it('el chevron escribe el documento en la URL', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /editar revisión técnica/i }))
+    expect(reemplazar).toHaveBeenCalledWith(
+      '/dashboard/admin/settings/certification?doc=REVISION_TECNICA')
+  })
+
+  it('abrir un documento no pierde el resto de la URL', async () => {
+    urlActual = 'section=conditions'
+    montar()
+    await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /editar revisión técnica/i }))
+    expect(reemplazar).toHaveBeenCalledWith(
+      '/dashboard/admin/settings/certification?section=conditions&doc=REVISION_TECNICA')
+  })
+
+  it('con un documento en la URL el panel abre solo', async () => {
+    urlActual = 'doc=MANTENCION_FRIO'
+    montar()
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: /mantención cámara de frío/i })).toBeInTheDocument())
+  })
+
+  it('cerrar el panel quita el documento de la URL', async () => {
+    urlActual = 'doc=MANTENCION_FRIO'
+    montar()
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /cerrar/i }))
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/certification')
+  })
+
+  it('un documento que no existe en el catálogo no abre ningún panel', async () => {
+    urlActual = 'doc=NO_EXISTE'
+    montar()
+    await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('avisa cuando el catálogo no carga, y deja reintentar', async () => {

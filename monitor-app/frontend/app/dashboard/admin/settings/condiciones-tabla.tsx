@@ -1,13 +1,15 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { taxonomiesApi } from '@/lib/api/config'
 import { EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
+import { CondicionPanel } from './CondicionPanel'
 import { celdaSeExigeA } from './frase-de-la-regla'
 import { INPUT, LoadState } from './shared'
 import type { RequirementOption } from '@/lib/types'
@@ -43,6 +45,22 @@ export function CondicionesTabla() {
   const [filtro, setFiltro] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
 
+  // El documento abierto VIAJA EN LA URL, como un viaje del Monitor: editar
+  // una regla se puede enlazar y recargar no devuelve a la lista. Cerrar quita
+  // el parametro, y el resto de la URL (la seccion) se conserva.
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const abierto = searchParams.get('doc')
+
+  const abrir = useCallback((code: string | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (code) params.set('doc', code)
+    else params.delete('doc')
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname)
+  }, [router, pathname, searchParams])
+
   const etiquetaSubtipo = useMemo(() => {
     const mapa = new Map((tax.data ?? []).map(s => [s.id, s.label]))
     // Un subtipo desactivado desaparece del catalogo pero su id sigue en la
@@ -70,6 +88,11 @@ export function CondicionesTabla() {
     // orden que importa ya viaja en `orden`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todos, filtro, busqueda, orden])
+
+  // El panel se dibuja desde el dato del catalogo, no desde la fila clicada:
+  // asi recargar con `?doc=` en la URL lo abre igual, sin haber pasado por la
+  // lista. Un codigo que no existe simplemente no abre nada.
+  const requisitoAbierto = todos.find(r => r.requirement_code === abierto)
 
   if (req.isPending || req.isError) {
     return (
@@ -131,6 +154,7 @@ export function CondicionesTabla() {
                 <td className="pr-2">
                   <button
                     type="button"
+                    onClick={() => abrir(r.requirement_code)}
                     aria-label={`Editar ${r.name}`}
                     className="text-gray-300 hover:text-gray-500 focus-visible:outline-none
                                focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
@@ -150,6 +174,15 @@ export function CondicionesTabla() {
           )}
         </tbody>
       </table>
+
+      {requisitoAbierto && (
+        <CondicionPanel
+          key={requisitoAbierto.id}
+          requisito={requisitoAbierto}
+          subtipos={(tax.data ?? []).map(t => ({ id: t.id, label: t.label }))}
+          onCerrar={() => abrir(null)}
+        />
+      )}
     </div>
   )
 }
