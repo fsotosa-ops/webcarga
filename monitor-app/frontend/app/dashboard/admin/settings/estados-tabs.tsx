@@ -75,6 +75,8 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
       const updated = await taxonomiesApi.patch(row.id, draft)
       setItems(prev => prev.map(r => (r.id === row.id ? updated : r)))
       setDrafts(d => { const n = { ...d }; delete n[row.id]; return n })
+      // Guardar cuenta como revisar, y lo registró el servidor.
+      revisiones.invalidar()
     })
   }
 
@@ -110,6 +112,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
       const created = await taxonomiesApi.create({ domain, ...nuevo })
       setItems(prev => [...prev, created])
       setNuevo(null)
+      revisiones.invalidar()
     } catch (e) {
       setCreateErr(e instanceof Error ? e.message : 'Error al crear')
     } finally {

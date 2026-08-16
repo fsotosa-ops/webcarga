@@ -233,6 +233,22 @@ describe('EstadosTabla', () => {
       .toHaveBeenCalledWith('operations', 'tms-statuses', 'ASIGNADO'))
   })
 
+  // Lo encontró el click-through: se guardaba un estado, el servidor
+  // registraba la revisión —guardar cuenta como revisar— y la insignia seguía
+  // diciendo "Sin revisar" hasta recargar. La pantalla mostrando algo distinto
+  // del dato, que es el defecto que este registro vino a arreglar.
+  it('guardar refresca la marca de revisión, sin recargar', async () => {
+    urlActual = 'estado=ASIGNADO'
+    montar()
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    expect(revisionesApi.list).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(screen.getByLabelText(/nombre visible/i), { target: { value: 'Asignado 2' } })
+    fireEvent.click(screen.getByRole('button', { name: /^guardar/i }))
+
+    await waitFor(() => expect(revisionesApi.list).toHaveBeenCalledTimes(2))
+  })
+
   it('avisa cuando el catálogo no carga, y deja reintentar', async () => {
     vi.mocked(configApi.getStatuses).mockRejectedValue(new Error('sin red'))
     montar()

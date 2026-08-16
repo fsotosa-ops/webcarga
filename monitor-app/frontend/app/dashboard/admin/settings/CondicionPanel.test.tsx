@@ -48,7 +48,7 @@ function montarPanel(r: RequirementOption = requisito(), onCerrar = vi.fn()) {
   const vista = render(
     <QueryClientProvider client={cliente}>
       <CondicionPanel requisito={r} subtipos={SUBTIPOS} gestiones={GESTIONES}
-        revision={null} onConfirmar={confirmar} confirmando={false} onCerrar={onCerrar} />
+        revision={null} onConfirmar={confirmar} confirmando={false} onGuardado={vi.fn()} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   // Volver a dibujar con OTRO objeto requisito, como hace react-query cuando
@@ -56,7 +56,7 @@ function montarPanel(r: RequirementOption = requisito(), onCerrar = vi.fn()) {
   const redibujar = (otro: RequirementOption) => vista.rerender(
     <QueryClientProvider client={cliente}>
       <CondicionPanel requisito={otro} subtipos={SUBTIPOS} gestiones={GESTIONES}
-        revision={null} onConfirmar={confirmar} confirmando={false} onCerrar={onCerrar} />
+        revision={null} onConfirmar={confirmar} confirmando={false} onGuardado={vi.fn()} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   return { onCerrar, vista, redibujar }

@@ -274,6 +274,7 @@ export function CondicionesTabla() {
           revision={revisiones.revisionDe(requisitoAbierto.id)}
           onConfirmar={() => revisiones.confirmar.mutate(requisitoAbierto.id)}
           confirmando={revisiones.confirmar.isPending}
+          onGuardado={revisiones.invalidar}
           onCerrar={() => abrir(null)}
         />
       )}

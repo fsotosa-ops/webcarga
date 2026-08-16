@@ -51,7 +51,7 @@ function mismoConjunto(a: string[], b: string[]) {
  *  Tramo 3: cambiar una condición puede crear o dejar de exigir cientos de
  *  registros, y nadie debería descubrirlo después. */
 export function CondicionPanel({
-  requisito, subtipos, gestiones, revision, onConfirmar, confirmando, onCerrar,
+  requisito, subtipos, gestiones, revision, onConfirmar, confirmando, onGuardado, onCerrar,
 }: {
   requisito: RequirementOption
   subtipos:  { id: string; label: string }[]
@@ -64,6 +64,9 @@ export function CondicionPanel({
   revision:    Revision | null | undefined
   onConfirmar: () => void
   confirmando: boolean
+  /** Guardar cuenta como revisar, y lo registra el servidor: esto es lo que
+   *  hace que la pantalla se entere sin recargar. */
+  onGuardado:  () => void
   onCerrar:    () => void
 }) {
   const canEdit = useCanAdmin()
@@ -141,6 +144,7 @@ export function CondicionPanel({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['compliance-requirements'] })
       qc.invalidateQueries({ queryKey: ['recalc-preview', requisito.id] })
+      onGuardado()
     },
   })
 

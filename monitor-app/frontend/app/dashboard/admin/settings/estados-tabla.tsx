@@ -177,6 +177,7 @@ export function EstadosTabla() {
           revision={revisiones.revisionDe(estadoAbierto.id)}
           onConfirmar={() => revisiones.confirmar.mutate(estadoAbierto.id)}
           confirmando={revisiones.confirmar.isPending}
+          onGuardado={revisiones.invalidar}
           onCerrar={() => abrir(null)}
         />
       )}

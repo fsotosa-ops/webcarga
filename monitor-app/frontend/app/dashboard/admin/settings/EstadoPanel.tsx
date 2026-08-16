@@ -31,7 +31,7 @@ const BOTON_ORDEN = 'inline-flex items-center gap-1 rounded-lg border border-bor
  *  reordenar es relativo al tablero, y filtrar por columna no puede cambiar
  *  con quién se intercambia un estado. */
 export function EstadoPanel({
-  estado, hermanos, revision, onConfirmar, confirmando, onCerrar,
+  estado, hermanos, revision, onConfirmar, confirmando, onGuardado, onCerrar,
 }: {
   estado:   TripStatusRow
   hermanos: TripStatusRow[]
@@ -39,6 +39,9 @@ export function EstadoPanel({
   revision:    Revision | null | undefined
   onConfirmar: () => void
   confirmando: boolean
+  /** Guardar cuenta como revisar, y lo registra el servidor: esto es lo que
+   *  hace que la pantalla se entere sin recargar. */
+  onGuardado: () => void
   onCerrar: () => void
 }) {
   // La puerta REAL es la ruta: app/dashboard/admin/layout.tsx redirige a quien
@@ -78,6 +81,7 @@ export function EstadoPanel({
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tms-statuses'] })
+      onGuardado()
     },
   })
 

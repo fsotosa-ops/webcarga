@@ -46,6 +46,16 @@ export function useRevisiones(dominio: string, seccion: string) {
   }, [q.data])
 
   return {
+    /** Para llamar DESPUÉS de guardar. Guardar cuenta como revisar y lo
+     *  registra el propio endpoint que guarda, del lado del servidor — pero la
+     *  pantalla no se entera sola, y el click-through lo encontró: se guardaba
+     *  un estado y la insignia seguía diciendo "Sin revisar" hasta recargar.
+     *  Vive acá y no en cada `onSuccess` para que la clave de la consulta no
+     *  quede escrita en cinco lugares. */
+    invalidar: () => {
+      qc.invalidateQueries({ queryKey: clave })
+      qc.invalidateQueries({ queryKey: ['config-inventario'] })
+    },
     // `undefined` mientras carga, para que la insignia no diga "sin revisar"
     // durante el viaje de ida: sería la tercera vez que un estado transitorio
     // se dibuja igual que un hecho.

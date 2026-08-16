@@ -30,6 +30,8 @@ export function AlertasVencimientoTab() {
       const updated = await configApi.patchAlertThreshold(row.doc_type, draft)
       setItems(prev => prev.map(r => (r.doc_type === row.doc_type ? updated : r)))
       setDrafts(d => { const n = { ...d }; delete n[row.doc_type]; return n })
+      // Guardar cuenta como revisar, y lo registró el servidor.
+      revisiones.invalidar()
     })
   }
 
@@ -112,6 +114,7 @@ export function RangosTemperaturaTab() {
       const updated = await configApi.patchTemperatureRange(row.cargo_type, draft)
       setItems(prev => prev.map(r => (r.cargo_type === row.cargo_type ? updated : r)))
       setDrafts(d => { const n = { ...d }; delete n[row.cargo_type]; return n })
+      revisiones.invalidar()
     })
   }
 
@@ -132,6 +135,7 @@ export function RangosTemperaturaTab() {
       const created = await configApi.createTemperatureRange(nuevo)
       setItems(prev => [...prev, created])
       setNuevo(null)
+      revisiones.invalidar()
     } catch (e) {
       setCreateErr(e instanceof Error ? e.message : 'Error al crear')
     } finally {
@@ -284,6 +288,7 @@ export function AlertasMonitorTab() {
       const updated = await configApi.patchMonitorAlertRules(draft)
       setRules(updated)
       setDraft({})
+      revisiones.invalidar()
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {
