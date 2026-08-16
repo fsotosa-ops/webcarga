@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { PortadaDominios } from './PortadaDominios'
@@ -23,10 +24,25 @@ describe('PortadaDominios', () => {
 
   // El prefetch ejecuta el layout del dashboard, que habla con Auth: eso
   // produjo un 429 en produccion (Ronda 110). No es decorativo.
-  it('los enlaces no hacen prefetch', () => {
-    render(<PortadaDominios />)
-    for (const a of screen.getAllByRole('link')) {
-      expect(a.getAttribute('data-prefetch')).not.toBe('true')
+  // Guardarrail del 429. Sin `prefetch={false}`, Next prefetchea cada enlace
+  // que entra al viewport, cada prefetch ejecuta el layout del dashboard —que
+  // va a la API de Auth— y Supabase responde 429. Medido en staging el
+  // 2026-08-15: 104 llamadas a /user en un minuto, sin un solo clic.
+  //
+  // El prop NO llega al DOM, asi que se verifica sobre el modulo, igual que en
+  // CertificationStatusTable.test.tsx. La version anterior de este test miraba
+  // un atributo `data-prefetch` que next/link nunca renderiza: pasaba con
+  // prefetch puesto y sin poner, o sea que no protegia nada.
+  it('ningun enlace de la portada prefetchea', async () => {
+    const fuente = await readFile(
+      'app/dashboard/admin/configuracion/PortadaDominios.tsx', 'utf-8',
+    )
+    const enlaces = fuente.split('<Link').slice(1)
+    expect(enlaces.length).toBeGreaterThan(0)
+    for (const enlace of enlaces) {
+      const props = enlace.slice(0, enlace.indexOf('>'))
+      expect(props, `un <Link> quedo sin prefetch={false}: ${props.trim().slice(0, 80)}`)
+        .toContain('prefetch={false}')
     }
   })
 

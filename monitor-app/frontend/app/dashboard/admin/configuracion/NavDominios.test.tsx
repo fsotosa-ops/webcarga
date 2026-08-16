@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { NavDominios } from './NavDominios'
@@ -26,5 +27,21 @@ describe('NavDominios', () => {
   it('un dominio proximamente no es alcanzable', () => {
     render(<NavDominios activo="certificacion" />)
     expect(screen.queryByRole('link', { name: /facturación/i })).not.toBeInTheDocument()
+  })
+
+  // Mismo guardarrail del 429 que la portada: esta barra se dibuja en cada
+  // pagina de dominio, asi que un <Link> sin prefetch={false} aca se multiplica
+  // por todas ellas. El prop no llega al DOM; se verifica sobre el modulo.
+  it('ningun enlace de la barra prefetchea', async () => {
+    const fuente = await readFile(
+      'app/dashboard/admin/configuracion/NavDominios.tsx', 'utf-8',
+    )
+    const enlaces = fuente.split('<Link').slice(1)
+    expect(enlaces.length).toBeGreaterThan(0)
+    for (const enlace of enlaces) {
+      const props = enlace.slice(0, enlace.indexOf('>'))
+      expect(props, `un <Link> quedo sin prefetch={false}: ${props.trim().slice(0, 80)}`)
+        .toContain('prefetch={false}')
+    }
   })
 })
