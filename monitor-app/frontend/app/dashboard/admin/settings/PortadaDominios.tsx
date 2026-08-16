@@ -36,7 +36,11 @@ export function PortadaDominios() {
   })
 
   return (
-    <div className="bg-white border border-border rounded-2xl overflow-hidden">
+    // La superficie LLENA el area de trabajo en vez de flotar sobre el gris
+    // del layout: medido, la pantalla de dominio cubria el 28% del alto util
+    // contra el 78% de /dashboard/compliance.
+    <div className="bg-white border border-border rounded-2xl overflow-hidden
+                    min-h-[calc(100vh-12rem)]">
       {DOMINIOS.map((d, i) => {
         const Icono   = d.icono
         const pares   = inv.data?.[d.clave] ?? []

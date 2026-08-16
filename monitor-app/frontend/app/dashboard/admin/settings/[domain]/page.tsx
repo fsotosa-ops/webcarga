@@ -63,10 +63,19 @@ function DominioInterior({ dominio }: { dominio: Dominio }) {
       <h1 className="font-mulish font-bold text-xl text-text-primary mt-1">{dominio.titulo}</h1>
       <p className="text-xs text-gray-400 mt-0.5">{dominio.proposito}</p>
 
-      <div className="mt-5 flex gap-6">
-        <NavDominios activo={dominio.clave} />
+      {/* UNA superficie blanca que LLENA el area de trabajo, como el resto del
+          dashboard. La version anterior de esta pantalla ponia las pestanas y
+          el panel directamente sobre el gris del layout (--bg-main, #e5e5e5):
+          medido, cubria el 28% del alto util contra el 78% de /dashboard/
+          compliance. La pantalla vieja de Configuracion SI tenia esta tarjeta y
+          se perdio al reescribirla. */}
+      <div className="mt-5 flex gap-0 bg-white border border-border rounded-2xl
+                      overflow-hidden min-h-[calc(100vh-14rem)]">
+        <div className="shrink-0 p-3 border-r border-border bg-gray-50/40">
+          <NavDominios activo={dominio.clave} />
+        </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 p-4">
           {/* Las pestanas SI corresponden aca: son pocas y del mismo tema.
               Lo que no funcionaba era usarlas como unica estructura del modulo. */}
           <div role="tablist" aria-label={`Secciones de ${dominio.titulo}`}
