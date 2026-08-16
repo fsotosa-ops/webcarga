@@ -1707,11 +1707,8 @@ paso del pipeline.
    empresas activas con tipo de gestión pasan de **0 a 36** (24 con Tractoreo), y la huella de
    control sigue en `4990` / `3def4798fd3561d97eefab19412d3e1d` — aplicarla **no movió un solo
    registro**. Backend 625 tests en verde contra el esquema nuevo.
-2. [ ] **Click-through en staging con Playwright** — no hecho: `dev` está 16 commits adelante de
-   `origin/dev` y nada está desplegado. Empujar dispara el despliegue, así que necesita decisión
-   del usuario. **El login lo escribe el usuario a mano.** Ojo: la pantalla usa `window.confirm`
-   antes de aplicar, y eso **bloquea Playwright** si no se registra un manejador de diálogo antes
-   de apretar el botón.
+2. [x] **Click-through en staging — HECHO (2026-08-16), y cambió el diseño del tramo.** Ver la
+   Ronda 114, abajo. Rama desplegada, ciclo completo verificado en vivo **incluido deshacer**.
 3. [ ] **`/code-review` sobre la rama** — lo dispara el usuario; el agente no puede lanzarlo.
 4. [ ] **Cuatro preguntas para WebCarga**, todas de la misma naturaleza: reglas que el sistema ya
    aplica sin que nadie las haya definido.
@@ -1734,6 +1731,127 @@ paso del pipeline.
 7. [ ] **Fuera de alcance por decisión** (spec §7): el historial de versiones como filas (0
    reemplazos en producción, y toca estos mismos triggers), las pilas agrupadas, conectar
    `document_matcher.py`, y la importación desde OneDrive con spec propio.
+
+### 2026-08-16 — Ronda 114: el click-through cambió el diseño — aplicar una regla dejó de ser irreversible
+
+**3 commits, 3 migraciones aplicadas.** Backend **627 tests**, frontend **876**.
+
+El click-through no confirmó el tramo: lo corrigió. El usuario preguntó cuál era el estándar de la
+industria para aplicar un cambio de regla sobre registros existentes, y la respuesta cambió el
+diseño.
+
+#### La decisión: no se borra, se apaga
+
+**El estándar es no destruir.** Las plataformas de cumplimiento sacan un control de alcance sin
+borrar su historia; nómina e impuestos usan reglas con vigencia por fecha; la contabilidad publica
+un asiento que reversa en vez de borrar el original.
+
+Lo incómodo: **este proyecto ya implementaba ese patrón en otro lado.** Al desactivar un vínculo
+empresa-cliente, `reconcile_carrier_shipper_link` no borra — pone `is_current = false`. La columna
+y el mecanismo ya estaban; el recálculo que se construyó en la Ronda 113 hacía un `DELETE` físico
+sobre una tabla sin historial. No faltaba la pieza: no se usó.
+
+`POST /compliance-requirements/{id}/recalc` pasa a **encender y apagar**:
+
+| Antes | Ahora |
+|---|---|
+| `DELETE` físico | `is_current = false` |
+| `INSERT ... ON CONFLICT DO NOTHING` | `ON CONFLICT ... DO UPDATE SET is_current = true` |
+| "se quitan 17" | "dejan de exigirse 17" |
+
+**El `DO UPDATE` toca SÓLO el interruptor.** No pisa `status`, `file_url`, `metadata`,
+`expiration_date` ni `updated_at`: una fila apagada puede tener documento cargado, y resucitarla
+pisándole el archivo destruiría trabajo real.
+
+**Efecto lateral bueno**: el defecto latente del índice único —que es total y no parcial, así que
+una fila apagada bloquea la reinserción— **desaparece en vez de agravarse**, porque ya nunca hay
+que reinsertar lo que existe.
+
+#### Un bug vivo, encontrado por el propio cambio
+
+`reconcile_carrier_shipper_link` es **la única de las cinco vías de siembra que apaga registros Y
+puede volver a dispararse** (su trigger es `AFTER INSERT OR UPDATE`). No tenía `ON CONFLICT`:
+desactivar un vínculo empresa-cliente y reactivarlo daba `23505 duplicate key` — un 500, y volver
+a exigir el documento era imposible sin tocar la base a mano.
+
+Reproducido contra la base real antes y después del arreglo. **No estaba vivo en los datos** (0
+registros apagados, 43 vínculos todos activos), pero el recálculo reversible lo alimentaba a
+escala: desde ahora cualquier recálculo deja apagados que después chocarían ahí.
+
+#### La trampa que casi se come el arreglo
+
+La definición **viva** de esa función ya no era la del archivo `20260816040000`: la migración
+`20260816050000` la había reemplazado. Escribir el `CREATE OR REPLACE` desde el texto del archivo
+**habría revertido en silencio el arreglo del defecto C1**. La migración se escribió desde
+`pg_get_functiondef()` de la función viva. *Un archivo de migración no es la fuente de verdad de
+una función que otra migración posterior reemplazó.*
+
+#### Verificado en producción — el ciclo completo, incluido deshacer
+
+| | |
+|---|---|
+| Filas totales antes y después de todo el ciclo | **4.990 → 4.990** |
+| Restringir la regla | 17 dejan de exigirse, **0 filas borradas** |
+| Restaurar la regla | 16 vuelven |
+| `created_at` de las que volvieron | `2026-07-28 14:34`, **la original** |
+
+Ése último dato es la prueba: son **las mismas filas**, no unas nuevas. Con el borrado físico
+habrían vuelto con fecha de hoy y la historia se habría perdido.
+
+El diálogo de confirmación dice la verdad y sus números coinciden con el panel: *"No se borra
+nada: los que dejan de exigirse conservan su documento y se vuelven a exigir si la regla cambia."*
+
+#### `KDKP93` queda apagado — decisión explícita del usuario
+
+Al restaurar la regla volvieron 16 de 17. El que falta es `KDKP93`: **no tiene subtipo cargado, así
+que ninguna regla lo alcanza.** Antes se le exigía cámara de frío porque el trigger sólo miraba "es
+una rampla"; ahora la regla mira el subtipo.
+
+El usuario decidió **dejarlo apagado** (2026-08-16). El estado es honesto —el sistema dejó de
+pedirle un documento a un vehículo que nadie clasificó— con la contrapartida de que ese vehículo ya
+no aparece en pendientes. Se resuelve clasificándolo, que sigue siendo pregunta de negocio.
+
+#### El quinto caso de un valor con dos significados
+
+El embudo mostraba **"Resto del catálogo: 0"** mientras el grupo no estuviera desplegado, porque se
+pide recién al abrirlo. Ese `0` significaba a la vez "ninguna" y "todavía no pregunté", y el primero
+invita a no abrir el grupo: **209 empresas quedaban invisibles detrás de un cero**. Arreglado
+(`85a72cc`): sin dato, sin número.
+
+Es el **quinto** caso de esta clase en el módulo. El patrón completo está en la memoria del
+proyecto, con el dato que más importa: **ninguno de los cinco lo encontró un test escrito de
+antemano** — dos aparecieron mirando la pantalla desplegada, dos mutando el código, uno cruzando
+dos definiciones a mano.
+
+#### Migraciones aplicadas en esta ronda
+
+1. `20260816050000` — la definición única de tipo de gestión (arreglo del Crítico C1). Verificado
+   tras aplicar: empresas activas con gestión pasan de **0 a 36**.
+2. `20260816070000` — el `ON CONFLICT` del vínculo empresa-cliente. **Va antes** que el despliegue
+   del recálculo reversible.
+3. `20260816060000` — `is_current` pasa a `NOT NULL DEFAULT true`. Ahora que es el interruptor
+   principal, un nulo ahí sería otra vez un valor con dos significados.
+
+#### Próximo paso exacto
+
+1. [ ] **`/code-review` sobre la rama** — lo dispara el usuario; el agente no puede lanzarlo.
+2. [ ] **Rediseñar dónde vive la edición de reglas.** La pestaña "Condiciones de Documentos" mide
+   **5.849px** — 37 tarjetas, 167 casillas, sin jerarquía. Feedback textual del usuario: *"muy
+   denso y con mucha carga cognitiva"*. Se puso ahí porque ya existían seis pestañas hermanas con
+   el patrón resuelto, o sea que **el costo de implementación decidió la navegación** — el error
+   que la memoria del proyecto ya tenía anotado. El problema de fondo: esa pantalla contesta
+   "¿cuáles son todas las reglas?", pero la pregunta real aparece **en Certificación, mirando un
+   caso**. Arranca con `superpowers:brainstorming`, con la premisa de fusionar y no agregar otra
+   pantalla.
+3. [ ] **Las cuatro preguntas para WebCarga** siguen abiertas (ver Ronda 113, punto 4). `KDKP93`
+   tiene decisión provisoria —apagado— pero no respuesta.
+4. [ ] **Deuda declarada, sin resolver**: no hay test automatizado de la regresión del vínculo
+   empresa-cliente. Vive en un trigger y la suite mockea el pool, así que ningún `AsyncMock` puede
+   ejecutar un `ON CONFLICT`. La evidencia es una corrida manual que hay que repetir si alguien
+   toca la función. Mismo hueco que I3 de la Ronda 113: **nada del tramo ejecuta SQL en CI**.
+5. [ ] **Nombre que miente, con nota al pie**: `quitados` en `RecalcResult` y en `audit_log` hoy
+   significa "apagados". Quedó comentado en el código para no partir el contrato en el mismo
+   commit; renombrarlo es pendiente.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
