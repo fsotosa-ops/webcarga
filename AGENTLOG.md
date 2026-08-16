@@ -1845,13 +1845,87 @@ dos definiciones a mano.
    pantalla.
 3. [ ] **Las cuatro preguntas para WebCarga** siguen abiertas (ver Ronda 113, punto 4). `KDKP93`
    tiene decisión provisoria —apagado— pero no respuesta.
-4. [ ] **Deuda declarada, sin resolver**: no hay test automatizado de la regresión del vínculo
-   empresa-cliente. Vive en un trigger y la suite mockea el pool, así que ningún `AsyncMock` puede
-   ejecutar un `ON CONFLICT`. La evidencia es una corrida manual que hay que repetir si alguien
-   toca la función. Mismo hueco que I3 de la Ronda 113: **nada del tramo ejecuta SQL en CI**.
+4. [x] **CERRADO — el tramo ya ejecuta SQL de verdad.** Ver Ronda 115.
 5. [ ] **Nombre que miente, con nota al pie**: `quitados` en `RecalcResult` y en `audit_log` hoy
    significa "apagados". Quedó comentado en el código para no partir el contrato en el mismo
    commit; renombrarlo es pendiente.
+
+### 2026-08-16 (cont.) — Ronda 115: `/code-review` + los tests dejan de mockear la base
+
+**3 commits.** Backend **647 tests** (627 + 20 de integración), frontend **879**.
+Una migración más aplicada (`20260816080000`).
+
+#### Una nota de memoria equivocada costó trabajo real
+
+La memoria del proyecto decía que la sandbox **no** llegaba a Postgres de Supabase, y por eso
+varios subagentes declararon imposible ejecutar SQL en tests y uno llegó a escribir (y descartar)
+un arnés con un Postgres efímero. El usuario lo desafió —*"lo de un postgres de prueba no aplica,
+ocupa la db que ya tenemos montada"*— y al probarlo, **conecta**.
+
+El host correcto es `aws-1-us-east-1.pooler.supabase.com:5432`. Los intentos viejos mezclaban dos
+fallas distintas: `db.<ref>.supabase.co` no resuelve (Supabase lo publica por IPv6), y el prefijo
+`aws-0` es el viejo. **La pista estaba en el error**: `aws-0` devolvía `tenant/user not found`, que
+es una respuesta *del servidor*, no un fallo de red. Distinguir "no llegué" de "llegué y falta
+configuración" era todo lo que hacía falta.
+
+#### La capa de integración
+
+20 tests que ejecutan SQL contra la base real, con la garantía de rollback **estructural**: la
+fixture entrega una conexión ya dentro de una transacción y la revierte en un `finally`, así que el
+test nunca ve el objeto transacción ni puede confirmarla. `PoolDeUnaConexion` la presenta como si
+fuera el pool, de modo que el servicio y los endpoints corren de verdad y su `conn.transaction()`
+se resuelve como SAVEPOINT.
+
+Tres redes más: un guardia de sesión que compara la huella de `compliance_records` antes y después;
+un test que **lee su propio archivo** y falla si aparece un `commit` o un `asyncpg.connect` fuera de
+la fixture —y que es el único del módulo que sigue corriendo sin base, o sea justo donde más
+importa—; y datos sintéticos con prefijo propio, nunca filas reales buscadas por id.
+
+Se saltean solos y **se nota**: el aviso sale incluso con `-q`. Separables con
+`-m integracion` / `-m "not integracion"`: verificado, 627 sin tocar la base en 20 s, 20 contra la
+base en 75 s.
+
+**14 de 14 mutantes muertos**, cinco al código Python y nueve a funciones de base aplicadas dentro
+de la misma transacción revertida.
+
+**Un matiz que el propio agente reportó y que es fácil leer al revés**: el test del invariante
+**no** protege el contenido de `carrier_management_types()`. Los dos lados llaman a la misma
+función, así que romperla los mueve juntos y la comparación sigue dando igual — que es justamente
+la propiedad que el tramo buscaba. Lo que la protege son los cinco tests que la ejecutan directo.
+
+#### Los tres hallazgos de `/code-review`
+
+1. **La guarda estaba en un lado del espejo y no en el otro.** El `ON CONFLICT DO UPDATE` del
+   recálculo no llevaba `WHERE`, así que reescribía `true` sobre `true` en filas ya vigentes:
+   inflaba `creados`, ensuciaba `audit_log` con ids que nunca cambió, y tomaba un lock por cada
+   una. El lado que **apaga** sí tenía su `AND is_current` deliberado. Corregido en la API y en el
+   trigger (`20260816080000`, aplicada). Verificado contra la base: reactivar dos veces seguidas
+   deja `updated_at` intacto la segunda.
+2. **El arreglo del cero creó su propia variante.** Al no mostrar número sin datos, quedaron **tres**
+   estados dibujados igual: "no pedí", "vino vacío" y "falló" — un error de red se veía como un
+   catálogo vacío, y reintentar no reintentaba (`setCatalogoAbierto(true)` sobre `true` no dispara
+   nada). La causa era **inferir** el estado de un booleano más un largo en vez de **nombrarlo**.
+   Ahora son cuatro estados explícitos.
+
+#### La lección de proceso, que es del controlador
+
+Se editó `app/routers/requirements.py` mientras un subagente corría mutaciones **sobre ese mismo
+archivo**, escribiéndolo y restaurándolo. Hubo una corrida con `1 failed` por estado intermedio, y
+si las dos escrituras hubieran coincidido, la restauración podía haber pisado el cambio ajeno en
+silencio. No pasó —verificado— pero el riesgo lo creó el controlador por no esperar.
+**No editar archivos que un subagente está mutando.**
+
+#### Próximo paso exacto
+
+1. [ ] **Rediseñar dónde vive la edición de reglas** (sigue siendo el pendiente de más valor). Ver
+   Ronda 114, punto 2. Arranca con `superpowers:brainstorming`.
+2. [ ] **Las cuatro preguntas para WebCarga** (Ronda 113, punto 4).
+3. [ ] **Cobertura que quedó fuera, declarada**: `reconcile_new_carrier/new_asset/new_driver` no
+   tienen comparación siembra-vs-servicio propia; la concurrencia se simula, no se corre (dos
+   transacciones romperían la garantía de rollback único); y el armado dinámico del `UPDATE` de
+   `PATCH /conditions` sigue mockeado.
+4. [ ] **Nombre que miente**: `quitados` en `RecalcResult` y `audit_log` significa "apagados".
+   Comentado en el código; renombrarlo es pendiente.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
