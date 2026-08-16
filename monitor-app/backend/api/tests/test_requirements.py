@@ -42,6 +42,7 @@ def test_list_requirements_returns_catalog():
         "name": "Licencia de Conducir", "requirement_level": "LEGAL_MANDATORY",
         "has_expiration": True, "is_active": True,
         "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None,
+        "alcanzadas": 80, "universo": 80,
     }]
     client = make_client(pool)
 
@@ -66,6 +67,7 @@ def test_list_requirements_returns_current_conditions():
         "name": "Mantención Cámara de Frío", "requirement_level": "CONDITIONAL_OPTIONAL",
         "has_expiration": True, "is_active": True,
         "applies_to_fleet_service_type_ids": ["ft-1", "ft-2"], "applies_to_management_types": None,
+        "alcanzadas": 36, "universo": 118,
     }]
     client = make_client(pool)
 
@@ -76,6 +78,53 @@ def test_list_requirements_returns_current_conditions():
     assert body["is_active"] is True
     assert body["applies_to_fleet_service_type_ids"] == ["ft-1", "ft-2"]
     assert body["applies_to_management_types"] is None
+
+
+def test_el_catalogo_dice_a_cuantas_entidades_alcanza_cada_regla():
+    """"Solo Furgon Congelado" no dice si son veinte vehiculos o dos. El
+    alcance es lo que convierte la regla en algo que se puede juzgar.
+
+    Los dos numeros salen planos de la consulta (`alcanzadas` y `universo`) y
+    el router los agrupa en un solo objeto: la pantalla los muestra siempre
+    juntos ("36 de 118") y separados invitan a leer uno sin el otro."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [{
+        "id": "r1", "target_entity": "ASSET", "requirement_code": "MANTENCION_FRIO",
+        "name": "Mantención Cámara de Frío", "requirement_level": "CONDITIONAL_OPTIONAL",
+        "has_expiration": True, "is_active": True,
+        "applies_to_fleet_service_type_ids": ["t1"], "applies_to_management_types": None,
+        "alcanzadas": 36, "universo": 118,
+    }]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-requirements")
+
+    assert res.status_code == 200
+    assert res.json()[0]["alcance"] == {"alcanzadas": 36, "universo": 118}
+
+
+def test_el_alcance_no_reescribe_la_regla_de_aplicabilidad():
+    """La condicion de cada entidad vive en UN solo lugar
+    (`app/services/requirement_conditions.py`). El catalogo la interpola; no
+    la copia. Una segunda copia del predicado es exactamente el defecto que
+    costo el critico del Tramo 3: dos textos correctos por separado, y una
+    pantalla mostrando lo que la otra no aplica.
+
+    El test compara textos, que es poco -- lo que prueba de verdad que los dos
+    cuentan lo mismo es `test_el_alcance_del_catalogo_cuenta_lo_mismo_que_la_
+    vista_previa`, que ejecuta los dos SQL contra Postgres."""
+    from app.routers.requirements import SQL_CATALOGO
+    from app.services.requirement_conditions import (
+        SQL_CONDICION_DE_ENTIDAD, TABLA_DE_ENTIDAD,
+    )
+
+    for entidad, condicion in SQL_CONDICION_DE_ENTIDAD.items():
+        assert condicion in SQL_CATALOGO, (
+            f"la condicion de {entidad} no sale del servicio: alguien la reescribio"
+        )
+        assert TABLA_DE_ENTIDAD[entidad] in SQL_CATALOGO, (
+            f"el universo de {entidad} no sale del servicio"
+        )
 
 
 def test_list_requirements_filters_by_target_entity():

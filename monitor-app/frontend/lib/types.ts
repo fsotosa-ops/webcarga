@@ -1308,6 +1308,18 @@ export type IngestUploadResult = {
   errors:   { file_name: string; error: string }[]
 }
 
+/** A cuántas entidades alcanza la condición de un requisito, sobre el
+ *  universo de su tipo de entidad: "36 de 118 vehículos". Los dos números
+ *  viajan juntos porque separados no dicen nada — "36" sin el universo no
+ *  distingue una regla acotada de una general.
+ *
+ *  `alcanzadas` cuenta la CONDICIÓN, no la vigencia: una regla apagada sigue
+ *  diciendo a cuántos alcanzaría si se encendiera. */
+export interface Alcance {
+  alcanzadas: number
+  universo:   number
+}
+
 export type RequirementOption = {
   id:                string
   target_entity:     'CARRIER' | 'DRIVER' | 'ASSET'
@@ -1321,6 +1333,9 @@ export type RequirementOption = {
   is_active:                         boolean
   applies_to_fleet_service_type_ids: string[] | null
   applies_to_management_types:       ManagementType[] | null
+  /** A cuántas entidades alcanza la regla, sobre el universo de su entidad.
+   *  Sin esto la frase de la condición no dice si son veinte vehículos o dos. */
+  alcance:                           Alcance
 }
 
 /** Lo que necesita `RequirementConditionsPanel` para dibujar un requisito:

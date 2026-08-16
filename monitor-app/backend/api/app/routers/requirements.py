@@ -15,9 +15,72 @@ from ..db import get_pool
 from ..schemas.compliance import RequirementOption
 from ..schemas.requirement import RecalcPreview, RecalcResult, RequirementConditionsPatchBody
 from ..services.audit import log_change
-from ..services.requirement_conditions import calcular_diferencias
+from ..services.requirement_conditions import (
+    SQL_CONDICION_DE_ENTIDAD,
+    TABLA_DE_ENTIDAD,
+    calcular_diferencias,
+)
 
 requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compliance"])
+
+# ── El alcance de cada regla ───────────────────────────────────────────────
+#
+# "Sólo Furgón Congelado" no dice si son veinte vehículos o dos. El alcance
+# —"36 de 118"— es lo que convierte la regla en algo que se puede juzgar
+# antes de aplicarla.
+#
+# La condición de cada entidad NO se escribe acá: se interpola desde
+# `app/services/requirement_conditions.py`, que es donde vive la única
+# definición. Una tercera copia del predicado (el trigger de siembra, la
+# vista previa y esto) es exactamente el defecto que costó el crítico del
+# Tramo 3: dos textos correctos por separado, y una pantalla mostrando lo que
+# la otra no aplica.
+#
+# La condición está escrita sobre los alias `e` y `req`, así que el catálogo
+# los provee: `req` es la fila que ya está leyendo, `e` la entidad candidata
+# del LATERAL. Un LATERAL por entidad porque los universos son tablas
+# distintas; el `WHERE req.target_entity = '...'` de adentro Postgres lo
+# resuelve como One-Time Filter, así que para una fila ASSET las tablas de
+# empresas y conductores no se recorren (37 filas: 3,7 ms medidos contra
+# producción).
+#
+# El alcance NO mira `is_active`: cuenta a cuántos alcanza la CONDICIÓN. Una
+# regla apagada sigue diciendo "248 de 248", que es lo que alguien necesita
+# saber antes de encenderla; que esté vigente o no lo dice su propia columna.
+
+
+def _lateral(entidad: str, condicion: str) -> str:
+    return f"""
+    LEFT JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE {condicion}) AS alcanzadas,
+               count(*)                            AS universo
+        FROM {TABLA_DE_ENTIDAD[entidad]} e
+        WHERE req.target_entity = '{entidad}'
+    ) alcance_{entidad.lower()} ON true"""
+
+
+def _columna(campo: str) -> str:
+    ramas = " ".join(
+        f"WHEN '{entidad}' THEN alcance_{entidad.lower()}.{campo}"
+        for entidad in SQL_CONDICION_DE_ENTIDAD
+    )
+    return f"CASE req.target_entity {ramas} END AS {campo}"
+
+
+SQL_CATALOGO = f"""
+    SELECT req.id::text, req.target_entity, req.requirement_code, req.name,
+           req.requirement_level, COALESCE(req.has_expiration, false) AS has_expiration,
+           req.is_active,
+           req.applies_to_fleet_service_type_ids::text[] AS applies_to_fleet_service_type_ids,
+           req.applies_to_management_types,
+           {_columna("alcanzadas")},
+           {_columna("universo")}
+    FROM public.compliance_requirements req
+    {"".join(_lateral(entidad, condicion)
+             for entidad, condicion in SQL_CONDICION_DE_ENTIDAD.items())}
+    WHERE ($1::text IS NULL OR req.target_entity = $1)
+    ORDER BY req.target_entity, req.name
+"""
 
 # Lista blanca de columnas tocables por PATCH /conditions — nunca se
 # interpolan nombres que vengan del request, solo estas tres literales.
@@ -42,20 +105,20 @@ async def list_compliance_requirements(
 
     Incluye is_active/applies_to_* (Tramo 3): la pantalla de condiciones
     (Task 5) los pinta directo desde esta lista, no hay un segundo endpoint
-    "de detalle" para el catálogo."""
-    rows = await pool.fetch(
-        """
-        SELECT id::text, target_entity, requirement_code, name,
-               requirement_level, COALESCE(has_expiration, false) AS has_expiration,
-               is_active, applies_to_fleet_service_type_ids::text[] AS applies_to_fleet_service_type_ids,
-               applies_to_management_types
-        FROM public.compliance_requirements
-        WHERE ($1::text IS NULL OR target_entity = $1)
-        ORDER BY target_entity, name
-        """,
-        target_entity,
-    )
-    return [dict(r) for r in rows]
+    "de detalle" para el catálogo. Y el alcance (Task 4), que la consulta
+    trae en dos columnas planas y acá se agrupa en un solo objeto: la
+    pantalla los muestra siempre juntos ("36 de 118") y separados invitan a
+    leer uno sin el otro. El `pop` va sin valor por defecto a propósito — si
+    la consulta dejara de traer una de las dos columnas, esto tiene que
+    romperse, no devolver un cero inventado."""
+    rows = await pool.fetch(SQL_CATALOGO, target_entity)
+    catalogo = []
+    for row in rows:
+        fila = dict(row)
+        fila["alcance"] = {"alcanzadas": fila.pop("alcanzadas"),
+                           "universo":   fila.pop("universo")}
+        catalogo.append(fila)
+    return catalogo
 
 
 @requirements_router.patch("/{requirement_id}/conditions")

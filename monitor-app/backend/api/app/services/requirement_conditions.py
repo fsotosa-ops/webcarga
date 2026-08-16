@@ -16,10 +16,32 @@ TODOS los registros vigentes del requisito.
 """
 from __future__ import annotations
 
+# El universo de cada tipo de entidad: la tabla contra la que se evalúa la
+# regla, y también contra la que se cuenta el "de 118" del alcance
+# (app/routers/requirements.py). Las tres son literales de este módulo; nunca
+# entra acá un nombre que venga de un request.
+TABLA_DE_ENTIDAD = {
+    "CARRIER": "public.carriers",
+    "DRIVER":  "public.drivers",
+    "ASSET":   "public.assets",
+}
+
 # Por qué el SQL y no ORM: la misma expresión tiene que poder compararse a
 # ojo contra la del trigger. Dos lenguajes distintos para la misma regla es
 # exactamente cómo divergen.
-SQL_ENTIDADES_QUE_APLICAN = {
+#
+# La CONDICIÓN, y nada más que la condición: escrita sobre dos alias fijos,
+# `e` (la entidad candidata) y `req` (el requisito). Quien la usa decide cómo
+# trae esas dos filas. Así la puede reusar tanto la vista previa —que fija un
+# requisito por parámetro— como el catálogo, que necesita los 37 de una y
+# correlaciona `req` con la fila que ya está leyendo.
+#
+# NO incluye `req.is_active`: la vigencia no es parte de la condición, es la
+# puerta de entrada, y se compone abajo. Separarlas es lo que permite que la
+# lista de configuración diga a cuántos ALCANZARÍA una regla apagada (que es
+# justamente lo que alguien quiere saber antes de encenderla) sin que existan
+# dos definiciones de la condición.
+SQL_CONDICION_DE_ENTIDAD = {
     # CARRIER tiene dos casos, igual que las dos ramas CARRIER de
     # reconcile_new_requirement(): un requisito sin shipper_id es general y
     # aplica a toda empresa (filtrada solo por management_types); uno CON
@@ -34,32 +56,40 @@ SQL_ENTIDADES_QUE_APLICAN = {
     # ramas CARRIER de siembra. Si cambia una, cambia la otra — pero cambian
     # juntas porque las dos llaman a la MISMA función de base.
     "CARRIER": """
-        SELECT e.id
-        FROM public.carriers e, public.compliance_requirements req
-        WHERE req.id = $1 AND req.is_active
-          AND (req.applies_to_management_types IS NULL
-               OR public.carrier_management_types(e.id) && req.applies_to_management_types)
-          AND (
-              req.shipper_id IS NULL
-              OR EXISTS (
-                  SELECT 1 FROM public.carrier_shippers cs
-                  WHERE cs.carrier_id = e.id AND cs.shipper_id = req.shipper_id
-                    AND cs.status = 'ACTIVE'
-              )
-          )
+        (req.applies_to_management_types IS NULL
+         OR public.carrier_management_types(e.id) && req.applies_to_management_types)
+        AND (
+            req.shipper_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM public.carrier_shippers cs
+                WHERE cs.carrier_id = e.id AND cs.shipper_id = req.shipper_id
+                  AND cs.status = 'ACTIVE'
+            )
+        )
     """,
-    "DRIVER": """
-        SELECT e.id
-        FROM public.drivers e, public.compliance_requirements req
-        WHERE req.id = $1 AND req.is_active
-    """,
+    # Un conductor no tiene subtipo ni gestión propios: hoy no hay ninguna
+    # condición que lo acote, y el requisito le aplica a todos. Queda escrito
+    # como `TRUE` en vez de omitido para que las tres entidades pasen por la
+    # misma composición y una condición nueva de DRIVER se agregue en un solo
+    # lugar.
+    "DRIVER": "TRUE",
     "ASSET": """
-        SELECT e.id
-        FROM public.assets e, public.compliance_requirements req
-        WHERE req.id = $1 AND req.is_active
-          AND (req.applies_to_fleet_service_type_ids IS NULL
-               OR e.fleet_service_type_id = ANY(req.applies_to_fleet_service_type_ids))
+        (req.applies_to_fleet_service_type_ids IS NULL
+         OR e.fleet_service_type_id = ANY(req.applies_to_fleet_service_type_ids))
     """,
+}
+
+# La regla completa para UN requisito, por su id: vigencia + condición. Es lo
+# que consume el recálculo (`calcular_diferencias`, más abajo) y lo que los
+# tests de integración comparan contra lo que siembran los triggers.
+SQL_ENTIDADES_QUE_APLICAN = {
+    entidad: f"""
+        SELECT e.id
+        FROM {TABLA_DE_ENTIDAD[entidad]} e, public.compliance_requirements req
+        WHERE req.id = $1 AND req.is_active
+          AND ({condicion})
+    """
+    for entidad, condicion in SQL_CONDICION_DE_ENTIDAD.items()
 }
 
 

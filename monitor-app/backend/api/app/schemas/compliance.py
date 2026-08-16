@@ -60,6 +60,19 @@ class PendingComplianceListResponse(BaseModel):
     rows: list[PendingComplianceRow]
 
 
+class Alcance(BaseModel):
+    """A cuántas entidades alcanza la condición de un requisito, sobre el
+    universo de su tipo de entidad: "36 de 118 vehículos".
+
+    Los dos números viajan juntos porque separados no dicen nada: "36" sin el
+    universo no distingue una regla acotada de una general. `alcanzadas`
+    cuenta la CONDICIÓN, no la vigencia — un requisito apagado sigue
+    informando a cuántos alcanzaría si se encendiera, que es justo lo que
+    alguien mira antes de encenderlo."""
+    alcanzadas: int
+    universo:   int
+
+
 class RequirementOption(BaseModel):
     """Una fila del catálogo de tipos de documento. La consume el desplegable
     de clasificación de la bandeja de sin clasificar, y —desde el Tramo 3—
@@ -75,3 +88,4 @@ class RequirementOption(BaseModel):
     is_active: bool
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None
+    alcance: Alcance

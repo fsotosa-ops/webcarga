@@ -32,7 +32,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.routers.requirements import recalc
+from app.routers.requirements import SQL_CATALOGO, recalc
 from app.services.requirement_conditions import (
     SQL_ENTIDADES_QUE_APLICAN,
     calcular_diferencias,
@@ -182,6 +182,15 @@ async def _aplican_segun_el_servicio(conn, entidad: str, requisito) -> set[str]:
         requisito,
     )
     return {f["id"] for f in filas}
+
+
+async def _alcance_del_catalogo(conn, requisito):
+    """La consulta REAL de `GET /compliance-requirements`, ejecutada contra
+    Postgres. El router la arma interpolando las condiciones del servicio, así
+    que un `AsyncMock` la ve siempre correcta: sólo Postgres dice si compila y
+    si cuenta lo que dice contar."""
+    filas = await conn.fetch(SQL_CATALOGO, None)
+    return next(f for f in filas if f["id"] == str(requisito))
 
 
 # ── 1. El predicado D13 ───────────────────────────────────────────────────
@@ -596,6 +605,68 @@ async def test_un_requisito_apagado_no_le_aplica_a_nadie(conexion_revertida):
     diferencias = await calcular_diferencias(PoolDeUnaConexion(conn), str(requisito))
     assert str(vehiculo) not in diferencias["crear"]
     assert len(diferencias["quitar"]) == 1
+
+
+# ── 5. El alcance del catálogo cuenta la MISMA regla ──────────────────────
+#
+# La lista de condiciones enuncia la regla en una frase ("Sólo Furgón
+# Congelado") y al lado dice a cuántos alcanza ("36 de 118"). Ese número lo
+# calcula la consulta del catálogo; a quiénes alcanza lo decide la vista
+# previa del recálculo. Si los dos no salieran de la MISMA definición, la
+# pantalla prometería un número y "Aplicar" haría otro.
+
+
+async def test_el_alcance_del_catalogo_cuenta_lo_mismo_que_la_vista_previa(conexion_revertida):
+    """Rama ASSET, que es la que hoy tiene condición de subtipo."""
+    conn = conexion_revertida
+    tipo = await _taxonomia(conn, "FLEET_SERVICE_TYPE", f"{PREFIJO} subtipo")
+    await _vehiculo(conn, tipo_flota=tipo)
+    await _vehiculo(conn, tipo_flota=tipo)
+    fuera = await _vehiculo(conn)  # no lo alcanza, pero sí entra al universo
+
+    requisito = await _requisito(conn, entidad="ASSET", tipos_flota=[tipo])
+
+    fila = await _alcance_del_catalogo(conn, requisito)
+    aplican = await _aplican_segun_el_servicio(conn, "ASSET", requisito)
+
+    assert fila["alcanzadas"] == len(aplican) == 2, (
+        "el catalogo cuenta un conjunto distinto del que la vista previa "
+        "considera aplicable: la pantalla miente sobre a cuantos alcanza"
+    )
+    assert str(fuera) not in aplican
+    assert fila["universo"] == await conn.fetchval("SELECT count(*) FROM public.assets"), (
+        "el universo tiene que ser TODOS los vehiculos, no los alcanzados"
+    )
+    assert fila["universo"] > fila["alcanzadas"], (
+        "el universo de prueba quedo sin ningun vehiculo fuera de la regla: "
+        "asi el test pasaria aunque el alcance contara de mas"
+    )
+
+
+async def test_el_alcance_de_un_requisito_de_un_cliente_no_cuenta_a_toda_empresa(
+    conexion_revertida,
+):
+    """La rama que se pierde primero al reescribir el predicado: un requisito
+    con `shipper_id` alcanza SÓLO a las empresas vinculadas a ese cliente. Un
+    catálogo que contara las 248 empresas para ANEXO_REPLEG diría más del
+    doble de lo que la vista previa aplica."""
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    vinculada = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", vinculada, cliente)
+    desvinculada = await _empresa(conn)
+
+    requisito = await _requisito(conn, entidad="CARRIER", cliente=cliente)
+
+    fila = await _alcance_del_catalogo(conn, requisito)
+    aplican = await _aplican_segun_el_servicio(conn, "CARRIER", requisito)
+
+    assert fila["alcanzadas"] == len(aplican) == 1
+    assert str(desvinculada) not in aplican
+    assert fila["universo"] == await conn.fetchval("SELECT count(*) FROM public.carriers")
+    assert fila["universo"] > fila["alcanzadas"]
 
 
 # ── El guardia del propio archivo ─────────────────────────────────────────
