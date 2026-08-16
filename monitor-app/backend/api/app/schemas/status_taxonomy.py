@@ -2,15 +2,20 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
-# Los dominios validos estaban escritos DOS VECES —aca y en el union
-# TaxonomyDomain de frontend/lib/api/config.ts— y WEBCARGA_OPERATION_TYPE existia
-# solo del lado TypeScript: listar o crear tipos de operacion devolvia 422. Es la
-# misma clase de defecto que el critico del Tramo 3 (dos definiciones del mismo
-# concepto, cada una correcta por su lado). Si se agrega un dominio, van los dos.
-VALID_DOMAINS = {
-    "OPERATIONAL_STATE", "DRIVER_REASON", "EQUIPMENT_STATE",
-    "FLEET_SERVICE_TYPE", "WEBCARGA_OPERATION_TYPE",
-}
+# NO hay lista de dominios validos aca, a proposito.
+#
+# La habia, y estaba escrita DOS VECES —este archivo y el union TaxonomyDomain
+# de frontend/lib/api/config.ts—. WEBCARGA_OPERATION_TYPE existia solo del lado
+# TypeScript, asi que la seccion "Tipos de operacion" devolvia 422 al listar y
+# al crear: media pantalla rotulada que no funcionaba. Es la misma clase de
+# defecto que el critico del Tramo 3 (el mismo concepto declarado dos veces,
+# cada copia correcta por su lado).
+#
+# La fuente de verdad es la TABLA: un dominio existe si app.status_taxonomies
+# tiene filas con ese valor. Agregar un vocabulario nuevo pasa a ser una
+# migracion que siembra su primera fila, que es lo correcto — un tipo de
+# vocabulario nuevo es una decision de producto, no un string suelto en un set.
+# La validacion vive en app/routers/status_taxonomies.py, que si puede consultar.
 VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
 
 
@@ -21,13 +26,6 @@ class StatusTaxonomyBody(BaseModel):
     text_color: str = "#374151"
     sort_order: int = 99
     group_id:   Optional[str] = None
-
-    @field_validator("domain")
-    @classmethod
-    def domain_valid(cls, v: str) -> str:
-        if v not in VALID_DOMAINS:
-            raise ValueError(f"domain debe ser uno de {VALID_DOMAINS}")
-        return v
 
     @field_validator("label")
     @classmethod

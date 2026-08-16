@@ -5,5 +5,5 @@ import { redirect } from 'next/navigation'
  *  accesos"), asi que ya no corresponde que la raiz de admin lleve directo a
  *  una seccion suelta. */
 export default function AdminPage() {
-  redirect('/dashboard/admin/configuracion')
+  redirect('/dashboard/admin/settings')
 }

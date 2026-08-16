@@ -13,19 +13,19 @@ describe('NavDominios', () => {
   // adelantar esa tarea, asi que se deja fuera de esta asercion; ver el
   // reporte de esta tarea para el detalle.
   it('ofrece los otros dominios sin volver a la portada', () => {
-    render(<NavDominios activo="certificacion" />)
+    render(<NavDominios activo="certification" />)
     expect(screen.getByRole('link', { name: /operaciones/i }))
-      .toHaveAttribute('href', '/dashboard/admin/configuracion/operaciones')
+      .toHaveAttribute('href', '/dashboard/admin/settings/operations')
   })
 
   it('marca cual es el dominio activo', () => {
-    render(<NavDominios activo="certificacion" />)
+    render(<NavDominios activo="certification" />)
     expect(screen.getByText('Certificación').closest('[aria-current]'))
       .toHaveAttribute('aria-current', 'page')
   })
 
   it('un dominio proximamente no es alcanzable', () => {
-    render(<NavDominios activo="certificacion" />)
+    render(<NavDominios activo="certification" />)
     expect(screen.queryByRole('link', { name: /facturación/i })).not.toBeInTheDocument()
   })
 
@@ -34,7 +34,7 @@ describe('NavDominios', () => {
   // por todas ellas. El prop no llega al DOM; se verifica sobre el modulo.
   it('ningun enlace de la barra prefetchea', async () => {
     const fuente = await readFile(
-      'app/dashboard/admin/configuracion/NavDominios.tsx', 'utf-8',
+      'app/dashboard/admin/settings/NavDominios.tsx', 'utf-8',
     )
     const enlaces = fuente.split('<Link').slice(1)
     expect(enlaces.length).toBeGreaterThan(0)

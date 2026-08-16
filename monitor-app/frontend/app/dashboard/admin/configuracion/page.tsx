@@ -1,15 +1,11 @@
-import { PortadaDominios } from './PortadaDominios'
+import { redirect } from 'next/navigation'
 
-export default function ConfiguracionPage() {
-  return (
-    <div className="p-4 md:p-6 space-y-6 flex-1 overflow-y-auto">
-      <div>
-        <h1 className="font-mulish font-bold text-xl text-text-primary">Configuración</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
-          Elige el área que quieres ajustar. Los cambios no requieren un despliegue.
-        </p>
-      </div>
-      <PortadaDominios />
-    </div>
-  )
+/** La ruta vieja en espanol. El estandar del proyecto es slug en INGLES y
+ *  etiqueta visible en espanol (normalizacion de rutas, Ronda 55), y este
+ *  modulo la habia extendido en espanol por descuido.
+ *
+ *  Redirige en vez de dar 404 porque estuvo meses en el menu lateral: es el
+ *  mismo criterio que se uso para /dashboard/admin/usuarios. */
+export default function ConfiguracionRedirect() {
+  redirect('/dashboard/admin/settings')
 }

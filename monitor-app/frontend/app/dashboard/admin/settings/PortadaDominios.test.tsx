@@ -17,13 +17,13 @@ function montar() {
 }
 
 const INVENTARIO = {
-  certificacion: [
+  certification: [
     { n: 37, etiqueta: 'documentos' },
     { n: 2, etiqueta: 'con condición' },
   ],
-  operaciones: [{ n: 25, etiqueta: 'estados del tablero' }],
-  flota:       [{ n: 10, etiqueta: 'subtipos' }],
-  personas:    [{ n: 10, etiqueta: 'usuarios' }],
+  operations: [{ n: 25, etiqueta: 'estados del tablero' }],
+  fleet:       [{ n: 10, etiqueta: 'subtypes' }],
+  people:      [{ n: 10, etiqueta: 'users' }],
 }
 
 beforeEach(() => {
@@ -51,7 +51,7 @@ describe('PortadaDominios', () => {
     // menciona "Certificación" (el vocabulario que comparte con ese dominio),
     // asi que /certificación/i sin ancorar matchea las dos tarjetas.
     expect(screen.getByRole('link', { name: /^certificación/i }))
-      .toHaveAttribute('href', '/dashboard/admin/configuracion/certificacion')
+      .toHaveAttribute('href', '/dashboard/admin/settings/certification')
   })
 
   // El prefetch ejecuta el layout del dashboard, que habla con Auth: eso
@@ -67,7 +67,7 @@ describe('PortadaDominios', () => {
   // prefetch puesto y sin poner, o sea que no protegia nada.
   it('ningun enlace de la portada prefetchea', async () => {
     const fuente = await readFile(
-      'app/dashboard/admin/configuracion/PortadaDominios.tsx', 'utf-8',
+      'app/dashboard/admin/settings/PortadaDominios.tsx', 'utf-8',
     )
     const enlaces = fuente.split('<Link').slice(1)
     expect(enlaces.length).toBeGreaterThan(0)

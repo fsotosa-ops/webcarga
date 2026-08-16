@@ -36,6 +36,10 @@ export interface Dominio {
 
 /** FUENTE DE VERDAD del modulo de Configuracion.
  *
+ *  Las CLAVES son slugs de URL y van en INGLES; los titulos y propositos que se
+ *  ven en pantalla van en espanol. Es el estandar que fijo la normalizacion de
+ *  rutas (Ronda 55): /dashboard/carriers muestra "Empresas".
+ *
  *  Agregar un dominio es agregar una entrada aca: ni la portada ni la barra
  *  lateral ni las rutas se tocan. Esa es la prueba de que el marco escala —
  *  cuando llegue Facturacion, solo cambia este archivo.
@@ -44,61 +48,61 @@ export interface Dominio {
  *  nombre. Si un ajuste no contesta el `proposito` del dominio, esta mal puesto. */
 export const DOMINIOS: Dominio[] = [
   {
-    clave: 'certificacion',
+    clave: 'certification',
     icono: ShieldCheck,
     titulo: 'Certificación',
     proposito: 'Qué documentos se exigen, a quién, y con cuánta anticipación se avisa',
     secciones: [
-      { clave: 'condiciones', titulo: 'Condiciones de documentos',
+      { clave: 'conditions', titulo: 'Condiciones de documentos',
         proposito: 'A quién se le exige cada documento', Panel: CondicionesDocumentosTab },
-      { clave: 'vencimientos', titulo: 'Alertas de vencimiento',
+      { clave: 'expiry-alerts', titulo: 'Alertas de vencimiento',
         proposito: 'Con cuántos días de anticipación avisar', Panel: AlertasVencimientoTab },
     ],
   },
   {
-    clave: 'operaciones',
+    clave: 'operations',
     icono: LayoutDashboard,
     titulo: 'Operaciones',
     proposito: 'Cómo se ve el tablero, cuándo avisa, y qué temperatura corresponde',
     secciones: [
-      { clave: 'estados-tms', titulo: 'Estados del tablero',
+      { clave: 'tms-statuses', titulo: 'Estados del tablero',
         proposito: 'Colores y columna de cada estado del TMS', Panel: EstadosTmsTab },
-      { clave: 'estados-operacionales', titulo: 'Estados operacionales',
+      { clave: 'operational-statuses', titulo: 'Estados operacionales',
         proposito: 'El vocabulario que usa el equipo', Panel: EstadosOperacionalesTab },
-      { clave: 'estados-equipo', titulo: 'Estados de equipo',
+      { clave: 'equipment-statuses', titulo: 'Estados de equipo',
         proposito: 'El motivo cuando un equipo no sale', Panel: EstadosEquipoTab },
-      { clave: 'umbrales', titulo: 'Umbrales de alerta',
+      { clave: 'alert-thresholds', titulo: 'Umbrales de alerta',
         proposito: 'Cuándo el monitor considera que algo va mal', Panel: AlertasMonitorTab },
-      { clave: 'temperaturas', titulo: 'Rangos de temperatura',
+      { clave: 'temperature-ranges', titulo: 'Rangos de temperatura',
         proposito: 'Qué rango corresponde a cada tipo de carga', Panel: RangosTemperaturaTab },
-      { clave: 'motivos-conductor', titulo: 'Motivos de conductor',
+      { clave: 'driver-reasons', titulo: 'Motivos de conductor',
         proposito: 'Por qué un conductor no está disponible', Panel: MotivosConductorTab },
     ],
   },
   {
-    clave: 'flota',
+    clave: 'fleet',
     icono: Truck,
     titulo: 'Flota',
     proposito: 'El vocabulario de vehículos que comparten Certificación y Operaciones',
     secciones: [
-      { clave: 'subtipos', titulo: 'Subtipos de vehículo',
+      { clave: 'subtypes', titulo: 'Subtipos de vehículo',
         proposito: 'Furgón congelado, sider, rampla plana', Panel: SubtiposVehiculoTab },
-      { clave: 'tipos-operacion', titulo: 'Tipos de operación',
+      { clave: 'operation-types', titulo: 'Tipos de operación',
         proposito: 'Tractoreo y equipo completo', Panel: TiposOperacionTab },
     ],
   },
   {
-    clave: 'personas',
+    clave: 'people',
     icono: Users,
     titulo: 'Personas y accesos',
     proposito: 'Quién entra y qué puede hacer',
     secciones: [
-      { clave: 'usuarios', titulo: 'Usuarios',
+      { clave: 'users', titulo: 'Usuarios',
         proposito: 'Quién tiene cuenta y con qué rol', Panel: UsuariosTab },
     ],
   },
   {
-    clave: 'facturacion',
+    clave: 'billing',
     icono: Receipt,
     titulo: 'Facturación',
     proposito: 'Más adelante',

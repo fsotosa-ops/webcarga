@@ -102,7 +102,7 @@ export function PortadaDominios() {
         return (
           <Link
             key={d.clave}
-            href={`/dashboard/admin/configuracion/${d.clave}`}
+            href={`/dashboard/admin/settings/${d.clave}`}
             prefetch={false}
             className={`flex gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50/70
                         focus-visible:outline-none focus-visible:bg-accent/5 ${borde}`}

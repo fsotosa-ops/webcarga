@@ -27,14 +27,22 @@ def test_list_requires_domain_query_param():
 
 
 def test_list_rejects_invalid_domain():
+    """Un dominio existe si la TABLA tiene filas con ese valor. Antes habia un
+    set escrito a mano en Python y un union en TypeScript, y extender uno solo
+    dejaba media pantalla devolviendo 422 -- paso con WEBCARGA_OPERATION_TYPE."""
     pool = AsyncMock()
+    pool.fetchval.return_value = False          # la tabla no conoce ese dominio
+    pool.fetch.return_value = [{"domain": "EQUIPMENT_STATE"}]
     client = make_client(pool)
     res = client.get("/api/v1/config/taxonomies?domain=NOT_A_DOMAIN")
     assert res.status_code == 422
+    # El mensaje dice cuales SI existen: un 422 que no orienta obliga a leer codigo.
+    assert "EQUIPMENT_STATE" in res.json()["detail"]
 
 
 def test_list_filters_by_domain():
     pool = AsyncMock()
+    pool.fetchval.return_value = True
     pool.fetch.return_value = [{
         "id": "t1", "domain": "EQUIPMENT_STATE", "label": "Disponible",
         "bg_color": "#fff", "text_color": "#000", "group": None, "sort_order": 1, "active": True,
@@ -50,6 +58,8 @@ def test_list_filters_by_domain():
 
 def test_create_rejects_invalid_domain():
     pool = AsyncMock()
+    pool.fetchval.return_value = False          # la tabla no conoce ese dominio
+    pool.fetch.return_value = [{"domain": "EQUIPMENT_STATE"}]
     client = make_client(pool)
     res = client.post("/api/v1/config/taxonomies", json={"domain": "NOT_A_DOMAIN", "label": "X"})
     assert res.status_code == 422
@@ -57,6 +67,7 @@ def test_create_rejects_invalid_domain():
 
 def test_create_taxonomy():
     pool = AsyncMock()
+    pool.fetchval.return_value = True
     pool.fetchrow.return_value = {
         "id": "t1", "domain": "EQUIPMENT_STATE", "label": "En Pana",
         "bg_color": "#fef2f2", "text_color": "#b91c1c", "group": None, "sort_order": 3, "active": True,

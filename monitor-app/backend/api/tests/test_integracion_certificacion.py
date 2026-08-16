@@ -620,3 +620,34 @@ def test_ningun_test_de_integracion_confirma_su_transaccion():
     assert "conexion_revertida" in cuerpo, (
         "el guardia quedo mirando un pedazo vacio del archivo"
     )
+
+
+# ── Los dominios de taxonomia: una sola fuente ─────────────────────────────
+
+
+async def test_el_union_de_typescript_coincide_con_los_dominios_de_la_tabla(conexion_revertida):
+    """La lista de dominios validos estaba escrita DOS VECES: un set en Python y
+    un union en TypeScript. WEBCARGA_OPERATION_TYPE existia solo del lado
+    TypeScript, asi que "Tipos de operacion" devolvia 422 al listar y al crear
+    -- media pantalla rotulada que no funcionaba, invisible para tsc, para el
+    build y para los tests con el cliente mockeado.
+
+    El set de Python se borro: ahora la fuente de verdad es la TABLA, y el
+    router valida contra ella. Queda el union de TypeScript, que es una
+    comodidad de tipado y no una segunda autoridad -- este test es lo que
+    impide que vuelva a divergir, y lo hace contra los datos reales, no contra
+    otra copia en codigo."""
+    filas = await conexion_revertida.fetch(
+        "SELECT DISTINCT domain FROM app.status_taxonomies ORDER BY domain"
+    )
+    en_la_tabla = {f["domain"] for f in filas}
+
+    fuente = Path(__file__).resolve().parents[3] / "frontend" / "lib" / "api" / "config.ts"
+    bloque = fuente.read_text(encoding="utf-8").split("export type TaxonomyDomain =")[1]
+    bloque = bloque.split("export type")[0]
+    en_typescript = set(re.findall(r"'([A-Z_]+)'", bloque))
+
+    assert en_typescript == en_la_tabla, (
+        f"sólo en TypeScript: {en_typescript - en_la_tabla} · "
+        f"sólo en la tabla: {en_la_tabla - en_typescript}"
+    )

@@ -651,8 +651,8 @@ def test_inventario_devuelve_pares_por_dominio():
 
     assert res.status_code == 200
     cuerpo = res.json()
-    assert cuerpo["certificacion"][0] == {"n": 37, "etiqueta": "documentos"}
-    assert cuerpo["flota"] == [
+    assert cuerpo["certification"][0] == {"n": 37, "etiqueta": "documentos"}
+    assert cuerpo["fleet"] == [
         {"n": 10, "etiqueta": "subtipos"},
         {"n": 2, "etiqueta": "tipos de operación"},
     ]
@@ -664,8 +664,8 @@ def test_inventario_omite_los_ceros():
     pool.fetchrow.return_value = {**_FILA_INVENTARIO, "rangos_temp": 0, "req_inactivos": 0}
     cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
 
-    assert all("rango" not in p["etiqueta"] for p in cuerpo["operaciones"])
-    assert all("vigencia" not in p["etiqueta"] for p in cuerpo["certificacion"])
+    assert all("rango" not in p["etiqueta"] for p in cuerpo["operations"])
+    assert all("vigencia" not in p["etiqueta"] for p in cuerpo["certification"])
 
 
 def test_inventario_usa_el_singular_cuando_corresponde():
@@ -673,29 +673,6 @@ def test_inventario_usa_el_singular_cuando_corresponde():
     pool.fetchrow.return_value = {**_FILA_INVENTARIO, "usuarios": 1, "subtipos": 1}
     cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
 
-    assert {"n": 1, "etiqueta": "usuario"} in cuerpo["personas"]
-    assert {"n": 1, "etiqueta": "subtipo"} in cuerpo["flota"]
+    assert {"n": 1, "etiqueta": "usuario"} in cuerpo["people"]
+    assert {"n": 1, "etiqueta": "subtipo"} in cuerpo["fleet"]
 
-
-def test_los_dominios_validos_coinciden_con_los_del_frontend():
-    """Los dominios de taxonomia estan declarados DOS VECES: aca y en el union
-    TaxonomyDomain de frontend/lib/api/config.ts. WEBCARGA_OPERATION_TYPE
-    existio meses solo del lado TypeScript, asi que la seccion "Tipos de
-    operacion" devolvia 422 al listar y al crear -- media pantalla rotulada que
-    no funcionaba, invisible para tsc y para los tests con el cliente mockeado.
-
-    Mientras las dos listas existan, este test es lo unico que las mantiene
-    juntas."""
-    import re
-    from pathlib import Path
-    from app.schemas.status_taxonomy import VALID_DOMAINS
-
-    fuente = Path(__file__).resolve().parents[3] / "frontend" / "lib" / "api" / "config.ts"
-    texto = fuente.read_text(encoding="utf-8")
-    bloque = texto.split("export type TaxonomyDomain =")[1].split("export type")[0]
-    del_frontend = set(re.findall(r"'([A-Z_]+)'", bloque))
-
-    assert del_frontend == VALID_DOMAINS, (
-        f"solo en el frontend: {del_frontend - VALID_DOMAINS} · "
-        f"solo en el backend: {VALID_DOMAINS - del_frontend}"
-    )

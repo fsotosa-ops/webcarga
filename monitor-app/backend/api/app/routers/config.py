@@ -377,18 +377,22 @@ def _pares(fila, *campos: tuple[str, str, str]) -> list[dict]:
 async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require_admin)):
     """Qué gobierna cada dominio, en números reales.
 
+    Las claves son los slugs de dominio del frontend, que van en INGLES por el
+    estandar de rutas del proyecto (Ronda 55): la URL habla ingles, la pantalla
+    habla espanol.
+
     La portada mostraba "N secciones", que describe la NAVEGACIÓN y no el
     contenido: Certificación con 37 documentos se veía igual que Personas con
     10 usuarios."""
     f = await pool.fetchrow(_INVENTARIO_SQL)
     return {
-        "certificacion": _pares(
+        "certification": _pares(
             f,
             ("req_total", "documento", "documentos"),
             ("req_condicion", "con condición", "con condición"),
             ("req_inactivos", "sin vigencia", "sin vigencia"),
         ),
-        "operaciones": _pares(
+        "operations": _pares(
             f,
             ("estados_tms", "estado del tablero", "estados del tablero"),
             ("estados_op", "operacional", "operacionales"),
@@ -396,12 +400,12 @@ async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require_adm
             ("motivos", "motivo", "motivos"),
             ("rangos_temp", "rango de temperatura", "rangos de temperatura"),
         ),
-        "flota": _pares(
+        "fleet": _pares(
             f,
             ("subtipos", "subtipo", "subtipos"),
             ("tipos_operacion", "tipo de operación", "tipos de operación"),
         ),
-        "personas": _pares(
+        "people": _pares(
             f,
             ("usuarios", "usuario", "usuarios"),
             ("roles", "rol", "roles"),

@@ -3,17 +3,35 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import require_admin
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
-from ..schemas.status_taxonomy import StatusTaxonomyBody, StatusTaxonomyPatch, VALID_DOMAINS
+from ..schemas.status_taxonomy import StatusTaxonomyBody, StatusTaxonomyPatch
 
 router = APIRouter(prefix="/config/taxonomies", tags=["config"])
 
 _FIELDS = 'id::text, domain, label, bg_color, text_color, group_id AS "group", sort_order, active'
 
 
+async def _exigir_dominio_conocido(domain: str, pool) -> None:
+    """Un dominio existe si la tabla tiene filas con ese valor.
+
+    Antes habia un set escrito a mano aca y un union en TypeScript, y bastaba
+    con extender uno solo para que media pantalla devolviera 422 -- fue
+    exactamente lo que paso con WEBCARGA_OPERATION_TYPE. Ahora la fuente de
+    verdad es la tabla: para sumar un vocabulario nuevo se siembra su primera
+    fila en una migracion, que es donde corresponde decidirlo."""
+    existe = await pool.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM app.status_taxonomies WHERE domain = $1)", domain,
+    )
+    if not existe:
+        conocidos = await pool.fetch(
+            "SELECT DISTINCT domain FROM app.status_taxonomies ORDER BY domain"
+        )
+        nombres = ", ".join(r["domain"] for r in conocidos)
+        raise HTTPException(422, f"domain desconocido: {domain}. Los que existen son: {nombres}")
+
+
 @router.get("")
 async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool)):
-    if domain not in VALID_DOMAINS:
-        raise HTTPException(422, f"domain debe ser uno de {VALID_DOMAINS}")
+    await _exigir_dominio_conocido(domain, pool)
     rows = await pool.fetch(
         f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE domain = $1 AND active = true ORDER BY sort_order, created_at",
         domain,
@@ -23,6 +41,7 @@ async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool)):
 
 @router.post("")
 async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), _=Depends(require_admin)):
+    await _exigir_dominio_conocido(body.domain, pool)
     row = await pool.fetchrow(
         f"""INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, sort_order, group_id)
             VALUES ($1, $2, $3, $4, $5, $6)

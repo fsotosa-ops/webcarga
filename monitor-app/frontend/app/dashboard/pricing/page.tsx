@@ -7,7 +7,7 @@ import { LocationCreateForm } from '@/components/dashboard/LocationCreateForm'
 import { LocationsTable } from '@/components/dashboard/LocationsTable'
 import { LocationsPendingTab } from '@/components/dashboard/LocationsPendingTab'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { INPUT, LoadState } from '../admin/configuracion/shared'
+import { INPUT, LoadState } from '../admin/settings/shared'
 
 type Tab = 'pending' | 'all'
 const LIMIT = 50

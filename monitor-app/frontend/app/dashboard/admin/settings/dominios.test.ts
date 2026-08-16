@@ -29,7 +29,7 @@ describe('registro de dominios', () => {
   })
 
   it('busca un dominio por su clave', () => {
-    expect(dominioPorClave('certificacion')?.titulo).toBe('Certificación')
+    expect(dominioPorClave('certification')?.titulo).toBe('Certificación')
     expect(dominioPorClave('no-existe')).toBeUndefined()
   })
 
@@ -46,14 +46,14 @@ describe('registro de dominios', () => {
     )
 
     expect(mapa).toEqual({
-      certificacion: ['condiciones', 'vencimientos'],
-      operaciones: [
-        'estados-equipo', 'estados-operacionales', 'estados-tms',
-        'motivos-conductor', 'temperaturas', 'umbrales',
+      certification: ['conditions', 'expiry-alerts'],
+      operations: [
+        'alert-thresholds', 'driver-reasons', 'equipment-statuses',
+        'operational-statuses', 'temperature-ranges', 'tms-statuses',
       ],
-      flota:       ['subtipos', 'tipos-operacion'],
-      personas:    ['usuarios'],
-      facturacion: [],
+      fleet:    ['operation-types', 'subtypes'],
+      people:   ['users'],
+      billing:  [],
     })
   })
 

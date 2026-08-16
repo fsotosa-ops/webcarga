@@ -13,7 +13,7 @@ export function NavDominios({ activo }: { activo: string }) {
         return (
           <Link
             key={d.clave}
-            href={`/dashboard/admin/configuracion/${d.clave}`}
+            href={`/dashboard/admin/settings/${d.clave}`}
             prefetch={false}
             aria-current={esActivo ? 'page' : undefined}
             className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
