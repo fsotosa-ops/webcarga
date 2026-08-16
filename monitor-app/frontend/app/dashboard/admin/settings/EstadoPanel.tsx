@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { configApi, type TripStatusRow } from '@/lib/api/config'
+import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { GROUP_OPTIONS, INPUT, SwatchPicker } from './shared'
 
 /** El editor de un estado del tablero: nombre visible, color y columna.
@@ -22,6 +23,13 @@ export function EstadoPanel({
   estado:   TripStatusRow
   onCerrar: () => void
 }) {
+  // La puerta REAL es la ruta: app/dashboard/admin/layout.tsx redirige a quien
+  // no sea admin u owner, y el backend exige require_admin en las escrituras.
+  // Este gate existe para no quedar asimetrico con CondicionPanel y para que el
+  // componente siga siendo correcto si algun dia se monta fuera de /admin.
+  // NO se le escribe test a la rama falsa: hoy es inalcanzable, y un test sobre
+  // un estado que no puede ocurrir es cobertura que no cubre.
+  const puedeEditar = useCanAdmin()
   const qc = useQueryClient()
 
   const [label, setLabel] = useState(estado.label)
@@ -63,11 +71,11 @@ export function EstadoPanel({
     <PanelLateral
       titulo={estado.label}
       onCerrar={onCerrar}
-      pie={sucio ? (
+      pie={sucio && puedeEditar ? (
         <button
           type="button"
           onClick={() => guardar.mutate()}
-          disabled={guardar.isPending}
+          disabled={guardar.isPending || !puedeEditar}
           className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs
                      font-semibold text-white hover:bg-accent/90 disabled:opacity-50
                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"

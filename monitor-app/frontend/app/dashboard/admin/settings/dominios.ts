@@ -3,7 +3,7 @@ import {
   ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
 } from 'lucide-react'
 import {
-  EstadosOperacionalesTab, EstadosEquipoTab, TaxonomyTab,
+  EstadosOperacionalesTab, EstadosEquipoTab,
 } from './estados-tabs'
 import {
   AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab,

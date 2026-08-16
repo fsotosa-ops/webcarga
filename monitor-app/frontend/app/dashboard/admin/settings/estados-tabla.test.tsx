@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => true }))
 import type { TripStatusRow } from '@/lib/api/config'
 
 vi.mock('@/lib/api/config', () => ({
