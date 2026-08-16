@@ -85,6 +85,12 @@ export const taxonomiesApi = {
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
     }),
 
+  // Devuelve cuántas condiciones de documento seguían apuntando al valor. El
+  // borrado es lógico, así que ninguna regla se rompe — pero el valor deja de
+  // aparecer en las casillas de Condiciones y la regla se ve como "0 marcas"
+  // sin serlo, así que quien desactiva tiene que enterarse en el momento.
   deactivate: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/v1/config/taxonomies/${id}`, { method: 'DELETE' }),
+    apiFetch<{ desactivado: boolean; en_uso_por: number }>(
+      `/api/v1/config/taxonomies/${id}`, { method: 'DELETE' },
+    ),
 }

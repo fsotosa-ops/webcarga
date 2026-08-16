@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react'
 import { configApi, taxonomiesApi, type TripStatusRow, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
 import {
   GROUP_OPTIONS, INPUT, useConfigList, LoadState, useRowFeedback,
@@ -144,6 +144,10 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
   const [nuevo, setNuevo]       = useState<ReturnType<typeof emptyNew> | null>(null)
   const [creating, setCreating] = useState(false)
   const [createErr, setCreateErr] = useState<string | null>(null)
+  // Cuántas condiciones de documento seguían usando el último valor desactivado.
+  // null = no hay nada que avisar. Sólo los subtipos de vehículo llegan a tener
+  // condiciones apuntándoles, así que en las demás secciones esto nunca se dibuja.
+  const [avisoUso, setAvisoUso] = useState<number | null>(null)
   const fb = useRowFeedback()
 
   const visibles = items.filter(s => s.active)
@@ -182,8 +186,12 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
   async function deactivate(row: TaxonomyRow) {
     if (!window.confirm(`¿Desactivar "${row.label}"? Dejará de aparecer como opción.`)) return
     await fb.run(row.id, async () => {
-      await taxonomiesApi.deactivate(row.id)
-      setItems(prev => prev.filter(r => r.id !== row.id))
+      const r = await taxonomiesApi.deactivate(row.id)
+      // Se guarda ANTES de sacar la fila: la desaparición de la fila es la
+      // señal de que el borrado terminó, y el aviso tiene que estar puesto
+      // para entonces.
+      setAvisoUso(r.en_uso_por > 0 ? r.en_uso_por : null)
+      setItems(prev => prev.filter(r2 => r2.id !== row.id))
     })
   }
 
@@ -207,6 +215,16 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
       <LoadState loading={loading} error={error} onRetry={reload} />
       {!loading && !error && (
         <>
+          {avisoUso !== null && (
+            <p role="status"
+               className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
+              <AlertTriangle size={13} className="shrink-0 mt-px" aria-hidden="true" />
+              Se desactivó, y {avisoUso === 1
+                ? 'una regla de documento seguía usándolo'
+                : `${avisoUso} reglas de documento seguían usándolo`}.
+              Revisa Certificación · Condiciones.
+            </p>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-xs min-w-[640px]">
               <thead>

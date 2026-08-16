@@ -65,3 +65,17 @@ async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), _=Depend
     if result == "UPDATE 0":
         raise HTTPException(404, "No encontrado")
     await invalidate_trips_meta_cache()
+    # Cuántas condiciones de documento siguen apuntando a este valor. El
+    # borrado es lógico, así que la regla NO se rompe — pero la casilla
+    # desaparece de la pantalla y la condición se ve como "0 marcas" sin serlo.
+    # Se cuentan también las condiciones inactivas: la pantalla de Condiciones
+    # las lista igual (GET /compliance-requirements no filtra por is_active),
+    # así que quien vaya a revisar las va a encontrar.
+    en_uso = await pool.fetchval(
+        """
+        SELECT count(*) FROM public.compliance_requirements
+         WHERE $1::uuid = ANY(applies_to_fleet_service_type_ids)
+        """,
+        taxonomy_id,
+    )
+    return {"desactivado": True, "en_uso_por": en_uso or 0}

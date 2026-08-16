@@ -107,9 +107,57 @@ def test_patch_taxonomy_no_fields_422():
 def test_deactivate_taxonomy():
     pool = AsyncMock()
     pool.execute.return_value = "UPDATE 1"
+    pool.fetchval.return_value = 0
     client = make_client(pool)
     res = client.delete("/api/v1/config/taxonomies/t1")
     assert res.status_code == 200
+    assert res.json() == {"desactivado": True, "en_uso_por": 0}
+
+
+def test_desactivar_un_subtipo_en_uso_avisa_cuantas_reglas_lo_usan():
+    """Desactivar no rompe nada -- el borrado es logico y el UUID sobrevive en
+    applies_to_fleet_service_type_ids -- pero el subtipo desaparece de las
+    casillas y la condicion se ve como '0 marcas' sin serlo. Quien desactiva
+    tiene que enterarse en el momento, no despues."""
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 1"
+    pool.fetchval.return_value = 2
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/config/taxonomies/t1")
+
+    assert res.status_code == 200
+    assert res.json() == {"desactivado": True, "en_uso_por": 2}
+
+
+def test_deactivate_taxonomy_cuenta_las_condiciones_que_apuntan_al_id():
+    """El conteo tiene que preguntar por ESTE id dentro del arreglo de subtipos
+    de las condiciones. Sin fijar la consulta y el argumento, un conteo que
+    mirara otra columna -- o que ignorara el id -- pasaria igual."""
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 1"
+    pool.fetchval.return_value = 2
+    client = make_client(pool)
+
+    client.delete("/api/v1/config/taxonomies/t1")
+
+    query = pool.fetchval.call_args.args[0]
+    assert "public.compliance_requirements" in query
+    assert "$1::uuid = ANY(applies_to_fleet_service_type_ids)" in query
+    assert pool.fetchval.call_args.args[1] == "t1"
+
+
+def test_deactivate_taxonomy_404_no_cuenta_condiciones():
+    """Si no se desactivo nada, no hay nada que contar: la segunda consulta
+    no se hace."""
+    pool = AsyncMock()
+    pool.execute.return_value = "UPDATE 0"
+    client = make_client(pool)
+
+    res = client.delete("/api/v1/config/taxonomies/t1")
+
+    assert res.status_code == 404
+    pool.fetchval.assert_not_awaited()
 
 
 def test_deactivate_taxonomy_404_when_missing():
