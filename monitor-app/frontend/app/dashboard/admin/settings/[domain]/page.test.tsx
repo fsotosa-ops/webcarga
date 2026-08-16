@@ -14,8 +14,8 @@ vi.mock('../umbrales-tabs', () => ({
   RangosTemperaturaTab: () => <div>panel temperaturas</div>,
   AlertasMonitorTab: () => <div>panel umbrales</div>,
 }))
-vi.mock('../condiciones-tab', () => ({
-  CondicionesDocumentosTab: () => <div>panel condiciones</div>,
+vi.mock('../condiciones-tabla', () => ({
+  CondicionesTabla: () => <div>panel condiciones</div>,
 }))
 vi.mock('../flota-tabs', () => ({
   SubtiposVehiculoTab: () => <div>panel subtipos</div>,

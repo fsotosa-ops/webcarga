@@ -8,7 +8,7 @@ import {
 import {
   AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab,
 } from './umbrales-tabs'
-import { CondicionesDocumentosTab } from './condiciones-tab'
+import { CondicionesTabla } from './condiciones-tabla'
 import { SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab } from './flota-tabs'
 import { UsuariosTab } from './usuarios-tab'
 
@@ -54,7 +54,7 @@ export const DOMINIOS: Dominio[] = [
     proposito: 'Qué documentos se exigen, a quién, y con cuánta anticipación se avisa',
     secciones: [
       { clave: 'conditions', titulo: 'Condiciones de documentos',
-        proposito: 'A quién se le exige cada documento', Panel: CondicionesDocumentosTab },
+        proposito: 'A quién se le exige cada documento', Panel: CondicionesTabla },
       { clave: 'expiry-alerts', titulo: 'Alertas de vencimiento',
         proposito: 'Con cuántos días de anticipación avisar', Panel: AlertasVencimientoTab },
     ],
