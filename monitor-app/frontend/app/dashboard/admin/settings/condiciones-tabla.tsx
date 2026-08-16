@@ -58,7 +58,17 @@ export function CondicionesTabla() {
     if (code) params.set('doc', code)
     else params.delete('doc')
     const qs = params.toString()
-    router.replace(qs ? `${pathname}?${qs}` : pathname)
+    const destino = qs ? `${pathname}?${qs}` : pathname
+    // ABRIR el panel es `push` y cerrarlo es `replace`. Asi el boton de atras
+    // del navegador CIERRA el panel, que es lo que espera cualquiera frente a
+    // algo que se abrio encima; con `replace` en los dos lados, atras sacaba de
+    // la pantalla entera.
+    //
+    // La SECCION sigue usando `replace` (en [domain]/page.tsx) y no es
+    // inconsistente: cambiar de seccion es moverse entre vistas hermanas de la
+    // misma pantalla, y recorrer seis no deberia costar seis "atras" para salir.
+    if (code) router.push(destino)
+    else router.replace(destino)
   }, [router, pathname, searchParams])
 
   const etiquetaSubtipo = useMemo(() => {

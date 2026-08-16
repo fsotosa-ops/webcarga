@@ -18,8 +18,9 @@ vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => true }))
 // elige qué trae.
 let urlActual = ''
 const reemplazar = vi.fn()
+const empujar = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: reemplazar }),
+  useRouter: () => ({ replace: reemplazar, push: empujar }),
   usePathname: () => '/dashboard/admin/settings/certification',
   useSearchParams: () => new URLSearchParams(urlActual),
 }))
@@ -71,6 +72,7 @@ function montar() {
 beforeEach(() => {
   urlActual = ''
   reemplazar.mockClear()
+  empujar.mockClear()
   vi.mocked(complianceApi.listRequirements).mockReset()
   vi.mocked(complianceApi.listRequirements).mockResolvedValue(REQS)
   vi.mocked(taxonomiesApi.list).mockReset()
@@ -179,7 +181,10 @@ describe('CondicionesTabla', () => {
     montar()
     await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /editar revisión técnica/i }))
-    expect(reemplazar).toHaveBeenCalledWith(
+    // `push` y no `replace`: abrir el panel deja una entrada en el historial,
+    // asi el boton de atras del navegador lo CIERRA en vez de sacar de la
+    // pantalla entera.
+    expect(empujar).toHaveBeenCalledWith(
       '/dashboard/admin/settings/certification?doc=REVISION_TECNICA')
   })
 
@@ -188,7 +193,7 @@ describe('CondicionesTabla', () => {
     montar()
     await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /editar revisión técnica/i }))
-    expect(reemplazar).toHaveBeenCalledWith(
+    expect(empujar).toHaveBeenCalledWith(
       '/dashboard/admin/settings/certification?section=conditions&doc=REVISION_TECNICA')
   })
 
@@ -219,5 +224,21 @@ describe('CondicionesTabla', () => {
     montar()
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /reintentar/i })).toBeInTheDocument())
+  })
+
+  // Cerrar es `replace` y no `push`: si cerrar tambien empujara, abrir y cerrar
+  // dos veces dejaria cuatro entradas en el historial y el boton de atras
+  // recorreria un ida y vuelta que el usuario nunca hizo.
+  it('cerrar el panel no ensucia el historial', async () => {
+    urlActual = 'section=conditions&doc=MANTENCION_FRIO'
+    montar()
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: /cámara de frío/i })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /cerrar/i }))
+
+    expect(reemplazar).toHaveBeenCalledWith(
+      '/dashboard/admin/settings/certification?section=conditions')
+    expect(empujar).not.toHaveBeenCalled()
   })
 })

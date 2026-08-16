@@ -25,7 +25,7 @@ import { inventarioApi, type InventarioConfig } from '@/lib/api/config'
  *
  *  Todo se deriva del registro: agregar un dominio no toca este archivo. */
 export function PortadaDominios() {
-  // react-query, que es lo que el modulo ya usa (RequirementConditionsPanel).
+  // react-query, que es lo que el modulo ya usa.
   // La primera version resolvia esto con un useEffect a mano y dejaba `{}`
   // significando DOS cosas -- "cargo vacio" y "fallo" --, que es el defecto
   // que este proyecto ya arrastro cinco veces. Aca los estados vienen
