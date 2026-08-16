@@ -349,7 +349,8 @@ export default function Sidebar({ role }: SidebarProps) {
 
         {canAdmin && (
           <Link
-            href="/dashboard/admin/usuarios"
+            href="/dashboard/admin/configuracion"
+            prefetch={false}
             className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
               isAdmin ? 'text-white' : 'text-white/40 hover:text-white/70'
             }`}
