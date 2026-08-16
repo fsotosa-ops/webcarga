@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ArrowUpDown, ArrowUp, ArrowDown, Check } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { getLatestTempStop, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { getStopStates } from '@/lib/utils/stopState'
 import { normalizeUTC, fmtDate } from '@/lib/utils/datetime'
+import { OrdenIcono } from '@/components/ui/tabla/OrdenIcono'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
@@ -118,12 +119,6 @@ function parsePhones(raw: string | null): string[] {
     if (Array.isArray(p)) return p.filter(Boolean)
   } catch { /* plain string */ }
   return [raw]
-}
-
-function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey | null; sortDir: 'asc' | 'desc' }) {
-  if (sortKey !== col) return <ArrowUpDown size={10} className="inline ml-0.5 text-gray-300" />
-  if (sortDir === 'asc') return <ArrowUp size={10} className="inline ml-0.5 text-accent" />
-  return <ArrowDown size={10} className="inline ml-0.5 text-accent" />
 }
 
 interface Props {
@@ -292,17 +287,17 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     estado es lo primero que filtran"). Reemplaza a Patente
                     como única columna sticky al hacer scroll horizontal. */}
                 <th onClick={() => onSort('current_status')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
-                  Estado<SortIcon col="current_status" sortKey={sortKey} sortDir={sortDir} />
+                  Estado<OrdenIcono activo={sortKey === 'current_status'} direccion={sortDir} />
                   <span className="sr-only">, Abrir detalle</span>
                 </th>
-                <th onClick={() => onSort('planning_date')} className="px-3 py-2.5 text-left w-[92px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<SortIcon col="planning_date" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('planning_date')} className="px-3 py-2.5 text-left w-[92px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Fecha<OrdenIcono activo={sortKey === 'planning_date'} direccion={sortDir} /></th>
                 <th className="px-2 py-2.5 text-left w-[44px]">TMS</th>
-                <th onClick={() => onSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<SortIcon col="source_system_trip_id" sortKey={sortKey} sortDir={sortDir} /></th>
-                <th onClick={() => onSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<SortIcon col="tractor_plate" sortKey={sortKey} sortDir={sortDir} /></th>
-                <th onClick={() => onSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<SortIcon col="driver_name" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<OrdenIcono activo={sortKey === 'source_system_trip_id'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<OrdenIcono activo={sortKey === 'tractor_plate'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<OrdenIcono activo={sortKey === 'driver_name'} direccion={sortDir} /></th>
                 <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
-                <th onClick={() => onSort('carrier_name')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<SortIcon col="carrier_name" sortKey={sortKey} sortDir={sortDir} /></th>
-                <th onClick={() => onSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<SortIcon col="client_name" sortKey={sortKey} sortDir={sortDir} /></th>
+                <th onClick={() => onSort('carrier_name')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<OrdenIcono activo={sortKey === 'carrier_name'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<OrdenIcono activo={sortKey === 'client_name'} direccion={sortDir} /></th>
                 <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
                 <th className="px-3 py-2.5 text-left">Destinos</th>
                 <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>

@@ -71,6 +71,14 @@ export function CondicionesTabla() {
     else router.replace(destino)
   }, [router, pathname, searchParams])
 
+  // Los subtipos vigentes, en la forma que usan la frase y el panel. Su
+  // cantidad es el TOTAL contra el que se enuncia una regla de varios
+  // subtipos: "9 de 10", no "sólo 9".
+  const subtipos = useMemo(
+    () => (tax.data ?? []).map(t => ({ id: t.id, label: t.label })),
+    [tax.data],
+  )
+
   const etiquetaSubtipo = useMemo(() => {
     const mapa = new Map((tax.data ?? []).map(s => [s.id, s.label]))
     // Un subtipo desactivado desaparece del catalogo pero su id sigue en la
@@ -104,12 +112,24 @@ export function CondicionesTabla() {
   // lista. Un codigo que no existe simplemente no abre nada.
   const requisitoAbierto = todos.find(r => r.requirement_code === abierto)
 
-  if (req.isPending || req.isError) {
+  // LAS DOS CONSULTAS, no sólo el catálogo. Los subtipos son la mitad de la
+  // frase: si sólo fallan ellos y la tabla se dibuja igual, `etiquetaSubtipo`
+  // cae al respaldo para todos los ids y la fila dice "Sólo un subtipo dado de
+  // baja" de un subtipo que existe perfectamente — sin error visible y sin
+  // forma de reintentar. La pantalla vieja miraba `errorReq ?? errorSub`.
+  const errorDeCarga = req.isError
+    ? 'No se pudo cargar el catálogo de documentos'
+    : tax.isError
+    ? 'No se pudieron cargar los subtipos de vehículo'
+    : null
+  const cargando = !errorDeCarga && (req.isPending || tax.isPending)
+
+  if (cargando || errorDeCarga) {
     return (
       <div className="p-1">
         <LoadState
-          loading={req.isPending}
-          error={req.isError ? 'No se pudo cargar el catálogo de documentos' : null}
+          loading={cargando}
+          error={errorDeCarga}
           onRetry={() => { req.refetch(); tax.refetch() }}
         />
       </div>
@@ -136,13 +156,16 @@ export function CondicionesTabla() {
             <EncabezadoOrdenable columna="documento" orden={orden} onOrdenar={ordenarPor}>Documento</EncabezadoOrdenable>
             <th scope="col" className={CABECERA}>Se exige a</th>
             <th scope="col" className={CABECERA}>Vigencia</th>
-            <th className="w-9" />
+            <th scope="col" className="w-9" aria-label="Acciones" />
           </tr>
         </thead>
         <tbody>
           {filas.map(r => {
             const e = ENTIDAD[r.target_entity]
-            const celda = celdaSeExigeA(r, etiquetaSubtipo)
+            // El total sale del catálogo de subtipos, no de un número escrito
+            // a mano: si mañana se da de alta un subtipo, la frase se corrige
+            // sola.
+            const celda = celdaSeExigeA(r, etiquetaSubtipo, subtipos.length)
             return (
               <tr key={r.id} className="border-b border-border/70 hover:bg-gray-50/60">
                 <td className="px-3 py-2.5">
@@ -189,7 +212,7 @@ export function CondicionesTabla() {
         <CondicionPanel
           key={requisitoAbierto.id}
           requisito={requisitoAbierto}
-          subtipos={(tax.data ?? []).map(t => ({ id: t.id, label: t.label }))}
+          subtipos={subtipos}
           onCerrar={() => abrir(null)}
         />
       )}

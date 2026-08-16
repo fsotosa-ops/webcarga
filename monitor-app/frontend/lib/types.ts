@@ -1338,9 +1338,12 @@ export type RequirementOption = {
   alcance:                           Alcance
 }
 
-/** Lo que necesita `RequirementConditionsPanel` para dibujar un requisito:
- *  un subconjunto de `RequirementOption` sin `requirement_level` ni
- *  `has_expiration`, que el panel no usa. */
+/** La condición de un requisito, sin lo que no hace falta para editarla: un
+ *  subconjunto de `RequirementOption` sin `requirement_level` ni
+ *  `has_expiration`. Es la forma que viaja en `PATCH /conditions`
+ *  (`lib/api/requirements.ts`); el panel que le daba nombre
+ *  —`RequirementConditionsPanel`— ya no existe, lo reemplazó `CondicionPanel`,
+ *  que dibuja desde `RequirementOption` completo. */
 export type RequirementConditions = Pick<RequirementOption,
   'id' | 'requirement_code' | 'name' | 'target_entity' |
   'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>

@@ -24,13 +24,20 @@ export function fraseDeLaRegla(
   r: Pick<RequirementOption,
     'target_entity' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>,
   etiquetaSubtipo: (id: string) => string,
+  totalSubtipos: number,
 ): string {
   const subtipos = r.applies_to_fleet_service_type_ids
   const gestiones = r.applies_to_management_types
 
   if (subtipos?.length) {
-    return subtipos.length === 1
-      ? `Sólo ${etiquetaSubtipo(subtipos[0])}`
+    if (subtipos.length === 1) return `Sólo ${etiquetaSubtipo(subtipos[0])}`
+    // "Sólo 9" cuando el catálogo tiene 10 SUBESTIMA: se lee como una
+    // restricción fuerte y en realidad excluye uno solo. Con el total a la
+    // vista la fila se lee igual que la columna de al lado ("36 de 118").
+    // Sin catálogo cargado no hay total que enunciar: "9 de 0" seria peor que
+    // no decirlo.
+    return totalSubtipos > 0
+      ? `${subtipos.length} de ${totalSubtipos} subtipos`
       : `Sólo ${subtipos.length} subtipos`
   }
   if (gestiones?.length) {
@@ -59,8 +66,9 @@ export function celdaSeExigeA(
     'target_entity' | 'is_active' | 'alcance' |
     'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>,
   etiquetaSubtipo: (id: string) => string,
+  totalSubtipos: number,
 ): { regla: string; alcance: string } {
   const cuenta = `${r.alcance.alcanzadas} de ${r.alcance.universo}`
   if (!r.is_active) return { regla: 'No se exige', alcance: `Alcanzaría a ${cuenta}` }
-  return { regla: fraseDeLaRegla(r, etiquetaSubtipo), alcance: cuenta }
+  return { regla: fraseDeLaRegla(r, etiquetaSubtipo, totalSubtipos), alcance: cuenta }
 }

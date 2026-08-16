@@ -35,12 +35,20 @@ function requisito(patch: Partial<RequirementOption> = {}): RequirementOption {
 }
 
 function montarPanel(r: RequirementOption = requisito(), onCerrar = vi.fn()) {
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const vista = render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={cliente}>
       <CondicionPanel requisito={r} subtipos={SUBTIPOS} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
-  return { onCerrar, vista }
+  // Volver a dibujar con OTRO objeto requisito, como hace react-query cuando
+  // refetchea el catálogo: mismo cliente, mismo panel montado.
+  const redibujar = (otro: RequirementOption) => vista.rerender(
+    <QueryClientProvider client={cliente}>
+      <CondicionPanel requisito={otro} subtipos={SUBTIPOS} onCerrar={onCerrar} />
+    </QueryClientProvider>,
+  )
+  return { onCerrar, vista, redibujar }
 }
 
 beforeEach(() => {
@@ -172,16 +180,43 @@ describe('CondicionPanel', () => {
   // Clase de bug recurrente en este proyecto: el borrador que no se
   // resincroniza cuando el prop cambia deja la pantalla mostrando lo viejo.
   it('si el requisito cambia, el borrador se resincroniza', () => {
-    const { vista } = montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
-    vista.rerender(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <CondicionPanel
-          requisito={requisito({ applies_to_fleet_service_type_ids: null })}
-          subtipos={SUBTIPOS}
-          onCerrar={vi.fn()}
-        />
-      </QueryClientProvider>,
-    )
+    const { redibujar } = montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
+    redibujar(requisito({ applies_to_fleet_service_type_ids: null }))
     expect(screen.getByRole('radio', { name: /a todos los vehículos/i })).toBeChecked()
+  })
+
+  // La misma clase de bug, del otro lado: resincronizar DE MÁS. El catálogo
+  // llega de react-query, que con refetchOnWindowFocus devuelve un objeto
+  // nuevo aunque el contenido sea idéntico. Si el borrador se resincroniza por
+  // IDENTIDAD del arreglo y no por su contenido, irse a otra ventana quince
+  // segundos y volver borra lo que se venía editando, sin ningún mensaje.
+  // Afecta sólo a los requisitos que YA tienen condición, que son justo los
+  // dos de los que trata la pantalla.
+  it('un refetch que devuelve lo mismo no borra lo que el usuario eligió', () => {
+    const { redibujar } = montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /furgón congelado/i }))
+    expect(screen.getByRole('checkbox', { name: /furgón congelado/i })).toBeChecked()
+
+    redibujar(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
+
+    expect(screen.getByRole('checkbox', { name: /furgón congelado/i })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /sider/i })).toBeChecked()
+  })
+
+  it('un refetch que devuelve lo mismo tampoco desmarca "a todos"', () => {
+    const { redibujar } = montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
+    fireEvent.click(screen.getByRole('radio', { name: /a todos los vehículos/i }))
+    redibujar(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
+    expect(screen.getByRole('radio', { name: /a todos los vehículos/i })).toBeChecked()
+  })
+
+  // Un requisito de empresa guarda la condición en OTRO campo: el arreglo que
+  // hay que comparar por contenido no es el mismo.
+  it('un refetch que devuelve lo mismo no borra el tipo de gestión elegido', () => {
+    const { redibujar } = montarPanel(
+      requisito({ target_entity: 'CARRIER', applies_to_management_types: ['TRACTOREO'] }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /equipo completo/i }))
+    redibujar(requisito({ target_entity: 'CARRIER', applies_to_management_types: ['TRACTOREO'] }))
+    expect(screen.getByRole('checkbox', { name: /equipo completo/i })).toBeChecked()
   })
 })

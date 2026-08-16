@@ -46,6 +46,8 @@ beforeEach(() => {
   empujar.mockClear()
   vi.mocked(configApi.getStatuses).mockReset()
   vi.mocked(configApi.getStatuses).mockResolvedValue(ESTADOS)
+  vi.mocked(configApi.patchStatus).mockReset()
+  vi.mocked(configApi.patchStatus).mockResolvedValue(ESTADOS[0])
 })
 
 describe('EstadosTabla', () => {
@@ -169,6 +171,29 @@ describe('EstadosTabla', () => {
     montar()
     await waitFor(() => expect(screen.getByText('Asignado')).toBeInTheDocument())
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  // Reordenar es relativo al CATÁLOGO COMPLETO, no a lo que la lista está
+  // mostrando: filtrar por columna o cambiar el orden de la tabla no puede
+  // cambiar con quién se intercambia un estado. "En destino" es el primero de
+  // la columna "En local" pero el segundo del tablero, así que puede subir —
+  // y sube contra "Asignado", que ni siquiera está en pantalla.
+  it('el panel reordena sobre el catálogo completo, no sobre lo filtrado', async () => {
+    urlActual = 'estado=EN_DESTINO'
+    montar()
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /en local/i }))
+    fireEvent.click(screen.getByRole('button', { name: /subir/i }))
+    await waitFor(() => expect(configApi.patchStatus).toHaveBeenCalledWith('EN_DESTINO', { sort_order: 1 }))
+    expect(configApi.patchStatus).toHaveBeenCalledWith('ASIGNADO', { sort_order: 2 })
+  })
+
+  // Una columna sin nombre accesible es una columna que un lector de pantalla
+  // no puede anunciar: la de acciones no tiene texto visible, asi que el
+  // nombre tiene que estar puesto a mano.
+  it('la columna de acciones tiene nombre accesible', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: /acciones/i })).toBeInTheDocument())
   })
 
   it('avisa cuando el catálogo no carga, y deja reintentar', async () => {

@@ -21,17 +21,23 @@ export function PanelLateral({
   const panel = useRef<HTMLDivElement>(null)
   const anterior = useRef<HTMLElement | null>(null)
 
+  // DOS efectos, no uno: tomar el foco ocurre UNA VEZ, al abrir; escuchar
+  // Escape necesita el `onCerrar` de ahora. Con los dos juntos, y como los
+  // llamadores pasan una flecha en linea, cualquier re-render del padre —un
+  // refetch de react-query, apretar un chip, ordenar— rearmaba el efecto
+  // entero y le sacaba el cursor a quien estaba escribiendo en el panel.
   useEffect(() => {
     anterior.current = document.activeElement as HTMLElement | null
     panel.current?.focus()
+    // Devolver el foco a donde estaba: sin esto, cerrar deja a quien navega
+    // con teclado al principio del documento.
+    return () => { anterior.current?.focus() }
+  }, [])
+
+  useEffect(() => {
     const alTeclear = (e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar() }
     document.addEventListener('keydown', alTeclear)
-    return () => {
-      document.removeEventListener('keydown', alTeclear)
-      // Devolver el foco a donde estaba: sin esto, cerrar deja a quien navega
-      // con teclado al principio del documento.
-      anterior.current?.focus()
-    }
+    return () => document.removeEventListener('keydown', alTeclear)
   }, [onCerrar])
 
   return (

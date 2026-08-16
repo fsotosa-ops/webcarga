@@ -19,6 +19,10 @@ const ALGUNOS: Record<string, string> = {
   CARRIER: 'Sólo a algunos tipos de gestión',
 }
 
+/** Separador de la clave de contenido de la condición: el separador de unidad
+ *  de ASCII, que ningún id de subtipo ni de tipo de gestión contiene. */
+const SEPARADOR = '\u001f'
+
 const GESTIONES: { id: string; label: string }[] = [
   { id: 'TRACTOREO',       label: 'Tractoreo' },
   { id: 'EQUIPO_COMPLETO', label: 'Equipo Completo' },
@@ -55,14 +59,27 @@ export function CondicionPanel({
   const esCarrier = requisito.target_entity === 'CARRIER'
   const opciones  = esAsset ? subtipos : esCarrier ? GESTIONES : []
 
-  const guardadas = useMemo<string[]>(() => (
+  // La condición guardada se memoiza por su CONTENIDO, no por la identidad del
+  // arreglo que la trae. El catálogo llega de react-query: con
+  // refetchOnWindowFocus, un refetch que devuelve exactamente lo mismo trae un
+  // arreglo NUEVO, y si `guardadas` cambiara de identidad por eso, el efecto de
+  // resincronización de abajo borraría el borrador de quien está editando.
+  // Es la clase de bug de borrador que este proyecto ya tuvo tres veces
+  // (ContactCard, TransporterDocumentsPanel), invertida: acá el borrador se
+  // resincronizaba de más. La clave usa el separador de unidad (U+001F)
+  // porque ningún id lo contiene.
+  const claveGuardada = (
     esAsset
       ? requisito.applies_to_fleet_service_type_ids ?? []
       : esCarrier
       ? requisito.applies_to_management_types ?? []
       : []
-  ), [esAsset, esCarrier, requisito.applies_to_fleet_service_type_ids,
-      requisito.applies_to_management_types])
+  ).join(SEPARADOR)
+
+  const guardadas = useMemo<string[]>(
+    () => (claveGuardada ? claveGuardada.split(SEPARADOR) : []),
+    [claveGuardada],
+  )
 
   // El estado es la RESPUESTA a la pregunta, no las diez casillas.
   const [alcance, setAlcance] = useState<'todos' | 'algunos'>(guardadas.length ? 'algunos' : 'todos')

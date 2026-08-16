@@ -64,6 +64,11 @@ export function EstadosTabla() {
 
   const chips = useMemo(() => columnasDe(todos), [todos])
 
+  // El orden del tablero, siempre completo y siempre por sort_order: es contra
+  // esta lista —no contra la filtrada ni contra la que el usuario reordenó por
+  // otra columna— que el panel intercambia posiciones.
+  const porOrden = useMemo(() => [...todos].sort((a, b) => a.sort_order - b.sort_order), [todos])
+
   const filas = useMemo(() => {
     const f = columna ? todos.filter(s => s.group === columna) : todos
     return comparar(f, s => (orden?.columna === 'visible' ? s.label : s.sort_order))
@@ -102,7 +107,7 @@ export function EstadosTabla() {
             <th scope="col" className={CABECERA}>Nombre en el TMS</th>
             <th scope="col" className={CABECERA}>Columna</th>
             <EncabezadoOrdenable columna="orden" orden={orden} onOrdenar={ordenarPor}>Orden</EncabezadoOrdenable>
-            <th className="w-9" />
+            <th scope="col" className="w-9" aria-label="Acciones" />
           </tr>
         </thead>
         <tbody>
@@ -153,6 +158,7 @@ export function EstadosTabla() {
         <EstadoPanel
           key={estadoAbierto.id}
           estado={estadoAbierto}
+          hermanos={porOrden}
           onCerrar={() => abrir(null)}
         />
       )}

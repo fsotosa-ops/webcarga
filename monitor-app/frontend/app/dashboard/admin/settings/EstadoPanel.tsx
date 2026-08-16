@@ -2,13 +2,18 @@
 
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Loader2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { configApi, type TripStatusRow } from '@/lib/api/config'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { GROUP_OPTIONS, INPUT, SwatchPicker } from './shared'
 
-/** El editor de un estado del tablero: nombre visible, color y columna.
+const BOTON_ORDEN = 'inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 '
+  + 'text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 '
+  + 'disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 '
+  + 'focus-visible:ring-accent/40'
+
+/** El editor de un estado del tablero: nombre visible, color, columna y orden.
  *
  *  El nombre del TMS se MUESTRA pero no se edita: lo define el TMS, no
  *  Configuración. Es el mismo dato que la lista conserva en su propia
@@ -16,11 +21,19 @@ import { GROUP_OPTIONS, INPUT, SwatchPicker } from './shared'
  *
  *  La paleta de color no se dibuja de entrada: aparece sólo al abrir el
  *  selector. Es el reemplazo de las 8 pastillas por fila que tenía la lista
- *  vieja — acá hay una sola, y sólo cuando se está editando. */
+ *  vieja — acá hay una sola, y sólo cuando se está editando.
+ *
+ *  EL ORDEN SE EDITA ACÁ Y NO EN LA LISTA. La lista es de lectura: devolverle
+ *  un par de flechas a cada una de las 25 filas sería volver a los 300
+ *  controles que este rediseño vino a sacar. `hermanos` es el catálogo
+ *  completo en orden del tablero —no lo que la lista está mostrando— porque
+ *  reordenar es relativo al tablero, y filtrar por columna no puede cambiar
+ *  con quién se intercambia un estado. */
 export function EstadoPanel({
-  estado, onCerrar,
+  estado, hermanos, onCerrar,
 }: {
   estado:   TripStatusRow
+  hermanos: TripStatusRow[]
   onCerrar: () => void
 }) {
   // La puerta REAL es la ruta: app/dashboard/admin/layout.tsx redirige a quien
@@ -63,8 +76,32 @@ export function EstadoPanel({
     },
   })
 
+  // Reordenar es INTERCAMBIO con el vecino, no renumeración: los 25 estados
+  // tienen su propio número, curado a mano, y mover uno no puede reescribir el
+  // de los otros 24. El empate —dos estados con el mismo número, que hoy no
+  // ocurre— se rompe dándoles la posición que ocupan en la lista.
+  const posicion = hermanos.findIndex(s => s.id === estado.id)
+
+  const mover = useMutation({
+    mutationFn: async (direccion: -1 | 1) => {
+      const vecino = hermanos[posicion + direccion]
+      if (!vecino) return
+      const empate = estado.sort_order === vecino.sort_order
+      const mio  = empate ? posicion + direccion + 1 : vecino.sort_order
+      const suyo = empate ? posicion + 1 : estado.sort_order
+      await configApi.patchStatus(estado.id, { sort_order: mio })
+      await configApi.patchStatus(vecino.id, { sort_order: suyo })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tms-statuses'] })
+    },
+  })
+
   const errorGuardar = guardar.isError
     ? (guardar.error instanceof Error ? guardar.error.message : 'Error al guardar el estado')
+    : null
+  const errorMover = mover.isError
+    ? (mover.error instanceof Error ? mover.error.message : 'Error al cambiar el orden')
     : null
 
   return (
@@ -134,7 +171,38 @@ export function EstadoPanel({
         </select>
       </label>
 
+      <div className="mt-4">
+        <span className="block text-xs text-gray-700 mb-1">Orden en el tablero</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-400 tabular-nums">
+            {`${posicion + 1} de ${hermanos.length}`}
+          </span>
+          <button
+            type="button"
+            onClick={() => mover.mutate(-1)}
+            disabled={!puedeEditar || posicion <= 0 || mover.isPending}
+            className={BOTON_ORDEN}
+          >
+            <ChevronUp size={12} aria-hidden="true" /> Subir
+          </button>
+          <button
+            type="button"
+            onClick={() => mover.mutate(1)}
+            disabled={!puedeEditar || posicion < 0 || posicion >= hermanos.length - 1 || mover.isPending}
+            className={BOTON_ORDEN}
+          >
+            <ChevronDown size={12} aria-hidden="true" /> Bajar
+          </button>
+          {mover.isPending && <Loader2 size={12} className="animate-spin text-gray-400" />}
+        </div>
+        <p className="mt-1 text-[10.5px] text-gray-500">
+          Define en qué orden aparece este estado en las listas y filtros del Monitor.
+          Se aplica al instante, sin apretar Guardar.
+        </p>
+      </div>
+
       {errorGuardar && <p className="mt-2 text-[10.5px] text-red-600">{errorGuardar}</p>}
+      {errorMover && <p className="mt-2 text-[10.5px] text-red-600">{errorMover}</p>}
     </PanelLateral>
   )
 }

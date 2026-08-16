@@ -24,10 +24,20 @@ function estado(patch: Partial<TripStatusRow> = {}): TripStatusRow {
   }
 }
 
-function montarPanel(s: TripStatusRow = estado(), onCerrar = vi.fn()) {
+// El catálogo completo, en el orden del tablero. Reordenar es una operación
+// RELATIVA: sin los hermanos el panel no sabe con quién intercambiarse.
+const CATALOGO: TripStatusRow[] = [
+  estado({ id: 'ASIGNADO',   label: 'Asignado',   sort_order: 1 }),
+  estado({ id: 'EN_DESTINO', label: 'En destino', sort_order: 2 }),
+  estado({ id: 'EN_BODEGA',  label: 'En bodega',  sort_order: 3 }),
+]
+
+function montarPanel(
+  s: TripStatusRow = estado(), onCerrar = vi.fn(), hermanos: TripStatusRow[] = CATALOGO,
+) {
   const vista = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <EstadoPanel estado={s} onCerrar={onCerrar} />
+      <EstadoPanel estado={s} hermanos={hermanos} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   return { onCerrar, vista }
@@ -105,7 +115,7 @@ describe('EstadoPanel', () => {
     fireEvent.change(screen.getByLabelText(/nombre visible/i), { target: { value: 'sucio' } })
     vista.rerender(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <EstadoPanel estado={estado({ id: 'EN_RUTA', label: 'En ruta' })} onCerrar={vi.fn()} />
+        <EstadoPanel estado={estado({ id: 'EN_RUTA', label: 'En ruta' })} hermanos={CATALOGO} onCerrar={vi.fn()} />
       </QueryClientProvider>,
     )
     expect(screen.getByLabelText(/nombre visible/i)).toHaveValue('En ruta')
@@ -117,5 +127,49 @@ describe('EstadoPanel', () => {
     fireEvent.change(screen.getByLabelText(/nombre visible/i), { target: { value: 'En camino' } })
     fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }))
     await waitFor(() => expect(screen.getByText('sin red')).toBeInTheDocument())
+  })
+
+  // El orden del tablero es un dato curado a mano —los 25 estados tienen su
+  // propio número— y es el ORDER BY con el que el backend sirve la lista. Sin
+  // esto, cambiarlo exige SQL a mano.
+  describe('orden en el tablero', () => {
+    it('dice qué posición ocupa el estado', () => {
+      montarPanel(estado({ id: 'EN_DESTINO', label: 'En destino', sort_order: 2 }))
+      expect(screen.getByText('2 de 3')).toBeInTheDocument()
+    })
+
+    // Intercambio con el vecino, no renumeración: mover uno no puede
+    // reescribir el número de los otros 24.
+    it('bajar intercambia el orden con el estado siguiente', async () => {
+      montarPanel()
+      fireEvent.click(screen.getByRole('button', { name: /bajar/i }))
+      await waitFor(() => expect(configApi.patchStatus).toHaveBeenCalledWith('ASIGNADO', { sort_order: 2 }))
+      expect(configApi.patchStatus).toHaveBeenCalledWith('EN_DESTINO', { sort_order: 1 })
+    })
+
+    it('subir intercambia el orden con el estado anterior', async () => {
+      montarPanel(estado({ id: 'EN_BODEGA', label: 'En bodega', sort_order: 3 }))
+      fireEvent.click(screen.getByRole('button', { name: /subir/i }))
+      await waitFor(() => expect(configApi.patchStatus).toHaveBeenCalledWith('EN_BODEGA', { sort_order: 2 }))
+      expect(configApi.patchStatus).toHaveBeenCalledWith('EN_DESTINO', { sort_order: 3 })
+    })
+
+    it('el primero no puede subir', () => {
+      montarPanel()
+      expect(screen.getByRole('button', { name: /subir/i })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /bajar/i })).not.toBeDisabled()
+    })
+
+    it('el último no puede bajar', () => {
+      montarPanel(estado({ id: 'EN_BODEGA', label: 'En bodega', sort_order: 3 }))
+      expect(screen.getByRole('button', { name: /bajar/i })).toBeDisabled()
+    })
+
+    it('si falla el reordenamiento, lo dice', async () => {
+      vi.mocked(configApi.patchStatus).mockRejectedValue(new Error('sin red'))
+      montarPanel()
+      fireEvent.click(screen.getByRole('button', { name: /bajar/i }))
+      await waitFor(() => expect(screen.getByText('sin red')).toBeInTheDocument())
+    })
   })
 })

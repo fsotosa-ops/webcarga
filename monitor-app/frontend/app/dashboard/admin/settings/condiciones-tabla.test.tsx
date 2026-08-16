@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RequirementOption } from '@/lib/types'
@@ -49,6 +49,10 @@ const REQS: RequirementOption[] = [
     target_entity: 'ASSET', is_active: true,
     applies_to_fleet_service_type_ids: ['t1'], applies_to_management_types: null,
     alcance: { alcanzadas: 36, universo: 118 } },
+  { ...BASE, id: 'r4', requirement_code: 'PESAJE_EJES', name: 'Pesaje de Ejes',
+    target_entity: 'ASSET', is_active: true,
+    applies_to_fleet_service_type_ids: ['t1', 't2'], applies_to_management_types: null,
+    alcance: { alcanzadas: 60, universo: 118 } },
   // Apagado y sin condición: el backend informa 248 de 248 porque `alcanzadas`
   // cuenta la condición, no la vigencia.
   { ...BASE, id: 'r3', requirement_code: 'SEGURO_EETT', name: 'Seguro EETT',
@@ -59,6 +63,8 @@ const REQS: RequirementOption[] = [
 
 const SUBTIPOS = [
   { id: 't1', label: 'Furgón Congelado', bg_color: '#fff', text_color: '#000', sort_order: 1, active: true },
+  { id: 't2', label: 'Sider', bg_color: '#fff', text_color: '#000', sort_order: 2, active: true },
+  { id: 't3', label: 'Rampla Plana', bg_color: '#fff', text_color: '#000', sort_order: 3, active: true },
 ]
 
 function montar() {
@@ -94,6 +100,14 @@ describe('CondicionesTabla', () => {
     await waitFor(() => expect(screen.getByText('36 de 118')).toBeInTheDocument())
   })
 
+  // "Sólo 2 subtipos" cuando el catálogo tiene 3 SUBESTIMA la regla: se lee
+  // como una restricción fuerte y en realidad excluye uno. El total sale del
+  // catálogo de subtipos, no de un número escrito a mano.
+  it('una regla de varios subtipos dice cuántos de cuántos', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByText('2 de 3 subtipos')).toBeInTheDocument())
+  })
+
   it('la entidad es una columna, no un encabezado de grupo', async () => {
     montar()
     await waitFor(() =>
@@ -109,8 +123,9 @@ describe('CondicionesTabla', () => {
     fireEvent.click(screen.getByRole('button', { name: /documento/i }))
     const filas = screen.getAllByRole('row').slice(1)
     expect(filas[0]).toHaveTextContent('Mantención Cámara de Frío')
-    expect(filas[1]).toHaveTextContent('Revisión Técnica')
-    expect(filas[2]).toHaveTextContent('Seguro EETT')
+    expect(filas[1]).toHaveTextContent('Pesaje de Ejes')
+    expect(filas[2]).toHaveTextContent('Revisión Técnica')
+    expect(filas[3]).toHaveTextContent('Seguro EETT')
   })
 
   it('el encabezado ordenado lo declara de forma accesible', async () => {
@@ -219,11 +234,57 @@ describe('CondicionesTabla', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  // Una columna sin nombre accesible es una columna que un lector de pantalla
+  // no puede anunciar: la de acciones no tiene texto visible, asi que el
+  // nombre tiene que estar puesto a mano.
+  it('la columna de acciones tiene nombre accesible', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: /acciones/i })).toBeInTheDocument())
+  })
+
   it('avisa cuando el catálogo no carga, y deja reintentar', async () => {
     vi.mocked(complianceApi.listRequirements).mockRejectedValue(new Error('sin red'))
     montar()
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /reintentar/i })).toBeInTheDocument())
+  })
+
+  // Los subtipos son la mitad de la frase: sin ellos, "Sólo Furgón Congelado"
+  // se convierte en "Sólo un subtipo dado de baja" y la fila miente sin avisar
+  // ni ofrecer reintentar. La pantalla vieja miraba los dos errores.
+  it('avisa cuando fallan los subtipos, en vez de inventar la frase', async () => {
+    vi.mocked(taxonomiesApi.list).mockRejectedValue(new Error('sin red'))
+    montar()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /reintentar/i })).toBeInTheDocument())
+    expect(screen.getByText(/no se pudieron cargar los subtipos/i)).toBeInTheDocument()
+    expect(screen.queryByText(/dado de baja/i)).not.toBeInTheDocument()
+  })
+
+  it('reintentar vuelve a pedir las dos consultas', async () => {
+    vi.mocked(taxonomiesApi.list).mockRejectedValue(new Error('sin red'))
+    montar()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /reintentar/i })).toBeInTheDocument())
+    const pedidosCatalogo = vi.mocked(complianceApi.listRequirements).mock.calls.length
+    const pedidosSubtipos = vi.mocked(taxonomiesApi.list).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: /reintentar/i }))
+    await waitFor(() => {
+      expect(vi.mocked(complianceApi.listRequirements).mock.calls.length).toBeGreaterThan(pedidosCatalogo)
+      expect(vi.mocked(taxonomiesApi.list).mock.calls.length).toBeGreaterThan(pedidosSubtipos)
+    })
+  })
+
+  // Mientras los subtipos viajan, la frase todavía no se puede escribir: el
+  // respaldo diría "dado de baja" de un subtipo que existe perfectamente.
+  it('mientras los subtipos cargan no dibuja ninguna fila', async () => {
+    vi.mocked(taxonomiesApi.list).mockReturnValue(new Promise(() => {}))
+    montar()
+    // El catálogo YA llegó —lo único pendiente son los subtipos—, así que sin
+    // esperarlo el test pasaría sin probar nada.
+    await act(async () => { await new Promise(r => setTimeout(r, 50)) })
+    expect(screen.queryByText('Revisión Técnica')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Cargando')).toBeInTheDocument()
   })
 
   // Cerrar es `replace` y no `push`: si cerrar tambien empujara, abrir y cerrar

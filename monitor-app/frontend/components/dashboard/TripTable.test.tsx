@@ -3,6 +3,23 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { TripTable } from './TripTable'
 import type { Trip } from '@/lib/types'
 
+// El icono de orden es una PIEZA COMPARTIDA, no una copia: si TripTable vuelve
+// a dibujar el suyo, la app termina con dos iconos de orden que hay que
+// mantener iguales a mano — que es justo lo que la pieza compartida evita.
+// Este espia no reemplaza el componente: lo envuelve y deja pasar el real.
+const { usosDelIconoCompartido } = vi.hoisted(() => ({
+  usosDelIconoCompartido: [] as { activo: boolean; direccion: 'asc' | 'desc' }[],
+}))
+vi.mock('@/components/ui/tabla/OrdenIcono', async importOriginal => {
+  const real = await importOriginal<typeof import('@/components/ui/tabla/OrdenIcono')>()
+  return {
+    OrdenIcono: (props: { activo: boolean; direccion: 'asc' | 'desc' }) => {
+      usosDelIconoCompartido.push(props)
+      return real.OrdenIcono(props)
+    },
+  }
+})
+
 function makeTrip(id: string, overrides: Partial<Trip> = {}): Trip {
   return {
     id, source_system: 'qanalytics', client_name: 'walmart', planning_date: '2026-07-02',
@@ -323,5 +340,15 @@ describe('TripTable — temperatura coloreada por la parada, no por el viaje', (
     const badges = screen.getAllByText('-20°C')
     expect(badges.length).toBeGreaterThan(0)
     badges.forEach(b => expect(b.className).not.toContain('text-red-700'))
+  })
+
+  // La columna ordenada muestra la flecha de su dirección y las demás la
+  // flecha neutra — las dos dibujadas por el icono COMPARTIDO.
+  it('el icono de orden es el compartido, no una copia local', () => {
+    usosDelIconoCompartido.length = 0
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey="tractor_plate" sortDir="desc" onSort={vi.fn()} />)
+    expect(usosDelIconoCompartido.length).toBeGreaterThan(1)
+    expect(usosDelIconoCompartido).toContainEqual({ activo: true, direccion: 'desc' })
+    expect(usosDelIconoCompartido).toContainEqual({ activo: false, direccion: 'desc' })
   })
 })

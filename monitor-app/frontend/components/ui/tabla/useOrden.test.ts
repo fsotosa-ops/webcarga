@@ -56,6 +56,27 @@ describe('useOrden', () => {
     expect(filas.map(f => f.n)).toEqual([3, 1, 2])
   })
 
+  // La app esta en espanol: comparar con `>` compara unidades UTF-16, asi que
+  // la "N" cae despues de la "z" y los acentos quedan fuera de lugar. Un
+  // usuario que busca "Nandu" en una lista alfabetica no lo encuentra al final.
+  it('ordena en espanol: la N va entre la N y la O, no despues de la Z', () => {
+    const { result } = renderHook(() => useOrden())
+    const filas = [{ s: 'Zorro' }, { s: 'Ñandú' }, { s: 'Nube' }, { s: 'Ostra' }]
+
+    act(() => result.current.ordenarPor('s'))
+    expect(result.current.comparar(filas, f => f.s).map(f => f.s))
+      .toEqual(['Nube', 'Ñandú', 'Ostra', 'Zorro'])
+  })
+
+  it('el acento no manda a una etiqueta al final de la lista', () => {
+    const { result } = renderHook(() => useOrden())
+    const filas = [{ s: 'Bodega' }, { s: 'Área' }, { s: 'Cámara' }]
+
+    act(() => result.current.ordenarPor('s'))
+    expect(result.current.comparar(filas, f => f.s).map(f => f.s))
+      .toEqual(['Área', 'Bodega', 'Cámara'])
+  })
+
   it('los valores iguales conservan su posicion relativa', () => {
     const { result } = renderHook(() => useOrden())
     const filas = [{ id: 'a', n: 1 }, { id: 'b', n: 1 }, { id: 'c', n: 0 }]

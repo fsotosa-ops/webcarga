@@ -25,6 +25,13 @@ export function useOrden(inicial: Orden = null) {
     const signo = orden.direccion === 'asc' ? 1 : -1
     return [...filas].sort((a, b) => {
       const va = valor(a), vb = valor(b)
+      // Los textos se comparan CON LAS REGLAS DEL ESPANOL: `>` compara
+      // unidades UTF-16, asi que la "N" (U+00D1) cae despues de la "z" y los
+      // acentos quedan fuera de lugar. Los numeros siguen comparandose como
+      // numeros: localeCompare los ordenaria como texto ("10" antes que "2").
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return va.localeCompare(vb, 'es') * signo
+      }
       if (va === vb) return 0
       return va > vb ? signo : -signo
     })

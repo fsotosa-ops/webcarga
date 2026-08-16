@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { PanelLateral } from './PanelLateral'
@@ -38,6 +39,51 @@ describe('PanelLateral', () => {
   it('al abrir toma el foco', () => {
     montar()
     expect(screen.getByRole('dialog')).toHaveFocus()
+  })
+
+  // Los dos llamadores pasan una flecha en linea (`onCerrar={() => abrir(null)}`),
+  // asi que su identidad cambia en CADA render del padre. Si el efecto que
+  // enfoca depende de `onCerrar`, cualquier refetch de la lista vuelve a
+  // ejecutarlo y le saca el cursor a quien esta escribiendo. El padre de este
+  // test hace exactamente eso: re-renderiza con una flecha nueva.
+  describe('cuando el padre re-renderiza', () => {
+    function Padre() {
+      const [n, setN] = useState(0)
+      return (
+        <>
+          <button onClick={() => setN(x => x + 1)}>refrescar</button>
+          <PanelLateral titulo="Asignado" onCerrar={() => cerrado.push(n)} pie={null}>
+            <input aria-label="Nombre visible" />
+            <span>{`refrescos: ${n}`}</span>
+          </PanelLateral>
+        </>
+      )
+    }
+    let cerrado: number[] = []
+
+    it('el foco del campo sobrevive a un re-render del padre', () => {
+      cerrado = []
+      render(<Padre />)
+      const campo = screen.getByLabelText(/nombre visible/i)
+      campo.focus()
+      expect(campo).toHaveFocus()
+
+      fireEvent.click(screen.getByRole('button', { name: /refrescar/i }))
+
+      expect(screen.getByText('refrescos: 1')).toBeInTheDocument()
+      expect(campo).toHaveFocus()
+    })
+
+    // Y el arreglo no puede lograrlo congelando el `onCerrar` del primer
+    // render: Escape tiene que llamar al de AHORA, no al de hace tres renders.
+    it('Escape sigue llamando al onCerrar mas reciente', () => {
+      cerrado = []
+      render(<Padre />)
+      fireEvent.click(screen.getByRole('button', { name: /refrescar/i }))
+      fireEvent.click(screen.getByRole('button', { name: /refrescar/i }))
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(cerrado).toEqual([2])
+    })
   })
 
   it('al cerrar devuelve el foco a donde estaba', () => {
