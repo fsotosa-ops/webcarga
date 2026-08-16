@@ -10,6 +10,7 @@ from .routers.assets import router as assets_router
 from .routers.carriers import router as carriers_router
 from .routers.compliance import router as compliance_router
 from .routers.config import router as config_router
+from .routers.config_reviews import buscador as config_search_router
 from .routers.config_reviews import router as config_reviews_router
 from .routers.document_ingest import router as document_ingest_router
 from .routers.contacts import router as contacts_router
@@ -62,6 +63,7 @@ app.add_middleware(
 app.include_router(roles_router,               prefix="/api/v1")
 app.include_router(config_router,              prefix="/api/v1")
 app.include_router(config_reviews_router,      prefix="/api/v1")
+app.include_router(config_search_router,       prefix="/api/v1")
 app.include_router(status_taxonomies_router,   prefix="/api/v1")
 app.include_router(trips_router,               prefix="/api/v1")
 app.include_router(users_router,               prefix="/api/v1")

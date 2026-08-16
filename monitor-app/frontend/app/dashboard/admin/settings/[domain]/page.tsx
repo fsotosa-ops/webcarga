@@ -4,6 +4,7 @@ import { Suspense, use, useEffect } from 'react'
 import Link from 'next/link'
 import { notFound, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
+import { BuscadorConfig } from '../BuscadorConfig'
 import { NavDominios } from '../NavDominios'
 import { dominioPorClave, type Dominio } from '../dominios'
 
@@ -71,8 +72,16 @@ function DominioInterior({ dominio }: { dominio: Dominio }) {
         Configuración
       </Link>
 
-      <h1 className="font-mulish font-bold text-xl text-text-primary mt-1">{dominio.titulo}</h1>
-      <p className="text-xs text-gray-400 mt-0.5">{dominio.proposito}</p>
+      <div className="flex items-start gap-4 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <h1 className="font-mulish font-bold text-xl text-text-primary mt-1">{dominio.titulo}</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{dominio.proposito}</p>
+        </div>
+        {/* El mismo buscador que la portada: adentro de un dominio también se
+            busca lo que está en OTRO, y volver a la portada para eso sería
+            convertirla en un peaje. */}
+        <div className="w-full sm:w-72 shrink-0 mt-1"><BuscadorConfig /></div>
+      </div>
 
       {/* UNA superficie blanca que LLENA el area de trabajo, como el resto del
           dashboard. La version anterior de esta pantalla ponia las pestanas y

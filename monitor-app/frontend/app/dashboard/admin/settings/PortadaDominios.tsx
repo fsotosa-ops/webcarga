@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
+import { BuscadorConfig } from './BuscadorConfig'
 import { DOMINIOS } from './dominios'
 import { inventarioApi, type InventarioConfig } from '@/lib/api/config'
 
@@ -41,6 +42,11 @@ export function PortadaDominios() {
     // contra el 78% de /dashboard/compliance.
     <div className="bg-white border border-border rounded-2xl overflow-hidden
                     min-h-[calc(100vh-12rem)]">
+      {/* El buscador arriba de todo: quien ya sabe qué viene a cambiar no
+          debería tener que adivinar en qué dominio lo pusimos. */}
+      <div className="px-4 pt-4 pb-3 border-b border-border">
+        <BuscadorConfig />
+      </div>
       {DOMINIOS.map((d, i) => {
         const Icono   = d.icono
         const dominio = inv.data?.[d.clave]

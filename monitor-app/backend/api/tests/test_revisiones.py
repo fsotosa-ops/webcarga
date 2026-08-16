@@ -14,10 +14,11 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user, require_admin
 from app.db import get_pool
 from app.routers.config import router as config_router
+from app.routers.config_reviews import buscador as search_router
 from app.routers.config_reviews import router as reviews_router
 from app.routers.status_taxonomies import router as taxonomies_router
 from app.services.revisiones import (
-    POR_SECCION, REVISABLES, SECCION_DE_TAXONOMIA, SQL_PENDIENTES_POR_DOMINIO,
+    POR_SECCION, REVISABLES, SECCION_DE_TAXONOMIA, SQL_BUSQUEDA, SQL_PENDIENTES_POR_DOMINIO,
     exigir_seccion, registrar_revision,
 )
 
@@ -26,7 +27,7 @@ USER = {"sub": "11111111-1111-1111-1111-111111111111", "email": "a@b.c", "role":
 
 def cliente(pool):
     app = FastAPI()
-    for r in (config_router, reviews_router, taxonomies_router):
+    for r in (config_router, reviews_router, search_router, taxonomies_router):
         app.include_router(r, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_current_user] = lambda: USER
@@ -269,3 +270,58 @@ def test_toda_seccion_revisable_existe_en_el_registro_de_dominios():
     for r in REVISABLES:
         assert f"clave: '{r.dominio}'" in fuente, r.dominio
         assert f"clave: '{r.seccion}'" in fuente, r.seccion
+
+
+# ── El buscador ──────────────────────────────────────────────────────────────
+
+def test_buscar_con_una_sola_letra_no_es_buscar():
+    """Con un caracter el resultado son casi todos los ajustes de la app."""
+    pool = AsyncMock()
+    res = cliente(pool).get("/api/v1/config/search?q=f")
+    assert res.status_code == 422
+    assert pool.fetch.await_count == 0
+
+
+def test_buscar_devuelve_donde_esta_cada_resultado():
+    """El resultado tiene que decir en que dominio y seccion vive: sin eso es
+    una lista de nombres sueltos que no lleva a ningun lado."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"domain": "certification", "section": "conditions",
+         "id": "r1", "label": "Mantención Cámara de Frío"},
+    ]
+    res = cliente(pool).get("/api/v1/config/search?q=frio")
+    assert res.status_code == 200
+    assert res.json() == [{
+        "domain": "certification", "section": "conditions",
+        "id": "r1", "label": "Mantención Cámara de Frío",
+    }]
+
+
+@pytest.mark.integracion
+@pytest.mark.asyncio
+async def test_integracion_buscar_cruza_los_dominios(conexion_revertida):
+    """La prueba del spec: escribir "frio" encuentra la condicion de
+    Certificacion Y el rango de temperatura de Operaciones. Es lo que hace que
+    el modulo escale a 20 o 200 ajustes."""
+    filas = await conexion_revertida.fetch(SQL_BUSQUEDA, "frio")
+    dominios = {f["domain"] for f in filas}
+    assert {"certification", "operations"} <= dominios
+
+
+@pytest.mark.integracion
+@pytest.mark.asyncio
+async def test_integracion_buscar_no_depende_de_las_tildes(conexion_revertida):
+    """Quien busca apurado escribe sin tildes, y quien cargo el dato las puso."""
+    con = await conexion_revertida.fetch(SQL_BUSQUEDA, "FRÍO")
+    sin = await conexion_revertida.fetch(SQL_BUSQUEDA, "frio")
+    assert [dict(f) for f in con] == [dict(f) for f in sin]
+    assert con, "sin resultados el test no probaria nada"
+
+
+@pytest.mark.integracion
+@pytest.mark.asyncio
+async def test_integracion_buscar_encuentra_por_codigo(conexion_revertida):
+    """El codigo es como se nombra un documento entre sistemas."""
+    filas = await conexion_revertida.fetch(SQL_BUSQUEDA, "MANTENCION_FRIO")
+    assert any(f["section"] == "conditions" for f in filas)

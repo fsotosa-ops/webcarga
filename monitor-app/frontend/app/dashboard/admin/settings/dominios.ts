@@ -116,6 +116,17 @@ export function dominioPorClave(clave: string): Dominio | undefined {
   return DOMINIOS.find(d => d.clave === clave)
 }
 
+/** Cómo abre un elemento cada sección que sabe abrirlo.
+ *
+ *  Sólo dos: Condiciones y Estados del tablero tienen panel, y su panel viaja
+ *  en la URL. Las demás secciones se editan en la propia fila, así que no hay
+ *  a qué apuntar más allá de la sección — y el buscador lleva ahí, en vez de
+ *  inventarle un panel a una tabla que no lo tiene. */
+export const PARAM_DE_SECCION: Record<string, string> = {
+  conditions:     'doc',
+  'tms-statuses': 'estado',
+}
+
 /** Dónde vive cada vocabulario de `app.status_taxonomies`.
  *
  *  `TaxonomyTab` es un solo componente que sirve a los cinco, así que no sabe

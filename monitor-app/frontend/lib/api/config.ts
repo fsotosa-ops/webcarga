@@ -152,6 +152,21 @@ export interface Revision {
   reviewed_by: string | null
 }
 
+export interface ResultadoDeBusqueda {
+  domain:  string
+  section: string
+  id:      string
+  label:   string
+}
+
+export const busquedaConfigApi = {
+  /** Busca sobre el CONTENIDO —una condición, un rango, un subtipo—, no sobre
+   *  los títulos de las secciones: es lo que hace que el módulo escale a 20 o
+   *  200 ajustes. Sale de la misma enumeración que cuenta lo pendiente. */
+  buscar: (q: string) =>
+    apiFetch<ResultadoDeBusqueda[]>(`/api/v1/config/search?q=${encodeURIComponent(q)}`),
+}
+
 export const revisionesApi = {
   /** Los elementos YA revisados de una sección. La lista de elementos la tiene
    *  la pantalla: pedirle al backend que la repita crearía una segunda

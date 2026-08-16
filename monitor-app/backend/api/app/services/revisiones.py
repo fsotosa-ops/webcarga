@@ -26,9 +26,15 @@ class Revisable:
 
     dominio: str
     seccion: str
-    #: SQL que devuelve UNA columna `id` de texto, un renglón por elemento.
+    #: SQL con TRES columnas y un renglón por elemento: `id` (texto), `label`
+    #: (cómo se llama en pantalla) y `buscable` (el texto contra el que se
+    #: busca, que puede incluir el código además del nombre).
     #: Es un literal escrito acá, nunca entrada del usuario: es lo que permite
-    #: componerlo dentro de la consulta de conteo.
+    #: componerlo dentro de la consulta de conteo y la de búsqueda.
+    #:
+    #: Una sola enumeración para las dos cosas, a propósito: dos listas de "qué
+    #: elementos tiene esta sección" se separan, y la portada terminaría
+    #: contando algo distinto de lo que el buscador encuentra.
     sql: str
     #: El vocabulario de `app.status_taxonomies` que edita esta sección, si es
     #: una de ésas. Se declara porque `PATCH /config/taxonomies/{id}` no sabe
@@ -40,29 +46,38 @@ class Revisable:
 def _taxonomia(dominio: str, seccion: str, vocabulario: str) -> Revisable:
     return Revisable(
         dominio, seccion,
-        "SELECT id::text AS id FROM app.status_taxonomies "
+        "SELECT id::text AS id, label, label AS buscable FROM app.status_taxonomies "
         f"WHERE domain = '{vocabulario}' AND active",
         vocabulario=vocabulario,
     )
 
 
 REVISABLES: tuple[Revisable, ...] = (
+    # El código es como se nombra un documento entre sistemas: buscar
+    # "MANTENCION_FRIO" tiene que encontrarlo igual que buscar "cámara".
     Revisable("certification", "conditions",
-              "SELECT id::text AS id FROM public.compliance_requirements"),
+              "SELECT id::text AS id, name AS label, "
+              "name || ' ' || requirement_code AS buscable "
+              "FROM public.compliance_requirements"),
     Revisable("certification", "expiry-alerts",
-              "SELECT doc_type AS id FROM app.alert_thresholds"),
+              "SELECT doc_type AS id, label, label || ' ' || doc_type AS buscable "
+              "FROM app.alert_thresholds"),
 
     Revisable("operations", "tms-statuses",
-              "SELECT id FROM app.trip_statuses WHERE active"),
+              "SELECT id, label, label || ' ' || id AS buscable "
+              "FROM app.trip_statuses WHERE active"),
     _taxonomia("operations", "operational-statuses", "OPERATIONAL_STATE"),
     _taxonomia("operations", "equipment-statuses", "EQUIPMENT_STATE"),
     _taxonomia("operations", "driver-reasons", "DRIVER_REASON"),
     Revisable("operations", "temperature-ranges",
-              "SELECT cargo_type AS id FROM app.temperature_ranges"),
+              "SELECT cargo_type AS id, label, label || ' ' || cargo_type AS buscable "
+              "FROM app.temperature_ranges"),
     # Los umbrales del monitor son UN formulario, no una lista: su elemento es
     # el formulario entero. Revisarlo es decir "estos siete números están
     # bien", que es exactamente la decisión que hoy no deja rastro.
-    Revisable("operations", "alert-thresholds", "SELECT 'reglas' AS id"),
+    Revisable("operations", "alert-thresholds",
+              "SELECT 'reglas' AS id, 'Umbrales de alerta' AS label, "
+              "'Umbrales de alerta demora detencion sin reportar' AS buscable"),
 
     _taxonomia("fleet", "subtypes", "FLEET_SERVICE_TYPE"),
     _taxonomia("fleet", "operation-types", "WEBCARGA_OPERATION_TYPE"),
@@ -93,10 +108,10 @@ def exigir_seccion(dominio: str, seccion: str) -> Revisable:
     return r
 
 
-def _union_de_elementos() -> str:
-    """Todos los elementos revisables de la app, en una sola relación."""
+def _union_de_elementos(columnas: str) -> str:
+    """Todos los elementos configurables de la app, en una sola relación."""
     return "\nUNION ALL\n".join(
-        f"SELECT '{r.dominio}' AS domain, '{r.seccion}' AS section, e.id::text AS id "
+        f"SELECT '{r.dominio}' AS domain, '{r.seccion}' AS section, {columnas} "
         f"FROM ({r.sql}) e"
         for r in REVISABLES
     )
@@ -104,7 +119,7 @@ def _union_de_elementos() -> str:
 
 SQL_PENDIENTES_POR_DOMINIO = f"""
 WITH elementos AS (
-{_union_de_elementos()}
+{_union_de_elementos("e.id::text AS id")}
 )
 SELECT e.domain,
        count(*)                                        AS total,
@@ -137,3 +152,27 @@ async def registrar_revision(conn, dominio: str, seccion: str, element_id: str, 
         """,
         dominio, seccion, str(element_id), usuario_id,
     )
+
+
+# El buscador sale de la MISMA enumeración: escribir "frío" tiene que encontrar
+# la condición de Certificación, el rango de temperatura de Operaciones y el
+# subtipo de vehículo, y eso sólo funciona si "qué elementos hay" está definido
+# una sola vez.
+#
+# `unaccent` NO está instalado en esta base (verificado), así que el acento se
+# resuelve del lado de la comparación: se normalizan las cinco vocales en los
+# dos lados. Buscar "frio" encuentra "Frío" y al revés — que es lo que hace
+# alguien apurado escribiendo sin tildes.
+_SIN_ACENTO = "translate({texto}, 'áéíóúÁÉÍÓÚüÜ', 'aeiouAEIOUuU')"
+
+SQL_BUSQUEDA = f"""
+WITH elementos AS (
+{_union_de_elementos("e.id::text AS id, e.label, e.buscable")}
+)
+SELECT domain, section, id, label
+  FROM elementos
+ WHERE lower({_SIN_ACENTO.format(texto='buscable')})
+       LIKE '%' || lower({_SIN_ACENTO.format(texto='$1::text')}) || '%'
+ ORDER BY label
+ LIMIT 40
+"""

@@ -1,5 +1,6 @@
 import { act, render, screen } from '@testing-library/react'
 import { Suspense } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Los paneles reales piden datos; acá sólo importa el marco del dominio.
@@ -25,6 +26,8 @@ vi.mock('../flota-tabs', () => ({
   MotivosConductorTab: () => <div>panel motivos</div>,
 }))
 vi.mock('../usuarios-tab', () => ({ UsuariosTab: () => <div>panel usuarios</div> }))
+// El buscador es react-query y consulta la API; acá sólo importa el marco.
+vi.mock('../BuscadorConfig', () => ({ BuscadorConfig: () => <div>buscador</div> }))
 
 const noEncontrado = vi.fn()
 const reemplazar = vi.fn()
@@ -47,9 +50,11 @@ async function montar(slug: string) {
   // dentro de act: sin esto React avisa que se suspendio fuera de un act.
   await act(async () => {
     render(
-      <Suspense fallback={<div>cargando</div>}>
-        <DominioPage params={Promise.resolve({ domain: slug })} />
-      </Suspense>,
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <Suspense fallback={<div>cargando</div>}>
+          <DominioPage params={Promise.resolve({ domain: slug })} />
+        </Suspense>
+      </QueryClientProvider>,
     )
   })
 }

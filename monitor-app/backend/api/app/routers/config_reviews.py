@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin
 from ..db import get_pool
-from ..services.revisiones import exigir_seccion, registrar_revision
+from ..services.revisiones import SQL_BUSQUEDA, exigir_seccion, registrar_revision
 
 router = APIRouter(prefix="/config/reviews", tags=["config"])
 
@@ -55,3 +55,20 @@ async def confirm_review(
     exigir_seccion(body.domain, body.section)
     await registrar_revision(pool, body.domain, body.section, body.element_id, usuario["sub"])
     return {"revisado": True}
+
+
+# El buscador vive en este router y no en el de Configuración por una razón
+# simple: comparte la enumeración con el registro de revisión, que es lo que le
+# permite buscar sobre el CONTENIDO (una condición, un rango de temperatura, un
+# subtipo) en vez de sobre los títulos de las secciones.
+buscador = APIRouter(prefix="/config/search", tags=["config"])
+
+
+@buscador.get("")
+async def search_config(q: str = Query(..., min_length=2), pool=Depends(get_pool)):
+    """Busca un ajuste por su nombre, en todos los dominios a la vez.
+
+    Dos caracteres como mínimo: con uno solo el resultado son casi todos los
+    ajustes de la app, que es lo mismo que no buscar."""
+    filas = await pool.fetch(SQL_BUSQUEDA, q.strip())
+    return [dict(f) for f in filas]
