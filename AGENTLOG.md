@@ -2049,15 +2049,120 @@ Nueve pasos contra la revisión desplegada, cinco de ellos sondas. Lo que salió
 
 #### Próximo paso exacto
 
-1. [ ] Los tres roces de `/verify` de arriba — ninguno rompe nada, los tres son de una línea.
-2. [ ] **Plan 3 del spec 1**: el registro de revisión y la búsqueda.
+1. [x] Los tres roces de `/verify` — **CERRADOS** (Ronda 118).
+2. [x] **Plan 3 del spec 1** — **CERRADO** (Ronda 119): registro de revisión y buscador.
 3. [ ] **Las cuatro preguntas para WebCarga** (Ronda 113, punto 4) — sigue abierto.
-4. [ ] Deuda declarada: `shared.tsx` vive en Configuración pero lo importan Tarifario, Requisitos
-   y Ubicaciones; los dos `PATCH` del reordenamiento **no son transaccionales** (si el segundo
-   falla queda un empate de `sort_order`); el mapeo etiqueta→código de gestión es **por
-   etiqueta**, así que un rename cae al respaldo en silencio.
-5. [ ] Hallazgos diferidos de la revisión de rama: H7 (el panel no atrapa el Tab), H8, H10, H11,
-   H13.
+4. [x] Deuda declarada — **CERRADA salvo `shared.tsx`** (Ronda 118).
+5. [x] Hallazgos diferidos de la revisión de rama (H7, H8, H10, H11, H13) — **CERRADOS**
+   (Ronda 118).
+
+### 2026-08-16 (cont.) — Ronda 118: los tres roces, y las deudas 3, 5 y 6
+
+**3 commits.** Backend **683**, frontend **1022**. Una migración aplicada.
+
+**Los tres roces del `/verify`**, ninguno rompía nada: el contador del chip ahora cuenta sobre lo
+buscado; una `?section=` inventada ya no se queda en la URL; y un slug de dominio desconocido cae
+en un 404 **con la app alrededor** que ofrece las áreas que sí existen (`settings/not-found.tsx`,
+reusando `NavDominios`).
+
+#### Deuda 3 · reordenar era dos PATCH sueltos
+
+Se movía desde el navegador: un PATCH con el `sort_order` del vecino, otro con el propio. Si el
+segundo no llegaba, los dos quedaban con el mismo número y **el empate no se podía deshacer desde
+la pantalla**.
+
+Ahora es `POST .../move {direction}`: el servidor **renumera el alcance completo en UNA
+transacción**, bloqueando en el orden canónico (que es lo que evita que dos movimientos
+simultáneos se traben). El empate deja de ser *representable* en vez de quedar arreglado a mano —
+y `sort_order` salió de los dos PATCH, porque mientras un cliente pueda escribir un número, el
+empate vuelve por otro camino. Se arregló en **las dos** pantallas que reordenan, no sólo en la
+del rediseño.
+
+#### Deuda 5 · el tipo de gestión se reconocía por su NOMBRE VISIBLE
+
+El usuario preguntó si agregar una columna era parche o arquitectura. La respuesta salió del
+propio esquema: **`app.status_taxonomies` era el único catálogo sin código propio**.
+
+| tabla | código estable | etiqueta |
+|---|---|---|
+| `app.alert_thresholds` | `doc_type` | `label` |
+| `app.temperature_ranges` | `cargo_type` | `label` |
+| `app.trip_statuses` | `id` (`ASIGNADO`) | `label` |
+| `public.compliance_requirements` | `requirement_code` | `name` |
+| `app.status_taxonomies` | — | `label` |
+
+Por eso `carrier_management_types()` comparaba contra `'Tractoreo'` y `'Equipo Completo'`.
+**Medido contra producción**: con la definición vieja, renombrar la etiqueta desde Configuración
+—lo que esa misma pantalla ofrece hacer— cambiaba la gestión derivada de **13 de las 39 empresas
+activas**, sin error y sin registro. Con `code`, de ninguna. La etiqueta estaba además copiada en
+**tres lugares del frontend**, que ahora la leen del catálogo.
+
+#### Deuda 6 · los cinco hallazgos diferidos
+
+H7 (el panel atrapa el Tab: `aria-modal` prometía algo que no cumplía), H8 (guardar ya no cierra
+la vista previa), H10 (vuelven los dos textos que explicaban la pantalla), H11 (lo oculto se
+nombra según la entidad), H13 (el estilo del encabezado dejó de estar escrito tres veces).
+
+### 2026-08-16 (cont.) — Ronda 119: el registro de revisión y el buscador
+
+**4 commits.** Backend **718**, frontend **1041**. Una migración aplicada.
+
+#### El registro de revisión
+
+Una condición vacía significaba DOS cosas: *"lo revisamos y va para todos"* y *"nadie lo miró"*.
+Sexta aparición de [[feedback_null_sentinel_double_duty]], y la de consecuencia más cara: los 16
+remolques con Mantención de Cámara de Frío exigida sin poder tenerla no salen de una decisión
+equivocada, sino de que **nadie decidió y el sistema no tenía cómo mostrarlo**.
+
+- **Guardar cuenta como revisar**, y lo registra el propio endpoint que guarda (los seis).
+  "Está bien así" existe sólo para el caso invisible. **Mover NO cuenta**: reordenar apagaría
+  insignias sin que nadie mirara la regla.
+- **No se deduce de `audit_log`**: "hay una fila en el log" significaría a la vez "alguien lo
+  cambió" y "alguien lo confirmó" — otra vez un valor con dos significados.
+- **No vence.** Poner caducidad convierte la portada en una lista de tareas que nadie pidió.
+- Lo único propio de cada dominio es **enumerar sus elementos**. Cero `if` por dominio.
+  Personas y accesos **no está**: una cuenta de usuario no es una decisión de configuración, y la
+  portada distingue "no aplica" de "cero pendientes".
+- Sin pendientes dice **"al día", no "0"** — un cero ahí sería otro número con dos significados.
+
+Estado del día uno, medido: **46 sin revisar en Certificación, 55 en Operaciones, 12 en Flota**.
+No es un tablero en rojo: es el inventario exacto de decisiones de negocio que nadie tomó.
+
+#### El buscador
+
+Busca sobre el **contenido**, no sobre los títulos de sección: "frio" encuentra la condición de
+Certificación **y** el rango de temperatura de Operaciones (verificado contra producción). Sale de
+la **misma enumeración** que cuenta lo pendiente — dos listas de "qué elementos hay" se separan.
+`unaccent` no está instalado, así que el acento se resuelve en la comparación.
+
+#### Los dos bugs que encontró el click-through, y ningún test
+
+1. **El enlace del buscador abría la lista y no el documento**: enlazaba `?doc=<uuid>` y
+   Condiciones abre por **código**. El id con el que el registro identifica un elemento NO es el
+   texto con el que su pantalla lo abre; ahora cada sección declara las dos cosas.
+2. **Guardar registraba la revisión en el servidor y la insignia seguía diciendo "Sin revisar"**
+   hasta recargar — verificado contra la base: la fila estaba en `app.config_reviews` mientras la
+   pantalla decía lo contrario. La pantalla mostrando algo distinto del dato, dentro del registro
+   que vino a arreglar exactamente eso.
+
+Los dos quedaron con red: uno con un test de integración contra los datos, el otro con un test que
+guarda y exige que la consulta de revisiones se vuelva a pedir (mutado, muere).
+
+#### Click-through en vivo, completo
+
+Portada con los conteos y el filtro en el enlace · buscador cruzando dominios · el resultado
+abriendo el panel · confirmar desde el panel (46 → 45 en la base) · confirmar desde una fila de
+Flota (12 → 11) · guardar un estado y un rango refrescando la marca al instante. **Todo lo que se
+tocó quedó restaurado**: `ORIGEN` volvió a `'Origen'` y `FRIO.min_c` a `2`, verificado en la base.
+
+#### Próximo paso exacto
+
+1. [ ] **Las cuatro preguntas para WebCarga** (Ronda 113, punto 4) — el registro de revisión las
+   vuelve visibles en la pantalla, pero siguen sin respuesta de negocio.
+2. [ ] `shared.tsx` vive en Configuración y lo importan Tarifario, Requisitos y Ubicaciones —
+   único ítem de la deuda declarada que queda abierto.
+3. [ ] **Promoción a `main`**: `dev` acumula el módulo entero de Configuración rediseñado y
+   producción sigue con una imagen del 2026-08-01.
 
 ### PENDIENTES VIGENTES AL CIERRE DE LA RONDA 94 (2026-08-07)
 
