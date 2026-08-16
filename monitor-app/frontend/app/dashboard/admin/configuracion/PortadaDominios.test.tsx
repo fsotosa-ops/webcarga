@@ -18,7 +18,10 @@ describe('PortadaDominios', () => {
 
   it('cada dominio visitable enlaza a su ruta', () => {
     render(<PortadaDominios />)
-    expect(screen.getByRole('link', { name: /certificación/i }))
+    // Ancorado al inicio del nombre accesible: el proposito de Flota tambien
+    // menciona "Certificación" (el vocabulario que comparte con ese dominio),
+    // asi que /certificación/i sin ancorar matchea las dos tarjetas.
+    expect(screen.getByRole('link', { name: /^certificación/i }))
       .toHaveAttribute('href', '/dashboard/admin/configuracion/certificacion')
   })
 

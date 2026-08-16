@@ -6,6 +6,7 @@ import {
   AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab,
 } from './umbrales-tabs'
 import { CondicionesDocumentosTab } from './condiciones-tab'
+import { SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab } from './flota-tabs'
 
 export interface Seccion {
   clave:     string
@@ -60,11 +61,22 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Cuándo el monitor considera que algo va mal', Panel: AlertasMonitorTab },
       { clave: 'temperaturas', titulo: 'Rangos de temperatura',
         proposito: 'Qué rango corresponde a cada tipo de carga', Panel: RangosTemperaturaTab },
+      { clave: 'motivos-conductor', titulo: 'Motivos de conductor',
+        proposito: 'Por qué un conductor no está disponible', Panel: MotivosConductorTab },
     ],
   },
-  // Flota (Task 4) y Personas y accesos (Task 6) se agregan aca cuando sus
-  // componentes existan. NO agregarlos antes con un panel vacio: un componente
-  // que no hace nada es peor que una seccion ausente, porque parece que anda.
+  {
+    clave: 'flota',
+    titulo: 'Flota',
+    proposito: 'El vocabulario de vehículos que comparten Certificación y Operaciones',
+    secciones: [
+      { clave: 'subtipos', titulo: 'Subtipos de vehículo',
+        proposito: 'Furgón congelado, sider, rampla plana', Panel: SubtiposVehiculoTab },
+      { clave: 'tipos-operacion', titulo: 'Tipos de operación',
+        proposito: 'Tractoreo y equipo completo', Panel: TiposOperacionTab },
+    ],
+  },
+  // Personas y accesos (Task 6) se agrega aca cuando su componente exista.
   {
     clave: 'facturacion',
     titulo: 'Facturación',
