@@ -4,10 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Los paneles reales piden datos; acá sólo importa el marco del dominio.
 vi.mock('../estados-tabs', () => ({
-  EstadosTmsTab: () => <div>panel estados tms</div>,
   EstadosOperacionalesTab: () => <div>panel operacionales</div>,
   EstadosEquipoTab: () => <div>panel equipo</div>,
   TaxonomyTab: () => <div>panel taxonomia</div>,
+}))
+vi.mock('../estados-tabla', () => ({
+  EstadosTabla: () => <div>panel estados tms</div>,
 }))
 vi.mock('../umbrales-tabs', () => ({
   AlertasVencimientoTab: () => <div>panel vencimientos</div>,

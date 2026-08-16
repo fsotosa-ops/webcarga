@@ -3,12 +3,13 @@ import {
   ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
 } from 'lucide-react'
 import {
-  EstadosTmsTab, EstadosOperacionalesTab, EstadosEquipoTab, TaxonomyTab,
+  EstadosOperacionalesTab, EstadosEquipoTab, TaxonomyTab,
 } from './estados-tabs'
 import {
   AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab,
 } from './umbrales-tabs'
 import { CondicionesTabla } from './condiciones-tabla'
+import { EstadosTabla } from './estados-tabla'
 import { SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab } from './flota-tabs'
 import { UsuariosTab } from './usuarios-tab'
 
@@ -66,7 +67,7 @@ export const DOMINIOS: Dominio[] = [
     proposito: 'Cómo se ve el tablero, cuándo avisa, y qué temperatura corresponde',
     secciones: [
       { clave: 'tms-statuses', titulo: 'Estados del tablero',
-        proposito: 'Colores y columna de cada estado del TMS', Panel: EstadosTmsTab },
+        proposito: 'Colores y columna de cada estado del TMS', Panel: EstadosTabla },
       { clave: 'operational-statuses', titulo: 'Estados operacionales',
         proposito: 'El vocabulario que usa el equipo', Panel: EstadosOperacionalesTab },
       { clave: 'equipment-statuses', titulo: 'Estados de equipo',

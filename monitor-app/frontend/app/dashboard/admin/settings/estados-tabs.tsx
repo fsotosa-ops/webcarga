@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react'
-import { configApi, taxonomiesApi, type TripStatusRow, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
+import { taxonomiesApi, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
 import {
   GROUP_OPTIONS, INPUT, useConfigList, LoadState, useRowFeedback,
   SaveRowButton, SwatchPicker, SortArrows,
@@ -19,108 +19,10 @@ function Badge({ label, bg, text }: { label: string; bg: string; text: string })
 
 const GROUP_HINT = 'Define en qué columna del tablero aparecen los viajes con este estado'
 
-// ── Estados TMS ───────────────────────────────────────────────────────────────
-
-export function EstadosTmsTab() {
-  const fetcher = useCallback(() => configApi.getStatuses(), [])
-  const { items, setItems, loading, error, reload } = useConfigList<TripStatusRow>(fetcher)
-  const [drafts, setDrafts] = useState<Record<string, Partial<TripStatusRow>>>({})
-  const fb = useRowFeedback()
-
-  const merged = (row: TripStatusRow) => ({ ...row, ...drafts[row.id] })
-  const isDirty = (row: TripStatusRow) => !!drafts[row.id] && Object.keys(drafts[row.id]).length > 0
-
-  function setDraft(id: string, patch: Partial<TripStatusRow>) {
-    setDrafts(d => ({ ...d, [id]: { ...d[id], ...patch } }))
-  }
-
-  async function save(row: TripStatusRow) {
-    const draft = drafts[row.id]
-    if (!draft) return
-    await fb.run(row.id, async () => {
-      const updated = await configApi.patchStatus(row.id, draft)
-      setItems(prev => prev.map(r => (r.id === row.id ? updated : r)))
-      setDrafts(d => { const n = { ...d }; delete n[row.id]; return n })
-    })
-  }
-
-  async function move(idx: number, dir: -1 | 1) {
-    const j = idx + dir
-    const a = items[idx], b = items[j]
-    if (!a || !b) return
-    const aOrder = a.sort_order === b.sort_order ? j + 1 : b.sort_order
-    const bOrder = a.sort_order === b.sort_order ? idx + 1 : a.sort_order
-    const next = [...items]
-    next[idx] = { ...b, sort_order: bOrder }
-    next[j]   = { ...a, sort_order: aOrder }
-    setItems(next)
-    await fb.run(a.id, async () => {
-      await configApi.patchStatus(a.id, { sort_order: aOrder })
-      await configApi.patchStatus(b.id, { sort_order: bOrder })
-    })
-  }
-
-  return (
-    <div className="p-4 md:p-5 space-y-3">
-      <p className="text-xs text-gray-400">
-        Los nombres de estado los define cada TMS y no se pueden crear ni borrar — acá se ajusta cómo se muestran y a qué columna del tablero pertenecen.
-      </p>
-      <LoadState loading={loading} error={error} onRetry={reload} />
-      {!loading && !error && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs min-w-[640px]">
-            <thead>
-              <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border">
-                <th className="py-2 pr-2 text-left w-8" aria-label="Orden" />
-                <th className="py-2 pr-3 text-left">Vista previa</th>
-                <th className="py-2 pr-3 text-left">Nombre visible</th>
-                <th className="py-2 pr-3 text-left">Color</th>
-                <th className="py-2 pr-3 text-left" title={GROUP_HINT}>Columna del tablero</th>
-                <th className="py-2 text-right w-[90px]" aria-label="Acciones" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {items.map((row, idx) => {
-                const m = merged(row)
-                return (
-                  <tr key={row.id} className={isDirty(row) ? 'bg-accent/[0.03]' : ''}>
-                    <td className="py-2 pr-2">
-                      <SortArrows name={row.id} onUp={() => move(idx, -1)} onDown={() => move(idx, 1)}
-                        disabledUp={idx === 0} disabledDown={idx === items.length - 1} />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Badge label={m.label} bg={m.bg_color} text={m.text_color} />
-                      <p className="text-[9px] text-gray-300 font-mono mt-0.5">{row.id}</p>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input value={m.label} onChange={e => setDraft(row.id, { label: e.target.value })}
-                        aria-label={`Nombre de ${row.id}`} className={INPUT + ' w-36'} />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <SwatchPicker name={row.id} bg={m.bg_color} text={m.text_color}
-                        onPick={c => setDraft(row.id, { bg_color: c.bg, text_color: c.text })} />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <select value={m.group} onChange={e => setDraft(row.id, { group: e.target.value })}
-                        aria-label={`Columna del tablero de ${row.id}`} title={GROUP_HINT} className={INPUT}>
-                        {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
-                      </select>
-                    </td>
-                    <td className="py-2 text-right">
-                      <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.id}
-                        saved={!!fb.savedAt[row.id]} onClick={() => save(row)} />
-                      {fb.errors[row.id] && <p className="text-[9px] text-red-500 mt-1">{fb.errors[row.id]}</p>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
+// Los estados del tablero (`app.trip_statuses`) se editan en `estados-tabla.tsx`
+// y `EstadoPanel.tsx` — lista con panel, en vez de las 25 filas de 8 pastillas
+// que tenía esta pestaña. Este archivo se queda sólo con `TaxonomyTab` y sus
+// dos usos (`EstadosOperacionalesTab`, `EstadosEquipoTab`), que no se tocan.
 
 // ── Taxonomía genérica (app.status_taxonomies) ────────────────────────────────
 // Reemplaza el cuerpo de EstadosOperacionalesTab — parametrizado por domain,
