@@ -1,12 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { use, useState } from 'react'
 import { notFound } from 'next/navigation'
 import { NavDominios } from '../NavDominios'
 import { dominioPorClave } from '../dominios'
 
-export default function DominioPage({ params }: { params: { dominio: string } }) {
-  const dominio = dominioPorClave(params.dominio)
+/** `params` es una PROMESA desde Next 15; en un componente de cliente se
+ *  desenvuelve con `use()`. Tipado como objeto plano, `params.dominio` daba
+ *  `undefined` y esta pagina llamaba a notFound() para TODOS los dominios: el
+ *  interior entero del modulo estaba muerto en produccion. Ni los tests (que
+ *  montaban el componente con un objeto a mano), ni `tsc` (el tipo mentia), ni
+ *  el build lo vieron. Lo encontro entrar a la pantalla. */
+export default function DominioPage({ params }: { params: Promise<{ dominio: string }> }) {
+  const { dominio: clave } = use(params)
+  const dominio = dominioPorClave(clave)
   // Un dominio reservado no es visitable: no tiene nada que mostrar.
   if (!dominio || dominio.proximamente) notFound()
 
