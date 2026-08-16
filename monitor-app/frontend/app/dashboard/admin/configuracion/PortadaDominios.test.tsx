@@ -1,11 +1,20 @@
 import { readFile } from 'node:fs/promises'
 import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/api/config', () => ({
   inventarioApi: { get: vi.fn() },
 }))
 import { inventarioApi } from '@/lib/api/config'
+
+function montar() {
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PortadaDominios />
+    </QueryClientProvider>,
+  )
+}
 
 const INVENTARIO = {
   certificacion: [
@@ -29,7 +38,7 @@ describe('PortadaDominios', () => {
   // se agrega un dominio, este test lo cubre solo. Escribir los nombres aca
   // seria una segunda fuente de verdad de lo que hay en el modulo.
   it('muestra una tarjeta por dominio, con su proposito', () => {
-    render(<PortadaDominios />)
+    montar()
     for (const d of DOMINIOS) {
       expect(screen.getByText(d.titulo), d.clave).toBeInTheDocument()
       expect(screen.getByText(d.proposito), d.clave).toBeInTheDocument()
@@ -37,7 +46,7 @@ describe('PortadaDominios', () => {
   })
 
   it('cada dominio visitable enlaza a su ruta', () => {
-    render(<PortadaDominios />)
+    montar()
     // Ancorado al inicio del nombre accesible: el proposito de Flota tambien
     // menciona "Certificación" (el vocabulario que comparte con ese dominio),
     // asi que /certificación/i sin ancorar matchea las dos tarjetas.
@@ -70,7 +79,7 @@ describe('PortadaDominios', () => {
   })
 
   it('un dominio proximamente no es un enlace', () => {
-    render(<PortadaDominios />)
+    montar()
     expect(screen.getByText('Facturación')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /facturación/i })).not.toBeInTheDocument()
   })
@@ -79,14 +88,14 @@ describe('PortadaDominios', () => {
   // 37 documentos se veia identica a Personas con 10 usuarios. Ahora cada fila
   // dice que gobierna su dominio, con datos reales del backend.
   it('cada dominio dice que gobierna, en numeros reales', async () => {
-    render(<PortadaDominios />)
+    montar()
     const certificacion = screen.getByText('Certificación').closest('a')!
     await waitFor(() => expect(certificacion).toHaveTextContent('37 documentos'))
     expect(certificacion).toHaveTextContent('2 con condición')
   })
 
   it('ya no muestra el conteo de secciones, que no informaba nada', async () => {
-    render(<PortadaDominios />)
+    montar()
     const fila = screen.getByText('Certificación').closest('a')!
     await waitFor(() => expect(fila).toHaveTextContent('37 documentos'))
     expect(screen.queryByText(/secciones/i)).not.toBeInTheDocument()
@@ -97,8 +106,18 @@ describe('PortadaDominios', () => {
   // entrar, no.
   it('si el inventario falla las filas siguen siendo navegables', async () => {
     vi.mocked(inventarioApi.get).mockRejectedValueOnce(new Error('502'))
-    render(<PortadaDominios />)
+    montar()
     await waitFor(() =>
       expect(screen.getByRole('link', { name: /^Certificación/ })).toBeInTheDocument())
+  })
+
+  // El fallo se DICE. La primera version dejaba `{}` significando a la vez
+  // "cargo vacio" y "fallo": la portada se veia igual que si no hubiera nada
+  // que contar, y nadie se enteraba de que el endpoint estaba caido.
+  it('si el inventario falla lo dice, en vez de parecer vacio', async () => {
+    vi.mocked(inventarioApi.get).mockRejectedValueOnce(new Error('502'))
+    montar()
+    await waitFor(() =>
+      expect(screen.getAllByText(/sin datos por ahora/i).length).toBeGreaterThan(0))
   })
 })

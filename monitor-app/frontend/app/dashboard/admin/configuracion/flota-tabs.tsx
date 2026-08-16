@@ -20,7 +20,7 @@ export function SubtiposVehiculoTab() {
       domain="FLEET_SERVICE_TYPE"
       title="Subtipos de vehículo"
       hint={AVISO_COMPARTIDO}
-      newLabel="Nuevo subtipo"
+      newLabel="subtipo"
     />
   )
 }
@@ -31,7 +31,7 @@ export function TiposOperacionTab() {
       domain="WEBCARGA_OPERATION_TYPE"
       title="Tipos de operación"
       hint={AVISO_COMPARTIDO}
-      newLabel="Nuevo tipo de operación"
+      newLabel="tipo de operación"
     />
   )
 }
@@ -44,7 +44,7 @@ export function MotivosConductorTab() {
       domain="DRIVER_REASON"
       title="Motivos de conductor"
       hint="Por qué un conductor no está disponible. Sólo lo usa Operaciones."
-      newLabel="Nuevo motivo"
+      newLabel="motivo"
     />
   )
 }

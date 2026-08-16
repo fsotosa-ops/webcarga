@@ -32,4 +32,36 @@ describe('registro de dominios', () => {
     expect(dominioPorClave('certificacion')?.titulo).toBe('Certificación')
     expect(dominioPorClave('no-existe')).toBeUndefined()
   })
+
+  // RED DE LA MUDANZA. Los demas tests iteran DOMINIOS, asi que borrar una
+  // seccion —o el dominio Flota entero— los deja a todos en verde: una seccion
+  // sin ruta es INVISIBLE, no rota, y ningun test la extrana.
+  //
+  // Esta es la unica expectativa independiente del registro, y por eso se
+  // escribe a mano. Si se agrega un dominio, se agrega aca; si se quita uno a
+  // proposito, este test lo obliga a ser una decision explicita.
+  it('estan los dominios y secciones que la mudanza tenia que preservar', () => {
+    const mapa = Object.fromEntries(
+      DOMINIOS.map(d => [d.clave, d.secciones.map(s => s.clave).sort()]),
+    )
+
+    expect(mapa).toEqual({
+      certificacion: ['condiciones', 'vencimientos'],
+      operaciones: [
+        'estados-equipo', 'estados-operacionales', 'estados-tms',
+        'motivos-conductor', 'temperaturas', 'umbrales',
+      ],
+      flota:       ['subtipos', 'tipos-operacion'],
+      personas:    ['usuarios'],
+      facturacion: [],
+    })
+  })
+
+  // La seccion activa se guarda por clave en useState, asi que dos secciones
+  // con la misma clave en dominios distintos no colisionan hoy -- pero si
+  // alguna vez se pasa a la URL, si.
+  it('las claves de seccion no se repiten entre dominios', () => {
+    const todas = DOMINIOS.flatMap(d => d.secciones.map(s => s.clave))
+    expect(new Set(todas).size).toBe(todas.length)
+  })
 })

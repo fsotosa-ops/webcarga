@@ -675,3 +675,27 @@ def test_inventario_usa_el_singular_cuando_corresponde():
 
     assert {"n": 1, "etiqueta": "usuario"} in cuerpo["personas"]
     assert {"n": 1, "etiqueta": "subtipo"} in cuerpo["flota"]
+
+
+def test_los_dominios_validos_coinciden_con_los_del_frontend():
+    """Los dominios de taxonomia estan declarados DOS VECES: aca y en el union
+    TaxonomyDomain de frontend/lib/api/config.ts. WEBCARGA_OPERATION_TYPE
+    existio meses solo del lado TypeScript, asi que la seccion "Tipos de
+    operacion" devolvia 422 al listar y al crear -- media pantalla rotulada que
+    no funcionaba, invisible para tsc y para los tests con el cliente mockeado.
+
+    Mientras las dos listas existan, este test es lo unico que las mantiene
+    juntas."""
+    import re
+    from pathlib import Path
+    from app.schemas.status_taxonomy import VALID_DOMAINS
+
+    fuente = Path(__file__).resolve().parents[3] / "frontend" / "lib" / "api" / "config.ts"
+    texto = fuente.read_text(encoding="utf-8")
+    bloque = texto.split("export type TaxonomyDomain =")[1].split("export type")[0]
+    del_frontend = set(re.findall(r"'([A-Z_]+)'", bloque))
+
+    assert del_frontend == VALID_DOMAINS, (
+        f"solo en el frontend: {del_frontend - VALID_DOMAINS} · "
+        f"solo en el backend: {VALID_DOMAINS - del_frontend}"
+    )

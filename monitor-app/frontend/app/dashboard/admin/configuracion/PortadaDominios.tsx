@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
 import { DOMINIOS } from './dominios'
 import { inventarioApi, type InventarioConfig } from '@/lib/api/config'
@@ -25,24 +25,21 @@ import { inventarioApi, type InventarioConfig } from '@/lib/api/config'
  *
  *  Todo se deriva del registro: agregar un dominio no toca este archivo. */
 export function PortadaDominios() {
-  const [inventario, setInventario] = useState<InventarioConfig | null>(null)
-
-  useEffect(() => {
-    let vigente = true
-    // El inventario es informativo: si falla, las filas siguen siendo
-    // navegables y sencillamente no muestran numeros. Una portada sin conteos
-    // sirve; una portada que no deja entrar, no.
-    inventarioApi.get()
-      .then(d => { if (vigente) setInventario(d) })
-      .catch(() => { if (vigente) setInventario({}) })
-    return () => { vigente = false }
-  }, [])
+  // react-query, que es lo que el modulo ya usa (RequirementConditionsPanel).
+  // La primera version resolvia esto con un useEffect a mano y dejaba `{}`
+  // significando DOS cosas -- "cargo vacio" y "fallo" --, que es el defecto
+  // que este proyecto ya arrastro cinco veces. Aca los estados vienen
+  // nombrados y el error deja de tragarse.
+  const inv = useQuery({
+    queryKey: ['config-inventario'],
+    queryFn: inventarioApi.get,
+  })
 
   return (
     <div className="bg-white border border-border rounded-2xl overflow-hidden">
       {DOMINIOS.map((d, i) => {
         const Icono   = d.icono
-        const pares   = inventario?.[d.clave] ?? []
+        const pares   = inv.data?.[d.clave] ?? []
         const primera = i === 0
 
         const cuerpo = (
@@ -66,8 +63,14 @@ export function PortadaDominios() {
                 <span className="block text-[11px] text-gray-400 mt-2">Reservado</span>
               ) : (
                 <span className="block text-xs text-gray-600 mt-2 tabular-nums min-h-[1rem]">
-                  {inventario === null
+                  {/* Tres estados, dibujados distinto. El inventario es
+                      informativo: si falla, la fila sigue siendo navegable
+                      -- una portada sin conteos sirve, una que no deja entrar
+                      no -- pero el fallo SE DICE, no parece un cero. */}
+                  {inv.isPending
                     ? <span className="inline-block w-40 h-3 bg-gray-100 rounded animate-pulse align-middle" />
+                    : inv.isError
+                    ? <span className="text-gray-400">Sin datos por ahora</span>
                     : pares.map((p, n) => (
                         <span key={p.etiqueta}>
                           {n > 0 && <span className="text-gray-300"> · </span>}

@@ -2,7 +2,15 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
-VALID_DOMAINS = {"OPERATIONAL_STATE", "DRIVER_REASON", "EQUIPMENT_STATE", "FLEET_SERVICE_TYPE"}
+# Los dominios validos estaban escritos DOS VECES —aca y en el union
+# TaxonomyDomain de frontend/lib/api/config.ts— y WEBCARGA_OPERATION_TYPE existia
+# solo del lado TypeScript: listar o crear tipos de operacion devolvia 422. Es la
+# misma clase de defecto que el critico del Tramo 3 (dos definiciones del mismo
+# concepto, cada una correcta por su lado). Si se agrega un dominio, van los dos.
+VALID_DOMAINS = {
+    "OPERATIONAL_STATE", "DRIVER_REASON", "EQUIPMENT_STATE",
+    "FLEET_SERVICE_TYPE", "WEBCARGA_OPERATION_TYPE",
+}
 VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
 
 
