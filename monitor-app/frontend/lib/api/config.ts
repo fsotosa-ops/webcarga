@@ -157,6 +157,10 @@ export interface ResultadoDeBusqueda {
   section: string
   id:      string
   label:   string
+  /** Lo que va en la URL para abrir ESTE elemento, que no siempre es el `id`:
+   *  Condiciones abre su panel por código (`?doc=MANTENCION_FRIO`), no por
+   *  uuid. Lo declara cada sección en el backend, junto a su enumeración. */
+  abre:    string
 }
 
 export const busquedaConfigApi = {

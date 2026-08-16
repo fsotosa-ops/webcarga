@@ -16,13 +16,17 @@ function ubicacion(dominio: string, seccion: string): string {
   return d && s ? `${d.titulo} · ${s.titulo}` : `${dominio} · ${seccion}`
 }
 
-function enlace(dominio: string, seccion: string, id: string): string {
+function enlace(dominio: string, seccion: string, abre: string): string {
   const base = `/dashboard/admin/settings/${dominio}?section=${seccion}`
   // Dos secciones abren el elemento directo porque su panel viaja en la URL;
   // el resto lleva a la sección, que es lo más cerca que se puede llegar sin
   // inventarle un panel a una tabla que no lo tiene.
+  //
+  // Se usa `abre` y NO el id: Condiciones abre por CÓDIGO. Enlazar con el uuid
+  // dejaba un enlace que llevaba a la lista correcta y no abría nada — el
+  // click-through lo encontró.
   const param = PARAM_DE_SECCION[seccion]
-  return param ? `${base}&${param}=${encodeURIComponent(id)}` : base
+  return param ? `${base}&${param}=${encodeURIComponent(abre)}` : base
 }
 
 /** El buscador del módulo, presente en las dos pantallas.
@@ -86,7 +90,7 @@ export function BuscadorConfig() {
           {q.data?.map(r => (
             <Link
               key={`${r.domain}/${r.section}/${r.id}`}
-              href={enlace(r.domain, r.section, r.id)}
+              href={enlace(r.domain, r.section, r.abre)}
               prefetch={false}
               role="option"
               aria-selected={false}

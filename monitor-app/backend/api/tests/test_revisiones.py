@@ -325,3 +325,25 @@ async def test_integracion_buscar_encuentra_por_codigo(conexion_revertida):
     """El codigo es como se nombra un documento entre sistemas."""
     filas = await conexion_revertida.fetch(SQL_BUSQUEDA, "MANTENCION_FRIO")
     assert any(f["section"] == "conditions" for f in filas)
+
+
+@pytest.mark.integracion
+@pytest.mark.asyncio
+async def test_integracion_lo_que_abre_un_resultado_es_lo_que_la_pantalla_espera(conexion_revertida):
+    """`abre` no siempre es el `id`: la pantalla de Condiciones abre su panel
+    con `?doc=<codigo>`, no con el uuid. El primer enlace del buscador usaba el
+    id y llevaba a la lista correcta sin abrir nada -- lo encontro el
+    click-through, no la suite, asi que queda esta red.
+
+    Se comprueba contra los datos: el `abre` de una condicion tiene que existir
+    como `requirement_code`."""
+    filas = await conexion_revertida.fetch(SQL_BUSQUEDA, "mantencion")
+    condiciones = [f for f in filas if f["section"] == "conditions"]
+    assert condiciones, "sin condiciones el test no probaria nada"
+
+    for f in condiciones:
+        assert f["abre"] != f["id"], "una condicion abre por codigo, no por uuid"
+        assert await conexion_revertida.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM public.compliance_requirements "
+            "WHERE requirement_code = $1)", f["abre"],
+        )

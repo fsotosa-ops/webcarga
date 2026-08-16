@@ -20,9 +20,13 @@ function escribir(texto: string) {
   fireEvent.change(screen.getByLabelText(/buscar un ajuste/i), { target: { value: texto } })
 }
 
+// `abre` NO es el id en Condiciones: su panel abre por CÓDIGO. Enlazar con el
+// uuid daba un enlace que llevaba a la lista correcta y no abría nada.
 const FRIO = [
-  { domain: 'certification', section: 'conditions', id: 'r1', label: 'Mantención Cámara de Frío' },
-  { domain: 'operations', section: 'temperature-ranges', id: 'FRIO', label: 'Frío' },
+  { domain: 'certification', section: 'conditions', id: 'r1',
+    label: 'Mantención Cámara de Frío', abre: 'MANTENCION_FRIO' },
+  { domain: 'operations', section: 'temperature-ranges', id: 'FRIO',
+    label: 'Frío', abre: 'FRIO' },
 ]
 
 beforeEach(() => {
@@ -55,7 +59,7 @@ describe('BuscadorConfig', () => {
 
     await waitFor(() => expect(screen.getByRole('option', { name: /cámara de frío/i }))
       .toHaveAttribute('href',
-        '/dashboard/admin/settings/certification?section=conditions&doc=r1'))
+        '/dashboard/admin/settings/certification?section=conditions&doc=MANTENCION_FRIO'))
     expect(screen.getByRole('option', { name: /^frío/i }))
       .toHaveAttribute('href', '/dashboard/admin/settings/operations?section=temperature-ranges')
   })

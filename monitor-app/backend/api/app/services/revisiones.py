@@ -26,9 +26,11 @@ class Revisable:
 
     dominio: str
     seccion: str
-    #: SQL con TRES columnas y un renglón por elemento: `id` (texto), `label`
-    #: (cómo se llama en pantalla) y `buscable` (el texto contra el que se
-    #: busca, que puede incluir el código además del nombre).
+    #: SQL con CUATRO columnas y un renglón por elemento: `id` (texto, el que
+    #: usa el registro de revisión), `label` (cómo se llama en pantalla),
+    #: `buscable` (el texto contra el que se busca, que puede incluir el código
+    #: además del nombre) y `abre` (lo que va en la URL para abrir ese elemento
+    #: en su pantalla, que NO siempre es el id: Condiciones abre por código).
     #: Es un literal escrito acá, nunca entrada del usuario: es lo que permite
     #: componerlo dentro de la consulta de conteo y la de búsqueda.
     #:
@@ -46,8 +48,8 @@ class Revisable:
 def _taxonomia(dominio: str, seccion: str, vocabulario: str) -> Revisable:
     return Revisable(
         dominio, seccion,
-        "SELECT id::text AS id, label, label AS buscable FROM app.status_taxonomies "
-        f"WHERE domain = '{vocabulario}' AND active",
+        "SELECT id::text AS id, label, label AS buscable, id::text AS abre "
+        f"FROM app.status_taxonomies WHERE domain = '{vocabulario}' AND active",
         vocabulario=vocabulario,
     )
 
@@ -56,28 +58,33 @@ REVISABLES: tuple[Revisable, ...] = (
     # El código es como se nombra un documento entre sistemas: buscar
     # "MANTENCION_FRIO" tiene que encontrarlo igual que buscar "cámara".
     Revisable("certification", "conditions",
+              # `abre` es el CÓDIGO y no el id: la pantalla de Condiciones abre
+              # su panel con `?doc=<código>`, porque el código es como se nombra
+              # un documento entre sistemas y hace el enlace legible.
               "SELECT id::text AS id, name AS label, "
-              "name || ' ' || requirement_code AS buscable "
+              "name || ' ' || requirement_code AS buscable, "
+              "requirement_code AS abre "
               "FROM public.compliance_requirements"),
     Revisable("certification", "expiry-alerts",
-              "SELECT doc_type AS id, label, label || ' ' || doc_type AS buscable "
-              "FROM app.alert_thresholds"),
+              "SELECT doc_type AS id, label, label || ' ' || doc_type AS buscable, "
+              "doc_type AS abre FROM app.alert_thresholds"),
 
     Revisable("operations", "tms-statuses",
-              "SELECT id, label, label || ' ' || id AS buscable "
+              "SELECT id, label, label || ' ' || id AS buscable, id AS abre "
               "FROM app.trip_statuses WHERE active"),
     _taxonomia("operations", "operational-statuses", "OPERATIONAL_STATE"),
     _taxonomia("operations", "equipment-statuses", "EQUIPMENT_STATE"),
     _taxonomia("operations", "driver-reasons", "DRIVER_REASON"),
     Revisable("operations", "temperature-ranges",
-              "SELECT cargo_type AS id, label, label || ' ' || cargo_type AS buscable "
-              "FROM app.temperature_ranges"),
+              "SELECT cargo_type AS id, label, label || ' ' || cargo_type AS buscable, "
+              "cargo_type AS abre FROM app.temperature_ranges"),
     # Los umbrales del monitor son UN formulario, no una lista: su elemento es
     # el formulario entero. Revisarlo es decir "estos siete números están
     # bien", que es exactamente la decisión que hoy no deja rastro.
     Revisable("operations", "alert-thresholds",
               "SELECT 'reglas' AS id, 'Umbrales de alerta' AS label, "
-              "'Umbrales de alerta demora detencion sin reportar' AS buscable"),
+              "'Umbrales de alerta demora detencion sin reportar' AS buscable, "
+              "'reglas' AS abre"),
 
     _taxonomia("fleet", "subtypes", "FLEET_SERVICE_TYPE"),
     _taxonomia("fleet", "operation-types", "WEBCARGA_OPERATION_TYPE"),
@@ -167,9 +174,9 @@ _SIN_ACENTO = "translate({texto}, 'áéíóúÁÉÍÓÚüÜ', 'aeiouAEIOUuU')"
 
 SQL_BUSQUEDA = f"""
 WITH elementos AS (
-{_union_de_elementos("e.id::text AS id, e.label, e.buscable")}
+{_union_de_elementos("e.id::text AS id, e.label, e.buscable, e.abre::text AS abre")}
 )
-SELECT domain, section, id, label
+SELECT domain, section, id, label, abre
   FROM elementos
  WHERE lower({_SIN_ACENTO.format(texto='buscable')})
        LIKE '%' || lower({_SIN_ACENTO.format(texto='$1::text')}) || '%'
