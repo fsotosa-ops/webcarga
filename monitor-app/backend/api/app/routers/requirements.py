@@ -169,6 +169,17 @@ async def recalc(
                 # trabajo real. `updated_at` tampoco se toca: alimenta
                 # `last_document_update` de la lista de empresas, y volver a
                 # exigir un requisito no es haber actualizado un documento.
+                #
+                # El `WHERE NOT is_current` del DO UPDATE es el ESPEJO del
+                # `AND is_current` que el apagado de abajo lleva a propósito.
+                # `d["crear"]` se calculó en otra conexión y en otra
+                # transacción, así que entre el cálculo y este INSERT alguien
+                # pudo encender una fila —reactivando un vínculo empresa-cliente
+                # o recalculando en paralelo—. Sin el WHERE, esa fila se
+                # reescribe `true` sobre `true`: entra en el RETURNING, infla
+                # `creados`, y deja en `audit_log` un id que este recálculo
+                # nunca cambió. Con el WHERE, encender es idempotente igual que
+                # apagar.
                 creados_rows = await conn.fetch(
                     """
                     INSERT INTO public.compliance_records
@@ -176,6 +187,7 @@ async def recalc(
                     SELECT unnest($1::uuid[]), $2, $3, 'MISSING', true
                     ON CONFLICT (entity_id, requirement_id) DO UPDATE SET
                         is_current = true
+                    WHERE NOT public.compliance_records.is_current
                     RETURNING id
                     """,
                     d["crear"], d["target_entity"], requirement_id,

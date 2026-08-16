@@ -451,8 +451,14 @@ def test_recalc_vuelve_a_encender_un_registro_apagado_sin_pisarle_el_documento()
     assert res.json()["creados"] == 1
     sql = _sql_normalizado(
         [c.args[0] for c in conn.fetch.call_args_list if "INSERT" in c.args[0].upper()][0])
+    # El WHERE es el ESPEJO del `AND is_current` del apagado: sin el, una fila
+    # que otro escritor encendio entre el calculo y este INSERT se reescribe
+    # `true` sobre `true`, entra en el RETURNING, infla `creados` y deja en
+    # audit_log un id que este recalculo nunca cambio. Hallazgo de /code-review
+    # (2026-08-16): la guarda estaba en un lado del espejo y no en el otro.
     assert sql[sql.index("ON CONFLICT"):] == (
         "ON CONFLICT (entity_id, requirement_id) DO UPDATE SET is_current = true "
+        "WHERE NOT public.compliance_records.is_current "
         "RETURNING id"
     )
 
