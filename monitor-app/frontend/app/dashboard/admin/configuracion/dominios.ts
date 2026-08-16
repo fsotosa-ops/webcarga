@@ -1,5 +1,8 @@
 import type { ComponentType } from 'react'
 import {
+  ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
+} from 'lucide-react'
+import {
   EstadosTmsTab, EstadosOperacionalesTab, EstadosEquipoTab, TaxonomyTab,
 } from './estados-tabs'
 import {
@@ -20,6 +23,10 @@ export interface Seccion {
 export interface Dominio {
   clave:     string
   titulo:    string
+  /** Cada dominio tiene su icono, como cada item de la barra lateral. Vive en
+   *  el registro y no en la portada porque es parte de la identidad del
+   *  dominio, no de la pantalla que lo dibuja. */
+  icono:     LucideIcon
   /** La pregunta que contesta el dominio. Si un ajuste no la contesta, esta mal ubicado. */
   proposito: string
   secciones: Seccion[]
@@ -38,6 +45,7 @@ export interface Dominio {
 export const DOMINIOS: Dominio[] = [
   {
     clave: 'certificacion',
+    icono: ShieldCheck,
     titulo: 'Certificación',
     proposito: 'Qué documentos se exigen, a quién, y con cuánta anticipación se avisa',
     secciones: [
@@ -49,6 +57,7 @@ export const DOMINIOS: Dominio[] = [
   },
   {
     clave: 'operaciones',
+    icono: LayoutDashboard,
     titulo: 'Operaciones',
     proposito: 'Cómo se ve el tablero, cuándo avisa, y qué temperatura corresponde',
     secciones: [
@@ -68,6 +77,7 @@ export const DOMINIOS: Dominio[] = [
   },
   {
     clave: 'flota',
+    icono: Truck,
     titulo: 'Flota',
     proposito: 'El vocabulario de vehículos que comparten Certificación y Operaciones',
     secciones: [
@@ -79,6 +89,7 @@ export const DOMINIOS: Dominio[] = [
   },
   {
     clave: 'personas',
+    icono: Users,
     titulo: 'Personas y accesos',
     proposito: 'Quién entra y qué puede hacer',
     secciones: [
@@ -88,6 +99,7 @@ export const DOMINIOS: Dominio[] = [
   },
   {
     clave: 'facturacion',
+    icono: Receipt,
     titulo: 'Facturación',
     proposito: 'Más adelante',
     secciones: [],

@@ -630,3 +630,48 @@ def test_trip_select_resolves_shipper_id_live_via_client_name_match():
     query = pool.fetchrow.call_args.args[0]
     assert "public.shippers" in query
     assert "lower(trim(" in query
+
+
+# ── /config/inventario — qué gobierna cada dominio ──────────────────────────
+
+_FILA_INVENTARIO = {
+    "req_total": 37, "req_condicion": 2, "req_inactivos": 2,
+    "estados_tms": 25, "estados_op": 5, "estados_eq": 6, "motivos": 16,
+    "rangos_temp": 2, "subtipos": 10, "tipos_operacion": 2,
+    "usuarios": 10, "roles": 5,
+}
+
+
+def test_inventario_devuelve_pares_por_dominio():
+    """La portada dibuja pares (numero, etiqueta) y no sabe nada de dominios en
+    particular: si supiera, agregar Facturacion obligaria a tocarla."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _FILA_INVENTARIO
+    res = make_client(pool).get("/api/v1/config/inventario")
+
+    assert res.status_code == 200
+    cuerpo = res.json()
+    assert cuerpo["certificacion"][0] == {"n": 37, "etiqueta": "documentos"}
+    assert cuerpo["flota"] == [
+        {"n": 10, "etiqueta": "subtipos"},
+        {"n": 2, "etiqueta": "tipos de operación"},
+    ]
+
+
+def test_inventario_omite_los_ceros():
+    """Una linea que dice '0 rangos' ocupa el lugar de algo que si informa."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {**_FILA_INVENTARIO, "rangos_temp": 0, "req_inactivos": 0}
+    cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
+
+    assert all("rango" not in p["etiqueta"] for p in cuerpo["operaciones"])
+    assert all("vigencia" not in p["etiqueta"] for p in cuerpo["certificacion"])
+
+
+def test_inventario_usa_el_singular_cuando_corresponde():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {**_FILA_INVENTARIO, "usuarios": 1, "subtipos": 1}
+    cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
+
+    assert {"n": 1, "etiqueta": "usuario"} in cuerpo["personas"]
+    assert {"n": 1, "etiqueta": "subtipo"} in cuerpo["flota"]

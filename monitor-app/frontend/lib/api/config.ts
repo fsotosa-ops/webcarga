@@ -94,3 +94,12 @@ export const taxonomiesApi = {
       `/api/v1/config/taxonomies/${id}`, { method: 'DELETE' },
     ),
 }
+
+/** Qué gobierna cada dominio de Configuración, en números reales. Las claves
+ *  son las del registro de dominios; los pares se dibujan tal cual, así que la
+ *  portada no sabe nada de dominios en particular. */
+export type InventarioConfig = Record<string, { n: number; etiqueta: string }[]>
+
+export const inventarioApi = {
+  get: (): Promise<InventarioConfig> => apiFetch<InventarioConfig>('/api/v1/config/inventario'),
+}

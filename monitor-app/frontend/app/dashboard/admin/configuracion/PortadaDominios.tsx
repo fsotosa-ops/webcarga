@@ -1,47 +1,109 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import { DOMINIOS } from './dominios'
+import { inventarioApi, type InventarioConfig } from '@/lib/api/config'
 
-/** La portada del modulo. Se deriva del registro: agregar un dominio no toca
- *  este archivo.
+/** La portada del modulo: una fila por dominio, con lo que ese dominio gobierna
+ *  en numeros reales.
  *
- *  Hoy cada tarjeta dice cuantas secciones tiene. La senal de "sin revisar"
- *  —que es lo que convierte la portada en algo mas que un menu— llega en el
- *  Plan 2, junto con el registro de revision. */
+ *  La primera version mostraba "N secciones", que describe la NAVEGACION y no
+ *  el contenido: Certificacion con 37 documentos se veia identica a Personas
+ *  con 10 usuarios, y la unica senal era un conteo que a nadie le sirve.
+ *
+ *  Filas y no tarjetas porque es el lenguaje que la app ya habla —el embudo de
+ *  Certificacion es una lista de filas— y porque una fila ancha deja lugar al
+ *  inventario sin dejar media pantalla vacia.
+ *
+ *  Sin color de estado a proposito. La app tiene tres colores con significado
+ *  fijo (--espera, --accion, --resuelto) y en esta pantalla todavia no hay nada
+ *  esperando ni resuelto: pintarla seria gastar la senal. Cuando entre el
+ *  registro de revision (Plan 2), "12 sin revisar" ocupa el lugar del
+ *  inventario en la misma linea, y AHI el color significa algo.
+ *
+ *  Todo se deriva del registro: agregar un dominio no toca este archivo. */
 export function PortadaDominios() {
+  const [inventario, setInventario] = useState<InventarioConfig | null>(null)
+
+  useEffect(() => {
+    let vigente = true
+    // El inventario es informativo: si falla, las filas siguen siendo
+    // navegables y sencillamente no muestran numeros. Una portada sin conteos
+    // sirve; una portada que no deja entrar, no.
+    inventarioApi.get()
+      .then(d => { if (vigente) setInventario(d) })
+      .catch(() => { if (vigente) setInventario({}) })
+    return () => { vigente = false }
+  }, [])
+
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {DOMINIOS.map(d => {
+    <div className="bg-white border border-border rounded-2xl overflow-hidden">
+      {DOMINIOS.map((d, i) => {
+        const Icono   = d.icono
+        const pares   = inventario?.[d.clave] ?? []
+        const primera = i === 0
+
         const cuerpo = (
           <>
-            <p className="text-sm font-semibold text-text-primary">{d.titulo}</p>
-            <p className="text-xs text-gray-500 mt-1">{d.proposito}</p>
+            <span
+              aria-hidden="true"
+              className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
+                d.proximamente ? 'bg-gray-100 text-gray-400' : 'bg-accent/10 text-accion'
+              }`}
+            >
+              <Icono size={15} />
+            </span>
+
+            <span className="flex-1 min-w-0">
+              <span className="block font-mulish font-bold text-sm text-text-primary">
+                {d.titulo}
+              </span>
+              <span className="block text-xs text-gray-500 mt-0.5">{d.proposito}</span>
+
+              {d.proximamente ? (
+                <span className="block text-[11px] text-gray-400 mt-2">Reservado</span>
+              ) : (
+                <span className="block text-xs text-gray-600 mt-2 tabular-nums min-h-[1rem]">
+                  {inventario === null
+                    ? <span className="inline-block w-40 h-3 bg-gray-100 rounded animate-pulse align-middle" />
+                    : pares.map((p, n) => (
+                        <span key={p.etiqueta}>
+                          {n > 0 && <span className="text-gray-300"> · </span>}
+                          <b className="font-semibold text-text-primary">{p.n}</b> {p.etiqueta}
+                        </span>
+                      ))}
+                </span>
+              )}
+            </span>
+
             {!d.proximamente && (
-              <p className="text-[11px] text-gray-400 mt-3 tabular-nums">
-                {d.secciones.length === 1 ? '1 sección' : `${d.secciones.length} secciones`}
-              </p>
+              <ChevronRight size={15} className="shrink-0 self-center text-gray-300" aria-hidden="true" />
             )}
           </>
         )
+
+        const borde = primera ? '' : 'border-t border-border'
 
         // Un dominio reservado se dibuja apagado y NO es un enlace: parecer
         // visitable y no llevar a ningun lado es peor que no ofrecerlo.
         if (d.proximamente) {
           return (
-            <div key={d.clave}
-                 className="rounded-xl border border-dashed border-border p-4 opacity-50">
+            <div key={d.clave} className={`flex gap-3 px-4 py-3.5 opacity-50 ${borde}`}>
               {cuerpo}
-              <p className="text-[11px] text-gray-400 mt-3">Reservado</p>
             </div>
           )
         }
 
         return (
-          <Link key={d.clave}
-                href={`/dashboard/admin/configuracion/${d.clave}`}
-                prefetch={false}
-                className="rounded-xl border border-border p-4 transition-colors hover:bg-gray-50/60">
+          <Link
+            key={d.clave}
+            href={`/dashboard/admin/configuracion/${d.clave}`}
+            prefetch={false}
+            className={`flex gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50/70
+                        focus-visible:outline-none focus-visible:bg-accent/5 ${borde}`}
+          >
             {cuerpo}
           </Link>
         )

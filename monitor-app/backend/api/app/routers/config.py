@@ -331,3 +331,79 @@ async def patch_monitor_alert_rules(
     row = await pool.fetchrow(_ALERT_RULES_SELECT)
     await invalidate_trips_meta_cache()
     return dict(row)
+
+
+# ── Inventario del módulo de Configuración ──────────────────────────────────
+
+# Cada dominio declara CÓMO se cuentan sus elementos; la portada no sabe nada de
+# dominios en particular — sólo dibuja pares (número, etiqueta). Esa es la razón
+# de que el mapa viva acá y no en el frontend: agregar un dominio es agregar una
+# entrada a este diccionario, sin tocar la pantalla.
+#
+# Una sola consulta para toda la portada: hacer una llamada por dominio serían
+# cuatro viajes para una pantalla que se mira dos segundos.
+_INVENTARIO_SQL = """
+SELECT
+  (SELECT count(*) FROM public.compliance_requirements)                                    AS req_total,
+  (SELECT count(*) FROM public.compliance_requirements
+    WHERE applies_to_fleet_service_type_ids IS NOT NULL
+       OR applies_to_management_types IS NOT NULL)                                         AS req_condicion,
+  (SELECT count(*) FROM public.compliance_requirements WHERE NOT is_active)                AS req_inactivos,
+  (SELECT count(*) FROM app.trip_statuses WHERE active)                                    AS estados_tms,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='OPERATIONAL_STATE' AND active) AS estados_op,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='EQUIPMENT_STATE' AND active)   AS estados_eq,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='DRIVER_REASON' AND active)     AS motivos,
+  (SELECT count(*) FROM app.temperature_ranges)                                            AS rangos_temp,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='FLEET_SERVICE_TYPE' AND active) AS subtipos,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='WEBCARGA_OPERATION_TYPE' AND active) AS tipos_operacion,
+  (SELECT count(*) FROM public.profiles WHERE active)                                      AS usuarios,
+  (SELECT count(DISTINCT role) FROM public.profiles WHERE active)                          AS roles
+"""
+
+
+def _pares(fila, *campos: tuple[str, str, str]) -> list[dict]:
+    """Arma los pares (n, etiqueta) de un dominio, en singular o plural según el
+    número. Se descartan los ceros: una línea que dice "0 rangos" ocupa el lugar
+    de algo que sí informa."""
+    salida = []
+    for clave, singular, plural in campos:
+        n = fila[clave] or 0
+        if n:
+            salida.append({"n": n, "etiqueta": singular if n == 1 else plural})
+    return salida
+
+
+@router.get("/inventario")
+async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require_admin)):
+    """Qué gobierna cada dominio, en números reales.
+
+    La portada mostraba "N secciones", que describe la NAVEGACIÓN y no el
+    contenido: Certificación con 37 documentos se veía igual que Personas con
+    10 usuarios."""
+    f = await pool.fetchrow(_INVENTARIO_SQL)
+    return {
+        "certificacion": _pares(
+            f,
+            ("req_total", "documento", "documentos"),
+            ("req_condicion", "con condición", "con condición"),
+            ("req_inactivos", "sin vigencia", "sin vigencia"),
+        ),
+        "operaciones": _pares(
+            f,
+            ("estados_tms", "estado del tablero", "estados del tablero"),
+            ("estados_op", "operacional", "operacionales"),
+            ("estados_eq", "de equipo", "de equipo"),
+            ("motivos", "motivo", "motivos"),
+            ("rangos_temp", "rango de temperatura", "rangos de temperatura"),
+        ),
+        "flota": _pares(
+            f,
+            ("subtipos", "subtipo", "subtipos"),
+            ("tipos_operacion", "tipo de operación", "tipos de operación"),
+        ),
+        "personas": _pares(
+            f,
+            ("usuarios", "usuario", "usuarios"),
+            ("roles", "rol", "roles"),
+        ),
+    }

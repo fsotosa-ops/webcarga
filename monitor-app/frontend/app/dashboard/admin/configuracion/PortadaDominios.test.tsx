@@ -1,6 +1,26 @@
 import { readFile } from 'node:fs/promises'
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/lib/api/config', () => ({
+  inventarioApi: { get: vi.fn() },
+}))
+import { inventarioApi } from '@/lib/api/config'
+
+const INVENTARIO = {
+  certificacion: [
+    { n: 37, etiqueta: 'documentos' },
+    { n: 2, etiqueta: 'con condición' },
+  ],
+  operaciones: [{ n: 25, etiqueta: 'estados del tablero' }],
+  flota:       [{ n: 10, etiqueta: 'subtipos' }],
+  personas:    [{ n: 10, etiqueta: 'usuarios' }],
+}
+
+beforeEach(() => {
+  vi.mocked(inventarioApi.get).mockReset()
+  vi.mocked(inventarioApi.get).mockResolvedValue(INVENTARIO)
+})
 import { PortadaDominios } from './PortadaDominios'
 import { DOMINIOS } from './dominios'
 
@@ -55,9 +75,30 @@ describe('PortadaDominios', () => {
     expect(screen.queryByRole('link', { name: /facturación/i })).not.toBeInTheDocument()
   })
 
-  it('dice cuantas secciones tiene cada dominio', () => {
+  // "N secciones" describia la NAVEGACION, no el contenido: Certificacion con
+  // 37 documentos se veia identica a Personas con 10 usuarios. Ahora cada fila
+  // dice que gobierna su dominio, con datos reales del backend.
+  it('cada dominio dice que gobierna, en numeros reales', async () => {
     render(<PortadaDominios />)
     const certificacion = screen.getByText('Certificación').closest('a')!
-    expect(certificacion).toHaveTextContent('2 secciones')
+    await waitFor(() => expect(certificacion).toHaveTextContent('37 documentos'))
+    expect(certificacion).toHaveTextContent('2 con condición')
+  })
+
+  it('ya no muestra el conteo de secciones, que no informaba nada', async () => {
+    render(<PortadaDominios />)
+    const fila = screen.getByText('Certificación').closest('a')!
+    await waitFor(() => expect(fila).toHaveTextContent('37 documentos'))
+    expect(screen.queryByText(/secciones/i)).not.toBeInTheDocument()
+  })
+
+  // El inventario es informativo: si el backend falla, las filas tienen que
+  // seguir siendo navegables. Una portada sin conteos sirve; una que no deja
+  // entrar, no.
+  it('si el inventario falla las filas siguen siendo navegables', async () => {
+    vi.mocked(inventarioApi.get).mockRejectedValueOnce(new Error('502'))
+    render(<PortadaDominios />)
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: /^Certificación/ })).toBeInTheDocument())
   })
 })
