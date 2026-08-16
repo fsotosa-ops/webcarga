@@ -5,6 +5,7 @@ from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..schemas.status_taxonomy import StatusTaxonomyBody, StatusTaxonomyPatch
 from ..services.reordenamiento import TAXONOMIAS, MovimientoBody, mover_una_posicion
+from ..services.revisiones import SECCION_DE_TAXONOMIA, registrar_revision
 
 router = APIRouter(prefix="/config/taxonomies", tags=["config"])
 
@@ -52,7 +53,7 @@ async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool)):
 
 
 @router.post("")
-async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), _=Depends(require_admin)):
+async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usuario=Depends(require_admin)):
     await _exigir_dominio_conocido(body.domain, pool)
     row = await pool.fetchrow(
         f"""INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, sort_order, group_id)
@@ -60,15 +61,18 @@ async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), _=De
             RETURNING {_FIELDS}""",
         body.domain, body.label, body.bg_color, body.text_color, body.sort_order, body.group_id,
     )
+    await _registrar(pool, body.domain, row["id"], usuario)
     await invalidate_trips_meta_cache()
     return dict(row)
 
 
 @router.patch("/{taxonomy_id}")
 async def patch_taxonomy(
-    taxonomy_id: str, body: StatusTaxonomyPatch, pool=Depends(get_pool), _=Depends(require_admin),
+    taxonomy_id: str, body: StatusTaxonomyPatch, pool=Depends(get_pool),
+    usuario=Depends(require_admin),
 ):
-    existing = await pool.fetchrow("SELECT id FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
+    existing = await pool.fetchrow(
+        "SELECT id, domain FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
     if not existing:
         raise HTTPException(404, "No encontrado")
 
@@ -84,8 +88,23 @@ async def patch_taxonomy(
 
     await pool.execute(f"UPDATE app.status_taxonomies SET {', '.join(sets)} WHERE id = $1", *vals)
     row = await pool.fetchrow(f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
+    await _registrar(pool, existing["domain"], taxonomy_id, usuario)
     await invalidate_trips_meta_cache()
     return dict(row)
+
+
+async def _registrar(pool, vocabulario: str, taxonomy_id, usuario) -> None:
+    """GUARDAR CUENTA COMO REVISAR.
+
+    Este endpoint es generico —sirve a los cinco vocabularios— y no sabe en que
+    pantalla esta parado quien edita: lo unico que tiene es el `domain` de la
+    fila, y de ahi sale la seccion. Un vocabulario que no este declarado como
+    revisable simplemente no registra nada."""
+    destino = SECCION_DE_TAXONOMIA.get(vocabulario)
+    if not destino:
+        return
+    dominio, seccion = destino
+    await registrar_revision(pool, dominio, seccion, str(taxonomy_id), usuario["sub"])
 
 
 @router.post("/{taxonomy_id}/move")

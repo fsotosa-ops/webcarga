@@ -128,8 +128,44 @@ export const taxonomiesApi = {
 /** Qué gobierna cada dominio de Configuración, en números reales. Las claves
  *  son las del registro de dominios; los pares se dibujan tal cual, así que la
  *  portada no sabe nada de dominios en particular. */
-export type InventarioConfig = Record<string, { n: number; etiqueta: string }[]>
+export interface DominioDelInventario {
+  pares: { n: number; etiqueta: string }[]
+  /** Cuántas decisiones nadie tomó todavía. `null` cuando el dominio no tiene
+   *  nada revisable —Personas y accesos—, que NO es lo mismo que cero: un cero
+   *  ahí sería otro número con dos significados. */
+  revision: { total: number; sin_revisar: number } | null
+}
+
+export type InventarioConfig = Record<string, DominioDelInventario>
 
 export const inventarioApi = {
   get: (): Promise<InventarioConfig> => apiFetch<InventarioConfig>('/api/v1/config/inventario'),
+}
+
+// ── Registro de revisión ────────────────────────────────────────────────────
+// Separa "lo revisamos y va así" de "nadie lo miró todavía", que hasta ahora se
+// veían igual: la columna vacía.
+
+export interface Revision {
+  element_id:  string
+  reviewed_at: string
+  reviewed_by: string | null
+}
+
+export const revisionesApi = {
+  /** Los elementos YA revisados de una sección. La lista de elementos la tiene
+   *  la pantalla: pedirle al backend que la repita crearía una segunda
+   *  definición de qué elementos hay. */
+  list: (domain: string, section: string) =>
+    apiFetch<Revision[]>(
+      `/api/v1/config/reviews?domain=${encodeURIComponent(domain)}&section=${encodeURIComponent(section)}`),
+
+  /** "Lo miré y está bien así" — el único caso que no deja rastro solo.
+   *  Guardar un cambio ya cuenta como revisar, y eso lo registra el propio
+   *  endpoint que guarda. */
+  confirm: (domain: string, section: string, element_id: string) =>
+    apiFetch<{ revisado: boolean }>('/api/v1/config/reviews', {
+      method: 'POST',
+      body: JSON.stringify({ domain, section, element_id }),
+    }),
 }

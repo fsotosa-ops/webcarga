@@ -41,18 +41,22 @@ function requisito(patch: Partial<RequirementOption> = {}): RequirementOption {
   }
 }
 
+const confirmar = vi.fn()
+
 function montarPanel(r: RequirementOption = requisito(), onCerrar = vi.fn()) {
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const vista = render(
     <QueryClientProvider client={cliente}>
-      <CondicionPanel requisito={r} subtipos={SUBTIPOS} gestiones={GESTIONES} onCerrar={onCerrar} />
+      <CondicionPanel requisito={r} subtipos={SUBTIPOS} gestiones={GESTIONES}
+        revision={null} onConfirmar={confirmar} confirmando={false} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   // Volver a dibujar con OTRO objeto requisito, como hace react-query cuando
   // refetchea el catálogo: mismo cliente, mismo panel montado.
   const redibujar = (otro: RequirementOption) => vista.rerender(
     <QueryClientProvider client={cliente}>
-      <CondicionPanel requisito={otro} subtipos={SUBTIPOS} gestiones={GESTIONES} onCerrar={onCerrar} />
+      <CondicionPanel requisito={otro} subtipos={SUBTIPOS} gestiones={GESTIONES}
+        revision={null} onConfirmar={confirmar} confirmando={false} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   return { onCerrar, vista, redibujar }

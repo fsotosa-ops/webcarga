@@ -9,6 +9,7 @@ from ..db import get_pool
 from ..services.reordenamiento import (
     ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
 )
+from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -141,7 +142,7 @@ async def patch_status(
     status_id: str,
     body: TripStatusPatch,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    usuario=Depends(require_admin),
 ):
     existing = await pool.fetchrow(
         "SELECT id FROM app.trip_statuses WHERE id = $1", status_id
@@ -166,6 +167,9 @@ async def patch_status(
         "FROM app.trip_statuses WHERE id = $1",
         status_id,
     )
+    # GUARDAR CUENTA COMO REVISAR: editar y guardar es tomar una decisión, y no
+    # hace falta un segundo gesto para dejarla registrada.
+    await registrar_revision(pool, "operations", "tms-statuses", status_id, usuario["sub"])
     await invalidate_trips_meta_cache()
     return dict(row)
 
@@ -205,7 +209,7 @@ async def patch_alert_threshold(
     doc_type: str,
     body: AlertThresholdPatch,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    usuario=Depends(require_admin),
 ):
     existing = await pool.fetchrow(
         "SELECT doc_type FROM app.alert_thresholds WHERE doc_type = $1", doc_type
@@ -230,6 +234,8 @@ async def patch_alert_threshold(
         "FROM app.alert_thresholds WHERE doc_type = $1",
         doc_type,
     )
+    await registrar_revision(
+        pool, "certification", "expiry-alerts", doc_type, usuario["sub"])
     await invalidate_trips_meta_cache()
     return dict(row)
 
@@ -249,7 +255,7 @@ async def list_temperature_ranges(pool=Depends(get_pool)):
 async def create_temperature_range(
     body: TemperatureRangeBody,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    usuario=Depends(require_admin),
 ):
     existing = await pool.fetchrow(
         "SELECT cargo_type FROM app.temperature_ranges WHERE cargo_type = $1",
@@ -264,6 +270,10 @@ async def create_temperature_range(
            RETURNING cargo_type, label, min_c, max_c""",
         body.cargo_type, body.label, body.min_c, body.max_c,
     )
+    # Crear también es decidir: un rango recién creado no nace pendiente de que
+    # alguien lo mire, porque lo acaba de mirar quien lo creó.
+    await registrar_revision(
+        pool, "operations", "temperature-ranges", body.cargo_type, usuario["sub"])
     await invalidate_trips_meta_cache()
     return dict(row)
 
@@ -273,7 +283,7 @@ async def patch_temperature_range(
     cargo_type: str,
     body: TemperatureRangePatch,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    usuario=Depends(require_admin),
 ):
     existing = await pool.fetchrow(
         "SELECT cargo_type, label, min_c, max_c FROM app.temperature_ranges WHERE cargo_type = $1",
@@ -303,6 +313,8 @@ async def patch_temperature_range(
         "SELECT cargo_type, label, min_c, max_c FROM app.temperature_ranges WHERE cargo_type = $1",
         cargo_type,
     )
+    await registrar_revision(
+        pool, "operations", "temperature-ranges", cargo_type, usuario["sub"])
     await invalidate_trips_meta_cache()
     return dict(row)
 
@@ -343,7 +355,7 @@ async def get_monitor_alert_rules(pool=Depends(get_pool)):
 async def patch_monitor_alert_rules(
     body: MonitorAlertRulesPatch,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    usuario=Depends(require_admin),
 ):
     data = body.model_dump(exclude_none=True)
     if not data:
@@ -359,6 +371,10 @@ async def patch_monitor_alert_rules(
         f"UPDATE app.monitor_alert_rules SET {', '.join(sets)} WHERE id = 1", *vals
     )
     row = await pool.fetchrow(_ALERT_RULES_SELECT)
+    # Los umbrales son UN formulario, no una lista: su elemento es el
+    # formulario entero, y revisarlo es decir "estos siete números están bien".
+    await registrar_revision(
+        pool, "operations", "alert-thresholds", "reglas", usuario["sub"])
     await invalidate_trips_meta_cache()
     return dict(row)
 
@@ -415,7 +431,13 @@ async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require_adm
     contenido: Certificación con 37 documentos se veía igual que Personas con
     10 usuarios."""
     f = await pool.fetchrow(_INVENTARIO_SQL)
-    return {
+    # Cuántas decisiones nadie tomó todavía, por dominio. "Sin revisar" no es un
+    # adorno: es el camino corto entre "algo falta" y "lo estoy resolviendo".
+    pendientes = {
+        r["domain"]: {"total": r["total"], "sin_revisar": r["sin_revisar"]}
+        for r in await pool.fetch(SQL_PENDIENTES_POR_DOMINIO)
+    }
+    contenido = {
         "certification": _pares(
             f,
             ("req_total", "documento", "documentos"),
@@ -440,4 +462,11 @@ async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require_adm
             ("usuarios", "usuario", "usuarios"),
             ("roles", "rol", "roles"),
         ),
+    }
+    # Un dominio sin nada revisable —Personas y accesos— no trae la clave, y la
+    # portada no le dibuja insignia. Es opt-in a propósito: una cuenta de
+    # usuario no es una decisión de configuración que alguien deba confirmar.
+    return {
+        clave: {"pares": pares, "revision": pendientes.get(clave)}
+        for clave, pares in contenido.items()
     }

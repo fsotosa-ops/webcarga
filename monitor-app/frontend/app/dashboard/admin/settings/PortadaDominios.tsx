@@ -43,7 +43,9 @@ export function PortadaDominios() {
                     min-h-[calc(100vh-12rem)]">
       {DOMINIOS.map((d, i) => {
         const Icono   = d.icono
-        const pares   = inv.data?.[d.clave] ?? []
+        const dominio = inv.data?.[d.clave]
+        const pares   = dominio?.pares ?? []
+        const revision = dominio?.revision
         const primera = i === 0
 
         const cuerpo = (
@@ -81,6 +83,24 @@ export function PortadaDominios() {
                           <b className="font-semibold text-text-primary">{p.n}</b> {p.etiqueta}
                         </span>
                       ))}
+                  {/* Cuando no hay pendientes se dice "al día", NO "0": un cero
+                      ahí volvería a significar dos cosas ("ninguno" contra
+                      "todavía no cargué"), el defecto que ya ocurrió en el
+                      embudo de Certificación. Y un dominio sin nada revisable
+                      —Personas— no dibuja nada, que es un tercer estado
+                      distinto de los dos. */}
+                  {revision && (
+                    <>
+                      <span className="text-gray-300"> · </span>
+                      {revision.sin_revisar > 0 ? (
+                        <b className="font-semibold text-amber-700">
+                          {`${revision.sin_revisar} sin revisar`}
+                        </b>
+                      ) : (
+                        <span className="text-resuelto">al día</span>
+                      )}
+                    </>
+                  )}
                 </span>
               )}
             </span>
@@ -103,10 +123,17 @@ export function PortadaDominios() {
           )
         }
 
+        // "Sin revisar" es un FILTRO, no un adorno: el número entra al dominio
+        // con el filtro puesto. Es el camino corto entre "algo falta" y "lo
+        // estoy resolviendo".
+        const destino = revision && revision.sin_revisar > 0
+          ? `/dashboard/admin/settings/${d.clave}?revision=pendiente`
+          : `/dashboard/admin/settings/${d.clave}`
+
         return (
           <Link
             key={d.clave}
-            href={`/dashboard/admin/settings/${d.clave}`}
+            href={destino}
             prefetch={false}
             className={`flex gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50/70
                         focus-visible:outline-none focus-visible:bg-accent/5 ${borde}`}

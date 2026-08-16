@@ -1,11 +1,22 @@
-import { render, screen } from '@testing-library/react'
+import { render as renderCrudo, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi } from 'vitest'
 import { SubtiposVehiculoTab, TiposOperacionTab } from './flota-tabs'
 
 vi.mock('@/lib/api/config', () => ({
   taxonomiesApi: { list: vi.fn().mockResolvedValue([]) },
+  revisionesApi: { list: vi.fn().mockResolvedValue([]), confirm: vi.fn() },
   configApi: {},
 }))
+
+// Las secciones muestran el registro de revisión, que es react-query.
+function render(ui: React.ReactElement) {
+  return renderCrudo(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      {ui}
+    </QueryClientProvider>,
+  )
+}
 
 describe('secciones de Flota', () => {
   it('subtipos de vehiculo pide el dominio correcto', async () => {

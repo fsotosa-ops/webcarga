@@ -37,7 +37,8 @@ function montarPanel(
 ) {
   const vista = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <EstadoPanel estado={s} hermanos={hermanos} onCerrar={onCerrar} />
+      <EstadoPanel estado={s} hermanos={hermanos} revision={null}
+        onConfirmar={vi.fn()} confirmando={false} onCerrar={onCerrar} />
     </QueryClientProvider>,
   )
   return { onCerrar, vista }
@@ -133,7 +134,8 @@ describe('EstadoPanel', () => {
     fireEvent.change(screen.getByLabelText(/nombre visible/i), { target: { value: 'sucio' } })
     vista.rerender(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <EstadoPanel estado={estado({ id: 'EN_RUTA', label: 'En ruta' })} hermanos={CATALOGO} onCerrar={vi.fn()} />
+        <EstadoPanel estado={estado({ id: 'EN_RUTA', label: 'En ruta' })} hermanos={CATALOGO}
+          revision={null} onConfirmar={vi.fn()} confirmando={false} onCerrar={vi.fn()} />
       </QueryClientProvider>,
     )
     expect(screen.getByLabelText(/nombre visible/i)).toHaveValue('En ruta')

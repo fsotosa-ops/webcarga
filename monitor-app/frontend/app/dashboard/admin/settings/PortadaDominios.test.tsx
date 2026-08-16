@@ -17,13 +17,15 @@ function montar() {
 }
 
 const INVENTARIO = {
-  certification: [
-    { n: 37, etiqueta: 'documentos' },
-    { n: 2, etiqueta: 'con condición' },
-  ],
-  operations: [{ n: 25, etiqueta: 'estados del tablero' }],
-  fleet:       [{ n: 10, etiqueta: 'subtypes' }],
-  people:      [{ n: 10, etiqueta: 'users' }],
+  certification: {
+    pares: [{ n: 37, etiqueta: 'documentos' }, { n: 2, etiqueta: 'con condición' }],
+    revision: { total: 46, sin_revisar: 12 },
+  },
+  // Al día: revisado todo lo que había que revisar.
+  operations: { pares: [{ n: 25, etiqueta: 'estados del tablero' }], revision: { total: 55, sin_revisar: 0 } },
+  fleet:      { pares: [{ n: 10, etiqueta: 'subtypes' }], revision: { total: 12, sin_revisar: 3 } },
+  // Personas no tiene nada revisable: NO es lo mismo que tener cero pendientes.
+  people:     { pares: [{ n: 10, etiqueta: 'users' }], revision: null },
 }
 
 beforeEach(() => {
@@ -50,8 +52,34 @@ describe('PortadaDominios', () => {
     // Ancorado al inicio del nombre accesible: el proposito de Flota tambien
     // menciona "Certificación" (el vocabulario que comparte con ese dominio),
     // asi que /certificación/i sin ancorar matchea las dos tarjetas.
+    expect(screen.getByRole('link', { name: /^personas/i }))
+      .toHaveAttribute('href', '/dashboard/admin/settings/people')
+  })
+
+  // "Sin revisar" es un FILTRO, no un adorno: el número entra al dominio con
+  // el filtro puesto. Es el camino corto entre "algo falta" y "lo estoy
+  // resolviendo".
+  it('el dominio con pendientes entra con el filtro puesto', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByText('12 sin revisar')).toBeInTheDocument())
     expect(screen.getByRole('link', { name: /^certificación/i }))
-      .toHaveAttribute('href', '/dashboard/admin/settings/certification')
+      .toHaveAttribute('href', '/dashboard/admin/settings/certification?revision=pendiente')
+  })
+
+  // Un cero ahí significaría dos cosas —"ninguno" y "todavía no cargué"—, que
+  // es el defecto que ya ocurrió en el embudo de Certificación.
+  it('sin pendientes dice "al día", no cero', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByText('al día')).toBeInTheDocument())
+    expect(screen.queryByText('0 sin revisar')).not.toBeInTheDocument()
+  })
+
+  // Tercer estado, distinto de los dos anteriores: no hay nada que revisar acá.
+  it('un dominio sin nada revisable no dibuja insignia', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByText('12 sin revisar')).toBeInTheDocument())
+    const personas = screen.getByRole('link', { name: /^personas/i })
+    expect(personas).not.toHaveTextContent(/sin revisar|al día/i)
   })
 
   // El prefetch ejecuta el layout del dashboard, que habla con Auth: eso

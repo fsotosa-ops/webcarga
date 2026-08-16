@@ -115,3 +115,18 @@ export const DOMINIOS: Dominio[] = [
 export function dominioPorClave(clave: string): Dominio | undefined {
   return DOMINIOS.find(d => d.clave === clave)
 }
+
+/** Dónde vive cada vocabulario de `app.status_taxonomies`.
+ *
+ *  `TaxonomyTab` es un solo componente que sirve a los cinco, así que no sabe
+ *  en qué sección está parado — y el registro de revisión necesita saberlo. Es
+ *  el mismo mapa que el backend tiene en `services/revisiones.py`; las dos
+ *  copias tienen que decir lo mismo, y hay un test que las compara contra la
+ *  base para que no se separen en silencio. */
+export const SECCION_DE_TAXONOMIA: Record<string, [dominio: string, seccion: string]> = {
+  OPERATIONAL_STATE:       ['operations', 'operational-statuses'],
+  EQUIPMENT_STATE:         ['operations', 'equipment-statuses'],
+  DRIVER_REASON:           ['operations', 'driver-reasons'],
+  FLEET_SERVICE_TYPE:      ['fleet', 'subtypes'],
+  WEBCARGA_OPERATION_TYPE: ['fleet', 'operation-types'],
+}

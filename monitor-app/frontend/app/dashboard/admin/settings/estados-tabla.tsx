@@ -9,6 +9,7 @@ import { CABECERA, EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoO
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { EstadoPanel } from './EstadoPanel'
+import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
 import { GROUP_OPTIONS, LoadState } from './shared'
 
 
@@ -36,7 +37,11 @@ function columnasDe(filas: TripStatusRow[]) {
 export function EstadosTabla() {
   const q = useQuery({ queryKey: ['tms-statuses'], queryFn: () => configApi.getStatuses() })
   const { orden, ordenarPor, comparar } = useOrden({ columna: 'orden', direccion: 'asc' })
-  const [columna, setColumna] = useState<string | null>(null)
+  // Dos filtros que no compiten: el de columna del tablero y el de revisión.
+  // Se resuelven con la misma barra de chips porque son la misma pregunta
+  // ("qué parte de la lista quiero ver"), y sólo uno puede estar activo.
+  const [columna, setColumna] = useChipDeRevision()
+  const revisiones = useRevisiones('operations', 'tms-statuses')
 
   // El estado abierto VIAJA EN LA URL, igual que un documento de Condiciones:
   // editar un estado se puede enlazar y recargar no devuelve a la lista.
@@ -61,7 +66,11 @@ export function EstadosTabla() {
 
   const todos = useMemo(() => q.data ?? [], [q.data])
 
-  const chips = useMemo(() => columnasDe(todos), [todos])
+  const chips = useMemo(() => [
+    { id: SIN_REVISAR, etiqueta: 'Sin revisar', n: todos.filter(s => revisiones.sinRevisar(s.id)).length },
+    ...columnasDe(todos),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [todos, revisiones.datos])
 
   // El orden del tablero, siempre completo y siempre por sort_order: es contra
   // esta lista —no contra la filtrada ni contra la que el usuario reordenó por
@@ -69,12 +78,14 @@ export function EstadosTabla() {
   const porOrden = useMemo(() => [...todos].sort((a, b) => a.sort_order - b.sort_order), [todos])
 
   const filas = useMemo(() => {
-    const f = columna ? todos.filter(s => s.group === columna) : todos
+    const f = columna === SIN_REVISAR
+      ? todos.filter(s => revisiones.sinRevisar(s.id))
+      : columna ? todos.filter(s => s.group === columna) : todos
     return comparar(f, s => (orden?.columna === 'visible' ? s.label : s.sort_order))
-    // `comparar` se recrea en cada render y no aporta identidad estable; el
-    // orden que importa ya viaja en `orden`.
+    // `comparar` y `revisiones.sinRevisar` se recrean en cada render; lo que
+    // cambia el resultado ya está acá.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todos, columna, orden])
+  }, [todos, columna, orden, revisiones.datos])
 
   // El panel se dibuja desde el dato del catálogo, no desde la fila clicada:
   // así recargar con `?estado=` en la URL lo abre igual, sin haber pasado por
@@ -106,6 +117,7 @@ export function EstadosTabla() {
             <th scope="col" className={CABECERA}>Nombre en el TMS</th>
             <th scope="col" className={CABECERA}>Columna</th>
             <EncabezadoOrdenable columna="orden" orden={orden} onOrdenar={ordenarPor}>Orden</EncabezadoOrdenable>
+            <th scope="col" className={CABECERA}>Revisión</th>
             <th scope="col" className="w-9" aria-label="Acciones" />
           </tr>
         </thead>
@@ -130,6 +142,10 @@ export function EstadosTabla() {
                 {GROUP_OPTIONS.find(g => g.id === s.group)?.label ?? s.group ?? '—'}
               </td>
               <td className="px-3 py-2.5 text-xs text-gray-400 tabular-nums">{s.sort_order}</td>
+              {/* La marca en la fila, el gesto en el panel: 25 botones de
+                  confirmar serían los mismos controles por fila que este
+                  rediseño vino a sacar. */}
+              <td className="px-3 py-2.5"><MarcaDeRevision revision={revisiones.revisionDe(s.id)} /></td>
               <td className="pr-2">
                 <button
                   type="button"
@@ -145,7 +161,7 @@ export function EstadosTabla() {
           ))}
           {!filas.length && (
             <tr>
-              <td colSpan={5} className="px-3 py-6 text-center text-xs text-gray-400">
+              <td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400">
                 Ningún estado coincide con el filtro.
               </td>
             </tr>
@@ -158,6 +174,9 @@ export function EstadosTabla() {
           key={estadoAbierto.id}
           estado={estadoAbierto}
           hermanos={porOrden}
+          revision={revisiones.revisionDe(estadoAbierto.id)}
+          onConfirmar={() => revisiones.confirmar.mutate(estadoAbierto.id)}
+          confirmando={revisiones.confirmar.isPending}
           onCerrar={() => abrir(null)}
         />
       )}

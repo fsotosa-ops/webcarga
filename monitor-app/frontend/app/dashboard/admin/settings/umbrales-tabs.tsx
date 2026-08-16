@@ -1,5 +1,6 @@
 'use client'
 
+import { CeldaDeRevision, BotonConfirmar, MarcaDeRevision, useRevisiones } from './revision'
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2, Loader2, Check, BellRing } from 'lucide-react'
 import { configApi } from '@/lib/api/config'
@@ -9,6 +10,7 @@ import { INPUT, useConfigList, LoadState, useRowFeedback, SaveRowButton } from '
 // ── Alertas de Vencimiento (documentos) ───────────────────────────────────────
 
 export function AlertasVencimientoTab() {
+  const revisiones = useRevisiones('certification', 'expiry-alerts')
   const fetcher = useCallback(() => configApi.getAlertThresholds(), [])
   const { items, setItems, loading, error, reload } = useConfigList<AlertThresholdMeta>(fetcher)
   const [drafts, setDrafts] = useState<Record<string, Partial<AlertThresholdMeta>>>({})
@@ -44,6 +46,7 @@ export function AlertasVencimientoTab() {
               <th className="py-2 pr-3 text-left">Documento</th>
               <th className="py-2 pr-3 text-left">Advertencia (días antes)</th>
               <th className="py-2 pr-3 text-left">Crítico (días antes)</th>
+              <th className="py-2 pr-3 text-left">Revisión</th>
               <th className="py-2 text-right w-[90px]" aria-label="Acciones" />
             </tr>
           </thead>
@@ -62,6 +65,9 @@ export function AlertasVencimientoTab() {
                     <input type="number" min={0} value={m.error_days}
                       onChange={e => setDraft(row.doc_type, { error_days: Number(e.target.value) })}
                       aria-label={`Crítico de ${row.label}`} className={INPUT + ' w-20'} />
+                  </td>
+                  <td className="py-2.5 pr-3">
+                    <CeldaDeRevision id={row.doc_type} revisiones={revisiones} />
                   </td>
                   <td className="py-2.5 text-right">
                     <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.doc_type}
@@ -83,6 +89,7 @@ export function AlertasVencimientoTab() {
 const EMPTY_RANGE = { cargo_type: '', label: '', min_c: 0, max_c: 5 }
 
 export function RangosTemperaturaTab() {
+  const revisiones = useRevisiones('operations', 'temperature-ranges')
   const fetcher = useCallback(() => configApi.getTemperatureRanges(), [])
   const { items, setItems, loading, error, reload } = useConfigList<TemperatureRangeMeta>(fetcher)
   const [drafts, setDrafts]       = useState<Record<string, Partial<TemperatureRangeMeta>>>({})
@@ -147,6 +154,7 @@ export function RangosTemperaturaTab() {
                 <th className="py-2 pr-3 text-left">Nombre</th>
                 <th className="py-2 pr-3 text-left">Mín °C</th>
                 <th className="py-2 pr-3 text-left">Máx °C</th>
+                <th className="py-2 pr-3 text-left">Revisión</th>
                 <th className="py-2 text-right w-[120px]" aria-label="Acciones" />
               </tr>
             </thead>
@@ -170,6 +178,9 @@ export function RangosTemperaturaTab() {
                         onChange={e => setDraft(row.cargo_type, { max_c: Number(e.target.value) })}
                         aria-label={`Máximo de ${row.cargo_type}`} className={INPUT + ' w-20'} />
                     </td>
+                    <td className="py-2.5 pr-3">
+                      <CeldaDeRevision id={row.cargo_type} revisiones={revisiones} />
+                    </td>
                     <td className="py-2.5 text-right whitespace-nowrap">
                       <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.cargo_type}
                         saved={!!fb.savedAt[row.cargo_type]} onClick={() => save(row)} />
@@ -183,7 +194,7 @@ export function RangosTemperaturaTab() {
                 )
               })}
               {items.length === 0 && (
-                <tr><td colSpan={5} className="py-4 text-center text-gray-300 italic">Sin rangos configurados</td></tr>
+                <tr><td colSpan={6} className="py-4 text-center text-gray-300 italic">Sin rangos configurados</td></tr>
               )}
             </tbody>
           </table>
@@ -241,6 +252,10 @@ const RULE_FIELDS: { key: keyof MonitorAlertRules; label: string; hint: string; 
 ]
 
 export function AlertasMonitorTab() {
+  // Los umbrales son UN formulario, no una lista: su elemento es el
+  // formulario entero, y revisarlo es decir "estos siete números están bien".
+  const revisiones = useRevisiones('operations', 'alert-thresholds')
+  const revision = revisiones.revisionDe('reglas')
   const [rules, setRules]     = useState<MonitorAlertRules | null>(null)
   const [draft, setDraft]     = useState<Partial<MonitorAlertRules>>({})
   const [loading, setLoading] = useState(true)
@@ -285,6 +300,7 @@ export function AlertasMonitorTab() {
         Umbrales de las alertas operacionales del monitor (tarjetas sobre la lista de viajes).
       </p>
       <LoadState loading={loading} error={error} onRetry={load} />
+      {!loading && !error && <MarcaDeRevision revision={revision} />}
       {!loading && !error && merged && (
         <div className={`border rounded-xl divide-y divide-border/50 ${dirty ? 'border-accent/30 bg-accent/[0.02]' : 'border-border'}`}>
           {RULE_FIELDS.map(f => (
@@ -319,6 +335,15 @@ export function AlertasMonitorTab() {
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-600" role="status">
               <Check size={13} /> Guardado
             </span>
+          )}
+          {/* Guardar ya cuenta como revisar, así que confirmar sólo aparece
+              cuando no hay nada que guardar. */}
+          {!dirty && (
+            <BotonConfirmar
+              revisado={!!revision}
+              pendiente={revisiones.confirmar.isPending}
+              onConfirmar={() => revisiones.confirmar.mutate('reglas')}
+            />
           )}
         </div>
       )}

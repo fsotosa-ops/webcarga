@@ -1,10 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render as renderCrudo, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TaxonomyTab } from './estados-tabs'
-import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomiesApi, revisionesApi } from '@/lib/api/config'
+
+// La pestaña muestra el registro de revisión, que es react-query: sin el
+// proveedor el componente entero no monta.
+function render(ui: React.ReactElement) {
+  return renderCrudo(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      {ui}
+    </QueryClientProvider>,
+  )
+}
 
 vi.mock('@/lib/api/config', () => ({
   taxonomiesApi: { list: vi.fn(), create: vi.fn(), patch: vi.fn(), deactivate: vi.fn(), move: vi.fn() },
+  revisionesApi: { list: vi.fn(), confirm: vi.fn() },
 }))
 
 beforeEach(() => {
@@ -12,6 +24,10 @@ beforeEach(() => {
   vi.mocked(taxonomiesApi.create).mockReset()
   vi.mocked(taxonomiesApi.deactivate).mockReset()
   vi.mocked(taxonomiesApi.move).mockReset()
+  vi.mocked(revisionesApi.list).mockReset()
+  vi.mocked(revisionesApi.list).mockResolvedValue([])
+  vi.mocked(revisionesApi.confirm).mockReset()
+  vi.mocked(revisionesApi.confirm).mockResolvedValue({ revisado: true })
   // jsdom no implementa window.confirm: sin este doble devuelve undefined y el
   // handler corta antes de llamar a la API, con lo que el test verde no
   // probaria nada.

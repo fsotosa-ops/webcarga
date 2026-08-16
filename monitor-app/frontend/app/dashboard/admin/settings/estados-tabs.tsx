@@ -7,6 +7,8 @@ import {
   GROUP_OPTIONS, INPUT, useConfigList, LoadState, useRowFeedback,
   SaveRowButton, SwatchPicker, SortArrows,
 } from './shared'
+import { CeldaDeRevision, useRevisiones } from './revision'
+import { SECCION_DE_TAXONOMIA } from './dominios'
 
 function Badge({ label, bg, text }: { label: string; bg: string; text: string }) {
   return (
@@ -39,6 +41,12 @@ interface TaxonomyTabProps {
 }
 
 export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
+  // Qué sección de Configuración es ésta. El componente es genérico —sirve a
+  // cinco vocabularios— y el registro de revisión necesita saber cuál: sale
+  // del mismo mapa que usa el backend, no de un prop nuevo que el llamador
+  // podría olvidarse de pasar.
+  const [dominioDeRevision, seccionDeRevision] = SECCION_DE_TAXONOMIA[domain]
+  const revisiones = useRevisiones(dominioDeRevision, seccionDeRevision)
   const fetcher = useCallback(() => taxonomiesApi.list(domain), [domain])
   const { items, setItems, loading, error, reload } = useConfigList<TaxonomyRow>(fetcher)
   const [drafts, setDrafts]     = useState<Record<string, Partial<TaxonomyRow>>>({})
@@ -133,6 +141,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                   <th className="py-2 pr-3 text-left">Vista previa</th>
                   <th className="py-2 pr-3 text-left">Nombre</th>
                   <th className="py-2 pr-3 text-left">Color</th>
+                  <th className="py-2 pr-3 text-left">Revisión</th>
                   {showGroup && <th className="py-2 pr-3 text-left" title={GROUP_HINT}>Columna del tablero</th>}
                   <th className="py-2 text-right w-[120px]" aria-label="Acciones" />
                 </tr>
@@ -154,6 +163,11 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                       <td className="py-2 pr-3">
                         <SwatchPicker name={row.label} bg={m.bg_color} text={m.text_color}
                           onPick={c => setDraft(row.id, { bg_color: c.bg, text_color: c.text })} />
+                      </td>
+                      {/* Acá el gesto va EN LA FILA: esta tabla no tiene panel
+                          y su botón de guardar también está en la fila. */}
+                      <td className="py-2 pr-3">
+                        <CeldaDeRevision id={row.id} revisiones={revisiones} />
                       </td>
                       {showGroup && (
                         <td className="py-2 pr-3">

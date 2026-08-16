@@ -15,6 +15,7 @@ from ..db import get_pool
 from ..schemas.compliance import RequirementOption
 from ..schemas.requirement import RecalcPreview, RecalcResult, RequirementConditionsPatchBody
 from ..services.audit import log_change
+from ..services.revisiones import registrar_revision
 from ..services.requirement_conditions import (
     SQL_CONDICION_DE_ENTIDAD,
     TABLA_DE_ENTIDAD,
@@ -179,6 +180,16 @@ async def patch_requirement_conditions(
                     action="update", field=field,
                     old_value=current[field], new_value=getattr(body, field),
                 )
+            # GUARDAR CUENTA COMO REVISAR, y va en la MISMA transaccion que el
+            # cambio: si el UPDATE se revierte, el registro de revision no puede
+            # quedar diciendo que alguien decidio algo que no ocurrio.
+            #
+            # No se deduce de `audit_log` —que se acaba de escribir dos lineas
+            # arriba— a proposito: "hay una fila en el log" significaria a la vez
+            # "alguien lo cambio" y "alguien lo confirmo", y separar esos dos es
+            # justamente para lo que existe el registro.
+            await registrar_revision(
+                conn, "certification", "conditions", requirement_id, user["sub"])
     return dict(row)
 
 

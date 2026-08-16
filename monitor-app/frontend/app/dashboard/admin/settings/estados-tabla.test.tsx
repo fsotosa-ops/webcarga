@@ -7,6 +7,7 @@ import type { TripStatusRow } from '@/lib/api/config'
 
 vi.mock('@/lib/api/config', () => ({
   configApi: { getStatuses: vi.fn(), patchStatus: vi.fn(), moveStatus: vi.fn() },
+  revisionesApi: { list: vi.fn(), confirm: vi.fn() },
 }))
 
 // El estado abierto VIAJA EN LA URL, como un documento de Condiciones: cada
@@ -20,7 +21,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(urlActual),
 }))
 
-import { configApi } from '@/lib/api/config'
+import { configApi, revisionesApi } from '@/lib/api/config'
 import { EstadosTabla } from './estados-tabla'
 
 // El orden de llegada NO coincide ni con el alfabetico del nombre visible ni
@@ -48,6 +49,10 @@ beforeEach(() => {
   vi.mocked(configApi.getStatuses).mockResolvedValue(ESTADOS)
   vi.mocked(configApi.patchStatus).mockReset()
   vi.mocked(configApi.patchStatus).mockResolvedValue(ESTADOS[0])
+  vi.mocked(revisionesApi.list).mockReset()
+  vi.mocked(revisionesApi.list).mockResolvedValue([])
+  vi.mocked(revisionesApi.confirm).mockReset()
+  vi.mocked(revisionesApi.confirm).mockResolvedValue({ revisado: true })
   vi.mocked(configApi.moveStatus).mockReset()
   vi.mocked(configApi.moveStatus).mockResolvedValue(ESTADOS)
 })
@@ -198,6 +203,34 @@ describe('EstadosTabla', () => {
   it('la columna de acciones tiene nombre accesible', async () => {
     montar()
     await waitFor(() => expect(screen.getByRole('columnheader', { name: /acciones/i })).toBeInTheDocument())
+  })
+
+  // El mismo registro que Certificación, con el mismo mecanismo: acá no hay ni
+  // un `if` por dominio.
+  it('el chip de sin revisar filtra los estados', async () => {
+    vi.mocked(revisionesApi.list).mockResolvedValue([
+      { element_id: 'ASIGNADO', reviewed_at: '2026-08-17T12:00:00Z', reviewed_by: 'Felipe' },
+    ])
+    montar()
+    await waitFor(() => expect(screen.getByText('Asignado')).toBeInTheDocument())
+
+    const chip = screen.getByRole('button', { name: /sin revisar/i })
+    expect(chip.textContent).toBe('Sin revisar2')
+    fireEvent.click(chip)
+
+    expect(screen.queryByText('Asignado')).not.toBeInTheDocument()
+    expect(screen.getByText('En destino')).toBeInTheDocument()
+  })
+
+  it('desde el panel se confirma que el estado está bien así', async () => {
+    urlActual = 'estado=ASIGNADO'
+    montar()
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /está bien así/i }))
+
+    await waitFor(() => expect(revisionesApi.confirm)
+      .toHaveBeenCalledWith('operations', 'tms-statuses', 'ASIGNADO'))
   })
 
   it('avisa cuando el catálogo no carga, y deja reintentar', async () => {

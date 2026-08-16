@@ -8,6 +8,7 @@ vi.mock('@/lib/api/compliance', () => ({
 }))
 vi.mock('@/lib/api/config', () => ({
   taxonomiesApi: { list: vi.fn() },
+  revisionesApi: { list: vi.fn(), confirm: vi.fn() },
 }))
 vi.mock('@/lib/api/requirements', () => ({
   requirementsApi: { patchConditions: vi.fn(), recalcPreview: vi.fn(), recalc: vi.fn() },
@@ -26,7 +27,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { complianceApi } from '@/lib/api/compliance'
-import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomiesApi, revisionesApi } from '@/lib/api/config'
 import { CondicionesTabla } from './condiciones-tabla'
 
 const BASE = {
@@ -93,6 +94,10 @@ beforeEach(() => {
   empujar.mockClear()
   vi.mocked(complianceApi.listRequirements).mockReset()
   vi.mocked(complianceApi.listRequirements).mockResolvedValue(REQS)
+  vi.mocked(revisionesApi.list).mockReset()
+  vi.mocked(revisionesApi.list).mockResolvedValue([])
+  vi.mocked(revisionesApi.confirm).mockReset()
+  vi.mocked(revisionesApi.confirm).mockResolvedValue({ revisado: true })
   vi.mocked(taxonomiesApi.list).mockReset()
   // Por dominio, no una respuesta única: la pantalla pide dos vocabularios
   // distintos y devolverle el mismo a los dos esconde cuál está usando.
@@ -219,6 +224,90 @@ describe('CondicionesTabla', () => {
     expect(chip).toBeEnabled()
     fireEvent.click(chip)
     expect(screen.getByText('Mantención Cámara de Frío')).toBeInTheDocument()
+  })
+
+  // Una condición vacía significaba DOS cosas: "lo revisamos y va para todos"
+  // y "nadie lo miró". Es la misma clase de defecto que apareció cinco veces
+  // en el Tramo 3, y costó 16 remolques con cámara de frío exigida sin poder
+  // tenerla.
+  it('la fila dice si nadie revisó la regla', async () => {
+    montar()
+    await waitFor(() => expect(screen.getAllByText('Sin revisar').length).toBeGreaterThan(0))
+  })
+
+  it('la fila revisada dice quién y cuándo, en vez de la insignia', async () => {
+    vi.mocked(revisionesApi.list).mockResolvedValue([
+      { element_id: 'r1', reviewed_at: '2026-08-17T12:00:00Z', reviewed_by: 'Felipe' },
+    ])
+    montar()
+    await waitFor(() => expect(screen.getByText(/Felipe/)).toBeInTheDocument())
+    expect(screen.getByText(/Felipe/).textContent).toContain('17-08-2026')
+  })
+
+  it('el chip de sin revisar filtra, y cuenta', async () => {
+    vi.mocked(revisionesApi.list).mockResolvedValue([
+      { element_id: 'r1', reviewed_at: '2026-08-17T12:00:00Z', reviewed_by: 'Felipe' },
+    ])
+    montar()
+    await waitFor(() => expect(screen.getByText('Mantención Cámara de Frío')).toBeInTheDocument())
+
+    const chip = screen.getByRole('button', { name: /sin revisar/i })
+    expect(chip.textContent).toBe('Sin revisar4')
+    fireEvent.click(chip)
+
+    // r1 es MANTENCION_FRIO, la única revisada: sale de la lista.
+    expect(screen.queryByText('Mantención Cámara de Frío')).not.toBeInTheDocument()
+    expect(screen.getByText('Revisión Técnica')).toBeInTheDocument()
+  })
+
+  // "Sin revisar" es un FILTRO, no un adorno: el número de la portada entra al
+  // dominio con el filtro ya puesto.
+  it('entrando desde la portada, el filtro viene puesto', async () => {
+    urlActual = 'revision=pendiente'
+    vi.mocked(revisionesApi.list).mockResolvedValue([
+      { element_id: 'r1', reviewed_at: '2026-08-17T12:00:00Z', reviewed_by: 'Felipe' },
+    ])
+    montar()
+    await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
+    expect(screen.queryByText('Mantención Cámara de Frío')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sin revisar/i })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // Si el parámetro quedara, la URL diría "estoy viendo lo pendiente" mientras
+  // la pantalla muestra otra cosa: el mismo desajuste de la sección inventada.
+  it('quitar el filtro limpia la URL', async () => {
+    urlActual = 'revision=pendiente'
+    montar()
+    await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /sin revisar/i }))
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/certification')
+  })
+
+  // El gesto vive en el PANEL y no en la fila: devolverle un botón a cada una
+  // de las 37 filas sería volver a los controles que este rediseño vino a
+  // sacar. Y sólo aparece sin cambios sin guardar: guardar ya cuenta como
+  // revisar, y confirmar antes diría que se revisó una regla que todavía no es
+  // la que está.
+  it('desde el panel se confirma que la regla está bien así', async () => {
+    urlActual = 'doc=REVISION_TECNICA'
+    montar()
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /está bien así/i }))
+
+    await waitFor(() => expect(revisionesApi.confirm)
+      .toHaveBeenCalledWith('certification', 'conditions', 'r2'))
+  })
+
+  it('una regla ya revisada no ofrece volver a confirmarla', async () => {
+    urlActual = 'doc=REVISION_TECNICA'
+    vi.mocked(revisionesApi.list).mockResolvedValue([
+      { element_id: 'r2', reviewed_at: '2026-08-17T12:00:00Z', reviewed_by: 'Felipe' },
+    ])
+    montar()
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /está bien así/i })).not.toBeInTheDocument())
   })
 
   it('sin coincidencias lo dice, en vez de mostrar una tabla vacía', async () => {

@@ -7,6 +7,8 @@ import { PanelLateral } from '@/components/ui/PanelLateral'
 import { requirementsApi } from '@/lib/api/requirements'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import type { ManagementType, RequirementOption } from '@/lib/types'
+import type { Revision } from '@/lib/api/config'
+import { BotonConfirmar, MarcaDeRevision } from './revision'
 
 const UNIVERSO: Record<string, string> = {
   ASSET:   'A todos los vehículos',
@@ -49,7 +51,7 @@ function mismoConjunto(a: string[], b: string[]) {
  *  Tramo 3: cambiar una condición puede crear o dejar de exigir cientos de
  *  registros, y nadie debería descubrirlo después. */
 export function CondicionPanel({
-  requisito, subtipos, gestiones, onCerrar,
+  requisito, subtipos, gestiones, revision, onConfirmar, confirmando, onCerrar,
 }: {
   requisito: RequirementOption
   subtipos:  { id: string; label: string }[]
@@ -58,7 +60,11 @@ export function CondicionPanel({
    *  Configuración dejaba esta casilla con el nombre viejo, justo en la
    *  pantalla desde la que se renombra. */
   gestiones: { id: string; label: string }[]
-  onCerrar:  () => void
+  /** Quién revisó esta regla, `null` si nadie, `undefined` mientras carga. */
+  revision:    Revision | null | undefined
+  onConfirmar: () => void
+  confirmando: boolean
+  onCerrar:    () => void
 }) {
   const canEdit = useCanAdmin()
   const qc = useQueryClient()
@@ -224,11 +230,25 @@ export function CondicionPanel({
               Aplicar
             </button>
           )}
+          {/* "Lo miré y está bien así" — el único caso que no deja rastro
+              solo. Guardar ya cuenta como revisar, y por eso este botón
+              desaparece en cuanto hay algo sin guardar: confirmar sin guardar
+              diría que se revisó una regla que todavía no es la que está. */}
+          {!sucio && (
+            <BotonConfirmar
+              revisado={!!revision}
+              pendiente={confirmando}
+              onConfirmar={onConfirmar}
+            />
+          )}
           {sucio && <span className="text-[10.5px] text-gray-400">Guarda la regla antes de ver qué cambia.</span>}
         </div>
       ) : null}
     >
-      <p className="text-[11px] text-gray-400">{requisito.requirement_code}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-[11px] text-gray-400">{requisito.requirement_code}</p>
+        <MarcaDeRevision revision={revision} />
+      </div>
 
       {(esAsset || esCarrier) ? (
         <fieldset className="mt-3">

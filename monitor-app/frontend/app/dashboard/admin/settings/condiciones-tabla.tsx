@@ -10,6 +10,7 @@ import { CABECERA, EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoO
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { CondicionPanel } from './CondicionPanel'
+import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
 import { celdaSeExigeA } from './frase-de-la-regla'
 import { INPUT, LoadState } from './shared'
 import type { RequirementOption } from '@/lib/types'
@@ -49,8 +50,11 @@ export function CondicionesTabla() {
     queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
   })
   const { orden, ordenarPor, comparar } = useOrden({ columna: 'entidad', direccion: 'asc' })
-  const [filtro, setFiltro] = useState<string | null>(null)
+  // El filtro llega puesto cuando se entra desde la portada por "N sin
+  // revisar": el número es el camino corto a resolverlo, no un adorno.
+  const [filtro, setFiltro] = useChipDeRevision()
   const [busqueda, setBusqueda] = useState('')
+  const revisiones = useRevisiones('certification', 'conditions')
 
   // El documento abierto VIAJA EN LA URL, como un viaje del Monitor: editar
   // una regla se puede enlazar y recargar no devuelve a la lista. Cerrar quita
@@ -131,19 +135,24 @@ export function CondicionesTabla() {
   }, [todos, busqueda])
 
   const filtros = useMemo(() => [
+    { id: SIN_REVISAR,     etiqueta: 'Sin revisar',   n: buscados.filter(r => revisiones.sinRevisar(r.id)).length },
     { id: 'con-condicion', etiqueta: 'Con condición', n: buscados.filter(tieneCondicion).length },
     { id: 'sin-vigencia',  etiqueta: 'Sin vigencia',  n: buscados.filter(r => !r.is_active).length },
-  ], [buscados])
+    // `revisiones.sinRevisar` se recrea en cada render; lo que cambia el
+    // resultado son los datos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [buscados, revisiones.datos])
 
   const filas = useMemo(() => {
     let f = buscados
+    if (filtro === SIN_REVISAR) f = f.filter(r => revisiones.sinRevisar(r.id))
     if (filtro === 'con-condicion') f = f.filter(tieneCondicion)
     if (filtro === 'sin-vigencia') f = f.filter(r => !r.is_active)
     return comparar(f, r => (orden?.columna === 'documento' ? r.name : r.target_entity))
-    // `comparar` se recrea en cada render y no aporta identidad estable; el
-    // orden que importa ya viaja en `orden`.
+    // `comparar` y `revisiones.sinRevisar` se recrean en cada render y no
+    // aportan identidad estable; lo que cambia el resultado ya está acá.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscados, filtro, orden])
+  }, [buscados, filtro, orden, revisiones.datos])
 
   // El panel se dibuja desde el dato del catalogo, no desde la fila clicada:
   // asi recargar con `?doc=` en la URL lo abre igual, sin haber pasado por la
@@ -197,6 +206,7 @@ export function CondicionesTabla() {
             <EncabezadoOrdenable columna="documento" orden={orden} onOrdenar={ordenarPor}>Documento</EncabezadoOrdenable>
             <th scope="col" className={CABECERA}>Se exige a</th>
             <th scope="col" className={CABECERA}>Vigencia</th>
+            <th scope="col" className={CABECERA}>Revisión</th>
             <th scope="col" className="w-9" aria-label="Acciones" />
           </tr>
         </thead>
@@ -225,6 +235,12 @@ export function CondicionesTabla() {
                 <td className={`px-3 py-2.5 text-xs ${r.is_active ? 'text-resuelto' : 'text-gray-400'}`}>
                   {r.is_active ? 'Vigente' : 'Sin vigencia'}
                 </td>
+                {/* La marca se MUESTRA en la fila y el gesto de confirmar vive
+                    en el panel: devolverle un botón a cada una de las 37 filas
+                    sería volver a los controles que este rediseño vino a sacar. */}
+                <td className="px-3 py-2.5">
+                  <MarcaDeRevision revision={revisiones.revisionDe(r.id)} />
+                </td>
                 <td className="pr-2">
                   <button
                     type="button"
@@ -241,7 +257,7 @@ export function CondicionesTabla() {
           })}
           {!filas.length && (
             <tr>
-              <td colSpan={5} className="px-3 py-6 text-center text-xs text-gray-400">
+              <td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400">
                 Ningún documento coincide con el filtro.
               </td>
             </tr>
@@ -255,6 +271,9 @@ export function CondicionesTabla() {
           requisito={requisitoAbierto}
           subtipos={subtipos}
           gestiones={gestiones}
+          revision={revisiones.revisionDe(requisitoAbierto.id)}
+          onConfirmar={() => revisiones.confirmar.mutate(requisitoAbierto.id)}
+          confirmando={revisiones.confirmar.isPending}
           onCerrar={() => abrir(null)}
         />
       )}

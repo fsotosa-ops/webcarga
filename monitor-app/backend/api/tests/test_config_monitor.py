@@ -651,11 +651,40 @@ def test_inventario_devuelve_pares_por_dominio():
 
     assert res.status_code == 200
     cuerpo = res.json()
-    assert cuerpo["certification"][0] == {"n": 37, "etiqueta": "documentos"}
-    assert cuerpo["fleet"] == [
+    assert cuerpo["certification"]["pares"][0] == {"n": 37, "etiqueta": "documentos"}
+    assert cuerpo["fleet"]["pares"] == [
         {"n": 10, "etiqueta": "subtipos"},
         {"n": 2, "etiqueta": "tipos de operación"},
     ]
+
+
+def test_inventario_dice_cuantas_decisiones_faltan_por_dominio():
+    """"Sin revisar" no es un adorno: es el camino corto entre "algo falta" y
+    "lo estoy resolviendo". Y sale de la MISMA consulta que enumera lo
+    revisable, no de un numero escrito al lado."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _FILA_INVENTARIO
+    pool.fetch.return_value = [
+        {"domain": "certification", "total": 46, "sin_revisar": 12},
+        {"domain": "operations", "total": 55, "sin_revisar": 0},
+    ]
+    cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
+
+    assert cuerpo["certification"]["revision"] == {"total": 46, "sin_revisar": 12}
+    assert cuerpo["operations"]["revision"] == {"total": 55, "sin_revisar": 0}
+
+
+def test_un_dominio_sin_nada_revisable_no_trae_insignia():
+    """Personas y accesos: una cuenta de usuario no es una decision de
+    configuracion que alguien deba confirmar. Es opt-in a proposito, y la
+    portada distingue "no aplica" de "cero pendientes"."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _FILA_INVENTARIO
+    pool.fetch.return_value = [{"domain": "certification", "total": 46, "sin_revisar": 12}]
+    cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
+
+    assert cuerpo["people"]["revision"] is None
+    assert cuerpo["people"]["pares"]
 
 
 def test_inventario_omite_los_ceros():
@@ -664,8 +693,8 @@ def test_inventario_omite_los_ceros():
     pool.fetchrow.return_value = {**_FILA_INVENTARIO, "rangos_temp": 0, "req_inactivos": 0}
     cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
 
-    assert all("rango" not in p["etiqueta"] for p in cuerpo["operations"])
-    assert all("vigencia" not in p["etiqueta"] for p in cuerpo["certification"])
+    assert all("rango" not in p["etiqueta"] for p in cuerpo["operations"]["pares"])
+    assert all("vigencia" not in p["etiqueta"] for p in cuerpo["certification"]["pares"])
 
 
 def test_inventario_usa_el_singular_cuando_corresponde():
@@ -673,6 +702,6 @@ def test_inventario_usa_el_singular_cuando_corresponde():
     pool.fetchrow.return_value = {**_FILA_INVENTARIO, "usuarios": 1, "subtipos": 1}
     cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
 
-    assert {"n": 1, "etiqueta": "usuario"} in cuerpo["people"]
-    assert {"n": 1, "etiqueta": "subtipo"} in cuerpo["fleet"]
+    assert {"n": 1, "etiqueta": "usuario"} in cuerpo["people"]["pares"]
+    assert {"n": 1, "etiqueta": "subtipo"} in cuerpo["fleet"]["pares"]
 

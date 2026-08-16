@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
-import { configApi, type Direccion, type TripStatusRow } from '@/lib/api/config'
+import { configApi, type Direccion, type Revision, type TripStatusRow } from '@/lib/api/config'
+import { BotonConfirmar, MarcaDeRevision } from './revision'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { GROUP_OPTIONS, INPUT, SwatchPicker } from './shared'
 
@@ -30,10 +31,14 @@ const BOTON_ORDEN = 'inline-flex items-center gap-1 rounded-lg border border-bor
  *  reordenar es relativo al tablero, y filtrar por columna no puede cambiar
  *  con quién se intercambia un estado. */
 export function EstadoPanel({
-  estado, hermanos, onCerrar,
+  estado, hermanos, revision, onConfirmar, confirmando, onCerrar,
 }: {
   estado:   TripStatusRow
   hermanos: TripStatusRow[]
+  /** Quién revisó este estado, `null` si nadie, `undefined` mientras carga. */
+  revision:    Revision | null | undefined
+  onConfirmar: () => void
+  confirmando: boolean
   onCerrar: () => void
 }) {
   // La puerta REAL es la ruta: app/dashboard/admin/layout.tsx redirige a quien
@@ -101,7 +106,9 @@ export function EstadoPanel({
     <PanelLateral
       titulo={estado.label}
       onCerrar={onCerrar}
-      pie={sucio && puedeEditar ? (
+      pie={puedeEditar ? (
+        <div className="flex items-center gap-2 flex-wrap">
+        {sucio ? (
         <button
           type="button"
           onClick={() => guardar.mutate()}
@@ -113,9 +120,18 @@ export function EstadoPanel({
           {guardar.isPending ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
           Guardar
         </button>
+        ) : (
+          // Guardar ya cuenta como revisar: confirmar sólo tiene sentido
+          // cuando no hay nada que guardar.
+          <BotonConfirmar revisado={!!revision} pendiente={confirmando} onConfirmar={onConfirmar} />
+        )}
+        </div>
       ) : null}
     >
-      <p className="text-[11px] text-gray-400 font-mono">{estado.id}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-[11px] text-gray-400 font-mono">{estado.id}</p>
+        <MarcaDeRevision revision={revision} />
+      </div>
       {/* La lista vieja lo decía arriba de todo y se perdió al rediseñarla.
           Va acá y no en la lista porque es la respuesta a la pregunta que se
           hace parado frente a un estado: por qué no hay dónde crear ni
