@@ -24,6 +24,9 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
+    # Los tests marcados `integracion` leen SUPABASE_DB_PASSWORD de
+    # monitor-app/backend/.env; sin dotenv se saltean solos.
+    "python-dotenv>=1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -31,3 +34,11 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# `integracion` = ejecuta SQL contra la base real, dentro de una transaccion
+# que siempre termina en ROLLBACK (ver tests/conftest.py).
+#   venv/bin/python -m pytest tests/ -q                    # todo
+#   venv/bin/python -m pytest tests/ -q -m integracion     # solo integracion
+#   venv/bin/python -m pytest tests/ -q -m "not integracion"  # sin tocar la base
+markers = [
+    "integracion: ejecuta SQL real contra Postgres en una transaccion revertida",
+]
