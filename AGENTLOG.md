@@ -1917,8 +1917,43 @@ silencio. No pasó —verificado— pero el riesgo lo creó el controlador por n
 
 #### Próximo paso exacto
 
-1. [ ] **Rediseñar dónde vive la edición de reglas** (sigue siendo el pendiente de más valor). Ver
-   Ronda 114, punto 2. Arranca con `superpowers:brainstorming`.
+1. [x] **Rediseñar dónde vive la edición de reglas — EN CURSO (2026-08-16).** Se decidió
+   partirlo en **dos specs**. El primero está escrito, aprobado y con plan
+   (`docs/superpowers/specs/2026-08-16-configuracion-por-dominios-design.md` +
+   `docs/superpowers/plans/2026-08-16-configuracion-marco-por-dominios.md`); se está
+   ejecutando. El segundo —la lista de condiciones por dentro— **se difiere a propósito**:
+   ver abajo.
+
+1bis. [ ] **Spec 2: la lista de condiciones por dentro.** Se escribe DESPUÉS del
+   click-through del marco, no antes. Razón, planteada por el usuario y compartida: esa
+   pantalla vive dentro del contenedor que recién se está construyendo, así que su alto
+   real, su densidad al lado de la barra de dominios y si las pestañas internas ayudan o
+   estorban **todavía no se saben, se dibujaron**. Diseñar contra un marco que nadie miró es
+   exactamente el patrón que ya costó caro dos veces (el cajón de 3.159px del Tramo 2 y el
+   rediseño del recálculo que salió del click-through).
+
+   **Decisiones YA tomadas en el brainstorming, que no dependen del marco** — no
+   re-litigar:
+   - **La mayoría de los 37 requisitos va a terminar con condición** (confirmado por el
+     usuario), así que la pantalla se diseña como **catálogo con jerarquía y edición de a
+     una**, NO como lista de excepciones. Hoy sólo 2 de 37 tienen condición, y eso es el
+     punto de partida, no el estado natural.
+   - **La explicación se deriva de la regla, jamás se escribe al lado.** Si el motivo que ve
+     el usuario ("se exige porque es Furgón Congelado") es un texto redactado en el
+     frontend, se crea una segunda fuente de verdad de la misma regla — el defecto exacto
+     que costó la revisión de rama del Tramo 3. Prueba de escalabilidad: cuando se agregue
+     una tercera dimensión de condición, la explicación tiene que seguir funcionando **sin
+     tocar el código que explica**. El motivo lo devuelve el mismo servicio que evalúa la
+     regla.
+   - **Desde un caso se explica y se deriva; no se edita la regla global.** Es el patrón de
+     Stripe Radar, Salesforce, LaunchDarkly y Vanta: separar "este caso está mal" de "la
+     regla está mal", porque editar una regla global parado frente a un caso particular es
+     cómo nació el problema de los 16 remolques.
+   - **La excepción por caso queda diferida, con razón escrita**: el único caso real
+     (`KDKP93`) no es una regla equivocada sino un dato que falta, y un mecanismo de
+     excepción sería donde los datos faltantes se esconden para siempre. Se retoma si
+     aparece un caso donde la regla sea correcta y aun así no corresponda.
+
 2. [ ] **Las cuatro preguntas para WebCarga** (Ronda 113, punto 4).
 3. [ ] **Cobertura que quedó fuera, declarada**: `reconcile_new_carrier/new_asset/new_driver` no
    tienen comparación siembra-vs-servicio propia; la concurrencia se simula, no se corre (dos
