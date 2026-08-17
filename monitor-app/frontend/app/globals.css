@@ -41,6 +41,24 @@
   --color-resuelto: var(--resuelto);
   --font-sans: var(--font-roboto), system-ui, sans-serif;
   --font-mulish: var(--font-mulish), system-ui, sans-serif;
+
+  /* ── Escala tipográfica ──────────────────────────────────────────────
+     Cinco pasos elegidos, contra los 8-9 improvisados que midió la auditoría
+     del 2026-08-16: en el Monitor había 428 elementos a 10px o menos (248 a
+     10, 152 a 9, 28 a 8). Ocho tamaños entre 8 y 16px no son jerarquía, son
+     ruido — nada guía el ojo porque casi todo pesa lo mismo.
+
+     El nombre dice el ROL, no el tamaño: `text-dato` sigue siendo el texto de
+     las tablas aunque mañana mida 14px, y renombrar un rol no obliga a buscar
+     `text-xs` por todo el código.
+
+     Nada por debajo de 11px. Lo verifica lib/ui/escala.test.ts, que además
+     lleva el conteo de la deuda heredada para que sólo pueda bajar. */
+  --text-etiqueta: 0.6875rem;  /* 11px — encabezado de columna, eyebrow */
+  --text-dato:     0.8125rem;  /* 13px — el texto de las tablas, el default */
+  --text-lectura:  0.9375rem;  /* 15px — párrafos, descripciones, ayuda */
+  --text-titulo:   1.25rem;    /* 20px — título de sección o de tarjeta */
+  --text-cifra:    1.75rem;    /* 28px — la cifra grande y el título de página */
 }
 
 body {
