@@ -191,6 +191,15 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
     )
   }
 
+  /* Una columna vacia en las 32 filas ocupa ancho y no dice nada, y ese ancho
+     lo estan necesitando EETT, Origen y Destinos, que entre las tres cortan 55
+     textos (medido el 2026-08-16 contra el ambiente real).
+     No se BORRAN: la temperatura importa en los viajes de frio, que son el 9%
+     del volumen, y el telefono sirve cuando el TMS lo reporta. Aparecen solo
+     cuando hay algo que mostrar. */
+  const hayTelefono = trips.some(t => parsePhones(t.driver_phone).length > 0)
+  const hayTemperatura = trips.some(t => getLatestTempStop(t.stops ?? [])?.temperature != null)
+
   return (
     <div className="bg-white rounded-xl border border-border overflow-hidden">
 
@@ -313,12 +322,12 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 <th onClick={() => onSort('source_system_trip_id')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<OrdenIcono activo={sortKey === 'source_system_trip_id'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('tractor_plate')} className="px-3 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<OrdenIcono activo={sortKey === 'tractor_plate'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('driver_name')} className="px-3 py-2.5 text-left w-[150px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Conductor<OrdenIcono activo={sortKey === 'driver_name'} direccion={sortDir} /></th>
-                <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>
+                {hayTelefono && <th className="px-3 py-2.5 text-left w-[110px]">Teléfono</th>}
                 <th onClick={() => onSort('carrier_name')} className="px-3 py-2.5 text-left w-[130px] cursor-pointer select-none hover:bg-gray-100 transition-colors">EETT<OrdenIcono activo={sortKey === 'carrier_name'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('client_name')} className="px-3 py-2.5 text-left w-[100px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Cliente<OrdenIcono activo={sortKey === 'client_name'} direccion={sortDir} /></th>
                 <th className="px-3 py-2.5 text-left w-[110px]">Origen · Carga</th>
                 <th className="px-3 py-2.5 text-left">Destinos</th>
-                <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>
+                {hayTemperatura && <th className="px-3 py-2.5 text-center w-[72px]">Temp</th>}
               </tr>
             </thead>
             <tbody>
@@ -449,24 +458,26 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     {/* TELÉFONO — solo lectura (Fase 2, Plan 6), antes PhoneTagCell.
                         El enlace tel: conserva stopPropagation: llamar es una
                         acción distinta de abrir el detalle, no "editar". */}
-                    <td className="px-3 py-2.5">
-                      {phones.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {phones.map(p => (
-                            <a
-                              key={p}
-                              href={`tel:${p}`}
-                              onClick={e => e.stopPropagation()}
-                              className="text-etiqueta font-identificador text-accent hover:underline block"
-                            >
-                              {p}
-                            </a>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-etiqueta text-gray-400">—</span>
-                      )}
-                    </td>
+                    {hayTelefono && (
+                      <td className="px-3 py-2.5">
+                        {phones.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {phones.map(p => (
+                              <a
+                                key={p}
+                                href={`tel:${p}`}
+                                onClick={e => e.stopPropagation()}
+                                className="text-etiqueta font-identificador text-accent hover:underline block"
+                              >
+                                {p}
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-etiqueta text-gray-400">—</span>
+                        )}
+                      </td>
+                    )}
 
                     {/* EETT */}
                     <td className="px-3 py-2.5">
@@ -509,7 +520,8 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       <StopPills stops={trip.stops} meta={meta} />
                     </td>
 
-                    {/* TEMP */}
+                    {/* TEMP — solo si algun viaje del listado la reporta */}
+                    {hayTemperatura && (
                     <td className="px-3 py-2.5 text-center">
                       {(() => {
                         // Misma parada para temp y tempStatus (ver comentario
@@ -523,6 +535,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           : <span className="text-gray-400 text-dato">—</span>
                       })()}
                     </td>
+                    )}
                   </tr>
                 )
               })}

@@ -352,3 +352,31 @@ describe('TripTable — temperatura coloreada por la parada, no por el viaje', (
     expect(usosDelIconoCompartido).toContainEqual({ activo: false, direccion: 'desc' })
   })
 })
+
+/** Una columna vacia en las 32 filas ocupa ancho y no dice nada, y ese ancho lo
+ *  necesitan EETT, Origen y Destinos, que entre las tres cortan 55 textos.
+ *  No se borran: aparecen cuando hay dato. */
+describe('columnas que aparecen solo si tienen algo que mostrar', () => {
+  const props = {
+    selectedId: null, onSelect: vi.fn(), onSelectFocusNotes: vi.fn(),
+    meta: null, sortKey: null, sortDir: 'asc' as const, onSort: vi.fn(),
+  }
+
+  it('oculta Teléfono cuando ningun viaje lo reporta', () => {
+    render(<TripTable trips={[makeTrip('t1', { driver_phone: null })]} {...props} />)
+    expect(screen.queryByRole('columnheader', { name: /teléfono/i })).not.toBeInTheDocument()
+  })
+
+  it('muestra Teléfono apenas un viaje lo trae', () => {
+    render(<TripTable trips={[
+      makeTrip('t1', { driver_phone: null }),
+      makeTrip('t2', { driver_phone: '+56 9 1234 5678' }),
+    ]} {...props} />)
+    expect(screen.getByRole('columnheader', { name: /teléfono/i })).toBeInTheDocument()
+  })
+
+  it('oculta Temp cuando ningun viaje reporta temperatura', () => {
+    render(<TripTable trips={[makeTrip('t1', { stops: [] })]} {...props} />)
+    expect(screen.queryByRole('columnheader', { name: /^temp$/i })).not.toBeInTheDocument()
+  })
+})
