@@ -13,6 +13,7 @@ import { TriageDropzone } from './TriageDropzone'
 import { TriageFileTable } from './TriageFileTable'
 import { TriagePreview } from './TriagePreview'
 import { TriageUndoNotice } from './TriageUndoNotice'
+import { Cifra } from '@/components/ui/Cifra'
 
 interface Props {
   /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
@@ -360,8 +361,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
           clasificar. */}
       <div className="border border-border rounded-xl bg-white overflow-hidden">
         <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
-          <span className="text-2xl font-bold text-slate-800 tabular-nums leading-none">{total}</span>
-          <span className="text-xs text-gray-500">sin clasificar</span>
+          <Cifra valor={total} etiqueta="sin clasificar" />
           {grupos > 0 && (
             <span className="text-xs text-gray-500">
               · {grupos === 1 ? '1 empresa' : `${grupos} empresas`}
