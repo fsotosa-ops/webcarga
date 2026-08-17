@@ -29,6 +29,7 @@ import {
 import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { Estado } from '@/components/ui/Estado'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -350,19 +351,17 @@ export default function DiarioPage() {
               por is_active, sin importar planning_date, así que no hay
               ningún día que mostrar/navegar acá. Esa necesidad (mirar un
               día específico) la cubre el tab Historial con su rango. */}
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="font-mulish font-bold text-xl text-text-primary capitalize">
-                {f.tab === 'en_curso' ? 'En Curso' : 'Base Histórica'}
-              </h1>
-              <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+          <EncabezadoDePagina
+            titulo={f.tab === 'en_curso' ? 'En Curso' : 'Base Histórica'}
+            bajada={
+              <span className="flex items-center gap-2">
                 <span>{loading ? '…' : `${total.toLocaleString('es-CL')} viaje${total !== 1 ? 's' : ''}`}</span>
                 {f.tab === 'en_curso' && (
                   <LastUpdated updatedAt={tripsQuery.dataUpdatedAt} fetching={fetching && !loading} />
                 )}
-              </p>
-            </div>
-          </div>
+              </span>
+            }
+          />
 
           {/* Tabs */}
           <div className="flex border-b border-border">

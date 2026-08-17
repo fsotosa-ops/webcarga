@@ -20,7 +20,9 @@ export function EncabezadoDePagina({
   children,
 }: {
   titulo: string
-  bajada?: string
+  /** Texto, o un nodo cuando la bajada lleva algo vivo dentro — el Monitor
+   *  muestra ahi cuando fue la ultima actualizacion. */
+  bajada?: ReactNode
   /** Opcional, y solo si aporta: un icono por tener uno es ruido. */
   icono?: ReactNode
   /** Acciones de la pagina. Van a la derecha, fuera del titulo. */
@@ -34,7 +36,7 @@ export function EncabezadoDePagina({
           {titulo}
         </h1>
         {bajada && (
-          <p className="text-dato text-gray-500 mt-1 max-w-[70ch]">{bajada}</p>
+          <div className="text-dato text-gray-500 mt-1 max-w-[70ch]">{bajada}</div>
         )}
       </div>
       {children && <div className="ml-auto flex items-center gap-2">{children}</div>}

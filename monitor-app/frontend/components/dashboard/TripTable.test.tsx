@@ -353,30 +353,31 @@ describe('TripTable — temperatura coloreada por la parada, no por el viaje', (
   })
 })
 
-/** Una columna vacia en las 32 filas ocupa ancho y no dice nada, y ese ancho lo
- *  necesitan EETT, Origen y Destinos, que entre las tres cortan 55 textos.
- *  No se borran: aparecen cuando hay dato. */
-describe('columnas que aparecen solo si tienen algo que mostrar', () => {
+/** El telefono ocupaba una columna de 110px para mostrar "—" en las 32 filas,
+ *  mientras EETT y Destinos cortaban sus textos. No se elimino: es un atributo
+ *  del conductor y vive bajo su nombre. */
+describe('el telefono vive bajo el conductor, no en su propia columna', () => {
   const props = {
     selectedId: null, onSelect: vi.fn(), onSelectFocusNotes: vi.fn(),
     meta: null, sortKey: null, sortDir: 'asc' as const, onSort: vi.fn(),
   }
 
-  it('oculta Teléfono cuando ningun viaje lo reporta', () => {
-    render(<TripTable trips={[makeTrip('t1', { driver_phone: null })]} {...props} />)
+  it('ya no hay una columna Teléfono', () => {
+    render(<TripTable trips={[makeTrip('t1', { driver_phone: '+56 9 1234 5678' })]} {...props} />)
     expect(screen.queryByRole('columnheader', { name: /teléfono/i })).not.toBeInTheDocument()
   })
 
-  it('muestra Teléfono apenas un viaje lo trae', () => {
-    render(<TripTable trips={[
-      makeTrip('t1', { driver_phone: null }),
-      makeTrip('t2', { driver_phone: '+56 9 1234 5678' }),
-    ]} {...props} />)
-    expect(screen.getByRole('columnheader', { name: /teléfono/i })).toBeInTheDocument()
+  it('el telefono se muestra, y se puede llamar', () => {
+    render(<TripTable trips={[makeTrip('t1', { driver_phone: '+56 9 1234 5678' })]} {...props} />)
+    const enlaces = screen.getAllByRole('link', { name: /1234 5678/ })
+    expect(enlaces.length).toBeGreaterThan(0)
+    expect(enlaces[0]).toHaveAttribute('href', expect.stringContaining('tel:'))
   })
 
-  it('oculta Temp cuando ningun viaje reporta temperatura', () => {
+  it('Temp sigue siendo una columna, siempre', () => {
+    // Se habia hecho condicional y desaparecia cuando no habia viajes de frio.
+    // Es una columna que el usuario espera ver.
     render(<TripTable trips={[makeTrip('t1', { stops: [] })]} {...props} />)
-    expect(screen.queryByRole('columnheader', { name: /^temp$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^temp$/i })).toBeInTheDocument()
   })
 })
