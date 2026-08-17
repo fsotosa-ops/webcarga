@@ -16,6 +16,7 @@ import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOve
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { updatedRelative } from '@/lib/compliance'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 
@@ -162,10 +163,10 @@ function EmpresasTransportePageInner() {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-mulish font-bold text-xl text-text-primary">Empresas de Transporte</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {loading ? '…' : `${grandTotal.toLocaleString('es-CL')} empresa${grandTotal !== 1 ? 's' : ''}`}
-          </p>
+          <EncabezadoDePagina
+            titulo="Empresas de Transporte"
+            bajada={loading ? '…' : `${grandTotal.toLocaleString('es-CL')} empresa${grandTotal !== 1 ? 's' : ''}`}
+          />
         </div>
         <div className="flex items-center gap-2">
           {canEdit && (

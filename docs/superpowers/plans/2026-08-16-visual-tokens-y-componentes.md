@@ -484,8 +484,30 @@ A 1440×900, sobre `webcarga-frontend-dev`, en Monitor · Cierre · Certificaci�
 | Colores de texto por pantalla | 13–21 | ≤ 8 |
 
 **Si alguna no baja, decirlo con el número**, no darla por buena. La meta de colores probablemente
-no se alcance con este plan —requiere migrar los 1.824 usos de color crudo— y eso hay que
+no se alcance con este plan —requiere migrar los 1.815 usos de color crudo— y eso hay que
 reportarlo como lo que es: parcial.
+
+- [ ] **Step 2b: La checklist de pre-entrega**
+
+De `ui-ux-pro-max --design-system`. Verifica lo que las métricas de arriba no miran, y se comprueba
+en las cuatro pantallas:
+
+- [ ] Sin emojis como iconos — sólo `lucide-react`
+- [ ] `cursor-pointer` en todo lo clickeable
+- [ ] Transiciones de hover entre 150 y 300 ms
+- [ ] Contraste de texto ≥ 4.5:1
+- [ ] Foco visible para navegación por teclado
+- [ ] `prefers-reduced-motion` respetado
+- [ ] Responsive verificado a 375, 768, 1024 y 1440 px
+
+> **Lo que la skill NO resolvió, y conviene dejar escrito.** `ui-ux-pro-max --design-system`
+> propuso un patrón de *landing de marketing* ("Hero, métricas, CTA Start trial") y un estilo
+> —*Exaggerated Minimalism*, `font-size: clamp(3rem, 10vw, 12rem)`, "massive whitespace"— cuyo
+> propio texto dice que es para moda, arquitectura y portafolios. Es el artefacto equivocado para
+> una herramienta interna de 44 filas. Su paleta además **reemplazaría** los tokens que ya existen,
+> que tienen sus razones escritas en `globals.css`. Se tomó sólo lo aplicable: **la checklist** y
+> **el emparejamiento tipográfico** (Fira Sans + Fira Code — la monoespaciada para patentes, IDs y
+> RUT, que es lo que le da carácter de este rubro).
 
 - [ ] **Step 3: Mirar las cuatro pantallas**, en escritorio y en teléfono. Un test no ve un renglón
   que se parte mal.

@@ -42,6 +42,10 @@
   --font-sans: var(--font-roboto), system-ui, sans-serif;
   --font-mulish: var(--font-mulish), system-ui, sans-serif;
 
+  /* La familia de los identificadores: patentes, IDs de viaje, RUT. Se usa
+     con `font-identificador`, nunca para texto corrido. */
+  --font-identificador: var(--font-fira-code), ui-monospace, SFMono-Regular, monospace;
+
   /* ── Escala tipográfica ──────────────────────────────────────────────
      Cinco pasos elegidos, contra los 8-9 improvisados que midió la auditoría
      del 2026-08-16: en el Monitor había 428 elementos a 10px o menos (248 a

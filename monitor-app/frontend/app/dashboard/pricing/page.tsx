@@ -8,6 +8,7 @@ import { LocationsTable } from '@/components/dashboard/LocationsTable'
 import { LocationsPendingTab } from '@/components/dashboard/LocationsPendingTab'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { INPUT, LoadState } from '../admin/settings/shared'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
 type Tab = 'pending' | 'all'
 const LIMIT = 50
@@ -60,10 +61,10 @@ export default function TarifarioPage() {
     <div className="p-4 md:p-6 space-y-3">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-mulish font-bold text-xl text-text-primary">Tarifario</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Local, formato, dirección, clasificación y tarifa vigente — la zona se clasifica sola desde los viajes del TMS.
-          </p>
+          <EncabezadoDePagina
+            titulo="Tarifario"
+            bajada="Local, formato, dirección, clasificación y tarifa vigente — la zona se clasifica sola desde los viajes del TMS."
+          />
         </div>
         <LocationCreateForm shippers={shippers} onCreated={invalidate} />
       </div>

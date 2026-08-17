@@ -11,6 +11,7 @@ import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { dueRelative } from '@/lib/utils/installments'
 import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
 import type { CarrierInsuranceOverviewItem, InsuranceOverviewFacets } from '@/lib/types'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
 const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 const ADMIN_ROLES  = new Set(['admin', 'owner'])
@@ -117,10 +118,10 @@ function SegurosPageInner() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div>
-        <h1 className="font-mulish font-bold text-xl text-text-primary">Seguros</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {loading ? '…' : `${facets.total.toLocaleString('es-CL')} empresa${facets.total !== 1 ? 's' : ''} con seguimiento de pólizas`}
-        </p>
+        <EncabezadoDePagina
+          titulo="Seguros"
+          bajada={loading ? '…' : `${facets.total.toLocaleString('es-CL')} empresa${facets.total !== 1 ? 's' : ''} con seguimiento de pólizas`}
+        />
       </div>
 
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">

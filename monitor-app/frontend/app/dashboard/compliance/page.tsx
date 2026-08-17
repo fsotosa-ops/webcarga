@@ -14,6 +14,7 @@ import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
 import type { CertificationGroup } from '@/lib/types'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
 type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos' | 'documentos'
 
@@ -132,11 +133,10 @@ function CertificationPageInner() {
   return (
     <div className="p-4 md:p-6 space-y-3">
       <div>
-        <h1 className="font-mulish font-bold text-xl text-text-primary">Certificación</h1>
-        <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">
-          Qué le falta a cada empresa para estar en condiciones de operar, y qué
-          documentos llegaron todavía sin asignar.
-        </p>
+        <EncabezadoDePagina
+          titulo="Certificación"
+          bajada="Qué le falta a cada empresa para estar en condiciones de operar, y qué documentos llegaron todavía sin asignar."
+        />
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
