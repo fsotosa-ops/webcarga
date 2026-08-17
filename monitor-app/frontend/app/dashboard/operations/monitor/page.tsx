@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Loader2, X, ClipboardCheck, Truck } from 'lucide-react'
+import { Search, X, ClipboardCheck, Truck } from 'lucide-react'
 import { filterGroupsApi, type FilterGroup } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
@@ -28,6 +28,7 @@ import {
 } from '@/lib/utils/alertSignals'
 import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
+import { Estado } from '@/components/ui/Estado'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -525,9 +526,7 @@ export default function DiarioPage() {
 
           {/* Table / Board — en refetch la data anterior queda visible, atenuada (sin flash de spinner) */}
           {loading ? (
-            <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
-              <Loader2 size={16} className="animate-spin" /> Cargando…
-            </div>
+            <Estado tipo="cargando" />
           ) : (
             <div className={`transition-opacity duration-150 ${fetching ? 'opacity-50' : ''}`} aria-busy={fetching}>
               {f.tab === 'en_curso' && viewMode === 'tablero' ? (

@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, AlertTriangle, FilePlus2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { AlertTriangle, FilePlus2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi } from '@/lib/api/equipmentClosures'
 import { AlertStatTiles } from '../AlertStatTiles'
 import type { DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
+import { Estado } from '@/components/ui/Estado'
 
 type OperationType = 'TRACTOREO' | 'EQUIPO_COMPLETO'
 type RowCategory = 'total' | 'assigned' | 'unassigned' | 'mismatch'
@@ -122,9 +123,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
 
   if (driversQuery.isLoading || !driversQuery.data || equipmentQuery.isLoading || !equipmentQuery.data) {
     return (
-      <div className="flex items-center justify-center py-12 text-gray-400">
-        <Loader2 size={20} className="animate-spin" />
-      </div>
+      <Estado tipo="cargando" />
     )
   }
 
@@ -307,7 +306,17 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
           </thead>
           <tbody className="divide-y divide-border/60">
             {paged.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-300 italic">Sin resultados en esta categoría</td></tr>
+              <tr>
+                <td colSpan={6}>
+                  {/* gray-300 en italica no llegaba a 4.5:1 de contraste, y
+                      "sin resultados" hace dudar de si algo se rompio. */}
+                  <Estado
+                    tipo="vacio"
+                    titulo="Nada en esta categoría"
+                    detalle="Prueba con otra categoría o limpia el buscador."
+                  />
+                </td>
+              </tr>
             )}
             {paged.map(r => (
               <tr key={r.key}>

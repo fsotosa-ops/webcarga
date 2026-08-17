@@ -16,6 +16,7 @@ import type { CarrierCreateResult } from '@/lib/api/carriers'
 import type { CertificationGroup } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
+import { Estado } from '@/components/ui/Estado'
 
 type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos' | 'documentos'
 
@@ -251,15 +252,13 @@ function CertificationPageInner() {
               )}
           </div>
 
-          {statusQuery.isPending && (
-            <p className="text-[11px] text-gray-500 p-3 flex items-center gap-1.5">
-              <Loader2 size={11} className="motion-safe:animate-spin" /> Cargando…
-            </p>
-          )}
+          {statusQuery.isPending && <Estado tipo="cargando" />}
           {statusQuery.error && (
-            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 m-3">
-              No se pudo cargar el estado de la certificación
-            </p>
+            <Estado
+              tipo="error"
+              titulo="No se pudo cargar el estado de la certificación"
+              detalle="Vuelve a intentarlo; si sigue fallando, avisa al equipo."
+            />
           )}
           {!statusQuery.isPending && !statusQuery.error && (
             <div className="overflow-y-auto max-h-[64vh]">
