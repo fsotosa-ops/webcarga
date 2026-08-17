@@ -358,7 +358,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <StatusBadge status={currentStatus} meta={meta} />
+                          <StatusBadge status={currentStatus} meta={meta} variante="punto" />
                           {trip.manual_status && (
                             <span className="text-etiqueta text-accent block mt-0.5">override</span>
                           )}

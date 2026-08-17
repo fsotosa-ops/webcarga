@@ -7,7 +7,7 @@ import { formatDurationMinutes } from './stopStats'
  *  'off_time', 'late_arrival' y 'unassigned' quedaron descartados — el
  *  binario 'dwell' fue reemplazado por 'dwell_severity' (semáforo de 4
  *  niveles, Hito 14, ver dwellSeverity). */
-export type KpiId = 'stale' | 'temp_out' | 'dwell_severity' | 'fleet_unmatched'
+export type KpiId = 'stale' | 'temp_out' | 'temp_reported' | 'dwell_severity' | 'fleet_unmatched'
 
 export type DwellSeverity = 'green' | 'yellow' | 'orange' | 'red'
 
@@ -114,6 +114,14 @@ export function matchesKpi(
     case 'temp_out':
       return trip.temp_status === 'out_of_range'
 
+    // Los viajes que SI reportan temperatura, este o no en rango. No es una
+    // alerta: es el subconjunto con cadena de frio, y sin este filtro no hay
+    // forma de mirar solo esos — "fuera de rango" solo muestra los que ya
+    // fallaron. Se lee de las paradas, no de trip.temp_status, que se apaga
+    // al entregarse la carga (mismo criterio que la celda de la tabla).
+    case 'temp_reported':
+      return (trip.stops ?? []).some(s => s.temperature != null)
+
     // Solo cuenta como alerta lo anómalo (amarillo/naranja/rojo) — verde es
     // el estado normal, mismo criterio de "gestión por excepción" que ya
     // usa el resto del Diario.
@@ -142,7 +150,7 @@ export function deriveKpis(
   rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
   now: number = Date.now(),
 ): DiarioKpis {
-  const kpis: DiarioKpis = { stale: 0, temp_out: 0, dwell_severity: 0, fleet_unmatched: 0 }
+  const kpis: DiarioKpis = { stale: 0, temp_out: 0, temp_reported: 0, dwell_severity: 0, fleet_unmatched: 0 }
   for (const t of trips) {
     for (const id of Object.keys(kpis) as KpiId[]) {
       if (matchesKpi(t, id, ranges, rules, now)) kpis[id]++

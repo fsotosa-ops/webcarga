@@ -185,3 +185,26 @@ describe('deriveKpis', () => {
     expect(kpis.dwell_severity).toBe(1)
   })
 })
+
+/** "Fuera de rango" solo muestra los que ya fallaron. Para vigilar la cadena
+ *  de frio hace falta ver TODOS los que la llevan. */
+describe('temp_reported — los viajes que si reportan temperatura', () => {
+  it('matchea cuando alguna parada trae temperatura, este o no en rango', () => {
+    const trip = makeTrip('a', { temp_status: null, stops: [
+      makeStop({ temperature: null }),
+      makeStop({ temperature: -18 }),
+    ] })
+    expect(matchesKpi(trip, 'temp_reported', [])).toBe(true)
+  })
+
+  it('incluye los que estan FUERA de rango — no es lo contrario de temp_out', () => {
+    const trip = makeTrip('a', { temp_status: 'out_of_range', stops: [makeStop({ temperature: 12 })] })
+    expect(matchesKpi(trip, 'temp_reported', [])).toBe(true)
+    expect(matchesKpi(trip, 'temp_out', [])).toBe(true)
+  })
+
+  it('no matchea cuando ninguna parada la reporta', () => {
+    const trip = makeTrip('a', { temp_status: null, stops: [makeStop({ temperature: null })] })
+    expect(matchesKpi(trip, 'temp_reported', [])).toBe(false)
+  })
+})

@@ -22,10 +22,10 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
 }
 
 describe('alertSignals', () => {
-  it('alertSignalDefs returns 4 KPI + 4 flag = 8 signals (2026-08-01: set reducido)', () => {
+  it('alertSignalDefs returns 5 KPI + 4 flag = 9 signals (2026-08-17: + "Con temperatura")', () => {
     const defs = alertSignalDefs(DEFAULT_ALERT_RULES)
     expect(defs.map(d => d.id)).toEqual([
-      'dwell_severity', 'stale', 'temp_out', 'fleet_unmatched',
+      'dwell_severity', 'stale', 'temp_out', 'temp_reported', 'fleet_unmatched',
       'active', 'working', 'assigned', 'second_leg_plus',
     ])
   })

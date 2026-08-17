@@ -9,7 +9,7 @@ export type FlagSignalId = 'active' | 'working' | 'assigned' | 'second_leg_plus'
 export type AlertSignalId = KpiId | FlagSignalId
 
 export const KPI_SIGNAL_IDS: KpiId[] =
-  ['dwell_severity', 'stale', 'temp_out', 'fleet_unmatched']
+  ['dwell_severity', 'stale', 'temp_out', 'temp_reported', 'fleet_unmatched']
 export const FLAG_SIGNAL_IDS: FlagSignalId[] =
   ['active', 'working', 'assigned', 'second_leg_plus']
 
@@ -36,6 +36,10 @@ export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
     // claro/estándar de la industria.
     { id: 'stale',          label: `Sin actualización del TMS > ${rules.stale_report_hours}h`, colorCls: 'text-amber-600', activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
     { id: 'temp_out',       label: 'Temp fuera de rango',         colorCls: 'text-blue-600',   activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50' },
+    // Los que SI reportan temperatura — el subconjunto con cadena de frio.
+    // "Fuera de rango" solo muestra los que ya fallaron; para vigilar el frio
+    // hace falta ver todos los que lo llevan.
+    { id: 'temp_reported',  label: 'Con temperatura',             colorCls: 'text-cyan-700',   activeCls: 'border-cyan-400 ring-2 ring-cyan-100 bg-cyan-50' },
     // "Sin identificar" (Ronda 43, Hallazgo F) — tracto/conductor sin
     // ningún cruce contra empresa, pedido por Pablo específicamente visible
     // "en la cuadratura de la caja", no solo dentro del detalle de un
