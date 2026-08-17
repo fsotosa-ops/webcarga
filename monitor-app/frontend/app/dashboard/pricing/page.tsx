@@ -12,8 +12,8 @@ import { INPUT, LoadState } from '../admin/settings/shared'
 type Tab = 'pending' | 'all'
 const LIMIT = 50
 
-/** Tarifario robustecido (2026-07-27) — reemplaza el gate "elegí un
- *  generador de carga primero" (spec 2026-07-22) por dos tabs: "Por
+/** Tarifario robustecido (2026-07-27) — reemplaza el gate que exigia un
+ *  generador de carga antes de operar (spec 2026-07-22) por dos tabs: "Por
  *  revisar" (triage, default) y "Todos los locales" (gestión completa,
  *  generador de carga como filtro opcional). Ver
  *  docs/superpowers/specs/2026-07-27-tarifario-robustecimiento-design.md. */

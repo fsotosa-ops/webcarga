@@ -131,7 +131,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
 
   async function handleCreate() {
     if (!form.planning_date) { setErr('La fecha de planificación es requerida'); return }
-    if (!fleet.driver_id) { setErr('Elegí un conductor del directorio de Empresas antes de crear el viaje'); return }
+    if (!fleet.driver_id) { setErr('Elige un conductor del directorio de Empresas antes de crear el viaje'); return }
     if (stops.some(s => s.stop_type !== 'ORIGIN' && !s.local.trim())) { setErr('Cada destino debe tener un nombre'); return }
     setSaving(true); setErr(null)
     try {

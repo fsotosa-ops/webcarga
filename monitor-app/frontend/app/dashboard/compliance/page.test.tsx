@@ -190,4 +190,17 @@ describe('Certificación — una lista, dos vistas', () => {
     await screen.findByText(/no hay documentos sin clasificar/i)
     expect(complianceApi.listStatus).not.toHaveBeenCalled()
   })
+
+  // El `?? 0` pintaba un "0 documentos por cubrir" en cifra grande mientras la
+  // consulta estaba en vuelo, y despues saltaba a 2.360: durante ese segundo la
+  // pantalla afirmaba con seguridad algo falso. Se ve en produccion.
+  it('no muestra un total mientras la consulta está en vuelo', async () => {
+    // La promesa nunca resuelve: congela el instante de carga.
+    vi.mocked(complianceApi.listStatus).mockReturnValue(new Promise(() => {}))
+    setup()
+
+    expect(await screen.findByText(/Cargando…/)).toBeInTheDocument()
+    expect(screen.queryByText('documentos por cubrir')).not.toBeInTheDocument()
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
+  })
 })

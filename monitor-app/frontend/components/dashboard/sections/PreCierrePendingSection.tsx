@@ -210,7 +210,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
           ))}
 
           <p className="text-[11px] text-gray-400 flex items-center gap-1">
-            <Info size={11} /> Podés avanzar al cierre aunque queden pendientes sin resolver.
+            <Info size={11} /> Puedes avanzar al cierre aunque queden pendientes sin resolver.
           </p>
         </div>
       )}

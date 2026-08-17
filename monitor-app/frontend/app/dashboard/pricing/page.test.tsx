@@ -46,7 +46,7 @@ describe('TarifarioPage', () => {
   it('shows the "Por revisar" tab by default, with no shipper selection required', async () => {
     renderPage()
     expect(await screen.findByText('Empresas Carozzi S.A.')).toBeInTheDocument()
-    expect(screen.queryByText('Elegí un generador de carga')).not.toBeInTheDocument()
+    expect(screen.queryByText('Elige un generador de carga')).not.toBeInTheDocument()
   })
 
   it('"Nuevo local" is visible immediately, without picking a shipper first', async () => {

@@ -33,7 +33,7 @@ export function LocationCreateForm({ shippers, onCreated }: Props) {
       setCreateErr('Nombre es requerido'); return
     }
     if (!nuevo.shipperId) {
-      setCreateErr('Elegí un generador de carga'); return
+      setCreateErr('Elige un generador de carga'); return
     }
     setCreating(true); setCreateErr(null)
     try {

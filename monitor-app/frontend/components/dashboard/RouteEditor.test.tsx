@@ -126,6 +126,6 @@ describe('RouteEditor', () => {
     expect(spy).toHaveBeenCalledWith([
       { local: 'Local nuevo sin registrar', planning_date: null, stop_type: 'DESTINATION', destination_region: null },
     ])
-    expect(screen.getByText(/Elegí una sugerencia/)).toBeInTheDocument()
+    expect(screen.getByText(/Elige una sugerencia/)).toBeInTheDocument()
   })
 })

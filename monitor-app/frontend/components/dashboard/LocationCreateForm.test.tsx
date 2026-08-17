@@ -46,7 +46,7 @@ describe('LocationCreateForm', () => {
     fireEvent.click(screen.getByText('Nuevo local'))
     fireEvent.change(screen.getByLabelText('Nombre del local nuevo'), { target: { value: 'Local Nuevo' } })
     fireEvent.click(screen.getByText('Crear local'))
-    expect(screen.getByText('Elegí un generador de carga')).toBeInTheDocument()
+    expect(screen.getByText('Elige un generador de carga')).toBeInTheDocument()
     expect(locationsApi.create).not.toHaveBeenCalled()
   })
 

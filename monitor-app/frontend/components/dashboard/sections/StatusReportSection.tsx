@@ -237,7 +237,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
             onClick={() => window.print()}
             disabled={!data}
             className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
-            title="Abre el diálogo de impresión — elegí 'Guardar como PDF' para descargarlo"
+            title="Abre el diálogo de impresión — elige 'Guardar como PDF' para descargarlo"
           >
             <Printer size={12} /> Descargar PDF
           </button>

@@ -126,6 +126,12 @@ describe('ClosuresCenterPage', () => {
     vi.mocked(equipmentClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-08-04', overridden: 0 })
     renderPage()
 
+    // El boton espera a que las consultas del dia resuelvan: firmar sobre
+    // datos a medio cargar produce un cierre falso.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled(),
+    )
+
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
 
     await waitFor(() => expect(dailyClosuresApi.close).toHaveBeenCalledWith('2026-08-04', false, ''))
@@ -144,6 +150,12 @@ describe('ClosuresCenterPage', () => {
     )
     renderPage()
 
+    // El boton espera a que las consultas del dia resuelvan: firmar sobre
+    // datos a medio cargar produce un cierre falso.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled(),
+    )
+
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
 
     await waitFor(() => expect(screen.getByText('2 conductores sin resolver')).toBeInTheDocument())
@@ -156,5 +168,22 @@ describe('ClosuresCenterPage', () => {
     fireEvent.change(screen.getByLabelText('Fecha del cierre'), { target: { value: '2026-08-05' } })
 
     expect(replace).toHaveBeenCalledWith(expect.stringContaining('fecha=2026-08-05'))
+  })
+
+  // Firmar el dia es un acto con nombre y hora. El boton solo miraba `closing`,
+  // asi que quedaba habilitado mientras el area de datos mostraba el spinner:
+  // se podia firmar un dia sobre informacion que no habia llegado.
+  it('no deja confirmar el cierre mientras los datos del día están cargando', async () => {
+    // Las dos consultas del cierre nunca resuelven: congela el instante de carga.
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    vi.mocked(dailyClosuresApi.get).mockReturnValue(new Promise(() => {}))
+    vi.mocked(equipmentClosuresApi.get).mockReturnValue(new Promise(() => {}))
+
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeDisabled(),
+    )
   })
 })

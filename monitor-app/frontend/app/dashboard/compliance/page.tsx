@@ -235,15 +235,29 @@ function CertificationPageInner() {
         <TriageWorkbench />
       ) : (
         <div className="border border-border rounded-xl bg-white overflow-hidden">
-          <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
-            <span className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
-              {statusQuery.data?.total_pending ?? 0}
-            </span>
-            <span className="text-xs text-gray-500">documentos por cubrir</span>
-            {group === 'carrier' && (statusQuery.data?.total_unclassified ?? 0) > 0 && (
-              <span className="text-xs text-gray-400">
-                · {statusQuery.data?.total_unclassified} sin clasificar
-              </span>
+          {/* Una cifra derivada no se muestra hasta tener el dato. El `?? 0`
+              de antes pintaba un "0 documentos por cubrir" en cifra grande
+              mientras la consulta estaba en vuelo, para despues saltar a 2.360:
+              durante ese segundo la pantalla afirmaba con seguridad algo falso.
+              El hueco reserva el alto para que la fila no salte al llegar. */}
+          <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border min-h-[3.25rem]">
+            {statusQuery.isPending ? (
+              <span
+                className="h-7 w-48 rounded bg-gray-100 motion-safe:animate-pulse"
+                aria-hidden
+              />
+            ) : (
+              <>
+                <span className="text-2xl font-bold text-slate-800 tabular-nums leading-none">
+                  {statusQuery.data?.total_pending ?? 0}
+                </span>
+                <span className="text-xs text-gray-500">documentos por cubrir</span>
+                {group === 'carrier' && (statusQuery.data?.total_unclassified ?? 0) > 0 && (
+                  <span className="text-xs text-gray-400">
+                    · {statusQuery.data?.total_unclassified} sin clasificar
+                  </span>
+                )}
+              </>
             )}
           </div>
 

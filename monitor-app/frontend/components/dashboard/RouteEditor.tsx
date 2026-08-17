@@ -134,7 +134,7 @@ export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
               </p>
             ) : (
               <p className="text-[10px] text-gray-400">
-                Elegí una sugerencia de la lista para clasificar la zona automáticamente
+                Elige una sugerencia de la lista para clasificar la zona automáticamente
               </p>
             )}
           </div>

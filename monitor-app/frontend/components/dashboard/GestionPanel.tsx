@@ -244,7 +244,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                 + Establecer estado operativo manual
               </button>
               <p className="text-[9px] text-gray-400 mt-1">
-                Es el mismo estado que se muestra en el encabezado — acá podés confirmarlo manualmente si hace falta.
+                Es el mismo estado que se muestra en el encabezado — aquí puedes confirmarlo manualmente si hace falta.
               </p>
             </>
           )}

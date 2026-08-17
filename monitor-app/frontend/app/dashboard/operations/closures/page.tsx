@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery } from '@tanstack/react-query'
 import {
   ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Loader2,
 } from 'lucide-react'
@@ -64,6 +64,17 @@ function ClosuresCenterPageInner() {
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [overrideNote, setOverrideNote] = useState('')
   const [tab, setTab] = useState<TabId>('flota')
+
+  // Las dos consultas que alimentan el cierre las dispara FlotaDelDiaSection;
+  // acá sólo se observa su estado con las MISMAS queryKey — no se agrega una
+  // consulta nueva ni se duplica el fetch.
+  //
+  // Los dos hooks se llaman SIEMPRE, cada uno en su línea: combinarlos con `||`
+  // hace que el segundo no se ejecute cuando el primero es verdadero, y React
+  // revienta por cambio en el orden de los hooks entre renders.
+  const cargandoTractoreo = useIsFetching({ queryKey: ['daily-closure', fecha] })
+  const cargandoEquipos = useIsFetching({ queryKey: ['equipment-closures', fecha] })
+  const cargandoDatos = cargandoTractoreo > 0 || cargandoEquipos > 0
 
   useEffect(() => {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en la sección */ })
@@ -143,7 +154,7 @@ function ClosuresCenterPageInner() {
             <ClipboardCheck size={20} className="text-accent" /> Centro de Cierre del Día
           </h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            Revisá pendientes, cerrá Tractoreo y Equipos Completos, y compartí el reporte del día — todo en un solo lugar.
+            Revisa pendientes, cierra Tractoreo y Equipos Completos, y comparte el reporte del día — todo en un solo lugar.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-gray-500">
@@ -231,13 +242,19 @@ function ClosuresCenterPageInner() {
               </button>
             </div>
           )}
+          {/* Firmar el dia es un acto con nombre y hora: no puede ocurrir sobre
+              datos que todavia no llegaron. El boton solo miraba `closing` (si
+              el cierre esta en curso), asi que quedaba habilitado mientras el
+              area de datos mostraba el spinner. */}
           <button
             type="button"
-            disabled={closing}
+            disabled={closing || cargandoDatos}
             onClick={() => handleConfirmClose(false)}
             className="text-sm font-semibold bg-accent text-white rounded-lg px-4 py-2.5 disabled:opacity-40 flex items-center gap-2 hover:bg-accent/90 transition-colors"
           >
-            {closing ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+            {closing || cargandoDatos
+              ? <Loader2 size={14} className="motion-safe:animate-spin" />
+              : <ClipboardCheck size={14} />}
             Confirmar cierre
           </button>
         </div>
