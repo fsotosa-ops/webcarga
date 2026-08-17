@@ -220,19 +220,37 @@ que se ve; después los componentes; los tokens y guardias en paralelo, sabiendo
 mayoría vive en chips y badges). `<h1>` a mano: 15 → 10, y los 10 restantes no son encabezado de
 módulo.
 
-#### Lo que queda del sistema visual
+#### El cierre del sistema visual (`7fc2fe2`)
 
-Chips de filtro y badges de alerta (donde está la mayoría del color crudo) · el detalle del viaje y
-el modal de flota, sin mirar · las barras de progreso de Certificación, invisibles cuando el valor es
-1 de 382 · y los 357 usos de `text-[Npx]` bajo 11px, congelados por el guardia pero sin pagar.
+Lo que quedaba anotado como pendiente se pagó en un commit:
+
+- **La barra de progreso de Certificación mentía.** Con 1 de 117 el ancho calculado era 0,25px, o
+  sea nada — igual que 0 de 12. Ahora usa `max(3px, N%)` con un `0` explícito para el cero real:
+  **empezado y no empezado dejan de verse iguales**, que es la única pregunta que esa barra
+  responde en el extremo bajo. Verificado en dev midiendo el DOM: 5 barras, la única de ancho 0 es
+  "0 de 12", y las de "1 de 117" / "1 de 3" / "2 de 6" miden 3px.
+- **Los cinco badges y chips** (`PendingDocsBadge`, `InsuranceAlertBadge`, `DwellSeverityBadge`,
+  `OperationTypeBadge`, `ChipsDeFiltro`) pasan a la escala y a los tres roles de gris; los rojos y
+  verdes elegidos a mano pasan a `status-incidente` / `resuelto`.
+- **El detalle del viaje y el modal de flota**, que nunca se habían mirado: `TripDetailView` tenía
+  29 tamaños sueltos y `GestionPanel` 26, más `StopTimeline` y `FleetCenterDialog`. Migrados,
+  incluido `font-mono` → `font-identificador`.
+
+**Los tres guardias bajaron su tope, que es la parte que importa**: tamaños bajo 11px **357 → 279**,
+color crudo **1.802 → 1.780**, `<h1>` a mano **10 → 9**. Ninguno puede volver a subir sin romper la
+suite. **1.078 tests, `tsc` y `build` en verde.**
+
+Lo que sigue abierto es residual y está congelado: 279 tamaños sueltos y 1.780 usos de color crudo
+repartidos en pantallas que no se tocaron. Sólo bajan migrando pantalla por pantalla, y el guardia
+impide que crezcan mientras tanto. **El frente visual queda cerrado como workstream.**
 
 #### El mapa de specs y planes
 
 | Plan | Depende de | Estado |
 |---|---|---|
-| 1 · Deuda visual urgente (voseo + estados de carga) | nada | **escrito, listo para ejecutar** |
-| 2 · Tokens y componentes compartidos | nada | por escribir |
-| 3 · El recorrido del Cierre (Bloques 1, 2, 4) | plan 2 | por escribir |
+| 1 · Deuda visual urgente (voseo + estados de carga) | nada | **ejecutado y verificado en dev** |
+| 2 · Tokens y componentes compartidos | nada | **ejecutado, más la cáscara y el cierre visual** |
+| 3 · El recorrido del Cierre (Bloques 1, 2, 4) | plan 2 (ya listo) | **desbloqueado, por escribir** |
 | 4 · El denominador (Bloque 0) | decisión de negocio | bloqueado |
 | 5 · Reportería (Bloque 3) | registro de corridas · Excel de Fabián | bloqueado |
 
@@ -266,6 +284,10 @@ la regla de la fila (lo justo para decidir arriba, el detalle abajo). Declara el
      **15 frames sin ninguna cifra**, luego 951. Antes ahí había un `0` grande.
    - De paso: `monitor-app/frontend/AGENTS.md` creado — `CLAUDE.md` de esa carpeta lo apuntaba sin
      que existiera.
+0.5 [x] **Plan 2 + la cáscara + el cierre visual: EJECUTADO y desplegado** (`8c07856`, `7fc2fe2`).
+   El sistema visual es ahora **dependencia satisfecha** del Plan 3: las pantallas del Cierre se
+   pueden construir sobre la escala, los tres componentes compartidos y los tres roles de color, en
+   vez de nacer con deuda que después hay que migrar.
 1. [ ] **DECISIÓN BLOQUEANTE — ¿la plataforma admin legacy sigue operando?** Define de qué se
    alimenta la resolución del conductor. Evidencia mixta: el pipeline `legacy_drivers_transporters`
    está vivo (14/08) y la tabla creció de 105.695 a 107.325 filas con modificaciones hasta el 12/08,
