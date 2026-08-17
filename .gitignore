@@ -21,3 +21,7 @@ credenciales.txt
 /*.csv
 /monitor-app/*.xlsx
 /monitor-app/*.csv
+
+# HOME aislado del MCP de mage-agent — contiene el config.json con credenciales
+# del cluster. Ver scripts/mage-agent-mcp.sh.
+.mage-agent-home/
