@@ -52,7 +52,7 @@ export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: Trips
           if (sourceTripId) navigator.clipboard?.writeText(sourceTripId).catch(() => {})
         }}
         title={sourceTripId ? `Abrir ${label} — ID ${sourceTripId} copiado para buscarlo` : `Abrir ${label}`}
-        className="text-[9px] font-bold px-1.5 py-0.5 rounded border hover:opacity-75 transition-opacity"
+        className="text-etiqueta font-bold px-1.5 py-0.5 rounded border hover:opacity-75 transition-opacity"
         style={style}
       >
         {label}
@@ -60,7 +60,7 @@ export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: Trips
     )
   }
   return (
-    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border" style={style}>
+    <span className="text-etiqueta font-bold px-1.5 py-0.5 rounded border" style={style}>
       {label}
     </span>
   )
@@ -72,7 +72,7 @@ export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: Trips
  *  para que hito 13 se vea igual en la tabla y en el detalle del viaje. */
 function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null }) {
   const destinations = stops?.filter(s => s.stop_type !== 'ORIGIN') ?? []
-  if (!destinations.length) return <span className="text-gray-200 text-xs">—</span>
+  if (!destinations.length) return <span className="text-gray-400 text-dato">—</span>
 
   const states = getStopStates(destinations)
 
@@ -97,8 +97,8 @@ function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null
             </span>
             <span
               title={name}
-              className={`text-[11px] truncate max-w-[170px] ${
-                state === 'active' ? 'font-bold text-slate-800' : state === 'done' ? 'text-gray-500' : 'text-gray-400'
+              className={`text-etiqueta truncate max-w-[170px] ${
+                state === 'active' ? 'font-bold text-text-primary' : state === 'done' ? 'text-gray-500' : 'text-gray-400'
               }`}
             >
               {name}
@@ -137,6 +137,24 @@ interface Props {
   onSort:             (col: SortKey) => void
 }
 
+/** El TMS devuelve el nombre como venga: "SUAREZ LOPEZ EFRAIN EDUARDO" en una
+ *  fila y "Aravena Herrera Francisco Javier" en la de al lado. Mezclados se ven
+ *  descuidados, y en mayusculas ocupan mas ancho y se parten en mas renglones
+ *  — que es de donde salian las filas de 76px cuando deberian medir 40.
+ *
+ *  Se normaliza SOLO en presentacion. El dato del TMS no se toca (regla 1 de
+ *  Pablo): lo que se guarda, se exporta y se compara sigue siendo el original,
+ *  y el nombre completo queda en el `title` para quien lo necesite. */
+export function nombreLegible(nombre: string): string {
+  return nombre
+    .trim()
+    .replace(/\s+/g, ' ')
+    // El punto final llega pegado o separado: "NOLASCO ." es un valor real.
+    .replace(/\s*\.\s*$/, '')
+    .toLocaleLowerCase('es-CL')
+    .replace(/(^|[\s'-])(\p{L})/gu, (_, sep, letra) => sep + letra.toLocaleUpperCase('es-CL'))
+}
+
 export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort }: Props) {
   // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): solo
   // Patente queda sticky (izquierda) — es fácil no notar que hay más
@@ -167,7 +185,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
   if (trips.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-border p-12 text-center text-sm text-gray-400">
+      <div className="bg-white rounded-xl border border-border p-12 text-center text-dato text-gray-400">
         Sin viajes para los filtros seleccionados
       </div>
     )
@@ -208,7 +226,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
               {/* fila 1: patente + temp + estado */}
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className={`font-mono text-sm font-bold shrink-0 ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal text-xs'}`}>
+                  <span className={`font-identificador text-dato font-bold shrink-0 ${primaryPlate ? 'text-text-primary' : 'text-gray-400 italic font-normal text-dato'}`}>
                     {primaryPlate ?? 'sin patente'}
                   </span>
                   <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" compact />
@@ -224,7 +242,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     const temp = tempStop?.temperature ?? null
                     const tempStatus = tempStop?.temp_status ?? null
                     return temp != null
-                      ? <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
+                      ? <span className={`rounded-full px-1.5 py-0.5 text-etiqueta font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                       : null
                   })()}
                   <StatusBadge status={currentStatus} meta={meta} />
@@ -239,16 +257,16 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
               {/* fila 2: conductor */}
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs text-slate-600 truncate">
-                  {trip.driver_name ?? <span className="text-gray-300 italic text-[11px]">sin conductor</span>}
+                <span className="text-dato text-gray-500 truncate">
+                  {trip.driver_name ?? <span className="text-gray-400 italic text-etiqueta">sin conductor</span>}
                 </span>
                 <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" compact />
               </div>
 
               {/* fila 3: EETT + origen */}
-              <div className="flex items-center gap-1.5 mt-1 text-[10px] text-gray-400 min-w-0">
+              <div className="flex items-center gap-1.5 mt-1 text-etiqueta text-gray-400 min-w-0">
                 {trip.carrier_id
-                  ? <span className="font-medium text-slate-500 truncate max-w-[160px]">{trip.carrier_name}</span>
+                  ? <span className="font-medium text-gray-500 truncate max-w-[160px]">{trip.carrier_name}</span>
                   : <span className="italic">sin EETT</span>}
                 <InsuranceAlertBadge alert={trip.insurance_alert} compact />
                 <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" compact />
@@ -261,7 +279,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 const eta = activeStop ? describeStopTiming(activeStop) : null
                 if (!eta) return null
                 return (
-                  <div className="flex items-center gap-1.5 mt-1 text-[10px] text-gray-400 min-w-0">
+                  <div className="flex items-center gap-1.5 mt-1 text-etiqueta text-gray-400 min-w-0">
                     <span className="truncate">{eta}</span>
                   </div>
                 )
@@ -280,9 +298,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
           <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 z-20 bg-gradient-to-l from-black/10 to-transparent" aria-hidden="true" />
         )}
         <div ref={scrollRef} className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 1080 }}>
+          <table className="w-full text-dato" style={{ minWidth: 1080 }}>
             <thead>
-              <tr className="bg-gray-50 border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+              <tr className="bg-gray-50 border-b border-border text-etiqueta font-bold text-gray-400 uppercase tracking-wide">
                 {/* ESTADO — columna fija (Hito 11, minuta 29/07 §4.3: "el
                     estado es lo primero que filtran"). Reemplaza a Patente
                     como única columna sticky al hacer scroll horizontal. */}
@@ -345,7 +363,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         <div className="min-w-0">
                           <StatusBadge status={currentStatus} meta={meta} />
                           {trip.manual_status && (
-                            <span className="text-[8px] text-accent block mt-0.5">override</span>
+                            <span className="text-etiqueta text-accent block mt-0.5">override</span>
                           )}
                           <DwellSeverityBadge
                             severity={dwell?.severity ?? null}
@@ -355,23 +373,23 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           {(() => {
                             const activeStop = getActiveStop(trip.stops ?? [])
                             const eta = activeStop ? describeStopTiming(activeStop) : null
-                            return eta ? <span className="text-[9px] text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
+                            return eta ? <span className="text-etiqueta text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
                           })()}
                         </div>
                         {/* Los indicadores (Activo/Trabajando/Asignado) se ven
                             y filtran arriba de la tabla, se editan en el
                             detalle (Fase 3 del hardening del Diario, 2026-07-18). */}
-                        <span className={`text-xs shrink-0 ${isActive ? 'text-accent' : 'text-gray-200'}`}>›</span>
+                        <span className={`text-dato shrink-0 ${isActive ? 'text-accent' : 'text-gray-400'}`}>›</span>
                       </div>
                     </td>
 
                     {/* FECHA */}
                     <td className="px-3 py-2.5">
-                      <p className="text-[11px] text-gray-700 font-medium whitespace-nowrap">
+                      <p className="text-etiqueta text-text-primary font-medium whitespace-nowrap">
                         {fmtDate(trip.planning_date)}
                       </p>
                       {trip.status_reported_at && (
-                        <p className="text-[9px] text-gray-300 whitespace-nowrap mt-0.5">
+                        <p className="text-etiqueta text-gray-400 whitespace-nowrap mt-0.5">
                           {new Intl.DateTimeFormat('es-CL', {
                             timeZone: 'America/Santiago',
                             hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -388,7 +406,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
                     {/* ID VIAJE */}
                     <td className="px-3 py-2.5">
-                      <span className="font-mono text-[11px] text-gray-500">
+                      <span className="font-identificador text-etiqueta text-gray-500">
                         {trip.source_system_trip_id ?? '—'}
                       </span>
                     </td>
@@ -400,11 +418,11 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="px-3 py-2.5">
                       <div className="flex items-start gap-1.5">
                         <div>
-                          <span className={`font-mono text-xs font-bold ${primaryPlate ? 'text-slate-800' : 'text-gray-300 italic font-normal'}`}>
+                          <span className={`font-identificador text-dato font-bold ${primaryPlate ? 'text-text-primary' : 'text-gray-400 italic font-normal'}`}>
                             {primaryPlate ?? 'sin patente'}
                           </span>
                           {secondaryPlate && (
-                            <span className="font-mono text-[10px] text-gray-400 mt-0.5 block">
+                            <span className="font-identificador text-etiqueta text-gray-400 mt-0.5 block">
                               {secondaryPlate}
                             </span>
                           )}
@@ -415,9 +433,14 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
                     {/* CONDUCTOR — solo lectura (Fase 2, Plan 6), antes ConductorCell */}
                     <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-slate-700 font-medium leading-tight">
-                          {trip.driver_name ?? <span className="text-gray-300 italic">sin asignar</span>}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className="text-dato text-text-primary font-medium leading-tight truncate block max-w-[150px]"
+                          title={trip.driver_name ?? undefined}
+                        >
+                          {trip.driver_name
+                            ? nombreLegible(trip.driver_name)
+                            : <span className="text-gray-400 italic">sin asignar</span>}
                         </span>
                         <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" compact />
                       </div>
@@ -434,14 +457,14 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                               key={p}
                               href={`tel:${p}`}
                               onClick={e => e.stopPropagation()}
-                              className="text-[10px] font-mono text-accent hover:underline block"
+                              className="text-etiqueta font-identificador text-accent hover:underline block"
                             >
                               {p}
                             </a>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-[10px] text-gray-300">—</span>
+                        <span className="text-etiqueta text-gray-400">—</span>
                       )}
                     </td>
 
@@ -449,7 +472,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="px-3 py-2.5">
                       {trip.carrier_id ? (
                         <>
-                          <span className="text-xs font-medium text-slate-700 leading-tight block truncate max-w-[120px]">
+                          <span className="text-dato font-medium text-text-primary leading-tight block truncate max-w-[120px]">
                             {trip.carrier_name}
                           </span>
                           <div className="flex items-center gap-1 mt-0.5">
@@ -458,24 +481,24 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           </div>
                         </>
                       ) : (
-                        <span className="text-[10px] text-gray-300 italic">sin vincular</span>
+                        <span className="text-etiqueta text-gray-400 italic">sin vincular</span>
                       )}
                     </td>
 
                     {/* CLIENTE */}
                     <td className="px-3 py-2.5">
-                      <span className="text-[11px] text-gray-500 truncate block max-w-[100px]">
+                      <span className="text-etiqueta text-gray-500 truncate block max-w-[100px]">
                         {trip.client_name ?? '—'}
                       </span>
                     </td>
 
                     {/* ORIGEN · CARGA */}
                     <td className="px-3 py-2.5">
-                      <p className="text-[11px] text-gray-600 truncate max-w-[110px]">
+                      <p className="text-etiqueta text-gray-500 truncate max-w-[110px]">
                         {trip.origin ?? '—'}
                       </p>
                       {trip.cargo_type && (
-                        <span className="text-[9px] text-gray-400 bg-gray-50 border border-gray-100 px-1 py-0.5 rounded mt-0.5 inline-block truncate max-w-[110px]">
+                        <span className="text-etiqueta text-gray-400 bg-gray-50 border border-gray-100 px-1 py-0.5 rounded mt-0.5 inline-block truncate max-w-[110px]">
                           {trip.cargo_type}
                         </span>
                       )}
@@ -496,8 +519,8 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         const temp = tempStop?.temperature ?? null
                         const tempStatus = tempStop?.temp_status ?? null
                         return temp != null
-                          ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
-                          : <span className="text-gray-300 text-xs">—</span>
+                          ? <span className={`rounded-full px-2 py-0.5 text-dato font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
+                          : <span className="text-gray-400 text-dato">—</span>
                       })()}
                     </td>
                   </tr>
