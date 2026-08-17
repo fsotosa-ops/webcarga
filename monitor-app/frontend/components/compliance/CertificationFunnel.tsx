@@ -41,7 +41,7 @@ interface Props {
  *  usuario no vigila un tablero: mueve empresas por un embudo. */
 const ETAPAS: { id: FunnelGroup; titulo: string; icono: typeof Plus; tono: string }[] = [
   { id: 'sin_documentos', titulo: 'Recién creadas · sin documentos', icono: Plus,           tono: 'bg-sky-50 text-sky-800' },
-  { id: 'en_proceso',     titulo: 'En proceso',                      icono: Clock,          tono: 'bg-gray-50 text-gray-600' },
+  { id: 'en_proceso',     titulo: 'En proceso',                      icono: Clock,          tono: 'bg-gray-50 text-gray-500' },
   { id: 'renovar',        titulo: 'Hay que renovar',                 icono: AlertTriangle,  tono: 'bg-amber-50 text-amber-800' },
   { id: 'al_dia',         titulo: 'Certificadas y al día',           icono: Check,          tono: 'bg-emerald-50 text-emerald-800' },
   { id: 'catalogo',       titulo: 'Resto del catálogo',              icono: Building2,      tono: 'bg-gray-50 text-gray-500' },
@@ -111,10 +111,10 @@ export function CertificationFunnel({
               />
               <Icono size={12} aria-hidden="true" />
               {/* Andamiaje: versalitas, 10px, no compite con el sujeto (§9). */}
-              <span className="text-[10px] font-semibold uppercase tracking-[.11em]">
+              <span className="text-etiqueta font-semibold uppercase tracking-[.11em]">
                 {titulo}
               </span>
-              <span className="ml-auto flex items-center gap-2 text-[11px] font-medium tabular-nums">
+              <span className="ml-auto flex items-center gap-2 text-etiqueta font-medium tabular-nums">
                 {id === 'renovar' && vencidos > 0 && (
                   <span className="font-normal">
                     {vencidos === 1 ? '1 documento vencido' : `${vencidos} documentos vencidos`}
@@ -138,7 +138,7 @@ export function CertificationFunnel({
             </button>
 
             {!plegado && !deEstaEtapa.length && (
-              <p className="px-4 py-2 text-[11px] text-gray-400 border-b border-gray-100">
+              <p className="px-4 py-2 text-etiqueta text-gray-400 border-b border-gray-100">
                 {id !== 'catalogo' ? 'Ninguna acá'
                   : catalogEstado === 'cargando' ? 'Cargando…'
                   : catalogEstado === 'error'    ? 'No se pudo cargar el catálogo. Vuelve a desplegar el grupo para reintentar.'
@@ -201,7 +201,7 @@ function FilaEmpresa({
         </span>
 
         {gestion && (
-          <span className="hidden sm:inline text-[10.5px] text-gray-500 shrink-0">
+          <span className="hidden sm:inline text-etiqueta text-gray-500 shrink-0">
             {gestion}
           </span>
         )}
@@ -213,18 +213,23 @@ function FilaEmpresa({
             priorizar por actividad prometería una anticipación que los datos
             no tienen. */}
         {(row.trips_30d ?? 0) > 0 && (
-          <span className="hidden md:inline text-[10.5px] text-gray-500 shrink-0 tabular-nums">
+          <span className="hidden md:inline text-etiqueta text-gray-500 shrink-0 tabular-nums">
             {row.trips_30d} viajes · 30 días
           </span>
         )}
 
+        {/* La barra mide 96px: con "1 de 382" el relleno daba 0,25px y se
+            veia IGUAL que cero. "Empezado" y "no empezado" son cosas
+            distintas y tienen que verse distinto, asi que cualquier avance
+            mayor a cero ocupa al menos 3px. La barra deja de ser proporcional
+            en el extremo bajo a proposito: ahi lo que importa es si arranco. */}
         <span className="h-1.5 w-24 rounded-full bg-gray-200 overflow-hidden shrink-0">
           <span
-            className={`block h-full rounded-full ${alDia ? 'bg-emerald-500' : 'bg-accent'}`}
-            style={{ width: `${pct}%` }}
+            className={`block h-full rounded-full ${alDia ? 'bg-resuelto' : 'bg-accion'}`}
+            style={{ width: pct > 0 ? `max(3px, ${pct}%)` : 0 }}
           />
         </span>
-        <span className="text-[11px] text-gray-600 tabular-nums whitespace-nowrap shrink-0 w-16 text-right">
+        <span className="text-etiqueta text-gray-500 tabular-nums whitespace-nowrap shrink-0 w-16 text-right">
           {row.satisfied_count} de {row.total_count}
         </span>
 
@@ -232,7 +237,7 @@ function FilaEmpresa({
           <span
             data-testid={`espera-${row.entity_id}`}
             title={`${row.unclassified_count} archivos esperando que los ubiques`}
-            className="inline-flex items-center rounded-full bg-espera px-2 py-0.5 text-[10px] font-bold tabular-nums text-white shrink-0"
+            className="inline-flex items-center rounded-full bg-espera px-2 py-0.5 text-etiqueta font-bold tabular-nums text-white shrink-0"
           >
             {row.unclassified_count}
           </span>

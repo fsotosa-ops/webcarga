@@ -101,7 +101,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
             <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
               <Truck size={16} className="text-accent" /> Centro de Flota — {fecha}
             </h2>
-            <button type="button" onClick={onClose} aria-label="Cerrar" className="text-gray-400 hover:text-gray-700 transition-colors">
+            <button type="button" onClick={onClose} aria-label="Cerrar" className="text-gray-400 hover:text-text-primary transition-colors">
               <X size={18} />
             </button>
           </div>
@@ -111,7 +111,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
               <button
                 type="button"
                 onClick={onOpenCloseDay}
-                className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-accent transition-colors"
+                className="flex items-center gap-1.5 text-etiqueta font-semibold text-gray-500 hover:text-accent transition-colors"
               >
                 <ClipboardCheck size={12} /> Ver cuadratura de conductores
               </button>
@@ -121,7 +121,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                   <button
                     type="button"
                     onClick={onNewTrip}
-                    className="flex items-center gap-1.5 bg-accent text-white text-xs font-semibold px-3.5 py-2 rounded-l-lg hover:bg-accent/90 transition-colors"
+                    className="flex items-center gap-1.5 bg-accent text-white text-dato font-semibold px-3.5 py-2 rounded-l-lg hover:bg-accent/90 transition-colors"
                   >
                     Nuevo viaje
                   </button>
@@ -136,7 +136,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                   </button>
                 </div>
                 {showNewMenu && (
-                  <div className="absolute right-0 mt-1 w-48 bg-white border border-border rounded-lg shadow-lg z-10 text-xs overflow-hidden">
+                  <div className="absolute right-0 mt-1 w-48 bg-white border border-border rounded-lg shadow-lg z-10 text-dato overflow-hidden">
                     <button type="button" onClick={() => { setShowNewMenu(false); onNewTrip() }} className="w-full text-left px-3 py-2 hover:bg-gray-50">
                       Viaje individual
                     </button>
@@ -171,16 +171,16 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                     onChange={e => setQ(e.target.value)}
                     placeholder="Buscar patente, conductor o empresa…"
                     aria-label="Buscar equipo"
-                    className="w-full pl-8 pr-3 py-2 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 bg-white"
+                    className="w-full pl-8 pr-3 py-2 text-dato border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 bg-white"
                   />
                 </div>
 
                 <div className="bg-white rounded-xl border border-border overflow-hidden">
-                  <table className="w-full text-xs">
+                  <table className="w-full text-dato">
                     {category === 'busy' ? (
                       <>
                         <thead>
-                          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                          <tr className="bg-gray-50 text-etiqueta font-bold text-gray-400 uppercase tracking-wide">
                             <th className="text-left px-3 py-2">Patente</th>
                             <th className="text-left px-3 py-2">Empresa</th>
                             <th className="text-left px-3 py-2">Cliente</th>
@@ -190,7 +190,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                         </thead>
                         <tbody className="divide-y divide-border/60">
                           {filteredBusy.length === 0 ? (
-                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos en esta categoría</td></tr>
+                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 italic">Sin equipos en esta categoría</td></tr>
                           ) : filteredBusy.map((a: BusyAsset) => (
                             <tr key={a.asset_id}>
                               <td className="px-3 py-2 font-semibold text-text-primary">{a.tractor_plate}</td>
@@ -201,7 +201,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                                 <button
                                   type="button"
                                   onClick={() => onSelectTrip(a.trip_id)}
-                                  className="flex items-center gap-1 ml-auto text-[11px] font-semibold text-accent hover:text-accent/80"
+                                  className="flex items-center gap-1 ml-auto text-etiqueta font-semibold text-accent hover:text-accent/80"
                                 >
                                   Ver viaje <ArrowRight size={11} />
                                 </button>
@@ -213,7 +213,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                     ) : (
                       <>
                         <thead>
-                          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                          <tr className="bg-gray-50 text-etiqueta font-bold text-gray-400 uppercase tracking-wide">
                             <th className="text-left px-3 py-2">Patente</th>
                             <th className="text-left px-3 py-2">Empresa</th>
                             <th className="text-left px-3 py-2">Conductor habitual</th>
@@ -223,7 +223,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                         </thead>
                         <tbody className="divide-y divide-border/60">
                           {filtered.length === 0 ? (
-                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Sin equipos en esta categoría</td></tr>
+                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 italic">Sin equipos en esta categoría</td></tr>
                           ) : filtered.map(a => (
                             <tr key={a.asset_id}>
                               <td className="px-3 py-2 font-semibold text-text-primary">{a.tractor_plate}</td>
@@ -242,7 +242,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                                 <button
                                   type="button"
                                   onClick={() => onAssign(toFleetValue(a))}
-                                  className="flex items-center gap-1 ml-auto text-[11px] font-semibold text-accent hover:text-accent/80"
+                                  className="flex items-center gap-1 ml-auto text-etiqueta font-semibold text-accent hover:text-accent/80"
                                 >
                                   Asignar viaje <ArrowRight size={11} />
                                 </button>

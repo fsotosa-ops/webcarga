@@ -41,12 +41,12 @@ export function StopTimeline({ stops }: Props) {
               </span>
               <div className="min-w-0 flex-1 pb-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className={`text-xs truncate ${state === 'active' ? 'font-bold text-slate-800' : 'font-semibold text-slate-700'}`}>{name}</p>
+                  <p className={`text-dato truncate ${state === 'active' ? 'font-bold text-text-primary' : 'font-semibold text-text-primary'}`}>{name}</p>
                   {stop.milestone_status && (
-                    <span className="text-[9px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{stop.milestone_status}</span>
+                    <span className="text-etiqueta text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{stop.milestone_status}</span>
                   )}
                 </div>
-                <p className="text-[10px] text-gray-400 mt-0.5">
+                <p className="text-etiqueta text-gray-400 mt-0.5">
                   {timing ?? (state === 'done' ? 'completada' : state === 'active' ? 'en camino' : 'pendiente')}
                   {dwell && <span className="text-gray-500"> · {dwell} en parada</span>}
                   {stopWasVisited(stop) && stop.temperature != null && (
@@ -59,11 +59,11 @@ export function StopTimeline({ stops }: Props) {
                     completo (no truncado) porque el caso de uso es cruzarlo
                     contra un documento — un "+2" obligaría a abrir otra vista. */}
                 {stop.delivery_numbers && stop.delivery_numbers.length > 0 && (
-                  <p className="text-[10px] text-gray-500 mt-0.5">
+                  <p className="text-etiqueta text-gray-500 mt-0.5">
                     <span className="text-gray-400">
                       {stop.delivery_numbers.length === 1 ? 'Entrega: ' : 'Entregas: '}
                     </span>
-                    <span className="font-mono">{stop.delivery_numbers.join(' · ')}</span>
+                    <span className="font-identificador">{stop.delivery_numbers.join(' · ')}</span>
                   </p>
                 )}
               </div>
@@ -73,7 +73,7 @@ export function StopTimeline({ stops }: Props) {
               <div className="flex items-center gap-2.5 pl-[8px] py-0.5">
                 <span className="w-px self-stretch min-h-[14px] bg-gray-200 ml-[0.5px]" />
                 {transit && (
-                  <span className="inline-flex items-center gap-1 text-[9px] text-gray-400">
+                  <span className="inline-flex items-center gap-1 text-etiqueta text-gray-400">
                     <Timer size={9} />
                     {transit}
                   </span>

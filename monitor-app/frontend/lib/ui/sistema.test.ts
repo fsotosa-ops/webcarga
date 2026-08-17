@@ -69,7 +69,7 @@ describe('el sistema visual se usa, no solo existe', () => {
 
   it('no crece el color decidido fuera del sistema', () => {
     // Medido el 2026-08-16. Baja al migrar cada pantalla a los tokens.
-    const DEUDA = 1802
+    const DEUDA = 1780
 
     const total = usosDeColorCrudo()
     expect(
@@ -83,7 +83,7 @@ describe('el sistema visual se usa, no solo existe', () => {
   it('no crecen los encabezados de pagina escritos a mano', () => {
     // Medido el 2026-08-16: eran 15 <h1> con SIETE combinaciones distintas de
     // clases. Baja a medida que cada pagina usa <EncabezadoDePagina>.
-    const DEUDA = 10
+    const DEUDA = 9
 
     const hallazgos = h1FueraDelEncabezado()
     expect(

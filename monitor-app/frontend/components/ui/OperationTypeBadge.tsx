@@ -10,8 +10,8 @@ interface Props {
 }
 
 const SIZE_CLS = {
-  sm: 'text-[8px] font-bold px-1 py-0.5',
-  md: 'text-[10px] font-semibold px-1.5 py-0.5',
+  sm: 'text-etiqueta font-bold px-1 py-0.5',
+  md: 'text-etiqueta font-semibold px-1.5 py-0.5',
 }
 
 export function OperationTypeBadge({ operationType, meta, size = 'sm' }: Props) {

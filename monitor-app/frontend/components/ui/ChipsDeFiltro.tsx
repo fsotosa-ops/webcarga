@@ -24,11 +24,11 @@ export function ChipsDeFiltro({
             type="button"
             aria-pressed={encendido}
             onClick={() => onElegir(encendido ? null : id)}
-            className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors
+            className={`rounded-full border px-2.5 py-1 text-etiqueta transition-colors
                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
               encendido
                 ? 'border-accion text-accion bg-accion/5 font-semibold'
-                : 'border-border text-gray-600 hover:text-gray-800'
+                : 'border-border text-gray-500 hover:text-text-primary'
             }`}
           >
             {etiqueta}

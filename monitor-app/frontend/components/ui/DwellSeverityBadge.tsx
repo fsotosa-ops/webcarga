@@ -19,17 +19,17 @@ interface Props {
 }
 
 const COLOR_CLS: Record<DwellSeverity, string> = {
-  green:  'bg-green-50 text-green-600 hover:bg-green-100',
+  green:  'bg-green-50 text-resuelto hover:bg-green-100',
   yellow: 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100',
   orange: 'bg-orange-50 text-orange-700 hover:bg-orange-100',
-  red:    'bg-red-50 text-red-600 hover:bg-red-100',
+  red:    'bg-red-50 text-status-incidente hover:bg-red-100',
 }
 
 const DOT_CLS: Record<DwellSeverity, string> = {
-  green:  'bg-green-500',
+  green:  'bg-resuelto',
   yellow: 'bg-yellow-500',
   orange: 'bg-orange-500',
-  red:    'bg-red-500',
+  red:    'bg-status-incidente',
 }
 
 export function DwellSeverityBadge({ severity, label, onClick, compact = false }: Props) {
@@ -54,7 +54,7 @@ export function DwellSeverityBadge({ severity, label, onClick, compact = false }
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${COLOR_CLS[severity]}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-etiqueta font-semibold whitespace-nowrap ${COLOR_CLS[severity]}`}
     >
       <Clock size={9} /> {label}
     </button>

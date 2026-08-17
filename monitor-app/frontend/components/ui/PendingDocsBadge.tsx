@@ -39,8 +39,8 @@ export function PendingDocsBadge({ count, critical, compact = false, label }: Pr
     return (
       <span
         title={title}
-        className={`inline-flex items-center gap-0.5 justify-center h-4 px-1 rounded-full text-[9px] font-bold shrink-0 ${
-          tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
+        className={`inline-flex items-center gap-0.5 justify-center h-4 px-1 rounded-full text-etiqueta font-bold shrink-0 ${
+          tone === 'red' ? 'bg-red-100 text-status-incidente' : 'bg-amber-50 text-amber-600'
         }`}
       >
         <FileWarning size={8} /> {count}
@@ -51,8 +51,8 @@ export function PendingDocsBadge({ count, critical, compact = false, label }: Pr
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${
-        tone === 'red' ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-etiqueta font-semibold whitespace-nowrap ${
+        tone === 'red' ? 'bg-red-100 text-status-incidente' : 'bg-amber-50 text-amber-600'
       }`}
     >
       <FileWarning size={9} /> {label ? `${label}: ` : ''}{count} pendiente{count === 1 ? '' : 's'}
