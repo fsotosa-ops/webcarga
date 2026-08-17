@@ -15,7 +15,7 @@ export default function Topbar({ displayName, role }: Props) {
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
-    <header className="h-14 bg-white border-b border-border flex items-center px-4 md:px-6 shrink-0 gap-3">
+    <header className="h-14 bg-white border-b border-border/70 flex items-center px-4 md:px-6 shrink-0 gap-3">
       {/* Mobile brand — visible only when sidebar is hidden */}
       <div className="md:hidden flex items-center gap-2 shrink-0">
         <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shadow">

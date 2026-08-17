@@ -6,6 +6,7 @@ import { dwellStatus } from '@/lib/utils/kpis'
 import { StopProgressDots } from './StopProgressDots'
 import { DwellSeverityBadge } from '@/components/ui/DwellSeverityBadge'
 import { TmsChip } from './TripTable'
+import { nombreLegible } from './TripTable'
 
 interface Props {
   trip:               Trip
@@ -28,26 +29,32 @@ export function TripCard({ trip, meta, onSaved, onSelect, onSelectFocusNotes, up
   return (
     <div
       onClick={() => onSelect(trip)}
-      className={`border rounded-lg p-2.5 mb-2 cursor-pointer hover:shadow-sm transition-all border-border ${
+      className={`border rounded-lg p-2.5 mb-2 cursor-pointer transition-all border-border shadow-[0_1px_2px_rgba(16,23,40,0.04)] hover:shadow-[0_2px_8px_rgba(16,23,40,0.08)] hover:-translate-y-px ${
         updated ? 'bg-amber-50' : 'bg-white'
       }`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className={`font-mono text-xs font-bold shrink-0 ${plate ? 'text-slate-800' : 'text-gray-300 italic font-normal'}`}>
-            {plate ?? 'sin patente'}
-          </span>
+          {plate ? (
+            <span className="font-identificador text-dato font-semibold tracking-[0.09em] text-text-primary border border-border rounded px-1.5 py-0.5 bg-gray-50/80 shrink-0">
+              {plate}
+            </span>
+          ) : (
+            <span className="text-dato text-gray-400 italic shrink-0">sin patente</span>
+          )}
           {trip.source_system && <TmsChip tms={trip.source_system} meta={meta} />}
         </div>
         {temp != null && (
-          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+          <span className={`text-etiqueta font-semibold tabular-nums px-1.5 py-0.5 rounded shrink-0 ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
             {temp}°C
           </span>
         )}
       </div>
-      <p className="text-[11px] text-gray-500 truncate mt-0.5">
-        {trip.driver_name ?? <span className="italic text-gray-300">sin conductor</span>}
-        {trip.client_name && <span className="text-gray-300"> · {trip.client_name}</span>}
+      <p className="text-etiqueta text-gray-500 truncate mt-1.5">
+        {trip.driver_name
+          ? nombreLegible(trip.driver_name)
+          : <span className="italic text-gray-400">sin conductor</span>}
+        {trip.client_name && <span className="text-gray-400 capitalize"> · {trip.client_name}</span>}
       </p>
       {/* Solo destinos — StopProgressDots filtra el origen internamente
           (hito 13, mismo lenguaje visual que StopTimeline/StopPills). */}
@@ -57,7 +64,7 @@ export function TripCard({ trip, meta, onSaved, onSelect, onSelectFocusNotes, up
         </div>
       )}
       {eta && (
-        <p className="text-[9px] text-gray-400 truncate mt-1">{eta}</p>
+        <p className="text-etiqueta text-gray-400 truncate mt-1">{eta}</p>
       )}
       {/* Indicadores (Activo/Trabajando/Asignado/1ra Vuelta) se ven y
           filtran arriba de la tabla, se editan en el detalle del viaje —

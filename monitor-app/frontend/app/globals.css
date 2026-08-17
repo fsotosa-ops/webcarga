@@ -1,16 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --sidebar-bg: #182635;
+  /* ── La cáscara ──────────────────────────────────────────────────────
+     Auditoría 2026-08-16: la app "se ve igual" aunque cambien las tablas,
+     porque lo que ocupa más superficie es esto — fondo, barra lateral,
+     bordes — y no había cambiado nunca.
+
+     El fondo era #e5e5e5: un gris medio, plano y sin matiz, el gris por
+     defecto de cualquier panel de administración. Un gris así compite con
+     el blanco de las tarjetas en vez de sostenerlo, y ensucia todo lo que
+     apoya encima. Se reemplaza por un casi-blanco con leve sesgo frío, del
+     mismo lado del círculo que el azul del producto: las superficies
+     blancas flotan sobre él en vez de pelearle. */
+  --sidebar-bg: #141d2b;
   --accent: #1cb9ec;
   --status-ruta: #62a420;
   --status-carga: #053bfa;
   --status-descarga: #ea6b25;
   --status-incidente: #b00020;
   --status-pendiente: #8a00dd;
-  --bg-main: #e5e5e5;
-  --text-primary: #192a3e;
-  --border-color: #dfe0eb;
+  --bg-main: #f5f6f9;
+  --text-primary: #131c2b;
+  --border-color: #e6e8ef;
 
   /* Los tres roles del sistema visual de Certificación (spec §9). El color
      separa QUÉ SE PUEDE HACER; el peso y la familia separan qué es cada cosa.
@@ -68,6 +79,19 @@
 body {
   background-color: var(--bg-main);
   color: var(--text-primary);
+}
+
+/* ── Las superficies ───────────────────────────────────────────────────
+   Una tarjeta definida SOLO por su borde se lee como un recuadro dibujado;
+   con una sombra minima se lee como una superficie apoyada. Es la
+   diferencia entre "hay una linea alrededor" y "esto esta encima de
+   aquello", y es gran parte de por que la app se veia plana.
+
+   La sombra es deliberadamente corta: dos pixeles y 4% de opacidad. Una
+   sombra grande en una herramienta que se mira ocho horas cansa. */
+.bg-white.rounded-xl,
+.bg-white.rounded-lg {
+  box-shadow: 0 1px 2px rgba(16, 23, 40, 0.04), 0 1px 3px rgba(16, 23, 40, 0.03);
 }
 
 /* ── Entrada del modal de detalle ─────────────────────────────── */

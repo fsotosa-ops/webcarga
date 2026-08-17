@@ -58,7 +58,7 @@ function DraggableCard({ trip, children }: { trip: Trip; children: React.ReactNo
     >
       <GripVertical
         size={11}
-        className="absolute right-1.5 top-1.5 text-gray-200 opacity-0 group-hover/card:opacity-100 transition-opacity pointer-events-none"
+        className="absolute right-1.5 top-1.5 text-gray-400 opacity-0 group-hover/card:opacity-100 transition-opacity pointer-events-none"
         aria-hidden="true"
       />
       {children}
@@ -80,8 +80,8 @@ function Column({
       } ${!isValidTarget ? 'opacity-60' : ''}`}
     >
       <div className="flex items-center justify-between px-1 pb-2">
-        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{group.label}</span>
-        <span className="text-[10px] text-gray-400">{count}</span>
+        <span className="text-etiqueta font-bold text-gray-500 uppercase tracking-wide">{group.label}</span>
+        <span className="text-etiqueta text-gray-400">{count}</span>
       </div>
       {children}
     </div>
@@ -159,7 +159,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, onSelectFocu
       onDragCancel={() => setDragging(false)}
     >
       {moveErr && (
-        <div className="mb-2 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg px-3 py-2">
+        <div className="mb-2 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-dato rounded-lg px-3 py-2">
           <span className="flex-1">{moveErr}</span>
           <button type="button" onClick={() => setMoveErr(null)} aria-label="Cerrar error"><X size={12} /></button>
         </div>
@@ -185,7 +185,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, onSelectFocu
                 </DraggableCard>
               ))}
               {colTrips.length === 0 && (
-                <p className="text-[10px] text-gray-300 text-center py-4">Sin viajes</p>
+                <p className="text-etiqueta text-gray-400 text-center py-4">Sin viajes</p>
               )}
             </Column>
           )
@@ -203,7 +203,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, onSelectFocu
             onClick={e => e.stopPropagation()}
             className="bg-white rounded-xl shadow-2xl p-4 w-72 space-y-2 animate-modal-in"
           >
-            <p className="text-xs font-semibold text-slate-700">
+            <p className="text-dato font-semibold text-text-primary">
               ¿A qué estado pasa {choice.trip.tractor_plate ?? 'el viaje'}?
             </p>
             <div className="space-y-1">
@@ -212,7 +212,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, onSelectFocu
                   key={s.id}
                   type="button"
                   onClick={() => { applyMove(choice.trip, s.id); setChoice(null) }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-gray-50 border border-transparent hover:border-border transition-colors"
+                  className="w-full text-left px-3 py-2 rounded-lg text-dato font-semibold hover:bg-gray-50 border border-transparent hover:border-border transition-colors"
                   style={{ backgroundColor: s.bg_color, color: s.text_color }}
                 >
                   {s.label}
@@ -220,7 +220,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, onSelectFocu
               ))}
             </div>
             <button type="button" onClick={() => setChoice(null)}
-              className="w-full text-center text-[11px] text-gray-400 hover:text-gray-600 pt-1">
+              className="w-full text-center text-etiqueta text-gray-400 hover:text-gray-500 pt-1">
               Cancelar
             </button>
           </div>
