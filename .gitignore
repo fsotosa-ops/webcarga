@@ -25,3 +25,5 @@ credenciales.txt
 # HOME aislado del MCP de mage-agent — contiene el config.json con credenciales
 # del cluster. Ver scripts/mage-agent-mcp.sh.
 .mage-agent-home/
+# Sync local de pipelines (.mage-agent/local_sync), relativo a cwd y no a HOME.
+.mage-agent/
