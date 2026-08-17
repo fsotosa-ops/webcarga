@@ -197,9 +197,28 @@ la regla de la fila (lo justo para decidir arriba, el detalle abajo). Declara el
 
 #### Próximo paso exacto
 
-0. [ ] **Ejecutar `docs/superpowers/plans/2026-08-16-visual-deuda-urgente.md`** (4 tareas). No
-   depende de ninguna decisión pendiente y saca de producción el voseo y las dos pantallas que
-   mienten mientras cargan.
+0. [x] **Plan 1 — deuda visual urgente: EJECUTADO, desplegado y verificado en dev** (`073d55e`).
+   - **El test encontró 8 casos de voseo, no los 5** que había visto un grep a mano
+     (`PreCierrePendingSection`, `StatusReportSection` y `pricing` se habían pasado). Lo que queda
+     es el guardia: `lib/copy/espanol-neutral.test.ts` recorre el código fuente, así que quien lo
+     reintroduzca rompe la suite. Se probó inyectando un archivo con voseo y borrándolo.
+   - **Bug propio, atrapado por la suite**: al cablear el botón usé `||` entre dos `useIsFetching`,
+     que deja de llamar al segundo hook cuando el primero es verdadero. React revento y cayeron 7
+     tests de golpe. Corregido llamando los dos hooks siempre.
+   - **Los dos tests nuevos se verificaron fallando sin su corrección**, con `git stash`. Que un
+     test pase no significa nada si nunca se lo vio fallar — este proyecto ya tuvo tests que
+     entraron pasando sin probar nada.
+   - Dos tests existentes también fallaron y **no se revirtió el arreglo**: clickeaban "Confirmar
+     cierre" antes de que las consultas resolvieran. Ahora esperan a que el botón se habilite, que
+     además es lo que haría una persona.
+   - **1045 tests, `tsc` y `npm run build` en verde.** El error de `CarrierDrawer` es preexistente,
+     confirmado con stash.
+   - **Verificado en `webcarga-frontend-dev`** con Playwright, midiendo y no mirando: el subtítulo
+     dice *"Revisa pendientes, cierra…"*; el botón está **deshabilitado** con el spinner y **se
+     habilita** al llegar los datos; y forzando el estado de carga (cambio de agrupación) hubo
+     **15 frames sin ninguna cifra**, luego 951. Antes ahí había un `0` grande.
+   - De paso: `monitor-app/frontend/AGENTS.md` creado — `CLAUDE.md` de esa carpeta lo apuntaba sin
+     que existiera.
 1. [ ] **DECISIÓN BLOQUEANTE — ¿la plataforma admin legacy sigue operando?** Define de qué se
    alimenta la resolución del conductor. Evidencia mixta: el pipeline `legacy_drivers_transporters`
    está vivo (14/08) y la tabla creció de 105.695 a 107.325 filas con modificaciones hasta el 12/08,
