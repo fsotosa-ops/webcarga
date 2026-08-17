@@ -380,9 +380,14 @@ la regla de la fila (lo justo para decidir arriba, el detalle abajo). Declara el
    (cero despachos en agosto). El camino es sembrar un padrón `patente → conductor` — **91% de
    acierto backtesteado, 528/528 viajes de agosto resueltos** — y dejar que operaciones corrija por
    `trip_fleet_links.link_source='manual'`. **No depende de que el archivo siga vivo.**
-2. [ ] **Reescribir el plan del Bloque 0** con el padrón como fuente (el anterior,
-   `2026-08-16-cierre-bloque-0-denominador.md`, se retiró sin comitear: agregaba columnas por
-   migración —que dbt borraría— y ponía el match en la vista). Ya no está bloqueado.
+2. [x] **Plan del Bloque 0: ESCRITO** — `docs/superpowers/plans/2026-08-17-cierre-bloque-0-padron.md`,
+   7 tareas, listo para ejecutar. **No crea tablas ni lógica nueva**: `app.v_trip_fleet_resolution`
+   ya coalesce `trip_fleet_links → vehicle_driver_assignments → nombre`, y el del medio **tiene 1
+   fila en toda la base**. Se llena desde el padrón. La vista se consume en **5 routers y 18
+   lugares**, así que mejora todo sin tocar Python ni TypeScript.
+   El plan incluye el candado de identificadores que pidió el usuario: `app.normalize_rut()` +
+   trigger + CHECK sobre `drivers.tax_id` (entrada tolerante, almacenamiento estricto), y lo mismo
+   para `assets.license_plate` — donde ya había una sucia, `GBVC90` con un tabulador al final.
 2b. [ ] **Bug del dedup de Mage en `bd_ot_master.sql`**: el `WHERE NOT EXISTS` compara sólo contra
    el destino, no dentro del lote — 3.477 filas duplicadas (107.325 filas vs 103.848 hashes).
    Arreglo: `SELECT DISTINCT` en el origen, o `GROUP BY hash_id` antes del insert.
