@@ -1,0 +1,113 @@
+<h2>El estándar: la fila muestra estado, el encabezado muestra volumen</h2>
+<p class="subtitle">A corregida. El chip repetido 208 veces era ruido; el aviso pasa a vivir una sola
+vez, arriba, y convertido en filtro.</p>
+
+<style>
+  .mk2{--bd:#e6e8ef;--tx:#131c2b;--t2:#5b6478;--t3:#8992a5;--acc:#0d7ea6;--av:#b45309;
+       --avbg:#fffbeb;--avbd:#fde68a;--ok:#62a420;--bg:#f5f6f9;
+       border:1px solid var(--bd);border-radius:10px;overflow:hidden;color:var(--tx);background:#fff}
+  .mk2 .barra{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+       padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--bd)}
+  .mk2 .filtro{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:12px;font-weight:650;
+       background:#fff;border:1px solid var(--avbd);color:var(--av);border-radius:999px;
+       padding:4px 11px;cursor:pointer}
+  .mk2 .filtro:hover{background:var(--avbg)}
+  .mk2 .filtro b{font-size:13px}
+  .mk2 .otros{font-size:12px;color:var(--t3)}
+  .mk2 table{width:100%;border-collapse:collapse;font-family:system-ui,sans-serif}
+  .mk2 th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);
+       font-weight:650;text-align:left;padding:8px 12px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  .mk2 td{font-size:13px;padding:10px 12px;border-bottom:1px solid var(--bd);vertical-align:top}
+  .mk2 tr:last-child td{border-bottom:0}
+  .mk2 .pat{font-family:ui-monospace,Menlo,monospace;font-weight:600;letter-spacing:.09em;
+       border:1px solid #d6dae6;border-radius:4px;padding:2px 6px;display:inline-block;font-size:12px}
+  .mk2 .sub{display:block;font-size:11px;color:var(--t3);margin-top:2px}
+  .mk2 .pt{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:1px;background:var(--ok)}
+  /* la celda: el control es la celda, y el hueco se dibuja al enfocar */
+  .mk2 .slot{display:inline-block;font:inherit;font-size:13px;background:none;border:1px solid transparent;
+       border-radius:6px;padding:2px 7px;margin:-2px -7px;cursor:pointer;text-align:left;color:var(--tx)}
+  .mk2 .slot:hover,.mk2 .slot:focus-visible{border-color:#d6dae6;background:#fafbfd}
+  .mk2 .slot.pend{color:var(--t2);border-style:dashed;border-color:#e2e6ef}
+  .mk2 .slot.pend:hover{border-color:var(--acc);background:rgba(13,126,166,.06)}
+  .mk2 .rutx{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--t3);display:block;margin-top:2px}
+  .nota2{font-size:12px;color:#5b6478;margin:10px 2px 0;line-height:1.55;max-width:74ch}
+  .porque{display:grid;gap:10px;margin-top:20px}
+  @media(min-width:780px){.porque{grid-template-columns:1fr 1fr}}
+  .porque div{border-left:3px solid #0d7ea6;padding:2px 0 2px 13px}
+  .porque h4{margin:0 0 3px;font-size:13px}
+  .porque p{margin:0;font-size:12px;color:#5b6478;line-height:1.5}
+</style>
+
+<div class="mk2">
+  <div class="barra">
+    <button class="filtro"><b>27</b> conductores sin identificar</button>
+    <span class="otros">· 4 sin tipo de vehículo · 2 sin empresa</span>
+  </div>
+  <table>
+    <thead><tr><th>Viaje</th><th>Tracto</th><th>Conductor</th><th>Estado</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>2031752<span class="sub">Walmart</span></td>
+        <td><span class="pat">LWRS40</span></td>
+        <td><button class="slot">Altamirano Ruiz, Víctor J.<span class="rutx">17.332.089-2</span></button></td>
+        <td><span class="pt"></span>En ruta</td>
+      </tr>
+      <tr>
+        <td>2032999<span class="sub">Walmart</span></td>
+        <td><span class="pat">DWVZ58</span></td>
+        <td><button class="slot pend">Suárez López, Efraín<span class="rutx">Sin registrar</span></button></td>
+        <td><span class="pt"></span>En ruta</td>
+      </tr>
+      <tr>
+        <td>2033104<span class="sub">Walmart</span></td>
+        <td><span class="pat">KSVP48</span></td>
+        <td><button class="slot">Romero Garrido, Adán M.<span class="rutx">10.914.211-5</span></button></td>
+        <td><span class="pt"></span>En ruta</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p class="nota2">Las tres filas se leen igual. La que falta se distingue por <strong>peso y borde
+punteado</strong>, no por color de alerta — y el RUT, que en las resueltas es la prueba de identidad,
+en la pendiente dice <em>«Sin registrar»</em> en su lugar. Misma posición, misma altura de fila.</p>
+
+<div class="porque">
+  <div>
+    <h4>El valor crudo siempre se ve</h4>
+    <p>QuickBooks y Ramp nunca esconden el texto de origen: es la única pista que tiene la persona
+    para decidir. El guión mudo de hoy es lo único que todos evitan.</p>
+  </div>
+  <div>
+    <h4>La celda es el control</h4>
+    <p>Como el campo de persona en Linear, Notion o Airtable: se hace clic en el hueco y se abre el
+    selector. Un botón aparte agrega un objetivo de clic y una decisión más.</p>
+  </div>
+  <div>
+    <h4>El volumen vive una sola vez</h4>
+    <p>El «27» arriba es contador y filtro a la vez. Con 208 filas marcadas nada es señal; con un
+    número arriba, un clic deja en pantalla sólo el trabajo.</p>
+  </div>
+  <div>
+    <h4>Nada cambia de tamaño</h4>
+    <p>La fila pendiente ocupa exactamente lo mismo que las resueltas. Una tabla que se deforma
+    según el estado obliga a re-escanear en cada carga.</p>
+  </div>
+</div>
+
+<div class="options" style="margin-top:26px">
+  <div class="option" data-choice="v2" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Así, y sigo con el popover</h3>
+      <p>Celda como control, sin chip por fila, contador-filtro arriba.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="v2-chip" onclick="toggleSelect(this)">
+    <div class="letter">±</div>
+    <div class="content">
+      <h3>Igual, pero conservando el chip en la fila</h3>
+      <p>Si preferís que cada fila diga explícitamente «sin registrar» aunque se repita.</p>
+    </div>
+  </div>
+</div>

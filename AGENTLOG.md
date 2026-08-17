@@ -116,10 +116,62 @@ prueba (son runtimes distintos, no copias). 1 borrada (`app.normalize_rut`, cód
 que mentía). 4 muertas en `dbt/transporters/macros/`, cuyo proyecto apunta a tablas que no existen:
 se borran **con el proyecto**, no sueltas.
 
+#### La corrección que encontró el usuario mirando el Monitor (viajes 2032999 y 2031752)
+
+**La precedencia estaba invertida.** El padrón quedaba ENCIMA del nombre del TMS, o sea la
+inferencia sobre la evidencia. El TMS dice quién manejó ESE viaje; el padrón dice quién maneja
+habitualmente ese tracto. Medido: de 1.002 viajes resueltos por padrón, **46 mostraban una persona
+sin nada en común con la reportada**, y el padrón **nunca** estaba llenando un hueco — siempre pisaba
+al TMS.
+
+**La causa raíz de que el nombre fallara no era suciedad: era el ORDEN.** El roster guarda
+"Nombre Apellido" y el TMS reporta "APELLIDO NOMBRE". Por eso la igualdad exacta cubría 34%.
+Comparando el **conjunto** de palabras sube a 59%; aceptando subconjuntos de ≥3 palabras llega a
+**79%, con cero ambigüedad medida**.
+
+Precedencia corregida: `manual > tms_rut > nombre > nombre_parcial > padron`, y el padrón **sólo si
+el TMS calló**. La identificación baja de ~100% a 60-88% por día, y **esa caída es la corrección**:
+el 100% incluía respuestas que contradecían al TMS.
+
+**El padrón resultó casi innecesario** — pasó a resolver 1 viaje. Todo ese aparato estaba
+compensando un bug de orden de nombres. Sigue sirviendo como respaldo cuando el TMS calla y como
+fuente de la sugerencia, pero no es lo que sostiene la resolución.
+
+**Y la asimetría con la empresa es correcta, no una inconsistencia:** el TMS informa «WEBCARGA SPA»
+en **933 de ~1.050 viajes**, en cinco grafías — no sabe qué EETT operó, porque nos ve a nosotros
+como el transportista. La regla no es "el TMS siempre manda", es **manda la fuente que realmente
+sabe**.
+
+#### Diseño cerrado, implementación diferida: asignar conductor desde el Monitor
+
+**El bug de origen**: `POST /trips/{id}/fleet-link` exige `carrier_id` (422 sin él), así que **no se
+puede asignar un conductor sin asignar también una empresa**. Por eso forzar el conductor en el
+detalle no guardaba nada. Es también lo que obliga a que la asignación viva en el detalle.
+
+Plan escrito y **sin ejecutar** por decisión del usuario:
+`docs/superpowers/plans/2026-08-17-asignar-conductor-desde-el-monitor.md`, 7 tareas.
+Los mockups aprobados quedaron en `docs/superpowers/mockups/` — **fuera de `.superpowers/`, que está
+en `.gitignore`**.
+
+Las cuatro decisiones ya tomadas (no volver a discutirlas, están argumentadas en el plan): la celda
+es el control · el valor crudo siempre se ve · sin chip de color por fila, con el contador-filtro
+arriba como condición dura · la casilla de alcance marcada por defecto y el número en el botón.
+
+El dato que ordena el diseño: **27 personas explican 208 viajes** (7,7 cada una, máximo 33). La
+unidad de trabajo es la persona, no el viaje.
+
+Y por qué **no** hay emparejamiento automático por similitud: los viajes identificados por RUT
+—donde la identidad es *segura*— tienen similitud de nombre de **0,40**. Un umbral alto para ser
+seguro descarta personas que sí son la misma.
+
 #### Próximo paso exacto
 
+0. [ ] **Ejecutar el plan de asignar conductor desde el Monitor** (7 tareas). Empieza por quitar la
+   exigencia de `carrier_id`, que es el bug reportado.
 1. [ ] **Plan 3 — el recorrido del Cierre** (Bloques 1, 2, 4, 5). Todo diseñado en §8bis del spec del
    Cierre; falta escribir el plan y ejecutar. **Ya no hay nada bloqueado por terceros.**
+1b. [ ] **Fusionar el conductor duplicado del roster** — dos filas con el mismo nombre. El resolvedor
+   se niega a elegir entre las dos (correcto), pero deja esos viajes sin identificar.
 2. [ ] `silver.int_habitual_driver_by_tractor` a modelo dbt. **No urgente**: sobrevive al
    full-refresh porque dbt no es su dueño. Exige agregar un bloque al DAG de la ingesta.
 3. [ ] **Registro de corridas de extracción** — sigue siendo la única pieza diferible del Cierre.

@@ -1,0 +1,124 @@
+<h2>El popover, y la decisión que importa: el alcance</h2>
+<p class="subtitle">Al hacer clic en la celda. No abre el detalle del viaje. La pregunta de diseño no
+es cómo se ve — es <strong>a cuántos viajes se aplica por defecto</strong>.</p>
+
+<style>
+  .pv{--bd:#e6e8ef;--bd2:#d6dae6;--tx:#131c2b;--t2:#5b6478;--t3:#8992a5;--acc:#0d7ea6;
+      --ok:#12a150;--av:#b45309;--avbg:#fffbeb;--avbd:#fde68a;
+      max-width:400px;border:1px solid var(--bd2);border-radius:12px;background:#fff;color:var(--tx);
+      box-shadow:0 12px 28px rgba(16,23,40,.14),0 2px 6px rgba(16,23,40,.06);overflow:hidden;
+      font-family:system-ui,sans-serif}
+  .pv .top{padding:12px 15px;border-bottom:1px solid var(--bd)}
+  .pv .top .q{font-size:12px;color:var(--t3);margin:0 0 2px}
+  .pv .top .n{font-size:15px;font-weight:650;margin:0}
+  .pv .cd{display:flex;align-items:center;gap:11px;padding:10px 15px;border-bottom:1px solid var(--bd);
+      width:100%;text-align:left;font:inherit;background:none;border-left:0;border-right:0;border-top:0;cursor:pointer}
+  .pv .cd:hover{background:rgba(13,126,166,.06)}
+  .pv .ini{width:29px;height:29px;border-radius:50%;background:rgba(13,126,166,.14);color:var(--acc);
+      font-size:11px;font-weight:700;display:grid;place-items:center;flex:0 0 auto}
+  .pv .nm{font-size:13px;font-weight:600;display:block}
+  .pv .rt{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--t3);display:block}
+  .pv .br{width:42px;height:4px;border-radius:2px;background:var(--bd);overflow:hidden;flex:0 0 auto}
+  .pv .br i{display:block;height:100%;background:var(--ok)}
+  .pv .pc{font-size:11px;color:var(--t3);width:28px;text-align:right;font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .pv .alta{display:block;width:100%;text-align:left;font:inherit;font-size:13px;padding:10px 15px;
+      background:none;border:0;border-top:1px solid var(--bd);color:var(--acc);font-weight:600;cursor:pointer}
+  .pv .foot{padding:11px 15px;background:rgba(13,126,166,.05);border-top:1px solid var(--bd)}
+  .pv .chk{display:flex;gap:9px;align-items:flex-start;font-size:13px;margin:0 0 10px;cursor:pointer}
+  .pv .chk input{margin:2px 0 0;accent-color:var(--acc);width:15px;height:15px;flex:0 0 auto}
+  .pv .chk span{color:var(--tx)}
+  .pv .chk em{display:block;font-style:normal;font-size:11px;color:var(--t3);margin-top:1px}
+  .pv .bts{display:flex;gap:8px}
+  .pv .b{font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:6px 14px;cursor:pointer;
+      border:1px solid var(--acc);background:var(--acc);color:#fff}
+  .pv .b.s{background:none;color:var(--acc)}
+  .cols{display:grid;gap:22px;margin-top:8px}
+  @media(min-width:860px){.cols{grid-template-columns:400px 1fr}}
+  .arg h4{margin:0 0 4px;font-size:13px}
+  .arg p{margin:0 0 14px;font-size:12px;color:#5b6478;line-height:1.55;max-width:60ch}
+  .arg p b{color:#131c2b}
+</style>
+
+<div class="cols">
+  <div class="pv">
+    <div class="top">
+      <p class="q">El TMS reportó</p>
+      <p class="n">SUAREZ LOPEZ EFRAIN EDUARDO</p>
+    </div>
+
+    <button class="cd">
+      <span class="ini">SL</span>
+      <span style="flex:1">
+        <span class="nm">Suárez López, Efraín E.</span>
+        <span class="rt">16.428.339-1</span>
+      </span>
+      <span class="br"><i style="width:88%"></i></span><span class="pc">88%</span>
+    </button>
+    <button class="cd">
+      <span class="ini">SL</span>
+      <span style="flex:1">
+        <span class="nm">Suárez Lagos, Eduardo</span>
+        <span class="rt">13.905.774-K</span>
+      </span>
+      <span class="br"><i style="width:41%"></i></span><span class="pc">41%</span>
+    </button>
+
+    <button class="alta">Ninguno — dar de alta a esta persona</button>
+
+    <div class="foot">
+      <label class="chk">
+        <input type="checkbox" checked>
+        <span>Aplicar también a sus otros 12 viajes
+          <em>Del 1 al 16 de agosto, el rango que estás mirando</em></span>
+      </label>
+      <div class="bts">
+        <button class="b">Asignar a 13 viajes</button>
+        <button class="b s">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="arg">
+    <h4>Por qué la casilla va marcada</h4>
+    <p>Es el punto donde se gana o se pierde todo. Con la casilla apagada por defecto, la persona
+    resuelve <b>27 veces el mismo problema, 7,7 veces cada uno</b>. Con ella marcada, 27 decisiones
+    cierran 208 filas.</p>
+
+    <h4>Y por qué es una casilla y no automático</h4>
+    <p>Gmail lo hace igual cuando creás un filtro: <b>«aplicar también a las N conversaciones que
+    coinciden»</b>, marcado, con el número a la vista. La acción masiva no es un efecto secundario
+    escondido — se anuncia, se cuenta y se puede desmarcar antes de confirmar.</p>
+
+    <h4>El botón dice el número</h4>
+    <p><b>«Asignar a 13 viajes»</b>, no «Asignar». Si la casilla se desmarca, el botón pasa a decir
+    «Asignar a este viaje». El control y su consecuencia dicen lo mismo — no hay que acordarse de lo
+    que se marcó arriba.</p>
+
+    <h4>El porcentaje ordena, no decide</h4>
+    <p>Los viajes identificados por RUT —donde la identidad es <b>segura</b>— tienen similitud de
+    nombre de apenas 0,40. Cualquier umbral automático lo bastante alto para ser seguro descartaría
+    personas que sí son la misma. Por eso la barra sugiere y ordena; elige la persona.</p>
+
+    <h4>Lo que no está acá</h4>
+    <p>La empresa. El TMS informa «WEBCARGA SPA» en 933 viajes del último mes: no sabe qué empresa
+    operó, porque nos ve a nosotros como el transportista. Esa corrección pertenece al tracto, en el
+    Centro de Flota.</p>
+  </div>
+</div>
+
+<div class="options" style="margin-top:26px">
+  <div class="option" data-choice="masivo" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Casilla marcada por defecto</h3>
+      <p>Aplica a los 13 viajes salvo que se desmarque. 27 decisiones cierran 208 filas.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="individual" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Casilla desmarcada por defecto</h3>
+      <p>Aplica sólo a este viaje salvo que se marque. Más conservador; más repetitivo.</p>
+    </div>
+  </div>
+</div>
