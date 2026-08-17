@@ -33,11 +33,13 @@
 #   email acá — sale del atributo `acct` del mismo item del Keychain, así que hay
 #   una sola fuente de verdad.
 #
-# Setup, una vez por repo (lo corre el humano; el `-w` sin valor hace que
-# `security` pida la password interactivamente en vez de dejarla en el history):
+# Setup, una vez por repo (lo corre el humano). `-w` va ÚLTIMO y sin valor: así
+# `security` pide la password interactivamente, con confirmación, en vez de
+# dejarla en el history. Si -w no va al final se come el flag siguiente como si
+# fuera la password (`-w -T /usr/bin/security` guarda el literal "-T"):
 #
 #   security add-generic-password -s mage-agent-webcarga \
-#     -a <email-del-cluster> -w -T /usr/bin/security
+#     -a <email-del-cluster> -T /usr/bin/security -w
 #
 #   La primera lectura macOS puede pedir confirmación por GUI: darle
 #   "Permitir siempre".
@@ -71,7 +73,7 @@ log() { echo "mage-agent-mcp.sh: $*" >&2; }
 
 manual_login_hint() {
   log "  Opción A — guardar la password en el Keychain para que se renueve sola:"
-  log "    security add-generic-password -s $KEYCHAIN_SERVICE -a <email> -w -T /usr/bin/security"
+  log "    security add-generic-password -s $KEYCHAIN_SERVICE -a <email> -T /usr/bin/security -w"
   log "  Opción B — re-sembrar del respaldo (si el token sigue vigente):"
   log "    mkdir -p \"$AGENT_HOME/.mage-agent\" && cp \"$PROFILE_BACKUP\" \"$CONFIG\" && chmod 600 \"$CONFIG\""
   log "  Opción C — re-loguear a mano (pide email + password):"
