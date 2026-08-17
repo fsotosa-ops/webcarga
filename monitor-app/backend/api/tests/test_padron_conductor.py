@@ -47,12 +47,14 @@ async def test_un_tracto_no_puede_tener_dos_conductores_activos(conexion_reverti
     dos = await _conductor(conn, "Conductor Dos", "1234567-4")
 
     await conn.execute(
-        "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id) VALUES ($1,$2)",
+        "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, source) "
+        "VALUES ($1,$2,'padron_legacy')",
         tracto, uno)
 
     with pytest.raises(asyncpg.UniqueViolationError):
         await conn.execute(
-            "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id) VALUES ($1,$2)",
+            "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, source) "
+        "VALUES ($1,$2,'padron_legacy')",
             tracto, dos)
 
 
@@ -67,7 +69,8 @@ async def test_un_conductor_si_puede_manejar_varios_tractos(conexion_revertida):
 
     for tracto in (uno, dos):
         await conn.execute(
-            "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id) VALUES ($1,$2)",
+            "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, source) "
+        "VALUES ($1,$2,'padron_legacy')",
             tracto, conductor)
 
     assert await conn.fetchval(
@@ -84,13 +87,15 @@ async def test_el_conductor_anterior_puede_quedar_inactivo(conexion_revertida):
     dos = await _conductor(conn, "Conductor Cuatro", "1234567-4")
 
     await conn.execute(
-        "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id) VALUES ($1,$2)",
+        "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, source) "
+        "VALUES ($1,$2,'padron_legacy')",
         tracto, uno)
     await conn.execute(
         "UPDATE public.vehicle_driver_assignments SET status='INACTIVE', end_date=CURRENT_DATE "
         "WHERE asset_id=$1 AND driver_id=$2", tracto, uno)
     await conn.execute(
-        "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id) VALUES ($1,$2)",
+        "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, source) "
+        "VALUES ($1,$2,'padron_legacy')",
         tracto, dos)
 
     assert await conn.fetchval(
@@ -105,19 +110,19 @@ async def test_el_padron_da_una_sola_fila_por_patente(conexion_revertida):
     """Es la clave de la tabla destino: si repitiera patente, el sembrado
     chocaria contra ux_vehicle_driver_assignments_active_asset."""
     fila = await conexion_revertida.fetchrow(
-        "SELECT count(*) AS filas, count(DISTINCT patente) AS patentes "
-        "FROM app.v_legacy_padron_conductor")
+        "SELECT count(*) AS filas, count(DISTINCT plate) AS plates "
+        "FROM silver.int_habitual_driver_by_tractor")
     assert fila["filas"] > 0, "el padron vacio no prueba nada"
-    assert fila["filas"] == fila["patentes"]
+    assert fila["filas"] == fila["plates"]
 
 
 async def test_el_padron_solo_trae_identificadores_canonicos(conexion_revertida):
-    """Nada que no pase por rut_canonico/patente_canonica sale de la vista."""
+    """Nada que no pase por canonical_rut/canonical_plate sale de la vista."""
     assert await conexion_revertida.fetchval(
         """
-        SELECT count(*) FROM app.v_legacy_padron_conductor
-        WHERE public.rut_canonico(tax_id) IS DISTINCT FROM tax_id
-           OR public.patente_canonica(patente) IS DISTINCT FROM patente
+        SELECT count(*) FROM silver.int_habitual_driver_by_tractor
+        WHERE public.canonical_rut(tax_id) IS DISTINCT FROM tax_id
+           OR public.canonical_plate(plate) IS DISTINCT FROM plate
         """
     ) == 0
 
@@ -128,22 +133,22 @@ async def test_el_padron_cubre_las_patentes_que_estan_rodando(conexion_revertida
     fila = await conexion_revertida.fetchrow(
         """
         WITH v AS (
-            SELECT DISTINCT public.patente_canonica(t.fleet->>'tractor_plate') AS patente
+            SELECT DISTINCT public.canonical_plate(t.fleet->>'tractor_plate') AS plate
             FROM app.trips t
             WHERE t.planning_date >= '2026-08-01'
-              AND public.patente_canonica(t.fleet->>'tractor_plate') IS NOT NULL
+              AND public.canonical_plate(t.fleet->>'tractor_plate') IS NOT NULL
         )
-        SELECT count(*) AS patentes,
+        SELECT count(*) AS plates,
                count(*) FILTER (
-                   WHERE EXISTS (SELECT 1 FROM app.v_legacy_padron_conductor p
-                                 WHERE p.patente = v.patente)) AS cubiertas
+                   WHERE EXISTS (SELECT 1 FROM silver.int_habitual_driver_by_tractor p
+                                 WHERE p.plate = v.plate)) AS cubiertas
         FROM v
         """
     )
-    assert fila["patentes"] > 0
+    assert fila["plates"] > 0
     # Medido 2026-08-17: 47 de 47. Se exige 90% para que no se rompa por una
     # patente nueva legitima, pero si baja de ahi hay que mirar.
-    assert fila["cubiertas"] / fila["patentes"] >= 0.90
+    assert fila["cubiertas"] / fila["plates"] >= 0.90
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -154,9 +159,9 @@ async def test_sembrar_es_idempotente(conexion_revertida):
     """Correrlo dos veces deja lo mismo que correrlo una."""
     conn = conexion_revertida
     sql = "SELECT count(*) FROM public.vehicle_driver_assignments WHERE status='ACTIVE'"
-    await conn.execute("SELECT * FROM app.sembrar_padron_conductor()")
+    await conn.execute("SELECT * FROM public.sync_habitual_drivers()")
     primera = await conn.fetchval(sql)
-    await conn.execute("SELECT * FROM app.sembrar_padron_conductor()")
+    await conn.execute("SELECT * FROM public.sync_habitual_drivers()")
     assert await conn.fetchval(sql) == primera
 
 
@@ -170,10 +175,10 @@ async def test_no_siembra_entradas_viejas_del_padron(conexion_revertida):
     conn = conexion_revertida
     vieja = await conn.fetchrow(
         """
-        SELECT p.patente, p.tax_id FROM app.v_legacy_padron_conductor p
-        JOIN public.assets  a ON a.license_plate = p.patente
+        SELECT p.plate, p.tax_id FROM silver.int_habitual_driver_by_tractor p
+        JOIN public.assets  a ON a.license_plate = p.plate
         JOIN public.drivers d ON d.tax_id        = p.tax_id
-        WHERE p.ultimo_despacho < current_date - 90
+        WHERE p.last_dispatched_on < current_date - 90
         LIMIT 1
         """
     )
@@ -181,11 +186,11 @@ async def test_no_siembra_entradas_viejas_del_padron(conexion_revertida):
         pytest.skip("no hay entradas viejas con alta previa: nada que verificar")
 
     asset_id = await conn.fetchval(
-        "SELECT id FROM public.assets WHERE license_plate = $1", vieja["patente"])
+        "SELECT id FROM public.assets WHERE license_plate = $1", vieja["plate"])
     await conn.execute(
         "DELETE FROM public.vehicle_driver_assignments WHERE asset_id = $1", asset_id)
 
-    await conn.execute("SELECT * FROM app.sembrar_padron_conductor()")
+    await conn.execute("SELECT * FROM public.sync_habitual_drivers()")
 
     assert await conn.fetchval(
         "SELECT count(*) FROM public.vehicle_driver_assignments "
@@ -198,25 +203,25 @@ async def test_no_pisa_una_correccion_manual(conexion_revertida):
     conn = conexion_revertida
     fila = await conn.fetchrow(
         """
-        SELECT p.patente FROM app.v_legacy_padron_conductor p
-        JOIN public.assets  a ON a.license_plate = p.patente
+        SELECT p.plate FROM silver.int_habitual_driver_by_tractor p
+        JOIN public.assets  a ON a.license_plate = p.plate
         JOIN public.drivers d ON d.tax_id        = p.tax_id
-        WHERE p.ultimo_despacho >= current_date - 90
+        WHERE p.last_dispatched_on >= current_date - 90
         LIMIT 1
         """
     )
     assert fila is not None, "sin padron fresco con alta previa el test no prueba nada"
     asset_id = await conn.fetchval(
-        "SELECT id FROM public.assets WHERE license_plate = $1", fila["patente"])
+        "SELECT id FROM public.assets WHERE license_plate = $1", fila["plate"])
 
     otro = await _conductor(conn, "Correccion A Mano", "12345678-5")
     await conn.execute(
         "DELETE FROM public.vehicle_driver_assignments WHERE asset_id = $1", asset_id)
     await conn.execute(
         "INSERT INTO public.vehicle_driver_assignments "
-        "(asset_id, driver_id, is_manual_override) VALUES ($1,$2,true)", asset_id, otro)
+        "(asset_id, driver_id, is_manual_override, source) VALUES ($1,$2,true,'manual')", asset_id, otro)
 
-    await conn.execute("SELECT * FROM app.sembrar_padron_conductor()")
+    await conn.execute("SELECT * FROM public.sync_habitual_drivers()")
 
     assert await conn.fetchval(
         "SELECT driver_id FROM public.vehicle_driver_assignments "
@@ -228,24 +233,24 @@ async def test_reemplaza_una_asignacion_automatica_desactualizada(conexion_rever
     conn = conexion_revertida
     fila = await conn.fetchrow(
         """
-        SELECT p.patente FROM app.v_legacy_padron_conductor p
-        JOIN public.assets  a ON a.license_plate = p.patente
+        SELECT p.plate FROM silver.int_habitual_driver_by_tractor p
+        JOIN public.assets  a ON a.license_plate = p.plate
         JOIN public.drivers d ON d.tax_id        = p.tax_id
-        WHERE p.ultimo_despacho >= current_date - 90
+        WHERE p.last_dispatched_on >= current_date - 90
         LIMIT 1
         """
     )
     asset_id = await conn.fetchval(
-        "SELECT id FROM public.assets WHERE license_plate = $1", fila["patente"])
+        "SELECT id FROM public.assets WHERE license_plate = $1", fila["plate"])
 
     viejo = await _conductor(conn, "Conductor Viejo", "1234567-4")
     await conn.execute(
         "DELETE FROM public.vehicle_driver_assignments WHERE asset_id = $1", asset_id)
     await conn.execute(
         "INSERT INTO public.vehicle_driver_assignments "
-        "(asset_id, driver_id, is_manual_override) VALUES ($1,$2,false)", asset_id, viejo)
+        "(asset_id, driver_id, is_manual_override, source) VALUES ($1,$2,false,'padron_legacy')", asset_id, viejo)
 
-    await conn.execute("SELECT * FROM app.sembrar_padron_conductor()")
+    await conn.execute("SELECT * FROM public.sync_habitual_drivers()")
 
     assert await conn.fetchval(
         "SELECT status FROM public.vehicle_driver_assignments "
@@ -255,20 +260,65 @@ async def test_reemplaza_una_asignacion_automatica_desactualizada(conexion_rever
         "WHERE asset_id=$1 AND status='ACTIVE'", asset_id) == 1
 
 
-async def test_la_resolucion_del_conductor_mejora_de_verdad(conexion_revertida):
-    """El test que justifica el plan entero: la vista que consumen los 5
-    routers tiene que resolver mas viajes despues de sembrar que antes."""
-    conn = conexion_revertida
-    sql = """
-        SELECT count(*) FILTER (WHERE vfr.resolved_driver_id IS NOT NULL)::float
-             / NULLIF(count(*), 0)
-        FROM app.trips t
-        JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-        WHERE t.planning_date >= current_date - 30
-    """
-    antes = await conn.fetchval(sql)
-    await conn.execute("SELECT * FROM app.sembrar_padron_conductor()")
-    despues = await conn.fetchval(sql)
+async def test_un_dia_cerrado_no_cambia_cuando_cambian_los_maestros(conexion_revertida):
+    """LA propiedad que compra todo el refactor.
 
-    assert antes is not None and despues is not None
-    assert despues > antes, f"sembrar no mejoro nada: antes={antes} despues={despues}"
+    Antes, app.v_trip_fleet_resolution decidia quien manejo cada viaje EN CADA
+    LECTURA, comparando `drivers.full_name` con el nombre del TMS. Corregir la
+    tipografia de un nombre cambiaba quien aparece en un dia que operaciones ya
+    cerro. Un cierre es una afirmacion sobre un instante; si se recalcula, no
+    afirma nada.
+
+    Ahora la respuesta esta materializada: cambiar el maestro NO la mueve.
+    Este test fallaba con la vista vieja."""
+    conn = conexion_revertida
+    fila = await conn.fetchrow(
+        """
+        SELECT vfr.trip_id, vfr.resolved_driver_id
+        FROM app.v_trip_fleet_resolution vfr
+        JOIN app.trip_fleet_links fl ON fl.trip_id = vfr.trip_id
+        WHERE fl.driver_match_rule = 'nombre' LIMIT 1
+        """
+    )
+    if fila is None:
+        pytest.skip("no hay viajes resueltos por nombre: nada que verificar")
+
+    await conn.execute(
+        "UPDATE public.drivers SET full_name = full_name || ' XX' WHERE id = $1",
+        fila["resolved_driver_id"])
+
+    despues = await conn.fetchval(
+        "SELECT resolved_driver_id FROM app.v_trip_fleet_resolution WHERE trip_id = $1",
+        fila["trip_id"])
+    assert despues == fila["resolved_driver_id"], (
+        "renombrar al conductor movio la resolucion de un viaje ya resuelto")
+
+
+async def test_resolver_es_idempotente(conexion_revertida):
+    """Correrlo dos veces no cambia el reparto por regla."""
+    conn = conexion_revertida
+    una = await conn.fetchval(
+        "SELECT by_rule::text FROM app.resolve_trip_fleet("
+        "  array(SELECT id FROM app.trips WHERE planning_date >= current_date - 7))")
+    dos = await conn.fetchval(
+        "SELECT by_rule::text FROM app.resolve_trip_fleet("
+        "  array(SELECT id FROM app.trips WHERE planning_date >= current_date - 7))")
+    assert una == dos
+
+
+async def test_el_resolvedor_no_pisa_una_correccion_manual(conexion_revertida):
+    """Precedencia 1: lo que dijo una persona es terminal."""
+    conn = conexion_revertida
+    trip_id = await conn.fetchval(
+        "SELECT trip_id FROM app.trip_fleet_links WHERE link_source='manual' LIMIT 1")
+    if trip_id is None:
+        pytest.skip("no hay vinculos manuales")
+    antes = await conn.fetchval(
+        "SELECT driver_id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+
+    await conn.execute("SELECT * FROM app.resolve_trip_fleet(array[$1]::uuid[])", trip_id)
+
+    assert await conn.fetchval(
+        "SELECT driver_id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id) == antes
+    assert await conn.fetchval(
+        "SELECT link_source FROM app.trip_fleet_links WHERE trip_id = $1", trip_id) == "manual"

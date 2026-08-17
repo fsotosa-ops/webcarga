@@ -18,7 +18,7 @@ pytestmark = pytest.mark.integracion
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# public.rut_canonico
+# public.canonical_rut
 # ══════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.parametrize(
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.integracion
     ],
 )
 async def test_normaliza_todas_las_variantes(conexion_revertida, entrada, esperado):
-    obtenido = await conexion_revertida.fetchval("SELECT public.rut_canonico($1)", entrada)
+    obtenido = await conexion_revertida.fetchval("SELECT public.canonical_rut($1)", entrada)
     assert obtenido == esperado
 
 
@@ -51,14 +51,14 @@ async def test_normaliza_todas_las_variantes(conexion_revertida, entrada, espera
     ],
 )
 async def test_lo_que_no_es_un_rut_devuelve_null(conexion_revertida, basura):
-    assert await conexion_revertida.fetchval("SELECT public.rut_canonico($1)", basura) is None
+    assert await conexion_revertida.fetchval("SELECT public.canonical_rut($1)", basura) is None
 
 
 async def test_normalizar_es_idempotente(conexion_revertida):
     """Normalizar lo ya normalizado no lo cambia. Es lo que permite ponerlo en
     un trigger sin que la segunda escritura difiera de la primera."""
-    una = await conexion_revertida.fetchval("SELECT public.rut_canonico('12.345.678-5')")
-    dos = await conexion_revertida.fetchval("SELECT public.rut_canonico($1)", una)
+    una = await conexion_revertida.fetchval("SELECT public.canonical_rut('12.345.678-5')")
+    dos = await conexion_revertida.fetchval("SELECT public.canonical_rut($1)", una)
     assert una == dos == "12345678-5"
 
 
@@ -67,10 +67,10 @@ async def test_el_dv_es_el_que_desambigua_los_de_ocho_caracteres(conexion_revert
     Se resuelve VALIDANDO: si el ultimo caracter cierra el modulo 11, es DV."""
     conn = conexion_revertida
     # 12345674 -> cuerpo 1234567, DV 4: cierra, se acepta
-    assert await conn.fetchval("SELECT public.rut_canonico('12345674')") == "1234567-4"
+    assert await conn.fetchval("SELECT public.canonical_rut('12345674')") == "1234567-4"
     # 12345670 -> cuerpo 1234567, DV 0: no cierra (el correcto es 4).
     # No se corrige ni se completa: un RUT mal escrito se rechaza.
-    assert await conn.fetchval("SELECT public.rut_canonico('12345670')") is None
+    assert await conn.fetchval("SELECT public.canonical_rut('12345670')") is None
 
 
 async def test_los_ruts_reales_de_drivers_ya_son_canonicos(conexion_revertida):
@@ -79,7 +79,7 @@ async def test_los_ruts_reales_de_drivers_ya_son_canonicos(conexion_revertida):
     fila = await conexion_revertida.fetchrow(
         """
         SELECT count(*) AS total,
-               count(*) FILTER (WHERE public.rut_canonico(tax_id) = tax_id) AS canonicos
+               count(*) FILTER (WHERE public.canonical_rut(tax_id) = tax_id) AS canonicos
         FROM public.drivers WHERE tax_id IS NOT NULL
         """
     )
@@ -152,13 +152,13 @@ async def test_actualizar_tambien_normaliza(conexion_revertida):
 )
 async def test_normaliza_patentes(conexion_revertida, entrada, esperado):
     assert await conexion_revertida.fetchval(
-        "SELECT public.patente_canonica($1)", entrada) == esperado
+        "SELECT public.canonical_plate($1)", entrada) == esperado
 
 
 @pytest.mark.parametrize("basura", ["", "   ", "GB", "GBVC901234", None])
 async def test_lo_que_no_es_patente_devuelve_null(conexion_revertida, basura):
     assert await conexion_revertida.fetchval(
-        "SELECT public.patente_canonica($1)", basura) is None
+        "SELECT public.canonical_plate($1)", basura) is None
 
 
 async def test_no_quedan_patentes_fuera_de_forma(conexion_revertida):

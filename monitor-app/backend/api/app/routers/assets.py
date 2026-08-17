@@ -173,10 +173,16 @@ async def assign_driver_to_asset(
             await conn.execute(
                 """
                 INSERT INTO public.vehicle_driver_assignments
-                    (asset_id, driver_id, status, is_manual_override, overridden_by, overridden_at)
-                VALUES ($1, $2, 'ACTIVE', true, $3, now())
+                    (asset_id, driver_id, status, is_manual_override, source,
+                     overridden_by, overridden_at)
+                VALUES ($1, $2, 'ACTIVE', true, 'manual', $3, now())
                 ON CONFLICT (asset_id, driver_id) DO UPDATE
                     SET status = 'ACTIVE', is_manual_override = true,
+                        -- `source` va JUNTO con is_manual_override: la
+                        -- restriccion vda_source_matches_manual_flag exige que
+                        -- digan lo mismo. Sin esto, reasignar a mano un
+                        -- vehiculo que venia del padron reventaba.
+                        source = 'manual', end_date = NULL,
                         overridden_by = $3, overridden_at = now()
                 """,
                 asset_id, driver_id, user["sub"],

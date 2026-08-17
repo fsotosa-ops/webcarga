@@ -124,7 +124,11 @@ async def _vehiculo(conn, *, tipo_flota=None, tipo_operacion=None):
         "INSERT INTO public.assets "
         "(license_plate, asset_type, fleet_service_type_id, webcarga_operation_type_id) "
         "VALUES ($1, 'TRACTOCAMION', $2, $3) RETURNING id",
-        f"ZZ{suf[:6].upper()}", tipo_flota, tipo_operacion,
+        # SEIS caracteres: es el largo real de una patente chilena, y desde
+        # 20260817120000 lo exige assets_license_plate_is_canonical. Antes
+        # decia ZZ + 6 = 8, que no existe en la calle — la fixture estaba
+        # probando contra datos que el dominio no admite.
+        f"ZZ{suf[:4].upper()}", tipo_flota, tipo_operacion,
     )
 
 
@@ -577,9 +581,15 @@ async def test_siembra_y_vista_previa_coinciden_para_conductores(conexion_revert
     """Un conductor no tiene subtipo ni gestión propios: el requisito le
     aplica a todos. Vale igual comprobarlo — es la rama que nadie mira."""
     conn = conexion_revertida
+    # El RUT se arma con el mismo modulo 11 que exige
+    # drivers_tax_id_is_canonical (20260817120000). Antes era
+    # f"{PREFIJO}-{_sufijo()}", que no es un RUT: la fixture probaba contra
+    # datos que el dominio no admite.
+    cuerpo = str(uuid4().int)[:8]
+    dv = await conn.fetchval("SELECT public.rut_check_digit($1)", cuerpo)
     conductor = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, tax_id) VALUES ($1, $2) RETURNING id",
-        f"{PREFIJO} {_sufijo()}", f"{PREFIJO}-{_sufijo()}")
+        f"{PREFIJO} {_sufijo()}", f"{cuerpo}-{dv}")
 
     requisito = await _requisito(conn, entidad="DRIVER")
 

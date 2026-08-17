@@ -39,29 +39,65 @@ son efectos de esto.
 Cada una tiene un solo trabajo, y ninguna hace el de la siguiente.
 
 ```
+bronze (crudo) → silver (conformado) → public (maestro) → app (operación)
+
 ┌────────────────────────────────────────────────────────────────────────┐
-│ 1 · IDENTIDAD        Una forma canónica por tipo de identificador       │
-│     app.rut_canonico(text) · app.patente_canonica(text)                │
-│     + CHECK en las columnas maestras                                   │
-│     Invariante: dos representaciones del mismo RUT no pueden coexistir │
+│ 1 · IDENTIDAD    public.canonical_rut() · public.canonical_plate()      │
+│                  public.rut_check_digit() · public.is_valid_rut()       │
+│                  + trigger + CHECK en las columnas maestras             │
+│     Invariante: dos representaciones del mismo RUT no pueden coexistir  │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 2 · DIMENSIÓN        Quién maneja qué, con vigencia y procedencia       │
-│     public.vehicle_driver_assignments                                  │
-│     Invariante: un tracto tiene un conductor vigente, no una lista     │
+│ 2 · DIMENSIÓN    public.vehicle_driver_assignments        (TABLA)       │
+│                  ← silver.int_habitual_driver_by_tractor  (vista)       │
+│                  ← public.sync_habitual_drivers()   deliberada          │
+│     Invariante: un tracto tiene un conductor vigente, no una lista      │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 3 · HECHO RESUELTO   La respuesta de un viaje, materializada y fechada  │
-│     app.trip_fleet_links  (UNIQUE trip_id)                             │
-│     Invariante: una vez escrita, sólo la cambia una regla de mayor     │
-│                 precedencia o una persona                              │
+│ 3 · HECHO        app.trip_fleet_links  (UNIQUE trip_id)                 │
+│                  ← app.resolve_trip_fleet()   por TRIGGER, automático   │
+│     Invariante: una vez escrita, sólo la cambia una regla de mayor      │
+│                 precedencia o una persona                               │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 4 · LECTURA          app.v_trip_fleet_resolution                       │
-│     LEE la capa 3. No resuelve nada.                                   │
+│ 4 · LECTURA      app.v_trip_fleet_resolution                            │
+│                  LEE la capa 3. No resuelve nada.                       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 **La regla que ordena todo:** *el conocimiento fluye hacia abajo, nunca hacia arriba.* La capa 4 no
 consulta la 2. La 3 no compara strings al leer. Si una capa necesita algo de dos capas más abajo, la
 que está mal es el diseño, no la consulta.
+
+**Dónde vive cada cosa se deriva de esa misma regla.** Las funciones de identidad **restringen tablas
+de `public`**, así que van en `public`: ponerlas en `app` haría que la base dependa de lo que
+alimenta. El padrón es una **conformación de bronze**, así que va en `silver`, igual que
+`int_tms_trips_conformed`. Es además la convención que el proyecto ya seguía —`reconcile_new_driver`
+y `reconcile_new_asset` viven en `public` porque sirven tablas de `public`.
+
+**Nomenclatura:** identificadores en inglés, como el resto de la base (`vehicle_driver_assignments`,
+`license_plate`, `reconcile_new_driver`); comentarios en español, como el resto del repo.
+
+### 2.1 · Tabla o derivación: la pregunta se responde por capa
+
+| Capa | ¿Tabla o vista? | Por qué |
+|---|---|---|
+| 2 · `vehicle_driver_assignments` | **Tabla** | Guarda correcciones humanas (dato que no existe en ninguna fuente), tiene vigencia en el tiempo, y operaciones la posee |
+| 2 · `int_habitual_driver_by_tractor` | **Vista** | Derivación pura de bronze. Nada que guardar |
+| 3 · `trip_fleet_links` | **Tabla** | Es el hecho fechado. Si se recalcula, el cierre no afirma nada |
+| 4 · `v_trip_fleet_resolution` | **Vista** | Sólo presenta la 3 |
+
+### 2.2 · Qué corre solo y qué se invoca
+
+| | Cuándo | Por qué |
+|---|---|---|
+| `sync_habitual_drivers()` | **Deliberado** | Depende de que Mage recargue un Excel que se está muriendo. Un trigger sobre `bronze` pondría lógica de negocio en la capa cruda e invertiría el flujo |
+| `resolve_trip_fleet()` | **Trigger, automático** | Ningún viaje puede existir sin intento de resolución. Si depende de que alguien se acuerde, vuelve el problema |
+
+El trigger es `FOR EACH STATEMENT` con tabla de transición, no `FOR EACH ROW`: dbt materializa
+`app.trips` con `merge` en lotes de cientos de filas, y el resolvedor arma una tabla temporal por
+invocación.
+
+**Y el guardia de reentrada es una bandera de transacción, no `pg_trigger_depth()`** — que vale 1
+tanto cuando dispara el merge de dbt (queremos que corra) como cuando dispara el `UPDATE` de
+`fleet_link_id` del propio resolvedor (no queremos). Son indistinguibles por profundidad.
 
 ---
 
@@ -156,23 +192,29 @@ viaje (`UNIQUE (trip_id)`, ya está), escrita por un resolvedor.
 
 ### 5.1 · La precedencia, en un solo lugar
 
-| # | Regla | `link_source` | Qué la respalda |
+| # | Regla | `driver_match_rule` | Qué la respalda |
 |---|---|---|---|
-| 1 | Una persona lo dijo | `manual` | Terminal. No la pisa nada. |
+| 1 | Una persona lo dijo | *(NULL — la persona **es** la procedencia)* | Terminal. No la pisa nada |
 | 2 | El TMS trae el RUT | `tms_rut` | Identidad directa (hoy: 8 de 1.541) |
 | 3 | Patente → padrón vigente | `padron` | 94,2% con evidencia < 3 meses |
 | 4 | Nombre exacto contra el roster | `nombre` | 34%. Se registra como tal |
 | — | Nada aplica | *(sin fila)* | La celda vacía **hace la pregunta** |
 
+**Corrección sobre la primera versión de este spec:** la regla del match **no** va dentro de
+`link_source`. Son dos preguntas distintas —*cómo se creó el vínculo* (`manual` | `auto`) y *cómo se
+identificó al conductor*— y meterlas en una columna obliga a inventar un valor para "resolví el
+tracto pero no al conductor". Columna propia, `NULL` cuando no hay conductor:
+
 ```sql
-ALTER TABLE app.trip_fleet_links DROP CONSTRAINT trip_fleet_links_link_source_check;
-ALTER TABLE app.trip_fleet_links ADD CONSTRAINT trip_fleet_links_link_source_check
-    CHECK (link_source IN ('manual','tms_rut','padron','nombre','auto'));
-    -- 'auto' se conserva por las 423 filas del backfill del 18/07
+ALTER TABLE app.trip_fleet_links
+    ADD COLUMN driver_match_rule text,
+    ADD COLUMN resolved_at       timestamptz;
+ALTER TABLE app.trip_fleet_links ADD CONSTRAINT tfl_driver_match_rule_check
+    CHECK (driver_match_rule IS NULL OR driver_match_rule IN ('tms_rut','padron','nombre'));
 ```
 
-**`link_source` es la columna que convierte el sistema en medible.** Con ella se responde "¿cuántos
-cierres de esta semana se apoyan en un match de nombre?" y se prioriza. Con un booleano, no.
+**`driver_match_rule` es la columna que convierte el sistema en medible.** Con ella se responde
+"¿cuántos cierres de esta semana se apoyan en un match de nombre?" y se prioriza. Con un booleano, no.
 
 ### 5.2 · No resolver es una respuesta
 
@@ -223,19 +265,52 @@ firma, más columnas. Y ganan `link_source` gratis.
 
 ---
 
-## 8 · Migración, en orden
+## 8 · Estado — todo aplicado el 2026-08-17
 
-1. **Capa 1** — funciones + trigger + CHECK. *(aplicado 2026-08-17)*
-2. **Capa 2** — `source` + `source_confirmed_at` + CHECK; sembrar desde el padrón con corte de
-   frescura de 90 días.
-3. **Capa 3** — ampliar `link_source`; escribir el resolvedor; backfill de los 1.541 viajes;
-   trigger vía `post_hook`.
-4. **Capa 4** — reemplazar la vista.
-5. **Verificación** — `conductores` se acerca a `tractos` (el 14/08 eran 12 contra 29), `count(*) =
-   count(DISTINCT trip_id)` en la vista, y el reparto por `link_source`.
+| Capa | Migración | Resultado medido |
+|---|---|---|
+| 1 · Identidad | `20260817120000_identidad_canonica.sql` | 79/79 RUT y 118/118 patentes canónicos; `GBVC90⇥` limpiada |
+| 2 · Dimensión | `20260817120100_capa2_padron_y_dimension.sql` | **46 asignaciones sembradas, 419 descartadas por viejas** |
+| 3 + 4 | `20260817120200_capa3_4_resolucion_materializada.sql` | **1.443 viajes materializados** |
 
-Los pasos 3 y 4 van **en la misma migración**: entre uno y otro la vista leería una tabla a medio
+Las capas 3 y 4 van **en la misma migración**: entre una y otra la vista leería una tabla a medio
 llenar.
+
+### 8.1 · Verificación contra producción
+
+**El número que abrió el caso.** El 14/08 el Cierre mostraba **12 conductores contra 29 tractos**, y
+cerrar exigía justificar ~17 ausencias falsas:
+
+| Día | Viajes | Tractos | Conductores | Resuelto |
+|---|---|---|---|---|
+| 11/08 | 43 | 28 | 23 | 70% |
+| 12/08 | 43 | 28 | 22 | 72% |
+| 13/08 | 33 | 26 | 22 | 79% |
+| **14/08** | 47 | **32** | **28** | **85%** |
+| 15/08 | 33 | 28 | 24 | 82% |
+| 16/08 | 16 | 13 | 10 | 81% |
+
+**Sin duplicación:** `1.541 filas = 1.541 viajes distintos = 1.541 en app.trips`.
+
+**Reparto por regla**, que es lo que antes no se podía preguntar:
+
+| Regla | Viajes |
+|---|---|
+| `padron` | 1.154 |
+| *(sin conductor)* | 271 |
+| `nombre` — el match débil, ahora visible | 27 |
+| `tms_rut` | 7 |
+| `manual` — las 9 correcciones humanas, intactas | 9 |
+
+## 8.2 · Pendiente en Mage
+
+Los dos triggers **se pierden con un `dbt --full-refresh`** (hace `DROP` + `CREATE TABLE AS SELECT`).
+Hay que agregarlos al `post_hook` del modelo `app/trips.sql`, junto a `trg_protect_manual_overrides`,
+que está ahí por exactamente esta razón. El push a Mage lo bloquea el clasificador de permisos: las
+dos líneas están al pie de la migración de la capa 3, listas para pegar.
+
+Lo mismo con `silver.int_habitual_driver_by_tractor`: debería ser un modelo dbt como el resto de
+`silver`, y está creada por migración por el mismo bloqueo.
 
 ---
 
