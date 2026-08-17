@@ -14,6 +14,118 @@
 > Diario 2.0", IANSA y la propuesta comercial. Lo que seguía abierto se consolidó ABAJO, en
 > PENDIENTES VIGENTES, antes de mover nada.)
 
+### 2026-08-17 (cont.) — Ronda 122: el modelo de resolución de flota, y el denominador deja de mentir
+
+**Bloque 0 completo, aplicado y verificado en producción.** Spec:
+`docs/superpowers/specs/2026-08-17-modelo-resolucion-flota-design.md`.
+
+#### El defecto de raíz, que no era ninguno de los síntomas
+
+`app.v_trip_fleet_resolution` decidía quién manejó cada viaje **en cada lectura**, con un COALESCE de
+tres niveles sobre comparación de strings. O sea: corregir mañana la tipografía del nombre de un
+conductor **cambia quién aparece en un día que operaciones cerró ayer**. Un cierre es una afirmación
+sobre un instante; si se recalcula, no afirma nada. Para un módulo de cierre eso es descalificante.
+
+Todo lo demás —el 34% de cobertura, el padrón que envejece, la patente con tabulador— eran efectos.
+
+#### Las cuatro capas
+
+```
+bronze (crudo) → silver (conformado) → public (maestro) → app (operación)
+
+1 · IDENTIDAD   public.canonical_rut / canonical_plate + trigger + CHECK
+2 · DIMENSIÓN   public.vehicle_driver_assignments  ← silver.int_habitual_driver_by_tractor
+3 · HECHO       app.trip_fleet_links               ← app.resolve_trip_fleet(), por TRIGGER
+4 · LECTURA     app.v_trip_fleet_resolution        — lee la 3, no resuelve
+```
+
+**No se creó ninguna tabla.** `trip_fleet_links` ya tenía `UNIQUE(trip_id)`, FK a
+drivers/carriers/assets y `link_source`; estaba congelada desde el backfill del 18/07. Sólo faltaba
+quién la escribiera. La vista pasó de **7 JOIN a 2** con la misma firma, así que los 5 routers y 18
+lugares que la consumen no cambiaron una línea.
+
+**Dónde vive cada cosa se deriva de la dirección de dependencias**, no del gusto: las funciones de
+identidad restringen tablas de `public`, así que van en `public` (ponerlas en `app` haría que la base
+dependa de lo que alimenta); el padrón es conformación de bronze, así que va en `silver`.
+Identificadores en inglés, como el resto de la base.
+
+#### El hallazgo que cambió el diseño
+
+El 91% de acierto del padrón **escondía dos poblaciones opuestas**:
+
+| Antigüedad de la evidencia | Casos | Acierto |
+|---|---|---|
+| Menos de 3 meses | 673 | **94,2%** |
+| Entre 3 y 6 meses | 25 | **4,0%** |
+
+Una entrada vieja no es una conjetura peor: es un nombre casi seguro equivocado, y en el Cierre un
+nombre plausible se confirma solo. De ahí el corte de frescura de 90 días — **419 entradas
+descartadas**. No resolver es una respuesta: la celda vacía hace la pregunta, la mal llenada la
+esconde.
+
+#### Cinco defectos propios que encontraron los tests, no la lectura
+
+1. **Un CHECK con `=` sobre una función que devuelve NULL se considera CUMPLIDO.** El candado
+   aceptaba exactamente los valores que venía a rechazar. Va `IS NOT DISTINCT FROM`.
+2. **`trim()` no saca tabuladores** — sólo espacios. `upper(trim())` no es normalización, y había una
+   patente `GBVC90` + TAB invisible para cualquier join.
+3. **`pg_trigger_depth()` no sirve de guardia de reentrada acá**: vale 1 tanto cuando dispara el
+   merge de dbt como cuando dispara el `UPDATE` del propio resolvedor. Va bandera de transacción.
+4. **`source` y `is_manual_override` tenían defaults contradictorios**: cualquier inserción sin
+   especificar violaba el CHECK. Se quitó el default — no hay dato sin procedencia.
+5. **`assets.py` ponía `is_manual_override=true` sin tocar `source` en el `ON CONFLICT`**: reasignar
+   a mano un vehículo del padrón habría reventado.
+
+#### Resultado medido — el número que abrió el caso
+
+| Día | Viajes | Tractos | Conductores | Resuelto |
+|---|---|---|---|---|
+| 14/08 **antes** | 47 | 29 | **12** | 34% |
+| 14/08 **después** | 47 | 32 | **33** | **100%** |
+
+Últimos días al 93-100%. **1.541 filas = 1.541 viajes distintos**: sin duplicación.
+Reparto final: `padron` 1.463 · `tms_rut` 7 · `nombre` **0** · sin conductor 62 · `manual` 9 intactas.
+El match débil de nombre —el del 34%— dejó de dispararse por completo.
+
+#### Las 13 altas (datos, no esquema — por eso van acá y no en una migración)
+
+**6 tractos y 7 conductores** que ruedan hace 30 días y no estaban en los maestros. Nombres en
+`initcap`, que es la convención de las 80 filas existentes.
+
+**Costo declarado: +132 registros de Certificación** (4.990 → 5.122). No es ruido: son vehículos y
+personas que efectivamente trabajan y que Certificación no veía. La carga documental es de negocio
+(ver [[project_carga_documental_es_de_negocio]]).
+
+Quedan fuera 1 tracto y 3 conductores del padrón fresco que **no ruedan** — no se dan de alta por lo
+mismo que no se dieron de alta los ~700 históricos: dispararía requisitos de gente que no trabaja acá.
+
+#### Mage — hecho
+
+Los dos triggers **se perdían con un `dbt --full-refresh`**. Ya están en el `post_hook` de
+`dbt/tms/models/app/trips.sql`, verificado bajando copia limpia del remoto. Se agregó una tercera
+línea que resuelve los viajes sin vínculo: en un full-refresh el `CTAS` inserta las filas **antes**
+de que el post_hook recree el trigger, así que esas filas nunca lo disparan.
+
+**Corrección de una memoria propia**: lo que el clasificador bloquea es `block_update`, no el flujo
+de sync. `sync_local_to_remote` pasó a la primera. No volver a decir "está bloqueado" sin intentarlo.
+
+#### Auditoría: cuántas definiciones de identidad quedan
+
+2 vivas —`public.canonical_rut` y `document_matcher.py:rut_dv()`— y **coinciden** en los 4 casos de
+prueba (son runtimes distintos, no copias). 1 borrada (`app.normalize_rut`, código muerto con nombre
+que mentía). 4 muertas en `dbt/transporters/macros/`, cuyo proyecto apunta a tablas que no existen:
+se borran **con el proyecto**, no sueltas.
+
+#### Próximo paso exacto
+
+1. [ ] **Plan 3 — el recorrido del Cierre** (Bloques 1, 2, 4, 5). Todo diseñado en §8bis del spec del
+   Cierre; falta escribir el plan y ejecutar. **Ya no hay nada bloqueado por terceros.**
+2. [ ] `silver.int_habitual_driver_by_tractor` a modelo dbt. **No urgente**: sobrevive al
+   full-refresh porque dbt no es su dueño. Exige agregar un bloque al DAG de la ingesta.
+3. [ ] **Registro de corridas de extracción** — sigue siendo la única pieza diferible del Cierre.
+
+---
+
 ### 2026-08-17 — Ronda 121: la decisión bloqueante, resuelta — el legacy está vivo como registro, muerto como feed
 
 **Auditoría, sin código.** Se revisó el pipeline `legacy_drivers_transporters` en Mage y se midió la

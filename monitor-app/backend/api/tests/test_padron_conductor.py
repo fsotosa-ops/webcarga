@@ -260,38 +260,44 @@ async def test_reemplaza_una_asignacion_automatica_desactualizada(conexion_rever
         "WHERE asset_id=$1 AND status='ACTIVE'", asset_id) == 1
 
 
+async def test_la_vista_no_mira_el_nombre_del_conductor(conexion_revertida):
+    """Guardia ESTRUCTURAL de la propiedad que compra todo el refactor.
+
+    La version vieja de app.v_trip_fleet_resolution resolvia el conductor
+    comparando `drivers.full_name` con el nombre del TMS, EN CADA LECTURA. Por
+    eso corregir la tipografia de un nombre cambiaba quien aparece en un dia ya
+    cerrado. Ahora la respuesta esta materializada y la vista solo la lee.
+
+    Se comprueba sobre la DEFINICION y no sobre los datos a proposito: la
+    version anterior de este test buscaba un viaje resuelto por `nombre`, y
+    cuando el padron subio la cobertura al 100% dejo de haber ninguno — se
+    salteaba solo, y un test que se saltea no protege nada."""
+    definicion = await conexion_revertida.fetchval(
+        "SELECT pg_get_viewdef('app.v_trip_fleet_resolution'::regclass, true)")
+    assert "full_name" not in definicion, (
+        "la vista volvio a comparar nombres: la historia vuelve a ser reescribible")
+    assert "trip_fleet_links" in definicion, "la vista dejo de leer el hecho materializado"
+
+
 async def test_un_dia_cerrado_no_cambia_cuando_cambian_los_maestros(conexion_revertida):
-    """LA propiedad que compra todo el refactor.
-
-    Antes, app.v_trip_fleet_resolution decidia quien manejo cada viaje EN CADA
-    LECTURA, comparando `drivers.full_name` con el nombre del TMS. Corregir la
-    tipografia de un nombre cambiaba quien aparece en un dia que operaciones ya
-    cerro. Un cierre es una afirmacion sobre un instante; si se recalcula, no
-    afirma nada.
-
-    Ahora la respuesta esta materializada: cambiar el maestro NO la mueve.
-    Este test fallaba con la vista vieja."""
+    """La misma propiedad, comprobada sobre datos reales: renombrar al
+    conductor no mueve la resolucion de un viaje ya resuelto."""
     conn = conexion_revertida
     fila = await conn.fetchrow(
         """
-        SELECT vfr.trip_id, vfr.resolved_driver_id
-        FROM app.v_trip_fleet_resolution vfr
-        JOIN app.trip_fleet_links fl ON fl.trip_id = vfr.trip_id
-        WHERE fl.driver_match_rule = 'nombre' LIMIT 1
+        SELECT trip_id, resolved_driver_id FROM app.v_trip_fleet_resolution
+        WHERE resolved_driver_id IS NOT NULL LIMIT 1
         """
     )
-    if fila is None:
-        pytest.skip("no hay viajes resueltos por nombre: nada que verificar")
+    assert fila is not None, "sin viajes resueltos el test no prueba nada"
 
     await conn.execute(
         "UPDATE public.drivers SET full_name = full_name || ' XX' WHERE id = $1",
         fila["resolved_driver_id"])
 
-    despues = await conn.fetchval(
+    assert await conn.fetchval(
         "SELECT resolved_driver_id FROM app.v_trip_fleet_resolution WHERE trip_id = $1",
-        fila["trip_id"])
-    assert despues == fila["resolved_driver_id"], (
-        "renombrar al conductor movio la resolucion de un viaje ya resuelto")
+        fila["trip_id"]) == fila["resolved_driver_id"]
 
 
 async def test_resolver_es_idempotente(conexion_revertida):
