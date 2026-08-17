@@ -302,15 +302,47 @@ cerrar exigía justificar ~17 ausencias falsas:
 | `tms_rut` | 7 |
 | `manual` — las 9 correcciones humanas, intactas | 9 |
 
-## 8.2 · Pendiente en Mage
+### 8.3 · Cuántas definiciones de "mismo RUT / misma patente" hay, después de esto
 
-Los dos triggers **se pierden con un `dbt --full-refresh`** (hace `DROP` + `CREATE TABLE AS SELECT`).
-Hay que agregarlos al `post_hook` del modelo `app/trips.sql`, junto a `trg_protect_manual_overrides`,
-que está ahí por exactamente esta razón. El push a Mage lo bloquea el clasificador de permisos: las
-dos líneas están al pie de la migración de la capa 3, listas para pegar.
+Auditado el 2026-08-17, porque el riesgo de este modelo es que las reglas de identidad se
+multipliquen sin que nadie lo note.
 
-Lo mismo con `silver.int_habitual_driver_by_tractor`: debería ser un modelo dbt como el resto de
-`silver`, y está creada por migración por el mismo bloqueo.
+| Dónde | Estado | Qué se hizo |
+|---|---|---|
+| `public.canonical_rut` / `canonical_plate` / `rut_check_digit` | **Viva** — restringe los maestros | Es la autoridad |
+| `app/services/document_matcher.py:40` `rut_dv()` | **Viva** — la usa el matcher | **Se dejó.** Mismo algoritmo y misma forma canónica `12345678-9`; verificado que coincide en los 4 casos de prueba. Es otro runtime, no una copia redundante |
+| `app.normalize_rut` | **Borrada** | Código muerto con nombre que mentía |
+| `dbt/transporters/macros/`: `clean_rut`, `is_valid_rut`, `clean_plate`, `calculate_expected_dv` | **Muertas** | El proyecto `transporters` apunta a `app.transporter_profiles` y `silver.silver_transporters`, que **no existen**. Mismo patrón que `centralizer_to_app`. Se dejaron: borrarlas es parte de retirar ese proyecto entero (pendiente 16 del AGENTLOG), no de este trabajo |
+| `upper(trim())` inline en `v_trip_fleet_resolution` | **Eliminada** | La vista ya no compara patentes: lee el hecho materializado |
+
+Las dos que quedan vivas coinciden. Las muertas conviene borrarlas **con su proyecto**, no sueltas:
+sacar una macro de un dbt que igual no corre no reduce la confusión, sólo la mueve.
+
+## 8.4 · Mage — hecho, y lo que queda
+
+**Hecho (2026-08-17).** Los dos triggers **se perdían con un `dbt --full-refresh`** (hace `DROP` +
+`CREATE TABLE AS SELECT`). Ya están en el `post_hook` de `dbt/tms/models/app/trips.sql`, junto a
+`trg_protect_manual_overrides`, que está ahí por exactamente esta razón. Verificado bajando una copia
+limpia del remoto.
+
+Se agregó además una tercera línea que cierra un hueco de orden de ejecución:
+
+```sql
+"SELECT app.resolve_trip_fleet(array(
+   SELECT t.id FROM app.trips t
+   LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
+   WHERE fl.trip_id IS NULL))"
+```
+
+En un `--full-refresh` el `CREATE TABLE AS SELECT` inserta las filas **antes** de que el post_hook
+recree el trigger, así que esas filas nunca lo disparan. Sin esa red, el refresh que restaura los
+triggers deja igual un agujero de viajes sin resolver. Medido: **0 escritos, 73 evaluados** — no-op
+en régimen normal.
+
+**Queda:** `silver.int_habitual_driver_by_tractor` debería ser modelo dbt como el resto de `silver`.
+No se hizo porque un archivo de modelo **no corre solo** — necesita un bloque dbt en el DAG, y eso
+cambia el grafo de ejecución de la ingesta. Dejarlo a medias sería peor: un modelo que parece que
+corre y no corre. Y no es urgente: **esa vista sobrevive al full-refresh** porque dbt no es su dueño.
 
 ---
 
