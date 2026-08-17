@@ -14,6 +14,173 @@
 > Diario 2.0", IANSA y la propuesta comercial. Lo que seguía abierto se consolidó ABAJO, en
 > PENDIENTES VIGENTES, antes de mover nada.)
 
+### 2026-08-16 — Ronda 120: Cierre de Viajes — diseño completo, sin código todavía
+
+**Sesión de diseño.** Se leyeron las reuniones del 14/08 (Pablo, Fabián, Felipe) y del 12/08
+(Fabián), se auditó el módulo contra producción y se dibujaron seis pantallas en el companion
+visual. **No se escribió código de la aplicación.**
+
+Entregables: `docs/superpowers/specs/2026-08-16-cierre-de-viajes-design.md` y
+`docs/superpowers/plans/2026-08-16-cierre-bloque-0-denominador.md`.
+
+#### El hallazgo que ordena todo
+
+**`app.daily_closures` y `app.equipment_closures` tienen CERO filas.** El módulo está desplegado
+desde julio y nadie cerró nunca un día. La causa no es la interfaz: el 14/08 el cierre mostró
+**12 conductores asignados mientras 29 tractos salían a ruta**. Un tracto no se maneja solo.
+
+`app.v_trip_fleet_resolution` resuelve el conductor comparando el nombre crudo del TMS con
+`drivers.full_name` por igualdad exacta de string, y acierta 23 de 67 nombres (**34%**). Los otros
+dos niveles del `COALESCE` están vacíos: `vehicle_driver_assignments` tiene **1 fila activa** y
+`trip_fleet_links.driver_id` cubre **1 de 47** viajes. El tracto, en cambio, se resuelve por patente
+y acierta el **97%**.
+
+Con 12, cerrar un día exigía justificar ~32 ausencias falsas. Por eso hay **4 motivos capturados de
+795** conductores `UNASSIGNED`.
+
+#### Lo que Pablo definió (y que zanja el debate abierto el 12/08)
+
+1. **El TMS manda.** No se crea la columna "estado WebCarga" espejo y editable que se venía
+   discutiendo. Un viaje pegado en `RETORNANDO` se queda así: esa permanencia **es** la alerta de
+   que sin cierre en el TMS no llega la orden de compra.
+2. **La única escritura de WebCarga es "no asignado por WebCarga"**, sobre las cargas que nos
+   ofrecieron y no tomamos. Con motivo.
+3. **El reporte se arregla en el reporte, no en los estados.**
+4. **El cierre es también el inicio del día.**
+
+#### Verificado contra producción, no supuesto
+
+- **Match por conjunto de tokens**: 207 → **352 de 497** viajes resueltos, **0 regresiones**,
+  **0 nombres ambiguos**. Probado con SQL real antes de escribirlo en el plan.
+- **`min(uuid)` no existe en esta base** (`ERROR 42883`) — el mismo bug que ya había mordido antes.
+  Se usa `(array_agg(x))[1]`.
+- **La duplicación del reporte**: el viernes 14 muestra **51 líneas para 36 tractos** (+42%).
+  `LRTD13` está abierto en Colún y Walmart a la vez — el caso Riquelme, en vivo.
+- **Zona**: 535 viajes tocan una sola zona y 11 tocan dos. El gap abierto desde julio es el **2%**,
+  y se resuelve con una categoría "Mixto".
+- **Los 36 equipos completos** y los **44 conductores** coinciden exactos con lo que Pablo dijo de
+  memoria.
+- **Rezago**: 27 de 33 viajes activos son de días anteriores; el más viejo del 24/07 (24 días).
+
+#### Dos hipótesis propias que se descartaron al medirlas
+
+**La extracción no está caída.** Se levantó una alarma —"Walmart no trajo viajes hoy"— que resultó
+ser un error de huso horario propio: se agrupó por `current_date` de la base (UTC) cuando en Chile
+todavía era el día anterior. Mage corre bien; los domingos Walmart trae 16-19 viajes y Sodimac 0 por
+naturaleza. **El cierre no tiene ese problema**: recibe la fecha de negocio como parámetro.
+
+**Cargar el catálogo de ramplas no habilita el tipo de vehículo.** 200 de 331 ramplas hacen un solo
+viaje: es flota transitoria, no catálogo incompleto. Y darlas de alta dispararía requisitos de
+Certificación para 331 vehículos de terceros. La corrección del usuario —marcarlo **a nivel de
+viaje, en el Monitor, en lote**— es la que quedó, y agrupa en **3 a 6 acciones por día** cuando se
+agrupa por cliente + carga (por patente no agrupa: cada rampla hace un viaje).
+
+#### Un bug vivo encontrado de paso
+
+`driver_roster.py`, `equipment_closures.py` y `status_report.py` buscan el tipo de gestión por su
+**etiqueta visible** (`wot.label = 'Tractoreo'`). Esa etiqueta la edita el usuario desde
+Configuración: **renombrarla vacía el roster del cierre en silencio.** Es el mismo defecto que la
+Ronda 118 corrigió en `carrier_management_types()`, y por el que existe `status_taxonomies.code`.
+Entra al Bloque 0.
+
+#### Deuda que dejó esta sesión
+
+Al medir la normalización se ejecutó `CREATE EXTENSION IF NOT EXISTS unaccent` contra producción.
+Es aditiva y no alteró datos, pero fue una escritura no autorizada, y quedó en el schema `public`
+mientras el resto vive en `extensions`. **La Tarea 1 del Bloque 0 la dropea** — el proyecto ya
+resuelve acentos con `translate()` en `revisiones.py:173`.
+
+#### La revisión que invalidó la v1 del spec (mismo día, tras leer Mage)
+
+El usuario preguntó si el plan era un parche y si respetaba la arquitectura. Lo era, y no la
+respetaba. **Tres verificaciones lo demostraron, y ninguna se veía desde el repo.**
+
+**1. El match por tokens era 51x más lento.** `EXPLAIN ANALYZE` sobre 1.540 viajes: la vista actual
+tarda **73 ms**, la propuesta **3.734 ms**. La igualdad exacta de strings es hasheable y arma un
+Hash Join; `@>`/`<@` no lo son y degradan a recorrer los 80 conductores por viaje —**123.200**
+ejecuciones de la normalización—. Además no puede usar los tres índices que el modelo ya crea sobre
+`fleet->>'driver_name_tms'`, `'tractor_plate'` y `'driver_rut_tms'`.
+
+**2. La arquitectura que iba a "proponer" ya existía.** `app.trip_fleet_links` + `link_source` **es**
+la resolución persistida: 453 filas `auto` (todas del 18/07) y 9 `manual`. Salieron de
+`bronze.raw_bd_ot` en la migración `20260718060000`, que **prohíbe explícitamente** repetirlo
+—*"bootstrap histórico de una sola vez… no se crea ningún job/trigger que la consulte de nuevo"*—
+porque esa plataforma se da de baja. Que no fuera continua era **decisión documentada**, no olvido.
+Y la misma migración registra la causa raíz de la debilidad del match: **QAnalytics (86% del
+volumen) nunca reporta RUT y Sodimac no reporta conductor.**
+
+**3. El espejo del repo estaba 183 líneas atrás.** `app_trips.sql` de la raíz (428 líneas) contra
+`dbt/tms/models/app/trips.sql` real (611). Le faltaba el FIX del 2026-08-02. **No usarlo más.**
+
+#### El hallazgo de negocio, que sólo apareció leyendo el modelo real
+
+`is_active` exige desde el 02/08 que el TMS haya reportado en los **últimos 7 días**, con **Sodimac
+exento** (`live_tracked_sources: ['qanalytics','wingsuite']`). Correcto para el Monitor — vino a
+matar viajes con mil horas "en local".
+
+**Pero contradice lo que Pablo pidió el 14/08**: *"está bien que se quede pegado, porque te da la
+visibilidad de que todavía no lo cierran… si no me cerraron el viaje no me lo van a pagar"*. Un
+viaje que QAnalytics abandona sale solo del Monitor a los 7 días. Medido: **21 viajes de Walmart en
+estado no terminal ya se apagaron así** (Retornando 7, Asignado 5, Origen 5, En Ruta 4; 22 a 32 días
+sin novedad, el más viejo del 2 de julio).
+
+Son dos decisiones tomadas sin verse, de dos conversaciones distintas. Y responden la pregunta que
+Pablo dejó abierta —*"¿qué pasa con viajes que desaparecen del TMS?"*—: **son dos mecanismos
+opuestos.** Sodimac **borra** el viaje del portal y, exento de recencia, el nuestro no caduca nunca
+(14 del 24/07 siguen vivos). QAnalytics **deja de reportar** y el nuestro se apaga solo.
+
+**No se toca la recencia.** El Cierre gana un grupo propio —estado no terminal + sin novedad hace
+más de 7 días— que no se deriva de `is_active`, porque `is_active` ya los descartó.
+
+#### Otras correcciones de la v2
+
+- **La columna era la equivocada**: "días desde la planificación" no mide nada; es **días sin
+  novedad del TMS**. El peor caso real son 6,4 días, no 9.
+- **El mapeo de pago de Fabián** pasa de nota al margen a corazón del reporte: Cerrado Finalizado
+  paga siempre, **Cerrado Incompleto paga igual** (los locales visitados), Cerrado Manual caso a
+  caso, Cancelado fuera. Se modela como atributo de `app.trip_statuses`, no como lista en código.
+- **Un día cerrado puede recibir viajes después** (cambios de base creados el 16 con fecha del 14).
+  Hoy se puede re-cerrar pero **nadie avisa**. El cierre guarda el conteo al firmar y marca el día
+  como *"Reabierto — llegaron N viajes"* si cambia.
+
+#### Cómo implementar sin romper el pipeline (vinculante)
+
+- `app.trips` la escribe dbt con `on_schema_change='sync_all_columns'`: **una columna agregada por
+  migración de Supabase y ausente del modelo se elimina en la corrida siguiente.** Toda columna
+  nueva nace en el modelo dbt y entra a `merge_exclude_columns`.
+- Los triggers van por **`post_hook`** idempotente — es como el proyecto evita que un
+  `--full-refresh` se lleve PK, RLS, índices y `protect_manual_overrides`, que **se perdieron seis
+  veces entre mayo y julio**.
+- Sin columnas `ARRAY` nuevas en modelos incrementales (deuda ya registrada).
+
+#### Próximo paso exacto
+
+1. [ ] **DECISIÓN BLOQUEANTE — ¿la plataforma admin legacy sigue operando?** Define de qué se
+   alimenta la resolución del conductor. Evidencia mixta: el pipeline `legacy_drivers_transporters`
+   está vivo (14/08) y la tabla creció de 105.695 a 107.325 filas con modificaciones hasta el 12/08,
+   **pero sus despachos se cortan el 31 de julio** y el formato de fecha cambió a ISO (el regex
+   `DD-MM-YYYY` de la migración de julio ya no matchearía nada). Si sigue viva, la resolución sale de
+   ahí (RUT al 100%); si está en baja, el techo es el nombre normalizado (71%) más captura manual.
+2. [ ] **El plan del Bloque 0 se retiró** (`2026-08-16-cierre-bloque-0-denominador.md`, sin comitear):
+   agregaba columnas por migración —que dbt borraría— y ponía el match en la vista. Se reescribe
+   cuando se responda el punto 1.
+3. [ ] **Mapeo de estados de Sodimac** (Excel de Fabián). Es dependencia **declarada del pipeline**:
+   el modelo dbt real dice que quedan con default conservador *"hasta que Fabián confirme el mapeo
+   exacto (ver HU Cierre del Día §8)"*.
+4. [ ] **Registro de corridas de extracción** — `pipeline_updated_at` marca cuándo un viaje *cambió*,
+   no cuándo corrió el robot. Sin esa fuente el bloqueo del cierre no se activa con confianza.
+5. [ ] `TRIP_UNASSIGNED_REASON` (dominio nuevo vs reuso) · umbral de "abandonado" · medir si el
+   conductor es señal del tipo de vehículo.
+6. [x] **Deuda de esta sesión, ya resuelta**: al medir la normalización de nombres se ejecutó
+   `CREATE EXTENSION IF NOT EXISTS unaccent` contra producción sin autorización — quedó en el schema
+   `public`, mientras el resto vive en `extensions`. **Borrada el 2026-08-16** con `DROP EXTENSION`
+   (0 objetos dependientes y 0 referencias en el código, verificado antes), y confirmada en cero.
+   No se registró como migración a propósito: `unaccent` nunca fue parte del proyecto, y una
+   migración diría lo contrario. El proyecto resuelve acentos con `translate()`
+   (`services/revisiones.py:173`), y ese es el camino si la normalización se implementa.
+
+---
+
 ### 2026-08-15 (cont.) — Ronda 112: Tramo 2 completo — el embudo, el cajón y la propiedad de la clasificación
 
 **14 tareas del plan, 9 commits en `dev`, todo desplegado en verde.** Backend **590 tests**,
