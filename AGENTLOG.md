@@ -153,8 +153,53 @@ más de 7 días— que no se deriva de `is_active`, porque `is_active` ya los de
   veces entre mayo y julio**.
 - Sin columnas `ARRAY` nuevas en modelos incrementales (deuda ya registrada).
 
+#### Auditoría visual — un workstream aparte que salió de esta sesión
+
+El usuario planteó que **la app se ve fea** y que los mockups salen mejores que lo construido. Se
+auditó el ambiente desplegado con Playwright a 1440×900, **midiendo el DOM**, no estimando sobre
+capturas. Informe: `docs/superpowers/specs/2026-08-16-sistema-visual-design.md` + Artifact.
+
+**No está rota: está sin sistema.** `globals.css` son 68 líneas con 14 tokens, **todos de color** —
+cero de tipografía, espaciado, radio o peso. Y aun en color se lo saltan: **571 usos de tokens
+propios contra 1.824 de color crudo de Tailwind, sobre 148 combinaciones distintas**.
+
+Medido por pantalla: **8-9 tamaños de letra** y **13-21 colores de texto**. En el Monitor hay
+**428 elementos a 10 px o menos** (248 a 10, 152 a 9, 28 a 8). Eso no es jerarquía, es ruido, y es
+la causa principal de que se lea como tosca aunque ninguna pantalla esté mal resuelta.
+
+**Dos hallazgos que no son de estética:**
+- **Voseo en producción, 5 casos**, contra el MUST del usuario. El más visible encabeza el módulo de
+  Cierre: *"Revisá pendientes, cerrá Tractoreo… y compartí el reporte"*.
+- **Pantallas que afirman cosas falsas mientras cargan**: Certificación muestra **"0 documentos por
+  cubrir"** en cifra grande y después salta a 2.360; el Cierre deja **"Confirmar cierre" habilitado**
+  con el área de datos vacía — se puede firmar un día sobre datos que no llegaron.
+
+También medido: **46 textos cortados**, **221 px ocultos** tras scroll horizontal a 1440 (Destinos y
+Temperatura caen fuera en un laptop), y filas de **63 a 96 px** porque los nombres del TMS se parten
+en cuatro renglones. Lo que **sí está bien** y no hay que tocar: la portada de Configuración, el
+cajón de Certificación y la navegación por módulos.
+
+#### El mapa de specs y planes
+
+| Plan | Depende de | Estado |
+|---|---|---|
+| 1 · Deuda visual urgente (voseo + estados de carga) | nada | **escrito, listo para ejecutar** |
+| 2 · Tokens y componentes compartidos | nada | por escribir |
+| 3 · El recorrido del Cierre (Bloques 1, 2, 4) | plan 2 | por escribir |
+| 4 · El denominador (Bloque 0) | decisión de negocio | bloqueado |
+| 5 · Reportería (Bloque 3) | registro de corridas · Excel de Fabián | bloqueado |
+
+El spec del Cierre ganó **§8bis — La interfaz**, con lo decidido mirando los mockups: item propio en
+el Sidebar, atajo en el Monitor que dice *cuánto falta* y no sólo su nombre, el título de cada paso
+escrito **como pregunta**, riel clickeable, momento de confirmación entre pasos, teclado completo, y
+la regla de la fila (lo justo para decidir arriba, el detalle abajo). Declara el sistema visual como
+**dependencia dura**: construir esas pantallas antes obliga a rehacerlas.
+
 #### Próximo paso exacto
 
+0. [ ] **Ejecutar `docs/superpowers/plans/2026-08-16-visual-deuda-urgente.md`** (4 tareas). No
+   depende de ninguna decisión pendiente y saca de producción el voseo y las dos pantallas que
+   mienten mientras cargan.
 1. [ ] **DECISIÓN BLOQUEANTE — ¿la plataforma admin legacy sigue operando?** Define de qué se
    alimenta la resolución del conductor. Evidencia mixta: el pipeline `legacy_drivers_transporters`
    está vivo (14/08) y la tabla creció de 105.695 a 107.325 filas con modificaciones hasta el 12/08,

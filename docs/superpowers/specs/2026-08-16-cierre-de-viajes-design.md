@@ -326,6 +326,63 @@ combinaciones** — un viernes de 47 viajes se marca en seis acciones.
 
 ---
 
+## 8bis. La interfaz — decidida mirándola
+
+Seis pantallas de mockup revisadas en sesión. Lo que quedó:
+
+### Dónde vive
+
+**Item propio en el Sidebar**: Operaciones › Monitor · **Cierre del Día**, con contador. Hoy no
+existe — `Sidebar.tsx:18-23` sólo tiene Monitor, y su comentario ya lo anticipaba: *"`/dashboard/
+operations/closures` pasará a ser el Centro de Cierre del Día (tarea futura), que todavía no tiene
+link de nav propio"*.
+
+**Atajo desde el Monitor**: el botón no dice sólo su nombre, dice **cuánto falta** — un `29` grande
+y "15 conductores y 14 cargas esperan tu respuesta". Un botón que dice "Cerrar el día" a secas no da
+ninguna razón para apretarlo. Los dos contadores son el mismo número y bajan a cero al terminar.
+
+### La escena
+
+- **El título de cada paso es la pregunta**, no el nombre del módulo: *"¿Por qué no salieron estos
+  15?"*, no "Tractoreo". El subtítulo dice **por qué se pregunta** — *"son conductores dedicados,
+  trabajan sólo para WebCarga, así que todos los días deberían tener viaje"* — que es lo que nadie
+  sabe la primera vez. Con eso la pantalla no necesita tour ni globitos.
+- **"Se guarda solo"** visible arriba a la derecha.
+- **Riel de progreso** con los 4 pasos y su contador, **clickeable**: el orden es una sugerencia
+  buena, no una reja.
+- **Momento entre pasos**: confirmación breve ("Tractoreo listo · 15 con motivo · quedan 2 pasos"),
+  saltable con Enter. En una tarea repetitiva y sin recompensa, ver el avance es lo que hace que se
+  termine.
+- **Teclado completo**: `↓↑` mover · `espacio` elegir · `A` todas · `M` abrir motivos · `1..9`
+  aplicar motivo · `Enter` confirmar y avanzar · `Esc` volver. Un coordinador hace esto todos los
+  días a las siete; si el teclado no alcanza, del mes en adelante deja de cerrar.
+
+**Lo que NO se hace**: pantalla completa que tape el menú (encerrar al usuario le quita la salida),
+animaciones más allá de la confirmación (a la tercera vez son espera), forzar el orden, ni tutorial.
+
+### La fila: lo justo para decidir, el resto abajo
+
+La fila cerrada muestra **sólo lo que cambia la respuesta**; el detalle se abre hacia abajo, en el
+mismo lugar — sin panel lateral ni pantalla nueva, el patrón que Certificación ya adoptó.
+
+| Paso | En la fila | Al abrir |
+|---|---|---|
+| **Tractoreo** | conductor · empresa · tracto · **zona** · gestión · motivo | teléfono, RUT, rampla, último viaje, dónde quedó, alertas de documentación, y las acciones (llamar, ver ficha) |
+| **Viajes** | fecha · días · cliente · ID · motivo | estado TMS, origen, destino, **zona**, y flota **vacía a propósito** — ese vacío *es* el criterio |
+
+Lo de arriba sirve para **decidir**; lo de abajo para **actuar**. La zona no es decoración: un
+conductor que quedó en Región Sur no se compara con uno en la RM, y filtrar por Z0 permite resolver
+esos 10 de una sola vez.
+
+### Dependencia dura
+
+**Estas pantallas se construyen sobre los tokens y componentes del spec de sistema visual**
+(`2026-08-16-sistema-visual-design.md`). Construirlas antes obliga a rehacerlas: la auditoría midió
+8 tamaños de letra y 13 colores de texto por pantalla, sin ningún componente compartido de
+encabezado, cifra, fila o estado vacío.
+
+---
+
 ## 9. Cómo se implementa sin pasar a llevar el pipeline
 
 Verificado contra el proyecto Mage sincronizado. **Esto es vinculante para los planes.**
