@@ -14,6 +14,93 @@
 > Diario 2.0", IANSA y la propuesta comercial. Lo que seguía abierto se consolidó ABAJO, en
 > PENDIENTES VIGENTES, antes de mover nada.)
 
+### 2026-08-17 — Ronda 121: la decisión bloqueante, resuelta — el legacy está vivo como registro, muerto como feed
+
+**Auditoría, sin código.** Se revisó el pipeline `legacy_drivers_transporters` en Mage y se midió la
+cuadratura de los RUT contra producción. La pregunta que bloqueaba el Plan 4 **queda respondida**, y
+la respuesta no era ninguna de las dos que estaban planteadas.
+
+#### La "plataforma legacy" no es una plataforma
+
+`raw_bd_ot_master.py` no consulta ningún sistema: descarga por Microsoft Graph el archivo
+**`Teamwebcarga/Documentos compartidos/Finanzas/BD OT 2026.xlsx`**, hoja `BD OT`. Vive en
+**Finanzas**, y eso explica todo lo demás.
+
+**Está vivo**: última modificación **2026-08-12** (metadato de SharePoint, que coincide exactamente
+con el `max(f_h_modificacion)` de la tabla). 165 OT creadas y 685 modificadas en agosto.
+
+**Pero cambió de oficio**: **cero despachos en agosto**; el último `f_despacho` es **2026-07-31**, y
+todas las filas de julio en adelante están en `Pendiente de pago` / `Feedback`. Dejó de ser registro
+de operación y es hoy un **libro de liquidación**. Por eso la evidencia parecía contradictoria: el
+archivo se edita todos los días, y aun así no sabe nada de lo que pasó ayer en ruta.
+
+#### La cuadratura de los RUT: el dato es bueno
+
+| Medición | Resultado |
+|---|---|
+| Filas con `rut_chofer` | 107.325 de 107.325 (100%) |
+| Normalizan a RUT plausible (8-9 caracteres) | 105.620 (98,4%) |
+| **Pasan el dígito verificador (módulo 11)** | **103.097 — 97,6%** |
+| Formatos conviviendo | 55.519 con guión · 35.032 con puntos · 13.779 sin nada |
+
+Los RUT inválidos son cola larga: por valor distinto sólo 565 de 763 son válidos, o sea la basura es
+de bajo volumen y los RUT que se repiten mucho son los correctos. Firma típica de un registro real.
+
+#### El match funciona… en julio, que es la única ventana donde ambas fuentes se solapan
+
+`app.trips` va del 01/07 al 18/08; los despachos del legacy cortan el 31/07. Cruzando por **patente
+de tracto + fecha de despacho** sobre los 985 viajes de julio:
+
+| | Viajes |
+|---|---|
+| Con patente | 960 de 985 (97,5%) |
+| **Resueltos a un único RUT** | **825 — 86% de los que tienen patente, 84% del total** |
+| Ambiguos (más de un RUT) | **6 (0,6%)** |
+| Sin match | 129 |
+
+Contra el **34%** que logra hoy la igualdad exacta de nombre. La ambigüedad, que era el riesgo
+teórico del cruce por patente, resultó ser el 0,6%.
+
+#### Y no sirve para agosto — de ahí sale el diseño correcto
+
+De los **528 viajes de agosto con patente, 0 cruzan por el mismo día**. Obvio: el archivo no tiene
+despachos de agosto. **Pero las 528 patentes son conocidas por el legacy históricamente.**
+
+O sea: el legacy no sirve como *feed diario*, sirve como **padrón**. En vez de cruzar por día, se
+deriva una vez un registro **patente → conductor** y se resuelve contra él.
+
+**Backtest honesto** (padrón construido SÓLO con datos anteriores al 01/07, evaluado contra la
+verdad de julio): **91,0% de acierto** donde hay entrada previa, 88,9% sobre todos los casos.
+
+**Aplicado a agosto: 528 de 528 viajes con patente resuelven — 47 patentes, 46 conductores.** La
+flota real de agosto son 47 tractos, no cientos.
+
+**Y la brecha para cerrarlo son 8 filas**: 38 de esos 46 conductores **ya están** en `public.drivers`
+(que tiene 79 con `tax_id`). El legacy conoce 763 RUT distintos; el padrón operativo son decenas.
+
+#### Bug real en el dedup de Mage
+
+`bd_ot_master.sql` inserta filtrando con
+`WHERE NOT EXISTS (select 1 from bronze.raw_bd_ot target where target.hash_id = md5(t::text))`.
+Eso compara **sólo contra el destino, nunca dentro del propio lote**: si el Excel trae dos filas
+idénticas en la misma carga, las dos pasan el filtro y las dos entran.
+
+**Medido: 107.325 filas contra 103.848 `hash_id` distintos → 3.477 filas duplicadas.** No es fatal
+—río abajo se deduplica por `id_envio`— pero significa que **el conteo de filas no es conteo de OT**
+(98.960 OT distintas, 1,08 versiones cada una) y que recargar el archivo infla la tabla.
+
+#### Lo que esto define para el Bloque 0
+
+El padrón **envejece**: es exacto hoy porque se alimentó hasta el 31/07, y va a derivar a medida que
+cambien los conductores. El diseño entonces no es "leer el legacy", es **sembrar con el legacy y
+dejar que operaciones corrija** — que es exactamente lo que ya hace `trip_fleet_links` con
+`link_source='manual'` (9 filas hoy) contra `'auto'` (423, todas del backfill del 18/07, congeladas).
+La corrección humana gana, y el legacy puede morir sin llevarse el sistema.
+
+**No hace falta que el archivo siga vivo.** Eso desbloquea el Plan 4 sin depender de Finanzas.
+
+---
+
 ### 2026-08-16 — Ronda 120: Cierre de Viajes — diseño completo, sin código todavía
 
 **Sesión de diseño.** Se leyeron las reuniones del 14/08 (Pablo, Fabián, Felipe) y del 12/08
@@ -288,15 +375,17 @@ la regla de la fila (lo justo para decidir arriba, el detalle abajo). Declara el
    El sistema visual es ahora **dependencia satisfecha** del Plan 3: las pantallas del Cierre se
    pueden construir sobre la escala, los tres componentes compartidos y los tres roles de color, en
    vez de nacer con deuda que después hay que migrar.
-1. [ ] **DECISIÓN BLOQUEANTE — ¿la plataforma admin legacy sigue operando?** Define de qué se
-   alimenta la resolución del conductor. Evidencia mixta: el pipeline `legacy_drivers_transporters`
-   está vivo (14/08) y la tabla creció de 105.695 a 107.325 filas con modificaciones hasta el 12/08,
-   **pero sus despachos se cortan el 31 de julio** y el formato de fecha cambió a ISO (el regex
-   `DD-MM-YYYY` de la migración de julio ya no matchearía nada). Si sigue viva, la resolución sale de
-   ahí (RUT al 100%); si está en baja, el techo es el nombre normalizado (71%) más captura manual.
-2. [ ] **El plan del Bloque 0 se retiró** (`2026-08-16-cierre-bloque-0-denominador.md`, sin comitear):
-   agregaba columnas por migración —que dbt borraría— y ponía el match en la vista. Se reescribe
-   cuando se responda el punto 1.
+1. [x] **DECISIÓN BLOQUEANTE — RESUELTA en la Ronda 121 (2026-08-17).** No era "viva o muerta": el
+   legacy es un Excel de Finanzas, **vivo como padrón** (editado el 12/08) y **muerto como feed**
+   (cero despachos en agosto). El camino es sembrar un padrón `patente → conductor` — **91% de
+   acierto backtesteado, 528/528 viajes de agosto resueltos** — y dejar que operaciones corrija por
+   `trip_fleet_links.link_source='manual'`. **No depende de que el archivo siga vivo.**
+2. [ ] **Reescribir el plan del Bloque 0** con el padrón como fuente (el anterior,
+   `2026-08-16-cierre-bloque-0-denominador.md`, se retiró sin comitear: agregaba columnas por
+   migración —que dbt borraría— y ponía el match en la vista). Ya no está bloqueado.
+2b. [ ] **Bug del dedup de Mage en `bd_ot_master.sql`**: el `WHERE NOT EXISTS` compara sólo contra
+   el destino, no dentro del lote — 3.477 filas duplicadas (107.325 filas vs 103.848 hashes).
+   Arreglo: `SELECT DISTINCT` en el origen, o `GROUP BY hash_id` antes del insert.
 3. [ ] **Mapeo de estados de Sodimac** (Excel de Fabián). Es dependencia **declarada del pipeline**:
    el modelo dbt real dice que quedan con default conservador *"hasta que Fabián confirme el mapeo
    exacto (ver HU Cierre del Día §8)"*.
