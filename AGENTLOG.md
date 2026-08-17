@@ -179,6 +179,53 @@ Temperatura caen fuera en un laptop), y filas de **63 a 96 px** porque los nombr
 en cuatro renglones. Lo que **sí está bien** y no hay que tocar: la portada de Configuración, el
 cajón de Certificación y la navegación por módulos.
 
+#### Plan 2 ejecutado, y la lección que costó cuatro iteraciones
+
+**Los cimientos sin aplicar no son progreso.** Se entregaron tokens (5 pasos de escala + Fira Code
+para identificadores), tres componentes compartidos (`EncabezadoDePagina`, `Cifra`, `Estado`) y tres
+guardias de deuda. Al desplegarlo, el usuario dijo lo obvio: **"lo veo igual"**. Y tenía razón — el
+propio plan decía *"Afuera: rediseñar pantallas una por una"*, o sea estaba diseñado para no cambiar
+nada visible, y eso no se comunicó antes de ejecutarlo.
+
+Después vinieron tres correcciones más, todas por feedback y todas justas:
+
+1. **Sólo se había migrado la tabla del Monitor**, no el tablero. Se había justificado como decisión
+   ("el color es la identidad de la columna") cuando en realidad no se había hecho.
+2. **La cáscara nunca se tocó** — y es lo que ocupa más superficie. El fondo era `#e5e5e5`, un gris
+   medio plano que compite con el blanco de las tarjetas en vez de sostenerlo; las superficies
+   estaban definidas sólo por su borde. Cambiarlo en `globals.css` alcanzó las **nueve pantallas de
+   una vez**, que es lo que finalmente se vio.
+3. **Tres cambios propios que hubo que revertir**: hacer condicional la columna de Temperatura
+   (escondía algo que el usuario espera ver), fusionar TMS+Cliente en la posición equivocada, y
+   quitar Teléfono como columna sin dejar claro que el dato seguía visible.
+
+**Orden correcto para la próxima**: cáscara primero (fondo, superficies, barra lateral) porque es lo
+que se ve; después los componentes; los tokens y guardias en paralelo, sabiendo que son invisibles.
+
+#### Lo entregado y verificado en dev
+
+- **Deuda urgente**: 8 casos de voseo (el test encontró 3 más que un grep a mano) con un guardia que
+  recorre el código fuente · la cifra de Certificación ya no muestra un "0" falso mientras carga
+  (verificado: **15 frames sin cifra**, luego 951) · "Confirmar cierre" no se puede apretar con los
+  datos a medio cargar.
+- **Monitor**: de 6 tamaños de letra a 2 y de **10 tonos de gris a 3** en `TripTable` · fuera el
+  **zebra striping** · la patente como objeto tipográfico monoespaciado · el estado como punto de
+  color en vez de pastilla rellena (el color sigue saliendo del catálogo) · nombres normalizados en
+  presentación, con el dato del TMS intacto · de 12 columnas a 9 y el desborde de 343 a 167px.
+- **Filtro nuevo "Con temperatura"** — el que había sólo mostraba los que ya fallaron.
+- **Bug propio atrapado por la suite**: `||` entre dos `useIsFetching` deja de llamar al segundo
+  hook; React revienta. Los dos hooks se llaman siempre.
+
+**1.078 tests, `tsc` y `build` en verde.** Deuda de color: 1.824 → 1.802 (baja poco a propósito: la
+mayoría vive en chips y badges). `<h1>` a mano: 15 → 10, y los 10 restantes no son encabezado de
+módulo.
+
+#### Lo que queda del sistema visual
+
+Chips de filtro y badges de alerta (donde está la mayoría del color crudo) · el detalle del viaje y
+el modal de flota, sin mirar · las barras de progreso de Certificación, invisibles cuando el valor es
+1 de 382 · y los 357 usos de `text-[Npx]` bajo 11px, congelados por el guardia pero sin pagar.
+
 #### El mapa de specs y planes
 
 | Plan | Depende de | Estado |
