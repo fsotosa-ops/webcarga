@@ -17,6 +17,227 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-18 (cont.) — Ronda 124: identificar al conductor desde la tabla, y un agujero de RLS
+
+**Plan de asignar conductor ejecutado (Tasks 1-6 de 7) + hallazgo de seguridad aplicado.**
+Commits `589d42d1` y `deb2401d`.
+
+#### El plan tenía cuatro supuestos falsos, y se verificaron ANTES de ejecutarlo
+
+Están anotados en el propio plan para no rediscutirlos:
+
+1. **No existe NINGUNA foreign key que apunte a `app.trips`** (verificado sobre `pg_constraint`).
+   El test de atomicidad dependía de que un `trip_id` inexistente reventara: no revienta. Se
+   reescribió contra `trip_fleet_links_driver_id_fkey`, que sí existe — y además es el error
+   plausible, un id viejo en la pantalla, no un viaje inventado.
+2. **Los tests de las Tasks 1 y 3 no probaban el endpoint**: insertaban por SQL y verificaban la
+   fila. Habrían pasado idénticos antes y después del fix.
+3. **`@testing-library/user-event` no es dependencia** del proyecto, que usa `fireEvent`.
+4. **El alta exige RUT** (`POST /drivers`) y QAnalytics nunca lo reporta. Decisión del usuario:
+   **se pide el RUT en el popover**; `tax_id` sigue obligatorio porque es la clave con la que el
+   resolvedor identifica por RUT.
+
+#### La corrección que más cambió el diseño: la similitud era la métrica equivocada
+
+Medido sobre los **7 viajes de identidad segura** (`driver_match_rule='tms_rut'`, donde el TMS mandó
+el RUT y la identidad no está en discusión):
+
+| tokens roster | tokens TMS | **en común** | similitud | casos |
+|---|---|---|---|---|
+| 4 | 2 | **2 = todos** | 0,400 | 3 |
+| 4 | 3 | **3 = todos** | 0,700 | 2 |
+| 4 | 4 | **4 = todos** | 1,000 | 2 |
+
+En los 7, **todas las palabras del TMS están dentro del nombre del roster**. La similitud baja sólo
+porque el TMS reporta MENOS palabras, nunca palabras distintas. **Un umbral en 0,5 habría escondido
+3 de esos 7.** La similitud castiga igual a un nombre incompleto que a uno ajeno.
+
+Se ordena por **CONTENCIÓN**, bidireccional igual que el CTE `by_partial` de
+`app.resolve_trip_fleet()`. El orden invertido y los acentos ya dan **1,000** porque
+`public.name_tokens()` normaliza y ordena (fix de la R122) — la pregunta del usuario sobre "apellidos
+invertidos o cualquier combinatoria" está resuelta en la capa de abajo, no acá.
+
+Aplicado a las **28 personas** sin identificar: **19 sin candidato** (alta directa), **7 con uno
+solo**, **2 ambiguas** — y esas 2 son el conductor duplicado del roster, que sigue pendiente.
+
+Y el viaje que originó todo, el **2032999** («SUAREZ LOPEZ EFRAIN EDUARDO»): esa persona **no existe
+en `public.drivers`** y por contención da **0 candidatos**. Se resuelve dando de alta, no eligiendo —
+el mejor "parecido" es otra persona, con 0,22.
+
+#### Dos decisiones de diseño que el plan no cubría
+
+- **El lote CONSERVA la empresa y el tracto ya resueltos.** Los vínculos `auto` traen empresa en
+  1.457 de 1.521 filas y tracto en las 1.521; como el `manual` es **terminal**, pisarlos con NULL
+  los perdería para siempre. Se cambiaría la respuesta a una pregunta contestando otra.
+- **Los ids del lote los da el backend, no un conteo del cliente.** El popover ofrece "aplicar a sus
+  N viajes" y varios no están en pantalla: contarlos con lo que la tabla tiene cargado sería
+  prometer un alcance y aplicar otro.
+
+#### Deuda propia encontrada y corregida en el camino (el usuario preguntó dos veces)
+
+`nombreLegible` salió de `TripTable` a `lib/utils/nombres.ts` — importar una utilidad DESDE un
+componente iba a crear un **ciclo** en cuanto la tabla montara la celda · el tipo de la API salió de
+un componente a `lib/types.ts` (el mismo error, cometido diez minutos después) · la bitácora del
+lote pasó de un INSERT por viaje a **uno solo** · el endpoint de candidatos era **más pobre que el
+resolvedor** (una dirección de contención en vez de dos) · `PoolDeUnaConexion` subió a `conftest` en
+vez de duplicarse · y **se rompió el trinquete del sistema visual** (1780 → 1811 colores crudos):
+no se subió el tope, los dos grises sin token viven ahora en `lib/ui/texto.ts`.
+
+#### El agujero de RLS — real, y no lo abrió esta sesión
+
+La alerta `rls_disabled_in_public` apuntaba a `document_ingest_batches`, `document_ingest_items` y
+`requirement_filename_aliases`, creadas el **14-15/08** (Certificación Tramo 1).
+
+**Por qué era real**: Supabase concede a `anon`/`authenticated` **todo el DML** sobre `public`. Lo
+que neutraliza esa concesión en el resto del proyecto **no son los permisos** —`drivers` y
+`compliance_records` también los tienen— sino **tener RLS activo sin políticas**. Estas tres se
+saltaron ese paso, así que con la clave `anon` (que viaja en el bundle por diseño) se podía SELECT,
+INSERT, UPDATE, DELETE y **TRUNCATE** vía PostgREST.
+
+Aplicado en producción. No rompe nada: el frontend no las consulta directo y la API entra con
+asyncpg como **dueña de la base**, que no está sujeta a RLS. 115 tests de esa ruta pasan y **ya no
+queda ningún lint de nivel ERROR**.
+
+#### Verificación
+
+786 tests de backend (14 de integración contra Postgres real, en transacción revertida) · 1090 de
+frontend · `tsc` y `npm run build` limpios.
+
+**Falta la Task 7**: desplegar a dev y hacer el click-through con el 2032999 — que ejercita el
+camino de **alta**, no el de elegir candidato.
+
+---
+
+### 2026-08-18 — Ronda 123: el Cierre auditado, y las tres pantallas vuelven a contar lo mismo
+
+**Auditoría del Cierre + Bloque 0 cerrado.** Todo verificado contra el código real y contra
+producción del día, no contra este archivo — que es historia de incidentes, no estado.
+
+#### El chequeo: qué faltaba de verdad
+
+`app.daily_closures` **sigue en 0 filas**. Y no es por falta de dato: el pipeline corrió a las 13:08,
+con 15 viajes de hoy y 32 de ayer. Es la interfaz y la aritmética.
+
+| Bloque del spec del Cierre | Estado real |
+|---|---|
+| **0 · Resolución de flota** | Aplicado en la R122, pero **los 4 defectos de conteo seguían los 4 vivos** → cerrados en esta ronda |
+| **1 · Recorrido de 4 pasos** | No existe: 3 pestañas planas, sin riel ni contador por paso |
+| **2 · Paso "Viajes"** | **Nada.** Ni los 4 grupos, ni el motivo sobre el viaje, ni "día reabierto" |
+| **3 · Reportería** | Parcial. `app.trip_statuses` **no tiene atributo de facturación** (columnas: id, label, bg_color, text_color, group_id, sort_order, active) |
+| **4 · Zona / gestión / tipo de vehículo** | Zona solo en el reporte. Tipo de vehículo en lote: no existe (`TripTable` no tiene selección múltiple) |
+| **§8bis · La interfaz** | **Destrabado**: los tokens y `EncabezadoDePagina`/`Cifra`/`Estado` ya existen. El Cierre es el único módulo que no los usa (salvo `Estado` en `FlotaDelDiaSection`) |
+
+Hallazgos sueltos: `CloseDayDialog.tsx` es **código muerto** (317 líneas con tests, nadie lo
+importa); el botón del Monitor **no lleva contador**; no hay nav propio en el Sidebar.
+
+Los 4 grupos del paso "Viajes" que aún no existe, medidos hoy: **Hoy 2 · Rezago 17 · En curso 6 ·
+Abandonados por el TMS 46** (23 qanalytics, 21 sodimac, 1 wingsuite, 1 manual). Los abandonados
+**más que duplicaron** los 21 que midió el spec el 16/08.
+
+#### Los 4 defectos de conteo — cerrados, cada uno medido antes de tocarlo
+
+1. **`pre_cierre.py` miraba un solo día** en sus 5 consultas mientras el resto del Cierre ya era
+   multi-día — y corre DENTRO de `_recompute()`, justo antes del cálculo que sí lo es. Delta medido
+   sobre el 14/08 antes de aplicar: patentes 33 → 35, RUT 1 → 1, cliente+patente 33 → 35,
+   onboarding 0 → 0, sin tipo 1 → 1. Y **0 patentes pierden señal** en `_single_value`: el ensanche
+   no vuelve más conservador al Tipo A, le suma 2 señales usables.
+2. **`driver_roster.py` no filtraba al conductor** por `operational_status` mientras
+   `fleet_driver_gap.py` sí. Corregido. **Hoy no cambia ningún número** — los 87 conductores están
+   ACTIVE, el roster sigue en 44. Es defecto latente, no discrepancia viva; se dice así en el código.
+3. **Vocabulario por etiqueta visible → por `code`** en 5 sitios (`driver_roster`,
+   `fleet_driver_gap`, `equipment_closures`, `trips`, `status_report`). Equivalencia verificada
+   antes del cambio: 43/43 Tractoreo y 73/73 Equipo Completo, 0 filas sin código. Renombrar
+   "Tractoreo" desde Configuración ya no vacía el roster en silencio.
+4. **`daily_closures.py` no excluía Sodimac** mientras las otras tres pantallas sí.
+   **El número que abrió el caso**: para el 14/08 su universo era de **63 viajes contra 48** de las
+   otras dos. Ahora comparten base de **49**, y la única diferencia que queda es el requisito de
+   tracto resuelto, que es intencional. Y **ningún conductor cambia de estado** (27 antes y después):
+   alinea la aritmética sin mover el cierre de nadie.
+
+#### La decisión de diseño que se tomó al medir, y va contra la letra del plan
+
+El plan pedía la exclusión de Sodimac en 4 líneas de `daily_closures` y también en `pre_cierre`.
+Se aplicó **solo en las 2 que definen el universo de conteo** (`day_trips` y el lateral
+`mismatch_trip`), no en los 2 laterales de `clients`: esos agregan **qué clientes atendió el
+conductor, para mostrarlos** — excluir ahí escondería un cliente real, que no es el defecto.
+
+Y en `pre_cierre` **no se agregó**, deliberadamente: sería código muerto. Sus 5 consultas exigen
+patente o RUT, y de los **54 viajes Sodimac que existen en `app.trips`, 0 traen patente y 0 traen
+RUT**. Esa fuente ya está excluida por construcción. Queda un test que explica por qué no hace
+falta, para que nadie la agregue "por consistencia".
+
+#### Lo que esta ronda NO arregló, y hay que decirlo
+
+De los 4 fixes, **2 son de causa raíz y 2 no**. El `label` → `code` elimina la clase de bug (el
+identificador era la etiqueta editable) y el filtro de conductor de baja era un predicado faltante.
+
+Pero los otros dos —el criterio multi-día y la exclusión de Sodimac— **son correctos y a la vez
+replican la duplicación que es la causa raíz real**. Medido después de aplicarlos:
+
+| Predicado escrito a mano | Veces | Archivos |
+|---|---|---|
+| Criterio multi-día | **14** | daily_closures, equipment_closures, status_report, trips, pre_cierre |
+| `source_system != 'sodimac'` | **9** | daily_closures, equipment_closures, status_report, trips |
+
+**"El universo de viajes del día" no tiene una sola definición: se copia y pega.** Por eso derivó,
+y esa deriva es exactamente el bug que esta ronda vino a corregir. El repo ya resolvió esta misma
+clase dos veces —extrayendo `app.v_trip_fleet_resolution` y `TRACTOREO_ROSTER_CTE`, con el
+comentario "la duplicación en 4 lugares fue justo la causa del bug"— y acá se siguió el patrón
+viejo en vez del bueno.
+
+**La corrección de fondo**: una sola definición. O una función `app.trips_of_day(p_date date)`
+—sirve con `$1` y también en los laterales correlacionados vía `LATERAL`, que es lo que obliga a
+tener dos redacciones distintas hoy— o una constante compartida al estilo `TRACTOREO_ROSTER_CTE`.
+No se hizo por alcance: toca `trips.py` en 4 puntos más. **Es el ítem que cierra el tema de verdad.**
+
+#### Decisiones de negocio tomadas
+
+1. **Motivos de viaje → dominio nuevo `TRIP_UNASSIGNED_REASON`** (hoy 0 semillas). Los 16 de
+   `DRIVER_REASON` responden otra pregunta. Se ejecuta con el Bloque 2.
+2. **El mapeo de estados de Sodimac deja de estar bloqueado por un tercero.** Los estados vienen de
+   los TMS y el catálogo **debe absorber dinámicamente** los que aparezcan sin mapear.
+   **Evidencia de que el mecanismo hace falta**: hay un viaje de Wingsuite con `trip_status =
+   'Cancelado'` mientras el catálogo tiene el id `'CANCELADO'` — mismo estado, distinta caja, y el
+   viaje **se cae de todo JOIN con `app.trip_statuses` en silencio**. Es 1 viaje, pero el mecanismo
+   de pérdida está activo. Vive en el pipeline, no se tocó acá.
+3. **Umbral de "abandonado por el TMS" (7 días): sigue sin confirmar** con operaciones.
+
+#### Verificación — qué se corrió y qué no
+
+- **Suite completa del backend: 770 pasan.** Se actualizaron 5 guardarraíles que asertaban el texto
+  `wot.label = 'Tractoreo'` (su intención sobrevive, cambió el mecanismo) y se agregaron 6 nuevos:
+  criterio multi-día en las 5 consultas de `pre_cierre`, exclusión de Sodimac en las 2 de
+  `daily_closures`, filtro de conductor de baja, y lectura por código en `status_report`.
+- **El SQL real validado contra Postgres de producción**: las 6 constantes (`_RECOMPUTE_SQL` de
+  daily y de equipment, `_DETAIL_SQL`, `_REPORT_SQL`, `_FLEET_DRIVER_GAP_SQL`, `_ROSTER_SQL`)
+  parsean, resuelven columnas y **tipan sus parámetros** vía `prepare()` — que no ejecuta, así que
+  las de escritura se validaron sin escribir nada. Las de lectura se ejecutaron: `_DETAIL_SQL`
+  devuelve las 44 filas de la cuadratura (12 asignados / 32 no), `_ROSTER_SQL` 79 tractos
+  (43 TRACTOREO · 35 EQUIPO_COMPLETO · 1 sin código).
+  Los mocks no probaban nada de esto: asertan por secuencia de `side_effect`.
+- **NO se corrió el click-through en vivo del frontend.** Riesgo bajo y acotado: no cambió ningún
+  contrato de API — el único campo renombrado (`webcarga_operation_type_label` →
+  `..._code`) se usaba en un solo lugar interno y no aparece en el frontend. Queda pendiente igual.
+- **Comiteado** en `c81d0e28` (ver Ronda 124 para lo que siguió).
+
+#### Próximo paso exacto
+
+0. [ ] **Click-through en vivo del Cierre** con el frontend de dev contra la API modificada:
+   confirmar que las 3 pestañas muestran cifras coherentes entre sí. Es lo único de la Ronda 123
+   que quedó sin hacer.
+1. [ ] **Ejecutar el plan de asignar conductor desde el Monitor** (7 tareas). Verificado que el bug
+   de origen sigue: `POST /trips/{id}/fleet-link` exige `carrier_id` y recibe `body: dict` **sin
+   modelo Pydantic** (`trips.py:2160-2175`), o sea el 422 es un `raise` a mano.
+2. [ ] **Plan 3 — el recorrido del Cierre** (Bloques 1, 2, 4 y §8bis). Ahora sí sobre aritmética que
+   cuadra. Incluye sembrar `TRIP_UNASSIGNED_REASON` y adoptar los componentes del sistema visual.
+3. [ ] **Una sola definición del "universo de viajes del día"** — `app.trips_of_day(date)` o una
+   constante compartida. Hoy el criterio multi-día está escrito a mano **14 veces** y la exclusión
+   de Sodimac **9**. Es la causa raíz que esta ronda alineó pero no eliminó.
+4. [ ] **Absorción dinámica de estados sin mapear** en el catálogo (decisión 2 de arriba).
+5. [ ] **Borrar `CloseDayDialog.tsx` y sus tests** — código muerto confirmado.
+
+---
+
 ### 2026-08-17 (cont.) — Ronda 122: el modelo de resolución de flota, y el denominador deja de mentir
 
 **Bloque 0 completo, aplicado y verificado en producción.** Spec:
@@ -326,33 +547,38 @@ al 08-14. Lo que falta no es el modelo, es el rediseño de la pantalla que lo us
 
 ---
 
-## Próxima sesión (actualizado al cerrar la Ronda 122, 2026-08-17)
+## Próxima sesión (actualizado al cerrar la Ronda 124, 2026-08-18)
 
-**Por dónde empezar, en orden.** Los dos primeros están escritos y listos para ejecutar; no hay que
-volver a diseñar nada.
+1. **Task 7 del plan de asignar conductor** — desplegar a dev y click-through con el viaje
+   **2032999**. Ojo: ese caso resuelve por **dar de alta** (0 candidatos por contención), no
+   eligiendo, así que ejercita el camino del RUT. Después verificar en la base que quedó
+   `manual · driver_match_rule NULL · con conductor`, y correr `app.resolve_trip_fleet()` para
+   comprobar que no lo pisó.
+2. **Plan 3 — el recorrido del Cierre** (Bloques 1, 2, 4 y §8bis del spec). Falta escribir el plan.
+   Ahora sí sobre aritmética que cuadra (R123). Incluye sembrar `TRIP_UNASSIGNED_REASON` —dominio
+   nuevo, ya decidido— y adoptar los componentes del sistema visual, que el Cierre no usa.
+3. **Una sola definición del "universo de viajes del día"** — `app.trips_of_day(date)` o una
+   constante compartida. El criterio multi-día está escrito a mano **14 veces** y la exclusión de
+   Sodimac **9**. Es la causa raíz que la R123 alineó pero no eliminó.
+4. **Absorción dinámica de estados sin mapear** en el catálogo (evidencia: `Cancelado` de Wingsuite
+   cae fuera del JOIN porque el catálogo tiene `CANCELADO`).
+5. **Fusionar el conductor duplicado del roster** — son las 2 personas ambiguas de la R124.
+6. **Borrar `CloseDayDialog.tsx`** y sus tests: código muerto confirmado.
 
-1. **Asignar conductor desde el Monitor** —
-   `docs/superpowers/plans/2026-08-17-asignar-conductor-desde-el-monitor.md`, 7 tareas, con el
-   código de cada test ya escrito. Mockups aprobados en `docs/superpowers/mockups/`. Arranca por
-   quitar la exigencia de `carrier_id` en `POST /trips/{id}/fleet-link`, que es el bug reportado
-   (viaje `2032999`: forzar el conductor no guardaba nada).
-2. **Plan 3 — el recorrido del Cierre** (Bloques 1, 2, 4, 5 del spec del Cierre). Diseñado en su
-   §8bis; falta escribir el plan. **Nada bloqueado por terceros.**
-
-**El estado del denominador, que era lo que trababa todo.** Verificado contra producción el
-2026-08-17, después de aplicar el modelo de resolución de flota:
+**El estado del Cierre**, verificado el 2026-08-18:
 
 | | |
 |---|---|
-| Resolución del conductor | 60-88% por día, y **de la palabra del TMS**, no de una inferencia |
-| Sin identificar | **27 personas** (no 350 viajes) — 7,7 viajes cada una |
+| Las 3 pantallas | **ya cuentan sobre el mismo universo** (era 63 vs 48 viajes para el 14/08) |
+| Identificar conductor | ya es un gesto de la tabla del Monitor, en lote, con alcance explícito |
 | `app.daily_closures` | sigue en **0** — nadie cerró un día todavía |
 
-La brecha que hacía imposible cerrar —12 conductores contra 29 tractos el 14/08— **ya no existe**.
-Lo que falta para que `daily_closures` deje de estar vacío es la interfaz, no el dato.
+Lo que falta para que `daily_closures` deje de estar vacío es **la interfaz**: el recorrido de 4
+pasos no existe (hoy son 3 pestañas planas) y el paso "Viajes" no existe en ninguna forma.
 
-Dónde vive el Cierre: `monitor-app/frontend/app/dashboard/operations/closures/` (con `history/`) y
-el overlay "Cerrar el día". Backend: `daily_closures.py`, `equipment_closures.py`, `pre_cierre.py`.
+Dónde vive el Cierre: `monitor-app/frontend/app/dashboard/operations/closures/` (con `history/`).
+Backend: `daily_closures.py`, `equipment_closures.py`, `pre_cierre.py`, `driver_roster.py`,
+`fleet_driver_gap.py`, `status_report.py`.
 
 Pendiente de producto que sigue vigente: el **rediseño de Cierres con los 3 formatos fijos por
 cliente** (mockups de Figma, refinamiento v2 ítem 6).
