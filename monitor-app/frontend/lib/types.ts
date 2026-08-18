@@ -434,6 +434,10 @@ export type Trip = {
   unassigned_reason_id:   string | null
   fleet_link_id:          string | null
   carrier_id:             string | null
+  /** Vínculo resuelto (`vfr.resolved_driver_id`). **Es la única señal fiable**
+   *  de si hay conductor identificado: `driver_name` sale de un COALESCE que
+   *  cae al nombre del TMS cuando no hay vínculo, así que nunca es null si el
+   *  TMS reportó algo. Ver `CeldaConductor`. */
   driver_id:              string | null
   tractor_asset_id:       string | null
   trailer_asset_id:       string | null

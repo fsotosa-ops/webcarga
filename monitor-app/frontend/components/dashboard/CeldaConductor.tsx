@@ -4,7 +4,12 @@ import { TEXTO_APOYO } from '@/lib/ui/texto'
 import { nombreLegible } from '@/lib/utils/nombres'
 
 type Props = {
-  /** Nombre del roster: hay conductor vinculado. */
+  /** El vínculo resuelto (`vfr.resolved_driver_id`). **Esta es la señal**, no
+   *  el nombre: `driver_name` viene de un COALESCE que cae al nombre del TMS
+   *  cuando no hay conductor, así que con él la celda se veía resuelta siempre.
+   *  Un nombre puede venir de dos fuentes; el id, de una sola. */
+  driverId: string | null
+  /** Nombre a mostrar. Puede ser del roster o del TMS — no distingue. */
   driverName: string | null
   /** RUT del roster — la prueba de identidad de la fila resuelta. */
   driverRut?: string | null
@@ -33,13 +38,14 @@ type Props = {
  *    trabajo se esconde y hay que volver al chip.
  */
 export function CeldaConductor({
+  driverId,
   driverName,
   driverRut,
   driverNameTms,
   puedeEditar = true,
   onAsignar,
 }: Props) {
-  const resuelto = Boolean(driverName)
+  const resuelto = Boolean(driverId)
   const mostrado = driverName ?? driverNameTms
 
   // Ni roster ni TMS: decirlo, no dibujar un hueco que parezca pendiente de

@@ -442,6 +442,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="px-2.5 py-2.5">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <CeldaConductor
+                          driverId={trip.driver_id}
                           driverName={trip.driver_name}
                           driverRut={trip.driver_tax_id}
                           driverNameTms={trip.driver_name_tms}

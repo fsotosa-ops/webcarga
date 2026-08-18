@@ -231,7 +231,7 @@ export default function DiarioPage() {
     // el número y lo abro". Si esto quedara decorativo, habría que volver al
     // chip por fila.
     if (soloSinIdentificar) {
-      result = result.filter(t => !t.driver_name && t.driver_name_tms)
+      result = result.filter(t => !t.driver_id && t.driver_name_tms)
     }
     return result
   }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules, soloSinIdentificar])
@@ -241,7 +241,10 @@ export default function DiarioPage() {
   const personasSinIdentificar = useMemo(() => {
     const nombres = new Set<string>()
     for (const t of trips) {
-      if (!t.driver_name && t.driver_name_tms) nombres.add(t.driver_name_tms.trim().toUpperCase())
+      // `driver_id`, NO `driver_name`: este ultimo cae al nombre del TMS cuando
+      // no hay vinculo, asi que el contador daba 0 estructuralmente — y el plan
+      // declaro este contador CONDICION DURA del diseño de la celda.
+      if (!t.driver_id && t.driver_name_tms) nombres.add(t.driver_name_tms.trim().toUpperCase())
     }
     return nombres.size
   }, [trips])
