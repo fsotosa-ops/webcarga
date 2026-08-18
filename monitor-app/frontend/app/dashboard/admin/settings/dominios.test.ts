@@ -50,6 +50,7 @@ describe('registro de dominios', () => {
       operations: [
         'alert-thresholds', 'driver-reasons', 'equipment-statuses',
         'operational-statuses', 'temperature-ranges', 'tms-statuses',
+        'unassigned-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
       people:   ['users'],

@@ -75,6 +75,7 @@ REVISABLES: tuple[Revisable, ...] = (
     _taxonomia("operations", "operational-statuses", "OPERATIONAL_STATE"),
     _taxonomia("operations", "equipment-statuses", "EQUIPMENT_STATE"),
     _taxonomia("operations", "driver-reasons", "DRIVER_REASON"),
+    _taxonomia("operations", "unassigned-reasons", "TRIP_UNASSIGNED_REASON"),
     Revisable("operations", "temperature-ranges",
               "SELECT cargo_type AS id, label, label || ' ' || cargo_type AS buscable, "
               "cargo_type AS abre FROM app.temperature_ranges"),

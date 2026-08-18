@@ -10,7 +10,9 @@ import {
 } from './umbrales-tabs'
 import { CondicionesTabla } from './condiciones-tabla'
 import { EstadosTabla } from './estados-tabla'
-import { SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab } from './flota-tabs'
+import {
+  SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab, MotivosNoAsignacionTab,
+} from './flota-tabs'
 import { UsuariosTab } from './usuarios-tab'
 
 export interface Seccion {
@@ -78,6 +80,8 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Qué rango corresponde a cada tipo de carga', Panel: RangosTemperaturaTab },
       { clave: 'driver-reasons', titulo: 'Motivos de conductor',
         proposito: 'Por qué un conductor no está disponible', Panel: MotivosConductorTab },
+      { clave: 'unassigned-reasons', titulo: 'Motivos de no asignación',
+        proposito: 'Por qué WebCarga no tomó una carga que le ofrecieron', Panel: MotivosNoAsignacionTab },
     ],
   },
   {
@@ -138,6 +142,7 @@ export const SECCION_DE_TAXONOMIA: Record<string, [dominio: string, seccion: str
   OPERATIONAL_STATE:       ['operations', 'operational-statuses'],
   EQUIPMENT_STATE:         ['operations', 'equipment-statuses'],
   DRIVER_REASON:           ['operations', 'driver-reasons'],
+  TRIP_UNASSIGNED_REASON:  ['operations', 'unassigned-reasons'],
   FLEET_SERVICE_TYPE:      ['fleet', 'subtypes'],
   WEBCARGA_OPERATION_TYPE: ['fleet', 'operation-types'],
 }

@@ -48,3 +48,18 @@ export function MotivosConductorTab() {
     />
   )
 }
+
+/** Motivos de no asignación TAMPOCO es compartido: responde por qué WebCarga
+ *  no tomó una carga que le ofrecieron (Cierre del Día, paso Viajes), no por
+ *  qué un conductor faltó — por eso es dominio propio y no una fila más de
+ *  DRIVER_REASON. Vive en Operaciones, igual que Motivos de conductor. */
+export function MotivosNoAsignacionTab() {
+  return (
+    <TaxonomyTab
+      domain="TRIP_UNASSIGNED_REASON"
+      title="Motivos de no asignación"
+      hint="Por qué WebCarga no tomó una carga que le ofrecieron. Sólo lo usa Operaciones."
+      newLabel="motivo"
+    />
+  )
+}

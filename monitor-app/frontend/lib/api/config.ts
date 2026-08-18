@@ -80,6 +80,10 @@ export type TaxonomyDomain =
   // 20260802030000 / 20260803050000 pero el tipo nunca los nombró, porque
   // hasta el Tramo 2 la app sólo los leía.
   | 'FLEET_SERVICE_TYPE' | 'WEBCARGA_OPERATION_TYPE'
+  // Por qué WebCarga NO tomó una carga que le ofrecieron (Cierre del Día,
+  // paso Viajes) — no confundir con DRIVER_REASON, que responde por qué un
+  // conductor faltó. Sembrado en 20260818130000_trip_unassigned_reasons.sql.
+  | 'TRIP_UNASSIGNED_REASON'
 /** `code` es el identificador ESTABLE de un valor del catálogo, separado del
  *  nombre visible. Lo tienen sólo los vocabularios a los que otras tablas
  *  apuntan por texto —hoy WEBCARGA_OPERATION_TYPE— y por eso es opcional. Es

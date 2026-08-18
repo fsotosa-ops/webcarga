@@ -24,6 +24,7 @@ vi.mock('../flota-tabs', () => ({
   SubtiposVehiculoTab: () => <div>panel subtipos</div>,
   TiposOperacionTab: () => <div>panel tipos de operacion</div>,
   MotivosConductorTab: () => <div>panel motivos</div>,
+  MotivosNoAsignacionTab: () => <div>panel motivos no asignacion</div>,
 }))
 vi.mock('../usuarios-tab', () => ({ UsuariosTab: () => <div>panel usuarios</div> }))
 // El buscador es react-query y consulta la API; acá sólo importa el marco.
