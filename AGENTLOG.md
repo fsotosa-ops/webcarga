@@ -554,9 +554,18 @@ al 08-14. Lo que falta no es el modelo, es el rediseño de la pantalla que lo us
    eligiendo, así que ejercita el camino del RUT. Después verificar en la base que quedó
    `manual · driver_match_rule NULL · con conductor`, y correr `app.resolve_trip_fleet()` para
    comprobar que no lo pisó.
-2. **Plan 3 — el recorrido del Cierre** (Bloques 1, 2, 4 y §8bis del spec). Falta escribir el plan.
-   Ahora sí sobre aritmética que cuadra (R123). Incluye sembrar `TRIP_UNASSIGNED_REASON` —dominio
-   nuevo, ya decidido— y adoptar los componentes del sistema visual, que el Cierre no usa.
+2. **Ejecutar el plan del paso "Viajes"** —
+   `docs/superpowers/plans/2026-08-18-cierre-paso-viajes.md`, **9 tareas, escrito y revisado**.
+   Es el Bloque 2 del spec: los 4 grupos, el motivo sobre el viaje sin tocar el estado del TMS, la
+   semilla `TRIP_UNASSIGNED_REASON` y el delta posterior al cierre. Entrega una pestaña más en el
+   Centro de Cierre; el recorrido de 4 pasos (Bloque 1 + §8bis) y las dimensiones (Bloque 4) son
+   planes aparte, a propósito.
+
+   **Vocabulario decidido el 18/08**: el día **no se reabre**. Lo que llega con fecha retroactiva es
+   **"posterior al cierre"** —el término contable estándar; en datos, *late-arriving facts*— y la
+   firma original **queda intacta**: el delta se resuelve como complemento. "Reabierto" contradiría
+   el principio de la R122 (una afirmación sobre un instante no se recalcula), y "rezago" ya está
+   tomado por otro grupo.
 3. **Una sola definición del "universo de viajes del día"** — `app.trips_of_day(date)` o una
    constante compartida. El criterio multi-día está escrito a mano **14 veces** y la exclusión de
    Sodimac **9**. Es la causa raíz que la R123 alineó pero no eliminó.
