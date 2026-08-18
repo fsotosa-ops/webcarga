@@ -66,3 +66,42 @@ describe('tripsApi.list — construcción de URL', () => {
     expect(requestedUrl).toBe('/api/v1/trips?fleet_match=mismatch')
   })
 })
+
+describe('tripsApi.cierreViajes — construcción de URL', () => {
+  // Menor 10 (revisión de rama, 2026-08-18): `cierreViajes` interpolaba
+  // `?fecha=${fecha}` sin `encodeURIComponent`, a diferencia de
+  // `dailyClosuresApi.get` en el mismo flujo (Centro de Cierre). No rompe
+  // hoy porque `fecha` siempre llega como YYYY-MM-DD, pero es el mismo
+  // patrón inconsistente que ya causó bugs de URL en este archivo.
+  it('codifica la fecha en el query string', async () => {
+    let requestedUrl: string | null = null
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      requestedUrl = url
+      return new Response(JSON.stringify({ grupos: {}, bloquean: 0 }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }))
+
+    await tripsApi.cierreViajes('2026-08-18')
+
+    expect(requestedUrl).toBe('/api/v1/trips/cierre-viajes?fecha=2026-08-18')
+  })
+
+  // Sin encodeURIComponent, un valor con caracteres especiales (p.ej. un
+  // "&" o un espacio pegado por error) rompe el query string en vez de
+  // viajar como parte del valor de `fecha`. Prueba real de que la función
+  // codifica, no sólo que un ISO date pasa igual con o sin ella.
+  it('escapa caracteres que romperían el query string', async () => {
+    let requestedUrl: string | null = null
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      requestedUrl = url
+      return new Response(JSON.stringify({ grupos: {}, bloquean: 0 }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }))
+
+    await tripsApi.cierreViajes('2026-08-18&extra=1')
+
+    expect(requestedUrl).toBe('/api/v1/trips/cierre-viajes?fecha=2026-08-18%26extra%3D1')
+  })
+})

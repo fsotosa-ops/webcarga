@@ -141,9 +141,12 @@ describe('useDiarioFilters', () => {
 
   // Task 8 (plan 2026-08-18-cierre-paso-viajes): "No asignado por WebCarga"
   // en el historial. Pablo: "voy a poder ver todos los viajes que alguna vez
-  // nos ofrecieron y no asignamos".
+  // nos ofrecieron y no asignamos". La casilla sólo se renderiza con
+  // `tab === 'historial'` (ver FilterPopover.tsx), así que el conteo se
+  // verifica en esa pestaña.
   it('fNoAsignadoWebcarga arranca apagado, cuenta como filtro activo y clear lo resetea', () => {
     const { result } = renderHook(() => useDiarioFilters())
+    act(() => result.current[1]({ type: 'patch', patch: { tab: 'historial' } }))
     expect(result.current[0].fNoAsignadoWebcarga).toBe(false)
 
     act(() => result.current[1]({ type: 'patch', patch: { fNoAsignadoWebcarga: true } }))
@@ -152,6 +155,21 @@ describe('useDiarioFilters', () => {
 
     act(() => result.current[1]({ type: 'clear' }))
     expect(result.current[0].fNoAsignadoWebcarga).toBe(false)
+    expect(countActiveFilters(result.current[0])).toBe(0)
+  })
+
+  // Menor 8 (revisión de rama, 2026-08-18): en "En Curso" la casilla no se
+  // renderiza y el parámetro no se envía al backend (page.tsx sólo lo
+  // agrega con tab === 'historial') — el filtro tiene que dejar de contarse
+  // apenas se sale del historial, aunque el valor siga en true por dentro
+  // (no se resetea al cambiar de pestaña, sólo deja de tener efecto).
+  it('fNoAsignadoWebcarga deja de contarse fuera de historial, aunque siga en true', () => {
+    const { result } = renderHook(() => useDiarioFilters())
+    act(() => result.current[1]({ type: 'patch', patch: { tab: 'historial', fNoAsignadoWebcarga: true } }))
+    expect(countActiveFilters(result.current[0])).toBe(1)
+
+    act(() => result.current[1]({ type: 'patch', patch: { tab: 'en_curso' } }))
+    expect(result.current[0].fNoAsignadoWebcarga).toBe(true)
     expect(countActiveFilters(result.current[0])).toBe(0)
   })
 })

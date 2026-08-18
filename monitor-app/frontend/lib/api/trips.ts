@@ -144,7 +144,7 @@ export const tripsApi = {
    *  bloquean el cierre del día si no se resuelven, en_curso/abandonado son
    *  de sólo lectura. */
   cierreViajes: (fecha: string) =>
-    apiFetch<CierreViajesResponse>(`/api/v1/trips/cierre-viajes?fecha=${fecha}`),
+    apiFetch<CierreViajesResponse>(`/api/v1/trips/cierre-viajes?fecha=${encodeURIComponent(fecha)}`),
 
   patchStop: (id: string, stopId: string, body: TripStopPatch) =>
     apiFetch<Trip>(`/api/v1/trips/${id}/stops/${stopId}`, {

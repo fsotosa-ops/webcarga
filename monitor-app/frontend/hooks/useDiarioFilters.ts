@@ -137,13 +137,24 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
   }
 }
 
+// Menor 8 (revisión de rama, 2026-08-18): `fNoAsignadoWebcarga` sobrevive al
+// cambio de pestaña — en "En Curso" la casilla no se renderiza (ver
+// FilterPopover.tsx) y el parámetro no se envía (page.tsx sólo lo agrega
+// cuando `f.tab === 'historial'`), pero el conteo lo seguía sumando: el
+// badge mostraba un filtro invisible que sólo se podía quitar con "Limpiar".
+// Contarlo sólo cuando de verdad aplica (tab === 'historial') alinea el
+// badge con lo que realmente filtra la consulta.
+function cuentaNoAsignadoWebcarga(f: DiarioFilters): number {
+  return f.tab === 'historial' && f.fNoAsignadoWebcarga ? 1 : 0
+}
+
 export function countActiveFilters(f: DiarioFilters): number {
   return [
     f.q, f.fechaDesde, f.fechaHasta, f.activeGroup,
   ].filter(v => v !== '' && v !== null).length
     + f.fTms.length + f.activeSignals.length + f.fOperationType.length
     + f.fClient.length + f.fCargoType.length + f.fOrigin.length
-    + (f.fNoAsignadoWebcarga ? 1 : 0)
+    + cuentaNoAsignadoWebcarga(f)
 }
 
 /** Filtros que viven dentro del popover "Filtros" (para su badge contador).
@@ -155,7 +166,7 @@ export function countPopoverFilters(f: DiarioFilters): number {
   ].filter(v => v !== '' && v !== null).length
     + f.fTms.length + f.fOperationType.length
     + f.fCargoType.length + f.fOrigin.length
-    + (f.fNoAsignadoWebcarga ? 1 : 0)
+    + cuentaNoAsignadoWebcarga(f)
 }
 
 export function useDiarioFilters() {

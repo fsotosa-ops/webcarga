@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Estado } from '@/components/ui/Estado'
-import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
 import type { CierreViajesResponse, GrupoDelCierre, UnassignedReasonMeta, ViajeDelCierre } from '@/lib/types'
@@ -55,7 +54,13 @@ function formatDiasSinNovedad(dias: number): string {
  *
  *  Puramente presentacional — el fetch de `cierreViajes`/`motivos` y la
  *  llamada a `bulkClose` viven en la página que la aloja, igual que
- *  `unassignedReasons` ya llega como prop a `FlotaDelDiaSection`. */
+ *  `unassignedReasons` ya llega como prop a `FlotaDelDiaSection`.
+ *
+ *  Sin encabezado propio (Importante 5, revisión de rama 2026-08-18): esta
+ *  sección vive DENTRO de una pestaña de `ClosuresCenterPageInner`, que ya
+ *  tiene su propio encabezado de nivel 1 ("Centro de Cierre del Día"). Sus
+ *  tres pestañas hermanas (`FlotaDelDiaSection`, `PreCierrePendingSection`,
+ *  `StatusReportSection`) tampoco llevan uno — se mantiene consistente. */
 export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos, onCerrar }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [motivoId, setMotivoId] = useState('')
@@ -97,11 +102,6 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
 
   return (
     <div className="space-y-4">
-      <EncabezadoDePagina
-        titulo="Viajes"
-        bajada="Viajes que hay que resolver antes de cerrar el día — dí por qué WebCarga no tomó la carga."
-      />
-
       <Cifra
         valor={bloquean}
         etiqueta="viajes por resolver antes de cerrar"

@@ -221,7 +221,6 @@ function ClosuresCenterPageInner() {
           después, nunca una reapertura. */}
       <AvisoPosteriorAlCierre
         cantidad={cierreQuery.data?.cierre?.posteriores_al_cierre ?? 0}
-        onVerlos={() => setTab('viajes')}
       />
 
       {/* Un solo lienzo: tab bar arriba, panel de contenido abajo (solo la
