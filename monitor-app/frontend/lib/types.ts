@@ -1126,6 +1126,31 @@ export type DailyClosureReport = {
   rows:        DailyClosureReportRow[]
 }
 
+// ── Cierre del Día, paso "Viajes" (Tarea 6) ─────────────────────────────────
+
+/** Un viaje en el paso "Viajes" del Cierre. `dias_sin_novedad` cuenta desde el
+ *  último reporte del TMS, NO desde la planificación: un viaje planificado hace
+ *  9 días puede haber reportado hace 2 horas, y a los 7 sin novedad desaparece
+ *  del Monitor — que es exactamente cuando empieza a importar. */
+export type ViajeDelCierre = {
+  trip_id:                 string
+  planning_date:           string
+  client_name:             string | null
+  source_system_trip_id:   string | null
+  trip_status:             string | null
+  dias_sin_novedad:        number
+  unassigned_reason_id:    string | null
+  unassigned_reason_label: string | null
+}
+
+export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado'
+
+export type CierreViajesResponse = {
+  grupos:   Record<GrupoDelCierre, ViajeDelCierre[]>
+  /** Cuántos impiden firmar el día: sólo `hoy` + `rezago`. */
+  bloquean: number
+}
+
 // ── Reporte de estatus del día, 6 secciones (Fase 5, HU-04) ─────────────────
 
 export type ZoneCrossTab = {

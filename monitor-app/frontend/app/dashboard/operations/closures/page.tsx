@@ -3,18 +3,22 @@
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useIsFetching, useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Loader2,
+  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { shippersApi } from '@/lib/api/locations'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
+import { tripsApi } from '@/lib/api/trips'
+import { taxonomiesApi } from '@/lib/api/config'
 import { FlotaDelDiaSection } from '@/components/dashboard/sections/FlotaDelDiaSection'
 import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
 import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
+import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSection'
+import { Estado } from '@/components/ui/Estado'
 import type { TripsMeta } from '@/lib/types'
 
 const ADMIN_ROLES = new Set(['admin', 'owner'])
@@ -25,6 +29,7 @@ function todayISO() {
 
 const TABS = [
   { id: 'flota',       label: 'Flota del día',  icon: Truck },
+  { id: 'viajes',      label: 'Viajes',         icon: Route },
   { id: 'pendientes',  label: 'Pendientes',     icon: AlertTriangle },
   { id: 'reporte',     label: 'Reporte',        icon: FileBarChart2 },
 ] as const
@@ -54,6 +59,7 @@ export default function ClosuresCenterPage() {
 function ClosuresCenterPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const fecha = searchParams.get('fecha') || todayISO()
 
   const [tripsMeta, setTripsMeta] = useState<TripsMeta | null>(null)
@@ -85,6 +91,26 @@ function ClosuresCenterPageInner() {
     queryFn: () => shippersApi.list(),
     staleTime: 5 * 60_000,
   })
+
+  // Paso "Viajes" (Tarea 6) — sólo se pide mientras esa pestaña está activa;
+  // las demás pestañas no la necesitan y el tab bar ya renderiza sólo la
+  // sección activa.
+  const cierreViajesQuery = useQuery({
+    queryKey: ['cierre-viajes', fecha],
+    queryFn: () => tripsApi.cierreViajes(fecha),
+    enabled: tab === 'viajes',
+  })
+  const motivosViajesQuery = useQuery({
+    queryKey: ['taxonomies', 'TRIP_UNASSIGNED_REASON'],
+    queryFn: () => taxonomiesApi.list('TRIP_UNASSIGNED_REASON'),
+    enabled: tab === 'viajes',
+    staleTime: 5 * 60_000,
+  })
+
+  async function handleCerrarViajes(tripIds: string[], motivoId: string) {
+    await tripsApi.bulkClose(tripIds, motivoId)
+    await queryClient.invalidateQueries({ queryKey: ['cierre-viajes', fecha] })
+  }
 
   useEffect(() => {
     const supabase = createClient()
@@ -202,6 +228,23 @@ function ClosuresCenterPageInner() {
               onSelectTrip={handleSelectTrip}
               onCreateManualTrip={handleCreateManualTrip}
             />
+          )}
+          {tab === 'viajes' && (
+            cierreViajesQuery.isError ? (
+              <Estado
+                tipo="error"
+                titulo="No se pudieron cargar los viajes"
+                detalle="Intenta de nuevo en unos segundos."
+              />
+            ) : (
+              <PasoViajesSection
+                grupos={cierreViajesQuery.data?.grupos}
+                bloquean={cierreViajesQuery.data?.bloquean}
+                cargando={cierreViajesQuery.isLoading}
+                motivos={motivosViajesQuery.data ?? []}
+                onCerrar={handleCerrarViajes}
+              />
+            )
           )}
           {tab === 'pendientes' && <PreCierrePendingSection fecha={fecha} />}
           {tab === 'reporte' && <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />}

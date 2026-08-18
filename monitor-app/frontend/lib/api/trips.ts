@@ -1,4 +1,4 @@
-import type { CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse } from '@/lib/types'
+import type { CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse, CierreViajesResponse } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type TripListResponse = {
@@ -126,14 +126,23 @@ export const tripsApi = {
       method: 'DELETE',
     }),
 
-  /** Selección masiva en el Diario — cierra/finaliza varios viajes de una
+  /** Selección masiva — cierra/finaliza varios viajes de una
    *  (is_active/is_working=false), mismo mecanismo que IndicatorSwitches
-   *  por viaje individual. */
-  bulkClose: (tripIds: string[]) =>
+   *  por viaje individual. El paso "Viajes" del Cierre (Tarea 6) es el
+   *  primer consumidor real: el motivo pasó a ser obligatorio (Tarea 4) —
+   *  un cierre sin motivo elegido no dice por qué WebCarga no tomó la
+   *  carga. */
+  bulkClose: (tripIds: string[], unassignedReasonId: string) =>
     apiFetch<{ ok: boolean; closed: number }>(`/api/v1/trips/bulk-close`, {
       method: 'PATCH',
-      body: JSON.stringify({ trip_ids: tripIds }),
+      body: JSON.stringify({ trip_ids: tripIds, unassigned_reason_id: unassignedReasonId }),
     }),
+
+  /** Los cuatro grupos del paso "Viajes" del Cierre (Tarea 3/6): hoy/rezago
+   *  bloquean el cierre del día si no se resuelven, en_curso/abandonado son
+   *  de sólo lectura. */
+  cierreViajes: (fecha: string) =>
+    apiFetch<CierreViajesResponse>(`/api/v1/trips/cierre-viajes?fecha=${fecha}`),
 
   patchStop: (id: string, stopId: string, body: TripStopPatch) =>
     apiFetch<Trip>(`/api/v1/trips/${id}/stops/${stopId}`, {
