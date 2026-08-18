@@ -107,9 +107,20 @@ function ClosuresCenterPageInner() {
     staleTime: 5 * 60_000,
   })
 
+  // Si `bulkClose` revienta, la excepción sube tal cual: `PasoViajesSection`
+  // la captura (mismo camino de escritura que `handleConfirmClose` con
+  // `closeError`) y muestra el error sin limpiar la selección — nadie cree
+  // que cerró N viajes cuando no cerró ninguno. El `invalidateQueries` de
+  // abajo va aparte: si el cierre YA tuvo éxito, que el refetch falle no
+  // puede disfrazarse de "no se cerró nada".
   async function handleCerrarViajes(tripIds: string[], motivoId: string) {
     await tripsApi.bulkClose(tripIds, motivoId)
-    await queryClient.invalidateQueries({ queryKey: ['cierre-viajes', fecha] })
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['cierre-viajes', fecha] })
+    } catch {
+      // La próxima vez que se entre a la pestaña "Viajes" vuelve a pedir el
+      // dato — no hace falta reintentar acá.
+    }
   }
 
   useEffect(() => {

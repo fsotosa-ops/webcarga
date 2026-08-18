@@ -83,11 +83,12 @@ beforeEach(async () => {
 })
 
 describe('ClosuresCenterPage', () => {
-  it('muestra las 3 tabs, con "Flota del día" activa por defecto', () => {
+  it('muestra las 4 tabs, con "Flota del día" activa por defecto', () => {
     renderPage()
     const tabs = screen.getAllByRole('tab')
-    expect(tabs.map(t => t.textContent)).toEqual(['Flota del día', 'Pendientes', 'Reporte'])
+    expect(tabs.map(t => t.textContent)).toEqual(['Flota del día', 'Viajes', 'Pendientes', 'Reporte'])
     expect(screen.getByRole('tab', { name: 'Flota del día' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Viajes' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: 'Pendientes' })).toHaveAttribute('aria-selected', 'false')
   })
 
