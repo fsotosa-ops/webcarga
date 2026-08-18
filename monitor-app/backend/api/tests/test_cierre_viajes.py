@@ -118,6 +118,35 @@ async def test_cada_grupo_clasifica_al_viaje_que_le_corresponde(conexion_reverti
     assert len(ids_en_resultado) == len(set(ids_en_resultado)), "hay viajes en mas de un grupo"
 
 
+async def test_un_viaje_declarado_sale_del_grupo_abandonado(conexion_revertida):
+    """Critico 1 (revision de rama, 2026-08-18): cerrar un viaje escribe
+    is_active=false. Sin excluir unassigned_reason_id, ese viaje reaparece en
+    el mismo instante en 'abandonado' -grupo de solo lectura, sin casilla,
+    sin accion- etiquetado como abandonado por el TMS cuando en realidad lo
+    cerro WebCarga. Medido contra produccion: 13 de los 17 viajes de Rezago
+    ya superan los 7 dias sin novedad, asi que esto no es un caso raro."""
+    from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
+
+    trip_id = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=30),
+        is_active=False, is_assigned=False, dias_sin_novedad=10)
+
+    filas = await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)
+    grupo_por_id = {f["trip_id"]: f["grupo"] for f in filas}
+    assert grupo_por_id.get(trip_id) == "abandonado", (
+        "precondicion: el viaje sintetico tiene que arrancar en abandonado")
+
+    motivo = await conexion_revertida.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain='TRIP_UNASSIGNED_REASON' LIMIT 1")
+    await conexion_revertida.execute(
+        "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2", motivo, trip_id)
+
+    filas = await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)
+    grupo_por_id = {f["trip_id"]: f["grupo"] for f in filas}
+    assert trip_id not in grupo_por_id, (
+        "un viaje declarado por WebCarga reaparecio como abandonado por el TMS")
+
+
 async def test_viaje_sin_planning_date_puede_ser_abandonado(conexion_revertida):
     """Bug real: la CTE excluia toda fila con planning_date IS NULL antes de
     que la rama `abandonado` pudiera verla, aunque esa rama no necesita
@@ -219,6 +248,30 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
     assert item_abandonado["unassigned_reason_label"] is None
 
 
+async def test_el_endpoint_no_pierde_el_orden_por_fecha(conexion_revertida):
+    """Menor 9 (revision de rama, 2026-08-18): `SQL_GRUPOS_CIERRE` termina en
+    `ORDER BY grupo, planning_date DESC`, pero el endpoint envuelve esa CTE
+    en un `SELECT ... LEFT JOIN` sin `ORDER BY` propio — Postgres no
+    garantiza que el orden del CTE sobreviva a la consulta externa. Dos
+    viajes sinteticos en 'rezago' con fechas distintas: el mas reciente
+    tiene que aparecer primero."""
+    from app.routers.trips import cierre_viajes
+
+    id_viejo = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=10),
+        is_active=True, is_assigned=False)
+    id_reciente = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=1),
+        is_active=True, is_assigned=False)
+
+    resp = await cierre_viajes(fecha="2026-08-18",
+                               pool=PoolDeUnaConexion(conexion_revertida), _=None)
+
+    ids_rezago = [v["trip_id"] for v in resp["grupos"]["rezago"]]
+    assert ids_rezago.index(str(id_reciente)) < ids_rezago.index(str(id_viejo)), (
+        "el mas reciente deberia listarse primero (planning_date DESC)")
+
+
 async def test_una_fecha_invalida_es_422(conexion_revertida):
     from fastapi import HTTPException
     from app.routers.trips import cierre_viajes
@@ -245,6 +298,59 @@ async def test_cerrar_un_viaje_exige_motivo(conexion_revertida):
     assert e.value.status_code == 422
 
 
+async def test_bulk_close_rechaza_motivo_de_otro_dominio(conexion_revertida):
+    """Importante 3: `app.trips.unassigned_reason_id` tiene dos escritores
+    con catalogos distintos. GestionPanel.tsx (vivo) escribe ids de
+    DRIVER_REASON ("Medico", "Vacaciones", "No se presento"); bulk-close
+    solo debe aceptar TRIP_UNASSIGNED_REASON. Sin esta validacion, el filtro
+    "No asignado por WebCarga" mostraria viajes cuyo motivo es "Vacaciones"."""
+    from fastapi import HTTPException
+    from app.routers.trips import bulk_close_trips
+    from app.schemas.trip import TripBulkCloseBody
+
+    conn = conexion_revertida
+    trip_id = str(await conn.fetchval("SELECT id FROM app.trips LIMIT 1"))
+    motivo_driver = await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain='DRIVER_REASON' LIMIT 1")
+    assert motivo_driver is not None, "precondicion: DRIVER_REASON tiene que tener datos"
+
+    with pytest.raises(HTTPException) as e:
+        await bulk_close_trips(
+            TripBulkCloseBody(trip_ids=[trip_id], unassigned_reason_id=str(motivo_driver)),
+            PoolDeUnaConexion(conn), await _usuario_real(conn))
+    assert e.value.status_code == 422
+
+    despues = await conn.fetchrow(
+        "SELECT unassigned_reason_id FROM app.trips WHERE id = $1", trip_id)
+    assert despues["unassigned_reason_id"] is None, "no debia escribir nada antes de validar"
+
+
+async def test_bulk_close_motivo_inexistente_es_422_no_500(conexion_revertida):
+    """Importante 6: antes de esta correccion, `pool.fetchval()` devolvia
+    None para un id inexistente, la nota y el audit_log quedaban con "None",
+    y recien despues el UPDATE fallaba por FK con un 500. Tiene que ser un
+    422 de negocio ANTES de escribir nada."""
+    import uuid
+
+    from fastapi import HTTPException
+    from app.routers.trips import bulk_close_trips
+    from app.schemas.trip import TripBulkCloseBody
+
+    conn = conexion_revertida
+    trip_id = str(await conn.fetchval("SELECT id FROM app.trips LIMIT 1"))
+    id_inexistente = str(uuid.uuid4())
+
+    with pytest.raises(HTTPException) as e:
+        await bulk_close_trips(
+            TripBulkCloseBody(trip_ids=[trip_id], unassigned_reason_id=id_inexistente),
+            PoolDeUnaConexion(conn), await _usuario_real(conn))
+    assert e.value.status_code == 422
+
+    despues = await conn.fetchrow(
+        "SELECT unassigned_reason_id FROM app.trips WHERE id = $1", trip_id)
+    assert despues["unassigned_reason_id"] is None, "no debia escribir nada antes de validar"
+
+
 async def test_el_estado_del_tms_no_se_toca(conexion_revertida):
     """Regla 1 de Pablo. El viaje conserva su ASIGNADO y en el historial se lee
     "No asignado por WebCarga - <motivo>" AL LADO, no encima."""
@@ -266,8 +372,17 @@ async def test_el_estado_del_tms_no_se_toca(conexion_revertida):
     assert despues["trip_status"] == fila["trip_status"], "se piso el estado del TMS"
     assert despues["is_active"] is False
     assert str(despues["unassigned_reason_id"]) == str(motivo)
+    # Menor 7 (revision de rama, 2026-08-18): el comentario original decia
+    # que sin esto "la proxima corrida de dbt borra el motivo" — es falso.
+    # El trigger app.protect_manual_overrides solo mira is_active, is_working,
+    # is_assigned, manual_status, is_first_leg (no unassigned_reason_id); la
+    # proteccion real viene de merge_exclude_columns en el modelo dbt, que ya
+    # incluye la columna (ver docs/superpowers/specs/2026-08-16-cierre-de-viajes-design.md:394).
+    # Este assert sigue siendo correcto -bulk_close_trips debe marcar el campo
+    # en manually_edited_fields, consistente con is_active/is_working- solo
+    # que por otra razon: documentar la edicion manual, no protegerla del trigger.
     assert "unassigned_reason_id" in despues["manually_edited_fields"], \
-        "sin esto, la proxima corrida de dbt borra el motivo"
+        "bulk_close_trips deberia marcar unassigned_reason_id como editado a mano"
 
 
 async def test_la_declaracion_queda_en_audit_log(conexion_revertida):

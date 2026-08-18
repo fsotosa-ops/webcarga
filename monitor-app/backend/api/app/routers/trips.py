@@ -2132,6 +2132,7 @@ async def cierre_viajes(
         SELECT g.*, ur.label AS unassigned_reason_label
         FROM g
         LEFT JOIN app.status_taxonomies ur ON ur.id = g.unassigned_reason_id
+        ORDER BY g.grupo, g.planning_date DESC
         """,
         day,
     )
@@ -2203,8 +2204,28 @@ async def bulk_close_trips(
     if missing:
         raise HTTPException(404, f"Viaje(s) no encontrado(s): {missing}")
 
-    motivo = await pool.fetchval(
-        "SELECT label FROM app.status_taxonomies WHERE id = $1", body.unassigned_reason_id)
+    # Importante 3 + 6 (revision de rama, 2026-08-18): app.trips.unassigned_reason_id
+    # tiene DOS escritores con catalogos distintos — GestionPanel.tsx (vivo)
+    # escribe ids de DRIVER_REASON, bulk-close escribe ids de
+    # TRIP_UNASSIGNED_REASON. La FK no restringe el dominio y nadie lo
+    # validaba: un id de DRIVER_REASON pasaba derecho y ensuciaba el filtro
+    # "No asignado por WebCarga" con motivos como "Vacaciones". Una sola
+    # consulta valida existencia Y dominio a la vez — si el id no existe O es
+    # de otro dominio, `motivo_row` viene None y se corta ANTES de escribir
+    # nada (antes: `fetchval` devolvia None en silencio, la nota y el
+    # audit_log quedaban con "None", y recien el UPDATE fallaba por FK con
+    # un 500 en vez de un 422 de negocio).
+    motivo_row = await pool.fetchrow(
+        "SELECT label FROM app.status_taxonomies "
+        "WHERE id = $1 AND domain = 'TRIP_UNASSIGNED_REASON'",
+        body.unassigned_reason_id,
+    )
+    if motivo_row is None:
+        raise HTTPException(
+            422,
+            "Motivo inválido: no existe o no pertenece al catálogo de no asignación por WebCarga",
+        )
+    motivo = motivo_row["label"]
 
     # El UPDATE y la traza en public.audit_log van en la MISMA transacción:
     # si log_change revienta para un viaje del lote, el lote entero se

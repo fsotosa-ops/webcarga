@@ -25,6 +25,7 @@ from ..auth import ADMIN_ROLES, get_current_user, require_editor
 from ..db import get_pool
 from ..schemas.daily_closures import CloseDayBody, DriverBatchReasonBody, DriverDayStatusPatchBody
 from ..services.audit import log_change
+from ..services.cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from ..services.pre_cierre import run_pre_cierre
 from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
@@ -269,8 +270,7 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
     total_trips_al_firmar = closure_dict.get("total_trips") if closure_dict else None
     posteriores_al_cierre = 0
     if total_trips_al_firmar is not None:
-        ahora = await pool.fetchval(
-            "SELECT count(*) FROM app.trips WHERE planning_date = $1", business_date)
+        ahora = await pool.fetchval(SQL_TOTAL_TRIPS_DEL_DIA, business_date)
         posteriores_al_cierre = max(0, ahora - total_trips_al_firmar)
 
     return {
@@ -424,8 +424,7 @@ async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user
     # Cuantos viajes tenia el dia AL MOMENTO DE FIRMAR — el unico dato que
     # despues permite detectar viajes posteriores al cierre (ver GET ""),
     # sin el cual el caso no se puede reconstruir retroactivamente.
-    total_trips = await pool.fetchval(
-        "SELECT count(*) FROM app.trips WHERE planning_date = $1", business_date)
+    total_trips = await pool.fetchval(SQL_TOTAL_TRIPS_DEL_DIA, business_date)
 
     await pool.execute(
         """

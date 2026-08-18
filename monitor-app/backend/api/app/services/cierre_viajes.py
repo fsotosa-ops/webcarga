@@ -26,6 +26,12 @@ DIAS_SIN_NOVEDAD = 7
 # un arreglo de catalogo, no de este servicio.
 GRUPOS_NO_TERMINALES = ("en_ruta", "retornando", "en_local", "otro")
 
+# El universo del dia "posterior al cierre" (Importante 4, revision de rama
+# 2026-08-18): app/routers/daily_closures.py lo necesitaba en DOS lugares
+# (guardar total_trips al firmar, y volver a contarlo despues para el delta)
+# y las dos veces estaba escrito a mano. Un solo lugar, consumido por los dos.
+SQL_TOTAL_TRIPS_DEL_DIA = "SELECT count(*) FROM app.trips WHERE planning_date = $1"
+
 SQL_GRUPOS_CIERRE = f"""
 WITH base AS (
     SELECT t.id AS trip_id, t.planning_date, t.client_name,
@@ -58,6 +64,14 @@ WHERE (is_active AND NOT is_assigned)
        -- mismo valor redondeado que se devuelve en el SELECT: filtrar sobre
        -- el crudo y mostrar el redondeado dejaba pasar filas de 7.0x que el
        -- resultado mostraba como 7.0 exactos (parecia violar > 7 sin bug real).
-       AND dias_sin_novedad > {DIAS_SIN_NOVEDAD})
+       AND dias_sin_novedad > {DIAS_SIN_NOVEDAD}
+       -- Critico 1 (revision de rama, 2026-08-18): cerrar un viaje en
+       -- bulk-close escribe is_active=false con un unassigned_reason_id. Sin
+       -- esta exclusion ese viaje YA declarado reaparecia aca, etiquetado
+       -- "abandonado por el TMS" -sin casilla, sin accion, para siempre-
+       -- cuando en realidad WebCarga ya lo cerro. Un viaje declarado tiene
+       -- que salir de los cuatro grupos: eso es lo que significa "resuelto".
+       -- Sigue visible en el historial via el filtro no_asignado_webcarga.
+       AND unassigned_reason_id IS NULL)
 ORDER BY grupo, planning_date DESC
 """

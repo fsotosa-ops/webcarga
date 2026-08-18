@@ -50,6 +50,27 @@ def test_bulk_close_422_when_no_unassigned_reason():
     assert res.status_code == 422
 
 
+def test_bulk_close_422_when_reason_does_not_exist_or_is_wrong_domain():
+    """Importante 3 + 6: `app.trips.unassigned_reason_id` tiene dos
+    escritores con catálogos distintos (GestionPanel.tsx usa DRIVER_REASON,
+    bulk-close usa TRIP_UNASSIGNED_REASON) y la FK no restringe el dominio.
+    Un id que no existe en absoluto O que existe pero es de otro dominio
+    tiene que dar 422 de negocio ANTES de escribir nada — no un 500 por FK
+    después de dejar la nota/audit_log con "None"."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetchrow.return_value = None  # ni existe, ni es del dominio correcto
+    client = make_client(pool)
+
+    res = client.patch(
+        "/api/v1/trips/bulk-close",
+        json={"trip_ids": ["t1"], "unassigned_reason_id": REASON_ID},
+    )
+
+    assert res.status_code == 422
+    pool.execute.assert_not_called()
+
+
 def test_bulk_close_404_when_a_trip_is_missing():
     pool = AsyncMock()
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
@@ -73,7 +94,7 @@ def test_bulk_close_sets_is_active_and_is_working_false_for_all_selected():
         {"id": "t1", "manually_edited_fields": []},
         {"id": "t2", "manually_edited_fields": []},
     ]
-    pool.fetchval.return_value = "Sin camión disponible"
+    pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
 
     res = client.patch(
@@ -101,7 +122,7 @@ def test_bulk_close_logs_a_system_note_per_trip():
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
-    pool.fetchval.return_value = "Sin camión disponible"
+    pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
 
     client.patch(
@@ -125,7 +146,7 @@ def test_bulk_close_logs_to_audit_log_per_trip():
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
-    pool.fetchval.return_value = "Sin camión disponible"
+    pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
 
     client.patch(
@@ -147,7 +168,7 @@ def test_bulk_close_route_does_not_collide_with_single_trip_patch():
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
-    pool.fetchval.return_value = "Sin camión disponible"
+    pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
 
     res = client.patch(
