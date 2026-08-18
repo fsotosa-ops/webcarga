@@ -149,3 +149,80 @@ async def test_los_viajes_futuros_no_entran(conexion_revertida):
     assert all(
         f["planning_date"] is None or f["planning_date"] <= FECHA_NEGOCIO
         for f in filas)
+
+
+async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
+    """Solo 'hoy' y 'rezago' bloquean: son cargas que nos ofrecieron y no
+    contestamos. 'en_curso' y 'abandonado' se muestran para que no
+    desaparezcan (regla 5), pero no impiden cerrar el dia.
+
+    Los datos son sinteticos, creados dentro de esta misma transaccion
+    revertida (ver docstring de `conexion_revertida`): el test no puede
+    empezar a fallar el dia que operaciones resuelva todos los pendientes
+    reales de hoy. Ademas de la clasificacion, verifica la forma de la
+    respuesta (tipos, join a status_taxonomies) que el test de servicio no
+    cubre porque llama al endpoint, no al SQL crudo."""
+    from app.routers.trips import cierre_viajes
+
+    motivo = await conexion_revertida.fetchrow(
+        "SELECT id, label FROM app.status_taxonomies "
+        "WHERE domain = 'TRIP_UNASSIGNED_REASON' AND code = 'SIN_CAMION'")
+    assert motivo is not None, "el motivo SIN_CAMION no existe: revisar el catalogo"
+
+    id_hoy = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO,
+        is_active=True, is_assigned=False)
+    await conexion_revertida.execute(
+        "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2",
+        motivo["id"], id_hoy)
+    id_rezago = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=3),
+        is_active=True, is_assigned=False)
+    id_en_curso = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=3),
+        is_active=True, is_assigned=True)
+    id_abandonado = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=30),
+        is_active=False, is_assigned=False, dias_sin_novedad=10)
+
+    resp = await cierre_viajes(fecha="2026-08-18",
+                               pool=PoolDeUnaConexion(conexion_revertida), _=None)
+
+    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado"}
+    assert resp["bloquean"] == len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"])
+
+    grupo_por_id = {
+        item["trip_id"]: grupo
+        for grupo, items in resp["grupos"].items()
+        for item in items
+    }
+    esperado = {
+        id_hoy: "hoy",
+        id_rezago: "rezago",
+        id_en_curso: "en_curso",
+        id_abandonado: "abandonado",
+    }
+    for trip_id, grupo_esperado in esperado.items():
+        assert grupo_por_id.get(str(trip_id)) == grupo_esperado, (
+            f"el viaje sintetico de {grupo_esperado} no aterrizo en ese grupo")
+
+    item_hoy = next(v for v in resp["grupos"]["hoy"] if v["trip_id"] == str(id_hoy))
+    assert item_hoy["client_name"] == "TEST-CIERRE"
+    assert item_hoy["planning_date"] == FECHA_NEGOCIO.isoformat()
+    assert isinstance(item_hoy["dias_sin_novedad"], float)
+    assert item_hoy["unassigned_reason_id"] == str(motivo["id"])
+    assert item_hoy["unassigned_reason_label"] == motivo["label"]
+
+    item_abandonado = next(
+        v for v in resp["grupos"]["abandonado"] if v["trip_id"] == str(id_abandonado))
+    assert item_abandonado["unassigned_reason_id"] is None
+    assert item_abandonado["unassigned_reason_label"] is None
+
+
+async def test_una_fecha_invalida_es_422(conexion_revertida):
+    from fastapi import HTTPException
+    from app.routers.trips import cierre_viajes
+
+    with pytest.raises(HTTPException) as e:
+        await cierre_viajes(fecha="ayer", pool=PoolDeUnaConexion(conexion_revertida), _=None)
+    assert e.value.status_code == 422

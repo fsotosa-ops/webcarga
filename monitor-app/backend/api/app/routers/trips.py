@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.trip import AsignarConductorBody, TripBulkCloseBody, TripPatch, TripStopPatch
+from ..services.cierre_viajes import SQL_GRUPOS_CIERRE
 
 
 def _parse_date(s: str) -> _date | None:
@@ -2086,6 +2087,53 @@ async def driver_candidates(
         ],
         "trip_ids_de_la_persona": [str(v["id"]) for v in viajes],
     }
+
+
+@router.get("/cierre-viajes")
+async def cierre_viajes(
+    fecha: str = Query(""),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Los cuatro grupos del paso "Viajes" del Cierre.
+
+    Sólo `hoy` y `rezago` bloquean el cierre: son cargas que nos ofrecieron y
+    todavía no contestamos. `en_curso` y `abandonado` se muestran para que no
+    desaparezcan de la vista —regla 5 de Pablo, "si no me cerraron el viaje no
+    me lo van a pagar"— pero no impiden firmar el día.
+
+    Declarado ANTES de GET /{trip_id} — FastAPI matchea rutas en el orden en
+    que se registran, así que el literal "/cierre-viajes" debe ir antes del
+    path param genérico o quedaría absorbido como trip_id="cierre-viajes"
+    (mismo gotcha que documenta PATCH /bulk-close)."""
+    day = _parse_date(fecha)
+    if day is None:
+        raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
+
+    filas = await pool.fetch(
+        f"""
+        WITH g AS ({SQL_GRUPOS_CIERRE})
+        SELECT g.*, ur.label AS unassigned_reason_label
+        FROM g
+        LEFT JOIN app.status_taxonomies ur ON ur.id = g.unassigned_reason_id
+        """,
+        day,
+    )
+
+    grupos: dict[str, list] = {"hoy": [], "rezago": [], "en_curso": [], "abandonado": []}
+    for r in filas:
+        grupos[r["grupo"]].append({
+            "trip_id": str(r["trip_id"]),
+            "planning_date": r["planning_date"].isoformat() if r["planning_date"] else None,
+            "client_name": r["client_name"],
+            "source_system_trip_id": r["source_system_trip_id"],
+            "trip_status": r["trip_status"],
+            "dias_sin_novedad": float(r["dias_sin_novedad"] or 0),
+            "unassigned_reason_id": str(r["unassigned_reason_id"]) if r["unassigned_reason_id"] else None,
+            "unassigned_reason_label": r["unassigned_reason_label"],
+        })
+
+    return {"grupos": grupos, "bloquean": len(grupos["hoy"]) + len(grupos["rezago"])}
 
 
 @router.get("/{trip_id}")
