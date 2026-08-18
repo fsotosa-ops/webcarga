@@ -624,6 +624,40 @@ una lista:
     protección de contraseñas filtradas, y corregir el rol `writer` no reconocido en `auth.py` que
     bloquea a 2 de 9 usuarios.
 
+**Agregado al cerrar la Ronda 125 (2026-08-18)** — lo que salió de las Rondas 123-125:
+
+21. [ ] **El aviso "posterior al cierre" no lleva a ningún lado.** Informa el número y el botón se
+    quitó, porque el Monitor no soporta filtro por fecha en la URL (verificado: no usa
+    `useSearchParams` ni lee parámetros). O se le agrega, o el aviso queda informativo a propósito.
+22. [ ] **Los tres trinquetes del sistema visual, dos en margen cero**: color 1779/1780,
+    tipografía sub-11px **279/279**, `<h1>` **9/9**. El próximo color crudo o tamaño chico que
+    alguien agregue **en cualquier archivo del repo** rompe CI con un fallo ajeno a lo que estaba
+    haciendo. La próxima tarea de frontend debería empezar bajándolos.
+23. [ ] **Una sola definición del "universo de viajes del día".** El criterio multi-día sigue escrito
+    a mano **14 veces** y la exclusión de Sodimac **9**. La R123 lo alineó pero no lo eliminó, y la
+    R125 tuvo que sacar una quinta copia nacida dentro del propio plan. Es la causa raíz de los
+    cuatro defectos de conteo que corrigió la R123.
+24. [ ] **Absorción dinámica de estados sin mapear** en `app.trip_statuses`. Evidencia: Wingsuite
+    manda `Cancelado` y el catálogo tiene `CANCELADO`, así que ese viaje cae fuera de todo JOIN en
+    silencio. Decisión del usuario del 18/08: los estados vienen de los TMS y el catálogo debe
+    absorberlos. Vive en el pipeline.
+25. [ ] **Confirmar con operaciones el umbral de 7 días** para "abandonado por el TMS".
+26. [ ] **Fusionar el conductor duplicado del roster** — dos filas con el mismo nombre; son las 2
+    personas ambiguas que la R124 midió. El resolvedor se niega a elegir (correcto) y esos viajes
+    quedan sin identificar.
+27. [ ] **Borrar `CloseDayDialog.tsx` y sus tests** — 317 líneas, código muerto confirmado: ningún
+    archivo de `app/` lo importa.
+28. [ ] **UX: el viaje que el TMS cierra y sigue sin conductor** se cae del Monitor "en curso" justo
+    cuando todavía hay trabajo. Mismo patrón que resolvió "Abandonados por el TMS" en el Cierre: el
+    trabajo no debe desaparecer porque el TMS cambió de estado.
+29. [ ] **UX: el alta de conductor no declara lo que cuesta.** Crear una persona dispara sus
+    requisitos de Certificación (13 altas costaron 132 registros) y el popover no lo dice. Se
+    resuelve en el copy y la fricción del paso de alta, antes de confirmar — no con un modal.
+30. [ ] **Medir la densidad del Monitor** antes de opinar sobre su UX. Lo único observado hasta hoy
+    es un límite de herramienta leyendo el árbol de accesibilidad (65k caracteres), que **no** es
+    evidencia de un defecto de pantalla. Si se aborda, medir columnas, contenido por fila y cuántas
+    decisiones caben sin scroll, con benchmark contra SaaS del rubro.
+
 **Corregido al archivar**: el checklist viejo pedía "diseñar (spec nuevo) `app.equipment_day_status`".
 **Esa tabla ya existe y tiene datos** — verificado hoy contra producción: 802 filas del 2026-08-01
 al 08-14. Lo que falta no es el modelo, es el rediseño de la pantalla que lo usa (ver abajo).
