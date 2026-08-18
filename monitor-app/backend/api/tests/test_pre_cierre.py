@@ -258,3 +258,56 @@ async def test_tipo_b_onboarding_y_sin_tipo_de_operacion():
     assert result["escalations"]["SIN_TIPO_OPERACION"] == [
         {"carrier_id": "c2", "carrier_name": "Empresa Sin Tipo"}
     ]
+
+
+# ── FIX 2026-08-18: las 5 consultas usaban `planning_date = $1` exacto
+# mientras el resto del Cierre (daily_closures.py, equipment_closures.py,
+# status_report.py) ya usaba el criterio multi-día. Como run_pre_cierre corre
+# DENTRO de _recompute(), justo antes del cálculo que sí es multi-día, un
+# viaje multi-día no disparaba ninguna corrección ni ninguna escalación: el
+# pre-cierre miraba un universo más chico que la cuadratura que preparaba.
+# El test mira el SQL realmente enviado, no una constante de módulo — acá las
+# queries son inline. ──────────
+
+_CRITERIO_MULTIDIA = "(t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))"
+
+
+@pytest.mark.asyncio
+async def test_las_cinco_consultas_usan_el_criterio_multidia():
+    conn = AsyncMock()
+    conn.fetch.side_effect = [[], [], [], [], []]
+    pool = _pool_with(conn)
+
+    await run_pre_cierre(pool, DAY)
+
+    consultas = [c.args[0] for c in conn.fetch.call_args_list]
+    assert len(consultas) == 5, "cambió la cantidad de scans de run_pre_cierre"
+    for i, sql in enumerate(consultas):
+        assert _CRITERIO_MULTIDIA in sql, f"el scan #{i + 1} volvió al criterio de un solo día"
+        assert "planning_date = $1 AND" not in sql, f"el scan #{i + 1} quedó con el predicado viejo"
+
+
+@pytest.mark.asyncio
+async def test_no_excluye_sodimac_porque_esa_fuente_no_puede_aportar_señal():
+    """Contrapunto deliberado de daily_closures, que SÍ la excluye.
+
+    Acá sería código muerto: las 5 consultas exigen `tractor_plate` o
+    `driver_rut_tms`, y de los 54 viajes Sodimac de app.trips, 0 traen
+    patente y 0 traen RUT (verificado contra producción, 2026-08-18).
+    Si alguien agrega la exclusión "por consistencia", este test explica
+    por qué no hace falta."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [[], [], [], [], []]
+    pool = _pool_with(conn)
+
+    await run_pre_cierre(pool, DAY)
+
+    consultas = [c.args[0] for c in conn.fetch.call_args_list]
+    exigen_patente_o_rut = [
+        s for s in consultas
+        if "tractor_plate" in s or "driver_rut_tms" in s
+    ]
+    assert len(exigen_patente_o_rut) == 5, (
+        "alguna consulta dejó de exigir patente o RUT — si es así, ahora SÍ "
+        "puede entrar Sodimac y hay que excluirla explícitamente"
+    )

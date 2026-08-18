@@ -374,3 +374,15 @@ def test_get_status_report_includes_section4_driver_detail():
             "tractor_plate": "ABCD12", "operation_type": "Tractoreo",
         },
     ]
+
+
+# ── FIX 2026-08-18: la Sección 4 decidía Tractoreo/Equipo Completo
+# comparando contra la ETIQUETA visible ('Tractoreo'), así que renombrarla
+# desde Configuración vaciaba el roster en silencio. Pasa a leer `code`, el
+# identificador estable que no se edita desde la app (columna agregada en la
+# migración 20260816090000). ──────────
+
+def test_roster_sql_lee_el_codigo_no_la_etiqueta():
+    from app.routers.status_report import _ROSTER_SQL
+    assert "wot.code AS webcarga_operation_type_code" in _ROSTER_SQL
+    assert "wot.label AS webcarga_operation_type_label" not in _ROSTER_SQL

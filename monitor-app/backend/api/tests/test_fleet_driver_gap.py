@@ -19,7 +19,7 @@ async def test_compute_fleet_driver_gap_devuelve_filas_tal_cual():
 
 
 def test_sql_excluye_equipo_completo():
-    assert "wot.label = 'Tractoreo'" in _FLEET_DRIVER_GAP_SQL
+    assert "wot.code = 'TRACTOREO'" in _FLEET_DRIVER_GAP_SQL
 
 
 def test_sql_filtra_por_operational_status_active():

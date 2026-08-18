@@ -53,8 +53,8 @@ def _parse_business_date(fecha: str) -> _date:
 _RECOMPUTE_SQL = """
 WITH active_roster AS (
     SELECT a.id AS asset_id, aa.carrier_id,
-           wot.label = 'Tractoreo' AS is_tractoreo,
-           wot.label = 'Equipo Completo' AS is_equipo_completo
+           wot.code = 'TRACTOREO' AS is_tractoreo,
+           wot.code = 'EQUIPO_COMPLETO' AS is_equipo_completo
     FROM public.assets a
     JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
     JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'

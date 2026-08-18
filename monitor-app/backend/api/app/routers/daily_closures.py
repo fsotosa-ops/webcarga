@@ -90,6 +90,13 @@ day_trips AS (
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+      -- FIX 2026-08-18: faltaba excluir Sodimac, que equipment_closures.py:69
+      -- y status_report.py:107 sí excluyen ("esa fuente no resuelve tracto por
+      -- la misma cadena"). El mismo día daba conteos distintos según la
+      -- pantalla. Medido sobre el 2026-08-14: el universo baja de 63 a 49
+      -- viajes y NINGÚN conductor cambia de estado (27 resueltos antes y
+      -- después) — alinea la aritmética sin mover el cierre de nadie.
+      AND t.source_system != 'sodimac'
 ),
 computed AS (
     SELECT
@@ -167,6 +174,7 @@ LEFT JOIN LATERAL (
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE vfr.resolved_driver_id = dds.driver_id
       AND (t.planning_date = dds.business_date OR (t.planning_date < dds.business_date AND t.is_active))
+      AND t.source_system != 'sodimac'  -- mismo criterio que equipment_closures.py:141
       AND (vfr.resolved_carrier_id IS NULL OR vfr.resolved_carrier_id IS DISTINCT FROM c.id)
     ORDER BY t.status_reported_at DESC NULLS LAST
     LIMIT 1

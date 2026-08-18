@@ -92,10 +92,10 @@ def test_detail_sql_mismatch_trip_counts_multi_day_active_trip():
 # tracto en equipment_closures.py). Las 3 queries deben compartir la MISMA
 # constante TRACTOREO_ROSTER_CTE, no una copia divergente. ──────────
 
-def test_tractoreo_roster_cte_filters_by_operation_type_label():
+def test_tractoreo_roster_cte_filters_by_operation_type_code():
     from app.routers.daily_closures import TRACTOREO_ROSTER_CTE
     assert "app.status_taxonomies" in TRACTOREO_ROSTER_CTE
-    assert "wot.label = 'Tractoreo'" in TRACTOREO_ROSTER_CTE
+    assert "wot.code = 'TRACTOREO'" in TRACTOREO_ROSTER_CTE
     assert "a.asset_type = 'TRACTOCAMION'" in TRACTOREO_ROSTER_CTE
 
 
@@ -103,20 +103,20 @@ def test_recompute_sql_uses_shared_tractoreo_roster_cte():
     from app.routers.daily_closures import _RECOMPUTE_SQL, TRACTOREO_ROSTER_CTE
     assert TRACTOREO_ROSTER_CTE in _RECOMPUTE_SQL
     assert "app.status_taxonomies" in _RECOMPUTE_SQL
-    assert "wot.label = 'Tractoreo'" in _RECOMPUTE_SQL
+    assert "wot.code = 'TRACTOREO'" in _RECOMPUTE_SQL
 
 
 def test_detail_sql_uses_shared_tractoreo_roster_cte():
     from app.routers.daily_closures import _DETAIL_SQL, TRACTOREO_ROSTER_CTE
     assert TRACTOREO_ROSTER_CTE in _DETAIL_SQL
-    assert "wot.label = 'Tractoreo'" in _DETAIL_SQL
+    assert "wot.code = 'TRACTOREO'" in _DETAIL_SQL
     assert "JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _DETAIL_SQL
 
 
 def test_report_sql_uses_shared_tractoreo_roster_cte():
     from app.routers.daily_closures import _REPORT_SQL, TRACTOREO_ROSTER_CTE
     assert TRACTOREO_ROSTER_CTE in _REPORT_SQL
-    assert "wot.label = 'Tractoreo'" in _REPORT_SQL
+    assert "wot.code = 'TRACTOREO'" in _REPORT_SQL
     assert "JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _REPORT_SQL
 
 
@@ -554,3 +554,34 @@ def test_close_day_override_as_admin_logs_and_closes():
     assert sum("audit_log" in s for s in audit_calls) == 2
     insert_sql = pool.execute.call_args_list[-1].args[0]
     assert "app.daily_closures" in insert_sql
+
+
+# ── FIX 2026-08-18: las 3 pantallas del Cierre no miraban el mismo universo.
+# daily_closures no excluía Sodimac mientras equipment_closures.py:69 y
+# status_report.py:107 sí lo hacen ("esa fuente no resuelve tracto por la
+# misma cadena"), así que el mismo día daba conteos distintos según dónde se
+# lo mirara. Medido sobre el 2026-08-14 antes de aplicarlo: el universo baja
+# de 63 a 49 viajes y ningún conductor cambia de estado (27 antes y
+# después). ──────────
+
+def test_recompute_sql_excluye_sodimac():
+    from app.routers.daily_closures import _RECOMPUTE_SQL
+    assert "t.source_system != 'sodimac'" in _RECOMPUTE_SQL
+
+
+def test_detail_sql_excluye_sodimac_en_el_lateral_de_mismatch():
+    from app.routers.daily_closures import _DETAIL_SQL
+    assert "t.source_system != 'sodimac'" in _DETAIL_SQL
+
+
+# ── FIX 2026-08-18: el roster filtraba la empresa y el activo por
+# operational_status, pero no al CONDUCTOR, mientras fleet_driver_gap.py sí
+# lo hace — el mismo conductor de baja contaba distinto en dos secciones del
+# mismo reporte. ──────────
+
+def test_tractoreo_roster_cte_excluye_conductores_de_baja():
+    from app.routers.daily_closures import TRACTOREO_ROSTER_CTE
+    assert "d.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
+    # los otros dos filtros ya estaban y no deben perderse
+    assert "c.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
+    assert "a.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE

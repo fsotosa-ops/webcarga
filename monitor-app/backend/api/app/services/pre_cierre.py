@@ -46,9 +46,14 @@ def _looks_like_webcarga_itself(tms_carrier_name: str) -> bool:
 
 
 def _single_value(values: list[str]) -> str | None:
-    """Señal usable solo si TODOS los viajes de hoy para esa patente/RUT
-    coinciden — un solo viaje discrepante dentro del mismo día es ambiguo,
-    no se auto-resuelve (queda para que MISMATCH lo atrape)."""
+    """Señal usable solo si TODOS los viajes de la ventana coinciden para esa
+    patente/RUT — un solo viaje discrepante es ambiguo, no se auto-resuelve
+    (queda para que MISMATCH lo atrape).
+
+    Desde el fix multi-día la ventana ya no es "hoy": incluye los viajes
+    abiertos de días anteriores. Medido sobre el 2026-08-14, eso SUMA 2
+    patentes con señal usable (32 → 34) y no le quita la señal a ninguna,
+    o sea el ensanche no vuelve más conservador al Tipo A."""
     distinct = {v for v in values if v}
     return next(iter(distinct)) if len(distinct) == 1 else None
 
@@ -63,6 +68,24 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
         "SIN_TIPO_OPERACION": [],
     }
 
+    # FIX 2026-08-18: las 5 consultas de acá usaban `planning_date = $1`
+    # exacto mientras el resto del Cierre ya usaba el criterio multi-día
+    # (daily_closures.py:92, equipment_closures.py:68, status_report.py:106).
+    # Como `run_pre_cierre` corre DENTRO de `_recompute()`, justo antes del
+    # cálculo que sí es multi-día, un viaje multi-día no disparaba ninguna
+    # corrección Tipo A ni ninguna escalación Tipo B: el pre-cierre miraba un
+    # universo más chico que la cuadratura que venía a preparar.
+    # Delta medido sobre el 2026-08-14 antes de aplicarlo: patentes 33 → 35,
+    # conductores por RUT 1 → 1, cliente+patente 33 → 35, onboarding 0 → 0,
+    # sin tipo de operación 1 → 1. El ensanche está acotado porque el segundo
+    # término exige `is_active`, que ya exige recencia.
+    #
+    # NO se agrega acá la exclusión de Sodimac que sí se agregó a
+    # daily_closures.py, y es deliberado: sería código muerto. Las 5 consultas
+    # exigen `tractor_plate` o `driver_rut_tms`, y de los 54 viajes Sodimac que
+    # existen en app.trips, 0 traen patente y 0 traen RUT (verificado
+    # 2026-08-18). Esa fuente no puede aportar señal a un Tipo A ni a un
+    # Tipo B: ya está excluida por construcción.
     async with pool.acquire() as conn:
         async with conn.transaction():
             # ── Tipo A #1 + Tipo B "patente" ────────────────────────────────
@@ -71,7 +94,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 SELECT upper(trim(t.fleet->>'tractor_plate')) AS plate,
                        array_agg(t.fleet->>'transporter_name_tms') AS carrier_names
                 FROM app.trips t
-                WHERE t.planning_date = $1 AND t.fleet->>'tractor_plate' IS NOT NULL
+                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND t.fleet->>'tractor_plate' IS NOT NULL
                 GROUP BY 1
                 """,
                 business_date,
@@ -163,7 +186,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 SELECT upper(trim(t.fleet->>'driver_rut_tms')) AS rut,
                        array_agg(t.fleet->>'driver_name_tms') AS names
                 FROM app.trips t
-                WHERE t.planning_date = $1 AND t.fleet->>'driver_rut_tms' IS NOT NULL
+                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND t.fleet->>'driver_rut_tms' IS NOT NULL
                   AND trim(t.fleet->>'driver_rut_tms') != ''
                 GROUP BY 1
                 """,
@@ -201,7 +224,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 """
                 SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate, t.client_name
                 FROM app.trips t
-                WHERE t.planning_date = $1 AND t.fleet->>'tractor_plate' IS NOT NULL
+                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND t.fleet->>'tractor_plate' IS NOT NULL
                   AND t.client_name IS NOT NULL
                 """,
                 business_date,
@@ -249,7 +272,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
                 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
                 JOIN public.carriers c ON c.id = aa.carrier_id
-                WHERE t.planning_date = $1 AND c.operational_status != 'ACTIVE'
+                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND c.operational_status != 'ACTIVE'
                 """,
                 business_date,
             )
@@ -271,7 +294,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
                 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
                 JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-                WHERE t.planning_date = $1
+                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
                   AND a.webcarga_operation_type_id IS NULL
                 """,
                 business_date,

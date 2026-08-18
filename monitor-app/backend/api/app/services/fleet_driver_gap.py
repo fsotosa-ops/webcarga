@@ -12,7 +12,7 @@ WITH tractoreo_assets AS (
     SELECT aa.carrier_id, count(*) AS n_tractos
     FROM public.asset_assignments aa
     JOIN public.assets a ON a.id = aa.asset_id AND a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
-    JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND wot.label = 'Tractoreo'
+    JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND wot.code = 'TRACTOREO'
     WHERE aa.status = 'ACTIVE'
     GROUP BY aa.carrier_id
 ),
