@@ -656,10 +656,10 @@ async def test_el_cierre_guarda_cuantos_viajes_tenia_el_dia(conexion_revertida):
 async def test_un_dia_sin_firmar_no_reporta_delta(conexion_revertida):
     """Nada que comparar todavia: `posteriores_al_cierre` tiene que ser 0, no
     el total de viajes del dia."""
-    from app.routers.daily_closures import get_daily_closure
+    from app.routers.daily_closures import get_daily_closure_status
 
-    resp = await get_daily_closure(fecha="2026-08-18",
-                                   pool=PoolDeUnaConexion(conexion_revertida), _=None)
+    resp = await get_daily_closure_status(
+        fecha="2026-08-18", pool=PoolDeUnaConexion(conexion_revertida), _=None)
     assert resp["cierre"]["total_trips_al_firmar"] is None
     assert resp["cierre"]["posteriores_al_cierre"] == 0
 ```
@@ -875,9 +875,11 @@ y `bulkClose` gana el segundo parámetro:
     }),
 ```
 
-**Buscar todos los llamadores de `bulkClose`** (`grep -rn "bulkClose" app components`) y pasarles el
-motivo — el Monitor ya lo usa para la selección masiva del Diario, y ahí también hay que ofrecer el
-selector, no inventar un motivo por defecto.
+**`bulkClose` no tiene ningún llamador hoy** — está definido en `lib/api/trips.ts:132` y no lo usa
+nadie (verificado en el pre-flight sobre todo el árbol). Cambiar su firma no rompe ninguna pantalla
+viva; esta pestaña es su primer consumidor real. Si `tsc --noEmit` señala algún llamador que el grep
+no vio, pasarle el motivo desde un selector — **nunca** inventar un motivo por defecto: un motivo
+que nadie eligió es peor que ninguno.
 
 - [ ] **Step 4: Correr y verificar**
 
