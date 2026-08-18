@@ -31,14 +31,19 @@ WITH base AS (
     SELECT t.id AS trip_id, t.planning_date, t.client_name,
            t.source_system_trip_id, t.trip_status, t.unassigned_reason_id,
            t.is_active, t.is_assigned,
-           EXTRACT(EPOCH FROM (now() - t.status_reported_at)) / 86400 AS dias_sin_novedad,
+           round((EXTRACT(EPOCH FROM (now() - t.status_reported_at)) / 86400)::numeric, 1)
+               AS dias_sin_novedad,
            s.group_id
     FROM app.trips t
     LEFT JOIN app.trip_statuses s ON s.id = t.trip_status
-    WHERE t.planning_date <= $1::date
+    -- planning_date IS NULL sólo entra si NOT is_active: así el único grupo
+    -- que puede alcanzar (abandonado, que no exige fecha) queda disponible
+    -- para él, pero un viaje activo sin fecha sigue sin calzar en ningún
+    -- grupo (hoy/rezago/en_curso sí exigen fecha, eso no cambia).
+    WHERE t.planning_date <= $1::date OR (t.planning_date IS NULL AND NOT t.is_active)
 )
 SELECT trip_id, planning_date, client_name, source_system_trip_id, trip_status,
-       unassigned_reason_id, round(dias_sin_novedad::numeric, 1) AS dias_sin_novedad,
+       unassigned_reason_id, dias_sin_novedad,
        CASE
            WHEN is_active AND NOT is_assigned AND planning_date = $1::date THEN 'hoy'
            WHEN is_active AND NOT is_assigned AND planning_date < $1::date THEN 'rezago'
@@ -50,6 +55,9 @@ WHERE (is_active AND NOT is_assigned)
    OR (is_active AND is_assigned AND planning_date < $1::date)
    OR (NOT is_active
        AND group_id IN {GRUPOS_NO_TERMINALES}
+       -- mismo valor redondeado que se devuelve en el SELECT: filtrar sobre
+       -- el crudo y mostrar el redondeado dejaba pasar filas de 7.0x que el
+       -- resultado mostraba como 7.0 exactos (parecia violar > 7 sin bug real).
        AND dias_sin_novedad > {DIAS_SIN_NOVEDAD})
 ORDER BY grupo, planning_date DESC
 """
