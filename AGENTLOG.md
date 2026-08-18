@@ -17,6 +17,89 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-18 (cont.) — Ronda 125: el paso "Viajes" del Cierre, ejecutado con subagentes
+
+**Plan de 9 tareas ejecutado entero** (`docs/superpowers/plans/2026-08-18-cierre-paso-viajes.md`),
+16 commits, un implementador y un revisor por tarea, más una revisión final de la rama completa.
+**Falta sólo la Task 9**, el click-through, que está bloqueado por credenciales.
+
+#### Qué existe ahora que antes no
+
+- **Dominio `TRIP_UNASSIGNED_REASON`** con los 4 motivos de negocio (No tenemos camión · No tenemos
+  proveedor · No da por tarifa · El mandante lo declinó), gestionable desde Configuración.
+- **`app/services/cierre_viajes.py`** — los 4 grupos con UNA sola definición, y
+  `GET /api/v1/trips/cierre-viajes`.
+- **`PATCH /trips/bulk-close` exige motivo**, valida su dominio, escribe a `public.audit_log` en la
+  misma transacción que el UPDATE, y **no toca el `trip_status` del TMS**.
+- **`app.daily_closures.total_trips`** — el conteo al firmar, y el delta "posterior al cierre".
+- **Pestaña "Viajes"** en el Centro de Cierre y **filtro "No asignado por WebCarga"** en el historial.
+
+#### Los dos defectos que sólo vio la revisión de la rama completa
+
+Cada tarea pasó su revisión individual. El conjunto tenía dos fallas críticas, **las dos de diseño
+del plan**, y las dos con el mismo síntoma: *se puede desplegar sin romper nada y sin servir para nada*.
+
+1. **La acción principal nunca se veía terminada.** Cerrar un viaje escribe `is_active=false`, y el
+   grupo "Abandonados por el TMS" se define como `NOT is_active` + más de 7 días sin novedad. Medido:
+   **13 de los 17 viajes de Rezago ya superan los 7 días**. Al declarar "No asignado por WebCarga",
+   el viaje desaparecía de Rezago y **reaparecía en el acto** en Abandonados —grupo de sólo lectura—
+   etiquetado como abandonado por el TMS cuando lo había cerrado WebCarga. Corregido: `abandonado`
+   excluye lo ya declarado.
+2. **El botón "Verlos" llevaba a una pantalla donde los viajes anunciados no estaban.** Medido: 47
+   viajes del 14/08, **0 visibles** en la pestaña. El conteo (¿la firma sigue cubriendo todo?) y la
+   pestaña (¿qué necesita decisión?) son cosas distintas y el plan las confundió. El Monitor **no
+   tiene** filtro por URL, así que se quitó el botón en vez de inventar un mecanismo. **Queda como
+   deuda declarada**: el aviso informa pero no lleva a ningún lado.
+
+Y un tercero, importante: **`app.trips.unassigned_reason_id` tenía dos escritores con vocabularios
+distintos** — `GestionPanel` escribe `DRIVER_REASON` ("Médico", "Vacaciones") y el bulk-close nuevo
+escribe `TRIP_UNASSIGNED_REASON`, sin que la FK ni nadie validara el dominio. El filtro le habría
+mostrado a Pablo, bajo "los que nos ofrecieron y no asignamos", viajes cuyo motivo es "Vacaciones".
+Había 0 filas, así que se validó antes de que naciera el problema.
+
+#### Lo que el proceso encontró de mis propios planes
+
+Los revisores no encontraron casi nada en la implementación; encontraron **defectos en el plan**:
+los colores que puse no pertenecían a la paleta cerrada del módulo · dos de los tests que redacté no
+probaban nada (uno tautológico por construcción, otro atado a datos de producción) · el número de
+abandonados que documenté (46) estaba mal medido: son **34**, porque conté sin el `NOT is_active` y
+dupliqué los Sodimac que ya están en rezago · `planning_date.isoformat()` habría reventado con el
+viaje sin fecha · el nombre `get_daily_closure` no existía · y afirmé que el Monitor usaba
+`bulkClose` cuando no lo usaba nadie.
+
+#### Un patrón de infraestructura, para la próxima
+
+**Tres subagentes se colgaron** lanzando la suite completa en segundo plano y quedándose a esperarla.
+El disparador era pedirles que la corrieran. Se resolvió sacándoles esa responsabilidad: corren sólo
+los tests acotados y **las suites completas las corre el coordinador entre tareas** — lo que además
+atrapó dos fallas que las corridas acotadas no veían.
+
+#### Estado de los trinquetes del sistema visual — importante para quien siga
+
+**Color 1779/1780 · tipografía 279/279 · `<h1>` 9/9.** Dos de los tres en margen cero: el próximo
+color crudo o tamaño por debajo de 11px que alguien agregue **en cualquier archivo del repo** rompe
+CI, con un fallo que no va a tener nada que ver con lo que esa persona estaba haciendo. La próxima
+tarea de frontend debería empezar bajándolos.
+
+#### Verificación
+
+Backend **804 tests** · frontend **1098 tests** · `tsc` y `npm run build` limpios. Las 3 migraciones
+aplicadas a producción son aditivas y verificadas. En producción: 4 motivos sembrados, columna
+`total_trips` creada, **0 viajes con motivo y 0 días firmados** — la infraestructura está puesta y
+sin estrenar, que es lo esperado.
+
+#### Próximo paso exacto
+
+0. [ ] **Task 9: el click-through.** Bloqueado por credenciales — el servidor de dev redirige a
+   `/login` y `.env.local` sólo tiene un placeholder. Hay que desplegar a dev y tener un usuario.
+   Es lo único que puede verificar que un viaje cerrado conserva su `trip_status` y que
+   `resolve_trip_fleet()` no lo pisa.
+1. [ ] **Decidir qué hacer con el aviso "posterior al cierre" sin acción** — o se agrega filtro por
+   URL al Monitor, o el aviso se queda informando nada más.
+2. [ ] **Bajar los tres trinquetes** antes de la próxima tarea de frontend.
+
+---
+
 ### 2026-08-18 (cont.) — Ronda 124: identificar al conductor desde la tabla, y un agujero de RLS
 
 **Plan de asignar conductor ejecutado (Tasks 1-6 de 7) + hallazgo de seguridad aplicado.**
@@ -547,47 +630,41 @@ al 08-14. Lo que falta no es el modelo, es el rediseño de la pantalla que lo us
 
 ---
 
-## Próxima sesión (actualizado al cerrar la Ronda 124, 2026-08-18)
+## Próxima sesión (actualizado al cerrar la Ronda 125, 2026-08-18)
 
-1. **Task 7 del plan de asignar conductor** — desplegar a dev y click-through con el viaje
-   **2032999**. Ojo: ese caso resuelve por **dar de alta** (0 candidatos por contención), no
-   eligiendo, así que ejercita el camino del RUT. Después verificar en la base que quedó
-   `manual · driver_match_rule NULL · con conductor`, y correr `app.resolve_trip_fleet()` para
-   comprobar que no lo pisó.
-2. **Ejecutar el plan del paso "Viajes"** —
-   `docs/superpowers/plans/2026-08-18-cierre-paso-viajes.md`, **9 tareas, escrito y revisado**.
-   Es el Bloque 2 del spec: los 4 grupos, el motivo sobre el viaje sin tocar el estado del TMS, la
-   semilla `TRIP_UNASSIGNED_REASON` y el delta posterior al cierre. Entrega una pestaña más en el
-   Centro de Cierre; el recorrido de 4 pasos (Bloque 1 + §8bis) y las dimensiones (Bloque 4) son
-   planes aparte, a propósito.
-
-   **Vocabulario decidido el 18/08**: el día **no se reabre**. Lo que llega con fecha retroactiva es
-   **"posterior al cierre"** —el término contable estándar; en datos, *late-arriving facts*— y la
-   firma original **queda intacta**: el delta se resuelve como complemento. "Reabierto" contradiría
-   el principio de la R122 (una afirmación sobre un instante no se recalcula), y "rezago" ya está
-   tomado por otro grupo.
-3. **Una sola definición del "universo de viajes del día"** — `app.trips_of_day(date)` o una
-   constante compartida. El criterio multi-día está escrito a mano **14 veces** y la exclusión de
-   Sodimac **9**. Es la causa raíz que la R123 alineó pero no eliminó.
-4. **Absorción dinámica de estados sin mapear** en el catálogo (evidencia: `Cancelado` de Wingsuite
+1. **El click-through del paso "Viajes"** (Task 9 del plan) — **bloqueado por credenciales**. Hay que
+   desplegar a dev y tener un usuario real: el servidor redirige a `/login` y `.env.local` sólo trae
+   un placeholder. Es lo único que verifica de punta a punta que cerrar un viaje conserva su
+   `trip_status` del TMS y que `resolve_trip_fleet()` no pisa la declaración.
+2. **El click-through de asignar conductor** (Task 7 del plan anterior) con el viaje **2032999** —
+   mismo bloqueo. Ese caso resuelve por **dar de alta** (0 candidatos por contención), no eligiendo.
+3. **Decidir el destino del aviso "posterior al cierre"**: hoy informa el número y no lleva a ningún
+   lado, porque el Monitor no soporta filtro por URL. O se le agrega, o el aviso queda informativo.
+4. **Bajar los tres trinquetes del sistema visual** antes de tocar frontend: color 1779/1780,
+   tipografía **279/279**, `<h1>` **9/9**. Dos en margen cero.
+5. **Una sola definición del "universo de viajes del día"** — sigue escrito a mano 14 veces (el
+   criterio multi-día) y 9 (la exclusión de Sodimac). La Ronda 123 lo alineó pero no lo eliminó, y
+   la Ronda 125 tuvo que sacar una quinta copia que había nacido dentro del propio plan.
+6. **Absorción dinámica de estados sin mapear** en el catálogo (evidencia: `Cancelado` de Wingsuite
    cae fuera del JOIN porque el catálogo tiene `CANCELADO`).
-5. **Fusionar el conductor duplicado del roster** — son las 2 personas ambiguas de la R124.
-6. **Borrar `CloseDayDialog.tsx`** y sus tests: código muerto confirmado.
+7. **Fusionar el conductor duplicado del roster** — son las 2 personas ambiguas de la R124.
+8. **Borrar `CloseDayDialog.tsx`** y sus tests: código muerto confirmado.
 
 **El estado del Cierre**, verificado el 2026-08-18:
 
 | | |
 |---|---|
-| Las 3 pantallas | **ya cuentan sobre el mismo universo** (era 63 vs 48 viajes para el 14/08) |
-| Identificar conductor | ya es un gesto de la tabla del Monitor, en lote, con alcance explícito |
-| `app.daily_closures` | sigue en **0** — nadie cerró un día todavía |
+| Las 3 pantallas viejas | cuentan sobre el mismo universo (R123) |
+| Identificar conductor | es un gesto de la tabla del Monitor, en lote (R124) |
+| **El paso "Viajes"** | **existe**: 4 grupos, motivo obligatorio, delta posterior al cierre, filtro en el historial (R125) |
+| `app.daily_closures` | sigue en **0** — nadie firmó un día todavía |
 
-Lo que falta para que `daily_closures` deje de estar vacío es **la interfaz**: el recorrido de 4
-pasos no existe (hoy son 3 pestañas planas) y el paso "Viajes" no existe en ninguna forma.
+Lo que falta para que `daily_closures` deje de estar vacío ya no es el paso "Viajes": es el
+**recorrido de 4 pasos** (Bloque 1 + §8bis del spec) y que alguien lo use.
 
 Dónde vive el Cierre: `monitor-app/frontend/app/dashboard/operations/closures/` (con `history/`).
 Backend: `daily_closures.py`, `equipment_closures.py`, `pre_cierre.py`, `driver_roster.py`,
-`fleet_driver_gap.py`, `status_report.py`.
+`fleet_driver_gap.py`, `status_report.py`, y ahora `services/cierre_viajes.py`.
 
 Pendiente de producto que sigue vigente: el **rediseño de Cierres con los 3 formatos fijos por
 cliente** (mockups de Figma, refinamiento v2 ítem 6).
