@@ -18,6 +18,7 @@ import { FlotaDelDiaSection } from '@/components/dashboard/sections/FlotaDelDiaS
 import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
 import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
 import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSection'
+import { AvisoPosteriorAlCierre } from '@/components/dashboard/AvisoPosteriorAlCierre'
 import { Estado } from '@/components/ui/Estado'
 import type { TripsMeta } from '@/lib/types'
 
@@ -81,6 +82,15 @@ function ClosuresCenterPageInner() {
   const cargandoTractoreo = useIsFetching({ queryKey: ['daily-closure', fecha] })
   const cargandoEquipos = useIsFetching({ queryKey: ['equipment-closures', fecha] })
   const cargandoDatos = cargandoTractoreo > 0 || cargandoEquipos > 0
+
+  // Tarea 7 (plan cierre-paso-viajes): misma queryKey que FlotaDelDiaSection
+  // — se comparte la respuesta ya en caché, no se dispara un segundo fetch.
+  // El día no se reabre: `posteriores_al_cierre` es sólo el delta que llegó
+  // después de la firma.
+  const cierreQuery = useQuery({
+    queryKey: ['daily-closure', fecha],
+    queryFn: () => dailyClosuresApi.get(fecha),
+  })
 
   useEffect(() => {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en la sección */ })
@@ -205,6 +215,14 @@ function ClosuresCenterPageInner() {
           />
         </label>
       </div>
+
+      {/* Va AL LADO del encabezado de arriba, no lo reemplaza: el día sigue
+          firmado y sigue diciendo "Cerrado" — esto es el delta que llegó
+          después, nunca una reapertura. */}
+      <AvisoPosteriorAlCierre
+        cantidad={cierreQuery.data?.cierre?.posteriores_al_cierre ?? 0}
+        onVerlos={() => setTab('viajes')}
+      />
 
       {/* Un solo lienzo: tab bar arriba, panel de contenido abajo (solo la
           tab activa se renderiza), "Confirmar cierre" fijo al pie. */}

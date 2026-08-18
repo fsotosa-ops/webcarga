@@ -1010,10 +1010,23 @@ export type PreCierreResult = {
   escalations:   PreCierreEscalations
 }
 
+/** Tarea 7 (plan cierre-paso-viajes): el delta de viajes que llegaron
+ *  después de firmar el día. El día no se reabre — la firma sigue siendo
+ *  verdadera sobre `total_trips_al_firmar`; `posteriores_al_cierre` es lo
+ *  que se sumó después, sin invalidar la firma original. */
+export type CierrePosteriorInfo = {
+  total_trips_al_firmar: number | null
+  posteriores_al_cierre: number
+}
+
 export type DailyClosureStatus = {
   business_date:    string
   closed:           boolean
   closure:          DailyClosureInfo | null
+  /** Opcional en el tipo porque son varios los fixtures de test que arman
+   *  este objeto a mano y no les concierne — el backend real siempre lo
+   *  manda (ver `daily_closures.py::get_daily_closure_status`). */
+  cierre?:          CierrePosteriorInfo
   total_drivers:    number
   assigned_count:   number
   unassigned_count: number

@@ -13,6 +13,9 @@ export function isClosePendingError(e: unknown): e is ApiError & { detail: Close
 }
 
 export const dailyClosuresApi = {
+  /** Trae `cierre.posteriores_al_cierre` (Tarea 7) además del detalle por
+   *  conductor — el día firmado no se recalcula, ese campo es el delta de
+   *  viajes que llegaron después de la firma. */
   get: (fecha: string) =>
     apiFetch<DailyClosureStatus>(`/api/v1/daily-closures?fecha=${encodeURIComponent(fecha)}`),
 

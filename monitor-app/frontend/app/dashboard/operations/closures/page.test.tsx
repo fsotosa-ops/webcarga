@@ -53,6 +53,7 @@ vi.mock('@/lib/api/statusReport', () => ({
 
 const EMPTY_STATUS: DailyClosureStatus = {
   business_date: '2026-08-04', closed: false, closure: null,
+  cierre: { total_trips_al_firmar: null, posteriores_al_cierre: 0 },
   total_drivers: 0, assigned_count: 0, unassigned_count: 0, mismatch_count: 0, pending_count: 0,
   drivers: [], pre_cierre: EMPTY_PRE_CIERRE,
 }
