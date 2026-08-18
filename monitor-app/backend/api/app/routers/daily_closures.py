@@ -251,20 +251,36 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
     drivers = [dict(r) for r in rows]
 
     closure = await pool.fetchrow(
-        "SELECT closed_by, closed_at, total_drivers, resolved_count, override_count "
+        "SELECT closed_by, closed_at, total_drivers, resolved_count, override_count, total_trips "
         "FROM app.daily_closures WHERE business_date = $1",
         business_date,
     )
+    closure_dict = dict(closure) if closure else None
 
     assigned = sum(1 for d in drivers if d["status"] == "ASSIGNED")
     unassigned = [d for d in drivers if d["status"] == "UNASSIGNED"]
     mismatch = [d for d in drivers if d["status"] == "MISMATCH"]
     unassigned_without_reason = [d for d in unassigned if not d["unassigned_reason_id"]]
 
+    # El dia sigue cerrado: la firma sigue siendo verdadera sobre lo que
+    # existia cuando se firmo, y no se recalcula. Lo que llega despues es un
+    # delta -- "posterior al cierre" -- que se resuelve aparte, sin invalidar
+    # la firma original.
+    total_trips_al_firmar = closure_dict.get("total_trips") if closure_dict else None
+    posteriores_al_cierre = 0
+    if total_trips_al_firmar is not None:
+        ahora = await pool.fetchval(
+            "SELECT count(*) FROM app.trips WHERE planning_date = $1", business_date)
+        posteriores_al_cierre = max(0, ahora - total_trips_al_firmar)
+
     return {
         "business_date": business_date.isoformat(),
         "closed": closure is not None,
-        "closure": dict(closure) if closure else None,
+        "closure": closure_dict,
+        "cierre": {
+            "total_trips_al_firmar": total_trips_al_firmar,
+            "posteriores_al_cierre": posteriores_al_cierre,
+        },
         "total_drivers": len(drivers),
         "assigned_count": assigned,
         "unassigned_count": len(unassigned),
@@ -405,15 +421,23 @@ async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user
                         new_value={"business_date": business_date.isoformat(), "note": body.override_note},
                     )
 
+    # Cuantos viajes tenia el dia AL MOMENTO DE FIRMAR — el unico dato que
+    # despues permite detectar viajes posteriores al cierre (ver GET ""),
+    # sin el cual el caso no se puede reconstruir retroactivamente.
+    total_trips = await pool.fetchval(
+        "SELECT count(*) FROM app.trips WHERE planning_date = $1", business_date)
+
     await pool.execute(
         """
-        INSERT INTO app.daily_closures (business_date, closed_by, total_drivers, resolved_count, override_count)
-        VALUES ($1, $2::uuid, $3, $4, $5)
+        INSERT INTO app.daily_closures
+            (business_date, closed_by, total_drivers, resolved_count, override_count, total_trips)
+        VALUES ($1, $2::uuid, $3, $4, $5, $6)
         ON CONFLICT (business_date) DO UPDATE SET
             closed_by = EXCLUDED.closed_by, closed_at = now(),
             total_drivers = EXCLUDED.total_drivers, resolved_count = EXCLUDED.resolved_count,
-            override_count = EXCLUDED.override_count
+            override_count = EXCLUDED.override_count, total_trips = EXCLUDED.total_trips
         """,
-        business_date, user["sub"], len(drivers), len(drivers) - len(pending), len(pending) if body.override else 0,
+        business_date, user["sub"], len(drivers), len(drivers) - len(pending),
+        len(pending) if body.override else 0, total_trips,
     )
     return {"ok": True, "business_date": business_date.isoformat(), "overridden": len(pending) if body.override else 0}

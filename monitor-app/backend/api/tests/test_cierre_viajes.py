@@ -352,3 +352,55 @@ async def test_el_lote_no_queda_a_medias_si_audit_log_falla(conexion_revertida, 
     auditoria = await conn.fetch(
         "SELECT entity_id FROM public.audit_log WHERE entity_id = ANY($1::uuid[])", trip_ids)
     assert auditoria == [], "quedo una fila de audit_log de un lote que se tenia que revertir"
+
+
+# ── Task 5 (plan 2026-08-18-cierre-paso-viajes): el conteo al firmar, y el
+# delta posterior al cierre. El dia NO se reabre: la firma sigue siendo
+# verdadera sobre lo que existia cuando se firmo, y lo que llega despues
+# (fecha retroactiva del TMS) se resuelve como un complemento aparte. ──────
+
+async def test_el_cierre_guarda_cuantos_viajes_tenia_el_dia(conexion_revertida):
+    """Sin este numero no hay con que comparar despues, y no se puede
+    reconstruir: es el unico dato que fija que afirmo la firma."""
+    filas = await conexion_revertida.fetch(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema='app' AND table_name='daily_closures'")
+    assert "total_trips" in {f["column_name"] for f in filas}
+
+
+async def test_un_dia_sin_firmar_no_reporta_delta(conexion_revertida):
+    """Nada que comparar todavia: `posteriores_al_cierre` tiene que ser 0, no
+    el total de viajes del dia."""
+    from app.routers.daily_closures import get_daily_closure_status
+
+    resp = await get_daily_closure_status(
+        fecha="2026-08-18", pool=PoolDeUnaConexion(conexion_revertida), _=None)
+    assert resp["cierre"]["total_trips_al_firmar"] is None
+    assert resp["cierre"]["posteriores_al_cierre"] == 0
+
+
+async def test_los_viajes_posteriores_al_cierre_se_cuentan_como_delta(conexion_revertida):
+    """El caso real: el sistema del cliente crea viajes con fecha retroactiva
+    ("los crean el dieciseis, pero con fechas del catorce"). El dia sigue
+    cerrado -la firma no se invalida-, pero el conteo posterior tiene que
+    reflejar cuantos viajes llegaron despues de la firma."""
+    from app.routers.daily_closures import get_daily_closure_status
+
+    fecha_cierre = date(2099, 1, 1)
+    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
+    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
+
+    await conexion_revertida.execute(
+        "INSERT INTO app.daily_closures "
+        "(business_date, closed_by, total_drivers, resolved_count, override_count, total_trips) "
+        "VALUES ($1, $2, 0, 0, 0, $3)",
+        fecha_cierre, uuid.uuid4(), 2)
+
+    # Llega un viaje despues de firmar (fecha retroactiva del TMS).
+    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
+
+    resp = await get_daily_closure_status(
+        fecha=fecha_cierre.isoformat(), pool=PoolDeUnaConexion(conexion_revertida), _=None)
+
+    assert resp["cierre"]["total_trips_al_firmar"] == 2
+    assert resp["cierre"]["posteriores_al_cierre"] == 1
