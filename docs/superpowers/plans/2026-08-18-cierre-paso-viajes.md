@@ -52,7 +52,12 @@ De la reunión del 2026-08-14 (spec §2):
 | **Hoy** | `is_active AND NOT is_assigned AND planning_date = $1` | 2 | Sí |
 | **Rezago** | `is_active AND NOT is_assigned AND planning_date < $1` | 17 | Sí |
 | **En curso** | `is_active AND is_assigned AND planning_date < $1` | 6 | No |
-| **Abandonados por el TMS** | grupo no terminal `AND now() - status_reported_at > 7 días` | 46 | No |
+| **Abandonados por el TMS** | grupo no terminal `AND NOT is_active AND now() - status_reported_at > 7 días` | 34 | No |
+
+**Corrección del 2026-08-18**: el número de abandonados es **34**, no 46. Los 46 salían de medir sin
+el `NOT is_active`, que contaba dos veces los 13 viajes de Sodimac que —por su exención de recencia—
+no caducan nunca y ya viven en `rezago`. Es exactamente la asimetría que describe el spec: el rezago
+es casi todo Sodimac, los abandonados son casi todo QAnalytics (23 de los 34).
 
 Los tres primeros salen de columnas que **ya existen y están pobladas** (`app_trips.sql` deriva
 `is_assigned` con la definición literal de Pablo). El cuarto es nuevo y **no se deriva de
@@ -340,7 +345,7 @@ Run: `venv/bin/python -m pytest tests/test_cierre_viajes.py -q`
 Expected: PASS
 
 Verificar además contra producción con el MCP de Supabase que los conteos por grupo dan
-**hoy 2 · rezago 17 · en_curso 6 · abandonado 46** para `$1 = '2026-08-18'`. Si difieren, el
+**hoy 2 · rezago 17 · en_curso 6 · abandonado 34** para `$1 = '2026-08-18'`. Si difieren, el
 predicado no es el que se midió — investigar antes de seguir, no ajustar el test.
 
 - [ ] **Step 5: Commit**
@@ -1071,7 +1076,7 @@ FROM app.trips WHERE id = '<el que se cerro>';
 
 - **El recorrido de 4 pasos con riel de progreso** (Bloque 1 y §8bis del spec) — plan siguiente.
   Esta pestaña se suma a las tres que ya existen.
-- **Perseguir los 46 viajes abandonados históricos.** Decisión del usuario: el objetivo es que
+- **Perseguir los 34 viajes abandonados históricos.** Decisión del usuario: el objetivo es que
   cuando la app esté operativa los muestre el mismo día, no reconstruir el pasado.
 - **Zona, gestión y tipo de vehículo** (Bloque 4) — plan aparte.
 - **El atributo de facturación en `app.trip_statuses`** (§7.2) — la tabla no tiene la columna y eso
