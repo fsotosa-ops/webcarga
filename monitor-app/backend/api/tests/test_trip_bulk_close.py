@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
 from app.routers.trips import router
+from tests.conftest import wire_transactional_conn
 
 USER = {
     "sub": "11111111-1111-1111-1111-111111111111",
@@ -62,7 +63,12 @@ def test_bulk_close_404_when_a_trip_is_missing():
 
 
 def test_bulk_close_sets_is_active_and_is_working_false_for_all_selected():
+    """El UPDATE corre sobre `conn` (dentro de la transacción que también
+    envuelve log_change) — ver `wire_transactional_conn` en conftest para el
+    wiring de `pool.acquire()`/`conn.transaction()`."""
     pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [
         {"id": "t1", "manually_edited_fields": []},
         {"id": "t2", "manually_edited_fields": []},
@@ -77,7 +83,7 @@ def test_bulk_close_sets_is_active_and_is_working_false_for_all_selected():
 
     assert res.status_code == 200
     assert res.json() == {"ok": True, "closed": 2}
-    update = next(c for c in pool.execute.call_args_list if c.args[0].strip().startswith("UPDATE app.trips"))
+    update = next(c for c in conn.execute.call_args_list if c.args[0].strip().startswith("UPDATE app.trips"))
     sql = update.args[0]
     assert "is_active = false" in sql
     assert "is_working = false" in sql
@@ -88,7 +94,12 @@ def test_bulk_close_sets_is_active_and_is_working_false_for_all_selected():
 
 
 def test_bulk_close_logs_a_system_note_per_trip():
+    """La nota va sobre `pool`, no sobre `conn`: `_log_system_note` corre
+    deliberadamente FUERA de la transacción del UPDATE/log_change (es
+    best-effort y se traga sus propios errores)."""
     pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
     pool.fetchval.return_value = "Sin camión disponible"
     client = make_client(pool)
@@ -107,8 +118,12 @@ def test_bulk_close_logs_a_system_note_per_trip():
 def test_bulk_close_logs_to_audit_log_per_trip():
     """Spec §6.3: la declaración se cruza con facturación — no alcanza con
     la bitácora best-effort de _log_system_note, tiene que quedar también en
-    public.audit_log vía log_change."""
+    public.audit_log vía log_change. La llamada va sobre `conn` (misma
+    transacción que el UPDATE, ver `test_bulk_close_sets_is_active_...`),
+    no sobre `pool`."""
     pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
     pool.fetchval.return_value = "Sin camión disponible"
     client = make_client(pool)
@@ -118,7 +133,7 @@ def test_bulk_close_logs_to_audit_log_per_trip():
         json={"trip_ids": ["t1"], "unassigned_reason_id": REASON_ID},
     )
 
-    audit_calls = [c for c in pool.execute.call_args_list if "public.audit_log" in c.args[0]]
+    audit_calls = [c for c in conn.execute.call_args_list if "public.audit_log" in c.args[0]]
     assert len(audit_calls) == 1
     assert audit_calls[0].args[4] == "no_asignado_por_webcarga"
     assert audit_calls[0].args[5] == "unassigned_reason_id"
@@ -129,6 +144,8 @@ def test_bulk_close_route_does_not_collide_with_single_trip_patch():
     PATCH /{trip_id} con trip_id='bulk-close' — se declaró antes en el
     router justamente por esto."""
     pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
     pool.fetchval.return_value = "Sin camión disponible"
     client = make_client(pool)

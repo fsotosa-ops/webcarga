@@ -295,3 +295,60 @@ async def test_la_declaracion_queda_en_audit_log(conexion_revertida):
     assert fila_auditoria is not None, "la declaracion no quedo en audit_log"
     assert fila_auditoria["action"] == "no_asignado_por_webcarga"
     assert fila_auditoria["field"] == "unassigned_reason_id"
+
+
+async def test_el_lote_no_queda_a_medias_si_audit_log_falla(conexion_revertida, monkeypatch):
+    """El UPDATE es atomico para todo el lote, pero antes de esta correccion
+    el loop que llama a log_change y _log_system_note corria FUERA de esa
+    transaccion (N adquisiciones independientes del pool): si fallaba a
+    mitad, quedaban viajes con is_active=false y motivo escrito pero sin
+    traza en audit_log, el request devolvia 500 y el reintento duplicaba
+    notas para los que ya habian pasado.
+
+    Se fuerza el fallo con un monkeypatch sobre log_change (el segundo viaje
+    del lote revienta) y se verifica que NINGUN viaje del lote quedo
+    modificado: UPDATE y audit_log tienen que cumplirse los dos o ninguno."""
+    from app.routers import trips as trips_router
+    from app.routers.trips import bulk_close_trips
+    from app.schemas.trip import TripBulkCloseBody
+
+    conn = conexion_revertida
+    id_1 = await _crear_viaje(
+        conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
+    id_2 = await _crear_viaje(
+        conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
+    trip_ids = [str(id_1), str(id_2)]
+    motivo_id = await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain='TRIP_UNASSIGNED_REASON' LIMIT 1")
+
+    original_log_change = trips_router.log_change
+    llamadas = {"n": 0}
+
+    async def log_change_que_revienta_en_el_segundo(*args, **kwargs):
+        llamadas["n"] += 1
+        if llamadas["n"] == 2:
+            raise RuntimeError("fallo simulado en log_change")
+        return await original_log_change(*args, **kwargs)
+
+    monkeypatch.setattr(trips_router, "log_change", log_change_que_revienta_en_el_segundo)
+
+    with pytest.raises(RuntimeError):
+        await bulk_close_trips(
+            TripBulkCloseBody(trip_ids=trip_ids, unassigned_reason_id=str(motivo_id)),
+            PoolDeUnaConexion(conn), await _usuario_real(conn))
+
+    assert llamadas["n"] == 2, "el fallo no ocurrio donde el test lo esperaba"
+
+    filas = await conn.fetch(
+        "SELECT id, is_active, unassigned_reason_id FROM app.trips WHERE id = ANY($1::uuid[])",
+        trip_ids)
+    assert len(filas) == 2
+    for fila in filas:
+        assert fila["is_active"] is True, (
+            "el lote quedo a medias: el UPDATE no se revirtio pese a que "
+            "log_change fallo para uno de los viajes")
+        assert fila["unassigned_reason_id"] is None
+
+    auditoria = await conn.fetch(
+        "SELECT entity_id FROM public.audit_log WHERE entity_id = ANY($1::uuid[])", trip_ids)
+    assert auditoria == [], "quedo una fila de audit_log de un lote que se tenia que revertir"

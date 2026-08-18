@@ -2191,32 +2191,43 @@ async def bulk_close_trips(
     motivo = await pool.fetchval(
         "SELECT label FROM app.status_taxonomies WHERE id = $1", body.unassigned_reason_id)
 
-    await pool.execute(
-        """
-        UPDATE app.trips
-        SET is_active = false, is_working = false,
-            unassigned_reason_id = $3::uuid,
-            manually_edited_fields = ARRAY(SELECT DISTINCT unnest(
-                COALESCE(manually_edited_fields,'{}')
-                || ARRAY['is_active','is_working','unassigned_reason_id']::text[]
-            )),
-            edited_by = $2::uuid, edited_at = NOW(), updated_at = NOW()
-        WHERE id = ANY($1::uuid[])
-        """,
-        body.trip_ids, user["sub"], body.unassigned_reason_id,
-    )
+    # El UPDATE y la traza en public.audit_log van en la MISMA transacción:
+    # si log_change revienta para un viaje del lote, el lote entero se
+    # revierte — nunca queda una parte con is_active=false y motivo escrito
+    # pero sin auditoría, que es justo lo que cruza con facturación.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                UPDATE app.trips
+                SET is_active = false, is_working = false,
+                    unassigned_reason_id = $3::uuid,
+                    manually_edited_fields = ARRAY(SELECT DISTINCT unnest(
+                        COALESCE(manually_edited_fields,'{}')
+                        || ARRAY['is_active','is_working','unassigned_reason_id']::text[]
+                    )),
+                    edited_by = $2::uuid, edited_at = NOW(), updated_at = NOW()
+                WHERE id = ANY($1::uuid[])
+                """,
+                body.trip_ids, user["sub"], body.unassigned_reason_id,
+            )
+            for tid in body.trip_ids:
+                await log_change(
+                    conn, actor=user["sub"], entity_type="TRIP", entity_id=tid,
+                    action="no_asignado_por_webcarga", field="unassigned_reason_id",
+                    old_value=None, new_value=motivo, source="cierre_viajes",
+                )
+
+    # Deliberadamente FUERA de la transacción de arriba: `_log_system_note`
+    # es best-effort a propósito y se traga sus errores con
+    # `except Exception: pass`. Si corriera adentro de esa transacción, un
+    # fallo ahí dejaría la transacción abortada y todo lo que viniera
+    # después fallaría en silencio — bug ya conocido en este proyecto (ver
+    # `_usuario_real` en tests/conftest.py). "AL LADO, no encima": el viaje
+    # conserva su estado del TMS y esto se lee en el historial junto a él.
+    # Pablo: "yo despues filtrare en el historial todos los no asignados por
+    # WebCarga".
     for tid in body.trip_ids:
-        # Spec §6.3: la declaración se cruza con facturación, así que además
-        # de la bitácora (best-effort, `_log_system_note` se traga errores)
-        # queda trazada en public.audit_log.
-        await log_change(
-            pool, actor=user["sub"], entity_type="TRIP", entity_id=tid,
-            action="no_asignado_por_webcarga", field="unassigned_reason_id",
-            old_value=None, new_value=motivo, source="cierre_viajes",
-        )
-        # "AL LADO, no encima": el viaje conserva su estado del TMS y esto se
-        # lee en el historial junto a él. Pablo: "yo despues filtrare en el
-        # historial todos los no asignados por WebCarga".
         await _log_system_note(pool, tid, user, f"No asignado por WebCarga · {motivo}")
     return {"ok": True, "closed": len(body.trip_ids)}
 
