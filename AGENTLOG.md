@@ -619,10 +619,18 @@ una lista:
 19. [ ] **Normalizar a inglés los valores de `?tab=seguros/conductores/equipos/…`** y el `type Tab`
     de `carriers/[id]/page.tsx` — deferido por el mismo blast radius de ~32 archivos que ya se
     evitó una vez.
-20. [ ] **Seguridad, de la Ronda 95** (van con el cierre de Hito 4, no como venta): cerrar las 5
-    matviews expuestas, revocar `EXECUTE` de las 3 funciones `SECURITY DEFINER`, activar la
-    protección de contraseñas filtradas, y corregir el rol `writer` no reconocido en `auth.py` que
-    bloquea a 2 de 9 usuarios.
+20. [x] **Seguridad, de la Ronda 95 — CERRADO el 2026-08-18.** Las 5 matviews expuestas y 2 de las
+    3 funciones `SECURITY DEFINER` se cerraron por migración
+    (`20260818200000_seguridad_matviews_y_funciones.sql`), verificado con el linter. Las otras dos
+    partes salieron a issues de GitHub porque no son trabajo de código:
+    · **`is_admin()` NO se revoca y es deliberado** — la usan 3 políticas de RLS vivas sobre
+      `profiles` y `admin_whitelist`; quitarle `EXECUTE` rompería el acceso a perfiles para todo
+      usuario autenticado. El linter va a seguir reportándola: es un falso positivo para este caso.
+    · **[issue #1](https://github.com/fsotosa-ops/webcarga/issues/1)** — el rol `writer`: es diseño
+      del modelo de permisos sobre 74 endpoints, no un arreglo.
+    · **[issue #2](https://github.com/fsotosa-ops/webcarga/issues/2)** — protección de contraseñas
+      filtradas: no es SQL sino configuración de Auth, y **requiere plan Pro**. Si el proyecto no
+      está en Pro, es una decisión de costo, no una tarea.
 
 **Agregado al cerrar la Ronda 125 (2026-08-18)** — lo que salió de las Rondas 123-125:
 
