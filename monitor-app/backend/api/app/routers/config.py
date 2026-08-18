@@ -399,6 +399,7 @@ SELECT
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='OPERATIONAL_STATE' AND active) AS estados_op,
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='EQUIPMENT_STATE' AND active)   AS estados_eq,
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='DRIVER_REASON' AND active)     AS motivos,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='TRIP_UNASSIGNED_REASON' AND active) AS motivos_no_asignacion,
   (SELECT count(*) FROM app.temperature_ranges)                                            AS rangos_temp,
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='FLEET_SERVICE_TYPE' AND active) AS subtipos,
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='WEBCARGA_OPERATION_TYPE' AND active) AS tipos_operacion,
@@ -450,6 +451,7 @@ async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require_adm
             ("estados_op", "operacional", "operacionales"),
             ("estados_eq", "de equipo", "de equipo"),
             ("motivos", "motivo", "motivos"),
+            ("motivos_no_asignacion", "motivo de no asignación", "motivos de no asignación"),
             ("rangos_temp", "rango de temperatura", "rangos de temperatura"),
         ),
         "fleet": _pares(

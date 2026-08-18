@@ -637,6 +637,7 @@ def test_trip_select_resolves_shipper_id_live_via_client_name_match():
 _FILA_INVENTARIO = {
     "req_total": 37, "req_condicion": 2, "req_inactivos": 2,
     "estados_tms": 25, "estados_op": 5, "estados_eq": 6, "motivos": 16,
+    "motivos_no_asignacion": 4,
     "rangos_temp": 2, "subtipos": 10, "tipos_operacion": 2,
     "usuarios": 10, "roles": 5,
 }
