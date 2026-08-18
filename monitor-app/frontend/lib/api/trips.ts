@@ -64,6 +64,7 @@ export const tripsApi = {
     cargo_type?:     string
     origin?:         string
     fleet_match?:    'unmatched' | 'mismatch'
+    no_asignado_webcarga?: boolean
     sort_by?:        string
     sort_dir?:       'asc' | 'desc'
     page?:           number
@@ -87,6 +88,7 @@ export const tripsApi = {
     if (params?.is_working      != null) qs.set('is_working',      String(params.is_working))
     if (params?.is_assigned     != null) qs.set('is_assigned',     String(params.is_assigned))
     if (params?.second_leg_plus != null) qs.set('second_leg_plus', String(params.second_leg_plus))
+    if (params?.no_asignado_webcarga)    qs.set('no_asignado_webcarga', String(params.no_asignado_webcarga))
     if (params?.page)            qs.set('page',            String(params.page))
     if (params?.limit)           qs.set('limit',           String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''

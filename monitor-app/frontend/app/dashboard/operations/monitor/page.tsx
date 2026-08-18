@@ -158,7 +158,11 @@ export default function DiarioPage() {
           tms: f.fTms.join(','), ...catalogFilterParams, ...sortParams, limit: 200 }
       : { view: 'historial', q: qDebounced, fecha_desde: f.fechaDesde, fecha_hasta: f.fechaHasta,
           status: statusParam, tms: f.fTms.join(','), ...catalogFilterParams, ...sortParams,
-          limit: historialPageSize, page: f.page, ...boolParams }
+          limit: historialPageSize, page: f.page, ...boolParams,
+          // Task 8: "No asignado por WebCarga" — solo tiene sentido en el
+          // historial (no mira is_active, ver trips.py). En "En Curso" no
+          // se envía: is_active:true de arriba dejaria la lista vacia igual.
+          ...(f.fNoAsignadoWebcarga ? { no_asignado_webcarga: true } : {}) }
 
   const queryClient = useQueryClient()
   const router       = useRouter()

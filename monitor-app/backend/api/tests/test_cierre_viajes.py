@@ -404,3 +404,54 @@ async def test_los_viajes_posteriores_al_cierre_se_cuentan_como_delta(conexion_r
 
     assert resp["cierre"]["total_trips_al_firmar"] == 2
     assert resp["cierre"]["posteriores_al_cierre"] == 1
+
+
+# ── Task 8 (plan 2026-08-18-cierre-paso-viajes): volver a LEER la
+# declaracion. Pablo: "yo despues filtrare en el historial todos los no
+# asignados por WebCarga y voy a poder ver todos los viajes que alguna vez
+# nos ofrecieron y no asignamos". Sin este filtro el dato se escribe y no
+# se puede leer, que es la mitad del punto. ──────────────────────────────
+
+async def test_se_puede_filtrar_lo_no_asignado_por_webcarga(conexion_revertida):
+    # Pablo: "voy a poder ver todos los viajes que alguna vez nos ofrecieron y
+    # no asignamos". Sin este filtro la declaracion se escribe y no se lee.
+    from app.routers.trips import list_trips
+
+    conn = conexion_revertida
+    motivo = await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain='TRIP_UNASSIGNED_REASON' LIMIT 1")
+    trip_id = await conn.fetchval("SELECT id FROM app.trips LIMIT 1")
+    await conn.execute(
+        "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2", motivo, trip_id)
+
+    resp = await list_trips(no_asignado_webcarga=True,
+                            pool=PoolDeUnaConexion(conn), _=None)
+
+    ids = [str(t["id"]) for t in resp["data"]]
+    assert str(trip_id) in ids
+    assert all(t["unassigned_reason_id"] for t in resp["data"]), \
+        "el filtro dejo pasar viajes sin motivo"
+
+
+async def test_el_filtro_no_mira_is_active(conexion_revertida):
+    """El punto es el HISTORIAL: viajes que nos ofrecieron y no asignamos,
+    incluidos los que ya se apagaron hace meses. Filtrar por activos
+    vaciaria la respuesta justo de lo que se quiere ver."""
+    from app.routers.trips import list_trips
+
+    conn = conexion_revertida
+    motivo = await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain='TRIP_UNASSIGNED_REASON' LIMIT 1")
+    id_apagado_hace_meses = await _crear_viaje(
+        conn, planning_date=FECHA_NEGOCIO - timedelta(days=180),
+        is_active=False, is_assigned=False)
+    await conn.execute(
+        "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2",
+        motivo, id_apagado_hace_meses)
+
+    resp = await list_trips(no_asignado_webcarga=True,
+                            pool=PoolDeUnaConexion(conn), _=None)
+
+    ids = [str(t["id"]) for t in resp["data"]]
+    assert str(id_apagado_hace_meses) in ids, \
+        "el filtro miro is_active y se comio un viaje apagado del historial"

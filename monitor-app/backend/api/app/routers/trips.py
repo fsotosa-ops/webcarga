@@ -4,7 +4,7 @@ import re
 import unicodedata
 from datetime import date as _date
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -674,28 +674,38 @@ _SORTABLE_COLUMNS = {
 
 @router.get("")
 async def list_trips(
-    fecha: str = Query(""),
-    view: str = Query("en_curso"),      # en_curso | historial
-    q: str = Query(""),
-    fecha_desde: str = Query(""),
-    fecha_hasta: str = Query(""),
-    status: str = Query(""),
-    is_active: str = Query(""),
-    is_working: str = Query(""),
-    is_assigned: str = Query(""),
-    second_leg_plus: str = Query(""),
-    tms: str = Query(""),
-    client: str = Query(""),
-    cargo_type: str = Query(""),
-    origin: str = Query(""),
-    origin_region: str = Query(""),
-    origin_city: str = Query(""),
-    fleet_match: str = Query(""),  # unmatched | mismatch — HU-04 (Fase 0)
-    insurance_alert: str = Query(""),  # EXPIRED | OVERDUE_INSTALLMENTS | EXPIRING_SOON — HU-12 (Fase 2)
-    sort_by: str = Query("planning_date"),
-    sort_dir: str = Query("desc"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(100, ge=1, le=500),
+    # Annotated[Type, Query(...)] = default, no `Type = Query(default)`: con
+    # el segundo estilo, invocar list_trips directo desde Python (fuera del
+    # ciclo de request de FastAPI, ej. tests de integración) deja el objeto
+    # `Query(...)` como valor real del parámetro no pasado — no el default
+    # que aparenta — y explota más abajo (split/fromisoformat sobre un
+    # `Query`, no un str). Con Annotated el default del propio parámetro de
+    # Python vuelve a ser el valor plano; Query() sólo aporta metadata para
+    # el schema/validación de OpenAPI. Confirmado con el filtro de Task 8
+    # (no_asignado_webcarga), que se llama así desde tests/test_cierre_viajes.py.
+    fecha: Annotated[str, Query()] = "",
+    view: Annotated[str, Query()] = "en_curso",      # en_curso | historial
+    q: Annotated[str, Query()] = "",
+    fecha_desde: Annotated[str, Query()] = "",
+    fecha_hasta: Annotated[str, Query()] = "",
+    status: Annotated[str, Query()] = "",
+    is_active: Annotated[str, Query()] = "",
+    is_working: Annotated[str, Query()] = "",
+    is_assigned: Annotated[str, Query()] = "",
+    second_leg_plus: Annotated[str, Query()] = "",
+    tms: Annotated[str, Query()] = "",
+    client: Annotated[str, Query()] = "",
+    cargo_type: Annotated[str, Query()] = "",
+    origin: Annotated[str, Query()] = "",
+    origin_region: Annotated[str, Query()] = "",
+    origin_city: Annotated[str, Query()] = "",
+    fleet_match: Annotated[str, Query()] = "",  # unmatched | mismatch — HU-04 (Fase 0)
+    insurance_alert: Annotated[str, Query()] = "",  # EXPIRED | OVERDUE_INSTALLMENTS | EXPIRING_SOON — HU-12 (Fase 2)
+    no_asignado_webcarga: Annotated[bool, Query()] = False,
+    sort_by: Annotated[str, Query()] = "planning_date",
+    sort_dir: Annotated[str, Query()] = "desc",
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
@@ -801,6 +811,11 @@ async def list_trips(
     # referenciar directo en el WHERE.
     if insurance_alert in ("EXPIRED", "OVERDUE_INSTALLMENTS", "EXPIRING_SOON"):
         add("ins.insurance_alert = ?", insurance_alert)
+    if no_asignado_webcarga:
+        # No mira is_active: el punto es el HISTORIAL de lo que nos
+        # ofrecieron y no tomamos, incluidos los que ya se apagaron hace
+        # meses (Pablo, spec §6.3).
+        filters.append("t.unassigned_reason_id IS NOT NULL")
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit

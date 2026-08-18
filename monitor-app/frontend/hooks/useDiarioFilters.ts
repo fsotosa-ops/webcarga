@@ -43,6 +43,11 @@ export interface DiarioFilters {
    *  contra app.trip_stops, ver trips.py). Elegido vía autocomplete
    *  (volumen de locales no escala como multi-select estático). */
   fOrigin:        string[]
+  /** "No asignado por WebCarga" — server-side, parámetro `no_asignado_webcarga`
+   *  (Task 8, plan 2026-08-18-cierre-paso-viajes). Pablo: "voy a poder ver
+   *  todos los viajes que alguna vez nos ofrecieron y no asignamos". No mira
+   *  is_active, así que vive junto al rango de fechas del historial. */
+  fNoAsignadoWebcarga: boolean
   sortKey:        SortKey | null
   sortDir:        'asc' | 'desc'
   page:           number
@@ -127,7 +132,7 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
         ...state,
         q: '', fechaDesde: '', fechaHasta: '', activeGroup: null,
         activeSignals: [], fTms: [], fOperationType: [],
-        fClient: [], fCargoType: [], fOrigin: [], page: 1,
+        fClient: [], fCargoType: [], fOrigin: [], fNoAsignadoWebcarga: false, page: 1,
       }
   }
 }
@@ -138,6 +143,7 @@ export function countActiveFilters(f: DiarioFilters): number {
   ].filter(v => v !== '' && v !== null).length
     + f.fTms.length + f.activeSignals.length + f.fOperationType.length
     + f.fClient.length + f.fCargoType.length + f.fOrigin.length
+    + (f.fNoAsignadoWebcarga ? 1 : 0)
 }
 
 /** Filtros que viven dentro del popover "Filtros" (para su badge contador).
@@ -149,13 +155,14 @@ export function countPopoverFilters(f: DiarioFilters): number {
   ].filter(v => v !== '' && v !== null).length
     + f.fTms.length + f.fOperationType.length
     + f.fCargoType.length + f.fOrigin.length
+    + (f.fNoAsignadoWebcarga ? 1 : 0)
 }
 
 export function useDiarioFilters() {
   return useReducer(reducer, {
     tab: 'en_curso', q: '', fechaDesde: '', fechaHasta: '',
     activeGroup: null, activeSignals: [], fTms: [], fOperationType: [],
-    fClient: [], fCargoType: [], fOrigin: [],
+    fClient: [], fCargoType: [], fOrigin: [], fNoAsignadoWebcarga: false,
     // sortKey null → page.tsx defaultea a status_reported_at (bug 5.6:
     // viaje más recientemente reportado por el TMS primero), sortDir desc
     // acompaña ese default — "más reciente arriba", no "más viejo arriba".

@@ -7,6 +7,7 @@ import type { FilterGroup, GroupColor } from '@/lib/api/filterGroups'
 import type { DiarioFilters, DiarioFiltersAction } from '@/hooks/useDiarioFilters'
 import { countPopoverFilters } from '@/hooks/useDiarioFilters'
 import { LocationPicker } from './LocationPicker'
+import { TEXTO_CUERPO } from '@/lib/ui/texto'
 
 interface DefaultGroup {
   id:       string
@@ -308,6 +309,28 @@ export function FilterPopover({
               </div>
             )}
           </div>
+
+          {/* "No asignado por WebCarga" — solo historial, Task 8 (plan
+              2026-08-18-cierre-paso-viajes). Pablo: "voy a poder ver todos
+              los viajes que alguna vez nos ofrecieron y no asignamos". No
+              mira is_active (trips.py), por eso vive junto al rango de
+              fechas del historial y no con Activo/Trabajando/Asignado. Es
+              la única casilla booleana del popover: se copia el patrón de
+              checkbox ya usado en AlertsPopover.tsx en vez de inventar un
+              estilo de pill nuevo. */}
+          {f.tab === 'historial' && (
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={f.fNoAsignadoWebcarga}
+                  onChange={() => dispatch({ type: 'patch', patch: { fNoAsignadoWebcarga: !f.fNoAsignadoWebcarga } })}
+                  className="shrink-0"
+                />
+                <span className={`text-xs ${TEXTO_CUERPO}`}>No asignado por WebCarga</span>
+              </label>
+            </div>
+          )}
 
           {/* Rango de fechas — solo historial */}
           {f.tab === 'historial' && (

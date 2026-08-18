@@ -138,4 +138,20 @@ describe('useDiarioFilters', () => {
     act(() => result.current[1]({ type: 'toggleSignal', id: 'active' }))
     expect(countActiveFilters(result.current[0])).toBe(2)
   })
+
+  // Task 8 (plan 2026-08-18-cierre-paso-viajes): "No asignado por WebCarga"
+  // en el historial. Pablo: "voy a poder ver todos los viajes que alguna vez
+  // nos ofrecieron y no asignamos".
+  it('fNoAsignadoWebcarga arranca apagado, cuenta como filtro activo y clear lo resetea', () => {
+    const { result } = renderHook(() => useDiarioFilters())
+    expect(result.current[0].fNoAsignadoWebcarga).toBe(false)
+
+    act(() => result.current[1]({ type: 'patch', patch: { fNoAsignadoWebcarga: true } }))
+    expect(result.current[0].fNoAsignadoWebcarga).toBe(true)
+    expect(countActiveFilters(result.current[0])).toBe(1)
+
+    act(() => result.current[1]({ type: 'clear' }))
+    expect(result.current[0].fNoAsignadoWebcarga).toBe(false)
+    expect(countActiveFilters(result.current[0])).toBe(0)
+  })
 })
