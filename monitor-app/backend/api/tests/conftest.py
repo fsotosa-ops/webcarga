@@ -232,6 +232,24 @@ class PoolDeUnaConexion:
         return getattr(self._conn, nombre)
 
 
+async def _usuario_real(conn) -> dict:
+    """Un actor que existe en `public.profiles`.
+
+    No se puede usar el USER sintético de este archivo: `app.trip_notes.author_id`
+    tiene FK a profiles, y `_log_system_note` se traga la violación con un
+    `except Exception: pass`. Con un pool de verdad eso es inocuo —cada
+    sentencia va en su propia transacción implícita— pero sobre la única
+    transacción del fixture `conexion_revertida` aborta TODO lo que viene
+    después, y el `pass` lo esconde. Con un perfil real el test además
+    verifica que la nota se escribe.
+
+    Vivía en test_asignar_conductor.py; se movió acá cuando un segundo
+    archivo (test_cierre_viajes.py) lo necesitó (2026-08-18), en vez de
+    copiarlo."""
+    fila = await conn.fetchrow("SELECT id, email FROM public.profiles LIMIT 1")
+    return {"sub": str(fila["id"]), "email": fila["email"], "role": "editor"}
+
+
 def pytest_report_header(config):
     """El estado de la capa de integración, en la cabecera de la corrida."""
     if HAY_CREDENCIALES:

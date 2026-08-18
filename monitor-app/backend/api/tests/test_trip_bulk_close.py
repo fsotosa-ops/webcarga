@@ -17,6 +17,11 @@ USER = {
     "role": "editor",
 }
 
+# unassigned_reason_id pasó a ser obligatorio (2026-08-18): el cierre en lote
+# no declara nada si no dice por qué. Cualquier string sirve acá — estos
+# tests mockean el pool, no ejercitan el FK real contra status_taxonomies.
+REASON_ID = "22222222-2222-2222-2222-222222222222"
+
 
 def make_client(pool):
     app = FastAPI()
@@ -35,11 +40,23 @@ def test_bulk_close_422_when_no_trip_ids():
     assert res.status_code == 422
 
 
+def test_bulk_close_422_when_no_unassigned_reason():
+    """El motivo pasó a ser obligatorio: apagar un viaje sin decir por qué
+    no declara nada (regla 2 de Pablo, "el acusete de operaciones")."""
+    pool = AsyncMock()
+    client = make_client(pool)
+    res = client.patch("/api/v1/trips/bulk-close", json={"trip_ids": ["t1"]})
+    assert res.status_code == 422
+
+
 def test_bulk_close_404_when_a_trip_is_missing():
     pool = AsyncMock()
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
     client = make_client(pool)
-    res = client.patch("/api/v1/trips/bulk-close", json={"trip_ids": ["t1", "t2"]})
+    res = client.patch(
+        "/api/v1/trips/bulk-close",
+        json={"trip_ids": ["t1", "t2"], "unassigned_reason_id": REASON_ID},
+    )
     assert res.status_code == 404
     assert "t2" in res.json()["detail"]
 
@@ -50,9 +67,13 @@ def test_bulk_close_sets_is_active_and_is_working_false_for_all_selected():
         {"id": "t1", "manually_edited_fields": []},
         {"id": "t2", "manually_edited_fields": []},
     ]
+    pool.fetchval.return_value = "Sin camión disponible"
     client = make_client(pool)
 
-    res = client.patch("/api/v1/trips/bulk-close", json={"trip_ids": ["t1", "t2"]})
+    res = client.patch(
+        "/api/v1/trips/bulk-close",
+        json={"trip_ids": ["t1", "t2"], "unassigned_reason_id": REASON_ID},
+    )
 
     assert res.status_code == 200
     assert res.json() == {"ok": True, "closed": 2}
@@ -60,20 +81,47 @@ def test_bulk_close_sets_is_active_and_is_working_false_for_all_selected():
     sql = update.args[0]
     assert "is_active = false" in sql
     assert "is_working = false" in sql
+    assert "unassigned_reason_id" in sql
     assert "manually_edited_fields" in sql
     assert update.args[1] == ["t1", "t2"]
+    assert update.args[3] == REASON_ID
 
 
 def test_bulk_close_logs_a_system_note_per_trip():
     pool = AsyncMock()
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetchval.return_value = "Sin camión disponible"
     client = make_client(pool)
 
-    client.patch("/api/v1/trips/bulk-close", json={"trip_ids": ["t1"]})
+    client.patch(
+        "/api/v1/trips/bulk-close",
+        json={"trip_ids": ["t1"], "unassigned_reason_id": REASON_ID},
+    )
 
     note_calls = [c for c in pool.execute.call_args_list if "app.trip_notes" in c.args[0]]
     assert len(note_calls) == 1
-    assert "selección masiva" in note_calls[0].args[3]
+    assert "No asignado por WebCarga" in note_calls[0].args[3]
+    assert "Sin camión disponible" in note_calls[0].args[3]
+
+
+def test_bulk_close_logs_to_audit_log_per_trip():
+    """Spec §6.3: la declaración se cruza con facturación — no alcanza con
+    la bitácora best-effort de _log_system_note, tiene que quedar también en
+    public.audit_log vía log_change."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetchval.return_value = "Sin camión disponible"
+    client = make_client(pool)
+
+    client.patch(
+        "/api/v1/trips/bulk-close",
+        json={"trip_ids": ["t1"], "unassigned_reason_id": REASON_ID},
+    )
+
+    audit_calls = [c for c in pool.execute.call_args_list if "public.audit_log" in c.args[0]]
+    assert len(audit_calls) == 1
+    assert audit_calls[0].args[4] == "no_asignado_por_webcarga"
+    assert audit_calls[0].args[5] == "unassigned_reason_id"
 
 
 def test_bulk_close_route_does_not_collide_with_single_trip_patch():
@@ -82,9 +130,13 @@ def test_bulk_close_route_does_not_collide_with_single_trip_patch():
     router justamente por esto."""
     pool = AsyncMock()
     pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetchval.return_value = "Sin camión disponible"
     client = make_client(pool)
 
-    res = client.patch("/api/v1/trips/bulk-close", json={"trip_ids": ["t1"]})
+    res = client.patch(
+        "/api/v1/trips/bulk-close",
+        json={"trip_ids": ["t1"], "unassigned_reason_id": REASON_ID},
+    )
 
     assert res.status_code == 200
     assert "closed" in res.json()

@@ -30,8 +30,14 @@ class TripBulkCloseBody(BaseModel):
     """Selección masiva en el Diario para cerrar/finalizar varios viajes de
     una — mismo mecanismo que ya usa IndicatorSwitches por viaje individual
     (is_active/is_working=false, protegido de que Mage lo pise en la
-    próxima corrida vía manually_edited_fields), solo que en lote."""
+    próxima corrida vía manually_edited_fields), solo que en lote.
+
+    `unassigned_reason_id` es OBLIGATORIO desde 2026-08-18: apagar un viaje sin
+    decir por qué no declara nada, y la declaración es todo el valor de este
+    paso ("el acusete de operaciones"). Se valida en el endpoint y no acá para
+    poder devolver un 422 con el mensaje de negocio."""
     trip_ids: list[str]
+    unassigned_reason_id: str | None = None
 
 
 class AsignarConductorBody(BaseModel):

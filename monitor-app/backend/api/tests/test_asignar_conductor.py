@@ -19,7 +19,7 @@ from fastapi import HTTPException
 
 from app.routers.trips import assign_driver_bulk, assign_fleet_link, driver_candidates
 from app.schemas.trip import AsignarConductorBody
-from tests.conftest import PoolDeUnaConexion
+from tests.conftest import PoolDeUnaConexion, _usuario_real
 
 pytestmark = pytest.mark.integracion
 
@@ -34,20 +34,6 @@ async def _un_viaje(conn) -> str:
 async def _un_conductor(conn) -> str:
     return str(await conn.fetchval(
         "SELECT id FROM public.drivers WHERE tax_id IS NOT NULL LIMIT 1"))
-
-
-async def _usuario_real(conn) -> dict:
-    """Un actor que existe en `public.profiles`.
-
-    No se puede usar el USER sintetico de conftest: `app.trip_notes.author_id`
-    tiene FK a profiles, y `_log_system_note` se traga la violacion con un
-    `except Exception: pass`. Con un pool de verdad eso es inocuo —cada
-    sentencia va en su propia transaccion implicita— pero sobre la unica
-    transaccion del fixture aborta TODO lo que viene despues, y el `pass` lo
-    esconde. Con un perfil real el test ademas verifica que la nota se
-    escribe, que es lo que esta tarea cambio."""
-    fila = await conn.fetchrow("SELECT id, email FROM public.profiles LIMIT 1")
-    return {"sub": str(fila["id"]), "email": fila["email"], "role": "editor"}
 
 
 # ── Task 1: la empresa deja de ser obligatoria ────────────────────────────

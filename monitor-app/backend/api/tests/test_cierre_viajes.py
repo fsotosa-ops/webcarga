@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from tests.conftest import PoolDeUnaConexion
+from tests.conftest import PoolDeUnaConexion, _usuario_real
 
 pytestmark = pytest.mark.integracion
 
@@ -226,3 +226,72 @@ async def test_una_fecha_invalida_es_422(conexion_revertida):
     with pytest.raises(HTTPException) as e:
         await cierre_viajes(fecha="ayer", pool=PoolDeUnaConexion(conexion_revertida), _=None)
     assert e.value.status_code == 422
+
+
+async def test_cerrar_un_viaje_exige_motivo(conexion_revertida):
+    """Sin motivo el cierre no declara nada. "Este es el acusete de
+    operaciones" (Pablo): el valor esta en el porque, no en el apagado."""
+    from fastapi import HTTPException
+    from app.routers.trips import bulk_close_trips
+    from app.schemas.trip import TripBulkCloseBody
+
+    conn = conexion_revertida
+    trip_id = str(await conn.fetchval("SELECT id FROM app.trips LIMIT 1"))
+
+    with pytest.raises(HTTPException) as e:
+        await bulk_close_trips(
+            TripBulkCloseBody(trip_ids=[trip_id], unassigned_reason_id=None),
+            PoolDeUnaConexion(conn), await _usuario_real(conn))
+    assert e.value.status_code == 422
+
+
+async def test_el_estado_del_tms_no_se_toca(conexion_revertida):
+    """Regla 1 de Pablo. El viaje conserva su ASIGNADO y en el historial se lee
+    "No asignado por WebCarga - <motivo>" AL LADO, no encima."""
+    from app.routers.trips import bulk_close_trips
+    from app.schemas.trip import TripBulkCloseBody
+
+    conn = conexion_revertida
+    fila = await conn.fetchrow("SELECT id, trip_status FROM app.trips LIMIT 1")
+    motivo = await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain='TRIP_UNASSIGNED_REASON' LIMIT 1")
+
+    await bulk_close_trips(
+        TripBulkCloseBody(trip_ids=[str(fila["id"])], unassigned_reason_id=str(motivo)),
+        PoolDeUnaConexion(conn), await _usuario_real(conn))
+
+    despues = await conn.fetchrow(
+        "SELECT trip_status, is_active, unassigned_reason_id, manually_edited_fields "
+        "FROM app.trips WHERE id = $1", fila["id"])
+    assert despues["trip_status"] == fila["trip_status"], "se piso el estado del TMS"
+    assert despues["is_active"] is False
+    assert str(despues["unassigned_reason_id"]) == str(motivo)
+    assert "unassigned_reason_id" in despues["manually_edited_fields"], \
+        "sin esto, la proxima corrida de dbt borra el motivo"
+
+
+async def test_la_declaracion_queda_en_audit_log(conexion_revertida):
+    """Spec §6.3: una declaracion de negocio que se cruza con facturacion no
+    puede depender solo de la bitacora best-effort (`_log_system_note` se
+    traga errores con `except: pass`). Tiene que quedar tambien en
+    public.audit_log, vía `log_change`."""
+    from app.routers.trips import bulk_close_trips
+    from app.schemas.trip import TripBulkCloseBody
+
+    conn = conexion_revertida
+    trip_id = await conn.fetchval("SELECT id FROM app.trips LIMIT 1")
+    motivo_fila = await conn.fetchrow(
+        "SELECT id, label FROM app.status_taxonomies "
+        "WHERE domain='TRIP_UNASSIGNED_REASON' LIMIT 1")
+
+    await bulk_close_trips(
+        TripBulkCloseBody(trip_ids=[str(trip_id)], unassigned_reason_id=str(motivo_fila["id"])),
+        PoolDeUnaConexion(conn), await _usuario_real(conn))
+
+    fila_auditoria = await conn.fetchrow(
+        "SELECT entity_type, entity_id, action, field, new_value FROM public.audit_log "
+        "WHERE entity_type = 'TRIP' AND entity_id = $1::uuid "
+        "ORDER BY occurred_at DESC LIMIT 1", str(trip_id))
+    assert fila_auditoria is not None, "la declaracion no quedo en audit_log"
+    assert fila_auditoria["action"] == "no_asignado_por_webcarga"
+    assert fila_auditoria["field"] == "unassigned_reason_id"

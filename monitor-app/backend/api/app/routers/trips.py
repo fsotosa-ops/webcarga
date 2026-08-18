@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.trip import AsignarConductorBody, TripBulkCloseBody, TripPatch, TripStopPatch
+from ..services.audit import log_change
 from ..services.cierre_viajes import SQL_GRUPOS_CIERRE
 
 
@@ -2175,6 +2176,8 @@ async def bulk_close_trips(
     path param genérico o quedaría absorbido como trip_id="bulk-close"."""
     if not body.trip_ids:
         raise HTTPException(422, "trip_ids no puede estar vacío")
+    if not body.unassigned_reason_id:
+        raise HTTPException(422, "Indica el motivo por el que no se tomó la carga")
 
     rows = await pool.fetch(
         "SELECT id, manually_edited_fields FROM app.trips WHERE id = ANY($1::uuid[])",
@@ -2185,20 +2188,36 @@ async def bulk_close_trips(
     if missing:
         raise HTTPException(404, f"Viaje(s) no encontrado(s): {missing}")
 
+    motivo = await pool.fetchval(
+        "SELECT label FROM app.status_taxonomies WHERE id = $1", body.unassigned_reason_id)
+
     await pool.execute(
         """
         UPDATE app.trips
         SET is_active = false, is_working = false,
+            unassigned_reason_id = $3::uuid,
             manually_edited_fields = ARRAY(SELECT DISTINCT unnest(
-                COALESCE(manually_edited_fields,'{}') || ARRAY['is_active','is_working']::text[]
+                COALESCE(manually_edited_fields,'{}')
+                || ARRAY['is_active','is_working','unassigned_reason_id']::text[]
             )),
             edited_by = $2::uuid, edited_at = NOW(), updated_at = NOW()
         WHERE id = ANY($1::uuid[])
         """,
-        body.trip_ids, user["sub"],
+        body.trip_ids, user["sub"], body.unassigned_reason_id,
     )
     for tid in body.trip_ids:
-        await _log_system_note(pool, tid, user, "Cerrado manualmente en selección masiva")
+        # Spec §6.3: la declaración se cruza con facturación, así que además
+        # de la bitácora (best-effort, `_log_system_note` se traga errores)
+        # queda trazada en public.audit_log.
+        await log_change(
+            pool, actor=user["sub"], entity_type="TRIP", entity_id=tid,
+            action="no_asignado_por_webcarga", field="unassigned_reason_id",
+            old_value=None, new_value=motivo, source="cierre_viajes",
+        )
+        # "AL LADO, no encima": el viaje conserva su estado del TMS y esto se
+        # lee en el historial junto a él. Pablo: "yo despues filtrare en el
+        # historial todos los no asignados por WebCarga".
+        await _log_system_note(pool, tid, user, f"No asignado por WebCarga · {motivo}")
     return {"ok": True, "closed": len(body.trip_ids)}
 
 
