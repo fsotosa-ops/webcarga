@@ -20,6 +20,7 @@ import { StatusReportSection } from '@/components/dashboard/sections/StatusRepor
 import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSection'
 import { AvisoPosteriorAlCierre } from '@/components/dashboard/AvisoPosteriorAlCierre'
 import { Estado } from '@/components/ui/Estado'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { TripsMeta } from '@/lib/types'
 
 const ADMIN_ROLES = new Set(['admin', 'owner'])
@@ -196,15 +197,12 @@ function ClosuresCenterPageInner() {
       </div>
 
       <div className="bg-white rounded-2xl border border-border shadow-sm p-5 sm:p-6 flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-text-primary flex items-center gap-2">
-            <ClipboardCheck size={20} className="text-accent" /> Centro de Cierre del Día
-          </h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Revisa pendientes, cierra Tractoreo y Equipos Completos, y comparte el reporte del día — todo en un solo lugar.
-          </p>
-        </div>
-        <label className="flex items-center gap-2 text-xs text-gray-500">
+        <EncabezadoDePagina
+          titulo="Centro de Cierre del Día"
+          icono={<ClipboardCheck size={20} className="text-accent" />}
+          bajada="Revisa pendientes, cierra Tractoreo y Equipos Completos, y comparte el reporte del día — todo en un solo lugar."
+        />
+        <label className="flex items-center gap-2 text-etiqueta text-gray-500">
           Fecha
           <input
             type="date"

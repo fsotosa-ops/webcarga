@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, BarChart3, Download, X } from 'lucide-react'
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import {
   FIELD_LABELS, GRANULARITY_LABELS, buildPivot, distinctFieldValues, applyFilters,
   type FieldId, type Granularity, type PivotFieldSpec, type PivotFilter,
@@ -168,9 +169,10 @@ export default function ReporteriaPage() {
   return (
     <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-lg font-bold text-text-primary flex items-center gap-2">
-          <BarChart3 size={18} className="text-accent" /> Reportería
-        </h1>
+        <EncabezadoDePagina
+          titulo="Reportería"
+          icono={<BarChart3 size={18} className="text-accent" />}
+        />
         <button
           type="button"
           onClick={handleExportCsv}
