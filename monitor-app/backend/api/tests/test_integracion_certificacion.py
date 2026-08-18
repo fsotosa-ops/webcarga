@@ -38,7 +38,7 @@ from app.services.requirement_conditions import (
     SQL_ENTIDADES_QUE_APLICAN,
     calcular_diferencias,
 )
-from tests.conftest import USER
+from tests.conftest import USER, PoolDeUnaConexion
 
 pytestmark = pytest.mark.integracion
 
@@ -49,29 +49,6 @@ PREFIJO = "ZZ-TEST-INTEGRACION"
 
 
 # ── Andamiaje ─────────────────────────────────────────────────────────────
-
-
-class PoolDeUnaConexion:
-    """Presenta la conexión del fixture como si fuera el pool de asyncpg.
-
-    El código de producción hace `async with pool.acquire() as conn` y adentro
-    abre su propia transacción. Sobre una conexión que YA está en transacción,
-    asyncpg resuelve ese `conn.transaction()` como un SAVEPOINT: el trabajo
-    sigue colgando de la transacción externa y se va entero con el ROLLBACK
-    del fixture. Es lo que permite ejecutar el servicio y el endpoint reales
-    sin que puedan escribir en firme."""
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    def acquire(self):
-        conn = self._conn
-
-        @asynccontextmanager
-        async def _prestada():
-            yield conn
-
-        return _prestada()
 
 
 def _sufijo() -> str:

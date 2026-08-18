@@ -43,7 +43,11 @@ def test_trip_from_resolves_against_public_carriers_not_legacy_transporter_profi
 
 def test_assign_fleet_link_inserts_carrier_and_driver_id():
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
+    # 5 valores desde 2026-08-18: cuando viene driver_id el endpoint busca
+    # ademas su full_name, para que la nota de bitacora diga lo que realmente
+    # se vinculo. El orden es: existe -> link viejo -> INSERT -> conductor ->
+    # empresa.
+    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Juan Perez", "Transportes Sur Spa"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={
@@ -180,3 +184,49 @@ def test_list_trips_ignores_invalid_fleet_match_value():
     assert res.status_code == 200
     query = pool.fetch.call_args_list[0].args[0]
     assert query.count(_FLEET_MATCH_CASE) == 1
+
+
+# ── 2026-08-18: `carrier_id` dejo de ser obligatorio ──────────────────────
+# Conductor y empresa son dos preguntas con fuentes distintas. Exigirlas
+# juntas era la causa del reporte del viaje 2032999.
+
+
+def test_assign_fleet_link_acepta_solo_conductor_sin_empresa():
+    pool = make_pool()
+    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Juan Perez"]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/trips/trip-1/fleet-link", json={"driver_id": "d1"})
+    assert res.status_code == 200
+
+    insert = next(c for c in pool.fetchval.call_args_list
+                  if "INSERT INTO app.trip_fleet_links" in c.args[0])
+    assert "d1" in insert.args
+    assert None in insert.args, "la empresa deberia quedar NULL, no inventada"
+
+
+def test_assign_fleet_link_rechaza_un_vinculo_sin_conductor_ni_empresa():
+    """Aflojar la exigencia no es quitarla: un vinculo que no afirma nada solo
+    serviria para pisar la resolucion automatica con silencio."""
+    pool = make_pool()
+    pool.fetchval.side_effect = ["trip-1"]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/trips/trip-1/fleet-link", json={})
+    assert res.status_code == 422
+
+
+def test_la_nota_dice_lo_que_se_vinculo_no_siempre_la_empresa():
+    """Una nota que dice 'empresa' sobre un vinculo sin empresa convierte la
+    bitacora en ruido."""
+    pool = make_pool()
+    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Juan Perez"]
+    client = make_client(pool)
+
+    client.post("/api/v1/trips/trip-1/fleet-link", json={"driver_id": "d1"})
+
+    nota = next(c for c in pool.execute.call_args_list
+                if "app.trip_notes" in c.args[0])
+    cuerpo = nota.args[3]
+    assert cuerpo == "Vinculó conductor: Juan Perez"
+    assert "empresa" not in cuerpo

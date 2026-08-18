@@ -3,6 +3,33 @@
 > **Para quien lo ejecute:** SUB-SKILL REQUERIDA: `superpowers:subagent-driven-development` o
 > `superpowers:executing-plans`, tarea por tarea. Los pasos usan casillas (`- [ ]`).
 
+> ## ⚠ Revisión del 2026-08-18, antes de ejecutar
+>
+> Se verificó el plan contra la base y **cuatro supuestos estaban mal**. Las correcciones están
+> incorporadas abajo; esta nota explica por qué, para no rediscutirlas.
+>
+> 1. **No existe NINGUNA foreign key que apunte a `app.trips`** (verificado sobre `pg_constraint`).
+>    El test `test_no_se_aplica_a_medias` dependía de que un `trip_id` inexistente reventara: no
+>    revienta. Reescrito para probar atomicidad de otra forma.
+> 2. **Los tests de las Tasks 1 y 3 no probaban el endpoint**: hacían `INSERT` por SQL y verificaban
+>    la fila. Habrían pasado idénticos antes y después del fix. Reescritos contra el endpoint real.
+> 3. **La similitud es la métrica equivocada.** Medido sobre los 7 viajes de identidad *segura*
+>    (`driver_match_rule='tms_rut'`): en los 7, **todos los tokens del TMS están en el nombre del
+>    roster**; la similitud baja sólo porque el TMS reporta menos palabras (4 vs 2 → 0.400,
+>    4 vs 3 → 0.700, 4 vs 4 → 1.000). Un umbral en 0.5 **escondería 3 de esos 7**. El orden
+>    invertido y los acentos ya dan 1.000 porque `public.name_tokens()` ordena alfabéticamente
+>    (fix de la R122). **Se ordena por CONTENCIÓN** (`name_tokens(roster) @> name_tokens(tms)`),
+>    con la similitud sólo como desempate.
+>    Aplicado a las 28 personas sin identificar: **19 sin candidato** (alta directa), **7 con un
+>    único candidato**, **2 ambiguas**.
+> 4. **El alta exige RUT** (`POST /drivers` tiene `tax_id` obligatorio) y QAnalytics nunca lo
+>    reporta. **Decisión del usuario (2026-08-18): se pide el RUT en el popover.** `tax_id` sigue
+>    siendo obligatorio — es la clave con la que el resolvedor identifica por RUT.
+>
+> Y el caso que motivó el plan, el viaje **2032999** («SUAREZ LOPEZ EFRAIN EDUARDO»): **esa persona
+> no existe en `public.drivers`**, y por contención da **0 candidatos**. Se resuelve dando de alta,
+> no eligiendo. El click-through de la Task 7 tiene que ejercitar ese camino.
+
 **Objetivo:** que identificar al conductor de un viaje sea un gesto de la tabla del Monitor y no un
 viaje al detalle — y que una decisión cierre las ~8 filas de esa persona, no una.
 

@@ -1367,3 +1367,30 @@ export type RecalcResult = {
   quitados:   number
   bloqueados: number
 }
+
+
+/** Candidato a ser la persona que el TMS nombra así — GET /trips/driver-candidates.
+ *  `contiene` (todas las palabras del TMS están en este nombre, o al revés) es
+ *  la señal que decide; `similitud` sólo desempata y NUNCA debe usarse como
+ *  umbral: sobre los casos de identidad segura cae a 0,40 por nombres
+ *  incompletos. */
+export type CandidatoConductor = {
+  driver_id:    string
+  full_name:    string
+  tax_id:       string | null
+  carrier_name: string | null
+  contiene:     boolean
+  similitud:    number
+}
+
+/** Respuesta de GET /trips/driver-candidates.
+ *
+ *  `trip_ids_de_la_persona` son los viajes REALES sin identificar de ese mismo
+ *  nombre en los últimos 30 días. Vienen del backend a propósito: el popover
+ *  ofrece "aplicar a sus N viajes" y varios de esos no están en pantalla —
+ *  contar en el cliente lo que la tabla tiene cargado sería prometer un
+ *  alcance y aplicar otro. */
+export type CandidatosConductorResponse = {
+  candidatos:             CandidatoConductor[]
+  trip_ids_de_la_persona: string[]
+}

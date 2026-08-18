@@ -28,6 +28,9 @@ import {
 } from '@/lib/utils/alertSignals'
 import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
+import { AsignarConductorPopover } from '@/components/dashboard/AsignarConductorPopover'
+import { useCanEdit } from '@/hooks/useCanEdit'
+import { driversApi } from '@/lib/api/drivers'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
@@ -182,6 +185,20 @@ export default function DiarioPage() {
     [trips, tripsMeta?.temperature_ranges, alertRules],
   )
   const { pinned, togglePin } = usePinnedAlertSignals()
+  // ── Identificar al conductor desde la tabla (2026-08-18) ───────────────
+  const puedeEditar = useCanEdit()
+  const [asignando, setAsignando] = useState<Trip | null>(null)
+  const [soloSinIdentificar, setSoloSinIdentificar] = useState(false)
+
+  // Los candidatos y los viajes REALES de esa persona vienen juntos del
+  // backend: el alcance que promete el popover se aplica a los ids que él
+  // devuelve, no a un conteo hecho acá sobre lo que la tabla tiene cargado.
+  const candidatosQuery = useQuery({
+    queryKey: ['driver-candidates', asignando?.driver_name_tms],
+    queryFn: () => tripsApi.driverCandidates(asignando!.driver_name_tms!),
+    enabled: Boolean(asignando?.driver_name_tms),
+  })
+
   const visibleTrips = useMemo(() => {
     let result = trips
     if (f.tab === 'en_curso' && f.activeSignals.length > 0) {
@@ -203,8 +220,27 @@ export default function DiarioPage() {
         ),
       )
     }
+    // El contador de arriba es un filtro de verdad, y eso NO es un detalle:
+    // es la condición que sostiene el diseño de la celda. Sin chip de color
+    // por fila (208 filas marcadas no son señal), el camino para descubrir
+    // el trabajo pendiente deja de ser "escaneo la tabla" y pasa a ser "veo
+    // el número y lo abro". Si esto quedara decorativo, habría que volver al
+    // chip por fila.
+    if (soloSinIdentificar) {
+      result = result.filter(t => !t.driver_name && t.driver_name_tms)
+    }
     return result
-  }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules])
+  }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules, soloSinIdentificar])
+
+  // PERSONAS, no viajes. 27 personas explican 208 viajes: contar viajes
+  // exagera el trabajo por 7,7 y hace que la tarea parezca infinita.
+  const personasSinIdentificar = useMemo(() => {
+    const nombres = new Set<string>()
+    for (const t of trips) {
+      if (!t.driver_name && t.driver_name_tms) nombres.add(t.driver_name_tms.trim().toUpperCase())
+    }
+    return nombres.size
+  }, [trips])
 
   // Centro de Flota (2026-07-28) — mismo queryKey que usa FleetCenterDialog
   // internamente, así el badge del botón y el modal comparten cache y no
@@ -220,6 +256,7 @@ export default function DiarioPage() {
   // ── Glow: marca filas cuyo último reporte TMS cambió entre refetches ────────
   const prevReportedRef = useRef<Map<string, string | null>>(new Map())
   const [updatedIds, setUpdatedIds] = useState<Set<string>>(new Set())
+
   useEffect(() => {
     if (!trips.length) return
     const prev = prevReportedRef.current
@@ -523,6 +560,26 @@ export default function DiarioPage() {
             <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
           )}
 
+          {/* El aviso vive UNA vez, arriba, y es un filtro — no un chip
+              repetido en cada fila. Sólo cuando ya llegó el dato: un "0"
+              mientras la consulta está en vuelo afirma algo falso. */}
+          {f.tab === 'en_curso' && !loading && personasSinIdentificar > 0 && (
+            <button
+              type="button"
+              onClick={() => setSoloSinIdentificar(v => !v)}
+              aria-pressed={soloSinIdentificar}
+              className={`self-start inline-flex items-center gap-2 rounded-full border px-3 py-1 text-etiqueta font-semibold transition-colors ${
+                soloSinIdentificar
+                  ? 'border-espera bg-espera/10 text-espera'
+                  : 'border-border ${TEXTO_CUERPO} hover:bg-bg-main'
+              }`}
+            >
+              <span className="text-dato">{personasSinIdentificar}</span>
+              {personasSinIdentificar === 1 ? 'conductor sin identificar' : 'conductores sin identificar'}
+              {soloSinIdentificar && <X size={12} />}
+            </button>
+          )}
+
           {/* Table / Board — en refetch la data anterior queda visible, atenuada (sin flash de spinner) */}
           {loading ? (
             <Estado tipo="cargando" />
@@ -555,6 +612,7 @@ export default function DiarioPage() {
                   sortKey={f.sortKey}
                   sortDir={f.sortDir}
                   onSort={col => dispatch({ type: 'toggleSort', col })}
+                  onAsignarConductor={puedeEditar ? setAsignando : undefined}
                 />
               )}
             </div>
@@ -592,6 +650,37 @@ export default function DiarioPage() {
         onImported={handleBulkImported}
         meta={tripsMeta}
       />
+      {asignando?.driver_name_tms && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
+             onClick={() => setAsignando(null)}>
+          <div onClick={e => e.stopPropagation()}>
+            <AsignarConductorPopover
+              nombreTms={asignando.driver_name_tms}
+              candidatos={candidatosQuery.data?.candidatos ?? []}
+              viajesDeLaPersona={candidatosQuery.data?.trip_ids_de_la_persona.length ?? 0}
+              cargando={candidatosQuery.isLoading}
+              onCancelar={() => setAsignando(null)}
+              onAsignar={async (driverId, aTodos) => {
+                const ids = aTodos
+                  ? candidatosQuery.data?.trip_ids_de_la_persona ?? [asignando.id]
+                  : [asignando.id]
+                await tripsApi.assignDriver(driverId, ids)
+                setAsignando(null)
+                await queryClient.invalidateQueries({ queryKey: ['trips'] })
+              }}
+              onDarDeAlta={async (nombre, rut, aTodos) => {
+                const creado = await driversApi.create({ tax_id: rut, full_name: nombre })
+                const ids = aTodos
+                  ? candidatosQuery.data?.trip_ids_de_la_persona ?? [asignando.id]
+                  : [asignando.id]
+                await tripsApi.assignDriver(creado.id, ids)
+                setAsignando(null)
+                await queryClient.invalidateQueries({ queryKey: ['trips'] })
+              }}
+            />
+          </div>
+        </div>
+      )}
       <FleetCenterDialog
         open={showFleetCenter}
         fecha={today}

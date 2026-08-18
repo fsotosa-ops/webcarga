@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
-from ..schemas.trip import TripBulkCloseBody, TripPatch, TripStopPatch
+from ..schemas.trip import AsignarConductorBody, TripBulkCloseBody, TripPatch, TripStopPatch
 
 
 def _parse_date(s: str) -> _date | None:
@@ -1352,8 +1352,8 @@ async def fleet_daily_overview(
         WITH active_roster AS (
             SELECT a.id AS asset_id, a.license_plate AS tractor_plate,
                    c.id AS carrier_id, c.business_name AS carrier_name,
-                   wot.label = 'Tractoreo' AS is_tractoreo,
-                   wot.label = 'Equipo Completo' AS is_equipo_completo
+                   wot.code = 'TRACTOREO' AS is_tractoreo,
+                   wot.code = 'EQUIPO_COMPLETO' AS is_equipo_completo
             FROM public.assets a
             JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
             JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
@@ -1910,6 +1910,184 @@ async def _log_tms_divergence_once(pool, trip_id: str, user: dict, d: dict) -> N
         pass  # best-effort: nunca romper la lectura del viaje
 
 
+@router.post("/assign-driver")
+async def assign_driver_bulk(
+    body: AsignarConductorBody,
+    pool=Depends(get_pool),
+    user=Depends(require_editor),
+):
+    """Vincula una persona a varios viajes de una, en UNA transacción.
+
+    Conserva lo que ya estaba resuelto. Es la decisión de diseño de este
+    endpoint y no es cosmética: los vínculos `auto` traen empresa en 1.457 de
+    1.521 filas y tracto en las 1.521, y un vínculo `manual` es TERMINAL —
+    `app.resolve_trip_fleet()` no lo vuelve a mirar. Si al asignar el conductor
+    pisáramos esos campos con NULL, la empresa y el tracto ya resueltos se
+    perderían para siempre: se estaría cambiando la respuesta a una pregunta
+    contestando otra.
+
+    Todo o nada. Un lote que se aplica a medias es peor que uno que falla: la
+    persona ve algunos viajes resueltos, no sabe cuáles faltaron, y reintentar
+    no es idempotente desde su punto de vista.
+    """
+    if not body.trip_ids:
+        raise HTTPException(422, "Indica al menos un viaje")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            filas = await conn.fetch(
+                """
+                INSERT INTO app.trip_fleet_links AS fl
+                    (trip_id, driver_id, link_source, created_by)
+                SELECT t.id, $1::uuid, 'manual', $2::uuid
+                FROM unnest($3::uuid[]) AS t(id)
+                ON CONFLICT (trip_id) DO UPDATE SET
+                    driver_id   = EXCLUDED.driver_id,
+                    link_source = 'manual',
+                    created_by  = EXCLUDED.created_by,
+                    updated_at  = now(),
+                    -- lo ya resuelto se conserva: sólo cambia el conductor
+                    driver_match_rule = NULL
+                RETURNING fl.id, fl.trip_id
+                """,
+                body.driver_id, user["sub"], body.trip_ids,
+            )
+            await conn.execute(
+                """
+                UPDATE app.trips t SET fleet_link_id = fl.id, updated_at = now()
+                FROM app.trip_fleet_links fl
+                WHERE fl.trip_id = t.id AND t.id = ANY($1::uuid[])
+                """,
+                body.trip_ids,
+            )
+
+    # Una sola sentencia, no un INSERT por viaje: el lote llega a 33 viajes
+    # para una persona, y un `for` acá son 33 viajes de ida y vuelta para
+    # escribir el mismo texto. Best-effort como el resto de la bitácora — que
+    # falle la nota no puede deshacer una asignación ya confirmada.
+    driver_name = await pool.fetchval(
+        "SELECT full_name FROM public.drivers WHERE id = $1", body.driver_id
+    )
+    try:
+        await pool.execute(
+            """
+            INSERT INTO app.trip_notes (trip_id, author_id, body, note_type)
+            SELECT t.id, $1::uuid, $2, 'sistema'
+            FROM unnest($3::uuid[]) AS t(id)
+            """,
+            user["sub"],
+            f"Vinculó conductor: {driver_name or body.driver_id}",
+            body.trip_ids,
+        )
+    except Exception:
+        pass
+
+    return {"asignados": len(filas)}
+
+
+@router.get("/driver-candidates")
+async def driver_candidates(
+    nombre: str = Query("", description="Nombre tal como lo reporta el TMS"),
+    limit: int = Query(5, ge=1, le=25),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Quién puede ser la persona que el TMS nombra así.
+
+    ORDENA LA CONTENCIÓN, NO LA SIMILITUD, y eso no es una preferencia: está
+    medido. Sobre los 7 viajes cuya identidad es SEGURA porque el TMS mandó el
+    RUT (`driver_match_rule='tms_rut'`), en los 7 **todos** los tokens del TMS
+    están dentro del nombre del roster. La similitud baja únicamente porque el
+    TMS reporta MENOS palabras:
+
+        4 tokens vs 2 → 0.400    4 vs 3 → 0.700    4 vs 4 → 1.000
+
+    Un umbral de similitud en 0.5 habría escondido 3 de esos 7 — gente cuya
+    identidad no estaba en discusión. La similitud castiga igual a un nombre
+    incompleto que a un nombre ajeno; la contención los distingue.
+
+    El orden de las palabras y los acentos ya no son un problema:
+    `public.name_tokens()` normaliza y ORDENA alfabéticamente, así que
+    "APELLIDO NOMBRE" contra "Nombre Apellido" da 1.000 (fix de la Ronda 122,
+    que fue lo que destrabó la resolución de conductor).
+
+    Se devuelven también los NO contenidos, con su bandera en `false`: la
+    decisión de mostrarlos o ir directo a dar de alta es de la interfaz, no de
+    acá. Medido sobre las 28 personas sin identificar de los últimos 30 días:
+    19 no tienen ningún candidato contenido, 7 tienen exactamente uno, y 2 son
+    ambiguas — esas 2 son el conductor duplicado del roster, que es limpieza
+    de datos pendiente y no un defecto de esta consulta.
+    """
+    # Con un solo token la contención matchearía a cualquiera que comparta ese
+    # apellido: media base. Eso no es una pista, es ruido — y el `@>` con un
+    # arreglo vacío es cierto para TODAS las filas, que sería peor.
+    tokens = [t for t in re.split(r"\s+", nombre.strip()) if t]
+    if len(tokens) < 2:
+        return {"candidatos": [], "trip_ids_de_la_persona": []}
+
+    rows = await pool.fetch(
+        """
+        SELECT d.id, d.full_name, d.tax_id,
+               c.business_name AS carrier_name,
+               -- Bidireccional, IGUAL que `by_partial` dentro de
+               -- app.resolve_trip_fleet(): al TMS le puede FALTAR un nombre
+               -- (roster 4 tokens, TMS 2) o le puede SOBRAR (roster 3, TMS 4).
+               -- Mirar una sola dirección perdía el segundo caso, y no hay
+               -- razón para que la sugerencia sea más pobre que el resolvedor.
+               (public.name_tokens(d.full_name) @> public.name_tokens($1)
+                OR public.name_tokens(d.full_name) <@ public.name_tokens($1)) AS contiene,
+               similarity(
+                   array_to_string(public.name_tokens(d.full_name), ' '),
+                   array_to_string(public.name_tokens($1), ' ')
+               ) AS similitud
+        FROM public.drivers d
+        LEFT JOIN public.driver_assignments da
+               ON da.driver_id = d.id AND da.status = 'ACTIVE'
+        LEFT JOIN public.carriers c ON c.id = da.carrier_id
+        WHERE d.full_name IS NOT NULL AND d.operational_status = 'ACTIVE'
+        ORDER BY contiene DESC, similitud DESC, d.full_name
+        LIMIT $2
+        """,
+        nombre,
+        limit,
+    )
+    # Los viajes REALES de esa persona, no un número calculado en el cliente.
+    # El popover ofrece "aplicar a sus N viajes", y varios de esos no están en
+    # pantalla: la tabla del Monitor muestra lo activo. Que el número lo invente
+    # el cliente contando lo que tiene cargado significaría prometer un alcance
+    # y aplicar otro. Se devuelven los ids y el lote se manda con ESOS.
+    #
+    # Mismo nombre crudo, sin identificar, y sólo la ventana que el popover
+    # anuncia (30 días): un viaje de hace cuatro meses no es lo que la persona
+    # cree estar tocando.
+    viajes = await pool.fetch(
+        """
+        SELECT t.id
+        FROM app.trips t
+        LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
+        WHERE public.name_tokens(t.fleet->>'driver_name_tms') = public.name_tokens($1)
+          AND fl.driver_id IS NULL
+          AND t.planning_date > (now() AT TIME ZONE 'America/Santiago')::date - 30
+        """,
+        nombre,
+    )
+
+    return {
+        "candidatos": [
+            {
+                "driver_id": str(r["id"]),
+                "full_name": r["full_name"],
+                "tax_id": r["tax_id"],
+                "carrier_name": r["carrier_name"],
+                "contiene": r["contiene"],
+                "similitud": float(r["similitud"] or 0),
+            }
+            for r in rows
+        ],
+        "trip_ids_de_la_persona": [str(v["id"]) for v in viajes],
+    }
+
+
 @router.get("/{trip_id}")
 async def get_trip(
     trip_id: str,
@@ -2169,9 +2347,20 @@ async def assign_fleet_link(
     if not exists:
         raise HTTPException(404, "Viaje no encontrado")
 
+    # `carrier_id` OPCIONAL desde 2026-08-18. Conductor y empresa son dos
+    # preguntas con fuentes distintas: al conductor lo sabe el TMS, a la
+    # empresa no (informa "WEBCARGA SPA" en 933 de 1.050 viajes) y la sabe el
+    # registro de flota. Exigir las dos juntas es lo que obligaba a resolver
+    # esto desde el detalle del viaje, y lo que hacia que forzar un conductor
+    # no guardara nada (reporte del viaje 2032999).
+    #
+    # Aflojar no es quitar: un vinculo sin conductor NI empresa no afirma
+    # nada, y crearlo solo serviria para pisar la resolucion automatica con
+    # silencio — el vinculo manual es terminal.
     carrier_id = body.get("carrier_id")
-    if not carrier_id:
-        raise HTTPException(422, "carrier_id requerido")
+    driver_id = body.get("driver_id")
+    if not carrier_id and not driver_id:
+        raise HTTPException(422, "Indica al menos un conductor o una empresa")
 
     # FIX 2026-07-18: buscar por trip_id en trip_fleet_links, no por
     # trips.fleet_link_id (se desincroniza con cada --full-refresh de dbt —
@@ -2194,7 +2383,7 @@ async def assign_fleet_link(
         """,
         trip_id,
         carrier_id,
-        body.get("driver_id"),
+        driver_id,
         body.get("tractor_asset_id"),
         body.get("trailer_asset_id"),
         body.get("tractor_plate"),
@@ -2208,13 +2397,22 @@ async def assign_fleet_link(
         link_id, trip_id,
     )
 
-    carrier_name = await pool.fetchval(
-        "SELECT business_name FROM public.carriers WHERE id = $1", carrier_id
-    )
-    await _log_system_note(
-        pool, trip_id, user,
-        f"Vinculó empresa transportista: {carrier_name or carrier_id}",
-    )
+    # La nota registra lo que efectivamente se vinculó, no siempre la empresa:
+    # desde que `carrier_id` es opcional, la mayoría de las veces es sólo el
+    # conductor, y una nota que dice "empresa" sobre un vínculo sin empresa
+    # convierte la bitácora en ruido.
+    vinculado = []
+    if driver_id:
+        driver_name = await pool.fetchval(
+            "SELECT full_name FROM public.drivers WHERE id = $1", driver_id
+        )
+        vinculado.append(f"conductor: {driver_name or driver_id}")
+    if carrier_id:
+        carrier_name = await pool.fetchval(
+            "SELECT business_name FROM public.carriers WHERE id = $1", carrier_id
+        )
+        vinculado.append(f"empresa transportista: {carrier_name or carrier_id}")
+    await _log_system_note(pool, trip_id, user, "Vinculó " + " · ".join(vinculado))
 
     await _mirror_manual_trip(pool, trip_id)
     return await get_trip(trip_id, pool, user)

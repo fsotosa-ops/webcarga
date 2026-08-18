@@ -205,7 +205,11 @@ describe('TripTable — ordenamiento delegado al padre (onSort)', () => {
     ]
     render(<TripTable trips={trips} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey="driver_name" sortDir="asc" onSort={vi.fn()} />)
     const rows = document.querySelectorAll('tbody tr')
-    expect(rows[0].textContent).toContain('sin asignar')
+    // El marcador de la fila sin conductor cambió en 2026-08-18: la celda
+    // dejó de decir "sin asignar" —que esconde el único dato útil— y ahora
+    // muestra lo que reportó el TMS, o lo dice cuando tampoco reportó nada.
+    // El test es sobre el ORDEN; sólo cambió cómo se reconoce la fila.
+    expect(rows[0].textContent).toContain('El TMS no reportó conductor')
     expect(rows[1].textContent).toContain('Ana')
   })
 

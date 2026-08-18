@@ -6,7 +6,7 @@ import { dwellStatus } from '@/lib/utils/kpis'
 import { StopProgressDots } from './StopProgressDots'
 import { DwellSeverityBadge } from '@/components/ui/DwellSeverityBadge'
 import { TmsChip } from './TripTable'
-import { nombreLegible } from './TripTable'
+import { nombreLegible } from '@/lib/utils/nombres'
 
 interface Props {
   trip:               Trip

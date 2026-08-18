@@ -34,6 +34,16 @@ class TripBulkCloseBody(BaseModel):
     trip_ids: list[str]
 
 
+class AsignarConductorBody(BaseModel):
+    """Asignar una persona a TODOS sus viajes de una (Monitor, 2026-08-18).
+
+    La unidad de trabajo es la persona, no el viaje: 27 personas sin
+    identificar explican 208 viajes, 7,7 cada una. Resolver de a un viaje
+    convierte una decision en ocho."""
+    driver_id: str
+    trip_ids: list[str]
+
+
 class TripStopPatch(BaseModel):
     """Override manual por parada — columnas *_manual reales en
     app.trip_stops, excluidas del MERGE de dbt (merge_exclude_columns),

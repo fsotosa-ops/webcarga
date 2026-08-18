@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -193,6 +194,42 @@ async def conexion_revertida(guardia_de_produccion):
             await transaccion.rollback()
         finally:
             await conn.close()
+
+
+class PoolDeUnaConexion:
+    """Presenta la conexión del fixture como si fuera el pool de asyncpg.
+
+    El código de producción hace `async with pool.acquire() as conn` y adentro
+    abre su propia transacción. Sobre una conexión que YA está en transacción,
+    asyncpg resuelve ese `conn.transaction()` como un SAVEPOINT: el trabajo
+    sigue colgando de la transacción externa y se va entero con el ROLLBACK
+    del fixture. Es lo que permite ejecutar el servicio y el endpoint reales
+    sin que puedan escribir en firme.
+
+    Vivía en test_integracion_certificacion.py; se movió acá cuando un segundo
+    archivo lo necesitó (2026-08-18, asignar conductor desde el Monitor), en
+    vez de copiarlo.
+
+    Reenvía además las llamadas DIRECTAS al pool (`pool.fetchval(...)`), que
+    es como están escritos varios endpoints de `trips.py` — no todos pasan por
+    `acquire()`."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def acquire(self):
+        conn = self._conn
+
+        @asynccontextmanager
+        async def _prestada():
+            yield conn
+
+        return _prestada()
+
+    def __getattr__(self, nombre):
+        # fetch/fetchval/fetchrow/execute/executemany van derecho a la
+        # conexión prestada. Sigue todo adentro de la misma transacción.
+        return getattr(self._conn, nombre)
 
 
 def pytest_report_header(config):

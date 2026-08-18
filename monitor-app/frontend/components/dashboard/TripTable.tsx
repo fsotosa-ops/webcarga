@@ -14,6 +14,8 @@ import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 import { DwellSeverityBadge } from '@/components/ui/DwellSeverityBadge'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { dwellStatus } from '@/lib/utils/kpis'
+import { nombreLegible } from '@/lib/utils/nombres'
+import { CeldaConductor } from './CeldaConductor'
 import type { SortKey } from '@/hooks/useDiarioFilters'
 
 /** Hipervínculo desde la patente hacia el TMS de origen (minuta §7A ítem 16).
@@ -135,6 +137,10 @@ interface Props {
   sortKey:            SortKey | null
   sortDir:            'asc' | 'desc'
   onSort:             (col: SortKey) => void
+  /** Abre el selector de conductor sobre ese viaje. Sin esto la celda sigue
+   *  mostrando el dato pero deja de ser un control — que es exactamente el
+   *  comportamiento correcto para quien no puede editar. */
+  onAsignarConductor?: (trip: Trip) => void
 }
 
 /** El TMS devuelve el nombre como venga: "SUAREZ LOPEZ EFRAIN EDUARDO" en una
@@ -145,17 +151,7 @@ interface Props {
  *  Se normaliza SOLO en presentacion. El dato del TMS no se toca (regla 1 de
  *  Pablo): lo que se guarda, se exporta y se compara sigue siendo el original,
  *  y el nombre completo queda en el `title` para quien lo necesite. */
-export function nombreLegible(nombre: string): string {
-  return nombre
-    .trim()
-    .replace(/\s+/g, ' ')
-    // El punto final llega pegado o separado: "NOLASCO ." es un valor real.
-    .replace(/\s*\.\s*$/, '')
-    .toLocaleLowerCase('es-CL')
-    .replace(/(^|[\s'-])(\p{L})/gu, (_, sep, letra) => sep + letra.toLocaleUpperCase('es-CL'))
-}
-
-export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort }: Props) {
+export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort, onAsignarConductor }: Props) {
   // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): solo
   // Patente queda sticky (izquierda) — es fácil no notar que hay más
   // columnas fuera de vista sin scrollear. Sombra/gradiente en el borde que
@@ -440,17 +436,18 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       </div>
                     </td>
 
-                    {/* CONDUCTOR — solo lectura (Fase 2, Plan 6), antes ConductorCell */}
+                    {/* CONDUCTOR — la celda ES el control (2026-08-18).
+                        Antes decia "sin asignar", que esconde el unico dato
+                        util: el nombre que SI reporto el TMS. */}
                     <td className="px-2.5 py-2.5">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className="text-dato text-text-primary font-medium leading-snug line-clamp-2 max-w-[152px]"
-                          title={trip.driver_name ?? undefined}
-                        >
-                          {trip.driver_name
-                            ? nombreLegible(trip.driver_name)
-                            : <span className="text-gray-400 italic">sin asignar</span>}
-                        </span>
+                        <CeldaConductor
+                          driverName={trip.driver_name}
+                          driverRut={trip.driver_tax_id}
+                          driverNameTms={trip.driver_name_tms}
+                          puedeEditar={Boolean(onAsignarConductor)}
+                          onAsignar={() => onAsignarConductor?.(trip)}
+                        />
                         <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" compact />
                       </div>
                       {/* El telefono vive bajo el conductor, no en su propia

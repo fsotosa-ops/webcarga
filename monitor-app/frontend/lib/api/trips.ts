@@ -1,4 +1,4 @@
-import type { Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse } from '@/lib/types'
+import type { CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type TripListResponse = {
@@ -145,6 +145,25 @@ export const tripsApi = {
     apiFetch<Trip>(`/api/v1/trips/${id}/fleet-link`, {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+
+  /** Quién puede ser la persona que el TMS nombra así.
+   *  Ordena la CONTENCIÓN de palabras, no la similitud — ver el docstring
+   *  del endpoint: la similitud castiga igual a un nombre incompleto que a
+   *  uno ajeno, y un umbral en 0,5 escondía 3 de los 7 casos de identidad
+   *  segura. `contiene` es la señal que la interfaz debe mirar. */
+  driverCandidates: (nombre: string, limit = 5) =>
+    apiFetch<CandidatosConductorResponse>(
+      `/api/v1/trips/driver-candidates?nombre=${encodeURIComponent(nombre)}&limit=${limit}`,
+    ),
+
+  /** Vincula una persona a varios viajes de una, en una transacción.
+   *  Conserva la empresa y el tracto ya resueltos: un vínculo manual es
+   *  terminal y el resolvedor no los volvería a llenar. */
+  assignDriver: (driverId: string, tripIds: string[]) =>
+    apiFetch<{ asignados: number }>(`/api/v1/trips/assign-driver`, {
+      method: 'POST',
+      body: JSON.stringify({ driver_id: driverId, trip_ids: tripIds }),
     }),
 
   removeFleetLink: (id: string) =>

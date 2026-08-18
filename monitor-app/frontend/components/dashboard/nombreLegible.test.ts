@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nombreLegible } from '@/components/dashboard/TripTable'
+import { nombreLegible } from '@/lib/utils/nombres'
 
 describe('nombreLegible', () => {
   it('normaliza las MAYUSCULAS del TMS', () => {
