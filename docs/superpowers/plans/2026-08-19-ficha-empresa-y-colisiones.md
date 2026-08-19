@@ -880,6 +880,138 @@ git commit -m "feat(certificacion): los dos mundos, cada uno con su entrada"
 
 ---
 
+## Task 2b: El casillero que ya tiene dueño
+
+Sale de la revisión de la Task 2. Las dos señales que esa tarea construyó cuentan sólo sobre los
+ítems **sin clasificar**: `count(*) OVER (...)` se evalúa sobre lo que dejó pasar
+`unclassified_predicate('i')`. Consecuencia, verificada leyendo `classify_batch`: si un documento ya
+fue confirmado y después llega otro al mismo `(entity_id, requirement_id)`, el segundo se lista con
+`mismo_casillero = 1` —"sin colisión"— y confirmarlo pisa al primero.
+
+**Por qué un campo nuevo y no ensanchar el que hay.** Un `1` que significa a la vez "no hay
+colisión" y "no hay colisión que yo pueda ver" es un valor con dos significados, la clase de bug que
+este módulo ya tuvo cinco veces y que ningún test encontró. Y para quien mira la pantalla son dos
+situaciones distintas, con dos decisiones distintas: *"otro archivo de esta cola apunta al mismo
+casillero"* (elegí cuál) contra *"confirmar esto reemplaza el documento que ya está"* (mirá el que
+está antes de decidir). Dos preguntas, dos campos.
+
+**Lo que NO hay que arreglar:** el daño ya es reversible. `_apply_stored_document` llama a
+`log_document_replacement` y guarda `replaced_storage_path` en el metadata, y el blob anterior nunca
+se sobrescribe en storage. Lo que falta es el aviso **antes**, no la recuperación después.
+
+**Files:**
+- Modify: `monitor-app/backend/api/app/routers/document_ingest.py` (`_SQL_COLA`)
+- Modify: `monitor-app/backend/api/app/schemas/document_ingest.py` (`QueueRow`)
+- Test: `monitor-app/backend/api/tests/test_document_ingest.py`
+
+**Interfaces:**
+- Produces: `QueueRow` gana `casillero_ocupado: bool = False` — **el requisito destino ya tiene un
+  archivo cargado hoy.** `False` cuando el ítem no tiene destino todavía.
+
+- [ ] **Step 1: Escribir los tests que fallan**
+
+```python
+async def test_la_cola_avisa_cuando_el_casillero_ya_tiene_documento(pool_real):
+    """El caso destructivo que `mismo_casillero` NO ve: el ocupante ya fue
+    confirmado, asi que salio de la cola y ninguna window function lo cuenta.
+    """
+    # Arma un compliance_record con file_url y un item de la cola apuntando
+    # al mismo (entity_id, requirement_id) — con el patron de fixtures que ya
+    # usa este archivo para datos reales.
+    fila = await _una_fila_de_la_cola(pool_real, entity_id=E, requirement_id=R)
+    assert fila["casillero_ocupado"] is True
+    assert fila["mismo_casillero"] == 1   # la senal vieja sigue diciendo "sin colision"
+
+
+async def test_un_item_sin_destino_no_tiene_el_casillero_ocupado(pool_real):
+    """Sin entity_id no hay casillero que ocupar. Sin esta guarda, el EXISTS
+    correlacionado con NULL da NULL y la fila viaja con un booleano vacio.
+    """
+    fila = await _una_fila_de_la_cola(pool_real, entity_id=None, requirement_id=None)
+    assert fila["casillero_ocupado"] is False
+```
+
+- [ ] **Step 2: Correr y verificar que fallan**
+
+```bash
+cd monitor-app/backend/api
+venv/bin/python -m pytest tests/test_document_ingest.py -q -k casillero
+```
+
+Esperado: FALLAN con `KeyError: 'casillero_ocupado'`.
+
+- [ ] **Step 3: La señal, en la misma pasada**
+
+En `_SQL_COLA`, junto a las otras dos:
+
+```sql
+           -- La colision que las window functions NO pueden ver: el ocupante
+           -- ya fue confirmado, salio de la cola y no esta en ninguna
+           -- particion. Es justo el caso destructivo — confirmar este item
+           -- reemplaza un documento que hoy es valido.
+           --
+           -- EXISTS y no JOIN a proposito: un JOIN a compliance_records
+           -- multiplicaria la fila si algun dia hay mas de un registro
+           -- vigente por (entity_id, requirement_id), y una cola que muestra
+           -- el mismo archivo dos veces es peor que una que no avisa.
+           CASE WHEN i.entity_id IS NOT NULL AND i.requirement_id IS NOT NULL
+                THEN EXISTS (
+                    SELECT 1 FROM public.compliance_records cr
+                     WHERE cr.entity_id = i.entity_id
+                       AND cr.requirement_id = i.requirement_id
+                       AND cr.is_current = true
+                       AND cr.file_url IS NOT NULL)
+                ELSE false END                        AS casillero_ocupado
+```
+
+Y en `QueueRow`:
+
+```python
+    casillero_ocupado: bool = False
+    """El requisito destino YA tiene un archivo. Confirmar este item lo
+    reemplaza — el anterior queda recuperable (`replaced_storage_path`), pero
+    quien confirma tiene que saberlo ANTES."""
+```
+
+- [ ] **Step 4: Correr, contra Postgres real**
+
+```bash
+venv/bin/python -m pytest tests/test_document_ingest.py -q -k casillero
+venv/bin/python -m pytest tests/ -q -m "not integracion"
+venv/bin/python -m pytest tests/ -q -m integracion
+```
+
+Las suites van **separadas y no se matan a mitad** (`max_connections` = 60).
+
+El test de placeholders contra argumentos de este endpoint tiene que seguir verde: el `EXISTS` no
+agrega ningún `$n`, así que el conteo no cambia — si cambió, algo se escribió mal.
+
+- [ ] **Step 5: Mutar**
+
+La mutación va escrita **después** de la aserción y nombrando cuál muere — en este plan ya hubo tres
+mutaciones que no mataron nada:
+
+1. Sacar la guarda de NULL (dejar el `EXISTS` pelado). Muere
+   `test_un_item_sin_destino_no_tiene_el_casillero_ocupado`, porque el `EXISTS` correlacionado con
+   `NULL` no encuentra fila y devuelve `false`… **verificá qué devuelve de verdad antes de darlo por
+   bueno**: si resulta que también da `false`, esa mutación no prueba nada y la guarda hay que
+   probarla de otra forma — por ejemplo, que dos ítems sin destino cuyos casilleros no existen no se
+   contagien entre sí.
+2. Quitar `AND cr.file_url IS NOT NULL`. Muere
+   `test_la_cola_avisa_cuando_el_casillero_ya_tiene_documento` si el fixture incluye un requisito
+   **sin** archivo: sin esa condición, un casillero vacío se reportaría ocupado.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add monitor-app/backend/api/app/routers/document_ingest.py \
+        monitor-app/backend/api/app/schemas/document_ingest.py \
+        monitor-app/backend/api/tests/test_document_ingest.py
+git commit -m "feat(bandeja): el casillero que ya tiene dueno deja de parecer vacio"
+```
+
+---
+
 ## Task 6: La Bandeja global pide empresa antes de subir
 
 Es la que convierte una advertencia en comportamiento: **acotar el universo a una empresa es lo que
