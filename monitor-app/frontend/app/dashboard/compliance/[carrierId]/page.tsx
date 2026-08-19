@@ -49,11 +49,17 @@ function filasDelEstado(rows: PendingComplianceRow[], estado: EstadoDocumental):
   }
 }
 
-/** Una fila con documento cargado: nombre, fecha, estado y "Ver". La otra
- *  mitad de la misma lista —`RenglonPendiente`, para MISSING/EXPIRED— ya
- *  existe y no se reescribe; ésta es su variante para lo que SÍ tiene
- *  archivo, que el cajón nunca necesitó mostrar porque sólo pide
- *  `estado='falta'`. */
+/** Una fila AL DÍA: nombre, fecha, estado y "Ver". La otra mitad de la misma
+ *  lista —`RenglonPendiente`, para todo lo que NO está al día— ya existe y no
+ *  se reescribe; ésta es su variante para lo que ya no pide nada, que el
+ *  cajón nunca necesitó mostrar porque sólo pide `estado='falta'`.
+ *
+ *  El badge sale de `status` y no de `urgencia` **porque acá `urgencia` ya no
+ *  aporta**: la partición garantiza que todas estas filas son `AL_DIA`, y
+ *  pintar "Al día" borraría la diferencia entre "Aprobado", "En revisión" y
+ *  "Rechazado", que son cosas distintas. La contradicción que había —"Aprobado
+ *  (manual)" sobre un documento vencido hace un año— no se arregló acá sino
+ *  en la partición: esas filas ya no llegan a este componente. */
 function FilaDocumento({ fila, viendo, onVer }: {
   fila:    PendingComplianceRow
   viendo:  boolean
@@ -276,15 +282,34 @@ export default function FichaEmpresaPage() {
             <p className="px-3 py-2 text-dato font-semibold text-text-primary bg-accent/5 border-b border-border">
               {s.titulo}
             </p>
+            {/* La partición es la MISMA `urgencia` que reparte el filtro de
+                arriba, no una segunda lectura por `status`. Con `status` la
+                lista se contradecía con el filtro que la contenía: los 9
+                registros vencidos por fecha del módulo están en
+                `APPROVED_MANUAL`, así que aparecían bajo "Falta" rotulados
+                "Aprobado (manual)". Y al revés, un `EXPIRED` —que TIENE
+                archivo— iba al renglón de carga y su documento quedaba
+                invisible en la pantalla que existe para hacerlo visible.
+                Que hay archivo o no lo dice `tiene_archivo`, que es el hecho;
+                del status no se deduce. */}
             {s.filas.map(f => (
-              f.status === 'MISSING' || f.status === 'EXPIRED'
-                ? <RenglonPendiente key={f.id} fila={f} puedeEditar={canEdit} onSubir={subir} />
-                : (
+              f.urgencia === 'AL_DIA'
+                ? (
                   <FilaDocumento
                     key={f.id}
                     fila={f}
                     viendo={viendoId === f.id && previewQuery.isFetching}
                     onVer={() => verDocumento(f)}
+                  />
+                )
+                : (
+                  <RenglonPendiente
+                    key={f.id}
+                    fila={f}
+                    puedeEditar={canEdit}
+                    onSubir={subir}
+                    onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
+                    viendo={viendoId === f.id && previewQuery.isFetching}
                   />
                 )
             ))}

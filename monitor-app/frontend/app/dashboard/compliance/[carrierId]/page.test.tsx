@@ -36,7 +36,7 @@ function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
     carrier_operation_types: [], certification_type: 'BASICA', category: 'EMPRESA',
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
-    status: 'MISSING', expiration_date: null,
+    status: 'MISSING', expiration_date: null, tiene_archivo: false,
     urgencia: 'FALTA', expiration_policy: 'NONE',
     ...over,
   } as PendingComplianceRow
@@ -113,6 +113,53 @@ describe('FichaEmpresaPage', () => {
     ])
     expect(await screen.findByRole('button', { name: /ver/i })).toBeInTheDocument()
     expect(screen.getByTestId('archivo-p2')).toBeInTheDocument()
+  })
+
+  // Ronda de arreglo: la ficha anunciaba "Aprobado (manual)" sobre un
+  // documento vencido hace un año, mientras el filtro que lo contenía decía
+  // "Falta" y el embudo lo contaba en "Hay que renovar". Son 9 registros
+  // reales. La fila y el filtro tienen que leer `urgencia`, que es la única
+  // fuente de esa verdad y ya viene en cada fila.
+  it('un vencido se anuncia vencido, aunque su status diga "Aprobado (manual)"', async () => {
+    montar([fila({
+      id: 'p1', document_name: 'Certificado de Vigencia', status: 'APPROVED_MANUAL',
+      expiration_date: '2025-08-12', urgencia: 'VENCIDO', tiene_archivo: true,
+    })])
+
+    expect(await screen.findByText('Certificado de Vigencia')).toBeInTheDocument()
+    expect(screen.getByText(/^vencido hace \d+ días?$/)).toBeInTheDocument()
+    expect(screen.queryByText('Aprobado (manual)')).not.toBeInTheDocument()
+  })
+
+  // El mismo defecto al revés: un vencido TIENE archivo —venció porque
+  // alguien lo subió— y la ficha, que existe para hacer visible lo cargado,
+  // lo mandaba al renglón de carga y escondía el archivo.
+  it('un vencido con archivo se puede ver, además de reemplazar', async () => {
+    montar([fila({ id: 'p1', status: 'EXPIRED', urgencia: 'VENCIDO', tiene_archivo: true })])
+
+    expect(await screen.findByRole('button', { name: 'Ver' })).toBeInTheDocument()
+    expect(screen.getByTestId('archivo-p1')).toBeInTheDocument()
+  })
+
+  it('lo que falta y no tiene archivo no ofrece verlo', async () => {
+    montar([fila({ id: 'p1', status: 'MISSING', urgencia: 'FALTA', tiene_archivo: false })])
+
+    expect(await screen.findByTestId('archivo-p1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ver' })).not.toBeInTheDocument()
+  })
+
+  // El "por vencer" caía en la fila de documento cargado con el badge de su
+  // status ("Aprobado"), o sea la misma contradicción que el vencido: el
+  // filtro decía "Por vencer" y el renglón decía "Aprobado".
+  it('un por vencer dice cuándo vence, no "Aprobado"', async () => {
+    const enDiezDias = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10)
+    montar([fila({
+      id: 'p1', status: 'APPROVED_MANUAL', expiration_date: enDiezDias,
+      urgencia: 'POR_VENCER', tiene_archivo: true,
+    })])
+
+    expect(await screen.findByText(/^vence en \d+ días?$/)).toBeInTheDocument()
+    expect(screen.queryByText('Aprobado (manual)')).not.toBeInTheDocument()
   })
 
   it('sin documentos dice por dónde empezar, no una tabla vacía', async () => {

@@ -425,6 +425,9 @@ def _pending_row(**overrides):
         # exige su requisito. El renglon de carga necesita la politica para
         # saber si pedir la fecha ANTES de subir.
         "urgencia": "FALTA", "expiration_policy": "REQUIRED",
+        # Si la fila tiene un archivo cargado. Sale de `file_url`, no de una
+        # lectura de `status` — ver el test de mas abajo.
+        "tiene_archivo": False,
     }
     base.update(overrides)
     return base
@@ -510,6 +513,28 @@ def test_pending_rows_expone_al_dia_sin_romper_el_contrato_de_respuesta():
 
     assert res.status_code == 200, res.text
     assert res.json()["rows"][0]["urgencia"] == "AL_DIA"
+
+
+def test_pending_dice_si_la_fila_tiene_archivo_en_vez_de_deducirlo_del_status():
+    """`status` no sirve para saber si hay un archivo cargado, y se estaba
+    usando para eso: un 'EXPIRED' SI lo tiene —vencio justamente porque
+    alguien lo subio— y un 'REJECTED' puede no tenerlo. La ficha de empresa
+    decide con este dato si ofrece "Ver", asi que sale de `file_url`, que es
+    el hecho, y no de una lectura del estado."""
+    from app.routers.compliance import _PENDING_ROWS_SQL
+
+    assert "cr.file_url IS NOT NULL AS tiene_archivo" in _PENDING_ROWS_SQL
+
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _pending_row(status="EXPIRED", urgencia="VENCIDO", tiene_archivo=True),
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["rows"][0]["tiene_archivo"] is True
 
 
 def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():

@@ -707,6 +707,12 @@ export type PendingComplianceRow = {
   document_name:              string
   status:                    ComplianceStatus
   expiration_date:            string | null
+  /** Si hay un archivo cargado. Es un hecho (`file_url IS NOT NULL`), no una
+   *  lectura de `status`: `MISSING`/`EXPIRED` se venía usando como si
+   *  significara "no tiene archivo", y un `EXPIRED` sí lo tiene —venció
+   *  porque alguien lo subió—, así que la ficha escondía el documento
+   *  cargado de todo lo vencido. */
+  tiene_archivo:              boolean
   /** Por qué esta fila está pendiente. Lo resuelve el SQL, no el cliente:
    *  recalcularlo comparando fechas acá es como dos superficies del mismo
    *  dato terminan discrepando. */

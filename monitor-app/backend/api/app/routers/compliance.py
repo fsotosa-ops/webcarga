@@ -397,6 +397,14 @@ async def get_certification_status(
 _PENDING_ROWS_SQL = f"""
 WITH pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+           -- El HECHO de si hay un archivo, para que la pantalla deje de
+           -- deducirlo del estado. `status IN ('MISSING','EXPIRED')` se venia
+           -- usando como si significara "no tiene archivo", y significa dos
+           -- cosas distintas: un 'EXPIRED' SI tiene archivo —vencio porque
+           -- alguien lo subio— y un 'REJECTED' puede no tenerlo. Con la
+           -- deduccion, la ficha escondia el documento cargado de todo lo
+           -- vencido, que es justo lo que esa pantalla vino a hacer visible.
+           cr.file_url IS NOT NULL AS tiene_archivo,
            req.id AS requirement_id,
            req.requirement_code, req.name AS document_name, req.requirement_level,
            req.expiration_policy
@@ -572,6 +580,7 @@ async def list_pending_compliance_records(
             "document_name": r["document_name"],
             "status": r["status"],
             "expiration_date": r["expiration_date"],
+            "tiene_archivo": r["tiene_archivo"],
             # Por que esta pendiente y que exige su requisito. Los dos los
             # necesita el renglon de carga: la urgencia para ordenar la
             # atencion, la politica para saber si pedir la fecha ANTES de

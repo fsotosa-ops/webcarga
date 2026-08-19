@@ -53,6 +53,10 @@ class PendingComplianceRow(BaseModel):
     document_name: str
     status: ComplianceStatus
     expiration_date: Optional[date] = None
+    # Si hay un archivo cargado. Es un HECHO (`file_url IS NOT NULL`), no una
+    # lectura de `status`: la ficha de empresa decide con esto si ofrece
+    # "Ver", y deducirlo del estado escondia el archivo de todo lo vencido.
+    tiene_archivo: bool
     # Por que esta pendiente, o si no lo esta. Cuatro valores excluyentes que
     # el SQL ya resuelve: el frontend no vuelve a decidirlo comparando
     # fechas, que es como dos superficies del mismo dato terminan
