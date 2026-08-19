@@ -840,6 +840,21 @@ Después:
 6. **`CarrierDrawer` NO se borra.** Verificado antes de escribir esto: sigue usándose en las vistas
    Conductores y Vehículos con la prop `subject`. Sólo pierde su consumidor de la vista Empresas.
 
+7. **Cuatro tests existentes afirman hoy lo contrario de lo que esta tarea construye.** No son daño
+   colateral que se descubre al correr la suite: son la decisión anterior escrita, y cada uno se
+   actualiza a mano. Verificados en el árbol antes de escribir esto:
+
+   | Archivo:línea | Qué afirma hoy | Qué pasa a afirmar |
+   |---|---|---|
+   | `app/dashboard/compliance/page.test.tsx:101` | tocar "Sin clasificar" hace `replace('/dashboard/compliance?vista=documentos')` | el botón ya no existe en el conmutador; el test se elimina — el Step 5 lo reemplaza |
+   | `app/dashboard/compliance/page.test.tsx:108` | con `?vista=documentos` monta la cola y el botón queda `aria-pressed` | con `?vista=documentos` redirige a `/dashboard/compliance/inbox` |
+   | `app/dashboard/compliance/page.test.tsx:205` | monta la cola con `?vista=documentos` | se mueve al test de la Bandeja, montando `/inbox` |
+   | `components/compliance/CarrierDrawer.test.tsx:60` | el enlace contiene `vista=documentos` | el enlace es exactamente `/dashboard/compliance/inbox` |
+
+   **Ninguno se borra sin reemplazo salvo el primero**, y ese porque su sujeto —el botón del
+   conmutador— deja de existir. Un test que se borra para que la suite pase verde es una red que se
+   corta; si alguno resulta imposible de trasladar, dilo en el reporte en vez de eliminarlo.
+
 - [ ] **Step 6: Correr todo y construir**
 
 ```bash
@@ -857,7 +872,9 @@ clasificar". Restaurá.
 
 ```bash
 git add monitor-app/frontend/components/dashboard/Sidebar.tsx \
-        monitor-app/frontend/app/dashboard/compliance/
+        monitor-app/frontend/app/dashboard/compliance/ \
+        monitor-app/frontend/components/compliance/CarrierDrawer.tsx \
+        monitor-app/frontend/components/compliance/CarrierDrawer.test.tsx
 git commit -m "feat(certificacion): los dos mundos, cada uno con su entrada"
 ```
 
