@@ -1,6 +1,6 @@
 'use client'
 
-import { documentIngestApi } from '@/lib/api/documentIngest'
+import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -49,6 +49,8 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
   const [driverPick, setDriverPick] = useState('')
   const [assigningDriver, setAssigningDriver] = useState(false)
   const [driverErr, setDriverErr] = useState<string | null>(null)
+
+  const subirDocumento = useSubirDocumento()
 
   const complianceQuery = useQuery({
     queryKey: ['asset-compliance-records', asset?.id],
@@ -364,16 +366,14 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
                 items={items}
                 canEdit={canEdit}
                 hideCounter
-                onUpload={async (recordId, file) => {
-                  const item = items.find(i => i.id === recordId)
-                  if (!item) return
-                  await documentIngestApi.uploadAndClassify({
-                    carrierId,
-                    entityType:    'ASSET',
-                    entityId:      asset.id,
-                    requirementId: item.requirement_id,
-                    file,
-                  })
+                /* EL MISMO hook que Certificación. Antes esto llamaba a
+                   `uploadAndClassify`, que sube ANTES de clasificar: cada
+                   rechazo por falta de fecha dejaba el archivo varado en la
+                   bandeja y el requisito vacío. Dos implementaciones de
+                   "subir un documento a un requisito" es como este módulo
+                   terminó con dos caminos que se estorbaban. */
+                onUpload={async (recordId, file, vencimiento) => {
+                  await subirDocumento(recordId, file, vencimiento)
                   await complianceQuery.refetch()
                 }}
                 carrierId={carrierId}

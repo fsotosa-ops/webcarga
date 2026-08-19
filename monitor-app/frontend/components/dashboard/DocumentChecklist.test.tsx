@@ -36,13 +36,104 @@ describe('DocumentChecklist', () => {
     expect(screen.getByTitle('Certificado de vigencia — vencido')).toBeInTheDocument()
   })
 
-  it('calls onUpload with the record id and the chosen file when canEdit is true and requires_file', () => {
+  it('con politica NONE sube de una, sin preguntar nada', () => {
     const onUpload = vi.fn()
-    render(<DocumentChecklist items={ITEMS} canEdit={true} onUpload={onUpload} />)
+    const items = ITEMS.map(i => ({ ...i, expiration_policy: 'NONE' as const }))
+    render(<DocumentChecklist items={items} canEdit={true} onUpload={onUpload} />)
     const input = screen.getByLabelText('Subir Endoso') as HTMLInputElement
     const file = new File(['x'], 'endoso.pdf', { type: 'application/pdf' })
     fireEvent.change(input, { target: { files: [file] } })
-    expect(onUpload).toHaveBeenCalledWith('cr3', file)
+    expect(onUpload).toHaveBeenCalledWith('cr3', file, undefined)
+  })
+
+  it('la ficha usa el MISMO gesto que Certificacion: pide la fecha antes de subir', async () => {
+    const onUpload = vi.fn()
+    const items = ITEMS.map(i => ({ ...i, expiration_policy: 'REQUIRED' as const }))
+    render(<DocumentChecklist items={items} canEdit={true} onUpload={onUpload} />)
+
+    fireEvent.change(screen.getByLabelText('Subir Endoso'), {
+      target: { files: [new File(['x'], 'endoso.pdf', { type: 'application/pdf' })] },
+    })
+
+    // Si la ficha tuviera su propia version del gesto, no preguntaria nada.
+    expect(await screen.findByLabelText(/vence el/i)).toBeInTheDocument()
+    // Lo critico: NO se subio nada todavia. Subir antes de tener la fecha es
+    // lo que dejaba el archivo varado con un 422 del servidor — 5 de los 12
+    // requisitos de conductor y 8 de los 10 de vehiculo la exigen.
+    expect(onUpload).not.toHaveBeenCalled()
+  })
+
+  it('sube recien cuando la fecha esta puesta', async () => {
+    const onUpload = vi.fn()
+    const items = ITEMS.map(i => ({ ...i, expiration_policy: 'REQUIRED' as const }))
+    render(<DocumentChecklist items={items} canEdit={true} onUpload={onUpload} />)
+
+    fireEvent.change(screen.getByLabelText('Subir Endoso'), {
+      target: { files: [new File(['x'], 'endoso.pdf', { type: 'application/pdf' })] },
+    })
+    fireEvent.change(await screen.findByLabelText(/vence el/i), { target: { value: '2027-01-31' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(onUpload).toHaveBeenCalledWith(
+      'cr3', expect.any(File), '2027-01-31',
+    ))
+  })
+
+  it('sin politica pregunta sin exigir: "no se" no se resuelve en ninguno de los dos extremos', async () => {
+    const onUpload = vi.fn()
+    render(<DocumentChecklist items={ITEMS} canEdit={true} onUpload={onUpload} />)
+
+    fireEvent.change(screen.getByLabelText('Subir Endoso'), {
+      target: { files: [new File(['x'], 'endoso.pdf', { type: 'application/pdf' })] },
+    })
+
+    // Pregunta...
+    expect(await screen.findByLabelText(/vence el/i)).toBeInTheDocument()
+    // ...pero deja guardar sin ella, que es lo unico honesto con un dato ausente.
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+    await waitFor(() => expect(onUpload).toHaveBeenCalledWith('cr3', expect.any(File), undefined))
+  })
+
+  it('soltar un archivo carga lo que falta', async () => {
+    const onUpload = vi.fn()
+    const items = ITEMS.map(i => ({ ...i, expiration_policy: 'NONE' as const }))
+    render(<DocumentChecklist items={items} canEdit={true} onUpload={onUpload} />)
+
+    fireEvent.drop(screen.getByTitle('Endoso — pendiente'), {
+      dataTransfer: { files: [new File(['x'], 'f.pdf', { type: 'application/pdf' })] },
+    })
+
+    await waitFor(() => expect(onUpload).toHaveBeenCalledWith('cr3', expect.any(File), undefined))
+  })
+
+  it('soltar encima de un documento YA cargado no lo reemplaza', () => {
+    const onUpload = vi.fn()
+    const items = ITEMS.map(i => ({ ...i, expiration_policy: 'NONE' as const }))
+    render(<DocumentChecklist items={items} canEdit={true} onUpload={onUpload} />)
+
+    // 'Póliza firmada' ya tiene file_url. Reemplazar es un clic explicito en
+    // su propio control; un arrastre accidental no puede pisar evidencia.
+    fireEvent.drop(screen.getByTitle('Póliza firmada — al día'), {
+      dataTransfer: { files: [new File(['x'], 'f.pdf', { type: 'application/pdf' })] },
+    })
+
+    expect(onUpload).not.toHaveBeenCalled()
+  })
+
+  it('un error de subida se muestra EN ESA fila', async () => {
+    // `onUpload` de la ficha es async (DriverDetailPanel / VehicleDetailPanel
+    // llaman al backend). Si el gesto no espera su promesa, el renglon dice
+    // "listo" mientras la subida fallo, y el motivo se pierde como un rechazo
+    // no manejado en la consola.
+    const onUpload = vi.fn().mockRejectedValue(new Error('El archivo supera 7 MB'))
+    const items = ITEMS.map(i => ({ ...i, expiration_policy: 'NONE' as const }))
+    render(<DocumentChecklist items={items} canEdit={true} onUpload={onUpload} />)
+
+    fireEvent.change(screen.getByLabelText('Subir Endoso'), {
+      target: { files: [new File(['x'], 'f.pdf', { type: 'application/pdf' })] },
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/7 MB/)
   })
 
   it('does not render an upload control when canEdit is false', () => {

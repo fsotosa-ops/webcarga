@@ -31,7 +31,7 @@ function requisito(patch: Partial<RequirementOption> = {}): RequirementOption {
     requirement_code: 'MANTENCION_FRIO',
     name: 'Mantención Cámara de Frío',
     requirement_level: 'SHIPPER_REQUIRED',
-    has_expiration: true,
+    has_expiration: true, expiration_policy: 'REQUIRED',
     is_active: true,
     applies_to_fleet_service_type_ids: null,
     applies_to_management_types: null,
@@ -71,6 +71,44 @@ beforeEach(() => {
   })
   vi.mocked(requirementsApi.recalcPreview).mockReset()
   vi.mocked(requirementsApi.recalcPreview).mockResolvedValue({ crear: 4, quitar: 1, bloqueados: 0 })
+})
+
+describe('CondicionPanel — la fecha de vencimiento', () => {
+  it('muestra la politica que el requisito tiene hoy', () => {
+    montarPanel(requisito({ expiration_policy: 'OPTIONAL' }))
+    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveValue('OPTIONAL')
+  })
+
+  it('guarda la politica elegida', async () => {
+    montarPanel()
+    fireEvent.change(screen.getByLabelText(/fecha de vencimiento/i), { target: { value: 'OPTIONAL' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalledWith(
+      'r1', expect.objectContaining({ expiration_policy: 'OPTIONAL' }),
+    ))
+  })
+
+  it('NO la manda si no se toco', async () => {
+    montarPanel()
+    // Se cambia otra cosa, para que haya algo que guardar.
+    fireEvent.click(screen.getByRole('checkbox', { name: /vigente/i }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalled())
+    // Mandarla siempre escribiria un UPDATE sin efecto y dejaria una fila de
+    // auditoria diciendo que alguien decidio algo que no decidio.
+    const body = vi.mocked(requirementsApi.patchConditions).mock.calls[0][1]
+    expect(body).not.toHaveProperty('expiration_policy')
+  })
+
+  it('resincroniza el borrador cuando llega otro requisito', () => {
+    const { redibujar } = montarPanel(requisito({ expiration_policy: 'REQUIRED' }))
+    // El bug de draft sin resincronizar ya aparecio tres veces en este
+    // frontend: el prop cambia y la pantalla sigue mostrando lo viejo.
+    redibujar(requisito({ expiration_policy: 'NONE' }))
+    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveValue('NONE')
+  })
 })
 
 describe('CondicionPanel', () => {

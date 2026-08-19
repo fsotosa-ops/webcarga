@@ -605,6 +605,11 @@ export type ComplianceRecord = {
   name:               string
   requirement_level:  RequirementLevel
   requires_file:      boolean
+  /** Qué hace el requisito con la fecha de vencimiento. Opcional porque el
+   *  backend lo agregó después: frontend y API se despliegan por separado, así
+   *  que la ventana en que no viene es real y dura minutos. Ausente significa
+   *  "no sé" — se pregunta la fecha sin exigirla. */
+  expiration_policy?: PoliticaVencimiento
   status:             ComplianceStatus
   expiration_date:    string | null
   file_url:           string | null
@@ -667,6 +672,12 @@ export type DocumentVersion = {
  *  la fecha. */
 export type PoliticaVencimiento = 'REQUIRED' | 'OPTIONAL' | 'NONE'
 
+/** Por qué un requisito cuenta como pendiente. Excluyentes y exhaustivos:
+ *  'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30 días,
+ *  'FALTA' no tiene documento. Antes de la Ronda 129 el segundo no existía y
+ *  renovar no tenía superficie en ninguna pantalla. */
+export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA'
+
 export type PendingComplianceRow = {
   id:                      string
   carrier_id:              string
@@ -686,11 +697,14 @@ export type PendingComplianceRow = {
   document_name:              string
   status:                    ComplianceStatus
   expiration_date:            string | null
-  /** Lo pide el backend en la Tarea 3 del plan. Mientras tanto puede no venir,
-   *  y quien lo lea debe tratar la ausencia como "no sé", nunca como "no
-   *  vence": dar por hecho que no hace falta la fecha es justo el supuesto que
-   *  rompía la carga. */
-  expiration_policy?:         PoliticaVencimiento
+  /** Por qué esta fila está pendiente. Lo resuelve el SQL, no el cliente:
+   *  recalcularlo comparando fechas acá es como dos superficies del mismo
+   *  dato terminan discrepando. */
+  urgencia:                   Urgencia
+  /** Qué exige su requisito. El renglón lo necesita para pedir la fecha
+   *  ANTES de subir; sin él pregunta siempre o no pregunta nunca, y no
+   *  preguntar nunca es un 422 con el archivo ya subido. */
+  expiration_policy:          PoliticaVencimiento
 }
 
 export type PendingComplianceListResponse = {
@@ -1396,6 +1410,10 @@ export type RequirementOption = {
   name:              string
   requirement_level: 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
   has_expiration:    boolean
+  /** Qué hace el sistema con la fecha de vencimiento. Es la fuente de verdad;
+   *  `has_expiration` sigue viajando por sus lectores vivos, pero es el
+   *  booleano de dos valores que cargaba estos tres significados. */
+  expiration_policy: PoliticaVencimiento
   /** Tramo 3: la regla de a quién se le exige este documento es dato del
    *  catálogo, no código. `null` en los dos `applies_to_*` significa "sin
    *  restricción" (aplica a todos), no "no cargado". */

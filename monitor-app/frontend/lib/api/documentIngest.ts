@@ -58,16 +58,26 @@ export const documentIngestApi = {
       method: 'POST', body: JSON.stringify(body),
     }),
 
-  /** Carga un documento cuyo destino YA se conoce (la ficha de una empresa,
-   *  un conductor o un vehículo).
+  /** **SIN LLAMADORES desde la Ronda 129. No la uses para cargar.**
    *
-   *  Usa la MISMA puerta que la bandeja —`upload` + `classifyBatch`— en vez de
-   *  un endpoint aparte: una sola implementación de carga es criterio de
-   *  aceptación de la HU-04, y dos caminos distintos para lo mismo terminan
-   *  divergiendo. La única diferencia es que acá el requisito ya se sabe.
+   *  Carga un documento cuyo destino ya se conoce, en dos pasos: sube primero
+   *  y clasifica después. Ese orden es el defecto, no un detalle: cuando la
+   *  clasificación se rechaza —el caso típico es el 422 por falta de fecha de
+   *  vencimiento, que alcanza a 5 de los 12 requisitos de conductor y 8 de los
+   *  10 de vehículo— el archivo ya está subido y queda varado en la bandeja
+   *  con el requisito vacío. El comentario anterior describía eso como una
+   *  virtud ("queda visible en vez de perderse"); en pantalla se leía como
+   *  "no pasó nada".
    *
-   *  Si la clasificación falla, el archivo queda visible en la bandeja de la
-   *  empresa en vez de perderse. */
+   *  El reemplazo es `useSubirDocumento`, que llama a
+   *  `POST /compliance-records/{id}/file` en UNA operación y no toca storage
+   *  hasta que el servidor validó. Lo consumen el cajón de Certificación y la
+   *  ficha legacy, que eran sus tres llamadores.
+   *
+   *  Se conserva —y no se borra— porque retirar superficie de API es un cambio
+   *  aparte del que la dejó sin uso. Si nadie la necesita, el siguiente que
+   *  pase por acá puede borrarla: `upload` y `classifyBatch`, que sí usa la
+   *  Bandeja, son independientes de ella. */
   uploadAndClassify: async (params: {
     carrierId:       string
     entityType:      'CARRIER' | 'DRIVER' | 'ASSET'

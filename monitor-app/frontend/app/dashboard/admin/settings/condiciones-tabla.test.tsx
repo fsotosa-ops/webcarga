@@ -32,7 +32,7 @@ import { CondicionesTabla } from './condiciones-tabla'
 
 const BASE = {
   requirement_level: 'SHIPPER_REQUIRED',
-  has_expiration: true,
+  has_expiration: true, expiration_policy: 'REQUIRED',
 } as const
 
 // MANTENCION_FRIO alcanza 36 de 118 vehículos: su regla lista 9 subtipos y 3

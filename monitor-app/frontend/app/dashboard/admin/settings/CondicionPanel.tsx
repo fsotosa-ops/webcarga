@@ -6,7 +6,7 @@ import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { requirementsApi } from '@/lib/api/requirements'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
-import type { ManagementType, RequirementOption } from '@/lib/types'
+import type { ManagementType, PoliticaVencimiento, RequirementOption } from '@/lib/types'
 import type { Revision } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision } from './revision'
 
@@ -102,6 +102,7 @@ export function CondicionPanel({
   const [alcance, setAlcance] = useState<'todos' | 'algunos'>(guardadas.length ? 'algunos' : 'todos')
   const [elegidos, setElegidos] = useState<string[]>(guardadas)
   const [marcadoActivo, setMarcadoActivo] = useState(requisito.is_active)
+  const [politica, setPolitica] = useState<PoliticaVencimiento>(requisito.expiration_policy)
   const [verPreview, setVerPreview] = useState(false)
 
   // Si el prop cambia —porque el guardado propagó la fila nueva o porque la
@@ -112,18 +113,20 @@ export function CondicionPanel({
     setAlcance(guardadas.length ? 'algunos' : 'todos')
     setElegidos(guardadas)
     setMarcadoActivo(requisito.is_active)
+    setPolitica(requisito.expiration_policy)
     // La vista previa NO se cierra acá. Este efecto corre también después de
     // guardar —el guardado propaga la fila nueva—, y cerrarla ahí obligaba a
     // volver a apretar "Ver qué cambia" justo cuando el número recién pasaba
     // a ser interesante. `guardar` invalida ['recalc-preview', id], así que si
     // está abierta se recalcula sola. Cambiar de documento no necesita
     // limpieza: la lista monta el panel con `key={id}`, o sea uno nuevo.
-  }, [requisito.id, requisito.is_active, guardadas])
+  }, [requisito.id, requisito.is_active, requisito.expiration_policy, guardadas])
 
   const elegidosEfectivos = alcance === 'todos' ? [] : elegidos
   const condicionSucia = (esAsset || esCarrier) && !mismoConjunto(elegidosEfectivos, guardadas)
   const activoSucio = marcadoActivo !== requisito.is_active
-  const sucio = condicionSucia || activoSucio
+  const politicaSucia = politica !== requisito.expiration_policy
+  const sucio = condicionSucia || activoSucio || politicaSucia
 
   // GET /config/taxonomies filtra active=true: un subtipo dado de baja que
   // siga en la condición no tiene casilla. El id sigue viajando en `elegidos`
@@ -133,12 +136,17 @@ export function CondicionPanel({
   const guardar = useMutation({
     mutationFn: () => {
       const body: Partial<Pick<RequirementOption,
-        'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>> = {}
+        'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'
+        | 'expiration_policy'>> = {}
       if (esAsset) body.applies_to_fleet_service_type_ids = elegidosEfectivos
       if (esCarrier) body.applies_to_management_types = elegidosEfectivos as ManagementType[]
       // `is_active` sólo viaja si de verdad cambió: nunca manda `null` (el
       // backend lo rechaza con 422) y evita un UPDATE sin efecto.
       if (activoSucio) body.is_active = marcadoActivo
+      // Mismo criterio que `is_active`: sólo si de verdad cambió. Mandarla
+      // siempre escribiría un UPDATE sin efecto y, peor, dejaría una fila de
+      // auditoría diciendo que alguien decidió algo que no decidió.
+      if (politicaSucia) body.expiration_policy = politica
       return requirementsApi.patchConditions(requisito.id, body)
     },
     onSuccess: () => {
@@ -328,6 +336,28 @@ export function CondicionPanel({
           Sin vigencia el documento no se exige a nadie, pero la condición queda guardada.
         </p>
       )}
+
+      {/* Antes esto era `has_expiration`, un booleano con tres significados:
+          "no vence" y "vence" compartían casilla con "la fecha es
+          obligatoria", y por eso la carga rechazaba con 422 documentos cuya
+          fecha la pantalla nunca pedía. Los tres estados se nombran, y quien
+          decide cuál es cada documento es negocio, no un despliegue. */}
+      <label className="mt-4 block">
+        <span className="text-etiqueta font-semibold uppercase tracking-wider text-informativo">
+          Fecha de vencimiento
+        </span>
+        <select
+          value={politica}
+          disabled={!canEdit}
+          onChange={e => setPolitica(e.target.value as PoliticaVencimiento)}
+          className="mt-1 w-full text-dato border border-border rounded-lg px-2 py-1.5 bg-white
+                     disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-accent/30"
+        >
+          <option value="REQUIRED">Obligatoria — sin ella el documento no se acepta</option>
+          <option value="OPTIONAL">Opcional — se acepta y la fecha queda pendiente</option>
+          <option value="NONE">No aplica — este documento no vence</option>
+        </select>
+      </label>
 
       {errorGuardar && <p className="mt-2 text-[10.5px] text-red-600">{errorGuardar}</p>}
       {errorAplicar && <p className="mt-2 text-[10.5px] text-red-600">{errorAplicar}</p>}

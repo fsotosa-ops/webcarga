@@ -19,5 +19,9 @@ export function complianceRecordsToChecklistItems(records: ComplianceRecord[]): 
     is_expired:        r.is_expired,
     is_expiring_soon:  r.is_expiring_soon,
     file_url:          r.file_url,
+    // Qué hace su requisito con la fecha. La ficha lo necesita para pedirla
+    // ANTES de subir: sin esto subía el archivo y el servidor lo rechazaba con
+    // 422, dejándolo varado — el mismo defecto que tenía Certificación.
+    expiration_policy: r.expiration_policy,
   }))
 }

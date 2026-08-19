@@ -67,6 +67,27 @@ export const complianceApi = {
   listFiles: (id: string) =>
     apiFetch<DocumentVersion[]>(`/api/v1/compliance-records/${id}/files`),
 
+  /** Sube un documento DIRECTO a su requisito, en una sola operación.
+   *
+   *  Es el camino corto, y el único que no puede dejar un archivo varado: la
+   *  otra puerta (`documentIngestApi.uploadAndClassify`) sube primero y
+   *  clasifica después, así que cada rechazo —típicamente el 422 por falta de
+   *  fecha— dejaba el archivo en la bandeja y el requisito vacío.
+   *
+   *  `expiration_date` viaja sólo si el requisito la contempla. `apiFetch` ya
+   *  maneja `FormData` sin pisar el `Content-Type` (necesita poner el boundary
+   *  del multipart él mismo) y propaga el `detail` del backend como mensaje,
+   *  así que el motivo del rechazo llega legible al renglón que lo pidió. */
+  uploadFile: (id: string, file: File, expirationDate?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (expirationDate) form.append('expiration_date', expirationDate)
+    return apiFetch<ComplianceFileUploadResult>(
+      `/api/v1/compliance-records/${id}/file`,
+      { method: 'POST', body: form },
+    )
+  },
+
   deleteFile: (id: string) =>
     apiFetch<ComplianceRecordDetail>(`/api/v1/compliance-records/${id}/file`, {
       method: 'DELETE',

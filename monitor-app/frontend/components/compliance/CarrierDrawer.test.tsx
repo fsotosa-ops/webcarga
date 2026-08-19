@@ -5,13 +5,17 @@ import { CarrierDrawer } from './CarrierDrawer'
 import type { PendingComplianceRow } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({
-  complianceApi: { listPending: vi.fn() },
+  complianceApi: {
+    listPending: vi.fn(),
+    uploadFile: vi.fn().mockResolvedValue({ status: 'APPROVED_MANUAL' }),
+  },
 }))
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: { uploadAndClassify: vi.fn().mockResolvedValue({ applied: 1 }) },
 }))
-// La bandeja de la empresa es el MISMO componente que la global; acá se
-// simula para que el cajón se pruebe solo, no para reimplementarla.
+// Se simula aunque el cajón ya no lo monte: si alguien lo volviera a montar,
+// el test que lo prohíbe tiene que fallar por la razón correcta y no por un
+// import roto.
 vi.mock('./TriageWorkbench', () => ({
   TriageWorkbench: ({ carrierId }: { carrierId?: string }) =>
     <div data-testid="workbench">bandeja de {carrierId}</div>,
@@ -28,6 +32,7 @@ function pendiente(over: Partial<PendingComplianceRow> = {}): PendingComplianceR
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
     status: 'MISSING', expiration_date: null,
+    urgencia: 'FALTA', expiration_policy: 'NONE',
     ...over,
   } as PendingComplianceRow
 }
@@ -44,9 +49,19 @@ function setup(rows: PendingComplianceRow[] = [pendiente()], total = rows.length
 beforeEach(() => vi.clearAllMocks())
 
 describe('CarrierDrawer', () => {
-  it('monta la bandeja de esa empresa, no una paralela', async () => {
+  it('NO monta la bandeja adentro: el casillero no compite con una zona de arrastre', async () => {
     setup()
-    expect(await screen.findByTestId('workbench')).toHaveTextContent('bandeja de c1')
+    await screen.findByText(/lo que falta/i)
+    // Las dos superficies recibían archivos y hacían cosas distintas — la
+    // grande mandaba a la bandeja sin clasificar, la chica clasificaba al
+    // requisito — y no se distinguían.
+    expect(screen.queryByTestId('workbench')).not.toBeInTheDocument()
+  })
+
+  it('la bandeja sigue existiendo, como destino y no como zona encima', async () => {
+    setup()
+    const enlace = await screen.findByRole('link', { name: /bandeja/i })
+    expect(enlace).toHaveAttribute('href', expect.stringContaining('vista=documentos'))
   })
 
   it('pide solo los pendientes de esa empresa', async () => {
@@ -86,22 +101,33 @@ describe('CarrierDrawer', () => {
     expect(screen.getByText('ABCD12')).toBeInTheDocument()
   })
 
-  it('subir un documento usa la misma puerta que la bandeja', async () => {
-    setup([pendiente({ entity_type: 'CARRIER', entity_id: 'c1', requirement_id: 'r1' })])
+  it('sube por el camino directo, no por el de la pila', async () => {
+    setup([pendiente({ id: 'p1', expiration_policy: 'NONE' })])
     // Los sujetos arrancan plegados para que el cajon quepa en la pantalla.
     fireEvent.click(await screen.findByText('De la empresa'))
 
-    const input = screen.getByTestId('subir-p1') as HTMLInputElement
-    fireEvent.change(input, {
+    fireEvent.change(screen.getByTestId('archivo-p1'), {
       target: { files: [new File(['x'], 'f30.pdf', { type: 'application/pdf' })] },
     })
 
-    await waitFor(() =>
-      expect(documentIngestApi.uploadAndClassify).toHaveBeenCalledWith(
-        expect.objectContaining({
-          carrierId: 'c1', entityType: 'CARRIER', entityId: 'c1', requirementId: 'r1',
-        }),
-      ))
+    await waitFor(() => expect(complianceApi.uploadFile).toHaveBeenCalledWith(
+      'p1', expect.any(File), undefined,
+    ))
+    // La otra puerta sube ANTES de clasificar, así que cada rechazo dejaba el
+    // archivo varado en la bandeja y el requisito vacío.
+    expect(documentIngestApi.uploadAndClassify).not.toHaveBeenCalled()
+  })
+
+  it('con la fecha obligatoria no sube nada hasta tenerla', async () => {
+    setup([pendiente({ id: 'p1', expiration_policy: 'REQUIRED' })])
+    fireEvent.click(await screen.findByText('De la empresa'))
+
+    fireEvent.change(screen.getByTestId('archivo-p1'), {
+      target: { files: [new File(['x'], 'f30.pdf', { type: 'application/pdf' })] },
+    })
+
+    expect(await screen.findByLabelText(/vence el/i)).toBeInTheDocument()
+    expect(complianceApi.uploadFile).not.toHaveBeenCalled()
   })
 
   // MEDIDO EN STAGING (2026-08-15): con los sujetos abiertos, el cajon de
@@ -164,7 +190,7 @@ describe('CarrierDrawer sin permiso de edición', () => {
 
     fireEvent.click(await screen.findByText('De la empresa'))
     expect(screen.getByText('F30')).toBeInTheDocument()
-    expect(screen.queryByTestId('subir-p1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('archivo-p1')).not.toBeInTheDocument()
   })
 })
 

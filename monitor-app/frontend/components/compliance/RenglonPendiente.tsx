@@ -1,20 +1,8 @@
 'use client'
 
-import { useRef, useState, type DragEvent } from 'react'
 import { AlertTriangle, Check, Loader2, Upload } from 'lucide-react'
+import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
 import type { PendingComplianceRow, PoliticaVencimiento } from '@/lib/types'
-
-/** En qué punto está este renglón. Es UN valor con la forma del estado, no
- *  cuatro booleanos sueltos: `subiendo` + `error` + `listo` + `archivo` daban
- *  dieciséis combinaciones para seis situaciones reales, y la mitad no
- *  significan nada ("subiendo y listo a la vez"). */
-type Estado =
-  | { tipo: 'reposo' }
-  | { tipo: 'recibiendo' }
-  | { tipo: 'pidiendo-fecha'; archivo: File }
-  | { tipo: 'subiendo' }
-  | { tipo: 'listo' }
-  | { tipo: 'error'; motivo: string; archivo: File | null; vencimiento?: string }
 
 interface Props {
   fila:        PendingComplianceRow
@@ -28,11 +16,15 @@ interface Props {
 
 /** Qué hacer con la fecha, cuando el catálogo todavía no lo dice.
  *
- *  El backend empieza a mandar `expiration_policy` en la Tarea 3 del plan.
- *  Hasta entonces la ausencia significa **"no sé"**, y "no sé" no puede
- *  resolverse en ninguno de los dos extremos: como `NONE` perdería una fecha
- *  que hacía falta, y como `REQUIRED` bloquearía documentos que no vencen.
- *  Se pregunta sin exigir, que es lo único honesto con un dato ausente. */
+ *  `/pending` ya manda `expiration_policy` (Ronda 129), así que el tipo lo
+ *  declara obligatorio. El respaldo se queda igual **porque frontend y
+ *  backend se despliegan por separado**: durante esa ventana la respuesta
+ *  puede no traerlo, y eso no es un caso imposible sino uno de minutos.
+ *
+ *  La ausencia significa **"no sé"**, y "no sé" no puede resolverse en
+ *  ninguno de los dos extremos: como `NONE` perdería una fecha que hacía
+ *  falta, y como `REQUIRED` bloquearía documentos que no vencen. Se pregunta
+ *  sin exigir, que es lo único honesto con un dato ausente. */
 function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
   return fila.expiration_policy ?? 'OPTIONAL'
 }
@@ -50,65 +42,19 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
 export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer }: Props) {
-  const [estado, setEstado] = useState<Estado>({ tipo: 'reposo' })
-  const [vencimiento, setVencimiento] = useState('')
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
   const politica = politicaDe(fila)
-  const ocupado = estado.tipo === 'subiendo'
 
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  async function subir(archivo: File, fecha?: string) {
-    setEstado({ tipo: 'subiendo' })
-    try {
-      await onSubir(fila, archivo, fecha)
-      setEstado({ tipo: 'listo' })
-    } catch (e) {
-      setEstado({
-        tipo: 'error',
-        motivo: e instanceof Error && e.message ? e.message : 'No se pudo subir el documento',
-        archivo,
-        vencimiento: fecha,
-      })
-    }
-  }
-
-  /** El archivo recién llegó, por clic o soltándolo. Si el requisito no pide
-   *  fecha, no hay nada más que preguntar y sale de una. */
-  function recibir(archivo: File | undefined) {
-    if (!archivo || ocupado) return
-    if (politica === 'NONE') {
-      void subir(archivo)
-      return
-    }
-    setVencimiento('')
-    setEstado({ tipo: 'pidiendo-fecha', archivo })
-  }
-
-  function alSoltar(e: DragEvent<HTMLDivElement>) {
-    e.preventDefault()
-    if (!puedeEditar) return
-    recibir(e.dataTransfer?.files?.[0])
-  }
-
-  function alArrastrarEncima(e: DragEvent<HTMLDivElement>) {
-    if (!puedeEditar || ocupado) return
-    e.preventDefault()
-    if (estado.tipo === 'reposo') setEstado({ tipo: 'recibiendo' })
-  }
-
-  function alSalir() {
-    if (estado.tipo === 'recibiendo') setEstado({ tipo: 'reposo' })
-  }
-
-  function guardar() {
-    if (estado.tipo !== 'pidiendo-fecha') return
-    // Con la fecha obligatoria, guardar sin ella no hace nada: el requisito
-    // no queda cubierto por un documento del que no se sabe hasta cuándo vale.
-    if (politica === 'REQUIRED' && !vencimiento) return
-    void subir(estado.archivo, vencimiento || undefined)
-  }
+  /** La regla —recibir, pedir la fecha si el requisito la exige, y recién
+   *  entonces subir— vive en el hook, compartida con la ficha legacy. Acá
+   *  queda sólo el layout de este renglón. */
+  const { estado, vencimiento, setVencimiento, guardar, reintentar, propsDeZona, propsDeInput } =
+    useGestoDeCarga({
+      politica,
+      puedeEditar,
+      onSubir: (archivo, fecha) => onSubir(fila, archivo, fecha),
+    })
 
   const fondo =
     estado.tipo === 'recibiendo'     ? 'bg-accent/10 outline outline-2 -outline-offset-2 outline-accent'
@@ -120,9 +66,7 @@ export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer }: Pro
   return (
     <div
       data-testid={`renglon-${fila.id}`}
-      onDrop={alSoltar}
-      onDragOver={alArrastrarEncima}
-      onDragLeave={alSalir}
+      {...propsDeZona()}
       className={`border-b border-border last:border-b-0 px-3 py-2 min-h-10 transition-colors ${fondo}`}
     >
       <div className="flex items-center gap-3">
@@ -170,14 +114,10 @@ export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer }: Pro
             {estado.tipo === 'recibiendo' ? 'Suelta para cargar aquí' : 'Arrastra aquí o elige un archivo'}
             <input
               id={inputId}
-              ref={inputRef}
               type="file"
               className="sr-only"
               data-testid={inputId}
-              onChange={e => {
-                recibir(e.target.files?.[0])
-                e.target.value = ''
-              }}
+              {...propsDeInput()}
             />
           </label>
         )}
@@ -220,7 +160,7 @@ export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer }: Pro
               <span className="text-etiqueta text-informativo truncate">{estado.archivo.name}</span>
               <button
                 type="button"
-                onClick={() => estado.archivo && subir(estado.archivo, estado.vencimiento)}
+                onClick={reintentar}
                 className="text-etiqueta font-semibold text-accion cursor-pointer transition-opacity hover:opacity-70"
               >
                 Reintentar

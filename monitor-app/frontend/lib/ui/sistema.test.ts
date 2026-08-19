@@ -69,7 +69,9 @@ describe('el sistema visual se usa, no solo existe', () => {
 
   it('no crece el color decidido fuera del sistema', () => {
     // Medido el 2026-08-16. Baja al migrar cada pantalla a los tokens.
-    const DEUDA = 1765
+    // 1.765 -> 1.755 en la Ronda 129: CarrierDrawer paso a tokens al soltar la
+    // zona de arrastre (sky/gray/amber/red crudos -> accent/informativo/border).
+    const DEUDA = 1755
 
     const total = usosDeColorCrudo()
     expect(

@@ -1,13 +1,14 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ChevronRight, Loader2, Upload } from 'lucide-react'
+import Link from 'next/link'
+import { Check, ChevronDown, ChevronRight, Loader2, Inbox } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
-import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
-import { TriageWorkbench } from './TriageWorkbench'
-import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
+import { useSubirDocumento } from '@/hooks/useSubirDocumento'
+import { RenglonPendiente } from './RenglonPendiente'
+import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { useQuery } from '@tanstack/react-query'
 import type { PendingComplianceRow } from '@/lib/types'
 
 interface Props {
@@ -42,11 +43,21 @@ type Sujeto = {
  *  (`addb278`) justamente por eso. El cajón no achica nada y nunca saca al
  *  usuario de donde estaba.
  *
- *  Dos secciones, en este orden (§5): lo que llegó y espera que lo ubiquen, y
- *  lo que falta — con la flota en renglones plegables. */
+ *  **La lista de lo que falta ES la superficie de carga** (Ronda 129). Antes
+ *  el cajón montaba la bandeja de triaje arriba —una zona de arrastre de
+ *  1183 × 211 px— y debajo, por renglón, un "Subir" de 42 × 17 px. Las dos
+ *  recibían archivos y hacían cosas distintas: la grande mandaba a la bandeja
+ *  sin clasificar, la chica clasificaba al requisito. Quien le pegaba a la
+ *  grande no veía cambiar el requisito y leía "no pasó nada".
+ *
+ *  De los cinco productos del rubro que se miraron (Highway, RMIS, MyCarrier-
+ *  Packets, Fleetio, Samsara), **ninguno pone el triaje como camino principal**:
+ *  cuatro hacen que el casillero pida lo que necesita, y el triaje aparece sólo
+ *  donde los documentos llegan sin pedirlos, siempre como destino aparte. Acá
+ *  quedó como eso: un enlace, no una zona encima del casillero. */
 export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
   const canEdit = useCanEdit()
-  const queryClient = useQueryClient()
+  const subirDocumento = useSubirDocumento()
   /** Se guardan los ABIERTOS, no los plegados, para que el default —conjunto
    *  vacío— sea "todo plegado" sin depender de que lleguen los datos.
    *
@@ -61,8 +72,6 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
    *  mostrar: el motivo del plegado era una empresa con 9 sujetos y 91
    *  requisitos midiendo 3.159px, y acá son los documentos de una persona. */
   const unSoloSujeto = !!subject
-  const [subiendo, setSubiendo] = useState<string | null>(null)
-  const [errorSubida, setErrorSubida] = useState<string | null>(null)
 
   /** Una sola consulta para todo "lo que falta": `/pending` ya trae la
    *  categoría, el sujeto, el requisito y el estado de cada fila, así que no
@@ -122,61 +131,22 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
     })
   }
 
-  /** Lo que queda obsoleto al aplicar un documento es LO MISMO que deja
-   *  obsoleto la bandeja: se comparte la función, no se replica la lista.
-   *  Acá antes había un conjunto propio, y por eso el cajón y la bandeja
-   *  llegaron a invalidar cosas distintas. Ver lib/queries/certificacion.ts. */
-  const invalidarTodo = () => invalidarCertificacion(queryClient)
-
-  async function subir(fila: PendingComplianceRow, file: File) {
-    setSubiendo(fila.id)
-    setErrorSubida(null)
-    try {
-      // La MISMA puerta que la bandeja (`upload` + `classify-batch`), no un
-      // camino aparte: dos implementaciones de lo mismo terminan divergiendo,
-      // y en este módulo ya pasó una vez.
-      await documentIngestApi.uploadAndClassify({
-        carrierId,
-        entityType:    fila.entity_type,
-        entityId:      fila.entity_id,
-        requirementId: fila.requirement_id,
-        file,
-      })
-      // Lo que queda obsoleto al aplicar un documento: lo que falta acá, el
-      // avance de la fila en el embudo y el conteo de la bandeja.
-      await invalidarTodo()
-    } catch (e) {
-      // Sin esto el spinner se apagaba, no cambiaba nada en pantalla y el
-      // archivo podia quedar huerfano en la bandeja sin que nadie se entere.
-      setErrorSubida(e instanceof Error ? e.message : 'No se pudo subir el documento')
-      await invalidarTodo()
-    } finally {
-      setSubiendo(null)
-    }
-  }
+  /** El renglón sabe dónde mostrar su propio error, así que el error se deja
+   *  propagar: acá no hay un aviso global. Uno solo, arriba del cajón, no
+   *  diría de cuál de los 91 renglones está hablando. */
+  const subir = (fila: PendingComplianceRow, archivo: File, vencimiento?: string) =>
+    subirDocumento(fila.id, archivo, vencimiento)
 
   return (
-    <div className="bg-sky-50/40 border-b border-border px-4 py-3 pl-8 space-y-3">
-      {/* 1 · Lo que llegó y espera. Es la MISMA bandeja que la global, sólo
-          que acotada a esta empresa: un solo componente que recibe o no un
-          carrier_id (§6). No se escribe una bandeja paralela. */}
-      <TriageWorkbench carrierId={carrierId} carrierName={carrierName} subject={subject} />
-
-      {/* 2 · Lo que falta */}
+    <div className="bg-accent/5 border-b border-border px-4 py-3 pl-8 space-y-3">
       <div>
-        <p className="text-etiqueta font-semibold uppercase tracking-[.11em] text-gray-500 pb-1.5">
+        <p className="text-etiqueta font-semibold uppercase tracking-[.11em] text-informativo pb-1.5">
           Lo que falta{total > 0 && <> · {total} documentos</>}
           {truncado && <> · se listan los primeros {rows.length}</>}
         </p>
 
-        {errorSubida && (
-          <p role="alert" className="text-etiqueta text-espera bg-red-50 border border-red-100 rounded-lg px-2 py-1.5 mb-1.5">
-            {errorSubida}
-          </p>
-        )}
-
         {pendingQuery.isPending && (
-          <p className="text-etiqueta text-gray-500 flex items-center gap-1.5 py-1">
+          <p className="text-etiqueta text-informativo flex items-center gap-1.5 py-1">
             <Loader2 size={11} className="motion-safe:animate-spin" /> Cargando…
           </p>
         )}
@@ -190,7 +160,7 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
         {sujetos.map(s => {
           const abierto = unSoloSujeto || abiertos.has(s.clave)
           return (
-            <div key={s.clave} className="border-t border-sky-100 first:border-t-0">
+            <div key={s.clave} className="border-t border-border first:border-t-0">
               <button
                 type="button"
                 onClick={() => alternar(s.clave)}
@@ -202,57 +172,42 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
                   ? <ChevronDown size={11} className="text-informativo" aria-hidden="true" />
                   : <ChevronRight size={11} className="text-informativo" aria-hidden="true" />}
                 {/* El sujeto es lo que se escanea: va en tinta y en semibold. */}
-                <span className="text-[12.5px] font-semibold text-text-primary group-hover:text-accent transition-colors">
+                <span className="text-dato font-semibold text-text-primary group-hover:text-accent transition-colors">
                   {s.titulo}
                 </span>
-                <span className="text-etiqueta text-gray-500 tabular-nums">
+                <span className="text-etiqueta text-informativo tabular-nums">
                   faltan {s.pendientes.length}
                 </span>
               </button>
 
               {abierto && s.pendientes.map(p => (
-                <div
+                <RenglonPendiente
                   key={p.id}
-                  className="flex items-center gap-2 py-1 pl-5 border-b border-sky-100/70 last:border-b-0"
-                >
-                  {/* El nombre del documento, en gris: es el objeto, no el
-                      sujeto. El peso separa qué es cada cosa (§9). */}
-                  <span className="flex-1 min-w-0 truncate text-[11.5px] text-gray-600">
-                    {p.document_name}
-                  </span>
-
-                  {p.status === 'EXPIRED' && (
-                    <span className="text-etiqueta text-amber-700 shrink-0">
-                      vencido{p.expiration_date ? ` · ${p.expiration_date}` : ''}
-                    </span>
-                  )}
-
-                  {canEdit && (
-                    <label
-                      className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-accion cursor-pointer transition-opacity hover:opacity-70"
-                    >
-                      {subiendo === p.id
-                        ? <Loader2 size={11} className="motion-safe:animate-spin" />
-                        : <Upload size={11} />}
-                      Subir
-                      <input
-                        type="file"
-                        className="hidden"
-                        data-testid={`subir-${p.id}`}
-                        disabled={subiendo === p.id}
-                        onChange={e => {
-                          const f = e.target.files?.[0]
-                          if (f) subir(p, f)
-                          e.target.value = ''
-                        }}
-                      />
-                    </label>
-                  )}
-                </div>
+                  fila={p}
+                  puedeEditar={canEdit}
+                  onSubir={subir}
+                />
               ))}
             </div>
           )
         })}
+
+        {/* La bandeja sigue existiendo, como DESTINO y no como zona encima del
+            casillero: es el camino de "me llegaron veinte por correo", no el de
+            "a esta persona le falta la licencia". Es un enlace justamente para
+            que no compita con el renglón por el mismo archivo soltado. */}
+        {canEdit && (
+          <p className="text-etiqueta text-informativo pt-2 flex items-center gap-1.5">
+            <Inbox size={11} aria-hidden="true" />
+            ¿Tienes muchos documentos de {carrierName}?{' '}
+            <Link
+              href="/dashboard/compliance?vista=documentos"
+              className="font-semibold text-accion transition-opacity hover:opacity-70"
+            >
+              Llévalos a la Bandeja
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   )

@@ -20,7 +20,7 @@ function requisito(patch: Partial<RequirementOption> = {}): RequirementOption {
     requirement_code: 'MANTENCION_FRIO',
     name: 'Mantención Cámara de Frío',
     requirement_level: 'SHIPPER_REQUIRED',
-    has_expiration: true,
+    has_expiration: true, expiration_policy: 'REQUIRED',
     is_active: true,
     applies_to_fleet_service_type_ids: null,
     applies_to_management_types: null,
