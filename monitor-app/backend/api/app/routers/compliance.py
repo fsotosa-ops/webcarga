@@ -684,13 +684,26 @@ async def _apply_compliance_upload(
     preserva la que ya estuviera declarada. Antes esta función no la escribía
     nunca, así que un documento subido quedaba con la fecha en NULL y — como
     /pending filtra por status — desaparecía de pendientes para siempre."""
+    # La politica de vencimiento es del REQUISITO, no del registro, asi que
+    # esta consulta —la que ya existia— se extiende con el JOIN en vez de
+    # agregar una segunda vuelta a la base.
     current = await pool.fetchrow(
-        "SELECT entity_id, entity_type, status, expiration_date, metadata FROM public.compliance_records "
-        "WHERE id = $1 AND is_current = true",
+        "SELECT cr.entity_id, cr.entity_type, cr.status, cr.expiration_date, cr.metadata, "
+        "       req.expiration_policy "
+        "FROM public.compliance_records cr "
+        "JOIN public.compliance_requirements req ON req.id = cr.requirement_id "
+        "WHERE cr.id = $1 AND cr.is_current = true",
         record_id,
     )
     if not current:
         raise HTTPException(404, "Registro de cumplimiento no encontrado")
+
+    # ANTES de tocar storage. Si validaramos despues, el rechazo dejaria el
+    # blob huerfano — que es exactamente el defecto que este trabajo viene a
+    # eliminar del camino de la bandeja, donde subir precedia a clasificar y
+    # cada 422 dejaba un archivo varado con el requisito vacio.
+    if current["expiration_policy"] == "REQUIRED" and expiration_date is None:
+        raise HTTPException(422, "Este documento requiere su fecha de vencimiento")
 
     key_prefix = f"{current['entity_type'].lower()}/{current['entity_id']}/{record_id}"
     uploaded = await upload_document_version(supabase, key_prefix=key_prefix, file=file)

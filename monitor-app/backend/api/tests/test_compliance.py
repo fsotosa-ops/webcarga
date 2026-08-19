@@ -78,11 +78,97 @@ def test_upload_file_404_when_record_missing():
     assert res.status_code == 404
 
 
+def test_upload_file_rejects_missing_date_when_policy_requires_it():
+    """Hoy /file acepta sin fecha SIEMPRE, incluso para una licencia.
+
+    El guardia vive en el servidor: el renglon pregunta antes para que nunca
+    llegue incompleto, pero quien decide es la API. Y valida ANTES de tocar
+    storage — si validara despues, el rechazo dejaria el blob huerfano, que es
+    exactamente el defecto que este trabajo viene a eliminar del otro camino.
+    """
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {
+        "entity_id": "d1", "entity_type": "DRIVER", "status": "MISSING",
+        "expiration_date": None, "metadata": {}, "expiration_policy": "REQUIRED",
+    }
+    supabase = MagicMock()
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/compliance-records/r1/file",
+        files={"file": ("licencia.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 422
+    assert "vencimiento" in res.json()["detail"]
+    # Lo critico: no se subio nada a storage.
+    supabase.storage.from_.return_value.upload.assert_not_called()
+
+
+def test_upload_file_accepts_missing_date_when_policy_is_optional():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {
+        "entity_id": "d1", "entity_type": "DRIVER", "status": "MISSING",
+        "expiration_date": None, "metadata": {}, "expiration_policy": "OPTIONAL",
+    }
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/compliance-records/r1/file",
+        files={"file": ("anexo.pdf", b"contenido", "application/pdf")},
+    )
+
+    assert res.status_code == 201
+
+
+def test_upload_file_accepts_date_when_policy_requires_it():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    pool.fetchrow.return_value = {
+        "entity_id": "d1", "entity_type": "DRIVER", "status": "MISSING",
+        "expiration_date": None, "metadata": {}, "expiration_policy": "REQUIRED",
+    }
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.upload.return_value = None
+    client = make_client(pool, supabase=supabase)
+
+    res = client.post(
+        "/api/v1/compliance-records/r1/file",
+        files={"file": ("licencia.pdf", b"contenido", "application/pdf")},
+        data={"expiration_date": "2027-01-31"},
+    )
+
+    assert res.status_code == 201
+
+
+def test_upload_file_reads_the_policy_from_the_catalog():
+    """La politica es del REQUISITO, no del registro: la consulta tiene que
+    unir con compliance_requirements o estaria leyendo una columna que no
+    existe en compliance_records."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = None
+    client = make_client(pool)
+
+    client.post(
+        "/api/v1/compliance-records/r1/file",
+        files={"file": ("x.pdf", b"c", "application/pdf")},
+    )
+
+    sql = pool.fetchrow.call_args.args[0]
+    assert "expiration_policy" in sql
+    assert "compliance_requirements" in sql
+
+
 def test_upload_file_rejects_disallowed_mime():
     pool = AsyncMock()
     pool.fetchrow.return_value = {
         "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
-        "expiration_date": None, "metadata": {},
+        "expiration_date": None, "metadata": {}, "expiration_policy": "NONE",
     }
     client = make_client(pool)
 
@@ -100,7 +186,7 @@ def test_upload_file_forces_approved_manual_and_persists_metadata():
     wire_transactional_conn(pool, conn)
     pool.fetchrow.return_value = {
         "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
-        "expiration_date": None, "metadata": {},
+        "expiration_date": None, "metadata": {}, "expiration_policy": "NONE",
     }
     supabase = MagicMock()
     supabase.storage.from_.return_value.upload.return_value = None
@@ -134,7 +220,7 @@ def test_upload_file_logs_replacement_when_previous_file_existed():
     wire_transactional_conn(pool, conn)
     pool.fetchrow.return_value = {
         "entity_id": "c1", "entity_type": "CARRIER", "status": "APPROVED_MANUAL",
-        "expiration_date": None, "metadata": {"storage_path": "carrier/c1/r1/old_x.pdf"},
+        "expiration_date": None, "metadata": {"storage_path": "carrier/c1/r1/old_x.pdf"}, "expiration_policy": "NONE",
     }
     supabase = MagicMock()
     supabase.storage.from_.return_value.upload.return_value = None
@@ -518,7 +604,7 @@ def test_bulk_upload_partial_failure_rejects_only_bad_file():
     ]
     pool.fetchrow.return_value = {
         "entity_id": "d1", "entity_type": "DRIVER", "status": "MISSING",
-        "expiration_date": None, "metadata": {},
+        "expiration_date": None, "metadata": {}, "expiration_policy": "NONE",
     }
     supabase = MagicMock()
     supabase.storage.from_.return_value.upload.return_value = None
@@ -604,7 +690,7 @@ def test_upload_persists_expiration_date_when_provided():
     wire_transactional_conn(pool, conn)
     pool.fetchrow.return_value = {
         "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
-        "expiration_date": None, "metadata": {},
+        "expiration_date": None, "metadata": {}, "expiration_policy": "NONE",
     }
     supabase = MagicMock()
     supabase.storage.from_.return_value.upload.return_value = None
@@ -628,7 +714,7 @@ def test_upload_without_expiration_date_leaves_it_untouched():
     wire_transactional_conn(pool, conn)
     pool.fetchrow.return_value = {
         "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
-        "expiration_date": None, "metadata": {},
+        "expiration_date": None, "metadata": {}, "expiration_policy": "NONE",
     }
     supabase = MagicMock()
     supabase.storage.from_.return_value.upload.return_value = None

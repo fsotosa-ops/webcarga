@@ -129,10 +129,16 @@ async def _requisito(conn, *, entidad, gestion=None, tipos_flota=None, cliente=N
     esa siembra es justamente lo que varios de estos tests miden."""
     return await conn.fetchval(
         """
+        -- `expiration_policy` va explicita y NO tiene DEFAULT a proposito:
+        -- un default silencioso convertiria "nadie decidio" en "no vence", que
+        -- es el defecto que esta columna vino a corregir. Estos tests no miden
+        -- vencimientos, asi que NONE es la eleccion que no cambia lo que
+        -- afirman.
         INSERT INTO public.compliance_requirements
             (target_entity, requirement_code, name, requirement_level,
-             shipper_id, applies_to_management_types, applies_to_fleet_service_type_ids)
-        VALUES ($1, $2, $3, 'LEGAL_MANDATORY', $4, $5, $6)
+             shipper_id, applies_to_management_types, applies_to_fleet_service_type_ids,
+             expiration_policy)
+        VALUES ($1, $2, $3, 'LEGAL_MANDATORY', $4, $5, $6, 'NONE')
         RETURNING id
         """,
         entidad, f"ZZ_{_sufijo().upper()}", f"{PREFIJO} requisito",
