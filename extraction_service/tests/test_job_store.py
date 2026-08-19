@@ -25,6 +25,10 @@ def make_pool_with_conn():
     conn = AsyncMock()
     txn_cm = AsyncMock()
     conn.transaction = MagicMock(return_value=txn_cm)
+    # try_claim_slot hace un conn.fetch(...) para recuperar slots huérfanos.
+    # Sin este default, el AsyncMock devuelve un mock truthy y el camino de
+    # "hubo huérfanos" se dispara siempre.
+    conn.fetch.return_value = []
 
     acquire_cm = AsyncMock()
     acquire_cm.__aenter__.return_value = conn
@@ -113,7 +117,7 @@ def test_try_claim_slot_succeeds_when_under_limit():
     conn.fetchval.return_value = 0  # nadie corriendo
     store = JobStore(pool)
 
-    claimed = asyncio.run(store.try_claim_slot("11111111-1111-1111-1111-111111111111", max_concurrent=1))
+    claimed = asyncio.run(store.try_claim_slot("11111111-1111-1111-1111-111111111111", max_concurrent=1, job_timeout_ms=600_000))
 
     assert claimed is True
     update_call = conn.execute.call_args
@@ -125,7 +129,7 @@ def test_try_claim_slot_fails_when_at_limit():
     conn.fetchval.return_value = 1  # ya hay 1 corriendo, límite=1
     store = JobStore(pool)
 
-    claimed = asyncio.run(store.try_claim_slot("11111111-1111-1111-1111-111111111111", max_concurrent=1))
+    claimed = asyncio.run(store.try_claim_slot("11111111-1111-1111-1111-111111111111", max_concurrent=1, job_timeout_ms=600_000))
 
     assert claimed is False
     # No debe intentar el UPDATE a running si no hay slot
@@ -138,7 +142,7 @@ def test_try_claim_slot_uses_advisory_lock_before_counting():
     conn.fetchval.return_value = 0
     store = JobStore(pool)
 
-    asyncio.run(store.try_claim_slot("11111111-1111-1111-1111-111111111111", max_concurrent=1))
+    asyncio.run(store.try_claim_slot("11111111-1111-1111-1111-111111111111", max_concurrent=1, job_timeout_ms=600_000))
 
     lock_call = conn.execute.call_args_list[0]
     assert "pg_advisory_xact_lock" in lock_call.args[0]
@@ -157,9 +161,108 @@ def test_try_claim_slot_respects_limit_under_simulated_concurrent_attempts():
         pool, conn = make_pool_with_conn()
         conn.fetchval.return_value = running_count["value"]
         store = JobStore(pool)
-        claimed = asyncio.run(store.try_claim_slot(str(uuid.uuid4()), max_concurrent=1))
+        claimed = asyncio.run(store.try_claim_slot(str(uuid.uuid4()), max_concurrent=1, job_timeout_ms=600_000))
         if claimed:
             claimed_total += 1
             running_count["value"] += 1
 
     assert claimed_total == 1
+
+
+# ── Recuperación de slots huérfanos (incidente 2026-08-19) ───────────────────
+#
+# Un despliegue de Cloud Run migró el tráfico con un job en vuelo; su instancia
+# desapareció y la fila quedó en 'running' para siempre, bloqueando el único
+# slot 58 minutos. Los tres scrapers fallaron con "Timeout esperando un slot
+# libre" y la ingestión se detuvo por completo.
+
+JOB_TIMEOUT = 600_000
+UMBRAL_ESPERADO = JOB_TIMEOUT + JobStore.ORPHAN_GRACE_MS
+
+
+def _sql_de_recuperacion(conn):
+    """La sentencia que marca 'failed' a los running vencidos, si se emitió."""
+    for call in conn.fetch.call_args_list:
+        if "status = 'running'" in call.args[0] and "started_at <" in call.args[0]:
+            return call
+    return None
+
+
+def test_recupera_el_slot_de_un_job_sin_proceso_detras():
+    pool, conn = make_pool_with_conn()
+    conn.fetch.return_value = [{"job_id": uuid.uuid4()}]  # un huérfano encontrado
+    conn.fetchval.return_value = 0  # tras recuperarlo, nadie corriendo
+    store = JobStore(pool)
+
+    claimed = asyncio.run(
+        store.try_claim_slot(str(uuid.uuid4()), max_concurrent=1, job_timeout_ms=JOB_TIMEOUT)
+    )
+
+    assert claimed is True, "con el slot huérfano liberado, el job nuevo debe entrar"
+    assert _sql_de_recuperacion(conn) is not None
+
+
+def test_la_recuperacion_ocurre_dentro_del_advisory_lock():
+    """Si se hiciera fuera del lock, dos instancias podrían recuperar el mismo
+    slot y ambas reclamarlo — justo la carrera que el lock existe para evitar."""
+    pool, conn = make_pool_with_conn()
+    conn.fetchval.return_value = 0
+    store = JobStore(pool)
+
+    asyncio.run(
+        store.try_claim_slot(str(uuid.uuid4()), max_concurrent=1, job_timeout_ms=JOB_TIMEOUT)
+    )
+
+    assert "pg_advisory_xact_lock" in conn.execute.call_args_list[0].args[0]
+    assert _sql_de_recuperacion(conn) is not None, "la recuperación debe emitirse"
+
+
+def test_el_umbral_es_el_timeout_del_job_mas_la_gracia():
+    """El invariante: un job no puede correr más de JOB_TIMEOUT_MS porque su
+    propio proceso lo mata. La gracia cubre esa escritura final y el desfase de
+    reloj — sin ella se podría matar un job vivo a punto de terminar."""
+    pool, conn = make_pool_with_conn()
+    conn.fetchval.return_value = 0
+    store = JobStore(pool)
+
+    asyncio.run(
+        store.try_claim_slot(str(uuid.uuid4()), max_concurrent=1, job_timeout_ms=JOB_TIMEOUT)
+    )
+
+    call = _sql_de_recuperacion(conn)
+    assert call.args[1] == UMBRAL_ESPERADO
+    assert JobStore.ORPHAN_GRACE_MS > 0, "sin gracia se puede matar un job vivo"
+
+
+def test_un_job_dentro_del_plazo_sigue_ocupando_su_slot():
+    """La recuperación no debe convertirse en una barrida de todo lo running:
+    si el que corre está dentro del plazo, el nuevo job espera, como siempre."""
+    pool, conn = make_pool_with_conn()
+    conn.fetch.return_value = []      # ninguno vencido
+    conn.fetchval.return_value = 1    # el que corre sigue vivo, límite=1
+    store = JobStore(pool)
+
+    claimed = asyncio.run(
+        store.try_claim_slot(str(uuid.uuid4()), max_concurrent=1, job_timeout_ms=JOB_TIMEOUT)
+    )
+
+    assert claimed is False
+    for call in conn.execute.call_args_list:
+        assert "SET status = 'running'" not in call.args[0]
+
+
+def test_el_huerfano_queda_marcado_failed_no_solo_ignorado():
+    """Ignorarlo dejaría la tabla mintiendo: un job 'running' eterno que nadie
+    corre. Marcarlo failed deja el incidente visible y el estado consistente."""
+    pool, conn = make_pool_with_conn()
+    conn.fetchval.return_value = 0
+    store = JobStore(pool)
+
+    asyncio.run(
+        store.try_claim_slot(str(uuid.uuid4()), max_concurrent=1, job_timeout_ms=JOB_TIMEOUT)
+    )
+
+    sql = _sql_de_recuperacion(conn).args[0]
+    assert "status = 'failed'" in sql
+    assert "completed_at = now()" in sql
+    assert "error =" in sql, "debe dejar dicho por qué murió"

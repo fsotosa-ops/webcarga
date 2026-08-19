@@ -9,6 +9,7 @@ Ver docs/superpowers/specs/2026-07-31-extraction-service-hardening-design.md.
 """
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -16,6 +17,8 @@ from typing import Optional
 import asyncpg
 
 from app.api.schemas import ExtractionRequest, Job, JobResult, JobStatus
+
+logger = logging.getLogger(__name__)
 
 
 class JobStore:
@@ -80,17 +83,67 @@ class JobStore:
             uuid.UUID(job_id), error,
         )
 
-    async def try_claim_slot(self, job_id: str, max_concurrent: int) -> bool:
+    # Margen sobre JOB_TIMEOUT_MS antes de dar por muerto un job 'running'.
+    # El proceso dueño se mata solo al cumplirse JOB_TIMEOUT_MS
+    # (asyncio.wait_for en routes.py) y recién ahí escribe 'failed'; el
+    # margen cubre esa escritura y cualquier desfase de reloj entre la
+    # instancia y Postgres. No hace falta que sea fino: lo único que cuesta
+    # un margen amplio es tardar más en recuperar un slot ya perdido.
+    ORPHAN_GRACE_MS = 60_000
+
+    async def try_claim_slot(
+        self, job_id: str, max_concurrent: int, job_timeout_ms: int
+    ) -> bool:
         """Reclama un slot de ejecución global (todas las instancias de
         Cloud Run comparten el conteo). El advisory lock serializa el
         check-then-act entre instancias concurrentes — sin él, dos
         instancias podrían leer el mismo COUNT antes de que ninguna
-        incremente, y ambas pasarían el límite."""
+        incremente, y ambas pasarían el límite.
+
+        RECUPERACIÓN DE SLOTS HUÉRFANOS (incidente 2026-08-19): el slot se
+        ocupa poniendo status='running' y se libera cuando el job pasa a
+        done/failed. Si la INSTANCIA desaparece con el job en vuelo, nadie
+        escribe ese estado final y la fila bloquea el slot para siempre.
+        Pasó de verdad: un despliegue de Cloud Run migró el tráfico a las
+        02:02:57Z, un job arrancó 3 segundos después, su instancia se fue, y
+        el único slot quedó tomado 58 minutos. Los tres scrapers fallaron con
+        'Timeout esperando un slot libre' y la ingestión se detuvo por
+        completo — sin archivos nuevos, los bloques de Mage aguas abajo
+        reventaron con errores que no tenían nada que ver con la causa.
+
+        El riesgo no es exclusivo del despliegue: el job corre en un
+        `asyncio.create_task` y Cloud Run no garantiza CPU ni vida de la
+        instancia fuera del ciclo de una request.
+
+        La recuperación se apoya en un invariante que el diseño YA asume: un
+        job no puede estar 'running' más de JOB_TIMEOUT_MS, porque su propio
+        proceso lo mata a esa altura. Una fila que lo supera no tiene proceso
+        detrás — está muerta, y su slot debe volver al pool. Se marca 'failed'
+        en vez de sólo ignorarla para que el estado quede consistente y el
+        incidente sea visible en la tabla.
+        """
+        umbral_ms = job_timeout_ms + self.ORPHAN_GRACE_MS
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     "SELECT pg_advisory_xact_lock(hashtext('extraction_jobs_slot'))"
                 )
+                # Dentro del lock, para que el COUNT de abajo vea el efecto.
+                huerfanos = await conn.fetch(
+                    "UPDATE ops.extraction_jobs SET status = 'failed', completed_at = now(), "
+                    "error = 'Slot huérfano recuperado: el job quedó en running sin proceso "
+                    "detrás (instancia caída o reciclada). Ver JobStore.try_claim_slot.' "
+                    "WHERE status = 'running' "
+                    "  AND started_at < now() - ($1::bigint * interval '1 millisecond') "
+                    "RETURNING job_id",
+                    umbral_ms,
+                )
+                if huerfanos:
+                    logger.warning(
+                        "Recuperados %d slot(s) huérfanos (running > %dms sin proceso): %s",
+                        len(huerfanos), umbral_ms,
+                        ", ".join(str(r["job_id"]) for r in huerfanos),
+                    )
                 running = await conn.fetchval(
                     "SELECT count(*) FROM ops.extraction_jobs WHERE status = 'running'"
                 )
