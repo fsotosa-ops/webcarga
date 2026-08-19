@@ -17,6 +17,70 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-19 (cont.) — Ronda 131: código muerto borrado, y la jerarquía de roles deja de estar escrita diez veces
+
+Salió de dos instrucciones del usuario: *"todo código muerto/huérfano y frankenstein se borran o
+refactorizan y se apalancan a la arquitectura y patrones de la app"* y *"nada de duplicación de
+código; si algo se usa para más de un componente debería ser capaz de adaptarse eficientemente"*.
+
+#### El caso que las ilustra a las dos a la vez
+
+**`hasRole` en `lib/types.ts` estaba escrita y no la llamaba nadie.** Mientras tanto, la jerarquía
+que esa función define estaba copiada **diez veces en siete archivos**, con dos formas distintas:
+
+| Forma | Dónde |
+|---|---|
+| `new Set(['editor','admin','owner'])` y su gemela de admin | 8 lugares, en `hooks/` y en 4 páginas |
+| `role !== 'admin' && role !== 'owner'` | `admin/layout.tsx` |
+| `u.role === 'admin' \|\| u.role === 'owner'` | `usuarios-tab.tsx`, `UsersTable.tsx` (×2), `Sidebar.tsx` |
+
+Y no era sólo la constante: **cuatro páginas reimplementaban el hook entero adentro de un
+`useEffect`** — sesión, consulta del perfil y comparación, copiado a mano.
+
+**Por qué importa, y es la parte que no se ve**: agregar un rol obligaba a acordarse de siete
+lugares, y olvidarse de uno **no rompe nada**. Simplemente esa pantalla le niega permiso a alguien
+que sí lo tiene, sin error y sin aviso. Es la misma familia que
+[[feedback_null_sentinel_double_duty]]: el fallo es silencioso y sólo se ve mirando.
+
+#### Qué quedó
+
+- **`hooks/useRolMinimo.ts`** — UNA implementación parametrizada por el nivel mínimo, no dos hooks
+  parecidos. `useCanEdit` y `useCanAdmin` **conservan su nombre** y pasan a ser una línea: "puede
+  editar" es el concepto que usan las pantallas y `'editor'` es un detalle de la jerarquía.
+- **`hasRole` dejó de estar muerta**: es la única definición del orden, y la consumen el hook, el
+  `layout.tsx` del servidor —que no puede usar un hook y comparte la **regla**, no el mecanismo— y
+  las cuatro comparaciones de las tablas de usuarios.
+- **Un `vigente` que las copias no tenían**: el hook cancela la escritura de estado si el componente
+  se desmontó antes de que vuelva la consulta.
+- **`lib/permisos.test.ts`**, 5 tests, que es lo que impide que vuelva: prohíbe el `Set` de roles,
+  prohíbe la comparación a mano *incluso en el servidor* (la décima copia tenía otra forma y no se
+  veía buscando "Set"), y prohíbe reimplementar la consulta del perfil **en el cliente** — los
+  server components quedan fuera a propósito, porque gatear una ruta antes de renderizar es otra
+  cosa y es legítima.
+
+**`canManage` se dejó como está**, y es una decisión: "quién puede gestionar a quién" no es un
+umbral de jerarquía (un admin no puede gestionar a otro admin). Forzarla al mismo molde sería el
+frankenstein al revés.
+
+#### La función muerta que yo mismo había dejado viva
+
+Ayer dejé `documentIngestApi.uploadAndClassify` con cero llamadores y un comentario que decía "no la
+uses". **Con la regla nueva eso es una trampa cargada**: la encuentra el próximo por búsqueda, la
+usa, y reintroduce el defecto. **Borrada, 42 líneas.**
+
+Y al borrarla apareció algo peor: dos tests la mockeaban y afirmaban
+`expect(uploadAndClassify).not.toHaveBeenCalled()`. Sobre un mock de una función inexistente, **ese
+test no puede fallar nunca**. Reemplazados por uno que fija el invariante que ahora sí es cierto —
+que el módulo no la exporta— y que deja escrito por qué, para que no vuelva.
+
+`upload` y `classifyBatch` **siguen existiendo por separado**: es lo que usa la Bandeja, donde el
+archivo llega sin destino y clasificarlo después es el flujo correcto.
+
+#### Verificación
+
+`tsc` limpio · trinquetes visuales en margen cero otra vez (color **1.755/1.755**, sub-11px
+**268/268**) · los 5 tests nuevos de permisos fallan si se revierte cualquiera de las diez copias.
+
 ### 2026-08-19 (cont.) — Ronda 130: la conexión a Supabase, auditada contra fsummer-platform
 
 Salió de una pregunta del usuario —"¿estamos bien conectados?"— y terminó encontrando que **la API
