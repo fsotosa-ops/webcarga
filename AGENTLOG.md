@@ -17,6 +17,130 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-19 (cont.) — Ronda 129: la carga documental terminada, y el gesto es uno solo
+
+Continuación directa de la Ronda 128. Se ejecutaron las **Tareas 3, 6, 7 y 4** del plan
+`docs/superpowers/plans/2026-08-19-certificacion-carga-documental.md`. Queda la 9 (verificación en
+vivo). El orden se cambió a propósito: **3 → 6 → 7 → 4**, porque 6 y 7 son las que vuelven visible
+todo lo construido y la 4 no bloquea nada.
+
+#### Tarea 3 · "Por vencer" deja de ser invisible, y la ventana tiene una sola definición
+
+`app/services/vencimientos.py` — `DIAS_POR_VENCER = 30`, `por_vencer_predicate()` y
+`vencido_predicate()`. Reemplaza **cuatro** copias escritas a mano, no tres: además de
+`carriers.py:282`, `drivers.py:224` y `assets.py:233`, el embudo tenía la suya en
+`get_certification_status`.
+
+**Medido contra producción ANTES de tocar el predicado**, que es la parte que el plan marcaba como
+"la que puede explotar": pendientes **5.035 → 5.038**. Los 3 que entran son una póliza de seguro que
+vence en 3 días y dos revisiones de vehículo de "Comercializadora De Los Rios Ltda", las tres en
+`APPROVED_MANUAL` con fecha futura — o sea, invisibles hasta el día en que fuera tarde.
+
+**El embudo NO se movió, y se verificó fila por fila**: de las 2 empresas con algo por vencer,
+ninguna cambia de etapa. Sólo se mueven los "N de M" (22→20 y 3→2). La razón es que la etapa
+`renovar` la decide `vencido`, no `pendiente` — **queda anotado en el código**: ampliar `renovar` a
+lo próximo a vencer cambiaría el significado de una etiqueta que operaciones ya usa, así que es
+decisión de negocio.
+
+**Un defecto propio, encontrado revisando mi propio diff**: la `urgencia` nueva no contaba
+`status = 'EXPIRED'` como vencido, pero el embudo sí. Un registro marcado a mano y sin fecha habría
+salido 'FALTA' en el cajón mientras el embudo lo contaba vencido — exactamente el desfase de dos
+lecturas que este módulo ya tuvo. Hoy son **0 filas** (medido); se alineó igual, con un test que lo
+fija y muere al revertirlo.
+
+#### Tarea 6 · El cajón carga por el camino directo
+
+`CarrierDrawer` soltó `TriageWorkbench` y el "Subir" de 42 × 17 px. La lista de lo que falta **es**
+la superficie de carga, con `RenglonPendiente` por renglón. La Bandeja sigue existiendo como
+**destino** —un enlace debajo de la lista—, que es lo que hacen 4 de los 5 productos del benchmark.
+
+`complianceApi.uploadFile` **hubo que escribirlo**: el tipo `ComplianceFileUploadResult` estaba
+declarado y ninguna función lo usaba, tal como la Ronda 128 ya había corregido en el plan.
+
+#### Tarea 7 · La ficha legacy usa el mismo gesto — y acá el plan se corrigió
+
+El plan decía "la fila de `DocumentChecklist` se reemplaza por `<RenglonPendiente>`". **Al leer el
+componente, eso resultaba ser una regresión**: la ficha tiene círculo de estado, vista previa,
+reasignación y edición de vencimiento, y `RenglonPendiente` no modela nada de eso. Reemplazar la
+fila entera habría borrado funcionalidad viva; envolver una en la otra habría dibujado el nombre del
+documento dos veces.
+
+**Lo que se comparte es el GESTO, no el layout**: `hooks/useGestoDeCarga.ts` — recibir el archivo,
+pedir la fecha si el requisito la exige, y no subir nada hasta estar completo. Es un hook y no un
+componente por la misma razón que `useFilaAbierta`, que este repo ya escribió: *"devuelve props
+sueltas y no un componente a propósito"*, porque las dos superficies tienen formas incompatibles.
+
+**La prueba de que es uno solo**: mutar el hook mata tests **en los dos archivos** a la vez.
+
+`DriverDetailPanel` y `VehicleDetailPanel` eran el segundo camino de carga —llamaban
+`uploadAndClassify` a mano— y ahora consumen `useSubirDocumento`. **`uploadAndClassify` quedó con
+cero llamadores en producción.** No se borró (retirar superficie de API es un cambio aparte), pero
+su comentario ahora dice que no se use y por qué: subía antes de clasificar, y el comentario viejo
+describía el archivo varado como una virtud.
+
+**Un defecto que introduje y corregí antes de comitear**: al hacer la fila entera zona de arrastre,
+soltar un archivo sobre un documento **ya cargado** lo reemplazaba en silencio. Se acotó la zona a
+lo que falta; reemplazar sigue siendo un clic explícito. Con su test, que muere al ampliarla.
+
+#### Tarea 4 · La política se edita desde Configuración
+
+Cambio chico porque el patrón ya estaba: `patch_requirement_conditions` arma un UPDATE de ancho
+variable desde una lista blanca. Se sumó `expiration_policy` ahí, al `sent_fields()`, al `RETURNING`
+y al `SQL_CATALOGO`. El `Literal` del schema corta un valor inventado con **422 legible** en vez de
+dejarlo llegar al CHECK y volver como 500.
+
+En el panel: mismo criterio de dirty que `is_active` —**viaja sólo si cambió**, porque mandarla
+siempre dejaría una fila de auditoría diciendo que alguien decidió algo que no decidió— y
+resincronización del borrador, con test propio: el bug de draft sin resincronizar ya apareció tres
+veces en este frontend.
+
+#### Verificación
+
+- **SQL nuevo contra Postgres real, con binding de verdad**: 9 placeholders contra 9 argumentos;
+  `/pending` devuelve `total_count` 2.371 y el reparto de urgencia FALTA 197 / POR_VENCER 2 /
+  VENCIDO 1 en la primera página. El checklist de un conductor real: **5 de 12** requisitos con
+  política `REQUIRED` — el mismo número que el diagnóstico de la Ronda 128 predijo.
+- **Cada test nuevo se mutó.** Nueve mutaciones distintas, todas matan su test. Una no mató nada la
+  primera vez —la mutación no había aplicado por indentación— y se repitió hasta que sí.
+- **Trinquetes visuales en margen cero otra vez**: color **1.755/1.755** (bajado de 1.765 en el
+  mismo commit que migró `CarrierDrawer` a tokens) y sub-11px **268/268**. El código nuevo no agregó
+  ni un color crudo ni un tamaño fuera de escala.
+- El diff de los dos componentes de Certificación: **74 líneas agregadas contra 179 borradas**.
+
+#### Próximo paso exacto
+
+1. [ ] **Tarea 9 · El click-through en vivo.** Es lo único del plan que falta y lo único que no se
+   puede probar sin pantalla. Contra `webcarga-frontend-dev`, con **Playwright** (la extensión de
+   Chrome está apagada): abrir el cajón de **un sujeto sin documentos cargados** —los desplegables
+   listan todo el catálogo, y ya se pisó un documento real por elegir a ojo—, subir uno con política
+   `NONE` (baja el pendiente sin cambiar de pantalla), uno con `REQUIRED` (pide la fecha y no sube
+   hasta ponerla), provocar un error y ver el motivo **en ese renglón**. Consola: cero errores.
+   Después, confirmar que `document_ingest_items` de la última hora viene **vacío**: el camino
+   directo no pasa por la bandeja.
+2. [ ] **Desplegar.** La migración de `expiration_policy` **ya está aplicada** desde la Ronda 128,
+   así que este despliegue no la necesita — pero `deploy-monitor-api.yml` sigue sin correr
+   migraciones, así que confirmar la columna en dev antes de desplegar la API.
+3. [ ] **Conectar el clasificador (P2)** — `document_matcher.py` son 307 líneas puras con 12 tests
+   que **no llama nadie**: `document_ingest.py:70` inserta `match_status` literal `'UNMATCHED'`.
+   Los 79 alias están sembrados y cubren los 37 requisitos, y la columna "Sugerencia" está
+   construida y vacía. Es cableado, no diseño.
+4. [ ] **La resolución polimórfica de `entity_id` está escrita 4 veces** (`CASE WHEN 'CARRIER' …
+   WHEN 'DRIVER' THEN da.carrier_id`), sobre 12 archivos. Es el ítem P5 y sigue siendo el de mayor
+   retorno estructural del módulo.
+5. [ ] **Borrar `uploadAndClassify`** si nadie la reclama: quedó con cero llamadores. `upload` y
+   `classifyBatch`, que sí usa la Bandeja, son independientes de ella.
+6. [x] ~~Decisión sobre "deshacer"~~ — **RESUELTA por el usuario: no se ofrece.** Verificado que
+   `DELETE /compliance-records/{id}/file` llama a `delete_document_version()`, que **borra el blob
+   del storage**; no hay archivado intermedio. `RenglonPendiente` ya está escrito para no ofrecerlo
+   si no llega `onDeshacer`, así que simplemente no se pasa. Corregir un error es subir el documento
+   correcto encima, que es una corrección sin pérdida.
+
+**Anotado para quien siga, y no es menor**: la suite completa del backend **no se puede correr de
+un tirón mientras se consulta la base a mano**. Los tests de integración toman conexiones del pooler
+en modo sesión, y matar corridas a mitad deja slots ocupados hasta que expiran — llegó a dar timeout
+hasta el MCP de Supabase. Correrlas separadas funciona y es rápido:
+`pytest -q -m "not integracion"` (25 s) y después `pytest -q -m integracion`.
+
 ### 2026-08-19 — Ronda 127: Certificación auditada, y los cimientos antes que la pantalla
 
 Arrancó como "analizá lo pendiente y prioritario de Certificación" y terminó **corrigiendo tres

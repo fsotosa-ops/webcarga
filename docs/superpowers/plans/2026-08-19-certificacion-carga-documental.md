@@ -78,7 +78,7 @@ FastAPI + asyncpg en `monitor-app/backend/api`; Postgres (Supabase).
 - Produces: columna `public.compliance_requirements.expiration_policy TEXT NOT NULL` con
   `CHECK (expiration_policy IN ('REQUIRED','OPTIONAL','NONE'))`.
 
-- [ ] **Step 1: Medir el estado de partida contra producción**
+- [x] **Step 1: Medir el estado de partida contra producción**
 
 Antes de escribir la migración, dejar registrado qué hay. Ejecuta:
 
@@ -93,7 +93,7 @@ el reparto es 19 / 16: los 2 de diferencia son `SEGURO_RC_EMPRESA` y `SEGURO_EET
 `is_active = false` esperando que negocio defina su regla.
 Si el número cambió, **detente y avisa**: la migración de abajo asume ese reparto.
 
-- [ ] **Step 2: Escribir la migración**
+- [x] **Step 2: Escribir la migración**
 
 ```sql
 -- La política de vencimiento de un requisito, con TRES estados nombrados.
@@ -130,7 +130,7 @@ COMMENT ON COLUMN public.compliance_requirements.expiration_policy IS
 (`carriers.py`, `drivers.py`, `assets.py`, `document_ingest.py`) y borrarla en la misma migración
 convierte un cambio aditivo en uno destructivo. Su retiro es una tarea futura.
 
-- [ ] **Step 3: Aplicar la migración y verificar el reparto**
+- [x] **Step 3: Aplicar la migración y verificar el reparto**
 
 Aplícala contra la base y ejecuta:
 
@@ -152,7 +152,7 @@ WHERE (expiration_policy = 'REQUIRED') <> COALESCE(has_expiration, false);
 
 Esperado: `0`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add monitor-app/backend/supabase/migrations/20260820100000_expiration_policy.sql
@@ -173,7 +173,7 @@ git commit -m "feat(certificacion): el vencimiento deja de ser un booleano con t
   `"Este documento requiere su fecha de vencimiento"` cuando la política es `REQUIRED` y no llega
   fecha. Con `OPTIONAL` y `NONE` acepta sin fecha.
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 En `tests/test_compliance.py`:
 
@@ -220,7 +220,7 @@ def test_file_upload_accepts_missing_date_when_optional():
 `grep -n "record_id}/file\|/file\"" tests/test_compliance.py` y copia su forma. No inventes una
 nueva; el repo ya tiene el patrón.
 
-- [ ] **Step 2: Correr y verificar que fallan**
+- [x] **Step 2: Correr y verificar que fallan**
 
 ```bash
 cd monitor-app/backend/api && venv/bin/python -m pytest tests/test_compliance.py -k "expiration_policy or missing_date" -v
@@ -228,7 +228,7 @@ cd monitor-app/backend/api && venv/bin/python -m pytest tests/test_compliance.py
 
 Esperado: FAIL — hoy `/file` acepta sin fecha siempre.
 
-- [ ] **Step 3: Implementar la validación**
+- [x] **Step 3: Implementar la validación**
 
 En `_apply_compliance_upload`, la consulta que ya lee el registro pasa a traer la política, y la
 validación va **antes** de tocar storage:
@@ -257,7 +257,7 @@ validación va **antes** de tocar storage:
 antes de editar (`sed -n '740,810p' app/routers/compliance.py`) — ya lee el registro y el
 `old_status`; **no agregues una segunda consulta**, extiende la que hay.
 
-- [ ] **Step 4: Correr y verificar que pasan**
+- [x] **Step 4: Correr y verificar que pasan**
 
 ```bash
 venv/bin/python -m pytest tests/test_compliance.py -v
@@ -265,7 +265,7 @@ venv/bin/python -m pytest tests/test_compliance.py -v
 
 Esperado: PASS, y los 61 tests previos del archivo siguen verdes.
 
-- [ ] **Step 5: Verificar contra Postgres real**
+- [x] **Step 5: Verificar contra Postgres real**
 
 El SQL nuevo se prueba con parámetros de verdad, no con literales sustituidos:
 
@@ -281,12 +281,12 @@ EXECUTE chk('<un record_id real de un requisito REQUIRED>');
 
 Esperado: una fila con `expiration_policy = 'REQUIRED'`.
 
-- [ ] **Step 6: Mutar los tests**
+- [x] **Step 6: Mutar los tests**
 
 Comenta la condición `if record["expiration_policy"] == "REQUIRED" ...` y corre los tests.
 Esperado: `test_file_upload_rejects_missing_date_when_required` FALLA. Restaura.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add monitor-app/backend/api/app/routers/compliance.py monitor-app/backend/api/tests/test_compliance.py
@@ -308,7 +308,7 @@ git commit -m "fix(certificacion): subir un documento pide la fecha que el requi
   `pendiente_predicate()` extendido. `/pending` devuelve un campo nuevo `urgencia` con valores
   `'VENCIDO' | 'POR_VENCER' | 'FALTA'`.
 
-- [ ] **Step 1: Medir las copias que existen**
+- [x] **Step 1: Medir las copias que existen**
 
 ```bash
 cd monitor-app/backend/api && grep -rn "INTERVAL '30 days'" app/routers/
@@ -318,7 +318,7 @@ Esperado: tres coincidencias — `carriers.py:282`, `drivers.py:224`, `assets.py
 regla escrita a mano tres veces, la misma clase de defecto que el "universo de viajes del día"
 (14 copias) que ya causó cuatro errores de conteo en este repo.
 
-- [ ] **Step 2: Escribir el test que falla**
+- [x] **Step 2: Escribir el test que falla**
 
 Crear `tests/test_vencimientos.py`:
 
@@ -355,7 +355,7 @@ def test_el_predicado_de_por_vencer_usa_la_constante():
     assert "cr.expiration_date" in sql
 ```
 
-- [ ] **Step 3: Correr y verificar que falla**
+- [x] **Step 3: Correr y verificar que falla**
 
 ```bash
 venv/bin/python -m pytest tests/test_vencimientos.py -v
@@ -363,7 +363,7 @@ venv/bin/python -m pytest tests/test_vencimientos.py -v
 
 Esperado: FAIL — el módulo no existe y hay tres literales.
 
-- [ ] **Step 4: Crear el módulo**
+- [x] **Step 4: Crear el módulo**
 
 `app/services/vencimientos.py`:
 
@@ -396,14 +396,14 @@ def por_vencer_predicate(alias: str = "cr") -> str:
     )
 ```
 
-- [ ] **Step 5: Reemplazar las tres copias**
+- [x] **Step 5: Reemplazar las tres copias**
 
 En `carriers.py`, `drivers.py` y `assets.py`, la expresión que hoy calcula `is_expiring_soon` pasa a
 interpolar `por_vencer_predicate(<alias que use ese archivo>)`. **Lee cada una antes de tocarla** —
 usan alias distintos y algunas ya excluyen los vencidos. El comportamiento observable no debe
 cambiar: son las mismas 30 días.
 
-- [ ] **Step 6: Extender `/pending`**
+- [x] **Step 6: Extender `/pending`**
 
 En `compliance.py`, `pendiente_predicate()` suma la ventana, y el SELECT expone la urgencia:
 
@@ -438,7 +438,7 @@ Y en `_PENDING_ROWS_SQL`, junto a los campos que ya devuelve:
 (`{por_vencer}` se interpola con `por_vencer_predicate("r")`; `req` ya está en el JOIN.)
 Agrega `urgencia` y `expiration_policy` al dict de respuesta de `list_pending_compliance_records`.
 
-- [ ] **Step 7: Correr todo el backend**
+- [x] **Step 7: Correr todo el backend**
 
 ```bash
 venv/bin/python -m pytest tests/ -q
@@ -447,7 +447,7 @@ venv/bin/python -m pytest tests/ -q
 Esperado: todos verdes. **Si algún test del embudo cambia de número, no lo ajustes sin entender por
 qué**: puede ser el bug de las tres lecturas desalineadas volviendo.
 
-- [ ] **Step 8: Verificar el conteo contra producción**
+- [x] **Step 8: Verificar el conteo contra producción**
 
 ```sql
 SELECT count(*) FROM public.compliance_records
@@ -457,7 +457,7 @@ WHERE is_current AND expiration_date >= CURRENT_DATE
 
 Esperado, medido el 2026-08-19: **3**. Esos son los que antes no aparecían en ninguna pantalla.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add monitor-app/backend/api/app/services/vencimientos.py monitor-app/backend/api/app/routers/ monitor-app/backend/api/tests/test_vencimientos.py
@@ -480,7 +480,7 @@ git commit -m "feat(certificacion): lo que esta por vencer deja de ser invisible
 - Produces: `PATCH /compliance-requirements/{id}/conditions` acepta
   `expiration_policy: 'REQUIRED'|'OPTIONAL'|'NONE'`. Sigue exigiendo `require_admin`.
 
-- [ ] **Step 1: Escribir el test de backend que falla**
+- [x] **Step 1: Escribir el test de backend que falla**
 
 En `tests/test_requirements.py`, copiando la forma de los tests de `PATCH /conditions` que ya
 existen ahí:
@@ -514,7 +514,7 @@ def test_patch_conditions_rejects_unknown_expiration_policy():
 
 Usa el helper de cliente admin que el archivo ya tenga (`grep -n "def make_" tests/test_requirements.py`).
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 ```bash
 venv/bin/python -m pytest tests/test_requirements.py -k expiration_policy -v
@@ -522,7 +522,7 @@ venv/bin/python -m pytest tests/test_requirements.py -k expiration_policy -v
 
 Esperado: FAIL — el campo no existe en el schema.
 
-- [ ] **Step 3: Agregarlo al schema y al router**
+- [x] **Step 3: Agregarlo al schema y al router**
 
 En `app/schemas/requirement.py`, dentro de `RequirementConditionsPatchBody`:
 
@@ -534,13 +534,13 @@ En `requirements.py`, el `PATCH /conditions` ya arma el UPDATE por campos presen
 `expiration_policy` a esa construcción, no escribas un UPDATE nuevo.** Lee la función completa antes
 de editar.
 
-- [ ] **Step 4: Correr y verificar que pasan**
+- [x] **Step 4: Correr y verificar que pasan**
 
 ```bash
 venv/bin/python -m pytest tests/test_requirements.py -v
 ```
 
-- [ ] **Step 5: Definir el tipo, una sola vez**
+- [x] **Step 5: Definir el tipo, una sola vez**
 
 En `monitor-app/frontend/lib/types.ts`, junto a los otros tipos de Certificación:
 
@@ -555,7 +555,7 @@ Y súmalo a `CertificationRequirement` y a `PendingComplianceRow` como
 `expiration_policy: PoliticaVencimiento`, junto con
 `urgencia: 'VENCIDO' | 'POR_VENCER' | 'FALTA'` en `PendingComplianceRow` (lo produce la Task 3).
 
-- [ ] **Step 6: El panel de Configuración lo edita**
+- [x] **Step 6: El panel de Configuración lo edita**
 
 En `CondicionPanel.tsx`, junto a los controles de `is_active` y de alcance, un selector de tres
 opciones. **Sólo tokens y escala** (trinquete en cero):
@@ -580,13 +580,13 @@ opciones. **Sólo tokens y escala** (trinquete en cero):
 Sigue el patrón de guardado que el panel ya usa: el campo viaja **sólo si cambió** (ver el
 comentario de `activoSucio` en `CondicionPanel.tsx:139-141`), y "Aplicar" queda gateado por dirty.
 
-- [ ] **Step 7: Test de componente + mutación**
+- [x] **Step 7: Test de componente + mutación**
 
 Un test que elija "Opcional", guarde, y exija que el body incluya `expiration_policy: 'OPTIONAL'`;
 y otro que exija que **no** viaje cuando no se tocó. Después mutá: hacé que siempre viaje, y
 confirmá que el segundo test falla.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add monitor-app/backend/api/app/schemas/requirement.py monitor-app/backend/api/app/routers/requirements.py monitor-app/backend/api/tests/test_requirements.py monitor-app/frontend/app/dashboard/admin/settings/ monitor-app/frontend/lib/
@@ -621,7 +621,7 @@ export function RenglonPendiente(props: {
 }): JSX.Element
 ```
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 ```tsx
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -704,7 +704,7 @@ describe('RenglonPendiente', () => {
 })
 ```
 
-- [ ] **Step 2: Correr y verificar que fallan**
+- [x] **Step 2: Correr y verificar que fallan**
 
 ```bash
 cd monitor-app/frontend && npx vitest run components/compliance/RenglonPendiente.test.tsx
@@ -712,7 +712,7 @@ cd monitor-app/frontend && npx vitest run components/compliance/RenglonPendiente
 
 Esperado: FAIL — el componente no existe.
 
-- [ ] **Step 3: Implementar el componente**
+- [x] **Step 3: Implementar el componente**
 
 Requisitos no negociables al escribirlo:
 
@@ -728,13 +728,13 @@ Requisitos no negociables al escribirlo:
 - **Sólo tokens y escala.** Gris → `text-informativo`. Nada de `text-[10px]` ni `text-gray-*`.
 - Español neutral: "Arrastra aquí o elige un archivo", "Guarda", "Vence el".
 
-- [ ] **Step 4: Correr y verificar que pasan**
+- [x] **Step 4: Correr y verificar que pasan**
 
 ```bash
 npx vitest run components/compliance/RenglonPendiente.test.tsx
 ```
 
-- [ ] **Step 5: Verificar los trinquetes**
+- [x] **Step 5: Verificar los trinquetes**
 
 ```bash
 npx vitest run lib/ui/sistema.test.ts lib/ui/escala.test.ts
@@ -743,12 +743,12 @@ npx vitest run lib/ui/sistema.test.ts lib/ui/escala.test.ts
 Esperado: PASS. Si fallan, el componente metió color crudo o un tamaño fuera de escala — **arréglalo
 en el componente, no subas el tope.**
 
-- [ ] **Step 6: Mutar**
+- [x] **Step 6: Mutar**
 
 Cambia el componente para que llame `onSubir` apenas se elige el archivo, ignorando la política.
 Esperado: falla el test "con politica REQUIRED pide la fecha antes de subir". Restaura.
 
-- [ ] **Step 7: Deshacer lo recién cargado**
+- [x] **Step 7: Deshacer lo recién cargado**
 
 El spec (§3, estado 5) pide poder deshacer mientras sea el último documento cargado. Hoy **nada se
 puede deshacer** y por eso todo da miedo.
@@ -790,7 +790,7 @@ que no se ofrezca. No inventes un DELETE: `DELETE /compliance-records/{id}/file`
 registro a `MISSING`, pero **borra evidencia**, así que usarlo como "deshacer" es una decisión de
 producto, no de implementación. Reporta y pregunta.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add monitor-app/frontend/components/compliance/RenglonPendiente.tsx monitor-app/frontend/components/compliance/RenglonPendiente.test.tsx
@@ -809,7 +809,7 @@ git commit -m "feat(certificacion): el renglon pide lo que su requisito exige"
 **Interfaces:**
 - Consumes: `RenglonPendiente` (Task 5), `urgencia` y `expiration_policy` de `/pending` (Task 3).
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 ```tsx
 it('el cajon ya no monta la bandeja adentro', async () => {
@@ -834,13 +834,13 @@ it('sube por el camino directo, no por el de la pila', async () => {
 })
 ```
 
-- [ ] **Step 2: Correr y verificar que fallan**
+- [x] **Step 2: Correr y verificar que fallan**
 
 ```bash
 npx vitest run components/compliance/CarrierDrawer.test.tsx
 ```
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 - Quitar `<TriageWorkbench …>` del cajón y su import.
 - Reemplazar el mapeo de pendientes por `<RenglonPendiente>`.
@@ -860,17 +860,17 @@ npx vitest run components/compliance/CarrierDrawer.test.tsx
   `<Link href="/dashboard/compliance?vista=documentos">Llévalos a la Bandeja</Link>`.
 - `invalidarCertificacion(queryClient)` se sigue usando igual (`lib/queries/certificacion.ts`).
 
-- [ ] **Step 4: Correr y verificar que pasan**
+- [x] **Step 4: Correr y verificar que pasan**
 
 ```bash
 npx vitest run components/compliance/ lib/ui/
 ```
 
-- [ ] **Step 5: Mutar**
+- [x] **Step 5: Mutar**
 
 Devuelve `uploadAndClassify` al `subir()`. Esperado: falla "sube por el camino directo". Restaura.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add monitor-app/frontend/components/compliance/ monitor-app/frontend/lib/api/compliance.ts
@@ -888,7 +888,7 @@ git commit -m "feat(certificacion): el cajon carga por el camino directo y suelt
 **Interfaces:**
 - Consumes: `RenglonPendiente` (Task 5).
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```tsx
 it('la ficha usa el MISMO renglon que Certificacion', async () => {
@@ -901,13 +901,13 @@ it('la ficha usa el MISMO renglon que Certificacion', async () => {
 })
 ```
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 ```bash
 npx vitest run components/dashboard/DocumentChecklist.test.tsx
 ```
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 `ChecklistItem` gana `expiration_policy`. La fila que hoy dibuja el botón `Upload` de
 `DocumentChecklist` se reemplaza por `<RenglonPendiente>`, adaptando `ChecklistItem` a la forma que
@@ -916,13 +916,13 @@ de la HU-04 y es donde reaparecería el frankenstein.
 
 `lib/utils/complianceChecklist.ts` pasa a mapear también `expiration_policy` desde la respuesta.
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 ```bash
 npx vitest run components/dashboard/ components/compliance/
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add monitor-app/frontend/components/dashboard/DocumentChecklist.tsx monitor-app/frontend/lib/utils/complianceChecklist.ts monitor-app/frontend/components/dashboard/DocumentChecklist.test.tsx
@@ -940,7 +940,7 @@ git commit -m "feat(certificacion): la ficha carga con el mismo renglon, no con 
 **Interfaces:**
 - Consumes: `enlaceAFilaAbierta` de `hooks/useFilaAbierta.ts`.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 ```tsx
 it('crear una empresa la abre DENTRO de Certificacion', async () => {
@@ -957,7 +957,7 @@ it('crear una empresa la abre DENTRO de Certificacion', async () => {
 
 Adapta el disparo del `onCreated` a cómo el test ya simula `NewCarrierPanel` en ese archivo.
 
-- [ ] **Step 2: Correr y verificar que falla**
+- [x] **Step 2: Correr y verificar que falla**
 
 ```bash
 npx vitest run app/dashboard/compliance/page.test.tsx
@@ -965,7 +965,7 @@ npx vitest run app/dashboard/compliance/page.test.tsx
 
 Esperado: FAIL — hoy hace `router.push('/dashboard/carriers/${created.id}?tab=documentos')`.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```tsx
   function handleCarrierCreated(created: CarrierCreateResult) {
@@ -977,13 +977,13 @@ Esperado: FAIL — hoy hace `router.push('/dashboard/carriers/${created.id}?tab=
   }
 ```
 
-- [ ] **Step 4: Correr y verificar que pasa**
+- [x] **Step 4: Correr y verificar que pasa**
 
 ```bash
 npx vitest run app/dashboard/compliance/
 ```
 
-- [ ] **Step 5: Confirmar que no queda ninguna fuga**
+- [x] **Step 5: Confirmar que no queda ninguna fuga**
 
 ```bash
 grep -rn "dashboard/carriers" components/compliance/ app/dashboard/compliance/
@@ -991,7 +991,7 @@ grep -rn "dashboard/carriers" components/compliance/ app/dashboard/compliance/
 
 Esperado: **sin coincidencias**.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add monitor-app/frontend/app/dashboard/compliance/
