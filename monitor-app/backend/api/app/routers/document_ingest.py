@@ -63,14 +63,23 @@ _SQL_COLA = """
            -- multiplicaria la fila si algun dia hay mas de un registro
            -- vigente por (entity_id, requirement_id), y una cola que muestra
            -- el mismo archivo dos veces es peor que una que no avisa.
-           CASE WHEN i.entity_id IS NOT NULL AND i.requirement_id IS NOT NULL
-                THEN EXISTS (
-                    SELECT 1 FROM public.compliance_records cr
-                     WHERE cr.entity_id = i.entity_id
-                       AND cr.requirement_id = i.requirement_id
-                       AND cr.is_current = true
-                       AND cr.file_url IS NOT NULL)
-                ELSE false END                        AS casillero_ocupado
+           -- Y aca NO va la guarda de NULL que llevan sus dos vecinas de
+           -- arriba, aunque la simetria la pida: un EXISTS correlacionado con
+           -- NULL no encuentra fila y devuelve `false`, nunca NULL. Se probo
+           -- empiricamente al escribir esto — sacarle la guarda no cambiaba
+           -- ningun resultado, o sea que ningun test podia defenderla.
+           --
+           -- La diferencia con las vecinas es real y vale entenderla: una
+           -- window function SI agrupa los NULL entre si, y sin su guarda
+           -- todos los items sin destino caen en la misma particion. Dejar
+           -- aca una guarda inerte haria leer las tres como decorativas, y
+           -- entonces alguien sacaria una de las que si sostienen algo.
+           EXISTS (
+               SELECT 1 FROM public.compliance_records cr
+                WHERE cr.entity_id = i.entity_id
+                  AND cr.requirement_id = i.requirement_id
+                  AND cr.is_current = true
+                  AND cr.file_url IS NOT NULL) AS casillero_ocupado
     FROM public.document_ingest_items i
     JOIN public.document_ingest_batches b ON b.id = i.batch_id
     LEFT JOIN public.carriers c
