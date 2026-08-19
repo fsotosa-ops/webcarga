@@ -901,7 +901,9 @@ entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento a
   deliberado y está bien fundado (una excepción cancela en cascada a las otras TMS, incidente
   07/08), y el bloque **sí imprime** el error. Lo que falta es **distinguir "no había datos nuevos"
   de "el job falló" en algún lugar visible sin abrir logs**. Es diseño, no un arreglo rápido.
-- [ ] Mirar en pantalla la tile "Ya no está en el TMS" del Monitor — desplegada y sin click-through.
+- [x] ~~Mirar en pantalla la tile "Ya no está en el TMS"~~ — **CONFIRMADA por el usuario el
+  2026-08-19**: aparece en el Monitor. Conteo esperado al momento de confirmarlo: 3 viajes hoy
+  (todos Sodimac) sobre 8 abiertos; 11 marcados sobre 23 abiertos en los últimos 7 días.
 
 **Deuda técnica comprometida**
 1. [ ] (hardening post-MVP/Hito 4, pedido explícito del usuario) Migrar `qanalytics_agg_nro_sap_transformer.py` (Walmart) a `TENANT_COLUMN_MAPS`, y evaluar consolidar las 5 cadenas de bloques Mage duplicadas por tenant (scraper→loader→transformer→tabla temp→insert repetidas íntegras entre Walmart e IANSA). La mitad del camino ya está hecha: la URL de extracción y el POST/polling salieron a `utils/extraction_client.py`, y el mapeo de columnas a `utils/qanalytics_tenant_column_maps.py`.
