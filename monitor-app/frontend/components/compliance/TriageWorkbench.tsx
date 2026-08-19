@@ -325,7 +325,14 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
 
   return (
     <div className="space-y-3">
-      {canEdit && !carrierId && (
+      {/* Oculto mientras hay selección: la barra contextual es la dueña de ese
+          modo, y dos cajas de "Buscar empresa" en pantalla a la vez —esta y
+          la de MoveToCarrierBar— significan cosas distintas ("¿de quién es lo
+          que voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?") sin
+          que elegir en la equivocada avise nada. El estado no se pierde, sólo
+          deja de mostrarse: `empresaDelLote` sigue vivo y vuelve a aparecer
+          con lo ya elegido en cuanto la selección se vacía. */}
+      {canEdit && !carrierId && selectedIds.size === 0 && (
         <div>
           <p className="text-etiqueta text-informativo pb-1">
             ¿De quién son estos documentos? Elegir la empresa hace que el sistema

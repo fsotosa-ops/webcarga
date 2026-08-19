@@ -126,4 +126,15 @@ describe('TriageFileTable — colisiones', () => {
     expect(screen.queryByText(/mismo casillero|ya está en la cola|ya tiene un documento/i))
       .not.toBeInTheDocument()
   })
+
+  // Ninguna señal reemplaza a otra: una fila puede traer las tres a la vez, y
+  // las tres tienen que verse — no sólo la estructura de tres `if`
+  // independientes que las hace posibles, sino la prueba de que efectivamente
+  // aparecen juntas.
+  it('las tres señales aparecen juntas cuando una fila las trae todas', () => {
+    setup({ rows: [fila({ mismo_casillero: 2, mismo_contenido: 2, casillero_ocupado: true })] })
+    expect(screen.getByText(/ya está en la cola/i)).toBeInTheDocument()
+    expect(screen.getByText(/2 archivos.*mismo/i)).toBeInTheDocument()
+    expect(screen.getByText(/ya tiene un documento/i)).toBeInTheDocument()
+  })
 })

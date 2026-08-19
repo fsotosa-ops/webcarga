@@ -170,7 +170,7 @@ function Colisiones({ row }: { row: QueueRow }) {
         <div className="space-y-0.5">
           {avisos.map(aviso => (
             <p key={aviso} className="flex items-center gap-1.5 text-etiqueta text-espera">
-              <AlertTriangle size={11} className="shrink-0" />
+              <AlertTriangle size={11} className="shrink-0" aria-hidden="true" />
               {aviso}
             </p>
           ))}

@@ -180,6 +180,38 @@ describe('TriageWorkbench', () => {
       undefined, expect.any(Array),
     ))
   })
+
+  // Dos cajas que dicen "Buscar empresa" y significan cosas distintas —"¿de
+  // quién es lo que voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?"—
+  // nunca son relevantes a la vez: seleccionar archivos es entrar en un modo,
+  // y la barra contextual es la dueña de ese modo.
+  it('seleccionar un archivo oculta el selector del lote, y deseleccionar lo devuelve sin perder la empresa elegida', async () => {
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
+    } as never)
+    setup()
+    await screen.findByText('i1.png')
+
+    fireEvent.change(await screen.findByPlaceholderText(/buscar empresa \(opcional\)/i), { target: { value: 'char' } })
+    fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+    expect(screen.queryByPlaceholderText(/buscar empresa \(opcional\)/i)).not.toBeInTheDocument()
+
+    // El mismo click deselecciona (toggle): el selector vuelve.
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+    expect(await screen.findByPlaceholderText(/buscar empresa \(opcional\)/i)).toBeInTheDocument()
+
+    // La prueba de que no se perdió: subir SIN volver a elegir sigue mandando
+    // 'c1'. Un selector que "vuelve" vacío sería peor que el problema que
+    // se está arreglando.
+    fireEvent.drop(screen.getByTestId('triage-dropzone'), {
+      dataTransfer: { files: [new File(['x'], 'b.pdf', { type: 'application/pdf' })] },
+    })
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledWith(
+      'c1', expect.any(Array),
+    ))
+  })
 })
 
 // El caso de uso que justifica toda la bandeja: soltar la carpeta de 120
