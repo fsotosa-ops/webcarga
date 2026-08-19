@@ -465,7 +465,29 @@ SELECT
     -- de dos lecturas que este modulo ya tuvo una vez. Hoy son 0 filas —se
     -- midio—, y se escribe asi para que sigan siendo 0 problemas cuando
     -- aparezca la primera.
+    --
+    -- 'AL_DIA' (Task 4, ronda de arreglo 1): con `estado='falta'` (el default
+    -- de siempre) esta rama nunca se alcanzaba porque TODAS las filas que
+    -- llegaban aca ya eran pendientes. Desde que `estado='todos'` existe, una
+    -- fila cubierta cae en el `CASE` igual que cualquier otra, y sin esta
+    -- rama terminaba en el `ELSE 'FALTA'` de abajo — 'FALTA' pasaba a
+    -- significar dos cosas a la vez ("falta de verdad" y "no entro en
+    -- ninguna de las anteriores"), la misma clase de bug que este modulo ya
+    -- tuvo cinco veces con un valor cargando dos sentidos.
+    --
+    -- Es la MISMA definicion de "al dia" que ya usa la rama 'al_dia' del
+    -- `CASE $10::text` de arriba (`NOT pendiente_predicate`) — no una lista
+    -- de estados escrita a mano, que es como el embudo y el cajon ya se
+    -- desincronizaron una vez. Va PRIMERO, aunque el orden no cambia el
+    -- resultado: `pendiente_predicate` arma sus tres vias (`status IN
+    -- ('MISSING','EXPIRED')`, `vencido_predicate`, `por_vencer_predicate`)
+    -- con OR, asi que si cualquiera de las tres ramas de abajo fuera
+    -- verdadera, `pendiente_predicate` ya seria verdadero y esta rama jamas
+    -- se cumpliria — son mutuamente excluyentes por construccion. Ponerla
+    -- primera es sobre legibilidad: el `CASE` se lee como la particion que
+    -- es, "al dia o no", antes de entrar al detalle de POR QUE no lo esta.
     CASE
+        WHEN NOT {pendiente_predicate('r')} THEN 'AL_DIA'
         WHEN r.status = 'EXPIRED' OR {vencido_predicate('r')} THEN 'VENCIDO'
         WHEN {por_vencer_predicate('r')} THEN 'POR_VENCER'
         ELSE 'FALTA'
@@ -505,7 +527,12 @@ async def list_pending_compliance_records(
         description="Acota a un sujeto concreto (un conductor o un vehículo). "
                     "Se usa junto con `category` para el cajón de una persona.",
     ),
-    limit: int = Query(50, le=200),
+    # 500, no 200 (ronda de arreglo 1, Task 4): la ficha de empresa pide UNA
+    # sola vez con estado='todos' y deriva sus cuatro cifras contando
+    # `urgencia` sobre las filas que llegaron, en vez de pedir las cuatro
+    # variantes de estado por separado. Con el tope viejo, ese pedido único
+    # volvia 422 antes de llegar al handler. Mismo tope que ya usa /status.
+    limit: int = Query(50, le=500),
     offset: int = Query(0, ge=0),
     estado: Literal["falta", "por_vencer", "al_dia", "todos"] = Query(
         "falta",

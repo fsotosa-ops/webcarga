@@ -21,15 +21,33 @@ import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
 import type { EstadoDocumental, PendingComplianceRow } from '@/lib/types'
 
-/** Los cuatro estados, con la cifra y el matiz de `<Cifra>` que le
- *  corresponden. Uno por bucket de `/pending?estado=`, así que las cuatro
- *  consultas de abajo tienen que cubrir exactamente estos cuatro valores. */
+/** Las cuatro cifras, con el matiz de `<Cifra>` que le corresponde a cada
+ *  una. "Requisitos" es la única que se apoya en `total` —exacto, viene del
+ *  servidor— y por eso es también la única que se muestra siempre; las otras
+ *  tres cuentan sobre las filas QUE LLEGARON, así que dependen de que
+ *  llegaron TODAS (ver `completa` más abajo). */
 const CIFRAS: { estado: EstadoDocumental; etiqueta: string; tono: 'normal' | 'atencion' | 'urgente' | 'resuelto' }[] = [
   { estado: 'todos',      etiqueta: 'requisitos',  tono: 'normal' },
   { estado: 'al_dia',     etiqueta: 'al día',      tono: 'resuelto' },
   { estado: 'falta',      etiqueta: 'faltan',      tono: 'urgente' },
   { estado: 'por_vencer', etiqueta: 'por vencer',  tono: 'atencion' },
 ]
+
+/** Qué mostrar de `allRows` para cada botón del filtro — de la MISMA
+ *  `urgencia` que ya trae cada fila, no un date-math nuevo del lado del
+ *  cliente. 'falta' es "no está al día" (`urgencia !== 'AL_DIA'`), la MISMA
+ *  definición que `pendiente_predicate` en el backend: ese predicado es
+ *  exactamente el complemento de "al día" (`compliance.py`, rama `AL_DIA`
+ *  del `CASE` de urgencia, ronda de arreglo 1). Escribir acá una lista de
+ *  estados a mano sería la QUINTA copia del mismo criterio. */
+function filasDelEstado(rows: PendingComplianceRow[], estado: EstadoDocumental): PendingComplianceRow[] {
+  switch (estado) {
+    case 'todos':      return rows
+    case 'al_dia':     return rows.filter(r => r.urgencia === 'AL_DIA')
+    case 'por_vencer': return rows.filter(r => r.urgencia === 'POR_VENCER')
+    case 'falta':      return rows.filter(r => r.urgencia !== 'AL_DIA')
+  }
+}
 
 /** Una fila con documento cargado: nombre, fecha, estado y "Ver". La otra
  *  mitad de la misma lista —`RenglonPendiente`, para MISSING/EXPIRED— ya
@@ -76,10 +94,18 @@ function FilaDocumento({ fila, viendo, onVer }: {
  *  módulo. Medido: 32 de 34 empresas activas no tienen ni un documento
  *  cargado, y la única con 23 no los podía ver en ningún lado.
  *
- *  Arranca mostrando TODO (no sólo lo que falta) y deja elegir con el mismo
- *  filtro de cuatro estados que ya usa el resto del módulo. El agrupado por
- *  sujeto —CARRIER→DRIVER→ASSET, "De la empresa"— es el MISMO que el cajón:
- *  vive en `lib/utils/agruparPorSujeto`, no una segunda copia acá. */
+ *  **UNA sola consulta** (ronda de arreglo 1): `estado='todos'`, una vez,
+ *  con `limit: 500`. La primera versión pedía las cuatro variantes en
+ *  paralelo porque `urgencia` sólo distinguía VENCIDO/POR_VENCER/FALTA — una
+ *  fila al día cargaba el mismo `'FALTA'` que una que de verdad faltaba, así
+ *  que no había forma de contar "al día" sin pedirlo aparte. Con la cuarta
+ *  rama del CASE (`'AL_DIA'`, `compliance.py`), la única fuente de verdad
+ *  para las cuatro cifras y para el filtro es la MISMA fila: cambiar de
+ *  filtro es contar/elegir sobre lo que ya llegó, no una consulta nueva.
+ *
+ *  El agrupado por sujeto —CARRIER→DRIVER→ASSET, "De la empresa"— es el
+ *  MISMO que el cajón: vive en `lib/utils/agruparPorSujeto`, no una segunda
+ *  copia acá. */
 export default function FichaEmpresaPage() {
   const { carrierId } = useParams<{ carrierId: string }>()
   const canEdit = useCanEdit()
@@ -89,7 +115,7 @@ export default function FichaEmpresaPage() {
   /** El documento que se está mirando, sea cual sea su sujeto. Se guarda el
    *  id y no la fila completa: `/pending` nunca trae `file_url` firmada —
    *  firmarla ahí sería una llamada HTTP por archivo sobre una lista que
-   *  puede traer 200— así que hay que volver a pedir el registro, ahora sí
+   *  puede traer 500— así que hay que volver a pedir el registro, ahora sí
    *  de a uno, cuando alguien elige "Ver". */
   const [viendoId, setViendoId] = useState<string | null>(null)
   const [viendoLabel, setViendoLabel] = useState('')
@@ -99,29 +125,42 @@ export default function FichaEmpresaPage() {
     queryFn: () => carriersApi.get(carrierId),
   })
 
-  /** Las cuatro variantes de `/pending`, una por bucket. No es una sola
-   *  consulta filtrada porque las cuatro cifras y el filtro tienen que poder
-   *  mostrar un número real a la vez —cambiar de "Todo" a "Al día" no puede
-   *  vaciar las otras tres cifras que ya se habían mostrado—, y el backend no
-   *  tiene un endpoint que devuelva las cuatro juntas (sí lo tiene por
-   *  requisito vencido/al día en `/status`, pero no por "por vencer": ese
-   *  bucket sólo existe acá). */
-  const todosQuery     = usePendientesPorEstado(carrierId, 'todos')
-  const alDiaQuery     = usePendientesPorEstado(carrierId, 'al_dia')
-  const faltaQuery     = usePendientesPorEstado(carrierId, 'falta')
-  const porVencerQuery = usePendientesPorEstado(carrierId, 'por_vencer')
-  const porBucket = { todos: todosQuery, al_dia: alDiaQuery, falta: faltaQuery, por_vencer: porVencerQuery }
-  const activa = porBucket[estadoFiltro]
+  const todosQuery = useQuery({
+    queryKey: clavesCertificacion.pendientes(carrierId, undefined, 'todos'),
+    queryFn: () => complianceApi.listPending({ carrierId, estado: 'todos', limit: 500 }),
+  })
 
-  const rows = activa.data?.rows ?? []
+  const allRows = todosQuery.data?.rows ?? []
+  const total = todosQuery.data?.total
+  /** Contar sobre `allRows` sólo es honesto si llegaron TODAS. Si el
+   *  servidor cortó por el límite, `allRows.length < total` — y en ese caso
+   *  las tres cifras derivadas mienten por definición (cuentan una muestra,
+   *  no el universo), así que no se muestran. "Requisitos" no depende de
+   *  esto: sale de `total`, que el servidor calcula sobre TODO el universo
+   *  sin importar cuántas filas mandó (`count(*) OVER()`, antes del LIMIT). */
+  const completa = total != null && allRows.length >= total
+
+  const rows = filasDelEstado(allRows, estadoFiltro)
   const sujetos = agruparPorSujeto(rows)
+
+  const conteos: Partial<Record<EstadoDocumental, number>> = {
+    todos: total,
+    ...(completa && {
+      al_dia:     filasDelEstado(allRows, 'al_dia').length,
+      falta:      filasDelEstado(allRows, 'falta').length,
+      por_vencer: filasDelEstado(allRows, 'por_vencer').length,
+    }),
+  }
+
   /** El fleet-derivado (Ronda 85: "la flota manda cuando existe") viaja en
-   *  cada fila de `/pending`, así que basta la primera. Sin filas —empresa
-   *  sin ningún documento aplicable— no hay de dónde sacarlo, y no se
-   *  reemplaza por la gestión DECLARADA de `carriersApi.get`: son dos
+   *  cada fila de `/pending`, así que basta la primera. Sin filas —o con
+   *  flota sin tipo declarado— no hay de dónde sacarlo: el chip lo dice en
+   *  vez de desaparecer (concern de la ronda anterior: el vacío es uno de
+   *  los cuatro estados obligatorios de pantalla, no una ausencia muda). No
+   *  se reemplaza por la gestión DECLARADA de `carriersApi.get`: son dos
    *  fuentes del mismo concepto y mezclarlas mostraría un chip que no
    *  coincide con lo que el resto del módulo (el embudo) ya muestra. */
-  const tipoOperacion = todosQuery.data?.rows[0]?.carrier_operation_types.join(' + ')
+  const tipoOperacion = allRows[0]?.carrier_operation_types.join(' + ')
 
   const previewQuery = useQuery({
     queryKey: ['compliance-record-file', viendoId],
@@ -170,10 +209,16 @@ export default function FichaEmpresaPage() {
             <span className={`text-etiqueta font-semibold px-2 py-0.5 rounded-full ${STATUS_CLS[carrier.operational_status]}`}>
               {STATUS_LABELS[carrier.operational_status]}
             </span>
-            {tipoOperacion && (
-              <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
-                {tipoOperacion}
-              </span>
+            {!todosQuery.isPending && (
+              tipoOperacion ? (
+                <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
+                  {tipoOperacion}
+                </span>
+              ) : (
+                <span className="text-etiqueta font-medium px-2 py-0.5 rounded-full bg-accent/5 text-informativo">
+                  Tipo de operación sin determinar
+                </span>
+              )
             )}
           </div>
         }
@@ -182,34 +227,32 @@ export default function FichaEmpresaPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {CIFRAS.map(c => (
           <div key={c.estado} className="border border-border rounded-xl bg-white px-4 py-3">
-            <Cifra valor={porBucket[c.estado].data?.total} etiqueta={c.etiqueta} tono={c.tono} />
+            <Cifra valor={conteos[c.estado]} etiqueta={c.etiqueta} tono={c.tono} />
           </div>
         ))}
       </div>
 
-      <FiltroDeEstado
-        valor={estadoFiltro}
-        onCambiar={setEstadoFiltro}
-        conteos={{
-          todos: todosQuery.data?.total,
-          al_dia: alDiaQuery.data?.total,
-          falta: faltaQuery.data?.total,
-          por_vencer: porVencerQuery.data?.total,
-        }}
-      />
+      {!completa && total != null && (
+        <p className="text-etiqueta text-informativo">
+          Se listan los primeros {allRows.length} de {total} — Al día, Faltan y Por vencer no se
+          muestran hasta tener todos, para no mostrar un conteo que no es.
+        </p>
+      )}
+
+      <FiltroDeEstado valor={estadoFiltro} onCambiar={setEstadoFiltro} conteos={conteos} />
 
       <div className="space-y-3">
-        {activa.isPending && <Estado tipo="cargando" />}
+        {todosQuery.isPending && <Estado tipo="cargando" />}
 
-        {activa.error && (
+        {todosQuery.error && (
           <Estado
             tipo="error"
             titulo="No se pudo cargar la documentación"
-            detalle={activa.error instanceof Error ? activa.error.message : undefined}
+            detalle={todosQuery.error instanceof Error ? todosQuery.error.message : undefined}
           />
         )}
 
-        {!activa.isPending && !activa.error && rows.length === 0 && (
+        {!todosQuery.isPending && !todosQuery.error && allRows.length === 0 && (
           <Estado
             tipo="vacio"
             titulo={`Nadie cargó documentos de ${carrier.business_name} todavía`}
@@ -217,7 +260,18 @@ export default function FichaEmpresaPage() {
           />
         )}
 
-        {!activa.isPending && !activa.error && sujetos.map(s => (
+        {/* Distinto del vacío de arriba: acá SÍ hay documentos, sólo que
+            ninguno queda del lado del filtro elegido. Mostrar el mismo "nadie
+            cargó nada" sería mentir sobre una empresa que sí tiene. */}
+        {!todosQuery.isPending && !todosQuery.error && allRows.length > 0 && rows.length === 0 && (
+          <Estado
+            tipo="vacio"
+            titulo="No hay documentos en ese estado"
+            detalle={`${carrier.business_name} tiene documentos, pero ninguno queda en este filtro. Elige "Todo" para verlos todos.`}
+          />
+        )}
+
+        {!todosQuery.isPending && !todosQuery.error && rows.length > 0 && sujetos.map(s => (
           <div key={s.clave} className="border border-border rounded-xl bg-white overflow-hidden">
             <p className="px-3 py-2 text-dato font-semibold text-text-primary bg-accent/5 border-b border-border">
               {s.titulo}
@@ -261,11 +315,4 @@ export default function FichaEmpresaPage() {
       )}
     </div>
   )
-}
-
-function usePendientesPorEstado(carrierId: string, estado: EstadoDocumental) {
-  return useQuery({
-    queryKey: clavesCertificacion.pendientes(carrierId, undefined, estado),
-    queryFn: () => complianceApi.listPending({ carrierId, estado, limit: 200 }),
-  })
 }

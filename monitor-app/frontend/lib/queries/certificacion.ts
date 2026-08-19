@@ -42,11 +42,14 @@ export const clavesCertificacion = {
    *  piden respuestas distintas del mismo endpoint, y compartir clave haría
    *  que uno sirviera la respuesta cacheada del otro.
    *
-   *  `estado` también va en la clave (Task 4, ficha de empresa): la ficha pide
-   *  las cuatro variantes (`todos`/`falta`/`por_vencer`/`al_dia`) a la vez
-   *  —una por cifra y por filtro—, y sin este segmento las cuatro
-   *  consultas compartirían UNA sola entrada de caché y se pisarían entre
-   *  sí. El cajón sigue sin pasarlo, así que sigue viajando `null`. */
+   *  `estado` también va en la clave: el cajón pide `falta` (no lo pasa,
+   *  viaja `null`) y la ficha de empresa pide `todos` — sin este segmento
+   *  las dos comparten UNA sola entrada de caché y una pisa a la otra según
+   *  quién haya montado primero. Ronda de arreglo 1 (Task 4): la ficha dejó
+   *  de pedir las cuatro variantes en paralelo —pedía `todos` una vez y las
+   *  otras tres sólo para contarlas, cuando `urgencia` ya trae esa cuenta
+   *  en la misma fila— y ahora pide sólo `todos`; el resto se filtra en el
+   *  cliente sobre esas filas, sin volver a la red. */
   pendientes: (carrierId?: string, entityId?: string, estado?: string) =>
     ['compliance-pending', carrierId ?? null, entityId ?? null, estado ?? null] as const,
   /** El catálogo de requisitos de un tipo de entidad. */

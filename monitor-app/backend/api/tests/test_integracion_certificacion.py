@@ -33,6 +33,7 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
+from app.routers.compliance import list_pending_compliance_records
 from app.routers.requirements import SQL_CATALOGO, recalc
 from app.services.requirement_conditions import (
     SQL_ENTIDADES_QUE_APLICAN,
@@ -661,6 +662,61 @@ async def test_el_alcance_de_un_requisito_de_un_cliente_no_cuenta_a_toda_empresa
     assert str(desvinculada) not in aplican
     assert fila["universo"] == await conn.fetchval("SELECT count(*) FROM public.carriers")
     assert fila["universo"] > fila["alcanzadas"]
+
+
+# ── 5. `/pending?estado=todos`: la urgencia de una fila al día ────────────
+#
+# Ronda de arreglo 1 de la ficha de empresa (Task 4). Con `estado='falta'`
+# (el default de siempre) esta rama del CASE nunca se alcanzaba: TODAS las
+# filas que llegaban a esa consulta ya eran pendientes. Desde que
+# `estado='todos'` existe, una fila cubierta pasa por el mismo CASE que
+# cualquier otra, y sin una rama propia caía en el `ELSE 'FALTA'` de abajo —
+# 'FALTA' pasaba a significar dos cosas a la vez ("falta de verdad" y "no
+# entró en ninguna de las anteriores"), la misma clase de bug que este módulo
+# ya tuvo cinco veces con un valor cargando dos sentidos.
+#
+# Esto ejecuta el SQL real, no lo mockea: un `AsyncMock` nunca hubiera visto
+# el defecto, porque el mock devuelve la urgencia que el test le dicta, no la
+# que calcula el CASE.
+
+
+async def test_pending_todos_marca_al_dia_una_fila_cubierta_sin_problema_de_fecha(
+    conexion_revertida,
+):
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    empresa = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", empresa, cliente)
+
+    # Requisito acotado al cliente sintetico: sin esto, un requisito CARRIER
+    # sin filtro siembra un MISSING para cada empresa activa real, y esta
+    # prueba pasaria a depender de cuantas haya hoy en la base.
+    requisito = await _requisito(conn, entidad="CARRIER", cliente=cliente)
+    registro = await _registro(conn, requisito, empresa)
+    assert registro is not None, "el trigger no sembro el MISSING esperado"
+
+    # Aprobado, con vencimiento lejano: no falta, no vencio, no esta por
+    # vencer. La unica etiqueta honesta es AL_DIA.
+    await conn.execute(
+        "UPDATE public.compliance_records "
+        "SET status = 'APPROVED_MANUAL', expiration_date = CURRENT_DATE + INTERVAL '400 days' "
+        "WHERE id = $1",
+        registro["id"])
+
+    respuesta = await list_pending_compliance_records(
+        carrier_id=str(empresa), category=None, requirement_code=None, q="",
+        operation_type=None, entity_id=None, limit=50, offset=0, estado="todos",
+        pool=PoolDeUnaConexion(conn), _=USER,
+    )
+
+    filas = [f for f in respuesta["rows"] if f["id"] == str(registro["id"])]
+    assert len(filas) == 1, "la fila cubierta no aparecio con estado='todos'"
+    assert filas[0]["urgencia"] == "AL_DIA", (
+        f"salio urgencia={filas[0]['urgencia']!r}: una fila al dia no puede "
+        "compartir el mismo valor que una que de verdad falta"
+    )
 
 
 # ── El guardia del propio archivo ─────────────────────────────────────────

@@ -42,10 +42,12 @@ function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
   } as PendingComplianceRow
 }
 
-/** Arma el QueryClientProvider y mockea `complianceApi.listPending` (mismo
- *  patrón que `CarrierDrawer.test.tsx`): resuelve las MISMAS filas sin
- *  importar el `estado` pedido, así que cada test elige lo que le importa
- *  ver, no cuatro variantes distintas por bucket. */
+/** Arma el QueryClientProvider y mockea `complianceApi.listPending`, mismo
+ *  patrón que `CarrierDrawer.test.tsx`.
+ *
+ *  Ronda de arreglo 1: la página pide `estado='todos'` UNA sola vez —ya no
+ *  cuatro variantes por bucket— y filtra en el cliente sobre `urgencia`. Por
+ *  eso `montar()` mockea un solo `mockResolvedValue`, no cuatro. */
 function montar(rows: PendingComplianceRow[], total = rows.length) {
   vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
   vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
@@ -78,25 +80,35 @@ describe('FichaEmpresaPage', () => {
     await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
       expect.objectContaining({ estado: 'todos' }),
     ))
-    // La llamada sola no alcanza: las cuatro cifras piden sus cuatro buckets
-    // desde el montaje, así que una llamada con estado:'todos' no prueba por
-    // sí sola que la lista arranca mostrando ese bucket. El filtro activo sí.
+    // La llamada sola no alcanza: es la UNICA que la pagina hace, siempre con
+    // estado:'todos', sin importar el filtro activo — filtrar es trabajo del
+    // cliente desde la ronda de arreglo 1. Lo que prueba que arranca
+    // mostrando TODO es el filtro activo, no la llamada.
     await screen.findByText('De la empresa')
     expect(screen.getByRole('button', { name: /^Todo/i })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('cambiar el filtro vuelve a pedir con ese estado', async () => {
-    montar([fila()])
-    await screen.findByText('De la empresa')
-    fireEvent.click(screen.getByRole('button', { name: /al día/i }))
-    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
-      expect.objectContaining({ estado: 'al_dia' }),
-    ))
+  it('cambiar el filtro cambia lo que se ve, sin volver a pedir nada', async () => {
+    // Ronda de arreglo 1: una sola consulta (estado='todos'); el filtro
+    // reparte lo que ya llegó usando `urgencia`, no dispara una consulta
+    // nueva por click.
+    montar([
+      fila({ id: 'p1', document_name: 'Certificado al día', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA' }),
+      fila({ id: 'p2', document_name: 'Rol SII', status: 'MISSING', urgencia: 'FALTA' }),
+    ])
+    await screen.findByText('Certificado al día')
+    expect(screen.getByText('Rol SII')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Al día/i }))
+
+    expect(screen.getByText('Certificado al día')).toBeInTheDocument()
+    expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
+    expect(complianceApi.listPending).toHaveBeenCalledTimes(1)
   })
 
   it('un documento cargado se puede ver; uno que falta se puede cargar', async () => {
     montar([
-      fila({ id: 'p1', status: 'APPROVED_MANUAL', document_name: 'Certificado de Vigencia' }),
+      fila({ id: 'p1', status: 'APPROVED_MANUAL', document_name: 'Certificado de Vigencia', urgencia: 'AL_DIA' }),
       fila({ id: 'p2', status: 'MISSING', document_name: 'Rol SII' }),
     ])
     expect(await screen.findByRole('button', { name: /ver/i })).toBeInTheDocument()
@@ -114,5 +126,21 @@ describe('FichaEmpresaPage', () => {
     montar([fila({ id: 'p1', status: 'MISSING' })])
     expect(await screen.findByText('De la empresa')).toBeInTheDocument()
     expect(screen.queryByTestId('archivo-p1')).not.toBeInTheDocument()
+  })
+
+  it('si la lista vino truncada, sólo la cifra de "todos" se muestra', async () => {
+    // rows.length (2) < total (500): contar sobre lo que llego para las
+    // otras tres cifras mentiria — son una muestra, no el universo.
+    montar([fila({ id: 'p1' }), fila({ id: 'p2', requirement_id: 'r2' })], 500)
+    await screen.findByText('De la empresa')
+    expect(screen.getByText('requisitos')).toBeInTheDocument()
+    expect(screen.queryByText('al día')).not.toBeInTheDocument()
+    expect(screen.queryByText('faltan')).not.toBeInTheDocument()
+    expect(screen.queryByText('por vencer')).not.toBeInTheDocument()
+  })
+
+  it('sin flota conocida, el chip de tipo de operación lo dice en vez de desaparecer', async () => {
+    montar([])
+    expect(await screen.findByText('Tipo de operación sin determinar')).toBeInTheDocument()
   })
 })

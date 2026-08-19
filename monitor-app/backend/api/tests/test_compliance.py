@@ -490,6 +490,28 @@ def test_pending_rows_expone_urgencia_y_politica():
     assert fila["expiration_policy"] == "OPTIONAL"
 
 
+def test_pending_rows_expone_al_dia_sin_romper_el_contrato_de_respuesta():
+    """Ronda de arreglo 1 (Task 4): `urgencia` gano un cuarto valor, 'AL_DIA',
+    para la fila cubierta que `estado='todos'` empezo a traer. El SQL puede
+    calcularlo bien y la respuesta romper igual si el `Literal` de
+    `PendingComplianceRow` (app/schemas/compliance.py) se queda en tres
+    valores: `response_model` la rechaza con 500 antes de llegar al cliente.
+
+    Un `AsyncMock` sin pasar por `TestClient` no ve esto — el mock devuelve
+    lo que el test le dicta sin pasar por la validacion de Pydantic. Por eso
+    esto pega contra la ruta real, no llama al handler a mano."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _pending_row(urgencia="AL_DIA", status="APPROVED_MANUAL", expiration_policy="NONE"),
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["rows"][0]["urgencia"] == "AL_DIA"
+
+
 def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():
     """Antes de la Ronda 129 renovar no tenia superficie: el predicado exigia
     la fecha YA pasada, asi que un documento que vence en diez dias no
@@ -550,6 +572,30 @@ def test_pending_rows_passes_filters_to_query():
     assert args[6] == 10
     assert args[7] == 5
     assert args[8] == "ACTIVE"
+
+
+def test_pending_acepta_limit_500_para_la_ficha_de_empresa():
+    """Ronda de arreglo 1 (Task 4): la ficha pide `estado='todos'` UNA sola
+    vez con `limit=500` y deriva sus cuatro cifras contando `urgencia` sobre
+    las filas que llegaron. El tope viejo (200) le devolveria 422 a esa unica
+    consulta antes de llegar al handler."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending?limit=500")
+
+    assert res.status_code == 200, res.text
+
+
+def test_pending_rechaza_un_limit_mayor_a_500():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending?limit=501")
+
+    assert res.status_code == 422
 
 
 def test_pending_rows_filters_by_subject():

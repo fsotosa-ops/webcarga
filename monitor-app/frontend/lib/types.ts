@@ -672,11 +672,17 @@ export type DocumentVersion = {
  *  la fecha. */
 export type PoliticaVencimiento = 'REQUIRED' | 'OPTIONAL' | 'NONE'
 
-/** Por qué un requisito cuenta como pendiente. Excluyentes y exhaustivos:
- *  'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30 días,
- *  'FALTA' no tiene documento. Antes de la Ronda 129 el segundo no existía y
- *  renovar no tenía superficie en ninguna pantalla. */
-export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA'
+/** Por qué un requisito cuenta como pendiente, o si no cuenta. Excluyentes y
+ *  exhaustivos: 'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30
+ *  días, 'FALTA' no tiene documento, 'AL_DIA' está cubierto y sin problema de
+ *  fecha. Antes de la Ronda 129 'POR_VENCER' no existía y renovar no tenía
+ *  superficie en ninguna pantalla. 'AL_DIA' se sumó en la ronda de arreglo 1
+ *  de la ficha de empresa (Task 4): con `estado='falta'` (el default de
+ *  siempre) el backend nunca devolvía una fila cubierta, así que el valor no
+ *  hacía falta; con `estado='todos'` sí, y sin él una fila al día salía
+ *  'FALTA' igual que una que de verdad falta — un valor cargando dos
+ *  sentidos, la misma clase de bug que este módulo ya tuvo cinco veces. */
+export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA' | 'AL_DIA'
 
 /** Qué mostrar de la documentación de una empresa. `falta` es el default del
  *  backend y reproduce el comportamiento anterior a la ficha. */
