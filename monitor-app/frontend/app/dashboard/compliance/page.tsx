@@ -17,6 +17,8 @@ import type { CertificationGroup } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
+import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { useFilaAbierta } from '@/hooks/useFilaAbierta'
 
 type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos' | 'documentos'
 
@@ -90,12 +92,12 @@ function CertificationPageInner() {
   const qDebounced = useDebouncedValue(q, 300)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)
-  /** Una sola fila abierta a la vez: el cajón es alto y dos abiertos obligan a
-   *  desplazarse para comparar, que es justo lo que el cajón vino a evitar. */
-  const [filaAbierta, setFilaAbierta] = useState<string | null>(null)
+  /** Una sola fila abierta a la vez. La regla y su razón viven en el hook,
+   *  porque este módulo tiene cuatro listas del mismo objeto. */
+  const { abierta: filaAbierta, alternar: alternarFila } = useFilaAbierta()
 
   const statusQuery = useQuery({
-    queryKey: ['certification-status', group, qDebounced],
+    queryKey: clavesCertificacion.estado(group ?? '', qDebounced),
     queryFn: () => complianceApi.listStatus({ group, q: qDebounced || undefined, limit: 200 }),
     enabled: !!group,
   })
@@ -104,7 +106,7 @@ function CertificationPageInner() {
    *  desplegar el grupo: traerlas siempre cuesta una consulta que casi nadie
    *  lee, y juntas con las activas no caben en el límite de 200. */
   const catalogQuery = useQuery({
-    queryKey: ['certification-status-catalog', qDebounced],
+    queryKey: clavesCertificacion.catalogo(qDebounced),
     queryFn: () => complianceApi.listStatus({
       group: 'carrier', scope: 'catalog', q: qDebounced || undefined, limit: 300,
     }),
@@ -115,7 +117,7 @@ function CertificationPageInner() {
    *  respuesta sólo interesa `total` — y comparte clave con el contador del
    *  Sidebar, así los dos se invalidan juntos y no pueden contradecirse. */
   const sinClasificar = useQuery({
-    queryKey: ['ingest-queue-count'],
+    queryKey: clavesCertificacion.colaTotal(),
     queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
     staleTime: 60_000,
   }).data?.total ?? 0
@@ -283,7 +285,7 @@ function CertificationPageInner() {
                     if (catalogQuery.isError) catalogQuery.refetch()
                   }}
                   openRowId={filaAbierta}
-                  onToggleRow={id => setFilaAbierta(prev => (prev === id ? null : id))}
+                  onToggleRow={alternarFila}
                   renderDrawer={r => (
                     <CarrierDrawer carrierId={r.entity_id} carrierName={r.entity_name} />
                   )}

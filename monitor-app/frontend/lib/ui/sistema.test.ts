@@ -69,7 +69,7 @@ describe('el sistema visual se usa, no solo existe', () => {
 
   it('no crece el color decidido fuera del sistema', () => {
     // Medido el 2026-08-16. Baja al migrar cada pantalla a los tokens.
-    const DEUDA = 1780
+    const DEUDA = 1765
 
     const total = usosDeColorCrudo()
     expect(

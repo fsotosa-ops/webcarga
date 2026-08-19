@@ -12,6 +12,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { documentIngestApi } from '@/lib/api/documentIngest'
+import { clavesCertificacion } from '@/lib/queries/certificacion'
 
 // "Operaciones" agrupa Monitor bajo un solo item expandible —
 // Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
@@ -182,7 +183,7 @@ export default function Sidebar({ role }: SidebarProps) {
   // Cuánto trabajo hay esperando en la bandeja. Se pide con limit=1: de la
   // respuesta solo interesa `total`.
   const inboxCount = useQuery({
-    queryKey: ['ingest-queue-count'],
+    queryKey: clavesCertificacion.colaTotal(),
     queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
     staleTime: 60_000,
   }).data?.total ?? 0

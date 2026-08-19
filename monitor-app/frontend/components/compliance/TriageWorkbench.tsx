@@ -14,6 +14,7 @@ import { TriageFileTable } from './TriageFileTable'
 import { TriagePreview } from './TriagePreview'
 import { TriageUndoNotice } from './TriageUndoNotice'
 import { Cifra } from '@/components/ui/Cifra'
+import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 
 interface Props {
   /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
@@ -33,23 +34,6 @@ const QUEUE_PAGE = 200
  *  nada. Se parte acá, del lado del cliente, y los lotes van encadenados. */
 const LOTE_DE_SUBIDA = 50
 
-/** Todo lo que una operación de la bandeja deja obsoleto.
- *
- *  Una sola lista para las cinco mutaciones (subir, clasificar, descartar,
- *  mover, deshacer): cada una invalidaba un conjunto distinto, así que subir
- *  desde la bandeja refrescaba la lista pero dejaba el contador del sidebar
- *  (`staleTime: 60_000`) contradiciéndola durante un minuto.
- *
- *  `['ingest-queue']` va por prefijo a propósito: la cola se cachea como
- *  `['ingest-queue', <empresa|'all'>]` y mover archivos cambia el grupo de
- *  origen Y el de destino. */
-export const CLAVES_DE_LA_BANDEJA: readonly string[][] = [
-  ['ingest-queue'],
-  ['ingest-queue-count'],
-  ['compliance-pending'],
-  ['compliance-pending-carrier-panel'],
-  ['certification-status'],
-]
 
 function mensajeDe(e: unknown, porDefecto: string) {
   return e instanceof Error && e.message ? e.message : porDefecto
@@ -81,7 +65,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   // de operaciones: quien deshace es quien acaba de aplicar.
   const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
 
-  const queueKey = ['ingest-queue', carrierId ?? 'all']
+  const queueKey = clavesCertificacion.cola(carrierId)
   const queueQuery = useQuery({
     queryKey: queueKey,
     queryFn: () => documentIngestApi.listQueue({ carrierId, limit: QUEUE_PAGE }),
@@ -104,7 +88,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
     ?? (focusedId ? rows.find(r => r.id === focusedId)?.carrier_id ?? null : null)
 
   const pendingQuery = useQuery({
-    queryKey: ['compliance-pending-carrier-panel', subjectCarrierId],
+    queryKey: clavesCertificacion.pendientes(subjectCarrierId ?? undefined),
     queryFn: () => complianceApi.listPending({ carrierId: subjectCarrierId!, limit: 200 }),
     enabled: !!subjectCarrierId,
   })
@@ -132,7 +116,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   // La vista previa se firma de a una, al enfocar — firmar el listado entero
   // es una llamada HTTP por archivo.
   const previewQuery = useQuery({
-    queryKey: ['ingest-preview', focusedId],
+    queryKey: clavesCertificacion.vistaPrevia(focusedId),
     queryFn: () => documentIngestApi.previewUrl(focusedId!),
     enabled: !!focusedId && targetIds.length === 1,
   })
@@ -150,9 +134,10 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
       preview_url: r.id === focusedId ? previewQuery.data?.preview_url ?? null : null,
     }))
 
-  /** Lo que toda operación de la bandeja deja obsoleto, en un solo lugar. */
+  /** Lo que toda operación de la bandeja deja obsoleto: una sola función,
+   *  compartida con el cajón. Ver lib/queries/certificacion.ts. */
   function refrescarBandeja() {
-    for (const queryKey of CLAVES_DE_LA_BANDEJA) qc.invalidateQueries({ queryKey })
+    void invalidarCertificacion(qc)
   }
 
   const uploadMutation = useMutation({

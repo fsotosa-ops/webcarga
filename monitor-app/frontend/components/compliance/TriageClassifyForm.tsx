@@ -7,6 +7,7 @@ import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
+import { clavesCertificacion } from '@/lib/queries/certificacion'
 
 type Subject = { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }
 
@@ -53,7 +54,7 @@ export function TriageClassifyForm({
   )
 
   const requirementsQuery = useQuery({
-    queryKey: ['compliance-requirements', subject?.entity_type],
+    queryKey: clavesCertificacion.requisitos(subject?.entity_type),
     queryFn: () => complianceApi.listRequirements(subject!.entity_type),
     enabled: !!subject,
   })

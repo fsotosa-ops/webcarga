@@ -11,6 +11,10 @@ export type ListPendingParams = {
   requirementCode?: string
   q?:               string
   operationType?:   'Tractoreo' | 'Equipo Completo'
+  /** Un sujeto concreto: lo que le falta a ESTE conductor o a ESTE vehículo.
+   *  Se filtra en el servidor y no en el cliente porque la página corta en
+   *  200 y hay empresas con 381 pendientes. */
+  entityId?:        string
   limit?:           number
   offset?:          number
 }
@@ -95,6 +99,7 @@ export const complianceApi = {
     if (params.requirementCode) qs.set('requirement_code', params.requirementCode)
     if (params.q)                qs.set('q', params.q)
     if (params.operationType)    qs.set('operation_type', params.operationType)
+    if (params.entityId)         qs.set('entity_id', params.entityId)
     if (params.limit != null)    qs.set('limit', String(params.limit))
     if (params.offset != null)   qs.set('offset', String(params.offset))
     const suffix = qs.toString() ? `?${qs}` : ''

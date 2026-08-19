@@ -1,7 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { TriageWorkbench, CLAVES_DE_LA_BANDEJA } from './TriageWorkbench'
+import { TriageWorkbench } from './TriageWorkbench'
+import { RAICES_DE_CERTIFICACION } from '@/lib/queries/certificacion'
 
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: {
@@ -170,7 +171,7 @@ describe('TriageWorkbench — deshacer un lote', () => {
 // compara cada mutación contra la MISMA lista, en vez de repartir aserciones
 // sueltas por los archivos.
 describe('TriageWorkbench — todas las operaciones refrescan lo mismo', () => {
-  const ESPERADO = [...CLAVES_DE_LA_BANDEJA]
+  const ESPERADO = [...RAICES_DE_CERTIFICACION]
     .map(k => JSON.stringify(k)).sort()
 
   it('las cinco mutaciones invalidan el mismo conjunto de claves', async () => {

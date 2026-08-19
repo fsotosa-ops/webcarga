@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2, Undo2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
+import { clavesCertificacion } from '@/lib/queries/certificacion'
 
 interface Props {
   /** El registro que hoy tiene el archivo mal puesto. */
@@ -27,7 +28,7 @@ export function ReassignDocument({ recordId, carrierId, onDone }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const pendientes = useQuery({
-    queryKey: ['compliance-pending-carrier-panel', carrierId],
+    queryKey: clavesCertificacion.pendientes(carrierId),
     queryFn: () => complianceApi.listPending({ carrierId, limit: 200 }),
     enabled: abierto,
   })

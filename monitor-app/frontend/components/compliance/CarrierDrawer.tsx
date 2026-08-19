@@ -6,7 +6,8 @@ import { Check, ChevronDown, ChevronRight, Loader2, Upload } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
-import { TriageWorkbench, CLAVES_DE_LA_BANDEJA } from './TriageWorkbench'
+import { TriageWorkbench } from './TriageWorkbench'
+import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import type { PendingComplianceRow } from '@/lib/types'
 
 interface Props {
@@ -54,11 +55,21 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
    *  categoría, el sujeto, el requisito y el estado de cada fila, así que no
    *  hacen falta las consultas de roster de conductores y de vehículos. */
   const pendingQuery = useQuery({
-    queryKey: ['compliance-pending-drawer', carrierId],
+    queryKey: clavesCertificacion.pendientes(carrierId),
     queryFn: () => complianceApi.listPending({ carrierId, limit: 200 }),
   })
 
   const rows = useMemo(() => pendingQuery.data?.rows ?? [], [pendingQuery.data])
+  /** Lo que la empresa tiene pendiente DE VERDAD, que no es lo que se trajo.
+   *
+   *  `/pending` corta en 200 —es su tope duro— y esta consulta pide justo esa
+   *  cantidad. Medido en producción: "Inversiones Huemul Spa" tiene 381, así
+   *  que el cajón mostraba 200 y escribía "200 documentos". Sin error y sin
+   *  aviso: la pantalla afirmando un número que no es, que es exactamente lo
+   *  que este frontend ya declaró que no se hace. Otras cuatro empresas
+   *  activas pasan de 90 y llegarán al tope al crecer su flota. */
+  const total = pendingQuery.data?.total ?? rows.length
+  const truncado = rows.length < total
 
   /** La empresa primero, después sus conductores y sus vehículos. Fijada la
    *  empresa los candidatos son 2 conductores y 3 vehículos en promedio, no 80
@@ -92,19 +103,11 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
     })
   }
 
-  /** Todo lo que queda obsoleto al aplicar un documento. Las claves salen de
-   *  CLAVES_DE_LA_BANDEJA —la lista compartida— más la del propio cajón, que
-   *  NO está cubierta por el prefijo `compliance-pending`: React Query compara
-   *  elemento por elemento y 'compliance-pending' ≠ 'compliance-pending-drawer'.
-   *  Antes acá había un `['document-ingest-items']` que no existe en ninguna
-   *  parte del repo, así que la bandeja de arriba del cajón no se refrescaba. */
-  async function invalidarTodo() {
-    await Promise.all([
-      ...CLAVES_DE_LA_BANDEJA.map(queryKey => queryClient.invalidateQueries({ queryKey })),
-      queryClient.invalidateQueries({ queryKey: ['compliance-pending-drawer', carrierId] }),
-      queryClient.invalidateQueries({ queryKey: ['certification-status-catalog'] }),
-    ])
-  }
+  /** Lo que queda obsoleto al aplicar un documento es LO MISMO que deja
+   *  obsoleto la bandeja: se comparte la función, no se replica la lista.
+   *  Acá antes había un conjunto propio, y por eso el cajón y la bandeja
+   *  llegaron a invalidar cosas distintas. Ver lib/queries/certificacion.ts. */
+  const invalidarTodo = () => invalidarCertificacion(queryClient)
 
   async function subir(fila: PendingComplianceRow, file: File) {
     setSubiendo(fila.id)
@@ -142,24 +145,25 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
 
       {/* 2 · Lo que falta */}
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[.11em] text-gray-500 pb-1.5">
-          Lo que falta{rows.length > 0 && <> · {rows.length} documentos</>}
+        <p className="text-etiqueta font-semibold uppercase tracking-[.11em] text-gray-500 pb-1.5">
+          Lo que falta{total > 0 && <> · {total} documentos</>}
+          {truncado && <> · se listan los primeros {rows.length}</>}
         </p>
 
         {errorSubida && (
-          <p role="alert" className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5 mb-1.5">
+          <p role="alert" className="text-etiqueta text-espera bg-red-50 border border-red-100 rounded-lg px-2 py-1.5 mb-1.5">
             {errorSubida}
           </p>
         )}
 
         {pendingQuery.isPending && (
-          <p className="text-[11px] text-gray-500 flex items-center gap-1.5 py-1">
+          <p className="text-etiqueta text-gray-500 flex items-center gap-1.5 py-1">
             <Loader2 size={11} className="motion-safe:animate-spin" /> Cargando…
           </p>
         )}
 
         {!pendingQuery.isPending && !rows.length && (
-          <p className="text-[11.5px] text-resuelto flex items-center gap-1.5 py-1">
+          <p className="text-etiqueta text-resuelto flex items-center gap-1.5 py-1">
             <Check size={12} /> No le falta ningún documento
           </p>
         )}
@@ -181,7 +185,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
                 <span className="text-[12.5px] font-semibold text-text-primary group-hover:text-accent transition-colors">
                   {s.titulo}
                 </span>
-                <span className="text-[10.5px] text-gray-500 tabular-nums">
+                <span className="text-etiqueta text-gray-500 tabular-nums">
                   faltan {s.pendientes.length}
                 </span>
               </button>
@@ -198,7 +202,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
                   </span>
 
                   {p.status === 'EXPIRED' && (
-                    <span className="text-[10px] text-amber-700 shrink-0">
+                    <span className="text-etiqueta text-amber-700 shrink-0">
                       vencido{p.expiration_date ? ` · ${p.expiration_date}` : ''}
                     </span>
                   )}

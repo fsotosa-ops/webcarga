@@ -429,6 +429,12 @@ WHERE c.operational_status = $8
   AND ($3::text IS NULL OR r.requirement_code = $3)
   AND ($4::text IS NULL OR c.business_name ILIKE '%' || $4 || '%' OR r.subject_name ILIKE '%' || $4 || '%')
   AND ($5::text IS NULL OR $5 = ANY(COALESCE(cot.operation_types, ARRAY[]::text[])))
+  -- Un sujeto concreto: lo que le falta a ESTE conductor o a ESTE vehículo.
+  -- Sin esto, quien quiera el detalle de una persona tiene que pedir el de la
+  -- empresa entera y filtrar del lado del cliente — y esa página corta en 200
+  -- (hay empresas con 381 pendientes), así que el filtro del cliente opera
+  -- sobre una muestra truncada y no lo dice. Se filtra donde están los datos.
+  AND ($9::uuid IS NULL OR r.entity_id = $9)
 ORDER BY c.business_name, r.entity_type, r.subject_name
 LIMIT $6 OFFSET $7
 """
@@ -441,6 +447,11 @@ async def list_pending_compliance_records(
     requirement_code: Optional[str] = Query(None),
     q: str = Query(""),
     operation_type: Optional[Literal["Tractoreo", "Equipo Completo"]] = Query(None),
+    entity_id: Optional[str] = Query(
+        None,
+        description="Acota a un sujeto concreto (un conductor o un vehículo). "
+                    "Se usa junto con `category` para el cajón de una persona.",
+    ),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     pool=Depends(get_pool),
@@ -456,7 +467,7 @@ async def list_pending_compliance_records(
     rows = await pool.fetch(
         _PENDING_ROWS_SQL,
         carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
-        ACTIVE_OPERATIONAL_STATUS,
+        ACTIVE_OPERATIONAL_STATUS, entity_id,
     )
     total = rows[0]["total_count"] if rows else 0
     result_rows = [

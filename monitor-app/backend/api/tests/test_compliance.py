@@ -366,6 +366,44 @@ def test_pending_rows_passes_filters_to_query():
     assert args[8] == "ACTIVE"
 
 
+def test_pending_rows_filters_by_subject():
+    """El cajon de un conductor o un vehiculo pide lo que le falta A EL.
+
+    Antes habia que pedir el pendiente de la empresa entera y filtrar del lado
+    del cliente. Esa pagina corta en 200 —hay empresas con 381 pendientes—, asi
+    que el filtro del cliente operaba sobre una muestra truncada sin decirlo."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get(
+        "/api/v1/compliance-records/pending?category=DRIVER"
+        "&entity_id=11111111-1111-1111-1111-111111111111"
+    )
+
+    args = pool.fetch.call_args.args
+    assert args[2] == "DRIVER"
+    assert args[9] == "11111111-1111-1111-1111-111111111111"
+
+
+def test_pending_rows_binds_exactly_the_parameters_it_references():
+    """Misma defensa que /status: un placeholder de mas o de menos hace que
+    Postgres rechace la sentencia, y el AsyncMock acepta cualquier cantidad."""
+    import re
+
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending")
+
+    sql, *args = pool.fetch.call_args.args
+    referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+    assert referenciados == set(range(1, len(args) + 1)), (
+        f"el SQL referencia {sorted(referenciados)} pero se pasan {len(args)} parametros"
+    )
+
+
 def test_pending_rows_excludes_inactive_carriers_from_query():
     """Bug 5.4: antes de este fix, /pending traía documentación pendiente de
     empresas LEGACY_INACTIVE/INACTIVE/ONBOARDING también — confirmado contra

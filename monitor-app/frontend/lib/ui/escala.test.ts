@@ -59,7 +59,7 @@ describe('la escala tipografica', () => {
     // puede bajar: se reduce al migrar cada pantalla, y cuando llegue a 0 la
     // asercion pasa a `toEqual([])`. Subirlo para que pase la suite es
     // exactamente lo que este test viene a impedir.
-    const DEUDA = 279
+    const DEUDA = 268
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

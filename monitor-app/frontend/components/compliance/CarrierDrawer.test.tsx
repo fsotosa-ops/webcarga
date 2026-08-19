@@ -32,8 +32,8 @@ function pendiente(over: Partial<PendingComplianceRow> = {}): PendingComplianceR
   } as PendingComplianceRow
 }
 
-function setup(rows: PendingComplianceRow[] = [pendiente()]) {
-  vi.mocked(complianceApi.listPending).mockResolvedValue({ total: rows.length, rows })
+function setup(rows: PendingComplianceRow[] = [pendiente()], total = rows.length) {
+  vi.mocked(complianceApi.listPending).mockResolvedValue({ total, rows })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <CarrierDrawer carrierId="c1" carrierName="Transportes Charlotte Spa" />
@@ -165,5 +165,27 @@ describe('CarrierDrawer sin permiso de edición', () => {
     fireEvent.click(await screen.findByText('De la empresa'))
     expect(screen.getByText('F30')).toBeInTheDocument()
     expect(screen.queryByTestId('subir-p1')).not.toBeInTheDocument()
+  })
+})
+
+
+// El cajón pide 200, que es el tope duro de /pending. Medido en produccion:
+// "Inversiones Huemul Spa" tiene 381 pendientes, asi que el cajon mostraba 200
+// y afirmaba "200 documentos" — sin error y sin aviso.
+describe('CarrierDrawer — la cuenta es la real, no la que se trajo', () => {
+  it('cuenta el total del servidor, no el largo de la pagina', async () => {
+    setup([pendiente({ id: 'p1' }), pendiente({ id: 'p2' })], 381)
+    expect(await screen.findByText(/381 documentos/)).toBeInTheDocument()
+  })
+
+  it('avisa que la lista viene cortada', async () => {
+    setup([pendiente({ id: 'p1' }), pendiente({ id: 'p2' })], 381)
+    expect(await screen.findByText(/se listan los primeros 2/)).toBeInTheDocument()
+  })
+
+  it('no avisa nada cuando llego todo', async () => {
+    setup([pendiente({ id: 'p1' }), pendiente({ id: 'p2' })])
+    expect(await screen.findByText(/2 documentos/)).toBeInTheDocument()
+    expect(screen.queryByText(/se listan los primeros/)).not.toBeInTheDocument()
   })
 })

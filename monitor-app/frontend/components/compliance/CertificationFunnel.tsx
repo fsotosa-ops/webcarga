@@ -7,6 +7,7 @@ import {
 import type {
   CertificationStatusRow, FunnelGroup, ManagementType,
 } from '@/lib/types'
+import { propsDeFilaExpandible } from '@/hooks/useFilaAbierta'
 
 interface Props {
   /** Las empresas del alcance `active`: operativas más cualquiera con
@@ -43,7 +44,7 @@ const ETAPAS: { id: FunnelGroup; titulo: string; icono: typeof Plus; tono: strin
   { id: 'sin_documentos', titulo: 'Recién creadas · sin documentos', icono: Plus,           tono: 'bg-sky-50 text-sky-800' },
   { id: 'en_proceso',     titulo: 'En proceso',                      icono: Clock,          tono: 'bg-gray-50 text-gray-500' },
   { id: 'renovar',        titulo: 'Hay que renovar',                 icono: AlertTriangle,  tono: 'bg-amber-50 text-amber-800' },
-  { id: 'al_dia',         titulo: 'Certificadas y al día',           icono: Check,          tono: 'bg-emerald-50 text-emerald-800' },
+  { id: 'al_dia',         titulo: 'Certificadas y al día',           icono: Check,          tono: 'bg-emerald-50 text-resuelto' },
   { id: 'catalogo',       titulo: 'Resto del catálogo',              icono: Building2,      tono: 'bg-gray-50 text-gray-500' },
 ]
 
@@ -138,7 +139,7 @@ export function CertificationFunnel({
             </button>
 
             {!plegado && !deEstaEtapa.length && (
-              <p className="px-4 py-2 text-etiqueta text-gray-400 border-b border-gray-100">
+              <p className="px-4 py-2 text-etiqueta text-gray-400 border-b border-border">
                 {id !== 'catalogo' ? 'Ninguna acá'
                   : catalogEstado === 'cargando' ? 'Cargando…'
                   : catalogEstado === 'error'    ? 'No se pudo cargar el catálogo. Vuelve a desplegar el grupo para reintentar.'
@@ -179,14 +180,8 @@ function FilaEmpresa({
   return (
     <>
       <div
-        role="button"
-        tabIndex={0}
-        onClick={() => onToggle?.(row.entity_id)}
-        onKeyDown={e => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle?.(row.entity_id) }
-        }}
-        aria-expanded={abierta}
-        className={`flex items-center gap-2.5 px-4 py-2 border-b border-gray-100 cursor-pointer transition-colors ${
+        {...propsDeFilaExpandible(row.entity_id, !!abierta, id => onToggle?.(id))}
+        className={`flex items-center gap-2.5 px-4 py-2 border-b border-border cursor-pointer transition-colors ${
           abierta ? 'bg-sky-50/60' : 'hover:bg-gray-50'
         }`}
       >
