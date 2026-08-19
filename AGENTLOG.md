@@ -876,6 +876,31 @@ La corrección humana gana, y el legacy puede morir sin llevarse el sistema.
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear
 entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento actual.
 
+**SIGUIENTE PASO EXACTO AL RETOMAR (Ronda 126, 2026-08-19 04:15Z)**
+
+0. [ ] **Confirmar que `app_trips_tests` quedó verde.** Es lo único sin verificar de la noche: el
+   test se reescribió y se sincronizó, su consulta devuelve **0 filas** contra producción (así que
+   debería pasar), pero **no se lo vio correr**. Si sigue rojo, el problema está en el archivo
+   sincronizado, no en el dato. Mirar el bloque en la última corrida programada.
+
+**Issues de GitHub abiertos** (levantados o refinados esta noche, todos con evidencia medida):
+- **#3** — criterio de ausencia para detectar borrados de Sodimac. **No bloquea**: la alerta ya opera
+  con 3 h configurables desde Configuración → Umbrales. Falta que Fabián y Pablo elijan el número.
+- **#5** — el scraper ya deduplica y está verificado en producción (320 → 47 filas), pero **sigue
+  sin saberse por qué el portal agrega filas en vez de reemplazarlas al paginar**. Necesita abrir el
+  DOM con Playwright. También queda sin descartar el `_set_page_size(20)` que falla en silencio.
+- **#6** — pérdida de tramos, localizada en `stg_sodimac_trips` (bronze: 18 viajes con 2 tramos;
+  silver: 0). Partido en dos: multi-destino es técnico y sin bloqueos; multi-origen necesita
+  definición de operaciones. **La prioridad la decide si esos 18 viajes afectan facturación.**
+- **#1** (modelo de permisos/`writer`) y **#2** (contraseñas filtradas, requiere plan Pro), de antes.
+
+**Deuda declarada de esta noche, sin issue propio:**
+- [ ] Los bloques de scraper de Mage devuelven `_NO_DATA` cuando el job de extracción falla — es
+  deliberado y está bien fundado (una excepción cancela en cascada a las otras TMS, incidente
+  07/08), y el bloque **sí imprime** el error. Lo que falta es **distinguir "no había datos nuevos"
+  de "el job falló" en algún lugar visible sin abrir logs**. Es diseño, no un arreglo rápido.
+- [ ] Mirar en pantalla la tile "Ya no está en el TMS" del Monitor — desplegada y sin click-through.
+
 **Deuda técnica comprometida**
 1. [ ] (hardening post-MVP/Hito 4, pedido explícito del usuario) Migrar `qanalytics_agg_nro_sap_transformer.py` (Walmart) a `TENANT_COLUMN_MAPS`, y evaluar consolidar las 5 cadenas de bloques Mage duplicadas por tenant (scraper→loader→transformer→tabla temp→insert repetidas íntegras entre Walmart e IANSA). La mitad del camino ya está hecha: la URL de extracción y el POST/polling salieron a `utils/extraction_client.py`, y el mapeo de columnas a `utils/qanalytics_tenant_column_maps.py`.
 2. [ ] `main` está muy por detrás de `dev`: `webcarga-frontend-prod` corre una imagen del 2026-08-01 y nada del trabajo de las Rondas 92-94 está promovido. Decidir cuándo se hace la promoción.
@@ -884,7 +909,7 @@ entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento a
 3. [ ] Un `--full-refresh` de `app.trip_stops` reintroduciría el huso horario viejo (11:00) en los 18 viajes Sodimac congelados — su valor correcto ya no existe en ninguna fuente viva (ni portal ni bronze) y la tabla de respaldo se dropeó. El proyecto ya evita el full-refresh por una razón peor (borra ediciones manuales de Operaciones), así que el riesgo es teórico, pero si ocurre hay que rehacer la corrección a mano.
 
 **Heredado de la Ronda 93, sin resolver**
-4. [~] **RETIRADO como "borrado de huérfanas" en la Ronda 126 — no ejecutar la versión vieja de este ítem.** Las filas no son basura: son **versiones legítimas** (cambios de base reportados por el TMS). Borrarlas destruye justo la trazabilidad que Pablo dice que no tiene. Medición al 18/08: 2.869 filas sobre 620 viajes, 0 con edición manual, 1 viaje activo. Lo que sí corresponde es (a) arreglar la fórmula del `stop_id` para que un cambio de nombre sea UPDATE y no una fila nueva, y (b) consultar la historia en `bronze.tms_trips_snapshot`, que ya la tiene bien (24.023 versiones sobre 3.563 viajes, verificado para `830021`). Detalle completo en la Ronda 126.
+4. [~] **RETIRADO como "borrado de huérfanas" en la Ronda 126 — no ejecutar la versión vieja de este ítem.** Las filas no son basura: son **versiones legítimas** (cambios de base reportados por el TMS). Borrarlas destruye justo la trazabilidad que Pablo dice que no tiene. Medición al 18/08: 2.869 filas sobre 620 viajes, 0 con edición manual, 1 viaje activo. **CORREGIDO 2026-08-19: el arreglo del `stop_id` que este ítem proponía quedó DESCARTADO** — habría forzado un solo origen justo donde hay dos legítimos (multi-retiro, ver issue #6). Lo que sí corresponde: la historia se consulta en `bronze.tms_trips_snapshot`, que ya la tiene bien (24.023 versiones sobre 3.563 viajes, verificado para `830021`), y la pérdida de tramos se trabaja en el issue #6. Detalle completo en la Ronda 126.
 5. [~] Filas DESTINATION duplicadas en `app.trip_stops` — mismo origen que el ítem 4, mismo cambio de criterio. No se resuelven con un DELETE.
 6. [ ] Revisar `cargo_type` del viaje `2003266` (probable error de clasificación FRIO/CONGELADO).
 7. [ ] Evaluar si `qanalytics/scraper.py` y `wingsuite/scraper.py` necesitan el mismo `timezone_id` que se le puso a Sodimac — ninguno lo especifica; no hay evidencia de que sus portales rendericen del lado del cliente, pero si aparece un desfase de horas, revisar esto primero.
