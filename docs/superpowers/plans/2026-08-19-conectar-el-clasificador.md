@@ -71,7 +71,7 @@ dataclasses que el motor espera.
   async def cargar_universo(conn, carrier_id: str | None = None) -> EntityUniverse
   ```
 
-- [ ] **Step 1: Leer los dataclasses que hay que llenar**
+- [x] **Step 1: Leer los dataclasses que hay que llenar**
 
 Antes de escribir nada:
 
@@ -108,7 +108,7 @@ class EntityUniverse:
 con un JOIN. Sin él, `_match_requirement` no puede acotar por tipo de entidad y una licencia se le
 podría proponer a un tracto.
 
-- [ ] **Step 2: Escribir los tests que fallan**
+- [x] **Step 2: Escribir los tests que fallan**
 
 Crear `tests/test_matcher_io.py`:
 
@@ -198,7 +198,7 @@ async def test_el_universo_acotado_solo_trae_asignaciones_activas(conexion_rever
     assert len(universo.drivers) == esperados
 ```
 
-- [ ] **Step 3: Correr y verificar que fallan**
+- [x] **Step 3: Correr y verificar que fallan**
 
 ```bash
 cd monitor-app/backend/api
@@ -207,7 +207,7 @@ venv/bin/python -m pytest tests/test_matcher_io.py -q -p no:randomly
 
 Esperado: FAIL con `ModuleNotFoundError: app.services.matcher_io`.
 
-- [ ] **Step 4: Escribir el módulo**
+- [x] **Step 4: Escribir el módulo**
 
 `app/services/matcher_io.py`:
 
@@ -293,7 +293,7 @@ async def cargar_universo(conn, carrier_id: str | None = None) -> EntityUniverse
     )
 ```
 
-- [ ] **Step 5: Correr y verificar que pasan**
+- [x] **Step 5: Correr y verificar que pasan**
 
 ```bash
 venv/bin/python -m pytest tests/test_matcher_io.py -q -p no:randomly
@@ -302,7 +302,7 @@ venv/bin/python -m pytest tests/test_matcher_io.py -q -p no:randomly
 Esperado: **5 passed**. Si `test_el_catalogo_cubre_los_37_requisitos` falla con menos de 37,
 **detente y avisa**: alguien borró alias y hay requisitos invisibles para el matcher.
 
-- [ ] **Step 6: Mutar**
+- [x] **Step 6: Mutar**
 
 Quita `r.target_entity` del SELECT y pásale `"CARRIER"` fijo a cada `RequirementAlias`. Esperado:
 falla `test_el_catalogo_trae_el_tipo_de_entidad_de_cada_alias`. Restaura.
@@ -310,7 +310,7 @@ falla `test_el_catalogo_trae_el_tipo_de_entidad_de_cada_alias`. Restaura.
 Después quita el `AND da.status = 'ACTIVE'` de `_SQL_DRIVERS`. Esperado: falla
 `test_el_universo_acotado_solo_trae_asignaciones_activas`. Restaura.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add monitor-app/backend/api/app/services/matcher_io.py \
@@ -332,7 +332,7 @@ git commit -m "feat(bandeja): los lectores que alimentan el motor de match"
 - Produces: cada fila de `document_ingest_items` nace con `match_status`, `entity_type`,
   `entity_id`, `requirement_id`, `confidence`, `match_evidence` y `candidates` poblados.
 
-- [ ] **Step 1: Leer la función que se modifica, entera**
+- [x] **Step 1: Leer la función que se modifica, entera**
 
 ```bash
 sed -n '34,82p' app/routers/document_ingest.py
@@ -346,7 +346,7 @@ Lo que hay que entender antes de tocarla:
 - Al final actualiza `document_ingest_batches.unmatched` con `len(items)` — hoy es correcto porque
   todo es UNMATCHED; **después del cambio deja de serlo** y hay que arreglarlo (Step 5).
 
-- [ ] **Step 2: Escribir los tests que fallan**
+- [x] **Step 2: Escribir los tests que fallan**
 
 En `tests/test_document_ingest.py`, copiando el armado de mocks que el archivo ya usa
 (`grep -n "def make_client\|wire_transactional_conn" tests/test_document_ingest.py`):
@@ -436,7 +436,7 @@ def test_el_catalogo_se_lee_una_vez_por_lote_no_una_por_archivo(monkeypatch):
 `(pool, conn)` con la transacción cableada y `conn.fetchval` devolviendo un `batch_id`. Copia la
 forma de los tests de ingesta que ya existen; no inventes una nueva.
 
-- [ ] **Step 3: Correr y verificar que fallan**
+- [x] **Step 3: Correr y verificar que fallan**
 
 ```bash
 venv/bin/python -m pytest tests/test_document_ingest.py -q -k "destino_propuesto or motor_falla or una_vez_por_lote"
@@ -444,7 +444,7 @@ venv/bin/python -m pytest tests/test_document_ingest.py -q -k "destino_propuesto
 
 Esperado: FAIL — hoy el SQL tiene el literal `'UNMATCHED'` y no importa `match_document`.
 
-- [ ] **Step 4: Implementar el cableado**
+- [x] **Step 4: Implementar el cableado**
 
 En los imports de `document_ingest.py`:
 
@@ -509,7 +509,7 @@ Y el `INSERT`, que pasa de escribir un literal a escribir el resultado:
         )
 ```
 
-- [ ] **Step 5: Arreglar el contador del lote, que dejó de ser cierto**
+- [x] **Step 5: Arreglar el contador del lote, que dejó de ser cierto**
 
 La línea ~78 escribe `unmatched = len(items)`. Eso era correcto cuando todo entraba `UNMATCHED`;
 **ahora miente**. Con el cambio:
@@ -525,7 +525,7 @@ La línea ~78 escribe `unmatched = len(items)`. Eso era correcto cuando todo ent
     )
 ```
 
-- [ ] **Step 6: Correr y verificar que pasan**
+- [x] **Step 6: Correr y verificar que pasan**
 
 ```bash
 venv/bin/python -m pytest tests/test_document_ingest.py -q
@@ -535,7 +535,7 @@ venv/bin/python -m pytest tests/ -q -m "not integracion"
 Esperado: todos verdes. **Si algún test de la Bandeja cambia de número, entiende por qué antes de
 ajustarlo**: puede ser el contador del Step 5 haciendo lo suyo, o puede ser un supuesto viejo.
 
-- [ ] **Step 7: Mutar**
+- [x] **Step 7: Mutar**
 
 Tres mutaciones, y las tres tienen que matar su test:
 
@@ -545,7 +545,7 @@ Tres mutaciones, y las tres tienen que matar su test:
 
 Restaura después de cada una.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add monitor-app/backend/api/app/routers/document_ingest.py \
@@ -560,7 +560,7 @@ git commit -m "feat(bandeja): un archivo entra con su destino propuesto"
 **Files:** ninguno — es verificación. **Esta tarea es el entregable de verdad**: las anteriores sólo
 la hacen posible.
 
-- [ ] **Step 1: Ejercitar el motor contra los nombres que ya existen**
+- [x] **Step 1: Ejercitar el motor contra los nombres que ya existen**
 
 No hay muestra de cómo vendrán los ~2.000 documentos y el usuario confirmó que no la tiene. Pero
 hay **65 nombres reales** en la Bandeja. Contra Postgres real:
@@ -592,7 +592,7 @@ asyncio.run(main())
 
 **Imprime el reparto, nunca los nombres.** Son datos personales.
 
-- [ ] **Step 2: Leer el resultado, que es lo que decide el trabajo siguiente**
+- [x] **Step 2: Leer el resultado, que es lo que decide el trabajo siguiente**
 
 | Reparto | Qué significa | Qué sigue |
 |---|---|---|
@@ -603,7 +603,7 @@ asyncio.run(main())
 **Anota el número en el AGENTLOG.** Es la medición que reemplaza a la muestra que no tenemos, y
 decide el orden de las tres piezas que quedaron fuera de alcance.
 
-- [ ] **Step 3: Medir que no se volvió lento**
+- [x] **Step 3: Medir que no se volvió lento**
 
 El riesgo real de este cambio no es correctitud, es tiempo: 50 archivos × un motor en memoria.
 
@@ -615,7 +615,7 @@ Y contra la base, con un lote de verdad: subir 20 archivos por la interfaz de de
 tarda. **Si pasa de unos pocos segundos, reportar** — el motor recorre el universo entero por
 archivo, y con 124 vehículos eso son 2.480 comparaciones por lote de 20.
 
-- [ ] **Step 4: Las dos suites, separadas**
+- [x] **Step 4: Las dos suites, separadas**
 
 ```bash
 venv/bin/python -m pytest tests/ -q -m "not integracion"   # ~25 s
@@ -635,7 +635,7 @@ WHERE created_at > now() - interval '7 days'
 GROUP BY 1 ORDER BY 2 DESC;
 ```
 
-- [ ] **Step 6: Actualizar el AGENTLOG y cerrar**
+- [x] **Step 6: Actualizar el AGENTLOG y cerrar**
 
 Qué se hizo, el reparto medido, y el siguiente paso exacto según lo que ese reparto haya dicho.
 
