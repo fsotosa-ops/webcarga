@@ -15,6 +15,7 @@ from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
+from ..services.vencimientos import por_vencer_predicate, vencido_predicate
 from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
 
 router = APIRouter(prefix="/carriers", tags=["carriers"])
@@ -273,13 +274,13 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
     )
 
     compliance = await pool.fetch(
-        """
+        f"""
         SELECT cr.id, cr.requirement_id, req.requirement_code, req.name, req.requirement_level,
-               req.requires_file, cr.status, cr.expiration_date, cr.file_url, cr.metadata,
+               req.requires_file, req.expiration_policy,
+               cr.status, cr.expiration_date, cr.file_url, cr.metadata,
                cr.is_manual_override, cr.updated_at,
-               (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE) AS is_expired,
-               (cr.expiration_date IS NOT NULL AND cr.expiration_date >= CURRENT_DATE
-                AND cr.expiration_date <= CURRENT_DATE + INTERVAL '30 days') AS is_expiring_soon
+               {vencido_predicate('cr')} AS is_expired,
+               {por_vencer_predicate('cr')} AS is_expiring_soon
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.entity_id = $1 AND cr.entity_type = 'CARRIER' AND cr.is_current = true

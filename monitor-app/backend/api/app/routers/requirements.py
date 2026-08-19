@@ -71,6 +71,10 @@ def _columna(campo: str) -> str:
 SQL_CATALOGO = f"""
     SELECT req.id::text, req.target_entity, req.requirement_code, req.name,
            req.requirement_level, COALESCE(req.has_expiration, false) AS has_expiration,
+           -- La fuente de verdad de la fecha. `has_expiration` sigue viajando
+           -- porque tiene lectores vivos, pero es el booleano de dos valores
+           -- que cargaba tres significados: quien decida algo mira esta.
+           req.expiration_policy,
            req.is_active,
            req.applies_to_fleet_service_type_ids::text[] AS applies_to_fleet_service_type_ids,
            req.applies_to_management_types,
@@ -91,6 +95,10 @@ _CONDITION_COLUMN_CASTS: dict[str, Optional[str]] = {
     "is_active": None,
     "applies_to_fleet_service_type_ids": "uuid[]",
     "applies_to_management_types": "text[]",
+    # Sin cast: es TEXT con CHECK, y el CHECK es la ultima red. La primera es
+    # el `Literal` del schema, que devuelve 422 en vez de dejar reventar la
+    # base con 500.
+    "expiration_policy": None,
 }
 
 
@@ -142,7 +150,7 @@ async def patch_requirement_conditions(
             current = await conn.fetchrow(
                 """
                 SELECT id, is_active, applies_to_fleet_service_type_ids,
-                       applies_to_management_types
+                       applies_to_management_types, expiration_policy
                 FROM public.compliance_requirements WHERE id = $1
                 """,
                 requirement_id,
@@ -170,7 +178,8 @@ async def patch_requirement_conditions(
                     {", ".join(set_parts)}
                 WHERE id = $1
                 RETURNING id, requirement_code, is_active,
-                          applies_to_fleet_service_type_ids, applies_to_management_types
+                          applies_to_fleet_service_type_ids, applies_to_management_types,
+                          expiration_policy
                 """,
                 *values,
             )

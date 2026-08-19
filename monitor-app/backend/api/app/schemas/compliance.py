@@ -53,6 +53,14 @@ class PendingComplianceRow(BaseModel):
     document_name: str
     status: ComplianceStatus
     expiration_date: Optional[date] = None
+    # Por que esta pendiente. Tres valores excluyentes que el SQL ya resuelve:
+    # el frontend no vuelve a decidirlo comparando fechas, que es como dos
+    # superficies del mismo dato terminan discrepando.
+    urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA"]
+    # Que hace su requisito con la fecha de vencimiento. El renglon de carga lo
+    # necesita para pedir la fecha ANTES de subir: sin el, o pregunta siempre,
+    # o no pregunta nunca y /file rechaza con 422 el archivo ya subido.
+    expiration_policy: Literal["REQUIRED", "OPTIONAL", "NONE"]
 
 
 class PendingComplianceListResponse(BaseModel):
@@ -85,6 +93,10 @@ class RequirementOption(BaseModel):
     name: str
     requirement_level: Literal["LEGAL_MANDATORY", "SHIPPER_REQUIRED", "CONDITIONAL_OPTIONAL"]
     has_expiration: bool
+    # Reemplaza a `has_expiration` como fuente de verdad. Aquel es un booleano
+    # que cargaba tres significados, y por eso la carga rechazaba con 422
+    # documentos cuya fecha la pantalla nunca pedia.
+    expiration_policy: Literal["REQUIRED", "OPTIONAL", "NONE"]
     is_active: bool
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None

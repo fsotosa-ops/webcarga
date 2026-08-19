@@ -6,6 +6,7 @@ from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.asset import AssetCreateBody, AssetPatchBody
 from ..services.audit import log_change, record_manual_edit
+from ..services.vencimientos import por_vencer_predicate, vencido_predicate
 from ..utils.document_storage import resolve_signed_url
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -224,13 +225,13 @@ async def list_asset_compliance_records(
     """Checklist itemizado del activo — mismo shape que el anidado en
     GET /carriers/{id} (_assemble_carrier_detail), filtrado a ASSET."""
     rows = await pool.fetch(
-        """
+        f"""
         SELECT cr.id, cr.requirement_id, req.requirement_code, req.name, req.requirement_level,
-               req.requires_file, cr.status, cr.expiration_date, cr.file_url, cr.metadata,
+               req.requires_file, req.expiration_policy,
+               cr.status, cr.expiration_date, cr.file_url, cr.metadata,
                cr.is_manual_override, cr.updated_at,
-               (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE) AS is_expired,
-               (cr.expiration_date IS NOT NULL AND cr.expiration_date >= CURRENT_DATE
-                AND cr.expiration_date <= CURRENT_DATE + INTERVAL '30 days') AS is_expiring_soon
+               {vencido_predicate('cr')} AS is_expired,
+               {por_vencer_predicate('cr')} AS is_expiring_soon
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.entity_id = $1 AND cr.entity_type = 'ASSET' AND cr.is_current = true

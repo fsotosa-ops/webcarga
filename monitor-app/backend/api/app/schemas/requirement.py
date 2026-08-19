@@ -1,7 +1,7 @@
 """Pydantic schemas para el catálogo de requisitos y su recálculo
 (app/routers/requirements.py). Ver app/services/requirement_conditions.py
 para la regla de aplicabilidad que estos endpoints exponen."""
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -27,6 +27,13 @@ class RequirementConditionsPatchBody(BaseModel):
     is_active: Optional[bool] = None
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None
+    # Que hace el sistema con la fecha de vencimiento de este requisito.
+    # `Literal` y no `str`: un valor fuera de los tres rebota como 422 legible
+    # en vez de llegar al CHECK de la base y volver como 500. La columna es
+    # NOT NULL, asi que `null` explicito no significa nada — pero a diferencia
+    # de `is_active` no hace falta rechazarlo aparte, porque `Literal` ya no
+    # admite None y Pydantic lo corta antes.
+    expiration_policy: Optional[Literal["REQUIRED", "OPTIONAL", "NONE"]] = None
 
     # mode="after", no "before": para cuando estos corren, Pydantic ya
     # validó cada elemento contra su tipo declarado (list[str] /
@@ -64,6 +71,7 @@ class RequirementConditionsPatchBody(BaseModel):
     def sent_fields(self) -> list[str]:
         fields = (
             "is_active", "applies_to_fleet_service_type_ids", "applies_to_management_types",
+            "expiration_policy",
         )
         return [f for f in fields if f in self.model_fields_set]
 

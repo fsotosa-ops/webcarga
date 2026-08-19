@@ -30,6 +30,7 @@ from ..schemas.compliance import (
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
+from ..services.vencimientos import por_vencer_predicate, vencido_predicate
 from ..utils.document_storage import (
     delete_document_version, get_document_history, log_document_replacement, resolve_signed_url,
     upload_document_version,
@@ -79,9 +80,25 @@ async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
 # "No le falta ningún documento" — se pedía renovar algo que la interfaz se
 # negaba a nombrar.
 def pendiente_predicate(alias: str = "cr") -> str:
+    """Lo que le falta a alguien: no tiene el documento, o el que tiene ya no
+    sirve, o esta por dejar de servir.
+
+    OJO: este predicado lo comparten /pending, el embudo (GET /status) y el
+    cajon. Ya hubo un bug por moverlos por separado (ver el comentario de
+    arriba). Si cambias este predicado, las tres lecturas se mueven JUNTAS.
+
+    La tercera via —"por vencer"— se sumo en la Ronda 129. Antes, renovar no
+    tenia superficie en ninguna parte: el predicado exigia expiration_date <
+    CURRENT_DATE, o sea YA vencido, asi que un documento que vence en diez
+    dias no aparecia ni en el cajon ni en la etapa "Hay que renovar" del
+    embudo. Medido al aplicarlo: 5.035 -> 5.038 pendientes. Los 3 que entran
+    son una poliza de seguro que vence en tres dias y dos revisiones de
+    vehiculo, las tres en APPROVED_MANUAL con fecha futura — invisibles hasta
+    el dia en que fuera tarde."""
     return (
         f"({alias}.status IN ('MISSING','EXPIRED') "
-        f"OR ({alias}.expiration_date IS NOT NULL AND {alias}.expiration_date < CURRENT_DATE))"
+        f"OR {vencido_predicate(alias)} "
+        f"OR {por_vencer_predicate(alias)})"
     )
 
 
@@ -291,10 +308,17 @@ async def get_certification_status(
     # el embudo cuenta la fecha y /pending no, el embudo manda a renovar
     # documentos que el cajón se niega a nombrar.
     pendiente = pendiente_predicate(fuente)
-    vencido = (
-        f"({fuente}.status = 'EXPIRED' OR ({fuente}.expiration_date IS NOT NULL "
-        f"AND {fuente}.expiration_date < CURRENT_DATE))"
-    )
+    # La cuarta copia de la regla de vencimiento, ahora tambien del modulo
+    # compartido. Suma `status = 'EXPIRED'` a proposito: el embudo cuenta como
+    # vencido lo que alguien marco a mano aunque no tenga fecha.
+    #
+    # OJO, y queda anotado: la etapa `renovar` la decide ESTE predicado, no
+    # `pendiente`. Un documento POR VENCER entra a /pending y al cajon, pero no
+    # mueve la etapa — medido al aplicarlo, ninguna de las 2 empresas con algo
+    # por vencer cambio de etapa. Ampliar `renovar` a lo proximo a vencer
+    # cambiaria el significado de una etiqueta que operaciones ya usa, asi que
+    # es decision de negocio y no se toma desde aca.
+    vencido = f"({fuente}.status = 'EXPIRED' OR {vencido_predicate(fuente)})"
     cubierto = f"({fuente}.status IS NOT NULL AND NOT {pendiente})"
 
     if group == "carrier":
@@ -374,7 +398,8 @@ _PENDING_ROWS_SQL = f"""
 WITH pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
            req.id AS requirement_id,
-           req.requirement_code, req.name AS document_name, req.requirement_level
+           req.requirement_code, req.name AS document_name, req.requirement_level,
+           req.expiration_policy
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
     WHERE cr.is_current = true AND {pendiente_predicate()}
@@ -417,6 +442,24 @@ carrier_operation_types AS (
 SELECT
     r.id::text, r.entity_type, r.entity_id::text, r.subject_name,
     r.requirement_id, r.requirement_code, r.document_name, r.requirement_level, r.status, r.expiration_date,
+    r.expiration_policy,
+    -- Por que esta fila esta pendiente. El orden de las ramas importa: se
+    -- pregunta primero por lo vencido, porque `por_vencer` ya lo excluye pero
+    -- leerlo al reves invitaria a alguien a "simplificar" el predicado y
+    -- volver a mezclarlos.
+    --
+    -- `status = 'EXPIRED'` va en la MISMA rama que la fecha, igual que en el
+    -- embudo (ver `vencido` en get_certification_status): sin eso, un registro
+    -- marcado vencido a mano y sin fecha saldria como 'FALTA' en el cajon
+    -- mientras el embudo lo cuenta como vencido, que es exactamente el desfase
+    -- de dos lecturas que este modulo ya tuvo una vez. Hoy son 0 filas —se
+    -- midio—, y se escribe asi para que sigan siendo 0 problemas cuando
+    -- aparezca la primera.
+    CASE
+        WHEN r.status = 'EXPIRED' OR {vencido_predicate('r')} THEN 'VENCIDO'
+        WHEN {por_vencer_predicate('r')} THEN 'POR_VENCER'
+        ELSE 'FALTA'
+    END AS urgencia,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
     count(*) OVER() AS total_count
@@ -487,6 +530,13 @@ async def list_pending_compliance_records(
             "document_name": r["document_name"],
             "status": r["status"],
             "expiration_date": r["expiration_date"],
+            # Por que esta pendiente y que exige su requisito. Los dos los
+            # necesita el renglon de carga: la urgencia para ordenar la
+            # atencion, la politica para saber si pedir la fecha ANTES de
+            # subir (sin ella el renglon preguntaria siempre, y /file
+            # rechazaria con 422 despues de haber subido).
+            "urgencia": r["urgencia"],
+            "expiration_policy": r["expiration_policy"],
         }
         for r in rows
     ]

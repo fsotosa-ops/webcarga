@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
-from app.routers.compliance import router
+from app.routers.compliance import pendiente_predicate, router
 from tests.conftest import USER, wire_transactional_conn
 
 
@@ -373,6 +373,10 @@ def _pending_row(**overrides):
         "requirement_level": "LEGAL_MANDATORY", "status": "MISSING", "expiration_date": None,
         "carrier_id": "c1", "carrier_name": "Transportes Sur Spa", "carrier_tax_id": "76.111.111-1",
         "carrier_operation_types": ["Tractoreo"], "total_count": 1,
+        # Los produce el SELECT (Ronda 129): por que esta pendiente, y que
+        # exige su requisito. El renglon de carga necesita la politica para
+        # saber si pedir la fecha ANTES de subir.
+        "urgencia": "FALTA", "expiration_policy": "REQUIRED",
     }
     base.update(overrides)
     return base
@@ -418,6 +422,54 @@ def test_pending_rows_maps_categories_and_certification_type():
     assert rows[0]["category"] == "EMPRESA" and rows[0]["certification_type"] == "BASICA"
     assert rows[1]["category"] == "CHOFER" and rows[1]["certification_type"] == "ADICIONAL"
     assert rows[2]["category"] == "EQUIPO" and rows[2]["certification_type"] == "ADICIONAL"
+
+
+def test_pending_rows_expone_urgencia_y_politica():
+    """Los dos campos que el renglon de carga necesita.
+
+    Sin `expiration_policy` el renglon no sabe si pedir la fecha y termina
+    preguntandola siempre o nunca; nunca es un 422 despues de haber subido.
+    """
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _pending_row(urgencia="POR_VENCER", expiration_policy="OPTIONAL"),
+    ]
+    client = make_client(pool)
+
+    fila = client.get("/api/v1/compliance-records/pending").json()["rows"][0]
+
+    assert fila["urgencia"] == "POR_VENCER"
+    assert fila["expiration_policy"] == "OPTIONAL"
+
+
+def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():
+    """Antes de la Ronda 129 renovar no tenia superficie: el predicado exigia
+    la fecha YA pasada, asi que un documento que vence en diez dias no
+    aparecia en ninguna pantalla.
+
+    Las dos mitades del `>=` importan: sin ella "por vencer" se tragaria a
+    "vencido" y la urgencia de la fila mentiria."""
+    sql = pendiente_predicate("cr")
+
+    assert "cr.expiration_date < CURRENT_DATE" in sql
+    assert "cr.expiration_date >= CURRENT_DATE" in sql
+    assert "INTERVAL '30 days'" in sql
+
+
+def test_la_urgencia_cuenta_lo_marcado_vencido_igual_que_el_embudo():
+    """Dos lecturas del mismo dato que discrepan es el defecto que este modulo
+    ya tuvo: el embudo mandaba 8 empresas a "Hay que renovar" mientras el cajon
+    de cada una decia "No le falta ningun documento".
+
+    Un registro marcado EXPIRED a mano y sin fecha tiene que salir VENCIDO en
+    las dos. Hoy hay 0 filas asi en produccion; el test existe para que la
+    primera no reabra el desfase."""
+    from app.routers.compliance import _PENDING_ROWS_SQL
+
+    rama = _PENDING_ROWS_SQL.split("AS urgencia")[0].split("CASE")[-1]
+    assert "r.status = 'EXPIRED'" in rama, (
+        "la urgencia dejo de contar lo marcado vencido a mano; el embudo si lo cuenta"
+    )
 
 
 def test_pending_rows_includes_carrier_operation_types():
