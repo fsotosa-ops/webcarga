@@ -142,8 +142,9 @@ export function TriageFileTable({
   )
 }
 
-/** Hoy siempre devuelve un guion: ningún item llega con match. El lugar existe
- *  desde ahora para que la llegada del agente no obligue a rehacer la fila. */
+/** Cuando no hay sugerencia, el clasificador SÍ corrió: buscó una señal en el
+ *  nombre del archivo (RUT, patente, nombre de conductor) y no encontró
+ *  ninguna. Ese archivo espera una asignación manual. */
 function Suggestion({ row }: { row: QueueRow }) {
   if (row.match_status === 'AMBIGUOUS' && row.candidate_count > 0) {
     return (
@@ -162,5 +163,5 @@ function Suggestion({ row }: { row: QueueRow }) {
       </span>
     )
   }
-  return <span className="text-gray-500" title="Sin sugerencia — el clasificador automático todavía no está conectado">—</span>
+  return <span className="text-gray-500" title="Sin sugerencia — el clasificador no encontró ninguna señal en el nombre del archivo">—</span>
 }

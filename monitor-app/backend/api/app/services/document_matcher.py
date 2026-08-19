@@ -280,11 +280,35 @@ def match_document(
             },
         ))
 
+    # Conductor por RUT en el nombre del archivo. Simétrica a la rama de
+    # empresas de arriba: sin esto, un archivo que trae el RUT del conductor
+    # ADEMÁS de su nombre queda peor que uno que solo trae el nombre — el
+    # `continue` de la rama difusa de abajo lo saca del match difuso, y antes
+    # de este cambio nada más abajo lo recogía.
+    for rut in ruts:
+        for entity_id, tax_id, _name in universe.drivers:
+            if tax_id != rut:
+                continue
+            requirement = _match_requirement(normalized, catalog, "DRIVER")
+            candidates.append(MatchCandidate(
+                entity_type="DRIVER",
+                entity_id=entity_id,
+                requirement_id=requirement.requirement_id if requirement else None,
+                confidence=0.95 if requirement else 0.60,
+                evidence={
+                    "entity": {"via": "RUT", "score": 0.95, "raw": rut},
+                    "type": (
+                        {"via": "ALIAS", "score": 0.85, "alias": requirement.alias}
+                        if requirement else {"via": None}
+                    ),
+                },
+            ))
+
     # Conductor por nombre de persona. Es el caso dominante en SharePoint:
     # el nombre del archivo trae la persona, no su RUT.
     for entity_id, tax_id, full_name in universe.drivers:
         if tax_id and tax_id in ruts:
-            continue  # ya resuelto por identificador fuerte más abajo
+            continue  # ya resuelto por identificador fuerte más arriba
         ratio = best_name_similarity(normalized, full_name)
         if ratio < _FUZZY_FLOOR:
             continue

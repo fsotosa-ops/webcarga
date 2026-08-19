@@ -17,6 +17,53 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-19 (cont.) — Ronda 132: la revisión final de `feat/clasificador-bandeja`, los 10 hallazgos arreglados en una pasada
+
+La rama conectó el motor de clasificación de documentos (Tareas 1-2 del plan
+`2026-08-19-conectar-el-clasificador`) y pasó sus revisiones por tarea, pero la revisión final de
+la rama encontró 1 crítico y 9 importantes/menores. Se arreglaron todos, cada uno con test nuevo
+mutado antes de darlo por bueno. Reporte completo:
+`.superpowers/sdd/2026-08-19-conectar-el-clasificador/task-fix-report.md`.
+
+**El crítico**: `document_matcher.py` sacaba al conductor del match difuso cuando su RUT aparecía en
+el nombre del archivo (`LICENCIA_<nombre>_<rut>.pdf` daba UNMATCHED), y el comentario declaraba un
+rescate ("ya resuelto por identificador fuerte más abajo") que no existía. Se agregó la rama de RUT
+para conductores, simétrica a la de empresas — único cambio autorizado al motor esta ronda.
+
+**Decisiones de arquitectura**:
+- La bandeja global (sin `carrier_id`) ahora filtra `matcher_io.py` por `FUNNEL_ACTIVE_STATUSES`
+  (la misma constante de `compliance.py`, no una lista nueva): 207 de 248 empresas eran
+  `LEGACY_INACTIVE` y se proponían igual al 0,95. Con `carrier_id` fijo (el operador ya eligió la
+  empresa desde su ficha) no se filtra — esa empresa es el destino querido aunque esté de baja.
+- El dedup de candidatos duplicados (mismo RUT dos veces en el nombre, ej. `F30_<rut>_ANEXO_<rut>`)
+  se implementó en `document_ingest.py` (el llamador), no en el motor — la restricción de esta
+  ronda era "sólo el arreglo del punto 1 en `document_matcher.py`". Como el motor ya devuelve la
+  lista ordenada por confianza, deduplicar quedándose con la primera aparición después de ese sort
+  da el mismo resultado que ordenar después de deduplicar.
+- `AMBIGUOUS` ya no escribe un ganador arbitrario: `entity_type`/`entity_id`/`requirement_id`/
+  `confidence` quedan NULL; `candidates` conserva la lista completa para que `classify-batch` la
+  preseleccione en el futuro.
+- El invariante "el catálogo cubre el 100% de los requisitos" (`test_matcher_io.py`) se invirtió a
+  un piso ("no baja de los 37 que hoy tienen alias") — el original ponía la suite roja el día que
+  Operaciones agregara un requisito legítimamente sin alias todavía.
+- `asyncpg` devuelve columnas `JSONB` como `str`, no como `dict` — confirmado con una consulta
+  directa antes de escribir el test de integración del punto 5, no asumido.
+
+**Verificación**: suite rápida 724 passed (antes 720), suite de integración 133 passed en 6:51
+(antes 128) — corrida completa, sin matar a mitad. Frontend: 153 passed en `components/compliance/`,
+7 passed en los trinquetes visuales (`sistema.test.ts`/`escala.test.ts`/`espanol-neutral.test.ts`,
+ningún margen se movió), `tsc --noEmit` limpio. 9 mutaciones aplicadas y restauradas, las 9
+mataron su test correspondiente sin necesidad de reescribir ningún assert.
+
+**Commits**: `a03bbc40` (RUT conductor), `b4d43605` (empresas de baja + invariante + simetría
+assets), `ade6d243` (dedup + AMBIGUOUS null + error + contador del lote), `d06b165b` (integración
+real de las 6 columnas), `4418e0c2` (copy del guion en `TriageFileTable.tsx`).
+
+**Siguiente paso exacto**: ninguno pendiente de este brief — los 10 hallazgos están cerrados y
+verificados. Lo que sigue es responsabilidad del coordinador: decidir si la rama se integra a `dev`
+(ver skill `finishing-a-development-branch`) y, fuera de esta rama, retomar el click-through
+bloqueado por credenciales que ya estaba anotado en "Próxima sesión" más abajo.
+
 ### 2026-08-19 (cont.) — Ronda 131: código muerto borrado, y la jerarquía de roles deja de estar escrita diez veces
 
 Salió de dos instrucciones del usuario: *"todo código muerto/huérfano y frankenstein se borran o

@@ -4,6 +4,7 @@ El archivo entra sin declarar a qué requisito pertenece y espera en staging
 hasta que una persona lo clasifica. La invariante que estos tests protegen:
 NADA toca public.compliance_records hasta la clasificación explícita.
 """
+import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -142,6 +143,218 @@ def test_upload_requires_at_least_one_file():
     res = client.post("/api/v1/document-ingest/c1/files", files=[])
 
     assert res.status_code == 422
+
+
+# ── El cableado del clasificador ───────────────────────────────────────────
+
+def _pool_de_ingesta():
+    """Mismo armado que el resto del archivo: transaccion cableada, un
+    batch_id fijo y un fetchrow que ya trae las columnas de destino."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = "batch-1"
+    conn.fetchrow.return_value = {
+        "id": "item-1", "file_name": "x.pdf", "mime_type": "application/pdf",
+        "size_bytes": 9, "storage_path": "staging/batch-1/x.pdf",
+        "match_status": "UNMATCHED",
+    }
+    return pool, conn
+
+
+def test_un_archivo_entra_con_su_destino_propuesto(monkeypatch):
+    """El cable que faltaba. Antes, `document_ingest.py:70` escribia el literal
+    'UNMATCHED' en cada archivo, asi que las seis columnas de destino —que
+    EXISTEN desde que se creo la tabla— quedaban en cero para siempre."""
+    from app.services.document_matcher import MatchCandidate
+
+    monkeypatch.setattr("app.routers.document_ingest.match_document",
+                        lambda **kw: [MatchCandidate(
+                            entity_type="DRIVER", entity_id="d1", requirement_id="req-1",
+                            confidence=0.95,
+                            evidence={"entity": {"via": "RUT", "score": 0.95, "raw": "1-9"}},
+                        )])
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files",
+                files={"files": ("12345678-9_licencia.pdf", b"%PDF-1.4", "application/pdf")})
+
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    sql, args = insert.args[0], insert.args[1:]
+    assert "entity_id" in sql and "confidence" in sql and "match_evidence" in sql
+    assert "'UNMATCHED'" not in sql, (
+        "el literal sigue ahi: la fila nace sin clasificar aunque el motor haya respondido"
+    )
+    assert "AUTO" in args
+
+
+def test_si_el_motor_falla_el_archivo_igual_entra(monkeypatch):
+    """EL ARCHIVO YA ESTA EN STORAGE cuando se clasifica. Si el motor
+    explotara y dejaramos propagar, el blob quedaria huerfano y el operador
+    veria un error sobre un archivo que si se subio.
+
+    Degradar a UNMATCHED es exactamente el comportamiento de antes del cambio:
+    en el peor caso, esta ronda no cambia nada.
+
+    El motivo del fallo no se pierde: no hay logging en toda `app/` (a
+    proposito, no se agrega acá), asi que el rastro va a la columna `error`
+    que la tabla ya tenia y nadie escribia — sin el nombre del archivo, que
+    es PII."""
+    def explota(**kw):
+        raise ValueError("catalogo corrupto")
+
+    monkeypatch.setattr("app.routers.document_ingest.match_document", explota)
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    res = client.post("/api/v1/document-ingest/files",
+                      files={"files": ("x.pdf", b"%PDF-1.4", "application/pdf")})
+
+    assert res.status_code == 201
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    args = insert.args[1:]
+    assert "UNMATCHED" in args
+    assert args[-1] == "ValueError: catalogo corrupto", (
+        "el motivo del fallo (tipo + mensaje, sin nombre de archivo) tiene "
+        "que quedar en la columna `error`"
+    )
+
+
+def test_el_catalogo_se_lee_una_vez_por_lote_no_una_por_archivo(monkeypatch):
+    """Una carga de 50 documentos hace 2 consultas de catalogo y universo, no
+    100. El motor es puro justamente para poder reusar lo cargado."""
+    llamadas = {"catalogo": 0, "universo": 0}
+
+    async def catalogo_espia(conn):
+        llamadas["catalogo"] += 1
+        from app.services.document_matcher import Catalog
+        return Catalog(aliases=[])
+
+    async def universo_espia(conn, carrier_id=None):
+        llamadas["universo"] += 1
+        from app.services.document_matcher import EntityUniverse
+        return EntityUniverse()
+
+    monkeypatch.setattr("app.routers.document_ingest.cargar_catalogo", catalogo_espia)
+    monkeypatch.setattr("app.routers.document_ingest.cargar_universo", universo_espia)
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files", files=[
+        ("files", ("a.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("b.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("c.pdf", b"%PDF-1.4", "application/pdf")),
+    ])
+
+    assert llamadas == {"catalogo": 1, "universo": 1}
+
+
+def test_duplicados_del_mismo_rut_no_degradan_a_ambiguous(monkeypatch):
+    """'F30_<rut>_ANEXO_<rut>.pdf' es un archivo real: el RUT aparece dos
+    veces en el nombre y `extract_ruts` no deduplica, asi que el motor
+    devuelve dos candidatos que son la MISMA empresa. Sin deduplicar antes de
+    clasificar, `classify_match` los ve empatados y AUTO se degrada a
+    AMBIGUOUS aunque no haya ninguna ambiguedad real."""
+    from app.services.document_matcher import MatchCandidate
+
+    mismo_candidato_dos_veces = [
+        MatchCandidate(entity_type="CARRIER", entity_id="c1", requirement_id="req-1",
+                        confidence=0.95, evidence={"entity": {"via": "RUT", "raw": "1-9"}}),
+        MatchCandidate(entity_type="CARRIER", entity_id="c1", requirement_id="req-1",
+                        confidence=0.95, evidence={"entity": {"via": "RUT", "raw": "1-9"}}),
+    ]
+    monkeypatch.setattr("app.routers.document_ingest.match_document",
+                        lambda **kw: mismo_candidato_dos_veces)
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files",
+                files={"files": ("F30.pdf", b"%PDF-1.4", "application/pdf")})
+
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    args = insert.args[1:]
+    assert args[5] == "AUTO", (
+        "dos candidatos iguales no son una ambiguedad real: deduplicar antes "
+        "de clasificar tiene que devolver AUTO, no AMBIGUOUS"
+    )
+    assert args[7] == "c1"
+
+
+def test_ambiguous_no_escribe_un_ganador_arbitrario(monkeypatch):
+    """Con un empate real (dos empresas homonimas, por ejemplo), elegir
+    `candidatos[0]` seria un desempate arbitrario que define el orden de
+    recorrido del motor, no una decision. La eleccion tiene que salir de
+    `candidates` — nunca de estas cuatro columnas."""
+    from app.services.document_matcher import MatchCandidate
+
+    empatados = [
+        MatchCandidate(entity_type="DRIVER", entity_id="d1", requirement_id="req-1",
+                        confidence=0.70, evidence={"entity": {"via": "NOMBRE_FUZZY"}}),
+        MatchCandidate(entity_type="DRIVER", entity_id="d2", requirement_id="req-1",
+                        confidence=0.69, evidence={"entity": {"via": "NOMBRE_FUZZY"}}),
+    ]
+    monkeypatch.setattr("app.routers.document_ingest.match_document",
+                        lambda **kw: empatados)
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files",
+                files={"files": ("ANEXO 3 Felipe.jpeg", b"x", "image/jpeg")})
+
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    args = insert.args[1:]
+    assert args[5] == "AMBIGUOUS"
+    assert args[6] is None, "entity_type no puede quedar con el ganador arbitrario"
+    assert args[7] is None, "entity_id no puede quedar con el ganador arbitrario"
+    assert args[8] is None, "requirement_id no puede quedar con el ganador arbitrario"
+    assert args[9] is None, "confidence no puede quedar con el ganador arbitrario"
+    # `candidates` SI conserva las dos opciones: de ahi sale la eleccion.
+    candidatos_guardados = json.loads(args[11])
+    assert len(candidatos_guardados) == 2
+
+
+def test_el_lote_cuenta_auto_y_revision_por_separado(monkeypatch):
+    """`document_ingest_batches.matched_auto`/`matched_review` se crearon
+    textualmente para medir si hace falta sumar OCR/LLM, y estaban en 0
+    porque nadie las escribia."""
+    from app.services.document_matcher import MatchCandidate
+
+    resultados = iter([
+        [MatchCandidate(entity_type="ASSET", entity_id="a1", requirement_id="r1",
+                        confidence=0.95, evidence={})],   # -> AUTO
+        [MatchCandidate(entity_type="DRIVER", entity_id="d1", requirement_id=None,
+                        confidence=0.70, evidence={})],   # -> SUGGESTED
+        [],                                                # -> UNMATCHED
+    ])
+    monkeypatch.setattr("app.routers.document_ingest.match_document",
+                        lambda **kw: next(resultados))
+    pool, conn = _pool_de_ingesta()
+    conn.fetchrow.side_effect = [
+        {"id": "i1", "file_name": "a.pdf", "mime_type": "application/pdf",
+         "size_bytes": 9, "storage_path": "staging/batch-1/a.pdf", "match_status": "AUTO"},
+        {"id": "i2", "file_name": "b.pdf", "mime_type": "application/pdf",
+         "size_bytes": 9, "storage_path": "staging/batch-1/b.pdf", "match_status": "SUGGESTED"},
+        {"id": "i3", "file_name": "c.pdf", "mime_type": "application/pdf",
+         "size_bytes": 9, "storage_path": "staging/batch-1/c.pdf", "match_status": "UNMATCHED"},
+    ]
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files", files=[
+        ("files", ("a.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("b.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("c.pdf", b"%PDF-1.4", "application/pdf")),
+    ])
+
+    update = next(c for c in conn.execute.call_args_list
+                  if "document_ingest_batches" in c.args[0])
+    assert update.args[1:] == ("batch-1", 1, 1, 1), (
+        "esperaba (batch_id, unmatched=1, matched_auto=1, matched_review=1)"
+    )
 
 
 # ── Bandeja: la cola global ────────────────────────────────────────────────
