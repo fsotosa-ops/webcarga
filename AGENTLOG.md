@@ -17,6 +17,110 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-19 (cont.) — Ronda 130: la conexión a Supabase, auditada contra fsummer-platform
+
+Salió de una pregunta del usuario —"¿estamos bien conectados?"— y terminó encontrando que **la API
+sola podía dejar la base sin conexiones**. Nada de esto lo causó Certificación; se descubrió porque
+la verificación de la Ronda 129 saturó el pooler.
+
+#### El dato que ordena todo
+
+```
+max_connections = 60          ← medido, es una instancia chica
+--max-instances = 5           ← deploy-monitor-api.yml
+max_size = 10 por instancia   ← app/db.py, valor anterior
+```
+
+**5 × 10 = 50 de 60.** Y lo primero que se cae al llegar ahí no es la API: son los servicios
+internos de Supabase (postgrest, el exporter, la mgmt-api), que ya ocupan ~9. Bajado a 5 → techo 25,
+con un test que falla si alguien lo sube y que lleva el porqué escrito.
+
+#### Dos cosas que afirmé mal y hay que dejar corregidas
+
+1. **"El host `db.<ref>.supabase.co` no existe."** Falso: tiene registro **AAAA**, es **IPv6 puro**.
+   Mi máquina no tiene IPv6, y `getaddrinfo` devolvía `gaierror` — que se lee como "no existe" y no
+   lo es. Verificado contra 8.8.8.8, 1.1.1.1 y 9.9.9.9.
+2. **"Producción está mal conectada."** También falso. `init_pool` corre en el `lifespan` sin
+   `try/except`, así que si el DSN no conectara la API no arrancaría; y en `pg_stat_activity` están
+   los **4 grupos de 2 conexiones desde `2600:1900:...`, el rango IPv6 de Google Cloud**. El secreto
+   de Secret Manager está bien.
+
+**Lo que sí está roto**: ese mismo DSN en `.env` y `.env.example` **no sirve desde un escritorio sin
+IPv6**. Por eso `conftest.py` tuvo que armarse su propia conexión por el pooler en vez de leer
+`DATABASE_URL`. Ahora `.env.example` documenta las dos URLs y cuál va dónde.
+
+#### El bug que habría tumbado la API al desplegar
+
+Escribí `statement_cache_size=0 if pooler else None`, dando por hecho que `None` era el default.
+**Es falso**: asyncpg lo valida con `>= 0` y devuelve `ValueError`. **El test no lo detectó porque
+mockeaba `create_pool`** — un mock nunca contradice a la librería. Apareció probando contra la base
+real. Ahora el kwarg se **omite**, con un test que fija por qué para que nadie lo "simplifique".
+
+Es la misma clase que [[feedback_verify_new_sql_against_real_db]], aplicada a la firma de una
+librería en vez de a SQL.
+
+#### El A/B que cambió la decisión
+
+La intención era mover el `conftest` al pooler en **modo transacción** (6543), como
+`fsummer-platform`. Medido con una sola variable:
+
+| | |
+|---|---|
+| 5432 (sesión) | 3 tests en 56 s |
+| 6543 (transacción) | **1 test en 3 minutos**, después `connection was closed in the middle of operation` |
+
+El motivo es la forma de `conexion_revertida`: envuelve **cada test** en una transacción que dura
+todo el test. En modo transacción el pooler fija el backend igual, pero contra un pool mucho más
+chico — todo el costo y ninguna ventaja. **Se queda en sesión.**
+
+Pero `app/db.py` **sí** sabe hablar los dos modos: detecta el 6543 por el DSN y apaga el caché sólo
+ahí. Medido: 60 consultas concurrentes por el 6543 con el caché encendido → **44 fallan**
+(`prepared statement "__asyncpg_stmt_3__" does not exist`); apagado → 0. Y no se apaga siempre
+porque cuesta **una vuelta de red por consulta** (~25-30 ms desde Cloud Run).
+
+#### Lo que hice mal, y la regla que queda
+
+**Maté cuatro corridas de la suite a mitad.** En modo sesión cada conexión retiene un backend hasta
+que expira, así que dejé la base sin cupo **~40 minutos** — no conectaba ni pytest, ni mis scripts,
+ni el MCP de Supabase. La regla no es cambiar de puerto: **es dejar que la suite termine.** Y la
+suite completa de integración hace la base inutilizable para el resto mientras corre, así que se
+corre cuando nadie más la necesita.
+
+#### Lo que consume la base de verdad (124 días de `pg_stat_statements`)
+
+| Consulta | Llamadas | Total | Media |
+|---|---|---|---|
+| `SELECT name FROM pg_timezone_names` | 112.375 | **19,6 h** | 628 ms |
+| Introspección de esquema (3 consultas) | ~113.000 c/u | **5,5 h** | 48-75 ms |
+| Ingesta de Mage (`bronze.*`, `COPY`) | ~26.000 | 4,9 h | 200-1.200 ms |
+| **`sync_habitual_drivers()`** | 142 | 58 min | **24,5 s** (máx **103 s**) |
+| Resolución de flota · Certificación | — | **no aparecen** | — |
+
+**Las 25 horas de arriba no las gasta nuestra aplicación**: son las 4 consultas que PostgREST corre
+al recargar su caché de esquema, y lo hace ante cualquier DDL. Quien hace DDL constantemente acá es
+dbt, en cada corrida de Mage. **Hipótesis a verificar, no confirmada.**
+
+**Y Redis no resuelve esto**: el caché de la API no toca ni una de esas consultas. `app/cache.py`
+está bien hecho —falla abierta, y sólo rutas públicas *porque el middleware corre antes de
+`Depends(get_current_user)`*, lo cual impide un agujero real— pero cubre **2 de 55 endpoints GET**,
+y su clave se arma a mano en dos lugares (el middleware y `invalidate_trips_meta_cache`). Es la
+misma fragilidad que se corrigió en el frontend con `lib/queries/certificacion.ts`.
+
+**Un aviso sobre el trigger de flota**: vi un `UPDATE app.trips SET fleet_link_id` corriendo 92
+segundos, y lo reporté como problema en vivo. **No aparece entre los consumidores acumulados**, así
+que casi seguro fue efecto de la saturación que yo causé. No hay evidencia de que sea rutinario.
+
+#### Próximo paso exacto
+
+1. [ ] **`sync_habitual_drivers()`** — 24,5 s de media, hasta 103. Es lo más lento de la base por
+   llamada, y es código nuestro.
+2. [ ] **Confirmar la hipótesis del DDL de dbt** contra la recarga de PostgREST. Si se confirma, se
+   arregla en Mage.
+3. [ ] **El plan de Supabase**: `max_connections=60` y agregar `pg_stat_statements` tarda *minutos*.
+   Los arreglos de esta ronda compran margen, no lo quitan.
+4. [ ] **Si se quiere que Redis rinda**: cachear DENTRO del endpoint (después de autenticar, con la
+   clave incluyendo rol/usuario) y unificar la construcción de claves en una sola función.
+
 ### 2026-08-19 (cont.) — Ronda 129: la carga documental terminada, y el gesto es uno solo
 
 Continuación directa de la Ronda 128. Se ejecutaron las **Tareas 3, 6, 7 y 4** del plan
