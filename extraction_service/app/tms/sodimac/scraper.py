@@ -50,6 +50,57 @@ SEL_TABLE_ROWS = "table[mat-table] tr[mat-row]"
 SEL_TABLE_CELLS = "td[mat-cell]"
 
 
+def dedupe_captures(
+    captures: list[list[list[str]]], headers: list[str]
+) -> tuple[list[dict], list[tuple[int, int]]]:
+    """Convierte las capturas crudas de la tabla en filas únicas.
+
+    Cada elemento de `captures` es lo que devolvió UNA lectura del DOM: una
+    lista de filas, cada fila una lista de textos de celda.
+
+    POR QUÉ EXISTE (GitHub issue #5, 2026-08-19): `_scrape_table` lee
+    `document.querySelectorAll('tr[mat-row]')` — TODO el documento, no las filas
+    nuevas — en cada click de paginación. Como el portal agrega filas en vez de
+    reemplazarlas, cada lectura recaptura las anteriores. Medido sobre tres
+    archivos consecutivos de producción: **320 filas escritas para 46 filas
+    reales de información**, con la escalera exacta
+    `23×10 + 2×(1+2+…+9) = 320` — la primera lectura ve 23 filas, la segunda
+    25, y así hasta 41.
+
+    Aguas abajo eso se volvía paradas inventadas: el transformador de Mage
+    agrupa por viaje y mete cada fila como una parada, así que un viaje de una
+    parada aparecía con diez.
+
+    LA CLAVE ES LA FILA COMPLETA, a propósito. Una solicitud con varias
+    conexiones son varias patas, y el portal lista una fila por pata con
+    orígenes (o destinos) distintos — ver issue #6. Deduplicar por `Nº ID`
+    borraría una pata real. Dos filas idénticas en todas sus columnas no se
+    distinguen entre sí ni acá ni aguas abajo, así que colapsarlas no pierde
+    información.
+
+    Devuelve las filas únicas en el orden en que aparecieron, y una lista de
+    `(nuevas, duplicadas)` por captura para poder loguear el patrón — que es
+    justo el diagnóstico que faltaba cuando esto pasó inadvertido.
+    """
+    seen: set[tuple[str, ...]] = set()
+    rows: list[dict] = []
+    stats: list[tuple[int, int]] = []
+
+    for cells_list in captures:
+        nuevas = 0
+        for cells in cells_list:
+            row = dict(zip(headers, cells))
+            key = tuple(row.get(h, "") for h in headers)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+            nuevas += 1
+        stats.append((nuevas, len(cells_list) - nuevas))
+
+    return rows, stats
+
+
 class SodimacExtractor(BaseTMSExtractor):
     SOURCE_NAME = "sodimac"
     PRODUCT_NAME = "trips"
@@ -343,7 +394,9 @@ class SodimacExtractor(BaseTMSExtractor):
         headers = [h.strip() for h in raw_headers if h.strip()]
         logger.info(f"Headers detectados: {headers}")
 
-        all_rows: list[dict] = []
+        # Cada iteración guarda su captura cruda; la deduplicación va después,
+        # en `dedupe_captures` (función pura, testeable sin navegador).
+        captures: list[list[list[str]]] = []
         page_num = 1
         while True:
             await page.wait_for_selector(SEL_TABLE_ROWS, timeout=timeout_ms)
@@ -360,11 +413,8 @@ class SodimacExtractor(BaseTMSExtractor):
                     );
                 }"""
             )
-            for cells in page_cells:
-                all_rows.append(dict(zip(headers, cells)))
-            logger.info(
-                f"Página {page_num}: +{len(page_cells)} filas (total={len(all_rows)})"
-            )
+            captures.append(page_cells)
+            logger.info(f"Página {page_num}: leídas {len(page_cells)} filas del DOM")
 
             if await self._next_is_disabled(page):
                 break
@@ -384,6 +434,25 @@ class SodimacExtractor(BaseTMSExtractor):
                 timeout=timeout_ms,
             )
             page_num += 1
+
+        all_rows, stats = dedupe_captures(captures, headers)
+        leidas = sum(n + d for n, d in stats)
+        duplicadas = sum(d for _, d in stats)
+        detalle = ", ".join(
+            f"p{i + 1}:+{n}/-{d}" for i, (n, d) in enumerate(stats)
+        )
+        logger.info(
+            f"[STEP scrape] {leidas} filas leídas del DOM → {len(all_rows)} únicas "
+            f"({duplicadas} duplicadas descartadas). Por página (nuevas/duplicadas): {detalle}"
+        )
+        # Señal de que la paginación relee en vez de avanzar (issue #5): si casi
+        # todo lo leído era repetido, el arreglo de acá lo tapa pero el portal
+        # sigue obligando a leer de más.
+        if leidas and duplicadas / leidas > 0.5:
+            logger.warning(
+                f"[STEP scrape] {duplicadas} de {leidas} filas leídas eran duplicadas "
+                f"({duplicadas / leidas:.0%}) — la paginación está releyendo el DOM completo."
+            )
 
         return headers, all_rows
 
