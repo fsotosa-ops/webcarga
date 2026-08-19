@@ -283,21 +283,58 @@ y se resuelve **preguntando sin exigir** (como `NONE` perdería una fecha necesa
 bloquearía documentos que no vencen); y sin `onDeshacer` el renglón **no ofrece deshacer**, porque
 prometer una vuelta atrás que no existe es peor que no ofrecerla.
 
+#### CIERRE — Tareas 8 y 2 también hechas
+
+**Tarea 8** (`7785961a`): crear una empresa deja de empujar a `/dashboard/carriers`. Verificado:
+`grep -rn "dashboard/carriers"` sobre `components/compliance/` y `app/dashboard/compliance/` no
+devuelve **nada**. Los cuatro puntos de fuga están cerrados.
+
+**Tarea 2** (`3741de31`): `/file` valida contra la política. **Valida ANTES de tocar storage**, y hay
+un test que lo fija (`upload.assert_not_called()`); mover la validación después de la subida lo
+rompe, comprobado. La política es del requisito, así que la consulta que ya existía se extendió con
+el JOIN en vez de agregar una segunda vuelta. Verificado contra Postgres real con `PREPARE`/`EXECUTE`.
+
+**Dos correcciones a documentos ya comiteados**: el spec y el plan afirmaban que el cliente del
+frontend ya tenía el método de subida directa, citando `lib/api/compliance.ts:71`. **Es falso** —
+esa línea es `deleteFile`; el tipo `ComplianceFileUploadResult` está declarado y ninguna función lo
+usa. El método hay que escribirlo en la Tarea 6. Lo que sí es cierto: `apiFetch` ya maneja
+`FormData` sin pisar el `Content-Type` y propaga el `detail` del backend como mensaje, así que el
+422 llega al renglón como texto legible.
+
+**Lo que destaparon los 16 tests de integración contra Postgres real**: la migración dejó la columna
+`NOT NULL` **sin `DEFAULT`**, así que todo `INSERT` que no la nombre revienta. Se verificó que **no
+existe camino de producción que inserte requisitos** (el catálogo se siembra por migraciones;
+`requirements.py` sólo tiene GET, PATCH de condiciones y recálculo), así que **se deja sin `DEFAULT`
+a propósito**: un default silencioso convertiría "nadie decidió" en "no vence", que es el defecto
+que esta columna vino a corregir. El fixture de integración lo declara.
+
+**Instrucción del usuario registrada, y es la que ordena lo que viene**: *"no repliques ni dupliques
+código, que esto no se vuelva un frankenstein"* + *"necesito código robusto y mantenible"*. Ya está
+escrito en el plan de la Tarea 6: la subida **no se implementa dos veces** — el cajón y la ficha
+legacy consumen **un** hook `useSubirDocumento`, y **un** método de cliente. Dos implementaciones de
+"subir un documento a un requisito" es exactamente cómo este módulo terminó con dos caminos de carga
+que se estorbaban.
+
+**Estado**: backend 825 tests, frontend 1.134, todo comiteado y pusheado a `dev`.
+**`RenglonPendiente` está comiteado y en `origin/dev`, pero todavía no lo importa nadie** — la
+Tarea 6 es la que lo vuelve visible.
+
 #### Próximo paso exacto
 
-1. [ ] **Tarea 2** — `/file` valida contra la política. La columna ya está en la base, así que el
-   orden migración-antes-que-API ya está satisfecho para esto.
+1. [x] ~~Tarea 2~~ — **HECHA**. Y la Tarea 8 también.
 2. [ ] **Tarea 3** — una sola definición de "por vencer". **Es la que puede explotar**:
    `pendiente_predicate()` alimenta `/pending`, el embudo y el cajón, y hay bug precedente
    documentado en `compliance.py:78-79`. Si los conteos del embudo se mueven, entender por qué antes
    de tocar nada.
-3. [ ] **Tareas 4, 6, 7, 8** — Configuración edita la política; el cajón usa el renglón y suelta el
-   dropzone; la ficha legacy usa el mismo renglón; crear empresa deja de salir del módulo.
-4. [ ] **Tarea 9** — verificación e2e, incluido el click-through subiendo un documento real.
-5. [ ] **Decisión abierta**: si "deshacer" una subida directa es posible sin borrar evidencia.
+3. [ ] **Tarea 6** — el cajón usa el renglón y suelta el dropzone. **Es la que vuelve visible todo
+   lo construido.** Necesita escribir `complianceApi.uploadFile` (no existe) y el hook
+   `useSubirDocumento`, **uno solo**, que la Tarea 7 reusa sin reimplementar.
+4. [ ] **Tareas 4 y 7** — Configuración edita la política; la ficha legacy usa el mismo renglón.
+5. [ ] **Tarea 9** — verificación e2e, incluido el click-through subiendo un documento real.
+6. [ ] **Decisión abierta**: si "deshacer" una subida directa es posible sin borrar evidencia.
    `undo-classify` revierte una clasificación *de la bandeja*, y el camino directo no pasa por ahí.
 
-Estimación restante: **4 a 5 horas**, de las cuales cerca de una es esperar suites y deploys
+Estimación restante: **~3 horas**, de las cuales cerca de una es esperar suites y deploys
 (`pytest` completo tarda 8 minutos).
 
 Plan en `docs/superpowers/plans/2026-08-19-certificacion-carga-documental.md`.
