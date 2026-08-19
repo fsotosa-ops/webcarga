@@ -88,23 +88,25 @@ describe('Certificación — una lista, dos vistas', () => {
 
   it('muestra en la misma fila lo que falta y lo que llegó sin clasificar', async () => {
     setup()
-    // El embudo dejo de ser una tabla: la fila es el contenedor con role=button
-    // que se abre hacia abajo. La intencion del test no cambia — las dos
-    // mitades del trabajo tienen que estar juntas, porque tenerlas en dos
-    // listas hermanas obligaba a cruzarlas de memoria.
-    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('[role="button"]')!
+    // El embudo dejo de ser una tabla: la fila es un enlace a la ficha. La
+    // intencion del test no cambia — las dos mitades del trabajo tienen que
+    // estar juntas, porque tenerlas en dos listas hermanas obligaba a
+    // cruzarlas de memoria.
+    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('a')!
     expect(fila).toHaveTextContent('9 de 12')
     expect(within(fila as HTMLElement).getByTestId('espera-c1')).toHaveTextContent('3')
   })
 
   // El cambio central de la tarea: antes esta fila abria el cajon ahi mismo,
   // ahora navega a la ficha (Task 4/5). Sin este test el hueco es invisible
-  // — nada se pone rojo si alguien vuelve a abrir el cajon inline.
+  // — nada se pone rojo si alguien vuelve a abrir el cajon inline. Navega
+  // como enlace y no con `router.push`: la fila decia ser un desplegable
+  // (`role="button"` + `aria-expanded`) y sacaba de la pantalla.
   it('la fila del embudo navega a la ficha de la empresa, no abre un cajon inline', async () => {
     setup()
-    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('[role="button"]')!
-    fireEvent.click(fila)
-    expect(push).toHaveBeenCalledWith('/dashboard/compliance/c1')
+    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('a')!
+    expect(fila).toHaveAttribute('href', '/dashboard/compliance/c1')
+    expect(fila).not.toHaveAttribute('aria-expanded')
   })
 
   // "la vista viaja en la URL, así volver del detalle no pierde el lugar"

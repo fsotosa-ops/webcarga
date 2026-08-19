@@ -283,7 +283,6 @@ function CertificationPageInner() {
                   setCatalogoAbierto(true)
                   if (catalogQuery.isError) catalogQuery.refetch()
                 }}
-                onToggleRow={irAEmpresa}
               />
             ) : (
               <CertificationStatusTable
