@@ -402,7 +402,17 @@ WITH pending AS (
            req.expiration_policy
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-    WHERE cr.is_current = true AND {pendiente_predicate()}
+    WHERE cr.is_current = true
+      -- El estado deja de estar incrustado. `falta` es el default y reproduce
+      -- exactamente el predicado anterior, para que ningun llamador actual
+      -- cambie de comportamiento. `todos` es lo que hace posible la ficha:
+      -- ver lo que la empresa TIENE y no solo lo que le falta.
+      AND CASE $10::text
+            WHEN 'todos'      THEN true
+            WHEN 'por_vencer' THEN {por_vencer_predicate('cr')}
+            WHEN 'al_dia'     THEN NOT {pendiente_predicate('cr')}
+            ELSE {pendiente_predicate('cr')}
+          END
 ),
 resolved AS (
     SELECT p.*,
@@ -497,6 +507,11 @@ async def list_pending_compliance_records(
     ),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
+    estado: Literal["falta", "por_vencer", "al_dia", "todos"] = Query(
+        "falta",
+        description="Qué mostrar. `falta` (default) reproduce el comportamiento "
+                    "anterior; `todos` es lo que usa la ficha de empresa.",
+    ),
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
@@ -510,7 +525,7 @@ async def list_pending_compliance_records(
     rows = await pool.fetch(
         _PENDING_ROWS_SQL,
         carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
-        ACTIVE_OPERATIONAL_STATUS, entity_id,
+        ACTIVE_OPERATIONAL_STATUS, entity_id, estado,
     )
     total = rows[0]["total_count"] if rows else 0
     result_rows = [

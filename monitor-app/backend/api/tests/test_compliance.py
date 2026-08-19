@@ -606,6 +606,71 @@ def test_pending_rows_excludes_inactive_carriers_from_query():
     assert args[8] == "ACTIVE"
 
 
+def test_pending_sin_estado_se_comporta_igual_que_antes():
+    """El default es `falta` para que ningun llamador actual cambie de
+    comportamiento. El cajon, el embudo y la exportacion piden /pending sin
+    parametro y tienen que seguir viendo lo mismo."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "$10" in sql, "el estado tiene que viajar como parametro, no interpolado"
+    assert pool.fetch.call_args.args[10] == "falta"
+
+
+def test_pending_estado_falta_arma_el_mismo_predicado_que_pendiente():
+    """El AsyncMock nunca ejecuta el SQL: un ELSE true en el CASE del estado
+    pasa `test_pending_sin_estado_se_comporta_igual_que_antes` igual, porque
+    ese test solo mira el argumento que viaja, no lo que la base haria con el.
+    Este chequea el texto del CASE, que es lo unico que un mock puede
+    verificar sin tocar Postgres."""
+    from app.routers.compliance import _PENDING_ROWS_SQL, pendiente_predicate
+
+    rama = _PENDING_ROWS_SQL.split("CASE $10::text")[1].split("END")[0]
+    assert f"ELSE {pendiente_predicate('cr')}" in rama, (
+        "el default de 'estado' dejo de armar el mismo predicado que 'pendiente'; "
+        "es el desfase que ya tuvo este modulo entre el embudo y el cajon"
+    )
+
+
+def test_pending_con_estado_todos_no_filtra():
+    """Es lo que hace posible la ficha: ver lo que la empresa TIENE, no solo lo
+    que le falta. Hoy los 23 documentos cargados de la unica empresa con
+    documentacion no aparecen en ninguna pantalla del modulo."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending?estado=todos")
+
+    assert pool.fetch.call_args.args[10] == "todos"
+
+
+def test_pending_rechaza_un_estado_inventado():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending?estado=cualquiera")
+
+    assert res.status_code == 422
+
+
+def test_el_sql_de_pending_bindea_exactamente_lo_que_referencia():
+    """El SQL pasa de 9 a 10 placeholders. Un $n de mas o de menos no falla al
+    desplegar: asyncpg tira un error de binding en la primera consulta real."""
+    import re
+    from app.routers.compliance import _PENDING_ROWS_SQL
+
+    referenciados = {int(n) for n in re.findall(r"\$(\d+)", _PENDING_ROWS_SQL)}
+    assert referenciados == set(range(1, 11)), (
+        f"el SQL referencia {sorted(referenciados)}; se esperaban 1..10"
+    )
+
+
 def test_carrier_status_filters_by_active_but_not_only():
     """Antes /pending-summary excluia a secas las no ACTIVE. Ahora el filtro es
     'activa O con documentos esperando': una empresa inactiva con archivos en la
