@@ -18,6 +18,7 @@ vi.mock('@/lib/api/carriers', () => ({
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { complianceApi } from '@/lib/api/compliance'
+import { carriersApi } from '@/lib/api/carriers'
 
 const row = (id: string, carrier: string) => ({
   id, file_name: `${id}.png`, mime_type: 'image/png', size_bytes: 10,
@@ -25,6 +26,7 @@ const row = (id: string, carrier: string) => ({
   created_at: '2026-08-14T10:00:00Z',
   carrier_id: carrier.toLowerCase(), carrier_name: carrier,
   confidence: null, suggested_requirement_name: null, candidate_count: 0,
+  mismo_casillero: 1, mismo_contenido: 1, casillero_ocupado: false,
 })
 
 function setup(props: Record<string, unknown> = {}) {
@@ -42,7 +44,7 @@ beforeEach(() => {
   })
   vi.mocked(documentIngestApi.previewUrl).mockReset()
     .mockResolvedValue({ preview_url: 'https://x/1' })
-  vi.mocked(documentIngestApi.upload).mockReset()
+  vi.mocked(documentIngestApi.upload).mockReset().mockResolvedValue({ items: [], errors: [] } as never)
   vi.mocked(documentIngestApi.remove).mockReset()
   vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({
     total: 1,
@@ -55,6 +57,7 @@ beforeEach(() => {
     }],
   } as never)
   vi.mocked(complianceApi.listRequirements).mockReset().mockResolvedValue([])
+  vi.mocked(carriersApi.list).mockReset().mockResolvedValue({ data: [] } as never)
 })
 
 describe('TriageWorkbench', () => {
@@ -140,6 +143,42 @@ describe('TriageWorkbench', () => {
         expect.objectContaining({ carrierId: 'acme' }),
       )
     })
+  })
+
+  // Acotar el universo a una empresa es lo que hace que el clasificador
+  // acierte: ~2 conductores y ~3 vehiculos en vez de 87 y 124.
+  it('la Bandeja global deja acotar el lote a una empresa antes de subir', async () => {
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
+    } as never)
+    setup()
+
+    fireEvent.change(await screen.findByPlaceholderText(/buscar empresa/i), { target: { value: 'char' } })
+    fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
+
+    // El dropzone no expone un testid para su input: se selecciona por su
+    // aria-label, y soltar se prueba con `fireEvent.drop` sobre
+    // `getByTestId('triage-dropzone')` — el patrón que TriageDropzone.test.tsx
+    // ya usa.
+    fireEvent.drop(screen.getByTestId('triage-dropzone'), {
+      dataTransfer: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] },
+    })
+
+    // El cliente ya sabe rutear: con carrierId va a /{id}/files, que es lo que
+    // acota el universo del clasificador.
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledWith(
+      'c1', expect.any(Array),
+    ))
+  })
+
+  it('sin elegir empresa sigue pudiendo subir a la bandeja global', async () => {
+    setup()
+    fireEvent.drop(screen.getByTestId('triage-dropzone'), {
+      dataTransfer: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] },
+    })
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledWith(
+      undefined, expect.any(Array),
+    ))
   })
 })
 

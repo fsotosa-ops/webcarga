@@ -7,6 +7,7 @@ import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import type { IngestUploadResult } from '@/lib/types'
+import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { TriageBulkBar } from './TriageBulkBar'
 import { TriageClassifyForm } from './TriageClassifyForm'
 import { TriageDropzone } from './TriageDropzone'
@@ -64,6 +65,12 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   // El ultimo lote aplicado, para poder revertirlo. No hace falta un registro
   // de operaciones: quien deshace es quien acaba de aplicar.
   const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
+  // Sólo tiene sentido en la bandeja global (`carrierId` ya trae la empresa):
+  // deja acotar el universo del clasificador ANTES de soltar los archivos.
+  // Es opcional a propósito — la tanda mezclada que llega por correo es un
+  // caso legítimo, y exigirla convertiría la bandeja en un buscador.
+  const [busqueda, setBusqueda] = useState('')
+  const [empresaDelLote, setEmpresaDelLote] = useState<CarrierSearchResult | null>(null)
 
   const queueKey = clavesCertificacion.cola(carrierId)
   const queueQuery = useQuery({
@@ -150,7 +157,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
         // Encadenados, no en paralelo: cada lote sube sus archivos a Storage y
         // lanzar tres tandas de 50 a la vez es pelearle ancho de banda a las
         // otras dos.
-        const res = await documentIngestApi.upload(carrierId, lote)
+        const res = await documentIngestApi.upload(carrierId ?? empresaDelLote?.id, lote)
         items.push(...res.items)
         errores.push(...res.errors)
         // Se publican mientras avanza: si un lote posterior falla, lo que ya
@@ -318,6 +325,23 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
 
   return (
     <div className="space-y-3">
+      {canEdit && !carrierId && (
+        <div>
+          <p className="text-etiqueta text-informativo pb-1">
+            ¿De quién son estos documentos? Elegir la empresa hace que el sistema
+            reconozca mejor a quién pertenece cada archivo.
+          </p>
+          <CarrierSearchPicker
+            query={busqueda}
+            onQueryChange={setBusqueda}
+            onPick={c => setEmpresaDelLote(c)}
+            selectedId={empresaDelLote?.id ?? null}
+            size="sm"
+            placeholder="Buscar empresa (opcional)…"
+          />
+        </div>
+      )}
+
       {canEdit && (
         <TriageDropzone
           carrierName={carrierName}

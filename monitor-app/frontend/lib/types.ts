@@ -1337,6 +1337,19 @@ export type QueueRow = {
   confidence:                 number | null
   suggested_requirement_name: string | null
   candidate_count:            number
+  /** Cuántos items pendientes comparten este destino / este contenido,
+   *  incluyéndose a sí mismo. 1 = sin colisión. Dos señales distintas aunque
+   *  compartan forma: mismo contenido -> "este archivo ya está en la cola,
+   *  borra uno"; mismo destino -> "dos archivos distintos reclaman el
+   *  casillero, elige cuál". */
+  mismo_casillero:            number
+  mismo_contenido:            number
+  /** El requisito destino YA tiene un archivo vigente (mira
+   *  `compliance_records`, no la cola). Confirmar este item lo reemplaza.
+   *  Distinta de `mismo_casillero`: esa señal sólo ve items que siguen sin
+   *  clasificar, y el ocupante de este casillero ya salió de la cola porque
+   *  fue confirmado. */
+  casillero_ocupado:          boolean
 }
 
 export type TrayPage = { total: number; rows: QueueRow[] }

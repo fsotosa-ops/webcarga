@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment } from 'react'
-import { FileQuestion } from 'lucide-react'
+import { AlertTriangle, FileQuestion } from 'lucide-react'
 import type { QueueRow } from '@/lib/types'
 
 interface Props {
@@ -134,11 +134,49 @@ export function TriageFileTable({
                   <Suggestion row={r} />
                 </td>
               </tr>
+              <Colisiones row={r} />
             </Fragment>
           )
         })}
       </tbody>
     </table>
+  )
+}
+
+/** Tres señales distintas, ninguna reemplaza a otra — una fila puede traer
+ *  las tres a la vez:
+ *
+ *  - `mismo_contenido > 1`: el mismo archivo entró más de una vez a la
+ *    cola. El operador borra uno.
+ *  - `mismo_casillero > 1`: dos archivos DISTINTOS reclaman el mismo
+ *    requisito destino. El operador elige cuál.
+ *  - `casillero_ocupado`: mira `compliance_records`, no la cola. El
+ *    requisito destino YA tiene un documento vigente — el ocupante fue
+ *    confirmado y salió de la cola, así que `mismo_casillero` sigue diciendo
+ *    1 y no ve este caso. Confirmar esta fila lo reemplaza (el anterior queda
+ *    recuperable, pero quien confirma tiene que enterarse ANTES, no poder
+ *    repararlo después). */
+function Colisiones({ row }: { row: QueueRow }) {
+  const avisos: string[] = []
+  if (row.mismo_contenido > 1) avisos.push('Este archivo ya está en la cola')
+  if (row.mismo_casillero > 1) avisos.push(`${row.mismo_casillero} archivos reclaman el mismo casillero`)
+  if (row.casillero_ocupado) avisos.push('Este requisito ya tiene un documento — confirmar lo reemplaza')
+
+  if (!avisos.length) return null
+
+  return (
+    <tr className="bg-espera/5">
+      <td colSpan={4} className="pl-3 pr-3 pb-1.5">
+        <div className="space-y-0.5">
+          {avisos.map(aviso => (
+            <p key={aviso} className="flex items-center gap-1.5 text-etiqueta text-espera">
+              <AlertTriangle size={11} className="shrink-0" />
+              {aviso}
+            </p>
+          ))}
+        </div>
+      </td>
+    </tr>
   )
 }
 

@@ -9,8 +9,14 @@ const row = (id: string, carrier: string, over: Record<string, unknown> = {}) =>
   created_at: '2026-08-14T10:00:00Z',
   carrier_id: carrier.toLowerCase(), carrier_name: carrier,
   confidence: null, suggested_requirement_name: null, candidate_count: 0,
+  mismo_casillero: 1, mismo_contenido: 1, casillero_ocupado: false,
   ...over,
 })
+
+// Fila suelta, sin importar de qué empresa es: usada en los tests de
+// colisión, que sólo les interesa el trío mismo_casillero/mismo_contenido/
+// casillero_ocupado.
+const fila = (over: Record<string, unknown> = {}) => row('i1', 'ACME', over)
 
 const ROWS = [row('i1', 'ACME'), row('i2', 'ACME'), row('i3', 'NORTE')]
 
@@ -91,5 +97,33 @@ describe('TriageFileTable', () => {
   it('avisa cuando no queda nada por clasificar', () => {
     setup({ rows: [] })
     expect(screen.getByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
+  })
+})
+
+describe('TriageFileTable — colisiones', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('avisa cuando dos archivos reclaman el mismo casillero', () => {
+    setup({ rows: [fila({ mismo_casillero: 2 })] })
+    expect(screen.getByText(/2 archivos.*mismo/i)).toBeInTheDocument()
+  })
+
+  it('avisa cuando el archivo ya está en la cola', () => {
+    setup({ rows: [fila({ mismo_contenido: 2 })] })
+    expect(screen.getByText(/ya está en la cola/i)).toBeInTheDocument()
+  })
+
+  // La colisión que las window functions NO pueden ver: el ocupante ya fue
+  // confirmado y salió de la cola, así que `mismo_casillero` sigue diciendo 1.
+  // Confirmar esta fila reemplaza un documento que hoy es válido.
+  it('avisa cuando el casillero ya tiene un documento cargado', () => {
+    setup({ rows: [fila({ mismo_casillero: 1, casillero_ocupado: true })] })
+    expect(screen.getByText(/ya tiene un documento/i)).toBeInTheDocument()
+  })
+
+  it('sin colisión no dice nada', () => {
+    setup({ rows: [fila({ mismo_casillero: 1, mismo_contenido: 1, casillero_ocupado: false })] })
+    expect(screen.queryByText(/mismo casillero|ya está en la cola|ya tiene un documento/i))
+      .not.toBeInTheDocument()
   })
 })

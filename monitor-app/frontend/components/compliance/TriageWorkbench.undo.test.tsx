@@ -38,6 +38,7 @@ const row = (id: string, carrier: string) => ({
   created_at: '2026-08-14T10:00:00Z',
   carrier_id: carrier.toLowerCase(), carrier_name: carrier,
   confidence: null, suggested_requirement_name: null, candidate_count: 0,
+  mismo_casillero: 1, mismo_contenido: 1, casillero_ocupado: false,
 })
 
 function setup(props: Record<string, unknown> = {}) {
@@ -229,7 +230,10 @@ describe('TriageWorkbench — todas las operaciones refrescan lo mismo', () => {
     await clavesDe('mover a otra empresa', async () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /i2\.png/ }))
       fireEvent.click(await screen.findByRole('button', { name: /mover 1 archivo a otra empresa/i }))
-      fireEvent.change(await screen.findByPlaceholderText(/buscar empresa/i), {
+      // Texto exacto, no regex: la bandeja global también trae su propio
+      // buscador de empresa (el del lote, siempre visible) y /buscar
+      // empresa/i matchea a los dos a la vez.
+      fireEvent.change(await screen.findByPlaceholderText('Buscar empresa…'), {
         target: { value: 'Otra' },
       })
       fireEvent.click(await screen.findByText('Otra Empresa'))
