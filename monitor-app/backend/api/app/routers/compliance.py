@@ -987,6 +987,16 @@ async def delete_compliance_file(
                     status = 'MISSING',
                     file_url = NULL,
                     metadata = '{}'::jsonb,
+                    -- La fecha se va CON el documento. Sin esto el registro
+                    -- quedaba MISSING —sin archivo— y con vencimiento futuro:
+                    -- un dato que sobrevive a la cosa que describia. La
+                    -- `urgencia` de /pending sale de esa fecha, asi que al
+                    -- acercarse un documento QUE NO EXISTE aparecia como
+                    -- 'POR_VENCER' ("hay que renovarlo") en vez de 'FALTA'.
+                    -- La otra ruta al mismo estado (`reassign` con `to_tray`)
+                    -- si la limpiaba: eran dos caminos haciendo cosas
+                    -- distintas para llegar al mismo lugar.
+                    expiration_date = NULL,
                     updated_at = NOW()
                 WHERE id = $1
                 """,

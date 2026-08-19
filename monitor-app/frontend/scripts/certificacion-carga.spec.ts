@@ -25,12 +25,37 @@ const PDF = {
   buffer: Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF'),
 }
 
+/** Valores de ejemplo de `.env.local.example`. Si llegan estos, no hay
+ *  credenciales de verdad — y sin decirlo, la suite muere veinte segundos
+ *  despues con un `waitForURL` que no explica nada. */
+const PLACEHOLDERS = ['changeme', 'demo@webcarga.com', 'tu-password', '']
+
 async function entrar(page: Page) {
+  if (PLACEHOLDERS.includes(PASSWORD) || PLACEHOLDERS.includes(EMAIL) || !EMAIL) {
+    throw new Error(
+      'Faltan credenciales reales. `.env.local` trae los valores de ejemplo, y con ' +
+      'esos el login responde "Credenciales incorrectas".\n' +
+      'Corre asi:\n' +
+      '  DEMO_EMAIL=<usuario> DEMO_PASSWORD=<clave> \\\n' +
+      '  PLAYWRIGHT_BASE_URL=https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app \\\n' +
+      '  npx playwright test scripts/certificacion-carga.spec.ts',
+    )
+  }
   await page.goto('/login')
   await page.fill('input[type="email"]', EMAIL)
   await page.fill('input[type="password"]', PASSWORD)
   await page.click('button[type="submit"]')
-  await page.waitForURL('**/dashboard/**', { timeout: 20000 })
+
+  // El error de credenciales aparece EN la pagina; esperar solo la navegacion
+  // convierte "clave equivocada" en un timeout de 20 s que no dice por que.
+  const error = page.locator('text=/credenciales incorrectas/i')
+  await Promise.race([
+    page.waitForURL('**/dashboard/**', { timeout: 25000 }),
+    error.waitFor({ timeout: 25000 }).then(() => {
+      throw new Error('El login rechazo las credenciales: revisa DEMO_EMAIL / DEMO_PASSWORD.')
+    }),
+  ])
+
   const saltar = page.locator('button:has-text("Saltar tour")')
   if (await saltar.isVisible({ timeout: 2000 }).catch(() => false)) await saltar.click()
 }

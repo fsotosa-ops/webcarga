@@ -265,6 +265,54 @@ def test_delete_file_422_when_no_file_loaded():
     assert res.status_code == 422
 
 
+def test_delete_file_tambien_limpia_la_fecha_de_vencimiento():
+    """"Mismo estado que un documento nunca subido" tiene que ser verdad.
+
+    Encontrado en el click-through del 19/08: borrar el archivo dejaba
+    `expiration_date` con la fecha del documento borrado. El registro quedaba
+    MISSING —sin documento— y con vencimiento futuro, o sea un dato que
+    sobrevive a la cosa que describia.
+
+    No es cosmetico. La `urgencia` de /pending se calcula con esa fecha: al
+    acercarse, un documento QUE NO EXISTE aparece como 'POR_VENCER' —"hay que
+    renovarlo"— en vez de 'FALTA'. Y el cajon escribe "vencido - <fecha>" para
+    algo que nunca se subio.
+
+    La otra ruta que devuelve un registro a MISSING —`reassign` con `to_tray`—
+    SI la limpia. Eran dos caminos al mismo estado haciendo cosas distintas.
+
+    Ojo: por `PATCH` no se puede arreglar a mano. Usa COALESCE, asi que null
+    significa "no lo mandaron" y la fecha es inalcanzable desde la API."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {
+        "entity_id": "d1", "entity_type": "DRIVER", "status": "APPROVED_MANUAL",
+        "metadata": {"storage_path": "d1/cert.pdf"},
+    }
+    # `_fetch_record` corre al final del endpoint y necesita su propia fila:
+    # mismo armado que test_delete_file_resets_to_missing_and_removes_from_storage.
+    pool.fetchrow.return_value = {
+        "id": "r1", "entity_id": "d1", "entity_type": "DRIVER",
+        "requirement_id": "req-1", "requirement_code": "CERT_ANTECEDENTES",
+        "name": "Certificado de Antecedentes", "requirement_level": "LEGAL_MANDATORY",
+        "requires_file": True, "status": "MISSING", "expiration_date": None,
+        "file_url": None, "metadata": {}, "is_manual_override": False,
+        "created_at": None, "updated_at": None,
+    }
+    client = make_client(pool, supabase=MagicMock())
+
+    res = client.delete("/api/v1/compliance-records/r1/file")
+
+    assert res.status_code == 200
+    update = next(c.args[0] for c in conn.execute.call_args_list
+                  if "status = 'MISSING'" in c.args[0])
+    assert "expiration_date = NULL" in update, (
+        "el registro queda MISSING con la fecha del documento borrado: "
+        "un vencimiento sin documento que lo respalde"
+    )
+
+
 def test_delete_file_resets_to_missing_and_removes_from_storage():
     pool = AsyncMock()
     conn = AsyncMock()

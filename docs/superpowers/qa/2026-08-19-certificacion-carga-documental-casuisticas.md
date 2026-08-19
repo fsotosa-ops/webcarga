@@ -103,3 +103,65 @@ Por entidad: conductor **5 de 12** REQUIRED, vehículo **8 de 10**, empresa **6 
   storage, así que "deshacer" borraría evidencia.
 - **La vista Requisitos** no tiene cajón: su superficie sería "a quiénes les falta este documento",
   que es una carga en lote distinta.
+
+---
+
+## Resultado del click-through en vivo — 2026-08-19, contra `webcarga-frontend-dev`
+
+Hecho con Playwright sobre el ambiente desplegado, con datos reales.
+
+| # | Casuística | Resultado | Evidencia |
+|---|---|---|---|
+| **B1** | El cajón no monta zona de arrastre encima | ✅ | 12 renglones, ninguna zona de la Bandeja adentro |
+| **B2** | Cajón del sujeto, lista abierta | ✅ | botón del sujeto `[disabled] [expanded]` |
+| **B6** | Enlace a la Bandeja, dentro del módulo | ✅ | `/dashboard/compliance?vista=documentos` |
+| **C1** | El renglón entero es el blanco | ✅ | "Arrastra aquí o elige un archivo" con cursor de puntero |
+| **C2** | Soltar equivale a elegir | ✅ | drop sobre el renglón → pidió la fecha |
+| **A2** | Con fecha obligatoria pide la fecha y **no sube** | ✅ | "prueba-certificacion.pdf · este documento no vale sin su vencimiento" |
+| **A3** | Guardar sin fecha no hace nada | ✅ | clic en "Guardar" vacío → sigue pidiéndola |
+| **A4** | Con la fecha puesta, sube | ✅ | `APPROVED_MANUAL`, `expiration_date = 2027-01-31` |
+| **D1** | El pendiente baja sin cambiar de pantalla | ✅ | 12 → **11 documentos**, URL intacta, cajón abierto |
+| **D2** | Los conteos se mueven juntos | ✅ | encabezado y "faltan N" bajaron a la vez |
+| **D4** | Nada queda varado en la Bandeja | ✅ | `document_ingest_items` de la última hora: **0** |
+| **D5** | Consola limpia | ✅ | 0 errores, 0 warnings |
+| **G1** | La fila abierta viaja en la URL | ✅ | `?abierta=<uuid>` |
+| **G2** | La tabla no enlaza fuera del módulo | ✅ | la columna Empresa es `button`, no `link` |
+| **E1** | Un lector no ve el control de carga | ⏳ | requiere una sesión sin permiso de edición |
+| **F1-F4** | Urgencia y embudo | ⏳ | verificado en SQL, no en pantalla |
+| **H1-H3** | Configuración cierra el circuito | ⏳ | |
+
+**Un dato que confirma que la pantalla no miente**: el renglón elegido decía "este documento no vale
+sin su vencimiento", y en la base ese requisito es efectivamente `expiration_policy = REQUIRED`.
+
+**El documento de prueba se retiró.** Se subió a un conductor con 0 documentos —verificado en la base
+antes, `MISSING` y sin archivo, para no pisar nada— y se borró por el mismo endpoint que usa la
+interfaz. El estado quedó exactamente como estaba.
+
+### Un defecto que sólo apareció al limpiar
+
+`DELETE /compliance-records/{id}/file` devolvía el registro a `MISSING` **pero dejaba
+`expiration_date`** con la fecha del documento borrado. Un vencimiento sin documento que lo respalde.
+
+No es cosmético: la `urgencia` de `/pending` se calcula con esa fecha, así que al acercarse, un
+documento **que no existe** aparecería como `POR_VENCER` —"hay que renovarlo"— en vez de `FALTA`.
+
+La otra ruta al mismo estado —`reassign` con `to_tray`— **sí la limpiaba**: eran dos caminos al
+mismo lugar haciendo cosas distintas. Y por `PATCH` no se podía arreglar a mano, porque usa
+`COALESCE` y ahí `null` significa "no lo mandaron".
+
+Corregido, con un test que muere al revertirlo.
+
+### La suite automatizada no pudo correr, y por qué
+
+`scripts/certificacion-carga.spec.ts` falla en el login: `.env.local` trae los valores de ejemplo
+(`demo@webcarga.com` / `changeme`) y el formulario responde "Credenciales incorrectas". El
+click-through de arriba se hizo con una sesión ya abierta en el navegador.
+
+El helper de login se corrigió para **decirlo** en vez de morir con un `waitForURL` de 20 s. Para
+correrla:
+
+```bash
+DEMO_EMAIL=<usuario> DEMO_PASSWORD=<clave> \
+PLAYWRIGHT_BASE_URL=https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app \
+npx playwright test scripts/certificacion-carga.spec.ts
+```
