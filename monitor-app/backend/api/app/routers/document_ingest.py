@@ -22,6 +22,8 @@ from ..schemas.document_ingest import (
     UndoClassifyBody, UndoClassifyResult, unclassified_predicate,
 )
 from ..services.audit import log_change
+from ..services.document_matcher import classify_match, match_document
+from ..services.matcher_io import cargar_catalogo, cargar_universo
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
 )
@@ -54,6 +56,14 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
         carrier_id, actor, len(files),
     )
 
+    # UNA vez por lote, no una por archivo: el motor es puro justamente para
+    # poder reusar lo cargado. Una carga de 50 documentos hace 2 consultas, no 100.
+    #
+    # El universo va acotado a la empresa cuando la hay, y eso es lo que mas
+    # sube la precision: ~2 conductores y ~3 vehiculos contra 87 y 124.
+    catalogo = await cargar_catalogo(conn)
+    universo = await cargar_universo(conn, carrier_id)
+
     for file in files:
         try:
             uploaded = await upload_document_version(
@@ -63,21 +73,54 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
             errors.append({"file_name": file.filename or "archivo", "error": str(exc.detail)})
             continue
 
+        # El archivo YA esta en storage. Si el motor falla, la fila entra
+        # UNMATCHED —el comportamiento exacto de antes de esta ronda— en vez de
+        # dejar un blob huerfano y mostrarle un error al operador sobre un
+        # archivo que si se subio.
+        try:
+            candidatos = match_document(
+                file_name=uploaded["file_name"], catalog=catalogo, universe=universo,
+            )
+        except Exception:
+            candidatos = []
+        estado = classify_match(candidatos)
+        mejor = candidatos[0] if candidatos else None
+
         row = await conn.fetchrow(
             """
             INSERT INTO public.document_ingest_items
-                (batch_id, storage_path, file_name, mime_type, size_bytes, match_status)
-            VALUES ($1, $2, $3, $4, $5, 'UNMATCHED')
+                (batch_id, storage_path, file_name, mime_type, size_bytes,
+                 match_status, entity_type, entity_id, requirement_id,
+                 confidence, match_evidence, candidates)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb)
             RETURNING id::text, file_name, mime_type, size_bytes, storage_path, match_status
             """,
             batch_id, uploaded["storage_path"], uploaded["file_name"],
             uploaded["mime_type"], uploaded["size_bytes"],
+            estado,
+            mejor.entity_type if mejor else None,
+            mejor.entity_id if mejor else None,
+            mejor.requirement_id if mejor else None,
+            mejor.confidence if mejor else None,
+            json.dumps(mejor.evidence if mejor else {}),
+            # La lista COMPLETA, para que AMBIGUOUS pueda ofrecer las dos
+            # opciones en vez de obligar a empezar de cero.
+            json.dumps([
+                {"entity_type": c.entity_type, "entity_id": c.entity_id,
+                 "requirement_id": c.requirement_id, "confidence": c.confidence,
+                 "evidence": c.evidence}
+                for c in candidatos
+            ]),
         )
         items.append(dict(row))
 
+    # `unmatched` cuenta lo que de verdad quedo sin resolver, no el lote entero.
+    # Antes daban lo mismo porque todo entraba UNMATCHED; dejarlo asi haria que
+    # el contador de la Bandeja pida atencion sobre archivos ya clasificados.
+    sin_resolver = sum(1 for i in items if i["match_status"] == "UNMATCHED")
     await conn.execute(
         "UPDATE public.document_ingest_batches SET unmatched = $2 WHERE id = $1",
-        batch_id, len(items),
+        batch_id, sin_resolver,
     )
     return batch_id, items, errors
 

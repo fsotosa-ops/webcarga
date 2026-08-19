@@ -144,6 +144,103 @@ def test_upload_requires_at_least_one_file():
     assert res.status_code == 422
 
 
+# ── El cableado del clasificador ───────────────────────────────────────────
+
+def _pool_de_ingesta():
+    """Mismo armado que el resto del archivo: transaccion cableada, un
+    batch_id fijo y un fetchrow que ya trae las columnas de destino."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = "batch-1"
+    conn.fetchrow.return_value = {
+        "id": "item-1", "file_name": "x.pdf", "mime_type": "application/pdf",
+        "size_bytes": 9, "storage_path": "staging/batch-1/x.pdf",
+        "match_status": "UNMATCHED",
+    }
+    return pool, conn
+
+
+def test_un_archivo_entra_con_su_destino_propuesto(monkeypatch):
+    """El cable que faltaba. Antes, `document_ingest.py:70` escribia el literal
+    'UNMATCHED' en cada archivo, asi que las seis columnas de destino —que
+    EXISTEN desde que se creo la tabla— quedaban en cero para siempre."""
+    from app.services.document_matcher import MatchCandidate
+
+    monkeypatch.setattr("app.routers.document_ingest.match_document",
+                        lambda **kw: [MatchCandidate(
+                            entity_type="DRIVER", entity_id="d1", requirement_id="req-1",
+                            confidence=0.95,
+                            evidence={"entity": {"via": "RUT", "score": 0.95, "raw": "1-9"}},
+                        )])
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files",
+                files={"files": ("12345678-9_licencia.pdf", b"%PDF-1.4", "application/pdf")})
+
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    sql, args = insert.args[0], insert.args[1:]
+    assert "entity_id" in sql and "confidence" in sql and "match_evidence" in sql
+    assert "'UNMATCHED'" not in sql, (
+        "el literal sigue ahi: la fila nace sin clasificar aunque el motor haya respondido"
+    )
+    assert "AUTO" in args
+
+
+def test_si_el_motor_falla_el_archivo_igual_entra(monkeypatch):
+    """EL ARCHIVO YA ESTA EN STORAGE cuando se clasifica. Si el motor
+    explotara y dejaramos propagar, el blob quedaria huerfano y el operador
+    veria un error sobre un archivo que si se subio.
+
+    Degradar a UNMATCHED es exactamente el comportamiento de antes del cambio:
+    en el peor caso, esta ronda no cambia nada."""
+    def explota(**kw):
+        raise ValueError("catalogo corrupto")
+
+    monkeypatch.setattr("app.routers.document_ingest.match_document", explota)
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    res = client.post("/api/v1/document-ingest/files",
+                      files={"files": ("x.pdf", b"%PDF-1.4", "application/pdf")})
+
+    assert res.status_code == 201
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    assert "UNMATCHED" in insert.args[1:]
+
+
+def test_el_catalogo_se_lee_una_vez_por_lote_no_una_por_archivo(monkeypatch):
+    """Una carga de 50 documentos hace 2 consultas de catalogo y universo, no
+    100. El motor es puro justamente para poder reusar lo cargado."""
+    llamadas = {"catalogo": 0, "universo": 0}
+
+    async def catalogo_espia(conn):
+        llamadas["catalogo"] += 1
+        from app.services.document_matcher import Catalog
+        return Catalog(aliases=[])
+
+    async def universo_espia(conn, carrier_id=None):
+        llamadas["universo"] += 1
+        from app.services.document_matcher import EntityUniverse
+        return EntityUniverse()
+
+    monkeypatch.setattr("app.routers.document_ingest.cargar_catalogo", catalogo_espia)
+    monkeypatch.setattr("app.routers.document_ingest.cargar_universo", universo_espia)
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files", files=[
+        ("files", ("a.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("b.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("c.pdf", b"%PDF-1.4", "application/pdf")),
+    ])
+
+    assert llamadas == {"catalogo": 1, "universo": 1}
+
+
 # ── Bandeja: la cola global ────────────────────────────────────────────────
 
 def _queue_row(item_id="i1", carrier_name="ACME S.A.", **over):
