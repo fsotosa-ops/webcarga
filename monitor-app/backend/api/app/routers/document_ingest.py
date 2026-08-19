@@ -33,6 +33,29 @@ router = APIRouter(prefix="/document-ingest", tags=["document-ingest"])
 _MAX_FILES_PER_UPLOAD = 50
 
 
+def _dedup_candidates(candidatos: list) -> list:
+    """Un mismo RUT puede aparecer dos veces en el nombre del archivo
+    (`F30_<rut>_ANEXO_<rut>.pdf`): `extract_ruts` no deduplica y el loop del
+    motor tampoco, así que llegan dos candidatos que son la MISMA entidad.
+    Sin esto, `classify_match` los ve empatados y declara AMBIGUOUS aunque no
+    haya ninguna ambigüedad real — la Bandeja termina ofreciendo elegir entre
+    una opción y ella misma.
+
+    `match_document` ya devuelve la lista ordenada por confianza descendente,
+    así que quedarse con la primera aparición de cada (entity_type, entity_id)
+    es quedarse con la de mayor confianza.
+    """
+    vistos: set[tuple] = set()
+    unicos = []
+    for c in candidatos:
+        clave = (c.entity_type, c.entity_id)
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        unicos.append(c)
+    return unicos
+
+
 async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
     """Sube N archivos a staging y los deja en la bandeja, sin clasificarlos.
 
@@ -76,32 +99,42 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
         # El archivo YA esta en storage. Si el motor falla, la fila entra
         # UNMATCHED —el comportamiento exacto de antes de esta ronda— en vez de
         # dejar un blob huerfano y mostrarle un error al operador sobre un
-        # archivo que si se subio.
+        # archivo que si se subio. El motivo queda en `error` (sin PII: solo
+        # el tipo de excepcion y su mensaje, nunca el nombre del archivo) para
+        # no perder el rastro en silencio.
         try:
-            candidatos = match_document(
+            candidatos = _dedup_candidates(match_document(
                 file_name=uploaded["file_name"], catalog=catalogo, universe=universo,
-            )
-        except Exception:
+            ))
+            motivo_error = None
+        except Exception as exc:
             candidatos = []
+            motivo_error = f"{type(exc).__name__}: {exc}"
         estado = classify_match(candidatos)
         mejor = candidatos[0] if candidatos else None
+        # Un empate real (AMBIGUOUS) no tiene un ganador: elegir
+        # candidatos[0] escribiria un desempate arbitrario, definido por el
+        # orden de recorrido del motor (empresas -> vehiculos -> conductores),
+        # no por una decision. La lista completa sigue en `candidates`: de ahi
+        # sale la eleccion cuando classify-batch la preseleccione.
+        ambiguo = estado == "AMBIGUOUS"
 
         row = await conn.fetchrow(
             """
             INSERT INTO public.document_ingest_items
                 (batch_id, storage_path, file_name, mime_type, size_bytes,
                  match_status, entity_type, entity_id, requirement_id,
-                 confidence, match_evidence, candidates)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb)
+                 confidence, match_evidence, candidates, error)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb, $13)
             RETURNING id::text, file_name, mime_type, size_bytes, storage_path, match_status
             """,
             batch_id, uploaded["storage_path"], uploaded["file_name"],
             uploaded["mime_type"], uploaded["size_bytes"],
             estado,
-            mejor.entity_type if mejor else None,
-            mejor.entity_id if mejor else None,
-            mejor.requirement_id if mejor else None,
-            mejor.confidence if mejor else None,
+            mejor.entity_type if mejor and not ambiguo else None,
+            mejor.entity_id if mejor and not ambiguo else None,
+            mejor.requirement_id if mejor and not ambiguo else None,
+            mejor.confidence if mejor and not ambiguo else None,
             json.dumps(mejor.evidence if mejor else {}),
             # La lista COMPLETA, para que AMBIGUOUS pueda ofrecer las dos
             # opciones en vez de obligar a empezar de cero.
@@ -111,16 +144,21 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
                  "evidence": c.evidence}
                 for c in candidatos
             ]),
+            motivo_error,
         )
         items.append(dict(row))
 
-    # `unmatched` cuenta lo que de verdad quedo sin resolver, no el lote entero.
-    # Antes daban lo mismo porque todo entraba UNMATCHED; dejarlo asi haria que
-    # el contador de la Bandeja pida atencion sobre archivos ya clasificados.
+    # Instrumentacion, no el badge de la Bandeja: ese sale de
+    # unclassified_predicate() en compliance.py, no de estos contadores.
+    # `matched_auto`/`matched_review` se crearon para medir si hace falta
+    # sumar OCR/LLM y estaban en 0 desde que existe la columna.
     sin_resolver = sum(1 for i in items if i["match_status"] == "UNMATCHED")
+    auto = sum(1 for i in items if i["match_status"] == "AUTO")
+    para_revisar = sum(1 for i in items if i["match_status"] in ("SUGGESTED", "AMBIGUOUS"))
     await conn.execute(
-        "UPDATE public.document_ingest_batches SET unmatched = $2 WHERE id = $1",
-        batch_id, sin_resolver,
+        "UPDATE public.document_ingest_batches "
+        "SET unmatched = $2, matched_auto = $3, matched_review = $4 WHERE id = $1",
+        batch_id, sin_resolver, auto, para_revisar,
     )
     return batch_id, items, errors
 
