@@ -190,6 +190,29 @@ def test_un_archivo_entra_con_su_destino_propuesto(monkeypatch):
     assert "AUTO" in args
 
 
+def test_ingest_insert_binds_exactly_the_parameters_it_references():
+    """Mismo guardia que `test_queue_binds_exactly_the_parameters_it_references`,
+    sobre el otro SQL de este router que tocó esta ronda: el INSERT de
+    `document_ingest_items` pasó de 12 a 13 columnas al sumar `content_sha256`.
+    Un `$n` desalineado no falla al desplegar — escribe un valor en la columna
+    equivocada, en silencio."""
+    import re
+
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files",
+                files={"files": ("x.pdf", b"%PDF-1.4", "application/pdf")})
+
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    sql, args = insert.args[0], insert.args[1:]
+    referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+    assert referenciados == set(range(1, len(args) + 1)), (
+        f"el INSERT referencia {sorted(referenciados)} pero recibe {len(args)} argumentos"
+    )
+
+
 def test_si_el_motor_falla_el_archivo_igual_entra(monkeypatch):
     """EL ARCHIVO YA ESTA EN STORAGE cuando se clasifica. Si el motor
     explotara y dejaramos propagar, el blob quedaria huerfano y el operador
@@ -217,7 +240,9 @@ def test_si_el_motor_falla_el_archivo_igual_entra(monkeypatch):
                   if "document_ingest_items" in c.args[0])
     args = insert.args[1:]
     assert "UNMATCHED" in args
-    assert args[-1] == "ValueError: catalogo corrupto", (
+    # `error` es el penúltimo argumento: el último es `content_sha256`, que se
+    # calcula igual haya fallado el motor o no —el archivo ya está en storage.
+    assert args[-2] == "ValueError: catalogo corrupto", (
         "el motivo del fallo (tipo + mensaje, sin nombre de archivo) tiene "
         "que quedar en la columna `error`"
     )
@@ -366,6 +391,7 @@ def _queue_row(item_id="i1", carrier_name="ACME S.A.", **over):
         "match_status": "UNMATCHED", "created_at": datetime(2026, 8, 14, tzinfo=timezone.utc),
         "carrier_id": "c1", "carrier_name": carrier_name,
         "confidence": None, "suggested_requirement_name": None, "candidate_count": 0,
+        "mismo_casillero": 1, "mismo_contenido": 1,
     }
     row.update(over)
     return row
@@ -477,6 +503,37 @@ def test_queue_binds_exactly_the_parameters_it_references():
         assert referenciados == set(range(1, len(args) + 1)), (
             f"SQL referencia {sorted(referenciados)} pero recibe {len(args)} argumentos"
         )
+
+
+def test_la_cola_avisa_cuando_dos_archivos_reclaman_el_mismo_casillero():
+    """`classify-batch` ya se protege de N archivos a un casillero en UNA
+    operación —su docstring cuenta que "marcar 31 licencias y asignarlas al
+    mismo conductor destruía 30"— pero el clasificador propone el mismo
+    (entity_id, requirement_id) a archivos DISTINTOS, y el operador los
+    confirma de a uno: exactamente lo que ese guardia permite."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 2
+    pool.fetch.return_value = [
+        _queue_row(item_id="a", mismo_casillero=2, mismo_contenido=1),
+        _queue_row(item_id="b", mismo_casillero=2, mismo_contenido=1),
+    ]
+    client = make_client(pool)
+
+    filas = client.get("/api/v1/document-ingest/items").json()["rows"]
+
+    assert [f["mismo_casillero"] for f in filas] == [2, 2]
+
+
+def test_el_sql_de_la_cola_no_agrupa_los_sin_destino():
+    """LA GUARDA DE NULL. Sin ella, los ~60 items UNMATCHED con entity_id nulo
+    caen en la MISMA partición y la pantalla diría que todos reclaman el mismo
+    casillero. Es el peor falso positivo posible: aparece justo cuando la cola
+    está llena de trabajo real."""
+    from app.routers.document_ingest import _SQL_COLA
+
+    assert "i.entity_id IS NOT NULL" in _SQL_COLA
+    assert "i.requirement_id IS NOT NULL" in _SQL_COLA
+    assert "i.content_sha256 IS NOT NULL" in _SQL_COLA
 
 
 def test_preview_url_is_signed_one_at_a_time():

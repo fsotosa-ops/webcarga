@@ -32,6 +32,41 @@ router = APIRouter(prefix="/document-ingest", tags=["document-ingest"])
 
 _MAX_FILES_PER_UPLOAD = 50
 
+_SQL_COLA = """
+    SELECT i.id::text, i.file_name, i.mime_type, i.size_bytes,
+           i.storage_path, i.match_status, i.created_at,
+           COALESCE(i.carrier_id, b.carrier_id)::text AS carrier_id,
+           c.business_name                            AS carrier_name,
+           i.confidence,
+           r.name                                     AS suggested_requirement_name,
+           jsonb_array_length(i.candidates)           AS candidate_count,
+           -- Las dos señales de colisión, derivadas en la MISMA pasada.
+           -- Se cuentan sobre toda la cola filtrada, no sobre la página:
+           -- las window functions corren después del WHERE y antes del
+           -- LIMIT, que es exactamente lo que hace falta.
+           --
+           -- LA GUARDA DE NULL NO ES OPCIONAL: sin ella, los items sin
+           -- destino (entity_id NULL) caen todos en la misma partición y
+           -- la pantalla diría que reclaman el mismo casillero.
+           CASE WHEN i.entity_id IS NOT NULL AND i.requirement_id IS NOT NULL
+                THEN count(*) OVER (PARTITION BY i.entity_id, i.requirement_id)
+                ELSE 1 END                            AS mismo_casillero,
+           CASE WHEN i.content_sha256 IS NOT NULL
+                THEN count(*) OVER (PARTITION BY i.content_sha256)
+                ELSE 1 END                            AS mismo_contenido
+    FROM public.document_ingest_items i
+    JOIN public.document_ingest_batches b ON b.id = i.batch_id
+    LEFT JOIN public.carriers c
+           ON c.id = COALESCE(i.carrier_id, b.carrier_id)
+    LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
+    {where}
+    -- file_name desempata: una carga masiva entra con el mismo created_at
+    -- y sin desempate el orden queda arbitrario entre recargas. En una cola
+    -- donde se selecciona por rango, eso hace que marques otra cosa.
+    ORDER BY c.business_name NULLS LAST, i.created_at, i.file_name
+    LIMIT $2 OFFSET $3
+"""
+
 
 def _dedup_candidates(candidatos: list) -> list:
     """Un mismo RUT puede aparecer dos veces en el nombre del archivo
@@ -124,8 +159,8 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
             INSERT INTO public.document_ingest_items
                 (batch_id, storage_path, file_name, mime_type, size_bytes,
                  match_status, entity_type, entity_id, requirement_id,
-                 confidence, match_evidence, candidates, error)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb, $13)
+                 confidence, match_evidence, candidates, error, content_sha256)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb, $13, $14)
             RETURNING id::text, file_name, mime_type, size_bytes, storage_path, match_status
             """,
             batch_id, uploaded["storage_path"], uploaded["file_name"],
@@ -145,6 +180,7 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
                 for c in candidatos
             ]),
             motivo_error,
+            uploaded["content_sha256"],
         )
         items.append(dict(row))
 
@@ -248,26 +284,7 @@ async def list_queue(
         carrier_id,
     )
     rows = await pool.fetch(
-        f"""
-        SELECT i.id::text, i.file_name, i.mime_type, i.size_bytes,
-               i.storage_path, i.match_status, i.created_at,
-               COALESCE(i.carrier_id, b.carrier_id)::text AS carrier_id,
-               c.business_name                            AS carrier_name,
-               i.confidence,
-               r.name                                     AS suggested_requirement_name,
-               jsonb_array_length(i.candidates)           AS candidate_count
-        FROM public.document_ingest_items i
-        JOIN public.document_ingest_batches b ON b.id = i.batch_id
-        LEFT JOIN public.carriers c
-               ON c.id = COALESCE(i.carrier_id, b.carrier_id)
-        LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
-        {where}
-        -- file_name desempata: una carga masiva entra con el mismo created_at
-        -- y sin desempate el orden queda arbitrario entre recargas. En una cola
-        -- donde se selecciona por rango, eso hace que marques otra cosa.
-        ORDER BY c.business_name NULLS LAST, i.created_at, i.file_name
-        LIMIT $2 OFFSET $3
-        """,
+        _SQL_COLA.format(where=where),
         carrier_id, limit, offset,
     )
     return {"total": total or 0, "rows": [dict(r) for r in rows]}

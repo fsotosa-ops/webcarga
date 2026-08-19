@@ -76,6 +76,15 @@ class QueueRow(BaseModel):
     confidence: Optional[float] = None
     suggested_requirement_name: Optional[str] = None
     candidate_count: int = 0
+    # Cuántos items pendientes comparten este destino / este contenido,
+    # incluyéndose a sí mismo. 1 = sin colisión.
+    #
+    # Son DOS señales y no una aunque compartan forma, porque piden acciones
+    # distintas: mismo contenido -> "este archivo ya está en la cola, borra
+    # uno"; mismo destino -> "dos archivos distintos reclaman el casillero,
+    # elige cuál".
+    mismo_casillero: int = 1
+    mismo_contenido: int = 1
 
 
 class TrayPage(BaseModel):

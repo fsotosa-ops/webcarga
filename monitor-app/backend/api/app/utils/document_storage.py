@@ -4,6 +4,7 @@ NUEVA (nunca sobrescribe el blob anterior) y registra el valor previo en
 public.audit_log en vez de una tabla de versiones dedicada. Decisión de
 Checkpoint A §2.2/decisión 4.
 """
+import hashlib
 import io
 import json
 import re
@@ -47,6 +48,10 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
     if len(data) > STORED_FILE_MAX_BYTES:
         raise HTTPException(422, f"{file.filename} supera 7MB — comprimí el archivo antes de subirlo")
 
+    # El hash va acá y no en el router porque acá el contenido YA está leído:
+    # calcularlo en otro lado obligaría a leer el archivo dos veces.
+    content_sha256 = hashlib.sha256(data).hexdigest()
+
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     storage_path = f"{key_prefix}/{stamp}_{safe_storage_name(file.filename or 'archivo')}"
 
@@ -60,6 +65,7 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
         "file_name": file.filename or "archivo",
         "mime_type": mime,
         "size_bytes": len(data),
+        "content_sha256": content_sha256,
     }
 
 
