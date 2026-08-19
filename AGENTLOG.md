@@ -135,6 +135,21 @@ así que vuelve a `severity='error'` sin umbral de gracia — no hay pasivo que 
 cubre, a propósito, es el aplanamiento de tramos (#6): eso es pérdida de información, no
 duplicación, y mezclarlo fue el error original.
 
+#### #6 localizado y acotado — queda como issue, NO se tocó
+
+Con los tramos ya llegando completos al payload se pudo medir dónde se pierden: **bronze tiene 18
+viajes de Sodimac con 2 tramos, silver tiene 0.** Se aplana en `stg_sodimac_trips`, que arma
+`trip_stops` desde `payload->'stops'->0` únicamente — su comentario todavía dice "Sodimac no tiene
+arreglo de stops, por lo que su único DESTINO se empaqueta", suposición que quedó obsoleta.
+
+**Se parte en dos y sólo una mitad necesita decisión**: multi-destino es puramente técnico
+(`app.trip_stops` ya soporta N destinos, funciona para QAnalytics con 3,3 promedio) y multi-origen
+necesita que operaciones defina si dos conexiones son un viaje o dos, y qué muestra el Monitor como
+origen. **La pregunta que decide la prioridad: ¿esos 18 viajes afectan facturación?**
+
+Ojo al retomar: los 25 viajes con más de 2 filas en `app.trip_stops` son residuo histórico de los
+`stop_id` duplicados, **no** son este problema.
+
 #### Cronología del incidente (ingestión caída ~1 h)
 
 **Al cerrar la sesión la ingestión llevaba ~30 min sin recibir dato en las tres fuentes.** Último
