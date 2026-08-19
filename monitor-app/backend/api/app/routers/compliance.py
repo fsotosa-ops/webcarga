@@ -587,7 +587,7 @@ async def reassign_compliance_document(
     """
     tiene_destino = bool(body.target_entity_type and body.target_entity_id and body.target_requirement_id)
     if not tiene_destino and not body.to_tray:
-        raise HTTPException(422, "Indicá un destino o devolvelo a sin clasificar")
+        raise HTTPException(422, "Indica un destino o devuélvelo a sin clasificar")
     if tiene_destino and body.to_tray:
         raise HTTPException(422, "O se reasigna a un requisito o se devuelve a la bandeja, no ambos")
 
@@ -659,7 +659,7 @@ async def reassign_compliance_document(
                 if not destino:
                     raise HTTPException(
                         404,
-                        "Esa entidad no tiene ese requisito. Verificá la categoría y el tipo de documento.",
+                        "Esa entidad no tiene ese requisito. Verifica la categoría y el tipo de documento.",
                     )
                 await _apply_stored_document(
                     conn, destino["id"],

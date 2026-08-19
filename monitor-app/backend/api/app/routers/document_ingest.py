@@ -390,7 +390,7 @@ async def classify_batch(
             if not record:
                 raise HTTPException(
                     404,
-                    "Esa entidad no tiene ese requisito. Verificá la categoría y el tipo de documento.",
+                    "Esa entidad no tiene ese requisito. Verifica la categoría y el tipo de documento.",
                 )
 
             if body.expiration_date is None:
