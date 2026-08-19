@@ -195,6 +195,17 @@ describe('FichaEmpresaPage', () => {
     expect(await screen.findByText(/nadie cargó documentos/i)).toBeInTheDocument()
   })
 
+  // "La preselección de empresa no es comodidad: es precisión" — el motor
+  // acota el universo a las entidades de esa empresa (~2 conductores y ~3
+  // vehículos contra 87 y 124). El enlace pelado dejaba esa capacidad sin
+  // puerta, que es palabra por palabra la crítica que la spec le hacía al
+  // estado anterior.
+  it('el puente a la Bandeja llega con la empresa ya elegida', async () => {
+    montar([fila()])
+    const enlace = await screen.findByRole('link', { name: /bandeja/i })
+    expect(enlace).toHaveAttribute('href', '/dashboard/compliance/inbox?empresa=c1')
+  })
+
   it('un lector ve todo y no puede cargar nada', async () => {
     vi.mocked(useCanEdit).mockReturnValue(false)
     montar([fila({ id: 'p1', status: 'MISSING' })])

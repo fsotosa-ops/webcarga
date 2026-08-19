@@ -4,12 +4,13 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, Eye, Inbox, Loader2 } from 'lucide-react'
+import { ChevronRight, Eye, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
+import { PuenteALaBandeja } from '@/components/compliance/PuenteALaBandeja'
 import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { DocumentPreviewModal } from '@/components/dashboard/DocumentPreviewModal'
@@ -342,18 +343,7 @@ export default function FichaEmpresaPage() {
           </div>
         ))}
 
-        {canEdit && (
-          <p className="text-etiqueta text-informativo pt-1 flex items-center gap-1.5">
-            <Inbox size={11} aria-hidden="true" />
-            ¿Tienes muchos documentos de {carrier.business_name}?{' '}
-            <Link
-              href="/dashboard/compliance/inbox"
-              className="font-semibold text-accion transition-opacity hover:opacity-70"
-            >
-              Llévalos a la Bandeja
-            </Link>
-          </p>
-        )}
+        <PuenteALaBandeja carrierId={carrierId} carrierName={carrier.business_name} />
       </div>
 
       {viendoId && previewQuery.data?.file_url && (

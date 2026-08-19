@@ -25,6 +25,11 @@ interface Props {
   /** Acota el panel a un conductor o vehículo concreto: entrando desde su
    *  ficha, lo único que interesa es lo que le falta a él. */
   subject?: { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string }
+  /** La empresa con la que llega el lote, cuando se entró desde la ficha de
+   *  una. No es lo mismo que `carrierId`: acá la cola SIGUE siendo global —se
+   *  ve todo lo que espera— y esto sólo dice de quién es lo que se va a subir,
+   *  que es exactamente lo que el selector pregunta. Se puede cambiar. */
+  empresaInicial?: CarrierSearchResult | null
 }
 
 const QUEUE_PAGE = 200
@@ -52,7 +57,7 @@ function motivosDe(errores: { error: string }[]) {
  *  Reemplaza al par panel + modal de clasificación, que costaba ~5 clics por
  *  documento. Acá el formulario aplica a todo lo marcado: con un archivo
  *  clasifica ese, con quince aplica a los quince. */
-export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
+export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicial }: Props) {
   const qc = useQueryClient()
   const canEdit = useCanEdit()
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -70,7 +75,13 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   // Es opcional a propósito — la tanda mezclada que llega por correo es un
   // caso legítimo, y exigirla convertiría la bandeja en un buscador.
   const [busqueda, setBusqueda] = useState('')
-  const [empresaDelLote, setEmpresaDelLote] = useState<CarrierSearchResult | null>(null)
+  /** La empresa que se ELIGIÓ acá. `null` significa "todavía nadie eligió", no
+   *  "ninguna": la que llega por el enlace se resuelve abajo con un COALESCE y
+   *  no sembrando este estado, que es como este frontend ya tuvo tres veces el
+   *  mismo bug (un estado inicial que no se resincroniza cuando el prop del
+   *  que salió cambia). Elegir acá gana; sin elección, manda la del enlace. */
+  const [empresaElegida, setEmpresaElegida] = useState<CarrierSearchResult | null>(null)
+  const empresaDelLote = empresaElegida ?? empresaInicial ?? null
 
   /** Sin nada marcado, la pantalla está en modo "subir"; con algo marcado,
    *  en modo "mover". Un solo nombre para la condición porque gobierna las
@@ -359,10 +370,19 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
             ¿De quién son estos documentos? Elegir la empresa hace que el sistema
             reconozca mejor a quién pertenece cada archivo.
           </p>
+          {/* La empresa elegida, DICHA. Sin esto, el estado gobierna a qué
+              empresa se atribuye la tanda sin estar en pantalla — el mismo
+              defecto que tenía esconder el selector con la selección activa.
+              Y es lo que hace visible la preselección que trae el enlace. */}
+          {empresaDelLote && (
+            <p className="text-etiqueta text-text-primary font-semibold pb-1">
+              Este lote es de {empresaDelLote.business_name}
+            </p>
+          )}
           <CarrierSearchPicker
             query={busqueda}
             onQueryChange={setBusqueda}
-            onPick={c => setEmpresaDelLote(c)}
+            onPick={c => setEmpresaElegida(c)}
             selectedId={empresaDelLote?.id ?? null}
             size="sm"
             placeholder="Buscar empresa (opcional)…"

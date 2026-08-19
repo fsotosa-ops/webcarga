@@ -1,7 +1,35 @@
 'use client'
 
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
+import { carriersApi } from '@/lib/api/carriers'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
+
+/** La empresa con la que llega el lote, si se entró desde la ficha de una.
+ *  Viaja sólo el id: el nombre se pregunta, para que un enlace compartido no
+ *  lleve escrito el nombre de una empresa ni pueda mostrar uno desactualizado.
+ *
+ *  La cola NO se acota: la Bandeja sigue mostrando todo lo que espera. Esto
+ *  responde "¿de quién es lo que voy a subir?", que es otra pregunta. */
+function EmpresaDelEnlace() {
+  const empresaId = useSearchParams().get('empresa')
+  const empresaQuery = useQuery({
+    queryKey: ['carrier-detail', empresaId],
+    queryFn: () => carriersApi.get(empresaId!),
+    enabled: !!empresaId,
+  })
+  const empresa = empresaQuery.data
+
+  return (
+    <TriageWorkbench
+      empresaInicial={empresa
+        ? { id: empresa.id, business_name: empresa.business_name, tax_id: empresa.tax_id }
+        : null}
+    />
+  )
+}
 
 /** La Bandeja: archivos que llegaron sueltos, todavía sin empresa ni
  *  requisito asignado.
@@ -25,7 +53,9 @@ export default function ComplianceInboxPage() {
         titulo="Sin clasificar"
         bajada="Archivos que llegaron sueltos, todavía sin empresa ni requisito asignado."
       />
-      <TriageWorkbench />
+      <Suspense fallback={null}>
+        <EmpresaDelEnlace />
+      </Suspense>
     </div>
   )
 }

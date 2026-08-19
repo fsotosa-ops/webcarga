@@ -59,7 +59,9 @@ describe('CarrierDrawer', () => {
     const enlace = await screen.findByRole('link', { name: /bandeja/i })
     // La Bandeja tiene ruta propia (Task 5): un enlace interno que pasara por
     // el redirect de `?vista=documentos` seria deuda desde el dia uno.
-    expect(enlace).toHaveAttribute('href', '/dashboard/compliance/inbox')
+    // Y con la empresa preseleccionada: el bloque es el MISMO componente que
+    // usa la ficha, no una copia verbatim en dos archivos.
+    expect(enlace).toHaveAttribute('href', '/dashboard/compliance/inbox?empresa=c1')
   })
 
   it('pide solo los pendientes de esa empresa', async () => {

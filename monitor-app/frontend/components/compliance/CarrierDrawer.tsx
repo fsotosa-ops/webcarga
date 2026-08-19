@@ -1,11 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
-import { Check, ChevronDown, ChevronRight, Loader2, Inbox } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
+import { PuenteALaBandeja } from './PuenteALaBandeja'
 import { RenglonPendiente } from './RenglonPendiente'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
@@ -169,22 +169,7 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
           )
         })}
 
-        {/* La bandeja sigue existiendo, como DESTINO y no como zona encima del
-            casillero: es el camino de "me llegaron veinte por correo", no el de
-            "a esta persona le falta la licencia". Es un enlace justamente para
-            que no compita con el renglón por el mismo archivo soltado. */}
-        {canEdit && (
-          <p className="text-etiqueta text-informativo pt-2 flex items-center gap-1.5">
-            <Inbox size={11} aria-hidden="true" />
-            ¿Tienes muchos documentos de {carrierName}?{' '}
-            <Link
-              href="/dashboard/compliance/inbox"
-              className="font-semibold text-accion transition-opacity hover:opacity-70"
-            >
-              Llévalos a la Bandeja
-            </Link>
-          </p>
-        )}
+        <PuenteALaBandeja carrierId={carrierId} carrierName={carrierName} />
       </div>
     </div>
   )
