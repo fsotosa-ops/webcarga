@@ -1193,22 +1193,48 @@ cd ../../frontend
 npx vitest run && npx tsc --noEmit && npm run build
 ```
 
-Punto de partida: backend **724** rápidos y **133** de integración; frontend **1.158**.
+Punto de partida al cerrar la Task 2b: backend **738** rápidos y **137** de integración;
+frontend **1.176**.
 
 - [ ] **Step 2: Los conteos no cambiaron para quien no pidió nada**
 
-Contra Postgres real: `/pending` sin `estado` tiene que devolver el mismo total que antes del Task 1
-(**5.038** el 2026-08-19). Si cambió, el default dejó de reproducir el comportamiento anterior.
+Contra Postgres real: `/pending` sin `estado` tiene que seguir devolviendo **2.371**. Si cambió, el
+default dejó de reproducir el comportamiento anterior.
 
-- [ ] **Step 3: Click-through en vivo con Playwright**
+> **Ojo con el número.** El plan decía originalmente 5.038, y era un defecto mío: ese número salió
+> del comentario de `compliance.py:93`, que registra una medición hecha **sin** el filtro
+> `c.operational_status = $8` que el endpoint ya aplicaba. Se verificó reconstruyendo y corriendo el
+> SQL anterior a la Task 1 contra Postgres: también da 2.371. **No es regresión.**
 
-Contra `webcarga-frontend-dev` (**no** claude-in-chrome, la extensión está apagada):
+- [ ] **Step 3: Click-through en vivo con Playwright, contra la rama de verdad**
+
+**No contra `webcarga-frontend-dev`**: esta rama no está desplegada ahí, así que probar contra dev
+mediría el código viejo y daría un falso verde. Y el backend tampoco lo está — la ficha pide
+`estado`, que el dev todavía no entiende.
+
+Se levanta el par completo en local, apuntando a la base real (la sandbox llega al pooler):
+
+```bash
+# Terminal 1 — el backend de esta rama
+cd monitor-app/backend/api && venv/bin/uvicorn app.main:app --port 8001
+
+# Terminal 2 — el frontend de esta rama, con el build de producción
+cd monitor-app/frontend && FASTAPI_URL=http://localhost:8001 npm run build && \
+  FASTAPI_URL=http://localhost:8001 npm start
+```
+
+`npm start` y no `npm run dev`: el build de producción es el único que prueba lo que se va a
+desplegar. Después, Playwright contra `http://localhost:3000` (**no** claude-in-chrome, la extensión
+está apagada):
 
 1. El sidebar muestra **Certificación › Empresas / Sin clasificar**, con el contador en la segunda.
 2. Clic en una empresa desde la lista → **la ficha**, con su URL propia. Recargar la mantiene.
 3. La ficha muestra empresa, conductores y vehículos **juntos**. Probar con
-   **"Comercializadora De Los Rios Ltda"**, que es la única con documentación real: tiene que
-   mostrar **23 al día, 10 faltan, 3 por vencer**.
+   **"Comercializadora De Los Rios Ltda"**, que es la única con documentación real.
+   **Los conteos esperados se miden en el momento, no se copian de acá**: consultá Postgres y
+   compará contra lo que muestra la pantalla. Los números que este plan citaba (23/10/3) son de
+   antes de la Task 1 y el universo cambió — un click-through que compara contra un número viejo
+   falla por el número, no por la pantalla.
 4. El filtro `Todo · Falta · Por vencer · Al día` cambia la lista.
 5. Un documento cargado ofrece **"Ver"** y abre la previsualización.
 6. En "Sin clasificar", elegir una empresa y subir → el request va a `/{carrier_id}/files`
@@ -1218,9 +1244,17 @@ Contra `webcarga-frontend-dev` (**no** claude-in-chrome, la extensión está apa
 **Elegí una empresa sin documentos para cualquier prueba de carga** — los desplegables listan todo
 el catálogo y ya se pisó un documento real por elegir a ojo.
 
-- [ ] **Step 4: Actualizar el AGENTLOG y cerrar**
+- [ ] **Step 4: Que no queden archivos varados**
+
+`document_ingest_items` de la última hora tiene que venir vacío si no se subió nada a propósito
+durante la prueba. El camino directo de carga no pasa por la bandeja.
+
+- [ ] **Step 5: Actualizar el AGENTLOG y cerrar**
 
 Qué se hizo, el siguiente paso exacto, y las decisiones de arquitectura.
+
+> **El merge a `dev` NO es parte de esta tarea.** Empujar `dev` dispara dos despliegues, y esa es
+> una decisión del usuario, no del plan. La tarea termina con la rama verde y verificada en local.
 
 ---
 
