@@ -212,6 +212,96 @@ una acción que no se puede completar.
 
 Plan completo en `~/.claude/plans/necesito-que-analices-lo-shiny-puffin.md`.
 
+### 2026-08-19 (cont.) — Ronda 128: la carga documental rediseñada, y dos tareas ejecutadas
+
+Siguió a la Ronda 127. El click-through en vivo contra dev destapó **dos defectos**, y de ahí salió
+un rediseño completo con spec y plan. Se ejecutaron las Tareas 1 y 5; el resto queda para mañana.
+
+#### Lo que encontró mirar la pantalla, que los tests no podían ver
+
+1. **`<tr role="button">` destruía la tabla.** El helper `propsDeFilaExpandible` imponía
+   `role="button"`, y sobre un `<tr>` eso pisa el `role="row"` implícito: el árbol de accesibilidad
+   quedaba como `button > cell`, celdas sin fila. **jsdom no computa roles**, así que la suite pasaba
+   igual. Corregido: el rol lo decide el elemento (`null` para quien ya tiene uno), con un test
+   `getByRole('row')` que sí lo detecta — Testing Library sí computa roles.
+2. **La subida por requisito falla con 422 y deja el archivo varado.** `classify-batch` exige fecha
+   de vencimiento y el botón "Subir" nunca la pedía: **5 de 12** requisitos de conductor, **8 de 10**
+   de vehículo, 6 de 13 de empresa. Y `uploadAndClassify` **sube antes de clasificar**, así que cada
+   rechazo dejaba el documento en la bandeja y el requisito vacío. Preexistente; el cajón de empresa
+   ya lo tenía.
+
+**Lo que NO se pudo reproducir**: el usuario reportó "no pasó nada" al hacer clic en Subir, y en
+Chromium el selector **sí se abre**. La hipótesis viva es la ambigüedad de las dos superficies —el
+dropzone de 1183×211 px manda a la bandeja, el "Subir" de 42×17 px clasifica directo—: pegarle al
+grande y no ver cambiar el requisito se percibe como "no pasó nada".
+
+#### El rediseño — spec `2026-08-19-certificacion-carga-documental-design.md`
+
+Sesión de brainstorming completa con el visual-companion. **El hallazgo del benchmark cambió mi
+propia recomendación**: de Highway, RMIS (DAT), MyCarrierPackets, Fleetio y Samsara, **ninguno tiene
+una bandeja de triaje como camino principal**. Cuatro de cinco hacen que el casillero pida lo que
+necesita; el triaje aparece sólo donde los documentos llegan sin pedirlos, y siempre como destino
+aparte, nunca encima del casillero.
+
+Elegido el **modelo A**: la lista de lo que falta *es* la superficie de carga. Decisiones del
+usuario: las tres situaciones (onboarding, renovación, recepción) conviven; la fecha **depende del
+requisito**; la ficha legacy entra al alcance.
+
+**Hueco encontrado al medir**: "renovación" no tiene superficie en ninguna parte. El predicado de
+pendiente es `expiration_date < CURRENT_DATE` — **ya vencido**. Un documento que vence en diez días
+no aparece ni en el cajón ni en el embudo. Hoy: 9 vencidos, 3 en 30 días, 6 en 90. Y la ventana de
+30 días está escrita a mano **tres veces** (`carriers.py:282`, `drivers.py:224`, `assets.py:233`).
+
+#### La pregunta del usuario sobre normalizar, y por qué la respuesta es "no acá"
+
+Preguntó si lo configurable no debería normalizarse en las tablas polimórficas. **Para las
+condiciones: no** — son 37 requisitos y 4 dimensiones, y una tabla genérica de reglas cambia columnas
+tipadas con `CHECK` por un `jsonb` que no es consultable ni validable. Es la forma que ya se rechazó
+como "frankenstein". **El umbral quedó escrito**: cuando aparezca la tercera dimensión que exige
+migración — la del anexo Walmart, "por cliente" — ahí sí conviene, con tres casos reales en mano.
+
+**Pero la pregunta apunta a algo real, en otra tabla**: la resolución polimórfica de `entity_id`
+está escrita **4 veces** (`CASE WHEN 'CARRIER' THEN … WHEN 'DRIVER' THEN da.carrier_id`), sobre
+**12 archivos** que tocan las tablas de asignación. Es el ítem P5 del backlog y sigue siendo el de
+mayor retorno estructural del módulo.
+
+#### Ejecutado: Tareas 1 y 5 (commit `d833d835`)
+
+- **Tarea 1 — migración aplicada y verificada.** `expiration_policy` con CHECK
+  REQUIRED/OPTIONAL/NONE. Backfill conservador (`true → REQUIRED`) para que nadie quede más ni menos
+  exigente que ayer. Medido después: REQUIRED 21, NONE 16, OPTIONAL 0; cero inconsistencias; cero
+  nulos. `has_expiration` **no se borra**: tiene lectores vivos en cuatro routers.
+  **El número esperado que yo mismo escribí en el plan estaba mal** (19/18 contra 21/16 real) — se
+  corrigió el plan para que no mande a detenerse por un dato correcto.
+- **Tarea 5 — `RenglonPendiente`.** El renglón entero es el blanco, recibe drop o clic, y pide la
+  fecha ahí mismo. **Nada se sube hasta estar completo.** El estado es UN valor con seis formas, no
+  cuatro booleanos (que darían dieciséis combinaciones para seis situaciones). 13 tests, **tres
+  mutaciones mueren**. Entró con **cero** color crudo y **cero** tamaños fuera de escala.
+
+**Dos decisiones de diseño que valen más que su tamaño**: la ausencia de política significa "no sé"
+y se resuelve **preguntando sin exigir** (como `NONE` perdería una fecha necesaria; como `REQUIRED`
+bloquearía documentos que no vencen); y sin `onDeshacer` el renglón **no ofrece deshacer**, porque
+prometer una vuelta atrás que no existe es peor que no ofrecerla.
+
+#### Próximo paso exacto
+
+1. [ ] **Tarea 2** — `/file` valida contra la política. La columna ya está en la base, así que el
+   orden migración-antes-que-API ya está satisfecho para esto.
+2. [ ] **Tarea 3** — una sola definición de "por vencer". **Es la que puede explotar**:
+   `pendiente_predicate()` alimenta `/pending`, el embudo y el cajón, y hay bug precedente
+   documentado en `compliance.py:78-79`. Si los conteos del embudo se mueven, entender por qué antes
+   de tocar nada.
+3. [ ] **Tareas 4, 6, 7, 8** — Configuración edita la política; el cajón usa el renglón y suelta el
+   dropzone; la ficha legacy usa el mismo renglón; crear empresa deja de salir del módulo.
+4. [ ] **Tarea 9** — verificación e2e, incluido el click-through subiendo un documento real.
+5. [ ] **Decisión abierta**: si "deshacer" una subida directa es posible sin borrar evidencia.
+   `undo-classify` revierte una clasificación *de la bandeja*, y el camino directo no pasa por ahí.
+
+Estimación restante: **4 a 5 horas**, de las cuales cerca de una es esperar suites y deploys
+(`pytest` completo tarda 8 minutos).
+
+Plan en `docs/superpowers/plans/2026-08-19-certificacion-carga-documental.md`.
+
 ### 2026-08-18 (cont.) — Ronda 126: los duplicados de `trip_stops` son historial, no basura
 
 Arrancó como "rediseñar el ítem 4 con los datos de hoy" y terminó **retirando el ítem 4**. El
