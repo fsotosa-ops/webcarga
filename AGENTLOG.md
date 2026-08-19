@@ -899,6 +899,26 @@ entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento a
   saltean. Antes de tocar nada, leer lo que ya existe — la trampa acá es reescribir una versión peor
   de un panel que ya está resuelto al lado.
 
+  **CÓMO ABORDARLO (pedido del usuario): no es redirigir enlaces, es diseñar el recorrido.** El
+  requisito declarado es una experiencia **interactiva, inmersiva, autoexplicativa y de muy baja
+  carga cognitiva**, validada contra el estándar de la industria antes de proponer nada. Corresponde
+  `superpowers:brainstorming` (ofrecer el visual-companion cuando aparezca la primera pregunta que
+  se entienda mejor mostrándola) más `frontend-design` + `ui-ux-pro-max` juntas.
+
+  **Comparables ya elegidos** — no son TMS sino productos de certificación/gestión documental de
+  flota, que hacen el mismo trabajo: **Highway** y **RMIS** (DAT) para verificación y onboarding de
+  transportistas; **MyCarrierPackets** para la carga documental; **Fleetio** y **Samsara** para
+  documentos por conductor y por vehículo con vencimientos.
+
+  **El patrón que comparten y que ataca el problema**: maestro-detalle sin perder el lugar — la lista
+  queda visible, el detalle abre en panel lateral SOBRE ella, y la carga del archivo ocurre ahí mismo
+  (arrastrar sobre el requisito), sin navegar a otra pantalla. Nunca se sale de la cola de trabajo.
+
+  **Pregunta abierta que define el alcance**: los tres enlaces no son iguales. Dos van al documental
+  de la EMPRESA (`?tab=documentos`) y uno al conductor o vehículo específico — ese último es el que
+  el usuario describió. Hay que definir si el documental de la empresa también debe quedar dentro de
+  Certificación o si ese sí tiene sentido que lleve a Empresas.
+
 **SIGUIENTE PASO EXACTO AL RETOMAR (Ronda 126, 2026-08-19 04:15Z)**
 
 - [ ] **Confirmar que `app_trips_tests` quedó verde.** Es lo único sin verificar de la noche: el
