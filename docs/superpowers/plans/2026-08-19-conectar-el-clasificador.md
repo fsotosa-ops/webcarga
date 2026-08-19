@@ -572,9 +572,12 @@ import asyncio, asyncpg
 from collections import Counter
 from app.services.matcher_io import cargar_catalogo, cargar_universo
 from app.services.document_matcher import match_document, classify_match
+# Las credenciales del pooler ya estan resueltas en el conftest: usuario
+# `postgres.<ref>`, puerto 5432, statement_cache_size=0. No las rearmes.
+from tests.conftest import credenciales_integracion
 
 async def main():
-    conn = await asyncpg.connect(...)   # el mismo DSN del pooler que usa conftest
+    conn = await asyncpg.connect(**credenciales_integracion())
     catalogo = await cargar_catalogo(conn)
     universo = await cargar_universo(conn)
     nombres = [r["file_name"] for r in
