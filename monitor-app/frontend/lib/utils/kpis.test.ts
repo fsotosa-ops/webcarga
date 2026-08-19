@@ -209,7 +209,7 @@ describe('temp_reported — los viajes que si reportan temperatura', () => {
   })
 })
 
-// ── "El TMS dejó de reportarlo" (Ronda 126) ──────────────────────────────────
+// ── "Ya no está en el TMS" (Ronda 126) ──────────────────────────────────
 // El booleano lo resuelve el backend (_tms_dropped, trips.py) porque el umbral
 // vive en la base y la comparación necesita la última corrida de cada TMS. Acá
 // se verifica que el KPI lo lee y que no lo confunde con `stale`, que es la

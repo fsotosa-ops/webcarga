@@ -47,7 +47,7 @@ class MonitorAlertRulesPatch(BaseModel):
     dwell_orange_min:       Optional[int]   = None
     dwell_red_min:          Optional[int]   = None
     # Horas que la TMS puede seguir corriendo sin traer un viaje antes de que
-    # se encienda "El TMS dejó de reportarlo". Configurable a propósito: el
+    # se encienda "Ya no está en el TMS". Configurable a propósito: el
     # criterio de cuándo una ausencia cuenta como baja lo define operaciones
     # (issue #3), y moverlo no puede exigir un despliegue.
     tms_dropped_hours:      Optional[float] = None

@@ -105,7 +105,7 @@ export function matchesKpi(
   now: number = Date.now(),
 ): boolean {
   switch (kpi) {
-    // "El TMS dejó de reportarlo" (Ronda 126). El booleano lo resuelve el
+    // "Ya no está en el TMS" (Ronda 126). El booleano lo resuelve el
     // backend (_tms_dropped, trips.py): el umbral vive en la base y la
     // comparación necesita la última corrida de cada TMS, que no viaja en el
     // Trip. Acá sólo se lee, igual que temp_status.

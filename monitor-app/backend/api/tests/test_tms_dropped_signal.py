@@ -1,4 +1,4 @@
-"""Señal "El TMS dejó de reportarlo" (Ronda 126).
+"""Señal "Ya no está en el TMS" (Ronda 126).
 
 Un viaje se marca cuando su TMS siguió corriendo durante N horas sin traerlo.
 La comparación es contra la ÚLTIMA CORRIDA DE SU PROPIA TMS

@@ -104,6 +104,17 @@ aplica a Sodimac por diseño (`is_live_tracked_source`), que es justo el TMS que
   **fijada de fábrica** en `usePinnedAlertSignals` — dejarla sólo dentro del popover mantendría
   invisible justo la condición que nunca se vio. Sólo afecta a quien nunca tocó el pin.
 
+**La etiqueta se llama "Ya no está en el TMS", SIN el umbral, y es una decisión de diseño, no un
+descuido.** Salió primero como "El TMS dejó de reportarlo > 3h" y el usuario la rechazó: un badge
+con horas la disfraza de alerta de grado, como "Detenido en local" o "Sin actualización del TMS",
+donde el número significa algo y el viaje va cruzando el umbral. Acá **el fenómeno es binario** —lo
+dicen los datos: atraso mínimo real 1 día 11 h, y 3 h / 12 h / 24 h marcan los mismos viajes— así
+que el umbral es sólo una protección contra el intervalo entre corridas y mostrarlo describe el
+mecanismo en vez del evento. Se eligió el texto que afirma sólo lo observado ("ya no está") y no la
+causa ("eliminado"), porque quién lo sacó es precisamente lo que falta definir en el issue #3. Hay
+un test que fija que `stale` lleva su umbral y `tms_dropped` no, para que nadie los empareje por
+simetría.
+
 **Medido en vivo, y corrige lo que estimé antes**: el umbral casi no discrimina. El atraso mínimo
 real es **1 día 11 h** y el máximo 101 días — o sea la ausencia es prácticamente binaria (o está en
 la corrida vigente o se fue del portal), y 3 h, 12 h o 24 h marcan los mismos 54 viajes. En la

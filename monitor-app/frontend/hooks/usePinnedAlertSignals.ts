@@ -14,7 +14,7 @@ const DEFAULT_PINNED: AlertSignalId[] = ['dwell_severity', 'temp_out', 'stale', 
  *  fueron descartados como alertas) es el que ve cualquier usuario que
  *  nunca tocó el pin.
  *
- *  2026-08-18: se suma 'tms_dropped' ("El TMS dejó de reportarlo"). Va fijada
+ *  2026-08-18: se suma 'tms_dropped' ("Ya no está en el TMS"). Va fijada
  *  de fábrica a propósito — es una condición que hasta ahora no se veía en
  *  ninguna pantalla (Sodimac elimina viajes de su portal sin cambiar el
  *  estado), así que dejarla sólo dentro del popover la mantendría invisible.

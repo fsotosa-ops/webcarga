@@ -247,10 +247,12 @@ export function RangosTemperaturaTab() {
 
 const RULE_FIELDS: { key: keyof MonitorAlertRules; label: string; hint: string; unit: string; step: string }[] = [
   { key: 'stale_report_hours', label: 'Sin actualización del TMS', hint: 'Horas sin actualización del TMS en un viaje abierto para encender la alerta', unit: 'horas', step: '0.5' },
-  // Ronda 126 — la TMS corrió y no trajo el viaje. Distinto del anterior, que
-  // mide cuánto hace que no sabemos nada (puede ser nuestro scraper caído).
-  // El valor lo va a definir operaciones; 3 horas es el punto de partida.
-  { key: 'tms_dropped_hours', label: 'El TMS dejó de reportarlo', hint: 'Horas que la TMS puede seguir corriendo sin traer un viaje abierto antes de marcarlo', unit: 'horas', step: '0.5' },
+  // Ronda 126 — el portal del mandante dejó de listar el viaje. Distinto del
+  // anterior, que mide cuánto hace que no sabemos nada (puede ser nuestro
+  // scraper caído). Este número NO aparece en el badge a propósito: es una
+  // protección contra el intervalo entre corridas, no el fenómeno. El criterio
+  // definitivo lo define operaciones (issue #3); 3 horas es el punto de partida.
+  { key: 'tms_dropped_hours', label: 'Ya no está en el TMS', hint: 'Horas que la TMS puede seguir corriendo sin traer un viaje abierto antes de darlo por ausente. Protege contra el intervalo entre corridas; la ausencia real se mide en días', unit: 'horas', step: '0.5' },
   // Hito 14 (minuta 29/07 §4.4): semáforo de tiempo en el local activo —
   // reemplaza al umbral binario "Detenido en local" (dwell_hours, sigue
   // existiendo en la DB pero ya no se edita acá ni se usa como alerta).

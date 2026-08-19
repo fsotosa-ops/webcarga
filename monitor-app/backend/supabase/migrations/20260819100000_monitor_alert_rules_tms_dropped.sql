@@ -1,4 +1,4 @@
--- Señal "El TMS dejó de reportarlo" (Ronda 126).
+-- Señal "Ya no está en el TMS" (Ronda 126).
 --
 -- Cuántas horas puede seguir corriendo una TMS sin traer un viaje antes de
 -- que el Monitor lo marque. El viaje se compara contra la ÚLTIMA CORRIDA de

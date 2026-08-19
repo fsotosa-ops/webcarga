@@ -422,7 +422,7 @@ router = APIRouter(prefix="/trips", tags=["trips"])
 
 # SQL fragment that maps actual DB columns to the expected API response shape.
 # fleet JSONB holds tractor/driver info; trip_fleet_links holds the resolved
-# ── Señal "El TMS dejó de reportarlo" (Ronda 126) ────────────────────────────
+# ── Señal "Ya no está en el TMS" (Ronda 126) ────────────────────────────
 #
 # Un viaje se marca cuando su TMS siguió corriendo durante N horas sin
 # traerlo. `status_reported_at` es el instante del archivo que lo reportó por
@@ -996,7 +996,7 @@ class TmsSourceMeta(BaseModel):
     # exactamente el `file_generated_at` del archivo que trajo al viaje, así
     # que el máximo por fuente es el instante de su última lectura del portal.
     #
-    # Lo usa la señal "El TMS dejó de reportarlo" (kpis.ts): un viaje cuyo
+    # Lo usa la señal "Ya no está en el TMS" (kpis.ts): un viaje cuyo
     # status_reported_at quedó atrás de este valor es un viaje que la TMS
     # tuvo oportunidad de reportar y no reportó. Distinto de la señal
     # `stale`, que compara contra now() y por lo tanto también se enciende

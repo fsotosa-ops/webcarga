@@ -233,7 +233,7 @@ export type MonitorAlertRules = {
   dwell_orange_min:       number
   dwell_red_min:          number
   /** Horas que una TMS puede seguir corriendo sin traer un viaje antes de que
-   *  se marque como "dejó de reportarlo" (Ronda 126). Configurable porque el
+   *  se marque como "Ya no está en el TMS" (Ronda 126). Configurable porque el
    *  criterio de negocio lo define operaciones — GitHub issue #3. */
   tms_dropped_hours:      number
 }

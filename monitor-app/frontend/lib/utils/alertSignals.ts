@@ -35,14 +35,22 @@ export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
     // renombrado 2026-08-01 a pedido del usuario para usar un término más
     // claro/estándar de la industria.
     { id: 'stale',          label: `Sin actualización del TMS > ${rules.stale_report_hours}h`, colorCls: 'text-amber-600', activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
-    // "El TMS dejó de reportarlo" (Ronda 126) — la TMS siguió corriendo N
-    // horas sin traer este viaje. Nace del caso Sodimac, que elimina viajes
-    // de su portal sin cambiar el estado: quedan en "asignado" para siempre y
-    // molestan el cierre, y hasta ahora no se veían en ninguna parte.
-    // Deliberadamente separada de "Sin actualización del TMS": esa se
-    // enciende cuando nadie sabe nada hace rato (puede ser culpa nuestra),
-    // ésta cuando el mandante corrió y no lo trajo.
-    { id: 'tms_dropped',    label: `El TMS dejó de reportarlo > ${rules.tms_dropped_hours}h`, colorCls: 'text-rose-600', activeCls: 'border-rose-400 ring-2 ring-rose-100 bg-rose-50' },
+    // "Ya no está en el TMS" (Ronda 126) — el portal del mandante dejó de
+    // listar este viaje. Nace del caso Sodimac, que elimina viajes sin cambiar
+    // el estado: quedan en "asignado" para siempre y molestan el cierre.
+    //
+    // SIN UMBRAL EN LA ETIQUETA, a diferencia de las señales de al lado, y es
+    // deliberado: acá el fenómeno NO es de grado. Medido en producción el
+    // 2026-08-18, el atraso mínimo real es 1 día 11 h y 3 h / 12 h / 24 h
+    // marcan exactamente los mismos viajes — o está en la corrida vigente o
+    // se fue del portal. `tms_dropped_hours` existe sólo como protección
+    // contra el intervalo entre corridas, y mostrarlo acá haría pasar por
+    // alerta de grado algo que es un estado binario.
+    //
+    // Dice lo que se observa ("ya no está"), no por qué: si fue el mandante
+    // quien lo eliminó o una corrida que falló es justo lo que falta definir
+    // (GitHub issue #3).
+    { id: 'tms_dropped',    label: 'Ya no está en el TMS', colorCls: 'text-rose-600', activeCls: 'border-rose-400 ring-2 ring-rose-100 bg-rose-50' },
     { id: 'temp_out',       label: 'Temp fuera de rango',         colorCls: 'text-blue-600',   activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50' },
     // Los que SI reportan temperatura — el subconjunto con cadena de frio.
     // "Fuera de rango" solo muestra los que ya fallaron; para vigilar el frio

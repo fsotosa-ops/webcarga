@@ -22,7 +22,7 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
 }
 
 describe('alertSignals', () => {
-  it('alertSignalDefs returns 6 KPI + 4 flag = 10 signals (2026-08-18: + "El TMS dejó de reportarlo")', () => {
+  it('alertSignalDefs returns 6 KPI + 4 flag = 10 signals (2026-08-18: + "Ya no está en el TMS")', () => {
     const defs = alertSignalDefs(DEFAULT_ALERT_RULES)
     expect(defs.map(d => d.id)).toEqual([
       'dwell_severity', 'stale', 'tms_dropped', 'temp_out', 'temp_reported', 'fleet_unmatched',
@@ -30,13 +30,16 @@ describe('alertSignals', () => {
     ])
   })
 
-  // Las dos señales de "el TMS no dice nada" son contiguas y distintas; que sus
-  // labels lleven cada uno su propio umbral es lo que las hace distinguibles en
-  // pantalla, y por eso se afirma acá.
-  it('tms_dropped y stale muestran cada uno su propio umbral en el label', () => {
+  // `stale` es una alerta de grado y su label lleva el umbral; `tms_dropped` es
+  // un estado binario (medido: el atraso mínimo real es 1 día 11 h, y 3/12/24 h
+  // marcan los mismos viajes) y su label NO debe llevarlo — mostrarlo lo haría
+  // pasar por una alerta de grado que no es. Se afirma acá para que nadie lo
+  // "empareje" con la señal de al lado por simetría.
+  it('stale muestra su umbral en el label; tms_dropped no, porque no es de grado', () => {
     const defs = alertSignalDefs({ ...DEFAULT_ALERT_RULES, stale_report_hours: 2, tms_dropped_hours: 3 })
     expect(defs.find(d => d.id === 'stale')!.label).toBe('Sin actualización del TMS > 2h')
-    expect(defs.find(d => d.id === 'tms_dropped')!.label).toBe('El TMS dejó de reportarlo > 3h')
+    expect(defs.find(d => d.id === 'tms_dropped')!.label).toBe('Ya no está en el TMS')
+    expect(defs.find(d => d.id === 'tms_dropped')!.label).not.toMatch(/\d+\s*h/)
   })
 
   it('tms_dropped cuenta y filtra como el resto de las señales KPI', () => {
