@@ -53,7 +53,24 @@ _SQL_COLA = """
                 ELSE 1 END                            AS mismo_casillero,
            CASE WHEN i.content_sha256 IS NOT NULL
                 THEN count(*) OVER (PARTITION BY i.content_sha256)
-                ELSE 1 END                            AS mismo_contenido
+                ELSE 1 END                            AS mismo_contenido,
+           -- La colision que las window functions NO pueden ver: el ocupante
+           -- ya fue confirmado, salio de la cola y no esta en ninguna
+           -- particion. Es justo el caso destructivo — confirmar este item
+           -- reemplaza un documento que hoy es valido.
+           --
+           -- EXISTS y no JOIN a proposito: un JOIN a compliance_records
+           -- multiplicaria la fila si algun dia hay mas de un registro
+           -- vigente por (entity_id, requirement_id), y una cola que muestra
+           -- el mismo archivo dos veces es peor que una que no avisa.
+           CASE WHEN i.entity_id IS NOT NULL AND i.requirement_id IS NOT NULL
+                THEN EXISTS (
+                    SELECT 1 FROM public.compliance_records cr
+                     WHERE cr.entity_id = i.entity_id
+                       AND cr.requirement_id = i.requirement_id
+                       AND cr.is_current = true
+                       AND cr.file_url IS NOT NULL)
+                ELSE false END                        AS casillero_ocupado
     FROM public.document_ingest_items i
     JOIN public.document_ingest_batches b ON b.id = i.batch_id
     LEFT JOIN public.carriers c

@@ -7,14 +7,16 @@ NADA toca public.compliance_records hasta la clasificación explícita.
 import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
-from app.routers.document_ingest import router
-from tests.conftest import USER, wire_transactional_conn
+from app.routers.document_ingest import list_queue, router
+from tests.conftest import USER, PoolDeUnaConexion, wire_transactional_conn
 
 
 def make_client(pool, supabase=None):
@@ -534,6 +536,124 @@ def test_el_sql_de_la_cola_no_agrupa_los_sin_destino():
     assert "i.entity_id IS NOT NULL" in _SQL_COLA
     assert "i.requirement_id IS NOT NULL" in _SQL_COLA
     assert "i.content_sha256 IS NOT NULL" in _SQL_COLA
+
+
+# ── Bandeja: el casillero que ya tiene dueño (Task 2b) ──────────────────────
+#
+# `mismo_casillero`/`mismo_contenido` cuentan sobre la cola: sólo ven items
+# que siguen sin clasificar. El caso destructivo es el que esas dos señales
+# NO pueden ver: el ocupante del casillero ya fue confirmado, salió de la
+# cola y no está en ninguna partición de `count(*) OVER (...)`. Confirmar el
+# item de la cola reemplazaría un documento que hoy es válido, sin aviso.
+#
+# Esto se verifica contra Postgres real (no AsyncMock): la pregunta central
+# es qué devuelve un EXISTS correlacionado cuando la columna correlacionada
+# es NULL, y eso es semántica del motor, no algo que un mock pueda simular.
+
+async def _requisito_real(conn) -> str:
+    """Un requisito sintético, sólo para tener un `requirement_id` real que
+    el `::uuid` de la FK pueda aceptar. Mismo patrón que
+    test_document_ingest_integracion.py."""
+    return await conn.fetchval(
+        """
+        INSERT INTO public.compliance_requirements
+            (target_entity, requirement_code, name, requirement_level, expiration_policy)
+        VALUES ('DRIVER', $1, $2, 'LEGAL_MANDATORY', 'NONE')
+        RETURNING id::text
+        """,
+        f"ZZ_{uuid4().hex[:8].upper()}", "ZZ-TEST-INTEGRACION requisito",
+    )
+
+
+async def _batch_vacio(conn) -> str:
+    return await conn.fetchval(
+        """
+        INSERT INTO public.document_ingest_batches (source, status, total_files)
+        VALUES ('UPLOAD', 'REVIEW', 1)
+        RETURNING id::text
+        """,
+    )
+
+
+async def _una_fila_de_la_cola(conn, *, entity_id, requirement_id) -> dict:
+    """Arma un item UNMATCHED de la cola apuntando a `(entity_id, requirement_id)`
+    y devuelve su fila tal como la ve `GET /document-ingest/items`.
+
+    No crea ningún `compliance_record`: el llamador decide si el casillero
+    está ocupado insertando uno antes de llamar a esta función."""
+    batch_id = await _batch_vacio(conn)
+    item_id = await conn.fetchval(
+        """
+        INSERT INTO public.document_ingest_items
+            (batch_id, storage_path, file_name, match_status, entity_type,
+             entity_id, requirement_id)
+        VALUES ($1, $2, $2, 'UNMATCHED', $3, $4::uuid, $5::uuid)
+        RETURNING id::text
+        """,
+        batch_id, f"staging/{batch_id}/doc.pdf",
+        "DRIVER" if entity_id else None, entity_id, requirement_id,
+    )
+    pagina = await list_queue(carrier_id=None, limit=200, offset=0,
+                               pool=PoolDeUnaConexion(conn), _=None)
+    return next(f for f in pagina["rows"] if f["id"] == item_id)
+
+
+@pytest.mark.integracion
+async def test_la_cola_avisa_cuando_el_casillero_ya_tiene_documento(conexion_revertida):
+    """El caso destructivo que `mismo_casillero` NO ve: el ocupante ya fue
+    confirmado, así que salió de la cola y ninguna window function lo cuenta.
+    """
+    conn = conexion_revertida
+    entity_id = str(uuid4())
+    requirement_id = await _requisito_real(conn)
+    await conn.execute(
+        """
+        INSERT INTO public.compliance_records
+            (entity_id, entity_type, requirement_id, status, file_url, is_current)
+        VALUES ($1::uuid, 'DRIVER', $2::uuid, 'APPROVED', 'https://x/y.pdf', true)
+        """,
+        entity_id, requirement_id,
+    )
+
+    fila = await _una_fila_de_la_cola(conn, entity_id=entity_id, requirement_id=requirement_id)
+
+    assert fila["casillero_ocupado"] is True
+    assert fila["mismo_casillero"] == 1  # la señal vieja sigue diciendo "sin colisión"
+
+
+@pytest.mark.integracion
+async def test_un_item_sin_destino_no_tiene_el_casillero_ocupado(conexion_revertida):
+    """Sin entity_id no hay casillero que ocupar. Sin la guarda de NULL, el
+    EXISTS correlacionado con NULL da NULL y la fila viaja con un booleano
+    vacío en vez de `false`."""
+    conn = conexion_revertida
+
+    fila = await _una_fila_de_la_cola(conn, entity_id=None, requirement_id=None)
+
+    assert fila["casillero_ocupado"] is False
+
+
+@pytest.mark.integracion
+async def test_un_casillero_sin_archivo_vigente_no_cuenta_como_ocupado(conexion_revertida):
+    """Un `compliance_record` puede existir para ese destino sin tener
+    archivo (`status = 'MISSING'`, `file_url` NULL) o sin estar vigente
+    (`is_current = false`). Ninguno de los dos es "el casillero ya tiene
+    dueño": confirmar el item de la cola no reemplaza nada."""
+    conn = conexion_revertida
+    entity_id = str(uuid4())
+    requirement_id = await _requisito_real(conn)
+    await conn.execute(
+        """
+        INSERT INTO public.compliance_records
+            (entity_id, entity_type, requirement_id, status, file_url, is_current)
+        VALUES ($1::uuid, 'DRIVER', $2::uuid, 'MISSING', NULL, true)
+        """,
+        entity_id, requirement_id,
+    )
+
+    fila = await _una_fila_de_la_cola(conn, entity_id=entity_id, requirement_id=requirement_id)
+
+    assert fila["casillero_ocupado"] is False
 
 
 def test_preview_url_is_signed_one_at_a_time():

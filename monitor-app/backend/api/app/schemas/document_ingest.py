@@ -85,6 +85,12 @@ class QueueRow(BaseModel):
     # elige cuál".
     mismo_casillero: int = 1
     mismo_contenido: int = 1
+    # El requisito destino YA tiene un archivo vigente. Confirmar este item lo
+    # reemplaza — el anterior queda recuperable (`replaced_storage_path`), pero
+    # quien confirma tiene que saberlo ANTES. Es distinto de `mismo_casillero`:
+    # esa señal sólo ve items que siguen sin clasificar, y el ocupante de este
+    # casillero ya salió de la cola porque fue confirmado.
+    casillero_ocupado: bool = False
 
 
 class TrayPage(BaseModel):
