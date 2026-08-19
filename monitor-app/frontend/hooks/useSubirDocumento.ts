@@ -9,7 +9,7 @@ import { invalidarCertificacion } from '@/lib/queries/certificacion'
  *
  *  La consumen el cajón de Certificación y la ficha legacy (`DocumentChecklist`
  *  vía `DriverDetailPanel` / `VehicleDetailPanel`). Antes cada una llamaba a
- *  `documentIngestApi.uploadAndClassify` por su cuenta, y ahí está el defecto
+ *  la puerta de la Bandeja por su cuenta, y ahí está el defecto
  *  que esto cierra: esa puerta **sube primero y clasifica después**, así que un
  *  rechazo —típicamente el 422 por falta de fecha de vencimiento— dejaba el
  *  archivo huérfano en la bandeja y el requisito vacío. El usuario veía "no

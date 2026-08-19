@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { hasRole } from '@/lib/types'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -13,7 +14,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin' && profile?.role !== 'owner') redirect('/dashboard/operations/monitor')
+  // La comparacion sale de `hasRole` y no se escribe a mano: es la MISMA
+  // jerarquia que usan `useCanAdmin` y `useCanEdit`. Este es un server
+  // component, asi que no puede usar el hook —que ademas trae la consulta del
+  // lado del cliente—, pero la regla es una sola y se comparte igual.
+  if (!hasRole(profile?.role, 'admin')) redirect('/dashboard/operations/monitor')
 
   return <>{children}</>
 }

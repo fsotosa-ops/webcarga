@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { deleteUser } from '@/lib/actions/users'
 import CreateUserForm from './CreateUserForm'
 import type { Profile, UserRole } from '@/lib/types'
-import { canManage } from '@/lib/types'
+import { canManage, hasRole } from '@/lib/types'
 import type { RoleInfo } from '@/lib/api/roles'
 import { usersApi } from '@/lib/api/users'
 import {
@@ -89,7 +89,7 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
 
   // Filtering
   const byTab = users.filter(u => {
-    if (tab === 'privileged') return u.role === 'admin' || u.role === 'owner'
+    if (tab === 'privileged') return hasRole(u.role, 'admin')
     if (tab === 'active')     return u.active !== false
     if (tab === 'inactive')   return u.active === false
     return true
@@ -100,7 +100,7 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
 
   const tabCounts = {
     all:        users.length,
-    privileged: users.filter(u => u.role === 'admin' || u.role === 'owner').length,
+    privileged: users.filter(u => hasRole(u.role, 'admin')).length,
     active:     users.filter(u => u.active !== false).length,
     inactive:   users.filter(u => u.active === false).length,
   }

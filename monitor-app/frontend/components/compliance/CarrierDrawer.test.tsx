@@ -10,9 +10,6 @@ vi.mock('@/lib/api/compliance', () => ({
     uploadFile: vi.fn().mockResolvedValue({ status: 'APPROVED_MANUAL' }),
   },
 }))
-vi.mock('@/lib/api/documentIngest', () => ({
-  documentIngestApi: { uploadAndClassify: vi.fn().mockResolvedValue({ applied: 1 }) },
-}))
 // Se simula aunque el cajón ya no lo monte: si alguien lo volviera a montar,
 // el test que lo prohíbe tiene que fallar por la razón correcta y no por un
 // import roto.
@@ -23,7 +20,6 @@ vi.mock('./TriageWorkbench', () => ({
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
 
 import { complianceApi } from '@/lib/api/compliance'
-import { documentIngestApi } from '@/lib/api/documentIngest'
 
 function pendiente(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
   return {
@@ -113,9 +109,8 @@ describe('CarrierDrawer', () => {
     await waitFor(() => expect(complianceApi.uploadFile).toHaveBeenCalledWith(
       'p1', expect.any(File), undefined,
     ))
-    // La otra puerta sube ANTES de clasificar, así que cada rechazo dejaba el
-    // archivo varado en la bandeja y el requisito vacío.
-    expect(documentIngestApi.uploadAndClassify).not.toHaveBeenCalled()
+    // La otra puerta —subir primero, clasificar despues— ya no existe en el
+    // cliente: se borro al quedarse sin llamadores.
   })
 
   it('con la fecha obligatoria no sube nada hasta tenerla', async () => {

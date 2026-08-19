@@ -5,7 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
-import { createClient } from '@/lib/supabase/client'
+import { useCanEdit } from '@/hooks/useCanEdit'
+import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { dueRelative } from '@/lib/utils/installments'
@@ -13,8 +14,6 @@ import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModa
 import type { CarrierInsuranceOverviewItem, InsuranceOverviewFacets } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
-const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
-const ADMIN_ROLES  = new Set(['admin', 'owner'])
 
 const LIMIT = 50
 
@@ -63,23 +62,13 @@ function SegurosPageInner() {
   const [tab, setTab]       = useState<HealthTab>('')
   const [statusTab, setStatusTab] = useState<StatusTab>('active')
   const [page, setPage]     = useState(1)
-  const [canEdit, setCanEdit]   = useState(false)
-  const [canAdmin, setCanAdmin] = useState(false)
+  const canEdit = useCanEdit()
+  const canAdmin = useCanAdmin()
   const [selected, setSelected] = useState<CarrierInsuranceOverviewItem | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
 
   useEffect(() => { setPage(1) }, [tab, statusTab, qDebounced])
 
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return
-      const { data: profile } = await supabase
-        .from('profiles').select('role').eq('id', session.user.id).single()
-      if (profile && EDITOR_ROLES.has(profile.role)) setCanEdit(true)
-      if (profile && ADMIN_ROLES.has(profile.role)) setCanAdmin(true)
-    })
-  }, [])
 
   const currentOperationalStatus = STATUS_TABS.find(t => t.id === statusTab)!.status
 

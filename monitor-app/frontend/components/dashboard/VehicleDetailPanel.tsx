@@ -367,7 +367,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
                 canEdit={canEdit}
                 hideCounter
                 /* EL MISMO hook que Certificación. Antes esto llamaba a
-                   `uploadAndClassify`, que sube ANTES de clasificar: cada
+                   la puerta de la Bandeja, que sube ANTES de clasificar: cada
                    rechazo por falta de fecha dejaba el archivo varado en la
                    bandeja y el requisito vacío. Dos implementaciones de
                    "subir un documento a un requisito" es como este módulo

@@ -7,7 +7,7 @@ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2,
 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { shippersApi } from '@/lib/api/locations'
 import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
@@ -23,7 +23,6 @@ import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { TripsMeta } from '@/lib/types'
 
-const ADMIN_ROLES = new Set(['admin', 'owner'])
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
@@ -65,7 +64,7 @@ function ClosuresCenterPageInner() {
   const fecha = searchParams.get('fecha') || todayISO()
 
   const [tripsMeta, setTripsMeta] = useState<TripsMeta | null>(null)
-  const [canAdmin, setCanAdmin] = useState(false)
+  const canAdmin = useCanAdmin()
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [overridePending, setOverridePending] = useState(false)
@@ -134,15 +133,6 @@ function ClosuresCenterPageInner() {
     }
   }
 
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return
-      const { data: profile } = await supabase
-        .from('profiles').select('role').eq('id', session.user.id).single()
-      if (profile && ADMIN_ROLES.has(profile.role)) setCanAdmin(true)
-    })
-  }, [])
 
   function setFecha(next: string) {
     const params = new URLSearchParams(searchParams.toString())

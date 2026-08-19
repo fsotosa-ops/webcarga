@@ -8,7 +8,8 @@ import {
   ChevronRight, PenLine, Check, X,
   Loader2, Search, Users, Truck, ShieldCheck, FileText,
 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { useCanEdit } from '@/hooks/useCanEdit'
+import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { taxonomiesApi } from '@/lib/api/config'
@@ -32,8 +33,6 @@ import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 import { expiryRelative, updatedRelative } from '@/lib/compliance'
 
-const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
-const ADMIN_ROLES  = new Set(['admin', 'owner'])
 const ROSTER_PAGE_SIZE = 9
 
 type Tab = 'resumen' | 'documentos' | 'conductores' | 'equipos' | 'seguros' | 'contactos'
@@ -146,8 +145,8 @@ function EmpresaDetailPageInner() {
   // vehículo, que es donde se carga su documentación.
   const requestedDriverId   = searchParams.get('driver')
   const requestedAssetId    = searchParams.get('asset')
-  const [canEdit, setCanEdit]     = useState(false)
-  const [canAdmin, setCanAdmin]   = useState(false)
+  const canEdit = useCanEdit()
+  const canAdmin = useCanAdmin()
   const [editOpen, setEditOpen]   = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>(
     requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen'),
@@ -203,16 +202,6 @@ function EmpresaDetailPageInner() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
 
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return
-      const { data: profile } = await supabase
-        .from('profiles').select('role').eq('id', session.user.id).single()
-      if (profile && EDITOR_ROLES.has(profile.role)) setCanEdit(true)
-      if (profile && ADMIN_ROLES.has(profile.role)) setCanAdmin(true)
-    })
-  }, [])
 
   const carrierQuery = useQuery({ queryKey: ['carrier-detail', id], queryFn: () => carriersApi.get(id) })
 

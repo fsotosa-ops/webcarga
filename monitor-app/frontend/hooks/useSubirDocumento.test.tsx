@@ -4,13 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ReactNode } from 'react'
 import { useSubirDocumento } from './useSubirDocumento'
 import { complianceApi } from '@/lib/api/compliance'
-import { documentIngestApi } from '@/lib/api/documentIngest'
 
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: { uploadFile: vi.fn().mockResolvedValue({ status: 'APPROVED_MANUAL' }) },
-}))
-vi.mock('@/lib/api/documentIngest', () => ({
-  documentIngestApi: { uploadAndClassify: vi.fn() },
 }))
 
 function envoltorio(client: QueryClient) {
@@ -31,10 +27,10 @@ describe('useSubirDocumento', () => {
     await act(() => result.current('rec-1', archivo(), '2027-01-31'))
 
     expect(complianceApi.uploadFile).toHaveBeenCalledWith('rec-1', expect.any(File), '2027-01-31')
-    // Lo critico: la otra puerta sube ANTES de clasificar, asi que un rechazo
-    // deja el archivo varado en la bandeja. Ese es el defecto que este hook
-    // existe para que no vuelva.
-    expect(documentIngestApi.uploadAndClassify).not.toHaveBeenCalled()
+    // La otra puerta —subir primero y clasificar despues— ya no existe: se
+    // borro al quedarse sin llamadores. Lo que se fija aca es que este hook
+    // llame al endpoint DIRECTO, que es de una sola operacion y no puede
+    // dejar un archivo varado si el servidor rechaza.
   })
 
   it('invalida la certificacion cuando la subida sale bien', async () => {

@@ -8,7 +8,7 @@ import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, Shi
 import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus, ComplianceHealth } from '@/lib/types'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
-import { createClient } from '@/lib/supabase/client'
+import { useCanEdit } from '@/hooks/useCanEdit'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransporterCard, STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
@@ -18,7 +18,6 @@ import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { updatedRelative } from '@/lib/compliance'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
-const EDITOR_ROLES = new Set(['editor', 'admin', 'owner'])
 
 type TransporterTab = 'active' | 'legacy' | 'onboarding'
 type HealthTab = '' | ComplianceHealth
@@ -76,19 +75,10 @@ function EmpresasTransportePageInner() {
   const [page, setPage]           = useState(1)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
-  const [canEdit, setCanEdit]     = useState(false)
+  const canEdit = useCanEdit()
   const [addCarrierOpen, setAddCarrierOpen] = useState(searchParams.get('create') === '1')
   const qDebounced = useDebouncedValue(q, 300)
 
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return
-      const { data: profile } = await supabase
-        .from('profiles').select('role').eq('id', session.user.id).single()
-      if (profile && EDITOR_ROLES.has(profile.role)) setCanEdit(true)
-    })
-  }, [])
 
   /** Alta manual de una empresa (distinta del bulk-load de Mage) — el
    *  formulario en sí vive en NewCarrierPanel (reusado también desde

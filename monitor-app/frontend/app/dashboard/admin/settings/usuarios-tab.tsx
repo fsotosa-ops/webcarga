@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { usersApi } from '@/lib/api/users'
 import { fetchRoles, type RoleInfo } from '@/lib/api/roles'
 import type { Profile, UserRole } from '@/lib/types'
+import { hasRole } from '@/lib/types'
 import UsersTable from '@/components/admin/UsersTable'
 import { LoadState } from './shared'
 
@@ -59,7 +60,7 @@ export function UsuariosTab() {
 
   const total     = profiles.length
   const activos   = profiles.filter(u => u.active !== false).length
-  const priv      = profiles.filter(u => u.role === 'admin' || u.role === 'owner').length
+  const priv      = profiles.filter(u => hasRole(u.role, 'admin')).length
   const inactivos = total - activos
 
   // Role distribution (desc: highest privilege first)

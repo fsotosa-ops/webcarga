@@ -13,6 +13,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { hasRole } from '@/lib/types'
 
 // "Operaciones" agrupa Monitor bajo un solo item expandible —
 // Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
@@ -206,7 +207,9 @@ export default function Sidebar({ role }: SidebarProps) {
 
   const isAdmin       = pathname.startsWith('/dashboard/admin')
   const isConfig      = pathname.startsWith('/dashboard/admin/settings')
-  const canAdmin      = role === 'admin' || role === 'owner'
+  // La misma jerarquia que `useCanAdmin`. Aca no se usa el hook porque el
+  // rol ya llego —no hay que volver a consultarlo—, pero la REGLA es una.
+  const canAdmin      = hasRole(role, 'admin')
   const roleBadge = ROLE_BADGE[role ?? 'viewer'] ?? ROLE_BADGE.viewer
 
   return (

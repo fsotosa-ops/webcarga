@@ -70,7 +70,7 @@ export const complianceApi = {
   /** Sube un documento DIRECTO a su requisito, en una sola operación.
    *
    *  Es el camino corto, y el único que no puede dejar un archivo varado: la
-   *  otra puerta (`documentIngestApi.uploadAndClassify`) sube primero y
+   *  otra puerta —`upload` + `classifyBatch`, la de la Bandeja— sube primero y
    *  clasifica después, así que cada rechazo —típicamente el 422 por falta de
    *  fecha— dejaba el archivo en la bandeja y el requisito vacío.
    *

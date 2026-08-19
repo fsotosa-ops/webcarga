@@ -58,48 +58,6 @@ export const documentIngestApi = {
       method: 'POST', body: JSON.stringify(body),
     }),
 
-  /** **SIN LLAMADORES desde la Ronda 129. No la uses para cargar.**
-   *
-   *  Carga un documento cuyo destino ya se conoce, en dos pasos: sube primero
-   *  y clasifica después. Ese orden es el defecto, no un detalle: cuando la
-   *  clasificación se rechaza —el caso típico es el 422 por falta de fecha de
-   *  vencimiento, que alcanza a 5 de los 12 requisitos de conductor y 8 de los
-   *  10 de vehículo— el archivo ya está subido y queda varado en la bandeja
-   *  con el requisito vacío. El comentario anterior describía eso como una
-   *  virtud ("queda visible en vez de perderse"); en pantalla se leía como
-   *  "no pasó nada".
-   *
-   *  El reemplazo es `useSubirDocumento`, que llama a
-   *  `POST /compliance-records/{id}/file` en UNA operación y no toca storage
-   *  hasta que el servidor validó. Lo consumen el cajón de Certificación y la
-   *  ficha legacy, que eran sus tres llamadores.
-   *
-   *  Se conserva —y no se borra— porque retirar superficie de API es un cambio
-   *  aparte del que la dejó sin uso. Si nadie la necesita, el siguiente que
-   *  pase por acá puede borrarla: `upload` y `classifyBatch`, que sí usa la
-   *  Bandeja, son independientes de ella. */
-  uploadAndClassify: async (params: {
-    carrierId:       string
-    entityType:      'CARRIER' | 'DRIVER' | 'ASSET'
-    entityId:        string
-    requirementId:   string
-    file:            File
-    expirationDate?: string
-  }) => {
-    const subida = await documentIngestApi.upload(params.carrierId, [params.file])
-    const item = subida.items[0]
-    if (!item) {
-      throw new Error(subida.errors[0]?.error ?? 'No se pudo subir el archivo')
-    }
-    return documentIngestApi.classifyBatch({
-      item_ids:      [item.id],
-      entity_type:   params.entityType,
-      entity_id:     params.entityId,
-      requirement_id: params.requirementId,
-      ...(params.expirationDate ? { expiration_date: params.expirationDate } : {}),
-    })
-  },
-
   /** Reasigna archivos sin clasificar a otra empresa. */
   moveItems: (itemIds: string[], carrierId: string) =>
     apiFetch<{ moved: number }>('/api/v1/document-ingest/items/move', {
