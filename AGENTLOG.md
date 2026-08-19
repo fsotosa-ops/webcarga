@@ -76,9 +76,23 @@ devolvió 503 dos veces — el cluster de Mage está caído, no es el token**:
 - `pipelines/batch_tms_monitor_trips/metadata.yaml` — bloque `app_trips_tests` (`command: test`)
   colgando de `app_trips_update`. YAML validado, DAG verificado: 35 bloques.
 
-**Sincronizado y verificado remotamente** (segundo intento, el 503 era transitorio): `block_list`
-confirma `app_trips_tests` con `command: test`, colgando de `app_trips_update`. **Falta verlo correr
-una vez** y confirmar que avisa por los 3 viajes sin cortar el pipeline.
+**Sincronizado y VERIFICADO CORRIENDO EN PRODUCCIÓN** (pipeline run 9362, 19/08 01:20-01:30):
+
+```
+Found 12 models, 2 snapshots, 48 data tests, 6 sources, 550 macros
+4 of 19 WARN 3 assert_trip_stops_at_most_one_origin_per_trip ... [WARN 3 in 1.21s]
+```
+
+19 tests seleccionados (más que los 14 contados a mano: `stg_qanalytics_trips` tiene sus propios
+tests de columna en `silver/schema.yml`), el del origen avisó con 3, **y no cortó**: bloque en
+`completed`, 35 bloques, 0 fallidos. El umbral hizo lo suyo — un cuarto viaje pondría el bloque en
+rojo. El log se trunca en "5 of 19" (limitación conocida de mage-agent), pero no hubo ERROR: dbt
+sale con código distinto de cero ante un test en error y eso habría fallado el bloque.
+
+`run_block` volvió a dar `NoResultFound` (5ª reproducción) — hay que correr el pipeline entero.
+
+Deuda menor detectada: dbt 1.8 avisa que el config `tests` del `schema.yml` se renombró a
+`data_tests`. No rompe nada hoy.
 
 Issue **#3 creado**: https://github.com/fsotosa-ops/webcarga/issues/3
 
