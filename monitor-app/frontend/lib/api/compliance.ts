@@ -1,7 +1,7 @@
 import type {
   CertificationGroup, CertificationScope, CertificationStatus,
   BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, DocumentVersion,
-  PendingComplianceListResponse, RequirementOption,
+  EstadoDocumental, PendingComplianceListResponse, RequirementOption,
 } from '@/lib/types'
 import { apiFetch } from './client'
 
@@ -15,6 +15,10 @@ export type ListPendingParams = {
    *  Se filtra en el servidor y no en el cliente porque la página corta en
    *  200 y hay empresas con 381 pendientes. */
   entityId?:        string
+  /** Qué mostrar de la documentación: falta, por vencer, al día o todo. El
+   *  backend asume 'falta' cuando no viaja, así que sólo se manda cuando NO
+   *  es el default — mismo criterio que `scope` en `listStatus`. */
+  estado?:          EstadoDocumental
   limit?:           number
   offset?:          number
 }
@@ -121,6 +125,9 @@ export const complianceApi = {
     if (params.q)                qs.set('q', params.q)
     if (params.operationType)    qs.set('operation_type', params.operationType)
     if (params.entityId)         qs.set('entity_id', params.entityId)
+    // Sólo se manda cuando NO es el default: el backend ya asume 'falta', y
+    // mandarlo igual ensucia la clave de caché de React Query sin necesidad.
+    if (params.estado && params.estado !== 'falta') qs.set('estado', params.estado)
     if (params.limit != null)    qs.set('limit', String(params.limit))
     if (params.offset != null)   qs.set('offset', String(params.offset))
     const suffix = qs.toString() ? `?${qs}` : ''

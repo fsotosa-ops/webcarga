@@ -678,6 +678,10 @@ export type PoliticaVencimiento = 'REQUIRED' | 'OPTIONAL' | 'NONE'
  *  renovar no tenía superficie en ninguna pantalla. */
 export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA'
 
+/** Qué mostrar de la documentación de una empresa. `falta` es el default del
+ *  backend y reproduce el comportamiento anterior a la ficha. */
+export type EstadoDocumental = 'todos' | 'falta' | 'por_vencer' | 'al_dia'
+
 export type PendingComplianceRow = {
   id:                      string
   carrier_id:              string
