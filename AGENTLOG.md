@@ -141,23 +141,74 @@ tabla del §3.2 lista "informativo · dato de contexto · —" sin token: ése e
 
 #### Próximo paso exacto
 
-1. [ ] **Decidir el token de gris**, que es lo que destraba escribir UI nueva: con los topes en
-   1.765/268 el margen volvió a ser 0, y el gris de texto secundario no tiene destino. Completar la
-   quinta señal del spec ("informativo") o aceptar que la UI nueva no use gris.
-2. [ ] **Paso 1 · Diseñar el recorrido** — `superpowers:brainstorming` + `frontend-design` +
+1. [x] ~~Decidir el token de gris~~ — **HECHO**: `--informativo` agregado, y el código nuevo entró
+   con margen cero sin sumar deuda.
+2. [ ] **Click-through en vivo del recorrido nuevo** — es lo único sin verificar, y necesita
+   credenciales reales. Entrar por Conductores, abrir el cajón de una persona **sin documentos
+   cargados** (los desplegables listan todo el catálogo; ya se pisó un documento real por elegir a
+   ojo), subir uno y ver bajar el pendiente sin cambiar de pantalla. Después, la columna Empresa.
+3. [ ] **Paso 1 · Diseñar el recorrido** — `superpowers:brainstorming` + `frontend-design` +
    `ui-ux-pro-max`, contra Highway, RMIS (DAT), MyCarrierPackets, Fleetio y Samsara. **Tres
    preguntas que el diseño tiene que resolver**: (a) la vista Requisitos no tiene sujeto —su cajón
    sería "a quiénes les falta este documento", una superficie de carga en lote distinta; (b) el
    salto a la empresa necesita que la fila abierta viaje en la URL, y hoy `openRowId` es estado de
    página; (c) conductores y vehículos sin empresa activa no tienen `carrier_id` que los alcance.
-3. [ ] **Paso 2 · `CarrierDrawer` gana `subject?`** y `CertificationStatusTable` gana el cajón,
-   usando `useFilaAbierta` y el filtro `entity_id` ya construido.
-4. [ ] **Conectar el clasificador (P2)** — `document_matcher.py` son 307 líneas puras con 12 tests
+   — sólo si al verlo en vivo el recorrido no convence. La mecánica ya está.
+4. [x] ~~Paso 2 · `CarrierDrawer` gana `subject?`~~ — **HECHO**, commit `edbf1cc3`.
+5. [ ] **Conectar el clasificador (P2)** — `document_matcher.py` son 307 líneas puras con 12 tests
    que **no llama nadie**: `document_ingest.py:70` inserta `match_status` literal `'UNMATCHED'`. Los
    79 alias están sembrados y cubren los 37 requisitos, y la columna "Sugerencia" está construida y
    vacía. Es cableado, no diseño, y es lo que cambia el orden de magnitud de cargar 2.000 documentos.
-5. [ ] **Llevar a negocio las 7 decisiones de P3** (ver PENDIENTES VIGENTES), ninguna se destraba
+6. [ ] **Llevar a negocio las 7 decisiones de P3** (ver PENDIENTES VIGENTES), ninguna se destraba
    programando.
+
+#### CIERRE DE LA NOCHE — la fuga cerrada, y el sistema visual completo
+
+Se siguió y se terminó el Paso 2. Commit `edbf1cc3`.
+
+- **`CarrierDrawer` ganó `subject?`** — una prop, no un componente hermano. Sin sujeto es el cajón
+  de la empresa; con sujeto, el de esa persona o ese vehículo. Con un solo sujeto su lista va
+  abierta: plegarla escondería lo único que el cajón muestra. Se acota **en el servidor** con el
+  `entity_id` agregado antes.
+- **`CertificationStatusTable` dejó de decidir a dónde se va.** Los tres enlaces al legacy ya no
+  existen; el nombre abre el cajón y la columna Empresa navega dentro del módulo.
+- **La fila abierta vive en la URL** (`?abierta=<id>`), no en `useState`. Con estado local había
+  que sembrarlo desde un prop y resincronizarlo — el bug de draft que este frontend ya tuvo tres
+  veces. En la URL no hay nada que resincronizar. `replace` y no `push`: abrir filas no es navegar.
+- **La quinta señal del sistema visual, `--informativo`.** El spec §3.2 la declaraba sin token y
+  ése era el gris del texto secundario: el trinquete lo contaba y no había a dónde migrarlo.
+  Agregada al valor que ya usan sus 226 apariciones. **Los otros seis niveles de gris NO se migran
+  en masa** — sería un cambio visual grande a ciegas; bajan cuando alguien toque esa pantalla.
+
+**El número que prueba que el token era el bloqueo**: después de escribir todo el código nuevo,
+color **1.765/1.765** y sub-11px **268/268**. El código nuevo no agregó ni un color crudo ni un
+tamaño fuera de escala.
+
+**Un bug propio que encontró un test**: la columna Empresa dibujaba "sin empresa" cuando había
+empresa pero no handler — el aviso afirmaba algo falso. Séptima aparición de
+[[feedback_null_sentinel_double_duty]] en este módulo.
+
+**Los tests viejos afirmaban el comportamiento que esta ronda elimina.** Se reescribieron a lo que
+ahora es cierto. El de "ningún `<Link>` prefetchea" —nacido de un 429 real, 104 llamadas a `/user`
+en un minuto— se reemplazó por uno **más fuerte que lo cubre**: la tabla no enlaza fuera del
+módulo. Sin enlaces no hay prefetch. Los 4 tests nuevos mueren al mutar el código: comprobado con
+dos mutaciones distintas, no supuesto.
+
+**Verificación final**: frontend **1.120 tests** / 118 archivos, `tsc` limpio, build verde;
+backend **821 tests**. Comiteado en `dev`, **sin pushear**.
+
+**Lo que NO se hizo, y hay que decirlo**: el click-through en vivo sigue **bloqueado por
+credenciales** (el servidor redirige a `/login`, `.env.local` sólo trae un placeholder). Nada de
+esto se vio funcionando en pantalla contra datos reales. Y la sesión de diseño visual
+(`brainstorming` + `frontend-design` + `ui-ux-pro-max`) **no se hizo**: la superficie que la
+necesitaba se achicó porque la respuesta resultó ser extender lo que existe, pero si al mirarlo en
+vivo el recorrido no convence, esa sesión sigue disponible y es el lugar donde corresponde.
+
+Tres decisiones tomadas por defecto, para objetar: la vista **Requisitos quedó fuera** del alcance
+(su cajón es "a quiénes les falta este documento", otra superficie); la fila abierta viaja como
+`?abierta=`; y conductores o vehículos **sin empresa activa siguen sin cajón** — el backend
+resuelve la empresa por `driver_assignments` y no tiene ninguna, así que darles cajón prometería
+una acción que no se puede completar.
 
 Plan completo en `~/.claude/plans/necesito-que-analices-lo-shiny-puffin.md`.
 
