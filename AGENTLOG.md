@@ -17,6 +17,37 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-19 (cont.) — Ronda 133: dos colisiones de carga masiva, APARCADAS con su evidencia
+
+Encontradas al revisar qué faltaba después de conectar el clasificador. **No se ejecutaron** — el
+usuario redirigió a cerrar la ficha de empresa primero. Quedan acá con todo lo necesario para
+retomarlas sin volver a investigar.
+
+**A · Dos archivos pueden reclamar el mismo casillero, y nada lo señala.** `classify-batch` ya se
+protege de un caso parecido —`if len(set(body.item_ids)) > 1: raise 422`— y su docstring cuenta por
+qué: *"Marcar 31 licencias y asignarlas al mismo conductor destruía 30"*, y los N-1 quedaban
+invisibles **e irreversibles**, porque desde el segundo `_apply_stored_document` escribe
+`replaced_storage_path` y el deshacer los rechaza.
+
+Pero ese guardia cubre *un lote a un casillero en una sola operación*. **El clasificador que se
+conectó en la Ronda 131 propone el mismo `(entity_id, requirement_id)` a dos archivos distintos**, y
+el operador los confirma uno por uno — que es exactamente lo que el guardia permite. Antes esto
+pasaba sólo si alguien se equivocaba; ahora el sistema lo invita, porque los dos llegan
+pre-etiquetados al mismo destino.
+
+**B · `content_sha256` existe en la tabla y no lo escribe nadie** (verificado: 0 valores distintos
+sobre 65 filas). Ni los duplicados exactos se detectan.
+
+**La forma que corresponde, y sigue el patrón que el módulo ya tiene**: la consulta de la cola
+deriva señales en una sola pasada —`jsonb_array_length(i.candidates) AS candidate_count`—, así que
+las dos van igual, con `count(*) OVER (PARTITION BY …)` y guarda de NULL (sin ella, los 60 items
+`UNMATCHED` con `entity_id` nulo se agrupan como si reclamaran todos el mismo casillero). El hash se
+calcula en `upload_document_version`, donde `data` ya está leído.
+
+Y hay que mantenerlas **separadas aunque compartan forma**, porque piden acciones distintas: mismo
+contenido → "este archivo ya está en la cola, borrá uno"; mismo destino → "dos archivos distintos
+reclaman el mismo casillero, elegí cuál".
+
 ### 2026-08-19 (cont.) — Ronda 132: la revisión final de `feat/clasificador-bandeja`, los 10 hallazgos arreglados en una pasada
 
 La rama conectó el motor de clasificación de documentos (Tareas 1-2 del plan
