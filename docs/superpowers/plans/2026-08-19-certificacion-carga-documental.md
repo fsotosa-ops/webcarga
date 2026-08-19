@@ -88,7 +88,9 @@ FROM public.compliance_requirements
 GROUP BY 1;
 ```
 
-Esperado, medido el 2026-08-19: `true` → 19, `false` → 18 (37 en total, 35 activos).
+Esperado, medido el 2026-08-19: **`true` → 21, `false` → 16** (37 en total). Entre los **activos**
+el reparto es 19 / 16: los 2 de diferencia son `SEGURO_RC_EMPRESA` y `SEGURO_EETT`, que están
+`is_active = false` esperando que negocio defina su regla.
 Si el número cambió, **detente y avisa**: la migración de abajo asume ese reparto.
 
 - [ ] **Step 2: Escribir la migración**
@@ -136,7 +138,9 @@ Aplícala contra la base y ejecuta:
 SELECT expiration_policy, count(*) FROM public.compliance_requirements GROUP BY 1;
 ```
 
-Esperado: `REQUIRED` → 19, `NONE` → 18, `OPTIONAL` → 0.
+Esperado: `REQUIRED` → 21, `NONE` → 16, `OPTIONAL` → 0. (La migración toca **todas** las filas,
+activas o no: una regla que hoy está apagada tiene que llegar con su política bien puesta el día
+que se encienda.)
 
 Y que nada quedó inconsistente:
 

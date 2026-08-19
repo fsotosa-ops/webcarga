@@ -658,6 +658,15 @@ export type DocumentVersion = {
 /** Módulo Documentos (sábana) — GET /compliance-records/pending. Un
  *  compliance_record pendiente por fila, con la empresa/sujeto ya
  *  resueltos (cruza toda la flota en vez de navegar empresa por empresa). */
+/** Qué hace el sistema con la fecha de vencimiento de un requisito.
+ *
+ *  Reemplaza a `has_expiration`, que era un booleano cargando estos tres
+ *  significados en dos valores — y por eso `classify-batch` trataba "tiene
+ *  vencimiento" como "el vencimiento es obligatorio", rechazando con 422 la
+ *  carga de 19 de los 35 requisitos activos sin que la pantalla pidiera nunca
+ *  la fecha. */
+export type PoliticaVencimiento = 'REQUIRED' | 'OPTIONAL' | 'NONE'
+
 export type PendingComplianceRow = {
   id:                      string
   carrier_id:              string
@@ -677,6 +686,11 @@ export type PendingComplianceRow = {
   document_name:              string
   status:                    ComplianceStatus
   expiration_date:            string | null
+  /** Lo pide el backend en la Tarea 3 del plan. Mientras tanto puede no venir,
+   *  y quien lo lea debe tratar la ausencia como "no sé", nunca como "no
+   *  vence": dar por hecho que no hace falta la fecha es justo el supuesto que
+   *  rompía la carga. */
+  expiration_policy?:         PoliticaVencimiento
 }
 
 export type PendingComplianceListResponse = {
