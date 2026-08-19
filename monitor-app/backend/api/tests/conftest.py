@@ -65,6 +65,25 @@ RUTA_ENV_BACKEND = Path(__file__).resolve().parents[2] / ".env"
 # fallaban por DNS, no por firewall, y de ahí venía la creencia de que la
 # sandbox no llegaba a Postgres. El que responde es `aws-1`.
 HOST_POOLER = "aws-1-us-east-1.pooler.supabase.com"
+# 5432 = MODO SESION, y se queda asi A PROPOSITO — se probo el 6543 (modo
+# transaccion) y es PEOR para esta suite, medido con un A/B de una sola
+# variable: a 5432, 3 tests en 56 s; a 6543, 1 test en 3 minutos y despues
+# fallas de "connection was closed in the middle of operation".
+#
+# El motivo es la forma de `conexion_revertida`: envuelve CADA test en una
+# transaccion explicita que dura todo el test. En modo transaccion el pooler
+# fija el backend mientras la transaccion este abierta, asi que se comporta
+# igual que sesion pero contra un pool mucho mas chico — o sea, todo el costo y
+# ninguna de las ventajas.
+#
+# El riesgo del modo sesion es real y hay que nombrarlo: cada conexion retiene
+# un backend mientras viva, y `max_connections` de esta base es 60. MATAR UNA
+# CORRIDA A MITAD DEJA LOS CUPOS TOMADOS hasta que expiran. Paso el 19/08 y
+# dejo la base sin atender ~40 minutos. La regla no es cambiar de puerto: es
+# dejar que la suite termine.
+#
+# `app/db.py` sí sabe hablar los dos modos: detecta el 6543 por el DSN y apaga
+# el cache de sentencias preparadas solo ahi.
 PUERTO_POOLER = 5432
 PROYECTO_SUPABASE = "viclzoftiudkepqnhekv"
 
@@ -101,9 +120,13 @@ def credenciales_integracion() -> dict | None:
         "password": clave,
         "database": "postgres",
         "ssl": "require",
-        # El pooler comparte sesiones: sentencias preparadas cacheadas del
-        # lado del cliente pueden apuntar a un plan que esa sesión ya no
-        # tiene. Es la receta estándar de asyncpg contra pgbouncer.
+        # El pooler comparte sesiones, así que una sentencia preparada
+        # cacheada del lado del cliente puede apuntar a un plan que esa sesión
+        # ya no tiene. Es la receta estándar de asyncpg contra pgbouncer, y en
+        # modo transacción es obligatoria: medido, 60 consultas concurrentes
+        # por el 6543 con el caché encendido → 44 fallan. Acá se deja puesta
+        # aunque estemos en sesión, porque cuesta poco y la suite no es
+        # sensible a la latencia.
         "statement_cache_size": 0,
         "timeout": 15,
     }
