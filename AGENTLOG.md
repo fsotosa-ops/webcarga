@@ -17,6 +17,150 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-19 — Ronda 127: Certificación auditada, y los cimientos antes que la pantalla
+
+Arrancó como "analizá lo pendiente y prioritario de Certificación" y terminó **corrigiendo tres
+defectos estructurales del módulo**, uno de ellos vivo en producción. No se tocó todavía el
+recorrido, que era la prioridad declarada: primero había que dejar de construir sobre lo que estaba
+mal.
+
+#### El dato que ordenó la prioridad
+
+La respuesta salió de medir producción, no de leer el backlog:
+
+| Medición (2026-08-19) | Valor |
+|---|---|
+| Registros de cumplimiento vivos | **5.122** |
+| De esos, con un archivo cargado | **24** (0,5 %) |
+| Última actividad sobre un registro | 2026-08-17 |
+| Archivos que pasaron por la Bandeja | **65**, todos `DISCARDED`, todos del 2026-08-15 |
+
+**El módulo está construido y no se usa para cargar documentos.** La Bandeja no recibió un archivo
+real desde el día en que se construyó. Cargar los ~2.000 documentos es trabajo de negocio, pero ese
+es el criterio de prioridad: lo prioritario es lo que le quita fricción a esa carga.
+
+#### La causa de la fuga NO son los enlaces
+
+Los cuatro puntos de fuga siguen donde estaban, verificado línea por línea. Pero redirigirlos no
+arregla nada: **el enlace de salida es el único gesto que la fila ofrece.** De las cinco vistas del
+módulo, sólo `empresas` y `documentos` tienen cajón; `conductores`, `vehiculos` y `requisitos` se
+dibujan con `CertificationStatusTable`, que no abre nada.
+
+Y un dato que corrige el encuadre: **la ficha legacy SÍ permite cargar hoy** — `CarrierDocumentsTab`
+monta el mismo `TriageWorkbench`, y `DriverDetailPanel`/`VehicleDetailPanel` llaman
+`uploadAndClassify` en vivo (HU-04 Task 10 revirtió la Ronda 88). Sus comentarios de cabecera dicen
+*"Solo lectura desde Ronda 88"* y están obsoletos. El problema real es que **se pierde la cola de
+trabajo**, no que afuera no se pueda cargar.
+
+#### El usuario preguntó dos veces, y las dos cambiaron el plan
+
+1. *"¿está basado en patrones robustos de diseño de sistemas?"* → auditar el propio plan mostró que
+   "reusar `CarrierDrawer`" **propagaba tres defectos** en vez de arreglarlos. De ahí salieron R1,
+   R2 y R3, y el orden cambió: **primero los cimientos, después la pantalla.**
+2. *"¿no estás duplicando código y construyendo un frankenstein?"* → el plan decía "un cajón de
+   sujeto **construido sobre el patrón de** `CarrierDrawer`", que es exactamente hacer un segundo
+   que se parece al primero. **Corregido: `CarrierDrawer` gana una prop `subject?` opcional, no hay
+   componente nuevo.** Es el criterio que este repo ya tomó para `TriageWorkbench` y que está
+   escrito en su código: *"Es una sola prop opcional, no dos modos."*
+
+#### R1 · Un bug vivo en producción: el cajón afirmaba un número que no era
+
+`CarrierDrawer` pedía `listPending({ limit: 200 })` —el tope duro del endpoint—, ignoraba el `total`
+que la respuesta **sí trae**, y escribía "Lo que falta · N documentos" con el largo del arreglo.
+
+**Medido: "Inversiones Huemul Spa" tiene 381 pendientes.** Su cajón mostraba 200 y afirmaba que eran
+200. Sin error y sin aviso. Otras cuatro empresas activas pasan de 90.
+
+Arreglado en dos mitades:
+- **Frontend**: usa `total` y declara el corte ("se listan los primeros N"). 3 tests, **verificados
+  mutando el código**: al volver a `rows.length` mueren 2 de 3.
+- **Backend**: `/compliance-records/pending` gana filtro `entity_id`. `entity_type` ya existía como
+  `category`, así que el cambio es un solo predicado. **Verificado contra Postgres real con
+  `PREPARE`/`EXECUTE`** —binding de verdad, no literales sustituidos—: 12 filas y `total_count` 12
+  para un conductor real. Más un test que cuenta placeholders contra argumentos, igual que
+  `/status`.
+
+Esto es lo que hace innecesario filtrar en el cliente: la página que se filtraría viene truncada.
+
+#### R2 · Un mecanismo de fila expandible, no tres
+
+`CertificationFunnel` ya tenía `openRowId`/`onToggleRow`/`renderDrawer`. Copiarlo a la tabla daba
+dos implementaciones y la vista Requisitos daría tres — la misma clase que el "universo de viajes
+del día" escrito 14 veces.
+
+Extraído a `hooks/useFilaAbierta.ts`: el hook con la regla de una fila abierta a la vez (y su razón
+medida: 3.159px de cajón contra 633px de lista), más `propsDeFilaExpandible()`, que es el contrato
+de teclado y ARIA. **Devuelve props sueltas y no un componente a propósito**: la fila del embudo es
+un `<div>` y la de la tabla será un `<tr>`; un envoltorio obligaría a una a deformarse.
+
+Se revisó antes si `AccordionSection` servía: no — tiene estado propio por sección y su markup
+(`<section>`/`<button>`) es inválido dentro de una `<table>`.
+
+#### R3 · Una sola fábrica de claves de caché, y dos claves muertas
+
+`CLAVES_DE_LA_BANDEJA` era un arreglo mantenido a mano que cada componente ampliaba. Ya había
+fallado una vez con `['document-ingest-items']`, que no existe en el repo. **Se encontró la
+segunda**: `['compliance-pending']` estaba en la lista de invalidación y **ninguna consulta la
+usaba** — React Query compara elemento por elemento, así que no alcanzaba a
+`['compliance-pending-carrier-panel']` ni a `['compliance-pending-drawer']`. Invalidaba exactamente
+nada.
+
+Y esos dos nombres eran **dos entradas de caché para la misma consulta**, pedida por dos componentes
+que se dibujan juntos.
+
+`lib/queries/certificacion.ts` resuelve las tres cosas: `pendientes()` ES `['compliance-pending',
+carrierId]`, así que la raíz que invalida y la clave que consulta salen de la misma función — una
+clave inventada ya no compila. Una sola `invalidarCertificacion()`, sin agregados por componente.
+
+**Efecto colateral verificado**: desapareció un error suelto de vitest que salía de importar la
+constante desde `TriageWorkbench.tsx`, un módulo que los tests mockean.
+
+#### Paso 0 · Los trinquetes visuales, que eran precondición
+
+Medido antes de tocar nada: color **1.778/1.780** (margen 2), tipografía **279/279** (margen 0),
+`<h1>` **9/9** (margen 0). Un cajón nuevo en el estilo de `CarrierDrawer` (~20 colores crudos, ~8
+tamaños sub-11px) **rompía CI en el primer commit**, con un fallo ajeno a lo que se estaba haciendo.
+
+Migrados a tokens y a la escala los tres archivos que igual se van a tocar. Color **1.778 → 1.765**,
+sub-11px **279 → 268**, topes bajados. El diff fue **exclusivamente `className`**, verificado.
+
+**Hallazgo que queda abierto**: el spec del sistema visual define cinco señales de color pero
+**nunca resolvió la rampa de grises**. El trinquete cuenta `text-gray-500` como deuda y el sistema
+no ofrece destino, así que el gris de texto secundario —el uso más común— no se puede migrar. La
+tabla del §3.2 lista "informativo · dato de contexto · —" sin token: ése es el hueco.
+
+#### Verificación
+
+- Frontend: **1.113 tests** en 118 archivos, `tsc --noEmit` limpio, `npm run build` verde.
+- Backend: **821 tests**.
+- SQL nuevo ejercitado contra producción con parámetros reales.
+- Los 3 tests de R1 **mueren si se muta el código** (comprobado, no supuesto).
+- El diff de la consolidación: **64 líneas agregadas contra 85 borradas**, neto negativo.
+
+**NADA ESTÁ COMITEADO**: los cambios están en el árbol de trabajo de `dev`.
+
+#### Próximo paso exacto
+
+1. [ ] **Decidir el token de gris**, que es lo que destraba escribir UI nueva: con los topes en
+   1.765/268 el margen volvió a ser 0, y el gris de texto secundario no tiene destino. Completar la
+   quinta señal del spec ("informativo") o aceptar que la UI nueva no use gris.
+2. [ ] **Paso 1 · Diseñar el recorrido** — `superpowers:brainstorming` + `frontend-design` +
+   `ui-ux-pro-max`, contra Highway, RMIS (DAT), MyCarrierPackets, Fleetio y Samsara. **Tres
+   preguntas que el diseño tiene que resolver**: (a) la vista Requisitos no tiene sujeto —su cajón
+   sería "a quiénes les falta este documento", una superficie de carga en lote distinta; (b) el
+   salto a la empresa necesita que la fila abierta viaje en la URL, y hoy `openRowId` es estado de
+   página; (c) conductores y vehículos sin empresa activa no tienen `carrier_id` que los alcance.
+3. [ ] **Paso 2 · `CarrierDrawer` gana `subject?`** y `CertificationStatusTable` gana el cajón,
+   usando `useFilaAbierta` y el filtro `entity_id` ya construido.
+4. [ ] **Conectar el clasificador (P2)** — `document_matcher.py` son 307 líneas puras con 12 tests
+   que **no llama nadie**: `document_ingest.py:70` inserta `match_status` literal `'UNMATCHED'`. Los
+   79 alias están sembrados y cubren los 37 requisitos, y la columna "Sugerencia" está construida y
+   vacía. Es cableado, no diseño, y es lo que cambia el orden de magnitud de cargar 2.000 documentos.
+5. [ ] **Llevar a negocio las 7 decisiones de P3** (ver PENDIENTES VIGENTES), ninguna se destraba
+   programando.
+
+Plan completo en `~/.claude/plans/necesito-que-analices-lo-shiny-puffin.md`.
+
 ### 2026-08-18 (cont.) — Ronda 126: los duplicados de `trip_stops` son historial, no basura
 
 Arrancó como "rediseñar el ítem 4 con los datos de hoy" y terminó **retirando el ítem 4**. El
@@ -879,6 +1023,12 @@ entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento a
 **El estado de `main` NO es un pendiente** (decisión del usuario, 2026-08-19): el trabajo es a nivel `dev`. No volver a listarlo como deuda.
 
 **PRIORIDAD PARA MAÑANA (pedido explícito del usuario, 2026-08-19)**
+
+> **ACTUALIZADO en la Ronda 127**: los cimientos ya están hechos (R1/R2/R3 + los trinquetes) y la
+> causa raíz quedó identificada — no son los enlaces, son las tres vistas sin cajón. Lo que sigue
+> abierto de este ítem es el **diseño del recorrido** y el cajón por sujeto. La pregunta de alcance
+> que estaba abajo **ya la respondió el usuario: todo queda dentro del módulo, incluida la columna
+> "Empresa"**; `page.tsx:130` (crear empresa) queda afuera a propósito.
 
 - [ ] **Certificación devuelve al usuario al Empresas legacy, y eso contradice la decisión ya
   tomada.** Al hacer clic en un conductor o un vehículo desde Certificación, se sale del módulo y se
