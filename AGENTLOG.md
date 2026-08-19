@@ -612,11 +612,11 @@ No se hizo por alcance: toca `trips.py` en 4 puntos más. **Es el ítem que cier
    modelo Pydantic** (`trips.py:2160-2175`), o sea el 422 es un `raise` a mano.
 2. [ ] **Plan 3 — el recorrido del Cierre** (Bloques 1, 2, 4 y §8bis). Ahora sí sobre aritmética que
    cuadra. Incluye sembrar `TRIP_UNASSIGNED_REASON` y adoptar los componentes del sistema visual.
-3. [ ] **Una sola definición del "universo de viajes del día"** — `app.trips_of_day(date)` o una
+2. [ ] **Una sola definición del "universo de viajes del día"** — `app.trips_of_day(date)` o una
    constante compartida. Hoy el criterio multi-día está escrito a mano **14 veces** y la exclusión
    de Sodimac **9**. Es la causa raíz que esta ronda alineó pero no eliminó.
-4. [ ] **Absorción dinámica de estados sin mapear** en el catálogo (decisión 2 de arriba).
-5. [ ] **Borrar `CloseDayDialog.tsx` y sus tests** — código muerto confirmado.
+3. [ ] **Absorción dinámica de estados sin mapear** en el catálogo (decisión 2 de arriba).
+4. [ ] **Borrar `CloseDayDialog.tsx` y sus tests** — código muerto confirmado.
 
 ---
 
@@ -876,9 +876,11 @@ La corrección humana gana, y el legacy puede morir sin llevarse el sistema.
 Consolidado de todo lo que queda abierto — es la lista a mirar al retomar, no hace falta rastrear
 entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento actual.
 
+**El estado de `main` NO es un pendiente** (decisión del usuario, 2026-08-19): el trabajo es a nivel `dev`. No volver a listarlo como deuda.
+
 **SIGUIENTE PASO EXACTO AL RETOMAR (Ronda 126, 2026-08-19 04:15Z)**
 
-0. [ ] **Confirmar que `app_trips_tests` quedó verde.** Es lo único sin verificar de la noche: el
+- [ ] **Confirmar que `app_trips_tests` quedó verde.** Es lo único sin verificar de la noche: el
    test se reescribió y se sincronizó, su consulta devuelve **0 filas** contra producción (así que
    debería pasar), pero **no se lo vio correr**. Si sigue rojo, el problema está en el archivo
    sincronizado, no en el dato. Mirar el bloque en la última corrida programada.
@@ -903,47 +905,46 @@ entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento a
 
 **Deuda técnica comprometida**
 1. [ ] (hardening post-MVP/Hito 4, pedido explícito del usuario) Migrar `qanalytics_agg_nro_sap_transformer.py` (Walmart) a `TENANT_COLUMN_MAPS`, y evaluar consolidar las 5 cadenas de bloques Mage duplicadas por tenant (scraper→loader→transformer→tabla temp→insert repetidas íntegras entre Walmart e IANSA). La mitad del camino ya está hecha: la URL de extracción y el POST/polling salieron a `utils/extraction_client.py`, y el mapeo de columnas a `utils/qanalytics_tenant_column_maps.py`.
-2. [ ] `main` está muy por detrás de `dev`: `webcarga-frontend-prod` corre una imagen del 2026-08-01 y nada del trabajo de las Rondas 92-94 está promovido. Decidir cuándo se hace la promoción.
 
 **Riesgos conocidos, aceptados y documentados**
-3. [ ] Un `--full-refresh` de `app.trip_stops` reintroduciría el huso horario viejo (11:00) en los 18 viajes Sodimac congelados — su valor correcto ya no existe en ninguna fuente viva (ni portal ni bronze) y la tabla de respaldo se dropeó. El proyecto ya evita el full-refresh por una razón peor (borra ediciones manuales de Operaciones), así que el riesgo es teórico, pero si ocurre hay que rehacer la corrección a mano.
+2. [ ] Un `--full-refresh` de `app.trip_stops` reintroduciría el huso horario viejo (11:00) en los 18 viajes Sodimac congelados — su valor correcto ya no existe en ninguna fuente viva (ni portal ni bronze) y la tabla de respaldo se dropeó. El proyecto ya evita el full-refresh por una razón peor (borra ediciones manuales de Operaciones), así que el riesgo es teórico, pero si ocurre hay que rehacer la corrección a mano.
 
 **Heredado de la Ronda 93, sin resolver**
-4. [~] **RETIRADO como "borrado de huérfanas" en la Ronda 126 — no ejecutar la versión vieja de este ítem.** Las filas no son basura: son **versiones legítimas** (cambios de base reportados por el TMS). Borrarlas destruye justo la trazabilidad que Pablo dice que no tiene. Medición al 18/08: 2.869 filas sobre 620 viajes, 0 con edición manual, 1 viaje activo. **CORREGIDO 2026-08-19: el arreglo del `stop_id` que este ítem proponía quedó DESCARTADO** — habría forzado un solo origen justo donde hay dos legítimos (multi-retiro, ver issue #6). Lo que sí corresponde: la historia se consulta en `bronze.tms_trips_snapshot`, que ya la tiene bien (24.023 versiones sobre 3.563 viajes, verificado para `830021`), y la pérdida de tramos se trabaja en el issue #6. Detalle completo en la Ronda 126.
-5. [~] Filas DESTINATION duplicadas en `app.trip_stops` — mismo origen que el ítem 4, mismo cambio de criterio. No se resuelven con un DELETE.
-6. [ ] Revisar `cargo_type` del viaje `2003266` (probable error de clasificación FRIO/CONGELADO).
-7. [ ] Evaluar si `qanalytics/scraper.py` y `wingsuite/scraper.py` necesitan el mismo `timezone_id` que se le puso a Sodimac — ninguno lo especifica; no hay evidencia de que sus portales rendericen del lado del cliente, pero si aparece un desfase de horas, revisar esto primero.
+3. [~] **RETIRADO como "borrado de huérfanas" en la Ronda 126 — no ejecutar la versión vieja de este ítem.** Las filas no son basura: son **versiones legítimas** (cambios de base reportados por el TMS). Borrarlas destruye justo la trazabilidad que Pablo dice que no tiene. Medición al 18/08: 2.869 filas sobre 620 viajes, 0 con edición manual, 1 viaje activo. **CORREGIDO 2026-08-19: el arreglo del `stop_id` que este ítem proponía quedó DESCARTADO** — habría forzado un solo origen justo donde hay dos legítimos (multi-retiro, ver issue #6). Lo que sí corresponde: la historia se consulta en `bronze.tms_trips_snapshot`, que ya la tiene bien (24.023 versiones sobre 3.563 viajes, verificado para `830021`), y la pérdida de tramos se trabaja en el issue #6. Detalle completo en la Ronda 126.
+4. [~] Filas DESTINATION duplicadas en `app.trip_stops` — mismo origen que el ítem 4, mismo cambio de criterio. No se resuelven con un DELETE.
+5. [ ] Revisar `cargo_type` del viaje `2003266` (probable error de clasificación FRIO/CONGELADO).
+6. [ ] Evaluar si `qanalytics/scraper.py` y `wingsuite/scraper.py` necesitan el mismo `timezone_id` que se le puso a Sodimac — ninguno lo especifica; no hay evidencia de que sus portales rendericen del lado del cliente, pero si aparece un desfase de horas, revisar esto primero.
 
 **Heredado de rondas ya archivadas** — se escribe completo acá porque esos checklists salieron del
 archivo activo al cerrar la Ronda 119, y una lista que apunta a una sección que ya no está no es
 una lista:
 
-8. [ ] **HU-20** — validar con negocio si "Póliza de Seguro Vigente" (RC) se rediseña como se
+7. [ ] **HU-20** — validar con negocio si "Póliza de Seguro Vigente" (RC) se rediseña como se
    propuso en la Ronda 54 (ocultar `INSURANCE_POLICY`, activar `SEGURO_RC_EMPRESA`). Bloqueado
    hasta esa confirmación: no tocar `compliance_requirements`/Mage para ese campo mientras tanto.
-9. [ ] **HU-24** — decisión de negocio sobre "Control Documental Mensual" (`CONTROL_MENSUAL_COL_T`):
+8. [ ] **HU-24** — decisión de negocio sobre "Control Documental Mensual" (`CONTROL_MENSUAL_COL_T`):
    mantener, reformular o eliminar (0% completado en 118 registros desde su creación).
-10. [ ] **Rol sin permiso de subir documentación** — pendiente de que el usuario confirme cuál es.
-11. [ ] **Centro de Flota como módulo de navegación de primer nivel** (con espacio para alertas de
+9. [ ] **Rol sin permiso de subir documentación** — pendiente de que el usuario confirme cuál es.
+10. [ ] **Centro de Flota como módulo de navegación de primer nivel** (con espacio para alertas de
     póliza/documentación de equipo) — quedó explícitamente fuera de la Ronda 51.
-12. [ ] **`vehicle_driver_assignments`** — "Conductor habitual" del Centro de Flota va a seguir casi
+11. [ ] **`vehicle_driver_assignments`** — "Conductor habitual" del Centro de Flota va a seguir casi
     siempre vacío hasta que operaciones cargue la asignación equipo por equipo desde la ficha de
     empresa. No es tarea de desarrollo.
-13. [ ] **Mage**: borrar a mano el bloque `wingsuite_has_new_data` (desconectado) y revisar por qué
+12. [ ] **Mage**: borrar a mano el bloque `wingsuite_has_new_data` (desconectado) y revisar por qué
     `centralizer_eett_sharepoint`/`load_compliance_records_08` siguen en `failed` (no bloqueante,
     los datos fluyen igual).
-14. [ ] **Tarea 9 de `status_taxonomies`** (DROP de las tablas legacy) — diferida por diseño, gated
+13. [ ] **Tarea 9 de `status_taxonomies`** (DROP de las tablas legacy) — diferida por diseño, gated
     por tiempo en producción + confirmación explícita.
-15. [ ] **Versionar el proyecto dbt real en git** — sigue sin decisión.
-16. [ ] **Retirar del pipeline `legacy_drivers_transporters`** los bloques
+14. [ ] **Versionar el proyecto dbt real en git** — sigue sin decisión.
+15. [ ] **Retirar del pipeline `legacy_drivers_transporters`** los bloques
     `snapshot_transporters_data`/`webapp_transporter_porfiles`.
-17. [ ] **`ops.pipeline_rejects` / `ops.pipeline_runs`** — sin auditar (515 y 5 filas).
-18. [ ] **Reescribir `/deploy` y `/check-env`** (`monitor-app/.claude/commands/`): describen el flujo
+16. [ ] **`ops.pipeline_rejects` / `ops.pipeline_runs`** — sin auditar (515 y 5 filas).
+17. [ ] **Reescribir `/deploy` y `/check-env`** (`monitor-app/.claude/commands/`): describen el flujo
     viejo de Vercel y el deploy real es Cloud Run.
-19. [ ] **Normalizar a inglés los valores de `?tab=seguros/conductores/equipos/…`** y el `type Tab`
+18. [ ] **Normalizar a inglés los valores de `?tab=seguros/conductores/equipos/…`** y el `type Tab`
     de `carriers/[id]/page.tsx` — deferido por el mismo blast radius de ~32 archivos que ya se
     evitó una vez.
-20. [x] **Seguridad, de la Ronda 95 — CERRADO el 2026-08-18.** Las 5 matviews expuestas y 2 de las
+19. [x] **Seguridad, de la Ronda 95 — CERRADO el 2026-08-18.** Las 5 matviews expuestas y 2 de las
     3 funciones `SECURITY DEFINER` se cerraron por migración
     (`20260818200000_seguridad_matviews_y_funciones.sql`), verificado con el linter. Las otras dos
     partes salieron a issues de GitHub porque no son trabajo de código:
@@ -958,34 +959,34 @@ una lista:
 
 **Agregado al cerrar la Ronda 125 (2026-08-18)** — lo que salió de las Rondas 123-125:
 
-21. [ ] **El aviso "posterior al cierre" no lleva a ningún lado.** Informa el número y el botón se
+20. [ ] **El aviso "posterior al cierre" no lleva a ningún lado.** Informa el número y el botón se
     quitó, porque el Monitor no soporta filtro por fecha en la URL (verificado: no usa
     `useSearchParams` ni lee parámetros). O se le agrega, o el aviso queda informativo a propósito.
-22. [ ] **Los tres trinquetes del sistema visual, dos en margen cero**: color 1779/1780,
+21. [ ] **Los tres trinquetes del sistema visual, dos en margen cero**: color 1779/1780,
     tipografía sub-11px **279/279**, `<h1>` **9/9**. El próximo color crudo o tamaño chico que
     alguien agregue **en cualquier archivo del repo** rompe CI con un fallo ajeno a lo que estaba
     haciendo. La próxima tarea de frontend debería empezar bajándolos.
-23. [ ] **Una sola definición del "universo de viajes del día".** El criterio multi-día sigue escrito
+22. [ ] **Una sola definición del "universo de viajes del día".** El criterio multi-día sigue escrito
     a mano **14 veces** y la exclusión de Sodimac **9**. La R123 lo alineó pero no lo eliminó, y la
     R125 tuvo que sacar una quinta copia nacida dentro del propio plan. Es la causa raíz de los
     cuatro defectos de conteo que corrigió la R123.
-24. [ ] **Absorción dinámica de estados sin mapear** en `app.trip_statuses`. Evidencia: Wingsuite
+23. [ ] **Absorción dinámica de estados sin mapear** en `app.trip_statuses`. Evidencia: Wingsuite
     manda `Cancelado` y el catálogo tiene `CANCELADO`, así que ese viaje cae fuera de todo JOIN en
     silencio. Decisión del usuario del 18/08: los estados vienen de los TMS y el catálogo debe
     absorberlos. Vive en el pipeline.
-25. [ ] **Confirmar con operaciones el umbral de 7 días** para "abandonado por el TMS".
-26. [ ] **Fusionar el conductor duplicado del roster** — dos filas con el mismo nombre; son las 2
+24. [ ] **Confirmar con operaciones el umbral de 7 días** para "abandonado por el TMS".
+25. [ ] **Fusionar el conductor duplicado del roster** — dos filas con el mismo nombre; son las 2
     personas ambiguas que la R124 midió. El resolvedor se niega a elegir (correcto) y esos viajes
     quedan sin identificar.
-27. [ ] **Borrar `CloseDayDialog.tsx` y sus tests** — 317 líneas, código muerto confirmado: ningún
+26. [ ] **Borrar `CloseDayDialog.tsx` y sus tests** — 317 líneas, código muerto confirmado: ningún
     archivo de `app/` lo importa.
-28. [ ] **UX: el viaje que el TMS cierra y sigue sin conductor** se cae del Monitor "en curso" justo
+27. [ ] **UX: el viaje que el TMS cierra y sigue sin conductor** se cae del Monitor "en curso" justo
     cuando todavía hay trabajo. Mismo patrón que resolvió "Abandonados por el TMS" en el Cierre: el
     trabajo no debe desaparecer porque el TMS cambió de estado.
-29. [ ] **UX: el alta de conductor no declara lo que cuesta.** Crear una persona dispara sus
+28. [ ] **UX: el alta de conductor no declara lo que cuesta.** Crear una persona dispara sus
     requisitos de Certificación (13 altas costaron 132 registros) y el popover no lo dice. Se
     resuelve en el copy y la fricción del paso de alta, antes de confirmar — no con un modal.
-30. [ ] **Medir la densidad del Monitor** antes de opinar sobre su UX. Lo único observado hasta hoy
+29. [ ] **Medir la densidad del Monitor** antes de opinar sobre su UX. Lo único observado hasta hoy
     es un límite de herramienta leyendo el árbol de accesibilidad (65k caracteres), que **no** es
     evidencia de un defecto de pantalla. Si se aborda, medir columnas, contenido por fila y cuántas
     decisiones caben sin scroll, con benchmark contra SaaS del rubro.
