@@ -96,7 +96,46 @@ determinista en vez de depender del orden de las filas.
 **El cambio del transformador NO está en git**: `.mage-agent/` está en `.gitignore` a propósito y el
 cluster de Mage es la fuente de verdad. Este registro es el respaldo.
 
-#### INCIDENTE ABIERTO — ingestión caída y el arreglo del #4 REVERTIDO
+#### CIERRE DE LA NOCHE — #4 y #5 verificados en producción, incidente resuelto
+
+**La causa raíz del incidente NO fue el código: fue un slot de concurrencia huérfano**, y el
+disparador fue mi propio despliegue. Ver abajo la cronología, que quedó como registro de un
+diagnóstico que se equivocó cuatro veces antes de llegar al fondo.
+
+`ops.extraction_jobs` ocupa el slot poniendo `status='running'` y lo libera al pasar a
+done/failed. **Si la instancia de Cloud Run desaparece con el job en vuelo, nadie escribe ese estado
+y la fila bloquea el slot para siempre.** Con `MAX_CONCURRENT_JOBS=1` eso detiene TODA la ingestión.
+Mi revisión entró a las 02:02:57Z; un job arrancó a las 02:03:00; su instancia se fue; 58 minutos de
+bloqueo. Los tres scrapers fallaron con "Timeout esperando un slot libre", no entraron archivos, los
+`processor_*` devolvieron vacío, y los transformadores reventaron con un `AttributeError` sobre
+`.empty` que **no tenía nada que ver con la causa**. Cada síntoma que perseguí era un eslabón hacia
+abajo.
+
+**Arreglado de fondo** (commit `5a29d146`, desplegado y verificado sin dejar huérfanos):
+`try_claim_slot` recupera slots vencidos apoyándose en un invariante que el diseño YA asumía — un
+job no puede correr más de `JOB_TIMEOUT_MS` porque su propio proceso lo mata. La recuperación va
+DENTRO del advisory lock. 5 tests nuevos, uno fijando que un job dentro del plazo sigue ocupando su
+slot. Suite: 47 pasan.
+
+**#5 VERIFICADO EN PRODUCCIÓN**: el CSV nuevo trae **47 filas en vez de 320**, 41 viajes, y los
+**6 viajes de dos tramos conservan los dos**. Dedupe sin pérdida.
+
+**#4 VERIFICADO EN PRODUCCIÓN** (corrida 9373): payload con **0 de 39 viajes sin `ESTADO`**
+(el peor archivo previo tenía 41 de 41 sin estado), **máximo 2 paradas por viaje en vez de 10**, y
+6 viajes con sus dos tramos. Toda la cadena completó: transformer → insert → stg → int → app.
+
+**EL TEST DE dbt CORTÓ EL PIPELINE POR DATO CORRECTO — y eso enseñó algo.** Al conservar el segundo
+tramo, los viajes con origen doble pasaron de 3 a 4 y el `error_if='>3'` puso el bloque en rojo. Los
+4 (`815726`, `830021`, `833795`, `841612`) tienen **dos lugares distintos**: son multi-retiro
+legítimo. El test afirmaba un invariante FALSO y encima bloqueaba.
+
+Reescrito para afirmar el que sí es cierto: **dos filas ORIGIN del mismo viaje EN EL MISMO LUGAR**.
+Un camión no retira dos veces de la misma bodega. Verificado: 0 violaciones con el criterio nuevo,
+así que vuelve a `severity='error'` sin umbral de gracia — no hay pasivo que congelar. Lo que ya NO
+cubre, a propósito, es el aplanamiento de tramos (#6): eso es pérdida de información, no
+duplicación, y mezclarlo fue el error original.
+
+#### Cronología del incidente (ingestión caída ~1 h)
 
 **Al cerrar la sesión la ingestión llevaba ~30 min sin recibir dato en las tres fuentes.** Último
 upsert a bronze: 02:04 UTC (21:04 COT).
