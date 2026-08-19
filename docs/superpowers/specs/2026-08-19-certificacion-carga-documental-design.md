@@ -105,8 +105,14 @@ a hacerse en la Bandeja. El cajón queda optimizado para renovación y para rema
 
 `POST /compliance-records/{record_id}/file` (`compliance.py:810`) recibe multipart `file` +
 `expiration_date`, deja el registro en `APPROVED_MANUAL` y escribe auditoría
-(`record_manual_edit`, `action="document_upload"`). El cliente del frontend también lo tiene
-(`lib/api/compliance.ts:71`).
+(`record_manual_edit`, `action="document_upload"`).
+
+**Corrección (2026-08-19, al implementar)**: este documento afirmaba que el cliente del frontend ya
+tenía el método. **Es falso.** `lib/api/compliance.ts` declara el tipo `ComplianceFileUploadResult`
+pero **ninguna función lo usa**; la línea que se citó es `deleteFile`. El método hay que escribirlo.
+Lo que sí es cierto y sostiene el diseño: `apiFetch` ya maneja `FormData` sin pisar el
+`Content-Type` (`lib/api/client.ts:24`) y propaga el `detail` del backend como mensaje de error, así
+que el 422 llega al renglón como texto legible sin plomería extra.
 
 El cajón hoy llama a `documentIngestApi.uploadAndClassify`, que es el camino de la pila. **Cambiar a
 qué endpoint llama elimina el varado estructuralmente**: no hay estado intermedio donde quedarse.

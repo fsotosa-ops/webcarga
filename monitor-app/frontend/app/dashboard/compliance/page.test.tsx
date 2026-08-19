@@ -30,6 +30,19 @@ vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
 }))
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+// El panel de alta se simula: lo que se prueba acá no es el formulario, es a
+// donde lleva la pagina DESPUES de crear.
+vi.mock('@/components/dashboard/NewCarrierPanel', () => ({
+  NewCarrierPanel: ({ open, onCreated }: {
+    open: boolean
+    onCreated: (c: { id: string; business_name: string }) => void
+  }) => open ? (
+    <button data-testid="crear-empresa-ok"
+            onClick={() => onCreated({ id: 'c-nueva', business_name: 'Empresa Nueva Spa' })}>
+      simular alta
+    </button>
+  ) : null,
+}))
 
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
@@ -206,5 +219,32 @@ describe('Certificación — una lista, dos vistas', () => {
     expect(await screen.findByText(/Cargando…/)).toBeInTheDocument()
     expect(screen.queryByText('documentos por cubrir')).not.toBeInTheDocument()
     expect(screen.queryByText('0')).not.toBeInTheDocument()
+  })
+})
+
+
+// El cuarto y ultimo punto de fuga al Empresas legacy. Crear una empresa desde
+// Certificacion y aterrizar en otro modulo obligaba a rehacer el filtro para
+// volver a la cola de trabajo — justo lo que el modulo vino a evitar.
+describe('CertificationPage — crear una empresa no saca del modulo', () => {
+  it('abre la empresa nueva DENTRO de Certificacion', async () => {
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: /Nueva empresa/i }))
+    fireEvent.click(await screen.findByTestId('crear-empresa-ok'))
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith(
+      expect.stringContaining('/dashboard/compliance?abierta=c-nueva'),
+    ))
+  })
+
+  it('no navega al modulo de Empresas', async () => {
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: /Nueva empresa/i }))
+    fireEvent.click(await screen.findByTestId('crear-empresa-ok'))
+
+    await waitFor(() => expect(push).toHaveBeenCalled())
+    for (const llamada of push.mock.calls) {
+      expect(String(llamada[0])).not.toContain('/dashboard/carriers')
+    }
   })
 })

@@ -846,8 +846,16 @@ npx vitest run components/compliance/CarrierDrawer.test.tsx
 - Reemplazar el mapeo de pendientes por `<RenglonPendiente>`.
 - `subir()` pasa a llamar el método directo de `complianceApi` sobre
   `POST /compliance-records/{id}/file` con `FormData` (`file`, y `expiration_date` si vino).
-  Si `lib/api/compliance.ts` no expone ese método con firma de multipart, agrégalo ahí —
-  **no armes el `fetch` dentro del componente**.
+  **El método NO existe** (verificado al implementar: `ComplianceFileUploadResult` está declarado y
+  ninguna función lo usa; la línea 71 que este plan citaba es `deleteFile`). Hay que escribirlo en
+  `lib/api/compliance.ts` — **uno solo**, y **no armes el `fetch` dentro del componente**.
+  `apiFetch` ya maneja `FormData` sin pisar el `Content-Type`.
+
+  **Y la subida no se implementa dos veces.** El cajón (esta tarea) y la ficha legacy (Task 7)
+  necesitan exactamente lo mismo: llamar al endpoint y después invalidar. Eso vive en **un** hook
+  `hooks/useSubirDocumento.ts` que las dos consumen. Dos implementaciones de "subir un documento a
+  un requisito" es precisamente cómo este módulo terminó con dos caminos de carga que se
+  estorbaban.
 - Debajo de la lista, una línea: `¿Tienes muchos documentos de {carrierName}?` +
   `<Link href="/dashboard/compliance?vista=documentos">Llévalos a la Bandeja</Link>`.
 - `invalidarCertificacion(queryClient)` se sigue usando igual (`lib/queries/certificacion.ts`).

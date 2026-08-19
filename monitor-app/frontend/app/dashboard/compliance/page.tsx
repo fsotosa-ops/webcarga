@@ -140,7 +140,11 @@ function CertificationPageInner() {
 
   function handleCarrierCreated(created: CarrierCreateResult) {
     setNewCarrierOpen(false)
-    router.push(`/dashboard/carriers/${created.id}?tab=documentos`)
+    // Cuarto y ultimo punto de fuga al Empresas legacy. Crear una empresa
+    // desde Certificacion y aterrizar en otro modulo obligaba a rehacer el
+    // filtro para volver a la cola de trabajo, que es justo lo que este
+    // modulo vino a evitar.
+    router.push(enlaceAFilaAbierta('/dashboard/compliance', created.id))
   }
 
   const rows = statusQuery.data?.rows ?? []
