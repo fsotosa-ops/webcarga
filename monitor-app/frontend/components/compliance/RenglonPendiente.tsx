@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Check, Eye, Loader2, Upload } from 'lucide-react'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
+import { AvisoDeFila } from './AvisoDeFila'
 import { expiryRelative } from '@/lib/compliance'
 import type { PendingComplianceRow, PoliticaVencimiento } from '@/lib/types'
 
@@ -20,6 +21,9 @@ interface Props {
   onVer?:      () => void
   /** La consulta del archivo está en vuelo. */
   viendo?:     boolean
+  /** Por qué "Ver" no abrió nada. Se dibuja EN el renglón, con reintento:
+   *  sin esto el spinner se apagaba y no pasaba absolutamente nada. */
+  avisoVer?:   string | null
 }
 
 /** Por qué este renglón está pendiente, dicho con la fecha en la mano.
@@ -64,7 +68,9 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  requisito exige. **Nada se sube hasta estar completo**: el camino viejo
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
-export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer, onVer, viendo }: Props) {
+export function RenglonPendiente({
+  fila, puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer,
+}: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
   const politica = politicaDe(fila)
@@ -186,6 +192,8 @@ export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer, onVer
           </span>
         </div>
       )}
+
+      {avisoVer && onVer && <AvisoDeFila mensaje={avisoVer} onReintentar={onVer} />}
 
       {estado.tipo === 'error' && (
         <div role="alert" className="flex items-center gap-2 flex-wrap mt-2 pl-1">

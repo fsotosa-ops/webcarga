@@ -162,6 +162,33 @@ describe('FichaEmpresaPage', () => {
     expect(screen.queryByText('Aprobado (manual)')).not.toBeInTheDocument()
   })
 
+  // "Falló" es uno de los cuatro estados obligatorios de pantalla, y su regla
+  // es que no puede parecer que no pasó nada. Antes: el modal sólo se montaba
+  // con `file_url`, así que si la consulta fallaba el spinner se apagaba y no
+  // ocurría nada — y volver a tocar "Ver" con el mismo id no cambiaba estado,
+  // así que el botón quedaba muerto hasta recargar la página.
+  it('si "Ver" falla, lo dice en el renglón y deja reintentar', async () => {
+    vi.mocked(complianceApi.get).mockRejectedValue(new Error('sesión vencida'))
+    montar([fila({ id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true })])
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no se pudo abrir/i)
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await waitFor(() => expect(complianceApi.get).toHaveBeenCalledTimes(2))
+  })
+
+  // El otro camino al mismo lugar: un registro en revisión o rechazado puede
+  // no tener archivo, y ofrecía "Ver" igual.
+  it('un registro sin archivo que abrir lo dice, en vez de no hacer nada', async () => {
+    vi.mocked(complianceApi.get).mockResolvedValue({ file_url: null } as never)
+    montar([fila({ id: 'p1', status: 'PENDING_REVIEW', urgencia: 'AL_DIA', tiene_archivo: true })])
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no tiene un archivo/i)
+  })
+
   it('sin documentos dice por dónde empezar, no una tabla vacía', async () => {
     // Es el caso de 32 de las 34 empresas activas.
     montar([])

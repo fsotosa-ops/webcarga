@@ -9,6 +9,7 @@ import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
+import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
 import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { DocumentPreviewModal } from '@/components/dashboard/DocumentPreviewModal'
@@ -60,32 +61,37 @@ function filasDelEstado(rows: PendingComplianceRow[], estado: EstadoDocumental):
  *  "Rechazado", que son cosas distintas. La contradicción que había —"Aprobado
  *  (manual)" sobre un documento vencido hace un año— no se arregló acá sino
  *  en la partición: esas filas ya no llegan a este componente. */
-function FilaDocumento({ fila, viendo, onVer }: {
-  fila:    PendingComplianceRow
-  viendo:  boolean
-  onVer:   () => void
+function FilaDocumento({ fila, viendo, avisoVer, onVer }: {
+  fila:     PendingComplianceRow
+  viendo:   boolean
+  /** Por qué "Ver" no abrió nada, dicho en este renglón y con reintento. */
+  avisoVer: string | null
+  onVer:    () => void
 }) {
   const cfg = COMPLIANCE_STATUS_CONFIG[fila.status]
   return (
-    <div className="border-b border-border last:border-b-0 px-3 py-2 min-h-10 flex items-center gap-3">
-      <span className="flex-1 min-w-0 truncate text-dato text-text-primary">{fila.document_name}</span>
-      {fila.expiration_date && (
-        <span className="shrink-0 text-etiqueta text-informativo tabular-nums">
-          {formatExpiry(fila.expiration_date)}
+    <div className="border-b border-border last:border-b-0 px-3 py-2 min-h-10">
+      <div className="flex items-center gap-3">
+        <span className="flex-1 min-w-0 truncate text-dato text-text-primary">{fila.document_name}</span>
+        {fila.expiration_date && (
+          <span className="shrink-0 text-etiqueta text-informativo tabular-nums">
+            {formatExpiry(fila.expiration_date)}
+          </span>
+        )}
+        <span className={`shrink-0 text-etiqueta font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
+          {cfg.label}
         </span>
-      )}
-      <span className={`shrink-0 text-etiqueta font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
-        {cfg.label}
-      </span>
-      <button
-        type="button"
-        onClick={onVer}
-        disabled={viendo}
-        className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
-      >
-        {viendo ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
-        Ver
-      </button>
+        <button
+          type="button"
+          onClick={onVer}
+          disabled={viendo}
+          className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
+        >
+          {viendo ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
+          Ver
+        </button>
+      </div>
+      {avisoVer && <AvisoDeFila mensaje={avisoVer} onReintentar={onVer} />}
     </div>
   )
 }
@@ -174,7 +180,25 @@ export default function FichaEmpresaPage() {
     enabled: !!viendoId,
   })
 
+  /** Por qué "Ver" no abrió nada. Los dos caminos terminan igual —el modal no
+   *  se monta— y antes ninguno se decía: el spinner se apagaba y no pasaba
+   *  absolutamente nada. "Falló" es uno de los cuatro estados obligatorios de
+   *  pantalla y su regla es que no puede parecer que no pasó nada. */
+  const avisoVer =
+    !viendoId || previewQuery.isFetching     ? null
+    : previewQuery.error                     ? 'No se pudo abrir el documento. Vuelve a intentarlo.'
+    : previewQuery.data && !previewQuery.data.file_url
+                                             ? 'Este registro no tiene un archivo que abrir.'
+    : null
+
   function verDocumento(fila: PendingComplianceRow) {
+    // Volver a tocar "Ver" sobre la MISMA fila no cambia el estado, así que
+    // sin este refetch el botón quedaba muerto hasta recargar la página:
+    // React Query no reintenta sola una consulta en error.
+    if (viendoId === fila.id) {
+      void previewQuery.refetch()
+      return
+    }
     setViendoId(fila.id)
     setViendoLabel(fila.document_name)
   }
@@ -299,6 +323,7 @@ export default function FichaEmpresaPage() {
                     key={f.id}
                     fila={f}
                     viendo={viendoId === f.id && previewQuery.isFetching}
+                    avisoVer={viendoId === f.id ? avisoVer : null}
                     onVer={() => verDocumento(f)}
                   />
                 )
@@ -310,6 +335,7 @@ export default function FichaEmpresaPage() {
                     onSubir={subir}
                     onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
                     viendo={viendoId === f.id && previewQuery.isFetching}
+                    avisoVer={viendoId === f.id ? avisoVer : null}
                   />
                 )
             ))}
