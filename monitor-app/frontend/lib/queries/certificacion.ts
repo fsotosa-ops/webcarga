@@ -36,8 +36,13 @@ export const clavesCertificacion = {
   colaTotal: () => ['ingest-queue-count'] as const,
   /** La URL firmada de un archivo, que se pide de a uno al enfocarlo. */
   vistaPrevia: (itemId: string | null) => ['ingest-preview', itemId] as const,
-  /** Lo que le falta a una empresa y a su gente. */
-  pendientes: (carrierId?: string) => ['compliance-pending', carrierId ?? null] as const,
+  /** Lo que le falta a una empresa y a su gente, o a un sujeto suyo.
+   *
+   *  El sujeto va EN la clave: el cajón de una persona y el de su empresa
+   *  piden respuestas distintas del mismo endpoint, y compartir clave haría
+   *  que uno sirviera la respuesta cacheada del otro. */
+  pendientes: (carrierId?: string, entityId?: string) =>
+    ['compliance-pending', carrierId ?? null, entityId ?? null] as const,
   /** El catálogo de requisitos de un tipo de entidad. */
   requisitos: (entityType?: string) => ['compliance-requirements', entityType ?? null] as const,
 }

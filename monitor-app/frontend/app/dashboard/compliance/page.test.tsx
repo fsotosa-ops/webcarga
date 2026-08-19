@@ -9,6 +9,8 @@ let params = new URLSearchParams()
 vi.mock('next/navigation', () => ({
   useSearchParams: () => params,
   useRouter: () => ({ replace, push }),
+  // La fila abierta vive en la URL, asi que el hook necesita saber donde esta.
+  usePathname: () => '/dashboard/compliance',
 }))
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: {
@@ -168,7 +170,9 @@ describe('Certificación — una lista, dos vistas', () => {
     setup()
 
     expect(await screen.findByText('Juan Pérez')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Transportes Sur Spa' })).toBeInTheDocument()
+    // La empresa se muestra y se puede abrir, pero DENTRO de Certificacion:
+    // antes era un enlace a /dashboard/carriers y eso sacaba del modulo.
+    expect(screen.getByRole('button', { name: 'Transportes Sur Spa' })).toBeInTheDocument()
     expect(complianceApi.listStatus).toHaveBeenCalledWith(
       expect.objectContaining({ group: 'driver' }),
     )

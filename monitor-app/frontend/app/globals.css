@@ -34,6 +34,20 @@
   --espera: #b00020;   /* UN solo significado: hay archivos esperando */
   --accion: #0d7ea6;   /* el único azul de la fila: si hay azul, se puede hacer clic */
   --resuelto: #12a150; /* sólo cuando algo quedó cerrado, nunca para "va bien" */
+
+  /* La quinta señal del spec (§3.2), que estaba declarada y sin token:
+     "informativo · dato de contexto". Es el gris del texto que acompaña —el
+     subtítulo, la unidad, el nombre del documento al lado del sujeto— y era
+     el hueco que hacía imposible escribir pantalla nueva sin deuda: el
+     trinquete cuenta `text-gray-500` y el sistema no ofrecía a dónde migrarlo.
+
+     Vale lo mismo que `gray-500` a propósito, que es el nivel que ya usan las
+     226 apariciones de texto secundario. Los otros seis niveles de gris (389
+     de `gray-400`, 81 de `gray-300`, …) NO se migran en masa: eso sería un
+     cambio visual grande hecho a ciegas. Bajan como baja todo acá, cuando
+     alguien toca esa pantalla. Lo que cambia hoy es que el código nuevo tiene
+     a dónde ir. */
+  --informativo: #6b7280;
 }
 
 @theme inline {
@@ -50,6 +64,7 @@
   --color-espera: var(--espera);
   --color-accion: var(--accion);
   --color-resuelto: var(--resuelto);
+  --color-informativo: var(--informativo);
   --font-sans: var(--font-roboto), system-ui, sans-serif;
   --font-mulish: var(--font-mulish), system-ui, sans-serif;
 

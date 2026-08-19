@@ -1,12 +1,22 @@
 'use client'
 
-import Link from 'next/link'
-import { AlertTriangle, Building2, Check } from 'lucide-react'
+import { Fragment } from 'react'
+import { AlertTriangle, Building2, Check, ChevronRight } from 'lucide-react'
 import type { CertificationGroup, CertificationStatusRow } from '@/lib/types'
+import { propsDeFilaExpandible } from '@/hooks/useFilaAbierta'
 
 interface Props {
   rows:  CertificationStatusRow[]
   group: CertificationGroup
+  /** La fila abierta, y cómo alternarla. Vienen de arriba —igual que en el
+   *  embudo— para que la tabla no dependa de las consultas del detalle. */
+  openRowId?:    string | null
+  onToggleRow?:  (entityId: string) => void
+  renderDrawer?: (row: CertificationStatusRow) => React.ReactNode
+  /** Ir a esta empresa DENTRO de Certificación. Antes cada fila enlazaba a la
+   *  ficha de Empresas y eso sacaba al usuario del módulo: se perdía la cola
+   *  de trabajo y volver exigía rehacer el filtro. */
+  onIrAEmpresa?: (carrierId: string) => void
 }
 
 /** La vista por defecto del módulo: cómo va cada empresa.
@@ -14,7 +24,9 @@ interface Props {
  *  Las dos mitades del trabajo viven en la misma fila — lo que falta y lo que
  *  llegó sin clasificar. Tenerlas en dos listas hermanas obligaba a cruzarlas
  *  de memoria, que es exactamente lo que hacía al módulo confuso. */
-export function CertificationStatusTable({ rows, group }: Props) {
+export function CertificationStatusTable({
+  rows, group, openRowId, onToggleRow, renderDrawer, onIrAEmpresa,
+}: Props) {
   const porEmpresa = group === 'carrier'
   // Agrupando por REQUISITO la fila es un tipo de documento, no una entidad
   // con dueño: no tiene empresa (el backend manda NULL a proposito, porque un
@@ -58,36 +70,43 @@ export function CertificationStatusTable({ rows, group }: Props) {
         {rows.map(r => {
           const pct = r.total_count > 0 ? Math.round((r.satisfied_count / r.total_count) * 100) : 0
           const alDia = r.total_count > 0 && r.pending_count === 0
+          // Un conductor o un vehiculo sin empresa activa no tiene por donde
+          // recibir documentacion: la tabla ya lo dice en su titulo, y darle un
+          // cajon prometeria una accion que el backend no puede completar.
+          const puedeAbrir = !!renderDrawer && !porEmpresa && !porRequisito && !!r.carrier_id
+          const abierta = openRowId === r.entity_id
 
           return (
-            <tr key={r.entity_id} className="border-b border-border hover:bg-gray-50 transition-colors">
+            <Fragment key={r.entity_id}>
+            <tr
+              {...(puedeAbrir && onToggleRow
+                ? propsDeFilaExpandible(r.entity_id, abierta, onToggleRow)
+                : {})}
+              className={`group border-b border-border transition-colors ${
+                abierta ? 'bg-sky-50/60' : 'hover:bg-gray-50'
+              } ${puedeAbrir ? 'cursor-pointer' : ''}`}
+            >
               <td className="py-2 pl-3 pr-2">
                 {porEmpresa ? (
-                  // prefetch=false, igual que TransporterCard y la lista de
-                  // Empresas: esta tabla muestra hasta 200 filas y Next.js
-                  // prefetchea todas las que entran al viewport. Cada prefetch
-                  // ejecuta el layout del dashboard, que va a la API de Auth,
-                  // y Supabase responde 429 ("Many requests"). Medido en
-                  // staging: 104 llamadas a /user en un solo minuto.
-                  <Link
-                    href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
-                    prefetch={false}
-                    className="text-xs font-medium text-text-primary hover:text-accent transition-colors"
-                  >
-                    {r.entity_name}
-                  </Link>
+                  // Agrupando por empresa la pantalla usa el embudo, no esta
+                  // tabla, asi que esta rama hoy no se dibuja. Se deja sin
+                  // enlace igual: mientras exista no puede ser la que devuelva
+                  // al usuario al modulo que Certificacion vino a reemplazar.
+                  <span className="text-xs font-medium text-text-primary">{r.entity_name}</span>
                 ) : porRequisito ? (
                   <span className="text-xs font-medium text-text-primary">{r.entity_name}</span>
-                ) : r.carrier_id ? (
-                  // Abre su panel dentro de la ficha: ahí se carga y clasifica
-                  // su documentación sin salir del contexto de la empresa.
-                  <Link
-                    href={`/dashboard/carriers/${r.carrier_id}?tab=${group === 'driver' ? 'conductores' : 'equipos'}&${group === 'driver' ? 'driver' : 'asset'}=${r.entity_id}`}
-                    prefetch={false}
-                    className="text-xs font-medium text-text-primary hover:text-accent transition-colors"
-                  >
+                ) : r.carrier_id && puedeAbrir ? (
+                  // Abre su cajón acá abajo. Antes esto navegaba a la ficha de
+                  // Empresas, o sea que el módulo que existe para reemplazar
+                  // ese flujo empujaba de vuelta hacia él.
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-text-primary group-hover:text-accent transition-colors">
+                    <ChevronRight
+                      size={11}
+                      className={`text-informativo transition-transform ${abierta ? 'rotate-90' : ''}`}
+                      aria-hidden="true"
+                    />
                     {r.entity_name}
-                  </Link>
+                  </span>
                 ) : (
                   <span className="text-xs font-medium text-text-primary" title="Sin empresa activa: no se le puede cargar documentación">
                     {r.entity_name}
@@ -100,14 +119,21 @@ export function CertificationStatusTable({ rows, group }: Props) {
 
               {!porEmpresa && !porRequisito && (
                 <td className="py-2 px-2">
-                  {r.carrier_id ? (
-                    <Link
-                      href={`/dashboard/carriers/${r.carrier_id}?tab=documentos`}
-                      prefetch={false}
-                      className="text-etiqueta text-gray-600 hover:text-accent transition-colors"
+                  {/* Con empresa se muestra siempre; que sea accionable
+                      depende de si el contenedor sabe adónde llevar. Antes esta
+                      condición era `carrier_id && onIrAEmpresa`, y sin handler
+                      una empresa que existe se dibujaba como "sin empresa": el
+                      aviso decía algo falso. */}
+                  {r.carrier_id ? onIrAEmpresa ? (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onIrAEmpresa(r.carrier_id!) }}
+                      className="text-etiqueta text-gray-600 hover:text-accent transition-colors cursor-pointer"
                     >
                       {r.carrier_name}
-                    </Link>
+                    </button>
+                  ) : (
+                    <span className="text-etiqueta text-gray-600">{r.carrier_name}</span>
                   ) : (
                     <span className="text-etiqueta text-amber-700" title="Sin asignación activa a una empresa">
                       sin empresa
@@ -154,6 +180,14 @@ export function CertificationStatusTable({ rows, group }: Props) {
               </td>
               )}
             </tr>
+            {abierta && (
+              <tr>
+                <td colSpan={porEmpresa || porRequisito ? 2 : 3} className="p-0">
+                  {renderDrawer?.(r)}
+                </td>
+              </tr>
+            )}
+            </Fragment>
           )
         })}
       </tbody>

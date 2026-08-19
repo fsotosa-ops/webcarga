@@ -1,6 +1,11 @@
 'use client'
 
-import { useCallback, useState, type KeyboardEvent } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useCallback, type KeyboardEvent } from 'react'
+
+/** El nombre del parámetro, escrito una vez. Quien enlace a una fila abierta
+ *  desde otra vista usa `enlaceAFilaAbierta()`, no arma la cadena a mano. */
+const PARAM = 'abierta'
 
 /**
  * "Una sola fila abierta a la vez", con su razón, en un solo lugar.
@@ -14,15 +19,49 @@ import { useCallback, useState, type KeyboardEvent } from 'react'
  * escrita a mano N veces: el criterio del "universo de viajes del día" quedó
  * copiado catorce veces y fue la causa de cuatro errores de conteo distintos.
  * Certificación tiene cuatro listas del mismo objeto; la regla se escribe una.
+ *
+ * **La fila abierta vive en la URL, no en `useState`.** Con estado local,
+ * llegar desde otra vista con una fila ya abierta obliga a sembrar el estado
+ * inicial desde un prop y a resincronizarlo cuando ese prop cambia — que es
+ * exactamente el bug que este frontend ya tuvo tres veces (ContactCard,
+ * TransporterDocumentsPanel, y evitado a último momento en PolicyLinkRow).
+ * En la URL no hay nada que resincronizar, y de yapa el botón atrás funciona
+ * y el enlace se puede compartir.
  */
 export function useFilaAbierta() {
-  const [abierta, setAbierta] = useState<string | null>(null)
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const abierta = searchParams.get(PARAM)
 
-  const alternar = useCallback((id: string) => {
-    setAbierta((prev) => (prev === id ? null : id))
-  }, [])
+  const alternar = useCallback(
+    (id: string) => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (params.get(PARAM) === id) params.delete(PARAM)
+      else params.set(PARAM, id)
+      const qs = params.toString()
+      // `replace` y no `push`: abrir y cerrar filas no es navegación, y con
+      // `push` el botón atrás tendría que deshacer cada clic antes de sacarte
+      // de la pantalla. Es el mismo criterio que ya usa cambiar de vista.
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    },
+    [router, pathname, searchParams],
+  )
 
   return { abierta, alternar, esAbierta: (id: string) => abierta === id }
+}
+
+/** Enlace a otra vista con una fila ya abierta.
+ *
+ *  Existe para que "ir a esta empresa" no se escriba a mano en cada lista: es
+ *  una sola forma de nombrar dónde estás, y por eso vive junto al hook que la
+ *  lee. Si mañana el parámetro cambia de nombre, cambia acá y en ningún otro
+ *  lado. */
+export function enlaceAFilaAbierta(pathname: string, id: string, vista?: string) {
+  const params = new URLSearchParams()
+  if (vista) params.set('vista', vista)
+  params.set(PARAM, id)
+  return `${pathname}?${params}`
 }
 
 /**

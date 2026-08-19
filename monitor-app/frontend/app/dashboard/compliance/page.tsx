@@ -18,7 +18,7 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
-import { useFilaAbierta } from '@/hooks/useFilaAbierta'
+import { enlaceAFilaAbierta, useFilaAbierta } from '@/hooks/useFilaAbierta'
 
 type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos' | 'documentos'
 
@@ -121,6 +121,17 @@ function CertificationPageInner() {
     queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
     staleTime: 60_000,
   }).data?.total ?? 0
+
+  /** Ir a una empresa SIN salir de Certificación: cambia de vista y deja su
+   *  fila abierta. Antes esto era un enlace a la ficha de Empresas, o sea que
+   *  el módulo empujaba de vuelta al flujo que vino a reemplazar.
+   *
+   *  La empresa viaja en la URL y no sólo en el estado: es lo que hace que
+   *  volver con el botón atrás caiga donde estabas, y que el enlace se pueda
+   *  compartir. */
+  function irAEmpresa(carrierId: string) {
+    router.push(enlaceAFilaAbierta('/dashboard/compliance', carrierId))
+  }
 
   function cambiarVista(v: Vista) {
     // La vista viaja en la URL: volver del detalle no pierde dónde estabas.
@@ -291,7 +302,25 @@ function CertificationPageInner() {
                   )}
                 />
               ) : (
-                <CertificationStatusTable rows={rows} group={group} />
+                <CertificationStatusTable
+                  rows={rows}
+                  group={group}
+                  openRowId={filaAbierta}
+                  onToggleRow={alternarFila}
+                  // El MISMO cajón que la vista Empresas, acotado al sujeto —
+                  // una prop, no un componente hermano.
+                  renderDrawer={r => r.carrier_id ? (
+                    <CarrierDrawer
+                      carrierId={r.carrier_id}
+                      carrierName={r.carrier_name ?? ''}
+                      subject={{
+                        entity_type: group === 'driver' ? 'DRIVER' : 'ASSET',
+                        entity_id: r.entity_id,
+                      }}
+                    />
+                  ) : null}
+                  onIrAEmpresa={irAEmpresa}
+                />
               )}
             </div>
           )}

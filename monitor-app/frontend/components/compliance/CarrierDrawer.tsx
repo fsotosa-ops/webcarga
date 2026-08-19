@@ -13,6 +13,15 @@ import type { PendingComplianceRow } from '@/lib/types'
 interface Props {
   carrierId:   string
   carrierName: string
+  /** Acota el cajón a UN sujeto: entrando por la vista Conductores o
+   *  Vehículos, lo único que interesa es lo que le falta a él.
+   *
+   *  Es una prop opcional y no un componente hermano, igual que `carrierId` en
+   *  `TriageWorkbench`: sin sujeto es el cajón de la empresa, con sujeto es el
+   *  de esa persona o ese vehículo. Un segundo componente "construido sobre el
+   *  patrón de éste" serían dos implementaciones de la misma pantalla, que en
+   *  este módulo ya divergieron una vez. */
+  subject?: { entity_type: PendingComplianceRow['entity_type']; entity_id: string }
 }
 
 /** Un sujeto del cajón: la empresa misma, uno de sus conductores o uno de sus
@@ -35,7 +44,7 @@ type Sujeto = {
  *
  *  Dos secciones, en este orden (§5): lo que llegó y espera que lo ubiquen, y
  *  lo que falta — con la flota en renglones plegables. */
-export function CarrierDrawer({ carrierId, carrierName }: Props) {
+export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
   const canEdit = useCanEdit()
   const queryClient = useQueryClient()
   /** Se guardan los ABIERTOS, no los plegados, para que el default —conjunto
@@ -48,15 +57,25 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
    *  lista había que subir cinco pantallas, peor que el panel lateral que se
    *  revirtió en la Ronda 109. Plegados, el mismo cajón mide ~720px. */
   const [abiertos, setAbiertos] = useState<Set<string>>(() => new Set())
+  /** Con un solo sujeto, plegarlo esconde LO ÚNICO que el cajón vino a
+   *  mostrar: el motivo del plegado era una empresa con 9 sujetos y 91
+   *  requisitos midiendo 3.159px, y acá son los documentos de una persona. */
+  const unSoloSujeto = !!subject
   const [subiendo, setSubiendo] = useState<string | null>(null)
   const [errorSubida, setErrorSubida] = useState<string | null>(null)
 
   /** Una sola consulta para todo "lo que falta": `/pending` ya trae la
    *  categoría, el sujeto, el requisito y el estado de cada fila, así que no
    *  hacen falta las consultas de roster de conductores y de vehículos. */
+  /** Acotar en el servidor y no filtrar acá: `/pending` corta en 200 y hay
+   *  empresas con 381 pendientes, así que filtrar del lado del cliente opera
+   *  sobre una muestra truncada sin decirlo. Por eso el endpoint tiene
+   *  `entity_id`. */
   const pendingQuery = useQuery({
-    queryKey: clavesCertificacion.pendientes(carrierId),
-    queryFn: () => complianceApi.listPending({ carrierId, limit: 200 }),
+    queryKey: clavesCertificacion.pendientes(carrierId, subject?.entity_id),
+    queryFn: () => complianceApi.listPending({
+      carrierId, entityId: subject?.entity_id, category: subject?.entity_type, limit: 200,
+    }),
   })
 
   const rows = useMemo(() => pendingQuery.data?.rows ?? [], [pendingQuery.data])
@@ -141,7 +160,7 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
       {/* 1 · Lo que llegó y espera. Es la MISMA bandeja que la global, sólo
           que acotada a esta empresa: un solo componente que recibe o no un
           carrier_id (§6). No se escribe una bandeja paralela. */}
-      <TriageWorkbench carrierId={carrierId} carrierName={carrierName} />
+      <TriageWorkbench carrierId={carrierId} carrierName={carrierName} subject={subject} />
 
       {/* 2 · Lo que falta */}
       <div>
@@ -169,18 +188,19 @@ export function CarrierDrawer({ carrierId, carrierName }: Props) {
         )}
 
         {sujetos.map(s => {
-          const abierto = abiertos.has(s.clave)
+          const abierto = unSoloSujeto || abiertos.has(s.clave)
           return (
             <div key={s.clave} className="border-t border-sky-100 first:border-t-0">
               <button
                 type="button"
                 onClick={() => alternar(s.clave)}
                 aria-expanded={abierto}
-                className="w-full flex items-center gap-1.5 py-1.5 text-left cursor-pointer group"
+                disabled={unSoloSujeto}
+                className="w-full flex items-center gap-1.5 py-1.5 text-left cursor-pointer group disabled:cursor-default"
               >
-                {abierto
-                  ? <ChevronDown size={11} className="text-gray-400" aria-hidden="true" />
-                  : <ChevronRight size={11} className="text-gray-400" aria-hidden="true" />}
+                {unSoloSujeto ? null : abierto
+                  ? <ChevronDown size={11} className="text-informativo" aria-hidden="true" />
+                  : <ChevronRight size={11} className="text-informativo" aria-hidden="true" />}
                 {/* El sujeto es lo que se escanea: va en tinta y en semibold. */}
                 <span className="text-[12.5px] font-semibold text-text-primary group-hover:text-accent transition-colors">
                   {s.titulo}

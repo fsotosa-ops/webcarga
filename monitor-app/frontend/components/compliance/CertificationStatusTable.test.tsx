@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
 import { CertificationStatusTable } from './CertificationStatusTable'
 import type { CertificationStatusRow } from '@/lib/types'
 
@@ -34,10 +34,10 @@ describe('CertificationStatusTable', () => {
     expect(screen.getByTitle(/4 obligatorios por ley/i)).toBeInTheDocument()
   })
 
-  it('la empresa lleva a su ficha, en el tab de documentos', () => {
+  it('no saca al usuario del modulo', () => {
     render(<CertificationStatusTable rows={[fila()]} group="carrier" />)
-    expect(screen.getByRole('link', { name: /Test Empresa Webcarga/ }))
-      .toHaveAttribute('href', '/dashboard/carriers/c1?tab=documentos')
+    expect(screen.getByText(/Test Empresa Webcarga/)).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('señala cuando la empresa no está activa', () => {
@@ -62,8 +62,54 @@ describe('CertificationStatusTable — agrupada por conductor o vehículo', () =
     render(<CertificationStatusTable rows={[conductor]} group="driver" />)
     expect(screen.getByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Transportes Sur Spa' }))
-      .toHaveAttribute('href', '/dashboard/carriers/c9?tab=documentos')
+    expect(screen.getByText('Transportes Sur Spa')).toBeInTheDocument()
+  })
+
+  // La fuga que motivo la ronda: el unico gesto que la fila ofrecia era un
+  // enlace a la ficha de Empresas, o sea que el modulo que existe para
+  // reemplazar ese flujo empujaba de vuelta hacia el.
+  it('el conductor abre su cajon acá, no navega a la ficha', () => {
+    const alternar = vi.fn()
+    render(<CertificationStatusTable
+      rows={[conductor]} group="driver"
+      onToggleRow={alternar}
+      renderDrawer={() => <div data-testid="cajon">lo que le falta</div>}
+    />)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Juan Pérez'))
+    expect(alternar).toHaveBeenCalledWith('d1')
+  })
+
+  it('dibuja el cajon de la fila abierta, y solo de esa', () => {
+    render(<CertificationStatusTable
+      rows={[conductor, fila({ entity_id: 'd2', entity_name: 'Ana Soto', carrier_id: 'c9' })]}
+      group="driver"
+      openRowId="d1"
+      onToggleRow={vi.fn()}
+      renderDrawer={r => <div data-testid={`cajon-${r.entity_id}`}>falta</div>}
+    />)
+    expect(screen.getByTestId('cajon-d1')).toBeInTheDocument()
+    expect(screen.queryByTestId('cajon-d2')).not.toBeInTheDocument()
+  })
+
+  // Sin empresa activa no hay a donde cargarle nada: el backend resuelve la
+  // empresa por `driver_assignments` y no tiene ninguna. Darle cajon
+  // prometeria una accion que no se puede completar.
+  it('no abre cajon para quien no tiene empresa activa', () => {
+    const alternar = vi.fn()
+    render(<CertificationStatusTable
+      rows={[fila({ entity_id: 'd3', entity_name: 'Sin Asignar', carrier_id: null, carrier_name: null })]}
+      group="driver" onToggleRow={alternar} renderDrawer={() => <div>x</div>}
+    />)
+    fireEvent.click(screen.getByText('Sin Asignar'))
+    expect(alternar).not.toHaveBeenCalled()
+  })
+
+  it('la columna Empresa navega dentro del modulo', () => {
+    const irA = vi.fn()
+    render(<CertificationStatusTable rows={[conductor]} group="driver" onIrAEmpresa={irA} />)
+    fireEvent.click(screen.getByText('Transportes Sur Spa'))
+    expect(irA).toHaveBeenCalledWith('c9')
   })
 
   it('avisa cuando el conductor no tiene empresa asignada', () => {
@@ -97,16 +143,18 @@ describe('CertificationStatusTable — agrupada por conductor o vehículo', () =
 // El prop no llega al DOM, así que se verifica sobre el módulo: es la única
 // forma de que su borrado accidental haga ruido.
 describe('CertificationStatusTable · prefetch', () => {
-  it('ningún enlace a una ficha de empresa prefetchea', async () => {
+  // Este test nacio por un 429 real: la tabla muestra hasta 200 filas, Next
+  // prefetcheaba cada <Link> que entraba al viewport, cada prefetch ejecutaba
+  // el layout del dashboard y Supabase devolvia "Many requests" (104 llamadas
+  // a /user en un minuto). Ahora la tabla no enlaza a ningun lado, asi que la
+  // afirmacion correcta es MAS fuerte y cubre lo mismo: sin enlaces no hay
+  // prefetch, y de paso no hay fuga fuera del modulo.
+  it('la tabla no enlaza fuera del modulo', async () => {
     const fuente = await readFile(
       'components/compliance/CertificationStatusTable.tsx', 'utf-8',
     )
-    const enlaces = fuente.split('<Link').slice(1)
-    expect(enlaces.length).toBeGreaterThan(0)
-    for (const enlace of enlaces) {
-      const props = enlace.slice(0, enlace.indexOf('>'))
-      expect(props, `un <Link> quedó sin prefetch={false}: ${props.trim().slice(0, 80)}`)
-        .toContain('prefetch={false}')
-    }
+    expect(fuente).not.toContain('dashboard/carriers')
+    expect(fuente).not.toContain('<Link')
   })
+
 })
