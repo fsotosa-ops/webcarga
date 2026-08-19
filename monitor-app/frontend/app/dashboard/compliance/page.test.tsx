@@ -214,14 +214,19 @@ describe('Certificación — una lista, dos vistas', () => {
 // Certificacion y aterrizar en otro modulo obligaba a rehacer el filtro para
 // volver a la cola de trabajo — justo lo que el modulo vino a evitar.
 describe('CertificationPage — crear una empresa no saca del modulo', () => {
-  it('abre la empresa nueva DENTRO de Certificacion', async () => {
+  // Ronda de arreglo 1 (Task 5): cuando la vista Empresas abria el cajon en
+  // la misma pantalla, `?abierta=c-nueva` bastaba para dejar la fila
+  // recien creada abierta. Ahora que la fila navega a la ficha en vez de
+  // abrir el cajon (Task 4/5), ese parametro no abre nada — y la empresa
+  // recien creada probablemente ni figura en el embudo, que solo lista las
+  // que tienen pendientes. "No salir del modulo" nunca fue solo eso: es
+  // quedar donde se puede seguir trabajando, y eso es su ficha.
+  it('aterriza en la ficha de la empresa nueva, donde se le pueden cargar documentos', async () => {
     setup()
     fireEvent.click(await screen.findByRole('button', { name: /Nueva empresa/i }))
     fireEvent.click(await screen.findByTestId('crear-empresa-ok'))
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith(
-      expect.stringContaining('/dashboard/compliance?abierta=c-nueva'),
-    ))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard/compliance/c-nueva'))
   })
 
   it('no navega al modulo de Empresas', async () => {

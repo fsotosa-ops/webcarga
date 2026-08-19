@@ -16,7 +16,7 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
-import { enlaceAFilaAbierta, useFilaAbierta } from '@/hooks/useFilaAbierta'
+import { useFilaAbierta } from '@/hooks/useFilaAbierta'
 
 type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos'
 
@@ -141,11 +141,16 @@ function CertificationPageInner() {
 
   function handleCarrierCreated(created: CarrierCreateResult) {
     setNewCarrierOpen(false)
-    // Cuarto y ultimo punto de fuga al Empresas legacy. Crear una empresa
-    // desde Certificacion y aterrizar en otro modulo obligaba a rehacer el
-    // filtro para volver a la cola de trabajo, que es justo lo que este
-    // modulo vino a evitar.
-    router.push(enlaceAFilaAbierta('/dashboard/compliance', created.id))
+    // Cuarto y ultimo punto de fuga al Empresas legacy, y ronda de arreglo 1
+    // de la Task 5: cuando la vista Empresas abria el cajon en la misma
+    // pantalla, aterrizar en `?abierta=<id>` bastaba. Ahora que la fila
+    // navega a la ficha (Task 4) en vez de abrir el cajon, quedarse en la
+    // lista con ese parametro no abria nada: la empresa recien creada
+    // probablemente ni figura en el embudo, que solo lista las que tienen
+    // pendientes. El punto de "no salir del modulo" nunca fue solo eso — era
+    // quedar donde se puede seguir trabajando, y eso es la ficha, cargandole
+    // los documentos que todavia no tiene.
+    router.push(`/dashboard/compliance/${created.id}`)
   }
 
   const rows = statusQuery.data?.rows ?? []
