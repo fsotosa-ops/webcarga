@@ -124,9 +124,28 @@ completaron. El archivo remoto del transformador se verificó íntegro y válido
 es incómoda (la corrida buena y la mala sólo se diferencian por mi sync) pero mi archivo no puede
 explicar los otros tres — cada bloque carga sólo el suyo.
 
-**QUÉ MIRAR EN LA PRÓXIMA CORRIDA PROGRAMADA**, que es lo que decide:
-- **Completa** → era el transformador. Entender cómo un archivo tumbó cuatro pods ANTES de reaplicar.
-- **Falla en los mismos cuatro** → es el cluster; el cambio queda exonerado y se reaplica.
+**RESUELTO — ES EL CLUSTER, NO EL CÓDIGO.** La corrida 9371 (02:46 → 02:52 UTC) se lanzó **con el
+transformador ya revertido** y volvió a fallar: murió `qanalytics_agg_iansa_transformer`, un bloque
+que nunca se tocó, con la misma firma (`exit_code=1, reason=Error`, sin traceback). El de sodimac ni
+siquiera arrancó. **El cambio del transformador queda exonerado.**
+
+Los tres bloques que acompañaron la primera falla llevaban sin tocarse desde el 16 de mayo
+(`qanalytics_agg_nro_sap`, `qanalytics_cumplimiento_sap`) y el 7 de agosto (`agg_iansa`).
+
+Patrón en las dos corridas fallidas: **los transformadores arrancan casi simultáneos** (dentro de
+2-7 segundos) porque los scrapers terminan juntos. En la corrida exitosa 9362 arrancaron
+escalonados por más de un minuto. Hipótesis: el cluster no puede levantar varios pods a la vez.
+
+**NO HAY ACCESO A `kubectl`.** El cluster es **Mage Cloud** (`https://cluster.mage.ai/mageai-20874-
+development`), infraestructura administrada por Mage, no el GCP del proyecto — la API de Kubernetes
+Engine está deshabilitada en `webcarga-dev-493220`. El error real del pod sólo se ve desde la UI de
+Mage o pidiéndolo a su soporte, con los nombres de los jobs
+(`mageai-20874-development-job-block-287571` y los de la corrida 9366) y la hora.
+
+**Pendiente al retomar**: reaplicar el transformador desde
+`docs/sodimac_payload_transformer_con_fix_pendiente.py` cuando el cluster esté sano, y verificar las
+tres cosas de una: CSV de ~46 filas en vez de 320, `ESTADO` presente en los 41 viajes, y los tramos
+completos.
 
 **El fix del transformador está guardado íntegro** en
 `scratchpad/transformer_con_fix.py` de la sesión. El del scraper (#5) **sigue desplegado y no se
