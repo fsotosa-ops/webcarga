@@ -46,8 +46,13 @@ class MonitorAlertRulesPatch(BaseModel):
     dwell_yellow_min:       Optional[int]   = None
     dwell_orange_min:       Optional[int]   = None
     dwell_red_min:          Optional[int]   = None
+    # Horas que la TMS puede seguir corriendo sin traer un viaje antes de que
+    # se encienda "El TMS dejó de reportarlo". Configurable a propósito: el
+    # criterio de cuándo una ausencia cuenta como baja lo define operaciones
+    # (issue #3), y moverlo no puede exigir un despliegue.
+    tms_dropped_hours:      Optional[float] = None
 
-    @field_validator("stale_report_hours", "dwell_hours")
+    @field_validator("stale_report_hours", "dwell_hours", "tms_dropped_hours")
     @classmethod
     def hours_positive(cls, v: Optional[float]) -> Optional[float]:
         if v is not None and v <= 0:
@@ -338,7 +343,7 @@ async def delete_temperature_range(
 
 _ALERT_RULES_SELECT = (
     "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
-    "dwell_yellow_min, dwell_orange_min, dwell_red_min "
+    "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours "
     "FROM app.monitor_alert_rules WHERE id = 1"
 )
 

@@ -7,9 +7,9 @@ beforeEach(() => {
 })
 
 describe('usePinnedAlertSignals', () => {
-  it('defaults to dwell_severity/temp_out/stale when localStorage is empty', () => {
+  it('defaults to dwell_severity/temp_out/stale/tms_dropped when localStorage is empty', () => {
     const { result } = renderHook(() => usePinnedAlertSignals())
-    expect(result.current.pinned).toEqual(['dwell_severity', 'temp_out', 'stale'])
+    expect(result.current.pinned).toEqual(['dwell_severity', 'temp_out', 'stale', 'tms_dropped'])
   })
 
   it('togglePin adds and removes, persisting to localStorage', () => {
@@ -31,6 +31,6 @@ describe('usePinnedAlertSignals', () => {
   it('ignores corrupted localStorage and keeps the default', () => {
     localStorage.setItem('diario:alertas-pineadas', 'not json{')
     const { result } = renderHook(() => usePinnedAlertSignals())
-    expect(result.current.pinned).toEqual(['dwell_severity', 'temp_out', 'stale'])
+    expect(result.current.pinned).toEqual(['dwell_severity', 'temp_out', 'stale', 'tms_dropped'])
   })
 })

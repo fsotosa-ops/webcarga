@@ -7,7 +7,7 @@ import { formatDurationMinutes } from './stopStats'
  *  'off_time', 'late_arrival' y 'unassigned' quedaron descartados — el
  *  binario 'dwell' fue reemplazado por 'dwell_severity' (semáforo de 4
  *  niveles, Hito 14, ver dwellSeverity). */
-export type KpiId = 'stale' | 'temp_out' | 'temp_reported' | 'dwell_severity' | 'fleet_unmatched'
+export type KpiId = 'stale' | 'temp_out' | 'temp_reported' | 'dwell_severity' | 'fleet_unmatched' | 'tms_dropped'
 
 export type DwellSeverity = 'green' | 'yellow' | 'orange' | 'red'
 
@@ -20,6 +20,7 @@ export const DEFAULT_ALERT_RULES: MonitorAlertRules = {
   dwell_yellow_min:       60,
   dwell_orange_min:       90,
   dwell_red_min:          120,
+  tms_dropped_hours:      3,
 }
 
 function toMs(iso: string | null | undefined): number | null {
@@ -104,6 +105,18 @@ export function matchesKpi(
   now: number = Date.now(),
 ): boolean {
   switch (kpi) {
+    // "El TMS dejó de reportarlo" (Ronda 126). El booleano lo resuelve el
+    // backend (_tms_dropped, trips.py): el umbral vive en la base y la
+    // comparación necesita la última corrida de cada TMS, que no viaja en el
+    // Trip. Acá sólo se lee, igual que temp_status.
+    //
+    // No confundir con 'stale', abajo: aquélla compara contra ahora y por lo
+    // tanto se enciende también cuando el caído es nuestro scraper; ésta
+    // compara contra la última corrida de la propia TMS, así que sólo marca
+    // cuando la TMS sí corrió y no lo trajo.
+    case 'tms_dropped':
+      return trip.tms_dropped === true
+
     case 'stale': {
       if (!isOpenTrip(trip)) return false
       const t = toMs(trip.status_reported_at)
@@ -150,7 +163,7 @@ export function deriveKpis(
   rules: MonitorAlertRules = DEFAULT_ALERT_RULES,
   now: number = Date.now(),
 ): DiarioKpis {
-  const kpis: DiarioKpis = { stale: 0, temp_out: 0, temp_reported: 0, dwell_severity: 0, fleet_unmatched: 0 }
+  const kpis: DiarioKpis = { stale: 0, temp_out: 0, temp_reported: 0, dwell_severity: 0, fleet_unmatched: 0, tms_dropped: 0 }
   for (const t of trips) {
     for (const id of Object.keys(kpis) as KpiId[]) {
       if (matchesKpi(t, id, ranges, rules, now)) kpis[id]++

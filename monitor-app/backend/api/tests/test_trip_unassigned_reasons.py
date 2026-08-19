@@ -31,13 +31,40 @@ def make_client(pool):
     return TestClient(app)
 
 
+
+# ── Mock de /trips/meta por CONTENIDO, no por posición ───────────────────────
+#
+# Estos tests usaban un side_effect posicional (`[[], [], [], [], filas, []]`) y
+# índices fijos en call_args_list. Cada consulta nueva en el endpoint corría
+# todos los índices y los rompía sin que el comportamiento bajo prueba hubiera
+# cambiado — pasó al agregar `last_run_at` por TMS (Ronda 126). Despachar por un
+# fragmento del SQL deja los tests atados a lo que de verdad afirman.
+
+def meta_fetch(por_consulta: dict):
+    """side_effect de pool.fetch que devuelve según un fragmento del SQL."""
+    def _fetch(query, *args, **kwargs):
+        for fragmento, filas in por_consulta.items():
+            if fragmento in query:
+                return filas
+        return []
+    return _fetch
+
+
+def consulta_con(pool, fragmento: str) -> str:
+    """La consulta realmente ejecutada que contiene ese fragmento."""
+    for c in pool.fetch.call_args_list:
+        if fragmento in c.args[0]:
+            return c.args[0]
+    raise AssertionError(f"ninguna consulta de /meta contiene {fragmento!r}")
+
+
 def test_meta_exposes_active_unassigned_reasons_ordered_by_sort_order():
     pool = make_pool()
-    pool.fetch.side_effect = [
-        [], [], [], [],
-        [{"id": "pana", "label": "Pana"}, {"id": "sin_conductor", "label": "Sin conductor"}],
-        [],  # clients (bug 5.2)
-    ]
+    pool.fetch.side_effect = meta_fetch({
+        "DRIVER_REASON": [
+            {"id": "pana", "label": "Pana"}, {"id": "sin_conductor", "label": "Sin conductor"},
+        ],
+    })
     pool.fetchrow.return_value = None
     client = make_client(pool)
 
@@ -48,10 +75,9 @@ def test_meta_exposes_active_unassigned_reasons_ordered_by_sort_order():
     assert body["unassigned_reasons"] == [
         {"id": "pana", "label": "Pana"}, {"id": "sin_conductor", "label": "Sin conductor"},
     ]
-    reasons_call = pool.fetch.call_args_list[4]
-    assert "app.status_taxonomies" in reasons_call.args[0]
-    assert "DRIVER_REASON" in reasons_call.args[0]
-    assert "active = true" in reasons_call.args[0]
+    reasons_query = consulta_con(pool, "DRIVER_REASON")
+    assert "app.status_taxonomies" in reasons_query
+    assert "active = true" in reasons_query
 
 
 def test_patch_trip_persists_unassigned_reason_id():
@@ -79,14 +105,12 @@ def test_patch_trip_clears_unassigned_reason_id_with_empty_string():
 def test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxonomies():
     """Verifies GET /trips/meta reads from app.status_taxonomies (Tarea 4)."""
     pool = AsyncMock()
-    pool.fetch.side_effect = [
-        [],  # statuses (trip_statuses)
-        [{"id": "uuid-1", "label": "En bodega", "bg_color": "#fff", "text_color": "#000", "group": "otro"}],  # operational_states
-        [],  # alert_thresholds
-        [],  # temperature_ranges
-        [{"id": "uuid-2", "label": "Documentación vencida"}],  # unassigned_reasons
-        [],  # clients (bug 5.2)
-    ]
+    pool.fetch.side_effect = meta_fetch({
+        "OPERATIONAL_STATE": [
+            {"id": "uuid-1", "label": "En bodega", "bg_color": "#fff", "text_color": "#000", "group": "otro"},
+        ],
+        "DRIVER_REASON": [{"id": "uuid-2", "label": "Documentación vencida"}],
+    })
     pool.fetchrow.return_value = None  # monitor_alert_rules (optional)
     client = make_client(pool)
 
@@ -98,8 +122,8 @@ def test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxono
     assert body["unassigned_reasons"][0]["label"] == "Documentación vencida"
 
     # Verify the queries read from app.status_taxonomies (not old tables)
-    op_query = pool.fetch.call_args_list[1].args[0]
-    reason_query = pool.fetch.call_args_list[4].args[0]
+    op_query = consulta_con(pool, "OPERATIONAL_STATE")
+    reason_query = consulta_con(pool, "DRIVER_REASON")
 
     assert "app.status_taxonomies" in op_query, f"Expected app.status_taxonomies in op_query, got: {op_query}"
     assert "OPERATIONAL_STATE" in op_query, f"Expected OPERATIONAL_STATE domain filter in op_query, got: {op_query}"
@@ -113,10 +137,9 @@ def test_meta_exposes_clients_from_trips_with_normalized_shipper_join():
     public.shippers — y debe normalizar lower(trim(...)) igual que el
     filtro de cliente (bug 5.1), no comparar exacto."""
     pool = AsyncMock()
-    pool.fetch.side_effect = [
-        [], [], [], [], [],
-        [{"id": "s1", "name": "Walmart"}, {"id": "s2", "name": "Sodimac"}],  # clients
-    ]
+    pool.fetch.side_effect = meta_fetch({
+        "public.shippers": [{"id": "s1", "name": "Walmart"}, {"id": "s2", "name": "Sodimac"}],
+    })
     pool.fetchrow.return_value = None
     client = make_client(pool)
 
@@ -126,7 +149,7 @@ def test_meta_exposes_clients_from_trips_with_normalized_shipper_join():
     body = res.json()
     assert body["clients"] == [{"id": "s1", "name": "Walmart"}, {"id": "s2", "name": "Sodimac"}]
 
-    clients_query = pool.fetch.call_args_list[5].args[0]
+    clients_query = consulta_con(pool, "public.shippers")
     assert "lower(trim(sh.name)) = lower(trim(t.client_name))" in clients_query
     assert "sh.status = 'ACTIVE'" in clients_query
     assert "DISTINCT" in clients_query

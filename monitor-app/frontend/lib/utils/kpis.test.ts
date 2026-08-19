@@ -208,3 +208,36 @@ describe('temp_reported — los viajes que si reportan temperatura', () => {
     expect(matchesKpi(trip, 'temp_reported', [])).toBe(false)
   })
 })
+
+// ── "El TMS dejó de reportarlo" (Ronda 126) ──────────────────────────────────
+// El booleano lo resuelve el backend (_tms_dropped, trips.py) porque el umbral
+// vive en la base y la comparación necesita la última corrida de cada TMS. Acá
+// se verifica que el KPI lo lee y que no lo confunde con `stale`, que es la
+// señal contigua y mide otra cosa.
+describe('kpi tms_dropped', () => {
+  it('marca el viaje cuando el backend lo resolvió como dejado de reportar', () => {
+    const t = makeTrip('a', { tms_dropped: true })
+    expect(matchesKpi(t, 'tms_dropped', RANGES, RULES, NOW)).toBe(true)
+  })
+
+  it('no marca cuando el backend lo resolvió como false', () => {
+    expect(matchesKpi(makeTrip('b', { tms_dropped: false }), 'tms_dropped', RANGES, RULES, NOW)).toBe(false)
+  })
+
+  it('no marca cuando el campo no viene (API vieja): se apaga, no se asume', () => {
+    expect(matchesKpi(makeTrip('c'), 'tms_dropped', RANGES, RULES, NOW)).toBe(false)
+  })
+
+  it('es independiente de stale: un viaje puede estar dejado de reportar sin estar stale', () => {
+    // status_reported_at recién ahora → stale = false. Pero el backend marcó
+    // tms_dropped, que compara contra la última corrida de la TMS, no contra ahora.
+    const t = makeTrip('d', { status_reported_at: '2026-07-04T18:00:00Z', tms_dropped: true })
+    expect(matchesKpi(t, 'stale', RANGES, RULES, NOW)).toBe(false)
+    expect(matchesKpi(t, 'tms_dropped', RANGES, RULES, NOW)).toBe(true)
+  })
+
+  it('deriveKpis lo cuenta como una señal más', () => {
+    const trips = [makeTrip('a', { tms_dropped: true }), makeTrip('b', { tms_dropped: true }), makeTrip('c')]
+    expect(deriveKpis(trips, RANGES, RULES, NOW).tms_dropped).toBe(2)
+  })
+})

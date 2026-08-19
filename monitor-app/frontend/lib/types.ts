@@ -73,6 +73,9 @@ export type TmsSourceMeta = {
   label:      string
   bg_color:   string
   text_color: string
+  /** Última corrida de esta TMS (el status_reported_at más reciente de todos
+   *  sus viajes). null si la fuente todavía no tiene viajes. */
+  last_run_at?: string | null
 }
 
 export type OperationalStateMeta = {
@@ -229,6 +232,10 @@ export type MonitorAlertRules = {
   dwell_yellow_min:       number
   dwell_orange_min:       number
   dwell_red_min:          number
+  /** Horas que una TMS puede seguir corriendo sin traer un viaje antes de que
+   *  se marque como "dejó de reportarlo" (Ronda 126). Configurable porque el
+   *  criterio de negocio lo define operaciones — GitHub issue #3. */
+  tms_dropped_hours:      number
 }
 
 export type TripsMeta = {
@@ -422,6 +429,12 @@ export type Trip = {
    *  frontend acá, es una regla de negocio real, no de presentación).
    *  null = sin dato, sin cargo_type clasificable, o cargo_delivered=true. */
   temp_status:             'ok' | 'out_of_range' | null
+  /** El TMS siguió corriendo sin traer este viaje (Ronda 126). Resuelto en el
+   *  backend (_tms_dropped, trips.py) porque el umbral vive en la base.
+   *  Distinto de la señal `stale`: ésta compara contra la última corrida de
+   *  la propia TMS, no contra ahora, así que no se enciende cuando el que
+   *  está caído es nuestro scraper. Sólo viajes abiertos. */
+  tms_dropped?:           boolean
   stops:                  TripStop[]
   is_active:              boolean
   is_working:             boolean

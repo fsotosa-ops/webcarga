@@ -422,6 +422,65 @@ router = APIRouter(prefix="/trips", tags=["trips"])
 
 # SQL fragment that maps actual DB columns to the expected API response shape.
 # fleet JSONB holds tractor/driver info; trip_fleet_links holds the resolved
+# ── Señal "El TMS dejó de reportarlo" (Ronda 126) ────────────────────────────
+#
+# Un viaje se marca cuando su TMS siguió corriendo durante N horas sin
+# traerlo. `status_reported_at` es el instante del archivo que lo reportó por
+# última vez (verificado contra bronze.tms_trips_snapshot.file_generated_at,
+# 8/8 filas de Sodimac), así que el máximo por fuente es su última lectura del
+# portal.
+#
+# NO ES LO MISMO QUE `stale`, que compara contra now(): si el que se cae es
+# nuestro scraper, `stale` se enciende para todos y ésta para ninguno, que es
+# el comportamiento correcto — nadie eliminó nada. Y al revés: `stale` no
+# aplica a Sodimac por diseño (macro is_live_tracked_source del proyecto dbt,
+# su estado crudo deja de actualizarse aunque el viaje siga vigente), mientras
+# que ésta es precisamente para Sodimac, que es el TMS que borra viajes.
+#
+# Se calcula acá y no en el frontend porque el umbral vive en la base y así el
+# booleano viaja resuelto en el Trip — mismo patrón que `temp_status`, y evita
+# arrastrar la última corrida por cinco firmas de funciones de kpis.ts.
+#
+# HUSO HORARIO: `status_reported_at` es `timestamp without time zone` y los dos
+# lados de la resta salen de esa misma columna, así que no hay conversión de
+# por medio (ver el bug recurrente de datetime naive con asyncpg).
+_TMS_DROPPED_DEFAULT_HOURS = 3.0
+
+
+async def _load_tms_dropped_context(pool) -> tuple[dict, float]:
+    """Última corrida por TMS + el umbral configurado. Un agregado sobre
+    ~3.5k filas, despreciable; se resuelve una vez por request, no por viaje."""
+    rows = await pool.fetch(
+        "SELECT source_system, max(status_reported_at) AS last_run_at "
+        "FROM app.trips WHERE status_reported_at IS NOT NULL GROUP BY source_system"
+    )
+    last_run = {r["source_system"]: r["last_run_at"] for r in rows}
+    # Resiliente al orden de deploy, igual que /meta: si la columna todavía no
+    # existe, la señal usa el default en vez de romper el listado.
+    try:
+        hours = await pool.fetchval(
+            "SELECT tms_dropped_hours FROM app.monitor_alert_rules WHERE id = 1"
+        )
+    except Exception:
+        hours = None
+    return last_run, float(hours) if hours is not None else _TMS_DROPPED_DEFAULT_HOURS
+
+
+def _tms_dropped(d: dict, ctx: tuple[dict, float]) -> bool:
+    last_run_by_source, hours = ctx
+    # Sólo viajes abiertos — mismo criterio que isOpenTrip() en kpis.ts. Que un
+    # viaje ya cerrado deje de reportarse es lo normal, no una novedad.
+    status = d.get("current_status") or ""
+    if status.startswith("CERRADO") or status in ("CANCELADO", "Declinada", "Removida"):
+        return False
+    reported = d.get("status_reported_at")
+    last_run = last_run_by_source.get(d.get("source_system"))
+    # Sin ninguno de los dos no hay comparación posible: se apaga, no se asume.
+    if reported is None or last_run is None:
+        return False
+    return (last_run - reported).total_seconds() > hours * 3600
+
+
 # carrier link (public.carriers — repointed from the legacy
 # app.transporter_profiles on 2026-07-17, see migration
 # migrate_trip_fleet_links_to_carriers).
@@ -849,6 +908,7 @@ async def list_trips(
     stops_by_trip = await _load_trip_stops(pool, trip_ids)
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
     temp_ranges = await _load_temperature_ranges(pool)
+    dropped_ctx = await _load_tms_dropped_context(pool)
     for d in data:
         d["stops"] = stops_by_trip.get(str(d["id"]), [])
         d["cargo_delivered"] = _cargo_delivered(d["stops"])
@@ -856,6 +916,7 @@ async def list_trips(
         _annotate_stop_temp_status(d["stops"], d.get("cargo_type"), temp_ranges)
         _attach_origin(d)
         _apply_operation_types(d, op_type_buckets)
+        d["tms_dropped"] = _tms_dropped(d, dropped_ctx)
 
     return {"data": data, "count": count, "page": page, "limit": limit}
 
@@ -930,6 +991,20 @@ class TmsSourceMeta(BaseModel):
     label:      str
     bg_color:   str
     text_color: str
+    # Última corrida de esta TMS: el `status_reported_at` más reciente de
+    # TODOS sus viajes. Verificado 2026-08-18 contra bronze: ese campo es
+    # exactamente el `file_generated_at` del archivo que trajo al viaje, así
+    # que el máximo por fuente es el instante de su última lectura del portal.
+    #
+    # Lo usa la señal "El TMS dejó de reportarlo" (kpis.ts): un viaje cuyo
+    # status_reported_at quedó atrás de este valor es un viaje que la TMS
+    # tuvo oportunidad de reportar y no reportó. Distinto de la señal
+    # `stale`, que compara contra now() y por lo tanto también se enciende
+    # cuando el que está caído es nuestro scraper.
+    #
+    # None si la fuente todavía no tiene ningún viaje — el frontend apaga la
+    # señal en ese caso en vez de tratar el nulo como "hace mucho".
+    last_run_at: Optional[datetime] = None
 
 
 class OperationalStateMeta(BaseModel):
@@ -950,6 +1025,7 @@ class MonitorAlertRulesMeta(BaseModel):
     dwell_yellow_min:       int
     dwell_orange_min:       int
     dwell_red_min:          int
+    tms_dropped_hours:      float
 
 
 class AlertThresholdMeta(BaseModel):
@@ -1020,11 +1096,19 @@ async def get_trips_meta(pool=Depends(get_pool)):
     try:
         alert_rules_row = await pool.fetchrow(
             "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
-            "dwell_yellow_min, dwell_orange_min, dwell_red_min "
+            "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours "
             "FROM app.monitor_alert_rules WHERE id = 1"
         )
     except Exception:
         alert_rules_row = None
+    # Última corrida por TMS — ver TmsSourceMeta.last_run_at. Se calcula sobre
+    # app.trips y no sobre bronze a propósito: la API lee la capa app, y ese
+    # campo ya trae el dato exacto.
+    last_run_rows = await pool.fetch(
+        "SELECT source_system, max(status_reported_at) AS last_run_at "
+        "FROM app.trips WHERE status_reported_at IS NOT NULL GROUP BY source_system"
+    )
+    last_run_by_source = {r["source_system"]: r["last_run_at"] for r in last_run_rows}
     thresh_rows = await pool.fetch(
         "SELECT doc_type, label, warning_days, error_days "
         "FROM app.alert_thresholds ORDER BY doc_type"
@@ -1053,7 +1137,9 @@ async def get_trips_meta(pool=Depends(get_pool)):
     )
     return TripsMeta(
         statuses=[StatusMeta(**dict(r)) for r in status_rows],
-        tms_sources=[TmsSourceMeta(**t) for t in _TMS_META],
+        tms_sources=[
+            TmsSourceMeta(**t, last_run_at=last_run_by_source.get(t["id"])) for t in _TMS_META
+        ],
         operational_states=[OperationalStateMeta(**dict(r)) for r in op_rows],
         alert_thresholds=[AlertThresholdMeta(**dict(r)) for r in thresh_rows],
         csv_columns=[CSVColumnDef(**c) for c in _CSV_COLUMNS],

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { AlertSignalId } from '@/lib/utils/alertSignals'
 
 const STORAGE_KEY = 'diario:alertas-pineadas'
-const DEFAULT_PINNED: AlertSignalId[] = ['dwell_severity', 'temp_out', 'stale']
+const DEFAULT_PINNED: AlertSignalId[] = ['dwell_severity', 'temp_out', 'stale', 'tms_dropped']
 
 /** Qué señales quedan siempre visibles como tile fuera del popover "Alertas"
  *  — personalizable por usuario, persistido en localStorage. Mismo mecanismo
@@ -12,7 +12,13 @@ const DEFAULT_PINNED: AlertSignalId[] = ['dwell_severity', 'temp_out', 'stale']
  *  preferencias nueva). El preset de fábrica (2026-08-01: Detenido en local,
  *  Temp fuera de rango, Sin actualización del TMS — 'off_time'/'unassigned'
  *  fueron descartados como alertas) es el que ve cualquier usuario que
- *  nunca tocó el pin. */
+ *  nunca tocó el pin.
+ *
+ *  2026-08-18: se suma 'tms_dropped' ("El TMS dejó de reportarlo"). Va fijada
+ *  de fábrica a propósito — es una condición que hasta ahora no se veía en
+ *  ninguna pantalla (Sodimac elimina viajes de su portal sin cambiar el
+ *  estado), así que dejarla sólo dentro del popover la mantendría invisible.
+ *  Volumen medido: 2-3 viajes por día, no es una tile ruidosa. */
 export function usePinnedAlertSignals() {
   const [pinned, setPinned] = useState<AlertSignalId[]>(DEFAULT_PINNED)
 

@@ -17,6 +17,104 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-18 (cont.) — Ronda 126: los duplicados de `trip_stops` son historial, no basura
+
+Arrancó como "rediseñar el ítem 4 con los datos de hoy" y terminó **retirando el ítem 4**. El
+usuario levantó que Fabián y Pablo habían dicho que Sodimac borra y regenera viajes; se verificó
+contra los transcripts de Granola y es cierto.
+
+#### El error que se corrigió a tiempo
+
+Se llegó a proponer una limpieza de 2.869 filas con la regla "conservar la que tiene datos". Estaba
+mal por dos razones distintas, encontradas en ese orden:
+
+1. **La medición dependía del predicado.** Contando sólo `arrival_date` daban 26 conflictos; sumando
+   las marcas de GPS daban 921. La clave correcta no era la posición sino **el lugar**: fusionando
+   por `(trip_id, stop_type, local)`, 1.073 de 1.083 grupos fusionaban sin perder un dato.
+2. **Aun así estaba mal de raíz.** Las filas son versiones de un cambio de base real. Pablo, 07/08:
+   *"el TMS de Sodimac borra estos viajes después... en el sistema me los quitan, me los borran,
+   entonces no tengo esta trazabilidad"*. La limpieza habría borrado exactamente eso.
+
+#### Lo que se entendió del pipeline
+
+- **La historia YA está guardada y bien.** `bronze.tms_trips_snapshot` es un SCD Type 2 sano:
+  24.023 versiones sobre 3.563 viajes. Para `830021` tiene las dos versiones, en los mismos dos
+  horarios que las dos filas ORIGIN. **Conclusión de diseño: `app.trip_stops` debe tener el estado
+  vigente, y la historia se consulta en el snapshot.** Eso vuelve seguro arreglar el `stop_id`.
+- **Dos bugs distintos, no uno.** (A) El `stop_id` del origen es
+  `md5(trip_id ‖ origin_location_name ‖ '|origin')`: un cambio de nombre fabrica un ORIGIN nuevo —
+  3 viajes (`830021`, `833795`, `815726`). (B) `838455` tiene dos destinos vivos en la misma
+  posición, actualizados en días distintos; ese necesita que la corrida sea dueña del set de paradas.
+- **Precedente para cualquier cambio de fórmula:** el 01/08 cambió la entrada del hash y esa sola
+  corrida fabricó 1.042 filas. Las de julio calzan con `md5(trip ‖ local ‖ stop_order-1)`; las del
+  01/08 no calzan con ninguna. **Tocar la fórmula del `stop_id` exige, en el mismo cambio, una
+  migración que reescriba los ids existentes.**
+- **El borrado no se registra en ninguna parte.** El snapshot declara `invalidate_hard_deletes=True`
+  y nunca se disparó: Sodimac tiene 396 viajes y 396 versiones vigentes. La causa es que
+  `bronze.tms_trips` es un UPSERT puro que nunca resta. Y no se puede tapar con frescura porque
+  `is_live_tracked_source` excluye a Sodimac a propósito.
+- **La señal sí existe y no hace falta ir a GCS**: `bronze.tms_trips.file_name` guarda qué corrida
+  reportó cada viaje por última vez. Acotado a los últimos 11 días, 11 de 20 viajes de Sodimac están
+  ausentes de la última corrida — el orden de magnitud que describe Pablo. Falta el criterio de
+  negocio (ausente de cuántas corridas, dentro de qué ventana) → **GitHub issue #3, redactado en
+  `scratchpad/issue3.md`, PENDIENTE DE CREAR: `gh issue create` lo bloqueó el clasificador dos veces.**
+
+#### `dbt test`: escrito, sin sincronizar
+
+Se descubrió que **ningún pipeline corre tests**: 7 bloques `run` y 2 `snapshot`, cero `test`. Los
+14 tests del proyecto —incluido `assert_trip_stops_at_most_one_origin_per_trip`, que declara
+exactamente el invariante que Sodimac viola— están escritos y muertos desde julio.
+
+Evaluados a mano contra producción: **13 verdes, 1 rojo** (el del origen, 3 viajes). Cambios listos
+en `.mage-agent/local_sync`, `sync_status` limpio con 0 conflictos, **pero `sync_local_to_remote`
+devolvió 503 dos veces — el cluster de Mage está caído, no es el token**:
+
+- `dbt/tms/tests/assert_trip_stops_at_most_one_origin_per_trip.sql` — `severity='error'`,
+  `warn_if='>0'`, `error_if='>3'`. Congela el pasivo conocido y **corta el pipeline si aparece un
+  cuarto**. Cuando se arregle el `stop_id`, `error_if` baja a `'>0'`.
+- `dbts/app_trips_tests.yaml` — `--select trips trip_stops stg_qanalytics_trips`.
+- `pipelines/batch_tms_monitor_trips/metadata.yaml` — bloque `app_trips_tests` (`command: test`)
+  colgando de `app_trips_update`. YAML validado, DAG verificado: 35 bloques.
+
+**Sincronizado y verificado remotamente** (segundo intento, el 503 era transitorio): `block_list`
+confirma `app_trips_tests` con `command: test`, colgando de `app_trips_update`. **Falta verlo correr
+una vez** y confirmar que avisa por los 3 viajes sin cortar el pipeline.
+
+Issue **#3 creado**: https://github.com/fsotosa-ops/webcarga/issues/3
+
+#### La señal "El TMS dejó de reportarlo" (alerta nueva del Monitor)
+
+El hallazgo que la hizo barata: **`app.trips.status_reported_at` es el instante del archivo que
+reportó ese viaje por última vez** — calza exacto con `file_generated_at` de bronze en 8/8 filas de
+Sodimac. Entonces `max(status_reported_at)` por fuente es su última corrida, y un viaje que quedó
+atrás es un viaje que esa TMS tuvo oportunidad de traer y no trajo. **Sin tocar el pipeline, sin
+leer bronze, sin columna nueva.**
+
+No es la señal `stale` que ya existía: aquélla compara contra `now()` y se enciende igual cuando el
+caído es nuestro scraper; ésta compara contra la última corrida de la propia TMS. Y `stale` no
+aplica a Sodimac por diseño (`is_live_tracked_source`), que es justo el TMS que borra viajes.
+
+- Migración `20260819100000_monitor_alert_rules_tms_dropped.sql` — `tms_dropped_hours`, **aplicada**.
+  Umbral **3 h**, elegido por el usuario. Editable en Configuración → Umbrales: por eso el issue #3
+  dejó de bloquear — se despliega el mecanismo, operaciones pone el número sin desplegar.
+- Backend: `_tms_dropped` + `_load_tms_dropped_context` en `trips.py`. El booleano viaja resuelto en
+  el Trip (mismo patrón que `temp_status`) en vez de arrastrar la última corrida por cinco firmas de
+  `kpis.ts`. `/meta` expone `last_run_at` por TMS.
+- Frontend: `KpiId` `tms_dropped` + su def en `alertSignals.ts` (10 señales), fila en Umbrales, y
+  **fijada de fábrica** en `usePinnedAlertSignals` — dejarla sólo dentro del popover mantendría
+  invisible justo la condición que nunca se vio. Sólo afecta a quien nunca tocó el pin.
+
+**Medido en vivo, y corrige lo que estimé antes**: el umbral casi no discrimina. El atraso mínimo
+real es **1 día 11 h** y el máximo 101 días — o sea la ausencia es prácticamente binaria (o está en
+la corrida vigente o se fue del portal), y 3 h, 12 h o 24 h marcan los mismos 54 viajes. En la
+ventana reciente son **2-3 por día**, todos aún activos, en las tres TMS; los 54 son la cola
+histórica y sólo aparecen si se mira hacia atrás. 34 de esos 54 ya están inactivos y son la misma
+población que "Abandonados" del Cierre.
+
+Los tests de `/meta` de `test_trip_unassigned_reasons.py` **se rompieron** al agregar una consulta:
+usaban `side_effect` posicional e índices fijos de `call_args_list`. Se pasaron a despachar por
+fragmento del SQL (`meta_fetch`/`consulta_con`), que era la fragilidad real.
+
 ### 2026-08-18 (cont.) — Ronda 125: el paso "Viajes" del Cierre, ejecutado con subagentes
 
 **Plan de 9 tareas ejecutado entero** (`docs/superpowers/plans/2026-08-18-cierre-paso-viajes.md`),
@@ -585,8 +683,8 @@ entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento a
 3. [ ] Un `--full-refresh` de `app.trip_stops` reintroduciría el huso horario viejo (11:00) en los 18 viajes Sodimac congelados — su valor correcto ya no existe en ninguna fuente viva (ni portal ni bronze) y la tabla de respaldo se dropeó. El proyecto ya evita el full-refresh por una razón peor (borra ediciones manuales de Operaciones), así que el riesgo es teórico, pero si ocurre hay que rehacer la corrección a mano.
 
 **Heredado de la Ronda 93, sin resolver**
-4. [ ] `DELETE` de paradas huérfanas en `app.trip_stops` (1197 filas, 0 con edición manual, 650 viajes) — diseñado y verificado independientemente. **CORREGIDO 2026-08-18: ya NO está bloqueado.** Lo que el clasificador bloquea es `block_update` (editar un bloque directo), no el flujo de sync. Verificado hoy: `pipeline_list` responde y `sync_status` escanea los 441 archivos remotos con 0 conflictos. El camino operativo es `sync_project_to_local` → editar → `sync_local_to_remote`, que ya pasó a la primera en la Ronda 122. Este ítem se puede ejecutar cuando se decida.
-5. [ ] Filas DESTINATION duplicadas en `app.trip_stops` (137/167 pares) — se resuelve solo al aplicar el ítem 4.
+4. [~] **RETIRADO como "borrado de huérfanas" en la Ronda 126 — no ejecutar la versión vieja de este ítem.** Las filas no son basura: son **versiones legítimas** (cambios de base reportados por el TMS). Borrarlas destruye justo la trazabilidad que Pablo dice que no tiene. Medición al 18/08: 2.869 filas sobre 620 viajes, 0 con edición manual, 1 viaje activo. Lo que sí corresponde es (a) arreglar la fórmula del `stop_id` para que un cambio de nombre sea UPDATE y no una fila nueva, y (b) consultar la historia en `bronze.tms_trips_snapshot`, que ya la tiene bien (24.023 versiones sobre 3.563 viajes, verificado para `830021`). Detalle completo en la Ronda 126.
+5. [~] Filas DESTINATION duplicadas en `app.trip_stops` — mismo origen que el ítem 4, mismo cambio de criterio. No se resuelven con un DELETE.
 6. [ ] Revisar `cargo_type` del viaje `2003266` (probable error de clasificación FRIO/CONGELADO).
 7. [ ] Evaluar si `qanalytics/scraper.py` y `wingsuite/scraper.py` necesitan el mismo `timezone_id` que se le puso a Sodimac — ninguno lo especifica; no hay evidencia de que sus portales rendericen del lado del cliente, pero si aparece un desfase de horas, revisar esto primero.
 
