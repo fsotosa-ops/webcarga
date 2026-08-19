@@ -41,14 +41,40 @@ mal por dos razones distintas, encontradas en ese orden:
   24.023 versiones sobre 3.563 viajes. Para `830021` tiene las dos versiones, en los mismos dos
   horarios que las dos filas ORIGIN. **Conclusión de diseño: `app.trip_stops` debe tener el estado
   vigente, y la historia se consulta en el snapshot.** Eso vuelve seguro arreglar el `stop_id`.
-- **Dos bugs distintos, no uno.** (A) El `stop_id` del origen es
-  `md5(trip_id ‖ origin_location_name ‖ '|origin')`: un cambio de nombre fabrica un ORIGIN nuevo —
-  3 viajes (`830021`, `833795`, `815726`). (B) `838455` tiene dos destinos vivos en la misma
-  posición, actualizados en días distintos; ese necesita que la corrida sea dueña del set de paradas.
+- **El diagnóstico del origen doble estuvo MAL TRES VECES antes de resolverse.** Se dijo, en orden:
+  (1) "es la misma bodega renombrada" — falso, 256 y 257 son códigos de local distintos, lo desarmó
+  el usuario; (2) "es un cambio de base real" — falso, un viaje finalizado el 15/07 seguía
+  alternando origen en agosto; (3) "el portal devuelve un valor inestable" — falso también.
+  **La respuesta salió de bajar el CSV real de GCS**, no de razonar sobre la base. Lección:
+  cuando el diagnóstico se cae dos veces, ir al artefacto de origen en vez de hipotetizar la tercera.
 - **Precedente para cualquier cambio de fórmula:** el 01/08 cambió la entrada del hash y esa sola
   corrida fabricó 1.042 filas. Las de julio calzan con `md5(trip ‖ local ‖ stop_order-1)`; las del
   01/08 no calzan con ninguna. **Tocar la fórmula del `stop_id` exige, en el mismo cambio, una
   migración que reescriba los ids existentes.**
+
+#### Los tres defectos reales de Sodimac (issues #4, #5, #6)
+
+Del CSV real del portal, verificado en tres archivos consecutivos:
+
+- **#4 · Un viaje con dos estados borra el estado de todo el lote.** El transformador clasifica cada
+  columna con `.max()` sobre TODOS los viajes del archivo; un viaje con dos `ESTADO` saca esa
+  columna del metadata de los 41. Medido: archivo del 18/08 21:22 → **41 de 41 sin estado**; el de
+  las 21:32 → 0. Histórico: `ESTADO` clasificado como columna de parada en 115 versiones, pero
+  realmente difiere en 3, sobre 2 viajes. **`trip_status` NO está en `merge_exclude_columns`**, así
+  que un nulo pisa el valor bueno. Se auto-sana en la corrida siguiente, por eso nunca se vio.
+- **#5 · El scraper duplica 7 a 1.** 320 filas para 46 reales, idéntico en 3 archivos.
+  `_scrape_table` hace `querySelectorAll` sobre TODO el documento en cada paginación y `append` sin
+  deduplicar. La aritmética cierra exacta: `23×10 + 2×(1+…+9) = 320`.
+- **#6 · Los viajes de varias conexiones pierden una pata.** "link 2 conexiónes" son DOS PATAS y el
+  portal lista una fila por pata, con orígenes distintos y **códigos de local distintos**. 5 viajes
+  hoy; 197 versiones históricas con más de un origen, 40 con más de un destino.
+
+**El arreglo del `stop_id` quedó DESCARTADO**: habría forzado a un solo origen justo donde hay dos
+de verdad. El comentario del test se corrigió en Mage para que no siga desinformando.
+
+**El test `assert_trip_stops_at_most_one_origin_per_trip` afirma un invariante que NO se cumple**
+para viajes de varias patas. Se deja porque marca pérdida real de información, pero hay que
+revisarlo al resolver el #6.
 - **El borrado no se registra en ninguna parte.** El snapshot declara `invalidate_hard_deletes=True`
   y nunca se disparó: Sodimac tiene 396 viajes y 396 versiones vigentes. La causa es que
   `bronze.tms_trips` es un UPSERT puro que nunca resta. Y no se puede tapar con frescura porque
