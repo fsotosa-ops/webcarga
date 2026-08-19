@@ -353,7 +353,7 @@ export default function Sidebar({ role }: SidebarProps) {
       </aside>
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
+      <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
         {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = href === mobileActiveHref
             && (href !== '/dashboard/operations/monitor' || pathname === href)

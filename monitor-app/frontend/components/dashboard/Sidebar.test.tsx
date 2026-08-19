@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -85,6 +85,21 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
 
     const sinClasificar = screen.getAllByRole('link', { name: /sin clasificar/i })[0]
     expect(sinClasificar).not.toHaveTextContent('0')
+  })
+
+  // El bottom nav mobile no tiene el concepto de grupo desplegable: aplana
+  // NAV_GROUPS a mano (ver comentario junto a MOBILE_NAV_ITEMS). Sin este
+  // test, volver a listar Monitor "a mano" en vez de aplanar los grupos deja
+  // a Certificacion afuera del mobile EN SILENCIO — nada se pone rojo.
+  it('en mobile las dos entradas de Certificación existen', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+
+    const navMobile = await screen.findByRole('navigation', { name: /móvil/i })
+    expect(within(navMobile).getByRole('link', { name: /^empresas$/i }))
+      .toHaveAttribute('href', '/dashboard/compliance')
+    expect(within(navMobile).getByRole('link', { name: /sin clasificar/i }))
+      .toHaveAttribute('href', '/dashboard/compliance/inbox')
   })
 
   it('no quedan Bandeja ni Pendientes como entradas propias', async () => {
