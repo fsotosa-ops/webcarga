@@ -113,6 +113,15 @@ describe('TriageFileTable — colisiones', () => {
     expect(screen.getByText(/ya está en la cola/i)).toBeInTheDocument()
   })
 
+  // `null` es "no lo sé" (el item entró sin hash), no "no está duplicado":
+  // afirmar "sin colisión" sobre algo que nadie pudo mirar es la mitad del
+  // defecto que la señal vino a arreglar. La pantalla se calla.
+  it('sin hash no afirma que no hay colisión: se calla', () => {
+    setup({ rows: [fila({ mismo_contenido: null, mismo_casillero: 1, casillero_ocupado: false })] })
+    expect(screen.queryByText(/ya está en la cola/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   // La colisión que las window functions NO pueden ver: el ocupante ya fue
   // confirmado y salió de la cola, así que `mismo_casillero` sigue diciendo 1.
   // Confirmar esta fila reemplaza un documento que hoy es válido.

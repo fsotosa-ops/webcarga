@@ -84,7 +84,11 @@ class QueueRow(BaseModel):
     # uno"; mismo destino -> "dos archivos distintos reclaman el casillero,
     # elige cuál".
     mismo_casillero: int = 1
-    mismo_contenido: int = 1
+    # `None` = NO SE SABE (el item entro sin `content_sha256`), que no es lo
+    # mismo que 1 = "no esta duplicado". Un valor con dos sentidos es el
+    # defecto que este modulo ya tuvo cinco veces; aca la pantalla se calla en
+    # vez de afirmar que no hay colision sobre algo que nadie pudo mirar.
+    mismo_contenido: Optional[int] = None
     # El requisito destino YA tiene un archivo vigente. Confirmar este item lo
     # reemplaza — el anterior queda recuperable (`replaced_storage_path`), pero
     # quien confirma tiene que saberlo ANTES. Es distinto de `mismo_casillero`:

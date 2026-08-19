@@ -538,6 +538,37 @@ def test_el_sql_de_la_cola_no_agrupa_los_sin_destino():
     assert "i.content_sha256 IS NOT NULL" in _SQL_COLA
 
 
+def test_mismo_contenido_dice_no_lo_se_en_vez_de_afirmar_que_no_hay_colision():
+    """El cuarto valor con dos significados.
+
+    `1` significaba "este archivo no esta duplicado en la cola" **y** "este
+    archivo no tiene hash, asi que no puedo saberlo". Con la senal escrita asi,
+    los 65 items historicos sin hash se listaban como "sin colision" sobre algo
+    que nadie miro nunca. Es la misma forma que ya se resolvio para
+    `mismo_casillero` con `casillero_ocupado`: el valor no puede cargar dos
+    sentidos.
+
+    `None` es "no lo se", y la pantalla se calla en vez de afirmar. Ojo con la
+    asimetria: `mismo_casillero` SI puede quedarse en 1 cuando no hay destino,
+    porque ahi "sin destino" es literalmente "no reclama ningun casillero" —
+    un solo sentido.
+    """
+    from app.routers.document_ingest import _SQL_COLA
+
+    rama = _SQL_COLA.split("AS mismo_contenido")[0].split("CASE")[-1]
+    assert "ELSE NULL" in rama, "mismo_contenido volvio a afirmar 1 sobre un item sin hash"
+
+    pool = AsyncMock()
+    pool.fetchval.return_value = 1
+    pool.fetch.return_value = [_queue_row(mismo_contenido=None)]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/document-ingest/items")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["rows"][0]["mismo_contenido"] is None
+
+
 # ── Bandeja: el casillero que ya tiene dueño (Task 2b) ──────────────────────
 #
 # `mismo_casillero`/`mismo_contenido` cuentan sobre la cola: sólo ven items

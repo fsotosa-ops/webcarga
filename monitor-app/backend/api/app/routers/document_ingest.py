@@ -51,9 +51,15 @@ _SQL_COLA = """
            CASE WHEN i.entity_id IS NOT NULL AND i.requirement_id IS NOT NULL
                 THEN count(*) OVER (PARTITION BY i.entity_id, i.requirement_id)
                 ELSE 1 END                            AS mismo_casillero,
+           -- `ELSE NULL` y no `ELSE 1`: sin hash NO SE SABE si esta
+           -- duplicado, y decir 1 seria afirmar que no lo esta. Era el mismo
+           -- valor con dos sentidos que ya se resolvio para `mismo_casillero`
+           -- con `casillero_ocupado`. La asimetria con su vecina de arriba es
+           -- real: ahi "sin destino" significa literalmente "no reclama
+           -- ningun casillero", un solo sentido, asi que el 1 esta bien.
            CASE WHEN i.content_sha256 IS NOT NULL
                 THEN count(*) OVER (PARTITION BY i.content_sha256)
-                ELSE 1 END                            AS mismo_contenido,
+                ELSE NULL END                         AS mismo_contenido,
            -- La colision que las window functions NO pueden ver: el ocupante
            -- ya fue confirmado, salio de la cola y no esta en ninguna
            -- particion. Es justo el caso destructivo — confirmar este item

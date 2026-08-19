@@ -95,6 +95,36 @@ def build_documents_zip(supabase, records: list[dict]) -> bytes:
     return buf.getvalue()
 
 
+def content_sha256_of_stored_file(supabase, storage_path: str | None) -> str | None:
+    """El hash del contenido de un blob que YA está en Storage.
+
+    Existe para el camino de reasignar un documento a la bandeja: ahí no hay
+    un UploadFile que leer —sólo viaja la referencia— y sin el hash el item
+    entra a la cola sin él, así que `mismo_contenido` no puede ver que el
+    archivo devuelto y su gemelo recién subido son el mismo byte a byte.
+
+    Se lee del blob y no del `metadata` del compliance_record **a propósito**:
+    los registros históricos no lo tienen guardado en ninguna parte, y el blob
+    sí está siempre. Es una operación manual y de a un archivo (tope de 7MB),
+    así que la descarga es aceptable.
+
+    Devuelve `None` si no se pudo leer: "no lo sé" es una respuesta válida de
+    esta función, y la señal de la cola la sabe distinguir de "no hay
+    colisión". Nunca hace fallar a quien la llama — mover la referencia de un
+    documento mal asignado importa más que la señal.
+    """
+    if not storage_path:
+        return None
+    try:
+        data = supabase.storage.from_(COMPLIANCE_BUCKET).download(storage_path)
+        # El hash va DENTRO del try: que Storage devuelva algo que no son
+        # bytes es otra forma de "no lo pude leer", y tampoco puede voltear
+        # una reasignación.
+        return hashlib.sha256(data).hexdigest() if data else None
+    except Exception:
+        return None
+
+
 def delete_document_version(supabase, storage_path: str | None) -> None:
     """Borra el blob de Storage. No falla si el objeto ya no existe (idempotente
     — el borrado a nivel de app.py es lo que importa, no el estado de Storage)."""

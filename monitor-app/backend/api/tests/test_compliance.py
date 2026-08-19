@@ -1382,6 +1382,62 @@ def test_reassign_to_tray_returns_it_unclassified():
     assert "UNMATCHED" in todo_sql
 
 
+def test_reassign_to_tray_lleva_el_hash_del_archivo():
+    """El item que vuelve a la bandeja tiene que entrar con su `content_sha256`.
+
+    Sin el, `mismo_contenido` no puede ver el caso destructivo: un archivo
+    devuelto a la bandeja y su gemelo byte a byte recien subido se listaban los
+    dos como "sin colision" y nada iba a poder detectarlo nunca. El hash sale
+    del blob que YA esta en storage — es una operacion manual y de a un
+    archivo, y leerlo ahi funciona tambien para los items historicos, que no
+    tienen el hash guardado en ninguna parte.
+    """
+    import hashlib
+
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [_record_with_file()]
+    conn.fetchval.return_value = "batch-9"
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = b"contenido"
+    client = make_client(pool, supabase)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={"to_tray": True})
+
+    assert res.status_code == 200, res.text
+    insert = next(
+        c for c in conn.execute.call_args_list
+        if "document_ingest_items" in str(c.args[0])
+    )
+    assert "content_sha256" in insert.args[0]
+    assert hashlib.sha256(b"contenido").hexdigest() in insert.args
+
+
+def test_reassign_to_tray_sin_poder_leer_el_blob_no_inventa_un_hash():
+    """Si el blob no se puede leer, el item entra con el hash en NULL — que es
+    "no lo se" y hace que la pantalla se calle— y la reasignacion NO falla:
+    mover la referencia de un documento mal asignado importa mas que la
+    senal de colision."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [_record_with_file()]
+    conn.fetchval.return_value = "batch-9"
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.side_effect = Exception("no existe")
+    client = make_client(pool, supabase)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={"to_tray": True})
+
+    assert res.status_code == 200, res.text
+    insert = next(
+        c for c in conn.execute.call_args_list
+        if "document_ingest_items" in str(c.args[0])
+    )
+    assert insert.args[-1] is None
+
+
 def test_reassign_requires_a_destination():
     pool = AsyncMock()
     client = make_client(pool)

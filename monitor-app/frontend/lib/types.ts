@@ -1349,7 +1349,11 @@ export type QueueRow = {
    *  borra uno"; mismo destino -> "dos archivos distintos reclaman el
    *  casillero, elige cuál". */
   mismo_casillero:            number
-  mismo_contenido:            number
+  /** `null` = NO SE SABE: el item entró sin `content_sha256`, así que no hay
+   *  con qué compararlo. No es 1 ("no está duplicado"); un valor con dos
+   *  sentidos fue el defecto que este módulo ya tuvo cinco veces, y acá la
+   *  pantalla se calla en vez de afirmar que no hay colisión. */
+  mismo_contenido:            number | null
   /** El requisito destino YA tiene un archivo vigente (mira
    *  `compliance_records`, no la cola). Confirmar este item lo reemplaza.
    *  Distinta de `mismo_casillero`: esa señal sólo ve items que siguen sin

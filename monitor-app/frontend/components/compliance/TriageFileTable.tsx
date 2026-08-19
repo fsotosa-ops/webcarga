@@ -147,7 +147,9 @@ export function TriageFileTable({
  *  las tres a la vez:
  *
  *  - `mismo_contenido > 1`: el mismo archivo entró más de una vez a la
- *    cola. El operador borra uno.
+ *    cola. El operador borra uno. En `null` no se sabe —el item entró sin
+ *    hash— y entonces no se dice nada: afirmar "sin colisión" sobre algo que
+ *    nadie pudo mirar es la mitad del defecto que la señal vino a arreglar.
  *  - `mismo_casillero > 1`: dos archivos DISTINTOS reclaman el mismo
  *    requisito destino. El operador elige cuál.
  *  - `casillero_ocupado`: mira `compliance_records`, no la cola. El
@@ -158,7 +160,7 @@ export function TriageFileTable({
  *    repararlo después). */
 function Colisiones({ row }: { row: QueueRow }) {
   const avisos: string[] = []
-  if (row.mismo_contenido > 1) avisos.push('Este archivo ya está en la cola')
+  if (row.mismo_contenido != null && row.mismo_contenido > 1) avisos.push('Este archivo ya está en la cola')
   if (row.mismo_casillero > 1) avisos.push(`${row.mismo_casillero} archivos reclaman el mismo casillero`)
   if (row.casillero_ocupado) avisos.push('Este requisito ya tiene un documento — confirmar lo reemplaza')
 
