@@ -1,15 +1,13 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Download, Inbox, Loader2, Plus } from 'lucide-react'
+import { Download, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
-import { documentIngestApi } from '@/lib/api/documentIngest'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
 import { CertificationFunnel } from '@/components/compliance/CertificationFunnel'
 import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
-import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
@@ -20,23 +18,23 @@ import { Estado } from '@/components/ui/Estado'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { enlaceAFilaAbierta, useFilaAbierta } from '@/hooks/useFilaAbierta'
 
-type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos' | 'documentos'
+type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos'
 
 /** Las cuatro agrupaciones miran los MISMOS pendientes, agrupados distinto: el
  *  control no crea vistas nuevas y no hay dos listas que sincronizar (§4).
  *
- *  `documentos` no está acá a propósito: la bandeja no es una quinta
- *  agrupación. Son archivos que todavía no pertenecen a nada, así que vive
- *  detrás de su propio botón, con contador. Sigue viajando en `?vista=` para
- *  no romper los enlaces que ya existen. */
+ *  La bandeja ya no es una vista de este conmutador (Task 5): tiene ruta
+ *  propia en `/dashboard/compliance/inbox` y entrada propia en el sidebar,
+ *  porque es otro trabajo — archivos sin destino, no requisitos sin
+ *  documento. `?vista=documentos` sigue reconociéndose acá abajo, pero sólo
+ *  para redirigir a la ruta nueva: es lo que hace que un enlace guardado no
+ *  quede roto. */
 const AGRUPACIONES: { id: Vista; label: string; group: CertificationGroup }[] = [
   { id: 'empresas',    label: 'Empresa',   group: 'carrier' },
   { id: 'conductores', label: 'Conductor', group: 'driver' },
   { id: 'vehiculos',   label: 'Vehículo',  group: 'asset' },
   { id: 'requisitos',  label: 'Requisito', group: 'requirement' },
 ]
-
-const VISTA_BANDEJA: Vista = 'documentos'
 
 function csvEscape(v: string) {
   return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
@@ -70,22 +68,35 @@ export default function CertificationPage() {
   )
 }
 
-/** Módulo Certificación — una sola lista, dos maneras de mirarla.
+/** Módulo Certificación — una sola lista de empresas, cuatro maneras de
+ *  agruparla.
  *
- *  Antes esto eran tres cosas distintas en el menú: la sábana de pendientes,
- *  la bandeja de sin clasificar y Empresas. Son vistas del mismo objeto —el
- *  estado documental de una empresa— y tenerlas separadas obligaba a cruzarlas
- *  de memoria. Acá "Por empresa" responde cómo va cada una, y "Por documento"
- *  es la cola transversal, útil cuando llega una tanda grande y no importa de
- *  qué empresa es. */
+ *  La bandeja de sin clasificar dejó de ser una de esas maneras (Task 5):
+ *  vivió acá adentro un tiempo porque se la trató como una vista más del
+ *  mismo objeto, y no lo es — es otro objeto (archivos sin destino, no
+ *  requisitos sin documento). Ahora tiene ruta y entrada de sidebar propias;
+ *  lo único que queda de esa decisión es el redirect de abajo, para que un
+ *  enlace guardado con `?vista=documentos` no quede roto. */
 function CertificationPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
   const param = searchParams.get('vista')
-  const esVistaConocida = param === VISTA_BANDEJA || AGRUPACIONES.some(v => v.id === param)
+
+  /** Enlace viejo a la bandeja: se conserva el reconocimiento del parámetro
+   *  únicamente para reenviar a su ruta nueva. `replace` y no `push`: llegar
+   *  por un enlace guardado no es un paso de navegación que el botón atrás
+   *  deba reponer. */
+  useEffect(() => {
+    if (param === 'documentos') router.replace('/dashboard/compliance/inbox')
+  }, [param, router])
+
+  const esVistaConocida = AGRUPACIONES.some(v => v.id === param)
   const vista: Vista = esVistaConocida ? (param as Vista) : 'empresas'
-  const group = AGRUPACIONES.find(v => v.id === vista)?.group
+  // `vista` sólo puede ser uno de los cuatro `id` de AGRUPACIONES (o el
+  // default 'empresas'), así que el `.find()` siempre encuentra: a diferencia
+  // de cuando existía `documentos`, ya no hay una vista sin grupo.
+  const group = AGRUPACIONES.find(v => v.id === vista)!.group
   const [q, setQ] = useState('')
   const [newCarrierOpen, setNewCarrierOpen] = useState(false)
   const [exportando, setExportando] = useState(false)
@@ -96,10 +107,12 @@ function CertificationPageInner() {
    *  porque este módulo tiene cuatro listas del mismo objeto. */
   const { abierta: filaAbierta, alternar: alternarFila } = useFilaAbierta()
 
+  const estaSaliendo = param === 'documentos'
+
   const statusQuery = useQuery({
-    queryKey: clavesCertificacion.estado(group ?? '', qDebounced),
+    queryKey: clavesCertificacion.estado(group, qDebounced),
     queryFn: () => complianceApi.listStatus({ group, q: qDebounced || undefined, limit: 200 }),
-    enabled: !!group,
+    enabled: !estaSaliendo,
   })
 
   /** "Resto del catálogo" son 209 empresas sin actividad. Se piden recién al
@@ -113,24 +126,12 @@ function CertificationPageInner() {
     enabled: group === 'carrier' && catalogoAbierto,
   })
 
-  /** Cuántos archivos esperan que los ubiquen. Se pide con `limit: 1` — de la
-   *  respuesta sólo interesa `total` — y comparte clave con el contador del
-   *  Sidebar, así los dos se invalidan juntos y no pueden contradecirse. */
-  const sinClasificar = useQuery({
-    queryKey: clavesCertificacion.colaTotal(),
-    queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
-    staleTime: 60_000,
-  }).data?.total ?? 0
-
-  /** Ir a una empresa SIN salir de Certificación: cambia de vista y deja su
-   *  fila abierta. Antes esto era un enlace a la ficha de Empresas, o sea que
-   *  el módulo empujaba de vuelta al flujo que vino a reemplazar.
-   *
-   *  La empresa viaja en la URL y no sólo en el estado: es lo que hace que
-   *  volver con el botón atrás caiga donde estabas, y que el enlace se pueda
-   *  compartir. */
+  /** Ir a la ficha de una empresa (Task 4). Antes esto abría su cajón sin
+   *  salir de Certificación; ahora que la ficha existe como pantalla propia,
+   *  abrir el cajón acá adentro sería mostrar una versión resumida de una
+   *  pantalla que ya tiene una completa. */
   function irAEmpresa(carrierId: string) {
-    router.push(enlaceAFilaAbierta('/dashboard/compliance', carrierId))
+    router.push(`/dashboard/compliance/${carrierId}`)
   }
 
   function cambiarVista(v: Vista) {
@@ -148,6 +149,9 @@ function CertificationPageInner() {
   }
 
   const rows = statusQuery.data?.rows ?? []
+
+  // El efecto de arriba ya disparó el reemplazo: nada que dibujar acá.
+  if (estaSaliendo) return null
 
   return (
     <div className="p-4 md:p-6 space-y-3">
@@ -178,31 +182,6 @@ function CertificationPageInner() {
             </button>
           ))}
         </div>
-
-        {/* La bandeja vive detrás de su propio botón, con contador: no es una
-            agrupación más. El rojo #b00020 con su único significado — hay
-            archivos esperando (§9). Sin archivos no se dibuja un cero: un cero
-            en rojo pediría atención sobre nada. */}
-        <button
-          type="button"
-          onClick={() => cambiarVista(VISTA_BANDEJA)}
-          aria-pressed={vista === VISTA_BANDEJA}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
-            vista === VISTA_BANDEJA
-              ? 'border-accent/40 bg-accent/5 text-text-primary'
-              : 'border-border bg-white text-gray-600 hover:text-gray-800'
-          }`}
-        >
-          <Inbox size={13} />
-          Sin clasificar
-          {sinClasificar > 0 && (
-            <span
-              className="rounded-full bg-espera px-1.5 py-px text-[10px] font-bold tabular-nums text-white"
-            >
-              {sinClasificar}
-            </span>
-          )}
-        </button>
 
         {group && (
           <>
@@ -250,86 +229,81 @@ function CertificationPageInner() {
         onCreated={handleCarrierCreated}
       />
 
-      {!group ? (
-        <TriageWorkbench />
-      ) : (
-        <div className="border border-border rounded-xl bg-white overflow-hidden">
-          <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border min-h-[3.25rem]">
-            <Cifra
-              valor={statusQuery.data?.total_pending}
-              etiqueta="documentos por cubrir"
-              cargando={statusQuery.isPending}
-            />
-            {!statusQuery.isPending &&
-              group === 'carrier' &&
-              (statusQuery.data?.total_unclassified ?? 0) > 0 && (
-                <span className="text-etiqueta text-gray-400">
-                  · {statusQuery.data?.total_unclassified} sin clasificar
-                </span>
-              )}
-          </div>
-
-          {statusQuery.isPending && <Estado tipo="cargando" />}
-          {statusQuery.error && (
-            <Estado
-              tipo="error"
-              titulo="No se pudo cargar el estado de la certificación"
-              detalle="Vuelve a intentarlo; si sigue fallando, avisa al equipo."
-            />
-          )}
-          {!statusQuery.isPending && !statusQuery.error && (
-            <div className="overflow-y-auto max-h-[64vh]">
-              {group === 'carrier' ? (
-                // Agrupando por empresa la lista es el embudo de certificación:
-                // el usuario mueve empresas por etapas, no vigila un tablero.
-                <CertificationFunnel
-                  rows={rows}
-                  catalogRows={catalogQuery.data?.rows ?? []}
-                  catalogEstado={
-                    !catalogoAbierto        ? 'sin-pedir'
-                      : catalogQuery.isError  ? 'error'
-                      : catalogQuery.isPending ? 'cargando'
-                      : 'listo'
-                  }
-                  // Volver a desplegar el grupo tras un error tiene que
-                  // reintentar de verdad: `setCatalogoAbierto(true)` cuando ya
-                  // está en `true` no dispara nada, así que el usuario quedaba
-                  // sin forma de recuperarse salvo recargar la página.
-                  onExpandCatalog={() => {
-                    setCatalogoAbierto(true)
-                    if (catalogQuery.isError) catalogQuery.refetch()
-                  }}
-                  openRowId={filaAbierta}
-                  onToggleRow={alternarFila}
-                  renderDrawer={r => (
-                    <CarrierDrawer carrierId={r.entity_id} carrierName={r.entity_name} />
-                  )}
-                />
-              ) : (
-                <CertificationStatusTable
-                  rows={rows}
-                  group={group}
-                  openRowId={filaAbierta}
-                  onToggleRow={alternarFila}
-                  // El MISMO cajón que la vista Empresas, acotado al sujeto —
-                  // una prop, no un componente hermano.
-                  renderDrawer={r => r.carrier_id ? (
-                    <CarrierDrawer
-                      carrierId={r.carrier_id}
-                      carrierName={r.carrier_name ?? ''}
-                      subject={{
-                        entity_type: group === 'driver' ? 'DRIVER' : 'ASSET',
-                        entity_id: r.entity_id,
-                      }}
-                    />
-                  ) : null}
-                  onIrAEmpresa={irAEmpresa}
-                />
-              )}
-            </div>
-          )}
+      <div className="border border-border rounded-xl bg-white overflow-hidden">
+        <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border min-h-[3.25rem]">
+          <Cifra
+            valor={statusQuery.data?.total_pending}
+            etiqueta="documentos por cubrir"
+            cargando={statusQuery.isPending}
+          />
+          {!statusQuery.isPending &&
+            group === 'carrier' &&
+            (statusQuery.data?.total_unclassified ?? 0) > 0 && (
+              <span className="text-etiqueta text-gray-400">
+                · {statusQuery.data?.total_unclassified} sin clasificar
+              </span>
+            )}
         </div>
-      )}
+
+        {statusQuery.isPending && <Estado tipo="cargando" />}
+        {statusQuery.error && (
+          <Estado
+            tipo="error"
+            titulo="No se pudo cargar el estado de la certificación"
+            detalle="Vuelve a intentarlo; si sigue fallando, avisa al equipo."
+          />
+        )}
+        {!statusQuery.isPending && !statusQuery.error && (
+          <div className="overflow-y-auto max-h-[64vh]">
+            {group === 'carrier' ? (
+              // Agrupando por empresa la lista es el embudo de certificación:
+              // el usuario mueve empresas por etapas, no vigila un tablero.
+              // La fila navega a la ficha de la empresa (Task 4) en vez de
+              // abrir el cajón acá adentro: la ficha ya es la pantalla
+              // completa, y el cajón sólo mostraba un resumen de lo mismo.
+              <CertificationFunnel
+                rows={rows}
+                catalogRows={catalogQuery.data?.rows ?? []}
+                catalogEstado={
+                  !catalogoAbierto        ? 'sin-pedir'
+                    : catalogQuery.isError  ? 'error'
+                    : catalogQuery.isPending ? 'cargando'
+                    : 'listo'
+                }
+                // Volver a desplegar el grupo tras un error tiene que
+                // reintentar de verdad: `setCatalogoAbierto(true)` cuando ya
+                // está en `true` no dispara nada, así que el usuario quedaba
+                // sin forma de recuperarse salvo recargar la página.
+                onExpandCatalog={() => {
+                  setCatalogoAbierto(true)
+                  if (catalogQuery.isError) catalogQuery.refetch()
+                }}
+                onToggleRow={irAEmpresa}
+              />
+            ) : (
+              <CertificationStatusTable
+                rows={rows}
+                group={group}
+                openRowId={filaAbierta}
+                onToggleRow={alternarFila}
+                // El MISMO cajón que la vista Empresas, acotado al sujeto —
+                // una prop, no un componente hermano.
+                renderDrawer={r => r.carrier_id ? (
+                  <CarrierDrawer
+                    carrierId={r.carrier_id}
+                    carrierName={r.carrier_name ?? ''}
+                    subject={{
+                      entity_type: group === 'driver' ? 'DRIVER' : 'ASSET',
+                      entity_id: r.entity_id,
+                    }}
+                  />
+                ) : null}
+                onIrAEmpresa={irAEmpresa}
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -57,7 +57,9 @@ describe('CarrierDrawer', () => {
   it('la bandeja sigue existiendo, como destino y no como zona encima', async () => {
     setup()
     const enlace = await screen.findByRole('link', { name: /bandeja/i })
-    expect(enlace).toHaveAttribute('href', expect.stringContaining('vista=documentos'))
+    // La Bandeja tiene ruta propia (Task 5): un enlace interno que pasara por
+    // el redirect de `?vista=documentos` seria deuda desde el dia uno.
+    expect(enlace).toHaveAttribute('href', '/dashboard/compliance/inbox')
   })
 
   it('pide solo los pendientes de esa empresa', async () => {

@@ -178,7 +178,7 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
             <Inbox size={11} aria-hidden="true" />
             ¿Tienes muchos documentos de {carrierName}?{' '}
             <Link
-              href="/dashboard/compliance?vista=documentos"
+              href="/dashboard/compliance/inbox"
               className="font-semibold text-accion transition-opacity hover:opacity-70"
             >
               Llévalos a la Bandeja
