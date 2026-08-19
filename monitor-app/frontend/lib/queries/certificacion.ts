@@ -40,9 +40,15 @@ export const clavesCertificacion = {
    *
    *  El sujeto va EN la clave: el cajón de una persona y el de su empresa
    *  piden respuestas distintas del mismo endpoint, y compartir clave haría
-   *  que uno sirviera la respuesta cacheada del otro. */
-  pendientes: (carrierId?: string, entityId?: string) =>
-    ['compliance-pending', carrierId ?? null, entityId ?? null] as const,
+   *  que uno sirviera la respuesta cacheada del otro.
+   *
+   *  `estado` también va en la clave (Task 4, ficha de empresa): la ficha pide
+   *  las cuatro variantes (`todos`/`falta`/`por_vencer`/`al_dia`) a la vez
+   *  —una por cifra y por filtro—, y sin este segmento las cuatro
+   *  consultas compartirían UNA sola entrada de caché y se pisarían entre
+   *  sí. El cajón sigue sin pasarlo, así que sigue viajando `null`. */
+  pendientes: (carrierId?: string, entityId?: string, estado?: string) =>
+    ['compliance-pending', carrierId ?? null, entityId ?? null, estado ?? null] as const,
   /** El catálogo de requisitos de un tipo de entidad. */
   requisitos: (entityType?: string) => ['compliance-requirements', entityType ?? null] as const,
 }
