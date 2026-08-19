@@ -78,9 +78,12 @@ export function CertificationStatusTable({
 
           return (
             <Fragment key={r.entity_id}>
+            {/* El `null` del final: un <tr> YA es role="row", y pisarlo con
+                role="button" deja las celdas sin fila en el árbol de
+                accesibilidad. Ver propsDeFilaExpandible. */}
             <tr
               {...(puedeAbrir && onToggleRow
-                ? propsDeFilaExpandible(r.entity_id, abierta, onToggleRow)
+                ? propsDeFilaExpandible(r.entity_id, abierta, onToggleRow, null)
                 : {})}
               className={`group border-b border-border transition-colors ${
                 abierta ? 'bg-sky-50/60' : 'hover:bg-gray-50'

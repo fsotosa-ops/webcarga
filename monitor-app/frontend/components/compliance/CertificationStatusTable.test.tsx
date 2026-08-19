@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { CertificationStatusTable } from './CertificationStatusTable'
 import type { CertificationStatusRow } from '@/lib/types'
@@ -103,6 +103,21 @@ describe('CertificationStatusTable — agrupada por conductor o vehículo', () =
     />)
     fireEvent.click(screen.getByText('Sin Asignar'))
     expect(alternar).not.toHaveBeenCalled()
+  })
+
+  // Lo encontro el click-through contra lo desplegado, no la suite: la fila
+  // salia como `button > cell` en el arbol de accesibilidad, o sea celdas sin
+  // fila, porque role="button" pisaba el role="row" implicito del <tr>.
+  // Testing Library SI computa roles, asi que esta asercion muere si vuelve.
+  it('la fila que se abre sigue siendo una fila de la tabla', () => {
+    render(<CertificationStatusTable
+      rows={[conductor]} group="driver"
+      onToggleRow={vi.fn()} renderDrawer={() => <div>x</div>}
+    />)
+    const fila = screen.getByRole('row', { name: /Juan Pérez/ })
+    expect(fila).toHaveAttribute('aria-expanded', 'false')
+    // Y sus celdas siguen siendo celdas de ESA fila.
+    expect(within(fila).getAllByRole('cell').length).toBeGreaterThan(0)
   })
 
   it('la columna Empresa navega dentro del modulo', () => {

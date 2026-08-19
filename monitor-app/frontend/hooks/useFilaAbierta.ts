@@ -80,9 +80,21 @@ export function propsDeFilaExpandible(
   id: string,
   abierta: boolean,
   alternar: (id: string) => void,
+  /** El rol lo decide el ELEMENTO, no este helper.
+   *
+   *  Un `<div>` no tiene rol y necesita `'button'`. Un `<tr>` ya es
+   *  `role="row"`, y pisarlo con `'button'` **destruye la tabla**: el árbol de
+   *  accesibilidad pasa a mostrar `button > cell`, o sea celdas sin fila, y un
+   *  lector de pantalla deja de poder recorrerla.
+   *
+   *  Se encontró mirando la pantalla desplegada, no con los tests: jsdom no
+   *  calcula el árbol de accesibilidad, así que la aserción "es una fila"
+   *  pasaba igual. Por eso el default es el caso que necesita rol explícito y
+   *  quien ya tiene uno pasa `null`. */
+  role: 'button' | null = 'button',
 ) {
   return {
-    role: 'button',
+    ...(role ? { role } : {}),
     tabIndex: 0,
     'aria-expanded': abierta,
     onClick: () => alternar(id),
