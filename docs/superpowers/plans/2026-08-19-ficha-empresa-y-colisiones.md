@@ -1024,7 +1024,8 @@ hace que el clasificador acierte.**
   `TriageFileTable.test.tsx`
 
 **Interfaces:**
-- Consumes: `mismo_casillero` y `mismo_contenido` de `QueueRow` (Task 2);
+- Consumes: `mismo_casillero`, `mismo_contenido` y `casillero_ocupado` de `QueueRow`
+  (Tasks 2 y 2b);
   `CarrierSearchPicker` de `components/dashboard/`, cuya firma es
   `{ query, onQueryChange, onPick, placeholder?, size?, ... }`.
 
@@ -1075,9 +1076,20 @@ it('avisa cuando el archivo ya está en la cola', () => {
   expect(screen.getByText(/ya está en la cola/i)).toBeInTheDocument()
 })
 
+it('avisa cuando el casillero ya tiene un documento cargado', () => {
+  // La colision que las window functions NO pueden ver: el ocupante ya fue
+  // confirmado y salio de la cola, asi que `mismo_casillero` sigue diciendo 1.
+  // Confirmar esta fila reemplaza un documento que hoy es valido.
+  render(<TriageFileTable rows={[fila({ mismo_casillero: 1, casillero_ocupado: true })]} {...props} />)
+  expect(screen.getByText(/ya tiene un documento/i)).toBeInTheDocument()
+})
+
 it('sin colisión no dice nada', () => {
-  render(<TriageFileTable rows={[fila({ mismo_casillero: 1, mismo_contenido: 1 })]} {...props} />)
-  expect(screen.queryByText(/mismo casillero|ya está en la cola/i)).not.toBeInTheDocument()
+  render(<TriageFileTable rows={[
+    fila({ mismo_casillero: 1, mismo_contenido: 1, casillero_ocupado: false }),
+  ]} {...props} />)
+  expect(screen.queryByText(/mismo casillero|ya está en la cola|ya tiene un documento/i))
+    .not.toBeInTheDocument()
 })
 ```
 
@@ -1121,6 +1133,17 @@ distintas:**
 
 - `mismo_contenido > 1` → *"Este archivo ya está en la cola"* — el operador borra uno.
 - `mismo_casillero > 1` → *"{n} archivos reclaman este casillero"* — el operador elige cuál.
+- `casillero_ocupado` → *"Este requisito ya tiene un documento — confirmar lo reemplaza"* — el
+  operador mira el que está antes de decidir.
+
+**Las tres son distintas y ninguna reemplaza a otra.** Las dos primeras se derivan de la cola;
+`casillero_ocupado` mira `compliance_records`, y es la única que ve el caso destructivo: el ocupante
+ya fue confirmado, salió de la cola, y por eso `mismo_casillero` sigue diciendo `1`. Una fila puede
+traer las tres a la vez.
+
+**El reemplazo no es una pérdida irreversible** —`_apply_stored_document` guarda
+`replaced_storage_path` y el blob anterior nunca se sobrescribe— pero eso es la red de abajo, no el
+aviso. Quien confirma tiene que enterarse ANTES, no poder repararlo después.
 
 **Sólo tokens**: el aviso va en `text-espera` con `text-etiqueta`. **Cero emojis** — usá
 `AlertTriangle` de `lucide-react`, que la tabla ya importa.
@@ -1135,8 +1158,17 @@ npm run build
 
 - [ ] **Step 6: Mutar**
 
-Hacé que la subida ignore `empresaDelLote` y mande siempre `carrierId`. Esperado: falla "deja acotar
-el lote a una empresa". Restaurá.
+**La mutación se decide DESPUÉS de escribir la aserción, y se nombra cuál test muere.** En este plan
+hubo tres mutaciones prescritas de antemano que no mataron nada, y las tres veces el defecto fue del
+plan, no del ejecutor.
+
+1. Que la subida ignore `empresaDelLote` y mande siempre `carrierId`. Debe morir "deja acotar el lote
+   a una empresa".
+2. Que el aviso de `casillero_ocupado` se pinte cuando `mismo_casillero > 1` en vez de cuando
+   `casillero_ocupado` es verdadero — es el error que haría que las dos señales se confundan, que es
+   justo lo que este diseño evita. Debe morir "avisa cuando el casillero ya tiene un documento".
+
+Restaurar a mano desde un respaldo, **nunca con `git checkout --`**.
 
 - [ ] **Step 7: Commit**
 
