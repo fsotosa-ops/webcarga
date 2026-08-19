@@ -878,6 +878,27 @@ entre rondas ni abrir el archivo histórico. Ninguno bloquea el funcionamiento a
 
 **El estado de `main` NO es un pendiente** (decisión del usuario, 2026-08-19): el trabajo es a nivel `dev`. No volver a listarlo como deuda.
 
+**PRIORIDAD PARA MAÑANA (pedido explícito del usuario, 2026-08-19)**
+
+- [ ] **Certificación devuelve al usuario al Empresas legacy, y eso contradice la decisión ya
+  tomada.** Al hacer clic en un conductor o un vehículo desde Certificación, se sale del módulo y se
+  cae en la UX vieja de Empresas, que exige múltiples clics para cargar un archivo — justo lo que
+  Certificación existe para reemplazar. **La dirección está invertida**: Empresas debía quedar
+  solo-lectura con un link *hacia* Certificación (`?carrier_id=`), no Certificación empujando hacia
+  Empresas.
+
+  Los cuatro puntos de fuga, ya ubicados:
+  - `components/compliance/CertificationStatusTable.tsx:73` → `/dashboard/carriers/{id}?tab=documentos`
+  - `components/compliance/CertificationStatusTable.tsx:85` → `...?tab=conductores&driver={entity_id}`
+    (o `equipos&asset=`) — **este es el que describió el usuario**
+  - `components/compliance/CertificationStatusTable.tsx:105` → `...?tab=documentos`
+  - `app/dashboard/compliance/page.tsx:130` → `router.push` al módulo viejo tras crear una empresa
+
+  El módulo **ya tiene** la superficie correcta: `CarrierDrawer` (Ronda 89, panel por empresa dentro
+  de Certificación, que reusa `TransporterSlideOver`/`BulkDocumentUploadModal`). Estos enlaces la
+  saltean. Antes de tocar nada, leer lo que ya existe — la trampa acá es reescribir una versión peor
+  de un panel que ya está resuelto al lado.
+
 **SIGUIENTE PASO EXACTO AL RETOMAR (Ronda 126, 2026-08-19 04:15Z)**
 
 - [ ] **Confirmar que `app_trips_tests` quedó verde.** Es lo único sin verificar de la noche: el
