@@ -72,6 +72,12 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   const [busqueda, setBusqueda] = useState('')
   const [empresaDelLote, setEmpresaDelLote] = useState<CarrierSearchResult | null>(null)
 
+  /** Sin nada marcado, la pantalla está en modo "subir"; con algo marcado,
+   *  en modo "mover". Un solo nombre para la condición porque gobierna las
+   *  dos mitades de la zona de carga y el camino de soltar-en-cualquier-parte:
+   *  escribirla tres veces es como se separaron la primera vez. */
+  const sinSeleccion = selectedIds.size === 0
+
   const queueKey = clavesCertificacion.cola(carrierId)
   const queueQuery = useQuery({
     queryKey: queueKey,
@@ -252,7 +258,17 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
       // `preventDefault`, que igual está obligada a hacer para que el
       // navegador no navegue al archivo.
       if (e.defaultPrevented) return
+      // `preventDefault` PRIMERO y siempre: es lo único que impide que el
+      // navegador abra el archivo y saque a la persona de la aplicación.
       e.preventDefault()
+      // Con selección activa la zona de carga no está en pantalla, y con ella
+      // se fue el único indicador de a qué empresa se atribuiría el lote.
+      // Subir por este camino sería hacerlo en silencio y en nombre de una
+      // empresa invisible.
+      if (!sinSeleccion) {
+        setNotice('Termina con los archivos seleccionados antes de subir otros.')
+        return
+      }
       const files = e.dataTransfer?.files
       if (files?.length) subirArchivos(Array.from(files))
     }
@@ -262,7 +278,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
       window.removeEventListener('dragover', prevenir)
       window.removeEventListener('drop', soltar)
     }
-  }, [canEdit, subirArchivos])
+  }, [canEdit, subirArchivos, sinSeleccion])
 
   function handleToggle(id: string, opts?: { range?: boolean }) {
     setSelectedIds(prev => {
@@ -325,14 +341,19 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Oculto mientras hay selección: la barra contextual es la dueña de ese
-          modo, y dos cajas de "Buscar empresa" en pantalla a la vez —esta y
-          la de MoveToCarrierBar— significan cosas distintas ("¿de quién es lo
-          que voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?") sin
-          que elegir en la equivocada avise nada. El estado no se pierde, sólo
-          deja de mostrarse: `empresaDelLote` sigue vivo y vuelve a aparecer
-          con lo ya elegido en cuanto la selección se vacía. */}
-      {canEdit && !carrierId && selectedIds.size === 0 && (
+      {/* La ZONA DE CARGA entera —el selector del lote y la zona de arrastre—
+          se retira mientras hay selección: la barra contextual es la dueña de
+          ese modo, y subir y mover son dos gestos distintos que no se pisan.
+
+          Dos cajas de "Buscar empresa" a la vez —ésta y la de
+          MoveToCarrierBar— significan cosas distintas ("¿de quién es lo que
+          voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?") sin que
+          elegir en la equivocada avise nada. Y esconder sólo el selector era
+          peor: `empresaDelLote` seguía gobernando la zona de arrastre, así que
+          una segunda tanda se subía atribuida a una empresa QUE YA NO SE VE.
+          El estado no se pierde, sólo deja de mostrarse: vuelve con lo ya
+          elegido en cuanto la selección se vacía. */}
+      {canEdit && !carrierId && sinSeleccion && (
         <div>
           <p className="text-etiqueta text-informativo pb-1">
             ¿De quién son estos documentos? Elegir la empresa hace que el sistema
@@ -349,7 +370,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
         </div>
       )}
 
-      {canEdit && (
+      {canEdit && sinSeleccion && (
         <TriageDropzone
           carrierName={carrierName}
           vacia={!queueQuery.isPending && total === 0}

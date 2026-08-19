@@ -181,6 +181,37 @@ describe('TriageWorkbench', () => {
     ))
   })
 
+  // Esconder el selector escondio un estado que seguia actuando: con la
+  // seleccion activa `empresaDelLote` sigue vivo y la zona de arrastre seguia
+  // montada, asi que una segunda tanda se subia atribuida a una empresa que
+  // ya no se ve en pantalla. Subir y mover son dos gestos distintos.
+  it('con seleccion activa, la zona de carga entera da un paso atras', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    expect(screen.getByTestId('triage-dropzone')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+
+    expect(screen.queryByTestId('triage-dropzone')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/buscar empresa \(opcional\)/i)).not.toBeInTheDocument()
+  })
+
+  // El otro camino a la misma zona: soltar FUERA del recuadro lo encamina a la
+  // bandeja igual. Esconder el recuadro sin cerrar este camino dejaria el
+  // defecto entero.
+  it('con seleccion activa, soltar en cualquier parte no sube en silencio', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+
+    fireEvent.drop(window, {
+      dataTransfer: { files: [new File(['x'], 'b.pdf', { type: 'application/pdf' })] },
+    })
+
+    expect(documentIngestApi.upload).not.toHaveBeenCalled()
+    expect(await screen.findByTestId('triage-notice')).toHaveTextContent(/seleccionados/i)
+  })
+
   // Dos cajas que dicen "Buscar empresa" y significan cosas distintas —"¿de
   // quién es lo que voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?"—
   // nunca son relevantes a la vez: seleccionar archivos es entrar en un modo,
