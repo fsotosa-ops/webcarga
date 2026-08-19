@@ -72,6 +72,83 @@ Del CSV real del portal, verificado en tres archivos consecutivos:
 **El arreglo del `stop_id` quedó DESCARTADO**: habría forzado a un solo origen justo donde hay dos
 de verdad. El comentario del test se corrigió en Mage para que no siga desinformando.
 
+#### Arreglos aplicados (#5 y #4)
+
+**#5 — scraper, commit `68a17916`, desplegado.** `dedupe_captures` en
+`extraction_service/app/tms/sodimac/scraper.py`, función pura con 7 tests unitarios que no piden
+navegador. **La clave es la FILA COMPLETA, no el `Nº ID`** — deduplicar por viaje borraría un tramo
+real. Verificado contra el CSV de producción: 320 → 46 filas, 41 viajes, los 5 de dos tramos
+intactos. Se agregó log por página (nuevas/duplicadas) y warning si más de la mitad es repetido.
+**No cierra el issue**: el portal sigue obligando a leer de más y falta mirarlo con el navegador.
+
+**#4 — transformador de Mage, clasificación ESTÁTICA.** `COLS_DE_PARADA = ['ORIGEN', 'DESTINO']`;
+todo lo demás es del viaje. Elimina el `.max()` sobre todos los viajes del archivo, que era el
+mecanismo común a los tres issues. Verificado simulando el bloque sobre el CSV real: 41 viajes,
+**0 sin ESTADO**, y los 5 de dos tramos con ambos. Se agregó `drop_duplicates()` en las paradas
+(defensa en profundidad: los archivos viejos de GCS siguen duplicados) y un diagnóstico que avisa si
+una columna de viaje varía dentro de un viaje.
+
+**Es compatible hacia atrás**: `stg_sodimac_trips` ya lee
+`COALESCE(payload->'stops'->0->>'ORIGEN', payload->'trip_metadata'->>'ORIGEN')`, así que tolera las
+dos formas de payload. Sigue tomando sólo el primer tramo — eso es el #6 — pero ahora de forma
+determinista en vez de depender del orden de las filas.
+
+**El cambio del transformador NO está en git**: `.mage-agent/` está en `.gitignore` a propósito y el
+cluster de Mage es la fuente de verdad. Este registro es el respaldo.
+
+#### INCIDENTE ABIERTO — ingestión caída y el arreglo del #4 REVERTIDO
+
+**Al cerrar la sesión la ingestión llevaba ~30 min sin recibir dato en las tres fuentes.** Último
+upsert a bronze: 02:04 UTC (21:04 COT).
+
+Cronología, en UTC (COT = −5):
+
+| Hora | Qué pasó |
+|---|---|
+| 01:20 → 01:30 | corrida 9362 **exitosa**, 35 bloques, `dbt test` avisó con 3 |
+| 02:02:22 | último CSV de Sodimac (scraper viejo, 320 filas) |
+| 02:02:57 | se activa la revisión `webcarga-extraction-dev-00007` con el fix del scraper |
+| **02:04** | **último dato que entró a bronze** |
+| 02:10:01 | sync del transformador con la clasificación estática |
+| 02:10:25 → 02:16:58 | corrida 9366 **fallida**: 4 transformadores muertos como pods k8s |
+| 02:27 | **revertido** el transformador y sincronizado |
+| 02:28 → 02:32 | corrida 9368 **cancelada por el usuario**, que dejó la programada |
+
+**Los 4 bloques que fallaron**: `sodimac_payload_transformer` (mío), más
+`qanalytics_agg_nro_sap_transformer`, `qanalytics_cumplimiento_sap_transformer` y
+`qanalytics_agg_iansa_transformer` — **los tres últimos NO se tocaron**. Todos murieron con
+`BackoffLimitExceeded`, exit 1, **sin traceback de Python**. Los scrapers y procesadores sí
+completaron. El archivo remoto del transformador se verificó íntegro y válido con `block_get`.
+
+**Qué NO se sabe**: si la causa fue el cambio del transformador o el cluster. La correlación temporal
+es incómoda (la corrida buena y la mala sólo se diferencian por mi sync) pero mi archivo no puede
+explicar los otros tres — cada bloque carga sólo el suyo.
+
+**QUÉ MIRAR EN LA PRÓXIMA CORRIDA PROGRAMADA**, que es lo que decide:
+- **Completa** → era el transformador. Entender cómo un archivo tumbó cuatro pods ANTES de reaplicar.
+- **Falla en los mismos cuatro** → es el cluster; el cambio queda exonerado y se reaplica.
+
+**El fix del transformador está guardado íntegro** en
+`scratchpad/transformer_con_fix.py` de la sesión. El del scraper (#5) **sigue desplegado y no se
+tocó**: los scrapers completaron bien en la corrida fallida, así que no está implicado. Y **no llegó
+a verificarse en producción**: la revisión se activó 35 s después del último CSV, así que ningún
+archivo se generó todavía con el dedupe.
+
+#### El modelo de la industria, validado contra documentación
+
+Se verificó contra las APIs reales, no de memoria:
+
+- **project44**: array `shipmentStops` con `stopType` (**`ORIGIN`/`DESTINATION`**, el mismo
+  vocabulario que ya usa `app.trip_stops`) y `stopNumber`. **El origen y el destino NO son campos
+  escalares del envío** — se identifican dentro del array por su `stopType`.
+- **Oracle OTM**: acepta órdenes con más de un pickup y más de un delivery; el `stop sequence` es un
+  entero que define el orden, con huecos permitidos (10, 20, 30).
+
+Conclusión para el #6: `app.trip_stops` **ya tiene la forma correcta**. No hay que rediseñar el
+modelo, hay que dejar de aplanar antes de llegar a él — `int_tms_trips_conformed.origin_location_name`
+es un escalar donde la industria deriva "la primera parada de retiro". Los destinos ya sobreviven;
+es el origen el que colapsa. Eso baja bastante el costo estimado del #6.
+
 **El test `assert_trip_stops_at_most_one_origin_per_trip` afirma un invariante que NO se cumple**
 para viajes de varias patas. Se deja porque marca pérdida real de información, pero hay que
 revisarlo al resolver el #6.
