@@ -695,10 +695,26 @@ git commit -m "feat(certificacion): la ficha de una empresa, con lo que tiene y 
 ## Task 5: Los dos mundos en el sidebar, y la Bandeja con ruta propia
 
 **Files:**
-- Create: `monitor-app/frontend/app/dashboard/compliance/inbox/page.tsx`
+- **Modify** (NO crear — ya existe): `monitor-app/frontend/app/dashboard/compliance/inbox/page.tsx`
 - Modify: `monitor-app/frontend/components/dashboard/Sidebar.tsx:32-50`
 - Modify: `monitor-app/frontend/app/dashboard/compliance/page.tsx`
-- Test: `monitor-app/frontend/components/dashboard/Sidebar.test.tsx`
+- Modify: `monitor-app/frontend/components/compliance/CarrierDrawer.tsx:204`
+- Test: `monitor-app/frontend/components/dashboard/Sidebar.test.tsx`,
+  `app/dashboard/compliance/page.test.tsx`, `components/compliance/CarrierDrawer.test.tsx`
+
+> **ESTA TAREA REVIERTE UNA DECISIÓN QUE EL MÓDULO YA TOMÓ, y hay que saberlo.**
+> `app/dashboard/compliance/inbox/page.tsx` **ya existe** y hoy hace lo contrario de lo que este
+> plan pide: redirige `/inbox` → `?vista=documentos`. Su comentario dice por qué:
+>
+> > *"La bandeja dejó de ser un destino propio: es la vista 'Por documento' del módulo
+> > Certificación. Tenerla como submódulo hermano de Pendientes obligaba a cruzar de memoria dos
+> > listas del mismo objeto. **La ruta se conserva porque quedó en enlaces guardados y en el
+> > historial.**"*
+>
+> La spec argumenta por qué se revierte: aquella decisión trataba a la Bandeja como *una vista más
+> de la misma lista*, y no lo es — es otro objeto (archivos sin destino contra requisitos sin
+> documento). Pero **la razón por la que aquel redirect se conservó sigue siendo válida y ahora
+> aplica al revés**: los enlaces guardados a `?vista=documentos` no pueden quedar rotos.
 
 **Interfaces:**
 - Consumes: la ruta `/dashboard/compliance/[carrierId]` (Task 4).
@@ -785,18 +801,44 @@ específico primero (`/dashboard/compliance/inbox` gana sobre `/dashboard/compli
 prefijo), así que no hay que tocarlo — pero **verificá que la ficha
 `/dashboard/compliance/<uuid>` marque "Empresas" y no "Sin clasificar"**.
 
-- [ ] **Step 5: La Bandeja gana su ruta**
+- [ ] **Step 5: La Bandeja gana su ruta, y el redirect se da vuelta**
 
-`app/dashboard/compliance/inbox/page.tsx` monta `<TriageWorkbench />` con el encabezado de la
-página. Y en `app/dashboard/compliance/page.tsx`:
+**Primero el test, porque un enlace roto no falla en CI — falla en la cara de quien lo guardó:**
 
-- se elimina el botón "Sin clasificar" y la vista `documentos` del conmutador — **son código muerto
-  en cuanto la ruta existe**; borralos en el mismo commit y poné el `grep` que lo prueba en el
-  mensaje.
-- la fila de la tabla y del embudo **navegan a la ficha** en vez de abrir el cajón.
-- `CarrierDrawer` queda **sin consumidores en la vista Empresas**, pero **sigue usándose** en las
-  vistas Conductores y Vehículos (con `subject`). Verificalo con `grep` antes de decidir si se borra:
-  si le quedan consumidores, se queda.
+```tsx
+// app/dashboard/compliance/page.test.tsx
+it('un enlace guardado a ?vista=documentos lleva a la Bandeja, no a una pantalla vacía', async () => {
+  // La ruta /inbox existía y redirigía HACIA acá; ahora es al revés. La razón
+  // por la que aquel redirect se conservó —"quedó en enlaces guardados y en el
+  // historial"— sigue siendo válida, sólo que en la otra dirección.
+  montarConParametros('?vista=documentos')
+  await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/compliance/inbox'))
+})
+```
+
+Después:
+
+1. **`app/dashboard/compliance/inbox/page.tsx` deja de redirigir y monta la Bandeja.** Reemplazá el
+   `redirect()` por `<TriageWorkbench />` con el encabezado de la página, y **reemplazá también su
+   comentario**: el que está describe la decisión contraria y quedaría mintiendo. Escribí por qué
+   ahora es un destino propio (dos trabajos distintos, no dos vistas de la misma lista).
+
+2. **`app/dashboard/compliance/page.tsx` redirige `?vista=documentos` → `/dashboard/compliance/inbox`.**
+   Con `router.replace` y no `push`: llegar por un enlace viejo no es un paso de navegación que el
+   botón atrás deba reponer.
+
+3. **`components/compliance/CarrierDrawer.tsx:204`** — el enlace "Llévalos a la Bandeja" apunta a
+   `?vista=documentos`. Cambialo a `/dashboard/compliance/inbox`. **Con el redirect funcionaría
+   igual, pero un enlace interno que pasa por un redirect es deuda desde el día uno.**
+
+4. Se elimina el botón "Sin clasificar" y la vista `documentos` del conmutador. **Verificá con
+   `grep -rn "vista=documentos" components app` que sólo queda el redirect**, y poné ese grep en el
+   mensaje del commit.
+
+5. La fila de la tabla y del embudo **navegan a la ficha** en vez de abrir el cajón.
+
+6. **`CarrierDrawer` NO se borra.** Verificado antes de escribir esto: sigue usándose en las vistas
+   Conductores y Vehículos con la prop `subject`. Sólo pierde su consumidor de la vista Empresas.
 
 - [ ] **Step 6: Correr todo y construir**
 
