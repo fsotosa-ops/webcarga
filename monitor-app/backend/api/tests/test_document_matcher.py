@@ -89,6 +89,27 @@ def test_encuentra_conductor_por_nombre_aunque_venga_con_typo():
     assert 0.60 <= top.confidence < 0.90
 
 
+def test_encuentra_conductor_por_rut_en_el_nombre_del_archivo():
+    """El bug que tapa esta ronda: el RUT del conductor en el nombre lo
+    sacaba del match difuso (el `continue` de la rama de nombre) y nada más
+    abajo lo recogía. 'LICENCIA_<nombre>.pdf' daba AUTO; agregarle el RUT
+    ('LICENCIA_<nombre>_<rut>.pdf') lo degradaba a UNMATCHED."""
+    candidates = match_document(
+        file_name="LICENCIA_Abraham_Ulloa_16030949-0.pdf",
+        catalog=_catalog(("r-licencia", "DRIVER", "LICENCIA", 100)),
+        universe=_universe(drivers=[DRIVER_ULLOA]),
+    )
+
+    assert candidates, "esperaba al menos un candidato"
+    top = candidates[0]
+    assert top.entity_type == "DRIVER"
+    assert top.entity_id == "d-ulloa"
+    assert top.requirement_id == "r-licencia"
+    assert top.confidence >= 0.90
+    assert top.evidence["entity"]["via"] == "RUT"
+    assert classify_match(candidates) == "AUTO"
+
+
 def test_alias_mas_especifico_le_gana_al_que_es_substring():
     """'EPP' está contenido en 'USO Y MANTENCION EPP'.
 
