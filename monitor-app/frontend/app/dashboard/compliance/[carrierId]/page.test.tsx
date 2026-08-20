@@ -13,7 +13,13 @@ vi.mock('@/lib/api/compliance', () => ({
   },
 }))
 vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { get: vi.fn() },
+  carriersApi: {
+    get: vi.fn(),
+    unassignDriver: vi.fn(),
+    unassignAsset: vi.fn(),
+    assignDriver: vi.fn(),
+    assignAsset: vi.fn(),
+  },
 }))
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: vi.fn(() => true) }))
 
@@ -59,7 +65,13 @@ function montar(rows: PendingComplianceRow[], total = rows.length) {
   )
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  // `clearAllMocks` no deshace un `mockReturnValue` puesto por un test
+  // anterior (sólo limpia el historial de llamadas): sin este reset, un
+  // test que apaga `canEdit` deja apagado a todos los que corren después.
+  vi.mocked(useCanEdit).mockReturnValue(true)
+})
 
 describe('FichaEmpresaPage', () => {
   // La promesa de la pantalla —empresa, conductores y vehiculos JUNTOS— se
@@ -424,5 +436,97 @@ describe('FichaEmpresaPage', () => {
 
     expect(await screen.findByText(/no se pudo cargar la documentación/i)).toBeInTheDocument()
     expect(screen.queryByText('Tipo de operación sin determinar')).not.toBeInTheDocument()
+  })
+
+  // Task 5: dar de baja y transferir sin salir de la ficha.
+  it('dar de baja a un conductor lo saca de la ficha, sin tocar sus documentos', async () => {
+    vi.mocked(carriersApi.unassignDriver).mockResolvedValue({ ok: true })
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
+    ])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    await waitFor(() => expect(carriersApi.unassignDriver).toHaveBeenCalledWith('c1', 'd1'))
+    // Nada se borra: la baja es un estado de la asignacion.
+    expect(complianceApi.uploadFile).not.toHaveBeenCalled()
+  })
+
+  it('un vehículo se da de baja por su propio endpoint, no por el de conductores', async () => {
+    // El sujeto sabe lo que es; sin esto, una sola rama trataria a los dos igual
+    // y el vehiculo se iria contra /drivers/{id}.
+    vi.mocked(carriersApi.unassignAsset).mockResolvedValue({ ok: true })
+    montar([fila({ id: 'p1', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Vehículos/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    await waitFor(() => expect(carriersApi.unassignAsset).toHaveBeenCalledWith('c1', 'a1'))
+    expect(carriersApi.unassignDriver).not.toHaveBeenCalled()
+  })
+
+  it('transferir usa el modal que ya existe y excluye a la empresa actual', async () => {
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Transferir/ }))
+
+    expect(screen.getByPlaceholderText(/empresa destino/i)).toBeInTheDocument()
+  })
+
+  it('un viewer no ve el menú', async () => {
+    vi.mocked(useCanEdit).mockReturnValue(false)
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    expect(screen.queryByRole('button', { name: /acciones/i })).not.toBeInTheDocument()
+  })
+
+  it('dar de baja al último conductor deja la ficha usable, sin el grupo vacío', async () => {
+    // A3. El agrupado ya descarta los grupos sin sujetos, pero nada lo afirmaba:
+    // el dia que alguien "simplifique" ese filter, la ficha muestra un grupo
+    // "Conductores · 0 conductores" y parece rota.
+    vi.mocked(carriersApi.unassignDriver).mockResolvedValue({ ok: true })
+    montar([fila({ id: 'p1', entity_type: 'CARRIER' })])   // ya sin conductores
+
+    expect(await screen.findByRole('button', { name: /De la empresa/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Conductores/ })).not.toBeInTheDocument()
+  })
+
+  it('dar de baja dos veces lo dice, en vez de romperse', async () => {
+    // A6: doble clic, o la misma ficha abierta en dos pestañas. El backend
+    // responde 404 "Asignación activa no encontrada" y eso hay que mostrarlo.
+    vi.mocked(carriersApi.unassignDriver).mockRejectedValue(
+      new Error('Asignación activa no encontrada'),
+    )
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no encontrada/i)
+  })
+
+  it('si la baja falla, el sujeto sigue ahí', async () => {
+    // Sacarlo antes de la confirmacion del servidor y devolverlo al fallar lo
+    // convierte en un fantasma: parpadea y vuelve.
+    vi.mocked(carriersApi.unassignDriver).mockRejectedValue(new Error('sesión vencida'))
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/sesión vencida/i)
+    expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
   })
 })
