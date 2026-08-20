@@ -21,6 +21,19 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Refs de "último valor": el padre real pasa handlers inline —identidad
+  // nueva en cada render—, y el listener de Escape vive adentro de un
+  // efecto. Si ese efecto dependiera de `onCancelar`, un re-render del padre
+  // a mitad de una baja en vuelo lo reiniciaría, haría `setEnviando(false)` y
+  // "Dar de baja" quedaría habilitado de nuevo con el request todavía
+  // viajando. Se asignan directo en el cuerpo del render (sin efecto propio):
+  // no afectan lo que se pinta, sólo mantienen la caja al día para cuando el
+  // handler se dispare.
+  const onCancelarRef = useRef(onCancelar)
+  onCancelarRef.current = onCancelar
+  const enviandoRef = useRef(enviando)
+  enviandoRef.current = enviando
+
   useEffect(() => {
     if (!abierto) return
     setEnviando(false)
@@ -28,12 +41,21 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
     // El foco va al botón de CANCELAR, no al destructivo: que Enter por
     // reflejo no dé de baja a nadie.
     cancelarRef.current?.focus()
-    const alTeclado = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancelar() }
+    const alTeclado = (e: KeyboardEvent) => {
+      // Mientras viaja, Escape no cancela: cerraría creyendo que se
+      // canceló mientras la baja sigue en curso.
+      if (e.key === 'Escape' && !enviandoRef.current) onCancelarRef.current()
+    }
     window.addEventListener('keydown', alTeclado)
     return () => window.removeEventListener('keydown', alTeclado)
-  }, [abierto, onCancelar])
+  }, [abierto])
 
   if (!abierto) return null
+
+  // Mismo motivo: mientras viaja, el clic en el fondo tampoco cancela.
+  function handleCancelarFondo() {
+    if (!enviando) onCancelar()
+  }
 
   async function handleConfirmar() {
     setEnviando(true)
@@ -49,7 +71,7 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onCancelar} aria-hidden="true" />
+      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={handleCancelarFondo} aria-hidden="true" />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
           role="dialog"
