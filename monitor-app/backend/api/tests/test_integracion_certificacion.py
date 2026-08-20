@@ -719,6 +719,52 @@ async def test_pending_todos_marca_al_dia_una_fila_cubierta_sin_problema_de_fech
     )
 
 
+async def test_pending_proyecta_tiene_archivo_desde_file_url(conexion_revertida):
+    """`tiene_archivo` tiene que llegar HASTA la respuesta, no sólo existir en
+    una CTE. El SELECT final enumera columnas, así que una que nadie nombra se
+    pierde en silencio y el handler revienta con KeyError — un `AsyncMock`
+    nunca lo ve, porque devuelve el diccionario que el test le dicta.
+
+    Y tiene que salir de `file_url`, que es el hecho: deducirlo del `status`
+    era exactamente el defecto (un 'EXPIRED' SI tiene archivo).
+    """
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    empresa = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", empresa, cliente)
+    requisito = await _requisito(conn, entidad="CARRIER", cliente=cliente)
+    registro = await _registro(conn, requisito, empresa)
+    assert registro is not None, "el trigger no sembro el MISSING esperado"
+
+    async def fila_del_registro():
+        respuesta = await list_pending_compliance_records(
+            carrier_id=str(empresa), category=None, requirement_code=None, q="",
+            operation_type=None, entity_id=None, limit=50, offset=0, estado="todos",
+            pool=PoolDeUnaConexion(conn), _=USER,
+        )
+        return next(f for f in respuesta["rows"] if f["id"] == str(registro["id"]))
+
+    assert (await fila_del_registro())["tiene_archivo"] is False
+
+    # Vencido a la fecha Y con archivo: el caso que la ficha escondia — venció
+    # porque alguien lo subió, y su documento tiene que poder verse.
+    await conn.execute(
+        "UPDATE public.compliance_records "
+        "SET status = 'APPROVED_MANUAL', expiration_date = CURRENT_DATE - INTERVAL '30 days', "
+        "    file_url = 'carrier/x/y/archivo.pdf' "
+        "WHERE id = $1",
+        registro["id"])
+
+    fila = await fila_del_registro()
+    assert fila["tiene_archivo"] is True
+    assert fila["urgencia"] == "VENCIDO", (
+        f"salio urgencia={fila['urgencia']!r}: un APPROVED_MANUAL con la fecha "
+        "pasada es lo que la ficha anunciaba como 'Aprobado (manual)'"
+    )
+
+
 # ── El guardia del propio archivo ─────────────────────────────────────────
 
 MARCA_GUARDIA = "# ── El guardia del propio archivo"

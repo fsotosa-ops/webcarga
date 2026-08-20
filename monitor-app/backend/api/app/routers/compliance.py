@@ -461,6 +461,9 @@ SELECT
     r.id::text, r.entity_type, r.entity_id::text, r.subject_name,
     r.requirement_id, r.requirement_code, r.document_name, r.requirement_level, r.status, r.expiration_date,
     r.expiration_policy,
+    -- Se proyecta explicitamente porque el SELECT final enumera columnas: el
+    -- `p.*` de `resolved` la trae hasta aca, pero si no se nombra no sale.
+    r.tiene_archivo,
     -- Por que esta fila esta pendiente. El orden de las ramas importa: se
     -- pregunta primero por lo vencido, porque `por_vencer` ya lo excluye pero
     -- leerlo al reves invitaria a alguien a "simplificar" el predicado y
