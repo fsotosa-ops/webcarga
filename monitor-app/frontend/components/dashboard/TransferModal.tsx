@@ -13,7 +13,7 @@ interface Props {
 }
 
 /** Mini-modal de transferencia (conductor/vehículo → otra empresa) — rol
- *  admin. Busca sobre carriersApi.list; el llamador orquesta la asignación
+ *  editor. Busca sobre carriersApi.list; el llamador orquesta la asignación
  *  real (assignDriver/assignAsset a la empresa nueva ya desactiva la
  *  asignación ACTIVE previa, ver H2.2 carriers.py — no hace falta un
  *  endpoint .../transfer dedicado). */
