@@ -502,6 +502,12 @@ describe('FichaEmpresaPage', () => {
   it('dar de baja dos veces lo dice, en vez de romperse', async () => {
     // A6: doble clic, o la misma ficha abierta en dos pestañas. El backend
     // responde 404 "Asignación activa no encontrada" y eso hay que mostrarlo.
+    //
+    // Ronda de arreglo 1: el motivo se dice DENTRO del diálogo, no en la
+    // tarjeta. `ConfirmarBaja` ya lo endureció (ronda anterior) para no
+    // cerrarse solo ante Escape ni el fondo mientras hay un request en
+    // vuelo; dejar que el padre lo cierre ante un error tiraría esa garantía
+    // por la puerta de atrás — un diálogo que se desvanece se lee "listo".
     vi.mocked(carriersApi.unassignDriver).mockRejectedValue(
       new Error('Asignación activa no encontrada'),
     )
@@ -512,12 +518,17 @@ describe('FichaEmpresaPage', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
     fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/no encontrada/i)
+    const dialogo = await screen.findByRole('dialog')
+    expect(dialogo).toHaveTextContent(/no encontrada/i)
+    // Sigue abierto y ofrece reintentar sin volver a confirmar desde cero.
+    expect(screen.getByRole('button', { name: /^Dar de baja$/ })).toBeInTheDocument()
   })
 
-  it('si la baja falla, el sujeto sigue ahí', async () => {
-    // Sacarlo antes de la confirmacion del servidor y devolverlo al fallar lo
-    // convierte en un fantasma: parpadea y vuelve.
+  it('si la baja falla, el diálogo lo dice ahí mismo y no se cierra solo', async () => {
+    // El diálogo no se desvanece ante el fallo: si se cerrara, quien mira
+    // leería "listo" y tendría que ir a buscar una nota en otro lado para
+    // enterarse de que no pasó. El sujeto, además, sigue asignado —nada lo
+    // sacó de la ficha detrás del diálogo.
     vi.mocked(carriersApi.unassignDriver).mockRejectedValue(new Error('sesión vencida'))
     montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
 
@@ -526,7 +537,8 @@ describe('FichaEmpresaPage', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
     fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/sesión vencida/i)
+    const dialogo = await screen.findByRole('dialog')
+    expect(dialogo).toHaveTextContent(/sesión vencida/i)
     expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
   })
 })

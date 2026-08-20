@@ -283,36 +283,30 @@ export default function FichaEmpresaPage() {
    *  a la vez: son diálogos, no hay forma de disparar dos a la vez. */
   const [confirmandoBaja, setConfirmandoBaja] = useState<Sujeto | null>(null)
   const [transfiriendo, setTransfiriendo] = useState<Sujeto | null>(null)
-  /** El último error de baja de cada sujeto, por su clave. Vive acá y no en
-   *  `ConfirmarBaja` porque el aviso se muestra EN LA TARJETA —con
-   *  `AvisoDeFila`, igual que el resto del módulo— y no en un diálogo que se
-   *  cierra: si falló, el sujeto sigue asignado y hay que poder verlo sin
-   *  reabrir nada. */
-  const [bajaErrors, setBajaErrors] = useState<Record<string, string>>({})
 
   /** La baja real, de un sujeto puntual: qué endpoint según lo que es, y
    *  después `invalidarCertificacion` — la lista se redibuja desde ahí, la
    *  única fuente. Nunca se quita la fila a mano: eso la convierte en un
-   *  fantasma que parpadea si el pedido falla. Se usa tanto al confirmar
-   *  desde el diálogo como al reintentar desde la tarjeta. */
+   *  fantasma que parpadea si el pedido falla.
+   *
+   *  Ronda de arreglo 1: NO atrapa el error. `ConfirmarBaja` ya sabe qué
+   *  hacer con uno —lo dice adentro, mantiene el diálogo abierto y ofrece
+   *  reintentar sin cerrarse con Escape ni con el fondo (fix de la ronda
+   *  anterior)— y atraparlo acá para mostrarlo en la tarjeta dejaba ese
+   *  camino inalcanzable: código muerto. Un diálogo que se cierra solo ante
+   *  un fallo se lee como "listo", que es exactamente lo que no pasó. */
   async function ejecutarBaja(s: Sujeto) {
-    try {
-      if (s.entityType === 'ASSET') await carriersApi.unassignAsset(carrierId, s.entityId)
-      else await carriersApi.unassignDriver(carrierId, s.entityId)
-      await invalidarCertificacion(queryClient)
-      setBajaErrors(({ [s.clave]: _omitida, ...resto }) => resto)
-    } catch (e) {
-      setBajaErrors(prev => ({ ...prev, [s.clave]: e instanceof Error ? e.message : 'No se pudo dar de baja' }))
-    }
+    if (s.entityType === 'ASSET') await carriersApi.unassignAsset(carrierId, s.entityId)
+    else await carriersApi.unassignDriver(carrierId, s.entityId)
+    await invalidarCertificacion(queryClient)
   }
 
   async function confirmarBaja() {
     const s = confirmandoBaja
     if (!s) return
+    // Si `ejecutarBaja` rechaza, esto no se alcanza: `ConfirmarBaja` atrapa
+    // el rechazo, muestra el motivo y se queda abierto para reintentar.
     await ejecutarBaja(s)
-    // Se cierra siempre, éxito o error: el error queda dicho en la tarjeta,
-    // no en el diálogo — reabrirlo no sería "reintentar", sería confirmar de
-    // nuevo algo que el usuario ya confirmó una vez.
     setConfirmandoBaja(null)
   }
 
@@ -560,11 +554,6 @@ export default function FichaEmpresaPage() {
                 onDarDeBaja={() => setConfirmandoBaja(s)}
                 accionesDeshabilitadas={confirmandoBaja?.clave === s.clave || transfiriendo?.clave === s.clave}
               />
-              {bajaErrors[s.clave] && (
-                <div className="px-3 py-2 border-b border-border">
-                  <AvisoDeFila mensaje={bajaErrors[s.clave]} onReintentar={() => ejecutarBaja(s)} />
-                </div>
-              )}
               {/* La partición es la MISMA `urgencia` que reparte el filtro de
                   arriba, no una segunda lectura por `status`. Con `status` la
                   lista se contradecía con el filtro que la contenía: los 9
