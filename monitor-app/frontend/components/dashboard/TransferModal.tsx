@@ -13,7 +13,7 @@ interface Props {
 }
 
 /** Mini-modal de transferencia (conductor/vehículo → otra empresa) — rol
- *  admin. Busca sobre carriersApi.list; el llamador orquesta la asignación
+ *  editor. Busca sobre carriersApi.list; el llamador orquesta la asignación
  *  real (assignDriver/assignAsset a la empresa nueva ya desactiva la
  *  asignación ACTIVE previa, ver H2.2 carriers.py — no hace falta un
  *  endpoint .../transfer dedicado). */
@@ -39,6 +39,11 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
   }
 
   function handleClose() {
+    // Mismo criterio que ConfirmarBaja: mientras el pedido viaja, ni el
+    // fondo ni la X cierran — cerrarlo desmontaría el modal, el `catch` de
+    // `handleConfirm` escribiría `setErr` sobre un componente muerto y el
+    // mensaje (por ejemplo el 409 de una asignación protegida) no se vería.
+    if (submitting) return
     setQ(''); setSelectedId(null); setErr(null)
     onClose()
   }
@@ -51,7 +56,7 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <ArrowRightLeft size={14} /> {title}
           </h3>
-          <button onClick={handleClose} className="text-white/50 hover:text-white transition-colors">
+          <button onClick={handleClose} aria-label="Cerrar" className="text-white/50 hover:text-white transition-colors">
             <X size={16} />
           </button>
         </div>

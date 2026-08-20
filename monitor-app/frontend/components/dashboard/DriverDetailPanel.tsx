@@ -204,7 +204,7 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
             {err && <p className="text-xs text-red-500 mt-1">{err}</p>}
 
             <div className="mt-5 space-y-2">
-              {canAdmin && (
+              {canEdit && (
                 <button
                   type="button"
                   onClick={onTransferClick}

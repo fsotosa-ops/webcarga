@@ -3,23 +3,26 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, ChevronDown, ChevronRight, Eye, Loader2, Truck, User } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
+import { AccionesDeSujeto } from '@/components/compliance/AccionesDeSujeto'
 import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
+import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
 import { PuenteALaBandeja } from '@/components/compliance/PuenteALaBandeja'
 import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { DocumentPreviewModal } from '@/components/dashboard/DocumentPreviewModal'
+import { TransferModal } from '@/components/dashboard/TransferModal'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
-import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
 import type { EstadoDocumental, PendingComplianceRow } from '@/lib/types'
 import type { Sujeto } from '@/lib/utils/agruparPorSujeto'
@@ -86,32 +89,54 @@ function avanceDelSujeto(filas: PendingComplianceRow[]): string {
  *
  *  Por eso el cuerpo va plegado y la cabecera carga el total: en el mockup
  *  cada sujeto declara "12 requisitos" y muestra UNA fila. */
-function CabeceraDeSujeto({ sujeto, abierto, onAlternar }: {
+function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa, onTransferir, onDarDeBaja, accionesDeshabilitadas }: {
   sujeto:     Sujeto
   abierto:    boolean
   onAlternar: () => void
+  canEdit:    boolean
+  /** Con qué empresa dialoga el menú — "Dar de baja de {nombreEmpresa}". */
+  nombreEmpresa: string
+  onTransferir:  () => void
+  onDarDeBaja:   () => void
+  accionesDeshabilitadas?: boolean
 }) {
   const { icono: Icono, clase } = SUJETO[sujeto.entityType]
   const cuenta = `${sujeto.filas.length} ${sujeto.filas.length === 1 ? 'requisito' : 'requisitos'}`
+  // La empresa no se da de baja de sí misma: el menú es sólo para conductor
+  // y vehículo, y sólo si se puede escribir.
+  const puedeAccionar = canEdit && (sujeto.entityType === 'DRIVER' || sujeto.entityType === 'ASSET')
   return (
-    <button
-      type="button"
-      onClick={onAlternar}
-      aria-expanded={abierto}
-      className="w-full flex items-center gap-2 px-3 py-2 bg-accent/5 border-b border-border text-left hover:bg-accent/10 transition-colors"
-    >
-      {abierto
-        ? <ChevronDown size={14} className="shrink-0 text-informativo" aria-hidden="true" />
-        : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
-      <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
-      <span className="text-dato font-semibold text-text-primary truncate">{sujeto.titulo}</span>
-      <span className="shrink-0 text-etiqueta text-informativo">
-        {clase ? `${clase} · ${cuenta}` : cuenta}
-      </span>
-      <span className="ml-auto shrink-0 text-etiqueta text-informativo tabular-nums">
-        {avanceDelSujeto(sujeto.filas)}
-      </span>
-    </button>
+    <div className="w-full flex items-center gap-2 px-3 py-2 bg-accent/5 border-b border-border">
+      {/* Contenedor, no botón: `AccionesDeSujeto` trae su propio <button> y un
+       *  botón dentro de otro botón es HTML inválido — el clic se lo lleva el
+       *  de afuera. Por eso el botón que pliega y el menú son hermanos. */}
+      <button
+        type="button"
+        onClick={onAlternar}
+        aria-expanded={abierto}
+        className="flex-1 min-w-0 flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+      >
+        {abierto
+          ? <ChevronDown size={14} className="shrink-0 text-informativo" aria-hidden="true" />
+          : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
+        <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
+        <span className="text-dato font-semibold text-text-primary truncate">{sujeto.titulo}</span>
+        <span className="shrink-0 text-etiqueta text-informativo">
+          {clase ? `${clase} · ${cuenta}` : cuenta}
+        </span>
+        <span className="ml-auto shrink-0 text-etiqueta text-informativo tabular-nums">
+          {avanceDelSujeto(sujeto.filas)}
+        </span>
+      </button>
+      {puedeAccionar && (
+        <AccionesDeSujeto
+          nombreEmpresa={nombreEmpresa}
+          onTransferir={onTransferir}
+          onDarDeBaja={onDarDeBaja}
+          deshabilitado={accionesDeshabilitadas}
+        />
+      )}
+    </div>
   )
 }
 
@@ -252,6 +277,38 @@ export default function FichaEmpresaPage() {
   const { carrierId } = useParams<{ carrierId: string }>()
   const canEdit = useCanEdit()
   const subirDocumento = useSubirDocumento()
+  const queryClient = useQueryClient()
+
+  /** El sujeto que está por darse de baja o transferirse, si alguno. Uno solo
+   *  a la vez: son diálogos, no hay forma de disparar dos a la vez. */
+  const [confirmandoBaja, setConfirmandoBaja] = useState<Sujeto | null>(null)
+  const [transfiriendo, setTransfiriendo] = useState<Sujeto | null>(null)
+
+  /** La baja real, de un sujeto puntual: qué endpoint según lo que es, y
+   *  después `invalidarCertificacion` — la lista se redibuja desde ahí, la
+   *  única fuente. Nunca se quita la fila a mano: eso la convierte en un
+   *  fantasma que parpadea si el pedido falla.
+   *
+   *  Ronda de arreglo 1: NO atrapa el error. `ConfirmarBaja` ya sabe qué
+   *  hacer con uno —lo dice adentro, mantiene el diálogo abierto y ofrece
+   *  reintentar sin cerrarse con Escape ni con el fondo (fix de la ronda
+   *  anterior)— y atraparlo acá para mostrarlo en la tarjeta dejaba ese
+   *  camino inalcanzable: código muerto. Un diálogo que se cierra solo ante
+   *  un fallo se lee como "listo", que es exactamente lo que no pasó. */
+  async function ejecutarBaja(s: Sujeto) {
+    if (s.entityType === 'ASSET') await carriersApi.unassignAsset(carrierId, s.entityId)
+    else await carriersApi.unassignDriver(carrierId, s.entityId)
+    await invalidarCertificacion(queryClient)
+  }
+
+  async function confirmarBaja() {
+    const s = confirmandoBaja
+    if (!s) return
+    // Si `ejecutarBaja` rechaza, esto no se alcanza: `ConfirmarBaja` atrapa
+    // el rechazo, muestra el motivo y se queda abierto para reintentar.
+    await ejecutarBaja(s)
+    setConfirmandoBaja(null)
+  }
 
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoDocumental>('todos')
   /** El documento que se está mirando, sea cual sea su sujeto. Se guarda el
@@ -491,6 +548,11 @@ export default function FichaEmpresaPage() {
                 sujeto={s}
                 abierto={estaAbierto(s)}
                 onAlternar={() => alternar(s.clave)}
+                canEdit={canEdit}
+                nombreEmpresa={carrier.business_name}
+                onTransferir={() => setTransfiriendo(s)}
+                onDarDeBaja={() => setConfirmandoBaja(s)}
+                accionesDeshabilitadas={confirmandoBaja?.clave === s.clave || transfiriendo?.clave === s.clave}
               />
               {/* La partición es la MISMA `urgencia` que reparte el filtro de
                   arriba, no una segunda lectura por `status`. Con `status` la
@@ -552,6 +614,48 @@ export default function FichaEmpresaPage() {
           url={previewQuery.data.file_url}
           canEdit={canEdit}
           onClose={() => setViendoId(null)}
+        />
+      )}
+
+      <ConfirmarBaja
+        // Sin trampa de foco, el ⋮ de otro sujeto sigue disponible mientras
+        // este diálogo está abierto: se puede pasar de un sujeto a otro sin
+        // cerrar. `abierto` no cambia en ese caso, así que el efecto interno
+        // que resetea enviando/error (depende sólo de `abierto`) no se
+        // reactiva. La `key` por sujeto fuerza el remount — mismo patrón que
+        // el resto de los "draft que no se resincroniza" de este repo.
+        key={confirmandoBaja?.clave}
+        abierto={!!confirmandoBaja}
+        nombreSujeto={confirmandoBaja?.titulo ?? ''}
+        nombreEmpresa={carrier.business_name}
+        // Sobre `allRows`, no sobre `confirmandoBaja.filas`: esas son las
+        // filas del sujeto que además pasaron el filtro de estado activo
+        // (`rows = filasDelEstado(allRows, estadoFiltro)`), así que con el
+        // filtro en "Falta" un conductor al día contaba 0 documentos y el
+        // diálogo omitía la frase que existe para decir justamente eso.
+        cuantosDocumentos={confirmandoBaja
+          ? allRows.filter(r =>
+              r.entity_type === confirmandoBaja.entityType &&
+              r.entity_id === confirmandoBaja.entityId &&
+              r.tiene_archivo,
+            ).length
+          : 0}
+        onCancelar={() => setConfirmandoBaja(null)}
+        onConfirmar={confirmarBaja}
+      />
+
+      {transfiriendo && (
+        <TransferModal
+          open
+          title={`Transferir a ${transfiriendo.titulo}`}
+          currentCarrierId={carrierId}
+          onClose={() => setTransfiriendo(null)}
+          onTransfer={async (destino) => {
+            const s = transfiriendo
+            if (s.entityType === 'ASSET') await carriersApi.assignAsset(destino, s.entityId)
+            else await carriersApi.assignDriver(destino, s.entityId)
+            await invalidarCertificacion(queryClient)
+          }}
         />
       )}
     </div>

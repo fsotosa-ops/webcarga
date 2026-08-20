@@ -1,12 +1,14 @@
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import FastAPI
+import pytest
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
-from app.routers.carriers import router
-from tests.conftest import USER, wire_transactional_conn
+from app.routers.carriers import assign_asset, assign_driver, router
+from app.schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
+from tests.conftest import USER, PoolDeUnaConexion, _usuario_real, wire_transactional_conn
 
 
 def make_client(pool, supabase=None):
@@ -534,7 +536,8 @@ def test_assign_driver_deactivates_previous_and_activates_new():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.return_value = 1  # carrier exists, driver exists
+    # carrier exists, driver exists, sin asignacion protegida en otra empresa
+    conn.fetchval.side_effect = [1, 1, None]
     client = make_client(pool)
 
     res = client.post("/api/v1/carriers/c1/drivers", json={"driver_id": "d1", "carrier_id": "c1"})
@@ -555,7 +558,7 @@ def test_assign_driver_transfer_never_touches_trip_fleet_links():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.return_value = 1
+    conn.fetchval.side_effect = [1, 1, None]
     client = make_client(pool)
 
     res = client.post("/api/v1/carriers/c2/drivers", json={"driver_id": "d1", "carrier_id": "c2"})
@@ -569,7 +572,7 @@ def test_assign_asset_transfer_never_touches_trip_fleet_links():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.return_value = 1
+    conn.fetchval.side_effect = [1, 1, None]
     client = make_client(pool)
 
     res = client.post("/api/v1/carriers/c2/assets", json={"asset_id": "a1", "carrier_id": "c2"})
@@ -577,6 +580,116 @@ def test_assign_asset_transfer_never_touches_trip_fleet_links():
     assert res.status_code == 201
     sqls = [c.args[0] for c in conn.execute.call_args_list]
     assert not any("trip_fleet_links" in s for s in sqls)
+
+
+def test_transferir_una_asignacion_protegida_da_409_y_no_un_error_de_base():
+    """Sin esto sale un 23505 crudo de Postgres: el UPDATE salta la fila
+    protegida y el INSERT sigue, asi que quedan dos ACTIVE y el indice unico
+    parcial las rechaza. Quien transfiere ve un error de base de datos en vez
+    de enterarse de que la asignacion estaba protegida a proposito.
+    """
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    # `fetchval` responde en el orden en que el endpoint pregunta:
+    # existe la empresa -> existe el conductor -> hay asignacion protegida
+    conn.fetchval.side_effect = [1, 1, "otra-empresa-id"]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers/c1/drivers", json={"driver_id": "d1", "carrier_id": "c1"})
+
+    assert res.status_code == 409
+    assert "protegida" in res.json()["detail"]
+    # Y no escribio nada: el INSERT no llego a correr.
+    assert not any("INSERT" in str(c) for c in conn.execute.call_args_list)
+
+
+def test_transferir_sin_proteccion_sigue_funcionando():
+    """La guarda nueva no puede romper el camino normal, que es el 99%."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = [1, 1, None]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers/c1/drivers", json={"driver_id": "d1", "carrier_id": "c1"})
+
+    assert res.status_code == 201
+
+
+def test_transferir_un_vehiculo_con_asignacion_protegida_da_409():
+    """Mismo defecto, misma guarda, en assign_asset."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = [1, 1, "otra-empresa-id"]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/carriers/c1/assets", json={"asset_id": "a1", "carrier_id": "c1"})
+
+    assert res.status_code == 409
+    assert "protegida" in res.json()["detail"]
+    assert "vehículo" in res.json()["detail"]
+    assert not any("INSERT" in str(c) for c in conn.execute.call_args_list)
+
+
+# ── Contra Postgres real: un AsyncMock no ejecuta el índice único parcial ──
+
+@pytest.mark.integracion
+async def test_integracion_transferir_conductor_protegido_da_409_y_no_deja_dos_active(conexion_revertida):
+    """Sin la guarda esto termina en un 23505 crudo de
+    idx_driver_assignments_one_active: el UPDATE salta la fila protegida y el
+    INSERT sigue igual, dejando dos filas ACTIVE para el mismo conductor."""
+    conn = conexion_revertida
+    driver_id = str(await conn.fetchval("SELECT id FROM public.drivers LIMIT 1"))
+    carriers = await conn.fetch("SELECT id FROM public.carriers LIMIT 2")
+    carrier_a, carrier_b = str(carriers[0]["id"]), str(carriers[1]["id"])
+    await conn.execute("DELETE FROM public.driver_assignments WHERE driver_id = $1", driver_id)
+    await conn.execute(
+        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, is_manual_override) "
+        "VALUES ($1, $2, 'ACTIVE', true)",
+        driver_id, carrier_a,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await assign_driver(
+            carrier_b, DriverAssignmentCreateBody(driver_id=driver_id, carrier_id=carrier_b),
+            PoolDeUnaConexion(conn), await _usuario_real(conn),
+        )
+    assert exc.value.status_code == 409
+
+    filas = await conn.fetch(
+        "SELECT carrier_id, status FROM public.driver_assignments WHERE driver_id = $1", driver_id)
+    assert len(filas) == 1, "la asignacion protegida no debia tocarse ni debia crearse una segunda"
+    assert str(filas[0]["carrier_id"]) == carrier_a
+    assert filas[0]["status"] == "ACTIVE"
+
+
+@pytest.mark.integracion
+async def test_integracion_transferir_vehiculo_protegido_da_409_y_no_deja_dos_active(conexion_revertida):
+    conn = conexion_revertida
+    asset_id = str(await conn.fetchval("SELECT id FROM public.assets LIMIT 1"))
+    carriers = await conn.fetch("SELECT id FROM public.carriers LIMIT 2")
+    carrier_a, carrier_b = str(carriers[0]["id"]), str(carriers[1]["id"])
+    await conn.execute("DELETE FROM public.asset_assignments WHERE asset_id = $1", asset_id)
+    await conn.execute(
+        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status, is_manual_override) "
+        "VALUES ($1, $2, 'ACTIVE', true)",
+        asset_id, carrier_a,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await assign_asset(
+            carrier_b, AssetAssignmentCreateBody(asset_id=asset_id, carrier_id=carrier_b),
+            PoolDeUnaConexion(conn), await _usuario_real(conn),
+        )
+    assert exc.value.status_code == 409
+
+    filas = await conn.fetch(
+        "SELECT carrier_id, status FROM public.asset_assignments WHERE asset_id = $1", asset_id)
+    assert len(filas) == 1
+    assert str(filas[0]["carrier_id"]) == carrier_a
+    assert filas[0]["status"] == "ACTIVE"
 
 
 def test_assign_driver_404_when_driver_missing():

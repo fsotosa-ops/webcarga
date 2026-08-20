@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import FichaEmpresaPage from './page'
@@ -13,7 +13,13 @@ vi.mock('@/lib/api/compliance', () => ({
   },
 }))
 vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { get: vi.fn() },
+  carriersApi: {
+    get: vi.fn(),
+    unassignDriver: vi.fn(),
+    unassignAsset: vi.fn(),
+    assignDriver: vi.fn(),
+    assignAsset: vi.fn(),
+  },
 }))
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: vi.fn(() => true) }))
 
@@ -59,7 +65,13 @@ function montar(rows: PendingComplianceRow[], total = rows.length) {
   )
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  // `clearAllMocks` no deshace un `mockReturnValue` puesto por un test
+  // anterior (sólo limpia el historial de llamadas): sin este reset, un
+  // test que apaga `canEdit` deja apagado a todos los que corren después.
+  vi.mocked(useCanEdit).mockReturnValue(true)
+})
 
 describe('FichaEmpresaPage', () => {
   // La promesa de la pantalla —empresa, conductores y vehiculos JUNTOS— se
@@ -424,5 +436,166 @@ describe('FichaEmpresaPage', () => {
 
     expect(await screen.findByText(/no se pudo cargar la documentación/i)).toBeInTheDocument()
     expect(screen.queryByText('Tipo de operación sin determinar')).not.toBeInTheDocument()
+  })
+
+  // Task 5: dar de baja y transferir sin salir de la ficha.
+  it('dar de baja a un conductor lo saca de la ficha, sin tocar sus documentos', async () => {
+    vi.mocked(carriersApi.unassignDriver).mockResolvedValue({ ok: true })
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
+    ])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    await waitFor(() => expect(carriersApi.unassignDriver).toHaveBeenCalledWith('c1', 'd1'))
+    // Nada se borra: la baja es un estado de la asignacion.
+    expect(complianceApi.uploadFile).not.toHaveBeenCalled()
+  })
+
+  // Hallazgo 1 de la revisión final (bloqueante): `cuantosDocumentos` salía
+  // de `s.filas`, que son las filas del sujeto YA FILTRADAS por el estado
+  // activo — no todas las suyas. Con el filtro en "Falta" —la forma natural
+  // de trabajar esta pantalla— un conductor con documentos al día perdía la
+  // única frase que ese diálogo existe para decir.
+  it('con el filtro en "Falta", el diálogo de baja sigue contando los documentos que sí tiene', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             requirement_id: 'r2', urgencia: 'FALTA', tiene_archivo: false }),
+    ])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/1 documento/)
+  })
+
+  it('un vehículo se da de baja por su propio endpoint, no por el de conductores', async () => {
+    // El sujeto sabe lo que es; sin esto, una sola rama trataria a los dos igual
+    // y el vehiculo se iria contra /drivers/{id}.
+    vi.mocked(carriersApi.unassignAsset).mockResolvedValue({ ok: true })
+    montar([fila({ id: 'p1', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Vehículos/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    await waitFor(() => expect(carriersApi.unassignAsset).toHaveBeenCalledWith('c1', 'a1'))
+    expect(carriersApi.unassignDriver).not.toHaveBeenCalled()
+  })
+
+  it('transferir usa el modal que ya existe y excluye a la empresa actual', async () => {
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Transferir/ }))
+
+    expect(screen.getByPlaceholderText(/empresa destino/i)).toBeInTheDocument()
+  })
+
+  it('un viewer no ve el menú', async () => {
+    vi.mocked(useCanEdit).mockReturnValue(false)
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    expect(screen.queryByRole('button', { name: /acciones/i })).not.toBeInTheDocument()
+  })
+
+  it('dar de baja al último conductor deja la ficha usable, sin el grupo vacío', async () => {
+    // A3. El agrupado ya descarta los grupos sin sujetos, pero nada lo afirmaba:
+    // el dia que alguien "simplifique" ese filter, la ficha muestra un grupo
+    // "Conductores · 0 conductores" y parece rota.
+    vi.mocked(carriersApi.unassignDriver).mockResolvedValue({ ok: true })
+    montar([fila({ id: 'p1', entity_type: 'CARRIER' })])   // ya sin conductores
+
+    expect(await screen.findByRole('button', { name: /De la empresa/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Conductores/ })).not.toBeInTheDocument()
+  })
+
+  it('dar de baja dos veces lo dice, en vez de romperse', async () => {
+    // A6: doble clic, o la misma ficha abierta en dos pestañas. El backend
+    // responde 404 "Asignación activa no encontrada" y eso hay que mostrarlo.
+    //
+    // Ronda de arreglo 1: el motivo se dice DENTRO del diálogo, no en la
+    // tarjeta. `ConfirmarBaja` ya lo endureció (ronda anterior) para no
+    // cerrarse solo ante Escape ni el fondo mientras hay un request en
+    // vuelo; dejar que el padre lo cierre ante un error tiraría esa garantía
+    // por la puerta de atrás — un diálogo que se desvanece se lee "listo".
+    vi.mocked(carriersApi.unassignDriver).mockRejectedValue(
+      new Error('Asignación activa no encontrada'),
+    )
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    const dialogo = await screen.findByRole('dialog')
+    expect(dialogo).toHaveTextContent(/no encontrada/i)
+    // Sigue abierto y ofrece reintentar sin volver a confirmar desde cero.
+    expect(screen.getByRole('button', { name: /^Dar de baja$/ })).toBeInTheDocument()
+  })
+
+  it('si la baja falla, el diálogo lo dice ahí mismo y no se cierra solo', async () => {
+    // El diálogo no se desvanece ante el fallo: si se cerrara, quien mira
+    // leería "listo" y tendría que ir a buscar una nota en otro lado para
+    // enterarse de que no pasó. El sujeto, además, sigue asignado —nada lo
+    // sacó de la ficha detrás del diálogo.
+    vi.mocked(carriersApi.unassignDriver).mockRejectedValue(new Error('sesión vencida'))
+    montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+
+    const dialogo = await screen.findByRole('dialog')
+    expect(dialogo).toHaveTextContent(/sesión vencida/i)
+    expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
+  })
+
+  // Hallazgo 5 de la revision final: el efecto que resetea enviando/error
+  // depende sólo de `abierto`, y el padre deja el diálogo montado siempre.
+  // Sin trampa de foco, sólo el ⋮ del sujeto EN CURSO queda deshabilitado —
+  // el de cualquier otro sigue disponible— así que se puede disparar la baja
+  // de un segundo sujeto sin haber cerrado la del primero, y el diálogo
+  // cambia de nombre sin limpiar el error que traía.
+  function accionesDe(nombreSujeto: RegExp) {
+    const cabecera = screen.getByRole('button', { name: nombreSujeto })
+    return within(cabecera.closest('div')!).getByRole('button', { name: /acciones/i })
+  }
+
+  it('un error mostrado para un sujeto no aparece al abrir el diálogo del siguiente', async () => {
+    vi.mocked(carriersApi.unassignDriver).mockRejectedValueOnce(new Error('sesión vencida'))
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Ana Torres' }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd2', subject_name: 'Beto Rojas', requirement_id: 'r2' }),
+    ])
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+
+    // La baja de Ana falla y el diálogo queda abierto mostrando el error.
+    fireEvent.click(accionesDe(/Ana Torres/))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/sesión vencida/i)
+
+    // Sin cerrarlo, se dispara la baja de Beto: su ⋮ nunca estuvo
+    // deshabilitado — sólo lo estaba el de Ana.
+    fireEvent.click(accionesDe(/Beto Rojas/))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+
+    const dialogo = await screen.findByRole('dialog')
+    expect(dialogo).toHaveTextContent(/Beto Rojas/)
+    expect(dialogo).not.toHaveTextContent(/sesión vencida/i)
   })
 })

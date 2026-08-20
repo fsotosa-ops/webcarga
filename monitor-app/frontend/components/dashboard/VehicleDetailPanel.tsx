@@ -310,7 +310,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
             </div>
 
             <div className="mt-5 space-y-2">
-              {canAdmin && (
+              {canEdit && (
                 <button
                   type="button"
                   onClick={onTransferClick}
