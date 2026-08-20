@@ -319,4 +319,29 @@ describe('EmpresaDetailPage', () => {
     expect(await screen.findByText(/tiene conductores asociados/)).toBeInTheDocument()
     expect(pushMock).not.toHaveBeenCalled()
   })
+
+  it('un editor puede transferir: el gate de pantalla decia admin y el endpoint aceptaba editor', async () => {
+    // El desalineado no protegia nada —un editor podia hacerlo por API igual— y
+    // le escondia el boton a quien mantiene esto al dia todos los dias.
+    vi.mocked(createClient).mockReturnValue({
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } }) },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: { role: 'editor' } }),
+          }),
+        }),
+      }),
+    } as unknown as ReturnType<typeof createClient>)
+    vi.mocked(driversApi.get).mockResolvedValue({
+      id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
+      operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
+      total_requirements: 5, last_document_update: null,
+    })
+    renderPage()
+    await clickTab(/Conductores/)
+    fireEvent.click(await screen.findByText('Juan Pérez'))
+
+    expect(await screen.findByRole('button', { name: /transferir/i })).toBeInTheDocument()
+  })
 })

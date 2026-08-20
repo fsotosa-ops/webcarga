@@ -504,7 +504,7 @@ function EmpresaDetailPageInner() {
                   Editar Empresa
                 </button>
               )}
-              {canAdmin && (
+              {canEdit && (
                 <button
                   onClick={() => carrier.operational_status !== 'ACTIVE' ? handleReactivateCarrier() : setBajaModalOpen(true)}
                   className={`px-4 py-2 rounded-lg text-sm font-bold transition border shadow-sm shrink-0 ${
@@ -945,7 +945,7 @@ function EmpresaDetailPageInner() {
         driver={selectedDriver}
         carrierId={id}
         canEdit={canEdit}
-        canAdmin={canAdmin}
+        canAdmin={canEdit}
         onClose={() => setSelectedDriverId(null)}
         onPatch={handlePatchDriver}
         onRemove={() => handleRemoveDriver(selectedDriver!.id)}
@@ -956,7 +956,7 @@ function EmpresaDetailPageInner() {
         asset={selectedAsset}
         carrierId={id}
         canEdit={canEdit}
-        canAdmin={canAdmin}
+        canAdmin={canEdit}
         onClose={() => setSelectedAssetId(null)}
         onPatch={handlePatchAsset}
         onRemove={() => handleRemoveAsset(selectedAsset!.id)}
