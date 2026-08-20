@@ -300,9 +300,10 @@ export default function FichaEmpresaPage() {
           />
         )}
 
-        {/* Distinto del vacío de arriba: acá SÍ hay documentos, sólo que
-            ninguno queda del lado del filtro elegido. Mostrar el mismo "nadie
-            cargó nada" sería mentir sobre una empresa que sí tiene. */}
+        {/* Distinto del vacío de arriba: acá SÍ hay requisitos, sólo que
+            ninguno queda del lado del filtro elegido. Decir "no tiene
+            requisitos asignados" sería mentir sobre una empresa que sí los
+            tiene. */}
         {!todosQuery.isPending && !todosQuery.error && allRows.length > 0 && rows.length === 0 && (
           <Estado
             tipo="vacio"
