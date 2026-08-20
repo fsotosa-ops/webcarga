@@ -118,9 +118,14 @@ describe('VehicleDetailPanel', () => {
     expect(screen.getByLabelText('Año del vehículo')).toHaveValue(2015)
   })
 
-  it('shows a "Transferir a otra empresa" button only for canAdmin', () => {
-    renderPanel(ASSET, { canAdmin: false })
+  it('shows a "Transferir a otra empresa" button only for canEdit', () => {
+    // Transferir se gatea con canEdit (Ronda de arreglo 1): la baja del
+    // sistema es la que sigue exigiendo canAdmin, ver el test de abajo.
+    renderPanel(ASSET, { canEdit: false })
     expect(screen.queryByRole('button', { name: /Transferir/ })).not.toBeInTheDocument()
+
+    renderPanel(ASSET, { canEdit: true, canAdmin: false })
+    expect(screen.getByRole('button', { name: /Transferir/ })).toBeInTheDocument()
   })
 
   it('shows "Quitar del roster" only when canEdit, and calls onRemove when clicked', async () => {

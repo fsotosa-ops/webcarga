@@ -945,7 +945,7 @@ function EmpresaDetailPageInner() {
         driver={selectedDriver}
         carrierId={id}
         canEdit={canEdit}
-        canAdmin={canEdit}
+        canAdmin={canAdmin}
         onClose={() => setSelectedDriverId(null)}
         onPatch={handlePatchDriver}
         onRemove={() => handleRemoveDriver(selectedDriver!.id)}
@@ -956,7 +956,7 @@ function EmpresaDetailPageInner() {
         asset={selectedAsset}
         carrierId={id}
         canEdit={canEdit}
-        canAdmin={canEdit}
+        canAdmin={canAdmin}
         onClose={() => setSelectedAssetId(null)}
         onPatch={handlePatchAsset}
         onRemove={() => handleRemoveAsset(selectedAsset!.id)}

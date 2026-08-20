@@ -104,9 +104,14 @@ describe('DriverDetailPanel', () => {
     await waitFor(() => expect(onPatch).toHaveBeenCalledWith('d1', { full_name: 'Juan Pablo' }))
   })
 
-  it('shows a "Transferir a otra empresa" button only for canAdmin', () => {
-    renderPanel(DRIVER, { canAdmin: false })
+  it('shows a "Transferir a otra empresa" button only for canEdit', () => {
+    // Transferir se gatea con canEdit (Ronda de arreglo 1): la baja del
+    // sistema es la que sigue exigiendo canAdmin, ver el test de abajo.
+    renderPanel(DRIVER, { canEdit: false })
     expect(screen.queryByRole('button', { name: /Transferir/ })).not.toBeInTheDocument()
+
+    renderPanel(DRIVER, { canEdit: true, canAdmin: false })
+    expect(screen.getByRole('button', { name: /Transferir/ })).toBeInTheDocument()
   })
 
   it('calls onTransferClick when the transfer button is clicked', () => {
