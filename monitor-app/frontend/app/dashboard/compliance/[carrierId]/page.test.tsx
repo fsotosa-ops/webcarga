@@ -455,6 +455,28 @@ describe('FichaEmpresaPage', () => {
     expect(complianceApi.uploadFile).not.toHaveBeenCalled()
   })
 
+  // Hallazgo 1 de la revisión final (bloqueante): `cuantosDocumentos` salía
+  // de `s.filas`, que son las filas del sujeto YA FILTRADAS por el estado
+  // activo — no todas las suyas. Con el filtro en "Falta" —la forma natural
+  // de trabajar esta pantalla— un conductor con documentos al día perdía la
+  // única frase que ese diálogo existe para decir.
+  it('con el filtro en "Falta", el diálogo de baja sigue contando los documentos que sí tiene', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             requirement_id: 'r2', urgencia: 'FALTA', tiene_archivo: false }),
+    ])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/1 documento/)
+  })
+
   it('un vehículo se da de baja por su propio endpoint, no por el de conductores', async () => {
     // El sujeto sabe lo que es; sin esto, una sola rama trataria a los dos igual
     // y el vehiculo se iria contra /drivers/{id}.

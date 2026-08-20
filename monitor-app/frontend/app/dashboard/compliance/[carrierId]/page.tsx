@@ -621,7 +621,18 @@ export default function FichaEmpresaPage() {
         abierto={!!confirmandoBaja}
         nombreSujeto={confirmandoBaja?.titulo ?? ''}
         nombreEmpresa={carrier.business_name}
-        cuantosDocumentos={confirmandoBaja?.filas.filter(f => f.tiene_archivo).length ?? 0}
+        // Sobre `allRows`, no sobre `confirmandoBaja.filas`: esas son las
+        // filas del sujeto que además pasaron el filtro de estado activo
+        // (`rows = filasDelEstado(allRows, estadoFiltro)`), así que con el
+        // filtro en "Falta" un conductor al día contaba 0 documentos y el
+        // diálogo omitía la frase que existe para decir justamente eso.
+        cuantosDocumentos={confirmandoBaja
+          ? allRows.filter(r =>
+              r.entity_type === confirmandoBaja.entityType &&
+              r.entity_id === confirmandoBaja.entityId &&
+              r.tiene_archivo,
+            ).length
+          : 0}
         onCancelar={() => setConfirmandoBaja(null)}
         onConfirmar={confirmarBaja}
       />
