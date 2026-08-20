@@ -17,13 +17,19 @@ import { test, expect, type Page } from '@playwright/test'
 
 const EMAIL    = process.env.DEMO_EMAIL    ?? ''
 const PASSWORD = process.env.DEMO_PASSWORD ?? ''
+/** El unico dato del ENTORNO que este spec necesita ademas de las
+ *  credenciales: el nombre de una empresa real con al menos un documento
+ *  cargado. Va por variable y no escrito aca porque es el nombre de una
+ *  empresa de verdad, y los nombres reales no viven en los tests. Sale de
+ *  `.env.local`, junto a DEMO_EMAIL/DEMO_PASSWORD. */
+const EMPRESA  = process.env.DEMO_CARRIER  ?? ''
 
 const PLACEHOLDERS = ['changeme', 'demo@webcarga.com', 'tu-password', '']
 
 async function entrar(page: Page) {
-  if (PLACEHOLDERS.includes(PASSWORD) || PLACEHOLDERS.includes(EMAIL) || !EMAIL) {
+  if (PLACEHOLDERS.includes(PASSWORD) || PLACEHOLDERS.includes(EMAIL) || !EMAIL || !EMPRESA) {
     throw new Error(
-      'Faltan credenciales reales. Corre asi, tomandolas de .env.local sin imprimirlas:\n' +
+      'Faltan credenciales reales o DEMO_CARRIER. Corre asi, tomandolos de .env.local sin imprimirlos:\n' +
       '  set -a; . .env.local; set +a; npx playwright test scripts/ficha-empresa.spec.ts',
     )
   }
@@ -84,7 +90,7 @@ test.describe('Certificación · la ficha de una empresa', () => {
     await entrar(page)
     await page.goto('/dashboard/compliance')
 
-    const fila = page.getByText('Comercializadora De Los Rios Ltda').first()
+    const fila = page.getByText(EMPRESA).first()
     await fila.waitFor({ timeout: 30000 })
     await fila.click()
 
@@ -93,7 +99,7 @@ test.describe('Certificación · la ficha de una empresa', () => {
 
     await page.reload()
     expect(page.url()).toBe(url)
-    await expect(page.getByText('Comercializadora De Los Rios Ltda').first()).toBeVisible()
+    await expect(page.getByText(EMPRESA).first()).toBeVisible()
   })
 
   test('muestra lo que TIENE junto a lo que le falta, y el filtro cambia la lista', async ({ page }) => {
@@ -102,7 +108,7 @@ test.describe('Certificación · la ficha de una empresa', () => {
 
     await entrar(page)
     await page.goto('/dashboard/compliance')
-    await page.getByText('Comercializadora De Los Rios Ltda').first().click()
+    await page.getByText(EMPRESA).first().click()
     await page.waitForURL(/\/dashboard\/compliance\/[0-9a-f-]{36}/, { timeout: 15000 })
 
     // Arranca en "Todo": es la razón de ser de la pantalla — los documentos
@@ -115,15 +121,19 @@ test.describe('Certificación · la ficha de una empresa', () => {
 
     await page.screenshot({ path: 'test-results/ficha-todo.png', fullPage: true })
 
-    // Al día: sólo lo cargado. No puede quedar ningún renglón de carga.
+    // Al día: sólo lo cargado. La aserción con dientes es que NO queda ningún
+    // renglón de carga — el `aria-pressed` que el clic acaba de poner es
+    // estado local del botón y pasaría con la pantalla rota.
     await page.getByRole('button', { name: /Al día/ }).click()
-    await expect(page.getByRole('button', { name: /Al día/ })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId(/^renglon-/)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Ver' }).first()).toBeVisible()
     await page.screenshot({ path: 'test-results/ficha-al-dia.png', fullPage: true })
 
-    // Falta: lo contrario. Ningún "Ver", porque nada tiene archivo.
+    // Falta: lo contrario. Todo lo que hay es un renglón de carga. (No se
+    // exige "ningún Ver": un vencido TIENE archivo y ofrece verlo además de
+    // renovarlo, que es justamente lo que la ficha vino a hacer visible.)
     await page.getByRole('button', { name: /^Falta/ }).click()
-    await expect(page.getByRole('button', { name: /^Falta/ })).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByRole('button', { name: 'Ver' })).toHaveCount(0)
+    await expect(page.getByTestId(/^renglon-/).first()).toBeVisible()
     await page.screenshot({ path: 'test-results/ficha-falta.png', fullPage: true })
 
     expect(erroresReales(consola), 'la consola no puede tener errores').toEqual([])
@@ -137,7 +147,7 @@ test.describe('Certificación · la ficha de una empresa', () => {
 
     await entrar(page)
     await page.goto('/dashboard/compliance')
-    await page.getByText('Comercializadora De Los Rios Ltda').first().click()
+    await page.getByText(EMPRESA).first().click()
     await page.waitForURL(/\/dashboard\/compliance\/[0-9a-f-]{36}/, { timeout: 15000 })
     await page.getByRole('button', { name: 'Ver' }).first().waitFor({ timeout: 15000 })
 

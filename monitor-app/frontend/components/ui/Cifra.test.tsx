@@ -26,6 +26,16 @@ describe('Cifra', () => {
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
+  // "Todavia no llego" y "no se va a mostrar" son dos cosas distintas. Las
+  // tres cifras que la ficha de empresa oculta a proposito —contarlas sobre
+  // una lista truncada seria mentir— quedaban latiendo para siempre: un
+  // esqueleto promete un dato que no va a llegar nunca.
+  it('sin `cargando` y sin dato lo dice, en vez de latir para siempre', () => {
+    render(<Cifra valor={undefined} etiqueta="al dia" />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('al dia')).toBeInTheDocument()
+  })
+
   it('un cero de verdad si se muestra', () => {
     // "Cero documentos pendientes" es una respuesta, y buena. Lo que no puede
     // es aparecer cuando todavia no se sabe.

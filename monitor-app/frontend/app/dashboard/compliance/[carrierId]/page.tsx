@@ -240,7 +240,10 @@ export default function FichaEmpresaPage() {
             <span className={`text-etiqueta font-semibold px-2 py-0.5 rounded-full ${STATUS_CLS[carrier.operational_status]}`}>
               {STATUS_LABELS[carrier.operational_status]}
             </span>
-            {!todosQuery.isPending && (
+            {/* Sin el dato no se afirma nada. Guardado tambien por el error y
+                no sólo por `isPending`: si la consulta falló no sabemos que el
+                tipo esté sin determinar — no pudimos preguntarlo. */}
+            {!todosQuery.isPending && !todosQuery.error && (
               tipoOperacion ? (
                 <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
                   {tipoOperacion}
@@ -284,10 +287,16 @@ export default function FichaEmpresaPage() {
         )}
 
         {!todosQuery.isPending && !todosQuery.error && allRows.length === 0 && (
+          /* Con `estado='todos'` esto NO es "nadie cargó nada": es que la
+             empresa no tiene ni un `compliance_record`. Las empresas sin
+             documentos sí tienen registros MISSING y nunca llegan acá; quien
+             llega es la empresa a la que todavía no se le sembró el catálogo,
+             y pedirle documentos sería decirle lo que no es — cargar no lo
+             arregla. */
           <Estado
             tipo="vacio"
-            titulo={`Nadie cargó documentos de ${carrier.business_name} todavía`}
-            detalle="En cuanto lleguen archivos por la Bandeja, van a aparecer acá agrupados por quién los necesita."
+            titulo={`${carrier.business_name} todavía no tiene requisitos asignados`}
+            detalle="Nadie le definió qué documentos necesita, así que no hay nada que pedir ni que mostrar. En cuanto tenga su catálogo de certificación, sus documentos van a aparecer acá agrupados por quién los necesita."
           />
         )}
 

@@ -189,10 +189,15 @@ describe('FichaEmpresaPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/no tiene un archivo/i)
   })
 
-  it('sin documentos dice por dónde empezar, no una tabla vacía', async () => {
-    // Es el caso de 32 de las 34 empresas activas.
+  // Con `estado='todos'`, cero filas NO significa "nadie cargó nada": significa
+  // que la empresa no tiene ni un `compliance_record`. Las 32 empresas sin
+  // documentos sí tienen registros MISSING, así que nunca ven este mensaje; lo
+  // ve la empresa a la que todavía no se le sembró el catálogo, y decirle
+  // "carga documentos" es decirle lo que no es — cargar no lo arregla.
+  it('sin requisitos asignados lo dice, en vez de culpar a nadie por no cargar', async () => {
     montar([])
-    expect(await screen.findByText(/nadie cargó documentos/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no tiene requisitos/i)).toBeInTheDocument()
+    expect(screen.queryByText(/nadie cargó documentos/i)).not.toBeInTheDocument()
   })
 
   // "La preselección de empresa no es comodidad: es precisión" — el motor
@@ -213,19 +218,34 @@ describe('FichaEmpresaPage', () => {
     expect(screen.queryByTestId('archivo-p1')).not.toBeInTheDocument()
   })
 
-  it('si la lista vino truncada, sólo la cifra de "todos" se muestra', async () => {
+  it('si la lista vino truncada, sólo la cifra de "todos" afirma un número', async () => {
     // rows.length (2) < total (500): contar sobre lo que llego para las
-    // otras tres cifras mentiria — son una muestra, no el universo.
+    // otras tres cifras mentiria — son una muestra, no el universo. Dicen que
+    // no hay dato en vez de latir para siempre prometiendo uno.
     montar([fila({ id: 'p1' }), fila({ id: 'p2', requirement_id: 'r2' })], 500)
     await screen.findByText('De la empresa')
-    expect(screen.getByText('requisitos')).toBeInTheDocument()
-    expect(screen.queryByText('al día')).not.toBeInTheDocument()
-    expect(screen.queryByText('faltan')).not.toBeInTheDocument()
-    expect(screen.queryByText('por vencer')).not.toBeInTheDocument()
+    expect(screen.getAllByText('500').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('—')).toHaveLength(3)
   })
 
   it('sin flota conocida, el chip de tipo de operación lo dice en vez de desaparecer', async () => {
     montar([])
     expect(await screen.findByText('Tipo de operación sin determinar')).toBeInTheDocument()
+  })
+
+  // Una afirmación derivada no se muestra sin el dato. Si la consulta falló no
+  // sabemos que el tipo esté sin determinar: no pudimos preguntarlo.
+  it('si la consulta falló, el chip se calla en vez de afirmar "sin determinar"', async () => {
+    vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
+    vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
+    vi.mocked(complianceApi.listPending).mockRejectedValue(new Error('500'))
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <FichaEmpresaPage />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText(/no se pudo cargar la documentación/i)).toBeInTheDocument()
+    expect(screen.queryByText('Tipo de operación sin determinar')).not.toBeInTheDocument()
   })
 })

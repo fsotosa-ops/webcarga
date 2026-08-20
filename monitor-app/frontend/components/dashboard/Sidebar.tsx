@@ -55,7 +55,10 @@ const NAV_GROUPS: NavGroupDef[] = [
 
 // Un modulo por objeto de trabajo. Seguros y Tarifario todavia no tienen
 // mas de una vista: pasar Seguros a seccion de la ficha es la HU-06.
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; badge?: 'inbox' }[] = [
+// Sin `badge`: al pasar Certificacion a NAV_GROUPS, el unico item con contador
+// se fue con ella. Un campo del tipo y una rama de render inalcanzables se leen
+// como una capacidad que existe, y no existe.
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/dashboard/insurance', label: 'Seguros',   icon: Shield },
   { href: '/dashboard/pricing',   label: 'Tarifario', icon: Receipt },
 ]
@@ -277,7 +280,7 @@ export default function Sidebar({ role }: SidebarProps) {
             />
           ))}
 
-          {NAV_ITEMS.map(({ href, label, icon: Icon, badge }) => {
+          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = href === activeHref
             return (
               <Link
@@ -297,11 +300,6 @@ export default function Sidebar({ role }: SidebarProps) {
                 <Icon size={16} className={`shrink-0 ${active ? 'text-accent' : 'group-hover:text-white/70'}`} />
                 {!collapsed && (
                   <span className={`font-medium truncate ${active ? 'text-white' : ''}`}>{label}</span>
-                )}
-                {badge === 'inbox' && inboxCount > 0 && !collapsed && (
-                  <span className="ml-auto shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
-                    {inboxCount}
-                  </span>
                 )}
               </Link>
             )
