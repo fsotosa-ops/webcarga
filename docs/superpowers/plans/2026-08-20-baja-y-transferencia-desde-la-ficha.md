@@ -118,38 +118,50 @@ la épica de Certificación y todavía vivo.
 - [ ] **Step 1: Escribir los tests que fallan**
 
 ```python
-# tests/test_carriers.py
-@pytest.mark.asyncio
-async def test_transferir_una_asignacion_protegida_da_409_y_no_un_error_de_base(client, pool_mock):
+# tests/test_carriers.py — usa el patrón que este archivo YA tiene:
+# `AsyncMock()` local, `wire_transactional_conn(pool, conn)` y `make_client(pool)`.
+# El endpoint pregunta por `conn`, no por `pool`: está dentro de
+# `async with pool.acquire() as conn`.
+def test_transferir_una_asignacion_protegida_da_409_y_no_un_error_de_base():
     """Sin esto sale un 23505 crudo de Postgres: el UPDATE salta la fila
     protegida y el INSERT sigue, asi que quedan dos ACTIVE y el indice unico
     parcial las rechaza. Quien transfiere ve un error de base de datos en vez
     de enterarse de que la asignacion estaba protegida a proposito.
     """
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
     # `fetchval` responde en el orden en que el endpoint pregunta:
     # existe la empresa -> existe el conductor -> hay asignacion protegida
-    pool_mock.fetchval.side_effect = [1, 1, "otra-empresa-id"]
+    conn.fetchval.side_effect = [1, 1, "otra-empresa-id"]
+    client = make_client(pool)
 
     res = client.post("/api/v1/carriers/c1/drivers", json={"driver_id": "d1", "carrier_id": "c1"})
 
     assert res.status_code == 409
     assert "protegida" in res.json()["detail"]
     # Y NO escribio nada: el INSERT no llego a correr.
-    assert not any("INSERT" in str(c) for c in pool_mock.execute.call_args_list)
+    assert not any("INSERT" in str(c) for c in conn.execute.call_args_list)
 
 
-@pytest.mark.asyncio
-async def test_transferir_sin_proteccion_sigue_funcionando(client, pool_mock):
+def test_transferir_sin_proteccion_sigue_funcionando():
     """La guarda nueva no puede romper el camino normal, que es el 99%."""
-    pool_mock.fetchval.side_effect = [1, 1, None]
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.side_effect = [1, 1, None]
+    client = make_client(pool)
 
     res = client.post("/api/v1/carriers/c1/drivers", json={"driver_id": "d1", "carrier_id": "c1"})
 
     assert res.status_code == 200
 ```
 
-Copia la forma exacta de los mocks de los tests que ya existen en ese archivo
-(`grep -n "assign_driver\|/drivers" tests/test_carriers.py`) — no inventes un `pool_mock` nuevo.
+Los imports ya están al tope de ese archivo:
+`from tests.conftest import USER, wire_transactional_conn` y `make_client` definido en la línea 12.
+**No inventes fixtures**: este archivo no usa `client` ni `pool_mock` como fixtures de pytest, y no
+usa `@pytest.mark.asyncio` para estos casos — mira `test_create_carrier_rejects_duplicate_tax_id`
+(línea 228), que es exactamente la forma que necesitas.
 
 - [ ] **Step 2: Correr y verificar que fallan**
 
@@ -610,6 +622,11 @@ it('si la baja falla, el sujeto sigue ahí', async () => {
   expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
 })
 ```
+
+**Antes de correr nada, amplía el mock del módulo.** Hoy `page.test.tsx:15-17` es
+`vi.mock('@/lib/api/carriers', () => ({ carriersApi: { get: vi.fn() } }))`, así que
+`carriersApi.unassignDriver` sería `undefined` y el test fallaría por una razón que no es la que
+quieres medir. Súmale `unassignDriver`, `unassignAsset`, `assignDriver` y `assignAsset`.
 
 - [ ] **Step 2: Correr y verificar que fallan**
 
