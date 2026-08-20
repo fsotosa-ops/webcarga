@@ -67,7 +67,13 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer }: {
   viendo:   boolean
   /** Por qué "Ver" no abrió nada, dicho en este renglón y con reintento. */
   avisoVer: string | null
-  onVer:    () => void
+  /** Ausente cuando no hay archivo que abrir. Estar al día no implica tenerlo:
+   *  son 62 renglones repartidos en 37 de las 38 empresas activas —una
+   *  aprobación manual sin evidencia adjunta es al día y no tiene blob—, y con
+   *  un "Ver" incondicional cada uno abría un botón que sólo podía contestar
+   *  que no hay nada. Lo mismo hace `RenglonPendiente` en la otra mitad de
+   *  esta lista: el hecho lo dice `tiene_archivo`, no el estado. */
+  onVer?:   () => void
 }) {
   const cfg = COMPLIANCE_STATUS_CONFIG[fila.status]
   return (
@@ -82,15 +88,17 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer }: {
         <span className={`shrink-0 text-etiqueta font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
           {cfg.label}
         </span>
-        <button
-          type="button"
-          onClick={onVer}
-          disabled={viendo}
-          className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
-        >
-          {viendo ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
-          Ver
-        </button>
+        {onVer && (
+          <button
+            type="button"
+            onClick={onVer}
+            disabled={viendo}
+            className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
+          >
+            {viendo ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
+            Ver
+          </button>
+        )}
       </div>
       {avisoVer && <AvisoDeFila mensaje={avisoVer} onReintentar={onVer} />}
     </div>
@@ -261,7 +269,18 @@ export default function FichaEmpresaPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {CIFRAS.map(c => (
           <div key={c.estado} className="border border-border rounded-xl bg-white px-4 py-3">
-            <Cifra valor={conteos[c.estado]} etiqueta={c.etiqueta} tono={c.tono} />
+            {/* `cargando` y el guión son dos mensajes distintos y esta pantalla
+                necesita los dos: mientras la consulta viaja el dato TODAVÍA NO
+                LLEGÓ —esqueleto—, y cuando la respuesta vino truncada las tres
+                cifras derivadas NO SE VAN A MOSTRAR —guión—, porque contarlas
+                sobre una lista incompleta sería mentir. Sin esta prop las
+                cuatro negaban de entrada un dato que venía en camino. */}
+            <Cifra
+              valor={conteos[c.estado]}
+              etiqueta={c.etiqueta}
+              tono={c.tono}
+              cargando={todosQuery.isPending}
+            />
           </div>
         ))}
       </div>
@@ -335,7 +354,7 @@ export default function FichaEmpresaPage() {
                     fila={f}
                     viendo={viendoId === f.id && previewQuery.isFetching}
                     avisoVer={viendoId === f.id ? avisoVer : null}
-                    onVer={() => verDocumento(f)}
+                    onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
                   />
                 )
                 : (

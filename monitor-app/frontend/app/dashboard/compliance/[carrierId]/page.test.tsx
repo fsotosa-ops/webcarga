@@ -108,7 +108,13 @@ describe('FichaEmpresaPage', () => {
 
   it('un documento cargado se puede ver; uno que falta se puede cargar', async () => {
     montar([
-      fila({ id: 'p1', status: 'APPROVED_MANUAL', document_name: 'Certificado de Vigencia', urgencia: 'AL_DIA' }),
+      // `tiene_archivo: true` explicito: el test dice "un documento CARGADO", y
+      // el default de la fixture es sin archivo. Sin esto describia un
+      // documento que se puede ver y no tiene nada que mostrar.
+      fila({
+        id: 'p1', status: 'APPROVED_MANUAL', document_name: 'Certificado de Vigencia',
+        urgencia: 'AL_DIA', tiene_archivo: true,
+      }),
       fila({ id: 'p2', status: 'MISSING', document_name: 'Rol SII' }),
     ])
     expect(await screen.findByRole('button', { name: /ver/i })).toBeInTheDocument()
@@ -187,6 +193,55 @@ describe('FichaEmpresaPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Ver' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/no tiene un archivo/i)
+  })
+
+  // Estar al dia NO implica tener archivo: una aprobacion manual sin evidencia
+  // adjunta es al dia y no tiene blob. Son 62 renglones repartidos en 37 de las
+  // 38 empresas activas, y con un "Ver" incondicional cada uno abria un boton
+  // que solo podia contestar que no hay nada que abrir. La otra mitad de la
+  // lista ya lo resolvia bien; esta la ofrecia igual.
+  it('una fila al día SIN archivo no ofrece "Ver", porque no hay nada que ver', async () => {
+    montar([fila({
+      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA',
+      tiene_archivo: false, document_name: 'Carta de compromiso',
+    })])
+
+    expect(await screen.findByText('Carta de compromiso')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ver' })).not.toBeInTheDocument()
+  })
+
+  // "Todavia no llego" y "no se va a mostrar" son mensajes distintos, y esta
+  // pantalla necesita los dos. Sin `cargando`, las cuatro cifras arrancaban en
+  // guion —negando de entrada un dato que venia en camino— y el guion perdia su
+  // unico significado, que es el de la respuesta truncada.
+  it('mientras la consulta viaja, las cifras no niegan el dato', async () => {
+    // La empresa resuelve y los pendientes NO: es la ventana real donde la
+    // pantalla ya se dibujó y las cifras todavía no tienen su número. Con las
+    // dos consultas en vuelo la página entera muestra su estado de carga y
+    // este test no podría distinguir nada.
+    let resolver: (v: unknown) => void = () => {}
+    vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
+    vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
+    vi.mocked(complianceApi.listPending).mockReturnValue(
+      new Promise(r => { resolver = r }) as never,
+    )
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <FichaEmpresaPage />
+      </QueryClientProvider>,
+    )
+    // Esperar a que la empresa llegue: recién ahí se dibujan las cifras.
+    await screen.findAllByText(CARRIER.business_name)
+
+    // La asercion va SINCRONICA, sin `waitFor`. Con `waitFor` este test no
+    // mataba nada: reintenta hasta que pasa, asi que el guion inicial se
+    // desvanecia solo al resolverse la promesa y el test daba verde con el
+    // defecto puesto. Lo que se afirma es el PRIMER render, que es justo el
+    // momento en que las cifras negaban un dato que venia en camino.
+    expect(screen.queryByText('—')).not.toBeInTheDocument()
+
+    resolver({ total: 0, rows: [] })
+    await waitFor(() => expect(screen.getAllByText('0').length).toBeGreaterThan(0))
   })
 
   // Con `estado='todos'`, cero filas NO significa "nadie cargó nada": significa
