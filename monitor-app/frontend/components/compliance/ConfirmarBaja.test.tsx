@@ -15,6 +15,17 @@ describe('ConfirmarBaja', () => {
     expect(screen.getByText(/se conservan/i)).toBeInTheDocument()
   })
 
+  it('no promete un regreso que hoy no funciona', () => {
+    // is_manual_override marca la asignacion dada de baja, y el INSERT de
+    // reasignacion la lee como "no tocar" tambien cuando decidio una
+    // persona: volver a asignar a la misma empresa responde 201 y no hace
+    // nada. La mitad "se conservan" es cierta y se queda; la promesa de
+    // que el regreso funciona solo, no.
+    render(<ConfirmarBaja {...base} />)
+    expect(screen.queryByText(/si vuelve/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/no hay que pedirlos de nuevo/i)).not.toBeInTheDocument()
+  })
+
   it('sin documentos cargados no habla de documentos', () => {
     // Prometer que "se conservan 0 documentos" es ruido que hace dudar.
     render(<ConfirmarBaja {...base} cuantosDocumentos={0} />)

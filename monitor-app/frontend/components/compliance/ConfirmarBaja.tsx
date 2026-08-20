@@ -85,8 +85,14 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
 
           <p className="text-lectura text-informativo">
             Deja de figurar en esta empresa.
+            {/* Sólo lo que hoy es cierto: los documentos no se tocan
+             *  (compliance_records no se toca en ningún camino de esta
+             *  ola). NO promete que el regreso vaya a funcionar solo —
+             *  is_manual_override deja la asignación sin un camino de
+             *  vuelta por la interfaz (issue #7); prometerlo acá sería
+             *  mentir. */}
             {cuantosDocumentos > 0 && (
-              <> Sus {cuantosDocumentos} documentos cargados se conservan: si vuelve, no hay que pedirlos de nuevo.</>
+              <> Sus {cuantosDocumentos} documentos cargados se conservan.</>
             )}
           </p>
 
