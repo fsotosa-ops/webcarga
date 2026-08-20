@@ -695,10 +695,26 @@ git commit -m "feat(certificacion): la ficha de una empresa, con lo que tiene y 
 ## Task 5: Los dos mundos en el sidebar, y la Bandeja con ruta propia
 
 **Files:**
-- Create: `monitor-app/frontend/app/dashboard/compliance/inbox/page.tsx`
+- **Modify** (NO crear — ya existe): `monitor-app/frontend/app/dashboard/compliance/inbox/page.tsx`
 - Modify: `monitor-app/frontend/components/dashboard/Sidebar.tsx:32-50`
 - Modify: `monitor-app/frontend/app/dashboard/compliance/page.tsx`
-- Test: `monitor-app/frontend/components/dashboard/Sidebar.test.tsx`
+- Modify: `monitor-app/frontend/components/compliance/CarrierDrawer.tsx:204`
+- Test: `monitor-app/frontend/components/dashboard/Sidebar.test.tsx`,
+  `app/dashboard/compliance/page.test.tsx`, `components/compliance/CarrierDrawer.test.tsx`
+
+> **ESTA TAREA REVIERTE UNA DECISIÓN QUE EL MÓDULO YA TOMÓ, y hay que saberlo.**
+> `app/dashboard/compliance/inbox/page.tsx` **ya existe** y hoy hace lo contrario de lo que este
+> plan pide: redirige `/inbox` → `?vista=documentos`. Su comentario dice por qué:
+>
+> > *"La bandeja dejó de ser un destino propio: es la vista 'Por documento' del módulo
+> > Certificación. Tenerla como submódulo hermano de Pendientes obligaba a cruzar de memoria dos
+> > listas del mismo objeto. **La ruta se conserva porque quedó en enlaces guardados y en el
+> > historial.**"*
+>
+> La spec argumenta por qué se revierte: aquella decisión trataba a la Bandeja como *una vista más
+> de la misma lista*, y no lo es — es otro objeto (archivos sin destino contra requisitos sin
+> documento). Pero **la razón por la que aquel redirect se conservó sigue siendo válida y ahora
+> aplica al revés**: los enlaces guardados a `?vista=documentos` no pueden quedar rotos.
 
 **Interfaces:**
 - Consumes: la ruta `/dashboard/compliance/[carrierId]` (Task 4).
@@ -785,18 +801,59 @@ específico primero (`/dashboard/compliance/inbox` gana sobre `/dashboard/compli
 prefijo), así que no hay que tocarlo — pero **verificá que la ficha
 `/dashboard/compliance/<uuid>` marque "Empresas" y no "Sin clasificar"**.
 
-- [ ] **Step 5: La Bandeja gana su ruta**
+- [ ] **Step 5: La Bandeja gana su ruta, y el redirect se da vuelta**
 
-`app/dashboard/compliance/inbox/page.tsx` monta `<TriageWorkbench />` con el encabezado de la
-página. Y en `app/dashboard/compliance/page.tsx`:
+**Primero el test, porque un enlace roto no falla en CI — falla en la cara de quien lo guardó:**
 
-- se elimina el botón "Sin clasificar" y la vista `documentos` del conmutador — **son código muerto
-  en cuanto la ruta existe**; borralos en el mismo commit y poné el `grep` que lo prueba en el
-  mensaje.
-- la fila de la tabla y del embudo **navegan a la ficha** en vez de abrir el cajón.
-- `CarrierDrawer` queda **sin consumidores en la vista Empresas**, pero **sigue usándose** en las
-  vistas Conductores y Vehículos (con `subject`). Verificalo con `grep` antes de decidir si se borra:
-  si le quedan consumidores, se queda.
+```tsx
+// app/dashboard/compliance/page.test.tsx
+it('un enlace guardado a ?vista=documentos lleva a la Bandeja, no a una pantalla vacía', async () => {
+  // La ruta /inbox existía y redirigía HACIA acá; ahora es al revés. La razón
+  // por la que aquel redirect se conservó —"quedó en enlaces guardados y en el
+  // historial"— sigue siendo válida, sólo que en la otra dirección.
+  montarConParametros('?vista=documentos')
+  await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/compliance/inbox'))
+})
+```
+
+Después:
+
+1. **`app/dashboard/compliance/inbox/page.tsx` deja de redirigir y monta la Bandeja.** Reemplazá el
+   `redirect()` por `<TriageWorkbench />` con el encabezado de la página, y **reemplazá también su
+   comentario**: el que está describe la decisión contraria y quedaría mintiendo. Escribí por qué
+   ahora es un destino propio (dos trabajos distintos, no dos vistas de la misma lista).
+
+2. **`app/dashboard/compliance/page.tsx` redirige `?vista=documentos` → `/dashboard/compliance/inbox`.**
+   Con `router.replace` y no `push`: llegar por un enlace viejo no es un paso de navegación que el
+   botón atrás deba reponer.
+
+3. **`components/compliance/CarrierDrawer.tsx:204`** — el enlace "Llévalos a la Bandeja" apunta a
+   `?vista=documentos`. Cambialo a `/dashboard/compliance/inbox`. **Con el redirect funcionaría
+   igual, pero un enlace interno que pasa por un redirect es deuda desde el día uno.**
+
+4. Se elimina el botón "Sin clasificar" y la vista `documentos` del conmutador. **Verificá con
+   `grep -rn "vista=documentos" components app` que sólo queda el redirect**, y poné ese grep en el
+   mensaje del commit.
+
+5. La fila de la tabla y del embudo **navegan a la ficha** en vez de abrir el cajón.
+
+6. **`CarrierDrawer` NO se borra.** Verificado antes de escribir esto: sigue usándose en las vistas
+   Conductores y Vehículos con la prop `subject`. Sólo pierde su consumidor de la vista Empresas.
+
+7. **Cuatro tests existentes afirman hoy lo contrario de lo que esta tarea construye.** No son daño
+   colateral que se descubre al correr la suite: son la decisión anterior escrita, y cada uno se
+   actualiza a mano. Verificados en el árbol antes de escribir esto:
+
+   | Archivo:línea | Qué afirma hoy | Qué pasa a afirmar |
+   |---|---|---|
+   | `app/dashboard/compliance/page.test.tsx:101` | tocar "Sin clasificar" hace `replace('/dashboard/compliance?vista=documentos')` | el botón ya no existe en el conmutador; el test se elimina — el Step 5 lo reemplaza |
+   | `app/dashboard/compliance/page.test.tsx:108` | con `?vista=documentos` monta la cola y el botón queda `aria-pressed` | con `?vista=documentos` redirige a `/dashboard/compliance/inbox` |
+   | `app/dashboard/compliance/page.test.tsx:205` | monta la cola con `?vista=documentos` | se mueve al test de la Bandeja, montando `/inbox` |
+   | `components/compliance/CarrierDrawer.test.tsx:60` | el enlace contiene `vista=documentos` | el enlace es exactamente `/dashboard/compliance/inbox` |
+
+   **Ninguno se borra sin reemplazo salvo el primero**, y ese porque su sujeto —el botón del
+   conmutador— deja de existir. Un test que se borra para que la suite pase verde es una red que se
+   corta; si alguno resulta imposible de trasladar, dilo en el reporte en vez de eliminarlo.
 
 - [ ] **Step 6: Correr todo y construir**
 
@@ -815,8 +872,142 @@ clasificar". Restaurá.
 
 ```bash
 git add monitor-app/frontend/components/dashboard/Sidebar.tsx \
-        monitor-app/frontend/app/dashboard/compliance/
+        monitor-app/frontend/app/dashboard/compliance/ \
+        monitor-app/frontend/components/compliance/CarrierDrawer.tsx \
+        monitor-app/frontend/components/compliance/CarrierDrawer.test.tsx
 git commit -m "feat(certificacion): los dos mundos, cada uno con su entrada"
+```
+
+---
+
+## Task 2b: El casillero que ya tiene dueño
+
+Sale de la revisión de la Task 2. Las dos señales que esa tarea construyó cuentan sólo sobre los
+ítems **sin clasificar**: `count(*) OVER (...)` se evalúa sobre lo que dejó pasar
+`unclassified_predicate('i')`. Consecuencia, verificada leyendo `classify_batch`: si un documento ya
+fue confirmado y después llega otro al mismo `(entity_id, requirement_id)`, el segundo se lista con
+`mismo_casillero = 1` —"sin colisión"— y confirmarlo pisa al primero.
+
+**Por qué un campo nuevo y no ensanchar el que hay.** Un `1` que significa a la vez "no hay
+colisión" y "no hay colisión que yo pueda ver" es un valor con dos significados, la clase de bug que
+este módulo ya tuvo cinco veces y que ningún test encontró. Y para quien mira la pantalla son dos
+situaciones distintas, con dos decisiones distintas: *"otro archivo de esta cola apunta al mismo
+casillero"* (elegí cuál) contra *"confirmar esto reemplaza el documento que ya está"* (mirá el que
+está antes de decidir). Dos preguntas, dos campos.
+
+**Lo que NO hay que arreglar:** el daño ya es reversible. `_apply_stored_document` llama a
+`log_document_replacement` y guarda `replaced_storage_path` en el metadata, y el blob anterior nunca
+se sobrescribe en storage. Lo que falta es el aviso **antes**, no la recuperación después.
+
+**Files:**
+- Modify: `monitor-app/backend/api/app/routers/document_ingest.py` (`_SQL_COLA`)
+- Modify: `monitor-app/backend/api/app/schemas/document_ingest.py` (`QueueRow`)
+- Test: `monitor-app/backend/api/tests/test_document_ingest.py`
+
+**Interfaces:**
+- Produces: `QueueRow` gana `casillero_ocupado: bool = False` — **el requisito destino ya tiene un
+  archivo cargado hoy.** `False` cuando el ítem no tiene destino todavía.
+
+- [ ] **Step 1: Escribir los tests que fallan**
+
+```python
+async def test_la_cola_avisa_cuando_el_casillero_ya_tiene_documento(pool_real):
+    """El caso destructivo que `mismo_casillero` NO ve: el ocupante ya fue
+    confirmado, asi que salio de la cola y ninguna window function lo cuenta.
+    """
+    # Arma un compliance_record con file_url y un item de la cola apuntando
+    # al mismo (entity_id, requirement_id) — con el patron de fixtures que ya
+    # usa este archivo para datos reales.
+    fila = await _una_fila_de_la_cola(pool_real, entity_id=E, requirement_id=R)
+    assert fila["casillero_ocupado"] is True
+    assert fila["mismo_casillero"] == 1   # la senal vieja sigue diciendo "sin colision"
+
+
+async def test_un_item_sin_destino_no_tiene_el_casillero_ocupado(pool_real):
+    """Sin entity_id no hay casillero que ocupar. Sin esta guarda, el EXISTS
+    correlacionado con NULL da NULL y la fila viaja con un booleano vacio.
+    """
+    fila = await _una_fila_de_la_cola(pool_real, entity_id=None, requirement_id=None)
+    assert fila["casillero_ocupado"] is False
+```
+
+- [ ] **Step 2: Correr y verificar que fallan**
+
+```bash
+cd monitor-app/backend/api
+venv/bin/python -m pytest tests/test_document_ingest.py -q -k casillero
+```
+
+Esperado: FALLAN con `KeyError: 'casillero_ocupado'`.
+
+- [ ] **Step 3: La señal, en la misma pasada**
+
+En `_SQL_COLA`, junto a las otras dos:
+
+```sql
+           -- La colision que las window functions NO pueden ver: el ocupante
+           -- ya fue confirmado, salio de la cola y no esta en ninguna
+           -- particion. Es justo el caso destructivo — confirmar este item
+           -- reemplaza un documento que hoy es valido.
+           --
+           -- EXISTS y no JOIN a proposito: un JOIN a compliance_records
+           -- multiplicaria la fila si algun dia hay mas de un registro
+           -- vigente por (entity_id, requirement_id), y una cola que muestra
+           -- el mismo archivo dos veces es peor que una que no avisa.
+           CASE WHEN i.entity_id IS NOT NULL AND i.requirement_id IS NOT NULL
+                THEN EXISTS (
+                    SELECT 1 FROM public.compliance_records cr
+                     WHERE cr.entity_id = i.entity_id
+                       AND cr.requirement_id = i.requirement_id
+                       AND cr.is_current = true
+                       AND cr.file_url IS NOT NULL)
+                ELSE false END                        AS casillero_ocupado
+```
+
+Y en `QueueRow`:
+
+```python
+    casillero_ocupado: bool = False
+    """El requisito destino YA tiene un archivo. Confirmar este item lo
+    reemplaza — el anterior queda recuperable (`replaced_storage_path`), pero
+    quien confirma tiene que saberlo ANTES."""
+```
+
+- [ ] **Step 4: Correr, contra Postgres real**
+
+```bash
+venv/bin/python -m pytest tests/test_document_ingest.py -q -k casillero
+venv/bin/python -m pytest tests/ -q -m "not integracion"
+venv/bin/python -m pytest tests/ -q -m integracion
+```
+
+Las suites van **separadas y no se matan a mitad** (`max_connections` = 60).
+
+El test de placeholders contra argumentos de este endpoint tiene que seguir verde: el `EXISTS` no
+agrega ningún `$n`, así que el conteo no cambia — si cambió, algo se escribió mal.
+
+- [ ] **Step 5: Mutar**
+
+La mutación va escrita **después** de la aserción y nombrando cuál muere — en este plan ya hubo tres
+mutaciones que no mataron nada:
+
+1. Sacar la guarda de NULL (dejar el `EXISTS` pelado). Muere
+   `test_un_item_sin_destino_no_tiene_el_casillero_ocupado`, porque el `EXISTS` correlacionado con
+   `NULL` no encuentra fila y devuelve `false`… **verificá qué devuelve de verdad antes de darlo por
+   bueno**: si resulta que también da `false`, esa mutación no prueba nada y la guarda hay que
+   probarla de otra forma — por ejemplo, que dos ítems sin destino cuyos casilleros no existen no se
+   contagien entre sí.
+2. Quitar `AND cr.file_url IS NOT NULL`. Muere
+   `test_la_cola_avisa_cuando_el_casillero_ya_tiene_documento` si el fixture incluye un requisito
+   **sin** archivo: sin esa condición, un casillero vacío se reportaría ocupado.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add monitor-app/backend/api/app/routers/document_ingest.py \
+        monitor-app/backend/api/app/schemas/document_ingest.py \
+        monitor-app/backend/api/tests/test_document_ingest.py
+git commit -m "feat(bandeja): el casillero que ya tiene dueno deja de parecer vacio"
 ```
 
 ---
@@ -833,7 +1024,8 @@ hace que el clasificador acierte.**
   `TriageFileTable.test.tsx`
 
 **Interfaces:**
-- Consumes: `mismo_casillero` y `mismo_contenido` de `QueueRow` (Task 2);
+- Consumes: `mismo_casillero`, `mismo_contenido` y `casillero_ocupado` de `QueueRow`
+  (Tasks 2 y 2b);
   `CarrierSearchPicker` de `components/dashboard/`, cuya firma es
   `{ query, onQueryChange, onPick, placeholder?, size?, ... }`.
 
@@ -884,9 +1076,20 @@ it('avisa cuando el archivo ya está en la cola', () => {
   expect(screen.getByText(/ya está en la cola/i)).toBeInTheDocument()
 })
 
+it('avisa cuando el casillero ya tiene un documento cargado', () => {
+  // La colision que las window functions NO pueden ver: el ocupante ya fue
+  // confirmado y salio de la cola, asi que `mismo_casillero` sigue diciendo 1.
+  // Confirmar esta fila reemplaza un documento que hoy es valido.
+  render(<TriageFileTable rows={[fila({ mismo_casillero: 1, casillero_ocupado: true })]} {...props} />)
+  expect(screen.getByText(/ya tiene un documento/i)).toBeInTheDocument()
+})
+
 it('sin colisión no dice nada', () => {
-  render(<TriageFileTable rows={[fila({ mismo_casillero: 1, mismo_contenido: 1 })]} {...props} />)
-  expect(screen.queryByText(/mismo casillero|ya está en la cola/i)).not.toBeInTheDocument()
+  render(<TriageFileTable rows={[
+    fila({ mismo_casillero: 1, mismo_contenido: 1, casillero_ocupado: false }),
+  ]} {...props} />)
+  expect(screen.queryByText(/mismo casillero|ya está en la cola|ya tiene un documento/i))
+    .not.toBeInTheDocument()
 })
 ```
 
@@ -930,6 +1133,17 @@ distintas:**
 
 - `mismo_contenido > 1` → *"Este archivo ya está en la cola"* — el operador borra uno.
 - `mismo_casillero > 1` → *"{n} archivos reclaman este casillero"* — el operador elige cuál.
+- `casillero_ocupado` → *"Este requisito ya tiene un documento — confirmar lo reemplaza"* — el
+  operador mira el que está antes de decidir.
+
+**Las tres son distintas y ninguna reemplaza a otra.** Las dos primeras se derivan de la cola;
+`casillero_ocupado` mira `compliance_records`, y es la única que ve el caso destructivo: el ocupante
+ya fue confirmado, salió de la cola, y por eso `mismo_casillero` sigue diciendo `1`. Una fila puede
+traer las tres a la vez.
+
+**El reemplazo no es una pérdida irreversible** —`_apply_stored_document` guarda
+`replaced_storage_path` y el blob anterior nunca se sobrescribe— pero eso es la red de abajo, no el
+aviso. Quien confirma tiene que enterarse ANTES, no poder repararlo después.
 
 **Sólo tokens**: el aviso va en `text-espera` con `text-etiqueta`. **Cero emojis** — usá
 `AlertTriangle` de `lucide-react`, que la tabla ya importa.
@@ -944,8 +1158,17 @@ npm run build
 
 - [ ] **Step 6: Mutar**
 
-Hacé que la subida ignore `empresaDelLote` y mande siempre `carrierId`. Esperado: falla "deja acotar
-el lote a una empresa". Restaurá.
+**La mutación se decide DESPUÉS de escribir la aserción, y se nombra cuál test muere.** En este plan
+hubo tres mutaciones prescritas de antemano que no mataron nada, y las tres veces el defecto fue del
+plan, no del ejecutor.
+
+1. Que la subida ignore `empresaDelLote` y mande siempre `carrierId`. Debe morir "deja acotar el lote
+   a una empresa".
+2. Que el aviso de `casillero_ocupado` se pinte cuando `mismo_casillero > 1` en vez de cuando
+   `casillero_ocupado` es verdadero — es el error que haría que las dos señales se confundan, que es
+   justo lo que este diseño evita. Debe morir "avisa cuando el casillero ya tiene un documento".
+
+Restaurar a mano desde un respaldo, **nunca con `git checkout --`**.
 
 - [ ] **Step 7: Commit**
 
@@ -970,22 +1193,48 @@ cd ../../frontend
 npx vitest run && npx tsc --noEmit && npm run build
 ```
 
-Punto de partida: backend **724** rápidos y **133** de integración; frontend **1.158**.
+Punto de partida al cerrar la Task 2b: backend **738** rápidos y **137** de integración;
+frontend **1.176**.
 
 - [ ] **Step 2: Los conteos no cambiaron para quien no pidió nada**
 
-Contra Postgres real: `/pending` sin `estado` tiene que devolver el mismo total que antes del Task 1
-(**5.038** el 2026-08-19). Si cambió, el default dejó de reproducir el comportamiento anterior.
+Contra Postgres real: `/pending` sin `estado` tiene que seguir devolviendo **2.371**. Si cambió, el
+default dejó de reproducir el comportamiento anterior.
 
-- [ ] **Step 3: Click-through en vivo con Playwright**
+> **Ojo con el número.** El plan decía originalmente 5.038, y era un defecto mío: ese número salió
+> del comentario de `compliance.py:93`, que registra una medición hecha **sin** el filtro
+> `c.operational_status = $8` que el endpoint ya aplicaba. Se verificó reconstruyendo y corriendo el
+> SQL anterior a la Task 1 contra Postgres: también da 2.371. **No es regresión.**
 
-Contra `webcarga-frontend-dev` (**no** claude-in-chrome, la extensión está apagada):
+- [ ] **Step 3: Click-through en vivo con Playwright, contra la rama de verdad**
+
+**No contra `webcarga-frontend-dev`**: esta rama no está desplegada ahí, así que probar contra dev
+mediría el código viejo y daría un falso verde. Y el backend tampoco lo está — la ficha pide
+`estado`, que el dev todavía no entiende.
+
+Se levanta el par completo en local, apuntando a la base real (la sandbox llega al pooler):
+
+```bash
+# Terminal 1 — el backend de esta rama
+cd monitor-app/backend/api && venv/bin/uvicorn app.main:app --port 8001
+
+# Terminal 2 — el frontend de esta rama, con el build de producción
+cd monitor-app/frontend && FASTAPI_URL=http://localhost:8001 npm run build && \
+  FASTAPI_URL=http://localhost:8001 npm start
+```
+
+`npm start` y no `npm run dev`: el build de producción es el único que prueba lo que se va a
+desplegar. Después, Playwright contra `http://localhost:3000` (**no** claude-in-chrome, la extensión
+está apagada):
 
 1. El sidebar muestra **Certificación › Empresas / Sin clasificar**, con el contador en la segunda.
 2. Clic en una empresa desde la lista → **la ficha**, con su URL propia. Recargar la mantiene.
 3. La ficha muestra empresa, conductores y vehículos **juntos**. Probar con
-   **"Comercializadora De Los Rios Ltda"**, que es la única con documentación real: tiene que
-   mostrar **23 al día, 10 faltan, 3 por vencer**.
+   **"Comercializadora De Los Rios Ltda"**, que es la única con documentación real.
+   **Los conteos esperados se miden en el momento, no se copian de acá**: consultá Postgres y
+   compará contra lo que muestra la pantalla. Los números que este plan citaba (23/10/3) son de
+   antes de la Task 1 y el universo cambió — un click-through que compara contra un número viejo
+   falla por el número, no por la pantalla.
 4. El filtro `Todo · Falta · Por vencer · Al día` cambia la lista.
 5. Un documento cargado ofrece **"Ver"** y abre la previsualización.
 6. En "Sin clasificar", elegir una empresa y subir → el request va a `/{carrier_id}/files`
@@ -995,9 +1244,17 @@ Contra `webcarga-frontend-dev` (**no** claude-in-chrome, la extensión está apa
 **Elegí una empresa sin documentos para cualquier prueba de carga** — los desplegables listan todo
 el catálogo y ya se pisó un documento real por elegir a ojo.
 
-- [ ] **Step 4: Actualizar el AGENTLOG y cerrar**
+- [ ] **Step 4: Que no queden archivos varados**
+
+`document_ingest_items` de la última hora tiene que venir vacío si no se subió nada a propósito
+durante la prueba. El camino directo de carga no pasa por la bandeja.
+
+- [ ] **Step 5: Actualizar el AGENTLOG y cerrar**
 
 Qué se hizo, el siguiente paso exacto, y las decisiones de arquitectura.
+
+> **El merge a `dev` NO es parte de esta tarea.** Empujar `dev` dispara dos despliegues, y esa es
+> una decisión del usuario, no del plan. La tarea termina con la rama verde y verificada en local.
 
 ---
 

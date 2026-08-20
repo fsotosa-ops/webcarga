@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -31,6 +32,27 @@ async def test_upload_document_version_returns_new_path_no_db_write():
     assert result["storage_path"].startswith("driver/abc-123/licencia/")
     assert "licencia.pdf" in result["storage_path"]
     supabase.storage.from_.assert_called_with("compliance-docs")
+
+
+@pytest.mark.asyncio
+async def test_el_hash_del_contenido_se_calcula_al_subir():
+    """La columna `content_sha256` existe desde la migración 20260814130000 y
+    nadie la escribía: 0 valores distintos sobre 65 filas. Sin ella, dos
+    cargas del mismo archivo son dos archivos para la bandeja."""
+    contenido = b"%PDF-1.4 contenido de prueba"
+    esperado = hashlib.sha256(contenido).hexdigest()
+    supabase = MagicMock()
+    file = MagicMock()
+    file.content_type = "application/pdf"
+    file.filename = "licencia.pdf"
+
+    async def fake_read():
+        return contenido
+    file.read = fake_read
+
+    resultado = await upload_document_version(supabase, key_prefix="x", file=file)
+
+    assert resultado["content_sha256"] == esperado
 
 
 def test_stored_file_max_bytes_is_7mb():

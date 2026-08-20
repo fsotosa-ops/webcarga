@@ -1,7 +1,9 @@
 'use client'
 
-import { AlertTriangle, Check, Loader2, Upload } from 'lucide-react'
+import { AlertTriangle, Check, Eye, Loader2, Upload } from 'lucide-react'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
+import { AvisoDeFila } from './AvisoDeFila'
+import { expiryRelative } from '@/lib/compliance'
 import type { PendingComplianceRow, PoliticaVencimiento } from '@/lib/types'
 
 interface Props {
@@ -12,6 +14,31 @@ interface Props {
   /** Si no llega, el renglón NO ofrece deshacer: prometer una vuelta atrás
    *  que no existe es peor que no ofrecerla. */
   onDeshacer?: () => void
+  /** Abre el documento QUE YA ESTÁ cargado. Sólo lo pasa quien sabe que hay
+   *  archivo (`fila.tiene_archivo`): un renglón vencido tiene uno —venció
+   *  porque alguien lo subió— y renovarlo no es lo mismo que mirarlo. Sin
+   *  esta prop el renglón no ofrece "Ver", igual que con `onDeshacer`. */
+  onVer?:      () => void
+  /** La consulta del archivo está en vuelo. */
+  viendo?:     boolean
+  /** Por qué "Ver" no abrió nada. Se dibuja EN el renglón, con reintento:
+   *  sin esto el spinner se apagaba y no pasaba absolutamente nada. */
+  avisoVer?:   string | null
+}
+
+/** Por qué este renglón está pendiente, dicho con la fecha en la mano.
+ *
+ *  Sale de `urgencia` y no de `status`: los 9 registros vencidos por fecha
+ *  del módulo están en `APPROVED_MANUAL`, así que leer el status los
+ *  anunciaba como "Aprobado (manual)" mientras el filtro que los contenía
+ *  decía "Falta". `urgencia` es la única fuente de esa verdad y la calcula
+ *  el SQL, que es también quien arma el filtro. */
+function porQue(fila: PendingComplianceRow): string | null {
+  if (fila.urgencia === 'AL_DIA' || fila.urgencia === 'FALTA') return null
+  const vencido = fila.urgencia === 'VENCIDO'
+  // Sin fecha no hay relativo que calcular, pero un vencido sin fecha
+  // —marcado a mano— sigue estando vencido y tiene que decirlo.
+  return expiryRelative(fila.expiration_date, vencido) ?? (vencido ? 'vencido' : null)
 }
 
 /** Qué hacer con la fecha, cuando el catálogo todavía no lo dice.
@@ -41,10 +68,13 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  requisito exige. **Nada se sube hasta estar completo**: el camino viejo
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
-export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer }: Props) {
+export function RenglonPendiente({
+  fila, puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer,
+}: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
   const politica = politicaDe(fila)
+  const motivo = porQue(fila)
 
   /** La regla —recibir, pedir la fecha si el requisito la exige, y recién
    *  entonces subir— vive en el hook, compartida con la ficha legacy. Acá
@@ -74,10 +104,22 @@ export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer }: Pro
           {fila.document_name}
         </span>
 
-        {fila.status === 'EXPIRED' && estado.tipo === 'reposo' && (
-          <span className="shrink-0 text-etiqueta text-espera">
-            vencido{fila.expiration_date ? ` · ${fila.expiration_date}` : ''}
-          </span>
+        {motivo && estado.tipo === 'reposo' && (
+          <span className="shrink-0 text-etiqueta text-espera">{motivo}</span>
+        )}
+
+        {onVer && estado.tipo === 'reposo' && (
+          <button
+            type="button"
+            onClick={onVer}
+            disabled={viendo}
+            className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
+          >
+            {viendo
+              ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" />
+              : <Eye size={12} aria-hidden="true" />}
+            Ver
+          </button>
         )}
 
         {estado.tipo === 'subiendo' && (
@@ -150,6 +192,8 @@ export function RenglonPendiente({ fila, puedeEditar, onSubir, onDeshacer }: Pro
           </span>
         </div>
       )}
+
+      {avisoVer && onVer && <AvisoDeFila mensaje={avisoVer} onReintentar={onVer} />}
 
       {estado.tipo === 'error' && (
         <div role="alert" className="flex items-center gap-2 flex-wrap mt-2 pl-1">

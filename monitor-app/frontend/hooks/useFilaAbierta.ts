@@ -3,8 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, type KeyboardEvent } from 'react'
 
-/** El nombre del parámetro, escrito una vez. Quien enlace a una fila abierta
- *  desde otra vista usa `enlaceAFilaAbierta()`, no arma la cadena a mano. */
+/** El nombre del parámetro, escrito una vez: si mañana cambia de nombre,
+ *  cambia acá y en ningún otro lado. */
 const PARAM = 'abierta'
 
 /**
@@ -49,19 +49,6 @@ export function useFilaAbierta() {
   )
 
   return { abierta, alternar, esAbierta: (id: string) => abierta === id }
-}
-
-/** Enlace a otra vista con una fila ya abierta.
- *
- *  Existe para que "ir a esta empresa" no se escriba a mano en cada lista: es
- *  una sola forma de nombrar dónde estás, y por eso vive junto al hook que la
- *  lee. Si mañana el parámetro cambia de nombre, cambia acá y en ningún otro
- *  lado. */
-export function enlaceAFilaAbierta(pathname: string, id: string, vista?: string) {
-  const params = new URLSearchParams()
-  if (vista) params.set('vista', vista)
-  params.set(PARAM, id)
-  return `${pathname}?${params}`
 }
 
 /**

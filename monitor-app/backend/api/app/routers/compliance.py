@@ -32,8 +32,8 @@ from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
 from ..services.vencimientos import por_vencer_predicate, vencido_predicate
 from ..utils.document_storage import (
-    delete_document_version, get_document_history, log_document_replacement, resolve_signed_url,
-    upload_document_version,
+    content_sha256_of_stored_file, delete_document_version, get_document_history,
+    log_document_replacement, resolve_signed_url, upload_document_version,
 )
 
 router = APIRouter(prefix="/compliance-records", tags=["compliance"])
@@ -397,12 +397,30 @@ async def get_certification_status(
 _PENDING_ROWS_SQL = f"""
 WITH pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+           -- El HECHO de si hay un archivo, para que la pantalla deje de
+           -- deducirlo del estado. `status IN ('MISSING','EXPIRED')` se venia
+           -- usando como si significara "no tiene archivo", y significa dos
+           -- cosas distintas: un 'EXPIRED' SI tiene archivo —vencio porque
+           -- alguien lo subio— y un 'REJECTED' puede no tenerlo. Con la
+           -- deduccion, la ficha escondia el documento cargado de todo lo
+           -- vencido, que es justo lo que esa pantalla vino a hacer visible.
+           cr.file_url IS NOT NULL AS tiene_archivo,
            req.id AS requirement_id,
            req.requirement_code, req.name AS document_name, req.requirement_level,
            req.expiration_policy
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-    WHERE cr.is_current = true AND {pendiente_predicate()}
+    WHERE cr.is_current = true
+      -- El estado deja de estar incrustado. `falta` es el default y reproduce
+      -- exactamente el predicado anterior, para que ningun llamador actual
+      -- cambie de comportamiento. `todos` es lo que hace posible la ficha:
+      -- ver lo que la empresa TIENE y no solo lo que le falta.
+      AND CASE $10::text
+            WHEN 'todos'      THEN true
+            WHEN 'por_vencer' THEN {por_vencer_predicate('cr')}
+            WHEN 'al_dia'     THEN NOT {pendiente_predicate('cr')}
+            ELSE {pendiente_predicate('cr')}
+          END
 ),
 resolved AS (
     SELECT p.*,
@@ -443,6 +461,9 @@ SELECT
     r.id::text, r.entity_type, r.entity_id::text, r.subject_name,
     r.requirement_id, r.requirement_code, r.document_name, r.requirement_level, r.status, r.expiration_date,
     r.expiration_policy,
+    -- Se proyecta explicitamente porque el SELECT final enumera columnas: el
+    -- `p.*` de `resolved` la trae hasta aca, pero si no se nombra no sale.
+    r.tiene_archivo,
     -- Por que esta fila esta pendiente. El orden de las ramas importa: se
     -- pregunta primero por lo vencido, porque `por_vencer` ya lo excluye pero
     -- leerlo al reves invitaria a alguien a "simplificar" el predicado y
@@ -455,7 +476,29 @@ SELECT
     -- de dos lecturas que este modulo ya tuvo una vez. Hoy son 0 filas —se
     -- midio—, y se escribe asi para que sigan siendo 0 problemas cuando
     -- aparezca la primera.
+    --
+    -- 'AL_DIA' (Task 4, ronda de arreglo 1): con `estado='falta'` (el default
+    -- de siempre) esta rama nunca se alcanzaba porque TODAS las filas que
+    -- llegaban aca ya eran pendientes. Desde que `estado='todos'` existe, una
+    -- fila cubierta cae en el `CASE` igual que cualquier otra, y sin esta
+    -- rama terminaba en el `ELSE 'FALTA'` de abajo — 'FALTA' pasaba a
+    -- significar dos cosas a la vez ("falta de verdad" y "no entro en
+    -- ninguna de las anteriores"), la misma clase de bug que este modulo ya
+    -- tuvo cinco veces con un valor cargando dos sentidos.
+    --
+    -- Es la MISMA definicion de "al dia" que ya usa la rama 'al_dia' del
+    -- `CASE $10::text` de arriba (`NOT pendiente_predicate`) — no una lista
+    -- de estados escrita a mano, que es como el embudo y el cajon ya se
+    -- desincronizaron una vez. Va PRIMERO, aunque el orden no cambia el
+    -- resultado: `pendiente_predicate` arma sus tres vias (`status IN
+    -- ('MISSING','EXPIRED')`, `vencido_predicate`, `por_vencer_predicate`)
+    -- con OR, asi que si cualquiera de las tres ramas de abajo fuera
+    -- verdadera, `pendiente_predicate` ya seria verdadero y esta rama jamas
+    -- se cumpliria — son mutuamente excluyentes por construccion. Ponerla
+    -- primera es sobre legibilidad: el `CASE` se lee como la particion que
+    -- es, "al dia o no", antes de entrar al detalle de POR QUE no lo esta.
     CASE
+        WHEN NOT {pendiente_predicate('r')} THEN 'AL_DIA'
         WHEN r.status = 'EXPIRED' OR {vencido_predicate('r')} THEN 'VENCIDO'
         WHEN {por_vencer_predicate('r')} THEN 'POR_VENCER'
         ELSE 'FALTA'
@@ -495,8 +538,18 @@ async def list_pending_compliance_records(
         description="Acota a un sujeto concreto (un conductor o un vehículo). "
                     "Se usa junto con `category` para el cajón de una persona.",
     ),
-    limit: int = Query(50, le=200),
+    # 500, no 200 (ronda de arreglo 1, Task 4): la ficha de empresa pide UNA
+    # sola vez con estado='todos' y deriva sus cuatro cifras contando
+    # `urgencia` sobre las filas que llegaron, en vez de pedir las cuatro
+    # variantes de estado por separado. Con el tope viejo, ese pedido único
+    # volvia 422 antes de llegar al handler. Mismo tope que ya usa /status.
+    limit: int = Query(50, le=500),
     offset: int = Query(0, ge=0),
+    estado: Literal["falta", "por_vencer", "al_dia", "todos"] = Query(
+        "falta",
+        description="Qué mostrar. `falta` (default) reproduce el comportamiento "
+                    "anterior; `todos` es lo que usa la ficha de empresa.",
+    ),
     pool=Depends(get_pool),
     _=Depends(get_current_user),
 ):
@@ -510,7 +563,7 @@ async def list_pending_compliance_records(
     rows = await pool.fetch(
         _PENDING_ROWS_SQL,
         carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
-        ACTIVE_OPERATIONAL_STATUS, entity_id,
+        ACTIVE_OPERATIONAL_STATUS, entity_id, estado,
     )
     total = rows[0]["total_count"] if rows else 0
     result_rows = [
@@ -530,6 +583,7 @@ async def list_pending_compliance_records(
             "document_name": r["document_name"],
             "status": r["status"],
             "expiration_date": r["expiration_date"],
+            "tiene_archivo": r["tiene_archivo"],
             # Por que esta pendiente y que exige su requisito. Los dos los
             # necesita el renglon de carga: la urgencia para ordenar la
             # atencion, la politica para saber si pedir la fecha ANTES de
@@ -555,6 +609,7 @@ async def reassign_compliance_document(
     record_id: str,
     body: ReassignBody,
     pool=Depends(get_pool),
+    supabase=Depends(get_supabase),
     user=Depends(require_editor),
 ):
     """Corrige un documento cargado en el lugar equivocado (HU-03).
@@ -572,7 +627,7 @@ async def reassign_compliance_document(
     """
     tiene_destino = bool(body.target_entity_type and body.target_entity_id and body.target_requirement_id)
     if not tiene_destino and not body.to_tray:
-        raise HTTPException(422, "Indicá un destino o devolvelo a sin clasificar")
+        raise HTTPException(422, "Indica un destino o devuélvelo a sin clasificar")
     if tiene_destino and body.to_tray:
         raise HTTPException(422, "O se reasigna a un requisito o se devuelve a la bandeja, no ambos")
 
@@ -622,15 +677,25 @@ async def reassign_compliance_document(
                     """,
                     carrier_id, user["sub"],
                 )
+                # El hash VIAJA con el item. Sin el, `mismo_contenido` no ve
+                # el caso destructivo: un archivo devuelto a la bandeja y su
+                # gemelo byte a byte recien subido se listan los dos como "sin
+                # colision", y confirmar cualquiera de los dos pisa al otro.
+                # Se calcula del blob que ya esta en storage porque es la
+                # unica fuente que existe tambien para los registros
+                # historicos; si no se puede leer devuelve None, que la senal
+                # sabe leer como "no lo se" en vez de como "no hay colision".
                 await conn.execute(
                     """
                     INSERT INTO public.document_ingest_items
-                        (batch_id, storage_path, file_name, mime_type, size_bytes, match_status)
-                    VALUES ($1::uuid, $2, $3, $4, $5, 'UNMATCHED')
+                        (batch_id, storage_path, file_name, mime_type, size_bytes,
+                         match_status, content_sha256)
+                    VALUES ($1::uuid, $2, $3, $4, $5, 'UNMATCHED', $6)
                     """,
                     batch_id, storage_path,
                     meta.get("file_name") or storage_path.rsplit("/", 1)[-1],
                     meta.get("mime_type"), meta.get("size_bytes"),
+                    content_sha256_of_stored_file(supabase, storage_path),
                 )
             else:
                 destino = await conn.fetchrow(
@@ -644,7 +709,7 @@ async def reassign_compliance_document(
                 if not destino:
                     raise HTTPException(
                         404,
-                        "Esa entidad no tiene ese requisito. Verificá la categoría y el tipo de documento.",
+                        "Esa entidad no tiene ese requisito. Verifica la categoría y el tipo de documento.",
                     )
                 await _apply_stored_document(
                     conn, destino["id"],

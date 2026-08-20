@@ -7,14 +7,16 @@ NADA toca public.compliance_records hasta la clasificación explícita.
 import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
-from app.routers.document_ingest import router
-from tests.conftest import USER, wire_transactional_conn
+from app.routers.document_ingest import list_queue, router
+from tests.conftest import USER, PoolDeUnaConexion, wire_transactional_conn
 
 
 def make_client(pool, supabase=None):
@@ -190,6 +192,29 @@ def test_un_archivo_entra_con_su_destino_propuesto(monkeypatch):
     assert "AUTO" in args
 
 
+def test_ingest_insert_binds_exactly_the_parameters_it_references():
+    """Mismo guardia que `test_queue_binds_exactly_the_parameters_it_references`,
+    sobre el otro SQL de este router que tocó esta ronda: el INSERT de
+    `document_ingest_items` pasó de 12 a 13 columnas al sumar `content_sha256`.
+    Un `$n` desalineado no falla al desplegar — escribe un valor en la columna
+    equivocada, en silencio."""
+    import re
+
+    pool, conn = _pool_de_ingesta()
+    client = make_client(pool)
+
+    client.post("/api/v1/document-ingest/files",
+                files={"files": ("x.pdf", b"%PDF-1.4", "application/pdf")})
+
+    insert = next(c for c in conn.fetchrow.call_args_list
+                  if "document_ingest_items" in c.args[0])
+    sql, args = insert.args[0], insert.args[1:]
+    referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+    assert referenciados == set(range(1, len(args) + 1)), (
+        f"el INSERT referencia {sorted(referenciados)} pero recibe {len(args)} argumentos"
+    )
+
+
 def test_si_el_motor_falla_el_archivo_igual_entra(monkeypatch):
     """EL ARCHIVO YA ESTA EN STORAGE cuando se clasifica. Si el motor
     explotara y dejaramos propagar, el blob quedaria huerfano y el operador
@@ -217,7 +242,9 @@ def test_si_el_motor_falla_el_archivo_igual_entra(monkeypatch):
                   if "document_ingest_items" in c.args[0])
     args = insert.args[1:]
     assert "UNMATCHED" in args
-    assert args[-1] == "ValueError: catalogo corrupto", (
+    # `error` es el penúltimo argumento: el último es `content_sha256`, que se
+    # calcula igual haya fallado el motor o no —el archivo ya está en storage.
+    assert args[-2] == "ValueError: catalogo corrupto", (
         "el motivo del fallo (tipo + mensaje, sin nombre de archivo) tiene "
         "que quedar en la columna `error`"
     )
@@ -366,6 +393,7 @@ def _queue_row(item_id="i1", carrier_name="ACME S.A.", **over):
         "match_status": "UNMATCHED", "created_at": datetime(2026, 8, 14, tzinfo=timezone.utc),
         "carrier_id": "c1", "carrier_name": carrier_name,
         "confidence": None, "suggested_requirement_name": None, "candidate_count": 0,
+        "mismo_casillero": 1, "mismo_contenido": 1,
     }
     row.update(over)
     return row
@@ -477,6 +505,186 @@ def test_queue_binds_exactly_the_parameters_it_references():
         assert referenciados == set(range(1, len(args) + 1)), (
             f"SQL referencia {sorted(referenciados)} pero recibe {len(args)} argumentos"
         )
+
+
+def test_la_cola_avisa_cuando_dos_archivos_reclaman_el_mismo_casillero():
+    """`classify-batch` ya se protege de N archivos a un casillero en UNA
+    operación —su docstring cuenta que "marcar 31 licencias y asignarlas al
+    mismo conductor destruía 30"— pero el clasificador propone el mismo
+    (entity_id, requirement_id) a archivos DISTINTOS, y el operador los
+    confirma de a uno: exactamente lo que ese guardia permite."""
+    pool = AsyncMock()
+    pool.fetchval.return_value = 2
+    pool.fetch.return_value = [
+        _queue_row(item_id="a", mismo_casillero=2, mismo_contenido=1),
+        _queue_row(item_id="b", mismo_casillero=2, mismo_contenido=1),
+    ]
+    client = make_client(pool)
+
+    filas = client.get("/api/v1/document-ingest/items").json()["rows"]
+
+    assert [f["mismo_casillero"] for f in filas] == [2, 2]
+
+
+def test_el_sql_de_la_cola_no_agrupa_los_sin_destino():
+    """LA GUARDA DE NULL. Sin ella, los ~60 items UNMATCHED con entity_id nulo
+    caen en la MISMA partición y la pantalla diría que todos reclaman el mismo
+    casillero. Es el peor falso positivo posible: aparece justo cuando la cola
+    está llena de trabajo real."""
+    from app.routers.document_ingest import _SQL_COLA
+
+    assert "i.entity_id IS NOT NULL" in _SQL_COLA
+    assert "i.requirement_id IS NOT NULL" in _SQL_COLA
+    assert "i.content_sha256 IS NOT NULL" in _SQL_COLA
+
+
+def test_mismo_contenido_dice_no_lo_se_en_vez_de_afirmar_que_no_hay_colision():
+    """El cuarto valor con dos significados.
+
+    `1` significaba "este archivo no esta duplicado en la cola" **y** "este
+    archivo no tiene hash, asi que no puedo saberlo". Con la senal escrita asi,
+    los 65 items historicos sin hash se listaban como "sin colision" sobre algo
+    que nadie miro nunca. Es la misma forma que ya se resolvio para
+    `mismo_casillero` con `casillero_ocupado`: el valor no puede cargar dos
+    sentidos.
+
+    `None` es "no lo se", y la pantalla se calla en vez de afirmar. Ojo con la
+    asimetria: `mismo_casillero` SI puede quedarse en 1 cuando no hay destino,
+    porque ahi "sin destino" es literalmente "no reclama ningun casillero" —
+    un solo sentido.
+    """
+    from app.routers.document_ingest import _SQL_COLA
+
+    rama = _SQL_COLA.split("AS mismo_contenido")[0].split("CASE")[-1]
+    assert "ELSE NULL" in rama, "mismo_contenido volvio a afirmar 1 sobre un item sin hash"
+
+    pool = AsyncMock()
+    pool.fetchval.return_value = 1
+    pool.fetch.return_value = [_queue_row(mismo_contenido=None)]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/document-ingest/items")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["rows"][0]["mismo_contenido"] is None
+
+
+# ── Bandeja: el casillero que ya tiene dueño (Task 2b) ──────────────────────
+#
+# `mismo_casillero`/`mismo_contenido` cuentan sobre la cola: sólo ven items
+# que siguen sin clasificar. El caso destructivo es el que esas dos señales
+# NO pueden ver: el ocupante del casillero ya fue confirmado, salió de la
+# cola y no está en ninguna partición de `count(*) OVER (...)`. Confirmar el
+# item de la cola reemplazaría un documento que hoy es válido, sin aviso.
+#
+# Esto se verifica contra Postgres real (no AsyncMock): la pregunta central
+# es qué devuelve un EXISTS correlacionado cuando la columna correlacionada
+# es NULL, y eso es semántica del motor, no algo que un mock pueda simular.
+
+async def _requisito_real(conn) -> str:
+    """Un requisito sintético, sólo para tener un `requirement_id` real que
+    el `::uuid` de la FK pueda aceptar. Mismo patrón que
+    test_document_ingest_integracion.py."""
+    return await conn.fetchval(
+        """
+        INSERT INTO public.compliance_requirements
+            (target_entity, requirement_code, name, requirement_level, expiration_policy)
+        VALUES ('DRIVER', $1, $2, 'LEGAL_MANDATORY', 'NONE')
+        RETURNING id::text
+        """,
+        f"ZZ_{uuid4().hex[:8].upper()}", "ZZ-TEST-INTEGRACION requisito",
+    )
+
+
+async def _batch_vacio(conn) -> str:
+    return await conn.fetchval(
+        """
+        INSERT INTO public.document_ingest_batches (source, status, total_files)
+        VALUES ('UPLOAD', 'REVIEW', 1)
+        RETURNING id::text
+        """,
+    )
+
+
+async def _una_fila_de_la_cola(conn, *, entity_id, requirement_id) -> dict:
+    """Arma un item UNMATCHED de la cola apuntando a `(entity_id, requirement_id)`
+    y devuelve su fila tal como la ve `GET /document-ingest/items`.
+
+    No crea ningún `compliance_record`: el llamador decide si el casillero
+    está ocupado insertando uno antes de llamar a esta función."""
+    batch_id = await _batch_vacio(conn)
+    item_id = await conn.fetchval(
+        """
+        INSERT INTO public.document_ingest_items
+            (batch_id, storage_path, file_name, match_status, entity_type,
+             entity_id, requirement_id)
+        VALUES ($1, $2, $2, 'UNMATCHED', $3, $4::uuid, $5::uuid)
+        RETURNING id::text
+        """,
+        batch_id, f"staging/{batch_id}/doc.pdf",
+        "DRIVER" if entity_id else None, entity_id, requirement_id,
+    )
+    pagina = await list_queue(carrier_id=None, limit=200, offset=0,
+                               pool=PoolDeUnaConexion(conn), _=None)
+    return next(f for f in pagina["rows"] if f["id"] == item_id)
+
+
+@pytest.mark.integracion
+async def test_la_cola_avisa_cuando_el_casillero_ya_tiene_documento(conexion_revertida):
+    """El caso destructivo que `mismo_casillero` NO ve: el ocupante ya fue
+    confirmado, así que salió de la cola y ninguna window function lo cuenta.
+    """
+    conn = conexion_revertida
+    entity_id = str(uuid4())
+    requirement_id = await _requisito_real(conn)
+    await conn.execute(
+        """
+        INSERT INTO public.compliance_records
+            (entity_id, entity_type, requirement_id, status, file_url, is_current)
+        VALUES ($1::uuid, 'DRIVER', $2::uuid, 'APPROVED', 'https://x/y.pdf', true)
+        """,
+        entity_id, requirement_id,
+    )
+
+    fila = await _una_fila_de_la_cola(conn, entity_id=entity_id, requirement_id=requirement_id)
+
+    assert fila["casillero_ocupado"] is True
+    assert fila["mismo_casillero"] == 1  # la señal vieja sigue diciendo "sin colisión"
+
+
+@pytest.mark.integracion
+async def test_un_item_sin_destino_no_tiene_el_casillero_ocupado(conexion_revertida):
+    """Sin entity_id no hay casillero que ocupar. Sin la guarda de NULL, el
+    EXISTS correlacionado con NULL da NULL y la fila viaja con un booleano
+    vacío en vez de `false`."""
+    conn = conexion_revertida
+
+    fila = await _una_fila_de_la_cola(conn, entity_id=None, requirement_id=None)
+
+    assert fila["casillero_ocupado"] is False
+
+
+@pytest.mark.integracion
+async def test_un_casillero_sin_archivo_vigente_no_cuenta_como_ocupado(conexion_revertida):
+    """Un `compliance_record` puede existir para ese destino sin tener
+    archivo (`status = 'MISSING'`, `file_url` NULL) o sin estar vigente
+    (`is_current = false`). Ninguno de los dos es "el casillero ya tiene
+    dueño": confirmar el item de la cola no reemplaza nada."""
+    conn = conexion_revertida
+    entity_id = str(uuid4())
+    requirement_id = await _requisito_real(conn)
+    await conn.execute(
+        """
+        INSERT INTO public.compliance_records
+            (entity_id, entity_type, requirement_id, status, file_url, is_current)
+        VALUES ($1::uuid, 'DRIVER', $2::uuid, 'MISSING', NULL, true)
+        """,
+        entity_id, requirement_id,
+    )
+
+    fila = await _una_fila_de_la_cola(conn, entity_id=entity_id, requirement_id=requirement_id)
+
+    assert fila["casillero_ocupado"] is False
 
 
 def test_preview_url_is_signed_one_at_a_time():

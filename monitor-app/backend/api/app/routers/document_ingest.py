@@ -32,6 +32,73 @@ router = APIRouter(prefix="/document-ingest", tags=["document-ingest"])
 
 _MAX_FILES_PER_UPLOAD = 50
 
+_SQL_COLA = """
+    SELECT i.id::text, i.file_name, i.mime_type, i.size_bytes,
+           i.storage_path, i.match_status, i.created_at,
+           COALESCE(i.carrier_id, b.carrier_id)::text AS carrier_id,
+           c.business_name                            AS carrier_name,
+           i.confidence,
+           r.name                                     AS suggested_requirement_name,
+           jsonb_array_length(i.candidates)           AS candidate_count,
+           -- Las dos señales de colisión, derivadas en la MISMA pasada.
+           -- Se cuentan sobre toda la cola filtrada, no sobre la página:
+           -- las window functions corren después del WHERE y antes del
+           -- LIMIT, que es exactamente lo que hace falta.
+           --
+           -- LA GUARDA DE NULL NO ES OPCIONAL: sin ella, los items sin
+           -- destino (entity_id NULL) caen todos en la misma partición y
+           -- la pantalla diría que reclaman el mismo casillero.
+           CASE WHEN i.entity_id IS NOT NULL AND i.requirement_id IS NOT NULL
+                THEN count(*) OVER (PARTITION BY i.entity_id, i.requirement_id)
+                ELSE 1 END                            AS mismo_casillero,
+           -- `ELSE NULL` y no `ELSE 1`: sin hash NO SE SABE si esta
+           -- duplicado, y decir 1 seria afirmar que no lo esta. Era el mismo
+           -- valor con dos sentidos que ya se resolvio para `mismo_casillero`
+           -- con `casillero_ocupado`. La asimetria con su vecina de arriba es
+           -- real: ahi "sin destino" significa literalmente "no reclama
+           -- ningun casillero", un solo sentido, asi que el 1 esta bien.
+           CASE WHEN i.content_sha256 IS NOT NULL
+                THEN count(*) OVER (PARTITION BY i.content_sha256)
+                ELSE NULL END                         AS mismo_contenido,
+           -- La colision que las window functions NO pueden ver: el ocupante
+           -- ya fue confirmado, salio de la cola y no esta en ninguna
+           -- particion. Es justo el caso destructivo — confirmar este item
+           -- reemplaza un documento que hoy es valido.
+           --
+           -- EXISTS y no JOIN a proposito: un JOIN a compliance_records
+           -- multiplicaria la fila si algun dia hay mas de un registro
+           -- vigente por (entity_id, requirement_id), y una cola que muestra
+           -- el mismo archivo dos veces es peor que una que no avisa.
+           -- Y aca NO va la guarda de NULL que llevan sus dos vecinas de
+           -- arriba, aunque la simetria la pida: un EXISTS correlacionado con
+           -- NULL no encuentra fila y devuelve `false`, nunca NULL. Se probo
+           -- empiricamente al escribir esto — sacarle la guarda no cambiaba
+           -- ningun resultado, o sea que ningun test podia defenderla.
+           --
+           -- La diferencia con las vecinas es real y vale entenderla: una
+           -- window function SI agrupa los NULL entre si, y sin su guarda
+           -- todos los items sin destino caen en la misma particion. Dejar
+           -- aca una guarda inerte haria leer las tres como decorativas, y
+           -- entonces alguien sacaria una de las que si sostienen algo.
+           EXISTS (
+               SELECT 1 FROM public.compliance_records cr
+                WHERE cr.entity_id = i.entity_id
+                  AND cr.requirement_id = i.requirement_id
+                  AND cr.is_current = true
+                  AND cr.file_url IS NOT NULL) AS casillero_ocupado
+    FROM public.document_ingest_items i
+    JOIN public.document_ingest_batches b ON b.id = i.batch_id
+    LEFT JOIN public.carriers c
+           ON c.id = COALESCE(i.carrier_id, b.carrier_id)
+    LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
+    {where}
+    -- file_name desempata: una carga masiva entra con el mismo created_at
+    -- y sin desempate el orden queda arbitrario entre recargas. En una cola
+    -- donde se selecciona por rango, eso hace que marques otra cosa.
+    ORDER BY c.business_name NULLS LAST, i.created_at, i.file_name
+    LIMIT $2 OFFSET $3
+"""
+
 
 def _dedup_candidates(candidatos: list) -> list:
     """Un mismo RUT puede aparecer dos veces en el nombre del archivo
@@ -124,8 +191,8 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
             INSERT INTO public.document_ingest_items
                 (batch_id, storage_path, file_name, mime_type, size_bytes,
                  match_status, entity_type, entity_id, requirement_id,
-                 confidence, match_evidence, candidates, error)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb, $13)
+                 confidence, match_evidence, candidates, error, content_sha256)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb, $13, $14)
             RETURNING id::text, file_name, mime_type, size_bytes, storage_path, match_status
             """,
             batch_id, uploaded["storage_path"], uploaded["file_name"],
@@ -145,6 +212,7 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
                 for c in candidatos
             ]),
             motivo_error,
+            uploaded["content_sha256"],
         )
         items.append(dict(row))
 
@@ -248,26 +316,7 @@ async def list_queue(
         carrier_id,
     )
     rows = await pool.fetch(
-        f"""
-        SELECT i.id::text, i.file_name, i.mime_type, i.size_bytes,
-               i.storage_path, i.match_status, i.created_at,
-               COALESCE(i.carrier_id, b.carrier_id)::text AS carrier_id,
-               c.business_name                            AS carrier_name,
-               i.confidence,
-               r.name                                     AS suggested_requirement_name,
-               jsonb_array_length(i.candidates)           AS candidate_count
-        FROM public.document_ingest_items i
-        JOIN public.document_ingest_batches b ON b.id = i.batch_id
-        LEFT JOIN public.carriers c
-               ON c.id = COALESCE(i.carrier_id, b.carrier_id)
-        LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
-        {where}
-        -- file_name desempata: una carga masiva entra con el mismo created_at
-        -- y sin desempate el orden queda arbitrario entre recargas. En una cola
-        -- donde se selecciona por rango, eso hace que marques otra cosa.
-        ORDER BY c.business_name NULLS LAST, i.created_at, i.file_name
-        LIMIT $2 OFFSET $3
-        """,
+        _SQL_COLA.format(where=where),
         carrier_id, limit, offset,
     )
     return {"total": total or 0, "rows": [dict(r) for r in rows]}
@@ -373,7 +422,7 @@ async def classify_batch(
             if not record:
                 raise HTTPException(
                     404,
-                    "Esa entidad no tiene ese requisito. Verificá la categoría y el tipo de documento.",
+                    "Esa entidad no tiene ese requisito. Verifica la categoría y el tipo de documento.",
                 )
 
             if body.expiration_date is None:

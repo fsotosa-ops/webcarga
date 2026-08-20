@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Salida de Playwright: videos, capturas y el reporte HTML. Son artefactos
+# de una corrida, no del proyecto.
+/test-results/
+/playwright-report/

@@ -425,6 +425,9 @@ def _pending_row(**overrides):
         # exige su requisito. El renglon de carga necesita la politica para
         # saber si pedir la fecha ANTES de subir.
         "urgencia": "FALTA", "expiration_policy": "REQUIRED",
+        # Si la fila tiene un archivo cargado. Sale de `file_url`, no de una
+        # lectura de `status` — ver el test de mas abajo.
+        "tiene_archivo": False,
     }
     base.update(overrides)
     return base
@@ -490,6 +493,50 @@ def test_pending_rows_expone_urgencia_y_politica():
     assert fila["expiration_policy"] == "OPTIONAL"
 
 
+def test_pending_rows_expone_al_dia_sin_romper_el_contrato_de_respuesta():
+    """Ronda de arreglo 1 (Task 4): `urgencia` gano un cuarto valor, 'AL_DIA',
+    para la fila cubierta que `estado='todos'` empezo a traer. El SQL puede
+    calcularlo bien y la respuesta romper igual si el `Literal` de
+    `PendingComplianceRow` (app/schemas/compliance.py) se queda en tres
+    valores: `response_model` la rechaza con 500 antes de llegar al cliente.
+
+    Un `AsyncMock` sin pasar por `TestClient` no ve esto — el mock devuelve
+    lo que el test le dicta sin pasar por la validacion de Pydantic. Por eso
+    esto pega contra la ruta real, no llama al handler a mano."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _pending_row(urgencia="AL_DIA", status="APPROVED_MANUAL", expiration_policy="NONE"),
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["rows"][0]["urgencia"] == "AL_DIA"
+
+
+def test_pending_dice_si_la_fila_tiene_archivo_en_vez_de_deducirlo_del_status():
+    """`status` no sirve para saber si hay un archivo cargado, y se estaba
+    usando para eso: un 'EXPIRED' SI lo tiene —vencio justamente porque
+    alguien lo subio— y un 'REJECTED' puede no tenerlo. La ficha de empresa
+    decide con este dato si ofrece "Ver", asi que sale de `file_url`, que es
+    el hecho, y no de una lectura del estado."""
+    from app.routers.compliance import _PENDING_ROWS_SQL
+
+    assert "cr.file_url IS NOT NULL AS tiene_archivo" in _PENDING_ROWS_SQL
+
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _pending_row(status="EXPIRED", urgencia="VENCIDO", tiene_archivo=True),
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["rows"][0]["tiene_archivo"] is True
+
+
 def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():
     """Antes de la Ronda 129 renovar no tenia superficie: el predicado exigia
     la fecha YA pasada, asi que un documento que vence en diez dias no
@@ -552,6 +599,30 @@ def test_pending_rows_passes_filters_to_query():
     assert args[8] == "ACTIVE"
 
 
+def test_pending_acepta_limit_500_para_la_ficha_de_empresa():
+    """Ronda de arreglo 1 (Task 4): la ficha pide `estado='todos'` UNA sola
+    vez con `limit=500` y deriva sus cuatro cifras contando `urgencia` sobre
+    las filas que llegaron. El tope viejo (200) le devolveria 422 a esa unica
+    consulta antes de llegar al handler."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending?limit=500")
+
+    assert res.status_code == 200, res.text
+
+
+def test_pending_rechaza_un_limit_mayor_a_500():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending?limit=501")
+
+    assert res.status_code == 422
+
+
 def test_pending_rows_filters_by_subject():
     """El cajon de un conductor o un vehiculo pide lo que le falta A EL.
 
@@ -604,6 +675,71 @@ def test_pending_rows_excludes_inactive_carriers_from_query():
     args = pool.fetch.call_args.args
     assert "c.operational_status = $8" in query
     assert args[8] == "ACTIVE"
+
+
+def test_pending_sin_estado_se_comporta_igual_que_antes():
+    """El default es `falta` para que ningun llamador actual cambie de
+    comportamiento. El cajon, el embudo y la exportacion piden /pending sin
+    parametro y tienen que seguir viendo lo mismo."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending")
+
+    sql = pool.fetch.call_args.args[0]
+    assert "$10" in sql, "el estado tiene que viajar como parametro, no interpolado"
+    assert pool.fetch.call_args.args[10] == "falta"
+
+
+def test_pending_estado_falta_arma_el_mismo_predicado_que_pendiente():
+    """El AsyncMock nunca ejecuta el SQL: un ELSE true en el CASE del estado
+    pasa `test_pending_sin_estado_se_comporta_igual_que_antes` igual, porque
+    ese test solo mira el argumento que viaja, no lo que la base haria con el.
+    Este chequea el texto del CASE, que es lo unico que un mock puede
+    verificar sin tocar Postgres."""
+    from app.routers.compliance import _PENDING_ROWS_SQL, pendiente_predicate
+
+    rama = _PENDING_ROWS_SQL.split("CASE $10::text")[1].split("END")[0]
+    assert f"ELSE {pendiente_predicate('cr')}" in rama, (
+        "el default de 'estado' dejo de armar el mismo predicado que 'pendiente'; "
+        "es el desfase que ya tuvo este modulo entre el embudo y el cajon"
+    )
+
+
+def test_pending_con_estado_todos_no_filtra():
+    """Es lo que hace posible la ficha: ver lo que la empresa TIENE, no solo lo
+    que le falta. Hoy los 23 documentos cargados de la unica empresa con
+    documentacion no aparecen en ninguna pantalla del modulo."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending?estado=todos")
+
+    assert pool.fetch.call_args.args[10] == "todos"
+
+
+def test_pending_rechaza_un_estado_inventado():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending?estado=cualquiera")
+
+    assert res.status_code == 422
+
+
+def test_el_sql_de_pending_bindea_exactamente_lo_que_referencia():
+    """El SQL pasa de 9 a 10 placeholders. Un $n de mas o de menos no falla al
+    desplegar: asyncpg tira un error de binding en la primera consulta real."""
+    import re
+    from app.routers.compliance import _PENDING_ROWS_SQL
+
+    referenciados = {int(n) for n in re.findall(r"\$(\d+)", _PENDING_ROWS_SQL)}
+    assert referenciados == set(range(1, 11)), (
+        f"el SQL referencia {sorted(referenciados)}; se esperaban 1..10"
+    )
 
 
 def test_carrier_status_filters_by_active_but_not_only():
@@ -1244,6 +1380,62 @@ def test_reassign_to_tray_returns_it_unclassified():
     todo_sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
     assert "document_ingest_items" in todo_sql
     assert "UNMATCHED" in todo_sql
+
+
+def test_reassign_to_tray_lleva_el_hash_del_archivo():
+    """El item que vuelve a la bandeja tiene que entrar con su `content_sha256`.
+
+    Sin el, `mismo_contenido` no puede ver el caso destructivo: un archivo
+    devuelto a la bandeja y su gemelo byte a byte recien subido se listaban los
+    dos como "sin colision" y nada iba a poder detectarlo nunca. El hash sale
+    del blob que YA esta en storage — es una operacion manual y de a un
+    archivo, y leerlo ahi funciona tambien para los items historicos, que no
+    tienen el hash guardado en ninguna parte.
+    """
+    import hashlib
+
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [_record_with_file()]
+    conn.fetchval.return_value = "batch-9"
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.return_value = b"contenido"
+    client = make_client(pool, supabase)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={"to_tray": True})
+
+    assert res.status_code == 200, res.text
+    insert = next(
+        c for c in conn.execute.call_args_list
+        if "document_ingest_items" in str(c.args[0])
+    )
+    assert "content_sha256" in insert.args[0]
+    assert hashlib.sha256(b"contenido").hexdigest() in insert.args
+
+
+def test_reassign_to_tray_sin_poder_leer_el_blob_no_inventa_un_hash():
+    """Si el blob no se puede leer, el item entra con el hash en NULL — que es
+    "no lo se" y hace que la pantalla se calle— y la reasignacion NO falla:
+    mover la referencia de un documento mal asignado importa mas que la
+    senal de colision."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.side_effect = [_record_with_file()]
+    conn.fetchval.return_value = "batch-9"
+    supabase = MagicMock()
+    supabase.storage.from_.return_value.download.side_effect = Exception("no existe")
+    client = make_client(pool, supabase)
+
+    res = client.post("/api/v1/compliance-records/rec-1/reassign", json={"to_tray": True})
+
+    assert res.status_code == 200, res.text
+    insert = next(
+        c for c in conn.execute.call_args_list
+        if "document_ingest_items" in str(c.args[0])
+    )
+    assert insert.args[-1] is None
 
 
 def test_reassign_requires_a_destination():

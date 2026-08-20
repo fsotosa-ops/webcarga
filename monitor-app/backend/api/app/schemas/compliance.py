@@ -53,10 +53,19 @@ class PendingComplianceRow(BaseModel):
     document_name: str
     status: ComplianceStatus
     expiration_date: Optional[date] = None
-    # Por que esta pendiente. Tres valores excluyentes que el SQL ya resuelve:
-    # el frontend no vuelve a decidirlo comparando fechas, que es como dos
-    # superficies del mismo dato terminan discrepando.
-    urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA"]
+    # Si hay un archivo cargado. Es un HECHO (`file_url IS NOT NULL`), no una
+    # lectura de `status`: la ficha de empresa decide con esto si ofrece
+    # "Ver", y deducirlo del estado escondia el archivo de todo lo vencido.
+    tiene_archivo: bool
+    # Por que esta pendiente, o si no lo esta. Cuatro valores excluyentes que
+    # el SQL ya resuelve: el frontend no vuelve a decidirlo comparando
+    # fechas, que es como dos superficies del mismo dato terminan
+    # discrepando. 'AL_DIA' se sumo en la ronda de arreglo 1 de la ficha de
+    # empresa (Task 4): con estado='falta' (el default de siempre) esta rama
+    # nunca se alcanzaba, asi que el valor no hacia falta; con
+    # estado='todos' si, y sin el una fila cubierta salia 'FALTA' igual que
+    # una que de verdad falta.
+    urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA", "AL_DIA"]
     # Que hace su requisito con la fecha de vencimiento. El renglon de carga lo
     # necesita para pedir la fecha ANTES de subir: sin el, o pregunta siempre,
     # o no pregunta nunca y /file rechaza con 422 el archivo ya subido.

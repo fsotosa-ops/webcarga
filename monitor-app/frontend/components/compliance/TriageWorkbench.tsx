@@ -7,6 +7,7 @@ import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import type { IngestUploadResult } from '@/lib/types'
+import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { TriageBulkBar } from './TriageBulkBar'
 import { TriageClassifyForm } from './TriageClassifyForm'
 import { TriageDropzone } from './TriageDropzone'
@@ -24,6 +25,11 @@ interface Props {
   /** Acota el panel a un conductor o vehículo concreto: entrando desde su
    *  ficha, lo único que interesa es lo que le falta a él. */
   subject?: { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string }
+  /** La empresa con la que llega el lote, cuando se entró desde la ficha de
+   *  una. No es lo mismo que `carrierId`: acá la cola SIGUE siendo global —se
+   *  ve todo lo que espera— y esto sólo dice de quién es lo que se va a subir,
+   *  que es exactamente lo que el selector pregunta. Se puede cambiar. */
+  empresaInicial?: CarrierSearchResult | null
 }
 
 const QUEUE_PAGE = 200
@@ -51,7 +57,7 @@ function motivosDe(errores: { error: string }[]) {
  *  Reemplaza al par panel + modal de clasificación, que costaba ~5 clics por
  *  documento. Acá el formulario aplica a todo lo marcado: con un archivo
  *  clasifica ese, con quince aplica a los quince. */
-export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
+export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicial }: Props) {
   const qc = useQueryClient()
   const canEdit = useCanEdit()
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -64,6 +70,24 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
   // El ultimo lote aplicado, para poder revertirlo. No hace falta un registro
   // de operaciones: quien deshace es quien acaba de aplicar.
   const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
+  // Sólo tiene sentido en la bandeja global (`carrierId` ya trae la empresa):
+  // deja acotar el universo del clasificador ANTES de soltar los archivos.
+  // Es opcional a propósito — la tanda mezclada que llega por correo es un
+  // caso legítimo, y exigirla convertiría la bandeja en un buscador.
+  const [busqueda, setBusqueda] = useState('')
+  /** La empresa que se ELIGIÓ acá. `null` significa "todavía nadie eligió", no
+   *  "ninguna": la que llega por el enlace se resuelve abajo con un COALESCE y
+   *  no sembrando este estado, que es como este frontend ya tuvo tres veces el
+   *  mismo bug (un estado inicial que no se resincroniza cuando el prop del
+   *  que salió cambia). Elegir acá gana; sin elección, manda la del enlace. */
+  const [empresaElegida, setEmpresaElegida] = useState<CarrierSearchResult | null>(null)
+  const empresaDelLote = empresaElegida ?? empresaInicial ?? null
+
+  /** Sin nada marcado, la pantalla está en modo "subir"; con algo marcado,
+   *  en modo "mover". Un solo nombre para la condición porque gobierna las
+   *  dos mitades de la zona de carga y el camino de soltar-en-cualquier-parte:
+   *  escribirla tres veces es como se separaron la primera vez. */
+  const sinSeleccion = selectedIds.size === 0
 
   const queueKey = clavesCertificacion.cola(carrierId)
   const queueQuery = useQuery({
@@ -150,7 +174,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
         // Encadenados, no en paralelo: cada lote sube sus archivos a Storage y
         // lanzar tres tandas de 50 a la vez es pelearle ancho de banda a las
         // otras dos.
-        const res = await documentIngestApi.upload(carrierId, lote)
+        const res = await documentIngestApi.upload(carrierId ?? empresaDelLote?.id, lote)
         items.push(...res.items)
         errores.push(...res.errors)
         // Se publican mientras avanza: si un lote posterior falla, lo que ya
@@ -245,7 +269,17 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
       // `preventDefault`, que igual está obligada a hacer para que el
       // navegador no navegue al archivo.
       if (e.defaultPrevented) return
+      // `preventDefault` PRIMERO y siempre: es lo único que impide que el
+      // navegador abra el archivo y saque a la persona de la aplicación.
       e.preventDefault()
+      // Con selección activa la zona de carga no está en pantalla, y con ella
+      // se fue el único indicador de a qué empresa se atribuiría el lote.
+      // Subir por este camino sería hacerlo en silencio y en nombre de una
+      // empresa invisible.
+      if (!sinSeleccion) {
+        setNotice('Termina con los archivos seleccionados antes de subir otros.')
+        return
+      }
       const files = e.dataTransfer?.files
       if (files?.length) subirArchivos(Array.from(files))
     }
@@ -255,7 +289,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
       window.removeEventListener('dragover', prevenir)
       window.removeEventListener('drop', soltar)
     }
-  }, [canEdit, subirArchivos])
+  }, [canEdit, subirArchivos, sinSeleccion])
 
   function handleToggle(id: string, opts?: { range?: boolean }) {
     setSelectedIds(prev => {
@@ -318,7 +352,45 @@ export function TriageWorkbench({ carrierId, carrierName, subject }: Props) {
 
   return (
     <div className="space-y-3">
-      {canEdit && (
+      {/* La ZONA DE CARGA entera —el selector del lote y la zona de arrastre—
+          se retira mientras hay selección: la barra contextual es la dueña de
+          ese modo, y subir y mover son dos gestos distintos que no se pisan.
+
+          Dos cajas de "Buscar empresa" a la vez —ésta y la de
+          MoveToCarrierBar— significan cosas distintas ("¿de quién es lo que
+          voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?") sin que
+          elegir en la equivocada avise nada. Y esconder sólo el selector era
+          peor: `empresaDelLote` seguía gobernando la zona de arrastre, así que
+          una segunda tanda se subía atribuida a una empresa QUE YA NO SE VE.
+          El estado no se pierde, sólo deja de mostrarse: vuelve con lo ya
+          elegido en cuanto la selección se vacía. */}
+      {canEdit && !carrierId && sinSeleccion && (
+        <div>
+          <p className="text-etiqueta text-informativo pb-1">
+            ¿De quién son estos documentos? Elegir la empresa hace que el sistema
+            reconozca mejor a quién pertenece cada archivo.
+          </p>
+          {/* La empresa elegida, DICHA. Sin esto, el estado gobierna a qué
+              empresa se atribuye la tanda sin estar en pantalla — el mismo
+              defecto que tenía esconder el selector con la selección activa.
+              Y es lo que hace visible la preselección que trae el enlace. */}
+          {empresaDelLote && (
+            <p className="text-etiqueta text-text-primary font-semibold pb-1">
+              Este lote es de {empresaDelLote.business_name}
+            </p>
+          )}
+          <CarrierSearchPicker
+            query={busqueda}
+            onQueryChange={setBusqueda}
+            onPick={c => setEmpresaElegida(c)}
+            selectedId={empresaDelLote?.id ?? null}
+            size="sm"
+            placeholder="Buscar empresa (opcional)…"
+          />
+        </div>
+      )}
+
+      {canEdit && sinSeleccion && (
         <TriageDropzone
           carrierName={carrierName}
           vacia={!queueQuery.isPending && total === 0}

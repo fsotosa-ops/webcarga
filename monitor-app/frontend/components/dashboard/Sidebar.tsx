@@ -37,22 +37,36 @@ const NAV_GROUPS: NavGroupDef[] = [
       { href: '/dashboard/operations/monitor', label: 'Monitor' },
     ],
   },
+  // Certificación se abre en DOS porque son dos trabajos, no dos vistas: la
+  // Bandeja responde "¿de quién es este archivo?" sobre archivos sin destino,
+  // y Empresas responde "¿qué le falta a esta empresa?" sobre requisitos sin
+  // documento. Las CUATRO agrupaciones (Empresa/Conductor/Vehículo/Requisito)
+  // NO se parten: siguen adentro de Empresas, porque ésas sí son cuatro
+  // maneras de mirar la misma lista.
+  {
+    label: 'Certificación',
+    icon:  BadgeCheck,
+    items: [
+      { href: '/dashboard/compliance',       label: 'Empresas' },
+      { href: '/dashboard/compliance/inbox', label: 'Sin clasificar', badge: 'inbox' },
+    ],
+  },
 ]
 
-// Un modulo por objeto de trabajo. Certificacion es UNA lista de empresas con
-// dos maneras de mirarla (por empresa / por documento), no tres submodulos:
-// tenerlos separados obligaba a cruzar de memoria listas del mismo objeto.
-// Seguros sigue aparte: pasarlo a seccion de la ficha es la HU-06.
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; badge?: 'inbox' }[] = [
-  { href: '/dashboard/compliance', label: 'Certificación', icon: BadgeCheck, badge: 'inbox' },
-  { href: '/dashboard/insurance',  label: 'Seguros',       icon: Shield },
-  { href: '/dashboard/pricing',    label: 'Tarifario',     icon: Receipt },
+// Un modulo por objeto de trabajo. Seguros y Tarifario todavia no tienen
+// mas de una vista: pasar Seguros a seccion de la ficha es la HU-06.
+// Sin `badge`: al pasar Certificacion a NAV_GROUPS, el unico item con contador
+// se fue con ella. Un campo del tipo y una rama de render inalcanzables se leen
+// como una capacidad que existe, y no existe.
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/dashboard/insurance', label: 'Seguros',   icon: Shield },
+  { href: '/dashboard/pricing',   label: 'Tarifario', icon: Receipt },
 ]
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahi, se listan
 // los items de los grupos ya aplanados junto a los demas.
 const MOBILE_NAV_ITEMS = [
-  { href: '/dashboard/operations/monitor', label: 'Monitor', icon: Truck },
+  ...NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, icon: g.icon }))),
   ...NAV_ITEMS,
 ]
 
@@ -174,9 +188,18 @@ export default function Sidebar({ role }: SidebarProps) {
   const supabase = createClient()
   const [collapsed, setCollapsed] = useState(false)
 
-  // Match más específico primero (ej. /dashboard/compliance/inbox no debe
-  // también resaltar /dashboard/compliance) — evita 2 items activos a la vez.
+  // Match más específico primero — evita 2 items activos a la vez. Hoy
+  // Seguros y Tarifario no comparten prefijo, pero la regla se deja escrita
+  // acá y no en cada item.
   const activeHref = [...NAV_ITEMS]
+    .map(i => i.href)
+    .filter(href => pathname.startsWith(href))
+    .sort((a, b) => b.length - a.length)[0]
+
+  // El bottom nav mobile no tiene el concepto de grupo (§ MOBILE_NAV_ITEMS):
+  // el match más específico se calcula sobre TODOS los hrefs juntos, para que
+  // /dashboard/compliance/inbox no resalte también "Empresas".
+  const mobileActiveHref = MOBILE_NAV_ITEMS
     .map(i => i.href)
     .filter(href => pathname.startsWith(href))
     .sort((a, b) => b.length - a.length)[0]
@@ -257,7 +280,7 @@ export default function Sidebar({ role }: SidebarProps) {
             />
           ))}
 
-          {NAV_ITEMS.map(({ href, label, icon: Icon, badge }) => {
+          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = href === activeHref
             return (
               <Link
@@ -277,11 +300,6 @@ export default function Sidebar({ role }: SidebarProps) {
                 <Icon size={16} className={`shrink-0 ${active ? 'text-accent' : 'group-hover:text-white/70'}`} />
                 {!collapsed && (
                   <span className={`font-medium truncate ${active ? 'text-white' : ''}`}>{label}</span>
-                )}
-                {badge === 'inbox' && inboxCount > 0 && !collapsed && (
-                  <span className="ml-auto shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
-                    {inboxCount}
-                  </span>
                 )}
               </Link>
             )
@@ -333,9 +351,10 @@ export default function Sidebar({ role }: SidebarProps) {
       </aside>
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
+      <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
         {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname.startsWith(href) && (href !== '/dashboard/operations/monitor' || pathname === href)
+          const active = href === mobileActiveHref
+            && (href !== '/dashboard/operations/monitor' || pathname === href)
           return (
             <Link
               key={href}

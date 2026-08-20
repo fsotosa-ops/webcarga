@@ -672,11 +672,21 @@ export type DocumentVersion = {
  *  la fecha. */
 export type PoliticaVencimiento = 'REQUIRED' | 'OPTIONAL' | 'NONE'
 
-/** Por qué un requisito cuenta como pendiente. Excluyentes y exhaustivos:
- *  'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30 días,
- *  'FALTA' no tiene documento. Antes de la Ronda 129 el segundo no existía y
- *  renovar no tenía superficie en ninguna pantalla. */
-export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA'
+/** Por qué un requisito cuenta como pendiente, o si no cuenta. Excluyentes y
+ *  exhaustivos: 'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30
+ *  días, 'FALTA' no tiene documento, 'AL_DIA' está cubierto y sin problema de
+ *  fecha. Antes de la Ronda 129 'POR_VENCER' no existía y renovar no tenía
+ *  superficie en ninguna pantalla. 'AL_DIA' se sumó en la ronda de arreglo 1
+ *  de la ficha de empresa (Task 4): con `estado='falta'` (el default de
+ *  siempre) el backend nunca devolvía una fila cubierta, así que el valor no
+ *  hacía falta; con `estado='todos'` sí, y sin él una fila al día salía
+ *  'FALTA' igual que una que de verdad falta — un valor cargando dos
+ *  sentidos, la misma clase de bug que este módulo ya tuvo cinco veces. */
+export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA' | 'AL_DIA'
+
+/** Qué mostrar de la documentación de una empresa. `falta` es el default del
+ *  backend y reproduce el comportamiento anterior a la ficha. */
+export type EstadoDocumental = 'todos' | 'falta' | 'por_vencer' | 'al_dia'
 
 export type PendingComplianceRow = {
   id:                      string
@@ -697,6 +707,12 @@ export type PendingComplianceRow = {
   document_name:              string
   status:                    ComplianceStatus
   expiration_date:            string | null
+  /** Si hay un archivo cargado. Es un hecho (`file_url IS NOT NULL`), no una
+   *  lectura de `status`: `MISSING`/`EXPIRED` se venía usando como si
+   *  significara "no tiene archivo", y un `EXPIRED` sí lo tiene —venció
+   *  porque alguien lo subió—, así que la ficha escondía el documento
+   *  cargado de todo lo vencido. */
+  tiene_archivo:              boolean
   /** Por qué esta fila está pendiente. Lo resuelve el SQL, no el cliente:
    *  recalcularlo comparando fechas acá es como dos superficies del mismo
    *  dato terminan discrepando. */
@@ -1327,6 +1343,23 @@ export type QueueRow = {
   confidence:                 number | null
   suggested_requirement_name: string | null
   candidate_count:            number
+  /** Cuántos items pendientes comparten este destino / este contenido,
+   *  incluyéndose a sí mismo. 1 = sin colisión. Dos señales distintas aunque
+   *  compartan forma: mismo contenido -> "este archivo ya está en la cola,
+   *  borra uno"; mismo destino -> "dos archivos distintos reclaman el
+   *  casillero, elige cuál". */
+  mismo_casillero:            number
+  /** `null` = NO SE SABE: el item entró sin `content_sha256`, así que no hay
+   *  con qué compararlo. No es 1 ("no está duplicado"); un valor con dos
+   *  sentidos fue el defecto que este módulo ya tuvo cinco veces, y acá la
+   *  pantalla se calla en vez de afirmar que no hay colisión. */
+  mismo_contenido:            number | null
+  /** El requisito destino YA tiene un archivo vigente (mira
+   *  `compliance_records`, no la cola). Confirmar este item lo reemplaza.
+   *  Distinta de `mismo_casillero`: esa señal sólo ve items que siguen sin
+   *  clasificar, y el ocupante de este casillero ya salió de la cola porque
+   *  fue confirmado. */
+  casillero_ocupado:          boolean
 }
 
 export type TrayPage = { total: number; rows: QueueRow[] }

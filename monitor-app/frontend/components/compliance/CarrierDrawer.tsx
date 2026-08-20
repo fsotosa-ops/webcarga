@@ -1,13 +1,14 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
-import { Check, ChevronDown, ChevronRight, Loader2, Inbox } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
+import { PuenteALaBandeja } from './PuenteALaBandeja'
 import { RenglonPendiente } from './RenglonPendiente'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
 import { useQuery } from '@tanstack/react-query'
 import type { PendingComplianceRow } from '@/lib/types'
 
@@ -23,16 +24,6 @@ interface Props {
    *  patrón de éste" serían dos implementaciones de la misma pantalla, que en
    *  este módulo ya divergieron una vez. */
   subject?: { entity_type: PendingComplianceRow['entity_type']; entity_id: string }
-}
-
-/** Un sujeto del cajón: la empresa misma, uno de sus conductores o uno de sus
- *  vehículos, con lo que le falta. */
-type Sujeto = {
-  clave:       string
-  titulo:      string
-  entityType:  PendingComplianceRow['entity_type']
-  entityId:    string
-  pendientes:  PendingComplianceRow[]
 }
 
 /** El cajón de una empresa: la fila se abre HACIA ABAJO.
@@ -101,26 +92,12 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
 
   /** La empresa primero, después sus conductores y sus vehículos. Fijada la
    *  empresa los candidatos son 2 conductores y 3 vehículos en promedio, no 80
-   *  y 118: por eso elegir sujeto acá es un clic. */
-  const sujetos = useMemo<Sujeto[]>(() => {
-    const porClave = new Map<string, Sujeto>()
-    for (const r of rows) {
-      const clave = `${r.entity_type}:${r.entity_id}`
-      if (!porClave.has(clave)) {
-        porClave.set(clave, {
-          clave,
-          titulo: r.entity_type === 'CARRIER' ? 'De la empresa' : (r.subject_name ?? 'Sin nombre'),
-          entityType: r.entity_type,
-          entityId: r.entity_id,
-          pendientes: [],
-        })
-      }
-      porClave.get(clave)!.pendientes.push(r)
-    }
-    const orden = { CARRIER: 0, DRIVER: 1, ASSET: 2 } as const
-    return [...porClave.values()].sort((a, b) =>
-      orden[a.entityType] - orden[b.entityType] || a.titulo.localeCompare(b.titulo))
-  }, [rows])
+   *  y 118: por eso elegir sujeto acá es un clic.
+   *
+   *  El agrupado en sí vive en `lib/utils/agruparPorSujeto`, compartido con la
+   *  ficha de empresa: agrupar por sujeto es el mismo problema en los dos,
+   *  sólo cambia qué filas llegan (acá siempre `estado='falta'`). */
+  const sujetos = useMemo(() => agruparPorSujeto(rows), [rows])
 
   function alternar(clave: string) {
     setAbiertos(prev => {
@@ -176,11 +153,11 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
                   {s.titulo}
                 </span>
                 <span className="text-etiqueta text-informativo tabular-nums">
-                  faltan {s.pendientes.length}
+                  faltan {s.filas.length}
                 </span>
               </button>
 
-              {abierto && s.pendientes.map(p => (
+              {abierto && s.filas.map(p => (
                 <RenglonPendiente
                   key={p.id}
                   fila={p}
@@ -192,22 +169,7 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
           )
         })}
 
-        {/* La bandeja sigue existiendo, como DESTINO y no como zona encima del
-            casillero: es el camino de "me llegaron veinte por correo", no el de
-            "a esta persona le falta la licencia". Es un enlace justamente para
-            que no compita con el renglón por el mismo archivo soltado. */}
-        {canEdit && (
-          <p className="text-etiqueta text-informativo pt-2 flex items-center gap-1.5">
-            <Inbox size={11} aria-hidden="true" />
-            ¿Tienes muchos documentos de {carrierName}?{' '}
-            <Link
-              href="/dashboard/compliance?vista=documentos"
-              className="font-semibold text-accion transition-opacity hover:opacity-70"
-            >
-              Llévalos a la Bandeja
-            </Link>
-          </p>
-        )}
+        <PuenteALaBandeja carrierId={carrierId} carrierName={carrierName} />
       </div>
     </div>
   )

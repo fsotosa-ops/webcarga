@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -28,10 +28,11 @@ beforeEach(() => {
   vi.mocked(documentIngestApi.listQueue).mockReset()
 })
 
-// HU-04: un módulo por objeto de trabajo. Certificación es UNA entrada con el
-// contador del trabajo pendiente; Bandeja y Pendientes dejaron de ser ítems
-// del menú y pasaron a ser dos vistas de la misma pantalla.
-describe('Sidebar — Certificación es una sola entrada', () => {
+// HU-04, revisado en Task 5: Certificación deja de ser una entrada única y
+// pasa a ser un grupo con DOS trabajos distintos adentro — Empresas y Sin
+// clasificar (ex-Bandeja) —, cada uno con su propia ruta. El contador del
+// trabajo pendiente vive en la entrada de "Sin clasificar", no en el grupo.
+describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () => {
   beforeEach(() => {
     vi.mocked(documentIngestApi.listQueue).mockReset()
   })
@@ -49,11 +50,56 @@ describe('Sidebar — Certificación es una sola entrada', () => {
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
-  it('apunta al módulo, no a un submódulo', async () => {
+  it('Certificación se abre en Empresas y Sin clasificar', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
-    const links = await screen.findAllByRole('link', { name: /certificación/i })
-    expect(links[0]).toHaveAttribute('href', '/dashboard/compliance')
+    // El grupo arranca plegado (la ruta activa del mock es /dashboard/carriers,
+    // ajena a Certificación), así que hay que desplegarlo para ver sus dos
+    // entradas — igual que haría alguien navegando de verdad.
+    fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
+
+    const empresas = screen.getAllByRole('link', { name: /^empresas$/i })
+    expect(empresas[0]).toHaveAttribute('href', '/dashboard/compliance')
+
+    const sinClasificar = screen.getAllByRole('link', { name: /sin clasificar/i })
+    expect(sinClasificar[0]).toHaveAttribute('href', '/dashboard/compliance/inbox')
+  })
+
+  it('el contador de la Bandeja vive en su entrada, no en el grupo', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 12, rows: [] })
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
+
+    await waitFor(() => {
+      const sinClasificar = screen.getAllByRole('link', { name: /sin clasificar/i })[0]
+      expect(sinClasificar).toHaveTextContent('12')
+    })
+  })
+
+  it('sin archivos esperando no dibuja un cero', async () => {
+    // Un cero en rojo pediria atencion sobre nada. Es la regla que el boton
+    // actual ya cumple y que este cambio no puede perder.
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
+
+    const sinClasificar = screen.getAllByRole('link', { name: /sin clasificar/i })[0]
+    expect(sinClasificar).not.toHaveTextContent('0')
+  })
+
+  // El bottom nav mobile no tiene el concepto de grupo desplegable: aplana
+  // NAV_GROUPS a mano (ver comentario junto a MOBILE_NAV_ITEMS). Sin este
+  // test, volver a listar Monitor "a mano" en vez de aplanar los grupos deja
+  // a Certificacion afuera del mobile EN SILENCIO — nada se pone rojo.
+  it('en mobile las dos entradas de Certificación existen', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+
+    const navMobile = await screen.findByRole('navigation', { name: /móvil/i })
+    expect(within(navMobile).getByRole('link', { name: /^empresas$/i }))
+      .toHaveAttribute('href', '/dashboard/compliance')
+    expect(within(navMobile).getByRole('link', { name: /sin clasificar/i }))
+      .toHaveAttribute('href', '/dashboard/compliance/inbox')
   })
 
   it('no quedan Bandeja ni Pendientes como entradas propias', async () => {

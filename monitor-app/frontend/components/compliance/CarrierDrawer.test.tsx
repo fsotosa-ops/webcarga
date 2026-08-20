@@ -27,7 +27,7 @@ function pendiente(over: Partial<PendingComplianceRow> = {}): PendingComplianceR
     carrier_operation_types: [], certification_type: 'BASICA', category: 'EMPRESA',
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
-    status: 'MISSING', expiration_date: null,
+    status: 'MISSING', expiration_date: null, tiene_archivo: false,
     urgencia: 'FALTA', expiration_policy: 'NONE',
     ...over,
   } as PendingComplianceRow
@@ -57,7 +57,11 @@ describe('CarrierDrawer', () => {
   it('la bandeja sigue existiendo, como destino y no como zona encima', async () => {
     setup()
     const enlace = await screen.findByRole('link', { name: /bandeja/i })
-    expect(enlace).toHaveAttribute('href', expect.stringContaining('vista=documentos'))
+    // La Bandeja tiene ruta propia (Task 5): un enlace interno que pasara por
+    // el redirect de `?vista=documentos` seria deuda desde el dia uno.
+    // Y con la empresa preseleccionada: el bloque es el MISMO componente que
+    // usa la ficha, no una copia verbatim en dos archivos.
+    expect(enlace).toHaveAttribute('href', '/dashboard/compliance/inbox?empresa=c1')
   })
 
   it('pide solo los pendientes de esa empresa', async () => {
@@ -161,10 +165,26 @@ describe('CarrierDrawer', () => {
     expect(await screen.findByText(/no le falta ningún documento/i)).toBeInTheDocument()
   })
 
-  it('un vencido se distingue de un faltante', async () => {
-    setup([pendiente({ status: 'EXPIRED', expiration_date: '2026-01-01' })])
+  // El motivo sale de `urgencia` y no de `status`: los 9 registros vencidos
+  // por fecha del módulo están en APPROVED_MANUAL, así que leer el status los
+  // dejaba indistinguibles de un faltante. El SQL manda las dos cosas y sólo
+  // una es la respuesta a "¿por qué está pendiente?".
+  it('un vencido se distingue de un faltante, aunque su status no diga EXPIRED', async () => {
+    setup([pendiente({
+      status: 'APPROVED_MANUAL', expiration_date: '2026-01-01',
+      urgencia: 'VENCIDO', tiene_archivo: true,
+    })])
     fireEvent.click(await screen.findByText('De la empresa'))
-    expect(screen.getByText(/vencido/i)).toBeInTheDocument()
+    expect(screen.getByText(/^vencido hace \d+ días?$/)).toBeInTheDocument()
+  })
+
+  // El cajón sólo sabe de lo que FALTA: mirar el archivo cargado es trabajo
+  // de la ficha, que es la pantalla que lo muestra entero. Sin `onVer` el
+  // renglón no promete una vista previa que acá nadie abriría.
+  it('el cajón no ofrece ver el archivo: para eso está la ficha', async () => {
+    setup([pendiente({ status: 'EXPIRED', urgencia: 'VENCIDO', tiene_archivo: true })])
+    fireEvent.click(await screen.findByText('De la empresa'))
+    expect(screen.queryByRole('button', { name: 'Ver' })).not.toBeInTheDocument()
   })
 })
 

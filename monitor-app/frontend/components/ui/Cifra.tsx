@@ -33,12 +33,27 @@ export function Cifra({
     resuelto: 'text-resuelto',
   }[tono]
 
-  if (cargando || valor === undefined || valor === null) {
+  // "Todavia no llego" y "no se va a mostrar" son dos cosas distintas, y el
+  // esqueleto que late solo puede decir la primera. Cuando la pantalla decide
+  // no mostrar una cifra —porque contarla sobre una lista truncada seria
+  // mentir, o porque la consulta fallo—, un `animate-pulse` eterno promete un
+  // dato que no va a llegar nunca. Es el mismo valor con dos significados que
+  // este componente vino a arreglar.
+  if (cargando) {
     return (
       <span
         className="h-7 w-32 rounded bg-gray-100 motion-safe:animate-pulse inline-block align-middle"
         aria-hidden
       />
+    )
+  }
+
+  if (valor === undefined || valor === null) {
+    return (
+      <span className="flex items-baseline gap-2">
+        <span className="text-cifra font-bold tabular-nums leading-none text-informativo">—</span>
+        <span className="text-etiqueta text-gray-500">{etiqueta}</span>
+      </span>
     )
   }
 

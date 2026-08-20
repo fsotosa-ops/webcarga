@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import {
   AlertTriangle, Building2, Check, ChevronRight, Clock, Loader2, Plus,
 } from 'lucide-react'
 import type {
   CertificationStatusRow, FunnelGroup, ManagementType,
 } from '@/lib/types'
-import { propsDeFilaExpandible } from '@/hooks/useFilaAbierta'
 
 interface Props {
   /** Las empresas del alcance `active`: operativas más cualquiera con
@@ -22,13 +22,6 @@ interface Props {
    *  significados— que este componente ya tuvo con el "0". */
   catalogEstado:    'sin-pedir' | 'cargando' | 'listo' | 'error'
   onExpandCatalog:  () => void
-  onToggleRow?:     (carrierId: string) => void
-  /** La fila abierta. Sólo una a la vez: el cajón es alto y dos abiertos
-   *  obligan a desplazarse para comparar, que es justo lo que se quería evitar. */
-  openRowId?:       string | null
-  /** El cajón de esa fila. Lo dibuja el padre para que el embudo no dependa de
-   *  las consultas del detalle. */
-  renderDrawer?:    (row: CertificationStatusRow) => React.ReactNode
 }
 
 /** El embudo de certificación.
@@ -63,8 +56,7 @@ function etiquetaGestion(tipos?: ManagementType[] | null): string | null {
 }
 
 export function CertificationFunnel({
-  rows, catalogRows, catalogEstado, onExpandCatalog, onToggleRow,
-  openRowId, renderDrawer,
+  rows, catalogRows, catalogEstado, onExpandCatalog,
 }: Props) {
   // Los dos grupos del fondo arrancan plegados: uno está vacío y el otro son
   // 209 empresas sin actividad. Ninguno es el trabajo de hoy.
@@ -148,13 +140,7 @@ export function CertificationFunnel({
             )}
 
             {!plegado && deEstaEtapa.map(r => (
-              <FilaEmpresa
-                key={r.entity_id}
-                row={r}
-                onToggle={onToggleRow}
-                abierta={openRowId === r.entity_id}
-                drawer={renderDrawer}
-              />
+              <FilaEmpresa key={r.entity_id} row={r} />
             ))}
           </section>
         )
@@ -163,14 +149,16 @@ export function CertificationFunnel({
   )
 }
 
-function FilaEmpresa({
-  row, onToggle, abierta, drawer,
-}: {
-  row:       CertificationStatusRow
-  onToggle?: (carrierId: string) => void
-  abierta?:  boolean
-  drawer?:   (row: CertificationStatusRow) => React.ReactNode
-}) {
+/** La fila del embudo NAVEGA a la ficha de la empresa, así que es un enlace.
+ *
+ *  Fue un `role="button"` con `aria-expanded` mientras abría un cajón acá
+ *  adentro; cuando el destino pasó a ser una página nueva, el contrato de
+ *  accesibilidad se quedó puesto: un lector de pantalla anunciaba "botón,
+ *  contraído" y activarlo sacaba de la pantalla, sin que nada en el árbol
+ *  anticipara la navegación. El chevron prometía lo mismo con el mouse.
+ *
+ *  De yapa, un `<Link>` real devuelve abrir-en-pestaña-nueva. */
+function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
   const pct = row.total_count > 0
     ? Math.round((row.satisfied_count / row.total_count) * 100)
     : 0
@@ -178,68 +166,58 @@ function FilaEmpresa({
   const gestion = etiquetaGestion(row.management_types)
 
   return (
-    <>
-      <div
-        {...propsDeFilaExpandible(row.entity_id, !!abierta, id => onToggle?.(id))}
-        className={`flex items-center gap-2.5 px-4 py-2 border-b border-border cursor-pointer transition-colors ${
-          abierta ? 'bg-sky-50/60' : 'hover:bg-gray-50'
-        }`}
-      >
-        <ChevronRight
-          size={12}
-          className={`text-gray-400 shrink-0 transition-transform ${abierta ? 'rotate-90' : ''}`}
-          aria-hidden="true"
+    <Link
+      href={`/dashboard/compliance/${row.entity_id}`}
+      className="flex items-center gap-2.5 px-4 py-2 border-b border-border transition-colors hover:bg-gray-50"
+    >
+      <ChevronRight size={12} className="text-gray-400 shrink-0" aria-hidden="true" />
+      {/* El sujeto es lo más fuerte de la fila: es lo que se escanea (§9). */}
+      <span className="flex-1 min-w-0 truncate text-[13.5px] font-semibold text-text-primary">
+        {row.entity_name}
+      </span>
+
+      {gestion && (
+        <span className="hidden sm:inline text-etiqueta text-gray-500 shrink-0">
+          {gestion}
+        </span>
+      )}
+
+      {/* Marca de actividad. Va NEUTRA a propósito: el mockup la pintaba en
+          rojo, pero el §9 reserva el rojo #b00020 para un solo significado
+          —hay archivos esperando—. Si todo tiene color, el color deja de
+          avisar. Y no ordena: hoy hay 0 viajes futuros vinculados, así que
+          priorizar por actividad prometería una anticipación que los datos
+          no tienen. */}
+      {(row.trips_30d ?? 0) > 0 && (
+        <span className="hidden md:inline text-etiqueta text-gray-500 shrink-0 tabular-nums">
+          {row.trips_30d} viajes · 30 días
+        </span>
+      )}
+
+      {/* La barra mide 96px: con "1 de 382" el relleno daba 0,25px y se
+          veia IGUAL que cero. "Empezado" y "no empezado" son cosas
+          distintas y tienen que verse distinto, asi que cualquier avance
+          mayor a cero ocupa al menos 3px. La barra deja de ser proporcional
+          en el extremo bajo a proposito: ahi lo que importa es si arranco. */}
+      <span className="h-1.5 w-24 rounded-full bg-gray-200 overflow-hidden shrink-0">
+        <span
+          className={`block h-full rounded-full ${alDia ? 'bg-resuelto' : 'bg-accion'}`}
+          style={{ width: pct > 0 ? `max(3px, ${pct}%)` : 0 }}
         />
-        {/* El sujeto es lo más fuerte de la fila: es lo que se escanea (§9). */}
-        <span className="flex-1 min-w-0 truncate text-[13.5px] font-semibold text-text-primary">
-          {row.entity_name}
+      </span>
+      <span className="text-etiqueta text-gray-500 tabular-nums whitespace-nowrap shrink-0 w-16 text-right">
+        {row.satisfied_count} de {row.total_count}
+      </span>
+
+      {row.unclassified_count > 0 && (
+        <span
+          data-testid={`espera-${row.entity_id}`}
+          title={`${row.unclassified_count} archivos esperando que los ubiques`}
+          className="inline-flex items-center rounded-full bg-espera px-2 py-0.5 text-etiqueta font-bold tabular-nums text-white shrink-0"
+        >
+          {row.unclassified_count}
         </span>
-
-        {gestion && (
-          <span className="hidden sm:inline text-etiqueta text-gray-500 shrink-0">
-            {gestion}
-          </span>
-        )}
-
-        {/* Marca de actividad. Va NEUTRA a propósito: el mockup la pintaba en
-            rojo, pero el §9 reserva el rojo #b00020 para un solo significado
-            —hay archivos esperando—. Si todo tiene color, el color deja de
-            avisar. Y no ordena: hoy hay 0 viajes futuros vinculados, así que
-            priorizar por actividad prometería una anticipación que los datos
-            no tienen. */}
-        {(row.trips_30d ?? 0) > 0 && (
-          <span className="hidden md:inline text-etiqueta text-gray-500 shrink-0 tabular-nums">
-            {row.trips_30d} viajes · 30 días
-          </span>
-        )}
-
-        {/* La barra mide 96px: con "1 de 382" el relleno daba 0,25px y se
-            veia IGUAL que cero. "Empezado" y "no empezado" son cosas
-            distintas y tienen que verse distinto, asi que cualquier avance
-            mayor a cero ocupa al menos 3px. La barra deja de ser proporcional
-            en el extremo bajo a proposito: ahi lo que importa es si arranco. */}
-        <span className="h-1.5 w-24 rounded-full bg-gray-200 overflow-hidden shrink-0">
-          <span
-            className={`block h-full rounded-full ${alDia ? 'bg-resuelto' : 'bg-accion'}`}
-            style={{ width: pct > 0 ? `max(3px, ${pct}%)` : 0 }}
-          />
-        </span>
-        <span className="text-etiqueta text-gray-500 tabular-nums whitespace-nowrap shrink-0 w-16 text-right">
-          {row.satisfied_count} de {row.total_count}
-        </span>
-
-        {row.unclassified_count > 0 && (
-          <span
-            data-testid={`espera-${row.entity_id}`}
-            title={`${row.unclassified_count} archivos esperando que los ubiques`}
-            className="inline-flex items-center rounded-full bg-espera px-2 py-0.5 text-etiqueta font-bold tabular-nums text-white shrink-0"
-          >
-            {row.unclassified_count}
-          </span>
-        )}
-      </div>
-
-      {abierta && drawer?.(row)}
-    </>
+      )}
+    </Link>
   )
 }

@@ -45,7 +45,6 @@ vi.mock('@/components/dashboard/NewCarrierPanel', () => ({
 }))
 
 import { complianceApi } from '@/lib/api/compliance'
-import { documentIngestApi } from '@/lib/api/documentIngest'
 import type { CertificationStatusRow } from '@/lib/types'
 import CertificationPage from './page'
 
@@ -89,27 +88,42 @@ describe('Certificación — una lista, dos vistas', () => {
 
   it('muestra en la misma fila lo que falta y lo que llegó sin clasificar', async () => {
     setup()
-    // El embudo dejo de ser una tabla: la fila es el contenedor con role=button
-    // que se abre hacia abajo. La intencion del test no cambia — las dos
-    // mitades del trabajo tienen que estar juntas, porque tenerlas en dos
-    // listas hermanas obligaba a cruzarlas de memoria.
-    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('[role="button"]')!
+    // El embudo dejo de ser una tabla: la fila es un enlace a la ficha. La
+    // intencion del test no cambia — las dos mitades del trabajo tienen que
+    // estar juntas, porque tenerlas en dos listas hermanas obligaba a
+    // cruzarlas de memoria.
+    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('a')!
     expect(fila).toHaveTextContent('9 de 12')
     expect(within(fila as HTMLElement).getByTestId('espera-c1')).toHaveTextContent('3')
   })
 
-  it('la vista viaja en la URL, así volver del detalle no pierde el lugar', async () => {
+  // El cambio central de la tarea: antes esta fila abria el cajon ahi mismo,
+  // ahora navega a la ficha (Task 4/5). Sin este test el hueco es invisible
+  // — nada se pone rojo si alguien vuelve a abrir el cajon inline. Navega
+  // como enlace y no con `router.push`: la fila decia ser un desplegable
+  // (`role="button"` + `aria-expanded`) y sacaba de la pantalla.
+  it('la fila del embudo navega a la ficha de la empresa, no abre un cajon inline', async () => {
     setup()
-    await screen.findByText('Test Empresa Webcarga')
-    fireEvent.click(screen.getByRole('button', { name: /sin clasificar/i }))
-    expect(replace).toHaveBeenCalledWith('/dashboard/compliance?vista=documentos')
+    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('a')!
+    expect(fila).toHaveAttribute('href', '/dashboard/compliance/c1')
+    expect(fila).not.toHaveAttribute('aria-expanded')
   })
 
-  it('con ?vista=documentos muestra la cola transversal', async () => {
+  // "la vista viaja en la URL, así volver del detalle no pierde el lugar"
+  // vivía acá, tocando el botón "Sin clasificar": ese botón dejó de existir
+  // en el conmutador (Task 5), así que el test se elimina sin reemplazo — el
+  // test de abajo ("un enlace guardado…") cubre lo que le queda de vigente,
+  // que es el redirect.
+
+  // La bandeja dejó de ser una vista de este conmutador (Task 5): tiene ruta
+  // propia. Un enlace guardado con `?vista=documentos` —el que existía antes
+  // de este cambio— no puede quedar apuntando a una pantalla vacía, así que
+  // se reenvía a la ruta nueva. `replace` y no `push`: llegar por un enlace
+  // guardado no es un paso de navegación que el botón atrás deba reponer.
+  it('un enlace guardado a ?vista=documentos lleva a la Bandeja, no a una pantalla vacía', async () => {
     params = new URLSearchParams('vista=documentos')
     setup()
-    expect(await screen.findByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /sin clasificar/i })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/compliance/inbox'))
   })
 
   // Spec §4: las cuatro opciones miran los mismos pendientes agrupados
@@ -124,31 +138,17 @@ describe('Certificación — una lista, dos vistas', () => {
     expect(opciones).toEqual(['Empresa', 'Conductor', 'Vehículo', 'Requisito'])
   })
 
+  // La bandeja ya no vive en esta pantalla (Task 5): no hay boton propio que
+  // buscar aca, tiene ruta y entrada de sidebar propias. El contador que este
+  // test verificaba paso a Sidebar.test.tsx ("el contador de la Bandeja vive
+  // en su entrada, no en el grupo" y "sin archivos esperando no dibuja un
+  // cero").
   it('la bandeja no esta entre las agrupaciones', async () => {
     setup()
     await screen.findByText('Test Empresa Webcarga')
 
     const agrupador = screen.getByRole('group', { name: /agrupar por/i })
     expect(within(agrupador).queryByText(/sin clasificar/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /sin clasificar/i })).toBeInTheDocument()
-  })
-
-  it('el boton de la bandeja dice cuantos archivos esperan', async () => {
-    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 23, rows: [] })
-    setup()
-
-    // Se espera el CONTEO, no el boton: el boton existe desde el primer render
-    // y esperarlo a el deja pasar el test antes de que llegue el dato.
-    const contador = await screen.findByText('23')
-    expect(contador.closest('button')).toHaveAccessibleName(/sin clasificar/i)
-  })
-
-  it('sin archivos esperando el boton no inventa un cero rojo', async () => {
-    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
-    setup()
-
-    const boton = await screen.findByRole('button', { name: /sin clasificar/i })
-    expect(boton.textContent).not.toMatch(/\b0\b/)
   })
 
   it('agrupa por requisito', async () => {
@@ -201,12 +201,11 @@ describe('Certificación — una lista, dos vistas', () => {
     })
   })
 
-  it('no pide el estado cuando estás en la cola', async () => {
-    params = new URLSearchParams('vista=documentos')
-    setup()
-    await screen.findByText(/no hay documentos sin clasificar/i)
-    expect(complianceApi.listStatus).not.toHaveBeenCalled()
-  })
+  // "no pide el estado cuando estás en la cola" vivía acá: con `?vista=
+  // documentos` esta pantalla ya no dibuja la cola, la redirige (test de
+  // arriba). Que la Bandeja no pida el estado por empresa se verifica ahora
+  // donde vive la Bandeja: app/dashboard/compliance/inbox/page.test.tsx
+  // ("no pide el estado de certificación por empresa").
 
   // El `?? 0` pintaba un "0 documentos por cubrir" en cifra grande mientras la
   // consulta estaba en vuelo, y despues saltaba a 2.360: durante ese segundo la
@@ -227,14 +226,19 @@ describe('Certificación — una lista, dos vistas', () => {
 // Certificacion y aterrizar en otro modulo obligaba a rehacer el filtro para
 // volver a la cola de trabajo — justo lo que el modulo vino a evitar.
 describe('CertificationPage — crear una empresa no saca del modulo', () => {
-  it('abre la empresa nueva DENTRO de Certificacion', async () => {
+  // Ronda de arreglo 1 (Task 5): cuando la vista Empresas abria el cajon en
+  // la misma pantalla, `?abierta=c-nueva` bastaba para dejar la fila
+  // recien creada abierta. Ahora que la fila navega a la ficha en vez de
+  // abrir el cajon (Task 4/5), ese parametro no abre nada — y la empresa
+  // recien creada probablemente ni figura en el embudo, que solo lista las
+  // que tienen pendientes. "No salir del modulo" nunca fue solo eso: es
+  // quedar donde se puede seguir trabajando, y eso es su ficha.
+  it('aterriza en la ficha de la empresa nueva, donde se le pueden cargar documentos', async () => {
     setup()
     fireEvent.click(await screen.findByRole('button', { name: /Nueva empresa/i }))
     fireEvent.click(await screen.findByTestId('crear-empresa-ok'))
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith(
-      expect.stringContaining('/dashboard/compliance?abierta=c-nueva'),
-    ))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard/compliance/c-nueva'))
   })
 
   it('no navega al modulo de Empresas', async () => {

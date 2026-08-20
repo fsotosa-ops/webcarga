@@ -4,6 +4,7 @@ NUEVA (nunca sobrescribe el blob anterior) y registra el valor previo en
 public.audit_log en vez de una tabla de versiones dedicada. Decisión de
 Checkpoint A §2.2/decisión 4.
 """
+import hashlib
 import io
 import json
 import re
@@ -47,6 +48,10 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
     if len(data) > STORED_FILE_MAX_BYTES:
         raise HTTPException(422, f"{file.filename} supera 7MB — comprimí el archivo antes de subirlo")
 
+    # El hash va acá y no en el router porque acá el contenido YA está leído:
+    # calcularlo en otro lado obligaría a leer el archivo dos veces.
+    content_sha256 = hashlib.sha256(data).hexdigest()
+
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     storage_path = f"{key_prefix}/{stamp}_{safe_storage_name(file.filename or 'archivo')}"
 
@@ -60,6 +65,7 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
         "file_name": file.filename or "archivo",
         "mime_type": mime,
         "size_bytes": len(data),
+        "content_sha256": content_sha256,
     }
 
 
@@ -87,6 +93,36 @@ def build_documents_zip(supabase, records: list[dict]) -> bytes:
             arcname = f"{safe_storage_name(r.get('name') or 'documento')}_{original_name}"
             zf.writestr(arcname, data)
     return buf.getvalue()
+
+
+def content_sha256_of_stored_file(supabase, storage_path: str | None) -> str | None:
+    """El hash del contenido de un blob que YA está en Storage.
+
+    Existe para el camino de reasignar un documento a la bandeja: ahí no hay
+    un UploadFile que leer —sólo viaja la referencia— y sin el hash el item
+    entra a la cola sin él, así que `mismo_contenido` no puede ver que el
+    archivo devuelto y su gemelo recién subido son el mismo byte a byte.
+
+    Se lee del blob y no del `metadata` del compliance_record **a propósito**:
+    los registros históricos no lo tienen guardado en ninguna parte, y el blob
+    sí está siempre. Es una operación manual y de a un archivo (tope de 7MB),
+    así que la descarga es aceptable.
+
+    Devuelve `None` si no se pudo leer: "no lo sé" es una respuesta válida de
+    esta función, y la señal de la cola la sabe distinguir de "no hay
+    colisión". Nunca hace fallar a quien la llama — mover la referencia de un
+    documento mal asignado importa más que la señal.
+    """
+    if not storage_path:
+        return None
+    try:
+        data = supabase.storage.from_(COMPLIANCE_BUCKET).download(storage_path)
+        # El hash va DENTRO del try: que Storage devuelva algo que no son
+        # bytes es otra forma de "no lo pude leer", y tampoco puede voltear
+        # una reasignación.
+        return hashlib.sha256(data).hexdigest() if data else None
+    except Exception:
+        return None
 
 
 def delete_document_version(supabase, storage_path: str | None) -> None:

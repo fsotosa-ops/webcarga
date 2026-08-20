@@ -180,12 +180,15 @@ describe('CertificationFunnel', () => {
     expect(screen.getByText('Vieja Ltda')).toBeInTheDocument()
   })
 
-  it('abrir una fila avisa cual', () => {
-    const onToggle = vi.fn()
-    setup({ onToggleRow: onToggle })
+  // La fila NAVEGA a la ficha, asi que es un enlace: mientras fue un
+  // `role="button"` con `aria-expanded`, un lector de pantalla anunciaba
+  // "boton, contraido" y activarlo sacaba de la pantalla.
+  it('la fila es un enlace a la ficha, no un desplegable', () => {
+    setup()
 
-    fireEvent.click(screen.getByText('Transportes Charlotte Spa'))
-    expect(onToggle).toHaveBeenCalledWith('c1')
+    const enlace = screen.getByRole('link', { name: /Transportes Charlotte Spa/ })
+    expect(enlace).toHaveAttribute('href', '/dashboard/compliance/c1')
+    expect(enlace).not.toHaveAttribute('aria-expanded')
   })
 
   // REGRESION (revision de rama, 2026-08-15): antes, con `rows` vacio se
@@ -205,31 +208,5 @@ describe('CertificationFunnel', () => {
   it('un grupo desplegado y vacio lo dice, en vez de quedar mudo', () => {
     setup({ rows: [] })
     expect(screen.getAllByText(/ninguna acá/i).length).toBeGreaterThan(0)
-  })
-
-  // La fila se abre HACIA ABAJO: sin panel lateral, sin modal, sin pagina
-  // nueva. El panel lateral del intento anterior apretaba la lista a media
-  // pantalla y se revirtio entero en la Ronda 109.
-  it('la fila abierta despliega su cajon debajo, en la misma lista', () => {
-    setup({
-      openRowId: 'c1',
-      renderDrawer: (r: CertificationStatusRow) =>
-        <div data-testid="cajon">cajón de {r.entity_name}</div>,
-    })
-
-    expect(screen.getByTestId('cajon')).toHaveTextContent('cajón de Transportes Charlotte Spa')
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('las filas cerradas no montan su cajon', () => {
-    setup({
-      rows: [fila({ entity_id: 'c1' }), fila({ entity_id: 'c2', entity_name: 'Otra' })],
-      openRowId: 'c1',
-      renderDrawer: (r: CertificationStatusRow) =>
-        <div data-testid={`cajon-${r.entity_id}`} />,
-    })
-
-    expect(screen.getByTestId('cajon-c1')).toBeInTheDocument()
-    expect(screen.queryByTestId('cajon-c2')).not.toBeInTheDocument()
   })
 })
