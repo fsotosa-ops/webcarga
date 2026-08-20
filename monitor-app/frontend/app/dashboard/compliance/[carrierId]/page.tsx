@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, Eye, Loader2 } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, Eye, Loader2, Truck, User } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
 import { useCanEdit } from '@/hooks/useCanEdit'
@@ -22,6 +22,7 @@ import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
 import type { EstadoDocumental, PendingComplianceRow } from '@/lib/types'
+import type { Sujeto } from '@/lib/utils/agruparPorSujeto'
 
 /** Las cuatro cifras, con el matiz de `<Cifra>` que le corresponde a cada
  *  una. "Requisitos" es la única que se apoya en `total` —exacto, viene del
@@ -49,6 +50,69 @@ function filasDelEstado(rows: PendingComplianceRow[], estado: EstadoDocumental):
     case 'por_vencer': return rows.filter(r => r.urgencia === 'POR_VENCER')
     case 'falta':      return rows.filter(r => r.urgencia !== 'AL_DIA')
   }
+}
+
+/** Qué es cada sujeto y con qué icono se lo reconoce. El mockup dice
+ *  "Tractocamión" para los vehículos; acá dice "Vehículo" porque el tipo de
+ *  chasis no viaja en `/pending` y **inventarlo sería peor que ser genérico**. */
+const SUJETO = {
+  CARRIER: { icono: Building2, clase: null },
+  DRIVER:  { icono: User,     clase: 'Conductor' },
+  ASSET:   { icono: Truck,    clase: 'Vehículo' },
+} as const
+
+/** El avance del sujeto, en el orden en que se mira: lo resuelto primero, lo
+ *  urgente al final. **Un cero no se escribe**: "0 por vencer" ocupa el mismo
+ *  espacio que un dato y no dice nada. */
+function avanceDelSujeto(filas: PendingComplianceRow[]): string {
+  const al_dia     = filas.filter(f => f.urgencia === 'AL_DIA').length
+  const por_vencer = filas.filter(f => f.urgencia === 'POR_VENCER').length
+  const faltan     = filas.length - al_dia - por_vencer
+  return [
+    al_dia     && `${al_dia} al día`,
+    por_vencer && `${por_vencer} por vencer`,
+    faltan     && `${faltan} ${faltan === 1 ? 'falta' : 'faltan'}`,
+  ].filter(Boolean).join(' · ')
+}
+
+/** La cabecera de un sujeto, tal como la dibuja el mockup acordado: icono,
+ *  nombre, qué es y cuántos requisitos tiene, y su avance.
+ *
+ *  Es lo que hace visible que una empresa CONTIENE conductores y vehículos.
+ *  Sin esto —un `<p>` con el nombre y los 93 requisitos desplegados debajo— la
+ *  ficha medía 6,4 pantallas: el primer conductor caía bajo el pliegue y el
+ *  primer vehículo 4,3 pantallas más abajo. El dato estaba y no se veía, que
+ *  para quien mira es lo mismo que no estar.
+ *
+ *  Por eso el cuerpo va plegado y la cabecera carga el total: en el mockup
+ *  cada sujeto declara "12 requisitos" y muestra UNA fila. */
+function CabeceraDeSujeto({ sujeto, abierto, onAlternar }: {
+  sujeto:     Sujeto
+  abierto:    boolean
+  onAlternar: () => void
+}) {
+  const { icono: Icono, clase } = SUJETO[sujeto.entityType]
+  const cuenta = `${sujeto.filas.length} ${sujeto.filas.length === 1 ? 'requisito' : 'requisitos'}`
+  return (
+    <button
+      type="button"
+      onClick={onAlternar}
+      aria-expanded={abierto}
+      className="w-full flex items-center gap-2 px-3 py-2 bg-accent/5 border-b border-border text-left hover:bg-accent/10 transition-colors"
+    >
+      {abierto
+        ? <ChevronDown size={14} className="shrink-0 text-informativo" aria-hidden="true" />
+        : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
+      <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
+      <span className="text-dato font-semibold text-text-primary truncate">{sujeto.titulo}</span>
+      <span className="shrink-0 text-etiqueta text-informativo">
+        {clase ? `${clase} · ${cuenta}` : cuenta}
+      </span>
+      <span className="ml-auto shrink-0 text-etiqueta text-informativo tabular-nums">
+        {avanceDelSujeto(sujeto.filas)}
+      </span>
+    </button>
+  )
 }
 
 /** Una fila AL DÍA: nombre, fecha, estado y "Ver". La otra mitad de la misma
@@ -163,6 +227,21 @@ export default function FichaEmpresaPage() {
 
   const rows = filasDelEstado(allRows, estadoFiltro)
   const sujetos = agruparPorSujeto(rows)
+
+  /** Qué sujetos están abiertos. Se guarda lo que el usuario abrió, no lo que
+   *  está cerrado: los sujetos cambian con el filtro y con la respuesta, y una
+   *  lista de cerrados obligaría a mantenerla al día con filas que van y
+   *  vienen. "De la empresa" arranca abierto porque es por donde el propio
+   *  mockup dice empezar — los de conductores y vehículos dependen de quién
+   *  esté asignado. */
+  const [abiertos, setAbiertos] = useState<Set<string>>(new Set())
+  const estaAbierto = (s: Sujeto) => s.entityType === 'CARRIER' ? !abiertos.has(s.clave) : abiertos.has(s.clave)
+  const alternar = (clave: string) => setAbiertos(prev => {
+    const siguiente = new Set(prev)
+    if (siguiente.has(clave)) siguiente.delete(clave)
+    else siguiente.add(clave)
+    return siguiente
+  })
 
   const conteos: Partial<Record<EstadoDocumental, number>> = {
     todos: total,
@@ -333,9 +412,11 @@ export default function FichaEmpresaPage() {
 
         {!todosQuery.isPending && !todosQuery.error && rows.length > 0 && sujetos.map(s => (
           <div key={s.clave} className="border border-border rounded-xl bg-white overflow-hidden">
-            <p className="px-3 py-2 text-dato font-semibold text-text-primary bg-accent/5 border-b border-border">
-              {s.titulo}
-            </p>
+            <CabeceraDeSujeto
+              sujeto={s}
+              abierto={estaAbierto(s)}
+              onAlternar={() => alternar(s.clave)}
+            />
             {/* La partición es la MISMA `urgencia` que reparte el filtro de
                 arriba, no una segunda lectura por `status`. Con `status` la
                 lista se contradecía con el filtro que la contenía: los 9
@@ -346,7 +427,7 @@ export default function FichaEmpresaPage() {
                 invisible en la pantalla que existe para hacerlo visible.
                 Que hay archivo o no lo dice `tiene_archivo`, que es el hecho;
                 del status no se deduce. */}
-            {s.filas.map(f => (
+            {estaAbierto(s) && s.filas.map(f => (
               f.urgencia === 'AL_DIA'
                 ? (
                   <FilaDocumento

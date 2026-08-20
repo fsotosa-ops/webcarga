@@ -244,6 +244,80 @@ describe('FichaEmpresaPage', () => {
     await waitFor(() => expect(screen.getAllByText('0').length).toBeGreaterThan(0))
   })
 
+  // El mockup acordado dibuja cada sujeto como una tarjeta con cabecera: icono,
+  // nombre, QUE ES y cuantos requisitos, y su avance. Sin eso —un <p> con el
+  // nombre y todos los requisitos desplegados— la ficha medía 6,4 pantallas: el
+  // primer conductor caía bajo el pliegue y el primer vehículo 4,3 pantallas más
+  // abajo. Que la empresa CONTIENE conductores y vehículos dejaba de verse.
+  it('cada sujeto dice qué es, cuántos requisitos tiene y cómo va', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'CARRIER', urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p2', entity_type: 'CARRIER', urgencia: 'FALTA' }),
+      fila({ id: 'p3', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
+      fila({ id: 'p4', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             urgencia: 'POR_VENCER', tiene_archivo: true }),
+      fila({ id: 'p5', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' }),
+    ])
+
+    const empresa = await screen.findByRole('button', { name: /De la empresa/ })
+    expect(empresa).toHaveTextContent('2 requisitos')
+    expect(empresa).toHaveTextContent('1 al día · 1 falta')
+
+    const conductor = screen.getByRole('button', { name: /Juan Pérez/ })
+    expect(conductor).toHaveTextContent('Conductor · 2 requisitos')
+    expect(conductor).toHaveTextContent('1 por vencer · 1 falta')
+    // Y NO escribe el cero: este conductor no tiene ninguno al día, y
+    // "0 al día" ocupa el mismo espacio que un dato sin decir nada. La
+    // asercion de arriba sola no lo defiende —`toHaveTextContent` busca
+    // subcadena, asi que "0 al día · 1 por vencer · 1 falta" tambien la
+    // cumpliria—, y sin esta linea la mutacion sobrevivia.
+    expect(conductor).not.toHaveTextContent('0 al día')
+
+    expect(screen.getByRole('button', { name: /HKXW55/ }))
+      .toHaveTextContent('Vehículo · 1 requisito')
+  })
+
+  // Los tres sujetos se ven JUNTOS, que es lo que la ficha vino a resolver: sus
+  // cuerpos van plegados y la cabecera carga el total. En el mockup cada sujeto
+  // declara "12 requisitos" y muestra UNA fila.
+  it('conductores y vehículos se ven sin desplegar nada, y se abren al tocarlos', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             document_name: 'Licencia de Conducir' }),
+      fila({ id: 'p2', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55',
+             document_name: 'Revisión Técnica' }),
+    ])
+
+    // Las dos cabeceras, visibles de entrada.
+    expect(await screen.findByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /HKXW55/ })).toBeInTheDocument()
+
+    // Sus requisitos, no: por eso caben juntos en una pantalla.
+    expect(screen.queryByText('Licencia de Conducir')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Juan Pérez/ })).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(screen.getByRole('button', { name: /Juan Pérez/ }))
+
+    expect(screen.getByText('Licencia de Conducir')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Juan Pérez/ })).toHaveAttribute('aria-expanded', 'true')
+    // Abrir uno no abre el resto.
+    expect(screen.queryByText('Revisión Técnica')).not.toBeInTheDocument()
+  })
+
+  // Por donde el propio mockup dice empezar: "los 13 de la empresa; los de
+  // conductores y vehículos dependen de quién esté asignado".
+  it('"De la empresa" arranca abierta, y se puede cerrar', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'CARRIER', document_name: 'Rol SII' }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
+    ])
+
+    expect(await screen.findByText('Rol SII')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /De la empresa/ }))
+    expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
+  })
+
   // Con `estado='todos'`, cero filas NO significa "nadie cargó nada": significa
   // que la empresa no tiene ni un `compliance_record`. Las 32 empresas sin
   // documentos sí tienen registros MISSING, así que nunca ven este mensaje; lo
