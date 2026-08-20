@@ -504,7 +504,7 @@ function EmpresaDetailPageInner() {
                   Editar Empresa
                 </button>
               )}
-              {canEdit && (
+              {canAdmin && (
                 <button
                   onClick={() => carrier.operational_status !== 'ACTIVE' ? handleReactivateCarrier() : setBajaModalOpen(true)}
                   className={`px-4 py-2 rounded-lg text-sm font-bold transition border shadow-sm shrink-0 ${

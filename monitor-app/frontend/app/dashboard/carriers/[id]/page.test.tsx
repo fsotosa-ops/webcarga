@@ -344,4 +344,29 @@ describe('EmpresaDetailPage', () => {
 
     expect(await screen.findByRole('button', { name: /transferir/i })).toBeInTheDocument()
   })
+
+  // Hallazgo 4 de la revision final: d4e6cc03 bajo tres gates de canAdmin a
+  // canEdit (los dos props de los paneles y este boton); la ronda de arreglo
+  // 21cd0a74 reviritio los dos props y dejo este. Es una escritura de
+  // operational_status de la EMPRESA, la familia que esta rama declaro fuera
+  // de alcance para conductores y vehiculos - no corresponde ensancharla
+  // tambien para la empresa por inercia.
+  it('un editor no ve "Dar de baja" de la empresa: sigue siendo de admin', async () => {
+    vi.mocked(createClient).mockReturnValue({
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } }) },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: { role: 'editor' } }),
+          }),
+        }),
+      }),
+    } as unknown as ReturnType<typeof createClient>)
+    renderPage()
+
+    // Algo del editor si tiene que aparecer, o el test no distingue "todavia
+    // no cargo" de "no le corresponde".
+    expect(await screen.findByRole('button', { name: 'Editar Empresa' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
+  })
 })
