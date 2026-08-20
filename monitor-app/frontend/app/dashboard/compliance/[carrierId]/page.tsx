@@ -231,11 +231,21 @@ export default function FichaEmpresaPage() {
   /** Qué sujetos están abiertos. Se guarda lo que el usuario abrió, no lo que
    *  está cerrado: los sujetos cambian con el filtro y con la respuesta, y una
    *  lista de cerrados obligaría a mantenerla al día con filas que van y
-   *  vienen. "De la empresa" arranca abierto porque es por donde el propio
-   *  mockup dice empezar — los de conductores y vehículos dependen de quién
-   *  esté asignado. */
+   *  vienen.
+   *
+   *  **Todos arrancan plegados**, y eso incluye a la empresa. Se probó al revés
+   *  —"De la empresa" abierta, por ser por donde conviene empezar— y medido en
+   *  vivo ese bloque ocupa 571 px con sus 13 casilleros, así que empujaba la
+   *  primera cabecera de conductor a 873 px: bajo el pliegue, en una pantalla
+   *  de 689. Volvía a pasar lo que esta pantalla vino a arreglar — que no se
+   *  viera que la empresa CONTIENE conductores y vehículos. El mockup abre ese
+   *  bloque mostrando 2 filas, no 13.
+   *
+   *  La excepción es tener un solo sujeto: plegar existe para dejar ver el
+   *  conjunto, y con un elemento no hay conjunto — sería llegar a una fila
+   *  cerrada y nada más. */
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set())
-  const estaAbierto = (s: Sujeto) => s.entityType === 'CARRIER' ? !abiertos.has(s.clave) : abiertos.has(s.clave)
+  const estaAbierto = (s: Sujeto) => sujetos.length === 1 || abiertos.has(s.clave)
   const alternar = (clave: string) => setAbiertos(prev => {
     const siguiente = new Set(prev)
     if (siguiente.has(clave)) siguiente.delete(clave)

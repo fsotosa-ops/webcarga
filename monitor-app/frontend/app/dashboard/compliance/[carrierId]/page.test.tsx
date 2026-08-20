@@ -304,18 +304,29 @@ describe('FichaEmpresaPage', () => {
     expect(screen.queryByText('Revisión Técnica')).not.toBeInTheDocument()
   })
 
-  // Por donde el propio mockup dice empezar: "los 13 de la empresa; los de
-  // conductores y vehículos dependen de quién esté asignado".
-  it('"De la empresa" arranca abierta, y se puede cerrar', async () => {
+  // Medido en vivo: con "De la empresa" abierta sus 13 casilleros ocupan 571 px
+  // y empujaban la primera cabecera de conductor a 873 px, bajo el pliegue de
+  // una pantalla de 689. Volvia a pasar lo que esta pantalla vino a arreglar.
+  it('la empresa también arranca plegada, para que se vea el conjunto', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'CARRIER', document_name: 'Rol SII' }),
       fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
     ])
 
-    expect(await screen.findByText('Rol SII')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /De la empresa/ }))
+      .toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /De la empresa/ }))
-    expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
+    expect(screen.getByText('Rol SII')).toBeInTheDocument()
+  })
+
+  // Plegar existe para dejar ver el conjunto. Con un solo sujeto no hay
+  // conjunto: seria llegar a una fila cerrada y nada mas.
+  it('una empresa sin flota asignada abre su único sujeto', async () => {
+    montar([fila({ id: 'p1', entity_type: 'CARRIER', document_name: 'Rol SII' })])
+
+    expect(await screen.findByText('Rol SII')).toBeInTheDocument()
   })
 
   // Con `estado='todos'`, cero filas NO significa "nadie cargó nada": significa
