@@ -62,15 +62,40 @@ function montar(rows: PendingComplianceRow[], total = rows.length) {
 beforeEach(() => vi.clearAllMocks())
 
 describe('FichaEmpresaPage', () => {
+  // La promesa de la pantalla —empresa, conductores y vehiculos JUNTOS— se
+  // cumple ahora con tres filas de primer nivel y no con una por sujeto: con 20
+  // conductores serian 21 filas y la lista volveria a ser larga. Los nombres
+  // aparecen al abrir su grupo.
   it('muestra la empresa, sus conductores y sus vehículos juntos', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'CARRIER', subject_name: null }),
       fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
       fila({ id: 'p3', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' }),
     ])
-    expect(await screen.findByText('De la empresa')).toBeInTheDocument()
-    expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
-    expect(screen.getByText('HKXW55')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /De la empresa/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Conductores/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Vehículos/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Conductores/ }))
+    expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
+  })
+
+  // La cuenta del grupo contesta "cuantos conductores tiene y como van" sin
+  // abrir nada, que es la pregunta con la que se llega a la ficha.
+  it('cada grupo dice cuántos son, cuántos requisitos y cómo van', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd2', subject_name: 'Ana Soto',
+             urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p3', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' }),
+    ])
+
+    const conductores = await screen.findByRole('button', { name: /Conductores/ })
+    expect(conductores).toHaveTextContent('2 conductores · 2 requisitos')
+    expect(conductores).toHaveTextContent('1 al día · 1 falta')
+
+    expect(screen.getByRole('button', { name: /Vehículos/ }))
+      .toHaveTextContent('1 vehículo · 1 requisito')
   })
 
   it('empieza mostrando TODO, no sólo lo que falta', async () => {
@@ -263,6 +288,7 @@ describe('FichaEmpresaPage', () => {
     expect(empresa).toHaveTextContent('2 requisitos')
     expect(empresa).toHaveTextContent('1 al día · 1 falta')
 
+    fireEvent.click(screen.getByRole('button', { name: /Conductores/ }))
     const conductor = screen.getByRole('button', { name: /Juan Pérez/ })
     expect(conductor).toHaveTextContent('Conductor · 2 requisitos')
     expect(conductor).toHaveTextContent('1 por vencer · 1 falta')
@@ -273,6 +299,7 @@ describe('FichaEmpresaPage', () => {
     // cumpliria—, y sin esta linea la mutacion sobrevivia.
     expect(conductor).not.toHaveTextContent('0 al día')
 
+    fireEvent.click(screen.getByRole('button', { name: /Vehículos/ }))
     expect(screen.getByRole('button', { name: /HKXW55/ }))
       .toHaveTextContent('Vehículo · 1 requisito')
   })
@@ -288,9 +315,19 @@ describe('FichaEmpresaPage', () => {
              document_name: 'Revisión Técnica' }),
     ])
 
-    // Las dos cabeceras, visibles de entrada.
-    expect(await screen.findByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /HKXW55/ })).toBeInTheDocument()
+    // Los dos grupos, visibles de entrada; sus sujetos, al abrirlos.
+    expect(await screen.findByRole('button', { name: /Conductores/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Vehículos/ })).toBeInTheDocument()
+
+    // Y arrancan PLEGADOS: es lo unico que mantiene la lista en tres filas por
+    // grande que sea la flota. Sin esta asercion, hacer que el grupo se abra
+    // solo no rompia ningun test —los nombres aparecerian y el resto seguiria
+    // pasando— y la lista larga volvia sin que nadie se enterara.
+    expect(screen.getByRole('button', { name: /Conductores/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: /Juan Pérez/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Conductores/ }))
+    expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
 
     // Sus requisitos, no: por eso caben juntos en una pantalla.
     expect(screen.queryByText('Licencia de Conducir')).not.toBeInTheDocument()

@@ -115,6 +115,63 @@ function CabeceraDeSujeto({ sujeto, abierto, onAlternar }: {
   )
 }
 
+/** Los sujetos de una empresa, agrupados por lo que son. Sin esto, una empresa
+ *  con 20 conductores son 21 filas de primer nivel y la lista vuelve a ser
+ *  larga; con esto son **tres, sin importar el tamaño de la flota**: la
+ *  empresa, Conductores y Vehículos.
+ *
+ *  La empresa NO se agrupa: es un sujeto único, y meterla en un grupo de uno
+ *  sería un envoltorio que sólo agrega un clic. */
+type Grupo = { tipo: PendingComplianceRow['entity_type']; sujetos: Sujeto[] }
+
+function agruparPorTipo(sujetos: Sujeto[]): Grupo[] {
+  const orden: PendingComplianceRow['entity_type'][] = ['CARRIER', 'DRIVER', 'ASSET']
+  return orden
+    .map(tipo => ({ tipo, sujetos: sujetos.filter(s => s.entityType === tipo) }))
+    .filter(g => g.sujetos.length > 0)
+}
+
+const GRUPO = {
+  DRIVER: { titulo: 'Conductores', uno: 'conductor', varios: 'conductores', icono: User },
+  ASSET:  { titulo: 'Vehículos',   uno: 'vehículo',  varios: 'vehículos',   icono: Truck },
+} as const
+
+/** La cabecera de un grupo: cuántos sujetos, cuántos requisitos entre todos y
+ *  el avance agregado. Contesta "¿cuántos conductores tiene y cómo van?" sin
+ *  abrir nada, que es la pregunta con la que se llega a la ficha. */
+function CabeceraDeGrupo({ grupo, abierto, onAlternar }: {
+  grupo:      Grupo
+  abierto:    boolean
+  onAlternar: () => void
+}) {
+  const cfg = GRUPO[grupo.tipo as 'DRIVER' | 'ASSET']
+  const filas = grupo.sujetos.flatMap(s => s.filas)
+  const cuantos = grupo.sujetos.length
+  const Icono = cfg.icono
+  return (
+    <button
+      type="button"
+      onClick={onAlternar}
+      aria-expanded={abierto}
+      className="w-full flex items-center gap-2 px-3 py-2 bg-accent/5 border-b border-border text-left hover:bg-accent/10 transition-colors"
+    >
+      {abierto
+        ? <ChevronDown size={14} className="shrink-0 text-informativo" aria-hidden="true" />
+        : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
+      <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
+      <span className="text-dato font-semibold text-text-primary">{cfg.titulo}</span>
+      <span className="shrink-0 text-etiqueta text-informativo tabular-nums">
+        {cuantos} {cuantos === 1 ? cfg.uno : cfg.varios}
+        {' · '}
+        {filas.length} {filas.length === 1 ? 'requisito' : 'requisitos'}
+      </span>
+      <span className="ml-auto shrink-0 text-etiqueta text-informativo tabular-nums">
+        {avanceDelSujeto(filas)}
+      </span>
+    </button>
+  )
+}
+
 /** Una fila AL DÍA: nombre, fecha, estado y "Ver". La otra mitad de la misma
  *  lista —`RenglonPendiente`, para todo lo que NO está al día— ya existe y no
  *  se reescribe; ésta es su variante para lo que ya no pide nada, que el
@@ -246,6 +303,11 @@ export default function FichaEmpresaPage() {
    *  cerrada y nada más. */
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set())
   const estaAbierto = (s: Sujeto) => sujetos.length === 1 || abiertos.has(s.clave)
+  const grupos = agruparPorTipo(sujetos)
+  /** Los grupos comparten la bolsa de abiertos, con una clave que no puede
+   *  chocar con la de un sujeto (`TIPO:uuid`). Un solo grupo se abre solo, por
+   *  el mismo motivo que un solo sujeto: no hay conjunto que mostrar. */
+  const grupoAbierto = (g: Grupo) => grupos.length === 1 || abiertos.has(`grupo:${g.tipo}`)
   const alternar = (clave: string) => setAbiertos(prev => {
     const siguiente = new Set(prev)
     if (siguiente.has(clave)) siguiente.delete(clave)
@@ -420,48 +482,66 @@ export default function FichaEmpresaPage() {
           />
         )}
 
-        {!todosQuery.isPending && !todosQuery.error && rows.length > 0 && sujetos.map(s => (
-          <div key={s.clave} className="border border-border rounded-xl bg-white overflow-hidden">
-            <CabeceraDeSujeto
-              sujeto={s}
-              abierto={estaAbierto(s)}
-              onAlternar={() => alternar(s.clave)}
-            />
-            {/* La partición es la MISMA `urgencia` que reparte el filtro de
-                arriba, no una segunda lectura por `status`. Con `status` la
-                lista se contradecía con el filtro que la contenía: los 9
-                registros vencidos por fecha del módulo están en
-                `APPROVED_MANUAL`, así que aparecían bajo "Falta" rotulados
-                "Aprobado (manual)". Y al revés, un `EXPIRED` —que TIENE
-                archivo— iba al renglón de carga y su documento quedaba
-                invisible en la pantalla que existe para hacerlo visible.
-                Que hay archivo o no lo dice `tiene_archivo`, que es el hecho;
-                del status no se deduce. */}
-            {estaAbierto(s) && s.filas.map(f => (
-              f.urgencia === 'AL_DIA'
-                ? (
-                  <FilaDocumento
-                    key={f.id}
-                    fila={f}
-                    viendo={viendoId === f.id && previewQuery.isFetching}
-                    avisoVer={viendoId === f.id ? avisoVer : null}
-                    onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
-                  />
-                )
-                : (
-                  <RenglonPendiente
-                    key={f.id}
-                    fila={f}
-                    puedeEditar={canEdit}
-                    onSubir={subir}
-                    onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
-                    viendo={viendoId === f.id && previewQuery.isFetching}
-                    avisoVer={viendoId === f.id ? avisoVer : null}
-                  />
-                )
-            ))}
-          </div>
-        ))}
+        {!todosQuery.isPending && !todosQuery.error && rows.length > 0 && (() => {
+          /* La tarjeta de un sujeto, para no escribirla dos veces: una vez
+             suelta —la empresa— y otra dentro de su grupo. */
+          const tarjeta = (s: Sujeto) => (
+            <div key={s.clave} className="border border-border rounded-xl bg-white overflow-hidden">
+              <CabeceraDeSujeto
+                sujeto={s}
+                abierto={estaAbierto(s)}
+                onAlternar={() => alternar(s.clave)}
+              />
+              {/* La partición es la MISMA `urgencia` que reparte el filtro de
+                  arriba, no una segunda lectura por `status`. Con `status` la
+                  lista se contradecía con el filtro que la contenía: los 9
+                  registros vencidos por fecha del módulo están en
+                  `APPROVED_MANUAL`, así que aparecían bajo "Falta" rotulados
+                  "Aprobado (manual)". Y al revés, un `EXPIRED` —que TIENE
+                  archivo— iba al renglón de carga y su documento quedaba
+                  invisible en la pantalla que existe para hacerlo visible.
+                  Que hay archivo o no lo dice `tiene_archivo`, que es el hecho;
+                  del status no se deduce. */}
+              {estaAbierto(s) && s.filas.map(f => (
+                f.urgencia === 'AL_DIA'
+                  ? (
+                    <FilaDocumento
+                      key={f.id}
+                      fila={f}
+                      viendo={viendoId === f.id && previewQuery.isFetching}
+                      avisoVer={viendoId === f.id ? avisoVer : null}
+                      onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
+                    />
+                  )
+                  : (
+                    <RenglonPendiente
+                      key={f.id}
+                      fila={f}
+                      puedeEditar={canEdit}
+                      onSubir={subir}
+                      onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
+                      viendo={viendoId === f.id && previewQuery.isFetching}
+                      avisoVer={viendoId === f.id ? avisoVer : null}
+                    />
+                  )
+              ))}
+            </div>
+          )
+          return grupos.map(g => g.tipo === 'CARRIER'
+            ? g.sujetos.map(tarjeta)
+            : (
+              <div key={g.tipo} className="border border-border rounded-xl bg-white overflow-hidden">
+                <CabeceraDeGrupo
+                  grupo={g}
+                  abierto={grupoAbierto(g)}
+                  onAlternar={() => alternar(`grupo:${g.tipo}`)}
+                />
+                {grupoAbierto(g) && (
+                  <div className="p-2 space-y-2 bg-bg-main">{g.sujetos.map(tarjeta)}</div>
+                )}
+              </div>
+            ))
+        })()}
 
         <PuenteALaBandeja carrierId={carrierId} carrierName={carrier.business_name} />
       </div>
