@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import FichaEmpresaPage from './page'
@@ -562,5 +562,40 @@ describe('FichaEmpresaPage', () => {
     const dialogo = await screen.findByRole('dialog')
     expect(dialogo).toHaveTextContent(/sesión vencida/i)
     expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
+  })
+
+  // Hallazgo 5 de la revision final: el efecto que resetea enviando/error
+  // depende sólo de `abierto`, y el padre deja el diálogo montado siempre.
+  // Sin trampa de foco, sólo el ⋮ del sujeto EN CURSO queda deshabilitado —
+  // el de cualquier otro sigue disponible— así que se puede disparar la baja
+  // de un segundo sujeto sin haber cerrado la del primero, y el diálogo
+  // cambia de nombre sin limpiar el error que traía.
+  function accionesDe(nombreSujeto: RegExp) {
+    const cabecera = screen.getByRole('button', { name: nombreSujeto })
+    return within(cabecera.closest('div')!).getByRole('button', { name: /acciones/i })
+  }
+
+  it('un error mostrado para un sujeto no aparece al abrir el diálogo del siguiente', async () => {
+    vi.mocked(carriersApi.unassignDriver).mockRejectedValueOnce(new Error('sesión vencida'))
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Ana Torres' }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd2', subject_name: 'Beto Rojas', requirement_id: 'r2' }),
+    ])
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+
+    // La baja de Ana falla y el diálogo queda abierto mostrando el error.
+    fireEvent.click(accionesDe(/Ana Torres/))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dar de baja$/ }))
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/sesión vencida/i)
+
+    // Sin cerrarlo, se dispara la baja de Beto: su ⋮ nunca estuvo
+    // deshabilitado — sólo lo estaba el de Ana.
+    fireEvent.click(accionesDe(/Beto Rojas/))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+
+    const dialogo = await screen.findByRole('dialog')
+    expect(dialogo).toHaveTextContent(/Beto Rojas/)
+    expect(dialogo).not.toHaveTextContent(/sesión vencida/i)
   })
 })

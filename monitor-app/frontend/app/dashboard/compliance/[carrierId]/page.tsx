@@ -618,6 +618,13 @@ export default function FichaEmpresaPage() {
       )}
 
       <ConfirmarBaja
+        // Sin trampa de foco, el ⋮ de otro sujeto sigue disponible mientras
+        // este diálogo está abierto: se puede pasar de un sujeto a otro sin
+        // cerrar. `abierto` no cambia en ese caso, así que el efecto interno
+        // que resetea enviando/error (depende sólo de `abierto`) no se
+        // reactiva. La `key` por sujeto fuerza el remount — mismo patrón que
+        // el resto de los "draft que no se resincroniza" de este repo.
+        key={confirmandoBaja?.clave}
         abierto={!!confirmandoBaja}
         nombreSujeto={confirmandoBaja?.titulo ?? ''}
         nombreEmpresa={carrier.business_name}
