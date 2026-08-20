@@ -550,6 +550,28 @@ async def assign_driver(
             if not await conn.fetchval("SELECT 1 FROM public.drivers WHERE id = $1", body.driver_id):
                 raise HTTPException(404, "Conductor no encontrado")
 
+            # La asignacion previa protegida no se desactiva —y esta bien, es
+            # una decision humana que la ingesta tampoco pisa— pero el INSERT
+            # de abajo sigue igual, y entonces quedan dos filas ACTIVE que el
+            # indice unico parcial `idx_driver_assignments_one_active` rechaza
+            # con un 23505 crudo. Preguntarlo antes convierte un error de base
+            # en una frase que dice que hacer.
+            protegida = await conn.fetchval(
+                """
+                SELECT carrier_id::text FROM public.driver_assignments
+                WHERE driver_id = $1 AND carrier_id <> $2
+                  AND status = 'ACTIVE' AND is_manual_override
+                LIMIT 1
+                """,
+                body.driver_id, carrier_id,
+            )
+            if protegida:
+                raise HTTPException(
+                    409,
+                    "Ese conductor tiene una asignación protegida en otra empresa. "
+                    "Quítale la protección antes de transferirlo.",
+                )
+
             # Desactivar la asignación ACTIVE previa en otra empresa (mismo
             # criterio que los loaders de Mage — Checkpoint M.5) salvo que
             # esté protegida por un override manual.
@@ -629,6 +651,26 @@ async def assign_asset(
                 raise HTTPException(404, "Empresa no encontrada")
             if not await conn.fetchval("SELECT 1 FROM public.assets WHERE id = $1", body.asset_id):
                 raise HTTPException(404, "Activo no encontrado")
+
+            # Mismo criterio que en assign_driver: una asignacion protegida
+            # en otra empresa no se desactiva, y sin esta guarda el INSERT de
+            # abajo seguiria igual y dejaria dos filas ACTIVE que el indice
+            # unico parcial rechaza con un 23505 crudo.
+            protegida = await conn.fetchval(
+                """
+                SELECT carrier_id::text FROM public.asset_assignments
+                WHERE asset_id = $1 AND carrier_id <> $2
+                  AND status = 'ACTIVE' AND is_manual_override
+                LIMIT 1
+                """,
+                body.asset_id, carrier_id,
+            )
+            if protegida:
+                raise HTTPException(
+                    409,
+                    "Ese vehículo tiene una asignación protegida en otra empresa. "
+                    "Quítale la protección antes de transferirlo.",
+                )
 
             await conn.execute(
                 """
