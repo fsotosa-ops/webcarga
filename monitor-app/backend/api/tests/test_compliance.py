@@ -1604,6 +1604,51 @@ def test_summary_agrupa_por_sujeto_desde_urgencia():
     }]
     assert body["totales"] == {"todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1}
     assert body["carrier_operation_types"] == ["Tractoreo"]
+    assert body["completo"] is True
+
+
+# Hallazgo 3 de la revision final: SUMMARY_LIMIT entra como LIMIT de la CTE,
+# ANTES del GROUP BY. Si una empresa superara ese numero de registros, la
+# CTE se corta a la mitad de una fila cualquiera y el agrupado -las cuatro
+# cifras, sujeto por sujeto- queda mal, en silencio: no hay ninguna senal en
+# la respuesta. La guarda `completa` que existia para esto se borro apoyada
+# en la afirmacion de que "el resumen nunca viene truncado", que es falsa
+# (hoy la empresa mas grande tiene 457 filas contra un tope de 5000: latente,
+# no activo). `completo` la repone: sale de comparar el conteo real contra
+# el tope, no de una consulta aparte.
+def test_summary_completo_false_cuando_el_conteo_toca_el_tope():
+    from app.routers.compliance import SUMMARY_LIMIT
+
+    pool = AsyncMock()
+    # Tantas filas como el tope: es exactamente lo que la CTE devuelve cuando
+    # el LIMIT la corto, no cuando la empresa de verdad tiene ese numero
+    # redondo de requisitos.
+    pool.fetch.return_value = [
+        {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+         "todos": SUMMARY_LIMIT, "al_dia": SUMMARY_LIMIT, "por_vencer": 0, "falta": 0,
+         "carrier_operation_types": []},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["completo"] is False
+
+
+def test_summary_completo_true_cuando_el_conteo_no_toca_el_tope():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+         "carrier_operation_types": []},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["completo"] is True
 
 
 async def _pedir_resumen(conn, carrier_id):

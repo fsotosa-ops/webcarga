@@ -539,11 +539,15 @@ async def list_pending_compliance_records(
         description="Acota a un sujeto concreto (un conductor o un vehículo). "
                     "Se usa junto con `category` para el cajón de una persona.",
     ),
-    # 500, no 200 (ronda de arreglo 1, Task 4): la ficha de empresa pide UNA
-    # sola vez con estado='todos' y deriva sus cuatro cifras contando
-    # `urgencia` sobre las filas que llegaron, en vez de pedir las cuatro
-    # variantes de estado por separado. Con el tope viejo, ese pedido único
-    # volvia 422 antes de llegar al handler. Mismo tope que ya usa /status.
+    # 500, no 200 (ronda de arreglo 1, Task 4): el tope subio para que un
+    # pedido de hasta 500 filas de un solo golpe no volviera 422 antes de
+    # llegar al handler -mismo tope que ya usa /status. Ya no hay un llamador
+    # fijo pidiendo justo esa cantidad (comentario viejo, corregido en
+    # perf/compresion-y-resumen: decia que "la ficha de empresa pide UNA sola
+    # vez con estado='todos'", y desde /summary + Tarea 1 de esa rama eso ya
+    # no es cierto -la ficha pide el resumen agregado y el detalle de cada
+    # sujeto aparte, con `limit=200`). El tope queda como margen, no como
+    # numero que alguien dependa de pedir exacto.
     limit: int = Query(50, le=500),
     offset: int = Query(0, ge=0),
     estado: Literal["falta", "por_vencer", "al_dia", "todos"] = Query(
@@ -598,6 +602,19 @@ async def list_pending_compliance_records(
     return {"total": total, "rows": result_rows}
 
 
+# No es un parametro publico: le pide a la CTE TODAS las filas de la
+# empresa, no las 500 que /pending tope para su listado global. Hoy la
+# empresa mas grande tiene 457; 5000 deja margen sin acercarse a convertir
+# esto en un escaneo de la tabla.
+#
+# A nivel de modulo (no dentro del handler) para que `completo` se pueda
+# comparar contra el MISMO numero que se le paso a la CTE, y para que un test
+# lo pueda importar en vez de repetirlo a mano (hallazgo 3 de la revision
+# final: tres comentarios afirmaban "el resumen nunca viene truncado", y era
+# falso -SUMMARY_LIMIT entra como LIMIT DENTRO de la CTE, antes del GROUP BY).
+SUMMARY_LIMIT = 5000
+
+
 # Reusa _PENDING_ROWS_SQL como CTE y agrupa sobre `urgencia`, que ya trae sus
 # cuatro ramas resueltas (ver `pendiente_predicate`). El agrupado NO vuelve a
 # decidir que es "pendiente" o "al dia" -esa es la misma clase de bug que
@@ -642,12 +659,14 @@ async def get_compliance_summary(
     El detalle de un sujeto se pide aparte, solo al desplegarlo
     (GET /pending?entity_id=...) -esta ruta nunca lo trae.
 
-    SUMMARY_LIMIT no es un parametro publico: le pide a la CTE TODAS las
-    filas de la empresa, no las 500 que /pending tope para su listado
-    global. Hoy la empresa mas grande tiene 457; 5000 deja margen sin
-    acercarse a convertir esto en un escaneo de la tabla.
+    `completo` (hallazgo 3 de la revision final): SUMMARY_LIMIT entra como
+    LIMIT de la CTE, ANTES del GROUP BY -si una empresa superara ese numero
+    de registros, el agrupado contaria sobre una lista recortada y las
+    cuatro cifras quedarian mal, EN SILENCIO. La forma barata de detectarlo
+    sin una segunda consulta: si la suma de `todos` toca el tope exacto, la
+    CTE se corto -ninguna empresa real tiene un numero de requisitos que
+    coincida justo con SUMMARY_LIMIT salvo que el LIMIT la haya cortado ahi.
     """
-    SUMMARY_LIMIT = 5000
     filas = await pool.fetch(
         _SUMMARY_SQL,
         carrier_id, None, None, None, None, SUMMARY_LIMIT, 0,
@@ -672,6 +691,7 @@ async def get_compliance_summary(
     return {
         "totales": totales,
         "sujetos": sujetos,
+        "completo": totales["todos"] != SUMMARY_LIMIT,
         "carrier_operation_types": list(filas[0]["carrier_operation_types"]) if filas else [],
     }
 

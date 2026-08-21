@@ -108,6 +108,14 @@ class ComplianceSummaryResponse(BaseModel):
     plegadas con sus conteos (medido en dev: 57.183 bytes)."""
     totales: ComplianceSummaryCounts
     sujetos: list[ComplianceSummarySubject]
+    # False si SUMMARY_LIMIT corto la CTE antes del GROUP BY (hallazgo 3 de
+    # la revision final): las cuatro cifras -y las de cada sujeto- se
+    # calcularon sobre una lista recortada y no hay que mostrarlas como si
+    # fueran exactas. No es solo un adorno de UI: reemplaza a la guarda
+    # `completa` que existia en la version anterior de este endpoint
+    # (/pending con `total` de `count(*) OVER()`) y que se borro creyendo que
+    # el resumen nunca podia venir truncado.
+    completo: bool
     # Tipo de Operacion (Tractoreo/Equipo Completo) agregado de la flota
     # activa de la empresa (Ronda 85). No es una fila de detalle -es un
     # escalar por empresa- asi que viaja aca en vez de obligar a la ficha a
