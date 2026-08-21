@@ -180,3 +180,40 @@ describe('el proxy comprime lo que devuelve', () => {
     expect(res.headers.get('content-encoding')).toBeNull()
   })
 })
+
+// HALLAZGO REAL (revision de la Tarea 1, medido contra dev): `res.text()`
+// decodifica el cuerpo como UTF-8 antes de reescribirlo. Sobre un binario
+// (ZIP, PDF, imagen) eso reemplaza cada secuencia de bytes invalida por
+// U+FFFD y esos bytes no vuelven. Medido sobre una descarga real de 24.597.607
+// bytes: 5.644.713 secuencias `EF BF BD` — 68,8% del archivo, basura. La
+// firma `PK\x03\x04` sobrevive porque es ASCII, asi que el archivo parece un
+// ZIP y no lo es.
+describe('el proxy no corrompe cuerpos binarios', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('un cuerpo binario vuelve byte a byte identico', async () => {
+    // 0xFF, 0xFE y 0x80 sueltos son secuencias invalidas en UTF-8: son las que
+    // `res.text()` reemplaza por U+FFFD y no vuelven.
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xff, 0xfe, 0x80, 0x01, 0x02])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(bytes, { status: 200, headers: { 'content-type': 'application/zip' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    const recibido = new Uint8Array(await res.arrayBuffer())
+    expect(recibido).toEqual(bytes)
+  })
+
+  it('un content-type binario no se comprime aunque supere el minimo y el cliente acepte gzip', async () => {
+    // Comprimir un ZIP es gastar CPU para nada: ya viene comprimido.
+    const grande = new Uint8Array(5000).fill(0x41)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/zip' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    expect(res.headers.get('content-encoding')).toBeNull()
+  })
+})

@@ -15,6 +15,16 @@ const NULL_BODY_STATUS = new Set([204, 205, 304])
 /** Por debajo de esto, el encabezado y el gasto de comprimir se comen la ganancia. */
 const MINIMO_PARA_COMPRIMIR = 1024
 
+/**
+ * Sólo JSON y `text/*` comprimen bien y se pueden reescribir sin perder
+ * información. Un binario (ZIP, PDF, imagen) ya viene comprimido —
+ * comprimirlo de nuevo es CPU tirada— y sobre todo: NO se puede leer como
+ * texto sin corromperlo (ver comentario en `proxy`).
+ */
+function esTextual(tipo: string): boolean {
+  return tipo.startsWith('text/') || tipo.includes('json')
+}
+
 const BACKEND = (process.env.FASTAPI_URL ?? 'http://localhost:8001').trim()
 
 async function getServerToken(): Promise<string> {
@@ -75,7 +85,13 @@ async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {
       return new NextResponse(null, { status: res.status })
     }
 
-    const body = await res.text()
+    // SIEMPRE bytes, nunca texto: `res.text()` decodifica como UTF-8, y sobre
+    // un binario (ZIP, PDF, imagen) cada secuencia invalida se convierte en
+    // U+FFFD sin vuelta atras. Medido en vivo sobre una descarga real de
+    // documentos de 24.597.607 bytes: 5.644.713 secuencias `EF BF BD` — 68,8%
+    // del archivo, basura. La firma `PK\x03\x04` sobrevive porque es ASCII,
+    // asi que el archivo parece un ZIP y no lo es.
+    const body = Buffer.from(await res.arrayBuffer())
     const tipo = res.headers.get('content-type') ?? 'application/json'
 
     // Se comprime ACA y no en FastAPI, y la diferencia no es de gusto: el
@@ -86,9 +102,13 @@ async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {
     //
     // Next comprime su propio HTML pero NO las respuestas de los Route
     // Handlers, asi que toda la API viajaba sin comprimir hasta el navegador.
+    //
+    // Sólo se comprime lo textual: un binario ya viene comprimido y
+    // comprimirlo de nuevo es CPU tirada. `body.length` mide bytes de verdad
+    // (es un Buffer), no unidades UTF-16 como medía antes sobre el string.
     const aceptaGzip = (req.headers.get('accept-encoding') ?? '').includes('gzip')
-    if (aceptaGzip && body.length >= MINIMO_PARA_COMPRIMIR) {
-      const comprimido = await comprimir(Buffer.from(body), { level: 6 })
+    if (aceptaGzip && esTextual(tipo) && body.length >= MINIMO_PARA_COMPRIMIR) {
+      const comprimido = await comprimir(body, { level: 6 })
       return new NextResponse(comprimido, {
         status: res.status,
         headers: {
