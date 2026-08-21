@@ -171,6 +171,23 @@ describe('el proxy comprime lo que devuelve', () => {
     expect(await res.text()).toBe(grande)
   })
 
+  it('comprime sin bloquear el event loop', async () => {
+    // `gzipSync` bloquearia el bucle en el camino de cada peticion y con varias
+    // en paralelo se serializan: la optimizacion se vuelve el cuello de botella.
+    // Se afirma que durante la compresion el bucle sigue atendiendo.
+    const grande = 'a'.repeat(2_000_000)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/json' } }),
+    ))
+
+    let tickCorrio = false
+    const enVuelo = GET(pedido('gzip'), { params })
+    setImmediate(() => { tickCorrio = true })
+    await enVuelo
+
+    expect(tickCorrio, 'el bucle no atendio nada mientras comprimia').toBe(true)
+  })
+
   it('un 204 sigue sin cuerpo', async () => {
     // Ya rompió una vez: construir una Response con cuerpo para 204 lanza
     // TypeError y el navegador veía un 502 en TODO DELETE de la app.
@@ -191,12 +208,40 @@ cd monitor-app/frontend
 npx vitest run "app/api/v1/[...path]/route.test.ts"
 ```
 
+### Por qué acá y no en el lugar del libro
+
+**Lo estándar es que el proxy no toque la codificación**: comprime el origen y cada salto reenvía
+`Content-Encoding` intacto — nginx, Envoy, Cloudflare y el propio proxy de Cloud Run funcionan así.
+Hoy este proxy hace media anomalía: descomprime y no vuelve a comprimir.
+
+Aplicar lo estándar exige dejar `fetch` —descomprime solo y no se puede desactivar— por
+`undici.request` o el módulo `http`: **una dependencia nueva** y reescribir el cliente HTTP de un
+archivo que ya maneja con cuidado la autenticación, los cuerpos multipart binarios y los 204 sin
+cuerpo. Este repo ya tuvo dos incidentes de deriva de dependencias entre `pyproject.toml` y el
+Dockerfile.
+
+Se elige comprimir en el proxy **a sabiendas**, por dos razones: no agrega dependencias, y pone la
+CPU de comprimir en el frontend en vez de en la API — que es el servicio que este trabajo quiere
+descargar, y el que escala con usuarios.
+
+**Cuándo revisar esta decisión:** el día que haya un balanceador con CDN delante de Cloud Run, el
+borde comprime solo y esto se borra entero. Y si alguna vez otro cliente consume la API sin pasar
+por el proxy, la compresión vuelve al backend.
+
 - [ ] **Step 3: Comprimir en el proxy**
 
 En `route.ts`, reemplazar el retorno del cuerpo:
 
+**La compresión va ASÍNCRONA.** `gzipSync` bloquea el event loop de Node durante toda la
+compresión, en el camino de cada petición: con varias en paralelo se serializan y la optimización se
+convierte en un cuello de botella. `zlib.gzip` promisificado hace el trabajo en el threadpool de
+libuv y no detiene el bucle.
+
 ```ts
-import { gzipSync } from 'node:zlib'
+import { promisify } from 'node:util'
+import { gzip } from 'node:zlib'
+
+const comprimir = promisify(gzip)
 
 /** Por debajo de esto, el encabezado y el gasto de comprimir se comen la ganancia. */
 const MINIMO_PARA_COMPRIMIR = 1024
@@ -214,7 +259,7 @@ const MINIMO_PARA_COMPRIMIR = 1024
     // Handlers, asi que toda la API viajaba sin comprimir hasta el navegador.
     const aceptaGzip = (req.headers.get('accept-encoding') ?? '').includes('gzip')
     if (aceptaGzip && body.length >= MINIMO_PARA_COMPRIMIR) {
-      const comprimido = gzipSync(Buffer.from(body), { level: 6 })
+      const comprimido = await comprimir(Buffer.from(body), { level: 6 })
       return new NextResponse(comprimido, {
         status: res.status,
         headers: {
@@ -257,8 +302,14 @@ Backend baja de 749 a **745** al borrar los 4 tests de compresión: es lo espera
 
 - [ ] **Step 6: Mutar**
 
-Después de las aserciones, y nombrando el muerto: bajar `MINIMO_PARA_COMPRIMIR` a `0`. Debe morir
-"una respuesta chica viaja sin comprimir". Restaurar a mano.
+Dos, después de las aserciones y nombrando el muerto:
+
+1. Bajar `MINIMO_PARA_COMPRIMIR` a `0`. Debe morir "una respuesta chica viaja sin comprimir".
+2. Cambiar `await comprimir(...)` por `gzipSync(...)`. Debe morir "comprime sin bloquear el event
+   loop". **Si no muere, el test no está midiendo lo que dice** — el cuerpo de prueba puede ser
+   demasiado chico para que el bloqueo se note. Dilo y propon uno que sí lo mida.
+
+Restaurar a mano las dos veces.
 
 - [ ] **Step 7: Commit**
 
