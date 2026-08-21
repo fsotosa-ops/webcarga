@@ -433,7 +433,16 @@ export default function FichaEmpresaPage() {
 
   const resumen = resumenQuery.data
   const todosLosSujetos = resumen?.sujetos ?? []
-  const conteos: Partial<Record<EstadoDocumental, number>> = resumen?.totales ?? {}
+  // Sin dato todavía → objeto vacío (`Cifra` decide "cargando" por su cuenta,
+  // vía la prop de más abajo). Con dato pero `completo: false` → también
+  // vacío: las cuatro cifras se calcularon sobre una CTE recortada
+  // (`SUMMARY_LIMIT`, hallazgo 3 de la revisión final) y mostrar un número
+  // ahí sería afirmar una cifra que puede estar mal — la regla del proyecto
+  // es que una cifra derivada no se muestra hasta tener el dato BUENO, no
+  // cualquier dato. `Cifra` con `valor=undefined` y `cargando=false` pinta
+  // "—", no un guion que prometa un cero que nunca llega.
+  const conteos: Partial<Record<EstadoDocumental, number>> =
+    resumen && resumen.completo ? resumen.totales : {}
 
   /** Los sujetos que quedan del lado del filtro activo. Antes esto salía de
    *  agrupar las FILAS ya filtradas; acá no hay filas hasta que alguien
@@ -604,9 +613,11 @@ export default function FichaEmpresaPage() {
           <div key={c.estado} className="border border-border rounded-xl bg-white px-4 py-3">
             {/* `cargando` mientras el resumen todavía no llegó: sin esta
                 prop las cuatro cifras negarían de entrada un dato que venía
-                en camino. El resumen nunca viene truncado, así que —a
-                diferencia de la versión anterior— no hace falta un segundo
-                estado para "no se va a mostrar". */}
+                en camino. Y el resumen SÍ puede venir truncado —`conteos`
+                ya sale vacío cuando `resumen.completo` es `false` (hallazgo
+                3 de la revisión final)—, así que acá no hace falta un
+                segundo estado: `valor=undefined` con `cargando=false` ya
+                pinta "—" en vez de un número que podría estar mal. */}
             <Cifra
               valor={conteos[c.estado]}
               etiqueta={c.etiqueta}

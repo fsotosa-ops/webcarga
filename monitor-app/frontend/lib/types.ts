@@ -731,9 +731,12 @@ export type PendingComplianceListResponse = {
 /** Las cuatro cifras, ya particionadas por `urgencia`: `al_dia + por_vencer +
  *  falta === todos` siempre (`falta` agrupa VENCIDO y FALTA, las dos ramas
  *  que la ficha ya mostraba juntas — ver `avanceDelSujeto`). Las calcula el
- *  servidor sobre TODAS las filas de la empresa, no una muestra: a
- *  diferencia de `PendingComplianceRow`, acá no hace falta una guarda tipo
- *  `completa` — el resumen nunca viene truncado. */
+ *  servidor agrupando sobre las filas que trajo la CTE — que SÍ puede venir
+ *  truncada (`SUMMARY_LIMIT` entra como su LIMIT, antes del GROUP BY): ver
+ *  `ComplianceSummaryResponse.completo`, la guarda que reemplaza a la
+ *  `completa` que tenía `PendingComplianceRow` (hallazgo 3 de la revisión
+ *  final de perf/compresion-y-resumen — este comentario decía "el resumen
+ *  nunca viene truncado", y era falso). */
 export type ComplianceSummaryCounts = {
   todos:      number
   al_dia:     number
@@ -758,6 +761,12 @@ export type ComplianceSummarySubject = ComplianceSummaryCounts & {
 export type ComplianceSummaryResponse = {
   totales: ComplianceSummaryCounts
   sujetos: ComplianceSummarySubject[]
+  /** `false` si `SUMMARY_LIMIT` cortó la CTE del backend antes de agrupar:
+   *  `totales` y las cifras de cada sujeto se calcularon sobre una lista
+   *  recortada. La pantalla no muestra esas cifras cuando esto es `false`
+   *  —igual que hacía la guarda `completa` que existía antes de este
+   *  endpoint—, en vez de mostrar un número que podría estar mal. */
+  completo: boolean
   /** Tipo de Operación (Tractoreo/Equipo Completo) agregado de la flota
    *  activa de la empresa. Escalar, no fila de detalle: por eso viaja acá y
    *  no obliga a desplegar el sujeto CARRIER para conocerlo. */

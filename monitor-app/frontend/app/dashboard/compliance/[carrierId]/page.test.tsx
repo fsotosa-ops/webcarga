@@ -76,7 +76,7 @@ function resumenDesdeFilas(rows: PendingComplianceRow[]): ComplianceSummaryRespo
     }),
     { todos: 0, al_dia: 0, por_vencer: 0, falta: 0 },
   )
-  return { totales, sujetos, carrier_operation_types: rows[0]?.carrier_operation_types ?? [] }
+  return { totales, sujetos, completo: true, carrier_operation_types: rows[0]?.carrier_operation_types ?? [] }
 }
 
 /** Lo que `GET /pending?estado=X` devolvería sobre las filas de UN sujeto —
@@ -475,9 +475,42 @@ describe('FichaEmpresaPage', () => {
 
     resolver({
       totales: { todos: 0, al_dia: 0, por_vencer: 0, falta: 0 },
-      sujetos: [], carrier_operation_types: [],
+      sujetos: [], completo: true, carrier_operation_types: [],
     })
     await waitFor(() => expect(screen.getAllByText('0').length).toBeGreaterThan(0))
+  })
+
+  // Hallazgo 3 de la revisión final: `SUMMARY_LIMIT` entra como LIMIT DENTRO
+  // de la CTE, antes del GROUP BY — si una empresa lo superara, el resumen
+  // contaría sobre una lista recortada y las cuatro cifras quedarían mal, EN
+  // SILENCIO. La guarda `completa` que existía para esto se borró apoyada en
+  // la afirmación de que "el resumen nunca viene truncado" (falsa). Con
+  // `completo: false`, la pantalla no muestra las cuatro cifras — un `—`,
+  // no un número que podría estar mal.
+  it('si el resumen viene truncado, la pantalla no afirma las cifras', async () => {
+    vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
+    vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
+    vi.mocked(complianceApi.summary).mockResolvedValue({
+      totales: { todos: 42, al_dia: 10, por_vencer: 2, falta: 30 },
+      sujetos: [],
+      completo: false,
+      carrier_operation_types: [],
+    })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <FichaEmpresaPage />
+      </QueryClientProvider>,
+    )
+
+    await screen.findAllByText(CARRIER.business_name)
+    await waitFor(() => expect(complianceApi.summary).toHaveBeenCalled())
+
+    // Ninguna de las cuatro cifras se muestra — ni siquiera la que coincide
+    // con el total real: mientras `completo` sea false no hay forma de saber
+    // CUÁL de las cuatro está mal, así que ninguna se afirma.
+    expect(await screen.findAllByText('—')).toHaveLength(4)
+    expect(screen.queryByText('42')).not.toBeInTheDocument()
+    expect(screen.queryByText('30')).not.toBeInTheDocument()
   })
 
   // El mockup acordado dibuja cada sujeto como una tarjeta con cabecera: icono,
