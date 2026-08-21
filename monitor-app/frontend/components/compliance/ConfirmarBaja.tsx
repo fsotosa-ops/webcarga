@@ -7,7 +7,8 @@ interface Props {
   abierto:           boolean
   nombreSujeto:      string
   nombreEmpresa:     string
-  cuantosDocumentos: number
+  /** `undefined` mientras la consulta viaja: 'no sé' no es 'cero'. */
+  cuantosDocumentos?: number
   onCancelar:        () => void
   onConfirmar:       () => Promise<void>
 }
@@ -91,7 +92,7 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
              *  is_manual_override deja la asignación sin un camino de
              *  vuelta por la interfaz (issue #7); prometerlo acá sería
              *  mentir. */}
-            {cuantosDocumentos > 0 && (
+            {cuantosDocumentos != null && cuantosDocumentos > 0 && (
               <> Sus {cuantosDocumentos} documentos cargados se conservan.</>
             )}
           </p>

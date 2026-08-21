@@ -184,10 +184,13 @@ describe('FichaEmpresaPage', () => {
     expect(complianceApi.listPending).not.toHaveBeenCalled()
   })
 
-  it('cambiar el filtro pide sólo las filas de ese estado, para el sujeto desplegado', async () => {
-    // Sujeto único (CARRIER): arranca desplegado, así que cambiar el filtro
-    // dispara una consulta nueva con el `estado` elegido — el detalle YA no
-    // se filtra en el cliente sobre una lista pre-cargada.
+  // Hallazgo 4 de la revision final: con `estadoFiltro` en la clave de
+  // cache, cada clic de filtro invalidaba la consulta de TODOS los sujetos
+  // desplegados y volvia a la red — con nueve sujetos abiertos, un clic son
+  // nueve peticiones. El detalle de un sujeto se pide UNA sola vez, con
+  // `estado='todos'` fijo; el filtro reparte en el cliente sobre `urgencia`,
+  // la MISMA particion que ya trae cada fila.
+  it('cambiar el filtro cambia lo que se ve, sin volver a pedir nada', async () => {
     montar([
       fila({ id: 'p1', document_name: 'Certificado al día', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA' }),
       fila({ id: 'p2', document_name: 'Rol SII', status: 'MISSING', urgencia: 'FALTA' }),
@@ -197,14 +200,16 @@ describe('FichaEmpresaPage', () => {
     await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
       expect.objectContaining({ entityId: 'c1', estado: 'todos' }),
     ))
+    expect(complianceApi.listPending).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: /^Al día/i }))
 
-    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
-      expect.objectContaining({ entityId: 'c1', estado: 'al_dia' }),
-    ))
-    expect(await screen.findByText('Certificado al día')).toBeInTheDocument()
+    // Sincrónico: el filtro ya cambió lo que se ve sin que medie ninguna
+    // consulta nueva — si hiciera falta un `waitFor` acá para que la fila
+    // vieja desaparezca, sería porque está esperando a la red de nuevo.
+    expect(screen.getByText('Certificado al día')).toBeInTheDocument()
     expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
+    expect(complianceApi.listPending).toHaveBeenCalledTimes(1)
   })
 
   // El avance de la cabecera sale del resumen (`sujeto.al_dia`/`por_vencer`/
@@ -225,15 +230,114 @@ describe('FichaEmpresaPage', () => {
     // avance completo antes de tocar ningún filtro.
     const cabecera = await screen.findByRole('button', { name: /Juan Pérez/ })
     expect(cabecera).toHaveTextContent('1 al día · 1 falta')
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'd1', estado: 'todos' }),
+    ))
 
     fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
 
-    // La lista de abajo SÍ se acota al filtro (ya probado arriba); la
-    // cabecera, no — sigue diciendo "1 al día · 1 falta", no sólo "1 falta".
-    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
-      expect.objectContaining({ entityId: 'd1', estado: 'falta' }),
-    ))
+    // La lista de abajo SÍ se acota al filtro (ya probado arriba, sin pedir
+    // nada nuevo); la cabecera, no — sigue diciendo "1 al día · 1 falta", no
+    // sólo "1 falta". Y el detalle de este sujeto se pidió una sola vez.
     expect(screen.getByRole('button', { name: /Juan Pérez/ })).toHaveTextContent('1 al día · 1 falta')
+    expect(complianceApi.listPending).toHaveBeenCalledTimes(1)
+  })
+
+  // Hallazgo 1 de la revision final: el chip "Falta" leía el balde exclusivo
+  // del resumen (`totales.falta` = FALTA + VENCIDO, sin lo por vencer) y la
+  // lista, al hacer clic, venía de `/pending?estado=falta`, que SÍ incluye
+  // lo por vencer -mismo rótulo, dos conjuntos. Con 1 al día + 1 por vencer +
+  // 1 falta, el chip decía "Falta 1" y la lista mostraba 2. Repartir en el
+  // cliente sobre la MISMA partición exclusiva que ya trae `urgencia` hace
+  // que la contradicción no pueda existir: hay una sola definición de "falta".
+  it('el número del chip "Falta" es la cantidad de filas que ese chip deja ver', async () => {
+    montar([
+      fila({ id: 'p1', document_name: 'Doc al día', urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p2', document_name: 'Doc por vencer', urgencia: 'POR_VENCER', tiene_archivo: true }),
+      fila({ id: 'p3', document_name: 'Doc falta', urgencia: 'FALTA' }),
+    ])
+    await screen.findByText('Doc al día')
+
+    const chipFalta = screen.getByRole('button', { name: /^Falta/i })
+    const conteoDelChip = Number(within(chipFalta).getByText(/^\d+$/).textContent)
+
+    fireEvent.click(chipFalta)
+
+    const filasVisibles = ['Doc al día', 'Doc por vencer', 'Doc falta']
+      .filter(nombre => screen.queryByText(nombre) !== null)
+
+    // MISMA aserción: el número que el chip ya mostraba tiene que coincidir
+    // con cuántas filas deja ver al activarlo — no dos números distintos con
+    // la misma etiqueta al lado.
+    expect(filasVisibles).toHaveLength(conteoDelChip)
+    expect(filasVisibles).toEqual(['Doc falta'])
+  })
+
+  // Hallazgo 1c: con la caché compartida (misma clave `estado='todos'` para
+  // el detalle y para el diálogo de baja), un sujeto que YA está desplegado
+  // no dispara una segunda consulta al abrir "Dar de baja" — antes, la
+  // consulta del diálogo llevaba `estado='todos'` fijo mientras la del
+  // detalle llevaba `estadoFiltro`, así que con el filtro en "Falta" las
+  // claves nunca coincidían y el diálogo SIEMPRE viajaba en blanco.
+  it('con el sujeto ya desplegado, el diálogo de baja no espera una segunda consulta', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             requirement_id: 'r2', urgencia: 'FALTA', tiene_archivo: false }),
+    ])
+
+    // Sujeto único: arranca desplegado y su detalle ya está en caché.
+    await screen.findByRole('button', { name: /Juan Pérez/ })
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledTimes(1))
+
+    // Con el filtro en "Falta" -la forma natural de trabajar esta pantalla-,
+    // antes esto NO compartía caché con el diálogo de baja.
+    fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+
+    // SINCRÓNICO, sin `findByRole` ni `waitFor`: si el diálogo dependiera de
+    // una consulta recién arrancada (cache fría), esto fallaría porque esa
+    // consulta todavía no habría resuelto en este mismo instante. React
+    // Query SÍ revalida en segundo plano al montar un segundo observador de
+    // la misma clave (`staleTime` por defecto es 0) — por eso no se afirma
+    // "una sola llamada de por vida", sólo que el dato YA estaba disponible
+    // sin esperar nada.
+    expect(screen.getByRole('dialog')).toHaveTextContent(/1 documento/)
+  })
+
+  // El otro lado del mismo hallazgo: un sujeto que NUNCA se desplegó no
+  // tiene nada en caché, así que su diálogo de baja sí viaja en blanco por
+  // un instante. Mientras tanto, `cuantosDocumentos` tiene que ser
+  // `undefined` -no `0`- para que el diálogo no afirme "cero documentos"
+  // (que es indistinguible de "no tiene ninguno") mientras todavía no sabe.
+  it('con el detalle todavía en vuelo, el diálogo de baja no afirma nada sobre documentos', async () => {
+    let resolver: (v: unknown) => void = () => {}
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez', urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd2', subject_name: 'Ana Soto', requirement_id: 'r2' }),
+    ])
+    vi.mocked(complianceApi.listPending).mockImplementation((params = {}) => {
+      if (params.entityId === 'd1') return new Promise(r => { resolver = r }) as never
+      return Promise.resolve({ total: 0, rows: [] })
+    })
+
+    // Dos sujetos: ninguno arranca desplegado, así que "Juan Pérez" no tiene
+    // nada pedido todavía cuando se abre su menú. Son dos "Acciones" en
+    // pantalla (uno por sujeto): `accionesDe` acota al de Juan Pérez.
+    await screen.findByRole('button', { name: /Juan Pérez/ })
+    fireEvent.click(accionesDe(/Juan Pérez/))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
+
+    const dialogo = screen.getByRole('dialog')
+    // Sincrónico: sin esto, la promesa ya resuelta por el propio test runner
+    // desvanecería la ventana en la que el dato todavía no llegó.
+    expect(dialogo).not.toHaveTextContent(/se conservan/i)
+
+    resolver({ total: 1, rows: [{ ...fila(), tiene_archivo: true }] })
+    await waitFor(() => expect(dialogo).toHaveTextContent(/se conservan/i))
   })
 
   it('un documento cargado se puede ver; uno que falta se puede cargar', async () => {

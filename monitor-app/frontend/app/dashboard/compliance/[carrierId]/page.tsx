@@ -23,12 +23,16 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
+import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
 import type { ComplianceSummarySubject, EstadoDocumental, PendingComplianceRow } from '@/lib/types'
 
 /** Las cuatro cifras, con el matiz de `<Cifra>` que le corresponde a cada
  *  una. Las cuatro salen del mismo resumen del servidor (`totales`), que
- *  particiona sobre TODA la empresa — a diferencia de `/pending`, acá no
- *  hace falta una guarda tipo "vino truncada": el resumen nunca lo está. */
+ *  particiona sobre TODA la empresa. A diferencia de `/pending`, el resumen
+ *  SÍ puede venir truncado (`SUMMARY_LIMIT` entra como LIMIT de la CTE,
+ *  antes del GROUP BY): `resumen.completo` es la señal, y mientras sea
+ *  `false` la pantalla no muestra estas cuatro cifras — ver `conteos` más
+ *  abajo (hallazgo 3 de la revisión final, perf/compresion-y-resumen). */
 const CIFRAS: { estado: EstadoDocumental; etiqueta: string; tono: 'normal' | 'atencion' | 'urgente' | 'resuelto' }[] = [
   { estado: 'todos',      etiqueta: 'requisitos',  tono: 'normal' },
   { estado: 'al_dia',     etiqueta: 'al día',      tono: 'resuelto' },
@@ -36,12 +40,26 @@ const CIFRAS: { estado: EstadoDocumental; etiqueta: string; tono: 'normal' | 'at
   { estado: 'por_vencer', etiqueta: 'por vencer',  tono: 'atencion' },
 ]
 
-function claveDeSujeto(s: ComplianceSummarySubject): string {
-  return `${s.entity_type}:${s.entity_id}`
-}
-
-function tituloDeSujeto(s: ComplianceSummarySubject): string {
-  return s.entity_type === 'CARRIER' ? 'De la empresa' : (s.subject_name ?? 'Sin nombre')
+/** Reparte las filas de UN sujeto (ya traídas con `estado='todos'`) según el
+ *  mismo criterio EXCLUSIVO que usa el resumen del servidor
+ *  (`ComplianceSummaryCounts.falta` = FALTA + VENCIDO, sin lo por vencer).
+ *
+ *  Es a propósito la MISMA partición que `tieneAlgoDelEstado` usa sobre el
+ *  resumen, más abajo — no la de `pendiente_predicate`/`GET
+ *  /pending?estado=falta`, que es inclusiva (incluye lo por vencer). Antes
+ *  el filtro pedía de nuevo al servidor con ese segundo criterio, y el chip
+ *  "Falta" (que lee el balde exclusivo del resumen) terminaba mostrando un
+ *  número distinto al de la lista que su propio clic abría — hallazgo 1 de
+ *  la revisión final: con 1 al día, 1 por vencer y 1 falta, el chip decía
+ *  "Falta 1" y la lista mostraba 2. Con una sola definición de cada balde,
+ *  usada acá y en el resumen, esa contradicción no puede existir. */
+function filasDelEstado(filas: PendingComplianceRow[], estado: EstadoDocumental): PendingComplianceRow[] {
+  switch (estado) {
+    case 'todos':      return filas
+    case 'al_dia':     return filas.filter(f => f.urgencia === 'AL_DIA')
+    case 'por_vencer': return filas.filter(f => f.urgencia === 'POR_VENCER')
+    case 'falta':      return filas.filter(f => f.urgencia === 'FALTA' || f.urgencia === 'VENCIDO')
+  }
 }
 
 /** Qué es cada sujeto y con qué icono se lo reconoce. El mockup dice
@@ -270,12 +288,22 @@ function TarjetaDeSujeto({
   onVer:  (fila: PendingComplianceRow) => void
   subir:  (fila: PendingComplianceRow, archivo: File, vencimiento?: string) => Promise<void>
 }) {
+  // `estado='todos'` FIJO, sin importar `estadoFiltro` (Task 1, ronda de
+  // arreglo 2): el detalle de un sujeto se pide UNA sola vez —son ~13 filas,
+  // no las 457 de la empresa entera— y el filtro reparte acá abajo, sobre
+  // `urgencia`, que ya viene en cada fila. Antes `estadoFiltro` estaba en la
+  // clave, así que cada clic de filtro invalidaba la consulta de TODOS los
+  // sujetos desplegados y volvía a la red — con nueve sujetos abiertos, un
+  // clic eran nueve peticiones (hallazgo 4 de la revisión final). Con la
+  // clave fija, además, esta consulta comparte caché con `bajaDocsQuery` de
+  // más abajo siempre que este sujeto ya esté desplegado, sin importar el
+  // filtro activo — antes sólo compartían con el filtro en "Todo".
   const filasQuery = useQuery({
-    queryKey: clavesCertificacion.pendientes(carrierId, sujeto.entity_id, estadoFiltro),
-    queryFn: () => complianceApi.listPending({ carrierId, entityId: sujeto.entity_id, estado: estadoFiltro, limit: 200 }),
+    queryKey: clavesCertificacion.pendientes(carrierId, sujeto.entity_id, 'todos'),
+    queryFn: () => complianceApi.listPending({ carrierId, entityId: sujeto.entity_id, estado: 'todos', limit: 200 }),
     enabled: abierto,
   })
-  const filas = filasQuery.data?.rows ?? []
+  const filas = filasDelEstado(filasQuery.data?.rows ?? [], estadoFiltro)
 
   return (
     <div className="border border-border rounded-xl bg-white overflow-hidden">
@@ -412,19 +440,24 @@ export default function FichaEmpresaPage() {
    *  despliega, así que se filtra sobre el conteo que el resumen ya trae —
    *  un sujeto sin nada de ese estado no tiene nada que mostrar.
    *
-   *  OJO: "falta" acá NO es `sujeto.falta` (el casillero exclusivo que suma
-   *  `al_dia + por_vencer + falta = todos`). Es el mismo criterio que
-   *  `GET /pending?estado=falta` —"no está al día", que SÍ incluye lo por
-   *  vencer—, porque es lo que ese sujeto va a devolver cuando se despliegue
-   *  con este mismo filtro. Filtrar por el casillero exclusivo escondería la
-   *  cabecera de un sujeto cuyo único pendiente es "por vencer": el filtro
-   *  lo ocultaría acá y el servidor sí se lo mostraría al desplegarlo. */
+   *  "falta" acá ES `sujeto.falta`, el casillero EXCLUSIVO del resumen
+   *  (`al_dia + por_vencer + falta = todos`) — la MISMA partición que usa
+   *  `filasDelEstado` sobre el detalle de cada sujeto, más arriba. Antes
+   *  usaba el criterio inclusivo de `GET /pending?estado=falta` ("no está al
+   *  día", que SÍ incluye lo por vencer") porque el detalle se pedía con
+   *  `estadoFiltro` y tenía que coincidir con lo que el servidor iba a
+   *  devolver. Ahora el detalle SIEMPRE se pide con `estado='todos'` y se
+   *  reparte acá con el mismo criterio que el resumen, así que las dos
+   *  particiones —la del chip y la de la lista— son la misma por
+   *  construcción: la contradicción del hallazgo 1 (chip "Falta 1", lista
+   *  con 2 filas) ya no puede pasar. Ningún sujeto queda escondido por esto:
+   *  "Por vencer" sigue siendo un chip propio con su propio conteo. */
   const tieneAlgoDelEstado = (s: ComplianceSummarySubject, estado: EstadoDocumental): boolean => {
     switch (estado) {
       case 'todos':      return true
       case 'al_dia':     return s.al_dia > 0
       case 'por_vencer': return s.por_vencer > 0
-      case 'falta':      return s.todos - s.al_dia > 0
+      case 'falta':      return s.falta > 0
     }
   }
   const sujetosVisibles = todosLosSujetos.filter(s => tieneAlgoDelEstado(s, estadoFiltro))
@@ -497,8 +530,10 @@ export default function FichaEmpresaPage() {
    *  revisión anterior de esta misma ficha). Se pide aparte, con
    *  `estado='todos'` fijo: el resumen no cuenta "con archivo", sólo
    *  "cuántos requisitos". Comparte clave de caché con `TarjetaDeSujeto`
-   *  cuando ese sujeto ya está desplegado con el filtro en "Todo", así que
-   *  ahí no dispara una segunda consulta. */
+   *  siempre que ese sujeto ya esté desplegado —`TarjetaDeSujeto` también
+   *  pide `estado='todos'` fijo desde la ronda de arreglo 2—, sin importar
+   *  el filtro activo de la pantalla; así ahí no dispara una segunda
+   *  consulta. */
   const bajaDocsQuery = useQuery({
     queryKey: clavesCertificacion.pendientes(carrierId, confirmandoBaja?.entity_id, 'todos'),
     queryFn: () => complianceApi.listPending({
@@ -506,7 +541,12 @@ export default function FichaEmpresaPage() {
     }),
     enabled: !!confirmandoBaja,
   })
-  const cuantosDocumentos = bajaDocsQuery.data?.rows.filter(r => r.tiene_archivo).length ?? 0
+  // Sin dato todavía (`bajaDocsQuery.data` es `undefined` mientras viaja) es
+  // "todavía no sé", no "cero". Un `?? 0` acá colapsaría los dos y el
+  // diálogo abriría afirmando "cero documentos" mientras la consulta viaja
+  // — hallazgo 1c de la revisión final. `ConfirmarBaja` ya no dibuja la
+  // frase (ni su negación) hasta tener el número.
+  const cuantosDocumentos = bajaDocsQuery.data?.rows.filter(r => r.tiene_archivo).length
 
   if (carrierQuery.isPending) return <Estado tipo="cargando" />
   if (carrierQuery.error || !carrierQuery.data) {

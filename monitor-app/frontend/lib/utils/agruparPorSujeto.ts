@@ -1,5 +1,30 @@
 import type { PendingComplianceRow } from '@/lib/types'
 
+/** Lo mínimo que hace falta para identificar un sujeto: tipo, id y nombre.
+ *  `PendingComplianceRow` y `ComplianceSummarySubject` traen las tres, así
+ *  que `claveDeSujeto`/`tituloDeSujeto` sirven para las dos sin acoplarse a
+ *  ninguna en particular. */
+type SujetoIdentificable = {
+  entity_type:  PendingComplianceRow['entity_type']
+  entity_id:    string
+  subject_name: string | null
+}
+
+/** La clave de un sujeto — tipo y id, sin ambigüedad entre un conductor y un
+ *  vehículo que compartieran id por casualidad. */
+export function claveDeSujeto(s: SujetoIdentificable): string {
+  return `${s.entity_type}:${s.entity_id}`
+}
+
+/** Cómo se titula un sujeto: "De la empresa" para el CARRIER, su nombre para
+ *  conductor o vehículo. Antes vivía escrito dos veces —acá y en la ficha de
+ *  empresa (`page.tsx`)—, con los mismos literales 'De la empresa' y 'Sin
+ *  nombre' repetidos: cambiar uno dejaba el otro atrás, y las dos superficies
+ *  se ven en la misma sesión (cajón y ficha). */
+export function tituloDeSujeto(s: SujetoIdentificable): string {
+  return s.entity_type === 'CARRIER' ? 'De la empresa' : (s.subject_name ?? 'Sin nombre')
+}
+
 /** Un sujeto de Certificación: la empresa misma, uno de sus conductores o uno
  *  de sus vehículos, con las filas de `/pending` que le corresponden. */
 export type Sujeto = {
@@ -13,20 +38,20 @@ export type Sujeto = {
 /** Agrupa filas de `/pending` por sujeto, en el orden CARRIER→DRIVER→ASSET y
  *  con "De la empresa" como título del sujeto CARRIER.
  *
- *  La comparten el cajón (`CarrierDrawer`, que sólo pide `estado='falta'`) y
- *  la ficha de empresa (que pide `estado='todos'`): agrupar por sujeto es EL
- *  MISMO problema en los dos, sólo cambia qué filas llegan. Antes vivía sólo
- *  dentro de `CarrierDrawer`; se extrajo acá al escribir la ficha para no
- *  tener una segunda copia del mismo agrupado — que es exactamente el defecto
- *  que este repo ya tuvo con el renglón de carga y con el cajón mismo. */
+ *  Hoy la usa sólo `CarrierDrawer` (que pide `estado='falta'`): la ficha de
+ *  empresa (`page.tsx`) dejó de llamarla con Task 2 de perf/compresion-y-resumen
+ *  —agrupa `ComplianceSummarySubject[]` del resumen, no filas de detalle—,
+ *  pero sigue compartiendo `claveDeSujeto`/`tituloDeSujeto` con ella: es el
+ *  mismo problema de identificar un sujeto, sólo cambia la forma del objeto
+ *  que lo trae. */
 export function agruparPorSujeto(rows: PendingComplianceRow[]): Sujeto[] {
   const porClave = new Map<string, Sujeto>()
   for (const r of rows) {
-    const clave = `${r.entity_type}:${r.entity_id}`
+    const clave = claveDeSujeto(r)
     if (!porClave.has(clave)) {
       porClave.set(clave, {
         clave,
-        titulo: r.entity_type === 'CARRIER' ? 'De la empresa' : (r.subject_name ?? 'Sin nombre'),
+        titulo: tituloDeSujeto(r),
         entityType: r.entity_type,
         entityId: r.entity_id,
         filas: [],
