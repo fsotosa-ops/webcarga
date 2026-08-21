@@ -16,13 +16,18 @@ const NULL_BODY_STATUS = new Set([204, 205, 304])
 const MINIMO_PARA_COMPRIMIR = 1024
 
 /**
- * Sólo JSON y `text/*` comprimen bien y se pueden reescribir sin perder
+ * Sólo JSON, XML y `text/*` comprimen bien y se pueden reescribir sin perder
  * información. Un binario (ZIP, PDF, imagen) ya viene comprimido —
  * comprimirlo de nuevo es CPU tirada— y sobre todo: NO se puede leer como
  * texto sin corromperlo (ver comentario en `proxy`).
+ *
+ * `xml` (menor 8 de la revisión final de perf/compresion-y-resumen): hoy
+ * ningún endpoint de esta API devuelve XML, así que esto no cambia nada
+ * observable todavía — es defensivo, para que el día que exista uno no
+ * quede sin comprimir por una lista de tipos que se olvidó de ese caso.
  */
 function esTextual(tipo: string): boolean {
-  return tipo.startsWith('text/') || tipo.includes('json')
+  return tipo.startsWith('text/') || tipo.includes('json') || tipo.includes('xml')
 }
 
 const BACKEND = (process.env.FASTAPI_URL ?? 'http://localhost:8001').trim()

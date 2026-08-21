@@ -140,6 +140,23 @@ describe('el proxy comprime lo que devuelve', () => {
     expect(await res.text()).toBe(chica)
   })
 
+  // Menor 8 de la revisión final: `esTextual` sólo miraba `text/*` y "json".
+  // Hoy la API no devuelve XML —no hay endpoint que lo haga—, así que esto
+  // es defensivo: el día que exista uno, que no quede sin comprimir por una
+  // lista de tipos que se olvidó de ese caso.
+  it('un content-type application/xml también comprime, aunque hoy ningún endpoint lo use', async () => {
+    const grande = `<r>${'x'.repeat(5000)}</r>`
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/xml' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    expect(res.headers.get('content-encoding')).toBe('gzip')
+    const bytes = Buffer.from(await res.arrayBuffer())
+    expect(gunzipSync(bytes).toString()).toBe(grande)
+  })
+
   it('si el cliente no acepta gzip, no se comprime', async () => {
     const grande = 'x'.repeat(5000)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
