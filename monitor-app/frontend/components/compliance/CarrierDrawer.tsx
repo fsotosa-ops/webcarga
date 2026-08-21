@@ -94,9 +94,12 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
    *  empresa los candidatos son 2 conductores y 3 vehículos en promedio, no 80
    *  y 118: por eso elegir sujeto acá es un clic.
    *
-   *  El agrupado en sí vive en `lib/utils/agruparPorSujeto`, compartido con la
-   *  ficha de empresa: agrupar por sujeto es el mismo problema en los dos,
-   *  sólo cambia qué filas llegan (acá siempre `estado='falta'`). */
+   *  El agrupado vive en `lib/utils/agruparPorSujeto`. Hoy es el único
+   *  llamador: la ficha de empresa dejó de usarlo con Task 2 de
+   *  perf/compresion-y-resumen (agrupa el resumen del servidor, no filas de
+   *  detalle), pero sigue compartiendo con ella `claveDeSujeto`/
+   *  `tituloDeSujeto` — identificar un sujeto es el mismo problema en las
+   *  dos, sólo cambia la forma del objeto que lo trae. */
   const sujetos = useMemo(() => agruparPorSujeto(rows), [rows])
 
   function alternar(clave: string) {

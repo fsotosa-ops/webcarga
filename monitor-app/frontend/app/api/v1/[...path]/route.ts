@@ -1,12 +1,34 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { promisify } from 'node:util'
+import { gzip } from 'node:zlib'
+
+const comprimir = promisify(gzip)
 
 /** Margen antes del vencimiento en el que sí conviene ir a refrescar. */
 const TOKEN_REFRESH_MARGIN_S = 120
 
 /** Estados que la especificacion HTTP define sin cuerpo. */
 const NULL_BODY_STATUS = new Set([204, 205, 304])
+
+/** Por debajo de esto, el encabezado y el gasto de comprimir se comen la ganancia. */
+const MINIMO_PARA_COMPRIMIR = 1024
+
+/**
+ * Sólo JSON, XML y `text/*` comprimen bien y se pueden reescribir sin perder
+ * información. Un binario (ZIP, PDF, imagen) ya viene comprimido —
+ * comprimirlo de nuevo es CPU tirada— y sobre todo: NO se puede leer como
+ * texto sin corromperlo (ver comentario en `proxy`).
+ *
+ * `xml` (menor 8 de la revisión final de perf/compresion-y-resumen): hoy
+ * ningún endpoint de esta API devuelve XML, así que esto no cambia nada
+ * observable todavía — es defensivo, para que el día que exista uno no
+ * quede sin comprimir por una lista de tipos que se olvidó de ese caso.
+ */
+function esTextual(tipo: string): boolean {
+  return tipo.startsWith('text/') || tipo.includes('json') || tipo.includes('xml')
+}
 
 const BACKEND = (process.env.FASTAPI_URL ?? 'http://localhost:8001').trim()
 
@@ -68,11 +90,41 @@ async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {
       return new NextResponse(null, { status: res.status })
     }
 
-    const body = await res.text()
-    return new NextResponse(body, {
-      status: res.status,
-      headers: { 'Content-Type': res.headers.get('content-type') ?? 'application/json' },
-    })
+    // SIEMPRE bytes, nunca texto: `res.text()` decodifica como UTF-8, y sobre
+    // un binario (ZIP, PDF, imagen) cada secuencia invalida se convierte en
+    // U+FFFD sin vuelta atras. Medido en vivo sobre una descarga real de
+    // documentos de 24.597.607 bytes: 5.644.713 secuencias `EF BF BD` — 68,8%
+    // del archivo, basura. La firma `PK\x03\x04` sobrevive porque es ASCII,
+    // asi que el archivo parece un ZIP y no lo es.
+    const body = Buffer.from(await res.arrayBuffer())
+    const tipo = res.headers.get('content-type') ?? 'application/json'
+
+    // Se comprime ACA y no en FastAPI, y la diferencia no es de gusto: el
+    // `fetch` de Node descomprime de forma transparente, asi que lo que
+    // comprimiera el backend se perdia en este mismo archivo y el navegador
+    // recibia el JSON crudo. Medido en dev sobre la ficha de una empresa:
+    // encodedBodySize 57.183 == decodedBodySize 57.183, 0% de ahorro.
+    //
+    // Next comprime su propio HTML pero NO las respuestas de los Route
+    // Handlers, asi que toda la API viajaba sin comprimir hasta el navegador.
+    //
+    // Sólo se comprime lo textual: un binario ya viene comprimido y
+    // comprimirlo de nuevo es CPU tirada. `body.length` mide bytes de verdad
+    // (es un Buffer), no unidades UTF-16 como medía antes sobre el string.
+    const aceptaGzip = (req.headers.get('accept-encoding') ?? '').includes('gzip')
+    if (aceptaGzip && esTextual(tipo) && body.length >= MINIMO_PARA_COMPRIMIR) {
+      const comprimido = await comprimir(body, { level: 6 })
+      return new NextResponse(comprimido, {
+        status: res.status,
+        headers: {
+          'Content-Type': tipo,
+          'Content-Encoding': 'gzip',
+          'Vary': 'Accept-Encoding',
+        },
+      })
+    }
+
+    return new NextResponse(body, { status: res.status, headers: { 'Content-Type': tipo } })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Backend unreachable'
     return NextResponse.json({ detail: msg }, { status: 502 })

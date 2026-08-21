@@ -87,3 +87,150 @@ describe('proxy /api/v1 — no golpea Auth en cada request', () => {
     expect(getUser).toHaveBeenCalledTimes(1)
   })
 })
+
+// El fetch de Node descomprime de forma transparente lo que responde FastAPI,
+// asi que lo que comprimiera el backend se perdia en este mismo archivo y el
+// navegador recibia el JSON crudo. Medido en dev sobre la ficha de una
+// empresa: encodedBodySize 57.183 == decodedBodySize 57.183, 0% de ahorro. La
+// compresion se mueve aca, al unico salto que de verdad llega al navegador.
+import { gunzipSync } from 'node:zlib'
+
+function pedido(acepta: string) {
+  // El handler lee `req.nextUrl.search`: un Request de fetch pelado no lo
+  // tiene, igual que en `req()` mas arriba en este archivo.
+  const base = new Request('http://localhost/api/v1/lo-que-sea', {
+    headers: { 'Accept-Encoding': acepta },
+  })
+  return Object.assign(base, { nextUrl: new URL(base.url) }) as never
+}
+
+const paramsCompresion = Promise.resolve({ path: ['lo-que-sea'] })
+
+describe('el proxy comprime lo que devuelve', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('una respuesta grande viaja comprimida, y se puede descomprimir', async () => {
+    // La forma real: JSON con las mismas claves repetidas en cada fila.
+    const grande = JSON.stringify(
+      Array.from({ length: 400 }, (_, i) => ({ id: `c${i}`, business_name: 'Transportes De Prueba' })),
+    )
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/json' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    expect(res.headers.get('content-encoding')).toBe('gzip')
+    const bytes = Buffer.from(await res.arrayBuffer())
+    // Se descomprime y da EXACTAMENTE lo que mandó el backend: comprimir mal
+    // rompe la aplicación entera de una forma que sólo se ve en vivo.
+    expect(gunzipSync(bytes).toString()).toBe(grande)
+    expect(bytes.length).toBeLessThan(grande.length / 5)
+  })
+
+  it('una respuesta chica viaja sin comprimir', async () => {
+    const chica = JSON.stringify({ ok: true })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(chica, { status: 200, headers: { 'content-type': 'application/json' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    expect(res.headers.get('content-encoding')).toBeNull()
+    expect(await res.text()).toBe(chica)
+  })
+
+  // Menor 8 de la revisión final: `esTextual` sólo miraba `text/*` y "json".
+  // Hoy la API no devuelve XML —no hay endpoint que lo haga—, así que esto
+  // es defensivo: el día que exista uno, que no quede sin comprimir por una
+  // lista de tipos que se olvidó de ese caso.
+  it('un content-type application/xml también comprime, aunque hoy ningún endpoint lo use', async () => {
+    const grande = `<r>${'x'.repeat(5000)}</r>`
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/xml' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    expect(res.headers.get('content-encoding')).toBe('gzip')
+    const bytes = Buffer.from(await res.arrayBuffer())
+    expect(gunzipSync(bytes).toString()).toBe(grande)
+  })
+
+  it('si el cliente no acepta gzip, no se comprime', async () => {
+    const grande = 'x'.repeat(5000)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/json' } }),
+    ))
+
+    const res = await GET(pedido('identity'), { params: paramsCompresion })
+
+    expect(res.headers.get('content-encoding')).toBeNull()
+    expect(await res.text()).toBe(grande)
+  })
+
+  it('comprime sin bloquear el event loop', async () => {
+    // `gzipSync` bloquearia el bucle en el camino de cada peticion y con varias
+    // en paralelo se serializan: la optimizacion se vuelve el cuello de botella.
+    // Se afirma que durante la compresion el bucle sigue atendiendo.
+    const grande = 'a'.repeat(2_000_000)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/json' } }),
+    ))
+
+    let tickCorrio = false
+    const enVuelo = GET(pedido('gzip'), { params: paramsCompresion })
+    setImmediate(() => { tickCorrio = true })
+    await enVuelo
+
+    expect(tickCorrio, 'el bucle no atendio nada mientras comprimia').toBe(true)
+  })
+
+  it('un 204 sigue sin cuerpo', async () => {
+    // Ya rompió una vez: construir una Response con cuerpo para 204 lanza
+    // TypeError y el navegador veía un 502 en TODO DELETE de la app.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    expect(res.status).toBe(204)
+    expect(res.headers.get('content-encoding')).toBeNull()
+  })
+})
+
+// HALLAZGO REAL (revision de la Tarea 1, medido contra dev): `res.text()`
+// decodifica el cuerpo como UTF-8 antes de reescribirlo. Sobre un binario
+// (ZIP, PDF, imagen) eso reemplaza cada secuencia de bytes invalida por
+// U+FFFD y esos bytes no vuelven. Medido sobre una descarga real de 24.597.607
+// bytes: 5.644.713 secuencias `EF BF BD` — 68,8% del archivo, basura. La
+// firma `PK\x03\x04` sobrevive porque es ASCII, asi que el archivo parece un
+// ZIP y no lo es.
+describe('el proxy no corrompe cuerpos binarios', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('un cuerpo binario vuelve byte a byte identico', async () => {
+    // 0xFF, 0xFE y 0x80 sueltos son secuencias invalidas en UTF-8: son las que
+    // `res.text()` reemplaza por U+FFFD y no vuelven.
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xff, 0xfe, 0x80, 0x01, 0x02])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(bytes, { status: 200, headers: { 'content-type': 'application/zip' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    const recibido = new Uint8Array(await res.arrayBuffer())
+    expect(recibido).toEqual(bytes)
+  })
+
+  it('un content-type binario no se comprime aunque supere el minimo y el cliente acepte gzip', async () => {
+    // Comprimir un ZIP es gastar CPU para nada: ya viene comprimido.
+    const grande = new Uint8Array(5000).fill(0x41)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(grande, { status: 200, headers: { 'content-type': 'application/zip' } }),
+    ))
+
+    const res = await GET(pedido('gzip'), { params: paramsCompresion })
+
+    expect(res.headers.get('content-encoding')).toBeNull()
+  })
+})

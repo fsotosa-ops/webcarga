@@ -26,6 +26,7 @@ FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
 from ..schemas.compliance import (
     ReassignBody,
     ComplianceRecordPatchBody,
+    ComplianceSummaryResponse,
     PendingComplianceListResponse,
 )
 from ..schemas.document_ingest import unclassified_predicate
@@ -538,11 +539,15 @@ async def list_pending_compliance_records(
         description="Acota a un sujeto concreto (un conductor o un vehículo). "
                     "Se usa junto con `category` para el cajón de una persona.",
     ),
-    # 500, no 200 (ronda de arreglo 1, Task 4): la ficha de empresa pide UNA
-    # sola vez con estado='todos' y deriva sus cuatro cifras contando
-    # `urgencia` sobre las filas que llegaron, en vez de pedir las cuatro
-    # variantes de estado por separado. Con el tope viejo, ese pedido único
-    # volvia 422 antes de llegar al handler. Mismo tope que ya usa /status.
+    # 500, no 200 (ronda de arreglo 1, Task 4): el tope subio para que un
+    # pedido de hasta 500 filas de un solo golpe no volviera 422 antes de
+    # llegar al handler -mismo tope que ya usa /status. Ya no hay un llamador
+    # fijo pidiendo justo esa cantidad (comentario viejo, corregido en
+    # perf/compresion-y-resumen: decia que "la ficha de empresa pide UNA sola
+    # vez con estado='todos'", y desde /summary + Tarea 1 de esa rama eso ya
+    # no es cierto -la ficha pide el resumen agregado y el detalle de cada
+    # sujeto aparte, con `limit=200`). El tope queda como margen, no como
+    # numero que alguien dependa de pedir exacto.
     limit: int = Query(50, le=500),
     offset: int = Query(0, ge=0),
     estado: Literal["falta", "por_vencer", "al_dia", "todos"] = Query(
@@ -595,6 +600,100 @@ async def list_pending_compliance_records(
         for r in rows
     ]
     return {"total": total, "rows": result_rows}
+
+
+# No es un parametro publico: le pide a la CTE TODAS las filas de la
+# empresa, no las 500 que /pending tope para su listado global. Hoy la
+# empresa mas grande tiene 457; 5000 deja margen sin acercarse a convertir
+# esto en un escaneo de la tabla.
+#
+# A nivel de modulo (no dentro del handler) para que `completo` se pueda
+# comparar contra el MISMO numero que se le paso a la CTE, y para que un test
+# lo pueda importar en vez de repetirlo a mano (hallazgo 3 de la revision
+# final: tres comentarios afirmaban "el resumen nunca viene truncado", y era
+# falso -SUMMARY_LIMIT entra como LIMIT DENTRO de la CTE, antes del GROUP BY).
+SUMMARY_LIMIT = 5000
+
+
+# Reusa _PENDING_ROWS_SQL como CTE y agrupa sobre `urgencia`, que ya trae sus
+# cuatro ramas resueltas (ver `pendiente_predicate`). El agrupado NO vuelve a
+# decidir que es "pendiente" o "al dia" -esa es la misma clase de bug que
+# este modulo ya tuvo con el embudo y el cajon contradiciendose.
+#
+# `falta` agrupa VENCIDO y FALTA: son las dos ramas que la ficha ya muestra
+# juntas como "lo que falta" (`avanceDelSujeto`, frontend). Con esta
+# particion, al_dia + por_vencer + falta == todos siempre -es lo que el test
+# de integracion verifica contra Postgres real.
+_SUMMARY_SQL = f"""
+WITH pending_rows AS (
+{_PENDING_ROWS_SQL}
+)
+SELECT
+    entity_type, entity_id, subject_name, carrier_operation_types,
+    count(*) AS todos,
+    count(*) FILTER (WHERE urgencia = 'AL_DIA') AS al_dia,
+    count(*) FILTER (WHERE urgencia = 'POR_VENCER') AS por_vencer,
+    count(*) FILTER (WHERE urgencia IN ('FALTA', 'VENCIDO')) AS falta
+FROM pending_rows
+-- `carrier_operation_types` es constante en toda la respuesta -esta consulta
+-- va acotada a UNA empresa (c.id = $1)-, asi que sumarla al agrupado no
+-- parte ningun sujeto en dos filas: solo evita una segunda consulta para un
+-- dato que ya viaja en cada fila de `_PENDING_ROWS_SQL`.
+GROUP BY entity_type, entity_id, subject_name, carrier_operation_types
+ORDER BY entity_type, subject_name
+"""
+
+
+@router.get("/summary", response_model=ComplianceSummaryResponse)
+async def get_compliance_summary(
+    carrier_id: str = Query(...),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """La ficha de una empresa, resumida: cuantos requisitos tiene cada
+    sujeto -la empresa, sus conductores, sus vehiculos- y como vienen, sin
+    bajar el detalle de cada uno. Reemplaza el fetch de 457 filas que la
+    ficha hacia solo para dibujar nueve cabeceras plegadas con sus conteos
+    (medido en dev: 57.183 bytes en la primera carga).
+
+    El detalle de un sujeto se pide aparte, solo al desplegarlo
+    (GET /pending?entity_id=...) -esta ruta nunca lo trae.
+
+    `completo` (hallazgo 3 de la revision final): SUMMARY_LIMIT entra como
+    LIMIT de la CTE, ANTES del GROUP BY -si una empresa superara ese numero
+    de registros, el agrupado contaria sobre una lista recortada y las
+    cuatro cifras quedarian mal, EN SILENCIO. La forma barata de detectarlo
+    sin una segunda consulta: si la suma de `todos` toca el tope exacto, la
+    CTE se corto -ninguna empresa real tiene un numero de requisitos que
+    coincida justo con SUMMARY_LIMIT salvo que el LIMIT la haya cortado ahi.
+    """
+    filas = await pool.fetch(
+        _SUMMARY_SQL,
+        carrier_id, None, None, None, None, SUMMARY_LIMIT, 0,
+        ACTIVE_OPERATIONAL_STATUS, None, "todos",
+    )
+    sujetos = [
+        {
+            "entity_type": f["entity_type"],
+            "entity_id": f["entity_id"],
+            "subject_name": f["subject_name"],
+            "todos": f["todos"],
+            "al_dia": f["al_dia"],
+            "por_vencer": f["por_vencer"],
+            "falta": f["falta"],
+        }
+        for f in filas
+    ]
+    totales = {
+        clave: sum(s[clave] for s in sujetos)
+        for clave in ("todos", "al_dia", "por_vencer", "falta")
+    }
+    return {
+        "totales": totales,
+        "sujetos": sujetos,
+        "completo": totales["todos"] != SUMMARY_LIMIT,
+        "carrier_operation_types": list(filas[0]["carrier_operation_types"]) if filas else [],
+    }
 
 
 @router.get("/{record_id}")

@@ -77,6 +77,52 @@ class PendingComplianceListResponse(BaseModel):
     rows: list[PendingComplianceRow]
 
 
+class ComplianceSummaryCounts(BaseModel):
+    """La misma particion que `urgencia` ya resuelve por fila, sumada.
+
+    `falta` agrupa las dos ramas VENCIDO y FALTA del CASE de `urgencia`: son
+    "lo que falta" para la ficha (`avanceDelSujeto` en el frontend ya conto
+    asi, sin nombrarlo aparte). `por_vencer` queda solo porque la ficha lo
+    muestra en su propio casillero. Con esta particion, al_dia + por_vencer +
+    falta == todos siempre — es lo que el test de integracion verifica contra
+    Postgres real."""
+    todos: int
+    al_dia: int
+    por_vencer: int
+    falta: int
+
+
+class ComplianceSummarySubject(ComplianceSummaryCounts):
+    """Una cabecera de la ficha de empresa: la empresa misma, o uno de sus
+    conductores o vehiculos, con sus cuatro cifras — sin las filas de
+    detalle. La ficha pide esto al llegar; el detalle de un sujeto se pide
+    aparte, solo cuando alguien lo despliega (GET /pending?entity_id=...)."""
+    entity_type: str
+    entity_id: str
+    subject_name: Optional[str] = None
+
+
+class ComplianceSummaryResponse(BaseModel):
+    """GET /compliance-records/summary — reemplaza el fetch de 457 filas de
+    detalle que la ficha de empresa hacia solo para dibujar nueve cabeceras
+    plegadas con sus conteos (medido en dev: 57.183 bytes)."""
+    totales: ComplianceSummaryCounts
+    sujetos: list[ComplianceSummarySubject]
+    # False si SUMMARY_LIMIT corto la CTE antes del GROUP BY (hallazgo 3 de
+    # la revision final): las cuatro cifras -y las de cada sujeto- se
+    # calcularon sobre una lista recortada y no hay que mostrarlas como si
+    # fueran exactas. No es solo un adorno de UI: reemplaza a la guarda
+    # `completa` que existia en la version anterior de este endpoint
+    # (/pending con `total` de `count(*) OVER()`) y que se borro creyendo que
+    # el resumen nunca podia venir truncado.
+    completo: bool
+    # Tipo de Operacion (Tractoreo/Equipo Completo) agregado de la flota
+    # activa de la empresa (Ronda 85). No es una fila de detalle -es un
+    # escalar por empresa- asi que viaja aca en vez de obligar a la ficha a
+    # desplegar el sujeto CARRIER solo para conocerlo.
+    carrier_operation_types: list[str]
+
+
 class Alcance(BaseModel):
     """A cuántas entidades alcanza la condición de un requisito, sobre el
     universo de su tipo de entidad: "36 de 118 vehículos".

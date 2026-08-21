@@ -1,7 +1,7 @@
 import type {
   CertificationGroup, CertificationScope, CertificationStatus,
-  BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, DocumentVersion,
-  EstadoDocumental, PendingComplianceListResponse, RequirementOption,
+  BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, ComplianceSummaryResponse,
+  DocumentVersion, EstadoDocumental, PendingComplianceListResponse, RequirementOption,
 } from '@/lib/types'
 import { apiFetch } from './client'
 
@@ -133,5 +133,16 @@ export const complianceApi = {
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<PendingComplianceListResponse>(`/api/v1/compliance-records/pending${suffix}`)
   },
+
+  /** La ficha de una empresa, resumida: cuántos requisitos tiene cada
+   *  sujeto —la empresa, sus conductores, sus vehículos— y cómo vienen, sin
+   *  bajar el detalle. Reemplaza el `listPending({ estado: 'todos', limit:
+   *  500 })` que la ficha hacía sólo para dibujar nueve cabeceras plegadas
+   *  con sus conteos. El detalle de un sujeto se pide aparte, con
+   *  `listPending({ entityId })`, sólo al desplegarlo. */
+  summary: (carrierId: string) =>
+    apiFetch<ComplianceSummaryResponse>(
+      `/api/v1/compliance-records/summary?carrier_id=${encodeURIComponent(carrierId)}`,
+    ),
 
 }

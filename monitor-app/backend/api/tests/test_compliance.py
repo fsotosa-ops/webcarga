@@ -1,13 +1,14 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
 from app.routers.compliance import pendiente_predicate, router
-from tests.conftest import USER, wire_transactional_conn
+from tests.conftest import USER, PoolDeUnaConexion, wire_transactional_conn
 
 
 def make_client(pool, supabase=None):
@@ -1512,3 +1513,228 @@ def test_status_active_scope_includes_newly_created_companies():
     assert "ONBOARDING" in sql or "ANY($1" in sql, (
         "el alcance activo tiene que incluir a las empresas recien creadas"
     )
+
+
+# ── GET /compliance-records/summary (Task 2, perf/compresion-y-resumen) ────
+#
+# La ficha de empresa mostraba nueve cabeceras plegadas y descargaba 457 filas
+# de detalle para dibujarlas (medido en dev: 57.183 bytes). Este endpoint
+# agrupa lo mismo que `/pending?estado=todos` ya calcula, para que la ficha
+# pida un resumen al llegar y el detalle de cada sujeto recien al desplegarlo.
+#
+# NO define una segunda vez que es "pendiente" o "al dia": reusa
+# `_PENDING_ROWS_SQL` como CTE y agrupa sobre `urgencia`, que ya trae sus
+# cuatro ramas resueltas por el SQL (ver `pendiente_predicate` mas arriba).
+
+
+def test_summary_binds_exactly_the_parameters_it_references():
+    """Misma defensa que /pending: un placeholder de mas o de menos lo acepta
+    un AsyncMock y lo rechaza Postgres."""
+    import re
+
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    sql, *args = pool.fetch.call_args.args
+    referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+    assert referenciados == set(range(1, len(args) + 1)), (
+        f"el SQL referencia {sorted(referenciados)} pero se pasan {len(args)} parametros"
+    )
+
+
+def test_summary_no_reescribe_pendiente_predicate():
+    """El agrupado tiene que salir de `urgencia`/`pendiente_predicate`, no de
+    una lista de status escrita a mano dentro de `_SUMMARY_SQL` — es la misma
+    clase de bug que este modulo ya tuvo con el embudo y el cajon
+    contradiciendose."""
+    from app.routers.compliance import _PENDING_ROWS_SQL, _SUMMARY_SQL
+
+    assert _PENDING_ROWS_SQL in _SUMMARY_SQL
+    assert "MISSING" not in _SUMMARY_SQL.replace(_PENDING_ROWS_SQL, "")
+    assert "EXPIRED" not in _SUMMARY_SQL.replace(_PENDING_ROWS_SQL, "")
+
+
+def test_summary_requiere_carrier_id():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary")
+
+    assert res.status_code == 422
+
+
+def test_summary_route_does_not_collide_with_record_id_path():
+    """Mismo cuidado que /pending: /summary tiene que declararse antes de
+    /{record_id}, o FastAPI lo interpreta como un record_id literal."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200
+    assert "totales" in res.json()
+    pool.fetchrow.assert_not_called()
+
+
+def test_summary_agrupa_por_sujeto_desde_urgencia():
+    """La particion que la ficha necesita: `al_dia`, `por_vencer` y `falta`
+    salen de la MISMA `urgencia` de cada fila — no una cuenta nueva por
+    `status`. `falta` agrupa VENCIDO y FALTA (las dos ramas que la ficha ya
+    muestra como "lo que falta"), para que la particion cierre exacto contra
+    `todos`."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+         "carrier_operation_types": ["Tractoreo"]},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["sujetos"] == [{
+        "entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+        "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+    }]
+    assert body["totales"] == {"todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1}
+    assert body["carrier_operation_types"] == ["Tractoreo"]
+    assert body["completo"] is True
+
+
+# Hallazgo 3 de la revision final: SUMMARY_LIMIT entra como LIMIT de la CTE,
+# ANTES del GROUP BY. Si una empresa superara ese numero de registros, la
+# CTE se corta a la mitad de una fila cualquiera y el agrupado -las cuatro
+# cifras, sujeto por sujeto- queda mal, en silencio: no hay ninguna senal en
+# la respuesta. La guarda `completa` que existia para esto se borro apoyada
+# en la afirmacion de que "el resumen nunca viene truncado", que es falsa
+# (hoy la empresa mas grande tiene 457 filas contra un tope de 5000: latente,
+# no activo). `completo` la repone: sale de comparar el conteo real contra
+# el tope, no de una consulta aparte.
+def test_summary_completo_false_cuando_el_conteo_toca_el_tope():
+    from app.routers.compliance import SUMMARY_LIMIT
+
+    pool = AsyncMock()
+    # Tantas filas como el tope: es exactamente lo que la CTE devuelve cuando
+    # el LIMIT la corto, no cuando la empresa de verdad tiene ese numero
+    # redondo de requisitos.
+    pool.fetch.return_value = [
+        {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+         "todos": SUMMARY_LIMIT, "al_dia": SUMMARY_LIMIT, "por_vencer": 0, "falta": 0,
+         "carrier_operation_types": []},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["completo"] is False
+
+
+def test_summary_completo_true_cuando_el_conteo_no_toca_el_tope():
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+         "carrier_operation_types": []},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["completo"] is True
+
+
+async def _pedir_resumen(conn, carrier_id):
+    """El resumen, llamando al handler real sobre la conexion transaccional
+    del fixture — mismo patron que `list_pending_compliance_records` en
+    `test_integracion_certificacion.py`, no uno inventado para esta prueba."""
+    from app.routers.compliance import get_compliance_summary
+
+    return await get_compliance_summary(
+        carrier_id=str(carrier_id), pool=PoolDeUnaConexion(conn), _=USER,
+    )
+
+
+async def _pedir_pending(conn, carrier_id, estado="todos", limit=500):
+    from app.routers.compliance import list_pending_compliance_records
+
+    respuesta = await list_pending_compliance_records(
+        carrier_id=str(carrier_id), category=None, requirement_code=None, q="",
+        operation_type=None, entity_id=None, limit=limit, offset=0, estado=estado,
+        pool=PoolDeUnaConexion(conn), _=USER,
+    )
+    return respuesta["rows"]
+
+
+@pytest.mark.integracion
+async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_revertida):
+    """El resumen tiene que contar EXACTAMENTE lo mismo que la lista, o la
+    pantalla dice un numero y muestra otro — que es el defecto que esta ficha
+    ya tuvo cuando el filtro y la fila se contradecian.
+
+    Que la particion cierre (al_dia + por_vencer + falta == todos) NO
+    ALCANZA: un intercambio de columnas en `_SUMMARY_SQL` (al_dia por falta,
+    por ejemplo) deja esa suma cerrada igual —mismo total, columnas
+    cambiadas de lugar— y pasaria en verde con un documento vencido
+    mostrandose "al dia". Por eso cada balde se compara contra Postgres real
+    para ESE estado, no solo contra el total.
+
+    `falta` es la excepcion: `/pending?estado=falta` usa
+    `pendiente_predicate`, que es "no esta al dia" e INCLUYE lo por vencer
+    -es lo que el filtro de la ficha necesita, para no esconder un sujeto
+    cuyo unico pendiente es un "por vencer" (ver `tieneAlgoDelEstado` en el
+    frontend)-, mientras que `resumen.totales.falta` es el balde EXCLUSIVO
+    (FALTA + VENCIDO, sin por_vencer) que hace que la particion cierre. Se
+    verifica entonces contra la particion de `filas` (estado='todos'), no
+    contra `/pending?estado=falta` -son dos conjuntos distintos a proposito.
+    """
+    carrier_id = await conexion_revertida.fetchval(
+        "SELECT carrier_id FROM public.driver_assignments WHERE status='ACTIVE' LIMIT 1"
+    )
+    resumen = await _pedir_resumen(conexion_revertida, carrier_id)
+    filas = await _pedir_pending(conexion_revertida, carrier_id, estado="todos", limit=1000)
+
+    assert resumen["totales"]["todos"] == len(filas)
+    assert sum(s["todos"] for s in resumen["sujetos"]) == len(filas)
+    t = resumen["totales"]
+    assert t["al_dia"] + t["por_vencer"] + t["falta"] == t["todos"]
+
+    # Cada balde contra Postgres real, no solo la suma.
+    filas_al_dia = await _pedir_pending(conexion_revertida, carrier_id, estado="al_dia", limit=1000)
+    filas_por_vencer = await _pedir_pending(conexion_revertida, carrier_id, estado="por_vencer", limit=1000)
+    filas_falta = [f for f in filas if f["urgencia"] in ("FALTA", "VENCIDO")]
+    assert t["al_dia"] == len(filas_al_dia), (
+        f"el resumen dice {t['al_dia']} al_dia y /pending?estado=al_dia devuelve {len(filas_al_dia)}"
+    )
+    assert t["por_vencer"] == len(filas_por_vencer), (
+        f"el resumen dice {t['por_vencer']} por_vencer y /pending?estado=por_vencer "
+        f"devuelve {len(filas_por_vencer)}"
+    )
+    assert t["falta"] == len(filas_falta), (
+        f"el resumen dice {t['falta']} falta y la particion de 'todos' por urgencia da {len(filas_falta)}"
+    )
+
+    # Y lo mismo por sujeto: que cada cabecera cuadre con SUS filas, no sólo
+    # el agregado de la empresa entera.
+    def _por_sujeto(rows):
+        conteo: dict[tuple, int] = {}
+        for r in rows:
+            clave = (r["entity_type"], r["entity_id"])
+            conteo[clave] = conteo.get(clave, 0) + 1
+        return conteo
+
+    al_dia_por_sujeto = _por_sujeto(filas_al_dia)
+    por_vencer_por_sujeto = _por_sujeto(filas_por_vencer)
+    falta_por_sujeto = _por_sujeto(filas_falta)
+    for s in resumen["sujetos"]:
+        clave = (s["entity_type"], s["entity_id"])
+        assert s["al_dia"] == al_dia_por_sujeto.get(clave, 0), f"sujeto {clave}: al_dia no cuadra"
+        assert s["por_vencer"] == por_vencer_por_sujeto.get(clave, 0), f"sujeto {clave}: por_vencer no cuadra"
+        assert s["falta"] == falta_por_sujeto.get(clave, 0), f"sujeto {clave}: falta no cuadra"
