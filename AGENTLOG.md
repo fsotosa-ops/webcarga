@@ -220,6 +220,15 @@ rechaza—. El guardia nació de un incidente real: *"marcar 31 licencias y mand
 destruía 30"*. Así que en lote se puede **mover a una empresa** y **descartar**; clasificar es de a
 uno a propósito.
 
+**7 · Y una regresión mía, que el propio código había advertido.** Al esconder el selector del lote
+para evitar las tres cajas, envolví el **bloque entero** — y adentro estaba la línea *"Este lote es
+de X"*. Dos líneas más abajo, el comentario decía textual: *"La empresa elegida, DICHA. Sin esto, el
+estado gobierna a qué empresa se atribuye la tanda sin estar en pantalla"*. Reproducido en dev:
+elegir empresa, enfocar un archivo, y el indicador desaparece mientras `empresaDelLote` sigue activo
+y la zona de arrastre sigue aceptando archivos. **Lo que colisiona son las dos CAJAS DE BÚSQUEDA; el
+indicador no es una caja.** Es la SEGUNDA vez que esta pantalla pierde ese invariante, así que ahora
+tiene test propio, verificado con mutación.
+
 **Lo que sí falta**, y es el pedido de fondo: asignar N archivos a N casilleros DISTINTOS en una
 pasada. No existe endpoint para eso —`classify-batch` colapsa a un requisito— y es donde el
 clasificador automático tendría su mayor rendimiento: proponer por archivo y confirmar todo junto.
