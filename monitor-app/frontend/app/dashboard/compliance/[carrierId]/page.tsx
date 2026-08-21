@@ -14,6 +14,7 @@ import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
 import { PuenteALaBandeja } from '@/components/compliance/PuenteALaBandeja'
 import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
+import { ExpirationDateCell } from '@/components/dashboard/ExpirationDateCell'
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { DocumentPreviewModal } from '@/components/dashboard/DocumentPreviewModal'
 import { TransferModal } from '@/components/dashboard/TransferModal'
@@ -215,11 +216,15 @@ function CabeceraDeGrupo({ grupo, abierto, onAlternar }: {
  *  "Rechazado", que son cosas distintas. La contradicción que había —"Aprobado
  *  (manual)" sobre un documento vencido hace un año— no se arregló acá sino
  *  en la partición: esas filas ya no llegan a este componente. */
-function FilaDocumento({ fila, viendo, avisoVer, onVer }: {
+function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorregida }: {
   fila:     PendingComplianceRow
   viendo:   boolean
   /** Por qué "Ver" no abrió nada, dicho en este renglón y con reintento. */
   avisoVer: string | null
+  /** Corregir la fecha es lo único que todavía obligaba a salir a Empresas
+   *  (HU-26). El archivo está bien; lo que se escribió mal es un dato. */
+  puedeEditar: boolean
+  onFechaCorregida: () => void
   /** Ausente cuando no hay archivo que abrir. Estar al día no implica tenerlo:
    *  son 62 renglones repartidos en 37 de las 38 empresas activas —una
    *  aprobación manual sin evidencia adjunta es al día y no tiene blob—, y con
@@ -233,11 +238,19 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer }: {
     <div className="border-b border-border last:border-b-0 px-3 py-2 min-h-10">
       <div className="flex items-center gap-3">
         <span className="flex-1 min-w-0 truncate text-dato text-text-primary">{fila.document_name}</span>
-        {fila.expiration_date && (
-          <span className="shrink-0 text-etiqueta text-informativo tabular-nums">
-            {formatExpiry(fila.expiration_date)}
-          </span>
-        )}
+        {/* `ExpirationDateCell` ya existía y ya estaba probada: vivía sólo en
+            la pestaña Documentos del módulo Empresas, o sea que corregir una
+            fecha obligaba a salir de Certificación. Se monta, no se
+            reescribe. */}
+        <span className="shrink-0 tabular-nums">
+          <ExpirationDateCell
+            recordId={fila.id}
+            value={fila.expiration_date ?? null}
+            required={fila.expiration_policy === 'REQUIRED'}
+            canEdit={puedeEditar}
+            onSaved={onFechaCorregida}
+          />
+        </span>
         <span className={`shrink-0 text-etiqueta font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
           {cfg.label}
         </span>
@@ -270,7 +283,7 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer }: {
 function TarjetaDeSujeto({
   sujeto, carrierId, estadoFiltro, abierto, onAlternar, canEdit, nombreEmpresa,
   onTransferir, onDarDeBaja, accionesDeshabilitadas,
-  viendoId, avisoVer, previewFetching, onVer, subir,
+  viendoId, avisoVer, previewFetching, onVer, subir, onFechaCorregida,
 }: {
   sujeto:        ComplianceSummarySubject
   carrierId:     string
@@ -278,6 +291,9 @@ function TarjetaDeSujeto({
   abierto:       boolean
   onAlternar:    () => void
   canEdit:       boolean
+  /** Tras corregir una fecha hay que repedir: el resumen del servidor trae los
+   *  conteos, y una fecha nueva puede mover un documento de balde. */
+  onFechaCorregida: () => void
   nombreEmpresa: string
   onTransferir:  () => void
   onDarDeBaja:   () => void
@@ -343,6 +359,8 @@ function TarjetaDeSujeto({
               viendo={viendoId === f.id && previewFetching}
               avisoVer={viendoId === f.id ? avisoVer : null}
               onVer={f.tiene_archivo ? () => onVer(f) : undefined}
+              puedeEditar={canEdit}
+              onFechaCorregida={onFechaCorregida}
             />
           )
           : (
@@ -678,6 +696,7 @@ export default function FichaEmpresaPage() {
               abierto={estaAbierto(s)}
               onAlternar={() => alternar(claveDeSujeto(s))}
               canEdit={canEdit}
+              onFechaCorregida={() => invalidarCertificacion(queryClient)}
               nombreEmpresa={carrier.business_name}
               onTransferir={() => setTransfiriendo(s)}
               onDarDeBaja={() => setConfirmandoBaja(s)}

@@ -9,6 +9,7 @@ vi.mock('@/lib/api/compliance', () => ({
   complianceApi: {
     listPending: vi.fn(),
     summary: vi.fn(),
+    patch: vi.fn(),
     get: vi.fn(),
     uploadFile: vi.fn().mockResolvedValue({ status: 'APPROVED_MANUAL' }),
   },
@@ -739,6 +740,45 @@ describe('FichaEmpresaPage', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /Transferir/ }))
 
     expect(screen.getByPlaceholderText(/empresa destino/i)).toBeInTheDocument()
+  })
+
+  // HU-26. Corregir una fecha mal escrita era lo unico que todavia obligaba a
+  // salir de Certificacion al modulo Empresas viejo. La celda ya existia y ya
+  // estaba probada; vivia en el lugar equivocado.
+  it('la fecha de un documento cargado se corrige sin salir del módulo', async () => {
+    vi.mocked(complianceApi.patch).mockResolvedValue({} as never)
+    montar([fila({
+      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      document_name: 'Licencia de Conducir', expiration_date: '2026-09-04',
+      expiration_policy: 'REQUIRED',
+    })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /editar vencimiento/i }))
+    const campo = screen.getByLabelText('Fecha de vencimiento')
+    fireEvent.change(campo, { target: { value: '2027-03-31' } })
+    fireEvent.blur(campo)
+
+    await waitFor(() => expect(complianceApi.patch).toHaveBeenCalledWith(
+      'p1', { expiration_date: '2027-03-31' },
+    ))
+  })
+
+  // El unico gate que puede mentir en silencio: un viewer que ve un control de
+  // edicion y recibe un 403 al usarlo.
+  it('un viewer ve la fecha pero no puede corregirla', async () => {
+    vi.mocked(useCanEdit).mockReturnValue(false)
+    montar([fila({
+      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      document_name: 'Licencia de Conducir',
+      expiration_date: '2026-09-04', expiration_policy: 'REQUIRED',
+    })])
+
+    // Esperar a que la FILA exista, no sólo la cabecera: afirmar la ausencia
+    // del botón antes de que el renglón se dibuje pasa siempre, con gate y
+    // sin gate. Se comprobó mutando —`canEdit={true}`— y el test sobrevivía.
+    expect(await screen.findByText('Licencia de Conducir')).toBeInTheDocument()
+    expect(screen.getByText(/2026|04-09/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /editar vencimiento/i })).not.toBeInTheDocument()
   })
 
   it('un viewer no ve el menú', async () => {
