@@ -198,6 +198,32 @@ en escritorio; **0 errores de consola**.
 **La lección, que ya es la tercera vez**: ningún test unitario ve un renglón que se parte mal. La
 regla del `AGENTS.md` —"mirar la pantalla, en escritorio y en teléfono"— no es ceremonia.
 
+### Y tres más, de la misma sesión de click-through
+
+**5 · La acción de mover en lote se leía como deshabilitada.** El usuario preguntó por qué no podía
+seleccionar varios archivos para asignarlos a una empresa — **y sí se puede**: `MoveToCarrierBar` da
+"Mover los N a otra empresa". Usaba `text-gray-600` viviendo DENTRO de la barra de selección, que es
+`bg-text-primary` (oscura). Medido: `disabled: false`, `opacity: 1` — funcionaba perfecto y se leía
+apagado, al lado de "Descartar los N" que sí es blanco. **La pregunta la generó el contraste.**
+
+**6 · "Hay 2archivos marcados"**, y al arreglarlo, "marcados.Deja". Es JSX comiéndose el espacio de
+fin de línea entre nodos de texto. **El test afirmaba `/Hay 3 archivos marcados/` y PASABA**:
+Testing Library compara contra `textContent`, que concatena los nodos, mientras el navegador colapsa
+el borde. Un test de copia no puede afirmar espacios así. Se arregla poniendo la frase entera en un
+literal, en vez de perseguir borde por borde.
+
+**El límite real de la selección múltiple, que NO es un bug.** `classify-batch` es, por contrato,
+*"aplica el MISMO requisito a N archivos"* (`item_ids` + UN `entity_id` + UN `requirement_id`).
+Clasificar es llenar un casillero concreto, y dos archivos no pueden llenar el mismo: el segundo
+pisa al primero y **de forma irreversible** —una vez escrito `replaced_storage_path`, el deshacer lo
+rechaza—. El guardia nació de un incidente real: *"marcar 31 licencias y mandarlas al mismo conductor
+destruía 30"*. Así que en lote se puede **mover a una empresa** y **descartar**; clasificar es de a
+uno a propósito.
+
+**Lo que sí falta**, y es el pedido de fondo: asignar N archivos a N casilleros DISTINTOS en una
+pasada. No existe endpoint para eso —`classify-batch` colapsa a un requisito— y es donde el
+clasificador automático tendría su mayor rendimiento: proponer por archivo y confirmar todo junto.
+
 ---
 
 ## SIGUIENTE PASO EXACTO
