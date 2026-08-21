@@ -99,11 +99,12 @@ function InsigniasDeVehiculo({ sujeto }: { sujeto: ComplianceSummarySubject }) {
       )}
       {sujeto.fleet_service_type_label && (
         <span
-          // `min-w-0 truncate` en vez de `shrink-0`: es la etiqueta mas larga
-          // ("Furgón Congelado / Refrigerado") y la menos critica de la fila,
-          // asi que es la que cede espacio cuando no alcanza. Cortarse un
-          // nombre largo se lee; perder la patente, no.
-          className="min-w-0 truncate text-etiqueta font-semibold px-1.5 py-0.5 rounded-full"
+          // Oculta en telefono, no truncada. Es la etiqueta mas larga
+          // ("Furgón Congelado / Refrigerado") y truncarla en 390px la dejaba
+          // en "F": una letra suelta no es un dato, es ruido con forma de
+          // dato. La carroceria es contexto y se lee al abrir el vehiculo; la
+          // patente y el chasis son la identidad y esos si entran siempre.
+          className="hidden sm:inline-block min-w-0 truncate text-etiqueta font-semibold px-1.5 py-0.5 rounded-full"
           style={{
             backgroundColor: sujeto.fleet_service_type_bg_color ?? undefined,
             color:           sujeto.fleet_service_type_text_color ?? undefined,
