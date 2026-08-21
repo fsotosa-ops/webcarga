@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from .config import get_settings
 from .db import close_pool, init_pool
@@ -59,6 +60,39 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+# GZip va AL FINAL, o sea el MAS EXTERNO, y eso no es una preferencia: Starlette
+# inserta cada middleware al principio de la pila, asi que el ultimo agregado
+# envuelve a todos. Tiene que quedar por FUERA de CacheMiddleware, que guarda
+# `body.decode()` — si lo envolviera al reves, el cache recibiria bytes
+# comprimidos y `decode()` reventaria con UnicodeDecodeError en cada MISS.
+#
+# Por que hace falta: las respuestas de este servicio son JSON con las mismas
+# claves repetidas en cada fila —`/compliance-records/pending` mide ~662 bytes
+# por fila, medido, y la ficha de una empresa pide hasta 500—, que es la forma
+# que mejor comprime que existe. El salto que se ahorra es Next -> esta API,
+# server a server, que hoy viaja crudo.
+#
+# `compresslevel=6` y no el 9 por defecto: el 9 cuesta bastante mas CPU y sobre
+# JSON con claves repetidas da una diferencia marginal. Comprimir con el nivel
+# maximo para ahorrar bytes seria mover el costo de la red a la CPU, que es
+# justo lo que este servicio no tiene de sobra.
+#
+# `minimum_size=1000` queda declarado pero HOY NO SE APLICA, y conviene saberlo
+# antes de perder una tarde: `CacheMiddleware` es un `BaseHTTPMiddleware`, que
+# emite toda respuesta como streaming, y en ese camino GZip comprime sin mirar
+# el tamano. Medido: una respuesta de 81 bytes sale comprimida con el cache
+# puesto y sin comprimir sin el. Se acepta —el desperdicio sobre respuestas
+# chicas es ruido al lado del 96% que se ahorra en las grandes— y volveria a
+# aplicarse solo si `CacheMiddleware` pasara a ser ASGI puro. `test_compresion.py`
+# fija esta interaccion para que el dia que cambie, avise.
+#
+# Sabido y aceptado: la descarga de documentos en zip (`carriers.py`, media_type
+# "application/zip") se recomprime al pedo — Starlette solo excluye
+# `text/event-stream` por content-type (leido en la fuente, no supuesto). Es una
+# accion manual y ocasional; excluirla exigiria una subclase del middleware para
+# un solo endpoint, que cuesta mas de lo que ahorra.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
 
 app.include_router(roles_router,               prefix="/api/v1")
 app.include_router(config_router,              prefix="/api/v1")
