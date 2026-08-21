@@ -97,7 +97,12 @@ Verificado además que **Next sí comprime su propio HTML** (`content-encoding: 
 - Modify: `monitor-app/frontend/app/api/v1/[...path]/route.ts`
 - Modify: `monitor-app/backend/api/app/main.py`
 - Delete: `monitor-app/backend/api/tests/test_compresion.py`
-- Test: `monitor-app/frontend/app/api/v1/[...path]/route.test.ts`
+- Test: **Modificar** (NO crear — ya existe): `monitor-app/frontend/app/api/v1/[...path]/route.test.ts`
+
+> **Ese archivo ya tiene 89 líneas y dos `describe`**: uno sobre respuestas sin cuerpo —incluido el
+> 204 que rompía TODO `DELETE`— y otro sobre no golpear Auth en cada petición. **Los tests nuevos se
+> agregan; ninguno de los existentes se toca.** Si alguno se pusiera rojo, no lo ajustes: significa
+> que la compresión rompió algo que ya funcionaba, y eso es un hallazgo, no un test a corregir.
 
 **Interfaces:**
 - Produces: el proxy responde con `Content-Encoding: gzip` cuando el cliente lo acepta y el cuerpo
@@ -105,17 +110,12 @@ Verificado además que **Next sí comprime su propio HTML** (`content-encoding: 
 
 - [ ] **Step 1: Escribir los tests que fallan**
 
+Se agrega un tercer `describe` al archivo existente. Los `vi.mock` de `next/headers` y
+`@supabase/ssr` **ya están arriba en ese archivo**: reusalos, no los declares de nuevo.
+
 ```ts
-// app/api/v1/[...path]/route.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+// app/api/v1/[...path]/route.test.ts — describe NUEVO, al final
 import { gunzipSync } from 'node:zlib'
-
-vi.mock('next/headers', () => ({ cookies: async () => ({ getAll: () => [] }) }))
-vi.mock('@supabase/ssr', () => ({
-  createServerClient: () => ({ auth: { getSession: async () => ({ data: { session: null } }) } }),
-}))
-
-import { GET } from './route'
 
 function pedido(acepta: string) {
   return new Request('http://localhost/api/v1/lo-que-sea', {
@@ -342,6 +342,7 @@ decirlo, no explicarlo.
 - Modify: `monitor-app/backend/api/app/routers/compliance.py`
 - Modify: `monitor-app/backend/api/tests/test_compliance.py`
 - Modify: `monitor-app/frontend/lib/api/compliance.ts`, `lib/types.ts`
+- Modify: `monitor-app/frontend/lib/queries/certificacion.ts` — la clave del resumen
 - Modify: `monitor-app/frontend/app/dashboard/compliance/[carrierId]/page.tsx` y su test
 
 **Interfaces:**
@@ -356,6 +357,10 @@ decirlo, no explicarlo.
   }
   ```
   Y `complianceApi.listPending` acepta `entityId?: string` para pedir **un solo sujeto**.
+- Produces: `clavesCertificacion.resumen(carrierId)` — **hay que agregarla**, hoy no existe. Va en
+  `lib/queries/certificacion.ts` junto a las demás, y su raíz tiene que quedar cubierta por
+  `RAICES_DE_CERTIFICACION` para que las escrituras la invaliden: una clave que nadie invalida deja
+  una pantalla desactualizada sin romper nada, y en este repo eso ya pasó **dos veces**.
 
 **Por qué esto y no subir el `limit`.** Desde que las tarjetas van plegadas, al llegar a la ficha se
 ven **nueve cabeceras** — y para dibujarlas se descargan **457 filas de detalle**. La pantalla ya no
@@ -407,8 +412,12 @@ El agrupado sale de `urgencia`, que ya tiene sus cuatro ramas.
 - [ ] **Step 4: `listPending` acepta un sujeto**
 
 En `lib/api/compliance.ts`, `ListPendingParams` gana `entityId?: string`, que viaja como
-`entity_id` **sólo si viene** — mismo criterio que `estado` y que `scope`. El backend ya filtra por
-`r.entity_id` en `_PENDING_ROWS_SQL`: verifícalo antes de agregar nada.
+`entity_id` **sólo si viene** — mismo criterio que `estado` y que `scope`.
+
+**Verificado antes de escribir esto**: el endpoint ya acepta `entity_id`
+(`compliance.py:536`, con su descripción: *"Acota a un sujeto concreto"*) y `clavesCertificacion.pendientes`
+ya recibe `(carrierId, entityId, estado)`. O sea que del lado del backend y de la caché **no hay nada
+que construir**: sólo falta que el cliente HTTP lo mande.
 
 - [ ] **Step 5: La ficha pide resumen al llegar, detalle al desplegar**
 
