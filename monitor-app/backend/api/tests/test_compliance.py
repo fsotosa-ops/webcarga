@@ -1633,6 +1633,22 @@ async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_rev
     """El resumen tiene que contar EXACTAMENTE lo mismo que la lista, o la
     pantalla dice un numero y muestra otro — que es el defecto que esta ficha
     ya tuvo cuando el filtro y la fila se contradecian.
+
+    Que la particion cierre (al_dia + por_vencer + falta == todos) NO
+    ALCANZA: un intercambio de columnas en `_SUMMARY_SQL` (al_dia por falta,
+    por ejemplo) deja esa suma cerrada igual —mismo total, columnas
+    cambiadas de lugar— y pasaria en verde con un documento vencido
+    mostrandose "al dia". Por eso cada balde se compara contra Postgres real
+    para ESE estado, no solo contra el total.
+
+    `falta` es la excepcion: `/pending?estado=falta` usa
+    `pendiente_predicate`, que es "no esta al dia" e INCLUYE lo por vencer
+    -es lo que el filtro de la ficha necesita, para no esconder un sujeto
+    cuyo unico pendiente es un "por vencer" (ver `tieneAlgoDelEstado` en el
+    frontend)-, mientras que `resumen.totales.falta` es el balde EXCLUSIVO
+    (FALTA + VENCIDO, sin por_vencer) que hace que la particion cierre. Se
+    verifica entonces contra la particion de `filas` (estado='todos'), no
+    contra `/pending?estado=falta` -son dos conjuntos distintos a proposito.
     """
     carrier_id = await conexion_revertida.fetchval(
         "SELECT carrier_id FROM public.driver_assignments WHERE status='ACTIVE' LIMIT 1"
@@ -1642,6 +1658,38 @@ async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_rev
 
     assert resumen["totales"]["todos"] == len(filas)
     assert sum(s["todos"] for s in resumen["sujetos"]) == len(filas)
-    # Y la particion cierra: al dia + por vencer + falta == todos
     t = resumen["totales"]
     assert t["al_dia"] + t["por_vencer"] + t["falta"] == t["todos"]
+
+    # Cada balde contra Postgres real, no solo la suma.
+    filas_al_dia = await _pedir_pending(conexion_revertida, carrier_id, estado="al_dia", limit=1000)
+    filas_por_vencer = await _pedir_pending(conexion_revertida, carrier_id, estado="por_vencer", limit=1000)
+    filas_falta = [f for f in filas if f["urgencia"] in ("FALTA", "VENCIDO")]
+    assert t["al_dia"] == len(filas_al_dia), (
+        f"el resumen dice {t['al_dia']} al_dia y /pending?estado=al_dia devuelve {len(filas_al_dia)}"
+    )
+    assert t["por_vencer"] == len(filas_por_vencer), (
+        f"el resumen dice {t['por_vencer']} por_vencer y /pending?estado=por_vencer "
+        f"devuelve {len(filas_por_vencer)}"
+    )
+    assert t["falta"] == len(filas_falta), (
+        f"el resumen dice {t['falta']} falta y la particion de 'todos' por urgencia da {len(filas_falta)}"
+    )
+
+    # Y lo mismo por sujeto: que cada cabecera cuadre con SUS filas, no sólo
+    # el agregado de la empresa entera.
+    def _por_sujeto(rows):
+        conteo: dict[tuple, int] = {}
+        for r in rows:
+            clave = (r["entity_type"], r["entity_id"])
+            conteo[clave] = conteo.get(clave, 0) + 1
+        return conteo
+
+    al_dia_por_sujeto = _por_sujeto(filas_al_dia)
+    por_vencer_por_sujeto = _por_sujeto(filas_por_vencer)
+    falta_por_sujeto = _por_sujeto(filas_falta)
+    for s in resumen["sujetos"]:
+        clave = (s["entity_type"], s["entity_id"])
+        assert s["al_dia"] == al_dia_por_sujeto.get(clave, 0), f"sujeto {clave}: al_dia no cuadra"
+        assert s["por_vencer"] == por_vencer_por_sujeto.get(clave, 0), f"sujeto {clave}: por_vencer no cuadra"
+        assert s["falta"] == falta_por_sujeto.get(clave, 0), f"sujeto {clave}: falta no cuadra"

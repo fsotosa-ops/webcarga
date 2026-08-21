@@ -207,6 +207,35 @@ describe('FichaEmpresaPage', () => {
     expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
   })
 
+  // El avance de la cabecera sale del resumen (`sujeto.al_dia`/`por_vencer`/
+  // `falta`), que no cambia con el filtro activo — a diferencia de la
+  // version anterior, que contaba sobre las filas YA filtradas y mostraba
+  // sólo el subconjunto elegido. La cabecera dice cómo va ESE conductor, no
+  // cómo va dentro del filtro: con "Falta" activo, un conductor con 1 al día
+  // y 1 falta seguía mostrando su "1 al día" en la cabecera, aunque la lista
+  // de abajo sólo mostrara la fila que falta.
+  it('el avance de la cabecera muestra el desglose completo, no sólo lo que deja ver el filtro activo', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+             requirement_id: 'r2', urgencia: 'FALTA' }),
+    ])
+    // Sujeto único: arranca desplegado, así que la cabecera ya muestra su
+    // avance completo antes de tocar ningún filtro.
+    const cabecera = await screen.findByRole('button', { name: /Juan Pérez/ })
+    expect(cabecera).toHaveTextContent('1 al día · 1 falta')
+
+    fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
+
+    // La lista de abajo SÍ se acota al filtro (ya probado arriba); la
+    // cabecera, no — sigue diciendo "1 al día · 1 falta", no sólo "1 falta".
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'd1', estado: 'falta' }),
+    ))
+    expect(screen.getByRole('button', { name: /Juan Pérez/ })).toHaveTextContent('1 al día · 1 falta')
+  })
+
   it('un documento cargado se puede ver; uno que falta se puede cargar', async () => {
     montar([
       // `tiene_archivo: true` explicito: el test dice "un documento CARGADO", y
