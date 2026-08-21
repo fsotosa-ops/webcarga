@@ -100,6 +100,15 @@ class ComplianceSummarySubject(ComplianceSummaryCounts):
     entity_type: str
     entity_id: str
     subject_name: Optional[str] = None
+    # Que es el vehiculo. Nulos para CARRIER y DRIVER -no es "desconocido",
+    # es que la pregunta no aplica-, y `fleet_service_type_*` tambien es nulo
+    # para un tractocamion: el subtipo de carroceria solo lo llevan las
+    # ramplas. La ficha dibuja un badge por campo presente, asi que un nulo
+    # simplemente no pinta nada; no hay valor de relleno que inventar.
+    asset_type: Optional[str] = None
+    fleet_service_type_label: Optional[str] = None
+    fleet_service_type_bg_color: Optional[str] = None
+    fleet_service_type_text_color: Optional[str] = None
 
 
 class ComplianceSummaryResponse(BaseModel):

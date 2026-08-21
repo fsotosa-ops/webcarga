@@ -71,7 +71,10 @@ describe('el sistema visual se usa, no solo existe', () => {
     // Medido el 2026-08-16. Baja al migrar cada pantalla a los tokens.
     // 1.765 -> 1.755 en la Ronda 129: CarrierDrawer paso a tokens al soltar la
     // zona de arrastre (sky/gray/amber/red crudos -> accent/informativo/border).
-    const DEUDA = 1755
+    // 1.755 -> 1.753 en la Ronda 138: VehicleRosterCard dejo de repetir la
+    // tabla de etiquetas de chasis, y la baja de empresa se pinto con
+    // `status-incidente` en vez de `red-*` crudo.
+    const DEUDA = 1753
 
     const total = usosDeColorCrudo()
     expect(

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
+import { CarrierSearchPicker } from '@/components/dashboard/CarrierSearchPicker'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
@@ -31,6 +32,12 @@ interface Props {
   /** Lo que le falta a esa empresa. Es el dato que responde "¿qué tengo
    *  pendiente acá?" sin salir de la pantalla, y el atajo para clasificar. */
   pendingRows?: PendingComplianceRow[]
+  /** Se llamó cuando el archivo pasó a tener empresa. El refresco lo hace el
+   *  Workbench, con las MISMAS claves que usan subir, clasificar, descartar y
+   *  mover en lote — este formulario no tiene un conjunto propio de claves,
+   *  que es justo el patrón que dejaba a unas superficies contradiciendo a
+   *  otras. */
+  onMovedToCarrier?: () => void
 }
 
 /** Panel derecho: a quién pertenece y qué es.
@@ -38,7 +45,7 @@ interface Props {
  *  El mismo formulario sirve para uno o para quince — la selección múltiple no
  *  necesita una pantalla propia. */
 export function TriageClassifyForm({
-  targetIds, subjects, onApplied, carrierLabel, pendingRows = [],
+  targetIds, subjects, onApplied, carrierLabel, pendingRows = [], onMovedToCarrier,
 }: Props) {
   const [subjectKey, setSubjectKey] = useState('')
   const [requirementId, setRequirementId] = useState('')
@@ -47,6 +54,24 @@ export function TriageClassifyForm({
   const [error, setError] = useState<string | null>(null)
   const [slot, setSlot] = useState<Slot | null>(null)
   const [manual, setManual] = useState(false)
+  /** La búsqueda de empresa del archivo que todavía no tiene ninguna. */
+  const [busquedaEmpresa, setBusquedaEmpresa] = useState('')
+
+  /** Le pone empresa al archivo enfocado.
+   *
+   *  NO atrapa el error, a propósito: `CarrierSearchPicker` ya espera esta
+   *  promesa —deja la fila elegida con spinner mientras está pendiente— y ya
+   *  muestra el motivo si rechaza. Atraparlo acá para mostrarlo también
+   *  pintaba el mismo error dos veces, y tragárselo apagaría el spinner
+   *  anunciando un éxito que no pasó. */
+  async function asignarEmpresa(c: { id: string }) {
+    await documentIngestApi.moveItems(targetIds, c.id)
+    setBusquedaEmpresa('')
+    // El refresco vuelve a pedir la cola: el archivo ya trae su empresa, el
+    // Workbench recalcula `subjectCarrierId` y el select de arriba se llena
+    // solo. No se toca el estado local para adivinarlo antes de tiempo.
+    onMovedToCarrier?.()
+  }
 
   const subject = useMemo(
     () => subjects.find(s => `${s.entity_type}:${s.entity_id}` === subjectKey) ?? null,
@@ -171,16 +196,67 @@ export function TriageClassifyForm({
           </label>
 
           {/* Dos causas distintas para la misma lista vacía, y confundirlas
-              dejaba al usuario sin saber qué hacer: un archivo recién soltado
-              en la bandeja global no tiene empresa todavía, y el camino es
-              moverlo (diseño §7: mover encamina, no termina). */}
-          {!subjects.length && (
+              dejaba al usuario sin saber qué hacer.
+
+              SIN EMPRESA es el caso normal, no el borde: 65 de los 66
+              archivos de la cola llegan sin empresa. Acá vivía un aviso que
+              mandaba a "el botón de la barra de selección" — que sólo existe
+              con la casilla marcada, y que al abrirse muestra un buscador en
+              blanco hasta escribir dos letras. Eran cuatro pasos no evidentes
+              para contestar lo primero que uno quiere decir de un archivo, así
+              que la pregunta se hace donde estaba el hueco.
+
+              Mueve por el MISMO endpoint que la barra de lote
+              (`moveItems`): esto resuelve el de a uno, esa sigue siendo la
+              dueña de mover cuarenta. */}
+          {!subjects.length && (carrierLabel ? (
             <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-              {carrierLabel
-                ? 'Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.'
-                : 'Este documento todavía no tiene empresa. Muévelo a una con el botón de la barra de selección y después elige a qué corresponde.'}
+              Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.
             </p>
-          )}
+          ) : (
+            <div className="space-y-1.5 border border-border rounded-lg px-2 py-2">
+              <p className="text-[11px] font-semibold text-gray-600">
+                ¿De qué empresa es este documento?
+              </p>
+              <p className="text-[10px] text-informativo">
+                Todavía no tiene una. Al elegirla aparece qué le falta a esa empresa.
+              </p>
+              {/* De a UNO, igual que clasificar. `targetIds` es plural y
+                  `moveItems` mueve TODO lo que le pasen, así que con varios
+                  marcados este bloque decía "este documento" sobre una
+                  selección de N — y con "marcar todo" en la bandeja global esa
+                  selección podía incluir archivos que SÍ tenían empresa, que
+                  se habrían reasignado en silencio. Mover en lote es trabajo
+                  de la barra de selección, que además rotula el conteo. */}
+              {targetIds.length > 1 ? (
+                <p className="text-[10px] text-informativo">
+                  Hay {targetIds.length} archivos marcados. Deja marcado uno solo para
+                  asignarle empresa acá, o usa &quot;Mover a otra empresa&quot; en la barra
+                  de selección para moverlos todos juntos.
+                </p>
+              ) : (
+              <>
+              <CarrierSearchPicker
+                query={busquedaEmpresa}
+                onQueryChange={setBusquedaEmpresa}
+                onPick={asignarEmpresa}
+                size="sm"
+                // `showMinCharsHint` en vez de `minChars={0}`. El síntoma
+                // original era que el campo quedaba en blanco y se leía como
+                // roto; esta prop existe exactamente para decir que hay que
+                // escribir, y ningún llamador la usaba. Bajar el mínimo a cero
+                // parecía mejor y era peor: `GET /carriers` sin `q` ordena por
+                // `compliance_health PENDING` y `pending_mandatory DESC`, así
+                // que precargaba las diez empresas PEOR certificadas —un
+                // criterio sin relación con el archivo— y sin filtrar por
+                // estado, o sea incluyendo empresas dadas de baja.
+                showMinCharsHint
+                placeholder="Buscar empresa (nombre o RUT)…"
+              />
+              </>
+              )}
+            </div>
+          ))}
 
           {subject && (
             <label className="block">
