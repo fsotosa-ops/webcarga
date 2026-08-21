@@ -3,6 +3,7 @@
 import { AlertTriangle, Check, Eye, Loader2, Upload } from 'lucide-react'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
 import { AvisoDeFila } from './AvisoDeFila'
+import { ExpirationDateCell } from '@/components/dashboard/ExpirationDateCell'
 import { expiryRelative } from '@/lib/compliance'
 import type { PendingComplianceRow, PoliticaVencimiento } from '@/lib/types'
 
@@ -24,6 +25,16 @@ interface Props {
   /** Por qué "Ver" no abrió nada. Se dibuja EN el renglón, con reintento:
    *  sin esto el spinner se apagaba y no pasaba absolutamente nada. */
   avisoVer?:   string | null
+  /** Corregir la fecha de un documento QUE YA ESTÁ cargado (HU-26).
+   *
+   *  Va acá y no sólo en la fila "al día" porque el caso donde la fecha está
+   *  mal es, justamente, el que se ve vencido: si alguien escribió 2025 en vez
+   *  de 2026, el documento aparece en este renglón y sin esto la única salida
+   *  era volver a subir un archivo que estaba bien.
+   *
+   *  Sólo lo pasa quien sabe que hay archivo (`fila.tiene_archivo`), igual que
+   *  `onVer`. */
+  onFechaCorregida?: () => void
 }
 
 /** Por qué este renglón está pendiente, dicho con la fecha en la mano.
@@ -69,7 +80,7 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
 export function RenglonPendiente({
-  fila, puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer,
+  fila, puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida,
 }: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
@@ -106,6 +117,18 @@ export function RenglonPendiente({
 
         {motivo && estado.tipo === 'reposo' && (
           <span className="shrink-0 text-etiqueta text-espera">{motivo}</span>
+        )}
+
+        {onFechaCorregida && estado.tipo === 'reposo' && (
+          <span className="shrink-0 tabular-nums">
+            <ExpirationDateCell
+              recordId={fila.id}
+              value={fila.expiration_date ?? null}
+              required={fila.expiration_policy === 'REQUIRED'}
+              canEdit={puedeEditar}
+              onSaved={onFechaCorregida}
+            />
+          </span>
         )}
 
         {onVer && estado.tipo === 'reposo' && (

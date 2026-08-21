@@ -364,12 +364,19 @@ function TarjetaDeSujeto({
             />
           )
           : (
+            /* `onFechaCorregida` se pasa según la POLÍTICA del requisito y no
+               según haya archivo: declarar un vencimiento sin tener el escaneo
+               es deliberado —así se sigue qué vence antes de subir los ~2.000
+               documentos— y ya estaba decidido cuando se escribió
+               `ExpirationDateCell`. `NONE` es el único que no la ofrece: el
+               Padrón no vence. */
             <RenglonPendiente
               key={f.id}
               fila={f}
               puedeEditar={canEdit}
               onSubir={subir}
               onVer={f.tiene_archivo ? () => onVer(f) : undefined}
+              onFechaCorregida={f.expiration_policy !== 'NONE' ? onFechaCorregida : undefined}
               viendo={viendoId === f.id && previewFetching}
               avisoVer={viendoId === f.id ? avisoVer : null}
             />

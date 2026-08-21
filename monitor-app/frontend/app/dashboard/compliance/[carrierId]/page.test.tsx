@@ -765,6 +765,31 @@ describe('FichaEmpresaPage', () => {
 
   // El unico gate que puede mentir en silencio: un viewer que ve un control de
   // edicion y recibe un 403 al usarlo.
+  // El caso que motivó la correccion: una empresa SIN un solo documento
+  // cargado —382 registros y cero archivos, medido en produccion— tiene que
+  // poder declarar vencimientos igual. Condicionarlo a `tiene_archivo` dejaba
+  // la pantalla sin un solo control en esas empresas, que son la mayoria.
+  it('un requisito sin archivo también deja declarar su vencimiento', async () => {
+    montar([fila({
+      id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
+      document_name: 'Licencia de Conducir', urgencia: 'FALTA',
+      tiene_archivo: false, expiration_date: null, expiration_policy: 'REQUIRED',
+    })])
+
+    expect(await screen.findByRole('button', { name: /agregar vencimiento/i })).toBeInTheDocument()
+  })
+
+  // Y el que NO vence no lo ofrece: el catalogo manda.
+  it('un requisito con política NONE no ofrece vencimiento', async () => {
+    montar([fila({
+      id: 'p1', document_name: 'Padrón', urgencia: 'FALTA',
+      tiene_archivo: false, expiration_date: null, expiration_policy: 'NONE',
+    })])
+
+    expect(await screen.findByText('Padrón')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /vencimiento/i })).not.toBeInTheDocument()
+  })
+
   it('un viewer ve la fecha pero no puede corregirla', async () => {
     vi.mocked(useCanEdit).mockReturnValue(false)
     montar([fila({
