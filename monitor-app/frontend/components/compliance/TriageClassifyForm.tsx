@@ -239,11 +239,16 @@ export function TriageClassifyForm({
                   selección podía incluir archivos que SÍ tenían empresa, que
                   se habrían reasignado en silencio. Mover en lote es trabajo
                   de la barra de selección, que además rotula el conteo. */}
+              {/* La frase de abajo va ENTERA en un literal. Partida en varias
+                  lineas de JSX, el espacio del borde se pierde al renderizar y
+                  salia "marcados.Deja" — y el test no lo veia, porque Testing
+                  Library compara contra `textContent`, que concatena los nodos
+                  sin colapsar nada. */}
               {targetIds.length > 1 ? (
                 <p className="text-[10px] text-informativo">
-                  {`Hay ${targetIds.length} archivos marcados.`} Deja marcado uno solo para
-                  asignarle empresa acá, o usa &quot;Mover a otra empresa&quot; en la barra
-                  de selección para moverlos todos juntos.
+                  {`Hay ${targetIds.length} archivos marcados. Deja marcado uno solo `
+                   + `para asignarle empresa acá, o usa "Mover a otra empresa" en la `
+                   + `barra de selección para moverlos todos juntos.`}
                 </p>
               ) : (
               <>
