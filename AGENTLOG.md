@@ -146,9 +146,32 @@ trackeado (el ignore no destrackea) y ya está borrado del disco.
 
 ---
 
+## Desplegado en dev, y dos incidentes del camino
+
+Merge `196df76c` a `dev`. **Deploy Monitor API y Deploy Frontend, los dos en verde**, verificado
+contra los servicios vivos y no contra el `success` del workflow: frontend HTTP 200,
+API `/health` 200, y `/compliance-records/summary` responde **401 y no 500** — el SQL nuevo no lo
+rompió.
+
+**Incidente 1 · `git rm --cached` NO conserva los archivos al cruzar de rama.** Los conserva en la
+rama donde se ejecuta. Al hacer `checkout dev` —donde los venv seguían trackeados— git los
+restauró, y el merge aplicó las bajas: **los tres entornos desaparecieron del disco.** Se
+recuperaron con `git archive d8da54cf -- <ruta> | tar -x`, que escribe a disco sin tocar el índice,
+y se verificó que corren (89 tests en verde), no sólo que los archivos estén.
+
+**Incidente 2 · un push grande apaga el filtro de rutas de GitHub Actions.** El push llevaba ~9.700
+borrados y **Deploy Frontend NO se disparó**, pese a que el merge toca `monitor-app/frontend/**`.
+Deploy Monitor API sí, pero **por el motivo equivocado**: el venv borrado cae bajo
+`monitor-app/backend/api/**`. Se lanzó a mano con `workflow_dispatch`. Es la SEGUNDA vez que un
+deploy se da por hecho sin mirarlo (la primera, Ronda 136). Con un cambio masivo de archivos, hay
+que **verificar qué workflows corrieron**, no asumir.
+
+---
+
 ## SIGUIENTE PASO EXACTO
 
-**Click-through en vivo, que sigue sin hacerse** — ahora incluye la ficha de una empresa dada de
+**Click-through en vivo, que sigue sin hacerse** — ya está desplegado en
+`https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app` — ahora incluye la ficha de una empresa dada de
 baja. Después, en este orden:
 
 1. **Aprobación manual de a una y carga masiva de fechas.** Es lo que Pablo espera para poder
