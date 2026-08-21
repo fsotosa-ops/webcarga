@@ -260,6 +260,35 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
     expect(await screen.findByText('ACME Transportes')).toBeInTheDocument()
   })
 
+  it('sin empresa NO muestra el desplegable "¿A quién pertenece?"', async () => {
+    // Sus opciones salen de los requisitos pendientes de la empresa del
+    // archivo. Sin empresa no hay ninguno, así que el control queda con
+    // "— Seleccionar —" y nada más: un desplegable que no se puede usar,
+    // mostrado ARRIBA del único que sí sirve. Reportado mirando la pantalla
+    // en dev; ningún test lo veía porque todos le pasaban `subjects`.
+    vi.mocked(carriersApi.list).mockResolvedValue(UNA_EMPRESA)
+    setupSinEmpresa()
+
+    expect(await screen.findByText('¿De qué empresa es este documento?')).toBeInTheDocument()
+    expect(screen.queryByLabelText('¿A quién pertenece?')).not.toBeInTheDocument()
+  })
+
+  it('con empresa SÍ muestra "¿A quién pertenece?"', async () => {
+    // La otra mitad: el control desaparece por falta de opciones, no porque
+    // se haya retirado de la pantalla.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <TriageClassifyForm
+          targetIds={['i1']} subjects={SUBJECTS} onApplied={vi.fn()} carrierLabel="ACME"
+        />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByLabelText('¿A quién pertenece?')).toBeInTheDocument()
+    expect(screen.queryByText('¿De qué empresa es este documento?')).not.toBeInTheDocument()
+  })
+
   it('con varios archivos marcados no ofrece asignar empresa de a uno', async () => {
     vi.mocked(carriersApi.list).mockResolvedValue(UNA_EMPRESA)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })

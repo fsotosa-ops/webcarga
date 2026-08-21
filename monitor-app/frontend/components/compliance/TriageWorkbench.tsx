@@ -149,6 +149,12 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
 
   const carrierLabel = rows.find(r => r.carrier_id === (selectedCarrierId ?? subjectCarrierId))?.carrier_name ?? null
 
+  /** El panel derecho está pidiendo la empresa de UN archivo. Se deriva del
+   *  mismo estado del que depende ese panel —hay exactamente un archivo en
+   *  juego y todavía no tiene empresa—, para que las dos superficies no puedan
+   *  desincronizarse: si una pregunta, la otra se calla. */
+  const preguntandoEmpresaDeUnArchivo = targetIds.length === 1 && !subjectCarrierId
+
   const previewItems = rows
     .filter(r => targetIds.includes(r.id))
     .map(r => ({
@@ -364,7 +370,13 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
           una segunda tanda se subía atribuida a una empresa QUE YA NO SE VE.
           El estado no se pierde, sólo deja de mostrarse: vuelve con lo ya
           elegido en cuanto la selección se vacía. */}
-      {canEdit && !carrierId && sinSeleccion && (
+      {/* …y tampoco mientras el panel derecho está preguntando la empresa de UN
+          archivo. Es la misma invariante que la línea de arriba defiende: dos
+          cajas de "Buscar empresa" al mismo tiempo significan cosas distintas
+          —"de quién es la tanda que voy a subir" y "de quién es ESTE archivo"—
+          y elegir en la equivocada no avisa nada. Enfocar un archivo sin
+          empresa levanta la segunda, así que acá se retira la primera. */}
+      {canEdit && !carrierId && sinSeleccion && !preguntandoEmpresaDeUnArchivo && (
         <div>
           <p className="text-etiqueta text-informativo pb-1">
             ¿De quién son estos documentos? Elegir la empresa hace que el sistema

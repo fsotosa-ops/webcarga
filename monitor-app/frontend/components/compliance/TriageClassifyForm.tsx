@@ -178,6 +178,16 @@ export function TriageClassifyForm({
 
       {(manual || !pendingRows.length) && (
         <>
+          {/* "¿A quién pertenece?" SÓLO cuando hay a quién ofrecer.
+              Sin empresa, sus opciones salen de los requisitos pendientes de
+              una empresa que no existe: el desplegable queda con "— Seleccionar
+              —" y nada más, o sea un control que no se puede usar. Mostrarlo
+              igual, y encima ARRIBA del buscador de empresa, dejaba tres
+              superficies para una sola pregunta —este select muerto, el
+              buscador de acá abajo y el del lote— y la primera que se ve es la
+              que no funciona.
+              Sin empresa hay UNA pregunta contestable, y es la de más abajo. */}
+          {!!subjects.length && (
           <label className="block">
             <span className="text-[11px] font-semibold text-gray-600">¿A quién pertenece?</span>
             <select
@@ -194,6 +204,7 @@ export function TriageClassifyForm({
               ))}
             </select>
           </label>
+          )}
 
           {/* Dos causas distintas para la misma lista vacía, y confundirlas
               dejaba al usuario sin saber qué hacer.

@@ -99,7 +99,11 @@ function InsigniasDeVehiculo({ sujeto }: { sujeto: ComplianceSummarySubject }) {
       )}
       {sujeto.fleet_service_type_label && (
         <span
-          className="shrink-0 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full"
+          // `min-w-0 truncate` en vez de `shrink-0`: es la etiqueta mas larga
+          // ("Furgón Congelado / Refrigerado") y la menos critica de la fila,
+          // asi que es la que cede espacio cuando no alcanza. Cortarse un
+          // nombre largo se lee; perder la patente, no.
+          className="min-w-0 truncate text-etiqueta font-semibold px-1.5 py-0.5 rounded-full"
           style={{
             backgroundColor: sujeto.fleet_service_type_bg_color ?? undefined,
             color:           sujeto.fleet_service_type_text_color ?? undefined,
@@ -163,7 +167,12 @@ function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa,
           ? <ChevronDown size={14} className="shrink-0 text-informativo" aria-hidden="true" />
           : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
         <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
-        <span className="text-dato font-semibold text-text-primary truncate">{tituloDeSujeto(sujeto)}</span>
+        {/* `shrink-0`, NO `truncate`. La patente es la IDENTIDAD del vehiculo y
+            era lo primero que el flexbox sacrificaba: en 390px medía 0px —
+            desaparecía entera— porque todo lo demás de la fila es `shrink-0`.
+            Las insignias terminaban empujando fuera justo lo que venían a
+            anotar. Cabe de sobra: una patente chilena son 6 caracteres. */}
+        <span className="shrink-0 text-dato font-semibold text-text-primary">{tituloDeSujeto(sujeto)}</span>
         <InsigniasDeVehiculo sujeto={sujeto} />
         <span className="shrink-0 text-etiqueta text-informativo">
           {clase ? `${clase} · ${cuenta}` : cuenta}
@@ -443,7 +452,7 @@ function TarjetaDeSujeto({
  *  del estado activo (`TarjetaDeSujeto`). */
 export default function FichaEmpresaPage() {
   const { carrierId } = useParams<{ carrierId: string }>()
-  const canEdit = useCanEdit()
+  const canEditRol = useCanEdit()
   const canAdmin = useCanAdmin()
   const subirDocumento = useSubirDocumento()
   const queryClient = useQueryClient()
@@ -552,6 +561,14 @@ export default function FichaEmpresaPage() {
    *  como empiezan a decir cosas distintas. Es el mismo criterio que usa
    *  Empresas (`operational_status !== 'ACTIVE'` para ofrecer reactivar). */
   const empresaActiva = carrierQuery.data?.operational_status === 'ACTIVE'
+
+  /** Si esta pantalla puede ESCRIBIR. No es sólo el rol: una empresa dada de
+   *  baja no recibe documentación, tenga uno el permiso que tenga. Se deriva
+   *  una vez y se pasa como `canEdit` a todo el árbol, porque el banner del
+   *  encabezado promete exactamente esto — y con el permiso a secas prometía
+   *  algo que la pantalla no cumplía: medido en dev, 6 controles de carga
+   *  seguían habilitados bajo el cartel que decía que no se podía cargar. */
+  const canEdit = canEditRol && empresaActiva
 
   const resumen = resumenQuery.data
   const todosLosSujetos = resumen?.sujetos ?? []

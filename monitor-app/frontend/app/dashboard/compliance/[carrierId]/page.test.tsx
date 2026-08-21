@@ -973,6 +973,41 @@ describe('FichaEmpresaPage', () => {
     ).toBeGreaterThan(1))
   })
 
+  // El banner de una empresa dada de baja promete "no se le puede cargar nada
+  // nueva". Medido en dev ANTES de este arreglo: 6 controles de carga
+  // habilitados debajo de ese cartel. El permiso de la pantalla no es solo el
+  // rol -- una empresa dada de baja no recibe documentacion, tenga uno el
+  // permiso que tenga.
+  //
+  // Se sonda con el menu de acciones del sujeto, que es el control de
+  // escritura mas barato de alcanzar: sale de `canEdit`, igual que la celda de
+  // vencimiento y la zona de carga de cada renglon.
+  const menuDeAcciones = () => screen.queryAllByRole('button', { name: /Acciones|Transferir|Dar de baja a/i })
+
+  it('una empresa dada de baja no deja escribir, aunque el rol alcance', async () => {
+    vi.mocked(useCanEdit).mockReturnValue(true)
+    montar([fila({ entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })],
+           { ...CARRIER, operational_status: 'INACTIVE' })
+
+    expect(await screen.findByText(/Esta empresa está dada de baja/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Conductores/ }))
+    await screen.findByRole('button', { name: /Juan Pérez/ })
+
+    expect(menuDeAcciones()).toHaveLength(0)
+  })
+
+  it('una empresa activa sí deja escribir: el bloqueo es la baja, no la pantalla', async () => {
+    // La otra mitad. Sin esto, `canEdit = false` siempre pasaría el test de
+    // arriba y nadie lo notaría.
+    vi.mocked(useCanEdit).mockReturnValue(true)
+    montar([fila({ entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
+
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    await screen.findByRole('button', { name: /Juan Pérez/ })
+
+    expect(menuDeAcciones().length).toBeGreaterThan(0)
+  })
+
   it('un editor no ve la baja de la empresa: sigue siendo de admin', async () => {
     vi.mocked(useCanEdit).mockReturnValue(true)
     vi.mocked(useCanAdmin).mockReturnValue(false)
