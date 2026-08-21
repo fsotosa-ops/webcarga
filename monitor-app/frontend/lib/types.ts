@@ -744,6 +744,26 @@ export type ComplianceSummaryCounts = {
   falta:      number
 }
 
+/** Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
+ *  placeholders del commit 5955c5f (Empresas/Seguros), anteriores a la
+ *  taxonomía real de vehículos —migraciones 20260802–20260804— y nunca
+ *  describieron el negocio: cero de los 124 vehículos los usa. El subtipo
+ *  fino vive en fleet_service_type_id, que es un catálogo de 10 valores.
+ *
+ *  Vive acá y no en `lib/api/assets.ts` porque ese archivo ya importa de
+ *  este: al revés sería un ciclo. `assets.ts` lo re-exporta, así que los
+ *  llamadores que ya lo pedían de ahí siguen funcionando. */
+export type AssetType = 'TRACTOCAMION' | 'RAMPLA'
+
+/** Cómo se escribe cada chasis en pantalla. Una sola vez: la misma tabla
+ *  estaba copiada en tres componentes, y una etiqueta que se corrige en uno
+ *  y no en los otros no rompe nada — sólo hace que la misma flota se llame
+ *  distinto según la pantalla. */
+export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
+  TRACTOCAMION: 'Tracto',
+  RAMPLA:       'Rampla',
+}
+
 /** Una cabecera de la ficha de empresa: la empresa misma, o uno de sus
  *  conductores o vehículos, con sus cuatro cifras — sin las filas de
  *  detalle. Esas se piden aparte, sólo al desplegar el sujeto
@@ -752,6 +772,16 @@ export type ComplianceSummarySubject = ComplianceSummaryCounts & {
   entity_type:  EntityType
   entity_id:    string
   subject_name: string | null
+  /** Qué ES el vehículo. `asset_type` es el chasis y lo tienen los 124
+   *  vehículos; `fleet_service_type_*` es el subtipo de carrocería y sólo lo
+   *  llevan las ramplas (los tractocamiones lo traen en `null`). Nulos los
+   *  cuatro para CARRIER y DRIVER: no es "desconocido", es que la pregunta no
+   *  aplica. Se dibuja un badge por campo presente — mismo criterio y mismo
+   *  marcado que `VehicleRosterCard`. */
+  asset_type:                    AssetType | null
+  fleet_service_type_label:      string | null
+  fleet_service_type_bg_color:   string | null
+  fleet_service_type_text_color: string | null
 }
 
 /** GET /compliance-records/summary — lo que la ficha de empresa pide al

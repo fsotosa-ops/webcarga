@@ -459,9 +459,24 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
                   selectedIds={selectedIds}
                   onFocus={setFocusedId}
                   onToggle={handleToggle}
-                  onToggleAll={() => setSelectedIds(prev =>
-                    prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id)),
-                  )}
+                  // "Marcar todo" respeta la MISMA regla que `handleToggle`:
+                  // una selección no cruza empresas. Sin esto era la única
+                  // puerta por la que se colaba una selección heterogénea, y
+                  // aguas abajo `selectedCarrierId` y `carrierLabel` caen a
+                  // null — o sea que la pantalla deja de saber de quién es lo
+                  // que está marcado, justo antes de ofrecer moverlo.
+                  //
+                  // "Todo" pasa a ser "todo lo de la empresa que ya está en
+                  // foco"; sin foco ni selección, la primera empresa de la
+                  // lista. En la bandeja de UNA empresa (`carrierId`) no
+                  // cambia nada: ahí todas las filas comparten empresa.
+                  onToggleAll={() => setSelectedIds(prev => {
+                    if (prev.size > 0) return new Set()
+                    const empresa = subjectCarrierId ?? rows[0]?.carrier_id ?? null
+                    return new Set(
+                      rows.filter(r => r.carrier_id === empresa).map(r => r.id),
+                    )
+                  })}
                 />
               )}
             </div>
@@ -493,6 +508,10 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
                   r => !subject || (r.entity_type === subject.entity_type && r.entity_id === subject.entity_id),
                 )}
                 onApplied={handleApplied}
+                onMovedToCarrier={() => {
+                  setNotice('Empresa asignada')
+                  refrescarBandeja()
+                }}
               />
               {targetIds.length > 0 && <TriagePreview items={previewItems} />}
             </div>

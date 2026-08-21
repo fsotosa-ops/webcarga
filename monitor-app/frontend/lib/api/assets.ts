@@ -1,12 +1,10 @@
-import type { Asset, ComplianceRecord, OperationalStatus, VehicleDriverAssignment } from '@/lib/types'
+import type { Asset, AssetType, ComplianceRecord, OperationalStatus, VehicleDriverAssignment } from '@/lib/types'
 import { apiFetch } from './client'
 
-/** Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
- *  placeholders del commit 5955c5f (Empresas/Seguros), anteriores a la
- *  taxonomía real de vehículos —migraciones 20260802–20260804— y nunca
- *  describieron el negocio: cero de los 118 vehículos los usa. El subtipo
- *  fino vive en fleet_service_type_id, que es un catálogo de 10 valores. */
-export type AssetType = 'TRACTOCAMION' | 'RAMPLA'
+// La definición se mudó a `lib/types.ts` —el archivo de contrato, del que
+// este ya dependía— y se re-exporta acá para no tocar a quien la importaba
+// desde este módulo.
+export type { AssetType }
 
 export type AssetCreateBody = {
   license_plate:       string

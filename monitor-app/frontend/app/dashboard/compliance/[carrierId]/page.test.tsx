@@ -21,13 +21,19 @@ vi.mock('@/lib/api/carriers', () => ({
     unassignAsset: vi.fn(),
     assignDriver: vi.fn(),
     assignAsset: vi.fn(),
+    patch: vi.fn(),
   },
 }))
 vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: vi.fn(() => true) }))
+// Por defecto NO es admin: el default de un mock de permisos tiene que ser
+// el permiso más chico, o un test que se olvide de declararlo pasa por la
+// puerta más ancha sin decirlo.
+vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: vi.fn(() => false) }))
 
 import { useParams } from 'next/navigation'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
+import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useCanEdit } from '@/hooks/useCanEdit'
 
 const CARRIER: Carrier = {
@@ -38,7 +44,17 @@ const CARRIER: Carrier = {
   contacts: [], compliance_records: [],
 }
 
-function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
+/** Una fila de detalle que además puede declarar qué ES el vehículo. En el
+ *  backend esos cuatro campos viajan en el RESUMEN, no en el detalle; acá se
+ *  cuelgan de la fila porque `resumenDesdeFilas` arma los sujetos a partir de
+ *  ellas, y así el test declara el sujeto completo en un solo lugar. */
+type FilaDePrueba = PendingComplianceRow & Partial<Pick<
+  ComplianceSummarySubject,
+  'asset_type' | 'fleet_service_type_label'
+  | 'fleet_service_type_bg_color' | 'fleet_service_type_text_color'
+>>
+
+function fila(over: Partial<FilaDePrueba> = {}): FilaDePrueba {
   return {
     id: 'p1', carrier_id: 'c1', carrier_name: 'Transportes Demo Spa', carrier_tax_id: '1-9',
     carrier_operation_types: [], certification_type: 'BASICA', category: 'EMPRESA',
@@ -47,13 +63,13 @@ function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
     status: 'MISSING', expiration_date: null, tiene_archivo: false,
     urgencia: 'FALTA', expiration_policy: 'NONE',
     ...over,
-  } as PendingComplianceRow
+  } as FilaDePrueba
 }
 
 /** El resumen que el backend calcularía sobre este mismo set de filas —
  *  misma partición que `_SUMMARY_SQL` (Task 2): `al_dia`/`por_vencer` cuentan
  *  su rama exacta de `urgencia`, `falta` junta FALTA y VENCIDO. */
-function resumenDesdeFilas(rows: PendingComplianceRow[]): ComplianceSummaryResponse {
+function resumenDesdeFilas(rows: FilaDePrueba[]): ComplianceSummaryResponse {
   const porSujeto = new Map<string, ComplianceSummarySubject>()
   for (const r of rows) {
     const clave = `${r.entity_type}:${r.entity_id}`
@@ -61,6 +77,12 @@ function resumenDesdeFilas(rows: PendingComplianceRow[]): ComplianceSummaryRespo
       porSujeto.set(clave, {
         entity_type: r.entity_type, entity_id: r.entity_id, subject_name: r.subject_name,
         todos: 0, al_dia: 0, por_vencer: 0, falta: 0,
+        // Null es el default correcto, no un relleno: es lo que el backend
+        // manda para una empresa o un conductor.
+        asset_type:                    r.asset_type ?? null,
+        fleet_service_type_label:      r.fleet_service_type_label ?? null,
+        fleet_service_type_bg_color:   r.fleet_service_type_bg_color ?? null,
+        fleet_service_type_text_color: r.fleet_service_type_text_color ?? null,
       })
     }
     const s = porSujeto.get(clave)!
@@ -83,7 +105,7 @@ function resumenDesdeFilas(rows: PendingComplianceRow[]): ComplianceSummaryRespo
 /** Lo que `GET /pending?estado=X` devolvería sobre las filas de UN sujeto —
  *  mismo criterio que `pendiente_predicate`: 'falta' es "no está al día"
  *  (incluye lo por vencer), no el casillero exclusivo del resumen. */
-function filasParaEstado(rows: PendingComplianceRow[], estado?: string): PendingComplianceRow[] {
+function filasParaEstado(rows: FilaDePrueba[], estado?: string): FilaDePrueba[] {
   switch (estado) {
     case 'al_dia':     return rows.filter(r => r.urgencia === 'AL_DIA')
     case 'por_vencer': return rows.filter(r => r.urgencia === 'POR_VENCER')
@@ -97,9 +119,9 @@ function filasParaEstado(rows: PendingComplianceRow[], estado?: string): Pending
  *  UN sujeto, que se pide recién al desplegarlo) — las dos derivadas del
  *  MISMO set de filas, para que el test siga escribiendo un solo fixture,
  *  como antes de la Task 2. */
-function montar(rows: PendingComplianceRow[]) {
+function montar(rows: FilaDePrueba[], empresa: Carrier = CARRIER) {
   vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
-  vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
+  vi.mocked(carriersApi.get).mockResolvedValue(empresa)
   vi.mocked(complianceApi.summary).mockResolvedValue(resumenDesdeFilas(rows))
   vi.mocked(complianceApi.listPending).mockImplementation(async (params = {}) => {
     const delSujeto = rows.filter(r => r.entity_id === params.entityId)
@@ -119,6 +141,7 @@ beforeEach(() => {
   // anterior (sólo limpia el historial de llamadas): sin este reset, un
   // test que apaga `canEdit` deja apagado a todos los que corren después.
   vi.mocked(useCanEdit).mockReturnValue(true)
+  vi.mocked(useCanAdmin).mockReturnValue(false)
 })
 
 describe('FichaEmpresaPage', () => {
@@ -529,7 +552,8 @@ describe('FichaEmpresaPage', () => {
       fila({ id: 'p3', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
       fila({ id: 'p4', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
              urgencia: 'POR_VENCER', tiene_archivo: true }),
-      fila({ id: 'p5', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' }),
+      fila({ id: 'p5', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55',
+             asset_type: 'TRACTOCAMION' }),
     ])
 
     const empresa = await screen.findByRole('button', { name: /De la empresa/ })
@@ -548,8 +572,13 @@ describe('FichaEmpresaPage', () => {
     expect(conductor).not.toHaveTextContent('0 al día')
 
     fireEvent.click(screen.getByRole('button', { name: /Vehículos/ }))
-    expect(screen.getByRole('button', { name: /HKXW55/ }))
-      .toHaveTextContent('Vehículo · 1 requisito')
+    const vehiculo = screen.getByRole('button', { name: /HKXW55/ })
+    // Antes decía "Vehículo · 1 requisito". La palabra genérica la reemplaza
+    // el chasis real, que ahora viaja en el resumen: decir "Vehículo" al lado
+    // de una patente no agregaba nada que la patente no dijera ya.
+    expect(vehiculo).toHaveTextContent('Tracto')
+    expect(vehiculo).toHaveTextContent('1 requisito')
+    expect(vehiculo).not.toHaveTextContent('Vehículo ·')
   })
 
   // Los tres sujetos se ven JUNTOS, que es lo que la ficha vino a resolver: sus
@@ -901,5 +930,105 @@ describe('FichaEmpresaPage', () => {
     const dialogo = await screen.findByRole('dialog')
     expect(dialogo).toHaveTextContent(/Beto Rojas/)
     expect(dialogo).not.toHaveTextContent(/sesión vencida/i)
+  })
+
+  // ── La empresa se da de baja sin salir del módulo ──────────────────────
+  //
+  // Dar de baja a un conductor DE la empresa y dar de baja a la empresa DEL
+  // sistema comparten el nombre y no son lo mismo: distinto endpoint y
+  // distinto permiso. Estos tests fijan esa frontera.
+
+  it('un admin puede dar de baja a la empresa desde la ficha', async () => {
+    vi.mocked(useCanAdmin).mockReturnValue(true)
+    vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
+    montar([fila()])
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Dar de baja$/ }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /Confirmar baja/ }))
+
+    await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith(
+      'c1', { operational_status: 'INACTIVE' },
+    ))
+  })
+
+  it('la baja refresca la certificación, no sólo la cabecera', async () => {
+    // El defecto: invalidar sólo `carrier-detail` dejaba la cabecera diciendo
+    // "Inactivo" y el cuerpo mostrando 457 requisitos durante los 60 s de
+    // `staleTime` (y `refetchOnWindowFocus` está apagado, así que volver a la
+    // pestaña tampoco lo arreglaba). Las raíces de Certificación viven en
+    // `RAICES_DE_CERTIFICACION` justamente porque esta lista "ya perdió una
+    // raíz dos veces".
+    vi.mocked(useCanAdmin).mockReturnValue(true)
+    vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
+    montar([fila()])
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Dar de baja$/ }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /Confirmar baja/ }))
+
+    // Se afirma que el resumen se vuelve a pedir. Contar llamadas es lo que
+    // distingue "invalidó" de "no invalidó": el mock resuelve igual en los dos
+    // casos, así que mirar lo que se ve en pantalla no lo detecta.
+    await waitFor(() => expect(
+      vi.mocked(complianceApi.summary).mock.calls.length,
+    ).toBeGreaterThan(1))
+  })
+
+  it('un editor no ve la baja de la empresa: sigue siendo de admin', async () => {
+    vi.mocked(useCanEdit).mockReturnValue(true)
+    vi.mocked(useCanAdmin).mockReturnValue(false)
+    montar([fila()])
+
+    // Algo del editor tiene que aparecer primero, o el test no distingue
+    // "todavía no cargó" de "no le corresponde".
+    expect(await screen.findByRole('heading', { name: 'Transportes Demo Spa' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Reactivar$/ })).not.toBeInTheDocument()
+  })
+
+  it('una empresa dada de baja ofrece reactivarla, no darla de baja otra vez', async () => {
+    vi.mocked(useCanAdmin).mockReturnValue(true)
+    vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
+    montar([fila()], { ...CARRIER, operational_status: 'INACTIVE' })
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Reactivar$/ }))
+
+    // Reactivar no pregunta: no destruye nada y es el camino de vuelta del
+    // error. Por eso va directo al PATCH, sin diálogo.
+    await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith(
+      'c1', { operational_status: 'ACTIVE' },
+    ))
+    expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
+  })
+
+  // ── Qué es el vehículo, no sólo su patente ────────────────────────────
+
+  it('un vehículo muestra su chasis y su carrocería, con el color del catálogo', async () => {
+    montar([fila({
+      entity_type: 'ASSET', entity_id: 'a1', subject_name: 'ABCD12', category: 'EQUIPO',
+      asset_type: 'RAMPLA',
+      fleet_service_type_label: 'Furgón Seco',
+      fleet_service_type_bg_color: '#eeeeee',
+      fleet_service_type_text_color: '#111111',
+    })])
+
+    expect(await screen.findByText('Rampla')).toBeInTheDocument()
+    const carroceria = screen.getByText('Furgón Seco')
+    expect(carroceria).toHaveStyle({ backgroundColor: '#eeeeee', color: '#111111' })
+
+    // La palabra genérica que estas dos insignias vinieron a reemplazar.
+    expect(screen.queryByText(/Vehículo ·/)).not.toBeInTheDocument()
+  })
+
+  it('un tractocamión muestra sólo su chasis: la carrocería no le aplica', async () => {
+    montar([fila({
+      entity_type: 'ASSET', entity_id: 'a1', subject_name: 'ABCD12', category: 'EQUIPO',
+      asset_type: 'TRACTOCAMION',
+      fleet_service_type_label: null,
+    })])
+
+    expect(await screen.findByText('Tracto')).toBeInTheDocument()
+    // Sin insignia de carrocería y sin relleno: los 87 tractocamiones reales
+    // tienen `fleet_service_type_id` en null y eso no es un dato faltante.
+    expect(screen.queryByText('Rampla')).not.toBeInTheDocument()
   })
 })

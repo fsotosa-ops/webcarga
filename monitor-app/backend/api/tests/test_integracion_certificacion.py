@@ -33,7 +33,10 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
-from app.routers.compliance import list_pending_compliance_records
+from app.routers.compliance import (
+    get_compliance_summary,
+    list_pending_compliance_records,
+)
 from app.routers.requirements import SQL_CATALOGO, recalc
 from app.services.requirement_conditions import (
     SQL_ENTIDADES_QUE_APLICAN,
@@ -763,6 +766,201 @@ async def test_pending_proyecta_tiene_archivo_desde_file_url(conexion_revertida)
         f"salio urgencia={fila['urgencia']!r}: un APPROVED_MANUAL con la fecha "
         "pasada es lo que la ficha anunciaba como 'Aprobado (manual)'"
     )
+
+
+async def _sujeto_del_resumen(conn, empresa, entity_id):
+    """El sujeto `entity_id` dentro del resumen de `empresa`, o None."""
+    respuesta = await get_compliance_summary(
+        carrier_id=str(empresa), pool=PoolDeUnaConexion(conn), _=USER,
+    )
+    return next(
+        (s for s in respuesta["sujetos"] if s["entity_id"] == str(entity_id)),
+        None,
+    )
+
+
+async def test_el_resumen_proyecta_el_tipo_de_vehiculo_con_los_colores_del_catalogo(
+    conexion_revertida,
+):
+    """El resumen tiene que traer QUÉ ES el vehículo, no sólo su patente.
+
+    Mismo riesgo que `tiene_archivo`: las cuatro columnas nacen en la CTE
+    `resolved`, y el SELECT final enumera columnas — una que nadie nombra se
+    pierde en silencio, y el handler revienta con KeyError. Además pasan por
+    un `GROUP BY`: si faltaran ahí, Postgres rechaza la consulta entera. Un
+    `AsyncMock` no ve ninguna de las dos cosas, porque devuelve el
+    diccionario que el test le dicta.
+
+    Los colores salen del catálogo (`app.status_taxonomies`) y no de una
+    tabla de constantes en el frontend: por eso se afirman los valores que
+    `_taxonomia` insertó, no unos escritos a mano acá.
+    """
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    empresa = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", empresa, cliente)
+
+    subtipo = await _taxonomia(conn, "FLEET_SERVICE_TYPE", f"{PREFIJO} Furgon {_sufijo()}")
+    vehiculo = await _vehiculo(conn, tipo_flota=subtipo)
+    await _asignar(conn, vehiculo, empresa)
+
+    # Requisito de vehículo acotado al cliente sintético: sin el filtro por
+    # cliente, sembraría un MISSING para cada vehículo activo de la base.
+    requisito = await _requisito(conn, entidad="ASSET", cliente=cliente)
+    assert await _registro(conn, requisito, vehiculo) is not None, (
+        "el trigger no sembro el MISSING del vehiculo")
+
+    sujeto = await _sujeto_del_resumen(conn, empresa, vehiculo)
+    assert sujeto is not None, "el vehiculo no aparecio en el resumen"
+
+    assert sujeto["asset_type"] == "TRACTOCAMION"
+    assert sujeto["fleet_service_type_label"] == await conn.fetchval(
+        "SELECT label FROM app.status_taxonomies WHERE id = $1", subtipo)
+    assert sujeto["fleet_service_type_bg_color"] == "#eeeeee"
+    assert sujeto["fleet_service_type_text_color"] == "#111111"
+
+
+async def test_un_vehiculo_sin_subtipo_trae_su_chasis_y_el_subtipo_nulo(
+    conexion_revertida,
+):
+    """Los 87 tractocamiones de la base tienen `fleet_service_type_id` en
+    NULL — el subtipo de carrocería sólo lo llevan las ramplas. Ese nulo no
+    es un dato faltante que haya que rellenar: es que la pregunta no aplica,
+    y la ficha dibuja un badge menos.
+
+    Se afirma explícitamente para que nadie lo "arregle" con un COALESCE a
+    una etiqueta de relleno, que es como un campo pasa a significar dos cosas.
+    """
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    empresa = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", empresa, cliente)
+
+    vehiculo = await _vehiculo(conn)  # sin tipo_flota, como los tractocamiones reales
+    await _asignar(conn, vehiculo, empresa)
+    requisito = await _requisito(conn, entidad="ASSET", cliente=cliente)
+    assert await _registro(conn, requisito, vehiculo) is not None
+
+    sujeto = await _sujeto_del_resumen(conn, empresa, vehiculo)
+    assert sujeto is not None, "el vehiculo no aparecio en el resumen"
+    assert sujeto["asset_type"] == "TRACTOCAMION"
+    assert sujeto["fleet_service_type_label"] is None
+    assert sujeto["fleet_service_type_bg_color"] is None
+
+
+async def test_la_empresa_y_el_conductor_no_traen_tipo_de_vehiculo(conexion_revertida):
+    """Nulos para CARRIER y DRIVER. El `LEFT JOIN` a `public.assets` sólo
+    matchea con `entity_type = 'ASSET'`, así que esto ya es cierto por
+    construcción — se afirma porque el día que alguien mueva el join o lo
+    cambie por uno sin condición, un conductor empezaría a heredar el chasis
+    de un vehículo cualquiera y nada más lo detectaría.
+    """
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    empresa = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", empresa, cliente)
+
+    requisito = await _requisito(conn, entidad="CARRIER", cliente=cliente)
+    assert await _registro(conn, requisito, empresa) is not None
+
+    sujeto = await _sujeto_del_resumen(conn, empresa, empresa)
+    assert sujeto is not None, "la empresa no aparecio en su propio resumen"
+    assert sujeto["entity_type"] == "CARRIER"
+    assert sujeto["asset_type"] is None
+    assert sujeto["fleet_service_type_label"] is None
+
+
+
+async def test_la_ficha_de_una_empresa_dada_de_baja_muestra_su_documentacion(
+    conexion_revertida,
+):
+    """Dar de baja NO borra el expediente.
+
+    `_PENDING_ROWS_SQL` filtraba por `operational_status = 'ACTIVE'` fijo, así
+    que la ficha de una empresa inactiva devolvía cero sujetos — y la pantalla
+    leía ese cero como "nunca se le asignaron requisitos", que es falso y es un
+    mensaje con dos causas. Medido: 2 empresas INACTIVE con 24 registros y 207
+    LEGACY_INACTIVE con 2.484 quedaban invisibles.
+
+    Un `AsyncMock` no puede ver esto: devuelve las filas que el test le dicta,
+    haya filtro o no.
+    """
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    empresa = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", empresa, cliente)
+    requisito = await _requisito(conn, entidad="CARRIER", cliente=cliente)
+    assert await _registro(conn, requisito, empresa) is not None
+
+    # Activa: se ve, que es la línea base contra la que se compara.
+    assert await _sujeto_del_resumen(conn, empresa, empresa) is not None
+
+    await conn.execute(
+        "UPDATE public.carriers SET operational_status = 'INACTIVE' WHERE id = $1",
+        empresa)
+
+    sujeto = await _sujeto_del_resumen(conn, empresa, empresa)
+    assert sujeto is not None, (
+        "la ficha de una empresa dada de baja quedo vacia: su documentacion es "
+        "material de auditoria y tiene que poder leerse"
+    )
+    assert sujeto["todos"] >= 1
+
+
+async def test_la_sabana_global_sigue_sin_traer_empresas_dadas_de_baja(
+    conexion_revertida,
+):
+    """La otra mitad del invariante, y la que se rompe sola si alguien
+    "simplifica" el filtro: la cola de trabajo NO es el expediente.
+
+    El filtro por ACTIVE existe por un bug medido (5.4) — la sábana traía
+    LEGACY_INACTIVE/INACTIVE/ONBOARDING y eran más de la mitad del volumen. Sin
+    este test, relajar la ficha se lleva puesta la sábana y nadie lo nota hasta
+    que alguien mire el conteo.
+    """
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    empresa = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+        "VALUES ($1, $2, 'ACTIVE')", empresa, cliente)
+    requisito = await _requisito(conn, entidad="CARRIER", cliente=cliente)
+    registro = await _registro(conn, requisito, empresa)
+    assert registro is not None
+
+    async def aparece_en_la_sabana() -> bool:
+        # `carrier_id=None` es lo que hace que esta consulta SEA la sábana
+        # global — es la condición que dispara el filtro por estado. El `q`
+        # sólo acota el resultado al dato sintético: sin él, la empresa de
+        # prueba ordena alfabéticamente después de las primeras 200 filas de
+        # las 5.026 reales y el caso base fallaría por paginación, no por el
+        # filtro que se quiere medir.
+        respuesta = await list_pending_compliance_records(
+            carrier_id=None, category=None, requirement_code=None, q=PREFIJO,
+            operation_type=None, entity_id=None, limit=200, offset=0, estado="todos",
+            pool=PoolDeUnaConexion(conn), _=USER,
+        )
+        return any(f["id"] == str(registro["id"]) for f in respuesta["rows"])
+
+    assert await aparece_en_la_sabana(), "la empresa activa no salio en la sabana"
+
+    await conn.execute(
+        "UPDATE public.carriers SET operational_status = 'INACTIVE' WHERE id = $1",
+        empresa)
+
+    assert not await aparece_en_la_sabana(), (
+        "una empresa dada de baja volvio a la sabana global: eso es el bug 5.4, "
+        "donde mas de la mitad del volumen mostrado eran empresas inactivas"
+    )
+
 
 
 # ── El guardia del propio archivo ─────────────────────────────────────────

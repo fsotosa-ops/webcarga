@@ -4,9 +4,10 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, ChevronDown, ChevronRight, Eye, Loader2, Truck, User } from 'lucide-react'
+import { Ban, Building2, ChevronDown, ChevronRight, Eye, Loader2, Truck, User } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
+import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { AccionesDeSujeto } from '@/components/compliance/AccionesDeSujeto'
@@ -21,10 +22,12 @@ import { TransferModal } from '@/components/dashboard/TransferModal'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
+import { ASSET_TYPE_LABELS } from '@/lib/types'
 import type { ComplianceSummarySubject, EstadoDocumental, PendingComplianceRow } from '@/lib/types'
 
 /** Las cuatro cifras, con el matiz de `<Cifra>` que le corresponde a cada
@@ -63,14 +66,51 @@ function filasDelEstado(filas: PendingComplianceRow[], estado: EstadoDocumental)
   }
 }
 
-/** Qué es cada sujeto y con qué icono se lo reconoce. El mockup dice
- *  "Tractocamión" para los vehículos; acá dice "Vehículo" porque el tipo de
- *  chasis no viaja en el resumen y **inventarlo sería peor que ser genérico**. */
+/** Qué es cada sujeto y con qué icono se lo reconoce.
+ *
+ *  Los vehículos no llevan `clase`: la palabra genérica "Vehículo" la
+ *  reemplazan sus insignias, que dicen el chasis y la carrocería de verdad
+ *  (`InsigniasDeVehiculo`). Decía "Vehículo" porque el tipo no viajaba en el
+ *  resumen y ser genérico era mejor que inventarlo; ahora viaja. */
 const SUJETO = {
   CARRIER: { icono: Building2, clase: null },
   DRIVER:  { icono: User,     clase: 'Conductor' },
-  ASSET:   { icono: Truck,    clase: 'Vehículo' },
+  ASSET:   { icono: Truck,    clase: null },
 } as const
+
+/** Qué es este vehículo: el chasis y, si la tiene, la carrocería.
+ *
+ *  Son dos insignias porque son dos datos con disponibilidad distinta —el
+ *  chasis lo tienen los 124 vehículos, la carrocería sólo las ramplas—, así
+ *  que un tractocamión muestra una y una rampla dos. No se rellena la que
+ *  falta: un valor inventado ahí diría que el dato existe.
+ *
+ *  El color de la carrocería sale del catálogo (`app.status_taxonomies`), no
+ *  de una tabla en el frontend, y por eso va en `style` — es dato, no
+ *  decisión de diseño. El del chasis sí es del sistema visual. */
+function InsigniasDeVehiculo({ sujeto }: { sujeto: ComplianceSummarySubject }) {
+  if (sujeto.entity_type !== 'ASSET') return null
+  return (
+    <>
+      {sujeto.asset_type && (
+        <span className="shrink-0 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-accent/10 text-informativo">
+          {ASSET_TYPE_LABELS[sujeto.asset_type] ?? sujeto.asset_type}
+        </span>
+      )}
+      {sujeto.fleet_service_type_label && (
+        <span
+          className="shrink-0 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full"
+          style={{
+            backgroundColor: sujeto.fleet_service_type_bg_color ?? undefined,
+            color:           sujeto.fleet_service_type_text_color ?? undefined,
+          }}
+        >
+          {sujeto.fleet_service_type_label}
+        </span>
+      )}
+    </>
+  )
+}
 
 /** El avance de un sujeto, tal como lo particiona el servidor: `al_dia`,
  *  `por_vencer` y `falta` ya suman `todos` (`falta` agrupa VENCIDO y FALTA —
@@ -124,6 +164,7 @@ function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa,
           : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
         <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
         <span className="text-dato font-semibold text-text-primary truncate">{tituloDeSujeto(sujeto)}</span>
+        <InsigniasDeVehiculo sujeto={sujeto} />
         <span className="shrink-0 text-etiqueta text-informativo">
           {clase ? `${clase} · ${cuenta}` : cuenta}
         </span>
@@ -403,12 +444,21 @@ function TarjetaDeSujeto({
 export default function FichaEmpresaPage() {
   const { carrierId } = useParams<{ carrierId: string }>()
   const canEdit = useCanEdit()
+  const canAdmin = useCanAdmin()
   const subirDocumento = useSubirDocumento()
   const queryClient = useQueryClient()
 
   /** El sujeto que está por darse de baja o transferirse, si alguno. Uno solo
    *  a la vez: son diálogos, no hay forma de disparar dos a la vez. */
   const [confirmandoBaja, setConfirmandoBaja] = useState<ComplianceSummarySubject | null>(null)
+  /** La baja de la EMPRESA, que es otra cosa que la de un sujeto suyo. Un
+   *  conductor se da de baja DE la empresa —deja de estar asignado— y sigue
+   *  existiendo; la empresa se da de baja DEL SISTEMA, cambiando su
+   *  `operational_status`. Son dos verbos distintos con el mismo nombre, así
+   *  que tienen estado, endpoint y permiso separados. */
+  const [dandoDeBajaEmpresa, setDandoDeBajaEmpresa] = useState(false)
+  const [reactivando, setReactivando] = useState(false)
+  const [errorReactivar, setErrorReactivar] = useState<string | null>(null)
   const [transfiriendo, setTransfiriendo] = useState<ComplianceSummarySubject | null>(null)
 
   /** La baja real, de un sujeto puntual: qué endpoint según lo que es, y
@@ -437,6 +487,46 @@ export default function FichaEmpresaPage() {
     setConfirmandoBaja(null)
   }
 
+  /** Baja y reactivación de la empresa. Es el mismo `PATCH` que usa Empresas
+   *  (`carriers/[id]`): acá no hay endpoint nuevo, sólo deja de haber que
+   *  salir del módulo para llegar a él. El cambio de estado queda auditado en
+   *  `public.audit_log` vía `record_manual_edit`, que es por qué el diálogo
+   *  confirma y no pide un motivo escrito.
+   *
+   *  No atrapa el error, por el mismo motivo que `ejecutarBaja`:
+   *  `BajaReasonModal` ya lo muestra y se queda abierto para reintentar. */
+  async function cambiarEstadoEmpresa(estado: 'ACTIVE' | 'INACTIVE') {
+    await carriersApi.patch(carrierId, { operational_status: estado })
+    // Las DOS invalidaciones, y ninguna alcanza sola. `carrier-detail` es la
+    // cabecera; `invalidarCertificacion` es todo lo demás de esta pantalla y
+    // del módulo —el resumen, los pendientes, el embudo del que la empresa
+    // acaba de entrar o salir—. Con sólo la primera, durante los 60 s de
+    // `staleTime` la cabecera decía "Inactivo" y el cuerpo mostraba 457
+    // requisitos. `lib/queries/certificacion.ts` existe por esto: su docstring
+    // cuenta que esa lista de raíces "ya perdió una raíz dos veces".
+    await queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })
+    await invalidarCertificacion(queryClient)
+  }
+
+  async function darDeBajaEmpresa() {
+    await cambiarEstadoEmpresa('INACTIVE')
+  }
+
+  /** Reactivar no pregunta —no destruye nada y es el camino de vuelta del
+   *  error— pero sí tiene que DECIR si falla. Sin esto era una promesa
+   *  rechazada sin manejar: cero señal, el botón seguía ofreciendo lo mismo, y
+   *  el usuario volvía a hacer clic sobre algo que no funcionaba. */
+  async function reactivarEmpresa() {
+    setReactivando(true); setErrorReactivar(null)
+    try {
+      await cambiarEstadoEmpresa('ACTIVE')
+    } catch (e) {
+      setErrorReactivar(e instanceof Error ? e.message : 'No se pudo reactivar')
+    } finally {
+      setReactivando(false)
+    }
+  }
+
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoDocumental>('todos')
   /** El documento que se está mirando, sea cual sea su sujeto. Se guarda el
    *  id y no la fila completa: `/pending` nunca trae `file_url` firmada —
@@ -455,6 +545,13 @@ export default function FichaEmpresaPage() {
     queryKey: clavesCertificacion.resumen(carrierId),
     queryFn: () => complianceApi.summary(carrierId),
   })
+
+  /** El único criterio de "está activa" de la pantalla. Se deriva una vez y
+   *  no se repite: el botón, su etiqueta y la insignia de estado del
+   *  encabezado tienen que decir lo mismo, y dos comparaciones sueltas es
+   *  como empiezan a decir cosas distintas. Es el mismo criterio que usa
+   *  Empresas (`operational_status !== 'ACTIVE'` para ofrecer reactivar). */
+  const empresaActiva = carrierQuery.data?.operational_status === 'ACTIVE'
 
   const resumen = resumenQuery.data
   const todosLosSujetos = resumen?.sujetos ?? []
@@ -631,7 +728,64 @@ export default function FichaEmpresaPage() {
             )}
           </div>
         }
-      />
+      >
+        {/* `canAdmin`, no `canEdit`: dar de baja a un conductor DE la empresa
+            es trabajo de un editor, pero bajar a la empresa DEL SISTEMA se
+            dejó en admin a propósito (Ronda 135). Mismo permiso, mismo
+            endpoint y mismo diálogo que en Empresas — lo único que cambia es
+            que ya no hay que ir hasta allá. */}
+        {canAdmin && (
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              disabled={reactivando}
+              onClick={() => empresaActiva ? setDandoDeBajaEmpresa(true) : reactivarEmpresa()}
+              // Dar de baja se ve destructivo y reactivar no: son gestos
+              // opuestos y verse iguales invita al clic equivocado en el que
+              // sí saca a la empresa de circulación.
+              //
+              // Usa `status-incidente`, que es el rojo del sistema, y no un
+              // `red-500` crudo: el trinquete de `lib/ui/sistema.test.ts`
+              // cuenta los colores decididos fuera del sistema y sólo puede
+              // bajar. El sistema NO tiene token de "acción destructiva"
+              // —`espera` comparte el valor pero significa "hay archivos
+              // esperando"—, así que esto toma prestado el de alerta. Cuando
+              // ese token exista, este es uno de sus llamadores.
+              className={`px-3 py-1.5 rounded-lg text-dato font-semibold border shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                empresaActiva
+                  ? 'border-status-incidente/30 bg-white text-status-incidente hover:bg-status-incidente/5'
+                  : 'border-border bg-white text-text-primary hover:bg-bg-main'
+              }`}
+            >
+              {reactivando ? 'Reactivando…' : empresaActiva ? 'Dar de baja' : 'Reactivar'}
+            </button>
+            {errorReactivar && (
+              <p className="text-etiqueta text-status-incidente max-w-xs text-right">{errorReactivar}</p>
+            )}
+          </div>
+        )}
+      </EncabezadoDePagina>
+
+      {/* Dada de baja NO es "sin datos": es un expediente cerrado, y se lee.
+          Va acá arriba y no en un chip del encabezado porque cambia lo que se
+          puede HACER en toda la pantalla — la carga queda deshabilitada—, y
+          una condición que apaga acciones tiene que estar donde se la ve
+          antes de intentarlas, no explicada después del error. */}
+      {!empresaActiva && (
+        <div className="border border-border rounded-xl bg-accent/5 px-4 py-3 flex items-start gap-3">
+          <Ban size={16} className="shrink-0 mt-0.5 text-informativo" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="text-dato font-semibold text-text-primary">
+              Esta empresa está dada de baja
+            </p>
+            <p className="text-etiqueta text-informativo mt-0.5">
+              Su documentación se muestra completa para poder consultarla, pero no
+              se le puede cargar nada nueva. Deja de contar en los pendientes del
+              módulo. Al reactivarla vas a ver qué se venció mientras estuvo de baja.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {CIFRAS.map(c => (
@@ -671,7 +825,15 @@ export default function FichaEmpresaPage() {
              documentos sí tienen registros MISSING y nunca llegan acá; quien
              llega es la empresa a la que todavía no se le sembró el catálogo,
              y pedirle documentos sería decirle lo que no es — cargar no lo
-             arregla. */
+             arregla.
+ 
+             Ese es el ÚNICO significado de este vacío, y hay que defenderlo:
+             cuando se agregó la baja de la empresa, este cartel pasó a cubrir
+             también "está dada de baja" y afirmaba que nunca se le definieron
+             documentos a una empresa que tenía 457. El backend ya no filtra
+             por estado cuando se pide UNA empresa, así que la baja no vacía la
+             ficha; si alguna vez volviera a hacerlo, este cartel mentiría otra
+             vez. */
           <Estado
             tipo="vacio"
             titulo={`${carrier.business_name} todavía no tiene requisitos asignados`}
@@ -734,7 +896,13 @@ export default function FichaEmpresaPage() {
             ))
         })()}
 
-        <PuenteALaBandeja carrierId={carrierId} carrierName={carrier.business_name} />
+        {/* Sin la guarda, la pantalla invita a subir documentos a una empresa
+            que no los puede recibir. Se retira en vez de deshabilitarse porque
+            el banner de arriba ya dice por qué — dos veces el mismo motivo, en
+            la misma pantalla, es ruido. */}
+        {empresaActiva && (
+          <PuenteALaBandeja carrierId={carrierId} carrierName={carrier.business_name} />
+        )}
       </div>
 
       {viendoId && previewQuery.data?.file_url && (
@@ -743,6 +911,14 @@ export default function FichaEmpresaPage() {
           url={previewQuery.data.file_url}
           canEdit={canEdit}
           onClose={() => setViendoId(null)}
+        />
+      )}
+
+      {dandoDeBajaEmpresa && (
+        <BajaReasonModal
+          label={carrier.business_name}
+          onClose={() => setDandoDeBajaEmpresa(false)}
+          onConfirm={darDeBajaEmpresa}
         />
       )}
 

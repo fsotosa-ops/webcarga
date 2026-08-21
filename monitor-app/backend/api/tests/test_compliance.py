@@ -597,7 +597,30 @@ def test_pending_rows_passes_filters_to_query():
     assert args[5] == "Tractoreo"
     assert args[6] == 10
     assert args[7] == 5
-    assert args[8] == "ACTIVE"
+    # Acotada a UNA empresa: sin filtro de estado. La ficha tiene que poder
+    # leer el expediente de una empresa dada de baja -es material de
+    # auditoria-, y el cero que devolvia el filtro la pantalla lo leia como
+    # "nunca se le asignaron requisitos".
+    assert args[8] is None
+
+
+def test_la_sabana_global_si_pide_solo_empresas_activas():
+    """La otra mitad, y la que se rompe sola si alguien unifica las dos ramas.
+
+    Sin `carrier_id` la consulta es la sabana global -"que hay que hacer hoy"-
+    y ahi el filtro por ACTIVE existe por un bug medido (5.4): antes traia
+    LEGACY_INACTIVE/INACTIVE/ONBOARDING y eran mas de la mitad del volumen.
+
+    Este test mira el ARGUMENTO, no el resultado; que el filtro efectivamente
+    excluya lo verifica el test de integracion contra Postgres real, porque un
+    AsyncMock nunca ejecuta el WHERE."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/pending?limit=10")
+
+    assert pool.fetch.call_args.args[8] == "ACTIVE"
 
 
 def test_pending_acepta_limit_500_para_la_ficha_de_empresa():
@@ -1590,7 +1613,9 @@ def test_summary_agrupa_por_sujeto_desde_urgencia():
     pool.fetch.return_value = [
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
          "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
-         "carrier_operation_types": ["Tractoreo"]},
+         "carrier_operation_types": ["Tractoreo"],
+         "asset_type": None, "fleet_service_type_label": None,
+         "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
     ]
     client = make_client(pool)
 
@@ -1601,6 +1626,11 @@ def test_summary_agrupa_por_sujeto_desde_urgencia():
     assert body["sujetos"] == [{
         "entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+        # Nulos porque es la EMPRESA: el tipo de vehiculo no le aplica. Se
+        # enumeran en vez de omitirse para que el test siga afirmando la
+        # forma completa de la respuesta, que es lo que consume el frontend.
+        "asset_type": None, "fleet_service_type_label": None,
+        "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
     }]
     assert body["totales"] == {"todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1}
     assert body["carrier_operation_types"] == ["Tractoreo"]
@@ -1626,7 +1656,9 @@ def test_summary_completo_false_cuando_el_conteo_toca_el_tope():
     pool.fetch.return_value = [
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
          "todos": SUMMARY_LIMIT, "al_dia": SUMMARY_LIMIT, "por_vencer": 0, "falta": 0,
-         "carrier_operation_types": []},
+         "carrier_operation_types": [],
+         "asset_type": None, "fleet_service_type_label": None,
+         "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
     ]
     client = make_client(pool)
 
@@ -1641,7 +1673,9 @@ def test_summary_completo_true_cuando_el_conteo_no_toca_el_tope():
     pool.fetch.return_value = [
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
          "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
-         "carrier_operation_types": []},
+         "carrier_operation_types": [],
+         "asset_type": None, "fleet_service_type_label": None,
+         "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
     ]
     client = make_client(pool)
 

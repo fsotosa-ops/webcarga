@@ -2,11 +2,7 @@
 'use client'
 
 import { Truck, ShieldAlert, ShieldCheck } from 'lucide-react'
-import type { CarrierAssetRosterItem } from '@/lib/types'
-
-const ASSET_TYPE_LABELS: Record<string, string> = {
-  TRACTOCAMION: 'Tracto', RAMPLA: 'Rampla',
-}
+import { ASSET_TYPE_LABELS, type AssetType, type CarrierAssetRosterItem } from '@/lib/types'
 
 interface Props {
   vehicle: CarrierAssetRosterItem
@@ -31,7 +27,7 @@ export function VehicleRosterCard({ vehicle, onOpen }: Props) {
         <div className="flex items-center gap-1.5">
           <p className="text-xs font-bold text-text-primary font-mono truncate">{vehicle.license_plate}</p>
           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 shrink-0">
-            {ASSET_TYPE_LABELS[vehicle.asset_type] ?? vehicle.asset_type}
+            {ASSET_TYPE_LABELS[vehicle.asset_type as AssetType] ?? vehicle.asset_type}
           </span>
           {vehicle.fleet_service_type_label && (
             <span

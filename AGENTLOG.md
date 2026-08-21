@@ -17,6 +17,198 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-21 — Ronda 138: tres huecos de Certificación y la investigación de Sodimac
+
+Rama `feat/certificacion-baja-y-tipo-vehiculo`, **sin comitear todavía**. Backend 897 tests verde,
+frontend 1.255 en 130 archivos, `tsc` limpio, `npm run build` OK. Los tres cambios se verificaron
+con mutación, no sólo con la suite en verde.
+
+**Los tres eran la misma forma de defecto: la capacidad existía y faltaba la puerta.**
+
+**A · La empresa no se podía dar de baja desde Certificación.** No era permiso —el perfil que lo
+reportó es `owner`— sino que nunca se construyó: `page.tsx:110` limitaba el menú `⋮` a `DRIVER` y
+`ASSET`. El comentario que lo acompañaba tenía razón en descartar *ese menú* para la empresa
+(rotularía "dar de baja a Transportes X de Transportes X"), pero de ahí se concluyó que la empresa
+no tiene baja en el módulo, que es otra cosa. Ahora vive en la cabecera de la ficha, con
+`useCanAdmin`, reusando `BajaReasonModal` y el `PATCH` de `carriersApi` — el mismo que usa Empresas.
+
+**B · La patente no decía qué es el vehículo.** El dato estaba (`assets.asset_type` en los 124;
+`fleet_service_type_id` → `app.status_taxonomies`, **con `bg_color`/`text_color` ya cargados**) y el
+badge también (`VehicleRosterCard`), pero no se cruzaban: `ComplianceSummarySubject` no llevaba los
+campos. El `LEFT JOIN public.assets` ya estaba en `_PENDING_ROWS_SQL` para sacar la patente, así que
+fue agregarle columnas y un join al catálogo, no una consulta nueva.
+
+**C · "¿A quién pertenece?" siempre vacío en la Bandeja.** Medido: **65 de los 66 archivos de la
+cola tienen `carrier_id` NULL**, o sea que la lista vacía era el estado normal, no un borde. Sin
+empresa, `pendingQuery` queda `enabled: false` y no hay sujetos que ofrecer. El aviso mandaba a "el
+botón de la barra de selección", que sólo aparece con la casilla marcada y abre un buscador en
+blanco hasta la segunda letra: cuatro pasos para contestar lo primero que uno quiere decir de un
+archivo. Ahora la pregunta se hace donde estaba el hueco, con `minChars={0}` y el mismo
+`moveItems` de la barra de lote.
+
+---
+
+## Decisiones de arquitectura de esta ronda
+
+- **`AssetType` y sus etiquetas se mudaron a `lib/types.ts`.** `lib/api/assets.ts` ya importaba de
+  ahí, así que al revés era un ciclo; re-exporta para no tocar llamadores. La tabla de etiquetas
+  estaba copiada en tres componentes — una etiqueta corregida en uno y no en los otros no rompe
+  nada, sólo hace que la misma flota se llame distinto según la pantalla.
+- **Un error se muestra en un solo lugar.** El primer intento del selector de empresa atrapaba el
+  error para mostrarlo, y `CarrierSearchPicker` ya lo hacía: salía **pintado dos veces**. Ahora el
+  handler relanza y el picker es el dueño de mostrarlo — tragárselo apagaría su spinner anunciando
+  un éxito que no pasó.
+- **`minChars={0}` en vez de `showMinCharsHint`.** La prop de la pista no aportaba nada una vez
+  que el mínimo es cero; dejarla puesta sería una prop que miente.
+- **El trinquete visual es un conteo global con tope 1755 que sólo baja.** Copiar el
+  `bg-slate-100 text-slate-500` de `VehicleRosterCard` habría roto CI, así que la insignia del
+  chasis usa tokens; la de carrocería va en `style` porque su color **es dato del catálogo**, no
+  decisión de diseño.
+
+## Lo que la mutación encontró (y la suite en verde no)
+
+Cinco mutaciones, las cinco detectadas: quitar el campo del dict del resumen, hardcodear el color
+del catálogo, ensanchar el permiso de la baja a `editor`, volver `minChars` al default de 2, y
+tragarse el error de `moveItems`. Además `tsc` marcó que el mock de `GET /carriers` tenía la forma
+inventada (`total` en vez de `count`/`facets`) — un test verde que no decía nada del contrato.
+
+---
+
+### 2026-08-21 (cont.) — Ronda 139: la reunión con Webcarga, y cerrar bien lo de la 138
+
+Se revisó la reunión **Webcarga 2.0** (21/08, Pablo Abumohor y Fabián Méndez) contra el código y
+contra la base. Tres pedidos de la reunión ya estaban hechos en la Ronda 138; una revisión encontró
+que dos tenían huecos que los volvían peligrosos. **Todo lo de abajo está medido.**
+
+**El defecto que ordenó la prioridad.** `_PENDING_ROWS_SQL` filtraba `c.operational_status = $8` con
+`ACTIVE` **fijo**, así que dar de baja una empresa dejaba su ficha vacía y la pantalla leía ese cero
+como *"todavía no tiene requisitos asignados"* — falso, y **un mensaje con dos causas** por sexta vez
+en este módulo. No era hipotético: **2 empresas `INACTIVE` con 24 registros y 207 `LEGACY_INACTIVE`
+con 2.484** ya eran invisibles. Es el mismo hueco que Pablo describió como *"me falta ese directorio
+que tenía yo antes… de las trescientas, cincuenta activas y doscientas cincuenta inactivas"*.
+
+**El criterio, ahora en un solo lugar** (`_estado_de_empresa_a_mostrar`): sin `carrier_id` es la
+sábana global —"qué hay que hacer hoy"— y ahí el filtro por ACTIVE se queda, porque existe por un bug
+medido (5.4: más de la mitad del volumen eran inactivas). Con `carrier_id` es el expediente de UNA
+empresa, y ahí el filtro sobraba. **La cola de trabajo no es el expediente.**
+
+Los otros cuatro arreglos: la baja no invalidaba las raíces de Certificación (60 s con la cabecera
+diciendo "Inactivo" y el cuerpo mostrando 457 requisitos); el selector de empresa de la Bandeja
+operaba sobre **todos** los `targetIds` con copia en singular; `onToggleAll` no aplicaba la regla de
+homogeneidad por empresa que `handleToggle` sí aplica —la única puerta por la que se colaba una
+selección heterogénea—; y `reactivarEmpresa()` era una promesa rechazada sin manejar.
+
+---
+
+## Decisiones de arquitectura de esta ronda
+
+- **Dar de baja archiva, no oculta.** Es el estándar de gestión de proveedores (Avetta, ISNetworld,
+  Ariba SLP) y hay tres razones, en orden de peso: el historial de cumplimiento es material de
+  auditoría; la baja sirve para sacar a la empresa de las **colas de trabajo**, no del registro; y al
+  reactivar lo primero que se necesita ver es **qué se venció durante la baja**.
+- **`minChars={0}` fue un error mío de la Ronda 138, revertido.** Descarté `showMinCharsHint` como
+  "una prop que miente" y era al revés: sin mínimo, `GET /carriers` sin `q` ordena por
+  `compliance_health PENDING` y `pending_mandatory DESC` y **sin filtrar por estado**, o sea que
+  precargaba las diez empresas peor certificadas, incluidas las dadas de baja.
+- **El sistema visual no tiene token de "acción destructiva".** `espera` y `status-incidente`
+  comparten el valor `#b00020` y no el significado. El botón de baja toma prestado el de alerta;
+  cuando el token exista, es uno de sus llamadores. El trinquete **bajó de 1.755 a 1.753**.
+
+## Lo que la mutación encontró
+
+Seis mutaciones. Cinco detectadas, y **una reveló un test falso**: al quitar
+`invalidarCertificacion` el test de invalidación seguía verde. La mutación había caído en
+`ejecutarBaja` (línea 478) y no en `cambiarEstadoEmpresa` (507) — o sea que el test estaba bien y la
+mutación estaba mal. Es exactamente el modo de falla que la memoria del proyecto ya registra:
+**verificar dónde quedó la mutación antes de leer el resultado.** De paso quedó a la vista que la
+baja de un conductor tampoco tiene test de refresco.
+
+## Higiene: el repo era 89% virtualenv (RESUELTO, commit `e7c53d24`)
+
+De **10.639 archivos trackeados, 9.498 eran un virtualenv**. Había **TRES entornos trackeados a la
+vez** —`monitor-app/backend/api/.venv`, `monitor-app/backend/api/venv` y `monitor-app/backend/venv`—
+más 202 `.pyc` del propio proyecto y 2 `.DS_Store`. El costo no era el tamaño: **cada corrida de
+pytest reescribía cientos de `.pyc`** y dejaba el `git status` ilegible, que es como un diff deja de
+poder revisarse.
+
+`extraction_service/.gitignore` ya tenía las reglas —por eso ese servicio estaba limpio— y
+`monitor-app/.gitignore` sólo cubría `.env`. Ahora están en la raíz.
+
+**Trackeados: 10.639 → 937.** Se usó `git rm --cached`, así que los archivos siguen en disco:
+verificado que los tres entornos quedaron completos (2.715 / 5.043 / 1.729 archivos) y que el que
+usan los tests corre. La prueba de que sirvió: después de correr pytest, el `git status` ya no
+muestra ningún `.pyc`.
+
+Los tres `.env` trackeados se revisaron y son `.example` — plantillas, sin secretos.
+
+**Queda uno del mismo tipo, sin tocar**: `logextraction.txt` está en `.gitignore` pero sigue
+trackeado (el ignore no destrackea) y ya está borrado del disco.
+
+---
+
+## SIGUIENTE PASO EXACTO
+
+**Click-through en vivo, que sigue sin hacerse** — ahora incluye la ficha de una empresa dada de
+baja. Después, en este orden:
+
+1. **Aprobación manual de a una y carga masiva de fechas.** Es lo que Pablo espera para poder
+   trabajar: *"sería bueno poder subir de alguna forma las fechas nomás. La información que yo tengo
+   en un Excel. Sin el documento"* — explícitamente NO quiere subir el histórico de 50 empresas.
+   `PATCH /compliance-records/{id}` ya acepta `status`; el único llamador del frontend es
+   `ExpirationDateCell` y sólo manda `expiration_date`. La exportación actual **no sirve de
+   plantilla**: `limit: 200` sobre **5.026 pendientes**, y sus columnas no identifican la fila.
+   **La patente no tiene RUT** (empresa y conductor por `tax_id`, vehículo por patente), y **1
+   conductor de 87 no tiene `tax_id`**.
+2. **La sincronización Monitor ↔ Certificación** (diseñada en el plan, sin ejecutar). Son dos
+   poblaciones con fuentes distintas por diseño: el Monitor se resuelve **por trigger**, Certificación
+   es **deliberada** (Excel de Mage + alta manual). El alta desde el Monitor vincula al conductor con
+   los VIAJES y nunca con una EMPRESA. Medido: **68 viajes sin empresa**, de los cuales **47 tienen
+   conductor que sí la tiene**; **0** tienen patente con empresa activa (la vía del vehículo está
+   muerta); y **56 tienen empresa distinta a la del conductor — esas no se tocan**.
+   - **Por qué el match manual "se revierte"** (el reclamo de Pablo sobre Edgar): de 25 links
+     `manual`, **14 no tienen empresa y los 14 tienen conductor que sí la tiene**.
+     `resolve_trip_fleet()` excluye los manuales para proteger la elección humana y de paso
+     **congela el `carrier_id` nulo para siempre**.
+   - Acordado: **las dos vías**. Automática en la resolución (llena el silencio, nunca contradice) y
+     forzada en el Cierre (los 85 viajes sin conductor ni empresa, como pidió Pablo).
+3. **La regla de cámara de frío**: el motor funciona, **el dato está mal**. `MANTENCION_FRIO` tiene
+   como condición "los 9 subtipos que no son Tractocamión" = toda rampla, furgón seco y sider
+   incluidos. Es un backfill de compatibilidad. **Se arregla desde la UI, sin código.**
+4. **Renombrar documentos a F30 / F30-1 / PTS**: no se puede desde Configuración (la whitelist de
+   `PATCH /{id}/conditions` no incluye `name`). Requiere migración. Renombrar `name` es inocuo;
+   **renombrar `requirement_code` rompe** el matcher de nombres de archivo.
+5. **Sodimac multiorigen** (#5/#6): la reunión cerró la definición que faltaba — el cierre se evalúa
+   **a nivel del ID del viaje**, no del origen. Pablo: *"Es que está finalizado o no, nada más… se
+   trata igual"*. Y pidió no hacer cierres de Sodimac hasta reprocesar.
+
+---
+
+### Ronda 138 — el detalle
+
+**Click-through en vivo, que todavía NO se hizo.** El `AGENTS.md` del frontend lo pide explícito
+("mirar la pantalla, en escritorio y en teléfono") y ningún test ve un renglón que se parte mal.
+Tres cosas concretas: las insignias en una empresa con ramplas (elegir una verificando antes en la
+base cuál tiene subtipo cargado), el contraste de los colores del catálogo —son fijos, no responden
+al tema— y el selector de empresa en la Bandeja sobre el único item `UNMATCHED` que hay.
+
+Después, por valor de negocio:
+
+1. **Aprobación manual de a una.** `PATCH /compliance-records/{id}` acepta `status` y su docstring
+   dice literalmente *"un admin aprueba a mano sin archivo"*. El único llamador en el frontend es
+   `ExpirationDateCell`, y sólo manda `expiration_date`. **Misma forma que los tres de arriba: la
+   API ya lo hace y falta el botón.**
+2. **Carga masiva por planilla** (pedida por el usuario, 2026-08-21). Diseño acordado: **un solo
+   archivo** con columna "¿De quién?" e "Identificador" —RUT para empresa y conductor, **patente
+   para vehículo, que no tiene RUT**— más una llave opaca del registro para que el match sea exacto
+   al volver. Dos columnas se completan: vencimiento y tipo de aprobación. Fila en blanco no se
+   toca. Vista previa antes de aplicar, como el resto del módulo.
+   - **Ojo con lo que hay hoy**: `exportarPendientes()` pide `limit: 200` sobre **5.026 registros
+     pendientes** (2.931 empresa, 1.060 vehículo, 1.035 conductor). Exporta el 4% y no lo dice. Y
+     sus columnas no identifican la fila, así que no sirve como template de ida y vuelta.
+   - **1 conductor de 87 no tiene `tax_id`**: con match por RUT no entra nunca, y hay que decirlo.
+
+---
+
 ### 2026-08-20/21 — Rondas 134-137: la ficha de empresa terminada, baja y transferencia, y el tráfico contra la API
 
 Cuatro ramas, todas mergeadas a `dev` y desplegadas. **Todo lo de abajo está medido, no estimado.**
@@ -93,7 +285,9 @@ tests: se iba en la ceremonia alrededor.
 
 ---
 
-## SIGUIENTE PASO EXACTO
+## Lo que quedaba abierto al cerrar las Rondas 134-137
+
+(El siguiente paso vigente es el de la Ronda 138, más arriba. Esto sigue pendiente y no se hizo.)
 
 **Verificar `Certificado de Antecedentes`**: tiene política `REQUIRED` y su registro cargado **no
 tiene fecha**. O se cargó antes de que la política existiera, o hay un camino que deja pasar sin

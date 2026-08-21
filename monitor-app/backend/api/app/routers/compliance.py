@@ -395,6 +395,29 @@ async def get_certification_status(
     }
 
 
+def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[str]:
+    """Que estados de empresa entran en la consulta.
+
+    LA COLA DE TRABAJO NO ES EL EXPEDIENTE. Son dos preguntas distintas y
+    hasta ahora compartian un filtro:
+
+    - Sin `carrier_id` es la sabana global: "que hay que hacer hoy". Ahi solo
+      entran las empresas ACTIVE, y ese filtro existe por un bug medido (5.4):
+      antes traia LEGACY_INACTIVE/INACTIVE/ONBOARDING y eran mas de la mitad
+      del volumen mostrado. No se toca.
+    - Con `carrier_id` es la ficha de UNA empresa: "que paso con esta". Ahi el
+      filtro de estado sobra y ademas MIENTE — devolvia cero sujetos y la
+      pantalla lo leia como "nunca se le asignaron requisitos". Hoy son 2
+      empresas INACTIVE con 24 registros y 207 LEGACY_INACTIVE con 2.484 que
+      el modulo no mostraba.
+
+    En gestion de proveedores dar de baja ARCHIVA, no oculta: el historial de
+    cumplimiento es material de auditoria, y al reactivar lo primero que se
+    necesita ver es que se vencio durante la baja.
+    """
+    return None if carrier_id else ACTIVE_OPERATIONAL_STATUS
+
+
 _PENDING_ROWS_SQL = f"""
 WITH pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
@@ -434,7 +457,21 @@ resolved AS (
             WHEN 'DRIVER' THEN d.full_name
             WHEN 'ASSET'  THEN a.license_plate
             ELSE NULL
-        END AS subject_name
+        END AS subject_name,
+        -- Que ES el vehiculo, no solo su patente. Son dos datos distintos y
+        -- ninguno reemplaza al otro: `asset_type` esta SIEMPRE (124 de 124
+        -- vehiculos: 87 TRACTOCAMION, 37 RAMPLA) y dice el chasis;
+        -- `fleet_service_type_id` es el subtipo de carroceria y solo lo tienen
+        -- las ramplas (36 de 37; los 87 tractocamiones lo tienen en NULL).
+        -- Por eso viajan los dos y la pantalla dibuja uno o dos badges segun
+        -- lo que haya, en vez de elegir un campo y mentir cuando falta.
+        --
+        -- Nulos para CARRIER y DRIVER por construccion: el LEFT JOIN a
+        -- `public.assets` ya solo matchea cuando entity_type = 'ASSET'.
+        a.asset_type,
+        fst.label      AS fleet_service_type_label,
+        fst.bg_color   AS fleet_service_type_bg_color,
+        fst.text_color AS fleet_service_type_text_color
     FROM pending p
     LEFT JOIN public.driver_assignments da
         ON p.entity_type = 'DRIVER' AND da.driver_id = p.entity_id AND da.status = 'ACTIVE'
@@ -442,6 +479,10 @@ resolved AS (
         ON p.entity_type = 'ASSET' AND aa.asset_id = p.entity_id AND aa.status = 'ACTIVE'
     LEFT JOIN public.drivers d ON p.entity_type = 'DRIVER' AND d.id = p.entity_id
     LEFT JOIN public.assets a ON p.entity_type = 'ASSET' AND a.id = p.entity_id
+    -- Los colores salen del catalogo, no del frontend: `app.status_taxonomies`
+    -- ya trae bg_color/text_color por fila y es lo que ya leen las otras
+    -- pantallas de flota (assets.py, equipment_closures.py, status_report.py).
+    LEFT JOIN app.status_taxonomies fst ON fst.id = a.fleet_service_type_id
 ),
 -- Tipo de Operación (Tractoreo/Equipo Completo) a nivel EMPRESA: no existe
 -- como columna propia de carriers — se agrega desde los vehículos activos
@@ -465,6 +506,9 @@ SELECT
     -- Se proyecta explicitamente porque el SELECT final enumera columnas: el
     -- `p.*` de `resolved` la trae hasta aca, pero si no se nombra no sale.
     r.tiene_archivo,
+    -- Mismo motivo que `tiene_archivo`: sin nombrarlas aca no salen de la CTE.
+    r.asset_type,
+    r.fleet_service_type_label, r.fleet_service_type_bg_color, r.fleet_service_type_text_color,
     -- Por que esta fila esta pendiente. El orden de las ramas importa: se
     -- pregunta primero por lo vencido, porque `por_vencer` ya lo excluye pero
     -- leerlo al reves invitaria a alguien a "simplificar" el predicado y
@@ -510,7 +554,11 @@ SELECT
 FROM resolved r
 JOIN public.carriers c ON c.id = r.resolved_carrier_id
 LEFT JOIN carrier_operation_types cot ON cot.carrier_id = c.id
-WHERE c.operational_status = $8
+-- $8 nulo = sin filtro de estado. NO es "traer todo por defecto": lo
+-- pasa nulo UNICAMENTE la consulta acotada a UNA empresa (ver
+-- `_estado_de_empresa_a_mostrar`). La sabana global sigue pidiendo
+-- ACTIVE, que es el bug 5.4 y la razon por la que este filtro existe.
+WHERE ($8::text IS NULL OR c.operational_status = $8)
   AND ($1::uuid IS NULL OR c.id = $1)
   AND ($2::text IS NULL OR r.entity_type = $2)
   AND ($3::text IS NULL OR r.requirement_code = $3)
@@ -568,7 +616,7 @@ async def list_pending_compliance_records(
     rows = await pool.fetch(
         _PENDING_ROWS_SQL,
         carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
-        ACTIVE_OPERATIONAL_STATUS, entity_id, estado,
+        _estado_de_empresa_a_mostrar(carrier_id), entity_id, estado,
     )
     total = rows[0]["total_count"] if rows else 0
     result_rows = [
@@ -630,6 +678,8 @@ WITH pending_rows AS (
 )
 SELECT
     entity_type, entity_id, subject_name, carrier_operation_types,
+    asset_type, fleet_service_type_label,
+    fleet_service_type_bg_color, fleet_service_type_text_color,
     count(*) AS todos,
     count(*) FILTER (WHERE urgencia = 'AL_DIA') AS al_dia,
     count(*) FILTER (WHERE urgencia = 'POR_VENCER') AS por_vencer,
@@ -639,7 +689,17 @@ FROM pending_rows
 -- va acotada a UNA empresa (c.id = $1)-, asi que sumarla al agrupado no
 -- parte ningun sujeto en dos filas: solo evita una segunda consulta para un
 -- dato que ya viaja en cada fila de `_PENDING_ROWS_SQL`.
-GROUP BY entity_type, entity_id, subject_name, carrier_operation_types
+--
+-- Los cuatro campos de vehiculo entran al agrupado por la misma razon y con
+-- la misma garantia, pero MAS fuerte: dependen funcionalmente de `entity_id`
+-- -son atributos de ESE vehiculo-, asi que no pueden partir un sujeto en dos
+-- filas ni aunque la consulta dejara de estar acotada a una empresa. Se
+-- agrupan en vez de envolverlos en un `max()` para que eso quede dicho: si
+-- alguna vez uno de ellos partiera un sujeto, seria una senal real de que el
+-- dato cambio de grano, no algo que un agregado deba tapar.
+GROUP BY entity_type, entity_id, subject_name, carrier_operation_types,
+         asset_type, fleet_service_type_label,
+         fleet_service_type_bg_color, fleet_service_type_text_color
 ORDER BY entity_type, subject_name
 """
 
@@ -670,7 +730,7 @@ async def get_compliance_summary(
     filas = await pool.fetch(
         _SUMMARY_SQL,
         carrier_id, None, None, None, None, SUMMARY_LIMIT, 0,
-        ACTIVE_OPERATIONAL_STATUS, None, "todos",
+        _estado_de_empresa_a_mostrar(carrier_id), None, "todos",
     )
     sujetos = [
         {
@@ -681,6 +741,10 @@ async def get_compliance_summary(
             "al_dia": f["al_dia"],
             "por_vencer": f["por_vencer"],
             "falta": f["falta"],
+            "asset_type": f["asset_type"],
+            "fleet_service_type_label": f["fleet_service_type_label"],
+            "fleet_service_type_bg_color": f["fleet_service_type_bg_color"],
+            "fleet_service_type_text_color": f["fleet_service_type_text_color"],
         }
         for f in filas
     ]
