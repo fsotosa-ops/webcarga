@@ -1,13 +1,14 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user, get_supabase, require_editor
 from app.db import get_pool
 from app.routers.compliance import pendiente_predicate, router
-from tests.conftest import USER, wire_transactional_conn
+from tests.conftest import USER, PoolDeUnaConexion, wire_transactional_conn
 
 
 def make_client(pool, supabase=None):
@@ -1512,3 +1513,135 @@ def test_status_active_scope_includes_newly_created_companies():
     assert "ONBOARDING" in sql or "ANY($1" in sql, (
         "el alcance activo tiene que incluir a las empresas recien creadas"
     )
+
+
+# ── GET /compliance-records/summary (Task 2, perf/compresion-y-resumen) ────
+#
+# La ficha de empresa mostraba nueve cabeceras plegadas y descargaba 457 filas
+# de detalle para dibujarlas (medido en dev: 57.183 bytes). Este endpoint
+# agrupa lo mismo que `/pending?estado=todos` ya calcula, para que la ficha
+# pida un resumen al llegar y el detalle de cada sujeto recien al desplegarlo.
+#
+# NO define una segunda vez que es "pendiente" o "al dia": reusa
+# `_PENDING_ROWS_SQL` como CTE y agrupa sobre `urgencia`, que ya trae sus
+# cuatro ramas resueltas por el SQL (ver `pendiente_predicate` mas arriba).
+
+
+def test_summary_binds_exactly_the_parameters_it_references():
+    """Misma defensa que /pending: un placeholder de mas o de menos lo acepta
+    un AsyncMock y lo rechaza Postgres."""
+    import re
+
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    sql, *args = pool.fetch.call_args.args
+    referenciados = {int(n) for n in re.findall(r"\$(\d+)", sql)}
+    assert referenciados == set(range(1, len(args) + 1)), (
+        f"el SQL referencia {sorted(referenciados)} pero se pasan {len(args)} parametros"
+    )
+
+
+def test_summary_no_reescribe_pendiente_predicate():
+    """El agrupado tiene que salir de `urgencia`/`pendiente_predicate`, no de
+    una lista de status escrita a mano dentro de `_SUMMARY_SQL` — es la misma
+    clase de bug que este modulo ya tuvo con el embudo y el cajon
+    contradiciendose."""
+    from app.routers.compliance import _PENDING_ROWS_SQL, _SUMMARY_SQL
+
+    assert _PENDING_ROWS_SQL in _SUMMARY_SQL
+    assert "MISSING" not in _SUMMARY_SQL.replace(_PENDING_ROWS_SQL, "")
+    assert "EXPIRED" not in _SUMMARY_SQL.replace(_PENDING_ROWS_SQL, "")
+
+
+def test_summary_requiere_carrier_id():
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary")
+
+    assert res.status_code == 422
+
+
+def test_summary_route_does_not_collide_with_record_id_path():
+    """Mismo cuidado que /pending: /summary tiene que declararse antes de
+    /{record_id}, o FastAPI lo interpreta como un record_id literal."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200
+    assert "totales" in res.json()
+    pool.fetchrow.assert_not_called()
+
+
+def test_summary_agrupa_por_sujeto_desde_urgencia():
+    """La particion que la ficha necesita: `al_dia`, `por_vencer` y `falta`
+    salen de la MISMA `urgencia` de cada fila — no una cuenta nueva por
+    `status`. `falta` agrupa VENCIDO y FALTA (las dos ramas que la ficha ya
+    muestra como "lo que falta"), para que la particion cierre exacto contra
+    `todos`."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+         "carrier_operation_types": ["Tractoreo"]},
+    ]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/summary?carrier_id=c1")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["sujetos"] == [{
+        "entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
+        "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+    }]
+    assert body["totales"] == {"todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1}
+    assert body["carrier_operation_types"] == ["Tractoreo"]
+
+
+async def _pedir_resumen(conn, carrier_id):
+    """El resumen, llamando al handler real sobre la conexion transaccional
+    del fixture — mismo patron que `list_pending_compliance_records` en
+    `test_integracion_certificacion.py`, no uno inventado para esta prueba."""
+    from app.routers.compliance import get_compliance_summary
+
+    return await get_compliance_summary(
+        carrier_id=str(carrier_id), pool=PoolDeUnaConexion(conn), _=USER,
+    )
+
+
+async def _pedir_pending(conn, carrier_id, estado="todos", limit=500):
+    from app.routers.compliance import list_pending_compliance_records
+
+    respuesta = await list_pending_compliance_records(
+        carrier_id=str(carrier_id), category=None, requirement_code=None, q="",
+        operation_type=None, entity_id=None, limit=limit, offset=0, estado=estado,
+        pool=PoolDeUnaConexion(conn), _=USER,
+    )
+    return respuesta["rows"]
+
+
+@pytest.mark.integracion
+async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_revertida):
+    """El resumen tiene que contar EXACTAMENTE lo mismo que la lista, o la
+    pantalla dice un numero y muestra otro — que es el defecto que esta ficha
+    ya tuvo cuando el filtro y la fila se contradecian.
+    """
+    carrier_id = await conexion_revertida.fetchval(
+        "SELECT carrier_id FROM public.driver_assignments WHERE status='ACTIVE' LIMIT 1"
+    )
+    resumen = await _pedir_resumen(conexion_revertida, carrier_id)
+    filas = await _pedir_pending(conexion_revertida, carrier_id, estado="todos", limit=1000)
+
+    assert resumen["totales"]["todos"] == len(filas)
+    assert sum(s["todos"] for s in resumen["sujetos"]) == len(filas)
+    # Y la particion cierra: al dia + por vencer + falta == todos
+    t = resumen["totales"]
+    assert t["al_dia"] + t["por_vencer"] + t["falta"] == t["todos"]

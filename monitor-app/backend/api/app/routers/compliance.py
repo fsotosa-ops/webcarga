@@ -26,6 +26,7 @@ FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
 from ..schemas.compliance import (
     ReassignBody,
     ComplianceRecordPatchBody,
+    ComplianceSummaryResponse,
     PendingComplianceListResponse,
 )
 from ..schemas.document_ingest import unclassified_predicate
@@ -595,6 +596,84 @@ async def list_pending_compliance_records(
         for r in rows
     ]
     return {"total": total, "rows": result_rows}
+
+
+# Reusa _PENDING_ROWS_SQL como CTE y agrupa sobre `urgencia`, que ya trae sus
+# cuatro ramas resueltas (ver `pendiente_predicate`). El agrupado NO vuelve a
+# decidir que es "pendiente" o "al dia" -esa es la misma clase de bug que
+# este modulo ya tuvo con el embudo y el cajon contradiciendose.
+#
+# `falta` agrupa VENCIDO y FALTA: son las dos ramas que la ficha ya muestra
+# juntas como "lo que falta" (`avanceDelSujeto`, frontend). Con esta
+# particion, al_dia + por_vencer + falta == todos siempre -es lo que el test
+# de integracion verifica contra Postgres real.
+_SUMMARY_SQL = f"""
+WITH pending_rows AS (
+{_PENDING_ROWS_SQL}
+)
+SELECT
+    entity_type, entity_id, subject_name, carrier_operation_types,
+    count(*) AS todos,
+    count(*) FILTER (WHERE urgencia = 'AL_DIA') AS al_dia,
+    count(*) FILTER (WHERE urgencia = 'POR_VENCER') AS por_vencer,
+    count(*) FILTER (WHERE urgencia IN ('FALTA', 'VENCIDO')) AS falta
+FROM pending_rows
+-- `carrier_operation_types` es constante en toda la respuesta -esta consulta
+-- va acotada a UNA empresa (c.id = $1)-, asi que sumarla al agrupado no
+-- parte ningun sujeto en dos filas: solo evita una segunda consulta para un
+-- dato que ya viaja en cada fila de `_PENDING_ROWS_SQL`.
+GROUP BY entity_type, entity_id, subject_name, carrier_operation_types
+ORDER BY entity_type, subject_name
+"""
+
+
+@router.get("/summary", response_model=ComplianceSummaryResponse)
+async def get_compliance_summary(
+    carrier_id: str = Query(...),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """La ficha de una empresa, resumida: cuantos requisitos tiene cada
+    sujeto -la empresa, sus conductores, sus vehiculos- y como vienen, sin
+    bajar el detalle de cada uno. Reemplaza el fetch de 457 filas que la
+    ficha hacia solo para dibujar nueve cabeceras plegadas con sus conteos
+    (medido en dev: 57.183 bytes en la primera carga).
+
+    El detalle de un sujeto se pide aparte, solo al desplegarlo
+    (GET /pending?entity_id=...) -esta ruta nunca lo trae.
+
+    SUMMARY_LIMIT no es un parametro publico: le pide a la CTE TODAS las
+    filas de la empresa, no las 500 que /pending tope para su listado
+    global. Hoy la empresa mas grande tiene 457; 5000 deja margen sin
+    acercarse a convertir esto en un escaneo de la tabla.
+    """
+    SUMMARY_LIMIT = 5000
+    filas = await pool.fetch(
+        _SUMMARY_SQL,
+        carrier_id, None, None, None, None, SUMMARY_LIMIT, 0,
+        ACTIVE_OPERATIONAL_STATUS, None, "todos",
+    )
+    sujetos = [
+        {
+            "entity_type": f["entity_type"],
+            "entity_id": f["entity_id"],
+            "subject_name": f["subject_name"],
+            "todos": f["todos"],
+            "al_dia": f["al_dia"],
+            "por_vencer": f["por_vencer"],
+            "falta": f["falta"],
+        }
+        for f in filas
+    ]
+    totales = {
+        clave: sum(s[clave] for s in sujetos)
+        for clave in ("todos", "al_dia", "por_vencer", "falta")
+    }
+    return {
+        "totales": totales,
+        "sujetos": sujetos,
+        "carrier_operation_types": list(filas[0]["carrier_operation_types"]) if filas else [],
+    }
 
 
 @router.get("/{record_id}")
