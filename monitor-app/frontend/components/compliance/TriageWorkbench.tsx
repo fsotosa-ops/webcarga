@@ -370,27 +370,30 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
           una segunda tanda se subía atribuida a una empresa QUE YA NO SE VE.
           El estado no se pierde, sólo deja de mostrarse: vuelve con lo ya
           elegido en cuanto la selección se vacía. */}
-      {/* …y tampoco mientras el panel derecho está preguntando la empresa de UN
-          archivo. Es la misma invariante que la línea de arriba defiende: dos
-          cajas de "Buscar empresa" al mismo tiempo significan cosas distintas
-          —"de quién es la tanda que voy a subir" y "de quién es ESTE archivo"—
-          y elegir en la equivocada no avisa nada. Enfocar un archivo sin
-          empresa levanta la segunda, así que acá se retira la primera. */}
+      {/* LA EMPRESA DEL LOTE SE DICE SIEMPRE, aunque su buscador no se muestre.
+          Son dos cosas distintas y meterlas en la misma condición fue un error
+          medido: al esconder el bloque entero mientras el panel derecho
+          pregunta, `empresaDelLote` seguía gobernando la zona de arrastre —que
+          sigue aceptando archivos— con la empresa fuera de pantalla. Es
+          textualmente el defecto que el comentario de acá abajo ya advertía.
+          Lo que colisiona son las dos CAJAS DE BÚSQUEDA; el indicador no es una
+          caja. */}
+      {canEdit && !carrierId && empresaDelLote && (
+        <p className="text-etiqueta text-text-primary font-semibold">
+          Este lote es de {empresaDelLote.business_name}
+        </p>
+      )}
+
+      {/* El buscador sí se retira mientras el panel derecho pregunta la empresa
+          de UN archivo: dos cajas de "Buscar empresa" al mismo tiempo
+          significan cosas distintas —"de quién es la tanda que voy a subir" y
+          "de quién es ESTE archivo"— y elegir en la equivocada no avisa nada. */}
       {canEdit && !carrierId && sinSeleccion && !preguntandoEmpresaDeUnArchivo && (
         <div>
           <p className="text-etiqueta text-informativo pb-1">
             ¿De quién son estos documentos? Elegir la empresa hace que el sistema
             reconozca mejor a quién pertenece cada archivo.
           </p>
-          {/* La empresa elegida, DICHA. Sin esto, el estado gobierna a qué
-              empresa se atribuye la tanda sin estar en pantalla — el mismo
-              defecto que tenía esconder el selector con la selección activa.
-              Y es lo que hace visible la preselección que trae el enlace. */}
-          {empresaDelLote && (
-            <p className="text-etiqueta text-text-primary font-semibold pb-1">
-              Este lote es de {empresaDelLote.business_name}
-            </p>
-          )}
           <CarrierSearchPicker
             query={busqueda}
             onQueryChange={setBusqueda}

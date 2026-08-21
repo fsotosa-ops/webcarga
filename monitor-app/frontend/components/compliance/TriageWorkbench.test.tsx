@@ -243,6 +243,33 @@ describe('TriageWorkbench', () => {
       'c1', expect.any(Array),
     ))
   })
+
+  // Es la SEGUNDA vez que esta pantalla pierde esta invariante. La primera fue
+  // esconder el selector con la seleccion activa; la segunda, esconderlo
+  // mientras el panel derecho pregunta la empresa de un archivo -- y en las dos
+  // se fue con el la linea que DICE cual es la empresa activa. La zona de
+  // arrastre sigue aceptando archivos, asi que el estado gobierna a que empresa
+  // se atribuyen sin estar en pantalla.
+  //
+  // Lo que colisiona son las dos CAJAS DE BUSQUEDA. El indicador no es una caja.
+  it('la empresa del lote se sigue DICIENDO aunque su buscador no se muestre', async () => {
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
+    } as never)
+    setup()
+    await screen.findByText('i1.png')
+
+    fireEvent.change(await screen.findByPlaceholderText(/buscar empresa \(opcional\)/i), { target: { value: 'char' } })
+    fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
+    expect(await screen.findByText(/Este lote es de Transportes Charlotte Spa/)).toBeInTheDocument()
+
+    // Con un archivo marcado el buscador se retira...
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+    expect(screen.queryByPlaceholderText(/buscar empresa \(opcional\)/i)).not.toBeInTheDocument()
+
+    // ...y la empresa activa SIGUE dicha.
+    expect(screen.getByText(/Este lote es de Transportes Charlotte Spa/)).toBeInTheDocument()
+  })
 })
 
 // El caso de uso que justifica toda la bandeja: soltar la carpeta de 120
