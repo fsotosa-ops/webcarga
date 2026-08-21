@@ -27,3 +27,21 @@ credenciales.txt
 .mage-agent-home/
 # Sync local de pipelines (.mage-agent/local_sync), relativo a cwd y no a HOME.
 .mage-agent/
+
+# ── Artefactos locales que nunca debieron entrar al control de versiones ──
+# Al 2026-08-21 el repo tenía 10.639 archivos trackeados y 9.498 eran un
+# virtualenv: el 89%. Cada corrida de pytest reescribía cientos de .pyc y
+# ensuciaba el `git status` hasta volverlo ilegible, que es como un diff real
+# se vuelve imposible de revisar.
+#
+# `extraction_service/.gitignore` ya tenía estas reglas —por eso ese servicio
+# estaba limpio— y `monitor-app/.gitignore` sólo cubría `.env`. Se ponen acá,
+# en la raíz, para que valgan en todo el repo y no haya que acordarse de
+# repetirlas en cada servicio nuevo.
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.DS_Store
