@@ -168,11 +168,39 @@ que **verificar qué workflows corrieron**, no asumir.
 
 ---
 
-## SIGUIENTE PASO EXACTO
+## El click-through, HECHO — y encontró cuatro defectos que la suite no vio
 
-**Click-through en vivo, que sigue sin hacerse** — ya está desplegado en
-`https://webcarga-frontend-dev-zcdyyci7ta-uc.a.run.app` — ahora incluye la ficha de una empresa dada de
-baja. Después, en este orden:
+Con Playwright contra dev, sobre el código ya desplegado. Los cuatro sobrevivieron a **1.257 tests
+en verde, `tsc` limpio y `npm run build` OK**. Commits `c26a6d0a` y `a3f6e269`.
+
+1. **La patente desaparecía en teléfono.** En 390px, un vehículo con DOS insignias mostraba
+   `Rampla · Furgón Congelado / Refrigerado` y **ninguna patente**: medido, el elemento del nombre
+   daba **0px** de ancho contra 51px en los de una sola insignia. Tenía `truncate` y todo lo demás
+   de la fila `shrink-0`, así que era lo primero que el flexbox sacrificaba — **las insignias
+   empujaban fuera justo lo que venían a anotar**. Ahora la patente es `shrink-0`.
+2. **Un desplegable muerto arriba del que sirve** (lo reportó el usuario). Sin empresa, "¿A quién
+   pertenece?" no tiene opciones y quedaba con "— Seleccionar —", **encima** del buscador que sí
+   funciona: lo primero que se ve es lo que no anda.
+3. **Tres cajas de "Buscar empresa" a la vez.** El selector del lote se retiraba con la selección
+   activa pero no al ENFOCAR un archivo, que es justo cuando aparece el del panel.
+4. **El banner mentía.** La ficha de una empresa dada de baja decía "no se le puede cargar nada
+   nueva" con **SEIS controles de carga habilitados** debajo: se guardó el puente a la Bandeja y no
+   los controles por renglón. `canEdit` pasa a derivarse de rol **Y** estado de la empresa.
+
+**Y el arreglo de (1) destapó otro**: al dejar de sacrificar la patente, la carrocería pasó a
+truncarse en **"F"**. Una letra suelta no es un dato, es ruido con forma de dato — se oculta bajo
+`sm` en vez de mostrarse partida (`a3f6e269`).
+
+**Verificado después, en el mismo ambiente**: patentes de 0px → 46-52px; controles de carga de 6 →
+0 con los documentos igual visibles; cajas de "Buscar empresa" de 3 → 1; 12 carrocerías completas
+en escritorio; **0 errores de consola**.
+
+**La lección, que ya es la tercera vez**: ningún test unitario ve un renglón que se parte mal. La
+regla del `AGENTS.md` —"mirar la pantalla, en escritorio y en teléfono"— no es ceremonia.
+
+---
+
+## SIGUIENTE PASO EXACTO
 
 1. **Aprobación manual de a una y carga masiva de fechas.** Es lo que Pablo espera para poder
    trabajar: *"sería bueno poder subir de alguna forma las fechas nomás. La información que yo tengo
