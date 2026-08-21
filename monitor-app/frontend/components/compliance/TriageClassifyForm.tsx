@@ -241,7 +241,7 @@ export function TriageClassifyForm({
                   de la barra de selección, que además rotula el conteo. */}
               {targetIds.length > 1 ? (
                 <p className="text-[10px] text-informativo">
-                  Hay {targetIds.length} archivos marcados. Deja marcado uno solo para
+                  {`Hay ${targetIds.length} archivos marcados.`} Deja marcado uno solo para
                   asignarle empresa acá, o usa &quot;Mover a otra empresa&quot; en la barra
                   de selección para moverlos todos juntos.
                 </p>

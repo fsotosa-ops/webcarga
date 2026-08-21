@@ -50,7 +50,13 @@ export function MoveToCarrierBar({ targetIds, currentCarrierId, onMoved }: Props
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 hover:text-accent transition-colors"
+        // Blanco, no `text-gray-600`: este boton vive DENTRO de la barra de
+        // seleccion, que es `bg-text-primary` (oscura). Gris oscuro sobre
+        // fondo oscuro se lee como deshabilitado sin estarlo — y es la unica
+        // via para asignar varios archivos a una empresa de una vez, asi que
+        // parecer apagado esconde justamente la accion en lote. Mismo
+        // tratamiento que su hermano "Limpiar seleccion" de al lado.
+        className="flex items-center gap-1.5 text-[11px] font-semibold text-white/70 hover:text-white transition-colors"
       >
         <ArrowRightLeft size={11} />
         Mover {cuantos(targetIds.length)} a otra empresa

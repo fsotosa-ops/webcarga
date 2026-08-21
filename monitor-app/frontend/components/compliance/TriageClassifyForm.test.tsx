@@ -304,6 +304,8 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
     // `moveItems` mueve TODO lo que le pasen. Con la copia en singular
     // ("este documento") sobre tres marcados, un clic reasignaba los tres —y
     // con "marcar todo" en la bandeja global, algunos podían tener empresa ya.
+    // Con el espacio. JSX come el espacio entre `{expresion}` y la palabra
+    // siguiente cuando hay salto de linea en medio: salia "Hay 3archivos".
     expect(await screen.findByText(/Hay 3 archivos marcados/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Buscar empresa transportista')).not.toBeInTheDocument()
   })
