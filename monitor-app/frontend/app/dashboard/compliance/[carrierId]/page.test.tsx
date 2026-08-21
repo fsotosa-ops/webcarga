@@ -2,12 +2,13 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import FichaEmpresaPage from './page'
-import type { Carrier, PendingComplianceRow } from '@/lib/types'
+import type { Carrier, ComplianceSummaryResponse, ComplianceSummarySubject, PendingComplianceRow } from '@/lib/types'
 
 vi.mock('next/navigation', () => ({ useParams: vi.fn() }))
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: {
     listPending: vi.fn(),
+    summary: vi.fn(),
     get: vi.fn(),
     uploadFile: vi.fn().mockResolvedValue({ status: 'APPROVED_MANUAL' }),
   },
@@ -48,16 +49,62 @@ function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
   } as PendingComplianceRow
 }
 
-/** Arma el QueryClientProvider y mockea `complianceApi.listPending`, mismo
- *  patrón que `CarrierDrawer.test.tsx`.
- *
- *  Ronda de arreglo 1: la página pide `estado='todos'` UNA sola vez —ya no
- *  cuatro variantes por bucket— y filtra en el cliente sobre `urgencia`. Por
- *  eso `montar()` mockea un solo `mockResolvedValue`, no cuatro. */
-function montar(rows: PendingComplianceRow[], total = rows.length) {
+/** El resumen que el backend calcularía sobre este mismo set de filas —
+ *  misma partición que `_SUMMARY_SQL` (Task 2): `al_dia`/`por_vencer` cuentan
+ *  su rama exacta de `urgencia`, `falta` junta FALTA y VENCIDO. */
+function resumenDesdeFilas(rows: PendingComplianceRow[]): ComplianceSummaryResponse {
+  const porSujeto = new Map<string, ComplianceSummarySubject>()
+  for (const r of rows) {
+    const clave = `${r.entity_type}:${r.entity_id}`
+    if (!porSujeto.has(clave)) {
+      porSujeto.set(clave, {
+        entity_type: r.entity_type, entity_id: r.entity_id, subject_name: r.subject_name,
+        todos: 0, al_dia: 0, por_vencer: 0, falta: 0,
+      })
+    }
+    const s = porSujeto.get(clave)!
+    s.todos += 1
+    if (r.urgencia === 'AL_DIA') s.al_dia += 1
+    else if (r.urgencia === 'POR_VENCER') s.por_vencer += 1
+    else s.falta += 1 // FALTA o VENCIDO
+  }
+  const sujetos = [...porSujeto.values()]
+  const totales = sujetos.reduce(
+    (acc, s) => ({
+      todos: acc.todos + s.todos, al_dia: acc.al_dia + s.al_dia,
+      por_vencer: acc.por_vencer + s.por_vencer, falta: acc.falta + s.falta,
+    }),
+    { todos: 0, al_dia: 0, por_vencer: 0, falta: 0 },
+  )
+  return { totales, sujetos, carrier_operation_types: rows[0]?.carrier_operation_types ?? [] }
+}
+
+/** Lo que `GET /pending?estado=X` devolvería sobre las filas de UN sujeto —
+ *  mismo criterio que `pendiente_predicate`: 'falta' es "no está al día"
+ *  (incluye lo por vencer), no el casillero exclusivo del resumen. */
+function filasParaEstado(rows: PendingComplianceRow[], estado?: string): PendingComplianceRow[] {
+  switch (estado) {
+    case 'al_dia':     return rows.filter(r => r.urgencia === 'AL_DIA')
+    case 'por_vencer': return rows.filter(r => r.urgencia === 'POR_VENCER')
+    case 'falta':      return rows.filter(r => r.urgencia !== 'AL_DIA')
+    default:           return rows // 'todos' o sin filtro
+  }
+}
+
+/** Arma el QueryClientProvider y mockea `complianceApi.summary` (el resumen
+ *  que la ficha pide al llegar) y `complianceApi.listPending` (el detalle de
+ *  UN sujeto, que se pide recién al desplegarlo) — las dos derivadas del
+ *  MISMO set de filas, para que el test siga escribiendo un solo fixture,
+ *  como antes de la Task 2. */
+function montar(rows: PendingComplianceRow[]) {
   vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
   vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
-  vi.mocked(complianceApi.listPending).mockResolvedValue({ total, rows })
+  vi.mocked(complianceApi.summary).mockResolvedValue(resumenDesdeFilas(rows))
+  vi.mocked(complianceApi.listPending).mockImplementation(async (params = {}) => {
+    const delSujeto = rows.filter(r => r.entity_id === params.entityId)
+    const filtradas = filasParaEstado(delSujeto, params.estado)
+    return { total: filtradas.length, rows: filtradas }
+  })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <FichaEmpresaPage />
@@ -93,7 +140,8 @@ describe('FichaEmpresaPage', () => {
   })
 
   // La cuenta del grupo contesta "cuantos conductores tiene y como van" sin
-  // abrir nada, que es la pregunta con la que se llega a la ficha.
+  // abrir nada, que es la pregunta con la que se llega a la ficha. Sale del
+  // resumen, no de contar filas — por eso no hace falta desplegar nada.
   it('cada grupo dice cuántos son, cuántos requisitos y cómo van', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
@@ -110,37 +158,53 @@ describe('FichaEmpresaPage', () => {
       .toHaveTextContent('1 vehículo · 1 requisito')
   })
 
-  it('empieza mostrando TODO, no sólo lo que falta', async () => {
-    // Es la razon de ser de la pantalla: los 23 documentos cargados de la
-    // unica empresa con documentacion no aparecian en ningun lado del modulo.
+  // La razon de ser de la Task 2: al llegar, la ficha pide el RESUMEN — no
+  // las 457 filas de detalle que antes bajaba sólo para dibujar nueve
+  // cabeceras.
+  it('al llegar pide el resumen, no el detalle de nadie', async () => {
     montar([fila()])
-    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
-      expect.objectContaining({ estado: 'todos' }),
-    ))
-    // La llamada sola no alcanza: es la UNICA que la pagina hace, siempre con
-    // estado:'todos', sin importar el filtro activo — filtrar es trabajo del
-    // cliente desde la ronda de arreglo 1. Lo que prueba que arranca
-    // mostrando TODO es el filtro activo, no la llamada.
+    await waitFor(() => expect(complianceApi.summary).toHaveBeenCalledWith('c1'))
     await screen.findByText('De la empresa')
     expect(screen.getByRole('button', { name: /^Todo/i })).toHaveAttribute('aria-pressed', 'true')
+    // El sujeto único arranca desplegado (ver test de más abajo), así que
+    // esto SÍ dispara un listPending — pero ninguno antes de que el resumen
+    // resuelva y decida qué sujetos hay.
+    expect(complianceApi.summary).toHaveBeenCalledTimes(1)
   })
 
-  it('cambiar el filtro cambia lo que se ve, sin volver a pedir nada', async () => {
-    // Ronda de arreglo 1: una sola consulta (estado='todos'); el filtro
-    // reparte lo que ya llegó usando `urgencia`, no dispara una consulta
-    // nueva por click.
+  // Con más de un sujeto, nadie arranca desplegado: no hay ningun detalle
+  // que pedir hasta que alguien despliegue algo. Es la baja de 457 filas a
+  // "cero" en la primera carga.
+  it('con varios sujetos, no se pide el detalle de ninguno hasta desplegar', async () => {
+    montar([
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
+      fila({ id: 'p2', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' }),
+    ])
+    await screen.findByRole('button', { name: /Conductores/ })
+    expect(complianceApi.listPending).not.toHaveBeenCalled()
+  })
+
+  it('cambiar el filtro pide sólo las filas de ese estado, para el sujeto desplegado', async () => {
+    // Sujeto único (CARRIER): arranca desplegado, así que cambiar el filtro
+    // dispara una consulta nueva con el `estado` elegido — el detalle YA no
+    // se filtra en el cliente sobre una lista pre-cargada.
     montar([
       fila({ id: 'p1', document_name: 'Certificado al día', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA' }),
       fila({ id: 'p2', document_name: 'Rol SII', status: 'MISSING', urgencia: 'FALTA' }),
     ])
     await screen.findByText('Certificado al día')
     expect(screen.getByText('Rol SII')).toBeInTheDocument()
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'c1', estado: 'todos' }),
+    ))
 
     fireEvent.click(screen.getByRole('button', { name: /^Al día/i }))
 
-    expect(screen.getByText('Certificado al día')).toBeInTheDocument()
+    await waitFor(() => expect(complianceApi.listPending).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'c1', estado: 'al_dia' }),
+    ))
+    expect(await screen.findByText('Certificado al día')).toBeInTheDocument()
     expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
-    expect(complianceApi.listPending).toHaveBeenCalledTimes(1)
   })
 
   it('un documento cargado se puede ver; uno que falta se puede cargar', async () => {
@@ -235,8 +299,8 @@ describe('FichaEmpresaPage', () => {
   // Estar al dia NO implica tener archivo: una aprobacion manual sin evidencia
   // adjunta es al dia y no tiene blob. Son 62 renglones repartidos en 37 de las
   // 38 empresas activas, y con un "Ver" incondicional cada uno abria un boton
-  // que solo podia contestar que no hay nada que abrir. La otra mitad de la
-  // lista ya lo resolvia bien; esta la ofrecia igual.
+  // que solo podia contestar que no hay nada. La otra mitad de la lista ya lo
+  // resolvia bien; esta la ofrecia igual.
   it('una fila al día SIN archivo no ofrece "Ver", porque no hay nada que ver', async () => {
     montar([fila({
       id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA',
@@ -249,17 +313,16 @@ describe('FichaEmpresaPage', () => {
 
   // "Todavia no llego" y "no se va a mostrar" son mensajes distintos, y esta
   // pantalla necesita los dos. Sin `cargando`, las cuatro cifras arrancaban en
-  // guion —negando de entrada un dato que venia en camino— y el guion perdia su
-  // unico significado, que es el de la respuesta truncada.
+  // guion —negando de entrada un dato que venia en camino. El resumen nunca
+  // viene truncado (a diferencia de la lista vieja), asi que ya no hace falta
+  // un segundo estado para "no se va a mostrar".
   it('mientras la consulta viaja, las cifras no niegan el dato', async () => {
-    // La empresa resuelve y los pendientes NO: es la ventana real donde la
-    // pantalla ya se dibujó y las cifras todavía no tienen su número. Con las
-    // dos consultas en vuelo la página entera muestra su estado de carga y
-    // este test no podría distinguir nada.
+    // La empresa resuelve y el resumen NO: es la ventana real donde la
+    // pantalla ya se dibujó y las cifras todavía no tienen su número.
     let resolver: (v: unknown) => void = () => {}
     vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
     vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
-    vi.mocked(complianceApi.listPending).mockReturnValue(
+    vi.mocked(complianceApi.summary).mockReturnValue(
       new Promise(r => { resolver = r }) as never,
     )
     render(
@@ -277,7 +340,10 @@ describe('FichaEmpresaPage', () => {
     // momento en que las cifras negaban un dato que venia en camino.
     expect(screen.queryByText('—')).not.toBeInTheDocument()
 
-    resolver({ total: 0, rows: [] })
+    resolver({
+      totales: { todos: 0, al_dia: 0, por_vencer: 0, falta: 0 },
+      sujetos: [], carrier_operation_types: [],
+    })
     await waitFor(() => expect(screen.getAllByText('0').length).toBeGreaterThan(0))
   })
 
@@ -286,6 +352,9 @@ describe('FichaEmpresaPage', () => {
   // nombre y todos los requisitos desplegados— la ficha medía 6,4 pantallas: el
   // primer conductor caía bajo el pliegue y el primer vehículo 4,3 pantallas más
   // abajo. Que la empresa CONTIENE conductores y vehículos dejaba de verse.
+  //
+  // Las cifras de la cabecera salen del resumen: no hace falta desplegar
+  // ningún sujeto para verlas.
   it('cada sujeto dice qué es, cuántos requisitos tiene y cómo va', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'CARRIER', urgencia: 'AL_DIA', tiene_archivo: true }),
@@ -318,7 +387,8 @@ describe('FichaEmpresaPage', () => {
 
   // Los tres sujetos se ven JUNTOS, que es lo que la ficha vino a resolver: sus
   // cuerpos van plegados y la cabecera carga el total. En el mockup cada sujeto
-  // declara "12 requisitos" y muestra UNA fila.
+  // declara "12 requisitos" y muestra UNA fila. Desplegar un sujeto dispara su
+  // propio pedido de detalle — ya no hay una lista pre-cargada que filtrar.
   it('conductores y vehículos se ven sin desplegar nada, y se abren al tocarlos', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
@@ -341,13 +411,19 @@ describe('FichaEmpresaPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Conductores/ }))
     expect(screen.getByRole('button', { name: /Juan Pérez/ })).toBeInTheDocument()
 
-    // Sus requisitos, no: por eso caben juntos en una pantalla.
+    // Sus requisitos, no: por eso caben juntos en una pantalla. Y todavía no
+    // se pidió ningún detalle.
     expect(screen.queryByText('Licencia de Conducir')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Juan Pérez/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(complianceApi.listPending).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: /Juan Pérez/ }))
 
-    expect(screen.getByText('Licencia de Conducir')).toBeInTheDocument()
+    // Recién ahora se pidió SU detalle — no el de nadie más.
+    expect(await screen.findByText('Licencia de Conducir')).toBeInTheDocument()
+    expect(complianceApi.listPending).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'd1' }),
+    )
     expect(screen.getByRole('button', { name: /Juan Pérez/ })).toHaveAttribute('aria-expanded', 'true')
     // Abrir uno no abre el resto.
     expect(screen.queryByText('Revisión Técnica')).not.toBeInTheDocument()
@@ -367,18 +443,19 @@ describe('FichaEmpresaPage', () => {
     expect(screen.queryByText('Rol SII')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /De la empresa/ }))
-    expect(screen.getByText('Rol SII')).toBeInTheDocument()
+    expect(await screen.findByText('Rol SII')).toBeInTheDocument()
   })
 
   // Plegar existe para dejar ver el conjunto. Con un solo sujeto no hay
-  // conjunto: seria llegar a una fila cerrada y nada mas.
+  // conjunto: seria llegar a una fila cerrada y nada mas. Arranca desplegado,
+  // asi que su detalle se pide sin que nadie toque nada.
   it('una empresa sin flota asignada abre su único sujeto', async () => {
     montar([fila({ id: 'p1', entity_type: 'CARRIER', document_name: 'Rol SII' })])
 
     expect(await screen.findByText('Rol SII')).toBeInTheDocument()
   })
 
-  // Con `estado='todos'`, cero filas NO significa "nadie cargó nada": significa
+  // Con el resumen, cero sujetos NO significa "nadie cargó nada": significa
   // que la empresa no tiene ni un `compliance_record`. Las 32 empresas sin
   // documentos sí tienen registros MISSING, así que nunca ven este mensaje; lo
   // ve la empresa a la que todavía no se le sembró el catálogo, y decirle
@@ -404,17 +481,11 @@ describe('FichaEmpresaPage', () => {
     vi.mocked(useCanEdit).mockReturnValue(false)
     montar([fila({ id: 'p1', status: 'MISSING' })])
     expect(await screen.findByText('De la empresa')).toBeInTheDocument()
+    // Espera el renglon (su detalle se pide al desplegar, y este sujeto
+    // único arranca desplegado): recien con el renglon montado tiene sentido
+    // afirmar que el input de carga NO esta.
+    expect(await screen.findByTestId('renglon-p1')).toBeInTheDocument()
     expect(screen.queryByTestId('archivo-p1')).not.toBeInTheDocument()
-  })
-
-  it('si la lista vino truncada, sólo la cifra de "todos" afirma un número', async () => {
-    // rows.length (2) < total (500): contar sobre lo que llego para las
-    // otras tres cifras mentiria — son una muestra, no el universo. Dicen que
-    // no hay dato en vez de latir para siempre prometiendo uno.
-    montar([fila({ id: 'p1' }), fila({ id: 'p2', requirement_id: 'r2' })], 500)
-    await screen.findByText('De la empresa')
-    expect(screen.getAllByText('500').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('—')).toHaveLength(3)
   })
 
   it('sin flota conocida, el chip de tipo de operación lo dice en vez de desaparecer', async () => {
@@ -427,7 +498,7 @@ describe('FichaEmpresaPage', () => {
   it('si la consulta falló, el chip se calla en vez de afirmar "sin determinar"', async () => {
     vi.mocked(useParams).mockReturnValue({ carrierId: 'c1' })
     vi.mocked(carriersApi.get).mockResolvedValue(CARRIER)
-    vi.mocked(complianceApi.listPending).mockRejectedValue(new Error('500'))
+    vi.mocked(complianceApi.summary).mockRejectedValue(new Error('500'))
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <FichaEmpresaPage />
@@ -459,7 +530,9 @@ describe('FichaEmpresaPage', () => {
   // de `s.filas`, que son las filas del sujeto YA FILTRADAS por el estado
   // activo — no todas las suyas. Con el filtro en "Falta" —la forma natural
   // de trabajar esta pantalla— un conductor con documentos al día perdía la
-  // única frase que ese diálogo existe para decir.
+  // única frase que ese diálogo existe para decir. Sigue valiendo con la
+  // Task 2: el conteo del diálogo se pide aparte, con `estado='todos'` fijo,
+  // sin importar el filtro activo de la pantalla.
   it('con el filtro en "Falta", el diálogo de baja sigue contando los documentos que sí tiene', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',

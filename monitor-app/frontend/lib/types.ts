@@ -728,6 +728,42 @@ export type PendingComplianceListResponse = {
   rows:  PendingComplianceRow[]
 }
 
+/** Las cuatro cifras, ya particionadas por `urgencia`: `al_dia + por_vencer +
+ *  falta === todos` siempre (`falta` agrupa VENCIDO y FALTA, las dos ramas
+ *  que la ficha ya mostraba juntas — ver `avanceDelSujeto`). Las calcula el
+ *  servidor sobre TODAS las filas de la empresa, no una muestra: a
+ *  diferencia de `PendingComplianceRow`, acá no hace falta una guarda tipo
+ *  `completa` — el resumen nunca viene truncado. */
+export type ComplianceSummaryCounts = {
+  todos:      number
+  al_dia:     number
+  por_vencer: number
+  falta:      number
+}
+
+/** Una cabecera de la ficha de empresa: la empresa misma, o uno de sus
+ *  conductores o vehículos, con sus cuatro cifras — sin las filas de
+ *  detalle. Esas se piden aparte, sólo al desplegar el sujeto
+ *  (`complianceApi.listPending({ entityId })`). */
+export type ComplianceSummarySubject = ComplianceSummaryCounts & {
+  entity_type:  EntityType
+  entity_id:    string
+  subject_name: string | null
+}
+
+/** GET /compliance-records/summary — lo que la ficha de empresa pide al
+ *  llegar. Reemplaza el fetch de 457 filas de detalle que se hacía solo para
+ *  dibujar nueve cabeceras plegadas con sus conteos (medido en dev: 57.183
+ *  bytes en la primera carga). */
+export type ComplianceSummaryResponse = {
+  totales: ComplianceSummaryCounts
+  sujetos: ComplianceSummarySubject[]
+  /** Tipo de Operación (Tractoreo/Equipo Completo) agregado de la flota
+   *  activa de la empresa. Escalar, no fila de detalle: por eso viaja acá y
+   *  no obliga a desplegar el sujeto CARRIER para conocerlo. */
+  carrier_operation_types: string[]
+}
+
 export type BulkUploadResult = {
   uploaded: { record_id: string; status: string; file_name: string; storage_path: string; mime_type: string; size_bytes: number }[]
   errors:   { record_id: string; file_name: string | null; error: string }[]

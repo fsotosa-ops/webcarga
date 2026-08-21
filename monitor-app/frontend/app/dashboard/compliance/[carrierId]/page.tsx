@@ -23,15 +23,12 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
-import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
-import type { EstadoDocumental, PendingComplianceRow } from '@/lib/types'
-import type { Sujeto } from '@/lib/utils/agruparPorSujeto'
+import type { ComplianceSummarySubject, EstadoDocumental, PendingComplianceRow } from '@/lib/types'
 
 /** Las cuatro cifras, con el matiz de `<Cifra>` que le corresponde a cada
- *  una. "Requisitos" es la única que se apoya en `total` —exacto, viene del
- *  servidor— y por eso es también la única que se muestra siempre; las otras
- *  tres cuentan sobre las filas QUE LLEGARON, así que dependen de que
- *  llegaron TODAS (ver `completa` más abajo). */
+ *  una. Las cuatro salen del mismo resumen del servidor (`totales`), que
+ *  particiona sobre TODA la empresa — a diferencia de `/pending`, acá no
+ *  hace falta una guarda tipo "vino truncada": el resumen nunca lo está. */
 const CIFRAS: { estado: EstadoDocumental; etiqueta: string; tono: 'normal' | 'atencion' | 'urgente' | 'resuelto' }[] = [
   { estado: 'todos',      etiqueta: 'requisitos',  tono: 'normal' },
   { estado: 'al_dia',     etiqueta: 'al día',      tono: 'resuelto' },
@@ -39,58 +36,45 @@ const CIFRAS: { estado: EstadoDocumental; etiqueta: string; tono: 'normal' | 'at
   { estado: 'por_vencer', etiqueta: 'por vencer',  tono: 'atencion' },
 ]
 
-/** Qué mostrar de `allRows` para cada botón del filtro — de la MISMA
- *  `urgencia` que ya trae cada fila, no un date-math nuevo del lado del
- *  cliente. 'falta' es "no está al día" (`urgencia !== 'AL_DIA'`), la MISMA
- *  definición que `pendiente_predicate` en el backend: ese predicado es
- *  exactamente el complemento de "al día" (`compliance.py`, rama `AL_DIA`
- *  del `CASE` de urgencia, ronda de arreglo 1). Escribir acá una lista de
- *  estados a mano sería la QUINTA copia del mismo criterio. */
-function filasDelEstado(rows: PendingComplianceRow[], estado: EstadoDocumental): PendingComplianceRow[] {
-  switch (estado) {
-    case 'todos':      return rows
-    case 'al_dia':     return rows.filter(r => r.urgencia === 'AL_DIA')
-    case 'por_vencer': return rows.filter(r => r.urgencia === 'POR_VENCER')
-    case 'falta':      return rows.filter(r => r.urgencia !== 'AL_DIA')
-  }
+function claveDeSujeto(s: ComplianceSummarySubject): string {
+  return `${s.entity_type}:${s.entity_id}`
+}
+
+function tituloDeSujeto(s: ComplianceSummarySubject): string {
+  return s.entity_type === 'CARRIER' ? 'De la empresa' : (s.subject_name ?? 'Sin nombre')
 }
 
 /** Qué es cada sujeto y con qué icono se lo reconoce. El mockup dice
  *  "Tractocamión" para los vehículos; acá dice "Vehículo" porque el tipo de
- *  chasis no viaja en `/pending` y **inventarlo sería peor que ser genérico**. */
+ *  chasis no viaja en el resumen y **inventarlo sería peor que ser genérico**. */
 const SUJETO = {
   CARRIER: { icono: Building2, clase: null },
   DRIVER:  { icono: User,     clase: 'Conductor' },
   ASSET:   { icono: Truck,    clase: 'Vehículo' },
 } as const
 
-/** El avance del sujeto, en el orden en que se mira: lo resuelto primero, lo
- *  urgente al final. **Un cero no se escribe**: "0 por vencer" ocupa el mismo
- *  espacio que un dato y no dice nada. */
-function avanceDelSujeto(filas: PendingComplianceRow[]): string {
-  const al_dia     = filas.filter(f => f.urgencia === 'AL_DIA').length
-  const por_vencer = filas.filter(f => f.urgencia === 'POR_VENCER').length
-  const faltan     = filas.length - al_dia - por_vencer
+/** El avance de un sujeto, tal como lo particiona el servidor: `al_dia`,
+ *  `por_vencer` y `falta` ya suman `todos` (`falta` agrupa VENCIDO y FALTA —
+ *  ver `ComplianceSummaryCounts`), así que acá no se vuelve a contar nada,
+ *  sólo se ordena para mostrar. **Un cero no se escribe**: "0 por vencer"
+ *  ocupa el mismo espacio que un dato y no dice nada. */
+function avanceDeCuentas(c: { al_dia: number; por_vencer: number; falta: number }): string {
   return [
-    al_dia     && `${al_dia} al día`,
-    por_vencer && `${por_vencer} por vencer`,
-    faltan     && `${faltan} ${faltan === 1 ? 'falta' : 'faltan'}`,
+    c.al_dia     && `${c.al_dia} al día`,
+    c.por_vencer && `${c.por_vencer} por vencer`,
+    c.falta      && `${c.falta} ${c.falta === 1 ? 'falta' : 'faltan'}`,
   ].filter(Boolean).join(' · ')
 }
 
 /** La cabecera de un sujeto, tal como la dibuja el mockup acordado: icono,
  *  nombre, qué es y cuántos requisitos tiene, y su avance.
  *
- *  Es lo que hace visible que una empresa CONTIENE conductores y vehículos.
- *  Sin esto —un `<p>` con el nombre y los 93 requisitos desplegados debajo— la
- *  ficha medía 6,4 pantallas: el primer conductor caía bajo el pliegue y el
- *  primer vehículo 4,3 pantallas más abajo. El dato estaba y no se veía, que
- *  para quien mira es lo mismo que no estar.
- *
- *  Por eso el cuerpo va plegado y la cabecera carga el total: en el mockup
- *  cada sujeto declara "12 requisitos" y muestra UNA fila. */
+ *  Las cifras salen del resumen (`sujeto.todos`/`al_dia`/`por_vencer`/`falta`),
+ *  no de contar filas: el detalle de este sujeto puede no haberse pedido
+ *  todavía —se pide recién al desplegarlo, en `TarjetaDeSujeto`—, y la
+ *  cabecera tiene que poder mostrar su avance sin esperarlo. */
 function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa, onTransferir, onDarDeBaja, accionesDeshabilitadas }: {
-  sujeto:     Sujeto
+  sujeto:     ComplianceSummarySubject
   abierto:    boolean
   onAlternar: () => void
   canEdit:    boolean
@@ -100,11 +84,11 @@ function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa,
   onDarDeBaja:   () => void
   accionesDeshabilitadas?: boolean
 }) {
-  const { icono: Icono, clase } = SUJETO[sujeto.entityType]
-  const cuenta = `${sujeto.filas.length} ${sujeto.filas.length === 1 ? 'requisito' : 'requisitos'}`
+  const { icono: Icono, clase } = SUJETO[sujeto.entity_type]
+  const cuenta = `${sujeto.todos} ${sujeto.todos === 1 ? 'requisito' : 'requisitos'}`
   // La empresa no se da de baja de sí misma: el menú es sólo para conductor
   // y vehículo, y sólo si se puede escribir.
-  const puedeAccionar = canEdit && (sujeto.entityType === 'DRIVER' || sujeto.entityType === 'ASSET')
+  const puedeAccionar = canEdit && (sujeto.entity_type === 'DRIVER' || sujeto.entity_type === 'ASSET')
   return (
     <div className="w-full flex items-center gap-2 px-3 py-2 bg-accent/5 border-b border-border">
       {/* Contenedor, no botón: `AccionesDeSujeto` trae su propio <button> y un
@@ -120,12 +104,12 @@ function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa,
           ? <ChevronDown size={14} className="shrink-0 text-informativo" aria-hidden="true" />
           : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
         <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
-        <span className="text-dato font-semibold text-text-primary truncate">{sujeto.titulo}</span>
+        <span className="text-dato font-semibold text-text-primary truncate">{tituloDeSujeto(sujeto)}</span>
         <span className="shrink-0 text-etiqueta text-informativo">
           {clase ? `${clase} · ${cuenta}` : cuenta}
         </span>
         <span className="ml-auto shrink-0 text-etiqueta text-informativo tabular-nums">
-          {avanceDelSujeto(sujeto.filas)}
+          {avanceDeCuentas(sujeto)}
         </span>
       </button>
       {puedeAccionar && (
@@ -147,12 +131,12 @@ function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa,
  *
  *  La empresa NO se agrupa: es un sujeto único, y meterla en un grupo de uno
  *  sería un envoltorio que sólo agrega un clic. */
-type Grupo = { tipo: PendingComplianceRow['entity_type']; sujetos: Sujeto[] }
+type Grupo = { tipo: ComplianceSummarySubject['entity_type']; sujetos: ComplianceSummarySubject[] }
 
-function agruparPorTipo(sujetos: Sujeto[]): Grupo[] {
-  const orden: PendingComplianceRow['entity_type'][] = ['CARRIER', 'DRIVER', 'ASSET']
+function agruparPorTipo(sujetos: ComplianceSummarySubject[]): Grupo[] {
+  const orden: ComplianceSummarySubject['entity_type'][] = ['CARRIER', 'DRIVER', 'ASSET']
   return orden
-    .map(tipo => ({ tipo, sujetos: sujetos.filter(s => s.entityType === tipo) }))
+    .map(tipo => ({ tipo, sujetos: sujetos.filter(s => s.entity_type === tipo) }))
     .filter(g => g.sujetos.length > 0)
 }
 
@@ -163,15 +147,20 @@ const GRUPO = {
 
 /** La cabecera de un grupo: cuántos sujetos, cuántos requisitos entre todos y
  *  el avance agregado. Contesta "¿cuántos conductores tiene y cómo van?" sin
- *  abrir nada, que es la pregunta con la que se llega a la ficha. */
+ *  abrir nada, que es la pregunta con la que se llega a la ficha. Suma las
+ *  cifras que cada sujeto ya trae del resumen — no cuenta filas. */
 function CabeceraDeGrupo({ grupo, abierto, onAlternar }: {
   grupo:      Grupo
   abierto:    boolean
   onAlternar: () => void
 }) {
   const cfg = GRUPO[grupo.tipo as 'DRIVER' | 'ASSET']
-  const filas = grupo.sujetos.flatMap(s => s.filas)
   const cuantos = grupo.sujetos.length
+  const requisitos = grupo.sujetos.reduce((acc, s) => acc + s.todos, 0)
+  const cuentas = grupo.sujetos.reduce(
+    (acc, s) => ({ al_dia: acc.al_dia + s.al_dia, por_vencer: acc.por_vencer + s.por_vencer, falta: acc.falta + s.falta }),
+    { al_dia: 0, por_vencer: 0, falta: 0 },
+  )
   const Icono = cfg.icono
   return (
     <button
@@ -188,10 +177,10 @@ function CabeceraDeGrupo({ grupo, abierto, onAlternar }: {
       <span className="shrink-0 text-etiqueta text-informativo tabular-nums">
         {cuantos} {cuantos === 1 ? cfg.uno : cfg.varios}
         {' · '}
-        {filas.length} {filas.length === 1 ? 'requisito' : 'requisitos'}
+        {requisitos} {requisitos === 1 ? 'requisito' : 'requisitos'}
       </span>
       <span className="ml-auto shrink-0 text-etiqueta text-informativo tabular-nums">
-        {avanceDelSujeto(filas)}
+        {avanceDeCuentas(cuentas)}
       </span>
     </button>
   )
@@ -251,28 +240,113 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer }: {
   )
 }
 
+/** La tarjeta de un sujeto: su cabecera (del resumen, siempre disponible) y,
+ *  si está desplegado, sus filas de detalle — pedidas EN ESE MOMENTO, no
+ *  antes.
+ *
+ *  Es un componente propio y no una función que arma JSX dentro de un
+ *  `.map()`: cada tarjeta necesita su propio `useQuery` para las filas del
+ *  sujeto, y llamar un hook desde una función invocada a mano (no montada
+ *  como elemento) rompe las reglas de hooks — el número de sujetos cambia
+ *  con el filtro, así que el número de llamadas también cambiaría. */
+function TarjetaDeSujeto({
+  sujeto, carrierId, estadoFiltro, abierto, onAlternar, canEdit, nombreEmpresa,
+  onTransferir, onDarDeBaja, accionesDeshabilitadas,
+  viendoId, avisoVer, previewFetching, onVer, subir,
+}: {
+  sujeto:        ComplianceSummarySubject
+  carrierId:     string
+  estadoFiltro:  EstadoDocumental
+  abierto:       boolean
+  onAlternar:    () => void
+  canEdit:       boolean
+  nombreEmpresa: string
+  onTransferir:  () => void
+  onDarDeBaja:   () => void
+  accionesDeshabilitadas?: boolean
+  viendoId:        string | null
+  avisoVer:        string | null
+  previewFetching: boolean
+  onVer:  (fila: PendingComplianceRow) => void
+  subir:  (fila: PendingComplianceRow, archivo: File, vencimiento?: string) => Promise<void>
+}) {
+  const filasQuery = useQuery({
+    queryKey: clavesCertificacion.pendientes(carrierId, sujeto.entity_id, estadoFiltro),
+    queryFn: () => complianceApi.listPending({ carrierId, entityId: sujeto.entity_id, estado: estadoFiltro, limit: 200 }),
+    enabled: abierto,
+  })
+  const filas = filasQuery.data?.rows ?? []
+
+  return (
+    <div className="border border-border rounded-xl bg-white overflow-hidden">
+      <CabeceraDeSujeto
+        sujeto={sujeto}
+        abierto={abierto}
+        onAlternar={onAlternar}
+        canEdit={canEdit}
+        nombreEmpresa={nombreEmpresa}
+        onTransferir={onTransferir}
+        onDarDeBaja={onDarDeBaja}
+        accionesDeshabilitadas={accionesDeshabilitadas}
+      />
+      {abierto && filasQuery.isPending && <Estado tipo="cargando" />}
+      {abierto && filasQuery.error && (
+        <Estado
+          tipo="error"
+          titulo="No se pudo cargar la documentación"
+          detalle={filasQuery.error instanceof Error ? filasQuery.error.message : undefined}
+        />
+      )}
+      {/* La partición es la MISMA `urgencia` que reparte el filtro de arriba,
+          no una segunda lectura por `status`. Con `status` la lista se
+          contradecía con el filtro que la contenía: los registros vencidos
+          por fecha del módulo están en `APPROVED_MANUAL`, así que aparecían
+          bajo "Falta" rotulados "Aprobado (manual)". Y al revés, un
+          `EXPIRED` —que TIENE archivo— iba al renglón de carga y su
+          documento quedaba invisible en la pantalla que existe para hacerlo
+          visible. Que hay archivo o no lo dice `tiene_archivo`, que es el
+          hecho; del status no se deduce. */}
+      {abierto && !filasQuery.isPending && !filasQuery.error && filas.map(f => (
+        f.urgencia === 'AL_DIA'
+          ? (
+            <FilaDocumento
+              key={f.id}
+              fila={f}
+              viendo={viendoId === f.id && previewFetching}
+              avisoVer={viendoId === f.id ? avisoVer : null}
+              onVer={f.tiene_archivo ? () => onVer(f) : undefined}
+            />
+          )
+          : (
+            <RenglonPendiente
+              key={f.id}
+              fila={f}
+              puedeEditar={canEdit}
+              onSubir={subir}
+              onVer={f.tiene_archivo ? () => onVer(f) : undefined}
+              viendo={viendoId === f.id && previewFetching}
+              avisoVer={viendoId === f.id ? avisoVer : null}
+            />
+          )
+      ))}
+    </div>
+  )
+}
+
 /** La ficha de una empresa: su documentación, la de sus conductores y la de
  *  sus vehículos, juntas.
  *
- *  Es la pantalla que le da sentido a `estado='todos'` (Task 1): antes,
- *  Certificación sólo sabía enseñar lo que a una empresa le FALTA —el cajón
- *  pide `estado='falta'` a propósito, para no repetir 91 líneas dos veces—,
- *  así que los documentos que sí tiene cargados eran invisibles en todo el
- *  módulo. Medido: 32 de 34 empresas activas no tienen ni un documento
- *  cargado, y la única con 23 no los podía ver en ningún lado.
+ *  **Resumen al llegar, detalle al desplegar** (Task 2, perf/compresion-y-resumen):
+ *  antes, la ficha pedía las 457 filas de detalle de la empresa —con
+ *  `estado='todos'` y `limit=500`— sólo para dibujar nueve cabeceras
+ *  plegadas con sus conteos (medido en dev: 57.183 bytes en la primera
+ *  carga). La pantalla dejó de mostrar el detalle hasta que alguien
+ *  despliega un sujeto; la consulta ahora también.
  *
- *  **UNA sola consulta** (ronda de arreglo 1): `estado='todos'`, una vez,
- *  con `limit: 500`. La primera versión pedía las cuatro variantes en
- *  paralelo porque `urgencia` sólo distinguía VENCIDO/POR_VENCER/FALTA — una
- *  fila al día cargaba el mismo `'FALTA'` que una que de verdad faltaba, así
- *  que no había forma de contar "al día" sin pedirlo aparte. Con la cuarta
- *  rama del CASE (`'AL_DIA'`, `compliance.py`), la única fuente de verdad
- *  para las cuatro cifras y para el filtro es la MISMA fila: cambiar de
- *  filtro es contar/elegir sobre lo que ya llegó, no una consulta nueva.
- *
- *  El agrupado por sujeto —CARRIER→DRIVER→ASSET, "De la empresa"— es el
- *  MISMO que el cajón: vive en `lib/utils/agruparPorSujeto`, no una segunda
- *  copia acá. */
+ *  Las cifras de arriba, las cabeceras de sujeto y de grupo salen todas de
+ *  `complianceApi.summary()`, que particiona sobre `urgencia` en el
+ *  servidor. El detalle de UN sujeto se pide recién al desplegarlo, y sólo
+ *  del estado activo (`TarjetaDeSujeto`). */
 export default function FichaEmpresaPage() {
   const { carrierId } = useParams<{ carrierId: string }>()
   const canEdit = useCanEdit()
@@ -281,23 +355,23 @@ export default function FichaEmpresaPage() {
 
   /** El sujeto que está por darse de baja o transferirse, si alguno. Uno solo
    *  a la vez: son diálogos, no hay forma de disparar dos a la vez. */
-  const [confirmandoBaja, setConfirmandoBaja] = useState<Sujeto | null>(null)
-  const [transfiriendo, setTransfiriendo] = useState<Sujeto | null>(null)
+  const [confirmandoBaja, setConfirmandoBaja] = useState<ComplianceSummarySubject | null>(null)
+  const [transfiriendo, setTransfiriendo] = useState<ComplianceSummarySubject | null>(null)
 
   /** La baja real, de un sujeto puntual: qué endpoint según lo que es, y
    *  después `invalidarCertificacion` — la lista se redibuja desde ahí, la
    *  única fuente. Nunca se quita la fila a mano: eso la convierte en un
    *  fantasma que parpadea si el pedido falla.
    *
-   *  Ronda de arreglo 1: NO atrapa el error. `ConfirmarBaja` ya sabe qué
-   *  hacer con uno —lo dice adentro, mantiene el diálogo abierto y ofrece
-   *  reintentar sin cerrarse con Escape ni con el fondo (fix de la ronda
-   *  anterior)— y atraparlo acá para mostrarlo en la tarjeta dejaba ese
-   *  camino inalcanzable: código muerto. Un diálogo que se cierra solo ante
-   *  un fallo se lee como "listo", que es exactamente lo que no pasó. */
-  async function ejecutarBaja(s: Sujeto) {
-    if (s.entityType === 'ASSET') await carriersApi.unassignAsset(carrierId, s.entityId)
-    else await carriersApi.unassignDriver(carrierId, s.entityId)
+   *  NO atrapa el error. `ConfirmarBaja` ya sabe qué hacer con uno —lo dice
+   *  adentro, mantiene el diálogo abierto y ofrece reintentar sin cerrarse
+   *  con Escape ni con el fondo— y atraparlo acá para mostrarlo en la
+   *  tarjeta dejaba ese camino inalcanzable: código muerto. Un diálogo que
+   *  se cierra solo ante un fallo se lee como "listo", que es exactamente lo
+   *  que no pasó. */
+  async function ejecutarBaja(s: ComplianceSummarySubject) {
+    if (s.entity_type === 'ASSET') await carriersApi.unassignAsset(carrierId, s.entity_id)
+    else await carriersApi.unassignDriver(carrierId, s.entity_id)
     await invalidarCertificacion(queryClient)
   }
 
@@ -314,7 +388,7 @@ export default function FichaEmpresaPage() {
   /** El documento que se está mirando, sea cual sea su sujeto. Se guarda el
    *  id y no la fila completa: `/pending` nunca trae `file_url` firmada —
    *  firmarla ahí sería una llamada HTTP por archivo sobre una lista que
-   *  puede traer 500— así que hay que volver a pedir el registro, ahora sí
+   *  puede traer 200— así que hay que volver a pedir el registro, ahora sí
    *  de a uno, cuando alguien elige "Ver". */
   const [viendoId, setViendoId] = useState<string | null>(null)
   const [viendoLabel, setViendoLabel] = useState('')
@@ -324,43 +398,48 @@ export default function FichaEmpresaPage() {
     queryFn: () => carriersApi.get(carrierId),
   })
 
-  const todosQuery = useQuery({
-    queryKey: clavesCertificacion.pendientes(carrierId, undefined, 'todos'),
-    queryFn: () => complianceApi.listPending({ carrierId, estado: 'todos', limit: 500 }),
+  const resumenQuery = useQuery({
+    queryKey: clavesCertificacion.resumen(carrierId),
+    queryFn: () => complianceApi.summary(carrierId),
   })
 
-  const allRows = todosQuery.data?.rows ?? []
-  const total = todosQuery.data?.total
-  /** Contar sobre `allRows` sólo es honesto si llegaron TODAS. Si el
-   *  servidor cortó por el límite, `allRows.length < total` — y en ese caso
-   *  las tres cifras derivadas mienten por definición (cuentan una muestra,
-   *  no el universo), así que no se muestran. "Requisitos" no depende de
-   *  esto: sale de `total`, que el servidor calcula sobre TODO el universo
-   *  sin importar cuántas filas mandó (`count(*) OVER()`, antes del LIMIT). */
-  const completa = total != null && allRows.length >= total
+  const resumen = resumenQuery.data
+  const todosLosSujetos = resumen?.sujetos ?? []
+  const conteos: Partial<Record<EstadoDocumental, number>> = resumen?.totales ?? {}
 
-  const rows = filasDelEstado(allRows, estadoFiltro)
-  const sujetos = agruparPorSujeto(rows)
+  /** Los sujetos que quedan del lado del filtro activo. Antes esto salía de
+   *  agrupar las FILAS ya filtradas; acá no hay filas hasta que alguien
+   *  despliega, así que se filtra sobre el conteo que el resumen ya trae —
+   *  un sujeto sin nada de ese estado no tiene nada que mostrar.
+   *
+   *  OJO: "falta" acá NO es `sujeto.falta` (el casillero exclusivo que suma
+   *  `al_dia + por_vencer + falta = todos`). Es el mismo criterio que
+   *  `GET /pending?estado=falta` —"no está al día", que SÍ incluye lo por
+   *  vencer—, porque es lo que ese sujeto va a devolver cuando se despliegue
+   *  con este mismo filtro. Filtrar por el casillero exclusivo escondería la
+   *  cabecera de un sujeto cuyo único pendiente es "por vencer": el filtro
+   *  lo ocultaría acá y el servidor sí se lo mostraría al desplegarlo. */
+  const tieneAlgoDelEstado = (s: ComplianceSummarySubject, estado: EstadoDocumental): boolean => {
+    switch (estado) {
+      case 'todos':      return true
+      case 'al_dia':     return s.al_dia > 0
+      case 'por_vencer': return s.por_vencer > 0
+      case 'falta':      return s.todos - s.al_dia > 0
+    }
+  }
+  const sujetosVisibles = todosLosSujetos.filter(s => tieneAlgoDelEstado(s, estadoFiltro))
 
   /** Qué sujetos están abiertos. Se guarda lo que el usuario abrió, no lo que
    *  está cerrado: los sujetos cambian con el filtro y con la respuesta, y una
    *  lista de cerrados obligaría a mantenerla al día con filas que van y
    *  vienen.
    *
-   *  **Todos arrancan plegados**, y eso incluye a la empresa. Se probó al revés
-   *  —"De la empresa" abierta, por ser por donde conviene empezar— y medido en
-   *  vivo ese bloque ocupa 571 px con sus 13 casilleros, así que empujaba la
-   *  primera cabecera de conductor a 873 px: bajo el pliegue, en una pantalla
-   *  de 689. Volvía a pasar lo que esta pantalla vino a arreglar — que no se
-   *  viera que la empresa CONTIENE conductores y vehículos. El mockup abre ese
-   *  bloque mostrando 2 filas, no 13.
-   *
-   *  La excepción es tener un solo sujeto: plegar existe para dejar ver el
-   *  conjunto, y con un elemento no hay conjunto — sería llegar a una fila
-   *  cerrada y nada más. */
+   *  **Todos arrancan plegados**, y eso incluye a la empresa. La excepción es
+   *  tener un solo sujeto: plegar existe para dejar ver el conjunto, y con un
+   *  elemento no hay conjunto — sería llegar a una fila cerrada y nada más. */
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set())
-  const estaAbierto = (s: Sujeto) => sujetos.length === 1 || abiertos.has(s.clave)
-  const grupos = agruparPorTipo(sujetos)
+  const estaAbierto = (s: ComplianceSummarySubject) => sujetosVisibles.length === 1 || abiertos.has(claveDeSujeto(s))
+  const grupos = agruparPorTipo(sujetosVisibles)
   /** Los grupos comparten la bolsa de abiertos, con una clave que no puede
    *  chocar con la de un sujeto (`TIPO:uuid`). Un solo grupo se abre solo, por
    *  el mismo motivo que un solo sujeto: no hay conjunto que mostrar. */
@@ -372,24 +451,12 @@ export default function FichaEmpresaPage() {
     return siguiente
   })
 
-  const conteos: Partial<Record<EstadoDocumental, number>> = {
-    todos: total,
-    ...(completa && {
-      al_dia:     filasDelEstado(allRows, 'al_dia').length,
-      falta:      filasDelEstado(allRows, 'falta').length,
-      por_vencer: filasDelEstado(allRows, 'por_vencer').length,
-    }),
-  }
-
-  /** El fleet-derivado (Ronda 85: "la flota manda cuando existe") viaja en
-   *  cada fila de `/pending`, así que basta la primera. Sin filas —o con
-   *  flota sin tipo declarado— no hay de dónde sacarlo: el chip lo dice en
-   *  vez de desaparecer (concern de la ronda anterior: el vacío es uno de
-   *  los cuatro estados obligatorios de pantalla, no una ausencia muda). No
-   *  se reemplaza por la gestión DECLARADA de `carriersApi.get`: son dos
-   *  fuentes del mismo concepto y mezclarlas mostraría un chip que no
-   *  coincide con lo que el resto del módulo (el embudo) ya muestra. */
-  const tipoOperacion = allRows[0]?.carrier_operation_types.join(' + ')
+  /** El fleet-derivado viaja como escalar en el resumen (Ronda 85: "la flota
+   *  manda cuando existe"), no por fila: es un dato de la EMPRESA, no del
+   *  detalle. Sin flota —o con flota sin tipo declarado— no hay de dónde
+   *  sacarlo: el chip lo dice en vez de desaparecer (uno de los cuatro
+   *  estados obligatorios de pantalla, no una ausencia muda). */
+  const tipoOperacion = resumen?.carrier_operation_types.join(' + ')
 
   const previewQuery = useQuery({
     queryKey: ['compliance-record-file', viendoId],
@@ -422,6 +489,24 @@ export default function FichaEmpresaPage() {
 
   const subir = (fila: PendingComplianceRow, archivo: File, vencimiento?: string) =>
     subirDocumento(fila.id, archivo, vencimiento)
+
+  /** Cuántos documentos CON archivo tiene el sujeto que se está por dar de
+   *  baja. No depende del filtro activo — con el filtro en "Falta", que es
+   *  la forma natural de trabajar esta pantalla, un sujeto al día perdería
+   *  la única frase que ese diálogo existe para decir (hallazgo real de una
+   *  revisión anterior de esta misma ficha). Se pide aparte, con
+   *  `estado='todos'` fijo: el resumen no cuenta "con archivo", sólo
+   *  "cuántos requisitos". Comparte clave de caché con `TarjetaDeSujeto`
+   *  cuando ese sujeto ya está desplegado con el filtro en "Todo", así que
+   *  ahí no dispara una segunda consulta. */
+  const bajaDocsQuery = useQuery({
+    queryKey: clavesCertificacion.pendientes(carrierId, confirmandoBaja?.entity_id, 'todos'),
+    queryFn: () => complianceApi.listPending({
+      carrierId, entityId: confirmandoBaja!.entity_id, estado: 'todos', limit: 200,
+    }),
+    enabled: !!confirmandoBaja,
+  })
+  const cuantosDocumentos = bajaDocsQuery.data?.rows.filter(r => r.tiene_archivo).length ?? 0
 
   if (carrierQuery.isPending) return <Estado tipo="cargando" />
   if (carrierQuery.error || !carrierQuery.data) {
@@ -459,7 +544,7 @@ export default function FichaEmpresaPage() {
             {/* Sin el dato no se afirma nada. Guardado tambien por el error y
                 no sólo por `isPending`: si la consulta falló no sabemos que el
                 tipo esté sin determinar — no pudimos preguntarlo. */}
-            {!todosQuery.isPending && !todosQuery.error && (
+            {!resumenQuery.isPending && !resumenQuery.error && (
               tipoOperacion ? (
                 <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
                   {tipoOperacion}
@@ -477,45 +562,36 @@ export default function FichaEmpresaPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {CIFRAS.map(c => (
           <div key={c.estado} className="border border-border rounded-xl bg-white px-4 py-3">
-            {/* `cargando` y el guión son dos mensajes distintos y esta pantalla
-                necesita los dos: mientras la consulta viaja el dato TODAVÍA NO
-                LLEGÓ —esqueleto—, y cuando la respuesta vino truncada las tres
-                cifras derivadas NO SE VAN A MOSTRAR —guión—, porque contarlas
-                sobre una lista incompleta sería mentir. Sin esta prop las
-                cuatro negaban de entrada un dato que venía en camino. */}
+            {/* `cargando` mientras el resumen todavía no llegó: sin esta
+                prop las cuatro cifras negarían de entrada un dato que venía
+                en camino. El resumen nunca viene truncado, así que —a
+                diferencia de la versión anterior— no hace falta un segundo
+                estado para "no se va a mostrar". */}
             <Cifra
               valor={conteos[c.estado]}
               etiqueta={c.etiqueta}
               tono={c.tono}
-              cargando={todosQuery.isPending}
+              cargando={resumenQuery.isPending}
             />
           </div>
         ))}
       </div>
 
-      {!completa && total != null && (
-        <p className="text-etiqueta text-informativo">
-          Se listan los primeros {allRows.length} de {total} — Al día, Faltan y Por vencer no se
-          muestran hasta tener todos, para no mostrar un conteo que no es.
-        </p>
-      )}
-
       <FiltroDeEstado valor={estadoFiltro} onCambiar={setEstadoFiltro} conteos={conteos} />
 
       <div className="space-y-3">
-        {todosQuery.isPending && <Estado tipo="cargando" />}
+        {resumenQuery.isPending && <Estado tipo="cargando" />}
 
-        {todosQuery.error && (
+        {resumenQuery.error && (
           <Estado
             tipo="error"
             titulo="No se pudo cargar la documentación"
-            detalle={todosQuery.error instanceof Error ? todosQuery.error.message : undefined}
+            detalle={resumenQuery.error instanceof Error ? resumenQuery.error.message : undefined}
           />
         )}
 
-        {!todosQuery.isPending && !todosQuery.error && allRows.length === 0 && (
-          /* Con `estado='todos'` esto NO es "nadie cargó nada": es que la
-             empresa no tiene ni un `compliance_record`. Las empresas sin
+        {!resumenQuery.isPending && !resumenQuery.error && todosLosSujetos.length === 0 && (
+          /* La empresa no tiene ni un `compliance_record`. Las empresas sin
              documentos sí tienen registros MISSING y nunca llegan acá; quien
              llega es la empresa a la que todavía no se le sembró el catálogo,
              y pedirle documentos sería decirle lo que no es — cargar no lo
@@ -531,7 +607,7 @@ export default function FichaEmpresaPage() {
             ninguno queda del lado del filtro elegido. Decir "no tiene
             requisitos asignados" sería mentir sobre una empresa que sí los
             tiene. */}
-        {!todosQuery.isPending && !todosQuery.error && allRows.length > 0 && rows.length === 0 && (
+        {!resumenQuery.isPending && !resumenQuery.error && todosLosSujetos.length > 0 && sujetosVisibles.length === 0 && (
           <Estado
             tipo="vacio"
             titulo="No hay documentos en ese estado"
@@ -539,55 +615,31 @@ export default function FichaEmpresaPage() {
           />
         )}
 
-        {!todosQuery.isPending && !todosQuery.error && rows.length > 0 && (() => {
-          /* La tarjeta de un sujeto, para no escribirla dos veces: una vez
-             suelta —la empresa— y otra dentro de su grupo. */
-          const tarjeta = (s: Sujeto) => (
-            <div key={s.clave} className="border border-border rounded-xl bg-white overflow-hidden">
-              <CabeceraDeSujeto
-                sujeto={s}
-                abierto={estaAbierto(s)}
-                onAlternar={() => alternar(s.clave)}
-                canEdit={canEdit}
-                nombreEmpresa={carrier.business_name}
-                onTransferir={() => setTransfiriendo(s)}
-                onDarDeBaja={() => setConfirmandoBaja(s)}
-                accionesDeshabilitadas={confirmandoBaja?.clave === s.clave || transfiriendo?.clave === s.clave}
-              />
-              {/* La partición es la MISMA `urgencia` que reparte el filtro de
-                  arriba, no una segunda lectura por `status`. Con `status` la
-                  lista se contradecía con el filtro que la contenía: los 9
-                  registros vencidos por fecha del módulo están en
-                  `APPROVED_MANUAL`, así que aparecían bajo "Falta" rotulados
-                  "Aprobado (manual)". Y al revés, un `EXPIRED` —que TIENE
-                  archivo— iba al renglón de carga y su documento quedaba
-                  invisible en la pantalla que existe para hacerlo visible.
-                  Que hay archivo o no lo dice `tiene_archivo`, que es el hecho;
-                  del status no se deduce. */}
-              {estaAbierto(s) && s.filas.map(f => (
-                f.urgencia === 'AL_DIA'
-                  ? (
-                    <FilaDocumento
-                      key={f.id}
-                      fila={f}
-                      viendo={viendoId === f.id && previewQuery.isFetching}
-                      avisoVer={viendoId === f.id ? avisoVer : null}
-                      onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
-                    />
-                  )
-                  : (
-                    <RenglonPendiente
-                      key={f.id}
-                      fila={f}
-                      puedeEditar={canEdit}
-                      onSubir={subir}
-                      onVer={f.tiene_archivo ? () => verDocumento(f) : undefined}
-                      viendo={viendoId === f.id && previewQuery.isFetching}
-                      avisoVer={viendoId === f.id ? avisoVer : null}
-                    />
-                  )
-              ))}
-            </div>
+        {!resumenQuery.isPending && !resumenQuery.error && sujetosVisibles.length > 0 && (() => {
+          /** La tarjeta de un sujeto, para no escribirla dos veces: una vez
+           *  suelta —la empresa— y otra dentro de su grupo. */
+          const tarjeta = (s: ComplianceSummarySubject) => (
+            <TarjetaDeSujeto
+              key={claveDeSujeto(s)}
+              sujeto={s}
+              carrierId={carrierId}
+              estadoFiltro={estadoFiltro}
+              abierto={estaAbierto(s)}
+              onAlternar={() => alternar(claveDeSujeto(s))}
+              canEdit={canEdit}
+              nombreEmpresa={carrier.business_name}
+              onTransferir={() => setTransfiriendo(s)}
+              onDarDeBaja={() => setConfirmandoBaja(s)}
+              accionesDeshabilitadas={
+                (!!confirmandoBaja && claveDeSujeto(confirmandoBaja) === claveDeSujeto(s)) ||
+                (!!transfiriendo && claveDeSujeto(transfiriendo) === claveDeSujeto(s))
+              }
+              viendoId={viendoId}
+              avisoVer={avisoVer}
+              previewFetching={previewQuery.isFetching}
+              onVer={verDocumento}
+              subir={subir}
+            />
           )
           return grupos.map(g => g.tipo === 'CARRIER'
             ? g.sujetos.map(tarjeta)
@@ -624,22 +676,11 @@ export default function FichaEmpresaPage() {
         // que resetea enviando/error (depende sólo de `abierto`) no se
         // reactiva. La `key` por sujeto fuerza el remount — mismo patrón que
         // el resto de los "draft que no se resincroniza" de este repo.
-        key={confirmandoBaja?.clave}
+        key={confirmandoBaja ? claveDeSujeto(confirmandoBaja) : undefined}
         abierto={!!confirmandoBaja}
-        nombreSujeto={confirmandoBaja?.titulo ?? ''}
+        nombreSujeto={confirmandoBaja ? tituloDeSujeto(confirmandoBaja) : ''}
         nombreEmpresa={carrier.business_name}
-        // Sobre `allRows`, no sobre `confirmandoBaja.filas`: esas son las
-        // filas del sujeto que además pasaron el filtro de estado activo
-        // (`rows = filasDelEstado(allRows, estadoFiltro)`), así que con el
-        // filtro en "Falta" un conductor al día contaba 0 documentos y el
-        // diálogo omitía la frase que existe para decir justamente eso.
-        cuantosDocumentos={confirmandoBaja
-          ? allRows.filter(r =>
-              r.entity_type === confirmandoBaja.entityType &&
-              r.entity_id === confirmandoBaja.entityId &&
-              r.tiene_archivo,
-            ).length
-          : 0}
+        cuantosDocumentos={cuantosDocumentos}
         onCancelar={() => setConfirmandoBaja(null)}
         onConfirmar={confirmarBaja}
       />
@@ -647,13 +688,13 @@ export default function FichaEmpresaPage() {
       {transfiriendo && (
         <TransferModal
           open
-          title={`Transferir a ${transfiriendo.titulo}`}
+          title={`Transferir a ${tituloDeSujeto(transfiriendo)}`}
           currentCarrierId={carrierId}
           onClose={() => setTransfiriendo(null)}
           onTransfer={async (destino) => {
             const s = transfiriendo
-            if (s.entityType === 'ASSET') await carriersApi.assignAsset(destino, s.entityId)
-            else await carriersApi.assignDriver(destino, s.entityId)
+            if (s.entity_type === 'ASSET') await carriersApi.assignAsset(destino, s.entity_id)
+            else await carriersApi.assignDriver(destino, s.entity_id)
             await invalidarCertificacion(queryClient)
           }}
         />
