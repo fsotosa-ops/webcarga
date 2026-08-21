@@ -17,6 +17,106 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-20/21 — Rondas 134-137: la ficha de empresa terminada, baja y transferencia, y el tráfico contra la API
+
+Cuatro ramas, todas mergeadas a `dev` y desplegadas. **Todo lo de abajo está medido, no estimado.**
+
+**R134 · La ficha de empresa** (`feat/ficha-empresa`, merge `a39eef9e`). Certificación mostraba sólo
+lo que a una empresa le FALTA; los documentos cargados eran invisibles en todo el módulo.
+`/pending` gana el parámetro `estado`, la ficha `/dashboard/compliance/[carrierId]` muestra empresa,
+conductores y vehículos juntos, y el módulo se parte en dos entradas del sidebar — Empresas y Sin
+clasificar — con la Bandeja en ruta propia. La cola avisa colisiones: `mismo_contenido`,
+`mismo_casillero` y `casillero_ocupado`, tres señales distintas y ninguna reemplaza a otra.
+
+**R135 · Dar de baja y transferir desde la ficha** (`feat/baja-y-transferencia`, merge `a0066619`).
+Casi no hubo backend: asignar al destino ya desactivaba la asignación previa —eso ES la
+transferencia— y el `DELETE` ya era la baja. Lo que sí se corrigió: transferir una asignación
+protegida por `is_manual_override` dejaba dos filas `ACTIVE` y salía como un **23505 crudo**; ahora
+es un 409. Permisos: `editor` para transferir y dar de baja **de la empresa**; la baja del SISTEMA
+(`operational_status`) se queda en `admin` — nunca tuvo otro valor que `ACTIVE` en 87 conductores y
+124 vehículos, y esa línea se corrió sola dos veces durante la rama.
+
+**R136 · El tráfico frontend↔API** (`perf/compresion-y-resumen`, merge `11fe04fa`). Medido en dev:
+
+| | Antes | Después |
+|---|---|---|
+| Bytes al abrir la ficha | **57.183** | **2.299** (−96%) |
+| Compresión al navegador | 0% | 72% |
+
+Nadie comprimía en el salto que ve el usuario: el `fetch` de Node descomprime solo, así que lo que
+comprimía FastAPI se perdía en el proxy, y Next comprime su HTML pero **no las respuestas de los
+Route Handlers**. De paso se cerró una corrupción viva: `res.text()` sobre toda respuesta hacía que
+la descarga de documentos en zip llegara con el **68,8%** del archivo convertido en U+FFFD.
+
+**R137 · Corregir la fecha de vencimiento** (HU-26, commits `18cf8f9a` + `65a76105`). Era lo único
+que todavía obligaba a salir al módulo Empresas viejo. **No se construyó nada**: `ExpirationDateCell`
+ya existía y estaba probada, vivía en el lugar equivocado.
+
+---
+
+## Decisiones de arquitectura de estas rondas
+
+- **Un valor no puede cargar dos significados.** Aparecieron SEIS en estas rondas y ninguno lo halló
+  un test: `urgencia='FALTA'` que también decía "no entró en ninguna rama"; `mismo_casillero=1` que
+  decía "sin colisión" y "sin colisión que yo pueda ver"; `mismo_contenido=1` que agregaba "sin hash,
+  no lo sé"; `tiene_archivo` deducido del status; una guarda de NULL que no guardaba nada; y
+  **`falta` como dos conjuntos distintos en la misma pantalla** —el chip decía 1 y la lista mostraba
+  2, con 3 registros `POR_VENCER` reales—. Los seis los encontró **una revisión leyendo código**.
+- **La política del requisito manda, no el archivo.** Declarar un vencimiento sin tener el escaneo es
+  deliberado: así se sigue qué vence antes de subir los ~2.000 documentos.
+- **Comprimir en el proxy y no en el backend.** Lo estándar es que el proxy no toque la codificación,
+  pero eso exige dejar `fetch` —que descomprime solo— por una dependencia nueva. Se eligió el proxy
+  a sabiendas: pone la CPU en el frontend, que es el servicio que escala con usuarios. **Revisar el
+  día que haya un balanceador con CDN delante.**
+- **NO apuntar la API al pooler de transacciones.** Medido: la API sostiene 3-5 conexiones ociosas,
+  no 25, y el modo transacción obliga a apagar el caché de sentencias preparadas — 25-30 ms por
+  consulta, documentado en `db.py`. Cambiaría un techo que no estamos tocando por latencia real.
+
+---
+
+## Cómo se trabaja desde acá (acordado con el usuario, 2026-08-21)
+
+El usuario planteó que nos demoramos más en verificar que en desarrollar, siendo esto un MVP.
+**Medido: la relación tests/código es 1,0-1,4x**, o sea normal. El tiempo no se iba en escribir
+tests: se iba en la ceremonia alrededor.
+
+- **Una sola revisión por rama**, sobre el diff completo. La cadena pesada —revisión por tarea +
+  re-revisión + revisión final + ola + re-revisión— sólo para lo que toca datos, dinero o permisos.
+- **Tests sólo donde el código puede mentir en silencio**: conteos, predicados, permisos. No para
+  verificar que un componente renderiza.
+- **Mutación sólo sobre esos.** Y verificando que el archivo cambió antes de leer el resultado: una
+  mutación que no se aplica se ve idéntica a un test que sobrevive (pasó).
+- **Nada de subagentes para cambios chicos y bien especificados.** Ocho ejecutores se colgaron
+  esperando corridas en segundo plano y hubo que rematarlos; hacerlo inline es más rápido.
+- **Medir en dev después de desplegar.** Eso destapó el 0% de compresión, confirmó el −96%, y
+  destapó que yo daba por desplegado un commit leyendo el `success` del anterior.
+
+---
+
+## SIGUIENTE PASO EXACTO
+
+**Verificar `Certificado de Antecedentes`**: tiene política `REQUIRED` y su registro cargado **no
+tiene fecha**. O se cargó antes de que la política existiera, o hay un camino que deja pasar sin
+fecha. Hay que mirarlo **antes** de construir nada encima, porque si ese camino existe, la HU-26 lo
+tapa en vez de cerrarlo.
+
+Después, por valor de negocio y en este orden:
+
+1. **La ficha vieja de Empresas dispara 7 peticiones al abrirse** contra un límite de **60 cada 10 s
+   por IP compartido con toda la app** (`proxy.ts`). Abrir tres empresas seguidas son 21. El usuario
+   vio un 429 real en dev. Agregar esas 7 en un endpoint de vista es el trabajo.
+2. **HU-26, límite conocido**: se puede corregir una fecha pero **no borrarla** — el `PATCH` usa
+   `COALESCE(expiration_date)`, así que vaciar el campo responde *"Ningún campo enviado"*. La celda
+   ofrece vaciarlo y el resultado es un error confuso.
+3. **Issue [#7](https://github.com/fsotosa-ops/webcarga/issues/7)**: 12 puntos, 10 abiertos. El más
+   caro es PostgREST recargando su caché por DDL en `bronze` —~12 min de CPU al día— pero **es el que
+   menos se siente**; el que se siente es `sync_habitual_drivers()` a 23 s de promedio.
+
+**Nada de esto bloquea.** La ficha, la baja, la transferencia, la compresión y la corrección de
+fechas están desplegadas y verificadas en dev.
+
+---
+
 ### 2026-08-19 (cont.) — Ronda 133: dos colisiones de carga masiva, APARCADAS con su evidencia
 
 Encontradas al revisar qué faltaba después de conectar el clasificador. **No se ejecutaron** — el
