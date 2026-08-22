@@ -233,6 +233,73 @@ tiene test propio, verificado con mutación.
 pasada. No existe endpoint para eso —`classify-batch` colapsa a un requisito— y es donde el
 clasificador automático tendría su mayor rendimiento: proponer por archivo y confirmar todo junto.
 
+### La Bandeja: de siete parches a una causa (commits `de99f2e1` → `fa4d1f54`)
+
+El usuario cortó una cadena de arreglos con *"estás puro parchando y no mostrándome una solución
+congruente, mantenible y basada en el patrón de desarrollo de la app"*. Tenía razón, y el análisis
+que faltaba explicó los siete defectos de una vez.
+
+**Diez representaciones de "empresa"** en `TriageWorkbench` —`carrierId`, `carrierName`,
+`empresaInicial`, `empresaElegida`, `empresaDelLote`, `selectedCarrierId`, `subjectCarrierId`,
+`carrierLabel` y dos cajas de búsqueda en dos componentes— más una tercera precedencia escrita
+inline en la subida. **Cada defecto fue un choque entre un par de esas diez**, así que arreglar un
+par generaba el siguiente. Ahora hay una: `useEmpresaDeTrabajo() → { empresa, origen,
+sePuedeQuitar, fijar, quitar }`. Mismo movimiento que `canEdit` en la ficha.
+
+`origen` (`'ruta' | 'archivos' | 'elegida' | 'ninguna'`) es el dato que faltaba: decide si ofrecer
+la ✕. **Un hecho gana sobre una elección**, porque una elección que contradice al dato no se puede
+aplicar.
+
+---
+
+## EL CLASIFICADOR NUNCA PRODUJO UN MATCH, y ésta era la causa
+
+**67 archivos pasaron por la cola y ninguno generó un solo candidato.** No era el motor fallando:
+corría sin error y no encontraba nada.
+
+La cascada tiene cuatro ramas y **las cuatro exigen una señal EN EL NOMBRE** del archivo: RUT de
+empresa, patente, RUT de conductor, o nombre de conductor difuso. El scope de empresa **sólo
+limitaba el universo y nunca aportaba evidencia**, así que un documento de empresa
+—`Carpeta_Tributaria_Regular.pdf`— no resolvía ni sabiendo de quién es.
+
+Faltaba la rama más fuerte, la única que no deduce nada: **la empresa DECLARADA por una persona**.
+Va primero en la cascada por eso. Se limita a requisitos de empresa a propósito — saber la empresa
+no dice cuál de sus 12 conductores es.
+
+Y la otra mitad: **el match corría UNA sola vez, al subir**, cuando todavía no había empresa. Ahora
+`move_items` re-clasifica, reusando el MISMO motor y las mismas cargas que la subida. Sólo lo que
+sigue sin clasificar: recalcular uno confirmado pisaría una decisión humana con una propuesta.
+
+**Verificado en producción**: `Carpeta_Tributaria_Regular.pdf` → `AUTO`, empresa Inversiones Huemul,
+requisito "Carpeta Tributaria", confianza 0.95, vía `EMPRESA_DECLARADA`. El otro archivo de la cola
+quedó intacto y sin empresa — la asignación es sobre lo marcado, no sobre todo lo que no tiene,
+porque barrer metería los de la empresa B dentro de la A.
+
+## Decisiones de estas rondas
+
+- **`EntityUniverse.scope_carrier_id` lo declara quien acota**, no se deduce de `len(carriers) == 1`:
+  una base con una sola empresa activa daría el mismo valor sin que nadie haya acotado nada.
+- **Una pantalla no advierte sobre algo que no ofrece.** El mensaje del lote se eliminó en vez de
+  reescribirse: con varios marcados no se muestra el formulario. Con él se fue el vocabulario del
+  modelo ("sujeto", "requisito"), que la regla del proyecto prohíbe.
+- **Lo que va a escribir se dice ANTES de elegir.** Elegir empresa con archivos marcados los asigna;
+  la ayuda lo anuncia, porque una escritura que se descubre después no es aceptable.
+
+## Lo que el click-through encontró y ningún test veía
+
+Siete defectos, todos con la suite en verde. Los más caros: **la patente medía 0px en teléfono**
+cuando había dos insignias —las insignias empujaban fuera lo que venían a anotar—; el banner de
+empresa dada de baja prometía que no se podía cargar con **seis controles habilitados** debajo; y
+**un test de copia afirmaba un espacio que la pantalla no tenía**, porque Testing Library compara
+contra `textContent` y el navegador colapsa el borde.
+
+## Diseño
+
+`monitor-app/docs/user-stories/20260821/02-hu-empresa-de-trabajo-en-la-bandeja.md`, con la tabla de
+las diez representaciones y qué par produjo cada defecto. **Ojo: 19 HU en disco, 0 trackeadas** —
+`/monitor-app/docs/` está en `.gitignore` por una regla escrita para PII de SharePoint, y las
+historias cayeron de arrastre.
+
 ---
 
 ## SIGUIENTE PASO EXACTO
