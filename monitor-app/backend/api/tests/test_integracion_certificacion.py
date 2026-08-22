@@ -39,11 +39,20 @@ from app.routers.compliance import (
 )
 from app.routers.document_ingest import move_items
 from app.schemas.document_ingest import MoveItemsBody
-from app.routers.requirements import SQL_CATALOGO, recalc
+from app.routers.requirements import (
+    SQL_CATALOGO,
+    create_requirement,
+    create_requirement_alias,
+    list_requirement_aliases,
+    recalc,
+)
+from app.schemas.requirement import RequirementAliasBody, RequirementCreateBody
 from app.services.requirement_conditions import (
     SQL_ENTIDADES_QUE_APLICAN,
     calcular_diferencias,
 )
+from app.services.document_matcher import EntityUniverse, match_document
+from app.services.matcher_io import cargar_catalogo
 from tests.conftest import USER, PoolDeUnaConexion
 
 pytestmark = pytest.mark.integracion
@@ -1045,6 +1054,105 @@ async def test_asignar_la_empresa_no_pisa_un_archivo_ya_clasificado(conexion_rev
         "SELECT match_status, requirement_id FROM public.document_ingest_items WHERE id = $1", item)
     assert fila["match_status"] == "COMMITTED"
     assert fila["requirement_id"] is None
+
+
+
+async def test_crear_un_documento_NO_siembra_ni_un_registro(conexion_revertida):
+    """Lo que hace que el alta no sea una escritura masiva.
+
+    `reconcile_new_requirement()` siembra un `compliance_record` por cada
+    entidad que califique: 87 conductores, hasta 124 vehiculos, sobre 5.121
+    registros. Nace APAGADO, asi que no le aplica a nadie y el disparador no
+    escribe nada. La siembra ocurre al activarlo, por el mismo camino que ya
+    usa cambiar una condicion.
+
+    Va contra Postgres real porque lo que se verifica es el TRIGGER, y un
+    AsyncMock no ejecuta triggers.
+    """
+    conn = conexion_revertida
+    antes = await conn.fetchval("SELECT count(*) FROM public.compliance_records")
+
+    creado = await create_requirement(
+        RequirementCreateBody(name=f"{PREFIJO} Certificado {_sufijo()}", target_entity="DRIVER"),
+        pool=PoolDeUnaConexion(conn), user=USER,
+    )
+
+    assert creado["is_active"] is False, "nacio vigente: eso siembra"
+    despues = await conn.fetchval("SELECT count(*) FROM public.compliance_records")
+    assert despues == antes, (
+        f"el alta sembro {despues - antes} registros: tiene que nacer apagada"
+    )
+
+
+async def test_el_codigo_se_deriva_del_nombre_y_no_se_recibe(conexion_revertida):
+    """`requirement_code` es la llave del motor de match y de los alias. Se
+    deriva para que dos documentos no compartan codigo y para que nadie la
+    cambie despues."""
+    conn = conexion_revertida
+    creado = await create_requirement(
+        RequirementCreateBody(name="F30 Multas Cliente Nuevo", target_entity="CARRIER"),
+        pool=PoolDeUnaConexion(conn), user=USER,
+    )
+    assert creado["requirement_code"] == "F30_MULTAS_CLIENTE_NUEVO"
+
+
+async def test_dos_documentos_del_mismo_tipo_no_pueden_compartir_codigo(conexion_revertida):
+    """Sin esto, el motor de match tendria dos requisitos con la misma llave y
+    resolveria uno arbitrario."""
+    conn = conexion_revertida
+    nombre = f"{PREFIJO} Duplicado {_sufijo()}"
+    await create_requirement(
+        RequirementCreateBody(name=nombre, target_entity="CARRIER"),
+        pool=PoolDeUnaConexion(conn), user=USER,
+    )
+    with pytest.raises(Exception) as exc:
+        await create_requirement(
+            RequirementCreateBody(name=nombre, target_entity="CARRIER"),
+            pool=PoolDeUnaConexion(conn), user=USER,
+        )
+    assert "409" in str(exc.value) or "codigo" in str(exc.value).lower()
+
+
+async def test_un_alias_nuevo_hace_que_el_clasificador_encuentre_el_documento(
+    conexion_revertida,
+):
+    """El caso de "CARNET REPRESENTANTE LEGAL.pdf": no resolvia porque el
+    catalogo tiene CEDULA, CI y COPIA CI, pero no CARNET.
+
+    Se verifica end-to-end: se agrega el alias y el MOTOR lo encuentra
+    cargando el catalogo de verdad, no un fixture.
+    """
+    conn = conexion_revertida
+    creado = await create_requirement(
+        RequirementCreateBody(name=f"{PREFIJO} Carnet {_sufijo()}", target_entity="CARRIER"),
+        pool=PoolDeUnaConexion(conn), user=USER,
+    )
+
+    assert await list_requirement_aliases(
+        creado["id"], pool=PoolDeUnaConexion(conn), _=USER) == [], (
+        "un documento nuevo nace sin alias: por eso nace invisible al clasificador")
+
+    await create_requirement_alias(
+        creado["id"], RequirementAliasBody(alias="carnet representante legal", priority=100),
+        pool=PoolDeUnaConexion(conn), user=USER,
+    )
+
+    alias = await list_requirement_aliases(
+        creado["id"], pool=PoolDeUnaConexion(conn), _=USER)
+    assert len(alias) == 1
+    # Normalizado a mayusculas: el motor compara contra el nombre normalizado.
+    assert alias[0]["alias"] == "CARNET REPRESENTANTE LEGAL"
+
+    # Y el motor, cargando el catalogo REAL, ahora lo resuelve.
+    catalogo = await cargar_catalogo(conn)
+    empresa = await _empresa(conn)
+    universo = EntityUniverse(carriers=[], drivers=[], assets=[], scope_carrier_id=str(empresa))
+    candidatos = match_document(
+        file_name="CARNET REPRESENTANTE LEGAL.pdf", catalog=catalogo, universe=universo,
+    )
+    assert any(c.requirement_id == creado["id"] for c in candidatos), (
+        "el alias nuevo no llego al motor: el documento sigue invisible"
+    )
 
 
 

@@ -103,6 +103,13 @@ export function CondicionPanel({
   const [elegidos, setElegidos] = useState<string[]>(guardadas)
   const [marcadoActivo, setMarcadoActivo] = useState(requisito.is_active)
   const [politica, setPolitica] = useState<PoliticaVencimiento>(requisito.expiration_policy)
+  // El nombre VISIBLE. Renombrarlo es inocuo -- nadie guarda copia, todas las
+  // pantallas hacen JOIN vivo contra `req.name` --, y por eso no pasa por la
+  // vista previa: no cambia a quien se le exige nada.
+  const [nombre, setNombre] = useState(requisito.name)
+  // A quien se le EXIGE. Esto SI cambia registros: los disparadores de siembra
+  // solo siembran LEGAL_MANDATORY.
+  const [nivel, setNivel] = useState(requisito.requirement_level)
   const [verPreview, setVerPreview] = useState(false)
 
   // Si el prop cambia —porque el guardado propagó la fila nueva o porque la
@@ -114,19 +121,24 @@ export function CondicionPanel({
     setElegidos(guardadas)
     setMarcadoActivo(requisito.is_active)
     setPolitica(requisito.expiration_policy)
+    setNombre(requisito.name)
+    setNivel(requisito.requirement_level)
     // La vista previa NO se cierra acá. Este efecto corre también después de
     // guardar —el guardado propaga la fila nueva—, y cerrarla ahí obligaba a
     // volver a apretar "Ver qué cambia" justo cuando el número recién pasaba
     // a ser interesante. `guardar` invalida ['recalc-preview', id], así que si
     // está abierta se recalcula sola. Cambiar de documento no necesita
     // limpieza: la lista monta el panel con `key={id}`, o sea uno nuevo.
-  }, [requisito.id, requisito.is_active, requisito.expiration_policy, guardadas])
+  }, [requisito.id, requisito.is_active, requisito.expiration_policy,
+      requisito.name, requisito.requirement_level, guardadas])
 
   const elegidosEfectivos = alcance === 'todos' ? [] : elegidos
   const condicionSucia = (esAsset || esCarrier) && !mismoConjunto(elegidosEfectivos, guardadas)
   const activoSucio = marcadoActivo !== requisito.is_active
   const politicaSucia = politica !== requisito.expiration_policy
-  const sucio = condicionSucia || activoSucio || politicaSucia
+  const nombreSucio = nombre.trim() !== requisito.name && nombre.trim().length > 0
+  const nivelSucio = nivel !== requisito.requirement_level
+  const sucio = condicionSucia || activoSucio || politicaSucia || nombreSucio || nivelSucio
 
   // GET /config/taxonomies filtra active=true: un subtipo dado de baja que
   // siga en la condición no tiene casilla. El id sigue viajando en `elegidos`
@@ -137,7 +149,7 @@ export function CondicionPanel({
     mutationFn: () => {
       const body: Partial<Pick<RequirementOption,
         'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'
-        | 'expiration_policy'>> = {}
+        | 'expiration_policy' | 'name' | 'requirement_level'>> = {}
       if (esAsset) body.applies_to_fleet_service_type_ids = elegidosEfectivos
       if (esCarrier) body.applies_to_management_types = elegidosEfectivos as ManagementType[]
       // `is_active` sólo viaja si de verdad cambió: nunca manda `null` (el
@@ -147,6 +159,10 @@ export function CondicionPanel({
       // siempre escribiría un UPDATE sin efecto y, peor, dejaría una fila de
       // auditoría diciendo que alguien decidió algo que no decidió.
       if (politicaSucia) body.expiration_policy = politica
+      // Mismo criterio para los dos: sólo si cambió, para no dejar una fila de
+      // auditoría diciendo que alguien decidió algo que no decidió.
+      if (nombreSucio) body.name = nombre.trim()
+      if (nivelSucio) body.requirement_level = nivel
       return requirementsApi.patchConditions(requisito.id, body)
     },
     onSuccess: () => {
@@ -261,6 +277,68 @@ export function CondicionPanel({
         <p className="text-[11px] text-gray-400">{requisito.requirement_code}</p>
         <MarcaDeRevision revision={revision} />
       </div>
+
+      {canEdit && (
+        <fieldset className="mt-3">
+          <legend className="text-xs font-semibold text-text-primary">Cómo se llama</legend>
+
+          {/* El nombre VISIBLE, y por eso no pasa por la vista previa: no
+              cambia a quién se le exige nada. Renombrarlo es inocuo porque
+              ninguna tabla guarda copia — todas las pantallas hacen JOIN vivo
+              contra `req.name`, así que se ve al instante en todo el módulo.
+
+              El CÓDIGO de arriba no se edita a propósito: es la llave de los
+              alias, del motor de match y del catálogo de vencimientos.
+              Cambiarlo dejaría al clasificador sin poder resolver este
+              documento. */}
+          <input
+            type="text"
+            value={nombre}
+            onChange={e => setNombre(e.target.value)}
+            aria-label="Nombre del documento"
+            className="mt-2 w-full rounded-lg border border-border px-2 py-1.5 text-xs
+                       focus:outline-none focus:ring-2 focus:ring-accent/30"
+          />
+          {!nombre.trim() && (
+            <p className="mt-1 text-etiqueta text-status-incidente">
+              El nombre no puede quedar vacío.
+            </p>
+          )}
+        </fieldset>
+      )}
+
+      {canEdit && (
+        <fieldset className="mt-3">
+          <legend className="text-xs font-semibold text-text-primary">¿Es obligatorio?</legend>
+          {/* NO es una etiqueta de presentación: los disparadores de siembra
+              sólo siembran LEGAL_MANDATORY, así que cambiar esto agrega o
+              quita registros. Por eso vive del lado de la regla y pasa por la
+              misma vista previa que las condiciones. */}
+          {([
+            ['LEGAL_MANDATORY', 'Obligatorio', 'Se le exige a todos los que califiquen.'],
+            ['CONDITIONAL_OPTIONAL', 'Opcional', 'No se le pide a nadie por defecto; se carga si aplica.'],
+          ] as const).map(([valor, etiqueta, ayuda]) => (
+            <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+              <input
+                type="radio"
+                name="nivel-del-requisito"
+                // Etiqueta explícita: sin ella el nombre accesible sale del
+                // texto de ayuda de al lado, y "se le exige a todos los que
+                // califiquen" colisiona con el radio de alcance "a todos los
+                // vehículos".
+                aria-label={etiqueta}
+                checked={nivel === valor}
+                onChange={() => setNivel(valor)}
+                className="mt-0.5 accent-accent"
+              />
+              <span>
+                {etiqueta}
+                <span className="block text-etiqueta text-informativo">{ayuda}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
 
       {(esAsset || esCarrier) ? (
         <fieldset className="mt-3">

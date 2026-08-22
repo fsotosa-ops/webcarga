@@ -182,12 +182,19 @@ describe('CondicionPanel', () => {
       'r1', { applies_to_management_types: ['TRACTOREO', 'EQUIPO_COMPLETO'] }))
   })
 
-  // Los 12 requisitos de conductor no tienen condición: la única regla que se
-  // les puede tocar es la vigencia.
-  it('a un conductor no le pregunta nada que no se pueda contestar', () => {
+  // Los 12 requisitos de conductor no tienen CONDICIÓN: no hay subtipo de
+  // carrocería ni tipo de gestión que preguntarles. Lo que sí se les puede
+  // tocar es la vigencia, el nombre y si es obligatorio — eso aplica a los
+  // tres tipos de entidad.
+  it('a un conductor no le pregunta condiciones que no se pueden contestar', () => {
     montarPanel(requisito({ target_entity: 'DRIVER' }))
-    expect(screen.queryAllByRole('radio')).toHaveLength(0)
+    // Los radios de ALCANCE ("a todos" / "sólo a algunos") no existen acá...
+    expect(screen.queryByRole('radio', { name: /a todos los/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /sólo a algunos/i })).not.toBeInTheDocument()
     expect(screen.getByText(/todos los conductores/i)).toBeInTheDocument()
+    // ...pero el nivel sí, porque un conductor también puede tener documentos
+    // obligatorios y opcionales.
+    expect(screen.getByRole('radio', { name: 'Obligatorio' })).toBeInTheDocument()
   })
 
   it('la vigencia se apaga desde el panel', async () => {
@@ -303,5 +310,53 @@ describe('CondicionPanel', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /equipo completo/i }))
     redibujar(requisito({ target_entity: 'CARRIER', applies_to_management_types: ['TRACTOREO'] }))
     expect(screen.getByRole('checkbox', { name: /equipo completo/i })).toBeChecked()
+  })
+
+  // ── Renombrar y parametrizar ──────────────────────────────────────────
+  //
+  // Pedido por el usuario: "los archivos podrían ser editables para que los
+  // nombres queden más intuitivos" y "parametrizar si son obligatorios,
+  // opcionales". Prometido en la reunion del 21/08.
+
+  it('renombrar el documento manda el nombre nuevo, y nada mas', async () => {
+    montarPanel()
+    fireEvent.change(screen.getByLabelText('Nombre del documento'), {
+      target: { value: 'F30 Multas' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalled())
+    const [, body] = vi.mocked(requirementsApi.patchConditions).mock.calls.at(-1)!
+    expect(body.name).toBe('F30 Multas')
+    // No arrastra lo que no cambio: una fila de auditoria diria que alguien
+    // decidio algo que no decidio.
+    expect(body).not.toHaveProperty('requirement_level')
+    expect(body).not.toHaveProperty('is_active')
+  })
+
+  it('el codigo NO se puede editar: es la llave del clasificador', () => {
+    montarPanel()
+    // El codigo se muestra, pero no hay campo para cambiarlo. Renombrarlo
+    // dejaria al motor de match sin poder resolver este documento.
+    const campos = screen.queryAllByRole('textbox')
+    expect(campos).toHaveLength(1)
+    expect(campos[0]).toHaveAccessibleName('Nombre del documento')
+  })
+
+  it('un nombre vacio no se puede guardar', () => {
+    montarPanel()
+    fireEvent.change(screen.getByLabelText('Nombre del documento'), { target: { value: '  ' } })
+    expect(screen.getByText(/no puede quedar vacío/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^guardar$/i })).not.toBeInTheDocument()
+  })
+
+  it('cambiar el nivel manda requirement_level', async () => {
+    montarPanel()
+    fireEvent.click(screen.getByRole('radio', { name: 'Opcional' }))
+    fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalled())
+    const [, body] = vi.mocked(requirementsApi.patchConditions).mock.calls.at(-1)!
+    expect(body.requirement_level).toBe('CONDITIONAL_OPTIONAL')
   })
 })

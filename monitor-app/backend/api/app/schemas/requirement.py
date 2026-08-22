@@ -3,7 +3,7 @@
 para la regla de aplicabilidad que estos endpoints exponen."""
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .common import ManagementType, normalize_management_types, normalize_nonempty_list
 
@@ -34,6 +34,21 @@ class RequirementConditionsPatchBody(BaseModel):
     # de `is_active` no hace falta rechazarlo aparte, porque `Literal` ya no
     # admite None y Pydantic lo corta antes.
     expiration_policy: Optional[Literal["REQUIRED", "OPTIONAL", "NONE"]] = None
+    # El nombre VISIBLE del documento. Renombrarlo es inocuo: ninguna tabla
+    # guarda copia -- `compliance_records` referencia por id y todas las
+    # pantallas hacen JOIN vivo contra `req.name` --, asi que el cambio se ve
+    # al instante en todo el modulo.
+    #
+    # `requirement_code` NO esta acá y no debe estarlo: es la llave que usan
+    # los alias de nombre de archivo (`requirement_filename_aliases`), el
+    # motor de match (`document_matcher`) y el catalogo de vencimientos.
+    # Renombrarlo dejaria al clasificador sin poder resolver ese documento.
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    # A quien se le EXIGE. No es una etiqueta de presentacion: los disparadores
+    # de siembra (`reconcile_new_*`) sólo siembran LEGAL_MANDATORY, así que
+    # cambiar esto agrega o quita registros. Por eso pasa por la misma vista
+    # previa que las condiciones.
+    requirement_level: Optional[Literal["LEGAL_MANDATORY", "CONDITIONAL_OPTIONAL"]] = None
 
     # mode="after", no "before": para cuando estos corren, Pydantic ya
     # validó cada elemento contra su tipo declarado (list[str] /
@@ -71,9 +86,50 @@ class RequirementConditionsPatchBody(BaseModel):
     def sent_fields(self) -> list[str]:
         fields = (
             "is_active", "applies_to_fleet_service_type_ids", "applies_to_management_types",
-            "expiration_policy",
+            "expiration_policy", "name", "requirement_level",
         )
         return [f for f in fields if f in self.model_fields_set]
+
+
+class RequirementCreateBody(BaseModel):
+    """Un tipo de documento nuevo en el catalogo.
+
+    NACE APAGADO, y no es un detalle de implementacion: `reconcile_new_requirement()`
+    siembra un `compliance_record` por cada entidad que califique, y hoy hay
+    5.121 registros -- uno de conductor agrega 87 de un saque, uno de vehiculo
+    hasta 124. Insertarlo vigente seria una escritura masiva disparada por un
+    formulario de alta.
+
+    Apagado no le aplica a nadie, asi que se le definen condiciones con calma y
+    la siembra ocurre al activarlo, por el MISMO camino que ya usa cambiar una
+    condicion: guardar la regla y aplicarla son dos decisiones distintas.
+
+    `requirement_code` NO se recibe: se deriva del nombre. Es la llave del
+    motor de match y de los alias, y dejarla escribir invita a que dos
+    documentos compartan codigo o a que alguien la cambie despues.
+    """
+    name: str = Field(min_length=1, max_length=255)
+    target_entity: Literal["CARRIER", "DRIVER", "ASSET"]
+    requirement_level: Literal["LEGAL_MANDATORY", "CONDITIONAL_OPTIONAL"] = "LEGAL_MANDATORY"
+    expiration_policy: Literal["REQUIRED", "OPTIONAL", "NONE"] = "NONE"
+    # Acota el requisito a un generador de carga. La siembra de empresas ya lo
+    # respeta (`req.shipper_id IS NULL` para los generales), asi que "lo que
+    # Sodimac pide y Walmart no" ya esta en el modelo -- faltaba exponerlo.
+    shipper_id: Optional[str] = None
+
+
+class RequirementAliasBody(BaseModel):
+    """Una forma de escribir este documento en el nombre de un archivo.
+
+    Sin alias, un documento nuevo nace INVISIBLE para el clasificador: el motor
+    resuelve el tipo buscando alias dentro del nombre normalizado. Es
+    literalmente el caso de "CARNET REPRESENTANTE LEGAL.pdf", que no resuelve
+    porque el catalogo tiene CEDULA, CI y COPIA CI, pero no CARNET.
+    """
+    alias: str = Field(min_length=2, max_length=120)
+    # Resuelve el solapamiento por substring: 'USO Y MANTENCION EPP' (100) le
+    # gana a 'EPP' (10), que esta contenido en el.
+    priority: int = 0
 
 
 class RecalcPreview(BaseModel):

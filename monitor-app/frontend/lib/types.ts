@@ -1539,8 +1539,23 @@ export type RequirementOption = {
  *  (`lib/api/requirements.ts`); el panel que le daba nombre
  *  —`RequirementConditionsPanel`— ya no existe, lo reemplazó `CondicionPanel`,
  *  que dibuja desde `RequirementOption` completo. */
+/** Una forma de escribir un documento en el nombre de un archivo.
+ *
+ *  Sin alias un documento es INVISIBLE para el clasificador: el motor resuelve
+ *  el tipo buscando alias dentro del nombre normalizado. Es el caso de
+ *  "CARNET REPRESENTANTE LEGAL.pdf", que no resuelve porque el catálogo tiene
+ *  CEDULA, CI y COPIA CI, pero no CARNET.
+ *
+ *  `priority` resuelve el solapamiento por substring: "USO Y MANTENCION EPP"
+ *  (100) le gana a "EPP" (10), que está contenido en él. */
+export type RequirementAlias = {
+  id:       string
+  alias:    string
+  priority: number
+}
+
 export type RequirementConditions = Pick<RequirementOption,
-  'id' | 'requirement_code' | 'name' | 'target_entity' |
+  'id' | 'requirement_code' | 'name' | 'target_entity' | 'requirement_level' |
   'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>
 
 /** `PATCH /conditions` devuelve solo las columnas de su propio `RETURNING`

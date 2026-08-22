@@ -6,14 +6,23 @@ estado de un compliance_record concreto, así que no cuelga de
 para poder crecer con la configuración de condiciones y el recálculo sin
 seguir engordando ese archivo.
 """
+import re
+import unicodedata
 from typing import Literal, Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, require_admin
 from ..db import get_pool
 from ..schemas.compliance import RequirementOption
-from ..schemas.requirement import RecalcPreview, RecalcResult, RequirementConditionsPatchBody
+from ..schemas.requirement import (
+    RecalcPreview,
+    RecalcResult,
+    RequirementAliasBody,
+    RequirementConditionsPatchBody,
+    RequirementCreateBody,
+)
 from ..services.audit import log_change
 from ..services.revisiones import registrar_revision
 from ..services.requirement_conditions import (
@@ -99,6 +108,18 @@ _CONDITION_COLUMN_CASTS: dict[str, Optional[str]] = {
     # el `Literal` del schema, que devuelve 422 en vez de dejar reventar la
     # base con 500.
     "expiration_policy": None,
+    # Sin cast: TEXT y TEXT. `name` es el nombre visible y renombrarlo es
+    # inocuo -- nadie guarda copia, todas las pantallas hacen JOIN vivo.
+    "name": None,
+    # `requirement_level` decide A QUIEN SE LE EXIGE: los disparadores de
+    # siembra sólo siembran LEGAL_MANDATORY. Cambiarlo agrega o quita
+    # registros, y por eso -- como las condiciones -- guardar no aplica: eso
+    # es POST /recalc.
+    "requirement_level": None,
+    # `requirement_code` NO ESTA, y no es un olvido: es la llave de
+    # `requirement_filename_aliases`, del motor de match y del catalogo de
+    # vencimientos. Renombrarlo dejaria al clasificador sin poder resolver ese
+    # documento nunca mas.
 }
 
 
@@ -128,6 +149,110 @@ async def list_compliance_requirements(
                            "universo":   fila.pop("universo")}
         catalogo.append(fila)
     return catalogo
+
+
+def _codigo_desde_nombre(nombre: str) -> str:
+    """`F30 Multas` -> `F30_MULTAS`. Sin acentos, sin puntuacion, sin dobles.
+
+    Se DERIVA y no se recibe: `requirement_code` es la llave del motor de match,
+    de los alias y del catalogo de vencimientos. Dejarla escribir invita a que
+    dos documentos compartan codigo, o a que alguien la cambie despues y deje al
+    clasificador sin poder resolver ese documento.
+    """
+    sin_acentos = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
+    limpio = re.sub(r"[^A-Za-z0-9]+", "_", sin_acentos).strip("_").upper()
+    return limpio[:60] or "REQUISITO"
+
+
+@requirements_router.post("", status_code=201)
+async def create_requirement(
+    body: RequirementCreateBody,
+    pool=Depends(get_pool), user=Depends(require_admin),
+):
+    """Da de alta un tipo de documento, APAGADO.
+
+    Apagado no le aplica a nadie, asi que el disparador de siembra no escribe
+    un solo `compliance_record`. La siembra ocurre al activarlo, por el mismo
+    camino que ya usa cambiar una condicion: `PATCH /conditions` para guardar
+    la regla y `POST /recalc` para aplicarla, con su vista previa en medio.
+
+    Insertarlo vigente seria una escritura masiva -- 87 registros por un
+    requisito de conductor, hasta 124 por uno de vehiculo, sobre 5.121 -- 
+    disparada por un formulario de alta.
+    """
+    codigo = _codigo_desde_nombre(body.name)
+    async with pool.acquire() as conn:
+        ya_existe = await conn.fetchval(
+            "SELECT 1 FROM public.compliance_requirements "
+            "WHERE target_entity = $1 AND requirement_code = $2",
+            body.target_entity, codigo,
+        )
+        if ya_existe:
+            raise HTTPException(
+                409,
+                f"Ya existe un documento de {body.target_entity} con el codigo "
+                f"{codigo}. Cambia el nombre.",
+            )
+        fila = await conn.fetchrow(
+            """
+            INSERT INTO public.compliance_requirements
+                (requirement_code, name, target_entity, requirement_level,
+                 expiration_policy, shipper_id, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6::uuid, false)
+            RETURNING id::text, requirement_code, name, target_entity,
+                      requirement_level, expiration_policy, is_active
+            """,
+            codigo, body.name, body.target_entity, body.requirement_level,
+            body.expiration_policy, body.shipper_id,
+        )
+    return dict(fila)
+
+
+@requirements_router.get("/{requirement_id}/aliases")
+async def list_requirement_aliases(
+    requirement_id: str, pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    """Las formas de escribir este documento en el nombre de un archivo."""
+    rows = await pool.fetch(
+        "SELECT id::text, alias, priority FROM public.requirement_filename_aliases "
+        "WHERE requirement_id = $1::uuid ORDER BY priority DESC, alias",
+        requirement_id,
+    )
+    return [dict(r) for r in rows]
+
+
+@requirements_router.post("/{requirement_id}/aliases", status_code=201)
+async def create_requirement_alias(
+    requirement_id: str, body: RequirementAliasBody,
+    pool=Depends(get_pool), user=Depends(require_admin),
+):
+    """Agrega una forma de escribirlo. Sin alias, un documento nuevo nace
+    INVISIBLE para el clasificador."""
+    try:
+        fila = await pool.fetchrow(
+            "INSERT INTO public.requirement_filename_aliases (requirement_id, alias, priority) "
+            "VALUES ($1::uuid, $2, $3) RETURNING id::text, alias, priority",
+            requirement_id, body.alias.strip().upper(), body.priority,
+        )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(409, "Ese alias ya existe para este documento")
+    return dict(fila)
+
+
+@requirements_router.delete("/{requirement_id}/aliases/{alias_id}", status_code=204)
+async def delete_requirement_alias(
+    requirement_id: str, alias_id: str,
+    pool=Depends(get_pool), user=Depends(require_admin),
+):
+    """Quita una forma de escribirlo. Acotado al requisito a proposito: sin el
+    `requirement_id` en el WHERE, un id de otro documento se borraria igual."""
+    result = await pool.execute(
+        "DELETE FROM public.requirement_filename_aliases "
+        "WHERE id = $1::uuid AND requirement_id = $2::uuid",
+        alias_id, requirement_id,
+    )
+    if str(result).rsplit(" ", 1)[-1] == "0":
+        raise HTTPException(404, "Ese alias no existe en este documento")
 
 
 @requirements_router.patch("/{requirement_id}/conditions")
