@@ -4,8 +4,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.routers.requirements import (
+    _CONDITION_COLUMN_CASTS,
+    patch_requirement_conditions,
+)
+from app.schemas.requirement import RequirementConditionsPatchBody
 from app.services.requirement_conditions import SQL_ENTIDADES_QUE_APLICAN, calcular_diferencias
-from tests.conftest import wire_transactional_conn
+from tests.conftest import PoolDeUnaConexion, _usuario_real, wire_transactional_conn
 
 MIGRACIONES = Path(__file__).resolve().parents[2] / "supabase" / "migrations"
 
@@ -289,3 +294,62 @@ async def test_calcular_diferencias_lee_las_tres_consultas_en_una_sola_transacci
     # las tres lecturas nunca deberian haber ido sueltas contra el pool
     pool.fetchrow.assert_not_called()
     pool.fetch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Que TODO campo habilitado se pueda guardar de verdad
+# ---------------------------------------------------------------------------
+#
+# `patch_requirement_conditions` escribe tres listas de columnas: la que LEE
+# antes (para la auditoria), la que ESCRIBE, y la que DEVUELVE. La del medio
+# se deriva de `_CONDITION_COLUMN_CASTS`; las otras dos estaban escritas a
+# mano, y habilitar `name` sin agregarlo al SELECT dejo la auditoria pidiendo
+# una clave que la fila no traia -- KeyError, 500, y ninguna suite en rojo
+# porque los tests con AsyncMock reciben lo que se les dice que reciban.
+#
+# Este test recorre la whitelist, asi que un campo nuevo queda cubierto sin
+# que nadie se acuerde de venir a agregarlo.
+
+VALOR_DE_PRUEBA = {
+    "is_active": True,
+    "applies_to_fleet_service_type_ids": [],
+    "applies_to_management_types": [],
+    "expiration_policy": "REQUIRED",
+    "name": "ZZ-TEST-INTEGRACION Documento Renombrado",
+    "requirement_level": "CONDITIONAL_OPTIONAL",
+}
+
+
+@pytest.mark.integracion
+@pytest.mark.parametrize("campo", sorted(_CONDITION_COLUMN_CASTS))
+async def test_integracion_cada_campo_habilitado_se_guarda_y_se_audita(campo, conexion_revertida):
+    """Un campo en la whitelist tiene que poder guardarse. Si falta en el
+    SELECT de auditoria, esto revienta con KeyError antes de escribir nada."""
+    assert campo in VALOR_DE_PRUEBA, (
+        f"'{campo}' entro a la whitelist sin valor de prueba: agregalo a "
+        "VALOR_DE_PRUEBA para que quede cubierto"
+    )
+    conn = conexion_revertida
+    requirement_id = str(await conn.fetchval(
+        "SELECT id FROM public.compliance_requirements LIMIT 1"))
+
+    row = await patch_requirement_conditions(
+        requirement_id,
+        RequirementConditionsPatchBody(**{campo: VALOR_DE_PRUEBA[campo]}),
+        PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    # Se devuelve, o sea que el RETURNING tampoco se quedo corto.
+    assert campo in row, f"'{campo}' no vuelve en la respuesta del PATCH"
+    # Y quedo escrito: leer la propia respuesta no probaria nada si el UPDATE
+    # no toco la fila.
+    guardado = await conn.fetchval(
+        f"SELECT {campo} FROM public.compliance_requirements WHERE id = $1::uuid",
+        requirement_id,
+    )
+    esperado = VALOR_DE_PRUEBA[campo]
+    if esperado == []:
+        # `[]` significa "sin restriccion" y se normaliza a NULL a proposito.
+        assert guardado is None
+    else:
+        assert guardado == esperado

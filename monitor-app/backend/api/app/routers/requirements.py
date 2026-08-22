@@ -122,6 +122,14 @@ _CONDITION_COLUMN_CASTS: dict[str, Optional[str]] = {
     # documento nunca mas.
 }
 
+# Las columnas editables, EN UN SOLO LUGAR. Leerlas antes del UPDATE y
+# devolverlas despues son dos listas mas que tienen que decir exactamente lo
+# mismo que la whitelist: escribirlas a mano ya dejo `name` fuera del SELECT y
+# el registro de auditoria reviento con KeyError sobre un campo recien
+# habilitado. Derivarlas hace imposible agregar un campo y olvidar uno de los
+# tres lugares.
+_COLUMNAS_EDITABLES = ", ".join(_CONDITION_COLUMN_CASTS)
+
 
 @requirements_router.get("", response_model=list[RequirementOption])
 async def list_compliance_requirements(
@@ -273,9 +281,8 @@ async def patch_requirement_conditions(
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
-                """
-                SELECT id, is_active, applies_to_fleet_service_type_ids,
-                       applies_to_management_types, expiration_policy
+                f"""
+                SELECT id, {_COLUMNAS_EDITABLES}
                 FROM public.compliance_requirements WHERE id = $1
                 """,
                 requirement_id,
@@ -302,9 +309,7 @@ async def patch_requirement_conditions(
                 UPDATE public.compliance_requirements SET
                     {", ".join(set_parts)}
                 WHERE id = $1
-                RETURNING id, requirement_code, is_active,
-                          applies_to_fleet_service_type_ids, applies_to_management_types,
-                          expiration_policy
+                RETURNING id, requirement_code, {_COLUMNAS_EDITABLES}
                 """,
                 *values,
             )
