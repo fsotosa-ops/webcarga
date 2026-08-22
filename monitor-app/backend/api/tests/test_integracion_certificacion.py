@@ -37,6 +37,8 @@ from app.routers.compliance import (
     get_compliance_summary,
     list_pending_compliance_records,
 )
+from app.routers.document_ingest import move_items
+from app.schemas.document_ingest import MoveItemsBody
 from app.routers.requirements import SQL_CATALOGO, recalc
 from app.services.requirement_conditions import (
     SQL_ENTIDADES_QUE_APLICAN,
@@ -960,6 +962,89 @@ async def test_la_sabana_global_sigue_sin_traer_empresas_dadas_de_baja(
         "una empresa dada de baja volvio a la sabana global: eso es el bug 5.4, "
         "donde mas de la mitad del volumen mostrado eran empresas inactivas"
     )
+
+
+
+async def test_asignar_la_empresa_vuelve_a_clasificar_el_archivo(conexion_revertida):
+    """El nudo que dejaba la bandeja sin un solo match en 67 archivos.
+
+    El match corría UNA sola vez, al subir, y sus cuatro ramas exigen una señal
+    EN EL NOMBRE del archivo: RUT de empresa, patente, RUT de conductor o
+    nombre de conductor. Un documento de empresa —`Carpeta_Tributaria_*.pdf`—
+    no tiene ninguna, así que nunca resolvía; y elegir la empresa después no
+    volvía a intentarlo.
+
+    Ahora asignar la empresa ES información nueva y dispara el match otra vez,
+    con el universo acotado a ella. Va contra Postgres real porque lo que se
+    verifica es la ida y vuelta completa: alias del catálogo, universo acotado
+    y escritura del resultado — nada de eso lo ve un AsyncMock.
+    """
+    conn = conexion_revertida
+    empresa = await _empresa(conn)
+
+    lote = await conn.fetchval(
+        "INSERT INTO public.document_ingest_batches (created_by) VALUES (NULL) RETURNING id")
+    item = await conn.fetchval(
+        """
+        INSERT INTO public.document_ingest_items
+            (batch_id, storage_path, file_name, mime_type, size_bytes, match_status)
+        VALUES ($1, 'staging/x', 'Carpeta_Tributaria_Regular.pdf', 'application/pdf', 10, 'UNMATCHED')
+        RETURNING id
+        """, lote)
+
+    antes = await conn.fetchrow(
+        "SELECT match_status, requirement_id, candidates FROM public.document_ingest_items WHERE id = $1",
+        item)
+    assert antes["match_status"] == "UNMATCHED"
+    assert antes["requirement_id"] is None
+
+    await move_items(
+        MoveItemsBody(item_ids=[str(item)], carrier_id=str(empresa)),
+        pool=PoolDeUnaConexion(conn), user=USER,
+    )
+
+    despues = await conn.fetchrow(
+        """
+        SELECT i.match_status, i.entity_type, i.entity_id, r.name AS requisito
+        FROM public.document_ingest_items i
+        LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
+        WHERE i.id = $1
+        """, item)
+
+    assert despues["match_status"] != "UNMATCHED", (
+        "asignar la empresa no volvio a clasificar: el archivo sigue sin match"
+    )
+    assert despues["entity_type"] == "CARRIER"
+    assert str(despues["entity_id"]) == str(empresa)
+    assert despues["requisito"] == "Carpeta Tributaria", (
+        f"resolvio el requisito equivocado: {despues['requisito']!r}"
+    )
+
+
+async def test_asignar_la_empresa_no_pisa_un_archivo_ya_clasificado(conexion_revertida):
+    """Recalcular el match de uno ya confirmado pisaria una decision humana con
+    una propuesta. Solo se re-clasifica lo que sigue sin clasificar."""
+    conn = conexion_revertida
+    empresa = await _empresa(conn)
+    lote = await conn.fetchval(
+        "INSERT INTO public.document_ingest_batches (created_by) VALUES (NULL) RETURNING id")
+    item = await conn.fetchval(
+        """
+        INSERT INTO public.document_ingest_items
+            (batch_id, storage_path, file_name, mime_type, size_bytes, match_status)
+        VALUES ($1, 'staging/y', 'Carpeta_Tributaria_Regular.pdf', 'application/pdf', 10, 'COMMITTED')
+        RETURNING id
+        """, lote)
+
+    await move_items(
+        MoveItemsBody(item_ids=[str(item)], carrier_id=str(empresa)),
+        pool=PoolDeUnaConexion(conn), user=USER,
+    )
+
+    fila = await conn.fetchrow(
+        "SELECT match_status, requirement_id FROM public.document_ingest_items WHERE id = $1", item)
+    assert fila["match_status"] == "COMMITTED"
+    assert fila["requirement_id"] is None
 
 
 

@@ -90,10 +90,17 @@ class EntityUniverse:
     carriers: (id, tax_id, business_name)
     drivers:  (id, tax_id, full_name)
     assets:   (id, license_plate)
+
+    `scope_carrier_id` es la empresa a la que el CALLER acoto este universo, si
+    lo hizo. No se deduce de `len(carriers) == 1`: una base con una sola empresa
+    activa daria el mismo valor sin que nadie haya acotado nada, y esa
+    ambiguedad es la clase de dato con dos sentidos que este proyecto ya arrastro
+    cinco veces. Lo declara quien acota.
     """
     carriers: list[tuple] = field(default_factory=list)
     drivers: list[tuple] = field(default_factory=list)
     assets: list[tuple] = field(default_factory=list)
+    scope_carrier_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -236,6 +243,34 @@ def match_document(
         resolved = _from_manifest(manifest_row, catalog, universe)
         if resolved:
             return [resolved]
+
+    # LA EMPRESA YA SABIDA. Va primero porque es la evidencia mas fuerte que hay:
+    # no se dedujo del nombre del archivo, la declaro una persona al acotar el
+    # universo -- entrando a la bandeja de esa empresa, o asignandosela a lo que
+    # marco.
+    #
+    # POR QUE FALTABA. Las otras cuatro ramas exigen una senal EN EL NOMBRE: RUT
+    # de empresa, patente, RUT de conductor, o nombre de conductor. El scope solo
+    # LIMITABA el universo y nunca aportaba, asi que un documento de empresa
+    # -- "Carpeta_Tributaria_Regular.pdf" -- no resolvia ni sabiendo de quien es.
+    # Medido: 67 archivos pasaron por la cola y ninguno produjo un solo
+    # candidato, porque ningun nombre traia RUT ni patente.
+    #
+    # Se limita a requisitos de empresa a proposito: saber la empresa no dice
+    # cual de sus 12 conductores es, y proponer uno seria inventar.
+    if universe.scope_carrier_id:
+        requirement = _match_requirement(normalized, catalog, "CARRIER")
+        if requirement:
+            candidates.append(MatchCandidate(
+                entity_type="CARRIER",
+                entity_id=universe.scope_carrier_id,
+                requirement_id=requirement.requirement_id,
+                confidence=0.95,
+                evidence={
+                    "entity": {"via": "EMPRESA_DECLARADA", "score": 0.95},
+                    "type": {"via": "ALIAS", "score": 0.85, "alias": requirement.alias},
+                },
+            ))
 
     ruts = extract_ruts(file_name)
     for rut in ruts:

@@ -23,12 +23,85 @@ DRIVER_ULLOA = ("d-ulloa", "16030949-0", "Abraham Ulloa")
 ASSET_GLCD14 = ("a-glcd14", "GLCD14")
 
 
-def _universe(carriers=(), drivers=(), assets=()):
-    return EntityUniverse(carriers=list(carriers), drivers=list(drivers), assets=list(assets))
+def _universe(carriers=(), drivers=(), assets=(), scope=None):
+    return EntityUniverse(
+        carriers=list(carriers), drivers=list(drivers), assets=list(assets),
+        scope_carrier_id=scope,
+    )
 
 
 def _catalog(*aliases):
     return Catalog(aliases=[RequirementAlias(*a) for a in aliases])
+
+
+# ── La empresa ya sabida ────────────────────────────────────────────────────
+#
+# LA RAMA QUE FALTABA, y la que explica por que el clasificador nunca produjo
+# nada: las otras cuatro exigen una senal EN EL NOMBRE del archivo -- RUT de
+# empresa, patente, RUT de conductor, o nombre de conductor. El scope de empresa
+# solo LIMITABA el universo y nunca aportaba evidencia.
+#
+# Medido en produccion antes de esta rama: 67 archivos pasaron por la cola y
+# NINGUNO produjo un solo candidato, porque ningun nombre traia RUT ni patente.
+
+
+def test_la_empresa_declarada_resuelve_un_documento_sin_rut_en_el_nombre():
+    """El caso real que no resolvia: `Carpeta_Tributaria_Regular.pdf`.
+
+    No trae RUT ni patente, asi que las cuatro ramas viejas dan cero. Con la
+    empresa declarada -- alguien entro a su bandeja o se la asigno -- la
+    entidad ya no hay que deducirla, y el tipo sale del alias como siempre.
+    """
+    universo = _universe(carriers=[CARRIER_LUMILIZ], scope=CARRIER_LUMILIZ[0])
+    catalogo = _catalog(("req-carpeta", "CARRIER", "CARPETA TRIBUTARIA", 100))
+
+    resultado = match_document(
+        file_name="Carpeta_Tributaria_Regular.pdf", catalog=catalogo, universe=universo,
+    )
+
+    assert len(resultado) == 1
+    assert resultado[0].entity_type == "CARRIER"
+    assert resultado[0].entity_id == "c-lumiliz"
+    assert resultado[0].requirement_id == "req-carpeta"
+    assert resultado[0].evidence["entity"]["via"] == "EMPRESA_DECLARADA"
+
+
+def test_sin_empresa_declarada_ese_mismo_archivo_no_resuelve():
+    """La contraprueba, y el estado de hoy en la bandeja global: sin declarar
+    la empresa no hay a quien proponerselo, y proponer una de 39 seria
+    inventar."""
+    universo = _universe(carriers=[CARRIER_LUMILIZ])
+    catalogo = _catalog(("req-carpeta", "CARRIER", "CARPETA TRIBUTARIA", 100))
+
+    assert match_document(
+        file_name="Carpeta_Tributaria_Regular.pdf", catalog=catalogo, universe=universo,
+    ) == []
+
+
+def test_la_empresa_declarada_no_alcanza_sin_un_alias_que_calce():
+    """Saber de quien es no dice QUE es. Sin alias no hay candidato: proponer
+    la empresa con `requirement_id=None` seria un match a medias que la
+    pantalla tendria que volver a preguntar."""
+    universo = _universe(carriers=[CARRIER_LUMILIZ], scope=CARRIER_LUMILIZ[0])
+    catalogo = _catalog(("req-carpeta", "CARRIER", "CARPETA TRIBUTARIA", 100))
+
+    assert match_document(
+        file_name="escaneo (3).pdf", catalog=catalogo, universe=universo,
+    ) == []
+
+
+def test_la_empresa_declarada_no_propone_conductores_ni_vehiculos():
+    """Saber la empresa NO dice cual de sus conductores es. La rama se limita a
+    requisitos de empresa a proposito -- proponer un conductor porque es el
+    unico del universo seria inventar."""
+    universo = _universe(
+        carriers=[CARRIER_LUMILIZ], drivers=[DRIVER_ULLOA], scope=CARRIER_LUMILIZ[0],
+    )
+    catalogo = _catalog(("req-lic", "DRIVER", "LICENCIA DE CONDUCIR", 100))
+
+    assert match_document(
+        file_name="Licencia_de_Conducir.pdf", catalog=catalogo, universe=universo,
+    ) == []
 
 
 # ── Identificador fuerte: RUT en el nombre del archivo ──────────────────────

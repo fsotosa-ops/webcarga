@@ -92,4 +92,5 @@ async def cargar_universo(conn, carrier_id: str | None = None) -> EntityUniverse
         ],
         drivers=[tuple(f) for f in await conn.fetch(_SQL_DRIVERS, carrier_id)],
         assets=[tuple(f) for f in await conn.fetch(_SQL_ASSETS, carrier_id)],
+        scope_carrier_id=carrier_id,
     )

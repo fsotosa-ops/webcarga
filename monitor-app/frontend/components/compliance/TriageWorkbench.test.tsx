@@ -46,6 +46,9 @@ beforeEach(() => {
     .mockResolvedValue({ preview_url: 'https://x/1' })
   vi.mocked(documentIngestApi.upload).mockReset().mockResolvedValue({ items: [], errors: [] } as never)
   vi.mocked(documentIngestApi.remove).mockReset()
+  // Sin este reset, el test que afirma "NO escribe" heredaba la llamada del
+  // que si escribe y fallaba solo al correr el archivo entero.
+  vi.mocked(documentIngestApi.moveItems).mockReset()
   vi.mocked(complianceApi.listPending).mockReset().mockResolvedValue({
     total: 1,
     rows: [{
@@ -259,6 +262,59 @@ describe('TriageWorkbench', () => {
 
     expect(await screen.findByPlaceholderText(/elegir empresa/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Quitar/ })).not.toBeInTheDocument()
+  })
+
+  // ── La pila mezclada: archivos de VARIAS empresas en la misma tanda ────
+
+  it('elegir empresa se la asigna a los MARCADOS, no a todo lo que no tiene', async () => {
+    // El caso que hay que soportar: una tanda mezclada se resuelve por grupos.
+    // Barrer "todo lo que no tiene empresa" hacia la elegida meteria los de la
+    // empresa B dentro de la A.
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({
+      total: 2,
+      rows: [
+        { ...row('i1', 'ACME'), carrier_id: null, carrier_name: null },
+        { ...row('i2', 'ACME'), carrier_id: null, carrier_name: null },
+      ],
+    } as never)
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
+    } as never)
+    vi.mocked(documentIngestApi.moveItems).mockResolvedValue({ moved: 1 } as never)
+    setup()
+    await screen.findByText('i1.png')
+
+    // Marcar UNO solo de los dos.
+    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
+
+    // La pantalla dice que va a escribir, ANTES de elegir.
+    expect(await screen.findByText(/El archivo marcado pasa a ser de la empresa que elijas/))
+      .toBeInTheDocument()
+
+    fireEvent.change(await screen.findByPlaceholderText(/elegir empresa/i), { target: { value: 'char' } })
+    fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
+
+    // Sólo el marcado. El otro sigue sin empresa.
+    await waitFor(() => expect(documentIngestApi.moveItems)
+      .toHaveBeenCalledWith(['i1'], 'c1'))
+  })
+
+  it('sin nada marcado, elegir empresa NO escribe: solo pre-etiqueta', async () => {
+    // La otra mitad, y la que evita una escritura sorpresa: con la cola llena
+    // de archivos sin empresa, elegir una no puede reasignarlos todos.
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
+    } as never)
+    setup()
+    await screen.findByText('i1.png')
+
+    expect(await screen.findByText(/Lo que subas ahora será de la empresa que elijas/))
+      .toBeInTheDocument()
+
+    fireEvent.change(await screen.findByPlaceholderText(/elegir empresa/i), { target: { value: 'char' } })
+    fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
+
+    expect(documentIngestApi.moveItems).not.toHaveBeenCalled()
   })
 
   // ── Paso 2 del funnel: esto es una COLA, no un formulario ──────────────

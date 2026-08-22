@@ -160,6 +160,32 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
   })
   const { empresa } = empresaDeTrabajo
 
+  /** Los marcados que TODAVIA no tienen empresa. Son los unicos a los que
+   *  elegir una les cambia algo: los que ya la tienen se mueven con la barra
+   *  de seleccion, que es otro gesto y lo rotula distinto. */
+  const marcadosSinEmpresa = useMemo(
+    () => rows.filter(r => selectedIds.has(r.id) && !r.carrier_id).map(r => r.id),
+    [rows, selectedIds],
+  )
+
+  /** Elegir empresa. Con archivos marcados sin empresa, SE LA ASIGNA a esos y
+   *  no a todo lo que no tenga: una tanda mezclada -- que es el caso que hay
+   *  que soportar -- se resuelve por grupos, marcando los de una empresa,
+   *  eligiendola, y repitiendo. Barrer "todo lo que no tiene empresa" hacia la
+   *  elegida meteria los de la empresa B dentro de la A.
+   *
+   *  Sin seleccion no escribe nada: solo pre-etiqueta lo que se suba despues.
+   *  Cual de las dos cosas va a pasar lo dice la ayuda ANTES de elegir. */
+  async function elegirEmpresa(c: CarrierSearchResult) {
+    empresaDeTrabajo.fijar(c)
+    if (!marcadosSinEmpresa.length) return
+    const n = marcadosSinEmpresa.length
+    await documentIngestApi.moveItems(marcadosSinEmpresa, c.id)
+    clearSelection()
+    setNotice(`${n === 1 ? '1 archivo' : `${n} archivos`} ahora son de ${c.business_name}`)
+    refrescarBandeja()
+  }
+
 
   const previewItems = rows
     .filter(r => targetIds.includes(r.id))
@@ -397,7 +423,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
           se dice siempre: la zona de arrastre sigue aceptando archivos y
           atribuirlos a una empresa fuera de pantalla es el defecto que este
           archivo ya tuvo dos veces. */}
-      {canEdit && (empresa || sinSeleccion) && !carrierId && (
+      {canEdit && (empresa || sinSeleccion || marcadosSinEmpresa.length > 0) && !carrierId && (
         // `items-start`, no `items-center`: con el buscador vacio la pista
         // ("Escribe al menos 2 caracteres…") ocupa alto, y centrar dejaba la
         // etiqueta EMPRESA flotando a media altura contra una caja larga —
@@ -430,12 +456,23 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
               </span>
             </>
           ) : (
-            sinSeleccion && (
+            (sinSeleccion || marcadosSinEmpresa.length > 0) && (
               <div className="min-w-0 flex-1 max-w-md">
+                {/* Que va a pasar al elegir, DICHO ANTES de elegir. Con
+                    archivos marcados sin empresa esto ESCRIBE -- les asigna la
+                    empresa --, y una escritura que se descubre despues es
+                    exactamente lo que no puede pasar acá. */}
+                <p className="text-etiqueta text-informativo pb-1">
+                  {marcadosSinEmpresa.length
+                    ? `${marcadosSinEmpresa.length === 1
+                        ? 'El archivo marcado pasa'
+                        : `Los ${marcadosSinEmpresa.length} archivos marcados pasan`} a ser de la empresa que elijas.`
+                    : 'Lo que subas ahora será de la empresa que elijas.'}
+                </p>
                 <CarrierSearchPicker
                   query={busqueda}
                   onQueryChange={setBusqueda}
-                  onPick={empresaDeTrabajo.fijar}
+                  onPick={elegirEmpresa}
                   size="sm"
                   showMinCharsHint
                   placeholder="Elegir empresa…"

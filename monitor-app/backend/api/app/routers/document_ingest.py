@@ -470,21 +470,83 @@ async def move_items(
     pool=Depends(get_pool),
     user=Depends(require_editor),
 ):
-    """Reasigna archivos sin clasificar a otra empresa.
+    """Asigna archivos sin clasificar a una empresa, y VUELVE A CLASIFICARLOS.
 
-    Un solo UPDATE a propósito: mover cuarenta archivos en un bucle serían
-    cuarenta statements. No toca compliance_records — estos archivos todavía
-    no están aplicados a ningún requisito.
+    Saber de qué empresa es un archivo es información nueva, y el match es una
+    función del nombre Y de la empresa: sin ella el motor no tiene a quién
+    proponerle un documento de empresa, y con ella sí. Dejar el match viejo
+    seria guardar una respuesta calculada con menos datos de los que hay.
+
+    Medido antes de esto: 67 archivos pasaron por la cola y NINGUNO produjo un
+    candidato, porque el match corría una sola vez —al subir, sin empresa— y
+    ninguna de sus ramas podía resolver sin un RUT o una patente en el nombre.
+
+    No toca compliance_records — estos archivos todavía no están aplicados a
+    ningún requisito.
     """
     if not body.item_ids:
         raise HTTPException(422, "Se requiere al menos un documento")
 
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            "UPDATE public.document_ingest_items SET carrier_id = $2, updated_at = NOW() "
-            "WHERE id = ANY($1::uuid[])",
-            body.item_ids, body.carrier_id,
-        )
+        async with conn.transaction():
+            result = await conn.execute(
+                "UPDATE public.document_ingest_items SET carrier_id = $2, updated_at = NOW() "
+                "WHERE id = ANY($1::uuid[])",
+                body.item_ids, body.carrier_id,
+            )
+
+            # El MISMO motor y las MISMAS cargas que la subida. Reusarlos es lo
+            # que evita que existan dos definiciones de "match" que se separen.
+            catalogo = await cargar_catalogo(conn)
+            universo = await cargar_universo(conn, body.carrier_id)
+
+            # Sólo los que siguen sin clasificar: recalcular el match de uno ya
+            # confirmado pisaría una decisión humana con una propuesta.
+            pendientes = await conn.fetch(
+                f"""
+                SELECT id::text, file_name FROM public.document_ingest_items
+                WHERE id = ANY($1::uuid[]) AND {unclassified_predicate('document_ingest_items')}
+                """,
+                body.item_ids,
+            )
+            for item in pendientes:
+                try:
+                    candidatos = _dedup_candidates(match_document(
+                        file_name=item["file_name"], catalog=catalogo, universe=universo,
+                    ))
+                    motivo_error = None
+                except Exception as exc:
+                    candidatos = []
+                    motivo_error = f"{type(exc).__name__}: {exc}"
+                estado = classify_match(candidatos)
+                mejor = candidatos[0] if candidatos else None
+                # Mismo criterio que la subida: un empate no tiene ganador, y
+                # elegir candidatos[0] escribiría un desempate arbitrario.
+                ambiguo = estado == "AMBIGUOUS"
+                await conn.execute(
+                    """
+                    UPDATE public.document_ingest_items SET
+                        match_status = $2, entity_type = $3, entity_id = $4::uuid,
+                        requirement_id = $5::uuid, confidence = $6,
+                        match_evidence = $7::jsonb, candidates = $8::jsonb,
+                        error = $9, updated_at = NOW()
+                    WHERE id = $1::uuid
+                    """,
+                    item["id"], estado,
+                    mejor.entity_type if mejor and not ambiguo else None,
+                    mejor.entity_id if mejor and not ambiguo else None,
+                    mejor.requirement_id if mejor and not ambiguo else None,
+                    mejor.confidence if mejor and not ambiguo else None,
+                    json.dumps(mejor.evidence if mejor else {}),
+                    json.dumps([
+                        {"entity_type": c.entity_type, "entity_id": c.entity_id,
+                         "requirement_id": c.requirement_id, "confidence": c.confidence,
+                         "evidence": c.evidence}
+                        for c in candidatos
+                    ]),
+                    motivo_error,
+                )
+
     return {"moved": int(str(result).rsplit(" ", 1)[-1])}
 
 
