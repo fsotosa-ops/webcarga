@@ -153,7 +153,7 @@ describe('TriageWorkbench', () => {
     } as never)
     setup()
 
-    fireEvent.change(await screen.findByPlaceholderText(/buscar empresa/i), { target: { value: 'char' } })
+    fireEvent.change(await screen.findByPlaceholderText(/elegir empresa/i), { target: { value: 'char' } })
     fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
 
     // El dropzone no expone un testid para su input: se selecciona por su
@@ -193,7 +193,7 @@ describe('TriageWorkbench', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
 
     expect(screen.queryByTestId('triage-dropzone')).not.toBeInTheDocument()
-    expect(screen.queryByPlaceholderText(/buscar empresa \(opcional\)/i)).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/elegir empresa/i)).not.toBeInTheDocument()
   })
 
   // El otro camino a la misma zona: soltar FUERA del recuadro lo encamina a la
@@ -216,32 +216,49 @@ describe('TriageWorkbench', () => {
   // quién es lo que voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?"—
   // nunca son relevantes a la vez: seleccionar archivos es entrar en un modo,
   // y la barra contextual es la dueña de ese modo.
-  it('seleccionar un archivo oculta el selector del lote, y deseleccionar lo devuelve sin perder la empresa elegida', async () => {
+  it('al elegir empresa el buscador se reemplaza por su nombre, con forma de quitarla', async () => {
+    // El modelo cambio: antes el buscador se escondia y volvia segun la
+    // seleccion, y el indicador vivia aparte. Ahora es UN control que cambia de
+    // forma -- buscador cuando no hay empresa, nombre + boton de quitar cuando
+    // si. Ver `useEmpresaDeTrabajo`.
     vi.mocked(carriersApi.list).mockResolvedValue({
       data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
     } as never)
     setup()
     await screen.findByText('i1.png')
 
-    fireEvent.change(await screen.findByPlaceholderText(/buscar empresa \(opcional\)/i), { target: { value: 'char' } })
+    fireEvent.change(await screen.findByPlaceholderText(/elegir empresa/i), { target: { value: 'char' } })
     fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
-    expect(screen.queryByPlaceholderText(/buscar empresa \(opcional\)/i)).not.toBeInTheDocument()
+    // El buscador se fue; el nombre quedo, con su inverso.
+    expect(screen.queryByPlaceholderText(/elegir empresa/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Transportes Charlotte Spa')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Quitar Transportes Charlotte Spa/ })).toBeInTheDocument()
 
-    // El mismo click deselecciona (toggle): el selector vuelve.
-    fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
-    expect(await screen.findByPlaceholderText(/buscar empresa \(opcional\)/i)).toBeInTheDocument()
-
-    // La prueba de que no se perdió: subir SIN volver a elegir sigue mandando
-    // 'c1'. Un selector que "vuelve" vacío sería peor que el problema que
-    // se está arreglando.
+    // Y la eleccion gobierna la subida sin una precedencia propia.
     fireEvent.drop(screen.getByTestId('triage-dropzone'), {
       dataTransfer: { files: [new File(['x'], 'b.pdf', { type: 'application/pdf' })] },
     })
     await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledWith(
       'c1', expect.any(Array),
     ))
+  })
+
+  it('quitar la empresa devuelve el buscador, y no la resucita', async () => {
+    // El inverso que no existia: una vez elegida, no habia forma de sacarla sin
+    // recargar la pagina.
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
+    } as never)
+    setup()
+    await screen.findByText('i1.png')
+
+    fireEvent.change(await screen.findByPlaceholderText(/elegir empresa/i), { target: { value: 'char' } })
+    fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
+    fireEvent.click(screen.getByRole('button', { name: /Quitar Transportes Charlotte Spa/ }))
+
+    expect(await screen.findByPlaceholderText(/elegir empresa/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Quitar/ })).not.toBeInTheDocument()
   })
 
   // Es la SEGUNDA vez que esta pantalla pierde esta invariante. La primera fue
@@ -252,23 +269,27 @@ describe('TriageWorkbench', () => {
   // se atribuyen sin estar en pantalla.
   //
   // Lo que colisiona son las dos CAJAS DE BUSQUEDA. El indicador no es una caja.
-  it('la empresa del lote se sigue DICIENDO aunque su buscador no se muestre', async () => {
+  it('un HECHO gana sobre una eleccion: marcar un archivo de ACME manda sobre lo elegido', async () => {
+    // La precedencia del modelo, vista en la pantalla. No es un capricho: una
+    // eleccion que contradice al dato no se puede aplicar -- ese archivo ES de
+    // ACME, y decir que el trabajo es de Charlotte seria mentir.
     vi.mocked(carriersApi.list).mockResolvedValue({
       data: [{ id: 'c1', business_name: 'Transportes Charlotte Spa', tax_id: '76.111.111-1' }],
     } as never)
     setup()
     await screen.findByText('i1.png')
 
-    fireEvent.change(await screen.findByPlaceholderText(/buscar empresa \(opcional\)/i), { target: { value: 'char' } })
+    fireEvent.change(await screen.findByPlaceholderText(/elegir empresa/i), { target: { value: 'char' } })
     fireEvent.click(await screen.findByText('Transportes Charlotte Spa'))
-    expect(await screen.findByText(/Este lote es de Transportes Charlotte Spa/)).toBeInTheDocument()
 
-    // Con un archivo marcado el buscador se retira...
     fireEvent.click(screen.getByRole('checkbox', { name: /i1\.png/ }))
-    expect(screen.queryByPlaceholderText(/buscar empresa \(opcional\)/i)).not.toBeInTheDocument()
 
-    // ...y la empresa activa SIGUE dicha.
-    expect(screen.getByText(/Este lote es de Transportes Charlotte Spa/)).toBeInTheDocument()
+    // La empresa se sigue DICIENDO -- la zona de arrastre acepta archivos y
+    // atribuirlos a una empresa fuera de pantalla es el defecto que este
+    // archivo ya tuvo DOS veces -- pero dice la del archivo, no la elegida.
+    expect(await screen.findByText(/Los archivos marcados ya son de ella/)).toBeInTheDocument()
+    // Y no se ofrece quitarla: no es una eleccion, es un hecho del dato.
+    expect(screen.queryByRole('button', { name: /Quitar/ })).not.toBeInTheDocument()
   })
 })
 

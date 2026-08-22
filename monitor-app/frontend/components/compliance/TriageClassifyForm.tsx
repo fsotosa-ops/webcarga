@@ -5,22 +5,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
-import { CarrierSearchPicker } from '@/components/dashboard/CarrierSearchPicker'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 
 type Subject = { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }
 
-/** La regla del lote (diseño §7): en una tanda una coordenada se comparte y la
- *  otra tiene que ser distinta en cada archivo. Este formulario fija las dos
- *  —el sujeto y el requisito—, así que aplica a un archivo. Marcar 31 licencias
- *  y mandarlas al mismo conductor destruía 30: ese conductor tiene UNA ranura
- *  de Licencia de Conducir. El backend también lo rechaza; acá se avisa antes
- *  de que la persona haga clic. */
-export const MENSAJE_LOTE_INVALIDO =
-  'Un lote no puede compartir el sujeto y el tipo de documento a la vez: '
-  + 'cada archivo necesita un requisito distinto'
 
 interface Props {
   targetIds: string[]
@@ -32,12 +22,6 @@ interface Props {
   /** Lo que le falta a esa empresa. Es el dato que responde "¿qué tengo
    *  pendiente acá?" sin salir de la pantalla, y el atajo para clasificar. */
   pendingRows?: PendingComplianceRow[]
-  /** Se llamó cuando el archivo pasó a tener empresa. El refresco lo hace el
-   *  Workbench, con las MISMAS claves que usan subir, clasificar, descartar y
-   *  mover en lote — este formulario no tiene un conjunto propio de claves,
-   *  que es justo el patrón que dejaba a unas superficies contradiciendo a
-   *  otras. */
-  onMovedToCarrier?: () => void
 }
 
 /** Panel derecho: a quién pertenece y qué es.
@@ -45,7 +29,7 @@ interface Props {
  *  El mismo formulario sirve para uno o para quince — la selección múltiple no
  *  necesita una pantalla propia. */
 export function TriageClassifyForm({
-  targetIds, subjects, onApplied, carrierLabel, pendingRows = [], onMovedToCarrier,
+  targetIds, subjects, onApplied, carrierLabel, pendingRows = [],
 }: Props) {
   const [subjectKey, setSubjectKey] = useState('')
   const [requirementId, setRequirementId] = useState('')
@@ -54,24 +38,7 @@ export function TriageClassifyForm({
   const [error, setError] = useState<string | null>(null)
   const [slot, setSlot] = useState<Slot | null>(null)
   const [manual, setManual] = useState(false)
-  /** La búsqueda de empresa del archivo que todavía no tiene ninguna. */
-  const [busquedaEmpresa, setBusquedaEmpresa] = useState('')
 
-  /** Le pone empresa al archivo enfocado.
-   *
-   *  NO atrapa el error, a propósito: `CarrierSearchPicker` ya espera esta
-   *  promesa —deja la fila elegida con spinner mientras está pendiente— y ya
-   *  muestra el motivo si rechaza. Atraparlo acá para mostrarlo también
-   *  pintaba el mismo error dos veces, y tragárselo apagaría el spinner
-   *  anunciando un éxito que no pasó. */
-  async function asignarEmpresa(c: { id: string }) {
-    await documentIngestApi.moveItems(targetIds, c.id)
-    setBusquedaEmpresa('')
-    // El refresco vuelve a pedir la cola: el archivo ya trae su empresa, el
-    // Workbench recalcula `subjectCarrierId` y el select de arriba se llena
-    // solo. No se toca el estado local para adivinarlo antes de tiempo.
-    onMovedToCarrier?.()
-  }
 
   const subject = useMemo(
     () => subjects.find(s => `${s.entity_type}:${s.entity_id}` === subjectKey) ?? null,
@@ -155,11 +122,19 @@ export function TriageClassifyForm({
         {carrierLabel && <span> · {carrierLabel}</span>}
       </p>
 
-      {loteInvalido && (
-        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
-          {MENSAJE_LOTE_INVALIDO}. Deja marcado un solo archivo para clasificarlo.
+      {/* Con varios marcados NO se muestra el formulario, y por eso no hay nada
+          que advertir. Antes se mostraba entero y deshabilitado, con un cartel
+          que explicaba la restriccion en vocabulario del modelo — "sujeto",
+          "tipo de documento", "requisito" —, que es justo lo que la regla del
+          proyecto prohibe: nombrar por el trabajo, no por el modelo de datos.
+          Una pantalla no advierte sobre algo que no ofrece. */}
+      {loteInvalido ? (
+        <p className="text-[11px] text-informativo leading-relaxed">
+          En lote puedes moverlos a una empresa o descartarlos, con la barra de
+          selección. Para decir qué documento es cada uno, deja marcado uno solo.
         </p>
-      )}
+      ) : (
+      <>
 
       {/* Lo que le falta a la empresa, que es la pregunta real: clasificar es
           cubrir un hueco concreto, no describir el archivo en abstracto. */}
@@ -206,73 +181,21 @@ export function TriageClassifyForm({
           </label>
           )}
 
-          {/* Dos causas distintas para la misma lista vacía, y confundirlas
-              dejaba al usuario sin saber qué hacer.
+          {/* SIN EMPRESA no se pregunta acá. El control de empresa vive
+              arriba, uno solo, y es el mismo para la tanda y para un archivo
+              suelto — ver `useEmpresaDeTrabajo`. Acá vivió un segundo buscador
+              durante unas horas y fue exactamente el problema: dos cajas para
+              el mismo gesto, y la primera que se veía era la que no servía.
 
-              SIN EMPRESA es el caso normal, no el borde: 65 de los 66
-              archivos de la cola llegan sin empresa. Acá vivía un aviso que
-              mandaba a "el botón de la barra de selección" — que sólo existe
-              con la casilla marcada, y que al abrirse muestra un buscador en
-              blanco hasta escribir dos letras. Eran cuatro pasos no evidentes
-              para contestar lo primero que uno quiere decir de un archivo, así
-              que la pregunta se hace donde estaba el hueco.
-
-              Mueve por el MISMO endpoint que la barra de lote
-              (`moveItems`): esto resuelve el de a uno, esa sigue siendo la
-              dueña de mover cuarenta. */}
-          {!subjects.length && (carrierLabel ? (
-            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-              Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.
+              Las dos causas de la lista vacía siguen siendo distintas y hay
+              que seguir distinguiéndolas. */}
+          {!subjects.length && (
+            <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
+              {carrierLabel
+                ? 'Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.'
+                : 'Este documento todavía no tiene empresa. Elígela arriba y aparecerá qué le falta.'}
             </p>
-          ) : (
-            <div className="space-y-1.5 border border-border rounded-lg px-2 py-2">
-              <p className="text-[11px] font-semibold text-gray-600">
-                ¿De qué empresa es este documento?
-              </p>
-              <p className="text-[10px] text-informativo">
-                Todavía no tiene una. Al elegirla aparece qué le falta a esa empresa.
-              </p>
-              {/* De a UNO, igual que clasificar. `targetIds` es plural y
-                  `moveItems` mueve TODO lo que le pasen, así que con varios
-                  marcados este bloque decía "este documento" sobre una
-                  selección de N — y con "marcar todo" en la bandeja global esa
-                  selección podía incluir archivos que SÍ tenían empresa, que
-                  se habrían reasignado en silencio. Mover en lote es trabajo
-                  de la barra de selección, que además rotula el conteo. */}
-              {/* La frase de abajo va ENTERA en un literal. Partida en varias
-                  lineas de JSX, el espacio del borde se pierde al renderizar y
-                  salia "marcados.Deja" — y el test no lo veia, porque Testing
-                  Library compara contra `textContent`, que concatena los nodos
-                  sin colapsar nada. */}
-              {targetIds.length > 1 ? (
-                <p className="text-[10px] text-informativo">
-                  {`Hay ${targetIds.length} archivos marcados. Deja marcado uno solo `
-                   + `para asignarle empresa acá, o usa "Mover a otra empresa" en la `
-                   + `barra de selección para moverlos todos juntos.`}
-                </p>
-              ) : (
-              <>
-              <CarrierSearchPicker
-                query={busquedaEmpresa}
-                onQueryChange={setBusquedaEmpresa}
-                onPick={asignarEmpresa}
-                size="sm"
-                // `showMinCharsHint` en vez de `minChars={0}`. El síntoma
-                // original era que el campo quedaba en blanco y se leía como
-                // roto; esta prop existe exactamente para decir que hay que
-                // escribir, y ningún llamador la usaba. Bajar el mínimo a cero
-                // parecía mejor y era peor: `GET /carriers` sin `q` ordena por
-                // `compliance_health PENDING` y `pending_mandatory DESC`, así
-                // que precargaba las diez empresas PEOR certificadas —un
-                // criterio sin relación con el archivo— y sin filtrar por
-                // estado, o sea incluyendo empresas dadas de baja.
-                showMinCharsHint
-                placeholder="Buscar empresa (nombre o RUT)…"
-              />
-              </>
-              )}
-            </div>
-          ))}
+          )}
 
           {subject && (
             <label className="block">
@@ -317,6 +240,10 @@ export function TriageClassifyForm({
 
       {error && <p className="text-[11px] text-red-500">{error}</p>}
 
+      </>
+      )}
+
+      {!loteInvalido && (
       <button
         type="button"
         onClick={apply}
@@ -326,6 +253,7 @@ export function TriageClassifyForm({
         {saving && <Loader2 size={14} className="motion-safe:animate-spin" />}
         {targetIds.length === 1 ? 'Clasificar' : `Clasificar los ${targetIds.length}`}
       </button>
+      )}
     </div>
   )
 }

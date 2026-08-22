@@ -77,14 +77,13 @@ describe('TriageClassifyForm', () => {
         />
       </QueryClientProvider>,
     )
-    expect(screen.getByText(/todavía no tiene una/i)).toBeInTheDocument()
-    expect(screen.getByText('¿De qué empresa es este documento?')).toBeInTheDocument()
+    expect(screen.getByText(/todavía no tiene empresa/i)).toBeInTheDocument()
     expect(screen.queryByText(/no está activa/i)).not.toBeInTheDocument()
   })
 
-  it('anuncia a cuántos documentos va a aplicar', () => {
-    setup(['i1', 'i2'])
-    expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeInTheDocument()
+  it('con un archivo, el boton dice que va a clasificar ese', async () => {
+    setup()
+    expect(await screen.findByRole('button', { name: /^Clasificar$/ })).toBeInTheDocument()
   })
 
   it('aplica el documento elegido', async () => {
@@ -106,19 +105,27 @@ describe('TriageClassifyForm', () => {
   // que aplicar N archivos mandaba N veces al MISMO compliance_record y cada
   // uno pisaba al anterior: sobrevivía el último y los N-1 quedaban invisibles
   // e irrecuperables desde la interfaz.
-  it('no deja aplicar dos archivos al mismo requisito', async () => {
+  //
+  // ANTES se mostraba el formulario entero deshabilitado con un cartel que
+  // explicaba la restriccion en vocabulario del modelo ("sujeto", "tipo de
+  // documento", "requisito"). Ahora NO SE MUESTRA: una pantalla no advierte
+  // sobre algo que no ofrece, y el vocabulario del modelo esta prohibido por
+  // la regla del proyecto.
+  it('con varios marcados no ofrece clasificar, y dice que si se puede hacer en lote', async () => {
     setup(['i1', 'i2'])
-    await elegir()
 
-    expect(screen.getByRole('button', { name: /clasificar los 2/i })).toBeDisabled()
-    expect(screen.getByText(/cada archivo necesita un requisito distinto/i)).toBeInTheDocument()
-    expect(documentIngestApi.classifyBatch).not.toHaveBeenCalled()
+    expect(await screen.findByText(/En lote puedes moverlos a una empresa o descartarlos/))
+      .toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /clasificar/i })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/a quién pertenece/i)).not.toBeInTheDocument()
   })
 
-  it('con dos marcados avisa antes del clic, no después del error', () => {
+  it('el aviso del lote no habla en vocabulario del modelo', async () => {
     setup(['i1', 'i2'])
-    expect(screen.getByText(/no puede compartir el sujeto y el tipo de documento/i))
-      .toBeInTheDocument()
+    const panel = await screen.findByText(/En lote puedes moverlos/)
+    for (const palabra of [/sujeto/i, /requisito/i, /tipo de documento/i]) {
+      expect(panel.textContent ?? '').not.toMatch(palabra)
+    }
   })
 
   // "10 clasificados" cuando se marcaron 12 es peor que un error: nadie va a
@@ -219,125 +226,28 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
 
   // ── Un archivo sin empresa ────────────────────────────────────────────
   //
-  // Es el caso NORMAL de la bandeja global, no el borde: 65 de los 66
-  // archivos de la cola llegan sin empresa. Antes acá había un aviso que
-  // mandaba a un control de otra parte de la pantalla, que a su vez sólo
-  // aparece con la casilla marcada.
+  // Es el caso NORMAL de la bandeja global, no el borde: 65 de los 66 archivos
+  // de la cola llegan sin empresa.
+  //
+  // Acá vivio un SEGUNDO buscador de empresa durante unas horas, y fue el
+  // problema: dos cajas para el mismo gesto y un desplegable muerto encima. El
+  // control de empresa es uno solo y vive arriba (`useEmpresaDeTrabajo`); este
+  // panel sólo tiene que DECIR que falta y a dónde ir.
 
-  function setupSinEmpresa(onMoved = vi.fn()) {
+  it('sin empresa lo dice y manda al control de arriba, sin una segunda caja', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
-        <TriageClassifyForm
-          targetIds={['i1']} subjects={[]} onApplied={vi.fn()}
-          carrierLabel={null} onMovedToCarrier={onMoved}
-        />
-      </QueryClientProvider>,
-    )
-    return onMoved
-  }
-
-  /** Escribe en el buscador de empresa. La lista aparece recién con 2
-   *  caracteres, a propósito: sin mínimo, `GET /carriers` sin `q` precarga las
-   *  diez empresas con más pendientes —criterio sin relación con el archivo— y
-   *  sin filtrar por estado. */
-  async function buscarEmpresa(texto = 'ACM') {
-    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), {
-      target: { value: texto },
-    })
-  }
-
-  it('un archivo sin empresa ofrece elegirla ahí mismo, y dice que hay que escribir', async () => {
-    vi.mocked(carriersApi.list).mockResolvedValue(UNA_EMPRESA)
-    setupSinEmpresa()
-
-    // El defecto original: el campo quedaba en blanco y se leía como roto. La
-    // pista tiene que estar ANTES de escribir, no ser un vacío mudo.
-    expect(await screen.findByText(/Escribe al menos 2 caracteres/i)).toBeInTheDocument()
-    expect(carriersApi.list).not.toHaveBeenCalled()
-
-    await buscarEmpresa()
-    expect(await screen.findByText('ACME Transportes')).toBeInTheDocument()
-  })
-
-  it('sin empresa NO muestra el desplegable "¿A quién pertenece?"', async () => {
-    // Sus opciones salen de los requisitos pendientes de la empresa del
-    // archivo. Sin empresa no hay ninguno, así que el control queda con
-    // "— Seleccionar —" y nada más: un desplegable que no se puede usar,
-    // mostrado ARRIBA del único que sí sirve. Reportado mirando la pantalla
-    // en dev; ningún test lo veía porque todos le pasaban `subjects`.
-    vi.mocked(carriersApi.list).mockResolvedValue(UNA_EMPRESA)
-    setupSinEmpresa()
-
-    expect(await screen.findByText('¿De qué empresa es este documento?')).toBeInTheDocument()
-    expect(screen.queryByLabelText('¿A quién pertenece?')).not.toBeInTheDocument()
-  })
-
-  it('con empresa SÍ muestra "¿A quién pertenece?"', async () => {
-    // La otra mitad: el control desaparece por falta de opciones, no porque
-    // se haya retirado de la pantalla.
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <QueryClientProvider client={qc}>
-        <TriageClassifyForm
-          targetIds={['i1']} subjects={SUBJECTS} onApplied={vi.fn()} carrierLabel="ACME"
-        />
+        <TriageClassifyForm targetIds={['i1']} subjects={[]} onApplied={vi.fn()} carrierLabel={null} />
       </QueryClientProvider>,
     )
 
-    expect(await screen.findByLabelText('¿A quién pertenece?')).toBeInTheDocument()
-    expect(screen.queryByText('¿De qué empresa es este documento?')).not.toBeInTheDocument()
-  })
-
-  it('con varios archivos marcados no ofrece asignar empresa de a uno', async () => {
-    vi.mocked(carriersApi.list).mockResolvedValue(UNA_EMPRESA)
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <QueryClientProvider client={qc}>
-        <TriageClassifyForm
-          targetIds={['i1', 'i2', 'i3']} subjects={[]} onApplied={vi.fn()}
-          carrierLabel={null} onMovedToCarrier={vi.fn()}
-        />
-      </QueryClientProvider>,
-    )
-
-    // `moveItems` mueve TODO lo que le pasen. Con la copia en singular
-    // ("este documento") sobre tres marcados, un clic reasignaba los tres —y
-    // con "marcar todo" en la bandeja global, algunos podían tener empresa ya.
-    // Con el espacio. JSX come el espacio entre `{expresion}` y la palabra
-    // siguiente cuando hay salto de linea en medio: salia "Hay 3archivos".
-    expect(await screen.findByText(/Hay 3 archivos marcados/)).toBeInTheDocument()
+    expect(await screen.findByText(/todavía no tiene empresa/i)).toBeInTheDocument()
+    expect(screen.getByText(/Elígela arriba/i)).toBeInTheDocument()
+    // Lo que NO puede volver: una segunda caja de "Buscar empresa" acá.
     expect(screen.queryByLabelText('Buscar empresa transportista')).not.toBeInTheDocument()
-  })
-
-  it('elegir la empresa mueve el archivo y avisa, sin tocar la clasificación', async () => {
-    vi.mocked(carriersApi.list).mockResolvedValue(UNA_EMPRESA)
-    vi.mocked(documentIngestApi.moveItems).mockResolvedValue({ moved: 1 })
-    const onMoved = setupSinEmpresa()
-    await buscarEmpresa()
-
-    fireEvent.click(await screen.findByText('ACME Transportes'))
-
-    // El MISMO endpoint que usa la barra de lote — no una vía nueva.
-    await waitFor(() => expect(documentIngestApi.moveItems)
-      .toHaveBeenCalledWith(['i1'], 'c1'))
-    await waitFor(() => expect(onMoved).toHaveBeenCalled())
-    // Asignar empresa no clasifica: son dos gestos y el segundo todavía no pasó.
-    expect(documentIngestApi.classifyBatch).not.toHaveBeenCalled()
-  })
-
-  it('si mover falla lo dice y no avisa que se movió', async () => {
-    vi.mocked(carriersApi.list).mockResolvedValue(UNA_EMPRESA)
-    vi.mocked(documentIngestApi.moveItems).mockRejectedValue(new Error('sesión vencida'))
-    const onMoved = setupSinEmpresa()
-    await buscarEmpresa()
-
-    fireEvent.click(await screen.findByText('ACME Transportes'))
-
-    expect(await screen.findByText(/sesión vencida/)).toBeInTheDocument()
-    // Lo que importa: no se anuncia un movimiento que no ocurrió. Sin el
-    // relanzado, el picker apagaría su spinner como si hubiera salido bien.
-    expect(onMoved).not.toHaveBeenCalled()
+    // Ni el desplegable que no se puede usar.
+    expect(screen.queryByLabelText('¿A quién pertenece?')).not.toBeInTheDocument()
   })
 
   it('una empresa sin requisitos pendientes NO ofrece elegir empresa: ya tiene', async () => {

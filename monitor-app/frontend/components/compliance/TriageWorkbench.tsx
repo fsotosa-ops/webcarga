@@ -16,6 +16,7 @@ import { TriagePreview } from './TriagePreview'
 import { TriageUndoNotice } from './TriageUndoNotice'
 import { Cifra } from '@/components/ui/Cifra'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
+import { useEmpresaDeTrabajo } from '@/hooks/useEmpresaDeTrabajo'
 
 interface Props {
   /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
@@ -70,18 +71,13 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
   // El ultimo lote aplicado, para poder revertirlo. No hace falta un registro
   // de operaciones: quien deshace es quien acaba de aplicar.
   const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
-  // Sólo tiene sentido en la bandeja global (`carrierId` ya trae la empresa):
-  // deja acotar el universo del clasificador ANTES de soltar los archivos.
-  // Es opcional a propósito — la tanda mezclada que llega por correo es un
-  // caso legítimo, y exigirla convertiría la bandeja en un buscador.
+  // El texto del ÚNICO buscador de empresa de la pantalla. La empresa en sí no
+  // vive acá: vive en `useEmpresaDeTrabajo`, que es la única respuesta a "¿de
+  // qué empresa es lo que estoy trabajando?".
+  //
+  // Sigue siendo OPCIONAL a propósito — la tanda mezclada que llega por correo
+  // es un caso legítimo, y exigirla convertiría la bandeja en un buscador.
   const [busqueda, setBusqueda] = useState('')
-  /** La empresa que se ELIGIÓ acá. `null` significa "todavía nadie eligió", no
-   *  "ninguna": la que llega por el enlace se resuelve abajo con un COALESCE y
-   *  no sembrando este estado, que es como este frontend ya tuvo tres veces el
-   *  mismo bug (un estado inicial que no se resincroniza cuando el prop del
-   *  que salió cambia). Elegir acá gana; sin elección, manda la del enlace. */
-  const [empresaElegida, setEmpresaElegida] = useState<CarrierSearchResult | null>(null)
-  const empresaDelLote = empresaElegida ?? empresaInicial ?? null
 
   /** Sin nada marcado, la pantalla está en modo "subir"; con algo marcado,
    *  en modo "mover". Un solo nombre para la condición porque gobierna las
@@ -149,11 +145,21 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
 
   const carrierLabel = rows.find(r => r.carrier_id === (selectedCarrierId ?? subjectCarrierId))?.carrier_name ?? null
 
-  /** El panel derecho está pidiendo la empresa de UN archivo. Se deriva del
-   *  mismo estado del que depende ese panel —hay exactamente un archivo en
-   *  juego y todavía no tiene empresa—, para que las dos superficies no puedan
-   *  desincronizarse: si una pregunta, la otra se calla. */
-  const preguntandoEmpresaDeUnArchivo = targetIds.length === 1 && !subjectCarrierId
+  /** LA ÚNICA respuesta a "¿de qué empresa es lo que estoy trabajando?".
+   *  Reemplaza las diez representaciones que tenía esta pantalla; ver el
+   *  docstring del hook para por qué. */
+  const empresaDeTrabajo = useEmpresaDeTrabajo({
+    deLaRuta: carrierId ? { id: carrierId, business_name: carrierName ?? '' } : null,
+    // Sólo cuando lo marcado/enfocado YA tiene empresa. Sin eso el hook no
+    // podría distinguir "es un hecho" de "alguien la eligió", que es la
+    // distinción de la que depende ofrecer o no la ✕.
+    deLosArchivos: subjectCarrierId && carrierLabel
+      ? { id: subjectCarrierId, business_name: carrierLabel }
+      : null,
+    inicial: empresaInicial ?? null,
+  })
+  const { empresa } = empresaDeTrabajo
+
 
   const previewItems = rows
     .filter(r => targetIds.includes(r.id))
@@ -180,7 +186,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
         // Encadenados, no en paralelo: cada lote sube sus archivos a Storage y
         // lanzar tres tandas de 50 a la vez es pelearle ancho de banda a las
         // otras dos.
-        const res = await documentIngestApi.upload(carrierId ?? empresaDelLote?.id, lote)
+        const res = await documentIngestApi.upload(empresa?.id, lote)
         items.push(...res.items)
         errores.push(...res.errors)
         // Se publican mientras avanza: si un lote posterior falla, lo que ya
@@ -358,50 +364,59 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
 
   return (
     <div className="space-y-3">
-      {/* La ZONA DE CARGA entera —el selector del lote y la zona de arrastre—
-          se retira mientras hay selección: la barra contextual es la dueña de
-          ese modo, y subir y mover son dos gestos distintos que no se pisan.
+      {/* UN SOLO CONTROL DE EMPRESA, y cambia de trabajo según de dónde salió.
+          Antes eran dos —un indicador que decía cuál era y un buscador que la
+          elegía— más un tercero en el panel derecho, cada uno con su condición
+          de visibilidad. Los cuatro defectos del 2026-08-21 fueron choques
+          entre pares de ellos.
 
-          Dos cajas de "Buscar empresa" a la vez —ésta y la de
-          MoveToCarrierBar— significan cosas distintas ("¿de quién es lo que
-          voy a subir?" vs. "¿a qué empresa muevo lo seleccionado?") sin que
-          elegir en la equivocada avise nada. Y esconder sólo el selector era
-          peor: `empresaDelLote` seguía gobernando la zona de arrastre, así que
-          una segunda tanda se subía atribuida a una empresa QUE YA NO SE VE.
-          El estado no se pierde, sólo deja de mostrarse: vuelve con lo ya
-          elegido en cuanto la selección se vacía. */}
-      {/* LA EMPRESA DEL LOTE SE DICE SIEMPRE, aunque su buscador no se muestre.
-          Son dos cosas distintas y meterlas en la misma condición fue un error
-          medido: al esconder el bloque entero mientras el panel derecho
-          pregunta, `empresaDelLote` seguía gobernando la zona de arrastre —que
-          sigue aceptando archivos— con la empresa fuera de pantalla. Es
-          textualmente el defecto que el comentario de acá abajo ya advertía.
-          Lo que colisiona son las dos CAJAS DE BÚSQUEDA; el indicador no es una
-          caja. */}
-      {canEdit && !carrierId && empresaDelLote && (
-        <p className="text-etiqueta text-text-primary font-semibold">
-          Este lote es de {empresaDelLote.business_name}
-        </p>
-      )}
+          El buscador se retira con la selección activa porque ahí la barra
+          contextual es la dueña del modo "mover", pero LO QUE LA EMPRESA ES
+          se dice siempre: la zona de arrastre sigue aceptando archivos y
+          atribuirlos a una empresa fuera de pantalla es el defecto que este
+          archivo ya tuvo dos veces. */}
+      {canEdit && (empresa || sinSeleccion) && !carrierId && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="text-etiqueta font-semibold text-informativo shrink-0">EMPRESA</span>
 
-      {/* El buscador sí se retira mientras el panel derecho pregunta la empresa
-          de UN archivo: dos cajas de "Buscar empresa" al mismo tiempo
-          significan cosas distintas —"de quién es la tanda que voy a subir" y
-          "de quién es ESTE archivo"— y elegir en la equivocada no avisa nada. */}
-      {canEdit && !carrierId && sinSeleccion && !preguntandoEmpresaDeUnArchivo && (
-        <div>
-          <p className="text-etiqueta text-informativo pb-1">
-            ¿De quién son estos documentos? Elegir la empresa hace que el sistema
-            reconozca mejor a quién pertenece cada archivo.
-          </p>
-          <CarrierSearchPicker
-            query={busqueda}
-            onQueryChange={setBusqueda}
-            onPick={c => setEmpresaElegida(c)}
-            selectedId={empresaDelLote?.id ?? null}
-            size="sm"
-            placeholder="Buscar empresa (opcional)…"
-          />
+          {empresa ? (
+            <>
+              <span className="inline-flex items-center gap-2 text-dato font-semibold text-text-primary">
+                {empresa.business_name}
+                {/* La ✕ SÓLO cuando es una elección. Si la empresa viene de la
+                    ruta o de los archivos no es una elección sino un hecho, y
+                    ofrecer quitarla sugeriría algo que no se puede hacer. */}
+                {empresaDeTrabajo.sePuedeQuitar && (
+                  <button
+                    type="button"
+                    onClick={empresaDeTrabajo.quitar}
+                    aria-label={`Quitar ${empresa.business_name}`}
+                    className="text-informativo hover:text-text-primary transition-colors"
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                )}
+              </span>
+              <span className="text-etiqueta text-informativo">
+                {empresaDeTrabajo.origen === 'archivos'
+                  ? 'Los archivos marcados ya son de ella.'
+                  : 'Lo que subas ahora será de esta empresa.'}
+              </span>
+            </>
+          ) : (
+            sinSeleccion && (
+              <div className="min-w-0 flex-1 max-w-md">
+                <CarrierSearchPicker
+                  query={busqueda}
+                  onQueryChange={setBusqueda}
+                  onPick={empresaDeTrabajo.fijar}
+                  size="sm"
+                  showMinCharsHint
+                  placeholder="Elegir empresa…"
+                />
+              </div>
+            )
+          )}
         </div>
       )}
 
@@ -523,10 +538,6 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
                   r => !subject || (r.entity_type === subject.entity_type && r.entity_id === subject.entity_id),
                 )}
                 onApplied={handleApplied}
-                onMovedToCarrier={() => {
-                  setNotice('Empresa asignada')
-                  refrescarBandeja()
-                }}
               />
               {targetIds.length > 0 && <TriagePreview items={previewItems} />}
             </div>
