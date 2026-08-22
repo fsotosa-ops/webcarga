@@ -398,8 +398,12 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
           atribuirlos a una empresa fuera de pantalla es el defecto que este
           archivo ya tuvo dos veces. */}
       {canEdit && (empresa || sinSeleccion) && !carrierId && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span className="text-etiqueta font-semibold text-informativo shrink-0">EMPRESA</span>
+        // `items-start`, no `items-center`: con el buscador vacio la pista
+        // ("Escribe al menos 2 caracteres…") ocupa alto, y centrar dejaba la
+        // etiqueta EMPRESA flotando a media altura contra una caja larga —
+        // se leia como un desalineo, no como una etiqueta.
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
+          <span className="text-etiqueta font-semibold text-informativo shrink-0 pt-1.5">EMPRESA</span>
 
           {empresa ? (
             <>
