@@ -302,6 +302,78 @@ historias cayeron de arrastre.
 
 ---
 
+### 2026-08-21 (cont.) — Ronda 140: el documento se edita donde se ve, y un 500 que sólo apareció mirándolo
+
+Commits `b6b198a5` (nuevo documento), `e5141dea` (celdas editables), `8cad098c` (el arreglo).
+Frontend 1.292 tests en 133 archivos, backend 916, `tsc` limpio, `npm run build` OK, desplegado en
+dev y verificado en vivo con Playwright.
+
+**El usuario descartó el panel**: *"ese tab que aparece en certificaciones para configurar ese
+documento, se me hace que es un paso innecesario y que basta que cada 'celda'/'item' de la variable
+se pueda editar ahí mismo donde lo visualizo"*, y después *"las reglas se pueden ajustar ahí
+mismo"*. Un rediseño anterior había sacado los controles de la fila por una razón buena —37
+formularios abiertos, uno debajo del otro, 5.849 px— y esa razón sigue en pie: **lo que vuelve no
+son 37 formularios simultáneos, sino una celda que se convierte en control al hacer clic, de a
+una.**
+
+**Lo que NO se perdió al mover las reglas a la tabla.** Guardar la regla y aplicarla siguen siendo
+dos actos. La fila que cambió su regla ofrece "Ver qué cambia" con el número exacto antes de sembrar
+—verificado en vivo: `Seguro EETT` de Opcional a Obligatorio mostró *"Se agregan 0 · se quitan 1"*
+con su botón Aplicar, y no se aplicó—. Sin esa separación, un interruptor en una tabla sembraría
+hasta 124 registros sin que nadie viera el número.
+
+**Tres decisiones que quedaron escritas en el código, no en un documento aparte:**
+
+- **El `requirement_code` se muestra y no se edita.** Es la llave de `requirement_filename_aliases`
+  y del motor de match; renombrarlo dejaría al clasificador sin poder resolver ese documento.
+- **Renombrar NO marca la fila como pendiente.** Ninguna tabla guarda copia del nombre —
+  `compliance_records` referencia por id y todas las pantallas hacen JOIN vivo—, así que el cambio
+  se ve al instante en todo el módulo. Se verificó en vivo: al renombrar `F43`, las etiquetas de
+  las otras cuatro celdas de la fila lo siguieron solas.
+- **Un tercer `requirement_level` no se colapsa en silencio.** `SHIPPER_REQUIRED` tiene cero filas
+  y es un placeholder anterior a la taxonomía; un interruptor de dos estados lo volvería
+  "Obligatorio" sin que nadie lo pidiera. Se muestra tal cual y no se toca — misma familia que los
+  cinco `AssetType` de los que sólo existían dos.
+
+**La condición ("Se exige a") sigue en el panel**, y es a propósito: es un multiselector de diez
+subtipos, y meterlo en una celda sería volver a ser el formulario que este rediseño vino a sacar.
+
+## EL 500 QUE LA SUITE NO PODÍA VER
+
+Renombrar desde la pantalla devolvía **500**, con las 1.292 y las 916 en verde y `tsc` limpio. Lo
+encontró el click-through, no un test.
+
+`patch_requirement_conditions` maneja **tres** listas de columnas: la que LEE antes (para la
+auditoría), la que ESCRIBE y la que DEVUELVE. Sólo la del medio se derivaba de
+`_CONDITION_COLUMN_CASTS`; las otras dos estaban escritas a mano. Habilitar `name` y
+`requirement_level` sin agregarlos al `SELECT` dejó a `log_change` pidiendo `current[field]` sobre
+una clave que la fila nunca trajo: `KeyError: 'name'`.
+
+**Por qué ningún test lo vio**: los que cubren ese endpoint usan `AsyncMock`, y un mock devuelve las
+claves que se le dicen que devuelva. Es el mismo motivo de
+`feedback_verify_new_sql_against_real_db`, por tercera vez.
+
+**El arreglo no fue agregar las dos columnas que faltaban** — eso deja el problema intacto para el
+próximo campo. Las tres listas pasaron a ser una, derivada de la whitelist. El test recorre
+`_CONDITION_COLUMN_CASTS` con `parametrize` contra Postgres real, así que un campo nuevo queda
+cubierto sin que nadie se acuerde de venir a agregarlo, **y falla en seco si entra sin valor de
+prueba**. Verificado devolviendo el `SELECT` a la lista escrita a mano: reproduce el `KeyError`
+exacto en los dos campos.
+
+## Lo que la mutación y el click-through confirmaron
+
+- Dos mutaciones sobre las guardas que importan: quitar `onGuardado?.(id)` mata los dos tests que
+  sostienen la separación guardar/aplicar; quitar `|| !conocido` mata el del tercer valor.
+- **Teléfono medido, no mirado a ojo**: a 390 px la página no desborda —la tabla scrollea dentro de
+  su propio contenedor— y ninguna celda mide 0 px, que fue el defecto del click-through anterior.
+- **Guardar cuenta como revisar**, y se ve: las dos filas que toqué quedaron marcadas
+  "Felipe Sumadots · 21-08-2026" en la columna Revisión. Es el comportamiento declarado en el
+  backend, no un efecto colateral.
+- Ambos cambios de prueba se revirtieron: `F43` volvió a llamarse `F43` y `Seguro EETT` volvió a
+  Opcional.
+
+---
+
 ## SIGUIENTE PASO EXACTO
 
 1. **Aprobación manual de a una y carga masiva de fechas.** Es lo que Pablo espera para poder
@@ -327,9 +399,10 @@ historias cayeron de arrastre.
 3. **La regla de cámara de frío**: el motor funciona, **el dato está mal**. `MANTENCION_FRIO` tiene
    como condición "los 9 subtipos que no son Tractocamión" = toda rampla, furgón seco y sider
    incluidos. Es un backfill de compatibilidad. **Se arregla desde la UI, sin código.**
-4. **Renombrar documentos a F30 / F30-1 / PTS**: no se puede desde Configuración (la whitelist de
-   `PATCH /{id}/conditions` no incluye `name`). Requiere migración. Renombrar `name` es inocuo;
-   **renombrar `requirement_code` rompe** el matcher de nombres de archivo.
+4. ~~**Renombrar documentos a F30 / F30-1 / PTS**~~ — **HECHO** en la Ronda 140, y sin migración:
+   la columna `name` ya existía, faltaba la puerta. También se puede crear documentos nuevos (nacen
+   sin vigencia) y cambiar obligatorio/opcional desde la misma celda. `requirement_code` sigue
+   deliberadamente fuera de la whitelist.
 5. **Sodimac multiorigen** (#5/#6): la reunión cerró la definición que faltaba — el cierre se evalúa
    **a nivel del ID del viaje**, no del origen. Pablo: *"Es que está finalizado o no, nada más… se
    trata igual"*. Y pidió no hacer cierres de Sodimac hasta reprocesar.
