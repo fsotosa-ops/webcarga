@@ -153,7 +153,7 @@ describe('CondicionesTabla', () => {
     // De entrada manda la entidad, que es el orden por defecto.
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('Revisión Técnica')
 
-    fireEvent.click(screen.getByRole('button', { name: /documento/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Documento/ }))
     const filas = screen.getAllByRole('row').slice(1)
     expect(filas[0]).toHaveTextContent('Mantención Cámara de Frío')
     expect(filas[1]).toHaveTextContent('Pesaje de Ejes')
@@ -164,7 +164,7 @@ describe('CondicionesTabla', () => {
   it('el encabezado ordenado lo declara de forma accesible', async () => {
     montar()
     await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: /documento/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Documento/ }))
     expect(screen.getByRole('columnheader', { name: /documento/i }))
       .toHaveAttribute('aria-sort', 'ascending')
   })

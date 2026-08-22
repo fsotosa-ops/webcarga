@@ -1,15 +1,17 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
+import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useQuery } from '@tanstack/react-query'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { taxonomiesApi } from '@/lib/api/config'
 import { CABECERA, EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { CondicionPanel } from './CondicionPanel'
+import { NuevoDocumentoPanel } from './NuevoDocumentoPanel'
 import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
 import { celdaSeExigeA } from './frase-de-la-regla'
 import { INPUT, LoadState } from './shared'
@@ -63,6 +65,8 @@ export function CondicionesTabla() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const abierto = searchParams.get('doc')
+  const canAdmin = useCanAdmin()
+  const [creando, setCreando] = useState(false)
 
   const abrir = useCallback((code: string | null) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -197,6 +201,22 @@ export function CondicionesTabla() {
           className={`${INPUT} w-56`}
         />
         <ChipsDeFiltro opciones={filtros} activo={filtro} onElegir={setFiltro} />
+
+        {/* Crear un documento es administrar el catálogo: la misma altura de
+            permiso que cambiarle las reglas a uno que ya existe. */}
+        {canAdmin && (
+          <button
+            type="button"
+            onClick={() => setCreando(true)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-border
+                       bg-white px-3 py-1.5 text-xs font-semibold text-text-primary
+                       hover:bg-bg-main focus-visible:outline-none focus-visible:ring-2
+                       focus-visible:ring-accent/40"
+          >
+            <Plus size={13} aria-hidden="true" />
+            Nuevo documento
+          </button>
+        )}
       </div>
 
       <table className="w-full border-collapse">
@@ -278,6 +298,8 @@ export function CondicionesTabla() {
           onCerrar={() => abrir(null)}
         />
       )}
+
+      {creando && <NuevoDocumentoPanel onCerrar={() => setCreando(false)} />}
     </div>
   )
 }
