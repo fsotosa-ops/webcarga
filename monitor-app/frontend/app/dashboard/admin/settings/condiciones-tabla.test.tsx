@@ -328,12 +328,15 @@ describe('CondicionesTabla', () => {
     expect(screen.getByText('Alcanzaría a 248 de 248')).toBeInTheDocument()
   })
 
-  // El chevron es el único camino a la edición: sin nombre, un lector de
-  // pantalla anuncia 37 botones idénticos.
+  // El chevron ya no es el ÚNICO camino a la edición —el nombre, el nivel y la
+  // vigencia se editan en su celda— pero sigue siendo el camino a la condición,
+  // que es un multiselector de diez subtipos y no entra en una celda. Y sigue
+  // teniendo que nombrar su fila: sin nombre, un lector de pantalla anuncia 37
+  // botones idénticos.
   it('cada fila ofrece abrirse, y el botón nombra la fila', async () => {
     montar()
     await waitFor(() => expect(screen.getByText('Revisión Técnica')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /revisión técnica/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar Revisión Técnica' })).toBeInTheDocument()
   })
 
   // El panel abre con URL propia, como abre un viaje: editar una regla es

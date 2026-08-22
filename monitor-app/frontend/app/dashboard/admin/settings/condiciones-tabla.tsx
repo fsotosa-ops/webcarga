@@ -12,6 +12,8 @@ import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { CondicionPanel } from './CondicionPanel'
 import { NuevoDocumentoPanel } from './NuevoDocumentoPanel'
+import { CeldaNivel, CeldaNombre, CeldaVigencia } from './celdas-editables'
+import { AplicarEnLaFila } from './AplicarEnLaFila'
 import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
 import { celdaSeExigeA } from './frase-de-la-regla'
 import { INPUT, LoadState } from './shared'
@@ -67,6 +69,15 @@ export function CondicionesTabla() {
   const abierto = searchParams.get('doc')
   const canAdmin = useCanAdmin()
   const [creando, setCreando] = useState(false)
+  /** Las filas cuya REGLA se cambió en esta sesión, y que por eso ofrecen
+   *  "Ver qué cambia". Renombrar no entra acá: no mueve un registro. */
+  const [sinAplicar, setSinAplicar] = useState<Set<string>>(new Set())
+  const marcarSinAplicar = useCallback(
+    (id: string) => setSinAplicar(prev => new Set(prev).add(id)), [])
+  const desmarcar = useCallback(
+    (id: string) => setSinAplicar(prev => {
+      const s = new Set(prev); s.delete(id); return s
+    }), [])
 
   const abrir = useCallback((code: string | null) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -245,15 +256,29 @@ export function CondicionesTabla() {
                   </span>
                 </td>
                 <td className="px-3 py-2.5 max-w-[22rem]">
-                  <div className="text-xs font-semibold text-text-primary truncate">{r.name}</div>
-                  <div className="text-[11px] text-gray-400 truncate">{r.requirement_code}</div>
+                  <CeldaNombre requisito={r} puedeEditar={canAdmin} />
+                  <div className="mt-1">
+                    <CeldaNivel requisito={r} puedeEditar={canAdmin} onReglaCambiada={marcarSinAplicar} />
+                  </div>
                 </td>
                 <td className="px-3 py-2.5">
                   <div className={`text-xs ${r.is_active ? 'text-gray-700' : 'text-gray-400'}`}>{celda.regla}</div>
-                  <div className="text-[11px] text-gray-400 tabular-nums">{celda.alcance}</div>
+                  <div className="text-etiqueta text-gray-400 tabular-nums">{celda.alcance}</div>
+                  {/* La CONDICIÓN sigue abriéndose aparte: es un multiselector
+                      de diez subtipos, y eso no entra en una celda sin volver
+                      a ser el formulario que este rediseño vino a sacar. */}
+                  {sinAplicar.has(r.id) && (
+                    <div className="mt-1">
+                      <AplicarEnLaFila
+                        requirementId={r.id}
+                        nombre={r.name}
+                        onAplicado={() => { desmarcar(r.id); revisiones.invalidar() }}
+                      />
+                    </div>
+                  )}
                 </td>
-                <td className={`px-3 py-2.5 text-xs ${r.is_active ? 'text-resuelto' : 'text-gray-400'}`}>
-                  {r.is_active ? 'Vigente' : 'Sin vigencia'}
+                <td className="px-3 py-2.5">
+                  <CeldaVigencia requisito={r} puedeEditar={canAdmin} onReglaCambiada={marcarSinAplicar} />
                 </td>
                 {/* La marca se MUESTRA en la fila y el gesto de confirmar vive
                     en el panel: devolverle un botón a cada una de las 37 filas
