@@ -261,6 +261,44 @@ describe('TriageWorkbench', () => {
     expect(screen.queryByRole('button', { name: /Quitar/ })).not.toBeInTheDocument()
   })
 
+  // ── Paso 2 del funnel: esto es una COLA, no un formulario ──────────────
+
+  /** La fila de la LISTA, no el nombre que el panel derecho repite. */
+  const filaDe = (nombre: string) =>
+    screen.getByRole('checkbox', { name: new RegExp(`Seleccionar ${nombre}`) }).closest('tr')!
+
+  it('despues de clasificar, el foco salta solo al siguiente archivo', async () => {
+    // Clasificar 40 documentos era 40 veces "clasificar, buscar el siguiente
+    // con el mouse, hacer clic". El foco se marca con `aria-current`.
+    vi.mocked(documentIngestApi.classifyBatch).mockResolvedValue({ applied: ['i1'], errors: [] })
+    // El mock compartido no trae `requirement_id`, y sin el la Slot queda
+    // incompleta y "Clasificar" nunca se habilita.
+    vi.mocked(complianceApi.listPending).mockResolvedValue({
+      total: 1,
+      rows: [{
+        id: 'r1', carrier_id: 'acme', carrier_name: 'ACME', carrier_tax_id: '1-9',
+        carrier_operation_types: [], certification_type: 'BASICA', category: 'EQUIPO',
+        entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55',
+        requirement_id: 'req-1', requirement_code: 'PADRON', document_name: 'Padrón',
+        status: 'MISSING', expiration_date: null,
+      }],
+    } as never)
+    setup()
+    await screen.findByText('i1.png')
+
+    fireEvent.click(filaDe('i1.png'))
+    await waitFor(() => expect(filaDe('i1.png')).toHaveAttribute('aria-current', 'true'))
+
+    // Clasificar el enfocado: se marca y se usa el camino real del panel.
+    // Elegir el casillero -- el gesto del paso 2 -- y aplicar.
+    fireEvent.click(await screen.findByRole('button', { name: /Padrón/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Clasificar$/ }))
+
+    // El foco quedo en el que ocupa su lugar, no en ninguno ni en el mismo.
+    await waitFor(() => expect(filaDe('i2.png')).toHaveAttribute('aria-current', 'true'))
+    expect(filaDe('i1.png')).not.toHaveAttribute('aria-current')
+  })
+
   // Es la SEGUNDA vez que esta pantalla pierde esta invariante. La primera fue
   // esconder el selector con la seleccion activa; la segunda, esconderlo
   // mientras el panel derecho pregunta la empresa de un archivo -- y en las dos

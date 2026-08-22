@@ -146,4 +146,31 @@ describe('TriageFileTable — colisiones', () => {
     expect(screen.getByText(/2 archivos.*mismo/i)).toBeInTheDocument()
     expect(screen.getByText(/ya tiene un documento/i)).toBeInTheDocument()
   })
+
+  // ── Paso 3 del funnel: los sin empresa SON las excepciones ────────────
+
+  it('el grupo sin empresa dice que hacer, no solo cuantos hay', () => {
+    // Esos archivos no se pueden clasificar hasta tener empresa: los
+    // casilleros que se ofrecen salen de los requisitos pendientes de UNA
+    // empresa. El grupo ya existia y solo contaba.
+    render(
+      <TriageFileTable
+        rows={[row('i1', '', { carrier_id: null, carrier_name: null }), row('i2', 'ACME')] as never}
+        focusedId={null} selectedIds={new Set()}
+        onFocus={vi.fn()} onToggle={vi.fn()} onToggleAll={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/elige una empresa arriba/i)).toBeInTheDocument()
+  })
+
+  it('un grupo CON empresa no lleva esa instruccion', () => {
+    render(
+      <TriageFileTable
+        rows={[row('i2', 'ACME')] as never}
+        focusedId={null} selectedIds={new Set()}
+        onFocus={vi.fn()} onToggle={vi.fn()} onToggleAll={vi.fn()}
+      />,
+    )
+    expect(screen.queryByText(/elige una empresa arriba/i)).not.toBeInTheDocument()
+  })
 })

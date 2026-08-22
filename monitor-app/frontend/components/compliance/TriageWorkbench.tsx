@@ -333,9 +333,31 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
     setFocusedId(id)
   }
 
+  /** Mueve el foco al archivo que sigue después de sacar `aplicados` de la
+   *  lista. Devuelve `null` cuando no queda ninguno — el final de la cola es
+   *  un estado legítimo, no un error. */
+  function avanzarAlSiguiente(aplicados: string[]) {
+    const quedan = rows.filter(r => !aplicados.includes(r.id))
+    if (!quedan.length) { setFocusedId(null); return }
+    const i = rows.findIndex(r => r.id === (aplicados[0] ?? focusedId))
+    // El que ocupa el lugar del que se fue; si era el último, el anterior.
+    const siguiente = quedan.find((_, j) => rows.indexOf(quedan[j]) > i) ?? quedan[quedan.length - 1]
+    setFocusedId(siguiente.id)
+  }
+
   function handleApplied(appliedIds: string[], errores: { item_id: string; error: string }[] = []) {
     const quedan = Math.max(total - appliedIds.length, 0)
     clearSelection()
+    // PASO 2 DEL FUNNEL: esto es una COLA, no un formulario. Clasificar 40
+    // documentos era 40 veces "clasificar, buscar el siguiente con el mouse,
+    // hacer clic". El foco salta solo al que sigue, así que el gesto se reduce
+    // a elegir el casillero y repetir.
+    //
+    // El siguiente se calcula ANTES del refresco, sobre las filas que están en
+    // pantalla: después del refresco el archivo aplicado ya no está y su
+    // posición no existe para buscar el vecino. Se elige el que ocupa su lugar
+    // (el de abajo) y si era el último, el de arriba.
+    avanzarAlSiguiente(appliedIds)
     refrescarBandeja()
 
     // Sin nada aplicado no hay nada que deshacer: el aviso de abajo, que es el

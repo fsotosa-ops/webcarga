@@ -94,18 +94,40 @@ export function TriageFileTable({
           return (
             <Fragment key={r.id}>
               {header && (
-                <tr className="bg-slate-100/80">
-                  <td colSpan={4} className="px-3 py-1.5 border-y border-slate-200">
+                <tr className={r.carrier_id ? 'bg-slate-100/80' : 'bg-accent/5'}>
+                  <td colSpan={4} className={`px-3 py-1.5 border-y ${r.carrier_id ? 'border-slate-200' : 'border-accent/20'}`}>
                     <span className="text-[11px] font-bold text-slate-700">{carrier}</span>
                     <span className="text-[10px] text-slate-500 ml-2 tabular-nums">
                       {counts.get(carrier)} sin clasificar
                     </span>
+                    {/* PASO 3 DEL FUNNEL. Los archivos sin empresa SON las
+                        excepciones de la cola: no se pueden clasificar hasta
+                        tenerla, porque los casilleros que se ofrecen salen de
+                        los requisitos pendientes de una empresa. El grupo ya
+                        existía y sólo contaba; acá dice qué hacer.
+
+                        Es la única categoría de excepción que se puede derivar
+                        con lo que la fila trae. "Tiene empresa pero ningún
+                        casillero libre" necesita la consulta de pendientes de
+                        ESA empresa, que sólo corre para la enfocada — fingirla
+                        por fila serían N consultas. */}
+                    {!r.carrier_id && (
+                      <span className="text-[10px] text-informativo ml-2">
+                        · elige una empresa arriba para poder clasificarlos
+                      </span>
+                    )}
                   </td>
                 </tr>
               )}
               <tr
                 onClick={() => onFocus(r.id)}
                 aria-selected={checked}
+                // El foco se marcaba SOLO en color -- fondo gris y una barra de
+                // acento --, asi que un lector de pantalla no podia decir cual
+                // fila esta en juego, que es justo el dato que gobierna el panel
+                // derecho. `aria-current` es el atributo para "el elemento
+                // actual dentro de un conjunto".
+                aria-current={focused ? 'true' : undefined}
                 className={`cursor-pointer transition-colors border-b border-gray-100 ${
                   checked ? 'bg-accent/10' : focused ? 'bg-slate-100' : 'hover:bg-gray-50'
                 }`}
