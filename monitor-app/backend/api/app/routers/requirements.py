@@ -13,6 +13,7 @@ from typing import Literal, Optional
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..services.document_matcher import normalize_text
 from ..auth import get_current_user, require_admin
 from ..db import get_pool
 from ..schemas.compliance import RequirementOption
@@ -87,9 +88,21 @@ SQL_CATALOGO = f"""
            req.is_active,
            req.applies_to_fleet_service_type_ids::text[] AS applies_to_fleet_service_type_ids,
            req.applies_to_management_types,
+           -- Los alias vienen EN el catálogo y no por fila. Son 37 documentos:
+           -- pedirlos de a uno serían 37 consultas para dibujar una tabla, que
+           -- es el patrón que este proyecto ya pagó al firmar una URL por
+           -- archivo dentro de un listado. Además hace visible de un vistazo el
+           -- documento que NO tiene ninguno — que es el que el clasificador no
+           -- puede encontrar.
+           COALESCE(al.aliases, ARRAY[]::text[]) AS aliases,
            {_columna("alcanzadas")},
            {_columna("universo")}
     FROM public.compliance_requirements req
+    LEFT JOIN (
+        SELECT requirement_id, array_agg(alias ORDER BY priority DESC, alias) AS aliases
+        FROM public.requirement_filename_aliases
+        GROUP BY requirement_id
+    ) al ON al.requirement_id = req.id
     {"".join(_lateral(entidad, condicion)
              for entidad, condicion in SQL_CONDICION_DE_ENTIDAD.items())}
     WHERE ($1::text IS NULL OR req.target_entity = $1)
@@ -213,6 +226,32 @@ async def create_requirement(
             codigo, body.name, body.target_entity, body.requirement_level,
             body.expiration_policy, body.shipper_id,
         )
+        # UN DOCUMENTO NUEVO NO PUEDE NACER INVISIBLE.
+        #
+        # El motor de match resuelve buscando alias dentro del nombre del
+        # archivo normalizado; sin un solo alias, el documento es invisible para
+        # el clasificador y todo archivo suyo cae en "sin resolver" para
+        # siempre. Desde que se pueden crear documentos desde la pantalla
+        # (Ronda 140) eso pasaba con cada alta, en silencio: nada falla, el
+        # documento simplemente nunca matchea.
+        #
+        # La semilla es el NOMBRE normalizado y no el `requirement_code`, porque
+        # el nombre es lo que la gente escribe en el archivo: "Carpeta
+        # Tributaria" aparece en "Carpeta_Tributaria_Regular_77094744-8.pdf",
+        # mientras que un codigo interno no aparece en ningun archivo real.
+        # Se normaliza con la MISMA funcion que usa el motor, para que no haya
+        # dos ideas de "normalizado".
+        #
+        # Prioridad 0: es la semilla mas generica. Un alias mas especifico que
+        # se agregue despues le gana, que es como esta disenado el desempate.
+        alias = normalize_text(body.name)
+        if alias:
+            await conn.execute(
+                "INSERT INTO public.requirement_filename_aliases "
+                "(requirement_id, alias, priority) VALUES ($1::uuid, $2, 0) "
+                "ON CONFLICT DO NOTHING",
+                fila["id"], alias,
+            )
     return dict(fila)
 
 

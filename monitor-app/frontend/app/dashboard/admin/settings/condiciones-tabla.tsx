@@ -12,7 +12,7 @@ import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { CondicionPanel } from './CondicionPanel'
 import { NuevoDocumentoPanel } from './NuevoDocumentoPanel'
-import { CeldaNivel, CeldaNombre, CeldaVigencia } from './celdas-editables'
+import { CeldaAlias, CeldaNivel, CeldaNombre, CeldaVigencia } from './celdas-editables'
 import { AplicarEnLaFila } from './AplicarEnLaFila'
 import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
 import { celdaSeExigeA } from './frase-de-la-regla'
@@ -237,6 +237,12 @@ export function CondicionesTabla() {
             <EncabezadoOrdenable columna="documento" orden={orden} onOrdenar={ordenarPor}>Documento</EncabezadoOrdenable>
             <th scope="col" className={CABECERA}>Se exige a</th>
             <th scope="col" className={CABECERA}>Vigencia</th>
+            {/* Cómo lo encuentra el clasificador en el nombre del archivo.
+                Pedido de Fabián (21/08): que el nombre del archivo coincida con
+                el del documento para que el match funcione. Sin esta columna,
+                que un documento sea invisible para el motor no se veía en
+                ningún lado. */}
+            <th scope="col" className={CABECERA}>Se reconoce como</th>
             <th scope="col" className={CABECERA}>Revisión</th>
             <th scope="col" className="w-9" aria-label="Acciones" />
           </tr>
@@ -279,6 +285,9 @@ export function CondicionesTabla() {
                 </td>
                 <td className="px-3 py-2.5">
                   <CeldaVigencia requisito={r} puedeEditar={canAdmin} onReglaCambiada={marcarSinAplicar} />
+                </td>
+                <td className="px-3 py-2.5">
+                  <CeldaAlias requisito={r} puedeEditar={canAdmin} />
                 </td>
                 {/* La marca se MUESTRA en la fila y el gesto de confirmar vive
                     en el panel: devolverle un botón a cada una de las 37 filas

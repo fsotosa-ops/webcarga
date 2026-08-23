@@ -1531,6 +1531,19 @@ export type RequirementOption = {
   /** A cuántas entidades alcanza la regla, sobre el universo de su entidad.
    *  Sin esto la frase de la condición no dice si son veinte vehículos o dos. */
   alcance:                           Alcance
+  /** Cómo se reconoce este documento en el NOMBRE del archivo.
+   *
+   *  El motor de match busca estos alias dentro del nombre normalizado, así que
+   *  un documento sin ninguno es **invisible** para el clasificador: todo
+   *  archivo suyo cae en "sin resolver". Viajan dentro del catálogo y no por
+   *  fila: son 37 documentos, y pedirlos de a uno serían 37 consultas para
+   *  dibujar una tabla.
+   *
+   *  Opcional por el mismo motivo que `expiration_policy`: el backend lo agregó
+   *  después, y frontend y API se despliegan por separado — la ventana en que
+   *  no viene es real y dura minutos. Ausente significa "no sé", y la celda lo
+   *  distingue de "no tiene ninguno", que es un problema de verdad. */
+  aliases?:                          string[]
 }
 
 /** La condición de un requisito, sin lo que no hace falta para editarla: un

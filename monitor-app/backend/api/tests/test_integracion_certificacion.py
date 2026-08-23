@@ -51,7 +51,7 @@ from app.services.requirement_conditions import (
     SQL_ENTIDADES_QUE_APLICAN,
     calcular_diferencias,
 )
-from app.services.document_matcher import EntityUniverse, match_document
+from app.services.document_matcher import EntityUniverse, match_document, normalize_text
 from app.services.matcher_io import cargar_catalogo
 from tests.conftest import USER, PoolDeUnaConexion
 
@@ -1128,9 +1128,16 @@ async def test_un_alias_nuevo_hace_que_el_clasificador_encuentre_el_documento(
         pool=PoolDeUnaConexion(conn), user=USER,
     )
 
-    assert await list_requirement_aliases(
-        creado["id"], pool=PoolDeUnaConexion(conn), _=USER) == [], (
-        "un documento nuevo nace sin alias: por eso nace invisible al clasificador")
+    # CAMBIO 2026-08-23: esta asercion decia `== []` y documentaba el defecto
+    # como un hecho — "un documento nuevo nace sin alias: por eso nace invisible
+    # al clasificador". Ya no: `create_requirement` siembra el alias del NOMBRE
+    # normalizado en la misma transaccion, asi que un documento no puede nacer
+    # invisible. Lo que sigue probando este test es lo otro, y es lo que
+    # importa: que AGREGAR una forma de escribirlo llegue al motor.
+    semilla = await list_requirement_aliases(
+        creado["id"], pool=PoolDeUnaConexion(conn), _=USER)
+    assert [a["alias"] for a in semilla] == [normalize_text(creado["name"])], (
+        "el documento nuevo tiene que nacer con el alias de su nombre")
 
     await create_requirement_alias(
         creado["id"], RequirementAliasBody(alias="carnet representante legal", priority=100),
@@ -1139,9 +1146,10 @@ async def test_un_alias_nuevo_hace_que_el_clasificador_encuentre_el_documento(
 
     alias = await list_requirement_aliases(
         creado["id"], pool=PoolDeUnaConexion(conn), _=USER)
-    assert len(alias) == 1
+    # Dos: la semilla del nombre y la forma que se acaba de agregar.
+    assert len(alias) == 2
     # Normalizado a mayusculas: el motor compara contra el nombre normalizado.
-    assert alias[0]["alias"] == "CARNET REPRESENTANTE LEGAL"
+    assert "CARNET REPRESENTANTE LEGAL" in [a["alias"] for a in alias]
 
     # Y el motor, cargando el catalogo REAL, ahora lo resuelve.
     catalogo = await cargar_catalogo(conn)
