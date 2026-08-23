@@ -1,21 +1,23 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Download, Loader2, Plus } from 'lucide-react'
+import { CalendarPlus, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
 import { CertificationFunnel } from '@/components/compliance/CertificationFunnel'
 import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
+import { CargarFechasModal } from '@/components/compliance/CargarFechasModal'
+import { useCanEdit } from '@/hooks/useCanEdit'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
 import type { CertificationGroup } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
-import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { useFilaAbierta } from '@/hooks/useFilaAbierta'
 
 type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos'
@@ -35,28 +37,6 @@ const AGRUPACIONES: { id: Vista; label: string; group: CertificationGroup }[] = 
   { id: 'vehiculos',   label: 'Vehículo',  group: 'asset' },
   { id: 'requisitos',  label: 'Requisito', group: 'requirement' },
 ]
-
-function csvEscape(v: string) {
-  return /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
-}
-
-/** Exportación de todo lo pendiente. Vivía en la sábana de pendientes; la
- *  sábana se retiró al unificar el módulo, pero la capacidad no tenía por qué
- *  irse con ella. */
-async function exportarPendientes() {
-  const { rows } = await complianceApi.listPending({ limit: 200 })
-  const header = ['Empresa', 'Tipo certificación', 'Categoría', 'Sub categoría', 'Tipo de documento']
-  const lines = [header.join(';')]
-  for (const r of rows) {
-    lines.push([r.carrier_name, r.certification_type, r.category, r.subject_name ?? '', r.document_name]
-      .map(csvEscape).join(';'))
-  }
-  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = 'certificacion_pendiente.csv'; a.click()
-  URL.revokeObjectURL(url)
-}
 
 const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
 
@@ -99,7 +79,9 @@ function CertificationPageInner() {
   const group = AGRUPACIONES.find(v => v.id === vista)!.group
   const [q, setQ] = useState('')
   const [newCarrierOpen, setNewCarrierOpen] = useState(false)
-  const [exportando, setExportando] = useState(false)
+  const [cargarFechasOpen, setCargarFechasOpen] = useState(false)
+  const qc = useQueryClient()
+  const puedeEditar = useCanEdit()
   const qDebounced = useDebouncedValue(q, 300)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)
@@ -203,17 +185,11 @@ function CertificationPageInner() {
               {group === 'carrier' && (<>
               <button
                 type="button"
-                onClick={async () => {
-                  setExportando(true)
-                  try { await exportarPendientes() } finally { setExportando(false) }
-                }}
-                disabled={exportando}
-                className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-accent transition-colors disabled:opacity-50 cursor-pointer"
+                onClick={() => setCargarFechasOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-accent transition-colors cursor-pointer"
               >
-                {exportando
-                  ? <Loader2 size={13} className="motion-safe:animate-spin" />
-                  : <Download size={13} />}
-                Exportar pendientes
+                <CalendarPlus size={13} />
+                Cargar fechas
               </button>
               <button
                 type="button"
@@ -232,6 +208,13 @@ function CertificationPageInner() {
         open={newCarrierOpen}
         onClose={() => setNewCarrierOpen(false)}
         onCreated={handleCarrierCreated}
+      />
+
+      <CargarFechasModal
+        open={cargarFechasOpen}
+        onClose={() => setCargarFechasOpen(false)}
+        onAplicado={() => { void invalidarCertificacion(qc) }}
+        puedeEditar={puedeEditar}
       />
 
       <div className="border border-border rounded-xl bg-white overflow-hidden">

@@ -2,8 +2,9 @@ import type {
   CertificationGroup, CertificationScope, CertificationStatus,
   BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, ComplianceSummaryResponse,
   DocumentVersion, EstadoDocumental, PendingComplianceListResponse, RequirementOption,
+  ResultadoDePlanilla, ResumenDePlanilla,
 } from '@/lib/types'
-import { apiFetch } from './client'
+import { apiFetch, apiFetchBlob } from './client'
 
 export type ListPendingParams = {
   carrierId?:       string
@@ -46,6 +47,30 @@ export const complianceApi = {
     apiFetch<ComplianceRecordDetail>(`/api/v1/compliance-records/${id}`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
+
+  /** La planilla de vencimientos. El CSV lo ESCRIBE el backend, que es el
+   *  mismo que después lo lee: con el formato decidido acá y el parser allá,
+   *  el día que uno de los dos cambie el separador el otro se entera con una
+   *  fila corrupta y sin error. */
+  planillaResumen: (alcance: 'activas' | 'todas' = 'activas') =>
+    apiFetch<ResumenDePlanilla>(
+      `/api/v1/compliance-records/date-template/resumen?alcance=${alcance}`,
+    ),
+
+  bajarPlanilla: (alcance: 'activas' | 'todas' = 'activas') =>
+    apiFetchBlob(`/api/v1/compliance-records/date-template?alcance=${alcance}`),
+
+  /** `dryRun` no escribe nada y contesta exactamente lo que pasaría. Guardar y
+   *  aplicar son dos actos: sin esa separación, un archivo mal armado escribe
+   *  sobre 1.326 registros antes de que nadie vea un número. */
+  subirPlanilla: (archivo: File, dryRun: boolean) => {
+    const cuerpo = new FormData()
+    cuerpo.append('file', archivo)
+    cuerpo.append('dry_run', String(dryRun))
+    return apiFetch<ResultadoDePlanilla>('/api/v1/compliance-records/date-template', {
+      method: 'POST', body: cuerpo,
+    })
+  },
 
 
   /** Catalogo de tipos de documento, para el desplegable de clasificacion. */

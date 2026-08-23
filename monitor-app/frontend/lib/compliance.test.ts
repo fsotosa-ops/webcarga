@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { expiryRelative, updatedRelative } from './compliance'
+import { COMPLIANCE_STATUS_CONFIG, evidenciaDeDocumento, expiryRelative, updatedRelative } from './compliance'
 
 describe('expiryRelative', () => {
   it('returns null when there is no expiration date', () => {
@@ -39,5 +39,34 @@ describe('updatedRelative', () => {
   it('returns "sin actualizar hace N días" for older timestamps', () => {
     expect(updatedRelative('2026-06-06T12:00:00Z', NOW)).toBe('sin actualizar hace 40 días')
     expect(updatedRelative('2026-07-15T12:00:00Z', NOW)).toBe('sin actualizar hace 1 día')
+  })
+})
+
+describe('evidenciaDeDocumento — los dos ejes no se colapsan', () => {
+  it('sin fecha y sin archivo, no sabemos nada del documento', () => {
+    expect(evidenciaDeDocumento('MISSING', null, false).label).toBe('Falta')
+  })
+
+  it('con fecha y sin archivo, lo que falta es el papel', () => {
+    // El caso de Pablo: cargó las fechas que tenía en un Excel sin subir el
+    // histórico. Decirle "Falta" a secas esconde que ya sabemos cuándo vence.
+    expect(evidenciaDeDocumento('MISSING', '2026-09-12', false).label).toBe('Falta el archivo')
+  })
+
+  it('la fecha NO aprueba el documento', () => {
+    // La regla que ninguna plataforma de cumplimiento rompe: una fecha sin
+    // evidencia no cuenta como cumplido. Si el estilo cambiara al de aprobado,
+    // cargar 1.326 fechas pondría empresas en verde sin que nadie vea un papel.
+    const conFecha = evidenciaDeDocumento('MISSING', '2026-09-12', false)
+    expect(conFecha.cls).toBe(COMPLIANCE_STATUS_CONFIG.MISSING.cls)
+    expect(conFecha.cls).not.toBe(COMPLIANCE_STATUS_CONFIG.APPROVED_MANUAL.cls)
+  })
+
+  it('con archivo cargado vuelve a mandar el estado, no la fecha', () => {
+    expect(evidenciaDeDocumento('APPROVED_MANUAL', '2026-09-12', true).label)
+      .toBe(COMPLIANCE_STATUS_CONFIG.APPROVED_MANUAL.label)
+    // Un MISSING con archivo es raro pero existe (un rechazo que conserva el
+    // blob): ahí "Falta el archivo" mentiría.
+    expect(evidenciaDeDocumento('MISSING', '2026-09-12', true).label).toBe('Falta')
   })
 })

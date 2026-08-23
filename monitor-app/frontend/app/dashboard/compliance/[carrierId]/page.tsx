@@ -24,7 +24,7 @@ import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
-import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
+import { evidenciaDeDocumento, formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
 import { ASSET_TYPE_LABELS } from '@/lib/types'
@@ -284,7 +284,10 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorr
    *  esta lista: el hecho lo dice `tiene_archivo`, no el estado. */
   onVer?:   () => void
 }) {
-  const cfg = COMPLIANCE_STATUS_CONFIG[fila.status]
+  // "Falta" significaba dos cosas: no saber nada del documento, y saber
+  // cuando vence pero no tener el papel. Son estados distintos para quien
+  // trabaja la cola — el segundo ya no hay que averiguarlo, hay que pedirlo.
+  const cfg = evidenciaDeDocumento(fila.status, fila.expiration_date, fila.tiene_archivo)
   return (
     <div className="border-b border-border last:border-b-0 px-3 py-2 min-h-10">
       <div className="flex items-center gap-3">

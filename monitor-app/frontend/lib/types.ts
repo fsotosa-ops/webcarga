@@ -1604,3 +1604,28 @@ export type CandidatosConductorResponse = {
   candidatos:             CandidatoConductor[]
   trip_ids_de_la_persona: string[]
 }
+
+
+/** La planilla de vencimientos — lo que trae ANTES de bajarla.
+ *
+ *  Existe para que el botón no mienta: la exportación anterior pedía 200 filas
+ *  sobre 5.026 pendientes y bajaba el 4% sin decirlo. */
+export interface ResumenDePlanilla {
+  alcance:           'activas' | 'todas'
+  filas:             number
+  empresas:          number
+  con_fecha_cargada: number
+}
+
+/** Lo que pasó (o pasaría, con `dry_run`) al devolver la planilla llena.
+ *
+ *  `vacias` no es un error: es lo que permite bajar la planilla entera y
+ *  llenar sólo lo que se sabe. */
+export interface ResultadoDePlanilla {
+  cambian:        number
+  sin_cambios:    number
+  vacias:         number
+  errores:        { fila: number | null; registro_id?: string; error: string }[]
+  total_errores:  number
+  aplicado:       boolean
+}

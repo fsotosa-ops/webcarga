@@ -14,6 +14,38 @@ export const COMPLIANCE_STATUS_CONFIG: Record<ComplianceStatus, { cls: string; l
   ARCHIVED:        { cls: 'bg-gray-100 text-gray-400',   label: 'Archivado' },
 }
 
+/** El eje de la EVIDENCIA, afinado con lo que la fila ya sabe de si misma.
+ *
+ *  Las plataformas de cumplimiento de proveedores y de flota (ISNetworld,
+ *  Avetta, Veriforce; Fleetio, Samsara) no guardan UN estado por requisito
+ *  sino dos independientes: **evidencia** (¿tenemos el papel?) y **vigencia**
+ *  (¿está al día?). Un documento puede estar vigente y sin evidencia, y eso no
+ *  es un error de dato: en Fleetio los recordatorios de renovación existen sin
+ *  documento adjunto, que es exactamente el caso que pidió Pablo — cargar las
+ *  fechas que tiene en un Excel sin subir dos mil archivos históricos.
+ *
+ *  Acá los dos ejes YA se dibujan por separado: el pill de estado y la celda
+ *  de vencimiento son dos elementos distintos de la misma fila. Lo único que
+ *  faltaba es que "Falta" dejara de significar dos cosas — "no sé nada de este
+ *  documento" y "sé cuándo vence, me falta el papel"—, que es la sexta vez que
+ *  un mensaje con dos causas aparece en este módulo.
+ *
+ *  LA REGLA QUE NO SE ROMPE: una fecha sin evidencia nunca cuenta como
+ *  cumplido. Por eso el estilo no cambia —sigue siendo el gris de "falta"— y
+ *  sólo se precisa la palabra. La urgencia la lleva la fecha, al lado.
+ */
+export function evidenciaDeDocumento(
+  status: ComplianceStatus,
+  expirationDate: string | null | undefined,
+  tieneArchivo: boolean,
+): { cls: string; label: string } {
+  const base = COMPLIANCE_STATUS_CONFIG[status]
+  if (status === 'MISSING' && expirationDate && !tieneArchivo) {
+    return { cls: base.cls, label: 'Falta el archivo' }
+  }
+  return base
+}
+
 /** Estado de alerta de vencimiento — 'ok' | 'expiring_soon' | 'expired'.
  *  El backend ya calcula is_expired/is_expiring_soon por compliance_record
  *  (GET /carriers/{id}, /drivers/{id}/compliance-records, etc.); no hay

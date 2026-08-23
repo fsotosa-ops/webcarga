@@ -9,11 +9,14 @@ el archivo ya lo revisó, no queda un estado intermedio "en revisión"
 un valor válido del CHECK constraint (datos legacy), pero nada nuevo lo
 setea.
 """
+import csv
+import io
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
@@ -31,6 +34,15 @@ from ..schemas.compliance import (
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
+from ..services.plantilla_vencimientos import (
+    COLUMNAS,
+    COLUMNA_EDITABLE,
+    COLUMNA_LLAVE,
+    FUENTE_AUDITORIA,
+    SQL_APLICAR,
+    SQL_AUDITAR,
+    sql_filas_plantilla,
+)
 from ..services.vencimientos import por_vencer_predicate, vencido_predicate
 from ..utils.document_storage import (
     content_sha256_of_stored_file, delete_document_version, get_document_history,
@@ -758,6 +770,230 @@ async def get_compliance_summary(
         "completo": totales["todos"] != SUMMARY_LIMIT,
         "carrier_operation_types": list(filas[0]["carrier_operation_types"]) if filas else [],
     }
+
+
+# ── La planilla de vencimientos ──────────────────────────────────────────────
+#
+# OJO CON EL ORDEN: estas rutas van ANTES de `GET /{record_id}`. FastAPI
+# resuelve por orden de declaracion, asi que declaradas despues, un GET a
+# /date-template entraria por /{record_id} y contestaria "Registro de
+# cumplimiento no encontrado" — un 404 que no dice nada de la ruta que falta.
+
+_MAX_FILAS_PLANILLA = 10_000
+
+# Los tres formatos que escribe una persona en Chile. `dd-mm-aaaa` es el que
+# baja la planilla; los otros dos entran porque Excel reescribe la columna
+# segun la configuracion regional del computador que la abrio, y rechazar por
+# eso seria culpar al usuario de una decision de Excel.
+_FORMATOS_DE_FECHA = ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d")
+
+
+def _parsear_fecha(crudo: str) -> Optional[date]:
+    for formato in _FORMATOS_DE_FECHA:
+        try:
+            return datetime.strptime(crudo, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _planilla_a_csv(filas: list[dict]) -> bytes:
+    """El MISMO modulo escribe la planilla y la lee. Esa es la condicion para
+    que el ida y vuelta cierre: con el formato decidido en el frontend y el
+    parser aca, el dia que uno de los dos cambie el separador o el quoting, el
+    otro se entera con una fila corrupta y sin error."""
+    buffer = io.StringIO()
+    escritor = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    escritor.writerow([c["csv_key"] for c in COLUMNAS])
+    for fila in filas:
+        escritor.writerow([fila[c["csv_key"]] for c in COLUMNAS])
+    # utf-8-sig, no utf-8: sin BOM, Excel es-CL abre "Revisión Técnica" con las
+    # tildes rotas y la persona devuelve un archivo con los nombres ya
+    # corrompidos. Es el mismo motivo por el que el resto del modulo exporta
+    # con BOM.
+    return buffer.getvalue().encode("utf-8-sig")
+
+
+async def _filas_de_planilla(pool, alcance: str) -> list[dict]:
+    filas = await pool.fetch(sql_filas_plantilla(pendiente_predicate("cr")), alcance)
+    return [dict(f) for f in filas]
+
+
+@router.get("/date-template/resumen")
+async def resumen_de_planilla_de_vencimientos(
+    alcance: Literal["activas", "todas"] = Query("activas"),
+    pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    """Que trae la planilla ANTES de bajarla.
+
+    Existe para que el boton no mienta. La exportacion que habia pedia 200
+    filas sobre 5.026 pendientes y bajaba el 4% sin decirlo — Fabian lo vio en
+    vivo en la reunion del 21/08: *"aqui no te bajo todo. Te bajo poquito."*
+    """
+    filas = await _filas_de_planilla(pool, alcance)
+    empresas = {f["empresa"] for f in filas if f["empresa"]}
+    return {
+        "alcance": alcance,
+        "filas": len(filas),
+        "empresas": len(empresas),
+        "con_fecha_cargada": sum(1 for f in filas if f[COLUMNA_EDITABLE]),
+    }
+
+
+@router.get("/date-template")
+async def bajar_planilla_de_vencimientos(
+    alcance: Literal["activas", "todas"] = Query(
+        "activas",
+        description="'activas' son las empresas operativas, que es lo que se "
+                    "pidio cargar. 'todas' suma el historico y las filas sin "
+                    "empresa.",
+    ),
+    pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    contenido = _planilla_a_csv(await _filas_de_planilla(pool, alcance))
+    return Response(
+        content=contenido,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="vencimientos.csv"'},
+    )
+
+
+@router.post("/date-template")
+async def cargar_planilla_de_vencimientos(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+    pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """Devuelve las fechas de la planilla a su lugar.
+
+    `dry_run=true` (el default) no escribe nada y contesta exactamente lo que
+    pasaria. Guardar y aplicar son dos actos — el mismo gesto que ya usa la
+    configuracion de documentos, y por el mismo motivo: sin esa separacion,
+    un archivo mal armado escribe sobre 1.326 registros antes de que nadie vea
+    un numero.
+
+    UNA FILA VACIA NO SE TOCA. Es lo que permite bajar la planilla entera y
+    llenar solo lo que se sabe. Como consecuencia deliberada, BORRAR una fecha
+    no se puede desde aca: vaciar la celda es "no se", no "no vence". Para
+    quitar una fecha esta la celda de la pantalla.
+    """
+    crudo = await file.read()
+    try:
+        texto = crudo.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # El archivo volvio en la codificacion de Excel para Windows. Es un
+        # caso normal, no un error del que la persona tenga la culpa.
+        try:
+            texto = crudo.decode("latin-1")
+        except UnicodeDecodeError:
+            raise HTTPException(422, "No se pudo leer el archivo. Guárdalo como CSV UTF-8.")
+
+    lector = csv.DictReader(io.StringIO(texto), delimiter=";")
+    encabezados = set(lector.fieldnames or [])
+    faltantes = {COLUMNA_LLAVE, COLUMNA_EDITABLE} - encabezados
+    if faltantes:
+        raise HTTPException(
+            422,
+            f"Al archivo le faltan columnas: {', '.join(sorted(faltantes))}. "
+            "Usa la planilla que baja el boton de descarga.",
+        )
+
+    errores: list[dict] = []
+    vacias = 0
+    pedidas: dict[str, date] = {}
+    for numero, fila in enumerate(lector, start=2):  # 1 es el encabezado
+        if numero - 1 > _MAX_FILAS_PLANILLA:
+            raise HTTPException(422, f"Maximo {_MAX_FILAS_PLANILLA} filas por planilla")
+        registro_id = (fila.get(COLUMNA_LLAVE) or "").strip()
+        crudo_fecha = (fila.get(COLUMNA_EDITABLE) or "").strip()
+        if not registro_id:
+            if crudo_fecha:
+                errores.append({"fila": numero, "error": "Tiene fecha pero no tiene registro"})
+            continue
+        if not crudo_fecha:
+            vacias += 1
+            continue
+        fecha = _parsear_fecha(crudo_fecha)
+        if fecha is None:
+            errores.append({"fila": numero, "error": f"Fecha no reconocida: \"{crudo_fecha}\""})
+            continue
+        if registro_id in pedidas and pedidas[registro_id] != fecha:
+            errores.append({"fila": numero, "error": "El mismo registro aparece dos veces con fechas distintas"})
+            continue
+        pedidas[registro_id] = fecha
+
+    # Una sola vuelta a la base para saber que existe, que ya vale eso, y que
+    # documento no admite fecha. Sin esto la vista previa contaria como
+    # "cambian" filas que la base va a rechazar.
+    actuales = await pool.fetch(
+        """
+        SELECT cr.id::text AS registro_id, cr.entity_type, cr.entity_id::text,
+               cr.expiration_date, req.has_expiration, req.name AS documento
+        FROM public.compliance_records cr
+        JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+        WHERE cr.id = ANY($1::uuid[]) AND cr.is_current = true
+        """,
+        list(pedidas.keys()),
+    ) if pedidas else []
+    por_id = {r["registro_id"]: r for r in actuales}
+
+    cambian: list[tuple[str, date, object, str, str]] = []
+    sin_cambios = 0
+    for registro_id, fecha in pedidas.items():
+        actual = por_id.get(registro_id)
+        if actual is None:
+            errores.append({"fila": None, "registro_id": registro_id,
+                            "error": "Ese registro no existe o ya no esta vigente"})
+            continue
+        if not actual["has_expiration"]:
+            errores.append({"fila": None, "registro_id": registro_id,
+                            "error": f"\"{actual['documento']}\" no lleva fecha de vencimiento"})
+            continue
+        if actual["expiration_date"] == fecha:
+            sin_cambios += 1
+            continue
+        cambian.append((registro_id, fecha, actual["expiration_date"],
+                        actual["entity_type"], actual["entity_id"]))
+
+    resumen = {
+        "cambian": len(cambian),
+        "sin_cambios": sin_cambios,
+        "vacias": vacias,
+        "errores": errores[:50],
+        "total_errores": len(errores),
+        "aplicado": False,
+    }
+    if dry_run:
+        return resumen
+
+    # Con errores no se escribe nada. Es la misma regla que la carga masiva de
+    # viajes ("no se importo nada"): una planilla a medio aplicar deja a la
+    # persona sin saber que quedo adentro.
+    if errores:
+        raise HTTPException(422, {"message": "La planilla tiene errores — no se aplico nada",
+                                  "errors": errores[:50]})
+    if not cambian:
+        return resumen
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.fetch(
+                SQL_APLICAR,
+                [c[0] for c in cambian],   # $1 ids
+                [c[1] for c in cambian],   # $2 fechas nuevas
+                user["sub"],               # $3 quien
+            )
+            await conn.execute(
+                SQL_AUDITAR,
+                user["sub"],                                                     # $1
+                [c[3] for c in cambian],                                         # $2 entity_type
+                [c[4] for c in cambian],                                         # $3 entity_id
+                [c[2].isoformat() if c[2] else None for c in cambian],           # $4 antes
+                [c[1].isoformat() for c in cambian],                             # $5 despues
+                FUENTE_AUDITORIA,                                                # $6
+            )
+    resumen["aplicado"] = True
+    return resumen
 
 
 @router.get("/{record_id}")
