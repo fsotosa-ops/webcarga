@@ -490,7 +490,14 @@ def test_close_day_succeeds_when_nothing_pending():
     res = client.post("/api/v1/daily-closures/close?fecha=2026-07-21", json={})
 
     assert res.status_code == 200
-    assert res.json() == {"ok": True, "business_date": "2026-07-21", "overridden": 0}
+    assert res.json() == {
+        "ok": True, "business_date": "2026-07-21",
+        # `overridden` cuenta TODO lo forzado; `overridden_sin_flota` separa la
+        # mitad que es de viaje y no de conductor. Un cierre firmado sobre 2
+        # patentes fuera del directorio con overridden=0 diria que no se forzo
+        # nada.
+        "overridden": 0, "overridden_sin_flota": 0,
+    }
     insert_sql = pool.execute.call_args_list[-1].args[0]
     assert "app.daily_closures" in insert_sql
 
@@ -507,6 +514,59 @@ def test_close_day_409_when_pending_without_override():
     assert res.status_code == 409
     detail = res.json()["detail"]
     assert detail["pending"][0]["full_name"] == "Ana Soto"
+
+
+def test_close_day_409_cuando_la_flota_no_esta_en_el_directorio(monkeypatch):
+    """El bloqueo nuevo. Es de VIAJE y no de conductor: un dia sin ningun
+    conductor pendiente igual no se puede firmar si hay una patente que no
+    existe en el directorio, porque ese viaje no tiene empresa a la que
+    atribuirse.
+
+    Antes del cambio, el pre-cierre detectaba esto y el dia se firmaba igual.
+    """
+    from app.routers import daily_closures as dc
+
+    async def _recompute_falso(pool, business_date):
+        return {"escalations": {"PATENTE_NO_REGISTRADA": [
+            {"tractor_plate": "ABCD12", "reason": "La patente no existe en public.assets"}]}}
+
+    monkeypatch.setattr(dc, "_recompute", _recompute_falso)
+    pool = AsyncMock()
+    # Ningun conductor pendiente: lo unico que bloquea es la flota.
+    pool.fetch.return_value = [_driver_row(driver_id="d1", status="ASSIGNED")]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/daily-closures/close?fecha=2026-07-21", json={})
+
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["pending"] == [], "no habia conductores pendientes"
+    assert detail["sin_flota"][0]["tractor_plate"] == "ABCD12"
+    assert detail["sin_flota"][0]["tipo"] == "PATENTE_NO_REGISTRADA"
+    assert "flota fuera del directorio" in detail["message"]
+
+
+def test_close_day_deja_firmar_con_override_y_lo_cuenta(monkeypatch):
+    """La valvula que ya existia sigue siendo la valvula: admin + comentario.
+    Es la que el propio refinamiento diseno contra el "deadlock operativo"."""
+    from app.routers import daily_closures as dc
+
+    async def _recompute_falso(pool, business_date):
+        return {"escalations": {"PATENTE_NO_REGISTRADA": [{"tractor_plate": "ABCD12"}]}}
+
+    monkeypatch.setattr(dc, "_recompute", _recompute_falso)
+    pool = AsyncMock()
+    pool.fetch.return_value = [_driver_row(driver_id="d1", status="ASSIGNED")]
+    client = make_client(pool, user=ADMIN_USER)
+
+    res = client.post(
+        "/api/v1/daily-closures/close?fecha=2026-07-21",
+        json={"override": True, "override_note": "la patente se da de alta manana"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["overridden_sin_flota"] == 1
+    assert res.json()["overridden"] == 1
 
 
 def test_close_day_override_requires_admin_role():

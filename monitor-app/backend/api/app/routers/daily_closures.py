@@ -379,6 +379,45 @@ async def patch_driver_day_status(
     return updated
 
 
+# LAS ESCALACIONES QUE BLOQUEAN EL CIERRE.
+#
+# Pedido de Pablo, reunion del 21/08: *"yo aqui deberia el sistema obligarme a
+# asignarle una empresa, y si la empresa no la tenemos, crearla nomas, ponerle
+# el RUT y el nombre"*. El pre-cierre YA detectaba estos casos desde el
+# 2026-08-18 y no bloqueaba nada: el dia se podia firmar con todos pendientes,
+# asi que la deteccion no cambiaba ninguna conducta.
+#
+# Son las tres que significan lo MISMO: la flota de ese viaje no esta en el
+# directorio, asi que el viaje no tiene empresa resoluble. `SIN_TIPO_OPERACION`
+# queda AFUERA a proposito — ahi el vehiculo SI esta en el directorio y lo que
+# falta es otro dato; mezclarlas seria volver a un mensaje con dos causas.
+#
+# Medido sobre 5 dias reales (14, 17, 20, 21 y 22 de agosto): entre 2 y 4 casos
+# por dia. Bloquear es operable; no congela la operacion. Y `EMPRESA_NO_RECONOCIDA`
+# da 0 todos los dias — lo que dispara es patente y conductor sin registrar, que
+# es exactamente la escena que describio Pablo.
+_ESCALACIONES_QUE_BLOQUEAN = (
+    "PATENTE_NO_REGISTRADA",
+    "CONDUCTOR_NO_REGISTRADO",
+    "EMPRESA_NO_RECONOCIDA",
+    "EMPRESA_ONBOARDING",
+)
+
+
+def _pendientes_de_flota(pre_cierre: dict) -> list[dict]:
+    """Aplana las escalaciones que bloquean, conservando de cual vino cada una.
+
+    Sin el tipo, la pantalla no puede decir QUE hacer: no es lo mismo "esta
+    patente no existe en el directorio" que "esta empresa esta en onboarding".
+    """
+    escalaciones = pre_cierre.get("escalations", {})
+    return [
+        {"tipo": tipo, **caso}
+        for tipo in _ESCALACIONES_QUE_BLOQUEAN
+        for caso in escalaciones.get(tipo, [])
+    ]
+
+
 @router.post("/close")
 async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user=Depends(require_editor)):
     """Bloqueo real de HU-03 — requisito explícito y no negociable de Pablo
@@ -388,7 +427,7 @@ async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user
     excepciones nuevo — requiere rol admin/owner y un comentario
     obligatorio, uno por conductor pendiente."""
     business_date = _parse_business_date(fecha)
-    await _recompute(pool, business_date)
+    pre_cierre = await _recompute(pool, business_date)
 
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     drivers = [dict(r) for r in rows]
@@ -396,17 +435,29 @@ async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user
         d for d in drivers
         if d["status"] == "MISMATCH" or (d["status"] == "UNASSIGNED" and not d["unassigned_reason_id"])
     ]
+    # El segundo motivo de bloqueo, y es de VIAJE y no de conductor: un viaje
+    # cuya flota no está en el directorio no tiene empresa a la que atribuirse.
+    sin_flota = _pendientes_de_flota(pre_cierre or {})
 
-    if pending and not body.override:
+    if (pending or sin_flota) and not body.override:
+        # Los dos motivos van separados en la respuesta: no es lo mismo "a este
+        # conductor le falta un motivo" que "esta patente no existe". Fundirlos
+        # en un solo contador daría un número que no dice qué hacer.
+        partes = []
+        if pending:
+            partes.append(f"{len(pending)} conductor(es) sin resolver")
+        if sin_flota:
+            partes.append(f"{len(sin_flota)} viaje(s) con flota fuera del directorio")
         raise HTTPException(
             409,
             {
-                "message": f"{len(pending)} conductor(es) sin resolver — no se puede cerrar el día",
+                "message": " y ".join(partes) + " — no se puede cerrar el día",
                 "pending": [{"driver_id": str(d["driver_id"]), "full_name": d["full_name"], "status": d["status"]} for d in pending],
+                "sin_flota": sin_flota,
             },
         )
 
-    if pending and body.override:
+    if (pending or sin_flota) and body.override:
         if user["role"] not in ADMIN_ROLES:
             raise HTTPException(403, "Forzar el cierre con pendientes requiere rol admin o superior")
         if not body.override_note or not body.override_note.strip():
@@ -418,6 +469,24 @@ async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user
                         conn, actor=user["sub"], entity_type="DRIVER", entity_id=d["driver_id"],
                         action="cuadratura_override", field="status",
                         old_value=d["status"],
+                        new_value={"business_date": business_date.isoformat(), "note": body.override_note},
+                    )
+                # El forzado de flota tambien queda auditado, en UN renglon con
+                # todos los casos adentro.
+                #
+                # Va contra el USUARIO y no contra una entidad del viaje porque
+                # lo que falta es justamente la entidad: la patente no existe en
+                # el directorio, asi que no hay uuid al que atribuirlo —
+                # `audit_log.entity_id` es NOT NULL— y las escalaciones vienen
+                # agrupadas por patente, sin id de viaje. Lo que SI existe y es
+                # verdadero es quien tomo la decision de firmar igual.
+                if sin_flota:
+                    await log_change(
+                        conn, actor=user["sub"], entity_type="USER",
+                        entity_id=user["sub"],
+                        action="cierre_forzado_con_flota_fuera_del_directorio",
+                        field="daily_closure",
+                        old_value=sin_flota,
                         new_value={"business_date": business_date.isoformat(), "note": body.override_note},
                     )
 
@@ -437,6 +506,14 @@ async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user
             override_count = EXCLUDED.override_count, total_trips = EXCLUDED.total_trips
         """,
         business_date, user["sub"], len(drivers), len(drivers) - len(pending),
-        len(pending) if body.override else 0, total_trips,
+        # Cuenta TODO lo que se forzo, no solo los conductores: un cierre
+        # firmado sobre 2 patentes fuera del directorio con `override_count = 0`
+        # diria que no se forzo nada.
+        (len(pending) + len(sin_flota)) if body.override else 0, total_trips,
     )
-    return {"ok": True, "business_date": business_date.isoformat(), "overridden": len(pending) if body.override else 0}
+    return {
+        "ok": True,
+        "business_date": business_date.isoformat(),
+        "overridden": (len(pending) + len(sin_flota)) if body.override else 0,
+        "overridden_sin_flota": len(sin_flota) if body.override else 0,
+    }

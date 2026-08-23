@@ -4,6 +4,19 @@ import { apiFetch, ApiError } from './client'
 export type ClosePendingError = {
   message: string
   pending: { driver_id: string; full_name: string; status: string }[]
+  /** El segundo motivo de bloqueo, y es de VIAJE y no de conductor: la flota de
+   *  ese viaje no está en el directorio, así que no tiene empresa a la que
+   *  atribuirse. Pedido de Pablo (21/08): *"el sistema debería obligarme a
+   *  asignarle una empresa"*.
+   *
+   *  Van separados de `pending` a propósito: fundirlos en un solo contador
+   *  daría un número que no dice qué hacer. `tipo` es cuál de las cuatro
+   *  escalaciones lo produjo — no es lo mismo "esta patente no existe" que
+   *  "esta empresa está en onboarding".
+   *
+   *  Opcional porque el backend lo agregó después y los dos se despliegan por
+   *  separado; el `message` que muestra la pantalla ya lo nombra igual. */
+  sin_flota?: { tipo: string; tractor_plate?: string; reason?: string }[]
 }
 
 /** El backend manda el 409 con `detail` = objeto estructurado (no string) —
