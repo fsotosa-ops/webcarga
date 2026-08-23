@@ -46,7 +46,7 @@ async def upload_document_version(supabase, *, key_prefix: str, file: UploadFile
         raise HTTPException(422, f"Tipo de archivo no permitido: {file.filename} ({mime})")
     data = await file.read()
     if len(data) > STORED_FILE_MAX_BYTES:
-        raise HTTPException(422, f"{file.filename} supera 7MB — comprimí el archivo antes de subirlo")
+        raise HTTPException(422, f"{file.filename} supera 7MB — comprime el archivo antes de subirlo")
 
     # El hash va acá y no en el router porque acá el contenido YA está leído:
     # calcularlo en otro lado obligaría a leer el archivo dos veces.

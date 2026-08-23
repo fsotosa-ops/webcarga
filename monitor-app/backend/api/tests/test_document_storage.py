@@ -78,7 +78,10 @@ async def test_upload_document_version_rejects_file_over_7mb():
         await upload_document_version(supabase, key_prefix="driver/abc-123/licencia", file=file)
 
     assert "7MB" in str(exc_info.value)
-    assert "comprimí" in str(exc_info.value)
+    # "comprime", no "comprimí": el mensaje decía voseo y el linter de español
+    # neutral no lo veía porque su lista de formas es a mano. Este test afirmaba
+    # la forma incorrecta, o sea que la fijaba en su lugar.
+    assert "comprime" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

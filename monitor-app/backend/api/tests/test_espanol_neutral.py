@@ -27,6 +27,11 @@ VOSEO = [
     "poné", "sacá", "mirá", "contá", "dejá", "probá", "usá", "andá", "vení",
     "hacé", "tené", "escribí", "leé", "guardá", "borrá", "marcá",
     "asigná", "confirmá", "cerrá", "abrí", "buscá", "agregá", "quitá",
+    # Agregados el 2026-08-23: "comprimí" se coló en el mensaje de archivo
+    # demasiado pesado (utils/document_storage.py) y vivió meses. La lista es a
+    # mano por diseño, así que crece cuando uno se cuela — no cuando se imagina
+    # uno. Estos son los verbos que el vocabulario de carga documental produce.
+    "comprimí", "completá", "corregí", "reintentá", "actualizá", "descargá",
     # imperativo + pronombre enclítico, que no lleva tilde
     "devolvelo", "asignalo", "marcalo", "borralo", "guardalo", "cerralo",
     "mandalo", "sacalo", "dejalo", "ponelo", "hacelo", "tenelo",

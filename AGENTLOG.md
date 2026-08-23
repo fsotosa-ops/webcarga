@@ -33,10 +33,14 @@ pregunta espera sin bloquear una rama.
 - **#9 · Forzar la asignación en el Cierre.** Lo cierra el PR de abajo.
 - **#10 · Gobernanza de datos sensibles.** Se abrió cuando Pablo pidió banco y cuenta como campos.
   Se difirió de común acuerdo: no es un campo más. Se cruza con el issue #1 (el rol `writer`).
-- **#11 · Dos definiciones chicas que faltan de negocio.** (a) El límite de peso por archivo **no
-  existe** —`_check_upload_size` sólo cuenta archivos, nunca bytes— y a Fabián se le dijo que sí.
+- **#11 · Dos definiciones chicas que faltan de negocio.** (a) ~~El límite de peso por archivo no
+  existe~~ — **ERROR MÍO, corregido el mismo día**: existe, son 7 MB en
+  `STORED_FILE_MAX_BYTES`, aplicado en las tres rutas de subida, y se bajó de 10 a 7 **a pedido de
+  Pablo** el 20/07 por las fotos de celular sin comprimir. Lo que se le respondió a Fabián era
+  correcto. El error salió de mirar `_check_upload_size` —que sólo cuenta archivos— y concluir de
+  ahí, sin abrir la función que sí valida bytes. Queda sólo verificar la capacidad del bucket.
   (b) ¿Existe "rechazar un documento"? De eso depende si `REJECTED` entra en la definición de
-  pendiente o se retira de las capas.
+  pendiente o se retira de las capas. Sigue abierto e inerte (0 filas, ningún escritor).
 
 Y los de Sodimac (#5, #6) actualizados **sin cerrarlos**, con el motivo escrito: #6 porque el
 multidestino sigue igual, y #5 porque después del 20/08 hay 6 viajes en 17 versiones — muy poca
