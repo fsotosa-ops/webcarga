@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
+from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import AsignarConductorBody, TripBulkCloseBody, TripPatch, TripStopPatch
 from ..services.audit import log_change
 from ..services.cierre_viajes import SQL_GRUPOS_CIERRE
@@ -614,6 +615,9 @@ def _compliance_alert_lateral(alias: str, entity_type: str, id_expr: str, critic
     `entity_type`/`critical_codes` siempre vienen hardcodeados por el caller,
     nunca de request."""
     codes_sql = "ARRAY[" + ", ".join(f"'{c}'" for c in critical_codes) + "]::varchar[]" if critical_codes else "ARRAY[]::varchar[]"
+    # El vocabulario de estados y fechas sale de la definición compartida.
+    # El ámbito (LEGAL_MANDATORY) sigue siendo propio de este semáforo.
+    pendiente = pendiente_predicate("cr")
     return f"""
     LEFT JOIN LATERAL (
         SELECT
@@ -624,15 +628,13 @@ def _compliance_alert_lateral(alias: str, entity_type: str, id_expr: str, critic
             -- cuando en realidad no hay ningún ID contra el que preguntar.
             CASE WHEN {id_expr} IS NULL THEN NULL ELSE COUNT(*) FILTER (
                 WHERE req.requirement_level = 'LEGAL_MANDATORY' AND (
-                    cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
-                    OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE)
+                    {pendiente}
                 )
             ) END AS pending_count,
             CASE WHEN {id_expr} IS NULL THEN NULL ELSE bool_or(
                 req.requirement_level = 'LEGAL_MANDATORY'
                 AND req.requirement_code = ANY({codes_sql})
-                AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
-                     OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+                AND ({pendiente})
             ) END AS has_critical_pending
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id

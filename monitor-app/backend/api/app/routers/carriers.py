@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
+from ..services.vencimientos import pendiente_predicate
 from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
 from ..schemas.carrier import CarrierCreateBody, CarrierListResponse, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
@@ -24,6 +25,11 @@ router = APIRouter(prefix="/carriers", tags=["carriers"])
 _CARRIER_HEALTH_VALUES = {"PENDING", "OK"}
 
 
+# El vocabulario de estados y fechas, UNA sola vez. El ámbito
+# (LEGAL_MANDATORY) lo pone cada llamador: son dos preguntas distintas.
+pendiente = pendiente_predicate('cr')
+
+
 def _pending_mandatory_join(entity_type: str, id_column: str) -> str:
     """Subquery de documentación LEGAL_MANDATORY pendiente/vencida para un
     entity_type dado — mismo criterio en los 3 niveles (CARRIER/DRIVER/ASSET,
@@ -34,8 +40,7 @@ def _pending_mandatory_join(entity_type: str, id_column: str) -> str:
             SELECT cr.entity_id AS {id_column},
                    COUNT(*) FILTER (
                        WHERE req.requirement_level = 'LEGAL_MANDATORY'
-                         AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
-                              OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+                         AND {pendiente}
                    ) AS pending_mandatory
             FROM public.compliance_records cr
             JOIN public.compliance_requirements req ON req.id = cr.requirement_id
@@ -44,24 +49,23 @@ def _pending_mandatory_join(entity_type: str, id_column: str) -> str:
         ) sev ON sev.{id_column} = r.{id_column}
     """
 
-# Mismo criterio de "problema obligatorio" que `mandatoryProblems` en la ficha
-# de empresa (app/dashboard/transportistas/empresa/[id]/page.tsx): requisito
-# LEGAL_MANDATORY con status MISSING/EXPIRED/REJECTED o vencido por fecha
-# (PENDING_REVIEW no cuenta como problema, ya está en revisión).
+# Mismo criterio de "problema obligatorio" que la ficha de empresa. El
+# vocabulario de estados y fechas sale de `pendiente_predicate` —una sola
+# definición para las seis lecturas—; lo único propio de acá es el ámbito:
+# se cuentan sólo los LEGAL_MANDATORY, porque la pregunta es "cuántos
+# obligatorios están en problemas" y no "qué entra a la cola de trabajo".
 _CARRIER_LIST_AGG = """
     SELECT c.id AS carrier_id, c.tax_id, c.country_code, c.business_name, c.operational_status,
            COUNT(cr.id) AS total_requirements,
            MAX(cr.updated_at) AS last_document_update,
            COUNT(cr.id) FILTER (
                WHERE req.requirement_level = 'LEGAL_MANDATORY'
-                 AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
-                      OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+                 AND {pendiente}
            ) AS pending_mandatory,
            CASE
                WHEN COUNT(cr.id) FILTER (
                    WHERE req.requirement_level = 'LEGAL_MANDATORY'
-                     AND (cr.status IN ('MISSING', 'EXPIRED', 'REJECTED')
-                          OR (cr.expiration_date IS NOT NULL AND cr.expiration_date < CURRENT_DATE))
+                     AND {pendiente}
                ) > 0 THEN 'PENDING'
                ELSE 'OK'
            END AS compliance_health
@@ -96,7 +100,7 @@ async def list_carriers(
         params.append(operational_status)
         clauses.append(f"c.operational_status = ${len(params)}")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    agg_cte = f"WITH agg AS ({_CARRIER_LIST_AGG.format(where=where)})"
+    agg_cte = f"WITH agg AS ({_CARRIER_LIST_AGG.format(where=where, pendiente=pendiente)})"
 
     health_params = list(params)
     if health:

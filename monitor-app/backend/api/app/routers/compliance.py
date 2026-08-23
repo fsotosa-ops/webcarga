@@ -52,7 +52,11 @@ from ..services.plantilla_certificacion import (
     TENENCIA_SI,
     sql_filas_plantilla,
 )
-from ..services.vencimientos import por_vencer_predicate, vencido_predicate
+from ..services.vencimientos import (
+    pendiente_predicate,
+    por_vencer_predicate,
+    vencido_predicate,
+)
 from ..utils.document_storage import (
     content_sha256_of_stored_file, delete_document_version, get_document_history,
     log_document_replacement, resolve_signed_url, upload_document_version,
@@ -92,38 +96,6 @@ async def _fetch_record(record_id: str, pool, supabase=None) -> dict:
 # Cada agrupación cambia sólo dos cosas: por qué entidad se agrupa y de dónde
 # sale su nombre. El resto de la consulta es idéntico, así que se parametriza en
 # vez de escribir tres consultas que después divergen.
-# UNA definición de "pendiente", usada por el embudo y por /pending.
-#
-# Un registro cuenta como pendiente por CUALQUIERA de las dos vías: que su
-# estado lo diga, o que su fecha ya haya pasado aunque nadie recalculó el
-# estado. Verificado contra producción: los 9 registros vencidos por fecha
-# tienen status APPROVED_MANUAL, así que mirando sólo el estado el embudo
-# mandaba 8 empresas a "Hay que renovar" mientras el cajón de cada una decía
-# "No le falta ningún documento" — se pedía renovar algo que la interfaz se
-# negaba a nombrar.
-def pendiente_predicate(alias: str = "cr") -> str:
-    """Lo que le falta a alguien: no tiene el documento, o el que tiene ya no
-    sirve, o esta por dejar de servir.
-
-    OJO: este predicado lo comparten /pending, el embudo (GET /status) y el
-    cajon. Ya hubo un bug por moverlos por separado (ver el comentario de
-    arriba). Si cambias este predicado, las tres lecturas se mueven JUNTAS.
-
-    La tercera via —"por vencer"— se sumo en la Ronda 129. Antes, renovar no
-    tenia superficie en ninguna parte: el predicado exigia expiration_date <
-    CURRENT_DATE, o sea YA vencido, asi que un documento que vence en diez
-    dias no aparecia ni en el cajon ni en la etapa "Hay que renovar" del
-    embudo. Medido al aplicarlo: 5.035 -> 5.038 pendientes. Los 3 que entran
-    son una poliza de seguro que vence en tres dias y dos revisiones de
-    vehiculo, las tres en APPROVED_MANUAL con fecha futura — invisibles hasta
-    el dia en que fuera tarde."""
-    return (
-        f"({alias}.status IN ('MISSING','EXPIRED') "
-        f"OR {vencido_predicate(alias)} "
-        f"OR {por_vencer_predicate(alias)})"
-    )
-
-
 _STATUS_GROUPS = {
     "carrier": {
         "entity_type": "CARRIER",
