@@ -17,6 +17,75 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-23 (cont.) — Ronda 145: PAUSA. La app queda operable, y esto es el punto de retomada
+
+**Decisión del usuario, textual**: *"si de acuerdo a lo levantado en la última reu ya pueden
+operar, dejamos hasta aquí el desarrollo de webcarga y cuando se hagan release y nuevas
+definiciones se vuelva"*. Esta sección es el estado de esa pausa: **no hay trabajo a medio hacer**.
+
+## Los dos compromisos del 21/08, cerrados
+
+| Compromiso | Estado | Dónde se ve |
+|---|---|---|
+| Cargar fechas sin subir el archivo | **En dev, click-through hecho** | Certificación → "Actualizar por planilla" |
+| Que un viaje con dos orígenes muestre los dos | **Escrito y sincronizado a Mage** | Falta UNA corrida del usuario |
+
+Y encima de eso, cuatro PRs que la reunión destrabó y no estaban comprometidos: el criterio único de
+"pendiente", los alias del clasificador, el vínculo manual sin empresa y el bloqueo del Cierre.
+
+## Lo único que queda del lado del usuario
+
+**Correr `app_trips_tests` en la UI de Mage.** No es un pendiente de código: `run_block` devuelve
+500 para `batch_tms_monitor_trips` desde hace 4 rondas y no se reintenta por API. Si
+`assert_trip_stops_no_aplana_los_origenes` volviera a fallar, lo que hace falta es **la segunda
+línea del error, la que nombra el nodo** — el log de `mage-agent` se trunca a ~8.000 caracteres y
+sin esa línea se itera a ciegas.
+
+## Un error mío, y lo que lo hizo posible
+
+Dije **tres veces** que el límite de peso por archivo no existía. Existe: 7 MB en
+`STORED_FILE_MAX_BYTES`, aplicado en las tres rutas de subida, bajado de 10 a 7 **a pedido de
+Pablo** el 20/07. Lo que se le respondió a Fabián en la reunión era correcto.
+
+Cómo pasó: leí `_check_upload_size` —que cuenta archivos, no bytes— y concluí desde ahí **sin abrir
+la función que sí valida el tamaño**. Un nombre plausible bastó para no seguir mirando. Quedó
+corregido en el issue #11 (cerrado), en la Ronda 144 de este archivo, y dicho en el chat.
+
+De arreglarlo salió algo peor que el error: el mensaje decía **"comprimí el archivo"** —voseo, que
+el usuario prohibió explícitamente— y **un test afirmaba esa forma** (`assert "comprimí" in ...`).
+El test no dejaba pasar el defecto: **lo sostenía**. El linter de español neutral no lo veía porque
+su lista de formas es a mano por diseño; se le agregaron seis verbos del vocabulario de carga
+documental. Suite completa después del arreglo: **949 passed**.
+
+## Lo que espera, y no bloquea a nadie
+
+Seis issues abiertos, ninguno en el camino crítico de las pruebas de WebCarga:
+
+- **#8 Seguros son tres pólizas** y **#10 gobernanza de datos sensibles** — esperan definición de
+  negocio. #10 se difirió de común acuerdo en la propia reunión.
+- **#1 el rol `writer`** — 74 endpoints, y parte de lo que se reportó como bug es diseño.
+- **#5 y #6 Sodimac** — actualizados con su medición y **deliberadamente no cerrados**: el
+  multidestino sigue igual, y después del 20/08 hay 6 viajes en 17 versiones, muestra insuficiente
+  para declarar resuelto el dedupe.
+- **#3 detectar viajes eliminados por Sodimac**, **#7 deuda de base de datos** (10 puntos abiertos),
+  **#2 Supabase Auth** (necesita plan Pro).
+
+`REJECTED` sigue afuera de la definición de pendiente **a propósito y documentado**: 0 filas,
+ningún escritor. Si algún día se decide que "rechazar un documento" existe como gesto, entra por
+`services/vencimientos.py` y por ningún otro lado — el trinquete impide la sexta copia.
+
+## Por dónde se vuelve
+
+1. **Lo primero al retomar**: preguntar qué encontró el equipo probando. Este archivo es historia
+   de incidentes cerrados, no estado — auditar contra Supabase antes de proponer nada.
+2. La definición de negocio que llegue primero (#8 o #10) decide la ronda siguiente; ninguna de las
+   dos tiene el código bloqueado, sólo la decisión.
+3. La HU `docs/user-stories/20260814/02-hu-fechas-sin-archivo.md` **quedó desactualizada**: dice que
+   el ida y vuelta de planilla *"queda descartado"*. La reunión del 21/08 lo reinstaló y la Ronda
+   141 lo construyó. Si esa HU se vuelve a leer sin esta nota, contradice lo que está en dev.
+
+---
+
 ### 2026-08-23 (cont.) — Ronda 144: los pendientes de Pablo, repartidos en issues y PRs
 
 El criterio para repartirlos: **si la decisión ya está tomada y sólo falta construir, es un PR;
