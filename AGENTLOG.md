@@ -17,6 +17,107 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-23 (cont.) — Ronda 142: Sodimac multiorigen, y la premisa del plan que era falsa
+
+El segundo compromiso del 21/08. **Escrito y sincronizado a Mage; falta que alguien corra la
+cadena** — `run_block` sigue roto para `batch_tms_monitor_trips`.
+
+## LA PREMISA DEL PLAN ERA FALSA
+
+El plan decía: *"reusar la estructura que Wingsuite ya usa: su `trip_stops` mezcla PICKUP y
+DELIVERY"*. **Es al revés.** El modelo de Wingsuite **excluye** `accion='Carga'` de su arreglo, y
+`app/trips.sql` documenta que el filtro por `action_type` *"NUNCA existió"* porque esa clave se
+descarta en el remapeo. El backend lo dice todavía más claro en `trips.py`: *"`app.trips.stops`
+(jsonb legacy) sigue siendo **solo-destinos** — el origen unificado vive en `app.trip_stops`"*.
+
+O sea que no había canal para N orígenes, y meterlos en el arreglo de destinos los habría convertido
+en destinos aguas abajo.
+
+## LA CAUSA RAÍZ TAMPOCO ERA LA QUE DECÍA EL PLAN
+
+No es "el modelo lee `stops->0`". Es que **el arreglo `stops` no tiene orden estable entre
+corridas**. Medido sobre el viaje 833795 —el que citó Pablo— a lo largo de 33 versiones del
+snapshot: el primer elemento **alterna** entre sus dos orígenes, y el largo oscila 1 → 10 → 2. Con
+eso, cualquier lectura posicional devuelve algo distinto cada vez.
+
+**Y eso explica los "duplicados" que la migración del 2026-08-07 vino a colapsar.** Hay **4 viajes
+de Sodimac con dos filas ORIGIN, las cuatro con el mismo `stop_order`**, y Sodimac es la **única**
+fuente con el fenómeno: QAnalytics tiene exactamente 1 fila en sus 1.676 viajes. No eran paradas
+renombradas — eran los dos orígenes reales, llegando uno por corrida. El dedupe hizo bien en
+colapsarlos porque eran indistinguibles; el arreglo iba aguas arriba.
+
+## El estándar, y por qué la salida no fue agregar estructura
+
+En modelado de transporte el origen **no es un atributo del viaje**: es el rol de una parada. EDI 204
+define N segmentos `S5` con código de motivo (`CL`/`PL` carga, `CU`/`PU` descarga) y multi-pickup es
+caso base; EDI 214 reporta estado por parada; project44 y FourKites exponen `stops[{type, sequence,
+location}]`. **`app.trip_stops` ya es esa forma** —tiene `stop_type` y `stop_order`—, así que el
+modelo correcto ya estaba en la base. Lo que fallaba era el pipeline, que seguía sintetizando UNA
+fila desde un escalar.
+
+De paso: el test `assert_trip_stops_at_most_one_origin_per_trip` **ya había llegado a esta misma
+conclusión el 2026-08-19**, citando project44 y Oracle OTM y nombrando los mismos 4 viajes. Y dejaba
+anotado lo que faltaba: *"que el modelo aplane los tramos a uno solo… necesita su propia
+verificación cuando se defina cómo se modelan los tramos"*. Esta ronda la definió y la escribió.
+
+## Lo que se cambió
+
+- **`stg_sodimac_trips`** — `origin_locations`: todos los orígenes distintos, ordenados por nombre.
+  El escalar `origin_location_name` se conserva y pasa a ser **derivado** (el primero), con lo que
+  deja de cambiar entre corridas.
+- **`int_tms_trips_conformed`** — las otras tres fuentes derivan `origin_locations` de su escalar
+  **sin tocar esos modelos congelados**: el conformado ya sabía completar columnas por fuente. Va al
+  final del contrato porque el UNION ALL alinea por posición (las 4 quedan en 51 columnas).
+- **`app/trip_stops`** — `origin_stops` explota el arreglo: una fila por origen, `stop_order`
+  0..k-1. **Con un solo origen es un no-op exacto.**
+- **`assert_trip_stops_no_aplana_los_origenes`** (test nuevo) — conservación entre capas contiguas:
+  tantas filas ORIGIN como orígenes declara el conformado. Compara con `<` y no con `!=` porque las
+  filas de MÁS son el pasivo histórico que el proyecto decidió no borrar.
+- **`app.v_driver_daily_trip_legs`** (migración, YA APLICADA) — el LATERAL desempataba por
+  `updated_at DESC`, que ante dos orígenes reales elige al azar. Ahora ordena por `stop_order`
+  primero: la salida es el primer origen.
+
+## Lo que NO hubo que tocar, y es la mitad de la noticia
+
+- **El frontend, nada.** `TripDetailView` ya mapea TODAS las paradas con insignia ORIGEN por fila.
+  Y el riesgo que el plan anotaba —*"editar la ruta a mano borraría el segundo origen"*— **no
+  existe**: `RouteEditor` sólo vive en `TripAssignDialog`, que es un diálogo de CREACIÓN.
+- **El backend, nada.** El dedupe es por `(trip_id, stop_type, stop_order)` —con el tipo adentro— y
+  `_stop_display_key` ya pone los orígenes primero con `stop_order` de desempate.
+- **El `post_hook`**, nada: su match ya estaba expresado por `stop_order = 0`. Sólo se corrigió el
+  comentario que lo justificaba con "siempre existe un solo origen".
+
+## Verificado contra la base, simulando el modelo nuevo desde bronze
+
+Sobre los 68 orígenes de Sodimac: **67 `stop_id` se conservan**, 4 filas nuevas (los segundos
+orígenes que faltaban), 6 cambian de `stop_order` de 0 a 1, y 1 queda huérfana. Ningún `stop_id`
+cambia — la continuidad del id es invariante dura del proyecto.
+
+La migración aplicada se verificó en caliente: **1.681 filas sobre 1.681 viajes**, o sea una fila
+por viaje; el fan-out que la migración de agosto vino a evitar no vuelve.
+
+**La huérfana (viaje 830021) NO se borra**: la decisión del proyecto es que esas filas son historial,
+no basura. El cambio corta que se sigan generando.
+
+## SIGUIENTE PASO EXACTO
+
+1. **Correr en la UI de Mage**, pipeline `batch_tms_monitor_trips`, en orden:
+   `stg_sodimac_trips` → `int_tms_trips_conformed` → `app_trips_update`. Leen del snapshot que ya
+   está: **no hace falta re-scrapear, y NO va `--full-refresh`** (reintroduce el huso horario viejo
+   en los 18 viajes Sodimac corregidos y borra ediciones manuales de Operaciones).
+2. **Ojo con el incremental**: `app/trip_stops` filtra por `t.updated_at`, así que sólo reprocesa
+   viajes cuyo `app.trips.updated_at` avanzó. Si los 4 segundos orígenes que faltan no aparecen
+   —son viajes de julio/agosto ya cerrados—, hay que forzar esos `trip_id` puntualmente.
+3. **Verificación de aceptación**, una sola consulta: los 7 viajes multiorigen
+   (804151, 807366, 815726, 833795, 841584, 841612, 843964) deben quedar con **2 filas ORIGIN,
+   `stop_order` 0 y 1**. Y después mirarlo: el detalle del viaje 833795 tiene que mostrar las dos
+   bodegas — La Farfana 256 y Farfana 4 (257)—, que es exactamente lo que Pablo describió.
+4. **El orden de los dos orígenes es ESTABLE, no es el itinerario.** Las patas del portal traen sólo
+   ORIGEN y DESTINO; HORA y FECHA son del viaje. Sodimac no reporta en qué orden se cargó, y
+   afirmarlo sería inventarlo.
+
+---
+
 ### 2026-08-23 — Ronda 141: la planilla de certificación, y los dos ejes que no se colapsan
 
 Rama `feat/certificacion-fechas-por-planilla`, mergeada a `dev`. Nace de cruzar la reunión
