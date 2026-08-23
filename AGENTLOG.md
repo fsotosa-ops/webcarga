@@ -28,18 +28,39 @@ definiciones se vuelva"*. Esta sección es el estado de esa pausa: **no hay trab
 | Compromiso | Estado | Dónde se ve |
 |---|---|---|
 | Cargar fechas sin subir el archivo | **En dev, click-through hecho** | Certificación → "Actualizar por planilla" |
-| Que un viaje con dos orígenes muestre los dos | **Escrito y sincronizado a Mage** | Falta UNA corrida del usuario |
+| Que un viaje con dos orígenes muestre los dos | **Corrido y verificado en la base** | 7 viajes con sus 2 orígenes, 833795 incluido |
 
 Y encima de eso, cuatro PRs que la reunión destrabó y no estaban comprometidos: el criterio único de
 "pendiente", los alias del clasificador, el vínculo manual sin empresa y el bloqueo del Cierre.
 
-## Lo único que queda del lado del usuario
+## La corrida de Mage: verificada contra la base, no contra el log
 
-**Correr `app_trips_tests` en la UI de Mage.** No es un pendiente de código: `run_block` devuelve
-500 para `batch_tms_monitor_trips` desde hace 4 rondas y no se reintenta por API. Si
-`assert_trip_stops_no_aplana_los_origenes` volviera a fallar, lo que hace falta es **la segunda
-línea del error, la que nombra el nodo** — el log de `mage-agent` se trunca a ~8.000 caracteres y
-sin esa línea se itera a ciegas.
+El usuario corrió `app_trips_tests` y quedó cerrado. **Lo verifiqué contra los datos**, que dicen
+más que el log truncado:
+
+- **7 viajes de Sodimac tienen ahora dos filas ORIGIN, con `stop_order` 0 y 1**, todas escritas en
+  la corrida del 23/08 18:35 UTC. Entre ellos **833795, el viaje que citó Pablo**: ahí están sus dos
+  orígenes, `Bod La Farfana 4 (257)` y `LA FARFANA CDMC (256)`, que es exactamente lo que él
+  describió — *"cargó en el 256, también cargó en el 257"*.
+- **El no-op se sostuvo**: qanalytics sigue con **exactamente 1 fila ORIGIN en sus 1.674 viajes** y
+  Wingsuite en sus 8. Cero viajes con `stop_order` repetido fuera del pasivo conocido.
+- **El test devuelve 0 filas** corriendo su propio SQL contra la base.
+- **El pasivo histórico es uno solo**: el viaje 830021, con dos filas ORIGIN compartiendo
+  `stop_order = 0`, ambas del 01/08 y nunca reprocesadas. Es el huérfano que la Ronda 142 ya había
+  contado (67 de 68 `stop_id` conservados) y por el que el test compara con `<` y no con `!=`.
+- **`v_driver_daily_trip_legs` no cambió de forma**: 1.681 filas para 1.681 viajes, fan-out cero.
+  Sodimac **no aparece en esa vista** —sus viajes no traen conductor—, así que el riesgo de
+  *"more than one row returned by a subquery"* nunca llegó a existir; el orden por `stop_order` que
+  puso la migración queda igual como la definición correcta para cuando alguno traiga conductor.
+
+**El residuo que la Ronda 142 dejó anotado, ahora con su causa.** Para las tres fuentes que no son
+Sodimac, el conformado deriva `origin_locations` envolviendo el escalar **sin filtrar nulos**: dos
+viajes de qanalytics sin origen quedan con `[null]`, o sea declarando un origen que no existe. No
+tiene efecto hoy —no hay fila ORIGIN que crear, y el test los excluye por su INNER JOIN—, pero
+alguien que cuente orígenes con `jsonb_array_length` contaría 1 donde hay 0. Son **2 viajes de
+1.692**, y uno de ellos tiene `source_system_trip_id = 'nan'`, basura de junio. El arreglo es una
+línea en `int_tms_trips_conformed` y **cuesta una corrida de Mage**, así que va con el próximo
+cambio del modelo, no solo.
 
 ## Un error mío, y lo que lo hizo posible
 
@@ -360,13 +381,14 @@ devuelve el encabezado a un `div` mata su test, y cae en el render del grupo.
 
 ## SIGUIENTE PASO EXACTO
 
-1. **Correr `app_trips_tests` en Mage** para confirmar que compila. Si vuelve a
-   fallar, hace falta la SEGUNDA línea del error —la que nombra el nodo—; sin
-   eso no se sigue.
+1. ~~Correr `app_trips_tests` en Mage~~ — **HECHO, y el test devuelve 0 filas**.
+   Verificado corriendo su propio SQL contra la base, no leyendo el log. Ver la
+   Ronda 145.
 2. **Los 2 viajes de qanalytics con CERO filas ORIGIN** (uno con
    `source_system_trip_id = 'nan'`). Es otro hueco —"este viaje no tiene origen",
    no "se aplanaron los tramos"— que en teoría cubre la escotilla OR 1 y sigue
-   sin resolverse. No se mezcló acá a propósito.
+   sin resolverse. No se mezcló acá a propósito. **La causa quedó identificada en
+   la Ronda 145**: el conformado les declara `origin_locations = [null]`.
 3. **La regla de cámara de frío**: `MANTENCION_FRIO` se exige a los 9 subtipos
    que no son Tractocamión. Se corrige **desde la UI, sin código**.
 4. **Seguros de tres pólizas**: la reunión destrabó HU-20/HU-06 y las amplió.
