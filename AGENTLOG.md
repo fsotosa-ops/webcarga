@@ -17,6 +17,98 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-23 (cont.) — Ronda 144: los pendientes de Pablo, repartidos en issues y PRs
+
+El criterio para repartirlos: **si la decisión ya está tomada y sólo falta construir, es un PR;
+si falta una definición de negocio o de operaciones, es un issue** — porque un issue es donde una
+pregunta espera sin bloquear una rama.
+
+## Issues abiertos, cada uno con su medición
+
+- **#8 · Seguros son tres pólizas.** RC de la empresa, vehicular del tracto (500-1.000 UF) y de
+  carga de la rampla (2.000-3.000 UF, una cubre N patentes). La reunión destrabó HU-20 y HU-06 y
+  de paso amplió el alcance de una póliza a tres. El modelo YA tiene `policy_assets` (póliza ↔ N
+  patentes) y `insurance_installments.payment_status`; le FALTA tipo de póliza —`coverage_types`
+  es un catálogo **sin seed versionado**— y monto en UF, que hoy sólo existe por cuota.
+- **#9 · Forzar la asignación en el Cierre.** Lo cierra el PR de abajo.
+- **#10 · Gobernanza de datos sensibles.** Se abrió cuando Pablo pidió banco y cuenta como campos.
+  Se difirió de común acuerdo: no es un campo más. Se cruza con el issue #1 (el rol `writer`).
+- **#11 · Dos definiciones chicas que faltan de negocio.** (a) El límite de peso por archivo **no
+  existe** —`_check_upload_size` sólo cuenta archivos, nunca bytes— y a Fabián se le dijo que sí.
+  (b) ¿Existe "rechazar un documento"? De eso depende si `REJECTED` entra en la definición de
+  pendiente o se retira de las capas.
+
+Y los de Sodimac (#5, #6) actualizados **sin cerrarlos**, con el motivo escrito: #6 porque el
+multidestino sigue igual, y #5 porque después del 20/08 hay 6 viajes en 17 versiones — muy poca
+muestra para declarar resuelto el dedupe.
+
+## PR 1 · Un solo criterio de "pendiente" (y un trinquete)
+
+La Ronda 129 unificó las TRES lecturas de Certificación. Afuera quedaban **cinco copias a mano** en
+`carriers.py` (×3) y `trips.py` (×2), y nadie lo notó porque una copia no rompe nada: contesta
+distinto. Diferían en **dos direcciones**: `REJECTED` (las copias sí, el predicado no) y "por
+vencer" (el predicado sí, las copias no).
+
+Medido: 0 registros `REJECTED` y ningún código los escribe, así que esa mitad era latente. **La viva
+era la otra**: el vehículo HKXW55 pasa de 3 a 5 obligatorios pendientes — dos documentos que vencen
+en 25 días que ya aparecían en Certificación y no en la ficha ni en el Diario.
+
+La definición se mudó a `services/vencimientos.py`, que ya era dueño de las otras dos mitades de la
+regla y porque **un router no debe importar de otro router**. El ÁMBITO no se unificó a propósito:
+que la ficha cuente sólo `LEGAL_MANDATORY` y Certificación cuente todos los niveles son dos
+preguntas distintas. El trinquete impide la sexta copia y **descarta comentarios** — un comentario
+que EXPLICA el criterio no es una copia, y sin eso daba falso positivo.
+
+## PR 2 · Un documento nuevo no puede nacer invisible
+
+`create_requirement` no sembraba alias, así que desde la Ronda 140 **cada alta nacía invisible para
+el clasificador, en silencio**. Ahora se siembra en la misma transacción, con el **nombre**
+normalizado y no el código: el nombre es lo que la gente escribe en el archivo.
+
+**Un test afirmaba el defecto como un hecho** (`== []`, "por eso nace invisible") — documentaba el
+bug en vez de proteger algo. Se reescribió para fijar el arreglo.
+
+Los alias viajan **dentro del catálogo** con un LEFT JOIN, no por fila: 37 documentos serían 37
+consultas para dibujar una tabla. La celda distingue **tres** estados: "—" (el dato no llegó
+todavía), "No se reconoce en ningún archivo" y los chips.
+
+## PR 3 · El vínculo manual deja de quedarse sin empresa
+
+El reclamo sobre Edgar, y **la causa no era la que parecía**. Nada se revertía: `resolve_trip_fleet()`
+excluye los vínculos manuales en dos lugares para proteger la elección humana, y eso está bien. El
+efecto colateral es que al vincular SOLO al conductor, el `carrier_id` nacía NULL y **ese NULL
+quedaba congelado**: ninguna corrida vuelve a mirar un vínculo manual.
+
+Medido: 25 vínculos manuales, 14 sin empresa, **los 14 con un conductor que sí la tiene**, y cero
+casos con empresa distinta. El arreglo no relaja las guardas — sólo toca filas con `carrier_id IS
+NULL`. **Una inferencia llena un silencio, nunca contradice.**
+
+Verificado en producción: **14 → 0**, y los 11 con empresa elegida a mano **intactos**, probado con
+la marca de tiempo (14 con `updated_at` reciente, 11 con la suya vieja, la más antigua del 18/07).
+El arreglo actúa **de inmediato**: el UPDATE de `app.trips` del propio endpoint dispara el trigger.
+
+## PR 4 · El Cierre obliga a resolver la flota fuera del directorio
+
+El pre-cierre detectaba los cinco casos desde el 18/08 **y no bloqueaba nada**. Detectar sin
+bloquear no cambia ninguna conducta.
+
+**Se midió antes de decidir qué bloquea**, porque bloquear sobre 50 pendientes congela la operación:
+sobre 5 días reales, **entre 2 y 4 casos por día**. `EMPRESA_NO_RECONOCIDA` da 0 todos los días — lo
+que dispara es patente y conductor sin registrar, la escena exacta que describió Pablo.
+`SIN_TIPO_OPERACION` queda AFUERA: ahí el vehículo sí está en el directorio.
+
+La válvula es **la que ya existía** (admin + comentario + auditado), la que el propio refinamiento
+diseñó contra el "deadlock operativo". `override_count` ahora cuenta todo lo forzado.
+
+Dos decisiones: los dos motivos van **separados** en la respuesta —fundirlos daría un número que no
+dice qué hacer—, y la auditoría del forzado de flota va **contra el usuario**, porque lo que falta
+es justamente la entidad (`audit_log.entity_id` es NOT NULL y no hay uuid al que atribuirlo).
+
+**El frontend no necesitó cambios**: el guard del 409 sólo mira el código. Es la tercera vez en esta
+tanda que la UI ya estaba lista.
+
+---
+
 ### 2026-08-23 (cont.) — Ronda 142: Sodimac multiorigen, y la premisa del plan que era falsa
 
 El segundo compromiso del 21/08. **Escrito y sincronizado a Mage; falta que alguien corra la
