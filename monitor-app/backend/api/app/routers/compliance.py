@@ -12,8 +12,14 @@ setea.
 import csv
 import io
 import json
+import unicodedata
+from collections import Counter
 from datetime import date, datetime
 from typing import Literal, Optional
+
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
+from openpyxl.utils import get_column_letter
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -34,13 +40,16 @@ from ..schemas.compliance import (
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
-from ..services.plantilla_vencimientos import (
+from ..services.plantilla_certificacion import (
     COLUMNAS,
-    COLUMNA_EDITABLE,
     COLUMNA_LLAVE,
+    COLUMNA_TENENCIA,
+    COLUMNA_VENCIMIENTO,
     FUENTE_AUDITORIA,
     SQL_APLICAR,
     SQL_AUDITAR,
+    TENENCIA_NO,
+    TENENCIA_SI,
     sql_filas_plantilla,
 )
 from ..services.vencimientos import por_vencer_predicate, vencido_predicate
@@ -772,46 +781,137 @@ async def get_compliance_summary(
     }
 
 
-# ── La planilla de vencimientos ──────────────────────────────────────────────
+# ── La planilla de certificación ─────────────────────────────────────────────
 #
 # OJO CON EL ORDEN: estas rutas van ANTES de `GET /{record_id}`. FastAPI
-# resuelve por orden de declaracion, asi que declaradas despues, un GET a
-# /date-template entraria por /{record_id} y contestaria "Registro de
+# resuelve por orden de declaración, así que declaradas después, un GET a
+# /date-template entraría por /{record_id} y contestaría "Registro de
 # cumplimiento no encontrado" — un 404 que no dice nada de la ruta que falta.
 
-_MAX_FILAS_PLANILLA = 10_000
+_MAX_FILAS_PLANILLA = 20_000
 
 # Los tres formatos que escribe una persona en Chile. `dd-mm-aaaa` es el que
-# baja la planilla; los otros dos entran porque Excel reescribe la columna
-# segun la configuracion regional del computador que la abrio, y rechazar por
-# eso seria culpar al usuario de una decision de Excel.
+# baja la planilla; los otros dos entran porque Excel reescribe la columna según
+# la configuración regional del computador que la abrió, y rechazar por eso
+# sería culpar al usuario de una decisión de Excel.
 _FORMATOS_DE_FECHA = ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d")
 
 
-def _parsear_fecha(crudo: str) -> Optional[date]:
+def _normalizar(valor: str) -> str:
+    """Minúsculas y sin tildes. La planilla vuelve de Excel, de Google Sheets y
+    de quien la escriba a mano: rechazar un "SI" por la tilde sería culpar a la
+    persona del teclado."""
+    sin_tildes = unicodedata.normalize("NFKD", valor.strip().lower())
+    return "".join(c for c in sin_tildes if not unicodedata.combining(c))
+
+
+def _parsear_fecha(crudo) -> Optional[date]:
+    # openpyxl devuelve datetime cuando la celda tiene formato de fecha, así que
+    # el valor no siempre llega como texto.
+    if isinstance(crudo, datetime):
+        return crudo.date()
+    if isinstance(crudo, date):
+        return crudo
     for formato in _FORMATOS_DE_FECHA:
         try:
-            return datetime.strptime(crudo, formato).date()
+            return datetime.strptime(str(crudo).strip(), formato).date()
         except ValueError:
             continue
     return None
 
 
-def _planilla_a_csv(filas: list[dict]) -> bytes:
-    """El MISMO modulo escribe la planilla y la lee. Esa es la condicion para
+# Un tercer resultado además de sí/no/vacío: "escribió algo que no se
+# entiende". Con None querría decir "vacío" y la fila se ignoraría en
+# silencio en vez de avisarle a la persona que su "Sii" no se leyó.
+NO_SE_ENTIENDE = object()
+
+
+def _parsear_tenencia(crudo: str):
+    valor = _normalizar(crudo)
+    if not valor:
+        return None
+    if valor in TENENCIA_SI:
+        return True
+    if valor in TENENCIA_NO:
+        return False
+    return NO_SE_ENTIENDE
+
+
+def _planilla_a_xlsx(filas: list[dict]) -> bytes:
+    """El MISMO módulo escribe la planilla y la lee. Esa es la condición para
     que el ida y vuelta cierre: con el formato decidido en el frontend y el
-    parser aca, el dia que uno de los dos cambie el separador o el quoting, el
-    otro se entera con una fila corrupta y sin error."""
-    buffer = io.StringIO()
-    escritor = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
-    escritor.writerow([c["csv_key"] for c in COLUMNAS])
-    for fila in filas:
-        escritor.writerow([fila[c["csv_key"]] for c in COLUMNAS])
-    # utf-8-sig, no utf-8: sin BOM, Excel es-CL abre "Revisión Técnica" con las
-    # tildes rotas y la persona devuelve un archivo con los nombres ya
-    # corrompidos. Es el mismo motivo por el que el resto del modulo exporta
-    # con BOM.
-    return buffer.getvalue().encode("utf-8-sig")
+    parser acá, el día que uno de los dos cambie el separador o el quoting, el
+    otro se entera con una fila corrupta y sin error.
+
+    XLSX y no CSV porque Excel lo abre sin diálogo de importación, sin romper
+    las tildes y sin reescribir la columna de fechas según la configuración
+    regional. Las columnas de contexto van BLOQUEADAS: el `id_registro` es la
+    llave que devuelve cada fila a su lugar, y una llave editable por accidente
+    es una fila que se aplica al documento equivocado."""
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Certificación"
+
+    encabezado = Font(bold=True, color="FFFFFF")
+    fondo_encabezado = PatternFill("solid", fgColor="141D2B")   # el azul del sidebar
+    fondo_editable = PatternFill("solid", fgColor="FFF8E1")     # lo que se completa
+    borde = Side(style="thin", color="D0D3DD")
+
+    for columna, definicion in enumerate(COLUMNAS, start=1):
+        celda = hoja.cell(row=1, column=columna, value=definicion["label"])
+        celda.font, celda.fill = encabezado, fondo_encabezado
+        celda.alignment = Alignment(horizontal="center", vertical="center")
+        celda.protection = Protection(locked=True)
+        hoja.column_dimensions[get_column_letter(columna)].width = definicion["ancho"]
+
+    for numero, fila in enumerate(filas, start=2):
+        for columna, definicion in enumerate(COLUMNAS, start=1):
+            celda = hoja.cell(row=numero, column=columna, value=fila[definicion["csv_key"]])
+            celda.protection = Protection(locked=not definicion["editable"])
+            celda.border = Border(bottom=borde)
+            if definicion["editable"]:
+                celda.fill = fondo_editable
+
+    hoja.freeze_panes = "A2"
+    hoja.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNAS))}{len(filas) + 1}"
+    # Sin contraseña a propósito: no es un control de seguridad, es una baranda
+    # para que nadie edite la llave sin querer. Quien necesite desbloquearla,
+    # puede.
+    hoja.protection.sheet = True
+    hoja.protection.autoFilter = False
+    hoja.protection.sort = False
+
+    memoria = io.BytesIO()
+    libro.save(memoria)
+    return memoria.getvalue()
+
+
+def _leer_planilla(nombre: str, crudo: bytes) -> list[dict]:
+    """Acepta XLSX y CSV. Baja XLSX porque es lo cómodo, pero alguien la va a
+    pasar por Google Sheets y a devolverla como CSV, y rechazarla ahí sería
+    hacerle perder el trabajo por el formato."""
+    if nombre.lower().endswith((".xlsx", ".xlsm")):
+        try:
+            libro = load_workbook(io.BytesIO(crudo), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(422, "No se pudo abrir el archivo de Excel.")
+        hoja = libro.active
+        renglones = hoja.iter_rows(values_only=True)
+        cabecera = [str(c).strip() if c is not None else "" for c in next(renglones, [])]
+        etiqueta_a_clave = {c["label"]: c["csv_key"] for c in COLUMNAS}
+        claves = [etiqueta_a_clave.get(t, t) for t in cabecera]
+        return [dict(zip(claves, valores)) for valores in renglones]
+
+    try:
+        texto = crudo.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # El archivo volvió en la codificación de Excel para Windows. Es un caso
+        # normal, no un error del que la persona tenga la culpa.
+        try:
+            texto = crudo.decode("latin-1")
+        except UnicodeDecodeError:
+            raise HTTPException(422, "No se pudo leer el archivo. Guárdalo como XLSX o CSV UTF-8.")
+    return list(csv.DictReader(io.StringIO(texto), delimiter=";"))
 
 
 async def _filas_de_planilla(pool, alcance: str) -> list[dict]:
@@ -820,143 +920,174 @@ async def _filas_de_planilla(pool, alcance: str) -> list[dict]:
 
 
 @router.get("/date-template/resumen")
-async def resumen_de_planilla_de_vencimientos(
+async def resumen_de_planilla(
     alcance: Literal["activas", "todas"] = Query("activas"),
     pool=Depends(get_pool), _=Depends(get_current_user),
 ):
-    """Que trae la planilla ANTES de bajarla.
+    """Qué trae la planilla ANTES de bajarla.
 
-    Existe para que el boton no mienta. La exportacion que habia pedia 200
-    filas sobre 5.026 pendientes y bajaba el 4% sin decirlo — Fabian lo vio en
-    vivo en la reunion del 21/08: *"aqui no te bajo todo. Te bajo poquito."*
+    Existe para que el botón no mienta. La exportación que había pedía 200 filas
+    sobre 5.026 pendientes y bajaba el 4% sin decirlo — Fabián lo vio en vivo en
+    la reunión del 21/08: *"aquí no te bajó todo. Te bajó poquito."*
     """
     filas = await _filas_de_planilla(pool, alcance)
     empresas = {f["empresa"] for f in filas if f["empresa"]}
+    por_entidad = Counter(f["entidad"] for f in filas)
     return {
-        "alcance": alcance,
-        "filas": len(filas),
+        "alcance":  alcance,
+        "filas":    len(filas),
         "empresas": len(empresas),
-        "con_fecha_cargada": sum(1 for f in filas if f[COLUMNA_EDITABLE]),
+        # Los dos ejes, para que la pantalla pueda decir que esto no es sólo de
+        # fechas: hoy son 1.326 con vencimiento y 1.044 de sola tenencia, y esas
+        # 1.044 son TODAS obligatorias.
+        "con_vencimiento": sum(1 for f in filas if f["lleva_vencimiento"]),
+        "solo_tenencia":   sum(1 for f in filas if not f["lleva_vencimiento"]),
+        "por_entidad": dict(por_entidad),
     }
 
 
 @router.get("/date-template")
-async def bajar_planilla_de_vencimientos(
+async def bajar_planilla(
     alcance: Literal["activas", "todas"] = Query(
         "activas",
         description="'activas' son las empresas operativas, que es lo que se "
-                    "pidio cargar. 'todas' suma el historico y las filas sin "
-                    "empresa.",
+                    "pidió cargar. 'todas' suma el histórico y las filas sin empresa.",
     ),
     pool=Depends(get_pool), _=Depends(get_current_user),
 ):
-    contenido = _planilla_a_csv(await _filas_de_planilla(pool, alcance))
+    contenido = _planilla_a_xlsx(await _filas_de_planilla(pool, alcance))
     return Response(
         content=contenido,
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="vencimientos.csv"'},
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="certificacion.xlsx"'},
     )
 
 
 @router.post("/date-template")
-async def cargar_planilla_de_vencimientos(
+async def cargar_planilla(
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
     pool=Depends(get_pool), user=Depends(require_editor),
 ):
-    """Devuelve las fechas de la planilla a su lugar.
+    """Devuelve a su lugar lo que la planilla declara.
 
     `dry_run=true` (el default) no escribe nada y contesta exactamente lo que
-    pasaria. Guardar y aplicar son dos actos — el mismo gesto que ya usa la
-    configuracion de documentos, y por el mismo motivo: sin esa separacion,
-    un archivo mal armado escribe sobre 1.326 registros antes de que nadie vea
-    un numero.
+    pasaría. Guardar y aplicar son dos actos — el mismo gesto que ya usa la
+    configuración de documentos, y por el mismo motivo: sin esa separación, un
+    archivo mal armado escribe sobre miles de registros antes de que nadie vea
+    un número.
 
-    UNA FILA VACIA NO SE TOCA. Es lo que permite bajar la planilla entera y
-    llenar solo lo que se sabe. Como consecuencia deliberada, BORRAR una fecha
-    no se puede desde aca: vaciar la celda es "no se", no "no vence". Para
-    quitar una fecha esta la celda de la pantalla.
+    UNA FILA VACÍA NO SE TOCA, y una planilla PARCIAL es válida: se puede subir
+    sólo las filas de conductores y el resto queda intacto. Como consecuencia
+    deliberada, vaciar una celda no borra lo que había — vaciar es "no sé", no
+    "no vence".
     """
     crudo = await file.read()
-    try:
-        texto = crudo.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        # El archivo volvio en la codificacion de Excel para Windows. Es un
-        # caso normal, no un error del que la persona tenga la culpa.
-        try:
-            texto = crudo.decode("latin-1")
-        except UnicodeDecodeError:
-            raise HTTPException(422, "No se pudo leer el archivo. Guárdalo como CSV UTF-8.")
+    filas = _leer_planilla(file.filename or "", crudo)
+    if len(filas) > _MAX_FILAS_PLANILLA:
+        raise HTTPException(422, f"Máximo {_MAX_FILAS_PLANILLA} filas por planilla")
 
-    lector = csv.DictReader(io.StringIO(texto), delimiter=";")
-    encabezados = set(lector.fieldnames or [])
-    faltantes = {COLUMNA_LLAVE, COLUMNA_EDITABLE} - encabezados
+    encabezados = set(filas[0].keys()) if filas else set()
+    faltantes = {COLUMNA_LLAVE, COLUMNA_TENENCIA, COLUMNA_VENCIMIENTO} - encabezados
     if faltantes:
         raise HTTPException(
             422,
             f"Al archivo le faltan columnas: {', '.join(sorted(faltantes))}. "
-            "Usa la planilla que baja el boton de descarga.",
+            "Usa la planilla que baja el botón de descarga.",
         )
 
     errores: list[dict] = []
     vacias = 0
-    pedidas: dict[str, date] = {}
-    for numero, fila in enumerate(lector, start=2):  # 1 es el encabezado
-        if numero - 1 > _MAX_FILAS_PLANILLA:
-            raise HTTPException(422, f"Maximo {_MAX_FILAS_PLANILLA} filas por planilla")
-        registro_id = (fila.get(COLUMNA_LLAVE) or "").strip()
-        crudo_fecha = (fila.get(COLUMNA_EDITABLE) or "").strip()
-        if not registro_id:
-            if crudo_fecha:
-                errores.append({"fila": numero, "error": "Tiene fecha pero no tiene registro"})
-            continue
-        if not crudo_fecha:
+    pedidas: dict[str, dict] = {}
+    for numero, fila in enumerate(filas, start=2):  # 1 es el encabezado
+        registro_id = str(fila.get(COLUMNA_LLAVE) or "").strip()
+        crudo_tenencia = str(fila.get(COLUMNA_TENENCIA) or "").strip()
+        crudo_fecha = fila.get(COLUMNA_VENCIMIENTO)
+        crudo_fecha = "" if crudo_fecha is None else str(crudo_fecha).strip()
+
+        if not crudo_tenencia and not crudo_fecha:
             vacias += 1
             continue
-        fecha = _parsear_fecha(crudo_fecha)
-        if fecha is None:
-            errores.append({"fila": numero, "error": f"Fecha no reconocida: \"{crudo_fecha}\""})
+        if not registro_id:
+            errores.append({"fila": numero, "error": "La fila tiene datos pero no tiene registro"})
             continue
-        if registro_id in pedidas and pedidas[registro_id] != fecha:
-            errores.append({"fila": numero, "error": "El mismo registro aparece dos veces con fechas distintas"})
-            continue
-        pedidas[registro_id] = fecha
 
-    # Una sola vuelta a la base para saber que existe, que ya vale eso, y que
-    # documento no admite fecha. Sin esto la vista previa contaria como
+        tenencia = _parsear_tenencia(crudo_tenencia)
+        if tenencia is NO_SE_ENTIENDE:
+            errores.append({"fila": numero, "error": f'No se entiende "{crudo_tenencia}" en Documento recibido. Escribe Sí o No.'})
+            continue
+        fecha = _parsear_fecha(crudo_fecha) if crudo_fecha else None
+        if crudo_fecha and fecha is None:
+            errores.append({"fila": numero, "error": f'Fecha no reconocida: "{crudo_fecha}"'})
+            continue
+        if registro_id in pedidas and pedidas[registro_id] != {"tenencia": tenencia, "fecha": fecha}:
+            errores.append({"fila": numero, "error": "El mismo registro aparece dos veces con valores distintos"})
+            continue
+        pedidas[registro_id] = {"tenencia": tenencia, "fecha": fecha}
+
+    # Una sola vuelta a la base para saber qué existe, qué ya vale eso, y qué
+    # documento no admite fecha. Sin esto la vista previa contaría como
     # "cambian" filas que la base va a rechazar.
     actuales = await pool.fetch(
         """
-        SELECT cr.id::text AS registro_id, cr.entity_type, cr.entity_id::text,
-               cr.expiration_date, req.has_expiration, req.name AS documento
+        SELECT cr.id::text AS id_registro, cr.entity_type, cr.entity_id::text,
+               cr.status, cr.expiration_date, req.has_expiration, req.name AS tipo_documento
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.id = ANY($1::uuid[]) AND cr.is_current = true
         """,
         list(pedidas.keys()),
     ) if pedidas else []
-    por_id = {r["registro_id"]: r for r in actuales}
+    por_id = {r["id_registro"]: r for r in actuales}
 
-    cambian: list[tuple[str, date, object, str, str]] = []
+    cambios: list[dict] = []
     sin_cambios = 0
-    for registro_id, fecha in pedidas.items():
+    for registro_id, pedido in pedidas.items():
         actual = por_id.get(registro_id)
         if actual is None:
             errores.append({"fila": None, "registro_id": registro_id,
-                            "error": "Ese registro no existe o ya no esta vigente"})
+                            "error": "Ese registro no existe o ya no está vigente"})
             continue
-        if not actual["has_expiration"]:
+        if pedido["fecha"] is not None and not actual["has_expiration"]:
             errores.append({"fila": None, "registro_id": registro_id,
-                            "error": f"\"{actual['documento']}\" no lleva fecha de vencimiento"})
+                            "error": f'"{actual["tipo_documento"]}" no lleva fecha de vencimiento'})
             continue
-        if actual["expiration_date"] == fecha:
+
+        estado_nuevo = None
+        if pedido["tenencia"] is True:
+            estado_nuevo = "APPROVED_MANUAL"
+        elif pedido["tenencia"] is False:
+            estado_nuevo = "MISSING"
+
+        # Marcar recibido un documento que SÍ vence, sin declarar su fecha, es
+        # exactamente el defecto que dejó 14 documentos invisibles: quedan
+        # aprobados con expiration_date NULL y desaparecen de pendientes para
+        # siempre, aunque el papel real venza el mes que viene.
+        vence_final = pedido["fecha"] or actual["expiration_date"]
+        if estado_nuevo == "APPROVED_MANUAL" and actual["has_expiration"] and vence_final is None:
+            errores.append({"fila": None, "registro_id": registro_id,
+                            "error": f'"{actual["tipo_documento"]}" necesita su fecha de vencimiento para darse por recibido'})
+            continue
+
+        cambia_estado = estado_nuevo is not None and estado_nuevo != actual["status"]
+        cambia_fecha = pedido["fecha"] is not None and pedido["fecha"] != actual["expiration_date"]
+        if not cambia_estado and not cambia_fecha:
             sin_cambios += 1
             continue
-        cambian.append((registro_id, fecha, actual["expiration_date"],
-                        actual["entity_type"], actual["entity_id"]))
+        cambios.append({
+            "id": registro_id,
+            "estado": estado_nuevo if cambia_estado else None,
+            "fecha": pedido["fecha"] if cambia_fecha else None,
+            "estado_antes": actual["status"],
+            "fecha_antes": actual["expiration_date"],
+            "entity_type": actual["entity_type"],
+            "entity_id": actual["entity_id"],
+        })
 
     resumen = {
-        "cambian": len(cambian),
+        "cambian": len(cambios),
+        "recibidos": sum(1 for c in cambios if c["estado"] == "APPROVED_MANUAL"),
+        "fechas": sum(1 for c in cambios if c["fecha"] is not None),
         "sin_cambios": sin_cambios,
         "vacias": vacias,
         "errores": errores[:50],
@@ -967,30 +1098,43 @@ async def cargar_planilla_de_vencimientos(
         return resumen
 
     # Con errores no se escribe nada. Es la misma regla que la carga masiva de
-    # viajes ("no se importo nada"): una planilla a medio aplicar deja a la
-    # persona sin saber que quedo adentro.
+    # viajes ("no se importó nada"): una planilla a medio aplicar deja a la
+    # persona sin saber qué quedó adentro.
     if errores:
-        raise HTTPException(422, {"message": "La planilla tiene errores — no se aplico nada",
+        raise HTTPException(422, {"message": "La planilla tiene errores — no se aplicó nada",
                                   "errors": errores[:50]})
-    if not cambian:
+    if not cambios:
         return resumen
+
+    # Un renglón de auditoría por CAMPO cambiado, no por fila: una fila que
+    # mueve los dos ejes son dos hechos distintos.
+    aud_tipo, aud_id, aud_campo, aud_antes, aud_despues = [], [], [], [], []
+    for c in cambios:
+        for campo, antes, despues in (
+            ("status", c["estado_antes"], c["estado"]),
+            ("expiration_date", c["fecha_antes"], c["fecha"]),
+        ):
+            if despues is None:
+                continue
+            aud_tipo.append(c["entity_type"])
+            aud_id.append(c["entity_id"])
+            aud_campo.append(campo)
+            aud_antes.append(antes.isoformat() if hasattr(antes, "isoformat") else antes)
+            aud_despues.append(despues.isoformat() if hasattr(despues, "isoformat") else despues)
 
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.fetch(
                 SQL_APLICAR,
-                [c[0] for c in cambian],   # $1 ids
-                [c[1] for c in cambian],   # $2 fechas nuevas
-                user["sub"],               # $3 quien
+                [c["id"] for c in cambios],      # $1
+                [c["estado"] for c in cambios],  # $2
+                [c["fecha"] for c in cambios],   # $3
+                user["sub"],                     # $4
             )
             await conn.execute(
                 SQL_AUDITAR,
-                user["sub"],                                                     # $1
-                [c[3] for c in cambian],                                         # $2 entity_type
-                [c[4] for c in cambian],                                         # $3 entity_id
-                [c[2].isoformat() if c[2] else None for c in cambian],           # $4 antes
-                [c[1].isoformat() for c in cambian],                             # $5 despues
-                FUENTE_AUDITORIA,                                                # $6
+                user["sub"], aud_tipo, aud_id, aud_campo, aud_antes, aud_despues,
+                FUENTE_AUDITORIA,
             )
     resumen["aplicado"] = True
     return resumen

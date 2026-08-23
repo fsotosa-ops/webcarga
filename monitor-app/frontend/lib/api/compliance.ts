@@ -48,10 +48,10 @@ export const complianceApi = {
       method: 'PATCH', body: JSON.stringify(body),
     }),
 
-  /** La planilla de vencimientos. El CSV lo ESCRIBE el backend, que es el
+  /** La planilla de certificación. El XLSX lo ESCRIBE el backend, que es el
    *  mismo que después lo lee: con el formato decidido acá y el parser allá,
    *  el día que uno de los dos cambie el separador el otro se entera con una
-   *  fila corrupta y sin error. */
+   *  fila corrupta y sin error. Al volver acepta XLSX o CSV. */
   planillaResumen: (alcance: 'activas' | 'todas' = 'activas') =>
     apiFetch<ResumenDePlanilla>(
       `/api/v1/compliance-records/date-template/resumen?alcance=${alcance}`,

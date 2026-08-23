@@ -1606,26 +1606,53 @@ export type CandidatosConductorResponse = {
 }
 
 
-/** La planilla de vencimientos — lo que trae ANTES de bajarla.
+/** La planilla de certificación — lo que trae ANTES de bajarla.
  *
  *  Existe para que el botón no mienta: la exportación anterior pedía 200 filas
- *  sobre 5.026 pendientes y bajaba el 4% sin decirlo. */
+ *  sobre 5.026 pendientes y bajaba el 4% sin decirlo.
+ *
+ *  Los dos ejes viajan separados porque la planilla no es sólo de fechas: de
+ *  2.370 pendientes en empresas activas, 1.326 llevan vencimiento y 1.044 no,
+ *  y esos 1.044 son TODOS obligatorios. */
 export interface ResumenDePlanilla {
-  alcance:           'activas' | 'todas'
-  filas:             number
-  empresas:          number
-  con_fecha_cargada: number
+  alcance:         'activas' | 'todas'
+  filas:           number
+  empresas:        number
+  con_vencimiento: number
+  solo_tenencia:   number
+  por_entidad:     Partial<Record<'Empresa' | 'Conductor' | 'Vehículo', number>>
 }
 
 /** Lo que pasó (o pasaría, con `dry_run`) al devolver la planilla llena.
  *
  *  `vacias` no es un error: es lo que permite bajar la planilla entera y
- *  llenar sólo lo que se sabe. */
+ *  llenar sólo lo que se sabe. Una planilla PARCIAL también es válida. */
 export interface ResultadoDePlanilla {
   cambian:        number
+  /** De los que cambian, cuántos se dan por recibidos (el eje de la evidencia). */
+  recibidos:      number
+  /** De los que cambian, cuántos declaran vencimiento (el eje de la vigencia). */
+  fechas:         number
   sin_cambios:    number
   vacias:         number
   errores:        { fila: number | null; registro_id?: string; error: string }[]
   total_errores:  number
   aplicado:       boolean
+}
+
+
+/** El directorio de empresas: cuántas hay, cuántas operan, y con qué flota.
+ *
+ *  Es la tira de cifras que existía en el módulo de Empresas y se perdió al
+ *  mover la carga documental a Certificación. Pablo, 21/08: *"me falta ese
+ *  directorio que tenía yo antes […] de las trescientas, cincuenta activas y
+ *  doscientas cincuenta inactivas"*, más el conteo de tractos, equipos y
+ *  conductores debajo.
+ *
+ *  `flota` cuenta SÓLO empresas activas y asignaciones vigentes: el catálogo
+ *  entero incluiría vehículos de empresas dadas de baja hace un año, y ese
+ *  número no describe ninguna operación. */
+export interface Directorio {
+  empresas: { total: number; activas: number; inactivas: number; onboarding: number }
+  flota:    { tractos: number; ramplas: number; conductores: number }
 }

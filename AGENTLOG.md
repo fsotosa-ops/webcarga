@@ -17,6 +17,183 @@
 > de Configuración, el registro de revisión y el buscador, y el diseño del Cierre. Mismo criterio:
 > lo abierto ya estaba consolidado en PENDIENTES VIGENTES antes de mover nada.)
 
+### 2026-08-23 — Ronda 141: la planilla de certificación, y los dos ejes que no se colapsan
+
+Rama `feat/certificacion-fechas-por-planilla`, mergeada a `dev`. Nace de cruzar la reunión
+**Webcarga 2.0** (21/08) contra el AGENTLOG: de los dos compromisos que se tomaron para ese mismo
+día, **ninguno había salido**. Los commits posteriores a la reunión (14:20–23:29) fueron los huecos
+de Certificación, la Bandeja y la configuración de documentos; el 22/08 no tiene commits. Los dos
+pendientes son los que tenían a Webcarga esperando: la carga de fechas sin archivo (Fabián y Karen
+no podían simular una empresa) y el reproceso multiorigen de Sodimac (Pablo no podía probar el
+cierre). **Esta ronda cierra el primero. El segundo sigue abierto.**
+
+## LO QUE CORRIGIÓ EL USUARIO, Y POR QUÉ TENÍA RAZÓN
+
+La primera versión traía **sólo los documentos que vencen**. El usuario lo cortó: *"¿por qué sólo
+pusiste los que hay fechas? Hay casos que no tienen fecha pero son obligatorios, entonces ahí hay
+una regla de tenencia o no tenencia y eso es relevante."*
+
+Medido en las 39 empresas activas, sobre 2.370 pendientes: **1.326 llevan vencimiento y 1.044 no lo
+llevan — y esos 1.044 son TODOS `LEGAL_MANDATORY`**. Sin esa columna, la mitad del trabajo pendiente
+no tenía ninguna vía de carga. Y el reparto por nivel desmiente que esto sea cosa de empresas: de
+las 1.326 filas con vencimiento, **sólo 168 son de empresa — 767 son de vehículo y 391 de
+conductor**.
+
+**Los dos ejes, una columna cada uno.** Es el modelo que usan ISNetworld, Avetta, Veriforce,
+Fleetio y Samsara: **evidencia** (¿tenemos el papel?) y **vigencia** (¿está al día?) son estados
+independientes, y una fecha sin evidencia **nunca** cuenta como cumplido. Fleetio es el precedente
+literal: sus recordatorios de renovación existen sin documento adjunto.
+
+## Decisiones de arquitectura de esta ronda
+
+- **La llave es `id_registro`, no el RUT.** El identificador natural cambia por nivel —el vehículo
+  va por patente, no tiene RUT—, así que un match por identificador necesitaría tres reglas y
+  fallaría en los dos bordes medidos: los 5 registros del único conductor sin `tax_id` de los 87, y
+  las 88 filas que no resuelven a ninguna empresa. Baja **bloqueada** en el XLSX.
+- **Los nombres de columna son los del rubro** (`Record ID`, `Entity Type`, `Document Type`,
+  `Status`, `Expiration Date`), en español por la convención del proyecto. La tenencia NO se llamó
+  "en archivo": chocaría con el estado `ARCHIVED`, que significa lo contrario.
+- **LA ESCRITURA ES UNA SOLA SENTENCIA, y no es una optimización.**
+  `trg_refresh_view_on_compliance` refresca una vista materializada **por statement** sobre
+  `compliance_records`, y `record_manual_edit()` hace un SEGUNDO update sobre la misma tabla. De a
+  una, 2.370 filas son 4.740 refrescos. El marcado de `is_manual_override` viaja dentro del mismo
+  `UPDATE`; la auditoría va aparte, y es **por campo**: una fila que mueve los dos ejes son dos
+  hechos distintos.
+- **La ruta va declarada ANTES de `GET /{record_id}`.** Declarada después queda eclipsada y
+  `/date-template` contesta "registro no encontrado" — un 404 que no dice nada de la ruta que falta.
+  Tiene test.
+- **Se retiró la exportación anterior** en vez de dejar dos botones: pedía 200 filas sobre 5.026
+  pendientes (el 4%, sin decirlo) y sus columnas no identificaban la fila, así que lo que bajaba no
+  se podía volver a subir. Fabián lo vio en vivo: *"aquí no te bajó todo. Te bajó poquito."*
+
+## Un defecto que encontré antes de comitear, y hoy son 0 filas
+
+La planilla baja con las dos columnas **pre-llenadas**. La primera versión mapeaba el estado a sí/no
+con `status IN ('MISSING','REJECTED') → No, resto → Sí`. Con eso, **bajar la planilla y volver a
+subirla sin tocarla** convertía un `REJECTED` en faltante y un `EXPIRED` en recibido, en silencio.
+Hoy la base sólo tiene `MISSING` (5.027) y `APPROVED_MANUAL` (95), así que el impacto real es cero —
+se arregló igual, y con test, para que sigan siendo 0 problemas cuando aparezca la primera.
+
+Ahora sólo se pre-llena lo que la columna PUEDE expresar; el resto baja en blanco, que significa "no
+se toca" y es la verdad.
+
+**De paso quedó a la vista**: el predicado compartido de "pendiente" **no incluye `REJECTED`**, así
+que un documento rechazado sin fecha es invisible para toda la cola del módulo. Es preexistente y
+cambiarlo movería el embudo, el cajón y `/pending` a la vez — no se tocó.
+
+## La insignia: los dos ejes YA estaban dibujados
+
+El pedido era una insignia de "pendiente de cargar la documentación". Al mirar el código, el pill de
+estado y la celda de vencimiento **ya son dos elementos separados de la misma fila** — el modelo de
+dos ejes ya estaba en pantalla. Lo único que faltaba era que "Falta" dejara de significar dos cosas
+("no sé nada de este documento" y "sé cuándo vence, me falta el papel"), que es la **sexta** vez que
+un mensaje con dos causas aparece en este módulo. Ahora dice **"Falta el archivo"**, con el mismo
+gris: la urgencia la lleva la fecha, al lado. Inventar un color nuevo habría sido escribir una
+versión peor de algo ya resuelto.
+
+## El directorio que Pablo echaba de menos
+
+*"Me falta ese directorio que tenía yo antes […] de las trescientas, cincuenta activas y doscientas
+cincuenta inactivas."* Existía en el módulo de Empresas como tabs Activas/Inactivo/Onboarding con
+sus conteos, y se perdió al mover la carga documental a Certificación. Se repuso arriba del embudo:
+**248 empresas · 39 activas · 209 inactivas**, y **79 tractos · 37 ramplas · 79 conductores**.
+
+Va arriba del embudo y no adentro: el embudo contesta *qué hay que hacer*, esto *con qué contamos*.
+La flota cuenta **sólo empresas activas y asignaciones vigentes** — el catálogo entero diría "124
+tractos" incluyendo los de empresas dadas de baja hace un año, y ese número no describe ninguna
+operación. Una sola consulta con ocho subconsultas: ocho viajes a la base para dibujar una tira de
+cifras es lo que vuelve lenta una portada.
+
+## La descarga no funcionaba fuera de Chrome
+
+El usuario reportó que no le bajaba ni XLSX ni CSV. El enlace se creaba y se clickeaba **sin
+insertarlo en el DOM**, y la URL del blob se revocaba en el mismo instante. Chrome tolera las dos
+cosas; Firefox y Safari no hacen nada y la descarga se pierde **sin ningún error**. La exportación
+vieja tenía el mismo patrón.
+
+## Verificación
+
+Backend **926 tests** (18 nuevos, todos contra Postgres real con rollback y guardia de huella),
+frontend **1.296**, `tsc` limpio, `npm run build` OK.
+
+**Siete mutaciones, las siete detectadas**, verificando en cada una dónde había caído antes de leer
+el resultado: quitar `is_manual_override` del UPDATE masivo, volver a filtrar la planilla por
+`has_expiration` (rompe 8 tests de una), hacer que `dry_run` escriba, que una fila vacía borre la
+fecha, quitar la guarda de "recibido sin fecha", sacarle a la flota el filtro de empresa activa, y
+devolver el mapeo sí/no que convertía estados en silencio.
+
+**Click-through con Playwright contra dev** sobre la primera versión: se bajó la planilla real
+(1.326 filas), se llenó **una** fila, la vista previa dijo *"1 cambia · 1.313 en blanco · 12 ya
+tenían esa fecha"* —la aritmética cierra— y al aplicar el registro quedó con su fecha,
+`is_manual_override` en true, **`status` intacto en MISSING** y 1 renglón de auditoría. El conteo
+global subió 31 → 32: cambió exactamente una fila. **El dato de prueba se revirtió** y el conteo
+volvió a 31. Falta rehacer el click-through sobre esta versión.
+
+De paso, dos cosas que le dijimos a Fabián y no se sostienen: el límite de "siete, diez megas" por
+archivo **no existe** (`_check_upload_size` sólo cuenta archivos, nunca bytes), y la capacidad del
+bucket quedó sin verificar.
+
+## PENDIENTE ANOTADO: hay DOS definiciones de "pendiente", y difieren en dos direcciones
+
+Salió al escribir la planilla y **no se tocó a propósito** — cruza el Diario y la ficha de empresa,
+y no se mezclan refactors de módulos distintos en una rama de Certificación.
+
+Corrige una afirmación de esta misma ronda: *"el criterio ya estaba unificado desde la Ronda 129"*
+es **falso**. La R129 unificó las TRES lecturas de dentro de Certificación (`/pending`, el embudo y
+el cajón) en `pendiente_predicate()`. Afuera quedaron **5 copias escritas a mano**: `carriers.py`
+(×3, el `pending_mandatory` de la ficha) y `trips.py` (×2, el semáforo del Diario).
+
+| | `pendiente_predicate` (Certificación) | Las 5 copias (ficha, Diario) |
+|---|---|---|
+| `MISSING`, `EXPIRED`, vencido por fecha | sí | sí |
+| `REJECTED` | **no** | **sí** |
+| Por vencer (30 días) | **sí** | **no** |
+| Ámbito | todos los niveles | sólo `LEGAL_MANDATORY` |
+
+**Medido el 2026-08-23**: **0 registros `REJECTED`** y **ningún código lo escribe** (el único hit del
+grep es un CASE de presentación) → esa mitad es latente. Pero **2 documentos obligatorios están "por
+vencer"** → ésos aparecen pendientes en Certificación y **no** en la ficha ni en el Diario. La
+divergencia viva es la de "por vencer", no la de REJECTED.
+
+**Cómo abordarlo, en este orden:**
+
+1. **Separar el ámbito de la regla.** El filtro `LEGAL_MANDATORY` es una diferencia LEGÍTIMA —la
+   ficha pregunta "cuántos obligatorios están en problemas" y Certificación "qué entra a la cola"—
+   y no hay que unificarlo. Lo que sí es una sola regla es el vocabulario de estados y fechas.
+   `pendiente_predicate(alias)` ya tiene la forma correcta (fragmento parametrizado por alias), así
+   que las 5 copias pasan a llamarlo y agregan su propio `AND req.requirement_level =
+   'LEGAL_MANDATORY'`. **Esto solo arregla los 2 documentos.**
+2. **Recién después decidir `REJECTED`**, que con una sola definición es un cambio de una línea.
+   Es decisión de negocio: *¿existe "rechazar un documento" como gesto?* Hoy no, y hay una decisión
+   explícita del 2026-07-18 de que no hay revisión separada del negocio ("quien sube el archivo ya
+   lo revisó") — la misma que dejó muerto a `PENDING_REVIEW`. Si no existe, `REJECTED` es un
+   placeholder anterior a la taxonomía —mismo caso que los 5 valores de `AssetType` de los que sólo
+   existían 2— y corresponde RETIRARLO de las capas, no ampliarlo. Si Karen sí necesita rechazar
+   (documento ilegible, o que llega vencido), es un estado vivo, necesita su botón, y entra.
+3. **Un trinquete que impida la sexta copia**, con el idioma que el repo ya usa para el sistema
+   visual: un test que cuente las apariciones a mano de `IN ('MISSING'…)` fuera del predicado.
+
+**Lo que NO hay que hacer**: meter `REJECTED` en el predicado compartido ahora. Sería alinear seis
+lugares alrededor de un estado que nadie produce, sin haber decidido si existe, y dejaría los dos
+documentos "por vencer" divergiendo igual.
+
+---
+
+## SIGUIENTE PASO EXACTO
+
+1. **Click-through de esta versión** (tenencia + XLSX + directorio) contra dev.
+2. **Sodimac multiorigen** — el otro compromiso del 21/08, sin empezar. El dato llega intacto hasta
+   el modelo dbt silver (`stg_sodimac_trips.sql` lee `stops->0`); el riesgo es que hay **tres capas
+   aguas abajo que fuerzan un solo origen**, una de ellas un dedupe escrito en agosto para colapsar
+   filas ORIGIN duplicadas que sí eran duplicados. Un segundo origen legítimo entra por esa misma
+   puerta. Plan completo en `~/.claude/plans/enumerated-brewing-shell.md`.
+3. **La regla de cámara de frío**: `MANTENCION_FRIO` se exige hoy a los 9 subtipos que no son
+   Tractocamión —rampla seca, sider, plano, botellero incluidos—. Se corrige **desde la UI, sin
+   código**, en Configuración → Certificación → condiciones.
+4. **Seguros de tres pólizas**: la reunión destrabó HU-20/HU-06 y las amplió. Sin empezar.
+
+---
+
 ### 2026-08-21 — Ronda 138: tres huecos de Certificación y la investigación de Sodimac
 
 Rama `feat/certificacion-baja-y-tipo-vehiculo`, **sin comitear todavía**. Backend 897 tests verde,

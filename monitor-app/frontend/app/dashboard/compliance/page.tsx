@@ -3,13 +3,14 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { CalendarPlus, Loader2, Plus } from 'lucide-react'
+import { FileSpreadsheet, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
 import { CertificationFunnel } from '@/components/compliance/CertificationFunnel'
+import { DirectorioResumen } from '@/components/compliance/DirectorioResumen'
 import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
-import { CargarFechasModal } from '@/components/compliance/CargarFechasModal'
+import { ActualizarPorPlanillaModal } from '@/components/compliance/ActualizarPorPlanillaModal'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
@@ -79,7 +80,7 @@ function CertificationPageInner() {
   const group = AGRUPACIONES.find(v => v.id === vista)!.group
   const [q, setQ] = useState('')
   const [newCarrierOpen, setNewCarrierOpen] = useState(false)
-  const [cargarFechasOpen, setCargarFechasOpen] = useState(false)
+  const [planillaOpen, setPlanillaOpen] = useState(false)
   const qc = useQueryClient()
   const puedeEditar = useCanEdit()
   const qDebounced = useDebouncedValue(q, 300)
@@ -185,11 +186,11 @@ function CertificationPageInner() {
               {group === 'carrier' && (<>
               <button
                 type="button"
-                onClick={() => setCargarFechasOpen(true)}
+                onClick={() => setPlanillaOpen(true)}
                 className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-accent transition-colors cursor-pointer"
               >
-                <CalendarPlus size={13} />
-                Cargar fechas
+                <FileSpreadsheet size={13} />
+                Actualizar por planilla
               </button>
               <button
                 type="button"
@@ -210,12 +211,14 @@ function CertificationPageInner() {
         onCreated={handleCarrierCreated}
       />
 
-      <CargarFechasModal
-        open={cargarFechasOpen}
-        onClose={() => setCargarFechasOpen(false)}
+      <ActualizarPorPlanillaModal
+        open={planillaOpen}
+        onClose={() => setPlanillaOpen(false)}
         onAplicado={() => { void invalidarCertificacion(qc) }}
         puedeEditar={puedeEditar}
       />
+
+      {group === 'carrier' && <DirectorioResumen />}
 
       <div className="border border-border rounded-xl bg-white overflow-hidden">
         <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border min-h-[3.25rem]">

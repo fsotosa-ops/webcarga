@@ -11,19 +11,24 @@ import { ApiError } from '@/lib/api/client'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
 import type { ResultadoDePlanilla } from '@/lib/types'
 
-/** Cargar las fechas que ya están escritas en otro lado.
+/** Registrar lo que ya se sabe de cada documento, sin adjuntarlo.
  *
  *  Pablo, reunión del 21/08: *"sería bueno poder subir de alguna forma las
  *  fechas nomás. La información que yo tengo en un Excel. Sin el documento."*
- *  De 5.026 documentos pendientes, 1.326 corresponden a documentos que piden
- *  vencimiento en las 39 empresas activas, y de esos hoy sólo 12 tienen fecha:
- *  las alertas de vencimiento están implementadas y no tienen con qué
- *  dispararse.
  *
- *  NO es la única vía de carga y no reemplaza a la celda. `ExpirationDateCell`
- *  sigue siendo el camino para corregir una fecha de a una; la planilla es el
- *  camino para las que ya existen en un Excel. La grilla no evitaba el doble
- *  trabajo — lo creaba, obligando a transcribir a mano lo ya escrito.
+ *  DOS EJES, DOS COLUMNAS. En las 39 empresas activas hay 2.370 pendientes:
+ *  1.326 llevan vencimiento y 1.044 no lo llevan pero son TODOS obligatorios.
+ *  Para esos 1.044 la única pregunta posible es si lo tenemos, así que la
+ *  planilla trae una columna por eje — evidencia y vigencia— en vez de una sola
+ *  que signifique dos cosas según la fila.
+ *
+ *  Y no es sólo de empresas: de las 1.326 filas con vencimiento, 767 son de
+ *  vehículo y 391 de conductor.
+ *
+ *  NO reemplaza a la celda. `ExpirationDateCell` sigue siendo el camino para
+ *  corregir de a una; la planilla es el camino para lo que ya está escrito en
+ *  otro lado. La grilla no evitaba el doble trabajo — lo creaba, obligando a
+ *  transcribir a mano lo ya escrito.
  */
 type Paso = 'inicio' | 'previa' | 'listo'
 
@@ -42,7 +47,7 @@ const BOTON_SECUNDARIO =
   'inline-flex items-center gap-1.5 text-xs font-semibold text-accion border border-accent/30 ' +
   'rounded-lg px-3 py-1.5 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer'
 
-export function CargarFechasModal({ open, onClose, onAplicado, puedeEditar }: Props) {
+export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEditar }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [paso, setPaso]           = useState<Paso>('inicio')
@@ -88,8 +93,15 @@ export function CargarFechasModal({ open, onClose, onAplicado, puedeEditar }: Pr
       const blob = await complianceApi.bajarPlanilla(alcance)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url; a.download = 'vencimientos.csv'; a.click()
-      URL.revokeObjectURL(url)
+      a.href = url
+      a.download = 'certificacion.xlsx'
+      // El enlace tiene que estar EN el documento y la URL no se puede revocar
+      // en el mismo instante: Chrome tolera las dos cosas, Firefox y Safari no
+      // hacen nada y la descarga se pierde sin ningún error.
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'No se pudo descargar la planilla')
     } finally {
@@ -135,15 +147,15 @@ export function CargarFechasModal({ open, onClose, onAplicado, puedeEditar }: Pr
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Cargar fechas de vencimiento"
+        aria-label="Actualizar por planilla"
         tabIndex={-1}
         className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh] focus:outline-none animate-modal-in"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="min-w-0">
-            <h2 className="font-bold text-sm text-text-primary">Cargar fechas de vencimiento</h2>
+            <h2 className="font-bold text-sm text-text-primary">Actualizar por planilla</h2>
             <p className={`text-xs ${TEXTO_APOYO} mt-0.5`}>
-              Registra cuándo vence cada documento sin subir el archivo
+              Marca qué documentos tienes y cuándo vencen, sin subir los archivos
             </p>
           </div>
           <button
@@ -171,20 +183,27 @@ export function CargarFechasModal({ open, onClose, onAplicado, puedeEditar }: Pr
                 )}
                 {vacia && (
                   <p className={`text-xs ${TEXTO_CUERPO}`}>
-                    No hay documentos con vencimiento pendientes
+                    No hay documentos pendientes
                     {historico ? '' : ' en las empresas activas'}. No hay nada que cargar.
                   </p>
                 )}
-                {resumen.data && !vacia && (
+                {resumen.data && !vacia && (<>
                   <p className={`text-xs ${TEXTO_CUERPO}`}>
-                    {resumen.data.filas.toLocaleString('es-CL')} filas ·{' '}
-                    {resumen.data.empresas} empresas · sólo documentos que llevan
-                    vencimiento
-                    {resumen.data.con_fecha_cargada > 0 && (
-                      <> · {resumen.data.con_fecha_cargada} ya tienen fecha</>
+                    {resumen.data.filas.toLocaleString('es-CL')} documentos pendientes ·{' '}
+                    {resumen.data.empresas} empresas
+                  </p>
+                  <p className={`text-xs ${TEXTO_APOYO}`}>
+                    {resumen.data.con_vencimiento.toLocaleString('es-CL')} llevan
+                    vencimiento · {resumen.data.solo_tenencia.toLocaleString('es-CL')} sólo
+                    piden confirmar si los tienes
+                    {Object.keys(resumen.data.por_entidad).length > 0 && (
+                      <> · {(['Empresa', 'Conductor', 'Vehículo'] as const)
+                        .filter(e => resumen.data!.por_entidad[e])
+                        .map(e => `${resumen.data!.por_entidad[e]!.toLocaleString('es-CL')} de ${e.toLowerCase()}`)
+                        .join(' · ')}</>
                     )}
                   </p>
-                )}
+                </>)}
                 <div className="flex items-center gap-3 flex-wrap">
                   <button
                     type="button" onClick={descargar} disabled={bajando || vacia}
@@ -245,7 +264,7 @@ export function CargarFechasModal({ open, onClose, onAplicado, puedeEditar }: Pr
                           </button>
                         </p>
                         <input
-                          ref={inputRef} type="file" accept=".csv,text/csv" className="hidden"
+                          ref={inputRef} type="file" accept=".xlsx,.csv" className="hidden"
                           onChange={e => {
                             const elegido = e.target.files?.[0]
                             // Se limpia para que elegir DOS VECES el mismo
@@ -266,17 +285,23 @@ export function CargarFechasModal({ open, onClose, onAplicado, puedeEditar }: Pr
             <section className="space-y-3">
               <p className="text-sm font-bold text-text-primary">
                 {previa.cambian === 0
-                  ? 'No hay fechas nuevas que cargar'
-                  : `Se van a cargar ${previa.cambian.toLocaleString('es-CL')} ${previa.cambian === 1 ? 'fecha' : 'fechas'}`}
+                  ? 'No hay nada nuevo que registrar'
+                  : `Se van a actualizar ${previa.cambian.toLocaleString('es-CL')} ${previa.cambian === 1 ? 'documento' : 'documentos'}`}
               </p>
               <ul className={`text-xs ${TEXTO_CUERPO} space-y-1`}>
+                {previa.recibidos > 0 && (
+                  <li>{previa.recibidos.toLocaleString('es-CL')} se marcan como recibidos</li>
+                )}
+                {previa.fechas > 0 && (
+                  <li>{previa.fechas.toLocaleString('es-CL')} declaran su vencimiento</li>
+                )}
                 {previa.vacias > 0 && (
                   <li>
                     {previa.vacias.toLocaleString('es-CL')} filas quedaron en blanco y no se tocan
                   </li>
                 )}
                 {previa.sin_cambios > 0 && (
-                  <li>{previa.sin_cambios.toLocaleString('es-CL')} ya tenían esa misma fecha</li>
+                  <li>{previa.sin_cambios.toLocaleString('es-CL')} ya estaban así</li>
                 )}
               </ul>
               {previa.total_errores > 0 && (
@@ -313,11 +338,11 @@ export function CargarFechasModal({ open, onClose, onAplicado, puedeEditar }: Pr
               <p className="flex items-center gap-1.5 text-sm font-bold text-resuelto">
                 <CheckCircle2 size={15} aria-hidden="true" />
                 {previa.cambian.toLocaleString('es-CL')}{' '}
-                {previa.cambian === 1 ? 'fecha cargada' : 'fechas cargadas'}
+                {previa.cambian === 1 ? 'documento actualizado' : 'documentos actualizados'}
               </p>
               <p className={`text-xs ${TEXTO_CUERPO}`}>
-                Los documentos siguen pendientes de archivo: ahora avisan cuándo
-                vencen.
+                Siguen pendientes de archivo: lo que cambió es lo que sabemos de
+                ellos, no la evidencia.
               </p>
             </section>
           )}

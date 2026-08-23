@@ -310,6 +310,68 @@ async def get_fleet_driver_gap(pool=Depends(get_pool), _=Depends(get_current_use
     return {"rows": await compute_fleet_driver_gap(pool)}
 
 
+# El directorio que Pablo echaba de menos. Textual, reunión del 21/08: *"me
+# falta ese directorio que tenía yo antes, porque en ese directorio me
+# aparecían, no sé, trescientas empresas, y de las trescientas eran cincuenta
+# están activas, doscientas cincuenta inactivas"*, y enseguida pidió, debajo de
+# eso, el conteo de tractos, equipos y conductores.
+#
+# Existía en el módulo de Empresas (`/dashboard/carriers`) como tabs
+# Activas/Inactivo/Onboarding con sus conteos, y se perdió al mover la carga
+# documental a Certificación. Se repone donde ahora se trabaja.
+#
+# UNA sola consulta: son ocho conteos sobre tres tablas, y ocho viajes a la base
+# para dibujar una tira de cifras es lo que vuelve lenta una portada.
+#
+# La flota se cuenta SOLO en empresas activas y por asignación vigente. Contar
+# los 124 vehículos del catálogo diría "124 tractos" incluyendo los de empresas
+# dadas de baja hace un año, y ese número no describe ninguna operación.
+_SQL_DIRECTORIO = """
+SELECT
+  (SELECT count(*) FROM public.carriers)                                          AS empresas_total,
+  (SELECT count(*) FROM public.carriers WHERE operational_status = 'ACTIVE')      AS activas,
+  (SELECT count(*) FROM public.carriers
+    WHERE operational_status IN ('LEGACY_INACTIVE', 'INACTIVE'))                  AS inactivas,
+  (SELECT count(*) FROM public.carriers WHERE operational_status = 'ONBOARDING')  AS onboarding,
+  (SELECT count(DISTINCT a.id) FROM public.assets a
+     JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+     JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+    WHERE a.asset_type = 'TRACTOCAMION')                                          AS tractos,
+  (SELECT count(DISTINCT a.id) FROM public.assets a
+     JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+     JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+    WHERE a.asset_type = 'RAMPLA')                                                AS ramplas,
+  (SELECT count(DISTINCT d.id) FROM public.drivers d
+     JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+     JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE')
+                                                                                  AS conductores
+"""
+
+
+@router.get("/directorio")
+async def get_directorio(pool=Depends(get_pool), _=Depends(get_current_user)):
+    """Cuántas empresas hay, cuántas operan, y con qué flota.
+
+    Va ANTES de `GET /{carrier_id}`: declarada después, un GET a /directorio
+    entraría por esa ruta y contestaría 404 de empresa no encontrada.
+    """
+    fila = await pool.fetchrow(_SQL_DIRECTORIO)
+    return {
+        "empresas": {
+            "total":      fila["empresas_total"],
+            "activas":    fila["activas"],
+            "inactivas":  fila["inactivas"],
+            "onboarding": fila["onboarding"],
+        },
+        # Sólo de las empresas activas: es la flota que opera, no el catálogo.
+        "flota": {
+            "tractos":     fila["tractos"],
+            "ramplas":     fila["ramplas"],
+            "conductores": fila["conductores"],
+        },
+    }
+
+
 @router.get("/{carrier_id}")
 async def get_carrier(
     carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),

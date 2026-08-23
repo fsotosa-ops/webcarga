@@ -12,6 +12,7 @@ import type {
   Contact,
   FleetDriverGapRow,
   PolicyStatus,
+  Directorio,
 } from '@/lib/types'
 import { apiFetch, apiFetchBlob } from './client'
 
@@ -91,6 +92,11 @@ export type InsurancePolicyCreateResult = {
 }
 
 export const carriersApi = {
+  /** Cuántas empresas hay, cuántas operan, y con qué flota. Una sola consulta:
+   *  ocho viajes a la base para dibujar una tira de cifras es lo que vuelve
+   *  lenta una portada. */
+  directorio: () => apiFetch<Directorio>('/api/v1/carriers/directorio'),
+
   list: (params?: CarrierListParams) => {
     const qs = new URLSearchParams()
     if (params?.q)                       qs.set('q', params.q)
