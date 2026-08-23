@@ -305,3 +305,72 @@ async def test_tambien_encuentra_cuando_al_tms_le_SOBRA_un_nombre(conexion_rever
     encontrada = next((f for f in resp["candidatos"] if f["driver_id"] == str(persona["id"])), None)
     assert encontrada is not None, "un nombre del TMS con un token de mas perdio a la persona"
     assert encontrada["contiene"] is True
+
+
+# ── El silencio se llena; la eleccion humana no se toca ───────────────────
+#
+# El reclamo de Pablo sobre Edgar: identificaba al conductor a mano y el viaje
+# volvia a aparecer sin empresa. NO se revertia nada — el vinculo manual es
+# terminal y eso lo prueban los tests de arriba. Lo que pasaba es que al
+# vincular solo al conductor, `carrier_id` nacia NULL, y como el vinculo manual
+# queda EXCLUIDO de todo el calculo, ese NULL se congelaba para siempre.
+#
+# Medido antes del arreglo: 25 vinculos manuales, 14 sin empresa, y LOS 14 con
+# un conductor que si la tiene.
+
+
+async def _conductor_con_empresa(conn) -> tuple[str, str]:
+    """Un conductor del padron con asignacion ACTIVE, y su empresa."""
+    fila = await conn.fetchrow(
+        "SELECT da.driver_id, da.carrier_id FROM public.driver_assignments da "
+        "WHERE da.status = 'ACTIVE' LIMIT 1")
+    return str(fila["driver_id"]), str(fila["carrier_id"])
+
+
+async def test_el_vinculo_manual_sin_empresa_la_hereda_del_conductor(conexion_revertida):
+    """Una inferencia LLENA UN SILENCIO. Es la misma regla que la capa 5 del
+    propio resolvedor: el padron solo habla si el TMS no dijo nada."""
+    conn = conexion_revertida
+    trip_id = await _un_viaje(conn)
+    driver_id, carrier_id = await _conductor_con_empresa(conn)
+
+    # Se vincula SOLO al conductor: el endpoint inserta carrier_id NULL.
+    await assign_fleet_link(
+        trip_id, {"driver_id": driver_id}, PoolDeUnaConexion(conn), await _usuario_real(conn))
+
+    # No hace falta esperar a la proxima corrida del pipeline: el UPDATE de
+    # `app.trips` que hace el propio endpoint dispara el trigger que llama a
+    # resolve_trip_fleet(), asi que el silencio se llena en el acto. Se llama
+    # igual, explicito, para que el test valga tambien si ese trigger cambia.
+    await conn.execute("SELECT * FROM app.resolve_trip_fleet(array[$1]::uuid[])", trip_id)
+
+    fila = await conn.fetchrow(
+        "SELECT carrier_id, link_source FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+    assert str(fila["carrier_id"]) == carrier_id, "el silencio siguio congelado"
+    assert fila["link_source"] == "manual", "se degrado el vinculo manual a automatico"
+
+
+async def test_una_empresa_elegida_a_mano_NO_se_pisa(conexion_revertida):
+    """La otra mitad, y la que importa: llenar un silencio nunca puede
+    convertirse en contradecir. Si alguien eligio una empresa distinta a la del
+    padron, esa eleccion manda."""
+    conn = conexion_revertida
+    trip_id = await _un_viaje(conn)
+    driver_id, carrier_del_padron = await _conductor_con_empresa(conn)
+    otra = str(await conn.fetchval(
+        "SELECT id FROM public.carriers WHERE id <> $1::uuid LIMIT 1", carrier_del_padron))
+    # Sin esto el test podria pasar por vacio: si la empresa elegida fuera la
+    # MISMA del padron, no habria contradiccion que proteger y la asercion de
+    # abajo se cumpliria sola, con guarda o sin ella.
+    assert otra != carrier_del_padron, "el test necesita DOS empresas distintas"
+
+    await assign_fleet_link(
+        trip_id, {"driver_id": driver_id, "carrier_id": otra},
+        PoolDeUnaConexion(conn), await _usuario_real(conn))
+
+    await conn.execute("SELECT * FROM app.resolve_trip_fleet(array[$1]::uuid[])", trip_id)
+
+    quedo = await conn.fetchval(
+        "SELECT carrier_id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+    assert str(quedo) == otra, (
+        f"se piso la empresa elegida a mano ({otra}) con la del padron ({carrier_del_padron})")
