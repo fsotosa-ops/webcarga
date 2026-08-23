@@ -99,22 +99,112 @@ por viaje; el fan-out que la migración de agosto vino a evitar no vuelve.
 **La huérfana (viaje 830021) NO se borra**: la decisión del proyecto es que esas filas son historial,
 no basura. El cambio corta que se sigan generando.
 
+## CORRIDO EN MAGE, Y LOS 7 VIAJES QUEDARON
+
+Verificado contra la base después de la corrida del usuario:
+
+| Viaje | Orígenes materializados |
+|---|---|
+| **833795** (el que citó Pablo) | Bod La Farfana 4 (257) `[0]` + LA FARFANA CDMC (256) `[1]` |
+| 804151, 815726, 841612 | Farfana 4 (257) `[0]` + La Farfana 256 `[1]` |
+| 807366, 841584, 843964 | BOD-209 Lo Ruiz `[0]` + La Farfana 256 `[1]` |
+
+Los siete con dos filas ORIGIN y `stop_order` 0 y 1.
+
+**Hizo falta una escotilla más, y el modelo ya tenía el patrón.** La primera
+corrida dejó el silver bien (`origin_locations` existe en el conformado) pero
+**no reprocesó ningún viaje**: el watermark de `app/trips.sql` es
+`status_reported_at > MAX(...)`, así que un viaje de julio no vuelve a entrar
+nunca, su `updated_at` no avanza y `app/trip_stops` no lo revisita. El modelo ya
+tenía tres escotillas (OR 1, 2 y 3) para exactamente esta clase de hueco — una
+dice literal *"qanalytics sin origen aún resuelto"*—, así que se agregó la
+cuarta: el viaje reentra cuando declara más orígenes de los que tiene
+materializados, **y se apaga sola** en cuanto se materializan.
+
+**La medida es `count(DISTINCT stop_order)`, no `count(*)`,** y esa decisión
+tiene dos razones medidas: cubre los dos síntomas con una condición —"falta el
+segundo origen" (1 fila) y "los dos comparten `stop_order`" (2 filas que el
+dedupe del backend colapsa, así que la pantalla igual muestra uno)— y **no
+engancha al huérfano del viaje 830021**, que con `count(*)` habría reentrado en
+cada corrida para siempre, porque esa fila no se borra a propósito.
+
+## El test propio puso el bloque en rojo, dos veces, por razones distintas
+
+**Primera vez, y tenía razón**: marcaba los 4 viajes aplanados. Pero señalaba una
+condición que **ninguna corrida podía destrabar** —el watermark—, así que era
+rojo permanente. Lo arregló la escotilla OR 4: ahora el pipeline sana exactamente
+lo que el test marca, que es la propiedad que hace que un test valga.
+
+**Segunda vez, Compilation Error.** El artefacto compilado de la primera versión
+existe en el remoto, así que el `ref` y el Jinja siempre estuvieron bien: se
+rompió con la segunda edición. Se volvió a la versión que demostradamente
+compila, en ASCII plano (era el único test del proyecto con `→` y mayúsculas
+acentuadas). Verificado: devuelve 0 filas contra la base. Lo que esa versión deja
+de cubrir lo previene aguas arriba la escotilla, que sí usa la medida fina.
+
+**No se siguió adivinando por API**: el `mage-agent` trunca logs a ~8.000
+caracteres y este proyecto ya perdió tiempo iterando a ciegas por eso.
+
+---
+
+### 2026-08-23 (cont.) — Ronda 143: los desplegables de Certificación
+
+Pedido mirando la pantalla: *"ajustaría los nombres de los desplegables… la
+UX/UI creo que no maneja la jerarquía visual y así se pierde un poco cómo
+funcionan"*.
+
+**Los nombres mezclaban tres formas gramaticales** — estado ("Recién creadas",
+"Certificadas y al día"), acción ("Hay que renovar") y sobrante ("Resto del
+catálogo") — y esa inconsistencia es parte de por qué la lista no se leía como
+una secuencia. Ahora son todos del mismo tipo, el estado de la empresa, que es
+el patrón de ISNetworld y Avetta: **Sin documentos · Incompletas · Con
+vencimientos · Al día · No activas**. "Resto del catálogo" ya lo había
+descartado el usuario en la reunión del 21/08.
+
+**La jerarquía tenía una causa concreta y contraintuitiva**: el título del grupo
+iba en un `span` de 10px versalitas, puesto a propósito como "andamiaje" para no
+competir con el sujeto, y el efecto era el contrario — quedaba **más débil que
+las empresas que contiene**, así que se leía como una franja de color y no como
+algo que se abre. Ahora es un `<h2>` real, y de paso se puede saltar de grupo en
+grupo con lector de pantalla (la base de UX marca "Keyboard Navigation" y
+"Heading Hierarchy" como los dos ítems de un acordeón).
+
+**El tinte quedó en un solo grupo.** Cinco franjas de color competían entre sí y
+con las insignias de las filas; cuando todo tiene color, el color deja de avisar
+(§9). Se retiraron 7 clases de color crudo, así que **el trinquete visual bajó**.
+
+## Y el click-through encontró que el arreglo estaba a medias
+
+Los dos defectos salieron de **medir el DOM desplegado**, no de mirar a ojo, y
+ningún test los veía:
+
+- **Escalón tipográfico de 1,5px.** Grupo 15px y empresa 13,5px, **los dos en
+  peso 600**. A la vista eso no es jerarquía. Subió el grupo a `font-bold`; el
+  nombre de la empresa no se debilita porque es lo que se escanea.
+- **Sangría de −9px.** El nombre de la empresa arrancaba **a la izquierda** del
+  título de su grupo: el contenedor sangraba 16px pero la fila trae su propio
+  `px-4` más chevron, y el encabezado suma chevron + icono. El hijo caía fuera
+  del padre y la sangría se leía al revés. Con `pl-6` queda alineado.
+
+**Medido después del arreglo, en dev**: grupo 15px/700 en x=150, empresa
+13,5px/600 en x=149 — 1px de desalineación. A 390px no desborda, el nombre mide
+96px y ningún elemento mide 0px.
+
+1.299 tests de frontend, `tsc` limpio, `npm run build` OK. La mutación que
+devuelve el encabezado a un `div` mata su test, y cae en el render del grupo.
+
 ## SIGUIENTE PASO EXACTO
 
-1. **Correr en la UI de Mage**, pipeline `batch_tms_monitor_trips`, en orden:
-   `stg_sodimac_trips` → `int_tms_trips_conformed` → `app_trips_update`. Leen del snapshot que ya
-   está: **no hace falta re-scrapear, y NO va `--full-refresh`** (reintroduce el huso horario viejo
-   en los 18 viajes Sodimac corregidos y borra ediciones manuales de Operaciones).
-2. **Ojo con el incremental**: `app/trip_stops` filtra por `t.updated_at`, así que sólo reprocesa
-   viajes cuyo `app.trips.updated_at` avanzó. Si los 4 segundos orígenes que faltan no aparecen
-   —son viajes de julio/agosto ya cerrados—, hay que forzar esos `trip_id` puntualmente.
-3. **Verificación de aceptación**, una sola consulta: los 7 viajes multiorigen
-   (804151, 807366, 815726, 833795, 841584, 841612, 843964) deben quedar con **2 filas ORIGIN,
-   `stop_order` 0 y 1**. Y después mirarlo: el detalle del viaje 833795 tiene que mostrar las dos
-   bodegas — La Farfana 256 y Farfana 4 (257)—, que es exactamente lo que Pablo describió.
-4. **El orden de los dos orígenes es ESTABLE, no es el itinerario.** Las patas del portal traen sólo
-   ORIGEN y DESTINO; HORA y FECHA son del viaje. Sodimac no reporta en qué orden se cargó, y
-   afirmarlo sería inventarlo.
+1. **Correr `app_trips_tests` en Mage** para confirmar que compila. Si vuelve a
+   fallar, hace falta la SEGUNDA línea del error —la que nombra el nodo—; sin
+   eso no se sigue.
+2. **Los 2 viajes de qanalytics con CERO filas ORIGIN** (uno con
+   `source_system_trip_id = 'nan'`). Es otro hueco —"este viaje no tiene origen",
+   no "se aplanaron los tramos"— que en teoría cubre la escotilla OR 1 y sigue
+   sin resolverse. No se mezcló acá a propósito.
+3. **La regla de cámara de frío**: `MANTENCION_FRIO` se exige a los 9 subtipos
+   que no son Tractocamión. Se corrige **desde la UI, sin código**.
+4. **Seguros de tres pólizas**: la reunión destrabó HU-20/HU-06 y las amplió.
 
 ---
 
