@@ -53,14 +53,36 @@ más que el log truncado:
   *"more than one row returned by a subquery"* nunca llegó a existir; el orden por `stop_order` que
   puso la migración queda igual como la definición correcta para cuando alguno traiga conductor.
 
-**El residuo que la Ronda 142 dejó anotado, ahora con su causa.** Para las tres fuentes que no son
-Sodimac, el conformado deriva `origin_locations` envolviendo el escalar **sin filtrar nulos**: dos
-viajes de qanalytics sin origen quedan con `[null]`, o sea declarando un origen que no existe. No
-tiene efecto hoy —no hay fila ORIGIN que crear, y el test los excluye por su INNER JOIN—, pero
-alguien que cuente orígenes con `jsonb_array_length` contaría 1 donde hay 0. Son **2 viajes de
-1.692**, y uno de ellos tiene `source_system_trip_id = 'nan'`, basura de junio. El arreglo es una
-línea en `int_tms_trips_conformed` y **cuesta una corrida de Mage**, así que va con el próximo
-cambio del modelo, no solo.
+## Ronda 146 · Un viaje sin origen declara cero, no uno
+
+El residuo que la Ronda 142 había anotado sin explicar. El conformado derivaba `origin_locations`
+**envolviendo el escalar sin mirarlo**, así que dos viajes de qanalytics sin origen quedaban con
+`[null]`: un arreglo que dice "hay un origen" señalando a nada. No rompía nada —`trip_stops`
+descarta el elemento con `WHERE o.local IS NOT NULL`, y el test los excluye por su INNER JOIN—,
+pero el largo del arreglo es justamente lo que leen el test y la escotilla de reproceso, y contaba
+1 donde hay 0.
+
+Arreglado en las cuatro ramas: las tres derivadas usan un `CASE` sobre `NULLIF(TRIM(...))`, y la de
+Sodimac usa el mismo `clean_string` que ya existía, escrito **una vez**, para que las dos capas no
+puedan discrepar sobre qué cuenta como origen.
+
+**Dos cosas que solo aparecieron al probarlas contra Postgres.**
+
+1. La primera versión decía `jsonb_build_array(x) - 'null'`. **No hace nada**: el operador `-` de
+   jsonb borra elementos de tipo *string* iguales a `'null'`, no el null de JSON, así que dejaba
+   `[null]` intacto. Leído se parecía a que funcionaba.
+2. **Corrijo lo que escribí más arriba**: dije que el arreglo "cuesta una corrida de Mage". Los
+   cuatro modelos silver son **vistas**, así que no reprocesa ni una fila de `app.*` — se recrean y
+   listo.
+
+**Verificado con el modelo renderizado corriendo contra la base**, fila por fila contra la vista
+desplegada: **3.960 filas comparadas, 37 cambian, las 37 son exactamente `[null]` → `[]`, y cero
+cambios inesperados.** Ningún valor de origen real se toca, o sea que ningún `stop_id` puede
+cambiar — la continuidad del id es invariante dura del proyecto. El modelo de Sodimac renderizado
+da 402 filas, 0 sin origen y los 7 multiorigen: para el dato de hoy es un no-op, la guarda queda
+para el día que un viaje llegue sin bodega.
+
+Sincronizado a Mage: **3 archivos, 0 conflictos**. Entra sola en la próxima corrida.
 
 ## Un error mío, y lo que lo hizo posible
 
@@ -384,11 +406,11 @@ devuelve el encabezado a un `div` mata su test, y cae en el render del grupo.
 1. ~~Correr `app_trips_tests` en Mage~~ — **HECHO, y el test devuelve 0 filas**.
    Verificado corriendo su propio SQL contra la base, no leyendo el log. Ver la
    Ronda 145.
-2. **Los 2 viajes de qanalytics con CERO filas ORIGIN** (uno con
-   `source_system_trip_id = 'nan'`). Es otro hueco —"este viaje no tiene origen",
-   no "se aplanaron los tramos"— que en teoría cubre la escotilla OR 1 y sigue
-   sin resolverse. No se mezcló acá a propósito. **La causa quedó identificada en
-   la Ronda 145**: el conformado les declara `origin_locations = [null]`.
+2. ~~Los 2 viajes de qanalytics con CERO filas ORIGIN~~ — **causa hallada y
+   ARREGLADA en la Ronda 146**: el conformado les declaraba
+   `origin_locations = [null]`, o sea un origen que no existe. Ahora declaran
+   `[]`. Los viajes siguen sin origen —eso es el dato, no un defecto—, pero el
+   modelo ya no afirma lo contrario.
 3. **La regla de cámara de frío**: `MANTENCION_FRIO` se exige a los 9 subtipos
    que no son Tractocamión. Se corrige **desde la UI, sin código**.
 4. **Seguros de tres pólizas**: la reunión destrabó HU-20/HU-06 y las amplió.
