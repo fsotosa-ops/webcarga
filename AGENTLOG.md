@@ -122,12 +122,45 @@ el resultado: quitar `is_manual_override` del UPDATE masivo, volver a filtrar la
 fecha, quitar la guarda de "recibido sin fecha", sacarle a la flota el filtro de empresa activa, y
 devolver el mapeo sí/no que convertía estados en silencio.
 
-**Click-through con Playwright contra dev** sobre la primera versión: se bajó la planilla real
-(1.326 filas), se llenó **una** fila, la vista previa dijo *"1 cambia · 1.313 en blanco · 12 ya
-tenían esa fecha"* —la aritmética cierra— y al aplicar el registro quedó con su fecha,
-`is_manual_override` en true, **`status` intacto en MISSING** y 1 renglón de auditoría. El conteo
-global subió 31 → 32: cambió exactamente una fila. **El dato de prueba se revirtió** y el conteo
-volvió a 31. Falta rehacer el click-through sobre esta versión.
+## EL CLICK-THROUGH, HECHO — y encontró que la insignia estaba donde no podía dibujarse
+
+Con Playwright contra dev, sobre el código desplegado (`3d47c1f5`).
+
+**Lo que salió bien, medido en pantalla.** El XLSX baja con 2.370 filas y 9 columnas, la hoja
+protegida, panel fijo en A2 y **sólo las dos columnas editables desbloqueadas**. El modal dice
+*"2.370 documentos pendientes · 39 empresas"* y *"1.326 llevan vencimiento · 1.044 sólo piden
+confirmar si los tienes · 433 de empresa · 939 de conductor · 998 de vehículo"* — cuadra con el SQL
+hasta el último número. El directorio dice **248 empresas · 39 activas · 209 inactivas · 79 tractos
+· 37 ramplas · 79 conductores**.
+
+Se llenaron **3 filas de 2.370**, una inválida a propósito. La vista previa: *"2 se marcan como
+recibidos · 1 declara su vencimiento · 2.367 ya estaban así"* más *"1 fila con problema · no se
+aplica nada hasta resolverlas"*, con el motivo exacto (*"Carpeta Tributaria necesita su fecha de
+vencimiento para darse por recibido"*) y **Aplicar deshabilitado**. La aritmética cierra:
+2 + 2.367 + 1 = 2.370. **La guarda operó en vivo, no sólo en el test.**
+
+Tras corregir la fila: F43 quedó `APPROVED_MANUAL` con fecha y override; Reglamento Interno —que NO
+vence— quedó `APPROVED_MANUAL` sin fecha, que es el caso de los 1.044; y Certificado Mutual quedó
+`MISSING` con fecha y la ficha ya dice **"vence en 28 días"**. Auditoría: 2 hechos de `status` + 1 de
+`expiration_date`. **Es la primera vez que las alertas de vencimiento tienen con qué dispararse.**
+
+**EL DEFECTO QUE ENCONTRÓ, Y LO HABÍA PUESTO YO.** La ficha de empresa parte sus filas por
+`urgencia`: las `AL_DIA` llevan pill de estado y las pendientes llevan zona de arrastre, **sin
+pill**. O sea que "Falta el archivo" —que por definición es un `MISSING`— **no podía renderizarse
+nunca ahí**. Una capacidad sin puerta, la cuarta de este módulo, y esta vez la agregué yo. Donde sí
+se dibuja pill para una fila pendiente es en `TransporterSlideOver` y `TransporterAlertBanner`, que
+listan documentos sin zona de arrastre y por lo tanto sin nada que aclare si falta el papel o falta
+todo. Ahí quedó cableada, con test que fija la combinación.
+
+También apareció concordancia de número: *"1 declaran su vencimiento"*, *"1 filas quedaron en
+blanco"*.
+
+**En teléfono (390 px)**: la página no desborda, el diálogo mide 358 y cabe, y **ningún elemento
+mide 0 px** — que fue exactamente el defecto del click-through anterior.
+
+**Los datos de prueba se revirtieron**, y la base quedó idéntica al estado previo: 31 con fecha, 95
+aprobados, 5.027 faltantes, 0 rastro en `audit_log`. Las planillas descargadas se borraron del disco
+porque traían nombres y RUT reales.
 
 De paso, dos cosas que le dijimos a Fabián y no se sostienen: el límite de "siete, diez megas" por
 archivo **no existe** (`_check_upload_size` sólo cuenta archivos, nunca bytes), y la capacidad del
@@ -181,16 +214,15 @@ documentos "por vencer" divergiendo igual.
 
 ## SIGUIENTE PASO EXACTO
 
-1. **Click-through de esta versión** (tenencia + XLSX + directorio) contra dev.
-2. **Sodimac multiorigen** — el otro compromiso del 21/08, sin empezar. El dato llega intacto hasta
+1. **Sodimac multiorigen** — el otro compromiso del 21/08, sin empezar. El dato llega intacto hasta
    el modelo dbt silver (`stg_sodimac_trips.sql` lee `stops->0`); el riesgo es que hay **tres capas
    aguas abajo que fuerzan un solo origen**, una de ellas un dedupe escrito en agosto para colapsar
    filas ORIGIN duplicadas que sí eran duplicados. Un segundo origen legítimo entra por esa misma
    puerta. Plan completo en `~/.claude/plans/enumerated-brewing-shell.md`.
-3. **La regla de cámara de frío**: `MANTENCION_FRIO` se exige hoy a los 9 subtipos que no son
+2. **La regla de cámara de frío**: `MANTENCION_FRIO` se exige hoy a los 9 subtipos que no son
    Tractocamión —rampla seca, sider, plano, botellero incluidos—. Se corrige **desde la UI, sin
    código**, en Configuración → Certificación → condiciones.
-4. **Seguros de tres pólizas**: la reunión destrabó HU-20/HU-06 y las amplió. Sin empezar.
+3. **Seguros de tres pólizas**: la reunión destrabó HU-20/HU-06 y las amplió. Sin empezar.
 
 ---
 
@@ -573,7 +605,7 @@ exacto en los dos campos.
      **congela el `carrier_id` nulo para siempre**.
    - Acordado: **las dos vías**. Automática en la resolución (llena el silencio, nunca contradice) y
      forzada en el Cierre (los 85 viajes sin conductor ni empresa, como pidió Pablo).
-3. **La regla de cámara de frío**: el motor funciona, **el dato está mal**. `MANTENCION_FRIO` tiene
+2. **La regla de cámara de frío**: el motor funciona, **el dato está mal**. `MANTENCION_FRIO` tiene
    como condición "los 9 subtipos que no son Tractocamión" = toda rampla, furgón seco y sider
    incluidos. Es un backfill de compatibilidad. **Se arregla desde la UI, sin código.**
 4. ~~**Renombrar documentos a F30 / F30-1 / PTS**~~ — **HECHO** en la Ronda 140, y sin migración:
