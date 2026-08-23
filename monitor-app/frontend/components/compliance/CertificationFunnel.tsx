@@ -123,7 +123,12 @@ export function CertificationFunnel({
                 aria-hidden="true"
               />
               <Icono size={14} className="shrink-0" aria-hidden="true" />
-              <span className="text-lectura font-semibold text-text-primary">
+              {/* font-bold y no semibold: la fila de empresa TAMBIÉN es
+                  semibold, así que con el mismo peso el escalón quedaba en
+                  1,5px de tamaño — medido en pantalla, eso no se lee como
+                  jerarquía. El nombre de la empresa no se debilita porque es lo
+                  que se escanea (§9); el que sube es el grupo. */}
+              <span className="text-lectura font-bold text-text-primary">
                 {titulo}
               </span>
               <span className="ml-auto flex items-center gap-2 text-etiqueta font-medium tabular-nums">
@@ -163,8 +168,13 @@ export function CertificationFunnel({
                 relación padre/hijo dependía sólo del color de la franja, y con
                 cinco grupos seguidos se perdía dónde terminaba uno y empezaba
                 el siguiente. */}
+            {/* pl-6 y no pl-4: medido en pantalla, con pl-4 el nombre de la
+                empresa caía 9px a la IZQUIERDA del título de su grupo — la
+                sangría se leía al revés. Con 24px queda alineado con el título
+                (149px contra 150px), que es lo que dice "estas filas son de ese
+                encabezado". */}
             {!plegado && deEstaEtapa.length > 0 && (
-              <div className="pl-4 border-l-2 border-border">
+              <div className="pl-6 border-l-2 border-border">
                 {deEstaEtapa.map(r => (
                   <FilaEmpresa key={r.entity_id} row={r} />
                 ))}
