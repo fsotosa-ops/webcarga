@@ -290,18 +290,30 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
               </p>
               <ul className={`text-xs ${TEXTO_CUERPO} space-y-1`}>
                 {previa.recibidos > 0 && (
-                  <li>{previa.recibidos.toLocaleString('es-CL')} se marcan como recibidos</li>
+                  <li>
+                    {previa.recibidos.toLocaleString('es-CL')}{' '}
+                    {previa.recibidos === 1 ? 'se marca como recibido' : 'se marcan como recibidos'}
+                  </li>
                 )}
                 {previa.fechas > 0 && (
-                  <li>{previa.fechas.toLocaleString('es-CL')} declaran su vencimiento</li>
+                  <li>
+                    {previa.fechas.toLocaleString('es-CL')}{' '}
+                    {previa.fechas === 1 ? 'declara su vencimiento' : 'declaran su vencimiento'}
+                  </li>
                 )}
                 {previa.vacias > 0 && (
                   <li>
-                    {previa.vacias.toLocaleString('es-CL')} filas quedaron en blanco y no se tocan
+                    {previa.vacias.toLocaleString('es-CL')}{' '}
+                    {previa.vacias === 1
+                      ? 'fila quedó en blanco y no se toca'
+                      : 'filas quedaron en blanco y no se tocan'}
                   </li>
                 )}
                 {previa.sin_cambios > 0 && (
-                  <li>{previa.sin_cambios.toLocaleString('es-CL')} ya estaban así</li>
+                  <li>
+                    {previa.sin_cambios.toLocaleString('es-CL')}{' '}
+                    {previa.sin_cambios === 1 ? 'ya estaba así' : 'ya estaban así'}
+                  </li>
                 )}
               </ul>
               {previa.total_errores > 0 && (

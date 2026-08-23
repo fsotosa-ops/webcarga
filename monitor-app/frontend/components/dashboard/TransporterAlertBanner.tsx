@@ -2,7 +2,7 @@
 
 import { AlertTriangle } from 'lucide-react'
 import type { ComplianceRecord } from '@/lib/types'
-import { COMPLIANCE_STATUS_CONFIG, expiryRelative, updatedRelative } from '@/lib/compliance'
+import { evidenciaDeDocumento, expiryRelative, updatedRelative } from '@/lib/compliance'
 
 interface Props {
   records: ComplianceRecord[]
@@ -19,7 +19,7 @@ function relativeLabel(r: ComplianceRecord): string | null {
  *  §5 Fase B.3) — reemplaza el semáforo de elegibilidad de Checkpoint A-E
  *  (sin equivalente en el modelo nuevo). Filas compactas sobre fondo
  *  blanco, no un bloque de color sólido: la severidad vive en el ícono y
- *  el pill de estado (mismo `COMPLIANCE_STATUS_CONFIG` que el resto de la
+ *  el pill de estado (mismo `evidenciaDeDocumento` que el resto de la
  *  app), no en pintar toda la tarjeta de rojo. */
 export function TransporterAlertBanner({ records }: Props) {
   const problems = records.filter(r =>
@@ -39,7 +39,7 @@ export function TransporterAlertBanner({ records }: Props) {
       <div className="divide-y divide-border/60">
         {problems.map(r => {
           const relative = relativeLabel(r)
-          const cfg = COMPLIANCE_STATUS_CONFIG[r.status]
+          const cfg = evidenciaDeDocumento(r.status, r.expiration_date, r.file_url !== null)
           return (
             <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
               <span className="text-xs font-medium text-text-primary truncate">{r.name}</span>

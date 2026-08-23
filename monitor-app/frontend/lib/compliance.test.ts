@@ -70,3 +70,20 @@ describe('evidenciaDeDocumento — los dos ejes no se colapsan', () => {
     expect(evidenciaDeDocumento('MISSING', '2026-09-12', true).label).toBe('Falta')
   })
 })
+
+describe('evidenciaDeDocumento — dónde se ve de verdad', () => {
+  it('la etiqueta nueva sólo puede aparecer en una fila PENDIENTE', () => {
+    // El click-through del 23/08 encontró que la ficha de empresa parte sus
+    // filas por `urgencia`: las AL_DIA llevan pill y las pendientes llevan zona
+    // de arrastre, sin pill. O sea que ahí "Falta el archivo" no podía
+    // renderizarse nunca: un MISSING no es AL_DIA. Las superficies que sí
+    // dibujan pill para pendientes son TransporterSlideOver y
+    // TransporterAlertBanner, y son las que consumen esta función.
+    //
+    // Este test fija la combinación, no la pantalla: si alguien la llama con
+    // un estado aprobado esperando la etiqueta nueva, no la va a obtener.
+    expect(evidenciaDeDocumento('MISSING', '2026-09-20', false).label).toBe('Falta el archivo')
+    expect(evidenciaDeDocumento('APPROVED_MANUAL', '2026-09-20', false).label)
+      .not.toBe('Falta el archivo')
+  })
+})

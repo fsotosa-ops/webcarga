@@ -9,7 +9,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { InsuranceSummaryCard } from './InsuranceSummaryCard'
 import { CompletionRing } from './CompletionRing'
 import { STATUS_LABELS, STATUS_CLS } from './TransporterCard'
-import { COMPLIANCE_STATUS_CONFIG, formatExpiry } from '@/lib/compliance'
+import { evidenciaDeDocumento, formatExpiry } from '@/lib/compliance'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 
 const CONTACT_ROLE_LABELS: Record<string, string> = {
@@ -148,7 +148,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
                     {issues.length > 0 && (
                       <ul className="space-y-1">
                         {issues.map(r => {
-                          const cfg = COMPLIANCE_STATUS_CONFIG[r.status]
+                          const cfg = evidenciaDeDocumento(r.status, r.expiration_date, r.file_url !== null)
                           return (
                             <li key={r.id} className="flex items-center justify-between gap-2 text-[11px] bg-gray-50 rounded-xl px-2.5 py-1.5">
                               <span className="text-gray-600 truncate">{r.name}</span>
