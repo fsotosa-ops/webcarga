@@ -40,9 +40,33 @@ describe('CertificationFunnel', () => {
       ],
     })
 
-    expect(screen.getByText(/recién creadas/i)).toBeInTheDocument()
+    expect(screen.getByText('Sin documentos')).toBeInTheDocument()
     const enProceso = screen.getByTestId('grupo-en_proceso')
     expect(within(enProceso).getByText('2')).toBeInTheDocument()
+  })
+
+  // Los cinco nombres son del MISMO tipo: el estado en que está la empresa.
+  // Antes mezclaban estado ("Recién creadas"), acción ("Hay que renovar") y
+  // sobrante ("Resto del catálogo"), y esa inconsistencia es parte de por qué
+  // la lista no se leía como una secuencia. El test los fija juntos, no de a
+  // uno: lo que importa es que sigan siendo la misma forma gramatical.
+  it('nombra los grupos por el estado de la empresa', () => {
+    setup({ rows: [] })
+    for (const titulo of ['Sin documentos', 'Incompletas', 'Con vencimientos', 'Al día', 'No activas']) {
+      expect(screen.getByText(titulo)).toBeInTheDocument()
+    }
+  })
+
+  // El grupo tiene que MANDAR sobre sus filas. Iba en un `span` de 10px
+  // versalitas y quedaba más débil que las empresas que contiene, así que se
+  // leía como una franja de color y no como algo que se abre. Un encabezado
+  // real además deja saltar de grupo en grupo con lector de pantalla.
+  it('el título del grupo es un encabezado, no un texto suelto', () => {
+    setup({ rows: [fila({ funnel_group: 'en_proceso', entity_id: 'b', entity_name: 'Charlotte' })] })
+    const encabezados = screen.getAllByRole('heading', { level: 2 })
+    expect(encabezados.map(h => h.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining('Incompletas')]),
+    )
   })
 
   // El orden es el del embudo, no el alfabetico ni el de completitud: la

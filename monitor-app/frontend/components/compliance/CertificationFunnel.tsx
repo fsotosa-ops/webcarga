@@ -33,12 +33,24 @@ interface Props {
  *
  *  El eje es **en qué punto de la certificación está cada empresa**, porque el
  *  usuario no vigila un tablero: mueve empresas por un embudo. */
+/** Los nombres son TODOS del mismo tipo: el estado en que está la empresa.
+ *
+ *  Antes mezclaban tres formas —estado ("Recién creadas", "Certificadas y al
+ *  día"), acción ("Hay que renovar") y sobrante ("Resto del catálogo")—, y esa
+ *  inconsistencia es parte de por qué la lista no se leía como una secuencia.
+ *  Es el patrón de ISNetworld y Avetta: el grupo describe en qué estado está el
+ *  proveedor, no qué hay que hacerle. "Resto del catálogo" además no decía
+ *  nada; son las empresas que no operan, y así se llaman.
+ *
+ *  EL TINTE ES DE UNO SOLO, a propósito. Cinco franjas de color competían entre
+ *  sí y con las insignias de las filas, y cuando todo tiene color el color deja
+ *  de avisar (§9). Se queda el único grupo con trabajo que vence. */
 const ETAPAS: { id: FunnelGroup; titulo: string; icono: typeof Plus; tono: string }[] = [
-  { id: 'sin_documentos', titulo: 'Recién creadas · sin documentos', icono: Plus,           tono: 'bg-sky-50 text-sky-800' },
-  { id: 'en_proceso',     titulo: 'En proceso',                      icono: Clock,          tono: 'bg-gray-50 text-gray-500' },
-  { id: 'renovar',        titulo: 'Hay que renovar',                 icono: AlertTriangle,  tono: 'bg-amber-50 text-amber-800' },
-  { id: 'al_dia',         titulo: 'Certificadas y al día',           icono: Check,          tono: 'bg-emerald-50 text-resuelto' },
-  { id: 'catalogo',       titulo: 'Resto del catálogo',              icono: Building2,      tono: 'bg-gray-50 text-gray-500' },
+  { id: 'sin_documentos', titulo: 'Sin documentos',   icono: Plus,          tono: '' },
+  { id: 'en_proceso',     titulo: 'Incompletas',      icono: Clock,         tono: '' },
+  { id: 'renovar',        titulo: 'Con vencimientos', icono: AlertTriangle, tono: 'bg-amber-50 text-amber-800' },
+  { id: 'al_dia',         titulo: 'Al día',           icono: Check,         tono: '' },
+  { id: 'catalogo',       titulo: 'No activas',       icono: Building2,     tono: '' },
 ]
 
 /** Las etiquetas visibles salen de acá y no del backend, que habla códigos: un
@@ -90,21 +102,28 @@ export function CertificationFunnel({
 
         return (
           <section key={id}>
+            {/* Encabezado DE VERDAD, y no un `span` con estilo. El grupo tiene
+                que mandar sobre sus filas: antes iba en 10px versalitas
+                —"andamiaje", para no competir con el sujeto— y el efecto era
+                el contrario, quedaba MÁS DÉBIL que las empresas que contiene,
+                así que se leía como una franja más y no como algo que se abre.
+                De paso lo arregla para quien navega por encabezados: un lector
+                de pantalla ahora puede saltar de grupo en grupo. */}
+            <h2>
             <button
               type="button"
               data-testid={`grupo-${id}`}
               onClick={() => alternar(id)}
               aria-expanded={!plegado}
-              className={`w-full flex items-center gap-2 px-4 py-1.5 border-b border-border cursor-pointer transition-colors hover:brightness-[0.98] ${tono}`}
+              className={`w-full flex items-center gap-2.5 px-4 py-2.5 border-b border-border cursor-pointer transition-colors hover:bg-bg-main ${tono}`}
             >
               <ChevronRight
-                size={12}
-                className={`transition-transform ${plegado ? '' : 'rotate-90'}`}
+                size={15}
+                className={`shrink-0 transition-transform ${plegado ? '' : 'rotate-90'}`}
                 aria-hidden="true"
               />
-              <Icono size={12} aria-hidden="true" />
-              {/* Andamiaje: versalitas, 10px, no compite con el sujeto (§9). */}
-              <span className="text-etiqueta font-semibold uppercase tracking-[.11em]">
+              <Icono size={14} className="shrink-0" aria-hidden="true" />
+              <span className="text-lectura font-semibold text-text-primary">
                 {titulo}
               </span>
               <span className="ml-auto flex items-center gap-2 text-etiqueta font-medium tabular-nums">
@@ -129,6 +148,7 @@ export function CertificationFunnel({
                         : null}
               </span>
             </button>
+            </h2>
 
             {!plegado && !deEstaEtapa.length && (
               <p className="px-4 py-2 text-etiqueta text-gray-400 border-b border-border">
@@ -139,9 +159,17 @@ export function CertificationFunnel({
               </p>
             )}
 
-            {!plegado && deEstaEtapa.map(r => (
-              <FilaEmpresa key={r.entity_id} row={r} />
-            ))}
+            {/* La sangría y la línea son la mitad del arreglo: sin ellas, la
+                relación padre/hijo dependía sólo del color de la franja, y con
+                cinco grupos seguidos se perdía dónde terminaba uno y empezaba
+                el siguiente. */}
+            {!plegado && deEstaEtapa.length > 0 && (
+              <div className="pl-4 border-l-2 border-border">
+                {deEstaEtapa.map(r => (
+                  <FilaEmpresa key={r.entity_id} row={r} />
+                ))}
+              </div>
+            )}
           </section>
         )
       })}
