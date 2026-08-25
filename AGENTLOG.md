@@ -181,6 +181,43 @@ un campo inventado. Ahora sí: mutar el filtro rompe 5.
 73 endpoints con `require_editor` no se tocaron — `ROLE_META` sólo le promete a writer el Diario.
 
 
+
+## Ronda 148 (cont. 5) — el test rojo: diagnosticado y mapeado como deuda
+
+`test_asignar_conductor::test_se_puede_vincular_un_conductor_sin_empresa` **no encontró un bug: fija
+un invariante que venció**. Cadena verificada de punta a punta:
+
+1. El test llama a `assign_fleet_link` sólo con el conductor.
+2. El endpoint inserta el link con `carrier_id` nulo y `link_source='manual'` — hasta ahí, lo esperado.
+3. Después hace `UPDATE app.trips SET fleet_link_id`, que dispara `trg_trips_resolve_fleet_upd`.
+4. Ese trigger llama a `app.resolve_trip_fleet()`, cuyo UPDATE final —agregado el **23/08** por
+   `20260823210000_el_link_manual_deja_de_quedarse_sin_empresa.sql`— rellena la empresa desde
+   `driver_assignments`.
+
+**El UUID del fallo (`a74501a1…`) es exactamente la empresa del conductor que el test elige**, vía su
+asignación activa. No es coincidencia: es el mecanismo.
+
+Y el arreglo del 23/08 funcionó: **de 25 vínculos manuales, hoy 0 están sin empresa** (eran 14 ese
+día). El test se escribió el 18/08 para probar que la empresa dejó de ser obligatoria —propósito que
+sigue vivo y sigue pasando— y su aserción `carrier_id is None` quedó atrás cuando el 23/08 cambió el
+comportamiento a propósito.
+
+Se propuso cambiar la aserción por la regla vigente (`carrier_id in (None, empresa_del_conductor)`,
+que fija "la inferencia llena un silencio y nunca contradice"). **Decisión del usuario: dejarlo así y
+registrarlo como deuda.** Queda en `TECH_DEBT.md` (prioridad Media) y como **PLA-08** del backlog,
+dentro de la iniciativa "El pipeline se prueba y se versiona".
+
+Lo que queda dicho: mientras tanto la suite corre en rojo, 1 de 968, y una suite que siempre falla
+enseña a no mirarla.
+
+## Ronda 148 (cont. 6) — el writer, desplegado
+
+`445a1a83` pusheado a `dev`. **Deploy Monitor API → success.** Antes de pushear se verificó que no
+hubiera ingestión en vuelo (59 jobs `done`, ninguno corriendo): desplegar con un job en vuelo ya
+costó una hora de ingestión caída en este proyecto. Corrió sólo ese workflow, que es el que
+corresponde — el cambio toca únicamente `backend/api`.
+
+
 ### 2026-08-24 — Ronda 147: el backlog y el roadmap de webcarga, contra lo que la app hace de verdad
 
 **Pedido**: dos planillas nuevas en Drive con la estructura del backlog y el roadmap de Fundación
