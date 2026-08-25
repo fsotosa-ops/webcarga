@@ -9,10 +9,13 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from ..auth import get_current_user, get_supabase, require_editor
+from ..auth import EDITOR_ROLES, get_current_user, get_supabase, require_editor, require_writer
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate
-from ..schemas.trip import AsignarConductorBody, TripBulkCloseBody, TripPatch, TripStopPatch
+from ..schemas.trip import (
+    AsignarConductorBody, TripBulkCloseBody, TripPatch, TripStopPatch,
+    CAMPOS_BASICOS_DEL_DIARIO, CAMPOS_BASICOS_DE_PARADA,
+)
 from ..services.audit import log_change
 from ..services.cierre_viajes import SQL_GRUPOS_CIERRE
 
@@ -2356,12 +2359,32 @@ async def bulk_close_trips(
     return {"ok": True, "closed": len(body.trip_ids)}
 
 
+def _exigir_campos_permitidos(user: dict, enviados, permitidos=None) -> None:
+    """`writer` sólo toca los campos básicos del Diario.
+
+    Se chequea ACÁ y no en el guardia de la ruta porque un guardia de endpoint
+    da la ruta entera o la niega entera, y `PATCH /trips/{id}` recibe en el
+    mismo cuerpo el teléfono del conductor —básico— y la patente del tracto
+    —sensible—. Un campo prohibido invalida el cuerpo completo: aceptar la
+    parte permitida dejaría al cliente creyendo que guardó todo."""
+    if user["role"] in EDITOR_ROLES:
+        return
+    if permitidos is None:
+        permitidos = CAMPOS_BASICOS_DEL_DIARIO
+    prohibidos = sorted(set(enviados) - permitidos)
+    if prohibidos:
+        raise HTTPException(
+            403,
+            "El rol writer no puede editar estos campos: " + ", ".join(prohibidos),
+        )
+
+
 @router.patch("/{trip_id}")
 async def patch_trip(
     trip_id: str,
     body: TripPatch,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require_writer),
 ):
     exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
     if not exists:
@@ -2370,6 +2393,10 @@ async def patch_trip(
     data = body.model_dump(exclude_none=True)
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
+
+    # Antes de cualquier escritura, y antes de los `pop` de más abajo: acá
+    # `data` todavía tiene los nombres tal como los mandó el cliente.
+    _exigir_campos_permitidos(user, data)
 
     # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
     if "driver_name" in data:
@@ -2493,11 +2520,14 @@ async def patch_trip(
 
 @router.patch("/{trip_id}/stops/{stop_id}")
 async def patch_trip_stop(
+    # `writer` escribe acá: los cuatro campos de la parada son los que el
+    # equipo completa al operar, y ninguno es sensible. Ver
+    # CAMPOS_BASICOS_DE_PARADA.
     trip_id: str,
     stop_id: str,
     body: TripStopPatch,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require_writer),
 ):
     """Override manual por parada — persiste en las columnas *_manual reales
     de app.trip_stops (desc_inicio_manual/desc_fin_manual, Fase 2 del
@@ -2517,6 +2547,7 @@ async def patch_trip_stop(
         raise HTTPException(404, "Parada no encontrada")
 
     patch = body.model_dump(exclude_none=True)
+    _exigir_campos_permitidos(user, patch, CAMPOS_BASICOS_DE_PARADA)
     if not patch:
         raise HTTPException(422, "Ningún campo enviado")
 
@@ -2783,13 +2814,17 @@ async def list_trip_notes(
 
 @router.post("/{trip_id}/notes", status_code=201)
 async def add_trip_note(
+    # `writer` escribe acá: la bitácora ES el campo "observaciones" que su rol
+    # promete — el `notes` de TripPatch es texto legacy y la UI no lo usa.
+    # Fijar (pin) y resolver quedan en editor a propósito: cambian cómo el
+    # resto lee esa nota, no la observación en sí.
     trip_id: str,
     body: str = Form(""),
     note_type: str = Form("observacion"),
     files: list[UploadFile] = File(default=[]),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require_writer),
 ):
     body = body.strip()
     if not body and not files:

@@ -13,6 +13,12 @@ bearer = HTTPBearer()
 
 EDITOR_ROLES = {"editor", "admin", "owner"}
 ADMIN_ROLES = {"admin", "owner"}
+# `writer` es un tercer nivel de escritura, por DEBAJO de editor: edita los
+# campos básicos del Diario y ninguno de los sensibles. Por eso no basta con
+# un guardia de endpoint —una ruta se da entera o se niega entera— y el
+# permiso se termina de resolver POR CAMPO en el endpoint que lo necesita
+# (ver CAMPOS_BASICOS_DEL_DIARIO en schemas/trip.py). Ver issue #1.
+WRITER_ROLES = EDITOR_ROLES | {"writer"}
 
 
 def get_supabase(settings: Settings = Depends(get_settings)) -> Client:
@@ -53,6 +59,16 @@ async def get_current_user(
 async def require_editor(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] not in EDITOR_ROLES:
         raise HTTPException(status_code=403, detail="Se requiere rol editor o superior")
+    return user
+
+
+async def require_writer(user: dict = Depends(get_current_user)) -> dict:
+    """Deja pasar a writer y a todo lo que esté por encima.
+
+    Abre la puerta, no da la ruta entera: el endpoint que la use tiene que
+    filtrar por campo si distingue básicos de sensibles."""
+    if user["role"] not in WRITER_ROLES:
+        raise HTTPException(status_code=403, detail="Se requiere rol writer o superior")
     return user
 
 

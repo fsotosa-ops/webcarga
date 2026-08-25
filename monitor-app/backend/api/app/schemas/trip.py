@@ -26,6 +26,25 @@ class TripPatch(BaseModel):
         return list(self.model_dump(exclude_none=True).keys())
 
 
+# Lo que el catálogo de roles le promete a `writer`: "edita campos básicos del
+# Diario (toggles, observaciones, teléfono)" — ROLE_META en routers/roles.py.
+#
+# Vive ACÁ, pegada a TripPatch, y no en auth.py, porque son nombres de campos
+# de ESTE modelo: si se separan, el día que alguien renombre uno la lista
+# apunta a un nombre muerto y el guardia deja de proteger sin avisar. Un test
+# de test_rol_writer.py cruza las dos y falla si divergen.
+#
+# Lo que queda FUERA es deliberado: `driver_name`, `tractor_plate` y
+# `trailer_plate` son la identidad de la flota y alimentan toda la cadena de
+# resolución; `unassigned_reason_id` cruza con facturación; y `manual_status`
+# pisa el estado que reporta el TMS.
+CAMPOS_BASICOS_DEL_DIARIO = frozenset({
+    "is_active", "is_working", "is_assigned", "is_first_leg",  # toggles
+    "notes", "comments",                                       # observaciones
+    "driver_phone",                                            # teléfono
+})
+
+
 class TripBulkCloseBody(BaseModel):
     """Selección masiva en el Diario para cerrar/finalizar varios viajes de
     una — mismo mecanismo que ya usa IndicatorSwitches por viaje individual
@@ -63,3 +82,19 @@ class TripStopPatch(BaseModel):
     desc_fin:      Optional[str] = None
     arrival:       Optional[str] = None
     departure:     Optional[str] = None
+
+
+# Los cuatro campos de la parada son TODOS básicos: son justamente los que el
+# equipo completa a mano al operar —el TMS puebla Plan., GPS Llegada y GPS
+# Salida, y esas tres son de solo lectura (los gps_* se sacaron de este modelo
+# el 2026-07-31, minuta 29/07 §4.2)—. O sea que hoy no hay nada sensible acá.
+#
+# Se declara igual, en vez de abrir el endpoint entero, por lo que viene
+# después: el día que alguien agregue un campo a `TripStopPatch`, el filtro lo
+# niega por omisión en vez de regalarlo, y el test de abajo falla para obligar
+# a decidir de qué lado cae. Un permiso que se amplía solo es el modo de falla
+# que este proyecto ya conoce.
+CAMPOS_BASICOS_DE_PARADA = frozenset({
+    "desc_inicio", "desc_fin",   # inicio y fin de descarga
+    "arrival", "departure",      # llegada y salida reales
+})
