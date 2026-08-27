@@ -5,9 +5,17 @@ import { Check } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { getLatestTempStop, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { getStopStates } from '@/lib/utils/stopState'
-import { normalizeUTC, fmtDate } from '@/lib/utils/datetime'
+import { fmtDate, fmtShort } from '@/lib/utils/datetime'
 import { OrdenIcono } from '@/components/ui/tabla/OrdenIcono'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+
+/** Cuándo el estado que muestra la insignia es de OTRO sistema y su palabra
+ *  choca con la nuestra. Hoy sólo Sodimac: su "ASIGNADO" quiere decir que el
+ *  mandante nos asignó el viaje, no que nosotros le asignamos un conductor
+ *  —de sus 71 viajes, ninguno trae patente—. Punto 9 de la minuta del 25/08. */
+const origenExterno = (t: { source_system: string | null }) =>
+  t.source_system === 'sodimac' ? 'Sodimac' : undefined
+
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
@@ -242,7 +250,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       ? <span className={`rounded-full px-1.5 py-0.5 text-etiqueta font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                       : null
                   })()}
-                  <StatusBadge status={currentStatus} meta={meta} />
+                  <StatusBadge status={currentStatus} meta={meta} origen={origenExterno(trip)} />
                   <DwellSeverityBadge
                     severity={dwell?.severity ?? null}
                     label={dwell?.label ?? null}
@@ -354,7 +362,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <StatusBadge status={currentStatus} meta={meta} variante="punto" />
+                          <StatusBadge status={currentStatus} meta={meta} variante="punto" origen={origenExterno(trip)} />
                           {trip.manual_status && (
                             <span className="text-etiqueta text-accent block mt-0.5">override</span>
                           )}
@@ -376,20 +384,41 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       </div>
                     </td>
 
-                    {/* FECHA */}
+                    {/* FECHA — la del viaje arriba, y debajo la HORA PLANIFICADA
+                        del origen, con su etiqueta.
+
+                        Acá se imprimía, sin ninguna etiqueta, la hora de
+                        `status_reported_at` — que es CUÁNDO EL TMS REPORTÓ EL
+                        ESTADO, no cuándo se planificó el viaje. Bajo un
+                        encabezado que dice "Fecha", eso se lee como la hora de
+                        planificación, y no coincide con la que muestra el
+                        detalle: es el punto 10 de la minuta del 25/08 ("la
+                        lista dice 16:33 y el detalle 19:57"). No era huso
+                        horario —`fmtShort` fija America/Santiago— eran dos
+                        campos distintos con el mismo nombre. Y peor: esa hora
+                        se mueve en CADA ingestión, así que cambiaba sola.
+
+                        Ahora dice lo mismo que el detalle, y la hora del
+                        reporte queda en el `title`, que es donde sirve: para
+                        saber qué tan fresco es el estado. */}
                     <td className="px-2.5 py-2.5">
                       <p className="text-etiqueta text-text-primary font-medium whitespace-nowrap">
                         {fmtDate(trip.planning_date)}
                       </p>
-                      {trip.status_reported_at && (
-                        <p className="text-etiqueta text-gray-400 whitespace-nowrap mt-0.5">
-                          {new Intl.DateTimeFormat('es-CL', {
-                            timeZone: 'America/Santiago',
-                            hour: '2-digit', minute: '2-digit', second: '2-digit',
-                            hour12: false,
-                          }).format(new Date(normalizeUTC(trip.status_reported_at)))}
-                        </p>
-                      )}
+                      {(() => {
+                        const origen = (trip.stops ?? []).find(x => x.stop_type === 'ORIGIN') ?? trip.stops?.[0]
+                        if (!origen?.planning_date) return null
+                        return (
+                          <p
+                            className="text-etiqueta text-informativo whitespace-nowrap mt-0.5"
+                            title={trip.status_reported_at
+                              ? `El TMS reportó el estado a las ${fmtShort(trip.status_reported_at)}`
+                              : undefined}
+                          >
+                            Plan. {fmtShort(origen.planning_date)}
+                          </p>
+                        )
+                      })()}
                     </td>
 
                     {/* TMS · CLIENTE — de donde viene el viaje. El cliente

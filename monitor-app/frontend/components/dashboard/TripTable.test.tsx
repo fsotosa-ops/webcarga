@@ -40,6 +40,41 @@ describe('TripTable', () => {
     expect(screen.getByText('02-07-2026')).toBeInTheDocument()
   })
 
+  // Punto 10 de la minuta del 25/08: bajo el encabezado "Fecha" se imprimia,
+  // SIN etiqueta, la hora de status_reported_at —cuando el TMS reporto el
+  // estado— y se leia como la hora de planificacion. No coincidia con el
+  // detalle, y encima se movia en cada ingestion.
+  it('bajo la fecha muestra la hora PLANIFICADA del origen, etiquetada', () => {
+    const stops: Trip['stops'] = [{
+      stop_id: 's1', local: 'CD El Penon', planning_date: '2026-08-25 22:57:00',
+      arrival_date: null, departure_date: null, departure_date_prog: null,
+      unload_start: null, unload_end: null, gps_arrival_date: null, gps_departure_date: null,
+      on_time_status: null, destination_city: null, destination_region: null, s2s: null,
+      temperature: null, milestone_status: null, stop_type: 'ORIGIN',
+    }]
+    render(<TripTable trips={[makeTrip('t1', { stops, status_reported_at: '2026-08-26 19:33:00' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+
+    // 22:57 UTC = 18:57 en Chile, que es lo que muestra el detalle.
+    expect(screen.getByText('Plan. 18:57')).toBeInTheDocument()
+    // Y la hora del reporte del TMS ya no se confunde con la planificacion.
+    expect(screen.queryByText('15:33')).toBeNull()
+    expect(screen.queryByText('19:33:00')).toBeNull()
+  })
+
+  // Punto 9 de la minuta del 25/08: "Viajes de Sodimac sin conductor ni empresa
+  // pero el sistema los marca como asignados". La insignia mostraba el estado
+  // del PORTAL de Sodimac —cuyo "ASIGNADO" significa que el mandante nos
+  // asignó el viaje— con la misma pinta que un estado propio.
+  it('marca de qué portal viene el estado cuando la palabra choca con la nuestra', () => {
+    render(<TripTable trips={[makeTrip('t1', { source_system: 'sodimac', current_status: 'ASIGNADO' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.getAllByText('· Sodimac').length).toBeGreaterThan(0)
+  })
+
+  it('un viaje que no es de Sodimac no lleva marca de origen', () => {
+    render(<TripTable trips={[makeTrip('t1', { source_system: 'qanalytics', current_status: 'RUTA' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.queryByText(/· (Sodimac|QAnalytics)/)).toBeNull()
+  })
+
   it('calls onSelect directly when a row is clicked (no intermediate expand step)', () => {
     const onSelect = vi.fn()
     render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
