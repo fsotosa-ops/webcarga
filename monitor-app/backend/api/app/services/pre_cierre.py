@@ -139,9 +139,14 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                     _normalize(tms_name),
                 )
                 if len(candidates) != 1:
+                    # `directory_carrier_id` viaja desde el 2026-08-27: sin él
+                    # el panel del Cierre sólo podía enlazar al índice del
+                    # directorio y la persona tenía que buscar a mano la
+                    # empresa que la pantalla ya sabía cuál era.
                     escalations["EMPRESA_NO_RECONOCIDA"].append({
                         "tractor_plate": plate, "tms_carrier_name": tms_name,
                         "directory_carrier_name": assignment["business_name"],
+                        "directory_carrier_id": str(assignment["carrier_id"]),
                     })
                     continue
 
@@ -181,9 +186,36 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 })
 
             # ── Tipo A #2 — conductor: nombre distinto para el mismo RUT ────
+            # EL RUT SE CANONIZA ANTES DE BUSCARLO (2026-08-27). Acá vivía el
+            # bug que bloqueó el cierre del 25/08: se comparaba
+            # `upper(trim(tax_id))` contra el RUT crudo del TMS, y
+            # `public.drivers.tax_id` está siempre en forma canónica
+            # `NNNNNNNN-D` porque lo obliga un trigger y un CHECK.
+            #
+            # Medido contra producción el 27/08: de los viajes de agosto que
+            # traen RUT del TMS, **los 7 lo traen CON puntos, y los 7
+            # conductores existen al canonizar**. O sea CONDUCTOR_NO_REGISTRADO
+            # era 100% falso positivo — y como esta escalación hace `continue`,
+            # de paso mataba la corrección Tipo A del nombre, que es lo único
+            # que este bloque vino a hacer.
+            #
+            # La llave del GROUP BY es el canónico cuando existe, y el crudo
+            # cuando no: así dos formatos del mismo RUT colapsan en un caso, y
+            # dos RUT inválidos distintos no se mezclan en uno solo.
+            #
+            # La patente de más arriba tiene la MISMA forma (compara literal
+            # teniendo `public.canonical_plate` al lado) y NO se toca en este
+            # cambio: está medida y hoy no falla —817 de 828 viajes de agosto
+            # calzan igual literal que canónico, y los 11 restantes son 2
+            # patentes que de verdad no están en el directorio—. Además su
+            # llave se cruza con la de `client_rows` más abajo, así que
+            # canonizar una sola de las dos las desalinea. Queda dicho para que
+            # sea una decisión y no un olvido.
             driver_rows = await conn.fetch(
                 """
-                SELECT upper(trim(t.fleet->>'driver_rut_tms')) AS rut,
+                SELECT COALESCE(public.canonical_rut(t.fleet->>'driver_rut_tms'),
+                                upper(trim(t.fleet->>'driver_rut_tms'))) AS rut,
+                       bool_or(public.canonical_rut(t.fleet->>'driver_rut_tms') IS NOT NULL) AS es_canonico,
                        array_agg(t.fleet->>'driver_name_tms') AS names
                 FROM app.trips t
                 WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND t.fleet->>'driver_rut_tms' IS NOT NULL
@@ -194,13 +226,34 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
             )
             for r in driver_rows:
                 rut = r["rut"]
-                driver = await conn.fetchrow(
-                    "SELECT id, full_name, is_manual_override FROM public.drivers WHERE upper(trim(tax_id)) = $1", rut,
-                )
-                if not driver:
-                    escalations["CONDUCTOR_NO_REGISTRADO"].append({"driver_rut": rut})
+                if not r["es_canonico"]:
+                    # El TMS mandó algo que no es un RUT. Es una escalación
+                    # legítima y distinta de "no está en el directorio": no
+                    # sirve de nada buscarlo, y el coordinador necesita ver
+                    # exactamente lo que llegó para poder reclamarlo.
+                    escalations["CONDUCTOR_NO_REGISTRADO"].append({
+                        "driver_rut": rut,
+                        "reason": "El TMS informó un RUT que no es válido",
+                    })
                     continue
+                driver = await conn.fetchrow(
+                    "SELECT id, full_name, is_manual_override FROM public.drivers WHERE tax_id = $1", rut,
+                )
                 tms_name = _single_value(r["names"])
+                if not driver:
+                    # El nombre del TMS viaja con la escalación (2026-08-27)
+                    # para que el panel del Cierre pueda ofrecer el alta ahí
+                    # mismo, con el nombre ya escrito. Sin él, la única salida
+                    # era un enlace a otro módulo: eso es el "círculo
+                    # bloqueante" que describe la minuta del 25/08.
+                    #
+                    # `_single_value` devuelve None si los viajes de ese RUT
+                    # traen nombres distintos: ahí no hay un nombre que
+                    # proponer, y proponer uno de los dos sería inventar.
+                    escalations["CONDUCTOR_NO_REGISTRADO"].append(
+                        {"driver_rut": rut, "driver_name_tms": tms_name}
+                    )
+                    continue
                 if not tms_name or driver["is_manual_override"]:
                     continue
                 if _normalize(tms_name) == _normalize(driver["full_name"]):

@@ -29,30 +29,78 @@ def test_get_driver_404_when_missing():
     assert res.status_code == 404
 
 
+# El alta canoniza el RUT con `public.canonical_rut()` antes de buscarlo
+# (2026-08-27). En estos tests `conn.fetchval` ES esa llamada: devuelve el RUT
+# canónico, o None cuando el RUT no es válido. La búsqueda del duplicado y el
+# INSERT son las DOS llamadas a `conn.fetchrow`, en ese orden.
+CANONICO = "16428339-1"
+FILA_CREADA = {
+    "id": "d1", "tax_id": CANONICO, "country_code": "CL",
+    "full_name": "Juan Perez", "operational_status": "ACTIVE", "created_at": None,
+}
+
+
 def test_create_driver_rejects_duplicate_tax_id():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.return_value = "existing"
+    conn.fetchval.return_value = CANONICO
+    conn.fetchrow.return_value = {
+        "id": "d-existente", "full_name": "Juan Perez", "operational_status": "ACTIVE",
+    }
     client = make_client(pool)
 
-    res = client.post("/api/v1/drivers", json={"tax_id": "1-9", "full_name": "Juan Perez"})
+    res = client.post("/api/v1/drivers", json={"tax_id": "16.428.339-1", "full_name": "Juan Perez"})
 
     assert res.status_code == 409
+    detalle = res.json()["detail"]
+    # El id va en el cuerpo porque la interfaz lo necesita para ofrecer
+    # "asignar a este conductor". Un 409 con sólo un texto deja al coordinador
+    # con el mismo callejón sin salida que el bug original.
+    assert detalle["code"] == "CONDUCTOR_YA_EXISTE"
+    assert detalle["driver_id"] == "d-existente"
+
+
+def test_create_driver_rechaza_un_rut_invalido_con_422():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None  # canonical_rut() no pudo canonizarlo
+    client = make_client(pool)
+
+    res = client.post("/api/v1/drivers", json={"tax_id": "12345678-0", "full_name": "Juan Perez"})
+
+    assert res.status_code == 422
+    assert res.json()["detail"]["code"] == "RUT_INVALIDO"
+    # Y no llegó a intentar el INSERT.
+    assert conn.fetchrow.await_count == 0
+
+
+def test_create_driver_guarda_el_canonico_y_no_lo_tecleado():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = CANONICO
+    conn.fetchrow.side_effect = [None, FILA_CREADA]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/drivers", json={"tax_id": "16.428.339-1", "full_name": "juan perez"})
+
+    assert res.status_code == 201
+    insert = conn.fetchrow.await_args_list[1]
+    assert "INSERT INTO public.drivers" in insert.args[0]
+    assert insert.args[1] == CANONICO
 
 
 def test_create_driver_success():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.return_value = None
-    conn.fetchrow.return_value = {
-        "id": "d1", "tax_id": "1-9", "country_code": "CL",
-        "full_name": "Juan Perez", "operational_status": "ACTIVE", "created_at": None,
-    }
+    conn.fetchval.return_value = CANONICO
+    conn.fetchrow.side_effect = [None, FILA_CREADA]
     client = make_client(pool)
 
-    res = client.post("/api/v1/drivers", json={"tax_id": "1-9", "full_name": "juan perez"})
+    res = client.post("/api/v1/drivers", json={"tax_id": "16.428.339-1", "full_name": "juan perez"})
 
     assert res.status_code == 201
     assert res.json()["full_name"] == "Juan Perez"

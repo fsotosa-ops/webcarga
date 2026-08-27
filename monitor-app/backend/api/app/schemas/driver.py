@@ -17,6 +17,12 @@ class DriverCreateBody(BaseModel):
     def _normalize_name(cls, v):
         return v.strip().title() if isinstance(v, str) and v else v
 
+    # Sólo limpieza de bordes. La CANONIZACIÓN (quitar puntos, validar dígito
+    # verificador, dejarlo en NNNNNNNN-D) NO vive acá a propósito: la hace
+    # `public.canonical_rut()` en routers/drivers.py, que es la misma función
+    # que usa el CHECK `drivers_tax_id_is_canonical` de la tabla. Reescribirla
+    # en Python daría dos definiciones de la misma regla, y se separan el día
+    # que alguien toca una sola.
     @field_validator("tax_id", mode="before")
     @classmethod
     def _clean_tax_id(cls, v):

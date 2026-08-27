@@ -172,6 +172,9 @@ async def test_tipo_b_empresa_no_reconocida_cuando_el_nombre_tms_no_matchea_ning
     assert result["escalations"]["EMPRESA_NO_RECONOCIDA"] == [{
         "tractor_plate": "ABCD12", "tms_carrier_name": "Transportes Fantasma SPA",
         "directory_carrier_name": "Empresa Vieja",
+        # El id va con la escalación para que el panel del Cierre enlace
+        # derecho a la ficha donde se corrige, y no al índice del directorio.
+        "directory_carrier_id": "c1",
     }]
     assert result["auto_resolved"] == []
 
@@ -181,7 +184,7 @@ async def test_tipo_a2_actualiza_nombre_del_conductor_por_rut():
     conn = AsyncMock()
     conn.fetch.side_effect = [
         [],  # plate scan
-        [{"rut": "111111111", "names": ["Juan Perez Gomez"]}],
+        [{"rut": "11111111-1", "es_canonico": True, "names": ["Juan Perez Gomez"]}],
         [], [], [],
     ]
     conn.fetchrow.side_effect = [
@@ -192,9 +195,9 @@ async def test_tipo_a2_actualiza_nombre_del_conductor_por_rut():
     result = await run_pre_cierre(pool, DAY)
 
     assert result["auto_resolved"] == [{
-        "type": "CONDUCTOR_DATOS", "driver_rut": "111111111",
+        "type": "CONDUCTOR_DATOS", "driver_rut": "11111111-1",
         "old_value": "Juan Perez", "new_value": "Juan Perez Gomez",
-        "message": "Se actualizó el nombre del conductor 111111111 de 'Juan Perez' a 'Juan Perez Gomez'.",
+        "message": "Se actualizó el nombre del conductor 11111111-1 de 'Juan Perez' a 'Juan Perez Gomez'.",
     }]
 
 
@@ -203,7 +206,7 @@ async def test_tipo_b_conductor_no_registrado():
     conn = AsyncMock()
     conn.fetch.side_effect = [
         [],
-        [{"rut": "222222222", "names": ["Pedro Soto"]}],
+        [{"rut": "22222222-2", "es_canonico": True, "names": ["Pedro Soto"]}],
         [], [], [],
     ]
     conn.fetchrow.side_effect = [None]
@@ -211,7 +214,70 @@ async def test_tipo_b_conductor_no_registrado():
 
     result = await run_pre_cierre(pool, DAY)
 
-    assert result["escalations"]["CONDUCTOR_NO_REGISTRADO"] == [{"driver_rut": "222222222"}]
+    assert result["escalations"]["CONDUCTOR_NO_REGISTRADO"] == [
+        {"driver_rut": "22222222-2", "driver_name_tms": "Pedro Soto"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_el_nombre_del_tms_viaja_con_la_escalacion_para_poder_dar_de_alta():
+    """Sin el nombre, la única salida del panel del Cierre era un enlace a otro
+    módulo — el "círculo bloqueante" de la minuta del 25/08. Con él, el alta se
+    ofrece ahí mismo y con el nombre ya escrito."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [],
+        [{"rut": "33333333-3", "es_canonico": True, "names": ["Pedro Soto", "Pedro Soto"]}],
+        [], [], [],
+    ]
+    conn.fetchrow.side_effect = [None]
+    pool = _pool_with(conn)
+
+    result = await run_pre_cierre(pool, DAY)
+
+    assert result["escalations"]["CONDUCTOR_NO_REGISTRADO"][0]["driver_name_tms"] == "Pedro Soto"
+
+
+@pytest.mark.asyncio
+async def test_si_el_tms_da_dos_nombres_para_el_mismo_rut_no_se_propone_ninguno():
+    """Elegir uno de los dos sería inventar. El panel pide el nombre a mano."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [],
+        [{"rut": "44444444-4", "es_canonico": True, "names": ["Pedro Soto", "Pedro Sotomayor"]}],
+        [], [], [],
+    ]
+    conn.fetchrow.side_effect = [None]
+    pool = _pool_with(conn)
+
+    result = await run_pre_cierre(pool, DAY)
+
+    assert result["escalations"]["CONDUCTOR_NO_REGISTRADO"][0]["driver_name_tms"] is None
+
+
+@pytest.mark.asyncio
+async def test_un_rut_que_no_canoniza_se_escala_con_su_motivo():
+    """Distinto de "no está en el directorio", y por eso no se busca.
+
+    Cuando `public.canonical_rut()` devuelve NULL, el TMS mandó algo que no es
+    un RUT. Buscarlo en `public.drivers` no puede dar nada, y el coordinador
+    necesita ver EXACTAMENTE lo que llegó para poder reclamarlo aguas arriba."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [],
+        [{"rut": "SIN RUT", "es_canonico": False, "names": ["Pedro Soto"]}],
+        [], [], [],
+    ]
+    pool = _pool_with(conn)
+
+    result = await run_pre_cierre(pool, DAY)
+
+    assert result["escalations"]["CONDUCTOR_NO_REGISTRADO"] == [{
+        "driver_rut": "SIN RUT",
+        "reason": "El TMS informó un RUT que no es válido",
+    }]
+    # No se buscó al conductor: no hay nada que buscar.
+    assert conn.fetchrow.await_count == 0
 
 
 @pytest.mark.asyncio

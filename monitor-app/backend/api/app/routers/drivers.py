@@ -2,6 +2,7 @@
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
 import re
 
+from asyncpg.exceptions import CheckViolationError, UniqueViolationError
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase, require_editor
@@ -154,20 +155,80 @@ async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(get_curre
 async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Depends(require_editor)):
     """Alta de conductor como master data (sin asignar a ninguna empresa
     todavía) — trg_reconcile_new_driver siembra los compliance_records
-    MISSING al insertar. Para asignarlo a una empresa, POST /carriers/{id}/drivers."""
+    MISSING al insertar. Para asignarlo a una empresa, POST /carriers/{id}/drivers.
+
+    EL RUT SE CANONIZA ACÁ, y con la función de la base (2026-08-27, bug crítico
+    #1 de la minuta del 25/08). Antes este pre-chequeo comparaba `tax_id = $1`
+    LITERAL contra una columna que `trg_drivers_normalize_tax_id` guarda siempre
+    como `NNNNNNNN-D`, y el propio formulario del Diario enseña el formato CON
+    puntos en su placeholder. O sea:
+
+      * RUT existente tecleado sin puntos -> lo encontraba -> 409 correcto.
+      * RUT existente tecleado CON puntos -> NO lo encontraba, seguía al INSERT,
+        el trigger lo canonizaba y recién ahí chocaba con `drivers_tax_id_key`:
+        `UniqueViolationError` sin `except` -> **500**.
+      * RUT con dígito verificador malo -> `canonical_rut` devuelve NULL, el
+        trigger conserva lo tecleado y lo rechaza `drivers_tax_id_is_canonical`:
+        `CheckViolationError` sin `except` -> **500** otra vez.
+
+    Se llama a `public.canonical_rut()` en vez de reescribirla en Python a
+    propósito: el CHECK de la tabla usa ESA, y dos implementaciones de la misma
+    regla se separan el día que alguien toca una. El CHECK no mira
+    `country_code` —es incondicional—, así que acá tampoco se ramifica.
+
+    Los `except` de abajo no son redundantes con el pre-chequeo: cubren la
+    carrera entre el SELECT y el INSERT. Sin ellos esa carrera es un 500.
+    """
     async with pool.acquire() as conn:
         async with conn.transaction():
-            existing = await conn.fetchval("SELECT id FROM public.drivers WHERE tax_id = $1", body.tax_id)
-            if existing:
-                raise HTTPException(409, f"Ya existe un conductor con tax_id {body.tax_id}")
-            row = await conn.fetchrow(
-                """
-                INSERT INTO public.drivers (tax_id, country_code, full_name, operational_status)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, tax_id, country_code, full_name, operational_status, created_at
-                """,
-                body.tax_id, body.country_code, body.full_name, body.operational_status,
+            canonico = await conn.fetchval("SELECT public.canonical_rut($1)", body.tax_id)
+            if canonico is None:
+                raise HTTPException(422, {
+                    "code": "RUT_INVALIDO",
+                    "message": (
+                        f"El RUT '{body.tax_id}' no es válido. Revisa el dígito verificador."
+                    ),
+                    "tax_id": body.tax_id,
+                })
+            existing = await conn.fetchrow(
+                "SELECT id, full_name, operational_status FROM public.drivers WHERE tax_id = $1",
+                canonico,
             )
+            if existing:
+                # Estructurado, no un string: la interfaz necesita el id para
+                # ofrecer "asignar a este conductor" en vez de dejar al
+                # coordinador con un mensaje y ninguna salida.
+                raise HTTPException(409, {
+                    "code": "CONDUCTOR_YA_EXISTE",
+                    "message": (
+                        f"{existing['full_name']} ya está registrado con el RUT {canonico}."
+                    ),
+                    "driver_id": str(existing["id"]),
+                    "full_name": existing["full_name"],
+                    "tax_id": canonico,
+                    "operational_status": existing["operational_status"],
+                })
+            try:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO public.drivers (tax_id, country_code, full_name, operational_status)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id, tax_id, country_code, full_name, operational_status, created_at
+                    """,
+                    canonico, body.country_code, body.full_name, body.operational_status,
+                )
+            except UniqueViolationError:
+                raise HTTPException(409, {
+                    "code": "CONDUCTOR_YA_EXISTE",
+                    "message": f"Ya existe un conductor con el RUT {canonico}.",
+                    "tax_id": canonico,
+                })
+            except CheckViolationError:
+                raise HTTPException(422, {
+                    "code": "RUT_INVALIDO",
+                    "message": f"El RUT '{body.tax_id}' no es válido.",
+                    "tax_id": body.tax_id,
+                })
             await log_change(
                 conn, actor=user["sub"], entity_type="DRIVER", entity_id=row["id"],
                 action="create", source="api",
