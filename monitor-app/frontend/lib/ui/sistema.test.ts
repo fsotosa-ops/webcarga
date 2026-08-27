@@ -74,7 +74,14 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1.755 -> 1.753 en la Ronda 138: VehicleRosterCard dejo de repetir la
     // tabla de etiquetas de chasis, y la baja de empresa se pinto con
     // `status-incidente` en vez de `red-*` crudo.
-    const DEUDA = 1753
+    // 1.753 -> 1.744 en la Ronda 149 (2026-08-27): el tope estaba 9 por encima
+    // del numero real, y este trinquete es justo lo que impide que ese margen
+    // se llene solo. La UI nueva del arreglo del Cierre —la caja de error del
+    // popover de conductor, SinFlotaList y el alta desde el pre-cierre— nacio
+    // con 16 usos crudos y se escribio de nuevo con tokens: `status-incidente`
+    // para el error, `informativo` para el gris de apoyo. Bajarlo hasta el
+    // numero real es lo que hace que el proximo margen no exista.
+    const DEUDA = 1744
 
     const total = usosDeColorCrudo()
     expect(
