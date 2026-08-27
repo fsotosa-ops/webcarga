@@ -11,6 +11,61 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-08-27 — STAND BY. Estado y punto de retomada
+
+`dev` en `684ec37a`, **pusheado y desplegado**. Deploy Frontend y Deploy Monitor API en verde.
+**Nada a medio hacer.**
+
+## Todo lo de la minuta del 25/08 que era código, está en producción
+
+Once commits en dos rondas, más **tres migraciones aplicadas a la base** (`name_tokens` sin
+puntuación, los 10 motivos, y los 3 que faltaban). Suites finales: **frontend 1.327 en verde**,
+**backend 987 en verde, cero salteados**.
+
+## Los 19 salteados: cerrado, era un hipo
+
+Tres corridas lo resolvieron: los 190 de integración solos dan `190 passed, 0 skipped`; los 797
+mockeados solos dan `797 passed, 0 skipped`; la completa dio una vez `968 passed, 19 skipped` y a la
+siguiente **`987 passed, 0 skipped`**. Transitorio, no reproducible.
+
+**Pero el mecanismo quedó anotado en `TECH_DEBT.md`**: `conexion_revertida` convierte un fallo de
+conexión en `skip`, no en rojo. Está bien para "no hay credenciales", no para "no pude conectar" —
+ahí el test no probó lo que dice probar y la suite igual reporta verde. Me pasó de creerlo, después
+de desmentirlo, y al final de confirmarlo con tres corridas: **vale más medir tres veces que
+corregirse dos**.
+
+## Lo que queda, y de quién es
+
+**De negocio, esperando a Pablo:**
+1. **Issue #12 — rotación.** La métrica no existe en el producto (lo más cercano es
+   `v_driver_daily_trip_legs`, vueltas por conductor por día). Y la marca GPS que él propuso **no
+   llega**: 0 de 821 en QAnalytics, 0 de 46 en Sodimac. Alternativa medida: llegada GPS al primer
+   destino, 707 de 821.
+2. **Criterio de ausencia de Sodimac (issue #3).** 22 viajes trabados, hasta 34 días. Ojo: el
+   mecanismo de alerta YA existe y ya los marca — falta decidir qué se hace con ellos, no construirlo.
+3. **La alerta a finanzas** (sección 5.3): falta el número de días y el destinatario.
+4. **Doris Mercedes** y la **reproducción del bug 4**: no existen en la base como para investigarlos.
+
+**De dato maestro, equipo WebCarga:** los 7 casos de la sección 6, Muñoz Godoy a La Fortaleza, los 7
+tractocamiones sin tipo de operación, y las 2 patentes fuera del directorio. Las puertas ya están
+abiertas.
+
+**De desarrollo, cuando haya definición:** el escalón que falta del mecanismo de alertas (que salga a
+buscar a alguien), y el bug de `trips.planning_date` corrido un día en 161 de 1.741 viajes de
+QAnalytics, que vive en `stg_qanalytics_trips`, en el dbt de Mage.
+
+## Checklist — siguiente paso exacto
+
+1. **El cierre de prueba de Pablo.** Es la única verificación que cuenta. Tres cosas concretas:
+   crear y asignar con un RUT que ya existe (tiene que aparecer el mensaje y el botón para
+   asignárselo, no el silencio), con puntos y con dígito verificador malo; cerrar el 25/08; y
+   confirmar una de las seis propuestas de vínculo.
+2. **Issue #12 necesita respuesta de negocio** antes de que haya nada que programar.
+3. **El job muerto de `ops.extraction_jobs`**: un `cumplimiento-iansa` encolado desde el 19/08 que
+   nunca arrancó (`started_at` vacío). Ocho días es un producto que el worker no está tomando.
+4. **La deuda de `conexion_revertida`** anotada arriba, cuando se toque el conftest.
+
+
 ### 2026-08-27 — Ronda 151: el 2.3 implementado, y la rotación convertida en pregunta
 
 Con la Ronda 150 desplegada, el usuario pidió las dos que quedaban: **implementar 2.3 en el
