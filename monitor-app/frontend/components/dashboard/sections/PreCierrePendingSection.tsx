@@ -7,6 +7,7 @@ import { dailyClosuresApi } from '@/lib/api/dailyClosures'
 import { carriersApi } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '../NewCarrierPanel'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
+import { AltaConductorDesdeCierre } from './AltaConductorDesdeCierre'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
 
 interface Props {
@@ -192,25 +193,56 @@ export function PreCierrePendingSection({ fecha }: Props) {
               <p className="text-xs text-amber-800">
                 Patente <span className="font-semibold">{esc.tractor_plate}</span>: el TMS reporta &quot;{esc.tms_carrier_name}&quot;, el directorio tiene &quot;{esc.directory_carrier_name}&quot; — sin match único.
               </p>
-              <a href="/dashboard/carriers" target="_blank" className="text-[11px] font-semibold text-accent hover:underline">
-                Revisar en el directorio
+              {/* Derecho a la ficha de la empresa que el directorio tiene para
+                  esa patente, pestaña Equipos: es donde se corrige. Mandar al
+                  índice pelado deja a la persona buscando a mano lo que la
+                  pantalla ya sabe — y el buscador de empresas ni siquiera
+                  busca por patente. */}
+              <a href={`/dashboard/carriers/${esc.directory_carrier_id}?tab=equipos`} target="_blank"
+                 className="text-[11px] font-semibold text-accent hover:underline">
+                Revisar {esc.tractor_plate} en {esc.directory_carrier_name}
               </a>
             </div>
           ))}
 
+          {/* Esta escalación BLOQUEA el cierre y era la única bloqueante sin
+              acción propia: sólo tenía un enlace a otro módulo, y encima a uno
+              que estaba fuera del menú. Es, textual, el "círculo bloqueante"
+              de la minuta del 25/08. Ahora el alta se hace acá.
+
+              Cuando el RUT ni siquiera es un RUT (`reason`), no hay a quién dar
+              de alta: eso se reclama aguas arriba, al TMS. */}
           {escalations.CONDUCTOR_NO_REGISTRADO.map(esc => (
             <div key={esc.driver_rut} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
               <p className="text-xs text-amber-800">
-                Conductor no registrado: RUT <span className="font-semibold">{esc.driver_rut}</span>.
+                {esc.reason
+                  ? <>El TMS informó un RUT que no es válido: <span className="font-semibold">{esc.driver_rut}</span>. Hay que corregirlo en el TMS.</>
+                  : <>Conductor no registrado: RUT <span className="font-semibold">{esc.driver_rut}</span>
+                      {esc.driver_name_tms ? <> — el TMS lo llama &quot;{esc.driver_name_tms}&quot;</> : null}.</>}
               </p>
-              <a href="/dashboard/carriers" target="_blank" className="text-[11px] font-semibold text-accent hover:underline">
-                Revisar en el directorio
-              </a>
+              {!esc.reason && (
+                <AltaConductorDesdeCierre
+                  rut={esc.driver_rut}
+                  nombreTms={esc.driver_name_tms ?? null}
+                  onListo={invalidate}
+                />
+              )}
             </div>
           ))}
 
-          <p className="text-[11px] text-gray-400 flex items-center gap-1">
-            <Info size={11} /> Puedes avanzar al cierre aunque queden pendientes sin resolver.
+          {/* Este pie decía "Puedes avanzar al cierre aunque queden pendientes
+              sin resolver" y era FALSO desde el 2026-08-23: `close_day`
+              devuelve 409 con `_ESCALACIONES_QUE_BLOQUEAN`, que son cuatro de
+              las cinco de acá arriba. Falta de tipo de operación es la única
+              que no bloquea, y por eso se nombra aparte: un aviso que promete
+              lo contrario de lo que hace la API enseña a no leer los avisos. */}
+          <p className="text-[11px] text-informativo flex items-start gap-1">
+            <Info size={11} className="mt-0.5 shrink-0" />
+            <span>
+              Estos pendientes bloquean el cierre del día, salvo la falta de tipo
+              de operación. Resuélvelos aquí, o pide a un administrador que fuerce
+              el cierre dejando una nota.
+            </span>
           </p>
         </div>
       )}

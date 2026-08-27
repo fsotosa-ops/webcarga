@@ -1136,8 +1136,17 @@ export type PreCierreAutoResolved = {
 }
 export type PreCierreEscalations = {
   PATENTE_NO_REGISTRADA:   { tractor_plate: string; reason: string }[]
-  EMPRESA_NO_RECONOCIDA:   { tractor_plate: string; tms_carrier_name: string; directory_carrier_name: string }[]
-  CONDUCTOR_NO_REGISTRADO: { driver_rut: string }[]
+  /** `directory_carrier_id` viaja desde el 2026-08-27: es la empresa que el
+   *  directorio tiene para esa patente, y con ella el panel enlaza derecho a
+   *  la ficha donde se corrige. Opcional porque backend y frontend se
+   *  despliegan por separado. */
+  EMPRESA_NO_RECONOCIDA:   { tractor_plate: string; tms_carrier_name: string; directory_carrier_name: string; directory_carrier_id?: string }[]
+  /** `driver_name_tms` viaja desde el 2026-08-27 para que el panel del Cierre
+   *  pueda ofrecer el alta con el nombre ya escrito; es null cuando los viajes
+   *  de ese RUT traen nombres distintos (proponer uno sería inventar).
+   *  `reason` sólo aparece cuando el TMS informó algo que ni siquiera es un
+   *  RUT: ahí no hay a quién dar de alta. */
+  CONDUCTOR_NO_REGISTRADO: { driver_rut: string; driver_name_tms?: string | null; reason?: string }[]
   EMPRESA_ONBOARDING:      { carrier_id: string; carrier_name: string }[]
   SIN_TIPO_OPERACION:      { carrier_id: string; carrier_name: string }[]
 }

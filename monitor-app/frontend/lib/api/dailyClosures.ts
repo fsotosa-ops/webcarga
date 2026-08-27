@@ -1,6 +1,22 @@
 import type { DailyClosureReport, DailyClosureStatus, DriverDayStatusRow } from '@/lib/types'
 import { apiFetch, ApiError } from './client'
 
+/** Un viaje cuya flota no está en el directorio, tal como lo arma
+ *  `_pendientes_de_flota` en daily_closures.py: `tipo` más los campos de la
+ *  escalación que lo produjo. Los campos son opcionales porque cada tipo trae
+ *  los suyos —una patente no registrada no tiene RUT, una empresa en onboarding
+ *  no tiene patente— y la pantalla arma la frase con lo que llegó. */
+export type SinFlota = {
+  tipo: 'PATENTE_NO_REGISTRADA' | 'CONDUCTOR_NO_REGISTRADO' | 'EMPRESA_NO_RECONOCIDA' | 'EMPRESA_ONBOARDING' | string
+  tractor_plate?: string
+  driver_rut?: string
+  reason?: string
+  tms_carrier_name?: string
+  directory_carrier_name?: string
+  carrier_id?: string
+  carrier_name?: string
+}
+
 export type ClosePendingError = {
   message: string
   pending: { driver_id: string; full_name: string; status: string }[]
@@ -16,7 +32,7 @@ export type ClosePendingError = {
    *
    *  Opcional porque el backend lo agregó después y los dos se despliegan por
    *  separado; el `message` que muestra la pantalla ya lo nombra igual. */
-  sin_flota?: { tipo: string; tractor_plate?: string; reason?: string }[]
+  sin_flota?: SinFlota[]
 }
 
 /** El backend manda el 409 con `detail` = objeto estructurado (no string) —

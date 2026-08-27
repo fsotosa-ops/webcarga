@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, ClipboardCheck, AlertTriangle, CheckCircle2, X, Truck } from 'lucide-react'
-import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
+import { dailyClosuresApi, isClosePendingError, type SinFlota } from '@/lib/api/dailyClosures'
+import { SinFlotaList } from './SinFlotaList'
 import { AlertStatTiles } from './AlertStatTiles'
 import type { DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
 
@@ -59,6 +60,10 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
   const [overrideNote, setOverrideNote] = useState('')
   const [closeErr, setCloseErr] = useState<string | null>(null)
   const [pendingList, setPendingList] = useState<{ driver_id: string; full_name: string; status: string }[] | null>(null)
+  // El segundo motivo de bloqueo, que llegaba en el 409 desde el 23/08 y que
+  // esta pantalla NO leía: el usuario veía "3 viajes con flota fuera del
+  // directorio" en el texto y ninguna forma de saber cuáles.
+  const [sinFlota, setSinFlota] = useState<SinFlota[] | null>(null)
   const [savingReason, setSavingReason] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
   const [category, setCategory] = useState<Category | ''>('')
@@ -97,12 +102,14 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
     try {
       await dailyClosuresApi.close(fecha, override, overrideNote)
       setPendingList(null)
+      setSinFlota(null)
       setOverrideOpen(false)
       setOverrideNote('')
       await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
     } catch (e) {
       if (isClosePendingError(e)) {
         setPendingList(e.detail.pending)
+        setSinFlota(e.detail.sin_flota ?? null)
         setCloseErr(e.detail.message)
       } else {
         setCloseErr(e instanceof Error ? e.message : 'No se pudo cerrar el día')
@@ -271,7 +278,8 @@ export function CloseDayDialog({ open, fecha, canAdmin, unassignedReasons, onClo
                         {pendingList.map(p => <li key={p.driver_id}>{p.full_name} — {STATUS_LABEL[p.status as DriverDayStatusValue] ?? p.status}</li>)}
                       </ul>
                     )}
-                    {pendingList && pendingList.length > 0 && canAdmin && !overrideOpen && (
+                    {sinFlota && <SinFlotaList casos={sinFlota} />}
+                    {((pendingList && pendingList.length > 0) || (sinFlota && sinFlota.length > 0)) && canAdmin && !overrideOpen && (
                       <button type="button" onClick={() => setOverrideOpen(true)} className="text-[11px] font-semibold text-amber-700 underline">
                         Forzar cierre con override
                       </button>

@@ -10,7 +10,8 @@ import {
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { shippersApi } from '@/lib/api/locations'
-import { dailyClosuresApi, isClosePendingError } from '@/lib/api/dailyClosures'
+import { dailyClosuresApi, isClosePendingError, type SinFlota } from '@/lib/api/dailyClosures'
+import { SinFlotaList } from '@/components/dashboard/SinFlotaList'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
 import { tripsApi } from '@/lib/api/trips'
 import { taxonomiesApi } from '@/lib/api/config'
@@ -68,6 +69,9 @@ function ClosuresCenterPageInner() {
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [overridePending, setOverridePending] = useState(false)
+  // Mismo hueco que tenía CloseDayDialog: el 409 trae los viajes cuya flota no
+  // está en el directorio y esta pantalla sólo mostraba el texto del mensaje.
+  const [sinFlota, setSinFlota] = useState<SinFlota[] | null>(null)
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [overrideNote, setOverrideNote] = useState('')
   const [tab, setTab] = useState<TabId>('flota')
@@ -144,11 +148,12 @@ function ClosuresCenterPageInner() {
     setClosing(true); setCloseError(null)
     try {
       await dailyClosuresApi.close(fecha, override, overrideNote)
-      setOverridePending(false); setOverrideOpen(false); setOverrideNote('')
+      setOverridePending(false); setOverrideOpen(false); setOverrideNote(''); setSinFlota(null)
     } catch (e) {
       setClosing(false)
       if (isClosePendingError(e)) {
         setOverridePending(true)
+        setSinFlota(e.detail.sin_flota ?? null)
         setCloseError(e.detail.message)
       } else {
         setCloseError(e instanceof Error ? e.message : 'No se pudo cerrar el día')
@@ -275,7 +280,10 @@ function ClosuresCenterPageInner() {
           </div>
 
           {closeError && (
-            <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{closeError}</p>
+            <div className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              <p>{closeError}</p>
+              {sinFlota && <SinFlotaList casos={sinFlota} />}
+            </div>
           )}
           {overridePending && canAdmin && !overrideOpen && (
             <button type="button" onClick={() => setOverrideOpen(true)} className="block text-[11px] font-semibold text-amber-700 underline">
