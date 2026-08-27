@@ -17,6 +17,12 @@ interface Props {
    *  ficha de Empresas y eso sacaba al usuario del módulo: se perdía la cola
    *  de trabajo y volver exigía rehacer el filtro. */
   onIrAEmpresa?: (carrierId: string) => void
+  /** Vincular a una empresa a un conductor o un vehículo que no tiene ninguna.
+   *  Sin esto, esa fila era texto muerto: la columna Empresa decía "sin
+   *  empresa" con un `title` explicativo y ninguna acción, y no había ninguna
+   *  otra vista de la app donde hacerlo (bug crítico #5 de la minuta del
+   *  25/08). Al 27/08 son 8 conductores con 278 viajes y 7 patentes con 82. */
+  onAsignarEmpresa?: (row: CertificationStatusRow) => void
 }
 
 /** La vista por defecto del módulo: cómo va cada empresa.
@@ -25,7 +31,7 @@ interface Props {
  *  llegó sin clasificar. Tenerlas en dos listas hermanas obligaba a cruzarlas
  *  de memoria, que es exactamente lo que hacía al módulo confuso. */
 export function CertificationStatusTable({
-  rows, group, openRowId, onToggleRow, renderDrawer, onIrAEmpresa,
+  rows, group, openRowId, onToggleRow, renderDrawer, onIrAEmpresa, onAsignarEmpresa,
 }: Props) {
   const porEmpresa = group === 'carrier'
   // Agrupando por REQUISITO la fila es un tipo de documento, no una entidad
@@ -111,7 +117,12 @@ export function CertificationStatusTable({
                     {r.entity_name}
                   </span>
                 ) : (
-                  <span className="text-xs font-medium text-text-primary" title="Sin empresa activa: no se le puede cargar documentación">
+                  <span
+                    className="text-xs font-medium text-text-primary"
+                    title={onAsignarEmpresa
+                      ? 'Sin empresa activa: asígnale una en la columna Empresa para poder cargarle documentación'
+                      : 'Sin empresa activa: no se le puede cargar documentación'}
+                  >
                     {r.entity_name}
                   </span>
                 )}
@@ -137,8 +148,17 @@ export function CertificationStatusTable({
                     </button>
                   ) : (
                     <span className="text-etiqueta text-gray-600">{r.carrier_name}</span>
+                  ) : onAsignarEmpresa ? (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onAsignarEmpresa(r) }}
+                      className="text-etiqueta text-espera hover:underline cursor-pointer"
+                      title="Sin empresa no se le puede cargar documentación ni entra al cierre del día"
+                    >
+                      Asignar empresa
+                    </button>
                   ) : (
-                    <span className="text-etiqueta text-amber-700" title="Sin asignación activa a una empresa">
+                    <span className="text-etiqueta text-espera" title="Sin asignación activa a una empresa">
                       sin empresa
                     </span>
                   )}

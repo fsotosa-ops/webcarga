@@ -10,11 +10,12 @@ import { CertificationFunnel } from '@/components/compliance/CertificationFunnel
 import { DirectorioResumen } from '@/components/compliance/DirectorioResumen'
 import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
+import { TransferModal } from '@/components/dashboard/TransferModal'
 import { ActualizarPorPlanillaModal } from '@/components/compliance/ActualizarPorPlanillaModal'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import type { CarrierCreateResult } from '@/lib/api/carriers'
-import type { CertificationGroup } from '@/lib/types'
+import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
+import type { CertificationGroup, CertificationStatusRow } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
@@ -86,6 +87,11 @@ function CertificationPageInner() {
   const qDebounced = useDebouncedValue(q, 300)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)
+  // El conductor o el vehículo sin empresa que se está por vincular. Reusa el
+  // MISMO modal que la transferencia —con `currentCarrierId` en null— porque
+  // es la misma pregunta ("¿de qué empresa es?") hecha desde otro punto de
+  // partida: una variante es una prop, no un componente hermano.
+  const [asignandoEmpresa, setAsignandoEmpresa] = useState<CertificationStatusRow | null>(null)
   /** Una sola fila abierta a la vez. La regla y su razón viven en el hook,
    *  porque este módulo tiene cuatro listas del mismo objeto. */
   const { abierta: filaAbierta, alternar: alternarFila } = useFilaAbierta()
@@ -289,11 +295,35 @@ function CertificationPageInner() {
                   />
                 ) : null}
                 onIrAEmpresa={irAEmpresa}
+                onAsignarEmpresa={setAsignandoEmpresa}
               />
             )}
           </div>
         )}
       </div>
+
+      {/* Vincular a su empresa a alguien que no tiene ninguna. El endpoint
+          siempre existió (`POST /carriers/{id}/drivers|assets`); lo que
+          faltaba era el botón. Al asignar, la empresa hereda sus requisitos de
+          documentación, así que hay que refrescar toda la certificación y no
+          sólo esta fila. */}
+      {asignandoEmpresa && (
+        <TransferModal
+          open
+          title={`Asignar empresa a ${asignandoEmpresa.entity_name}`}
+          currentCarrierId={null}
+          onClose={() => setAsignandoEmpresa(null)}
+          onTransfer={async carrierId => {
+            if (group === 'driver') {
+              await carriersApi.assignDriver(carrierId, asignandoEmpresa.entity_id)
+            } else {
+              await carriersApi.assignAsset(carrierId, asignandoEmpresa.entity_id)
+            }
+            await invalidarCertificacion(qc)
+            setAsignandoEmpresa(null)
+          }}
+        />
+      )}
     </div>
   )
 }
