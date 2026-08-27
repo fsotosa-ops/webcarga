@@ -31,6 +31,7 @@ import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { AsignarConductorPopover } from '@/components/dashboard/AsignarConductorPopover'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { driversApi } from '@/lib/api/drivers'
+import { carriersApi } from '@/lib/api/carriers'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
@@ -675,8 +676,18 @@ export default function DiarioPage() {
                 setAsignando(null)
                 await queryClient.invalidateQueries({ queryKey: ['trips'] })
               }}
-              onDarDeAlta={async (nombre, rut, aTodos) => {
+              // NO lleva try/catch acá a propósito: la promesa se le devuelve al
+              // popover, que es quien tiene el botón y por lo tanto quien puede
+              // mostrar el error, apagar el control y ofrecer la salida. Lo que
+              // sí importa es que `setAsignando(null)` viene DESPUÉS del await:
+              // si la API falla, el popover queda abierto con lo que se escribió.
+              onDarDeAlta={async (nombre, rut, aTodos, carrierId) => {
                 const creado = await driversApi.create({ tax_id: rut, full_name: nombre })
+                // La empresa va antes de asignar el viaje: un conductor sin
+                // empresa no aparece en el cierre del día. Si esta llamada
+                // falla, el conductor ya existe y el reintento cae en el 409,
+                // que ofrece asignárselo — se puede salir del paso.
+                if (carrierId) await carriersApi.assignDriver(carrierId, creado.id)
                 const ids = aTodos
                   ? candidatosQuery.data?.trip_ids_de_la_persona ?? [asignando.id]
                   : [asignando.id]
