@@ -39,6 +39,13 @@ export type CarrierPatchBody = {
   business_name?:       string
   tax_id?:              string
   operational_status?:  CarrierOperationalStatus
+  /** El backend lo acepta desde que existe la columna (`carriers.py`,
+   *  `management_types = COALESCE($5, management_types)`), pero este tipo no lo
+   *  exponía y lo único que lo escribía era el panel de alta: al 27/08,
+   *  **0 de 248 empresas** lo tenían cargado. No es un dato decorativo — los
+   *  requisitos de Certificación se filtran por `applies_to_management_types`,
+   *  así que con la columna vacía esas reglas no se aplican a nadie. */
+  management_types?:    ManagementType[]
   expected_updated_at?: string
 }
 

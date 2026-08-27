@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ban, Building2, ChevronDown, ChevronRight, Eye, Loader2, Truck, User } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
+import { tripsApi } from '@/lib/api/trips'
 import { carriersApi } from '@/lib/api/carriers'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useCanEdit } from '@/hooks/useCanEdit'
@@ -19,6 +20,8 @@ import { ExpirationDateCell } from '@/components/dashboard/ExpirationDateCell'
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { DocumentPreviewModal } from '@/components/dashboard/DocumentPreviewModal'
 import { TransferModal } from '@/components/dashboard/TransferModal'
+import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
+import { GestionDeclarada } from '@/components/compliance/GestionDeclarada'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
@@ -700,6 +703,20 @@ export default function FichaEmpresaPage() {
   // frase (ni su negación) hasta tener el número.
   const cuantosDocumentos = bajaDocsQuery.data?.rows.filter(r => r.tiene_archivo).length
 
+  /** Los viajes activos del sujeto que está por darse de baja. Se pide sólo
+   *  cuando el diálogo se abre —`enabled`— porque es la única pregunta que lo
+   *  necesita, y cobrarle ese join a la ficha entera sería pagar por todos lo
+   *  que usa uno. Mismo criterio que `cuantosDocumentos` con el `undefined`:
+   *  mientras viaja no se afirma "cero". */
+  const bajaViajesQuery = useQuery({
+    queryKey: ['trips-activos', confirmandoBaja?.entity_type, confirmandoBaja?.entity_id],
+    queryFn: () => tripsApi.conteoActivos(
+      confirmandoBaja!.entity_type as 'DRIVER' | 'ASSET', confirmandoBaja!.entity_id,
+    ),
+    enabled: !!confirmandoBaja
+      && (confirmandoBaja.entity_type === 'DRIVER' || confirmandoBaja.entity_type === 'ASSET'),
+  })
+
   if (carrierQuery.isPending) return <Estado tipo="cargando" />
   if (carrierQuery.error || !carrierQuery.data) {
     return (
@@ -738,7 +755,8 @@ export default function FichaEmpresaPage() {
                 tipo esté sin determinar — no pudimos preguntarlo. */}
             {!resumenQuery.isPending && !resumenQuery.error && (
               tipoOperacion ? (
-                <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
+                <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent"
+                      title="Derivado de los vehículos de la flota. Se edita en cada vehículo.">
                   {tipoOperacion}
                 </span>
               ) : (
@@ -747,6 +765,31 @@ export default function FichaEmpresaPage() {
                 </span>
               )
             )}
+            {/* El tipo DECLARADO, que es OTRA COSA que el chip de al lado y por
+                eso va aparte y no en su lugar. Ese se DERIVA de los vehículos
+                (`assets.webcarga_operation_type_id`) y se edita en cada uno;
+                éste es lo que la empresa dice de sí misma. Son hermanos, no
+                sinónimos: la flota manda cuando existe, y esto sirve sobre todo
+                mientras todavía no hay flota. Reemplazar uno por el otro fue el
+                primer intento, y un test lo atajó: son dos preguntas distintas.
+
+                No es decorativo: los requisitos de Certificación se filtran por
+                `applies_to_management_types`, y al 27/08 **0 de 248 empresas**
+                lo tenían cargado, así que esas reglas no le aplicaban a nadie.
+                El PATCH siempre lo aceptó; faltaba la puerta.
+
+                Las DOS invalidaciones, igual que `cambiarEstadoEmpresa`:
+                `carrier-detail` es la cabecera —de donde sale este valor— y no
+                está entre las raíces de Certificación. */}
+            <GestionDeclarada
+              carrierId={carrierId}
+              declarado={carrier.management_types}
+              canEdit={canEdit}
+              onGuardado={async () => {
+                await queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })
+                await invalidarCertificacion(queryClient)
+              }}
+            />
           </div>
         }
       >
@@ -917,6 +960,33 @@ export default function FichaEmpresaPage() {
             ))
         })()}
 
+        {/* El alta de conductores y equipos, dentro del módulo. Es el bug
+            crítico #3 de la minuta del 25/08: hasta el 27/08 esto sólo existía
+            en la ficha vieja de Empresas, que además estaba fuera del menú.
+
+            Va DEBAJO de los grupos y no dentro de cada uno a propósito: los
+            grupos sólo se dibujan cuando tienen a alguien, así que una empresa
+            sin conductores —justo la que hay que poblar— no tendría dónde
+            mostrar el botón.
+
+            El componente es compartido con la ficha vieja: dos formularios
+            iguales en dos pantallas es la forma en que este arreglo vuelve. */}
+        {canEdit && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-border px-3 py-2.5">
+            <AltaDeFlota
+              carrierId={carrierId}
+              tipo="conductor"
+              onCreado={async () => { await invalidarCertificacion(queryClient) }}
+            />
+            <AltaDeFlota
+              carrierId={carrierId}
+              tipo="equipo"
+              gestionesDeclaradas={carrier.management_types}
+              onCreado={async () => { await invalidarCertificacion(queryClient) }}
+            />
+          </div>
+        )}
+
         {/* Sin la guarda, la pantalla invita a subir documentos a una empresa
             que no los puede recibir. Se retira en vez de deshabilitarse porque
             el banner de arriba ya dice por qué — dos veces el mismo motivo, en
@@ -955,6 +1025,7 @@ export default function FichaEmpresaPage() {
         nombreSujeto={confirmandoBaja ? tituloDeSujeto(confirmandoBaja) : ''}
         nombreEmpresa={carrier.business_name}
         cuantosDocumentos={cuantosDocumentos}
+        viajesActivos={bajaViajesQuery.data?.activos}
         onCancelar={() => setConfirmandoBaja(null)}
         onConfirmar={confirmarBaja}
       />

@@ -689,6 +689,32 @@ describe('FichaEmpresaPage', () => {
     expect(await screen.findByText('Tipo de operación sin determinar')).toBeInTheDocument()
   })
 
+  // El tipo DERIVADO de la flota y el DECLARADO por la empresa son hermanos, no
+  // sinónimos, y por eso conviven. Reemplazar uno por el otro fue el primer
+  // intento del 27/08 y lo atajó el test de acá arriba: son dos preguntas
+  // distintas y responder una no responde la otra.
+  it('el tipo declarado por la empresa convive con el derivado de la flota', async () => {
+    montar([])
+    expect(await screen.findByText('Tipo de operación sin determinar')).toBeInTheDocument()
+    expect(screen.getByText('Gestión sin declarar')).toBeInTheDocument()
+  })
+
+  // Punto 8 de la sección 4 de la minuta del 25/08: el PATCH siempre aceptó
+  // `management_types`, pero sólo lo escribía el panel de alta. Al 27/08, 0 de
+  // 248 empresas lo tenían cargado, y los requisitos que se filtran por ese
+  // campo no le aplicaban a nadie.
+  it('el tipo de gestión se puede editar después del alta', async () => {
+    montar([])
+    fireEvent.click(await screen.findByRole('button', { name: /editar el tipo de gestión/i }))
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Tractoreo' }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar el tipo de gestión/i }))
+
+    await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith(
+      'c1', { management_types: ['TRACTOREO'] },
+    ))
+  })
+
   // Una afirmación derivada no se muestra sin el dato. Si la consulta falló no
   // sabemos que el tipo esté sin determinar: no pudimos preguntarlo.
   it('si la consulta falló, el chip se calla en vez de afirmar "sin determinar"', async () => {
