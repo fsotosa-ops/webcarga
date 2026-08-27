@@ -11,6 +11,87 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-08-27 — Ronda 151: el 2.3 implementado, y la rotación convertida en pregunta
+
+Con la Ronda 150 desplegada, el usuario pidió las dos que quedaban: **implementar 2.3 en el
+pre-cierre** y **dejar lo de rotación como issue**. Y aportó las definiciones que faltaban.
+
+## Lo que el usuario definió
+
+| Pregunta abierta | Su respuesta |
+|---|---|
+| Ausencia de Sodimac | Un mecanismo de alertas estándar de la industria, y el gestor del monitor decide qué hacer |
+| Adelanto de ruta | Partir de la fecha-hora GPS de **salida del local de origen** (propuesta de Pablo) |
+| Caso Gerson Ferrada | **En el pre-cierre**, y desde ahí sincroniza con Certificación |
+| Motivos duplicados | Van los del documento, los trece |
+
+## Dos de esas cuatro cambiaron al ir a mirar el dato
+
+**El mecanismo de alertas YA EXISTE.** Antes de diseñar uno nuevo fui a `app.monitor_alert_rules`:
+tiene `stale_report_hours 2h`, `dwell_hours 2h`, **`tms_dropped_hours 3h`** y
+`late_arrival_grace_min 60`, configurables desde Configuración. `_tms_dropped` (trips.py:473) compara
+el último reporte del viaje contra la última corrida de SU TMS, y hay chip de filtro en el Diario:
+**"Ya no está en el TMS"**. Verificado contra la base: **los 25 viajes trabados ya están marcados**, y
+los 19 de Sodimac llevan hasta **721 horas —30 días— sin ser reportados**. No falta detección, ni
+umbral, ni pantalla, ni el flujo de cierre con motivo. **Falta que alguien los cierre**, que es
+exactamente OPS-13. Lo único que no existe es el escalón de arriba: que la alerta salga a buscar a
+alguien en vez de esperar a que entren a mirar.
+
+**La marca GPS que propuso Pablo no llega.** Medido sobre agosto: `gps_departure_date` en la parada
+ORIGEN existe en **0 de 821** viajes de QAnalytics y **0 de 46** de Sodimac; sólo Wingsuite la trae
+(6 de 7), que es el 1% del volumen. Los GPS existen pero **sólo en los destinos** (1.126 salidas
+sobre 1.393 paradas de destino en QAnalytics). Alternativa con datos: la **llegada GPS al primer
+destino**, 707 de 821 en QAnalytics. Sodimac queda fuera de las dos: 46 de 46 sin ninguna marca.
+
+## 2.3 — la propuesta de vínculo
+
+`run_pre_cierre` suma `CONDUCTOR_SIN_EMPRESA`. **Propone y no escribe**, y las tres condiciones son
+el argumento:
+
+1. `NOT EXISTS` sobre `driver_assignments` activas — sólo cuando el padrón está **en silencio**.
+   Nunca cuando hay una asignación que diga otra cosa: la inferencia llena un silencio, no contradice.
+2. `HAVING count(DISTINCT resolved_carrier_id) = 1` — dos empresas distintas no son una propuesta.
+3. El vínculo lo escribe una persona desde el panel. Y **como Certificación LEE
+   `driver_assignments`, esa escritura ES la sincronización** entre los dos módulos: no hay
+   mecanismo aparte que mantener.
+
+**No bloquea** (fuera de `_ESCALACIONES_QUE_BLOQUEAN`, con test que lo fija). La consulta exacta,
+corrida contra la base para el 25/08, devuelve **6 propuestas, con Gerson Ferrada Zapata →
+Transportes Juan Ramirez Spa** entre ellas. Para hoy, 4.
+
+## Una corrección mía, medida
+
+Comenté que el guarda de `hasEscalations` protegía a la sección de una clave que el backend todavía
+no manda. **Lo muté y no rompió ningún test**: `Object.values` no devuelve las claves ausentes. El
+que protege de verdad es el `?? []` del `.map` — sacarlo rompe **cinco** tests, cuatro de ellos
+preexistentes. El comentario ahora dice lo medido, no lo que yo suponía.
+
+## Estado
+
+Motivos completos y aplicados: **DRIVER_REASON 21, TRIP_UNASSIGNED_REASON 12**. Los tres que había
+frenado por duplicar a otros entraron por decisión del usuario, con el argumento y la salida limpia
+(apagar el viejo con `active = false`, nunca borrarlo) escritos en la migración.
+
+**Issue #12** abierto con lo de rotación: la métrica no existe en el producto, la marca GPS no llega,
+y el conflicto entre la ventana multi-día del cierre y la estadística. Incluye el bug de
+`trips.planning_date` corrido un día en **161 de 1.741 viajes de QAnalytics (9,2%)**, que vive en
+`stg_qanalytics_trips`, en el dbt de Mage.
+
+## Checklist — siguiente paso exacto
+
+1. **Desplegar la Ronda 151** cuando no haya job corriendo. Ojo: el único `queued` de
+   `ops.extraction_jobs` está **encolado desde el 19/08 y nunca arrancó** (`started_at` vacío, un
+   `cumplimiento-iansa`) — es una fila muerta, no ingesta en vuelo. La condición real es que no haya
+   nada en `running`.
+2. **Ese job muerto merece su propia mirada**: ocho días encolado es un producto que el worker no
+   está tomando.
+3. **El cierre de prueba de Pablo**: crear y asignar con un RUT que ya existe, con puntos y con
+   dígito verificador malo; cerrar el 25/08; y confirmar una de las seis propuestas de vínculo.
+4. **Issue #12 necesita respuesta de negocio** antes de que haya nada que programar.
+5. **El escalón que falta del mecanismo de alertas**: que la alerta salga a buscar a alguien, y la
+   alerta a finanzas de la sección 5.3 (falta el número de días y el destinatario).
+
+
 ### 2026-08-27 — Ronda 150: el plan de la Ronda 149, ejecutado
 
 **Decisión del usuario**: ejecutar el plan. Y a mitad de camino, dos más: **no desplegar ni tocar la
