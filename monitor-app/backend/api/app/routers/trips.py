@@ -2196,6 +2196,57 @@ async def driver_candidates(
     }
 
 
+@router.get("/conteo-activos")
+async def conteo_de_viajes_activos(
+    entity_type: str = Query(..., pattern="^(DRIVER|ASSET)$"),
+    entity_id: str = Query(...),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Cuántos viajes activos tiene hoy este conductor o este vehículo.
+
+    Existe para UNA pregunta, y se pide sólo cuando se va a hacer daño: antes
+    de desvincular a alguien de su empresa. Un conductor sin empresa
+    **desaparece del cierre del día** —el roster de Tractoreo se arma desde
+    `driver_assignments`— así que sacarle la empresa a alguien que está
+    manejando lo vuelve invisible sin que nada avise.
+
+    No es hipotético. El 25/08, durante la propia revisión de la app, se
+    desvinculó a un conductor con **70 viajes en 60 días**; al 27/08 hay 8
+    conductores en esa situación, con 278 viajes entre todos. La app dejaba
+    crear el problema y no ofrecía cómo deshacerlo.
+
+    Endpoint propio y no una columna más en `/compliance-records/summary`: esa
+    consulta la pide la ficha entera al abrirse, y este dato sólo lo necesita
+    un diálogo de confirmación. Cobrarle a todos por lo que usa uno es cómo se
+    pone lenta una pantalla.
+
+    Va declarado ANTES de `/{trip_id}`: FastAPI resuelve por orden, y después
+    del path param genérico un GET acá entraría como `trip_id="conteo-activos"`
+    — mismo gotcha que documenta PATCH /bulk-close.
+    """
+    if entity_type == "DRIVER":
+        condicion = "vfr.resolved_driver_id = $1::uuid"
+    else:
+        # La vista resuelve el TRACTO, no la rampla: `v_trip_fleet_resolution`
+        # no tiene `resolved_trailer_asset_id` (verificado contra la base). Para
+        # una rampla este conteo da 0, y eso es correcto: hoy nada la vincula a
+        # un viaje activo por esta cadena.
+        condicion = "vfr.resolved_tractor_asset_id = $1::uuid"
+
+    fila = await pool.fetchrow(
+        f"""
+        SELECT count(*) AS activos,
+               max(t.planning_date) AS ultimo
+        FROM app.trips t
+        JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+        WHERE t.is_active AND {condicion}
+        """,
+        entity_id,
+    )
+    return {"activos": fila["activos"], "ultimo": fila["ultimo"]}
+
+
 @router.get("/cierre-viajes")
 async def cierre_viajes(
     fecha: str = Query(""),

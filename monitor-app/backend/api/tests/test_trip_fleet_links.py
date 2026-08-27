@@ -230,3 +230,35 @@ def test_la_nota_dice_lo_que_se_vinculo_no_siempre_la_empresa():
     cuerpo = nota.args[3]
     assert cuerpo == "Vinculó conductor: Juan Perez"
     assert "empresa" not in cuerpo
+
+
+# ── GET /trips/conteo-activos ────────────────────────────────────────────────
+# El diálogo de baja pregunta esto antes de desvincular a alguien de su empresa:
+# un conductor sin empresa desaparece del cierre del día. Acá se fija lo que un
+# test de integración no puede ver —el ruteo y la validación de FastAPI—, no la
+# consulta, que se prueba contra Postgres en test_conteo_de_viajes_activos.py.
+
+def test_conteo_activos_no_lo_absorbe_la_ruta_de_trip_id():
+    """`/{trip_id}` está declarada después, pero FastAPI resuelve por orden: si
+    alguien mueve esta ruta debajo, el GET entraría como
+    `trip_id="conteo-activos"` y contestaría un 404 que no dice nada."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"activos": 3, "ultimo": None}
+    client = make_client(pool)
+
+    res = client.get("/api/v1/trips/conteo-activos?entity_type=DRIVER&entity_id=d1")
+
+    assert res.status_code == 200
+    assert res.json()["activos"] == 3
+
+
+def test_conteo_activos_rechaza_un_tipo_de_entidad_inventado():
+    """Sin el `pattern`, cualquier valor caía en la rama del vehículo y el
+    endpoint contestaba contando OTRA cosa que la que le pidieron."""
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/trips/conteo-activos?entity_type=EMPRESA&entity_id=c1")
+
+    assert res.status_code == 422
+    assert pool.fetchrow.await_count == 0

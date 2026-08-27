@@ -9,6 +9,9 @@ interface Props {
   nombreEmpresa:     string
   /** `undefined` mientras la consulta viaja: 'no sé' no es 'cero'. */
   cuantosDocumentos?: number
+  /** Viajes activos que tiene hoy. `undefined` mientras la consulta viaja:
+   *  'no sé' no es 'cero', igual que `cuantosDocumentos`. */
+  viajesActivos?:    number
   onCancelar:        () => void
   onConfirmar:       () => Promise<void>
 }
@@ -17,7 +20,7 @@ interface Props {
  *  se abre desde `AccionesDeSujeto`. Sin motivo de baja: la HU lo propone,
  *  pero exige una columna nueva y el vocabulario es decisión del negocio.
  *  La baja ya deja rastro en `audit_log` vía `record_manual_edit`. */
-export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDocumentos, onCancelar, onConfirmar }: Props) {
+export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDocumentos, viajesActivos, onCancelar, onConfirmar }: Props) {
   const cancelarRef = useRef<HTMLButtonElement>(null)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -96,6 +99,20 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
               <> Sus {cuantosDocumentos} documentos cargados se conservan.</>
             )}
           </p>
+
+          {/* El aviso que faltaba. Sacarle la empresa a alguien que está
+              manejando lo borra del cierre del día —el roster de Tractoreo se
+              arma desde `driver_assignments`— y nada avisaba. El 25/08, en la
+              propia revisión de la app, se desvinculó a un conductor con 70
+              viajes en 60 días; al 27/08 hay 8 así, con 278 viajes entre todos.
+              No bloquea: a veces la baja es justamente lo que corresponde. */}
+          {viajesActivos != null && viajesActivos > 0 && (
+            <p role="alert" className="text-dato text-espera bg-espera/10 border border-espera/20 rounded-lg px-3 py-2">
+              Tiene {viajesActivos} {viajesActivos === 1 ? 'viaje activo' : 'viajes activos'} en
+              este momento. Sin empresa deja de aparecer en el cierre del día, aunque
+              siga manejando.
+            </p>
+          )}
 
           {error && (
             <p role="alert" className="text-dato text-espera bg-espera/10 border border-espera/20 rounded-lg px-3 py-2">

@@ -134,6 +134,14 @@ export const tripsApi = {
    *  primer consumidor real: el motivo pasó a ser obligatorio (Tarea 4) —
    *  un cierre sin motivo elegido no dice por qué WebCarga no tomó la
    *  carga. */
+  /** Cuántos viajes activos tiene hoy este conductor o este vehículo. Se pide
+   *  sólo antes de hacer daño —desvincularlo de su empresa—, no en listados:
+   *  un conductor sin empresa desaparece del cierre del día. */
+  conteoActivos: (entityType: 'DRIVER' | 'ASSET', entityId: string) =>
+    apiFetch<{ activos: number; ultimo: string | null }>(
+      `/api/v1/trips/conteo-activos?entity_type=${entityType}&entity_id=${encodeURIComponent(entityId)}`,
+    ),
+
   bulkClose: (tripIds: string[], unassignedReasonId: string) =>
     apiFetch<{ ok: boolean; closed: number }>(`/api/v1/trips/bulk-close`, {
       method: 'PATCH',

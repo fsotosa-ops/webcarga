@@ -103,4 +103,28 @@ describe('ConfirmarBaja', () => {
 
     void resolver
   })
+
+  // El aviso que faltaba: sacarle la empresa a alguien que está manejando lo
+  // borra del cierre del día. El 25/08 pasó de verdad, con 70 viajes.
+  it('avisa cuando el sujeto tiene viajes activos', () => {
+    render(<ConfirmarBaja {...base} viajesActivos={70} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(/70 viajes activos/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/deja de aparecer en el cierre/i)
+  })
+
+  it('con un solo viaje lo dice en singular', () => {
+    render(<ConfirmarBaja {...base} viajesActivos={1} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(/1 viaje activo\b/i)
+  })
+
+  it('sin viajes activos no dibuja el aviso', () => {
+    render(<ConfirmarBaja {...base} viajesActivos={0} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  // "Todavía no sé" no es "cero": mientras la consulta viaja no se afirma nada.
+  it('mientras no llega el dato no afirma que no tiene viajes', () => {
+    render(<ConfirmarBaja {...base} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 })
