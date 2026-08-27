@@ -12,7 +12,6 @@ import { useCanEdit } from '@/hooks/useCanEdit'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
-import { taxonomiesApi } from '@/lib/api/config'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
@@ -25,6 +24,7 @@ import { VehicleRosterCard } from '@/components/dashboard/VehicleRosterCard'
 import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
 import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
+import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/components/dashboard/InsurancePolicyModal'
@@ -165,31 +165,11 @@ function EmpresaDetailPageInner() {
   const [assetShowAll, setAssetShowAll] = useState(false)
 
   const [addDriverOpen,  setAddDriverOpen]  = useState(!!handoffDriverName)
-  const [driverForm,     setDriverForm]     = useState({ tax_id: '', full_name: handoffDriverName ?? '' })
   const [addAssetOpen,   setAddAssetOpen]   = useState(!!handoffTractorPlate)
   /** Los dos catálogos de clasificación de vehículos. Sólo se piden cuando el
    *  formulario de alta está abierto: son datos de un caso puntual, no de la
    *  ficha. */
-  const subtiposQuery = useQuery({
-    queryKey: ['taxonomias', 'FLEET_SERVICE_TYPE'],
-    queryFn: () => taxonomiesApi.list('FLEET_SERVICE_TYPE'),
-    enabled: addAssetOpen,
-    staleTime: 5 * 60_000,
-  })
-  const gestionesQuery = useQuery({
-    queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
-    queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
-    enabled: addAssetOpen,
-    staleTime: 5 * 60_000,
-  })
 
-  const [assetForm,      setAssetForm]      = useState<{
-    asset_type: AssetType; license_plate: string
-    fleet_service_type_id: string; webcarga_operation_type_id: string
-  }>({
-    asset_type: 'TRACTOCAMION', license_plate: handoffTractorPlate ?? '',
-    fleet_service_type_id: '', webcarga_operation_type_id: '',
-  })
   const [addPolicyOpen,  setAddPolicyOpen]  = useState(false)
   const [policyForm,     setPolicyForm]     = useState<PolicyFormState>({
     insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
@@ -205,22 +185,10 @@ function EmpresaDetailPageInner() {
 
   const carrierQuery = useQuery({ queryKey: ['carrier-detail', id], queryFn: () => carriersApi.get(id) })
 
-  /** D7 aterrizado donde corresponde: la gestión que la empresa declaró al
-   *  crearse preselecciona la del primer vehículo. No se toca el SUBTIPO —
-   *  son conceptos hermanos y deducir uno del otro volvería a mezclar lo que
-   *  la migración 20260803050000 separó: hay 37 tractocamiones con gestión
-   *  "Equipo Completo". Es una propuesta, no una restricción: el selector
-   *  sigue ofreciendo todas las opciones. */
-  useEffect(() => {
-    if (!addAssetOpen) return
-    const declaradas = carrierQuery.data?.management_types
-    if (declaradas?.length !== 1) return
-    const propuesta = (gestionesQuery.data ?? [])
-      .find(t => t.label === (declaradas[0] === 'TRACTOREO' ? 'Tractoreo' : 'Equipo Completo'))
-    if (propuesta) {
-      setAssetForm(v => (v.webcarga_operation_type_id ? v : { ...v, webcarga_operation_type_id: propuesta.id }))
-    }
-  }, [addAssetOpen, carrierQuery.data?.management_types, gestionesQuery.data])
+  // La propuesta de gestión a partir de lo que la empresa declaró se fue con
+  // el formulario a `AltaDeFlota` (2026-08-27), junto con los catálogos de
+  // subtipo y gestión: viven donde se usan, y así las dos pantallas que dan de
+  // alta se comportan igual sin que nadie tenga que acordarse de las dos.
 
   const driversQuery = useQuery({ queryKey: ['carrier-drivers', id], queryFn: () => carriersApi.listDrivers(id) })
   const assetsQuery  = useQuery({ queryKey: ['carrier-assets-roster', id], queryFn: () => carriersApi.listAssets(id) })
@@ -269,17 +237,6 @@ function EmpresaDetailPageInner() {
     router.push('/dashboard/carriers')
   }
 
-  async function handleAddDriver() {
-    if (!driverForm.tax_id || !driverForm.full_name) return
-    setSubmitting(true)
-    try {
-      const created = await driversApi.create(driverForm)
-      await carriersApi.assignDriver(id, created.id)
-      setDriverForm({ tax_id: '', full_name: '' })
-      setAddDriverOpen(false)
-      invalidateDrivers()
-    } finally { setSubmitting(false) }
-  }
   async function handlePatchDriver(driverId: string, body: DriverPatchBody) {
     await driversApi.patch(driverId, body)
     queryClient.invalidateQueries({ queryKey: ['driver-detail', driverId] })
@@ -291,26 +248,6 @@ function EmpresaDetailPageInner() {
     invalidateDrivers()
   }
 
-  async function handleAddAsset() {
-    if (!assetForm.license_plate) return
-    setSubmitting(true)
-    try {
-      // Las cadenas vacias no viajan: la columna es uuid, y "" no es "sin
-      // declarar". Ademas is_manual_override solo se marca si se declaro algo.
-      const created = await assetsApi.create({
-        asset_type: assetForm.asset_type,
-        license_plate: assetForm.license_plate,
-        ...(assetForm.fleet_service_type_id
-          ? { fleet_service_type_id: assetForm.fleet_service_type_id } : {}),
-        ...(assetForm.webcarga_operation_type_id
-          ? { webcarga_operation_type_id: assetForm.webcarga_operation_type_id } : {}),
-      })
-      await carriersApi.assignAsset(id, created.id)
-      setAssetForm({ asset_type: 'TRACTOCAMION', license_plate: '', fleet_service_type_id: '', webcarga_operation_type_id: '' })
-      setAddAssetOpen(false)
-      invalidateAssets()
-    } finally { setSubmitting(false) }
-  }
   async function handlePatchAsset(assetId: string, body: AssetPatchBody) {
     await assetsApi.patch(assetId, body)
     queryClient.invalidateQueries({ queryKey: ['asset-detail', assetId] })
@@ -689,30 +626,22 @@ function EmpresaDetailPageInner() {
           </div>
         </div>
 
+        {/* El formulario ya no vive escrito acá: lo comparte con la ficha de
+            Certificación (`AltaDeFlota`), que es donde la minuta del 25/08 lo
+            pedía y donde no existía. Dos copias del mismo formulario es la
+            forma en que un arreglo así vuelve: se agrega un campo en una y la
+            otra se queda corta sin que nada avise. El botón "+ Conductor" de
+            la cabecera sigue siendo el disparador — modo controlado. */}
         {addDriverOpen && (
-          <div className="mb-3 p-3 rounded-lg bg-gray-50/80 flex items-center gap-2 flex-wrap">
-            <input
-              placeholder="Tax ID"
-              value={driverForm.tax_id}
-              onChange={e => setDriverForm(v => ({ ...v, tax_id: e.target.value }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-32"
+          <div className="mb-3">
+            <AltaDeFlota
+              carrierId={id}
+              tipo="conductor"
+              prefill={handoffDriverName ?? undefined}
+              abierto={addDriverOpen}
+              onAbiertoChange={setAddDriverOpen}
+              onCreado={invalidateDrivers}
             />
-            <input
-              placeholder="Nombre completo"
-              value={driverForm.full_name}
-              onChange={e => setDriverForm(v => ({ ...v, full_name: e.target.value }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 flex-1"
-            />
-            <button
-              onClick={handleAddDriver}
-              disabled={submitting || !driverForm.tax_id || !driverForm.full_name}
-              className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
-            >
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-            </button>
-            <button onClick={() => setAddDriverOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-              <X size={14} />
-            </button>
           </div>
         )}
 
@@ -801,58 +730,16 @@ function EmpresaDetailPageInner() {
         </div>
 
         {addAssetOpen && (
-          <div className="mb-3 p-3 rounded-lg bg-gray-50/80 flex items-center gap-2 flex-wrap">
-            <select
-              value={assetForm.asset_type}
-              onChange={e => setAssetForm(v => ({ ...v, asset_type: e.target.value as AssetType }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-36 bg-white"
-            >
-              {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            {/* Subtipo y gestion son conceptos HERMANOS, no lo mismo: la
-                migracion 20260803050000 los separo a proposito — 37
-                tractocamiones tienen gestion "Equipo Completo" aunque el
-                vehiculo sea un tracto. Por eso son dos selectores y ninguno
-                se deduce del otro. Ambos opcionales: si se dejan vacios los
-                completa la ingesta. */}
-            <select
-              aria-label="Subtipo"
-              value={assetForm.fleet_service_type_id}
-              onChange={e => setAssetForm(v => ({ ...v, fleet_service_type_id: e.target.value }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-44 bg-white"
-            >
-              <option value="">Subtipo (opcional)</option>
-              {(subtiposQuery.data ?? []).map(t => (
-                <option key={t.id} value={t.id}>{t.label}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Tipo de gestión"
-              value={assetForm.webcarga_operation_type_id}
-              onChange={e => setAssetForm(v => ({ ...v, webcarga_operation_type_id: e.target.value }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-44 bg-white"
-            >
-              <option value="">Gestión (opcional)</option>
-              {(gestionesQuery.data ?? []).map(t => (
-                <option key={t.id} value={t.id}>{t.label}</option>
-              ))}
-            </select>
-            <input
-              placeholder="Patente"
-              value={assetForm.license_plate}
-              onChange={e => setAssetForm(v => ({ ...v, license_plate: e.target.value }))}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 w-24 font-mono uppercase"
+          <div className="mb-3">
+            <AltaDeFlota
+              carrierId={id}
+              tipo="equipo"
+              gestionesDeclaradas={carrierQuery.data?.management_types}
+              prefill={handoffTractorPlate ?? undefined}
+              abierto={addAssetOpen}
+              onAbiertoChange={setAddAssetOpen}
+              onCreado={invalidateAssets}
             />
-            <button
-              onClick={handleAddAsset}
-              disabled={submitting || !assetForm.license_plate}
-              className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50"
-            >
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Guardar'}
-            </button>
-            <button onClick={() => setAddAssetOpen(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-              <X size={14} />
-            </button>
           </div>
         )}
 

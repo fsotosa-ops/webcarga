@@ -2,8 +2,14 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// La ruta activa se mueve por test. Dejo de fijarla en '/dashboard/carriers'
+// porque desde el 2026-08-27 ESA ruta pertenece al grupo Certificación —el
+// Directorio volvió al menú— y entonces el grupo se abre solo, y el clic que
+// estos tests hacen para abrirlo lo CERRABA. Dos de ellos seguían en verde
+// leyendo los enlaces del nav mobile, o sea probando otra cosa.
+const nav = vi.hoisted(() => ({ ruta: '/dashboard/insurance' }))
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/dashboard/carriers',
+  usePathname: () => nav.ruta,
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }))
 vi.mock('@/lib/supabase/client', () => ({
@@ -26,6 +32,7 @@ function setup() {
 
 beforeEach(() => {
   vi.mocked(documentIngestApi.listQueue).mockReset()
+  nav.ruta = '/dashboard/insurance'
 })
 
 // HU-04, revisado en Task 5: Certificación deja de ser una entrada única y
@@ -53,7 +60,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
   it('Certificación se abre en Empresas y Sin clasificar', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
-    // El grupo arranca plegado (la ruta activa del mock es /dashboard/carriers,
+    // El grupo arranca plegado (la ruta activa del mock está fuera del grupo,
     // ajena a Certificación), así que hay que desplegarlo para ver sus dos
     // entradas — igual que haría alguien navegando de verdad.
     fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
@@ -100,6 +107,43 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
       .toHaveAttribute('href', '/dashboard/compliance')
     expect(within(navMobile).getByRole('link', { name: /sin clasificar/i }))
       .toHaveAttribute('href', '/dashboard/compliance/inbox')
+  })
+
+  // El Directorio volvió al menú el 2026-08-27 (bug crítico #3 de la minuta
+  // del 25/08): era la ÚNICA pantalla donde se da de alta un conductor o un
+  // vehículo dentro de una empresa, y el rediseño del 19/08 la había dejado
+  // sin entrada. Es también el destino de los enlaces de escape del pre-cierre.
+  it('el Directorio tiene entrada propia y pertenece a Certificación', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    nav.ruta = '/dashboard/carriers'
+    setup()
+
+    // Estando parado en el Directorio, el grupo se abre solo: es donde estoy.
+    const enlaces = await screen.findAllByRole('link', { name: /directorio/i })
+    expect(enlaces[0]).toHaveAttribute('href', '/dashboard/carriers')
+    expect(await screen.findByRole('button', { name: /certificación/i }))
+      .toHaveAttribute('aria-expanded', 'true')
+  })
+
+  // Dos entradas con el mismo nombre en el mismo grupo no son navegación, son
+  // una adivinanza. "Empresas" es el embudo de certificación y "Directorio" es
+  // el padrón con su alta: son dos trabajos, y por eso se llaman distinto.
+  it('ninguna entrada de Certificación repite el nombre de otra', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    nav.ruta = '/dashboard/carriers'
+    setup()
+
+    const aside = document.querySelector('aside')!
+    const enlaces = await waitFor(() => {
+      const encontrados = within(aside).getAllByRole('link')
+        .filter(a => a.getAttribute('href')?.startsWith('/dashboard/compliance')
+                  || a.getAttribute('href') === '/dashboard/carriers')
+      expect(encontrados).toHaveLength(3)
+      return encontrados
+    })
+
+    const nombres = enlaces.map(a => a.textContent?.trim())
+    expect(new Set(nombres).size).toBe(nombres.length)
   })
 
   it('no quedan Bandeja ni Pendientes como entradas propias', async () => {

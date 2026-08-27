@@ -37,18 +37,34 @@ const NAV_GROUPS: NavGroupDef[] = [
       { href: '/dashboard/operations/monitor', label: 'Monitor' },
     ],
   },
-  // Certificación se abre en DOS porque son dos trabajos, no dos vistas: la
+  // Certificación se abre en TRES porque son tres trabajos, no tres vistas: la
   // Bandeja responde "¿de quién es este archivo?" sobre archivos sin destino,
-  // y Empresas responde "¿qué le falta a esta empresa?" sobre requisitos sin
-  // documento. Las CUATRO agrupaciones (Empresa/Conductor/Vehículo/Requisito)
+  // Empresas responde "¿qué le falta a esta empresa?" sobre requisitos sin
+  // documento, y el Directorio responde "¿quién está operando, y quiénes son su
+  // gente?". Las CUATRO agrupaciones (Empresa/Conductor/Vehículo/Requisito)
   // NO se parten: siguen adentro de Empresas, porque ésas sí son cuatro
   // maneras de mirar la misma lista.
+  //
+  // El Directorio (/dashboard/carriers) VOLVIÓ acá el 2026-08-27. El rediseño
+  // del 19/08 (e75d7d93) reemplazó su entrada por las dos de Certificación y no
+  // dejó ninguna en su lugar, así que quedó inalcanzable por navegación: es la
+  // ÚNICA pantalla donde se da de alta un conductor o un vehículo dentro de una
+  // empresa, donde se edita el tipo de operación del tracto, y es el destino al
+  // que apuntan los enlaces de escape del pre-cierre
+  // (PreCierrePendingSection.tsx). Sin ella, un "conductor no registrado" que
+  // bloquea el cierre no se puede resolver desde ninguna parte.
+  //
+  // Se llama "Directorio" y no "Empresas" a propósito: ya hay una entrada
+  // "Empresas" cinco líneas más arriba y son objetos distintos vistos desde
+  // trabajos distintos. Dos ítems con el mismo nombre no son navegación, son
+  // una adivinanza.
   {
     label: 'Certificación',
     icon:  BadgeCheck,
     items: [
       { href: '/dashboard/compliance',       label: 'Empresas' },
       { href: '/dashboard/compliance/inbox', label: 'Sin clasificar', badge: 'inbox' },
+      { href: '/dashboard/carriers',         label: 'Directorio' },
     ],
   },
 ]
