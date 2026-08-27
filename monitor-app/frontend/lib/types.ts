@@ -1149,6 +1149,18 @@ export type PreCierreEscalations = {
   CONDUCTOR_NO_REGISTRADO: { driver_rut: string; driver_name_tms?: string | null; reason?: string }[]
   EMPRESA_ONBOARDING:      { carrier_id: string; carrier_name: string }[]
   SIN_TIPO_OPERACION:      { carrier_id: string; carrier_name: string }[]
+  /** El conductor manejó el tracto de una empresa y no tiene ninguna asignada.
+   *  El backend lo PROPONE —nunca lo escribe— y sólo cuando el padrón está en
+   *  silencio y todos sus viajes apuntan a la misma empresa. Confirmar desde
+   *  el panel escribe `driver_assignments`, que es lo que Certificación lee:
+   *  esa escritura ES la sincronización entre los dos módulos.
+   *
+   *  Opcional porque backend y frontend se despliegan por separado, y un
+   *  `.map` sobre `undefined` rompe la sección entera. */
+  CONDUCTOR_SIN_EMPRESA?: {
+    driver_id: string; driver_name: string
+    carrier_id: string; carrier_name: string; viajes: number
+  }[]
 }
 export type PreCierreResult = {
   auto_resolved: PreCierreAutoResolved[]

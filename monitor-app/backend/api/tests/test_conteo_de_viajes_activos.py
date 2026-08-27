@@ -65,3 +65,29 @@ async def test_cuenta_los_viajes_activos_de_un_conductor_que_los_tiene(conexion_
     assert respuesta["activos"] == fila["activos"]
     assert respuesta["ultimo"] is not None
 
+
+
+# ── La propuesta de vinculo del pre-cierre, contra el esquema real ───────────
+# El caso Gerson Ferrada. La consulta cruza app.trips, v_trip_fleet_resolution,
+# drivers, carriers y driver_assignments: un AsyncMock no puede contradecir
+# ninguno de esos nombres, y ya paso una vez en esta ronda que una columna
+# inventada (resolved_trailer_asset_id) sobreviviera a un test mockeado.
+
+async def test_la_propuesta_de_vinculo_corre_y_nunca_contradice_al_padron(conexion_revertida):
+    from datetime import date
+
+    from app.services.pre_cierre import run_pre_cierre
+
+    resultado = await run_pre_cierre(PoolDeUnaConexion(conexion_revertida), date(2026, 8, 25))
+    propuestas = resultado["escalations"]["CONDUCTOR_SIN_EMPRESA"]
+
+    # Ninguna propuesta puede caer sobre alguien que YA tiene empresa: eso
+    # seria contradecir un dato cargado a mano, no llenar un silencio.
+    for p in propuestas:
+        tiene = await conexion_revertida.fetchval(
+            "SELECT 1 FROM public.driver_assignments WHERE driver_id = $1::uuid AND status = 'ACTIVE'",
+            p["driver_id"],
+        )
+        assert tiene is None, f"se propuso empresa para {p['driver_name']}, que ya tiene una"
+        assert p["carrier_id"] and p["carrier_name"]
+        assert p["viajes"] >= 1

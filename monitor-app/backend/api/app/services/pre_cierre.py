@@ -66,6 +66,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
         "CONDUCTOR_NO_REGISTRADO": [],
         "EMPRESA_ONBOARDING": [],
         "SIN_TIPO_OPERACION": [],
+        "CONDUCTOR_SIN_EMPRESA": [],
     }
 
     # FIX 2026-08-18: las 5 consultas de acá usaban `planning_date = $1`
@@ -356,5 +357,66 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 escalations["SIN_TIPO_OPERACION"].append(
                     {"carrier_id": str(r["carrier_id"]), "carrier_name": r["business_name"]}
                 )
+
+            # ── Tipo B — conductor con viaje y sin empresa: se PROPONE ──────
+            # El caso Gerson Ferrada de la minuta del 25/08, y el problema
+            # estructural detrás: el cierre por conductor recorre el PADRÓN
+            # (`driver_assignments`, quién figura) mientras el viaje resuelve el
+            # conductor por el HECHO (lo que reporta el TMS). Nada reconciliaba
+            # los dos, así que el cierre mostraba al conductor de papel como no
+            # asignado y al que efectivamente manejó no lo mostraba en absoluto.
+            #
+            # Al 27/08 son 8 conductores con 278 viajes en 60 días invisibles
+            # para la cuadratura.
+            #
+            # ESTO PROPONE, NO ESCRIBE, y las tres condiciones son el porqué:
+            #
+            #   1. `NOT EXISTS ... status = 'ACTIVE'` — sólo cuando el padrón
+            #      está EN SILENCIO. Si el conductor ya tiene empresa y el
+            #      tracto dice otra, eso es una contradicción y no se toca: una
+            #      inferencia llena un silencio, nunca contradice un dato que
+            #      alguien cargó a mano.
+            #   2. `HAVING count(DISTINCT ...) = 1` — sólo cuando todos sus
+            #      viajes de la ventana apuntan a la MISMA empresa. Dos
+            #      empresas distintas no son una propuesta, son una pregunta.
+            #      Mismo criterio que `_single_value` más arriba.
+            #   3. El vínculo lo escribe una persona desde el panel del Cierre.
+            #      Y como Certificación LEE `driver_assignments`, escribir ahí
+            #      ES la sincronización entre los dos módulos: no hace falta
+            #      ningún mecanismo aparte.
+            #
+            # NO entra a `_ESCALACIONES_QUE_BLOQUEAN` (daily_closures.py): es
+            # una propuesta, y bloquear el cierre con ella cambiaría la
+            # operación diaria sin que nadie lo haya pedido.
+            sin_empresa_rows = await conn.fetch(
+                """
+                SELECT vfr.resolved_driver_id AS driver_id,
+                       d.full_name,
+                       min(vfr.resolved_carrier_id::text)::uuid AS carrier_id,
+                       min(c.business_name) AS carrier_name,
+                       count(*) AS viajes
+                FROM app.trips t
+                JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+                JOIN public.drivers d ON d.id = vfr.resolved_driver_id
+                                     AND d.operational_status = 'ACTIVE'
+                JOIN public.carriers c ON c.id = vfr.resolved_carrier_id
+                                      AND c.operational_status = 'ACTIVE'
+                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+                  AND NOT EXISTS (
+                        SELECT 1 FROM public.driver_assignments da
+                        WHERE da.driver_id = vfr.resolved_driver_id AND da.status = 'ACTIVE')
+                GROUP BY vfr.resolved_driver_id, d.full_name
+                HAVING count(DISTINCT vfr.resolved_carrier_id) = 1
+                """,
+                business_date,
+            )
+            for r in sin_empresa_rows:
+                escalations["CONDUCTOR_SIN_EMPRESA"].append({
+                    "driver_id": str(r["driver_id"]),
+                    "driver_name": r["full_name"],
+                    "carrier_id": str(r["carrier_id"]),
+                    "carrier_name": r["carrier_name"],
+                    "viajes": r["viajes"],
+                })
 
     return {"auto_resolved": auto_resolved, "escalations": escalations}

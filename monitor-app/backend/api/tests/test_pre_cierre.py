@@ -4,8 +4,9 @@ Cada test controla la secuencia exacta de conn.fetch/fetchrow/fetchval vía
 side_effect, siguiendo el orden real de queries en run_pre_cierre: plate
 scan (Tipo A#1 + Tipo B patente) -> driver scan (Tipo A#2 + Tipo B
 conductor) -> client scan (Tipo A#3) -> onboarding scan (Tipo B) -> sin
-tipo de operación scan (Tipo B). Los sub-tests que no ejercitan un scan le
-pasan listas vacías para mantener la secuencia predecible."""
+tipo de operación scan (Tipo B) -> conductor sin empresa scan (Tipo B,
+2026-08-27). Los sub-tests que no ejercitan un scan le pasan listas vacías
+para mantener la secuencia predecible."""
 from datetime import date
 from unittest.mock import AsyncMock
 
@@ -37,6 +38,7 @@ async def test_tipo_a1_reasigna_empresa_cuando_tms_reporta_una_empresa_real_dist
         [],  # client scan
         [],  # onboarding scan
         [],  # sin tipo de operación scan
+        [],  # conductor sin empresa scan
     ]
     pool = _pool_with(conn)
 
@@ -68,6 +70,7 @@ async def test_ignora_webcarga_como_señal_de_empresa():
         [],  # client scan
         [],  # onboarding scan
         [],  # sin tipo de operación scan
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [
         {"id": "asset1"},
@@ -89,6 +92,7 @@ async def test_no_actua_si_los_viajes_del_dia_discrepan_entre_si():
     conn.fetch.side_effect = [
         [{"plate": "ABCD12", "carrier_names": ["Empresa A", "Empresa B"]}],
         [], [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [
         {"id": "asset1"},
@@ -107,6 +111,7 @@ async def test_no_actua_sobre_asignacion_con_override_manual():
     conn.fetch.side_effect = [
         [{"plate": "ABCD12", "carrier_names": ["Transportes Moneda Ltda."]}],
         [], [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [
         {"id": "asset1"},
@@ -125,6 +130,7 @@ async def test_tipo_b_patente_no_registrada_cuando_el_asset_no_existe():
     conn.fetch.side_effect = [
         [{"plate": "XXXX99", "carrier_names": [None]}],
         [], [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [None]
     pool = _pool_with(conn)
@@ -142,6 +148,7 @@ async def test_tipo_b_patente_no_registrada_cuando_no_tiene_asignacion_activa():
     conn.fetch.side_effect = [
         [{"plate": "ABCD12", "carrier_names": [None]}],
         [], [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [{"id": "asset1"}, None]
     pool = _pool_with(conn)
@@ -160,6 +167,7 @@ async def test_tipo_b_empresa_no_reconocida_cuando_el_nombre_tms_no_matchea_ning
         [{"plate": "ABCD12", "carrier_names": ["Transportes Fantasma SPA"]}],
         [],  # candidates: ninguno matchea
         [], [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [
         {"id": "asset1"},
@@ -186,6 +194,7 @@ async def test_tipo_a2_actualiza_nombre_del_conductor_por_rut():
         [],  # plate scan
         [{"rut": "11111111-1", "es_canonico": True, "names": ["Juan Perez Gomez"]}],
         [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [
         {"id": "d1", "full_name": "Juan Perez", "is_manual_override": False},
@@ -208,6 +217,7 @@ async def test_tipo_b_conductor_no_registrado():
         [],
         [{"rut": "22222222-2", "es_canonico": True, "names": ["Pedro Soto"]}],
         [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [None]
     pool = _pool_with(conn)
@@ -229,6 +239,7 @@ async def test_el_nombre_del_tms_viaja_con_la_escalacion_para_poder_dar_de_alta(
         [],
         [{"rut": "33333333-3", "es_canonico": True, "names": ["Pedro Soto", "Pedro Soto"]}],
         [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [None]
     pool = _pool_with(conn)
@@ -246,6 +257,7 @@ async def test_si_el_tms_da_dos_nombres_para_el_mismo_rut_no_se_propone_ninguno(
         [],
         [{"rut": "44444444-4", "es_canonico": True, "names": ["Pedro Soto", "Pedro Sotomayor"]}],
         [], [], [],
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [None]
     pool = _pool_with(conn)
@@ -267,6 +279,7 @@ async def test_un_rut_que_no_canoniza_se_escala_con_su_motivo():
         [],
         [{"rut": "SIN RUT", "es_canonico": False, "names": ["Pedro Soto"]}],
         [], [], [],
+        [],  # conductor sin empresa scan
     ]
     pool = _pool_with(conn)
 
@@ -289,6 +302,7 @@ async def test_tipo_a3_agrega_cliente_a_carrier_shippers():
         [{"plate": "ABCD12", "client_name": "Walmart"}],
         [],  # onboarding scan
         [],  # sin tipo de operación scan
+        [],  # conductor sin empresa scan
     ]
     conn.fetchrow.side_effect = [
         {"id": "asset1"},
@@ -313,6 +327,7 @@ async def test_tipo_b_onboarding_y_sin_tipo_de_operacion():
         [], [], [],
         [{"carrier_id": "c1", "business_name": "Empresa Onboarding"}],
         [{"carrier_id": "c2", "business_name": "Empresa Sin Tipo"}],
+        [],  # conductor sin empresa scan
     ]
     pool = _pool_with(conn)
 
@@ -338,16 +353,96 @@ async def test_tipo_b_onboarding_y_sin_tipo_de_operacion():
 _CRITERIO_MULTIDIA = "(t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))"
 
 
+# ── Conductor con viaje y sin empresa: se PROPONE, no se escribe ────────────
+# El caso Gerson Ferrada de la minuta del 25/08. El cierre recorre el padron
+# (driver_assignments) y el viaje resuelve el conductor por lo que reporta el
+# TMS; nada los reconciliaba. Lo que se fija aca son las TRES condiciones que
+# hacen que esto sea una propuesta y no una escritura automatica.
+
+def _fetch_con_sin_empresa(filas):
+    """La secuencia de scans con la ULTIMA consulta —la de conductor sin
+    empresa— devolviendo `filas`. Las otras cinco no se ejercitan."""
+    return [[], [], [], [], [], filas]
+
+
 @pytest.mark.asyncio
-async def test_las_cinco_consultas_usan_el_criterio_multidia():
+async def test_propone_la_empresa_del_tracto_al_conductor_que_no_tiene():
     conn = AsyncMock()
-    conn.fetch.side_effect = [[], [], [], [], []]
+    conn.fetch.side_effect = _fetch_con_sin_empresa([{
+        "driver_id": "d1", "full_name": "Gerson Ferrada Zapata",
+        "carrier_id": "c1", "carrier_name": "Transportes Juan Ramirez Spa", "viajes": 25,
+    }])
+    pool = _pool_with(conn)
+
+    result = await run_pre_cierre(pool, DAY)
+
+    assert result["escalations"]["CONDUCTOR_SIN_EMPRESA"] == [{
+        "driver_id": "d1", "driver_name": "Gerson Ferrada Zapata",
+        "carrier_id": "c1", "carrier_name": "Transportes Juan Ramirez Spa", "viajes": 25,
+    }]
+
+
+@pytest.mark.asyncio
+async def test_la_propuesta_no_escribe_nada():
+    """Lo unico que la separa de una correccion Tipo A. Escribirla sola seria
+    dejar que una inferencia decida sobre el padron sin que nadie la vea."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = _fetch_con_sin_empresa([{
+        "driver_id": "d1", "full_name": "Gerson Ferrada Zapata",
+        "carrier_id": "c1", "carrier_name": "Transportes Juan Ramirez Spa", "viajes": 25,
+    }])
+    pool = _pool_with(conn)
+
+    result = await run_pre_cierre(pool, DAY)
+
+    assert conn.execute.await_count == 0
+    # Y no se cuela como correccion automatica, que es lo que la pantalla
+    # muestra como "ya lo resolvi solo".
+    assert result["auto_resolved"] == []
+
+
+@pytest.mark.asyncio
+async def test_la_propuesta_no_bloquea_el_cierre():
+    """No entra a _ESCALACIONES_QUE_BLOQUEAN: bloquear el dia con una
+    propuesta cambiaria la operacion sin que nadie lo haya pedido."""
+    from app.routers.daily_closures import _ESCALACIONES_QUE_BLOQUEAN
+
+    assert "CONDUCTOR_SIN_EMPRESA" not in _ESCALACIONES_QUE_BLOQUEAN
+
+
+@pytest.mark.asyncio
+async def test_solo_propone_cuando_el_padron_esta_en_silencio_y_la_senal_es_unica():
+    """Las dos condiciones viven en el SQL, asi que se fijan leyendolo: si
+    alguien las saca, el test lo dice antes de que la propuesta empiece a
+    contradecir el padron o a elegir entre dos empresas."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = _fetch_con_sin_empresa([])
+    pool = _pool_with(conn)
+
+    await run_pre_cierre(pool, DAY)
+
+    sql = conn.fetch.call_args_list[-1].args[0]
+    # 1. Solo si el conductor NO tiene asignacion activa (silencio, nunca
+    #    contradiccion).
+    assert "NOT EXISTS" in sql and "driver_assignments" in sql
+    assert "da.status = 'ACTIVE'" in sql
+    # 2. Solo si todos sus viajes apuntan a la MISMA empresa.
+    assert "HAVING count(DISTINCT vfr.resolved_carrier_id) = 1" in sql
+    # 3. Y sobre empresas y conductores vigentes, no dados de baja.
+    assert "d.operational_status = 'ACTIVE'" in sql
+    assert "c.operational_status = 'ACTIVE'" in sql
+
+
+@pytest.mark.asyncio
+async def test_las_seis_consultas_usan_el_criterio_multidia():
+    conn = AsyncMock()
+    conn.fetch.side_effect = [[], [], [], [], [], []]
     pool = _pool_with(conn)
 
     await run_pre_cierre(pool, DAY)
 
     consultas = [c.args[0] for c in conn.fetch.call_args_list]
-    assert len(consultas) == 5, "cambió la cantidad de scans de run_pre_cierre"
+    assert len(consultas) == 6, "cambió la cantidad de scans de run_pre_cierre"
     for i, sql in enumerate(consultas):
         assert _CRITERIO_MULTIDIA in sql, f"el scan #{i + 1} volvió al criterio de un solo día"
         assert "planning_date = $1 AND" not in sql, f"el scan #{i + 1} quedó con el predicado viejo"
@@ -357,13 +452,15 @@ async def test_las_cinco_consultas_usan_el_criterio_multidia():
 async def test_no_excluye_sodimac_porque_esa_fuente_no_puede_aportar_señal():
     """Contrapunto deliberado de daily_closures, que SÍ la excluye.
 
-    Acá sería código muerto: las 5 consultas exigen `tractor_plate` o
+    Acá sería código muerto: las consultas exigen `tractor_plate` o
     `driver_rut_tms`, y de los 54 viajes Sodimac de app.trips, 0 traen
-    patente y 0 traen RUT (verificado contra producción, 2026-08-18).
+    patente y 0 traen RUT (verificado contra producción, 2026-08-18). El
+    scan de "conductor sin empresa" (2026-08-27) tampoco la alcanza: sale
+    de `v_trip_fleet_resolution`, que resuelve por patente o por RUT.
     Si alguien agrega la exclusión "por consistencia", este test explica
     por qué no hace falta."""
     conn = AsyncMock()
-    conn.fetch.side_effect = [[], [], [], [], []]
+    conn.fetch.side_effect = [[], [], [], [], [], []]
     pool = _pool_with(conn)
 
     await run_pre_cierre(pool, DAY)

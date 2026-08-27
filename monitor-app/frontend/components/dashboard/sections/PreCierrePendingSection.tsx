@@ -8,6 +8,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '../NewCarrierPanel'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { AltaConductorDesdeCierre } from './AltaConductorDesdeCierre'
+import { VincularConductorPropuesto } from './VincularConductorPropuesto'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
 
 interface Props {
@@ -79,7 +80,11 @@ export function PreCierrePendingSection({ fecha }: Props) {
   if (!data) return null
 
   const { auto_resolved, escalations } = data.pre_cierre
-  const hasEscalations = Object.values(escalations).some(list => list.length > 0)
+  // El `?.length` cubre la clave que llega explícitamente en `undefined`.
+  // Una clave AUSENTE no pasa por acá —`Object.values` no la devuelve—: de esa
+  // protege el `?? []` del `.map` de más abajo, y eso está medido: quitarlo
+  // rompe cinco tests, quitar este no rompe ninguno.
+  const hasEscalations = Object.values(escalations).some(list => (list?.length ?? 0) > 0)
 
   return (
     <div className="space-y-4">
@@ -104,6 +109,27 @@ export function PreCierrePendingSection({ fecha }: Props) {
           <p className="text-xs font-bold text-text-primary flex items-center gap-1.5">
             <AlertTriangle size={13} className="text-amber-500" /> Requieren tu atención
           </p>
+
+          {/* La PROPUESTA va primero: es la única del bloque que se resuelve
+              con un clic y sin salir de la pantalla. Las demás piden datos que
+              hay que ir a buscar.
+
+              El `?? []` no es defensa de adorno: backend y frontend se
+              despliegan por separado, y sin él una clave que el backend
+              todavía no manda tira sobre `undefined.map` y se lleva la SECCIÓN
+              ENTERA, incluidas las escalaciones que sí llegaron. Medido:
+              sacarlo rompe cinco tests. */}
+          {(escalations.CONDUCTOR_SIN_EMPRESA ?? []).map(esc => (
+            <VincularConductorPropuesto
+              key={esc.driver_id}
+              driverId={esc.driver_id}
+              driverName={esc.driver_name}
+              carrierId={esc.carrier_id}
+              carrierName={esc.carrier_name}
+              viajes={esc.viajes}
+              onVinculado={invalidate}
+            />
+          ))}
 
           {escalations.PATENTE_NO_REGISTRADA.map(esc => (
             <div key={esc.tractor_plate} className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 space-y-2">

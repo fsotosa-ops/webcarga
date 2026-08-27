@@ -8,7 +8,7 @@ vi.mock('@/lib/api/dailyClosures', () => ({
   dailyClosuresApi: { get: vi.fn() },
 }))
 vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { create: vi.fn(), patch: vi.fn(), fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
+  carriersApi: { create: vi.fn(), patch: vi.fn(), assignDriver: vi.fn(), fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
 }))
 
 function status(overrides: Partial<DailyClosureStatus['pre_cierre']> = {}): DailyClosureStatus {
@@ -42,6 +42,7 @@ beforeEach(async () => {
   vi.mocked(dailyClosuresApi.get).mockReset()
   vi.mocked(carriersApi.create).mockReset()
   vi.mocked(carriersApi.patch).mockReset()
+  vi.mocked(carriersApi.assignDriver).mockReset().mockResolvedValue({ ok: true } as never)
 })
 
 describe('PreCierrePendingSection', () => {
@@ -135,5 +136,76 @@ describe('PreCierrePendingSection', () => {
     renderSection()
     await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalled())
     expect(screen.queryByText('Requieren tu atención')).not.toBeInTheDocument()
+  })
+
+  // ── La propuesta de empresa (caso Gerson Ferrada, minuta del 25/08) ───────
+  // El cierre recorre el padron y el viaje resuelve por lo que reporta el TMS.
+  // Cuando el padron esta en silencio y todos sus viajes apuntan a la misma
+  // empresa, la app PROPONE y una persona confirma.
+  const PROPUESTA = {
+    driver_id: 'd1', driver_name: 'Gerson Ferrada Zapata',
+    carrier_id: 'c1', carrier_name: 'Transportes Juan Ramirez Spa', viajes: 25,
+  }
+
+  it('propone la empresa del tracto, y dice lo que cuesta no tenerla', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [], CONDUCTOR_SIN_EMPRESA: [PROPUESTA],
+      },
+    }))
+    renderSection()
+
+    expect(await screen.findByText(/Gerson Ferrada Zapata/)).toBeInTheDocument()
+    expect(screen.getByText(/25 viajes/)).toBeInTheDocument()
+    expect(screen.getByText(/no aparece en el cierre del día/i)).toBeInTheDocument()
+  })
+
+  it('confirmar la propuesta escribe la asignacion, que es lo que lee Certificacion', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { carriersApi } = await import('@/lib/api/carriers')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [], CONDUCTOR_SIN_EMPRESA: [PROPUESTA],
+      },
+    }))
+    renderSection()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Asignar a Transportes Juan Ramirez Spa/i }))
+
+    await waitFor(() => expect(carriersApi.assignDriver).toHaveBeenCalledWith('c1', 'd1'))
+  })
+
+  it('ofrece una salida cuando la propuesta esta equivocada', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [], CONDUCTOR_SIN_EMPRESA: [PROPUESTA],
+      },
+    }))
+    renderSection()
+
+    expect(await screen.findByRole('link', { name: /Es otra empresa/i }))
+      .toHaveAttribute('href', '/dashboard/compliance?vista=conductores')
+  })
+
+  // Backend y frontend se despliegan por separado. Antes del guarda, una clave
+  // que el backend todavia no manda rompia la seccion ENTERA, incluidas las
+  // escalaciones que si llegaron.
+  it('si el backend todavia no manda la clave, la seccion sigue funcionando', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [],
+        CONDUCTOR_NO_REGISTRADO: [{ driver_rut: '8245112-9', driver_name_tms: 'JAIME VIDAL' }],
+        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+      },
+    }))
+    renderSection()
+
+    expect(await screen.findByText(/8245112-9/)).toBeInTheDocument()
   })
 })
