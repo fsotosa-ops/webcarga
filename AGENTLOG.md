@@ -13,8 +13,9 @@
 
 ### 2026-08-27 — STAND BY. Estado y punto de retomada
 
-`dev` en `684ec37a`, **pusheado y desplegado**. Deploy Frontend y Deploy Monitor API en verde.
-**Nada a medio hacer.**
+`dev` en `c60888d7`, **pusheado**. El último código desplegado es `684ec37a` —Deploy Frontend y
+Deploy Monitor API en verde—; lo posterior son sólo AGENTLOG, TECH_DEBT y el borrado de
+`logextraction.txt`, que no disparan workflow. Árbol limpio. **Nada a medio hacer.**
 
 ## Todo lo de la minuta del 25/08 que era código, está en producción
 
