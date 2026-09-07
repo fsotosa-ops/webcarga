@@ -341,9 +341,14 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
             # fleet_service_type_id — viven en el TRACTO individual, no a
             # nivel empresa; public.carrier_fleet_service_types se eliminó,
             # nunca tuvo una fuente de ingesta real.)
+            #
+            # Trae la PATENTE, no solo la empresa: la accion es sobre un
+            # vehiculo puntual —abrirlo y clasificarlo—, y una empresa con
+            # cuatro tractos no dice cual. Antes decia solo el nombre de la
+            # empresa y mandaba a la ficha a buscarlo a ojo.
             sin_tipo_rows = await conn.fetch(
                 """
-                SELECT DISTINCT c.id AS carrier_id, c.business_name
+                SELECT DISTINCT c.id AS carrier_id, c.business_name, a.license_plate
                 FROM app.trips t
                 JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
                 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
@@ -355,7 +360,11 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
             )
             for r in sin_tipo_rows:
                 escalations["SIN_TIPO_OPERACION"].append(
-                    {"carrier_id": str(r["carrier_id"]), "carrier_name": r["business_name"]}
+                    {
+                        "carrier_id": str(r["carrier_id"]),
+                        "carrier_name": r["business_name"],
+                        "tractor_plate": r["license_plate"],
+                    }
                 )
 
             # ── Tipo B — conductor con viaje y sin empresa: se PROPONE ──────

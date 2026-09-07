@@ -121,7 +121,7 @@ describe('PreCierrePendingSection', () => {
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
       escalations: {
         PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
-        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [{ carrier_id: 'c5', carrier_name: 'Rios Ltda' }],
+        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [{ carrier_id: 'c5', carrier_name: 'Rios Ltda', tractor_plate: 'HKXW55' }],
       },
     }))
     renderSection()
@@ -207,5 +207,21 @@ describe('PreCierrePendingSection', () => {
     renderSection()
 
     expect(await screen.findByText(/8245112-9/)).toBeInTheDocument()
+  })
+  it('SIN_TIPO_OPERACION nombra la patente y dice que bloquea el cierre, no que "no puede clasificarse"', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [],
+        SIN_TIPO_OPERACION: [{ carrier_id: 'c5', carrier_name: 'Rios Ltda', tractor_plate: 'HKXW55' }],
+      },
+    }))
+    renderSection()
+
+    // La patente, porque la acción es sobre un vehículo y no sobre la empresa.
+    expect(await screen.findByText('HKXW55')).toBeInTheDocument()
+    // Y la consecuencia real, que es que el día no se cierra.
+    expect(screen.getByText(/bloquea el cierre del día/)).toBeInTheDocument()
   })
 })

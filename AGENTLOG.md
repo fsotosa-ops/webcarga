@@ -11,6 +11,173 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-09-07 — Ronda 153: el eje de bajas, y una alarma que yo mismo había inflado
+
+Bloque 2 del plan. Tres arreglos y **una corrección a lo que había escrito en la Ronda 152**.
+
+## Las empresas dadas de baja no estaban en ninguna pestaña
+
+`_SQL_DIRECTORIO` cuenta `LEGACY_INACTIVE + INACTIVE` como "inactivas" —**214**— y la pestaña del
+Directorio filtraba sólo el primero —**206**—. La cifra del encabezado y la lista de abajo, en la
+misma pantalla, no podían coincidir. Las **8** que faltaban son justo las dadas de baja **desde la
+app**, y entre ellas está *Transportes Cristian González E.i.r.l.*: la que Pablo dijo el 04/09
+—*"yo di de baja esa empresa y no aparece"*— y también *Transporte Cribas*, de la minuta del 25/08.
+
+`operational_status` acepta ahora varios estados separados por coma (`= ANY($n::text[])`); un solo
+valor se comporta igual que antes. La pestaña se llama **"Inactivas"** y manda los dos. Lo mismo en
+Seguros, que tenía el mismo corte. Verificado en pantalla: la pestaña dice **214** y la empresa de
+Pablo aparece al buscarla.
+
+## La baja, dicha en la lista
+
+`DriverRosterCard` y `VehicleRosterCard` recibían `operational_status` en el payload y no lo
+dibujaban: había que abrir cada ficha para ver que el botón decía "Reactivar". Ahora hay un
+`ChipDeBaja`, y va **en lugar** del pill de documentación, no al lado — un conductor de baja con los
+papeles al día se veía con un "Al día" verde, la lectura exactamente contraria. Verificado en
+pantalla con los 3 conductores de *Inversiones Casilla Spa*, que es la captura de Pablo.
+
+Y el chip de estado de la ficha de empresa **imprimía el enum crudo**: decía `ACTIVE` en una
+interfaz en español. Eso alimentaba su pregunta de la reunión —*"¿lo da de baja o le pone
+inactivo?"*—: son el mismo eje escrito de dos maneras. Ahora hay `OPERATIONAL_STATUS_LABELS`, y
+`LEGACY_INACTIVE` e `INACTIVE` se dicen igual a propósito.
+
+## La corrección: "53 de 90 conductores fuera del cierre" era alarmista
+
+En la Ronda 152 escribí que 53 de 90 conductores activos no pueden aparecer nunca en el cierre. La
+aritmética era correcta y la lectura no. Desglosado:
+
+| | conductores | ¿es un defecto? |
+|---|---|---|
+| entran al roster | 37 | — |
+| empresa **100% Equipo Completo** | **34** | **no** — correcto que no estén en el cierre de Tractoreo |
+| sin empresa asignada | 10 | ya lo cubre `CONDUCTOR_SIN_EMPRESA` en el pre-cierre |
+| empresa dada de baja | 8 | correcto, si la baja lo es |
+| empresa con tractos sin clasificar | **1** | sí, y se arregla con el selector de la Ronda 152 |
+
+O sea el criterio del roster **está bien** y no se tocó. El ítem 11 del plan queda cerrado sin
+código. Escribir "53 de 90" sin abrir el porqué era exactamente el error que este proyecto ya tiene
+anotado: un número sin sus filas no dice qué pasa.
+
+## Lo medido
+
+**Backend 993 en verde** (incluidos los 190 de integración), **frontend 1.347**, `tsc` limpio,
+build OK. Dos trinquetes bajados: color crudo **1.744 → 1.721** y tamaños por debajo de 11px
+**268 → 262**. Este segundo apareció en rojo: el `ChipDeBaja` nació a 10px. Pasa que la suite lo
+habría dejado pasar por compensación —había quitado tantos como agregué—, así que la tira de chips
+de `VehicleRosterCard` subió entera al mínimo de la escala en vez de aprovechar el margen.
+
+## Checklist — siguiente paso exacto
+
+1. **Sigue sin comitear.** Rondas 152 y 153 juntas en el árbol.
+2. **El cierre de prueba de Pablo**, que es lo único que cierra el Bloque 1.
+3. **Bloque 3**: **Facturación queda FUERA** (definición del usuario, 07/09) — la pregunta P1 de la
+   reunión del 04/09 se cierra sola y no hay que dividir el cierre por área. Lo que sigue vivo del
+   bloque es agrupar el cierre de viajes **por estado** y sacar el Directorio de Certificación;
+   ambos siguen esperando la matriz estado→grupo de Pablo y Fabián.
+4. Deuda anotada y no tocada: abrir el cierre de un día ya firmado le recalcula las cifras.
+
+### 2026-09-07 — Ronda 152: los 43 tractos que ninguna pantalla mostraba
+
+Pablo entregó `monitor-app/bugs/20260907/Bugs Cierre de viaje.docx` —12 capturas del **segundo
+cierre de prueba**, sobre el día **03-09**— y el 04/09 las revisamos en vivo con él y Fabián. Cuatro
+de esos comentarios eran **un solo bug**.
+
+## La causa raíz
+
+`GET /equipment-closures` devuelve DOS listas, `tractoreo` y `equipos_completos`. El frontend leía
+sólo la segunda (`FlotaDelDiaSection.tsx:131`), y la pestaña rotulada **"Tractoreo" mostraba
+CONDUCTORES**, traídos de `GET /daily-closures`. Los **43 tractos** de `tractoreo.equipment` del
+03-09 no los pintaba nadie. Por eso el badge decía "18 sin asignar" (conductores) al lado de un
+error que decía "15 sin resolver" (tractos): dos números que no podían cuadrar porque no contaban
+lo mismo.
+
+| Comentario de Pablo | Patente | Qué era en realidad |
+|---|---|---|
+| "este viaje no aparece en el cierre" | HKXW55 | `ASSIGNED` en el bucket invisible |
+| "faltaban 4 casos, ni asignados ni no asignados" | FCCP42, BSYF60, CZZG66, SVLT42 | los cuatro `ASSIGNED` en el bucket invisible |
+| "este equipo no aparece como tractoreo" | DTBY52 | `UNASSIGNED`: **uno de los 15 que bloqueaban** |
+| "cuál es el listado de estos 15, ni hay un detalle" | — | esos mismos 15 |
+
+Y el detalle **sí venía**: el 409 trae `pending[{asset_id, tractor_plate}]` desde siempre;
+`page.tsx` guardaba `detail.message` y tiraba el resto. Es la misma lección que `SinFlotaList` ya
+tenía escrita en su docstring desde agosto — *"un número sin sus filas no dice qué hacer"*—, sin
+aplicar a las otras dos listas.
+
+## Lo que se hizo
+
+1. **Tres vistas, una tabla.** El cabezal pasó de dos tarjetas a tres —Conductores / Tractos ·
+   Tractoreo / Tractos · Equipo Completo—, y son la misma tarjeta con props. La de Tractoreo
+   anuncia *"N sin motivo — bloquean el cierre"*.
+2. **El 409 se despliega**, en los dos pasos: patente + empresa con link a la ficha para tractos,
+   nombre y estado para conductores (`PendientesDelCierre.tsx`, nuevo).
+3. **El override llega a equipos.** `page.tsx:164` llamaba `close(fecha)` sin override, así que con
+   tractos pendientes el día no se podía firmar **ni forzando**. Eso explica que
+   `app.equipment_closures` esté **vacía desde que existe**.
+4. **El tipo de operación se edita.** El `PATCH` lo aceptaba desde el 03/08 y no había pantalla: el
+   `GET` no lo devolvía, el cliente TS no lo tipaba y la vista materializada no lo exponía. Ahora
+   se ve como chip en el roster y se elige en el panel del equipo. Se lee **en vivo** de
+   `public.assets`, no del roster materializado, porque es un campo que ahora se edita ahí mismo.
+5. **El conductor del tracto es el del VIAJE**, no sólo el habitual de `vehicle_driver_assignments`
+   (cobertura baja). Campos separados: `driver_name` / `trip_driver_name`. Medido: 3 filas del
+   03-09 traen conductor sólo por el viaje.
+6. **"Ver viaje" en un conductor asignado.** `trip_id` sale del LATERAL de mismatch, así que en un
+   ASSIGNED sano es NULL por diseño: de 25 asignados del 03-09, **1** tenía link. Con
+   `today_trip_id`, los 25.
+7. **`SIN_TIPO_OPERACION` dice la verdad**: nombra la patente y dice que bloquea. No es una
+   contradicción con `_ESCALACIONES_QUE_BLOQUEAN` —esa lista gobierna el cierre de CONDUCTORES—,
+   era la copia la que se quedaba corta.
+8. **El botón "Crear viaje manual" ya no miente**: su handler era un `TODO` vacío. La prop pasó a
+   opcional y la página dejó de pasarla.
+
+## Un test rojo que no era mío
+
+`test_se_puede_vincular_un_conductor_sin_empresa` fallaba **también en HEAD** (verificado en un
+worktree limpio). Elegía su sujeto con `SELECT id FROM public.drivers ... LIMIT 1` sin ORDER BY:
+hoy 87 de 96 conductores con RUT tienen empresa, así que el test cruzaba por accidente la rama
+contraria a la que dice probar. La causa real está en `app.resolve_trip_fleet()`:
+
+```sql
+UPDATE app.trip_fleet_links SET carrier_id = da.carrier_id
+WHERE fl.link_source = 'manual' AND fl.carrier_id IS NULL ...
+```
+
+O sea la inferencia **llena un silencio y nunca contradice** — la regla del modelo de resolución de
+flota, funcionando. El test elige ahora su sujeto a propósito, y se escribió el que faltaba para la
+otra rama.
+
+## Lo medido, y una advertencia
+
+Suites: **backend 991 en verde** (incluidos los 190 de integración contra la base real), **frontend
+1.343 en verde**, `tsc` limpio, `npm run build` OK. El trinquete de color crudo **bajó de 1.744 a
+1.721**. Las cuatro consultas SQL nuevas se corrieron contra la base de producción antes de
+confiar en ningún mock, y los tests de regresión se verificaron por mutación: revertir la conducta
+vieja los pone en rojo.
+
+**Click-through hecho en local** (uvicorn + next contra la base real): las tres tarjetas cargan,
+Tractoreo lista los tractos con patente y motivo —DTBY52 entre ellos—, los asignados muestran el
+conductor del viaje, y la ficha de Comercializadora De Los Rios marca HKXW55 como *"Sin tipo de
+operación"* con su selector.
+
+**Ojo con el número: no es estable.** El `GET` recalcula. El 03-09 tenía 15 tractos bloqueando
+cuando lo medí a las 12:50, y 17 después de abrir la pantalla a las 13:43 —`computed_at` lo
+confirma—, sobre un día que **ya estaba firmado** en `app.daily_closures`. Abrir el cierre de un día
+cerrado le cambia las cifras. Está anotado como deuda, no se tocó.
+
+## Checklist — siguiente paso exacto
+
+1. **Nada está comiteado ni desplegado.** Revisar el diff y decidir el commit.
+2. **El cierre de prueba de Pablo, otra vez**, ahora que hay listas: poner motivo a los 17 tractos y
+   ver que `app.equipment_closures` deje de estar vacía. Es la única verificación que cuenta.
+3. **Bloque 2 del plan** (un solo eje de bajas): hoy hay cinco definiciones de "dado de baja", 53 de
+   90 conductores activos no pueden aparecer en el cierre, y el listado de empresas **no tiene
+   pestaña `INACTIVE`** — que es justo lo que escribe el botón "Dar de baja".
+4. **Bloque 3** (Directorio fuera de Certificación; cierre de viajes agrupado por estado):
+   **Facturación queda fuera** por definición del usuario (07/09), así que el corte por área no va y
+   P1 deja de ser una pregunta abierta. Sigue esperando la matriz estado→grupo de Pablo y Fabián.
+5. **Los 31 viajes trabados son todos de Sodimac** (24/07 al 07/09, hasta 42 días). El mecanismo ya
+   los detecta; falta cerrarlos, que es negocio. Lo que sí es desarrollo: `SQL_GRUPOS_CIERRE` es el
+   único SQL del cierre sin filtro anti-Sodimac.
+
 ### 2026-08-27 — STAND BY. Estado y punto de retomada
 
 `dev` en `c60888d7`, **pusheado**. El último código desplegado es `684ec37a` —Deploy Frontend y

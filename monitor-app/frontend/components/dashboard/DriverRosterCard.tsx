@@ -4,6 +4,7 @@
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { CarrierDriverRosterItem } from '@/lib/types'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
+import { ChipDeBaja } from './ChipDeBaja'
 
 interface Props {
   driver: CarrierDriverRosterItem
@@ -15,7 +16,12 @@ interface Props {
  *  mismo criterio y componente visual que TransporterCard en el listado de
  *  Empresas) — reemplaza el conteo plano "N requisitos" que no distinguía
  *  cuáles conductores necesitan atención. El detalle por documento vive en
- *  DriverDetailPanel, abierto al hacer click. */
+ *  DriverDetailPanel, abierto al hacer click.
+ *
+ *  Un conductor dado de baja lo dice acá (2026-09-07): el dato llegaba en el
+ *  payload y no se dibujaba, así que sólo se sabía abriendo la ficha de a una.
+ *  Y lo dice EN LUGAR del pill de documentación — uno de baja con los papeles
+ *  al día se veía en verde "Al día". */
 export function DriverRosterCard({ driver, onOpen }: Props) {
   return (
     <button
@@ -31,7 +37,9 @@ export function DriverRosterCard({ driver, onOpen }: Props) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-bold text-text-primary truncate">{driver.full_name}</p>
-        {driver.compliance_health === 'PENDING' ? (
+        {driver.operational_status !== 'ACTIVE' ? (
+          <ChipDeBaja estado={driver.operational_status} />
+        ) : driver.compliance_health === 'PENDING' ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 mt-0.5">
             <ShieldAlert size={9} /> {driver.pending_mandatory} pendiente{driver.pending_mandatory === 1 ? '' : 's'}
           </span>

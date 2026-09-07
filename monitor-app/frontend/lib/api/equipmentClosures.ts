@@ -1,9 +1,12 @@
-import type { EquipmentClosureStatus, EquipmentDayStatusRow } from '@/lib/types'
+import type { EquipmentClosePending, EquipmentClosureStatus, EquipmentDayStatusRow } from '@/lib/types'
 import { apiFetch, ApiError } from './client'
 
 export type EquipmentClosePendingError = {
   message: string
-  pending: { asset_id: string; tractor_plate: string }[]
+  /** Los equipos que bloquean, con patente y empresa. Llegaban desde el
+   *  primer día y la pantalla sólo mostraba `message`: "15 equipo(s) sin
+   *  resolver" sin decir cuáles. */
+  pending: EquipmentClosePending[]
 }
 
 /** El backend manda el 409 con `detail` = objeto estructurado — ver

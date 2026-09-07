@@ -36,7 +36,7 @@ vi.mock('@/lib/api/dailyClosures', () => ({
 
 vi.mock('@/lib/api/equipmentClosures', () => ({
   equipmentClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn(), close: vi.fn() },
-  isEquipmentClosePendingError: () => false,
+  isEquipmentClosePendingError: vi.fn(() => false),
 }))
 
 vi.mock('@/lib/api/carriers', () => ({
@@ -80,6 +80,8 @@ beforeEach(async () => {
   vi.mocked(dailyClosuresApi.close).mockReset()
   vi.mocked(equipmentClosuresApi.get).mockReset().mockResolvedValue(EMPTY_EQUIPMENT)
   vi.mocked(equipmentClosuresApi.close).mockReset()
+  const { isEquipmentClosePendingError } = await import('@/lib/api/equipmentClosures')
+  vi.mocked(isEquipmentClosePendingError).mockReset().mockReturnValue(false)
   push.mockReset(); replace.mockReset()
 })
 
@@ -137,7 +139,11 @@ describe('ClosuresCenterPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
 
     await waitFor(() => expect(dailyClosuresApi.close).toHaveBeenCalledWith('2026-08-04', false, ''))
-    await waitFor(() => expect(equipmentClosuresApi.close).toHaveBeenCalledWith('2026-08-04'))
+    // Los mismos tres argumentos que el primer paso: el override tiene que
+    // llegar a los dos. Antes se llamaba con la fecha sola, así que con
+    // tractos pendientes el segundo paso devolvía 409 aunque el admin lo
+    // hubiera forzado — `app.equipment_closures` nunca llegó a tener una fila.
+    await waitFor(() => expect(equipmentClosuresApi.close).toHaveBeenCalledWith('2026-08-04', false, ''))
   })
 
   it('Confirmar cierre: si Tractoreo falla con pendientes (409), NO llama a Equipos Completos', async () => {
@@ -187,5 +193,62 @@ describe('ClosuresCenterPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeDisabled(),
     )
+  })
+  // ── Regresión del 2026-09-07 ──────────────────────────────────────────────
+  // Pablo: *"cuál es el listado de estos 15 equipos sin resolver, ni hay un
+  // detalle"*. El 409 traía patente y empresa de cada uno desde siempre; la
+  // pantalla guardaba `detail.message` y tiraba `detail.pending`.
+
+  it('el 409 de equipos se despliega con la patente y la empresa de cada tracto que bloquea', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { equipmentClosuresApi, isEquipmentClosePendingError } = await import('@/lib/api/equipmentClosures')
+    vi.mocked(dailyClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-08-04', overridden: 0 })
+    vi.mocked(equipmentClosuresApi.close).mockRejectedValue(Object.assign(new Error('pending'), {
+      status: 409,
+      detail: {
+        message: '2 equipo(s) sin resolver — no se puede cerrar el día',
+        pending: [
+          { asset_id: 'a1', tractor_plate: 'DTBY52', carrier_id: 'cf', carrier_name: 'Transportes La Fortaleza Spa' },
+          { asset_id: 'a2', tractor_plate: 'LCSR30', carrier_id: null, carrier_name: null },
+        ],
+      },
+    }))
+    vi.mocked(isEquipmentClosePendingError).mockReturnValue(true)
+    renderPage()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
+
+    expect(await screen.findByText('Tractos sin motivo (2)')).toBeInTheDocument()
+    const conEmpresa = screen.getByText('DTBY52 — Transportes La Fortaleza Spa')
+    expect(conEmpresa).toBeInTheDocument()
+    expect(conEmpresa.closest('a')).toHaveAttribute('href', '/dashboard/carriers/cf?tab=equipos')
+    // Sin empresa no se inventa un destino: se nombra igual, sin link.
+    expect(screen.getByText('LCSR30')).toBeInTheDocument()
+    expect(screen.getByText('LCSR30').closest('a')).toBeNull()
+  })
+
+  it('el 409 de conductores nombra a cada uno, no sólo cuántos son', async () => {
+    const { dailyClosuresApi, isClosePendingError } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.close).mockRejectedValue(Object.assign(new Error('pending'), {
+      status: 409,
+      detail: {
+        message: '2 conductor(es) sin resolver — no se puede cerrar el día',
+        pending: [
+          { driver_id: 'd1', full_name: 'Ana Soto', status: 'UNASSIGNED' },
+          { driver_id: 'd2', full_name: 'Luis Rojas', status: 'MISMATCH' },
+        ],
+        sin_flota: [],
+      },
+    }))
+    vi.mocked(isClosePendingError).mockReturnValue(true)
+    renderPage()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
+
+    expect(await screen.findByText('Conductores sin resolver (2)')).toBeInTheDocument()
+    expect(screen.getByText('Ana Soto — sin motivo')).toBeInTheDocument()
+    expect(screen.getByText('Luis Rojas — empresa por regularizar')).toBeInTheDocument()
   })
 })

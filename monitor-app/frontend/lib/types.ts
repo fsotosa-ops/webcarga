@@ -764,6 +764,21 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   RAMPLA:       'Rampla',
 }
 
+/** El estado operativo, dicho en español. La ficha de empresa imprimía el enum
+ *  crudo —un chip que decía "ACTIVE" en una interfaz en español— y eso alimentó
+ *  la confusión que Pablo trajo el 04/09: *"¿qué es lo mejor? ¿lo da de baja o
+ *  le pone inactivo? Porque en un lado te decía dar de baja y en otro dejaba
+ *  ahí la empresa inactivo"*. Son el mismo eje escrito de dos maneras.
+ *
+ *  `LEGACY_INACTIVE` e `INACTIVE` se dicen igual a propósito: la diferencia
+ *  —de dónde vino la baja— no cambia nada para quien mira. */
+export const OPERATIONAL_STATUS_LABELS: Record<CarrierOperationalStatus, string> = {
+  ACTIVE:          'Activa',
+  INACTIVE:        'Dada de baja',
+  LEGACY_INACTIVE: 'Dada de baja',
+  ONBOARDING:      'En onboarding',
+}
+
 /** Una cabecera de la ficha de empresa: la empresa misma, o uno de sus
  *  conductores o vehículos, con sus cuatro cifras — sin las filas de
  *  detalle. Esas se piden aparte, sólo al desplegar el sujeto
@@ -904,6 +919,15 @@ export type CarrierAssetRosterItem = {
   fleet_service_type_label:    string | null
   fleet_service_type_bg_color: string | null
   fleet_service_type_text_color: string | null
+  /** "Tipo de Operación WebCarga" — Tractoreo / Equipo Completo, dominio
+   *  WEBCARGA_OPERATION_TYPE. NO es lo mismo que `fleet_service_type_*`, que
+   *  describe el subtipo físico de la carrocería: 36 tractocamiones operan
+   *  bajo un arreglo Equipo Completo. Es el campo que decide si un tracto
+   *  bloquea el cierre del día, y `null` ("sin clasificar") también lo
+   *  bloquea, por diseño. */
+  webcarga_operation_type_id:    string | null
+  webcarga_operation_type_label: string | null
+  webcarga_operation_type_code:  'TRACTOREO' | 'EQUIPO_COMPLETO' | null
   total_requirements:          number | null
   last_document_update:        string | null
   pending_mandatory:           number
@@ -949,6 +973,15 @@ export type Asset = {
   fleet_service_type_label:     string | null
   fleet_service_type_bg_color:  string | null
   fleet_service_type_text_color: string | null
+  /** "Tipo de Operación WebCarga" — Tractoreo / Equipo Completo, dominio
+   *  WEBCARGA_OPERATION_TYPE. NO es lo mismo que `fleet_service_type_*`, que
+   *  describe el subtipo físico de la carrocería: 36 tractocamiones operan
+   *  bajo un arreglo Equipo Completo. Es el campo que decide si un tracto
+   *  bloquea el cierre del día, y `null` ("sin clasificar") también lo
+   *  bloquea, por diseño. */
+  webcarga_operation_type_id:    string | null
+  webcarga_operation_type_label: string | null
+  webcarga_operation_type_code:  'TRACTOREO' | 'EQUIPO_COMPLETO' | null
   total_requirements:          number | null
   last_document_update:        string | null
 }
@@ -1109,6 +1142,12 @@ export type DriverDayStatusRow = {
    *  — null para ASSIGNED/UNASSIGNED. Reemplaza el link genérico a Empresas
    *  en CloseDayDialog por un link directo al viaje. */
   trip_id:                     string | null
+  /** El viaje de HOY de este conductor, sea o no un MISMATCH. Existe aparte
+   *  de `trip_id` porque son dos preguntas distintas: aquél responde "cuál es
+   *  el viaje que contradice a su empresa" y por eso es null en un ASSIGNED
+   *  sano — con lo cual la fila quedaba sin "Ver viaje". Medido el 03-09: de
+   *  25 conductores asignados, sólo 1 tenía link. */
+  today_trip_id:               string | null
   /** Tarea 5 (plan 2.2) — tracto habitual del conductor, mejor esfuerzo vía
    *  el viaje más reciente resuelto para él; puede ser null si no tiene
    *  ninguno. */
@@ -1148,7 +1187,13 @@ export type PreCierreEscalations = {
    *  RUT: ahí no hay a quién dar de alta. */
   CONDUCTOR_NO_REGISTRADO: { driver_rut: string; driver_name_tms?: string | null; reason?: string }[]
   EMPRESA_ONBOARDING:      { carrier_id: string; carrier_name: string }[]
-  SIN_TIPO_OPERACION:      { carrier_id: string; carrier_name: string }[]
+  /** Tracto activo sin Tractoreo/Equipo Completo. Trae la patente porque la
+   *  acción es clasificar UN vehículo, y una empresa con cuatro tractos no
+   *  dice cuál. Y sí bloquea el cierre, aunque no esté en
+   *  `_ESCALACIONES_QUE_BLOQUEAN`: esa lista gobierna el cierre de
+   *  CONDUCTORES; sin clasificar cuenta como Tractoreo en el de TRACTOS y
+   *  exige motivo. Son dos cierres distintos, no una contradicción. */
+  SIN_TIPO_OPERACION:      { carrier_id: string; carrier_name: string; tractor_plate?: string | null }[]
   /** El conductor manejó el tracto de una empresa y no tiene ninguna asignada.
    *  El backend lo PROPONE —nunca lo escribe— y sólo cuando el padrón está en
    *  silencio y todos sus viajes apuntan a la misma empresa. Confirmar desde
@@ -1204,9 +1249,9 @@ export type CloseDayPending = {
 export type DailyClosureReportRow = Omit<
   DriverDayStatusRow,
   | 'resolved_by' | 'resolved_at' | 'driver_pending_docs_critical' | 'suggested_reason_id' | 'trip_id'
-  // Tarea 7 (plan 2.4): _REPORT_SQL (backend) no trae estos 2 campos —
+  // Tarea 7 (plan 2.4): _REPORT_SQL (backend) no trae estos campos —
   // solo _DETAIL_SQL (GET /daily-closures) los expone.
-  | 'last_known_tractor_plate' | 'last_known_operation_type'
+  | 'last_known_tractor_plate' | 'last_known_operation_type' | 'today_trip_id'
 > & {
   business_date: string
 }
@@ -1242,6 +1287,12 @@ export type EquipmentDayStatusRow = {
   /** Viaje de HOY, si el equipo está ASSIGNED — paridad con Tractoreo
    *  (2026-08-04), necesario para "Ver viaje" en Flota del día. */
   trip_id:                 string | null
+  /** Conductor DEL VIAJE de hoy. No es `driver_name`, que es el conductor
+   *  habitual del tracto (maestro `vehicle_driver_assignments`, cobertura
+   *  baja). Van separados porque responden preguntas distintas: quién
+   *  maneja normalmente este tracto vs. quién lo manejó hoy. */
+  trip_driver_id:          string | null
+  trip_driver_name:        string | null
 }
 
 export type EquipmentCategorySummary = {
@@ -1288,6 +1339,11 @@ export type EquipmentClosureStatus = {
 export type EquipmentClosePending = {
   asset_id:      string
   tractor_plate: string
+  /** La empresa a la que ir a resolverlo. Una patente suelta no dice a
+   *  dónde: es la misma lección de SinFlotaList — un número, o un dato
+   *  sin destino, no dice qué hacer. */
+  carrier_id:    string | null
+  carrier_name:  string | null
 }
 
 export type DailyClosureReport = {

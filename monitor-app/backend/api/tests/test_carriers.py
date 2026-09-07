@@ -121,6 +121,38 @@ def test_list_carriers_insurance_overview_filters_by_search():
     assert pool.fetch.call_args.args[1] == "Acme"
 
 
+def test_list_carriers_acepta_varios_estados_separados_por_coma():
+    """El resumen del Directorio cuenta `LEGACY_INACTIVE + INACTIVE` como
+    "inactivas" (_SQL_DIRECTORIO) y la pestana filtraba solo por el primero:
+    la cifra del encabezado y la lista de abajo no podian coincidir, y las
+    empresas dadas de baja DESDE LA APP —las 8 que hoy estan en INACTIVE— no
+    aparecian en ninguna pestana. Pablo, 04/09: *"yo di de baja esa empresa y
+    no aparece"*."""
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _carrier_facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers?operational_status=LEGACY_INACTIVE,INACTIVE")
+
+    assert res.status_code == 200
+    assert pool.fetch.call_args.args[1] == ["LEGACY_INACTIVE", "INACTIVE"]
+
+
+def test_list_carriers_ignora_estados_vacios_entre_comas():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = 0
+    pool.fetchrow.return_value = _carrier_facets_row()
+    client = make_client(pool)
+
+    res = client.get("/api/v1/carriers?operational_status=ACTIVE,,")
+
+    assert res.status_code == 200
+    assert pool.fetch.call_args.args[1] == ["ACTIVE"]
+
+
 def test_list_carriers_insurance_overview_filters_by_operational_status():
     pool = AsyncMock()
     pool.fetch.return_value = []
@@ -132,8 +164,11 @@ def test_list_carriers_insurance_overview_filters_by_operational_status():
 
     assert res.status_code == 200
     fetch_query = pool.fetch.call_args.args[0]
-    assert "c.operational_status = $1" in fetch_query
-    assert pool.fetch.call_args.args[1] == "LEGACY_INACTIVE"
+    # Un solo estado sigue llegando como lista de uno: `= ANY(ARRAY['X'])` es
+    # equivalente a `= 'X'`, y asi la pestana "Inactivas" puede mandar los dos
+    # estados que su propio resumen ya suma.
+    assert "c.operational_status = ANY($1::text[])" in fetch_query
+    assert pool.fetch.call_args.args[1] == ["LEGACY_INACTIVE"]
 
 
 def test_list_carriers_insurance_overview_combines_search_and_operational_status():
@@ -149,7 +184,7 @@ def test_list_carriers_insurance_overview_combines_search_and_operational_status
     fetch_query = pool.fetch.call_args.args[0]
     assert "AND" in fetch_query
     assert pool.fetch.call_args.args[1] == "Acme"
-    assert pool.fetch.call_args.args[2] == "ACTIVE"
+    assert pool.fetch.call_args.args[2] == ["ACTIVE"]
 
 
 def test_list_carriers_insurance_overview_filters_by_health():

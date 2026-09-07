@@ -59,7 +59,11 @@ describe('la escala tipografica', () => {
     // puede bajar: se reduce al migrar cada pantalla, y cuando llegue a 0 la
     // asercion pasa a `toEqual([])`. Subirlo para que pase la suite es
     // exactamente lo que este test viene a impedir.
-    const DEUDA = 268
+    // 268 -> 262 en la Ronda 152 (2026-09-07): la tira de chips de
+    // VehicleRosterCard subio entera al minimo de la escala. El chip nuevo
+    // —el tipo de operacion, y el de baja— no podia nacer a 9px, y dejarlo
+    // solo a 11px entre hermanos de 9px se veia desparejo.
+    const DEUDA = 262
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

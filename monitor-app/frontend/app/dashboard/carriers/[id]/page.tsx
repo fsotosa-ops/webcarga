@@ -14,6 +14,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
+import { OPERATIONAL_STATUS_LABELS } from '@/lib/types'
 import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
@@ -414,7 +415,7 @@ function EmpresaDetailPageInner() {
                   </p>
                 )}
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                  {carrier.operational_status}
+                  {OPERATIONAL_STATUS_LABELS[carrier.operational_status] ?? carrier.operational_status}
                 </span>
                 {carrier.is_manual_override && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>

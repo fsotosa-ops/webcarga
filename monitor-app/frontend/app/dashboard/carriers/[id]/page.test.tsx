@@ -71,7 +71,7 @@ const DRIVERS: CarrierDriverRosterItem[] = [
 ]
 
 const ASSETS: CarrierAssetRosterItem[] = [
-  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
+  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
 ]
 
 const pushMock = vi.fn()

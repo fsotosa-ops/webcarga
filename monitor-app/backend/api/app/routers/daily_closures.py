@@ -135,6 +135,7 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        dcomp.has_critical_pending AS driver_pending_docs_critical,
        sugg.id AS suggested_reason_id,
        mismatch_trip.trip_id,
+       today_trip.trip_id AS today_trip_id,
        last_tractor.tractor_plate AS last_known_tractor_plate,
        last_tractor.operation_type AS last_known_operation_type
 FROM app.driver_day_status dds
@@ -199,6 +200,24 @@ LEFT JOIN LATERAL (
     ORDER BY t2.status_reported_at DESC NULLS LAST
     LIMIT 1
 ) last_tractor ON true
+-- El viaje de HOY de este conductor, sea o no un MISMATCH. Va aparte de
+-- `trip_id` a proposito: `trip_id` sale del LATERAL de mismatch y responde
+-- "cual es el viaje que contradice a su empresa", asi que para un ASSIGNED
+-- sano es NULL por diseno — y la fila quedaba sin "Ver viaje", que es
+-- exactamente lo que pidio Pablo el 04/09: *"puedo ver el viaje, pero al
+-- pinchar ver el viaje no le puedo asignar el conductor"*. Dos preguntas
+-- distintas, dos columnas distintas: un NULL con dos significados es la
+-- clase de bug que este proyecto ya vio cinco veces.
+LEFT JOIN LATERAL (
+    SELECT t3.id AS trip_id
+    FROM app.trips t3
+    JOIN app.v_trip_fleet_resolution vfr3 ON vfr3.trip_id = t3.id
+    WHERE vfr3.resolved_driver_id = dds.driver_id
+      AND (t3.planning_date = dds.business_date OR (t3.planning_date < dds.business_date AND t3.is_active))
+      AND t3.source_system != 'sodimac'
+    ORDER BY t3.status_reported_at DESC NULLS LAST
+    LIMIT 1
+) today_trip ON true
 WHERE dds.business_date = $1
 ORDER BY d.full_name
 """

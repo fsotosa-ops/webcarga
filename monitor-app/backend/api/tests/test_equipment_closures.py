@@ -35,7 +35,7 @@ def _equipment_row(**overrides):
         "status": "UNASSIGNED", "requires_motivo": True, "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None,
         "driver_id": None, "driver_name": None, "last_known_origin": None,
-        "trip_id": None,
+        "trip_id": None, "trip_driver_id": None, "trip_driver_name": None,
     }
     base.update(overrides)
     return base
@@ -113,6 +113,24 @@ def test_detail_sql_incluye_trip_id_de_hoy():
     from app.routers.equipment_closures import _DETAIL_SQL
     assert "today_trip.trip_id" in _DETAIL_SQL
     assert "resolved_tractor_asset_id = eds.asset_id" in _DETAIL_SQL
+
+
+def test_detail_sql_trae_el_conductor_del_viaje_aparte_del_habitual():
+    """Son dos preguntas distintas y van en dos campos distintos: `driver_name`
+    es quien maneja normalmente ese tracto (maestro `vehicle_driver_assignments`,
+    cobertura baja) y `trip_driver_name` es quien lo manejo hoy. Pablo, 04/09:
+    *"En el viaje si esta asignado el conductor... pero aqui desaparece sin
+    conductor"* — la pantalla mostraba el primero y el leia el segundo.
+
+    Verificado ademas contra la base real del 2026-09-03: 3 filas traen
+    conductor SOLO por el viaje, y ninguna fila ASSIGNED de Tractoreo queda sin
+    conductor por las dos vias."""
+    from app.routers.equipment_closures import _DETAIL_SQL
+    assert "today_trip.trip_driver_id" in _DETAIL_SQL
+    assert "today_trip.trip_driver_name" in _DETAIL_SQL
+    # Sale del viaje, no del maestro: si se resolviera con vda seria el mismo
+    # dato con otro nombre.
+    assert "vfr.resolved_driver_id AS trip_driver_id" in _DETAIL_SQL
 
 
 def test_get_equipment_closure_status_incluye_tipo_vehiculo_por_tracto():
@@ -237,6 +255,28 @@ def test_close_equipment_day_409_when_tractoreo_pending():
 
     assert res.status_code == 409
     assert res.json()["detail"]["pending"][0]["asset_id"] == "a1"
+
+
+def test_close_equipment_day_409_nombra_patente_y_empresa_de_cada_pendiente():
+    """El 409 es lo unico que el coordinador ve cuando no puede cerrar: si
+    dice "15 equipo(s) sin resolver" sin decir cuales, no hay accion posible.
+    La empresa va porque la patente sola no dice a que ficha ir."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _equipment_row(asset_id="a1", tractor_plate="DTBY52", carrier_id="cf",
+                       carrier_name="Transportes La Fortaleza Spa"),
+        _equipment_row(asset_id="a2", tractor_plate="LCSR30", carrier_id=None, carrier_name=None),
+    ]
+    client = make_client(pool)
+
+    res = client.post("/api/v1/equipment-closures/close?fecha=2026-09-03", json={})
+
+    assert res.status_code == 409
+    assert res.json()["detail"]["pending"] == [
+        {"asset_id": "a1", "tractor_plate": "DTBY52", "carrier_id": "cf",
+         "carrier_name": "Transportes La Fortaleza Spa"},
+        {"asset_id": "a2", "tractor_plate": "LCSR30", "carrier_id": None, "carrier_name": None},
+    ]
 
 
 def test_close_equipment_day_no_bloquea_por_equipos_completos_sin_motivo():

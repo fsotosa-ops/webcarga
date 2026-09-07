@@ -5,13 +5,14 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2,
+  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2, UserX,
 } from 'lucide-react'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { shippersApi } from '@/lib/api/locations'
 import { dailyClosuresApi, isClosePendingError, type SinFlota } from '@/lib/api/dailyClosures'
 import { SinFlotaList } from '@/components/dashboard/SinFlotaList'
+import { PendientesDelCierre, type ItemPendiente } from '@/components/dashboard/PendientesDelCierre'
 import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
 import { tripsApi } from '@/lib/api/trips'
 import { taxonomiesApi } from '@/lib/api/config'
@@ -54,10 +55,16 @@ export default function ClosuresCenterPage() {
  *  mismo lienzo, visible sin importar qué tab esté activa — es la acción
  *  primaria de la página, no algo que dependa de estar en "Reporte".
  *
- *  Encadena 2 llamados: primero Tractoreo (dailyClosuresApi.close, bloquea
- *  si hay pendientes — motivo obligatorio, HU-03), y solo si ese tuvo
- *  éxito, Equipos Completos (equipmentClosuresApi.close, nunca bloquea —
- *  cierre pasivo). Si el primero falla, el segundo no se llama. */
+ *  Encadena 2 llamados: primero los CONDUCTORES (dailyClosuresApi.close) y,
+ *  sólo si ese tuvo éxito, los TRACTOS (equipmentClosuresApi.close). Si el
+ *  primero falla, el segundo no se llama, y el override viaja a los dos.
+ *
+ *  "Equipos Completos nunca bloquea" describía sólo la mitad del segundo
+ *  paso: los tractos de Equipo Completo puro son pasivos, pero los de
+ *  Tractoreo —y los que no tienen tipo de operación, que caen ahí— exigen
+ *  motivo y devuelven 409. Ese 409 es el que dejó `app.equipment_closures`
+ *  vacía desde que existe: el override no llegaba y el detalle no se
+ *  mostraba. */
 function ClosuresCenterPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -72,6 +79,11 @@ function ClosuresCenterPageInner() {
   // Mismo hueco que tenía CloseDayDialog: el 409 trae los viajes cuya flota no
   // está en el directorio y esta pantalla sólo mostraba el texto del mensaje.
   const [sinFlota, setSinFlota] = useState<SinFlota[] | null>(null)
+  // El mismo hueco que sinFlota tenía, en las otras dos listas: el 409 trae
+  // quiénes bloquean y hasta el 2026-09-07 la pantalla mostraba sólo el
+  // número. Un número sin sus filas no dice qué hacer.
+  const [pendientesConductores, setPendientesConductores] = useState<ItemPendiente[]>([])
+  const [pendientesEquipos, setPendientesEquipos] = useState<ItemPendiente[]>([])
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [overrideNote, setOverrideNote] = useState('')
   const [tab, setTab] = useState<TabId>('flota')
@@ -145,29 +157,49 @@ function ClosuresCenterPageInner() {
   }
 
   async function handleConfirmClose(override?: boolean) {
-    setClosing(true); setCloseError(null)
+    setClosing(true)
+    setCloseError(null); setSinFlota(null)
+    setPendientesConductores([]); setPendientesEquipos([])
     try {
       await dailyClosuresApi.close(fecha, override, overrideNote)
-      setOverridePending(false); setOverrideOpen(false); setOverrideNote(''); setSinFlota(null)
     } catch (e) {
       setClosing(false)
       if (isClosePendingError(e)) {
         setOverridePending(true)
         setSinFlota(e.detail.sin_flota ?? null)
+        setPendientesConductores(
+          (e.detail.pending ?? []).map(d => ({
+            clave: d.driver_id,
+            texto: `${d.full_name} — ${d.status === 'MISMATCH' ? 'empresa por regularizar' : 'sin motivo'}`,
+          })),
+        )
         setCloseError(e.detail.message)
       } else {
         setCloseError(e instanceof Error ? e.message : 'No se pudo cerrar el día')
       }
       return
     }
+    // El override del admin también viaja acá. Antes se llamaba sin él, así que
+    // con equipos pendientes el segundo paso devolvía 409 siempre y el día no
+    // se podía firmar ni forzando: `app.equipment_closures` quedó vacía desde
+    // que existe.
     try {
-      await equipmentClosuresApi.close(fecha)
+      await equipmentClosuresApi.close(fecha, override, overrideNote)
+      setOverridePending(false); setOverrideOpen(false); setOverrideNote('')
     } catch (e) {
-      setCloseError(
-        isEquipmentClosePendingError(e)
-          ? e.detail.message
-          : e instanceof Error ? e.message : 'No se pudo cerrar equipos completos',
-      )
+      if (isEquipmentClosePendingError(e)) {
+        setOverridePending(true)
+        setPendientesEquipos(
+          (e.detail.pending ?? []).map(p => ({
+            clave: p.asset_id,
+            texto: p.carrier_name ? `${p.tractor_plate} — ${p.carrier_name}` : p.tractor_plate,
+            href: p.carrier_id ? `/dashboard/carriers/${p.carrier_id}?tab=equipos` : undefined,
+          })),
+        )
+        setCloseError(e.detail.message)
+      } else {
+        setCloseError(e instanceof Error ? e.message : 'No se pudo cerrar equipos completos')
+      }
     } finally {
       setClosing(false)
     }
@@ -175,12 +207,6 @@ function ClosuresCenterPageInner() {
 
   function handleSelectTrip(tripId: string) {
     router.push(`/dashboard/operations/monitor/trips/${tripId}`)
-  }
-
-  function handleCreateManualTrip(_driverId: string, _driverName: string) {
-    // TODO(Tarea 1.3/1.4): montar TripAssignDialog prellenado con el
-    // conductor — esta página todavía no lo aloja, ver mismo patrón que
-    // monitor/page.tsx (prefillFleet/handleNewTripFromFleet).
   }
 
   return (
@@ -195,7 +221,7 @@ function ClosuresCenterPageInner() {
         <EncabezadoDePagina
           titulo="Centro de Cierre del Día"
           icono={<ClipboardCheck size={20} className="text-accent" />}
-          bajada="Revisa pendientes, cierra Tractoreo y Equipos Completos, y comparte el reporte del día — todo en un solo lugar."
+          bajada="Revisa pendientes, cierra los conductores y los tractos del día, y comparte el reporte — todo en un solo lugar."
         />
         <label className="flex items-center gap-2 text-etiqueta text-gray-500">
           Fecha
@@ -247,7 +273,12 @@ function ClosuresCenterPageInner() {
               fecha={fecha}
               unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
               onSelectTrip={handleSelectTrip}
-              onCreateManualTrip={handleCreateManualTrip}
+              // Sin `onCreateManualTrip`: esta página todavía no aloja el
+              // TripAssignDialog (TODO Tarea 1.3/1.4, mismo patrón que
+              // monitor/page.tsx con prefillFleet/handleNewTripFromFleet), y
+              // hasta el 2026-09-07 lo pasaba con un handler vacío — el botón
+              // se veía y no hacía nada. La sección ya no lo dibuja si nadie
+              // puede responderle.
             />
           )}
           {tab === 'viajes' && (
@@ -275,13 +306,23 @@ function ClosuresCenterPageInner() {
           <div>
             <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Cierra Tractoreo (requiere motivo en todos los pendientes) y, si eso tiene éxito, Equipos Completos (nunca bloquea).
+              Cierra primero los conductores y después los tractos. Los dos exigen motivo en sus pendientes; Equipo Completo nunca bloquea.
             </p>
           </div>
 
           {closeError && (
             <div className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
               <p>{closeError}</p>
+              <PendientesDelCierre
+                titulo="Conductores sin resolver"
+                icono={<UserX size={11} />}
+                items={pendientesConductores}
+              />
+              <PendientesDelCierre
+                titulo="Tractos sin motivo"
+                icono={<Truck size={11} />}
+                items={pendientesEquipos}
+              />
               {sinFlota && <SinFlotaList casos={sinFlota} />}
             </div>
           )}

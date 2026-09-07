@@ -41,11 +41,11 @@ beforeEach(() => {
 })
 
 describe('EmpresasTransportePage', () => {
-  it('renders an Onboarding tab alongside Activas/Inactivo', async () => {
+  it('renders an Onboarding tab alongside Activas/Inactivas', async () => {
     renderPage()
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: /^Activas/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^Inactivo/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Inactivas/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Onboarding/ })).toBeInTheDocument()
   })
 
@@ -54,8 +54,22 @@ describe('EmpresasTransportePage', () => {
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: /^Onboarding/ }))
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalledWith(
-      expect.objectContaining({ operational_status: 'ONBOARDING' }),
+      expect.objectContaining({ operational_status: ['ONBOARDING'] }),
     ))
     expect(screen.getByRole('button', { name: /^Onboarding/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('"Inactivas" pide los DOS estados de baja, no sólo el del padrón viejo', async () => {
+    // El resumen de esta misma pantalla cuenta LEGACY_INACTIVE + INACTIVE
+    // ("214 inactivas") y la pestaña filtraba sólo el primero (206): las 8 que
+    // faltaban eran las dadas de baja desde la app, y no aparecían en NINGUNA
+    // de las tres pestañas.
+    renderPage()
+    await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: /^Inactivas/ }))
+
+    await waitFor(() => expect(carriersApi.list).toHaveBeenCalledWith(
+      expect.objectContaining({ operational_status: ['LEGACY_INACTIVE', 'INACTIVE'] }),
+    ))
   })
 })

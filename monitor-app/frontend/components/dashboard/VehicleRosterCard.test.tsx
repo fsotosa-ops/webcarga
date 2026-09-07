@@ -7,7 +7,7 @@ const VEHICLE: CarrierAssetRosterItem = {
   id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION',
   operational_status: 'ACTIVE',
   fleet_service_type_id: null, fleet_service_type_label: null,
-  fleet_service_type_bg_color: null, fleet_service_type_text_color: null,
+  fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null,
   total_requirements: 6, last_document_update: '2026-06-01',
   pending_mandatory: 0, compliance_health: 'OK',
 }
@@ -50,5 +50,21 @@ describe('VehicleRosterCard', () => {
   it('does not render a fleet service type chip when there is none', () => {
     render(<VehicleRosterCard vehicle={VEHICLE} onOpen={vi.fn()} />)
     expect(screen.queryByText('Tractoreo')).not.toBeInTheDocument()
+  })
+  // ── Regresión del 2026-09-07 ──────────────────────────────────────────────
+
+  it('muestra el tipo de operación, que es lo que decide si bloquea el cierre', () => {
+    render(<VehicleRosterCard vehicle={{ ...VEHICLE, webcarga_operation_type_label: 'Tractoreo', webcarga_operation_type_code: 'TRACTOREO' }} onOpen={vi.fn()} />)
+    expect(screen.getByText('Tractoreo')).toBeInTheDocument()
+  })
+
+  it('sin tipo de operación lo dice en la tarjeta, no en silencio', () => {
+    render(<VehicleRosterCard vehicle={{ ...VEHICLE, webcarga_operation_type_label: null }} onOpen={vi.fn()} />)
+    expect(screen.getByText('Sin tipo de operación')).toBeInTheDocument()
+  })
+  it('un equipo dado de baja lo dice, y no muestra "Al día" en verde', () => {
+    render(<VehicleRosterCard vehicle={{ ...VEHICLE, operational_status: 'INACTIVE', compliance_health: 'OK' }} onOpen={vi.fn()} />)
+    expect(screen.getByText('Dado de baja')).toBeInTheDocument()
+    expect(screen.queryByText('Al día')).not.toBeInTheDocument()
   })
 })

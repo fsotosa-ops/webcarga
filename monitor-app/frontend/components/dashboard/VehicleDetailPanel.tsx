@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2, User, UserX, ExternalLink } from 'lucide-react'
 import type { Asset } from '@/lib/types'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
+import { taxonomiesApi } from '@/lib/api/config'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
@@ -35,15 +36,26 @@ interface Props {
 
 /** Modal de detalle de un equipo — mismo lenguaje inmersivo que
  *  DriverDetailPanel. La patente es inmutable (no está en AssetPatchBody);
- *  lo único editable acá es el tipo de equipo + estado operativo. Documentos
- *  solo lectura desde Ronda 88 — subir/editar se hace en Certificación. */
+ *  lo editable acá es el tipo de equipo, el año y el tipo de operación
+ *  (Tractoreo / Equipo Completo), más el estado operativo. Documentos solo
+ *  lectura desde Ronda 88 — subir/editar se hace en Certificación.
+ *
+ *  El tipo de operación se agregó el 2026-09-07. El backend lo aceptaba desde
+ *  el 2026-08-03 y no había ninguna pantalla que lo cambiara: sólo se podía
+ *  fijar en el alta, donde además es opcional. Es el campo que decide si un
+ *  tracto bloquea el cierre del día —"sin clasificar" cuenta como Tractoreo y
+ *  exige motivo—, así que un equipo importado por la ingesta sin clasificar
+ *  bloqueaba el cierre sin que hubiera dónde arreglarlo. Pablo, 04/09: *"no
+ *  puedo definir qué tractoreo, entonces no me lo muestra aquí"*. */
 export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
   const open = !!asset
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const [removing, setRemoving] = useState(false)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
-  const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string }>({ asset_type: 'TRACTOCAMION', manufacture_year: '' })
+  const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string; webcarga_operation_type_id: string }>(
+    { asset_type: 'TRACTOCAMION', manufacture_year: '', webcarga_operation_type_id: '' },
+  )
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [driverPick, setDriverPick] = useState('')
@@ -58,6 +70,12 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
     enabled: !!asset,
   })
 
+  const gestionesQuery = useQuery({
+    queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
+    queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
+    staleTime: 5 * 60_000,
+  })
+
   const driverAssignmentQuery = useQuery({
     queryKey: ['asset-driver-assignment', asset?.id],
     queryFn: () => assetsApi.getDriverAssignment(asset!.id),
@@ -66,7 +84,14 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
 
   useEffect(() => {
     if (!asset) return
-    setDraft({ asset_type: asset.asset_type as AssetType, manufacture_year: asset.manufacture_year ? String(asset.manufacture_year) : '' })
+    // El draft se resincroniza desde el prop en cada apertura — no se confía
+    // en el useState inicial. Es la clase de bug que ya apareció tres veces en
+    // este frontend (ContactCard, TransporterDocumentsPanel).
+    setDraft({
+      asset_type: asset.asset_type as AssetType,
+      manufacture_year: asset.manufacture_year ? String(asset.manufacture_year) : '',
+      webcarga_operation_type_id: asset.webcarga_operation_type_id ?? '',
+    })
     setErr(null)
     setDriverPick(''); setDriverErr(null)
   }, [asset])
@@ -99,6 +124,17 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
     }
   }, [open, onClose])
 
+  // El valor actual siempre es una opción, aunque el catálogo todavía no haya
+  // llegado o la fila se haya desactivado en Configuración: un <select> cuyo
+  // value no está entre sus options se dibuja vacío, y un tracto clasificado
+  // se vería "Sin clasificar" — con el aviso de que bloquea el cierre debajo.
+  const gestiones = (() => {
+    const catalogo = gestionesQuery.data ?? []
+    const actual = draft.webcarga_operation_type_id
+    if (!actual || catalogo.some(g => g.id === actual)) return catalogo
+    return [{ id: actual, label: asset?.webcarga_operation_type_label ?? 'Tipo actual' }, ...catalogo]
+  })()
+
   async function handleSaveDatos() {
     if (!asset) return
     setSaving(true); setErr(null)
@@ -106,6 +142,9 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
       await onPatch(asset.id, {
         asset_type: draft.asset_type,
         manufacture_year: draft.manufacture_year ? Number(draft.manufacture_year) : undefined,
+        // Vacío es "no lo toques", no "déjalo sin clasificar": el UPDATE hace
+        // COALESCE y sin clasificar es justo el estado que bloquea el cierre.
+        webcarga_operation_type_id: draft.webcarga_operation_type_id || undefined,
       })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
@@ -198,19 +237,19 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
 
             <div className="grid grid-cols-2 gap-2 mb-2">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Tipo de equipo</label>
+                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Tipo de equipo</label>
                 <select
                   aria-label="Tipo de equipo"
                   value={draft.asset_type}
                   disabled={!canEdit}
                   onChange={e => setDraft(d => ({ ...d, asset_type: e.target.value as AssetType }))}
-                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
                 >
                   {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Año</label>
+                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Año</label>
                 <input
                   type="number"
                   aria-label="Año del vehículo"
@@ -220,11 +259,11 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
                   value={draft.manufacture_year}
                   disabled={!canEdit}
                   onChange={e => setDraft(d => ({ ...d, manufacture_year: e.target.value }))}
-                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
+                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
                 />
               </div>
               <div className="space-y-1 col-span-2">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Tipo Vehículo</label>
+                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Tipo Vehículo</label>
                 {asset.fleet_service_type_label ? (
                   <span
                     className="inline-block text-xs font-semibold px-2 py-1 rounded-full"
@@ -237,6 +276,33 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
                   </span>
                 ) : (
                   <p className="text-xs text-gray-400 italic">Sin clasificar</p>
+                )}
+              </div>
+              <div className="space-y-1 col-span-2">
+                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide" htmlFor="tipo-operacion">
+                  Tipo de operación
+                </label>
+                <select
+                  id="tipo-operacion"
+                  aria-label="Tipo de operación"
+                  value={draft.webcarga_operation_type_id}
+                  disabled={!canEdit}
+                  onChange={e => setDraft(d => ({ ...d, webcarga_operation_type_id: e.target.value }))}
+                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
+                >
+                  <option value="">Sin clasificar</option>
+                  {gestiones.map(g => (
+                    <option key={g.id} value={g.id}>{g.label}</option>
+                  ))}
+                </select>
+                {/* Sólo cuando ya sabemos que está sin clasificar. Mientras el
+                    catálogo viaja, el select tiene el valor pero todavía no la
+                    opción, y afirmar acá que bloquea el cierre sería mentir
+                    sobre un equipo que sí está clasificado. */}
+                {!draft.webcarga_operation_type_id && !gestionesQuery.isLoading && (
+                  <p className="text-etiqueta text-status-incidente">
+                    Sin esto el equipo cuenta como Tractoreo y bloquea el cierre del día hasta que alguien le ponga un motivo.
+                  </p>
                 )}
               </div>
             </div>
@@ -259,7 +325,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
                 depender del bootstrap histórico de raw_bd_ot — acá se
                 asigna UNA vez por vehículo, no viaje por viaje. */}
             <div className="mt-5 pt-4 border-t border-border/60">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Conductor habitual</label>
+              <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Conductor habitual</label>
               {driverAssignmentQuery.isPending ? (
                 <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1.5">
                   <Loader2 size={12} className="animate-spin" /> Cargando…
@@ -354,7 +420,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
 
           <div className="flex-1 min-w-0 overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentación</p>
+              <p className="text-[10px] font-bold text-informativo uppercase tracking-wide">Documentación</p>
             </div>
             {complianceQuery.isPending ? (
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>

@@ -81,7 +81,14 @@ describe('el sistema visual se usa, no solo existe', () => {
     // con 16 usos crudos y se escribio de nuevo con tokens: `status-incidente`
     // para el error, `informativo` para el gris de apoyo. Bajarlo hasta el
     // numero real es lo que hace que el proximo margen no exista.
-    const DEUDA = 1744
+    // 1.744 -> 1.721 en la Ronda 152 (2026-09-07): el cabezal del Cierre eran
+    // dos tarjetas de markup calcado; pasaron a ser UNA con props, y la
+    // tercera (los tractos Tractoreo, que antes no existia) nacio con tokens
+    // —`informativo` para el gris de apoyo, `status-incidente` para el numero
+    // que bloquea— en vez de gray-400/red-500 crudos. VehicleDetailPanel
+    // sumaba dos usos crudos por el renglon nuevo, asi que sus seis etiquetas
+    // de campo pasaron a `informativo` y el fondo deshabilitado a `bg-main`.
+    const DEUDA = 1721
 
     const total = usosDeColorCrudo()
     expect(

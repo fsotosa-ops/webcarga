@@ -20,12 +20,22 @@ async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(get_current
                a.is_manual_override, a.created_at,
                a.fleet_service_type_id, acs.fleet_service_type_label,
                acs.fleet_service_type_bg_color, acs.fleet_service_type_text_color,
+               -- "Tipo de Operacion WebCarga" (Tractoreo / Equipo Completo).
+               -- El PATCH lo acepta desde el 2026-08-03 y el GET no lo
+               -- devolvia, asi que ninguna pantalla podia mostrar en que
+               -- estaba ni ofrecer cambiarlo: quedaba fijado en el alta, que
+               -- ademas lo pide como opcional. Es el campo que decide si un
+               -- tracto bloquea el cierre del dia.
+               a.webcarga_operation_type_id,
+               wot.label AS webcarga_operation_type_label,
+               wot.code  AS webcarga_operation_type_code,
                acs.total_requirements, acs.last_document_update,
                -- Ver el comentario equivalente en routers/drivers.py.
                c.id::text      AS carrier_id,
                c.business_name AS carrier_name
         FROM public.assets a
         LEFT JOIN app.asset_compliance_status acs ON acs.asset_id = a.id
+        LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
         LEFT JOIN public.asset_assignments aa
                ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
         LEFT JOIN public.carriers c ON c.id = aa.carrier_id

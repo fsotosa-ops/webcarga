@@ -14,6 +14,15 @@ vi.mock('@/lib/api/assets', () => ({
   },
 }))
 
+vi.mock('@/lib/api/config', () => ({
+  taxonomiesApi: {
+    list: vi.fn().mockResolvedValue([
+      { id: 'tr', label: 'Tractoreo', bg_color: '#eff6ff', text_color: '#1d4ed8' },
+      { id: 'ec', label: 'Equipo Completo', bg_color: '#f3f4f6', text_color: '#374151' },
+    ]),
+  },
+}))
+
 function renderWithClient(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
@@ -23,7 +32,7 @@ const ASSET: Asset = {
   id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION',
   operational_status: 'ACTIVE', manufacture_year: null, is_manual_override: false, created_at: null,
   fleet_service_type_id: null, fleet_service_type_label: null,
-  fleet_service_type_bg_color: null, fleet_service_type_text_color: null,
+  fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null,
   total_requirements: 1, last_document_update: null,
 }
 
@@ -187,5 +196,62 @@ describe('VehicleDetailPanel', () => {
     renderPanel(ASSET, { canEdit: false })
     await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument())
     expect(screen.queryByLabelText('Quitar conductor habitual')).not.toBeInTheDocument()
+  })
+  // ── Regresión del 2026-09-07 ──────────────────────────────────────────────
+  // El tipo de operación decide si el equipo bloquea el cierre del día, y no
+  // había ninguna pantalla donde cambiarlo después del alta.
+
+  it('el tipo de operación se puede elegir y se guarda', async () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined)
+    renderPanel({ ...ASSET, webcarga_operation_type_id: null }, { onPatch })
+
+    // Esperar la OPCION, no el select: cambiar a un value que todavia no
+    // existe entre las options es un no-op silencioso.
+    await screen.findByRole('option', { name: 'Tractoreo' })
+    const select = screen.getByLabelText('Tipo de operación')
+    expect(select).toHaveValue('')
+    fireEvent.change(select, { target: { value: 'tr' } })
+    fireEvent.click(screen.getByRole('button', { name: /Guardar/ }))
+
+    await waitFor(() => {
+      expect(onPatch).toHaveBeenCalledWith('v1', expect.objectContaining({
+        webcarga_operation_type_id: 'tr',
+      }))
+    })
+  })
+
+  it('sin tipo de operación avisa la consecuencia, no sólo que falta el dato', async () => {
+    renderPanel({ ...ASSET, webcarga_operation_type_id: null })
+
+    expect(await screen.findByText(/bloquea el cierre del día/)).toBeInTheDocument()
+  })
+
+  it('el draft del tipo de operación se resincroniza desde el prop al abrir otro equipo', async () => {
+    const { rerender } = renderPanel({ ...ASSET, webcarga_operation_type_id: 'tr' })
+    expect(await screen.findByLabelText('Tipo de operación')).toHaveValue('tr')
+
+    rerender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <VehicleDetailPanel
+          asset={{ ...ASSET, id: 'v2', webcarga_operation_type_id: 'ec' }}
+          carrierId="c1" canEdit canAdmin={false}
+          onClose={vi.fn()} onPatch={vi.fn()} onRemove={vi.fn()} onTransferClick={vi.fn()}
+          drivers={DRIVERS}
+        />
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByLabelText('Tipo de operación')).toHaveValue('ec'))
+  })
+
+  it('un tipo de operación vacío no viaja como null: vacío es "no lo toques"', async () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined)
+    renderPanel({ ...ASSET, webcarga_operation_type_id: null }, { onPatch })
+
+    await screen.findByLabelText('Tipo de operación')
+    fireEvent.click(screen.getByRole('button', { name: /Guardar/ }))
+
+    await waitFor(() => expect(onPatch).toHaveBeenCalled())
+    expect(onPatch.mock.calls[0][1].webcarga_operation_type_id).toBeUndefined()
   })
 })

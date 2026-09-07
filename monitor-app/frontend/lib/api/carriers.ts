@@ -18,7 +18,12 @@ import { apiFetch, apiFetchBlob } from './client'
 
 export type CarrierListParams = {
   q?:                  string
-  operational_status?: CarrierOperationalStatus | ''
+  /** Uno o varios. La pestaña "Inactivas" del Directorio manda los DOS
+   *  —`LEGACY_INACTIVE` y `INACTIVE`— porque el resumen de esa misma pantalla
+   *  ya los cuenta juntos: con uno solo la cifra del encabezado (214) y la
+   *  lista de abajo (206) no podían coincidir, y las empresas dadas de baja
+   *  desde la app quedaban fuera de las tres pestañas. */
+  operational_status?: CarrierOperationalStatus | CarrierOperationalStatus[] | ''
   health?:             ComplianceHealth | ''
   page?:               number
   limit?:              number
@@ -107,7 +112,10 @@ export const carriersApi = {
   list: (params?: CarrierListParams) => {
     const qs = new URLSearchParams()
     if (params?.q)                       qs.set('q', params.q)
-    if (params?.operational_status)      qs.set('operational_status', params.operational_status)
+    if (params?.operational_status?.length) {
+      const estados = params.operational_status
+      qs.set('operational_status', Array.isArray(estados) ? estados.join(',') : estados)
+    }
     if (params?.health)                  qs.set('health', params.health)
     if (params?.page)                    qs.set('page', String(params.page))
     if (params?.limit)                   qs.set('limit', String(params.limit))

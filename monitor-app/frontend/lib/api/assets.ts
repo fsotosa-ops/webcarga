@@ -17,6 +17,15 @@ export type AssetPatchBody = {
   asset_type?:          AssetType
   operational_status?:  OperationalStatus
   manufacture_year?:    number
+  /** Tractoreo / Equipo Completo. El backend lo acepta desde el 2026-08-03 y
+   *  este tipo no lo declaraba, así que la única forma de fijarlo era el alta
+   *  —donde además es opcional— y un tracto mal clasificado, o sin clasificar,
+   *  bloqueaba el cierre del día sin que hubiera dónde corregirlo.
+   *
+   *  `undefined` es "no lo toques": el UPDATE hace COALESCE, así que no se
+   *  puede volver a dejar sin clasificar desde acá. Es intencional — sin
+   *  clasificar es justo el estado que bloquea. */
+  webcarga_operation_type_id?: string
 }
 
 /** POST /assets RETURNING es más angosto que GET /assets/{id} — sin

@@ -26,16 +26,23 @@ const LIMIT = 100
 const VIEW_MODE_STORAGE_KEY = 'empresas:vista'
 const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
 
-/** Cada tab mapea 1:1 a un operational_status real — hoy solo existen
- *  ACTIVE (38) y LEGACY_INACTIVE (208) en datos reales (INACTIVE es la baja
- *  manual de una empresa que sí llegó a operar, ver schemas/carrier.py,
- *  sin filas reales todavía). Filtrar server-side, no sobre una sola
- *  página — 208 > el límite de 100 por página del backend. ONBOARDING
- *  (empresa creada sin tax_id, tarea backend previa) es la tercera tab. */
-const TABS: { id: TransporterTab; label: string; status: CarrierOperationalStatus }[] = [
-  { id: 'active', label: 'Activas', status: 'ACTIVE' },
-  { id: 'legacy', label: 'Inactivo', status: 'LEGACY_INACTIVE' },
-  { id: 'onboarding', label: 'Onboarding', status: 'ONBOARDING' },
+/** Cada tab agrupa los `operational_status` que significan lo mismo para quien
+ *  mira. Filtrar server-side, no sobre una sola página — 214 > el límite de 100
+ *  por página del backend.
+ *
+ *  "Inactivas" manda LOS DOS estados de baja. `LEGACY_INACTIVE` es la empresa
+ *  que llegó inactiva desde el padrón viejo; `INACTIVE` es la que alguien dio
+ *  de baja desde la app. La distinción existe en la base y no le importa a
+ *  nadie acá: hasta el 2026-09-07 la pestaña filtraba sólo la primera, así que
+ *  el resumen de esta misma pantalla decía "214 inactivas" y la lista mostraba
+ *  206 — y las 8 que faltaban eran justo las dadas de baja desde la app. Pablo,
+ *  04/09: *"yo di de baja esa empresa y no aparece"*. Una de las 8 era la suya.
+ *
+ *  ONBOARDING (empresa creada sin tax_id) es la tercera tab. */
+const TABS: { id: TransporterTab; label: string; status: CarrierOperationalStatus[] }[] = [
+  { id: 'active', label: 'Activas', status: ['ACTIVE'] },
+  { id: 'legacy', label: 'Inactivas', status: ['LEGACY_INACTIVE', 'INACTIVE'] },
+  { id: 'onboarding', label: 'Onboarding', status: ['ONBOARDING'] },
 ]
 
 /** Segundo eje de filtrado, independiente de Activas/Inactivo — agrupa por

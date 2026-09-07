@@ -39,7 +39,7 @@ def _driver_row(**overrides):
         "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None, "client_names": [],
         "driver_pending_docs_critical": None, "suggested_reason_id": None,
-        "trip_id": None,
+        "trip_id": None, "today_trip_id": None,
         "last_known_tractor_plate": None, "last_known_operation_type": None,
     }
     base.update(overrides)
@@ -189,6 +189,22 @@ def test_get_daily_closure_status_includes_trip_id_for_mismatch():
     detail_sql = pool.fetch.call_args_list[0].args[0]
     assert "mismatch_trip.trip_id" in detail_sql
     assert "app.v_trip_fleet_resolution" in detail_sql
+
+
+def test_detail_sql_trae_el_viaje_de_hoy_aparte_del_de_mismatch():
+    """`trip_id` responde "cual es el viaje que contradice a su empresa", asi
+    que en un ASSIGNED sano es NULL por diseno — y la fila quedaba sin "Ver
+    viaje". Medido contra la base del 2026-09-03: de 25 conductores asignados
+    solo 1 tenia link; con `today_trip_id` lo tienen los 25.
+
+    Van en dos columnas porque son dos preguntas: un NULL con dos significados
+    es la clase de bug que este proyecto ya vio cinco veces."""
+    from app.routers.daily_closures import _DETAIL_SQL
+    assert "today_trip.trip_id AS today_trip_id" in _DETAIL_SQL
+    # El de hoy NO filtra por mismatch: ese predicado es lo que vaciaba el link.
+    i = _DETAIL_SQL.index(") today_trip ON true")
+    bloque = _DETAIL_SQL[_DETAIL_SQL.index("LEFT JOIN LATERAL", _DETAIL_SQL.index("last_tractor ON true")):i]
+    assert "resolved_carrier_id IS DISTINCT FROM" not in bloque
 
 
 # ── Tarea 5 (plan 2.2, minuta 2026-08-03): "tracto habitual" y tipo de

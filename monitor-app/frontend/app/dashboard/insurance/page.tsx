@@ -11,7 +11,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { dueRelative } from '@/lib/utils/installments'
 import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
-import type { CarrierInsuranceOverviewItem, InsuranceOverviewFacets } from '@/lib/types'
+import type { CarrierInsuranceOverviewItem, CarrierOperationalStatus, InsuranceOverviewFacets } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 
 
@@ -36,9 +36,13 @@ const TABS: { id: HealthTab; label: string; facetKey: keyof InsuranceOverviewFac
  *  y mismo concepto Activo/Inactivo (no Activo/Legacy) que la landing de
  *  Empresas (pedido explícito del usuario 2026-07-18: Seguros debe tener
  *  la misma separación). */
-const STATUS_TABS: { id: StatusTab; label: string; status: 'ACTIVE' | 'LEGACY_INACTIVE' }[] = [
-  { id: 'active', label: 'Activas',  status: 'ACTIVE' },
-  { id: 'legacy', label: 'Inactivo', status: 'LEGACY_INACTIVE' },
+/** "Inactivas" agrupa los dos estados de baja, igual que en Empresas: una
+ *  empresa dada de baja desde la app queda en `INACTIVE` y con un solo estado
+ *  no aparecía en ninguna de las dos pestañas. Ver el comentario largo en
+ *  app/dashboard/carriers/page.tsx. */
+const STATUS_TABS: { id: StatusTab; label: string; status: CarrierOperationalStatus[] }[] = [
+  { id: 'active', label: 'Activas',   status: ['ACTIVE'] },
+  { id: 'legacy', label: 'Inactivas', status: ['LEGACY_INACTIVE', 'INACTIVE'] },
 ]
 
 const EMPTY_FACETS: InsuranceOverviewFacets = {
@@ -75,7 +79,7 @@ function SegurosPageInner() {
   const query = useQuery({
     queryKey: ['carriers-insurance-overview', qDebounced, tab, statusTab, page],
     queryFn: () => carriersApi.listInsuranceOverview({
-      q: qDebounced, health: tab, operational_status: currentOperationalStatus, page, limit: LIMIT,
+      q: qDebounced, health: tab, operational_status: currentOperationalStatus.join(','), page, limit: LIMIT,
     }),
   })
 
@@ -86,7 +90,7 @@ function SegurosPageInner() {
   const otherOperationalStatus = STATUS_TABS.find(t => t.id === otherStatusTabId)!.status
   const otherStatusQuery = useQuery({
     queryKey: ['carriers-insurance-overview-count', otherOperationalStatus, qDebounced],
-    queryFn: () => carriersApi.listInsuranceOverview({ q: qDebounced, operational_status: otherOperationalStatus, page: 1, limit: 1 }),
+    queryFn: () => carriersApi.listInsuranceOverview({ q: qDebounced, operational_status: otherOperationalStatus.join(','), page: 1, limit: 1 }),
   })
 
   const items   = query.data?.data ?? []

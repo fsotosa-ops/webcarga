@@ -36,6 +36,37 @@ async def _un_conductor(conn) -> str:
         "SELECT id FROM public.drivers WHERE tax_id IS NOT NULL LIMIT 1"))
 
 
+async def _conductor_sin_empresa(conn) -> str:
+    """Un conductor que el padron NO vincula a ninguna empresa.
+
+    `_un_conductor` sirve para "hace falta un conductor cualquiera", pero no
+    para afirmar nada sobre su empresa: hoy 87 de los 96 conductores con RUT
+    tienen asignacion activa, y cual devuelve `LIMIT 1` sin ORDER BY depende
+    del orden fisico de la tabla. Un test que elige su sujeto de los datos de
+    produccion cambia de color solo."""
+    return str(await conn.fetchval(
+        """
+        SELECT d.id FROM public.drivers d
+        WHERE d.tax_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM public.driver_assignments da
+                          WHERE da.driver_id = d.id AND da.status = 'ACTIVE')
+        LIMIT 1
+        """))
+
+
+async def _conductor_con_empresa(conn):
+    """Un conductor con asignacion activa, y la empresa que el padron le da."""
+    fila = await conn.fetchrow(
+        """
+        SELECT da.driver_id, da.carrier_id
+        FROM public.driver_assignments da
+        JOIN public.drivers d ON d.id = da.driver_id AND d.tax_id IS NOT NULL
+        WHERE da.status = 'ACTIVE'
+        LIMIT 1
+        """)
+    return str(fila["driver_id"]), str(fila["carrier_id"])
+
+
 # ── Task 1: la empresa deja de ser obligatoria ────────────────────────────
 
 
@@ -51,7 +82,7 @@ async def test_se_puede_vincular_un_conductor_sin_empresa(conexion_revertida):
     'carrier_id requerido')."""
     conn = conexion_revertida
     trip_id = await _un_viaje(conn)
-    driver_id = await _un_conductor(conn)
+    driver_id = await _conductor_sin_empresa(conn)
 
     await assign_fleet_link(
         trip_id, {"driver_id": driver_id}, PoolDeUnaConexion(conn), await _usuario_real(conn),
@@ -61,7 +92,37 @@ async def test_se_puede_vincular_un_conductor_sin_empresa(conexion_revertida):
         "SELECT driver_id, carrier_id, link_source FROM app.trip_fleet_links "
         "WHERE trip_id = $1", trip_id)
     assert str(fila["driver_id"]) == driver_id
-    assert fila["carrier_id"] is None, "no se pidio empresa y sin embargo quedo una"
+    assert fila["carrier_id"] is None, "el padron no dice nada y el vinculo se invento una empresa"
+    assert fila["link_source"] == "manual"
+
+
+async def test_el_padron_llena_la_empresa_que_no_se_pidio(conexion_revertida):
+    """La otra mitad de la regla, y la que faltaba escribir.
+
+    `app.resolve_trip_fleet()` completa `carrier_id` de un vinculo manual desde
+    la asignacion activa del conductor, y SOLO cuando esta en NULL:
+
+        WHERE fl.link_source = 'manual' AND fl.carrier_id IS NULL ...
+
+    O sea la inferencia llena un silencio, nunca contradice — el mismo criterio
+    del modelo de resolucion de flota. El vinculo sigue siendo 'manual': que el
+    padron complete un campo no lo convierte en automatico.
+
+    Esta rama no estaba cubierta, y el test de arriba la cruzaba por accidente
+    cada vez que su `LIMIT 1` caia en un conductor con empresa — que es lo que
+    lo puso en rojo el 2026-09-07, sin que hubiera cambiado ni una linea."""
+    conn = conexion_revertida
+    trip_id = await _un_viaje(conn)
+    driver_id, carrier_esperado = await _conductor_con_empresa(conn)
+
+    await assign_fleet_link(
+        trip_id, {"driver_id": driver_id}, PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    fila = await conn.fetchrow(
+        "SELECT driver_id, carrier_id, link_source FROM app.trip_fleet_links "
+        "WHERE trip_id = $1", trip_id)
+    assert str(fila["carrier_id"]) == carrier_esperado
     assert fila["link_source"] == "manual"
 
 

@@ -109,7 +109,15 @@ SELECT
     -- criterio que day_trips en daily_closures.py — necesario para que
     -- "Ver viaje" funcione en la fila de un equipo ASSIGNED, igual que ya
     -- funciona para un conductor Tractoreo.
-    today_trip.trip_id
+    today_trip.trip_id,
+    -- Conductor DEL VIAJE de hoy, que no es lo mismo que el habitual de
+    -- arriba. Van en campos distintos a proposito: `driver_name` responde
+    -- "quien maneja normalmente este tracto" (maestro, cobertura baja) y
+    -- `trip_driver_name` responde "quien lo manejo hoy" (el viaje). Pablo,
+    -- 04/09: *"En el viaje si esta asignado el conductor... pero aqui
+    -- desaparece sin conductor"* — leia el primero creyendo el segundo.
+    today_trip.trip_driver_id,
+    today_trip.trip_driver_name
 FROM app.equipment_day_status eds
 JOIN public.assets a ON a.id = eds.asset_id
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
@@ -133,9 +141,10 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) last_origin ON true
 LEFT JOIN LATERAL (
-    SELECT t.id AS trip_id
+    SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+    LEFT JOIN public.drivers td ON td.id = vfr.resolved_driver_id
     WHERE vfr.resolved_tractor_asset_id = eds.asset_id
       AND (t.planning_date = eds.business_date OR (t.planning_date < eds.business_date AND t.is_active))
       AND t.source_system != 'sodimac'
@@ -308,7 +317,18 @@ async def close_equipment_day(
             409,
             {
                 "message": f"{len(pending)} equipo(s) sin resolver — no se puede cerrar el día",
-                "pending": [{"asset_id": str(e["asset_id"]), "tractor_plate": e["tractor_plate"]} for e in pending],
+                # Con empresa: una patente suelta no dice a que ficha ir a
+                # resolverla. Pablo, 04/09: *"cual es el listado de estos 15
+                # equipos sin resolver, ni hay un detalle"*.
+                "pending": [
+                    {
+                        "asset_id": str(e["asset_id"]),
+                        "tractor_plate": e["tractor_plate"],
+                        "carrier_id": str(e["carrier_id"]) if e["carrier_id"] else None,
+                        "carrier_name": e["carrier_name"],
+                    }
+                    for e in pending
+                ],
             },
         )
 

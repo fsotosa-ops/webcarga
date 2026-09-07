@@ -78,10 +78,28 @@ _CARRIER_LIST_AGG = """
 """
 
 
+def _estados(valor: str) -> list[str]:
+    """Uno o varios estados separados por coma, sin vacios.
+
+    Un solo valor sigue funcionando igual que antes — `= ANY(ARRAY['ACTIVE'])`
+    es lo mismo que `= 'ACTIVE'`—, asi que ningun llamador viejo cambia.
+    """
+    return [e.strip() for e in valor.split(",") if e.strip()]
+
+
 @router.get("", response_model=CarrierListResponse)
 async def list_carriers(
     q: str = Query("", description="Buscar por nombre o tax_id"),
-    operational_status: str = Query(""),
+    operational_status: str = Query(
+        "",
+        description=(
+            "ACTIVE|INACTIVE|LEGACY_INACTIVE|ONBOARDING. Acepta VARIOS separados por coma: "
+            "la pestaña 'Inactivas' del Directorio manda 'LEGACY_INACTIVE,INACTIVE' porque el "
+            "resumen de esa misma pantalla ya cuenta las dos juntas — filtrar por una sola dejaba "
+            "fuera a las empresas dadas de baja desde la app, que es justo lo que el usuario "
+            "acababa de hacer y no encontraba."
+        ),
+    ),
     health: str = Query("", description="PENDING|OK — filtra por documentación obligatoria pendiente"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
@@ -97,8 +115,8 @@ async def list_carriers(
         params.append(q)
         clauses.append(f"(c.business_name ILIKE '%' || ${len(params)} || '%' OR c.tax_id ILIKE '%' || ${len(params)} || '%')")
     if operational_status:
-        params.append(operational_status)
-        clauses.append(f"c.operational_status = ${len(params)}")
+        params.append(_estados(operational_status))
+        clauses.append(f"c.operational_status = ANY(${len(params)}::text[])")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     agg_cte = f"WITH agg AS ({_CARRIER_LIST_AGG.format(where=where, pendiente=pendiente)})"
 
@@ -194,8 +212,8 @@ async def list_carriers_insurance_overview(
         q_params.append(q)
         q_clauses.append(f"(c.business_name ILIKE '%' || ${len(q_params)} || '%' OR c.tax_id ILIKE '%' || ${len(q_params)} || '%')")
     if operational_status:
-        q_params.append(operational_status)
-        q_clauses.append(f"c.operational_status = ${len(q_params)}")
+        q_params.append(_estados(operational_status))
+        q_clauses.append(f"c.operational_status = ANY(${len(q_params)}::text[])")
     q_where = ("WHERE " + " AND ".join(q_clauses)) if q_clauses else ""
     agg_cte = f"WITH agg AS ({_INSURANCE_OVERVIEW_AGG.format(q_where=q_where)})"
 
@@ -694,10 +712,23 @@ async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends
         SELECT r.asset_id AS id, r.license_plate, r.asset_type, r.operational_status,
                r.fleet_service_type_id, r.fleet_service_type_label,
                r.fleet_service_type_bg_color, r.fleet_service_type_text_color,
+               -- Tipo de Operacion WebCarga (Tractoreo / Equipo Completo), el
+               -- campo que decide si el tracto bloquea el cierre del dia.
+               --
+               -- Se lee de public.assets EN VIVO, no del roster: la vista es
+               -- materializada, y este es un campo que ahora se edita desde
+               -- esta misma pantalla — leerlo de la vista mostraria el valor
+               -- viejo hasta el proximo REFRESH, o sea el usuario guardaria y
+               -- la ficha le diria que no cambio nada.
+               av.webcarga_operation_type_id,
+               wot.label AS webcarga_operation_type_label,
+               wot.code  AS webcarga_operation_type_code,
                r.total_requirements, r.last_document_update,
                COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
                CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health
         FROM app.carrier_asset_roster r
+        JOIN public.assets av ON av.id = r.asset_id
+        LEFT JOIN app.status_taxonomies wot ON wot.id = av.webcarga_operation_type_id
         {_pending_mandatory_join('ASSET', 'asset_id')}
         WHERE r.carrier_id = $1
         ORDER BY r.license_plate

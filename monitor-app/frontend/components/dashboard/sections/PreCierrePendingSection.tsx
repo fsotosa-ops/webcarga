@@ -199,10 +199,18 @@ export function PreCierrePendingSection({ fecha }: Props) {
             </div>
           ))}
 
+          {/* Dice la consecuencia, no sólo que falta el dato: un tracto sin
+              tipo de operación cuenta como Tractoreo y exige motivo, así que
+              deja el día sin cerrar hasta que alguien lo resuelva. La versión
+              anterior decía "no puede clasificarse en el cierre", que se lee
+              como un detalle de presentación. */}
           {escalations.SIN_TIPO_OPERACION.map(esc => (
-            <div key={esc.carrier_id} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+            <div key={`${esc.carrier_id}-${esc.tractor_plate ?? ''}`} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
               <p className="text-xs text-amber-800">
-                <span className="font-semibold">{esc.carrier_name}</span> — falta tipo de operación. El equipo no puede clasificarse en el cierre.
+                {esc.tractor_plate
+                  ? <>Patente <span className="font-semibold">{esc.tractor_plate}</span> de <span className="font-semibold">{esc.carrier_name}</span></>
+                  : <span className="font-semibold">{esc.carrier_name}</span>}
+                {' '}— sin tipo de operación. Cuenta como Tractoreo y exige motivo, así que bloquea el cierre del día hasta resolverlo.
               </p>
               <a
                 href={`/dashboard/carriers/${esc.carrier_id}?tab=equipos`}

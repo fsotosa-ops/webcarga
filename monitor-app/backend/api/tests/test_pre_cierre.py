@@ -326,7 +326,7 @@ async def test_tipo_b_onboarding_y_sin_tipo_de_operacion():
     conn.fetch.side_effect = [
         [], [], [],
         [{"carrier_id": "c1", "business_name": "Empresa Onboarding"}],
-        [{"carrier_id": "c2", "business_name": "Empresa Sin Tipo"}],
+        [{"carrier_id": "c2", "business_name": "Empresa Sin Tipo", "license_plate": "ZZZZ99"}],
         [],  # conductor sin empresa scan
     ]
     pool = _pool_with(conn)
@@ -336,8 +336,10 @@ async def test_tipo_b_onboarding_y_sin_tipo_de_operacion():
     assert result["escalations"]["EMPRESA_ONBOARDING"] == [
         {"carrier_id": "c1", "carrier_name": "Empresa Onboarding"}
     ]
+    # Con patente: la accion es clasificar UN vehiculo, y el nombre de la
+    # empresa no alcanza para saber cual de sus tractos abrir.
     assert result["escalations"]["SIN_TIPO_OPERACION"] == [
-        {"carrier_id": "c2", "carrier_name": "Empresa Sin Tipo"}
+        {"carrier_id": "c2", "carrier_name": "Empresa Sin Tipo", "tractor_plate": "ZZZZ99"}
     ]
 
 
