@@ -11,6 +11,20 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-09-07 — Ronda 157: el comentario del cierre, en su propia columna
+
+Ajuste pedido por el usuario sobre la Ronda 155: el comentario estaba **debajo del motivo**, dentro
+de la celda "Acción". Metido ahí competía por el ancho con el desplegable y se leía como un pie de
+página del motivo, no como el dato que es. Pasó a ser **columna propia**, al final de la tabla y
+pegada a Acción, para que motivo y comentario se lean juntos de izquierda a derecha.
+
+Se mantiene la regla: sin motivo elegido no hay qué comentar —un texto libre sin categoría no se
+agrupa ni se cuenta—, y la celda lo dice con un guion en vez de ofrecer un campo que no guarda nada.
+
+**Frontend 1.366 en verde**, build limpio. La mutación que devuelve el comentario adentro de "Acción"
+pone en rojo dos tests. Click-through local sobre el 03-09: el encabezado "Comentario" como novena
+columna, y la fila con su motivo en una celda y su comentario en la de al lado.
+
 ### 2026-09-07 — Ronda 156: la baja bloquea de verdad, un botón de menos, y el CD de origen
 
 ## La empresa dada de baja: la pantalla lo prometía, la API no lo cumplía

@@ -420,12 +420,17 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                 />
               ))}
               <th className="text-left px-3 py-2">Acción</th>
+              {/* Columna propia y no un renglón bajo el motivo (pedido del
+                  usuario, 07/09): metido dentro de "Acción" competía por el
+                  ancho con el desplegable y se leía como un pie de página del
+                  motivo, no como el dato que es. */}
+              <th className="text-left px-3 py-2">Comentario</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
             {paged.length === 0 && (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   {/* gray-300 en italica no llegaba a 4.5:1 de contraste, y
                       "sin resultados" hace dudar de si algo se rompio. */}
                   <Estado
@@ -481,14 +486,6 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                           <option key={reason.id} value={reason.id}>{reason.label}</option>
                         ))}
                       </select>
-                      {r.unassignedReasonId && (
-                        <ComentarioDeFila
-                          valor={r.comentario ?? ''}
-                          guardando={savingReason === r.entityId}
-                          onGuardar={texto => handleSetReason(r.entityId, r.unassignedReasonId!, texto)}
-                          etiqueta={`Comentario de ${r.primary}`}
-                        />
-                      )}
                       {!r.unassignedReasonId && r.driverPendingDocsCritical && r.suggestedReasonId && (
                         <button
                           type="button"
@@ -535,6 +532,22 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                     >
                       Ver viaje
                     </button>
+                  )}
+                </td>
+                {/* El comentario acompaña al motivo: sin motivo elegido no hay
+                    qué comentar, porque un texto libre sin categoría no se
+                    agrupa ni se cuenta. La celda lo dice con un guion en vez de
+                    dejar un campo que no guarda nada. */}
+                <td className="px-3 py-2 min-w-[12rem]">
+                  {r.unassignedReasonId ? (
+                    <ComentarioDeFila
+                      valor={r.comentario ?? ''}
+                      guardando={savingReason === r.entityId}
+                      onGuardar={texto => handleSetReason(r.entityId, r.unassignedReasonId!, texto)}
+                      etiqueta={`Comentario de ${r.primary}`}
+                    />
+                  ) : (
+                    <span className="text-informativo">—</span>
                   )}
                 </td>
               </tr>

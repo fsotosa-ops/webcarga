@@ -561,7 +561,22 @@ describe('FlotaDelDiaSection', () => {
     })
   })
 
-  it('sin motivo elegido no hay dónde comentar', async () => {
+  it('el comentario es una columna propia, no un renglón bajo el motivo', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('No trabajando'))
+
+    const fila = (await screen.findByText('Carla Díaz')).closest('tr')!
+    const celdas = fila.querySelectorAll('td')
+    // La última celda es la del comentario; la del motivo es la anterior.
+    expect(screen.getByRole('columnheader', { name: 'Comentario' })).toBeInTheDocument()
+    expect(within(celdas[celdas.length - 1] as HTMLElement)
+      .getByLabelText('Comentario de Carla Díaz')).toBeInTheDocument()
+    expect(within(celdas[celdas.length - 2] as HTMLElement)
+      .getByRole('combobox')).toBeInTheDocument()
+  })
+
+  it('sin motivo elegido la celda de comentario lo dice, no deja un campo que no guarda', async () => {
     // Un texto libre sin categoría no se puede agrupar ni contar.
     renderSection()
     await screen.findByText('Ana Soto')
