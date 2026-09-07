@@ -1083,6 +1083,7 @@ class TripsMeta(BaseModel):
     unassigned_reasons:  list[UnassignedReasonMeta]
     operation_types:     list[OperationTypeMeta]
     clients:             list[ClientMeta]
+    origins:             list[str]
     monitor_alert_rules: Optional[MonitorAlertRulesMeta] = None
 
 
@@ -1140,6 +1141,22 @@ async def get_trips_meta(pool=Depends(get_pool)):
         "  ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE' "
         "ORDER BY sh.name"
     )
+    # Los CD de origen que EXISTEN, mismo criterio que los clientes (bug 5.2):
+    # dinamico segun lo que hay en la base, no un catalogo. El filtro de Origen
+    # era un autocomplete con el argumento de que son "cientos de locales" —
+    # cierto para los DESTINOS (279 distintos) y falso para los origenes:
+    # medido el 2026-09-07, son 23 en todo el historico y cinco concentran el
+    # 98% del volumen. Con eso, una lista se lee de un vistazo y el
+    # autocomplete obligaba a saber el nombre antes de buscarlo.
+    #
+    # Ordenados por volumen y no alfabeticamente: los CD que mueven la
+    # operacion tienen que estar arriba.
+    origin_rows = await pool.fetch(
+        "SELECT ts.local "
+        "FROM app.trip_stops ts "
+        "WHERE ts.stop_type = 'ORIGIN' AND NULLIF(btrim(ts.local), '') IS NOT NULL "
+        "GROUP BY ts.local ORDER BY count(*) DESC, ts.local"
+    )
     return TripsMeta(
         statuses=[StatusMeta(**dict(r)) for r in status_rows],
         tms_sources=[
@@ -1152,6 +1169,7 @@ async def get_trips_meta(pool=Depends(get_pool)):
         unassigned_reasons=[UnassignedReasonMeta(**dict(r)) for r in unassigned_reason_rows],
         operation_types=[OperationTypeMeta(**t) for t in _OPERATION_TYPE_META],
         clients=[ClientMeta(**dict(r)) for r in client_rows],
+        origins=[r["local"] for r in origin_rows],
         monitor_alert_rules=MonitorAlertRulesMeta(**dict(alert_rules_row)) if alert_rules_row else None,
     )
 

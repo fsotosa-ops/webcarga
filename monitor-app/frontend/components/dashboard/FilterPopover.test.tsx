@@ -30,7 +30,7 @@ const meta: TripsMeta = {
     { id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' },
     { id: 'ZONA_CERO', label: 'Zona Cero', bg_color: '#fef3e8', text_color: '#a35b00' },
   ],
-  clients: [],
+  clients: [], origins: [],
 }
 
 // Bug 5.2: Estado (grupos default + custom) se movió al popover — mismo
@@ -142,7 +142,11 @@ describe('FilterPopover', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'toggleCargoType', id: 'FRIO' })
   })
 
-  it('shows selected origins as removable chips and dispatches toggleOrigin on remove', () => {
+  it('lista los CD de origen que existen en la base y alterna al clickear', () => {
+    // Era un autocomplete con el argumento de que son "cientos de locales":
+    // cierto para los DESTINOS (279 distintos) y falso para los orígenes, que
+    // medidos el 2026-09-07 son 23. Ahora son chips dinámicas, igual que
+    // Fuente y Cliente.
     const dispatch = vi.fn()
     function OriginHarness() {
       const [filters] = useDiarioFilters()
@@ -150,7 +154,7 @@ describe('FilterPopover', () => {
         <FilterPopover
           filters={{ ...filters, fOrigin: ['CD Quilicura'] }}
           dispatch={dispatch}
-          meta={meta}
+          meta={{ ...meta, origins: ['CD EL PEÑON', 'CD Quilicura'] }}
           defaultGroups={defaultGroups}
           customGroups={customGroups}
           statusParam=""
@@ -162,8 +166,13 @@ describe('FilterPopover', () => {
     }
     renderWithQueryClient(<OriginHarness />)
     fireEvent.click(screen.getByText('Filtros'))
-    expect(screen.getByText('CD Quilicura')).toBeInTheDocument()
-    fireEvent.click(screen.getByLabelText('Quitar origen CD Quilicura'))
+
+    // Los dos que existen, aunque sólo uno esté elegido.
+    expect(screen.getByRole('button', { name: 'CD EL PEÑON' })).toHaveAttribute('aria-pressed', 'false')
+    const elegido = screen.getByRole('button', { name: 'CD Quilicura' })
+    expect(elegido).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(elegido)
     expect(dispatch).toHaveBeenCalledWith({ type: 'toggleOrigin', id: 'CD Quilicura' })
   })
 

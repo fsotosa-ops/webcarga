@@ -279,35 +279,38 @@ export function FilterPopover({
             </div>
           )}
 
-          {/* Origen — autocomplete (no chips estáticas: cientos de locales
-              reales, no escala como multi-select). Cada elección real se
-              agrega como chip removible; el draft se limpia para seguir
-              agregando más de uno. */}
+          {/* CD de origen — chips dinámicas desde la base, igual que Fuente y
+              Cliente. Era un autocomplete con el argumento de que son
+              "cientos de locales reales": cierto para los DESTINOS —279
+              distintos— y falso para los orígenes, que medidos el 2026-09-07
+              son 23 en todo el histórico y cinco concentran el 98% del
+              volumen. Con eso una lista se lee de un vistazo, y el
+              autocomplete obligaba a saber el nombre antes de buscarlo.
+
+              Vienen ordenadas por volumen y no alfabéticamente: los CD que
+              mueven la operación tienen que estar arriba. */}
           <div>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Origen</p>
-            <LocationPicker
-              value={originDraft}
-              onChange={setOriginDraft}
-              onSelectLocation={loc => {
-                dispatch({ type: 'toggleOrigin', id: loc.name })
-                setOriginDraft('')
-              }}
-              placeholder="Buscar local de origen…"
-              ariaLabel="Filtrar por local de origen"
-              size="sm"
-            />
-            {f.fOrigin.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                {f.fOrigin.map(name => (
-                  <span key={name} className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 rounded-full pl-2.5 pr-1.5 py-1">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">CD de origen</p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(meta?.origins ?? []).map(name => {
+                const active = f.fOrigin.includes(name)
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => dispatch({ type: 'toggleOrigin', id: name })}
+                    aria-pressed={active}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                      active
+                        ? 'text-accent bg-accent/10 border-accent/30'
+                        : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
                     {name}
-                    <button type="button" onClick={() => dispatch({ type: 'toggleOrigin', id: name })} aria-label={`Quitar origen ${name}`}>
-                      <X size={11} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {/* "No asignado por WebCarga" — solo historial, Task 8 (plan

@@ -248,6 +248,11 @@ export type TripsMeta = {
   unassigned_reasons:  UnassignedReasonMeta[]
   operation_types:     OperationTypeMeta[]
   clients:             ClientMeta[]
+  /** Los CD de origen que EXISTEN en la base, ordenados por volumen. Dinámico
+   *  como `clients` y no un catálogo: si un CD deja de operar, deja de estar.
+   *  Medido el 2026-09-07: 23 orígenes distintos contra 279 destinos — por eso
+   *  el origen se puede listar y el destino no. */
+  origins:             string[]
   monitor_alert_rules?: MonitorAlertRules | null
 }
 

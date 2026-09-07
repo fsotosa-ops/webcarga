@@ -148,7 +148,6 @@ function EmpresaDetailPageInner() {
   const requestedAssetId    = searchParams.get('asset')
   const canEdit = useCanEdit()
   const canAdmin = useCanAdmin()
-  const [editOpen, setEditOpen]   = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>(
     requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen'),
   )
@@ -389,10 +388,6 @@ function EmpresaDetailPageInner() {
 
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
-      {editOpen && (
-        <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setEditOpen(false)} />
-      )}
-
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
         <a href="/dashboard/carriers" className="hover:text-accent transition-colors shrink-0">Empresas</a>
         <ChevronRight size={13} />
@@ -402,9 +397,17 @@ function EmpresaDetailPageInner() {
       <div className="bg-white rounded-xl border border-border p-4 md:p-5">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">
-                {carrier.business_name || '—'}
-              </h1>
+              {/* La razón social se edita acá, sobre el nombre. Vivía dentro
+                  del cajón "Editar Empresa", que además ofrecía cambiar el
+                  estado operativo — lo mismo que los botones "Dar de baja" y
+                  "Reactivar" de al lado, con otras palabras y otro camino. Al
+                  sacar el botón (pedido del usuario, 07/09) lo único que no se
+                  duplicaba era renombrar, así que se quedó donde se lee. */}
+              <NombreEditable
+                nombre={carrier.business_name || '—'}
+                canEdit={canEdit}
+                onGuardar={handleSaveBusinessName}
+              />
               <div className="flex items-center gap-3 mt-2 flex-wrap">
                 <p className="text-xs text-gray-500">
                   Tax ID: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.tax_id}</span>
@@ -434,14 +437,6 @@ function EmpresaDetailPageInner() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {canEdit && (
-                <button
-                  onClick={() => setEditOpen(true)}
-                  className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition border border-border shadow-sm shrink-0"
-                >
-                  Editar Empresa
-                </button>
-              )}
               {canAdmin && (
                 <button
                   onClick={() => carrier.operational_status !== 'ACTIVE' ? handleReactivateCarrier() : setBajaModalOpen(true)}
@@ -861,30 +856,6 @@ function EmpresaDetailPageInner() {
         canEdit={canEdit}
       />
 
-      {/* ── Edit Slide-Over ── */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] bg-white border-l border-border shadow-2xl flex flex-col transition-transform duration-300 ${
-          editOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <div className="px-5 py-4 bg-slate-900 flex items-center justify-between shrink-0">
-          <h3 className="text-base font-bold text-white">Editar Datos Empresa</h3>
-          <button onClick={() => setEditOpen(false)} className="text-white/50 hover:text-white transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <div className="py-2.5 border-b border-border/60 flex items-center gap-3">
-            <span className="text-xs text-gray-400 w-32 shrink-0">Carrier ID</span>
-            <span className="text-xs font-mono text-gray-400 select-all break-all">{carrier.id}</span>
-          </div>
-
-          <EditableField label="Razón Social" value={carrier.business_name} canEdit={canEdit} onSave={handleSaveBusinessName} />
-          <EditableField label="Estado operativo" value={carrier.operational_status} canEdit={canEdit} onSave={handleChangeOperationalStatus} options={OPERATIONAL_STATUS_OPTIONS} />
-        </div>
-      </div>
-
       <TransferModal
         open={!!transferTarget}
         title={transferTarget ? `Transferir ${transferTarget.label}` : 'Transferir'}
@@ -908,6 +879,78 @@ function EmpresaDetailPageInner() {
           onConfirm={handleDeleteCarrier}
         />
       )}
+    </div>
+  )
+}
+
+/** El nombre de la empresa, editable donde se lee.
+ *
+ *  Vivía dentro del cajón "Editar Empresa", que ofrecía dos cosas: renombrar y
+ *  cambiar el estado operativo. Lo segundo ya lo hacían los botones "Dar de
+ *  baja"/"Reactivar" de al lado — dos caminos para el mismo acto, con nombres
+ *  distintos, que es exactamente cómo dos superficies terminan diciendo cosas
+ *  distintas del mismo dato. Al sacar el botón (pedido del usuario, 07/09) lo
+ *  único que no se duplicaba era el renombre, así que se quedó acá. */
+function NombreEditable({
+  nombre, canEdit, onGuardar,
+}: {
+  nombre:    string
+  canEdit:   boolean
+  onGuardar: (valor: string) => Promise<void> | void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [draft, setDraft] = useState(nombre)
+  const [guardando, setGuardando] = useState(false)
+
+  // El draft se resincroniza al ABRIR, no en el useState inicial: es la clase
+  // de bug que este frontend ya vio tres veces.
+  function abrir() { setDraft(nombre); setEditando(true) }
+
+  async function guardar() {
+    const limpio = draft.trim()
+    if (!limpio || limpio === nombre) { setEditando(false); return }
+    setGuardando(true)
+    try { await onGuardar(limpio); setEditando(false) } finally { setGuardando(false) }
+  }
+
+  if (!editando) {
+    return (
+      <div className="flex items-center gap-2">
+        <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">{nombre}</h1>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={abrir}
+            aria-label="Editar razón social"
+            className="text-informativo hover:text-accent transition-colors shrink-0"
+          >
+            <PenLine size={14} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        autoFocus
+        value={draft}
+        disabled={guardando}
+        aria-label="Razón social"
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') guardar()
+          if (e.key === 'Escape') setEditando(false)
+        }}
+        className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight border-b-2 border-accent bg-transparent focus:outline-none w-full"
+      />
+      <button type="button" onClick={guardar} disabled={guardando} aria-label="Guardar razón social" className="text-accent shrink-0">
+        <Check size={16} />
+      </button>
+      <button type="button" onClick={() => setEditando(false)} aria-label="Cancelar" className="text-informativo shrink-0">
+        <X size={16} />
+      </button>
     </div>
   )
 }

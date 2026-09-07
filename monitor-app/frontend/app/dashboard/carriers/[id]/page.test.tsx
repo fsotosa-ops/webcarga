@@ -365,8 +365,31 @@ describe('EmpresaDetailPage', () => {
     renderPage()
 
     // Algo del editor si tiene que aparecer, o el test no distingue "todavia
-    // no cargo" de "no le corresponde".
-    expect(await screen.findByRole('button', { name: 'Editar Empresa' })).toBeInTheDocument()
+    // no cargo" de "no le corresponde". El control positivo era el boton
+    // "Editar Empresa", que se retiro el 2026-09-07 por duplicar lo que ya
+    // hacian "Dar de baja"/"Reactivar"; el renombre quedo sobre el nombre.
+    expect(await screen.findByRole('button', { name: 'Editar razón social' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
+  })
+  it('la razón social se renombra sobre el nombre, sin cajón aparte', async () => {
+    // El cajón "Editar Empresa" ofrecía dos cosas: renombrar y cambiar el
+    // estado operativo. Lo segundo lo hacían ya los botones de al lado — dos
+    // caminos para el mismo acto, con nombres distintos.
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar razón social' }))
+    const campo = screen.getByLabelText('Razón social')
+    fireEvent.change(campo, { target: { value: 'Transportes Nuevo Nombre' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar razón social' }))
+
+    await waitFor(() => {
+      expect(carriersApi.patch).toHaveBeenCalledWith('t1', { business_name: 'Transportes Nuevo Nombre' })
+    })
+  })
+
+  it('ya no hay botón "Editar Empresa"', async () => {
+    renderPage()
+    await screen.findByRole('button', { name: 'Editar razón social' })
+    expect(screen.queryByRole('button', { name: 'Editar Empresa' })).not.toBeInTheDocument()
   })
 })

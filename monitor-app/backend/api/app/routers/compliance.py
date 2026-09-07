@@ -1301,6 +1301,7 @@ async def patch_compliance_record(
     return await _fetch_record(record_id, pool, supabase)
 
 
+
 async def _apply_compliance_upload(
     record_id: str, file: UploadFile, pool, supabase, user,
     expiration_date: date | None = None,
@@ -1317,9 +1318,34 @@ async def _apply_compliance_upload(
     # La politica de vencimiento es del REQUISITO, no del registro, asi que
     # esta consulta —la que ya existia— se extiende con el JOIN en vez de
     # agregar una segunda vuelta a la base.
+    # UNA EMPRESA DADA DE BAJA DEJA DE PEDIR DOCUMENTOS.
+    #
+    # Pedido del usuario (07/09): *"si una empresa se da baja en el modulo de
+    # directorio, automaticamente debe dejar de solicitar documentacion, es como
+    # si se bloqueara su espacio de certificacion"*.
+    #
+    # Bloquea la ESCRITURA, no la lectura: dar de baja archiva, no oculta —lo
+    # dice el docstring de `_estado_de_empresa_a_mostrar`— y al reactivar lo
+    # primero que se necesita ver es que se vencio durante la baja.
+    #
+    # Va en ESTA consulta y no en una segunda: es el mismo record, y una vuelta
+    # mas a la base por cada archivo de una carga masiva de 30 no se paga sola.
+    #
+    # `entity_id` es POLIMORFICO —apunta a un carrier, un conductor o un
+    # vehiculo segun `entity_type`—, asi que el CASE resuelve al dueno por cada
+    # camino. Filtrar por carrier_id a secas da un falso negativo, que es un
+    # error que este proyecto ya cometio.
     current = await pool.fetchrow(
         "SELECT cr.entity_id, cr.entity_type, cr.status, cr.expiration_date, cr.metadata, "
-        "       req.expiration_policy "
+        "       req.expiration_policy, "
+        "       (SELECT c.business_name FROM public.carriers c "
+        "         WHERE c.operational_status <> 'ACTIVE' AND c.id = CASE cr.entity_type "
+        "           WHEN 'CARRIER' THEN cr.entity_id "
+        "           WHEN 'DRIVER'  THEN (SELECT da.carrier_id FROM public.driver_assignments da "
+        "                                 WHERE da.driver_id = cr.entity_id AND da.status = 'ACTIVE' LIMIT 1) "
+        "           ELSE (SELECT aa.carrier_id FROM public.asset_assignments aa "
+        "                  WHERE aa.asset_id = cr.entity_id AND aa.status = 'ACTIVE' LIMIT 1) "
+        "         END) AS empresa_de_baja "
         "FROM public.compliance_records cr "
         "JOIN public.compliance_requirements req ON req.id = cr.requirement_id "
         "WHERE cr.id = $1 AND cr.is_current = true",
@@ -1327,6 +1353,16 @@ async def _apply_compliance_upload(
     )
     if not current:
         raise HTTPException(404, "Registro de cumplimiento no encontrado")
+
+    # Tambien ANTES de tocar storage, por el mismo motivo del comentario de
+    # abajo: un rechazo despues de subir deja el blob huerfano.
+    bloqueada = current.get("empresa_de_baja")
+    if bloqueada:
+        raise HTTPException(
+            409,
+            f"{bloqueada} está dada de baja: su certificación quedó bloqueada. "
+            "Reactívala desde el Directorio para volver a cargar documentos.",
+        )
 
     # ANTES de tocar storage. Si validaramos despues, el rechazo dejaria el
     # blob huerfano — que es exactamente el defecto que este trabajo viene a

@@ -11,6 +11,59 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-09-07 — Ronda 156: la baja bloquea de verdad, un botón de menos, y el CD de origen
+
+## La empresa dada de baja: la pantalla lo prometía, la API no lo cumplía
+
+El frontend **ya estaba completo**: el banner *"no se le puede cargar nada nueva"* y
+`canEdit = canEditRol && empresaActiva`, que apaga los controles en todo el árbol. Lo que faltaba
+era que la API lo hiciera cumplir — un POST directo, la carga masiva o la Bandeja escribían igual.
+
+Se cerraron **los dos** caminos de escritura (`_apply_compliance_upload` y el de la Bandeja) con
+409. Guardar uno solo deja la puerta de atrás abierta.
+
+Tres decisiones que valen:
+- **Bloquea la escritura, no la lectura.** Dar de baja archiva, no oculta: al reactivar lo primero
+  que se necesita ver es qué se venció durante la baja. Eso ya estaba escrito en el docstring de
+  `_estado_de_empresa_a_mostrar` y se respetó.
+- **Va en la consulta que ya traía el record**, no en una segunda: una vuelta más por cada archivo
+  de una carga masiva de 30 no se paga sola.
+- **`entity_id` es polimórfico** — carrier, conductor o vehículo según `entity_type`—, así que el
+  CASE resuelve al dueño por los tres caminos. Verificado contra la base: activa → None, empresa de
+  baja → su nombre, conductor de empresa de baja → su nombre.
+
+Los conteos globales ya excluían a las no activas desde antes (`_estado_de_empresa_a_mostrar`).
+
+## El botón "Editar Empresa", retirado sin perder nada
+
+El cajón ofrecía dos cosas: renombrar y cambiar el estado operativo. Lo segundo lo hacían ya los
+botones "Dar de baja"/"Reactivar" de al lado — **dos caminos para el mismo acto, con nombres
+distintos**, que es exactamente cómo dos superficies terminan diciendo cosas distintas del mismo
+dato. Lo único que no se duplicaba era el renombre, así que quedó sobre el nombre, con un lápiz.
+
+## El CD de origen: el argumento era cierto, pero de los destinos
+
+El filtro de Origen era un autocomplete, con este comentario: *"no chips estáticas: cientos de
+locales reales"*. Medido el 07/09: **23 orígenes distintos contra 279 destinos**, y cinco
+concentran el 98% del volumen. El argumento vale para los destinos y no para los orígenes. Ahora
+son chips dinámicas desde la base, ordenadas **por volumen y no alfabéticamente** —los CD que mueven
+la operación van arriba—, igual que Fuente y Cliente.
+
+## Lo medido
+
+**Frontend 1.365 en verde, backend 1.006** (con los 190 de integración), build limpio. Trinquete de
+color **1.719 → 1.717**. Las tres consultas nuevas corridas contra la base real antes de escribir un
+mock. Click-through local: las chips de CD ordenadas por volumen, la ficha sin "Editar Empresa" y
+con el lápiz sobre el nombre, y la certificación de una empresa de baja mostrando su historial
+completo bajo el cartel que ahora la API respalda.
+
+## Checklist — siguiente paso exacto
+
+1. **El cierre de prueba de Pablo**, que sigue siendo lo único que cierra el Bloque 1.
+2. **Agrupar el cierre de viajes por estado**, esperando la matriz estado→grupo de Pablo y Fabián.
+   Facturación quedó fuera de alcance.
+3. Que Fabián reproduzca el bug de "crear conductor desde Empresas no lo asigna".
+
 ### 2026-09-07 — Ronda 155: siete pedidos del usuario sobre el cierre
 
 ## Los siete, y qué era cada uno

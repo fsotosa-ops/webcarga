@@ -90,7 +90,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // de campo pasaron a `informativo` y el fondo deshabilitado a `bg-main`.
     // 1.721 -> 1.719 en la Ronda 155: la cabecera de la tabla del cierre y el
     // chip de estado pasaron a tokens al volverse ordenables.
-    const DEUDA = 1719
+    // 1.719 -> 1.717 en la Ronda 156: se retiro el cajon "Editar Empresa".
+    const DEUDA = 1717
 
     const total = usosDeColorCrudo()
     expect(

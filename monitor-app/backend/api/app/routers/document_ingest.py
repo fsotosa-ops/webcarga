@@ -413,9 +413,22 @@ async def classify_batch(
 
             record = await conn.fetchrow(
                 """
-                SELECT id::text, entity_id::text, entity_type, status, expiration_date
-                FROM public.compliance_records
-                WHERE entity_id = $1 AND requirement_id = $2 AND is_current = true
+                SELECT cr.id::text, cr.entity_id::text, cr.entity_type, cr.status, cr.expiration_date,
+                       -- Misma regla que en el camino de carga directa
+                       -- (`_apply_compliance_upload`): una empresa dada de baja
+                       -- deja de pedir documentos. La Bandeja es el OTRO camino
+                       -- de escritura, y guardar uno solo deja la puerta de
+                       -- atras abierta.
+                       (SELECT c.business_name FROM public.carriers c
+                         WHERE c.operational_status <> 'ACTIVE' AND c.id = CASE cr.entity_type
+                           WHEN 'CARRIER' THEN cr.entity_id
+                           WHEN 'DRIVER'  THEN (SELECT da.carrier_id FROM public.driver_assignments da
+                                                 WHERE da.driver_id = cr.entity_id AND da.status = 'ACTIVE' LIMIT 1)
+                           ELSE (SELECT aa.carrier_id FROM public.asset_assignments aa
+                                  WHERE aa.asset_id = cr.entity_id AND aa.status = 'ACTIVE' LIMIT 1)
+                         END) AS empresa_de_baja
+                FROM public.compliance_records cr
+                WHERE cr.entity_id = $1 AND cr.requirement_id = $2 AND cr.is_current = true
                 """,
                 body.entity_id, body.requirement_id,
             )
@@ -423,6 +436,12 @@ async def classify_batch(
                 raise HTTPException(
                     404,
                     "Esa entidad no tiene ese requisito. Verifica la categoría y el tipo de documento.",
+                )
+            if record.get("empresa_de_baja"):
+                raise HTTPException(
+                    409,
+                    f"{record['empresa_de_baja']} está dada de baja: su certificación quedó "
+                    "bloqueada. Reactívala desde el Directorio para clasificarle documentos.",
                 )
 
             if body.expiration_date is None:
