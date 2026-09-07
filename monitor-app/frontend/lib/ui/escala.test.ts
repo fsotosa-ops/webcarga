@@ -63,7 +63,8 @@ describe('la escala tipografica', () => {
     // VehicleRosterCard subio entera al minimo de la escala. El chip nuevo
     // —el tipo de operacion, y el de baja— no podia nacer a 9px, y dejarlo
     // solo a 11px entre hermanos de 9px se veia desparejo.
-    const DEUDA = 262
+    // 262 -> 260 en la Ronda 155, por el mismo cambio.
+    const DEUDA = 260
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

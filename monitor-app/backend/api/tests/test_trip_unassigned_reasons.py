@@ -153,3 +153,34 @@ def test_meta_exposes_clients_from_trips_with_normalized_shipper_join():
     assert "lower(trim(sh.name)) = lower(trim(t.client_name))" in clients_query
     assert "sh.status = 'ACTIVE'" in clients_query
     assert "DISTINCT" in clients_query
+
+# ── El motivo del viaje es del catalogo del viaje (2026-09-07) ─────────────
+
+
+def test_patch_rechaza_un_motivo_del_catalogo_de_conductores():
+    """`app.trips.unassigned_reason_id` tuvo dos escritores con catalogos
+    distintos: bulk-close validaba el dominio desde el 2026-08-18 y este PATCH
+    no. El detalle del viaje en el Monitor escribia ids de DRIVER_REASON
+    —"Vacaciones", "Panne"— sobre un campo que significa "por que WebCarga no
+    tomo este viaje".
+
+    Medido antes de arreglarlo: 0 viajes tenian motivo escrito, asi que el
+    arreglo llego antes que el dato sucio."""
+    pool = make_pool()
+    pool.fetchval.side_effect = ["trip-1", None]  # existe el viaje; el motivo no es del dominio
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/trips/trip-1", json={"unassigned_reason_id": "motivo-de-conductor"})
+
+    assert res.status_code == 422
+    assert "catálogo de no asignación del viaje" in res.json()["detail"]
+
+
+def test_patch_acepta_un_motivo_del_catalogo_del_viaje():
+    pool = make_pool()
+    pool.fetchval.side_effect = ["trip-1", 1]  # existe el viaje; el motivo SI es del dominio
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/trips/trip-1", json={"unassigned_reason_id": "motivo-de-viaje"})
+
+    assert res.status_code != 422

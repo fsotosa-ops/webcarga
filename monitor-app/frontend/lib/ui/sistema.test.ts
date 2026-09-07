@@ -88,7 +88,9 @@ describe('el sistema visual se usa, no solo existe', () => {
     // que bloquea— en vez de gray-400/red-500 crudos. VehicleDetailPanel
     // sumaba dos usos crudos por el renglon nuevo, asi que sus seis etiquetas
     // de campo pasaron a `informativo` y el fondo deshabilitado a `bg-main`.
-    const DEUDA = 1721
+    // 1.721 -> 1.719 en la Ronda 155: la cabecera de la tabla del cierre y el
+    // chip de estado pasaron a tokens al volverse ordenables.
+    const DEUDA = 1719
 
     const total = usosDeColorCrudo()
     expect(

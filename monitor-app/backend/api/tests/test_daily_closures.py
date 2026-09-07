@@ -455,7 +455,10 @@ def test_set_batch_reason_actualiza_varios_conductores_en_un_llamado():
     assert len(res.json()) == 2
     update_sql = pool.execute.call_args_list[-1].args[0]
     assert "unassigned_reason_id = $1" in update_sql
-    assert pool.execute.call_args_list[-1].args[-1] == ["d1", "d2"]
+    # Por posicion y no por `args[-1]`: el ultimo argumento dejo de ser la
+    # lista de ids cuando se sumo el comentario, y un test que apunta "al
+    # ultimo" se rompe cada vez que el UPDATE crece.
+    assert pool.execute.call_args_list[-1].args[4] == ["d1", "d2"]
 
 
 def test_set_batch_reason_404_cuando_falta_un_conductor():
@@ -661,3 +664,80 @@ def test_tractoreo_roster_cte_excluye_conductores_de_baja():
     # los otros dos filtros ya estaban y no deben perderse
     assert "c.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
     assert "a.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
+
+# ── Permiso, comentario y las dos columnas nuevas (2026-09-07) ─────────────
+
+
+def test_cerrar_el_dia_lo_puede_hacer_un_writer():
+    """Definicion del usuario (07/09): *"ambos pueden hacer cierres de viaje"*.
+    `writer` es el rol de quien opera el Diario todos los dias y era justamente
+    el que no podia terminar su propio trabajo."""
+    from app.auth import WRITER_ROLES
+    assert "writer" in WRITER_ROLES
+    from app.routers import daily_closures
+    fuente = open(daily_closures.__file__, encoding="utf-8").read()
+    # Sobre el uso real, no sobre la palabra: "require_editor" tambien aparece
+    # en el comentario que explica por que ya no se usa.
+    assert "Depends(require_editor)" not in fuente
+    assert "Depends(require_writer)" in fuente
+    # El override NO se abrio: forzar con pendientes sigue siendo de admin.
+    assert "ADMIN_ROLES" in fuente
+
+
+def test_el_comentario_se_guarda_y_el_recompute_lo_conserva_solo_si_sigue_sin_asignar():
+    from app.routers.daily_closures import _RECOMPUTE_SQL
+    assert "comentario = CASE WHEN EXCLUDED.status = 'UNASSIGNED'" in _RECOMPUTE_SQL
+    # Sigue al motivo: explica por que alguien no trabajo, asi que no puede
+    # sobrevivir al dia en que si trabajo.
+    assert "ELSE NULL END" in _RECOMPUTE_SQL
+
+
+def test_patch_guarda_el_comentario_junto_al_motivo():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "UNASSIGNED"}
+    pool.fetch.return_value = [_driver_row(driver_id="d1")]
+    client = make_client(pool)
+
+    res = client.patch(
+        "/api/v1/daily-closures/d1?fecha=2026-09-03",
+        json={"unassigned_reason_id": "r1", "comentario": "llegó tarde el repuesto"},
+    )
+
+    assert res.status_code == 200
+    # args[0] es el SQL; los parametros van (motivo, actor, driver_id, fecha,
+    # comentario), asi que el comentario es el quinto parametro.
+    assert pool.execute.call_args_list[-1].args[5] == "llegó tarde el repuesto"
+    assert pool.execute.call_args_list[-1].args[6] is True  # la clave vino en el payload
+
+
+def test_cambiar_solo_el_motivo_no_borra_el_comentario():
+    """"No mandé el campo" no es lo mismo que pedir que quede en null. Sin esto, elegir otro motivo
+    —que no manda comentario— borraba en silencio el texto que alguien había
+    escrito."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "UNASSIGNED"}
+    pool.fetch.return_value = [_driver_row(driver_id="d1")]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-09-03", json={"unassigned_reason_id": "r2"})
+
+    assert res.status_code == 200
+    assert pool.execute.call_args_list[-1].args[6] is False
+    update_sql = pool.execute.call_args_list[-1].args[0]
+    assert "CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END" in update_sql
+
+
+def test_detail_sql_trae_numero_de_viaje_y_local_de_origen():
+    """Pablo, 04/09: *"para no estar adivinando por que esta la patente nomas,
+    no esta el numero de viaje, nada"*.
+
+    El origen sale de app.trip_stops y NO de trips.origin_tms: esa columna esta
+    vacia en las 2.204 filas (medido contra la base el 2026-09-07)."""
+    from app.routers.daily_closures import _DETAIL_SQL
+    assert "today_trip_code" in _DETAIL_SQL
+    assert "today_trip_origin" in _DETAIL_SQL
+    # El origen sale del JOIN a trip_stops, no de la columna vacia. Se afirma
+    # sobre el SELECT y no sobre la ausencia de la palabra: "origin_tms" vive
+    # tambien en el comentario que explica por que no se usa.
+    assert "ts3.local AS origen" in _DETAIL_SQL
+    assert "ts3.stop_type = 'ORIGIN'" in _DETAIL_SQL

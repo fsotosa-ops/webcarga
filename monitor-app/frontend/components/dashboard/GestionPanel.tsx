@@ -9,6 +9,7 @@ import {
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
+import { taxonomiesApi } from '@/lib/api/config'
 import { fmtDT, fmtDate } from '@/lib/utils/datetime'
 import { IndicatorSwitches } from './IndicatorSwitches'
 import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from './FleetAssignSection'
@@ -42,6 +43,26 @@ interface Props {
 }
 
 export function GestionPanel({ trip, meta, onSaved }: Props) {
+  // EL MOTIVO DE UN VIAJE ES DEL CATALOGO DEL VIAJE.
+  //
+  // Hasta el 2026-09-07 este select ofrecia `meta.unassigned_reasons`, que es
+  // el catalogo de CONDUCTORES (`DRIVER_REASON`: "Vacaciones", "Panne",
+  // "Licencia vencida"), y escribia el id elegido en
+  // `app.trips.unassigned_reason_id` — un campo que significa "por que WebCarga
+  // no tomo este viaje". El propio backend ya lo tenia anotado como un campo
+  // con dos escritores y dos catalogos; bulk-close validaba el dominio desde
+  // agosto y este camino no.
+  //
+  // Los doce motivos correctos ya existen en `TRIP_UNASSIGNED_REASON` ("Sin
+  // equipo disponible", "Mandante elimina viaje", "Flete falso"...) y son los
+  // mismos que usa la pestana Viajes del Cierre: ahora las dos superficies
+  // dicen lo mismo del mismo viaje.
+  const motivosDeViaje = useQuery({
+    queryKey: ['taxonomies', 'TRIP_UNASSIGNED_REASON'],
+    queryFn: () => taxonomiesApi.list('TRIP_UNASSIGNED_REASON'),
+    staleTime: 5 * 60_000,
+  })
+
   const [collapsed, setCollapsed]               = useState(false)
   const [estadoDraft, setEstadoDraft]           = useState('')
   const [saving, setSaving]                     = useState(false)
@@ -261,7 +282,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
         </div>
 
         {/* Motivo de no asignación */}
-        {!trip.is_assigned && (meta?.unassigned_reasons?.length ?? 0) > 0 && (
+        {!trip.is_assigned && (motivosDeViaje.data?.length ?? 0) > 0 && (
           <div>
             <p className="text-etiqueta font-bold text-gray-400 uppercase tracking-wide mb-1.5">Motivo de no asignación</p>
             <select
@@ -282,7 +303,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
               className="w-full text-dato border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
             >
               <option value="">— Sin especificar —</option>
-              {meta!.unassigned_reasons.map(r => (
+              {(motivosDeViaje.data ?? []).map(r => (
                 <option key={r.id} value={r.id}>{r.label}</option>
               ))}
             </select>

@@ -31,7 +31,7 @@ from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import ADMIN_ROLES, get_current_user, require_editor
+from ..auth import ADMIN_ROLES, get_current_user, require_writer
 from ..db import get_pool
 from ..schemas.equipment_closures import CloseEquipmentDayBody, EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
 from ..services.audit import log_change
@@ -85,7 +85,10 @@ ON CONFLICT (asset_id, business_date) DO UPDATE SET
     computed_at = EXCLUDED.computed_at,
     unassigned_reason_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.unassigned_reason_id ELSE NULL END,
     resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.resolved_by ELSE NULL END,
-    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.resolved_at ELSE NULL END
+    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.resolved_at ELSE NULL END,
+    -- El comentario sigue al motivo: explica por que alguien no trabajo, asi
+    -- que no puede sobrevivir al dia en que si trabajo.
+    comentario = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.comentario ELSE NULL END
 """
 
 _DETAIL_SQL = """
@@ -97,6 +100,7 @@ SELECT
     st.label AS fleet_service_type_label, st.bg_color AS fleet_service_type_bg_color,
     st.text_color AS fleet_service_type_text_color,
     eds.status, eds.requires_motivo, eds.unassigned_reason_id, ur.label AS unassigned_reason_label,
+    eds.comentario,
     eds.resolved_by, eds.resolved_at,
     -- Conductor habitual del equipo (sigue mostrándose junto al tracto,
     -- HU-03 §BLOQUE 1 — ya no es la unidad que se cierra, ver docstring).
@@ -117,7 +121,13 @@ SELECT
     -- 04/09: *"En el viaje si esta asignado el conductor... pero aqui
     -- desaparece sin conductor"* — leia el primero creyendo el segundo.
     today_trip.trip_driver_id,
-    today_trip.trip_driver_name
+    today_trip.trip_driver_name,
+    -- Mismo par que en el cierre por conductor: el numero de viaje del TMS y
+    -- el local de origen de HOY. `last_known_origin` de arriba es otra cosa
+    -- —el origen del viaje mas reciente, sea de hoy o no— y por eso no se
+    -- reusa: dos preguntas, dos columnas.
+    today_trip.source_system_trip_id AS today_trip_code,
+    today_trip.origen AS today_trip_origin
 FROM app.equipment_day_status eds
 JOIN public.assets a ON a.id = eds.asset_id
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
@@ -141,10 +151,13 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) last_origin ON true
 LEFT JOIN LATERAL (
-    SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name
+    SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name,
+           t.source_system_trip_id, ts_o.local AS origen
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     LEFT JOIN public.drivers td ON td.id = vfr.resolved_driver_id
+    -- Mismo motivo que en daily_closures: trips.origin_tms esta vacia.
+    LEFT JOIN app.trip_stops ts_o ON ts_o.trip_id = t.id AND ts_o.stop_type = 'ORIGIN'
     WHERE vfr.resolved_tractor_asset_id = eds.asset_id
       AND (t.planning_date = eds.business_date OR (t.planning_date < eds.business_date AND t.is_active))
       AND t.source_system != 'sodimac'
@@ -226,9 +239,18 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
     }
 
 
+# QUIEN PUEDE CERRAR. `require_writer` y no `require_editor` desde el
+# 2026-09-07, por definicion del usuario: *"ambos pueden hacer cierres de
+# viaje"*. `writer` es el rol de quien opera el Diario todos los dias —el
+# equipo de operaciones— y era justamente el que no podia terminar el trabajo
+# que hace: elegir un motivo y firmar el dia.
+#
+# El OVERRIDE no se movio: forzar el cierre con pendientes sigue exigiendo
+# ADMIN_ROLES, y eso se resuelve dentro del endpoint, no en el guardia. Abrir
+# la puerta no es dar la llave del cuarto de atras.
 @router.patch("/reason")
 async def set_batch_reason(
-    body: EquipmentBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_editor),
+    body: EquipmentBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_writer),
 ):
     """BLOQUE 1 de HU-03: selección masiva con checkbox — mismo motivo para
     varios tractos en un clic (criterio de aceptación #2)."""
@@ -250,10 +272,18 @@ async def set_batch_reason(
     await pool.execute(
         """
         UPDATE app.equipment_day_status
-        SET unassigned_reason_id = $1, resolved_by = $2::uuid, resolved_at = now()
+        -- "No mande el campo" no es lo mismo que pedir que quede en null.
+        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
+        -- borraba en silencio el texto que alguien habia escrito. El booleano
+        -- dice si la clave vino en el payload; Pydantic lo sabe por
+        -- `model_fields_set`.
+        SET unassigned_reason_id = $1,
+            comentario = CASE WHEN $6 THEN $5 ELSE app.equipment_day_status.comentario END,
+            resolved_by = $2::uuid, resolved_at = now()
         WHERE business_date = $3 AND asset_id = ANY($4::uuid[])
         """,
-        body.unassigned_reason_id, user["sub"], business_date, body.asset_ids,
+        body.unassigned_reason_id, user["sub"], business_date, body.asset_ids, body.comentario,
+        "comentario" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     updated = [dict(r) for r in rows if str(r["asset_id"]) in found_ids]
@@ -263,7 +293,7 @@ async def set_batch_reason(
 @router.patch("/{asset_id}")
 async def patch_equipment_day_status(
     asset_id: str, fecha: str, body: EquipmentDayStatusPatchBody,
-    pool=Depends(get_pool), user=Depends(require_editor),
+    pool=Depends(get_pool), user=Depends(require_writer),
 ):
     """Captura el motivo de un equipo individual — paridad con
     patch_driver_day_status (daily_closures.py), pedida explícitamente para
@@ -285,10 +315,18 @@ async def patch_equipment_day_status(
     await pool.execute(
         """
         UPDATE app.equipment_day_status
-        SET unassigned_reason_id = $1, resolved_by = $2::uuid, resolved_at = now()
+        -- "No mande el campo" no es lo mismo que pedir que quede en null.
+        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
+        -- borraba en silencio el texto que alguien habia escrito. El booleano
+        -- dice si la clave vino en el payload; Pydantic lo sabe por
+        -- `model_fields_set`.
+        SET unassigned_reason_id = $1,
+            comentario = CASE WHEN $6 THEN $5 ELSE app.equipment_day_status.comentario END,
+            resolved_by = $2::uuid, resolved_at = now()
         WHERE asset_id = $3 AND business_date = $4
         """,
-        body.unassigned_reason_id, user["sub"], asset_id, business_date,
+        body.unassigned_reason_id, user["sub"], asset_id, business_date, body.comentario,
+        "comentario" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     updated = next((dict(r) for r in rows if r["asset_id"] == asset_id or str(r["asset_id"]) == asset_id), None)
@@ -297,7 +335,7 @@ async def patch_equipment_day_status(
 
 @router.post("/close")
 async def close_equipment_day(
-    fecha: str, body: CloseEquipmentDayBody, pool=Depends(get_pool), user=Depends(require_editor),
+    fecha: str, body: CloseEquipmentDayBody, pool=Depends(get_pool), user=Depends(require_writer),
 ):
     """Confirmar cierre (HU-03): bloquea si hay tractos de Tractoreo/Sin
     clasificar sin motivo — 'A confirmar' cuenta como motivo válido

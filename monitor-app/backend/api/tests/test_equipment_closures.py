@@ -167,7 +167,7 @@ def test_set_batch_reason_actualiza_varios_equipos_en_un_llamado():
     assert len(res.json()) == 2
     update_sql = pool.execute.call_args_list[-1].args[0]
     assert "unassigned_reason_id = $1" in update_sql
-    assert pool.execute.call_args_list[-1].args[-1] == ["a1", "a2"]
+    assert pool.execute.call_args_list[-1].args[4] == ["a1", "a2"]
 
 
 def test_set_batch_reason_404_cuando_falta_un_equipo():

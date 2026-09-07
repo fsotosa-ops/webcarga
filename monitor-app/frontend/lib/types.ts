@@ -1148,6 +1148,14 @@ export type DriverDayStatusRow = {
    *  sano — con lo cual la fila quedaba sin "Ver viaje". Medido el 03-09: de
    *  25 conductores asignados, sólo 1 tenía link. */
   today_trip_id:               string | null
+  /** Nº de viaje del TMS y local de origen de HOY. La tabla del cierre decía
+   *  la patente y nada más; Pablo, 04/09: *"para no estar adivinando por qué
+   *  está la patente nomás, no está el número de viaje, nada"*. */
+  today_trip_code:             string | null
+  today_trip_origin:           string | null
+  /** Texto libre de quien cierra el día. El motivo dice la categoría —"Panne"—
+   *  y esto dice el caso. Vacío y ausente son lo mismo: los dos llegan null. */
+  comentario:                  string | null
   /** Tarea 5 (plan 2.2) — tracto habitual del conductor, mejor esfuerzo vía
    *  el viaje más reciente resuelto para él; puede ser null si no tiene
    *  ninguno. */
@@ -1288,6 +1296,7 @@ export type DailyClosureReportRow = Omit<
   // Tarea 7 (plan 2.4): _REPORT_SQL (backend) no trae estos campos —
   // solo _DETAIL_SQL (GET /daily-closures) los expone.
   | 'last_known_tractor_plate' | 'last_known_operation_type' | 'today_trip_id'
+  | 'today_trip_code' | 'today_trip_origin' | 'comentario'
 > & {
   business_date: string
 }
@@ -1329,6 +1338,12 @@ export type EquipmentDayStatusRow = {
    *  maneja normalmente este tracto vs. quién lo manejó hoy. */
   trip_driver_id:          string | null
   trip_driver_name:        string | null
+  /** Nº de viaje del TMS y local de origen de HOY. `last_known_origin` de
+   *  arriba es otra cosa —el origen del viaje más reciente, sea de hoy o no—:
+   *  dos preguntas, dos campos. */
+  today_trip_code:         string | null
+  today_trip_origin:       string | null
+  comentario:              string | null
 }
 
 export type EquipmentCategorySummary = {

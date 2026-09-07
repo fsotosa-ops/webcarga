@@ -11,6 +11,26 @@ class EquipmentDayStatusPatchBody(BaseModel):
     usuario 2026-08-04: "Flota del día" necesita la misma funcionalidad de
     edición fila-por-fila para Equipo Completo que ya tiene Tractoreo)."""
     unassigned_reason_id: str
+    comentario: Optional[str] = None
+    """El comentario de texto libre, opcional.
+
+    El motivo dice la categoria —"Panne"— y no dice el caso: cual panne, desde
+    cuando, que se hizo. Pedido del usuario (07/09): quien cierra el dia tiene
+    que poder escribirlo con sus palabras.
+
+    Un texto en blanco y un comentario ausente son lo mismo, y los dos se
+    guardan como NULL: dos maneras de decir "no escribio nada" es la clase de
+    ambiguedad que despues nadie sabe leer.
+    """
+
+    @field_validator("comentario")
+    @classmethod
+    def vacio_es_nulo(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        limpio = v.strip()
+        return limpio or None
+
 
 
 class EquipmentBatchReasonBody(BaseModel):
@@ -18,6 +38,7 @@ class EquipmentBatchReasonBody(BaseModel):
     para varios tractos en un clic."""
     asset_ids: list[str]
     unassigned_reason_id: str
+    comentario: Optional[str] = None
 
     @field_validator("asset_ids")
     @classmethod

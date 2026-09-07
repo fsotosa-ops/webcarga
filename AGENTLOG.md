@@ -11,6 +11,63 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-09-07 — Ronda 155: siete pedidos del usuario sobre el cierre
+
+## Los siete, y qué era cada uno
+
+1. **`writer` puede cerrar.** Los endpoints del cierre exigían `require_editor`,
+   que deja fuera justamente al rol de quien opera el Diario todos los días. Pasaron a
+   `require_writer`. El **override no se movió**: forzar con pendientes sigue siendo de admin —
+   abrir la puerta no es dar la llave del cuarto de atrás.
+2. **Comentario de texto libre por fila** (migración `20260907200000`). El motivo dice la
+   categoría —"Panne"— y no dice el caso. Va donde está la decisión que justifica, y sólo cuando
+   hay motivo elegido: un texto sin categoría no se agrupa ni se cuenta.
+3. **Card "No trabajando".** "No asignados" mezclaba a los que nadie miró con los ya resueltos, así
+   que el número de lo pendiente no bajaba nunca aunque el trabajo avanzara. Medido en vivo sobre
+   el 03-09: pasó de decir **10** a decir **1 sin resolver y 9 no trabajando**.
+4. **El motivo del viaje es del catálogo del viaje.** El detalle del viaje en el Monitor ofrecía
+   `DRIVER_REASON` —"Vacaciones", "Panne"— y escribía el id en
+   `app.trips.unassigned_reason_id`, que significa "por qué WebCarga no tomó este viaje". El propio
+   backend ya lo tenía anotado como *un campo con dos escritores y dos catálogos*: bulk-close
+   validaba el dominio desde agosto y este camino no. Ahora ofrece los doce de
+   `TRIP_UNASSIGNED_REASON` y el `PATCH` rechaza el otro dominio con 422. **Medido antes de
+   tocarlo: 0 viajes tenían motivo escrito**, así que el arreglo llegó antes que el dato sucio.
+5. **Dos columnas nuevas**: Nº de viaje del TMS y local de origen. El origen sale de
+   `app.trip_stops`, no de `trips.origin_tms` — esa columna está **vacía en las 2.204 filas**.
+6. **La tabla funciona como una planilla**: orden asc/desc/sin orden por columna y filtro múltiple
+   por los valores presentes. Los valores del filtro salen de las filas que hay, no de un catálogo:
+   verificado en vivo, la columna Empresa ofrece las 8 que están en pantalla y no las 250 del
+   padrón.
+7. **20/50/100 filas por página.** Eran 10 fijas; con 81 tractos, revisar el día eran nueve saltos.
+
+## Un bug que me hice y me pesqué el guardia
+
+Al sumar el comentario, cambiar el motivo lo habría **borrado en silencio**: el frontend no manda
+el campo y el UPDATE lo ponía en NULL. Se arregló en el backend, que es la capa correcta —
+`model_fields_set` distingue "no mandé la clave" de "quiero que quede vacía"—, con test que lo fija.
+
+Y el test de español neutral me pescó cuatro *"ponelo"* en mis propios comentarios. Ese guardia
+existe porque llegaron ocho casos a producción sin que nada los detectara; esta vez detectó.
+
+## Lo medido
+
+**Frontend 1.363 en verde, backend 1.004** (con los 190 de integración), build limpio. Trinquetes
+bajados: color crudo **1.721 → 1.719**, tamaños <11px **262 → 260**. Las consultas nuevas corridas
+contra la base real antes de confiar en mocks, y el conteo de placeholders contra argumentos hecho a
+mano en los cuatro UPDATE. Tres mutaciones sobre la tabla —quitar el corte de "No trabajando", el
+orden y el filtro— ponen en rojo cinco tests distintos.
+
+Click-through local sobre el 03-09: las cinco cards, las siete columnas con su botón de orden y de
+filtro, el selector de filas, y el campo de comentario apareciendo sólo en las filas con motivo.
+
+## Checklist — siguiente paso exacto
+
+1. **El cierre de prueba de Pablo**, que sigue siendo lo único que cierra el Bloque 1.
+2. Lo que resta del Bloque 3: **agrupar el cierre de viajes por estado**, esperando la matriz
+   estado→grupo de Pablo y Fabián. **Facturación quedó fuera de alcance.**
+3. Que Fabián reproduzca sobre el build de hoy el bug de "crear conductor desde Empresas no lo
+   asigna": no se puede verificar sin crear registros reales.
+
 ### 2026-09-07 — Ronda 154: el Directorio sale de Certificación, y busca las tres cosas
 
 Auditoría pedida por el usuario: *"¿por qué no están separados? La UX de empresas tiene muchos

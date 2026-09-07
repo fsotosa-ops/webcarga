@@ -23,6 +23,15 @@ vi.mock('@/lib/api/trips', () => ({
 vi.mock('@/lib/api/drivers', () => ({
   driversApi: { search: vi.fn(), fuzzyMatch: vi.fn() },
 }))
+vi.mock('@/lib/api/config', () => ({
+  taxonomiesApi: {
+    list: vi.fn().mockResolvedValue([
+      { id: 'sin_equipo', label: 'Sin equipo disponible' },
+      { id: 'flete_falso', label: 'Flete falso' },
+    ]),
+  },
+}))
+
 vi.mock('@/lib/api/locations', () => ({
   locationsApi: { list: vi.fn() },
 }))
@@ -706,18 +715,36 @@ describe('TripDetailView — Ubicación de origen (solo operation_type)', () => 
 })
 
 describe('TripDetailView — motivo de no asignación (Fase 1.5d)', () => {
+  // `meta.unassigned_reasons` es el catálogo de CONDUCTORES y sigue llegando
+  // en el meta para otras partes de la pantalla. Se deja acá a propósito: el
+  // punto del primer test es que este select ya NO lo usa.
   const metaWithReasons = {
     statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [],
     csv_columns: [], temperature_ranges: [],
     unassigned_reasons: [{ id: 'pana', label: 'Pana' }, { id: 'sin_conductor', label: 'Sin conductor' }],
   } as never
 
-  it('shows the reason dropdown when the trip is not is_assigned and saves via tripsApi.patch', async () => {
+  it('ofrece los motivos DEL VIAJE, no los del conductor', async () => {
+    // Hasta el 2026-09-07 este select listaba `meta.unassigned_reasons`
+    // —"Vacaciones", "Panne"— y escribía el id elegido en
+    // `app.trips.unassigned_reason_id`, que significa "por qué WebCarga no tomó
+    // este viaje". Dos escritores, dos catálogos, un solo campo. Pedido del
+    // usuario (07/09): que se sincronice con el motivo del viaje.
+    renderDetailView({ ...baseTrip, is_assigned: false }, { meta: metaWithReasons })
+
+    expect(await screen.findByRole('option', { name: 'Sin equipo disponible' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Pana' })).not.toBeInTheDocument()
+  })
+
+  it('guarda el motivo elegido con tripsApi.patch', async () => {
     vi.mocked(tripsApi.patch).mockResolvedValue(baseTrip)
     renderDetailView({ ...baseTrip, is_assigned: false }, { meta: metaWithReasons })
-    fireEvent.change(screen.getByDisplayValue('— Sin especificar —'), { target: { value: 'pana' } })
+
+    await screen.findByRole('option', { name: 'Sin equipo disponible' })
+    fireEvent.change(screen.getByDisplayValue('— Sin especificar —'), { target: { value: 'sin_equipo' } })
+
     await waitFor(() =>
-      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { unassigned_reason_id: 'pana' }))
+      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { unassigned_reason_id: 'sin_equipo' }))
   })
 
   it('hides the reason dropdown once the trip is is_assigned', () => {

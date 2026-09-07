@@ -48,10 +48,10 @@ export const dailyClosuresApi = {
   get: (fecha: string) =>
     apiFetch<DailyClosureStatus>(`/api/v1/daily-closures?fecha=${encodeURIComponent(fecha)}`),
 
-  setReason: (driverId: string, fecha: string, unassignedReasonId: string) =>
+  setReason: (driverId: string, fecha: string, unassignedReasonId: string, comentario?: string | null) =>
     apiFetch<DriverDayStatusRow>(
       `/api/v1/daily-closures/${driverId}?fecha=${encodeURIComponent(fecha)}`,
-      { method: 'PATCH', body: JSON.stringify({ unassigned_reason_id: unassignedReasonId }) },
+      { method: 'PATCH', body: JSON.stringify({ unassigned_reason_id: unassignedReasonId, comentario }) },
     ),
 
   /** Tarea 7 (plan 2.4) — selección masiva con checkbox, un motivo para

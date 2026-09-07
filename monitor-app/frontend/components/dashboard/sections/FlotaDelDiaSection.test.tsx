@@ -19,7 +19,7 @@ function driverRow(overrides: Partial<DailyClosureStatus['drivers'][number]> = {
     driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur',
     status: 'UNASSIGNED' as const, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null,
-    suggested_reason_id: null, trip_id: null, today_trip_id: null, last_known_tractor_plate: null, last_known_operation_type: null,
+    suggested_reason_id: null, trip_id: null, today_trip_id: null, today_trip_code: null, today_trip_origin: null, comentario: null, last_known_tractor_plate: null, last_known_operation_type: null,
     ...overrides,
   }
 }
@@ -31,6 +31,7 @@ function equipmentRow(overrides: Partial<EquipmentDayStatusRow> = {}): Equipment
     status: 'UNASSIGNED', requires_motivo: false, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, driver_id: null, driver_name: null, last_known_origin: null,
     trip_id: null, trip_driver_id: null, trip_driver_name: null,
+    today_trip_code: null, today_trip_origin: null, comentario: null,
     ...overrides,
   }
 }
@@ -48,7 +49,7 @@ const DRIVERS_STATUS: DailyClosureStatus = {
   drivers: [
     driverRow({ driver_id: 'd1', full_name: 'Ana Soto', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', last_known_tractor_plate: 'ABCD12', last_known_operation_type: 'Tractoreo' }),
     driverRow({ driver_id: 'd2', full_name: 'Luis Rojas', carrier_name: 'Transportes Norte', status: 'MISMATCH', trip_id: 't1' }),
-    driverRow({ driver_id: 'd3', full_name: 'Juan Pérez', carrier_name: 'Transportes Sur', status: 'ASSIGNED', today_trip_id: 't3' }),
+    driverRow({ driver_id: 'd3', full_name: 'Juan Pérez', carrier_name: 'Transportes Sur', status: 'ASSIGNED', today_trip_id: 't3', today_trip_code: '2045490', today_trip_origin: 'CD LO AGUIRRE' }),
     driverRow({ driver_id: 'd4', full_name: 'Carla Díaz', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana' }),
   ],
 }
@@ -186,7 +187,7 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.change(within(row).getByRole('combobox'), { target: { value: 'pana' } })
 
     await waitFor(() => {
-      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('a2', '2026-08-04', 'pana')
+      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('a2', '2026-08-04', 'pana', undefined)
     })
   })
 
@@ -303,30 +304,50 @@ describe('FlotaDelDiaSection', () => {
     expect(link).toHaveAttribute('href', '/dashboard/carriers/c9')
   })
 
-  it('pagina Conductores cuando hay más de 10 pendientes', async () => {
+  it('pagina Conductores de a 20, no de a 10', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const many = Array.from({ length: 12 }, (_, i) =>
-      driverRow({ driver_id: `p${i}`, full_name: `Conductor ${i}`, status: 'UNASSIGNED' }),
+    const many = Array.from({ length: 25 }, (_, i) =>
+      driverRow({ driver_id: `p${i}`, full_name: `Conductor ${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
     )
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
-      ...DRIVERS_STATUS, drivers: many, pending_count: 12,
+      ...DRIVERS_STATUS, drivers: many, pending_count: 25,
     })
     renderSection()
-    await screen.findByText('Conductor 0')
+    await screen.findByText('Conductor 00')
 
     expect(screen.getByText('Página 1 de 2')).toBeInTheDocument()
-    expect(screen.queryByText('Conductor 11')).not.toBeInTheDocument()
+    expect(screen.getByText('Conductor 19')).toBeInTheDocument()
+    expect(screen.queryByText('Conductor 20')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }))
 
-    expect(await screen.findByText('Conductor 11')).toBeInTheDocument()
-    expect(screen.queryByText('Conductor 0')).not.toBeInTheDocument()
+    expect(await screen.findByText('Conductor 24')).toBeInTheDocument()
+    expect(screen.queryByText('Conductor 00')).not.toBeInTheDocument()
   })
 
-  it('pagina Equipo Completo cuando hay más de 10 equipos sin asignar', async () => {
+  it('el selector de filas por página cambia cuántas se ven', async () => {
+    // Con 10 fijas y 81 tractos, revisar el día eran nueve saltos de página.
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const many = Array.from({ length: 25 }, (_, i) =>
+      driverRow({ driver_id: `p${i}`, full_name: `Conductor ${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
+    )
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS, drivers: many, pending_count: 25,
+    })
+    renderSection()
+    await screen.findByText('Conductor 00')
+    expect(screen.queryByText('Conductor 24')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Filas por página'), { target: { value: '50' } })
+
+    expect(await screen.findByText('Conductor 24')).toBeInTheDocument()
+    expect(screen.queryByText(/Página 1 de/)).not.toBeInTheDocument()
+  })
+
+  it('pagina Equipo Completo de a 20', async () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
-    const many = Array.from({ length: 12 }, (_, i) =>
-      equipmentRow({ asset_id: `e${i}`, tractor_plate: `PLT${i}`, status: 'UNASSIGNED' }),
+    const many = Array.from({ length: 25 }, (_, i) =>
+      equipmentRow({ asset_id: `e${i}`, tractor_plate: `PLT${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
     )
     vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
       ...EQUIPMENT_STATUS,
@@ -334,14 +355,14 @@ describe('FlotaDelDiaSection', () => {
     })
     renderSection()
     fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
-    await screen.findByText('PLT0')
+    await screen.findByText('PLT00')
 
     expect(screen.getByText('Página 1 de 2')).toBeInTheDocument()
-    expect(screen.queryByText('PLT11')).not.toBeInTheDocument()
+    expect(screen.queryByText('PLT24')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }))
 
-    expect(await screen.findByText('PLT11')).toBeInTheDocument()
+    expect(await screen.findByText('PLT24')).toBeInTheDocument()
   })
   // ── Regresión del 2026-09-07 ──────────────────────────────────────────────
   // Pablo cerró el 03-09 y reportó cinco viajes que "no aparecen en el cierre,
@@ -410,7 +431,9 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.change(within(fila).getByRole('combobox'), { target: { value: 'pana' } })
 
     await waitFor(() => {
-      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('tr3', '2026-08-04', 'pana')
+      // Sin comentario: `undefined` no viaja en el JSON, y el backend distingue
+      // "no mandé el campo" de "ponelo en null" para no borrar lo escrito.
+      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('tr3', '2026-08-04', 'pana', undefined)
     })
     expect(dailyClosuresApi.setReason).not.toHaveBeenCalled()
   })
@@ -432,5 +455,117 @@ describe('FlotaDelDiaSection', () => {
     await screen.findByText('Ana Soto')
 
     expect(screen.queryByRole('button', { name: /Crear viaje manual/ })).not.toBeInTheDocument()
+  })
+  // ── Pedidos del 2026-09-07 ────────────────────────────────────────────────
+
+  it('marcar un motivo descuenta de "No asignados" y suma en "No trabajando"', async () => {
+    // Antes los dos estados caían en el mismo número, así que resolver una
+    // fila no movía el contador de lo pendiente.
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    const noAsignados = screen.getByText('No asignados').closest('button')!
+    const noTrabajando = screen.getByText('No trabajando').closest('button')!
+    // Ana Soto y Carla Díaz están No asignadas; sólo Carla tiene motivo.
+    expect(within(noAsignados).getByText('1')).toBeInTheDocument()
+    expect(within(noTrabajando).getByText('1')).toBeInTheDocument()
+  })
+
+  it('el tile "No trabajando" muestra sólo a los que ya tienen motivo', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    fireEvent.click(screen.getByText('No trabajando'))
+
+    expect(await screen.findByText('Carla Díaz')).toBeInTheDocument()
+    expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
+  })
+
+  it('la tabla muestra el Nº de viaje y el local de origen', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    expect(screen.getByRole('columnheader', { name: /Nº viaje/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /Local de origen/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Total'))
+    expect(await screen.findByText('2045490')).toBeInTheDocument()
+    expect(screen.getByText('CD LO AGUIRRE')).toBeInTheDocument()
+  })
+
+  it('ordenar por una columna cicla asc, desc y sin orden', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('Total'))
+    await screen.findByText('Juan Pérez')
+
+    const nombres = () => screen.getAllByRole('row').slice(1)
+      .map(f => f.querySelectorAll('td')[1]?.textContent ?? '')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ordenar por Conductor' }))
+    expect(nombres()[0]).toBe('Ana Soto')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ordenar por Conductor' }))
+    expect(nombres()[0]).toBe('Luis Rojas')
+  })
+
+  it('el filtro de una columna acepta varios valores a la vez', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('Total'))
+    await screen.findByText('Juan Pérez')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Empresa' }))
+    fireEvent.click(await screen.findByLabelText('Transportes Norte'))
+
+    // Con un solo valor elegido, sólo queda quien pertenece a esa empresa.
+    expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
+
+    // Y el filtro es MÚLTIPLE: al sumar la segunda empresa vuelven los suyos.
+    fireEvent.click(screen.getByLabelText('Transportes Sur'))
+    expect(await screen.findByText('Ana Soto')).toBeInTheDocument()
+    expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
+  })
+
+  it('los valores del filtro salen de las filas, no de un catálogo', async () => {
+    // Un desplegable que lista todo el padrón obliga a elegir a ojo — la misma
+    // lección del click-through de agosto.
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('Total'))
+    await screen.findByText('Juan Pérez')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Empresa' }))
+
+    expect(await screen.findByText('2 valores')).toBeInTheDocument()
+  })
+
+  it('el comentario se guarda al salir del campo, y sólo si cambió', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('No trabajando'))
+    await screen.findByText('Carla Díaz')
+
+    const campo = screen.getByLabelText('Comentario de Carla Díaz')
+    fireEvent.blur(campo)
+    expect(dailyClosuresApi.setReason).not.toHaveBeenCalled()
+
+    fireEvent.change(campo, { target: { value: 'llegó tarde el repuesto' } })
+    fireEvent.blur(campo)
+
+    await waitFor(() => {
+      expect(dailyClosuresApi.setReason).toHaveBeenCalledWith(
+        'd4', '2026-08-04', 'pana', 'llegó tarde el repuesto',
+      )
+    })
+  })
+
+  it('sin motivo elegido no hay dónde comentar', async () => {
+    // Un texto libre sin categoría no se puede agrupar ni contar.
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    expect(screen.queryByLabelText('Comentario de Ana Soto')).not.toBeInTheDocument()
   })
 })

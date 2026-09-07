@@ -21,7 +21,7 @@ forma pasiva y por tracto, en equipment_closures.py."""
 from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
-from ..auth import ADMIN_ROLES, get_current_user, require_editor
+from ..auth import ADMIN_ROLES, get_current_user, require_writer
 from ..db import get_pool
 from ..schemas.daily_closures import CloseDayBody, DriverBatchReasonBody, DriverDayStatusPatchBody
 from ..services.audit import log_change
@@ -123,19 +123,29 @@ ON CONFLICT (driver_id, business_date) DO UPDATE SET
     -- motivo viejo queda obsoleto.
     unassigned_reason_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.unassigned_reason_id ELSE NULL END,
     resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_by ELSE NULL END,
-    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_at ELSE NULL END
+    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_at ELSE NULL END,
+    -- El comentario sigue al motivo: explica por que alguien no trabajo, asi
+    -- que no puede sobrevivir al dia en que si trabajo.
+    comentario = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.comentario ELSE NULL END
 """
 
 _DETAIL_SQL = f"""
 WITH {TRACTOREO_ROSTER_CTE}
 SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name,
        dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
+       dds.comentario,
        dds.resolved_by, dds.resolved_at,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
        dcomp.has_critical_pending AS driver_pending_docs_critical,
        sugg.id AS suggested_reason_id,
        mismatch_trip.trip_id,
        today_trip.trip_id AS today_trip_id,
+       -- El numero de viaje del TMS y el local de origen, para que la tabla del
+       -- cierre diga de que viaje habla sin obligar a abrirlo. Pablo, 04/09:
+       -- *"para no estar adivinando por que esta la patente nomas, no esta el
+       -- numero de viaje, nada"*.
+       today_trip.source_system_trip_id AS today_trip_code,
+       today_trip.origen AS today_trip_origin,
        last_tractor.tractor_plate AS last_known_tractor_plate,
        last_tractor.operation_type AS last_known_operation_type
 FROM app.driver_day_status dds
@@ -209,9 +219,13 @@ LEFT JOIN LATERAL (
 -- distintas, dos columnas distintas: un NULL con dos significados es la
 -- clase de bug que este proyecto ya vio cinco veces.
 LEFT JOIN LATERAL (
-    SELECT t3.id AS trip_id
+    SELECT t3.id AS trip_id, t3.source_system_trip_id, ts3.local AS origen
     FROM app.trips t3
     JOIN app.v_trip_fleet_resolution vfr3 ON vfr3.trip_id = t3.id
+    -- El local de origen vive en trip_stops, no en trips.origin_tms — esa
+    -- columna esta vacia en las 2.204 filas (medido 2026-09-07) y es de donde
+    -- ya lo lee el Diario.
+    LEFT JOIN app.trip_stops ts3 ON ts3.trip_id = t3.id AND ts3.stop_type = 'ORIGIN'
     WHERE vfr3.resolved_driver_id = dds.driver_id
       AND (t3.planning_date = dds.business_date OR (t3.planning_date < dds.business_date AND t3.is_active))
       AND t3.source_system != 'sodimac'
@@ -330,9 +344,18 @@ async def get_daily_closures_report(
     }
 
 
+# QUIEN PUEDE CERRAR. `require_writer` y no `require_editor` desde el
+# 2026-09-07, por definicion del usuario: *"ambos pueden hacer cierres de
+# viaje"*. `writer` es el rol de quien opera el Diario todos los dias —el
+# equipo de operaciones— y era justamente el que no podia terminar el trabajo
+# que hace: elegir un motivo y firmar el dia.
+#
+# El OVERRIDE no se movio: forzar el cierre con pendientes sigue exigiendo
+# ADMIN_ROLES, y eso se resuelve dentro del endpoint, no en el guardia. Abrir
+# la puerta no es dar la llave del cuarto de atras.
 @router.patch("/reason")
 async def set_batch_reason(
-    body: DriverBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_editor),
+    body: DriverBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_writer),
 ):
     """BLOQUE 1 de HU-03 (conductor, Tarea 7 plan 2.4): selección masiva con
     checkbox — mismo motivo para varios conductores en un clic (criterio de
@@ -356,10 +379,18 @@ async def set_batch_reason(
     await pool.execute(
         """
         UPDATE app.driver_day_status
-        SET unassigned_reason_id = $1, resolved_by = $2::uuid, resolved_at = now()
+        -- "No mande el campo" no es lo mismo que pedir que quede en null.
+        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
+        -- borraba en silencio el texto que alguien habia escrito. El booleano
+        -- dice si la clave vino en el payload; Pydantic lo sabe por
+        -- `model_fields_set`.
+        SET unassigned_reason_id = $1,
+            comentario = CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END,
+            resolved_by = $2::uuid, resolved_at = now()
         WHERE business_date = $3 AND driver_id = ANY($4::uuid[])
         """,
-        body.unassigned_reason_id, user["sub"], business_date, body.driver_ids,
+        body.unassigned_reason_id, user["sub"], business_date, body.driver_ids, body.comentario,
+        "comentario" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     return [dict(r) for r in rows if str(r["driver_id"]) in found_ids]
@@ -368,7 +399,7 @@ async def set_batch_reason(
 @router.patch("/{driver_id}")
 async def patch_driver_day_status(
     driver_id: str, fecha: str, body: DriverDayStatusPatchBody,
-    pool=Depends(get_pool), user=Depends(require_editor),
+    pool=Depends(get_pool), user=Depends(require_writer),
 ):
     """Captura el motivo de no asignación (HU-02) — el punto de captura
     estructurado que pidió el usuario explícitamente (reusa app.unassigned_reasons,
@@ -388,10 +419,18 @@ async def patch_driver_day_status(
     await pool.execute(
         """
         UPDATE app.driver_day_status
-        SET unassigned_reason_id = $1, resolved_by = $2::uuid, resolved_at = now()
+        -- "No mande el campo" no es lo mismo que pedir que quede en null.
+        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
+        -- borraba en silencio el texto que alguien habia escrito. El booleano
+        -- dice si la clave vino en el payload; Pydantic lo sabe por
+        -- `model_fields_set`.
+        SET unassigned_reason_id = $1,
+            comentario = CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END,
+            resolved_by = $2::uuid, resolved_at = now()
         WHERE driver_id = $3 AND business_date = $4
         """,
-        body.unassigned_reason_id, user["sub"], driver_id, business_date,
+        body.unassigned_reason_id, user["sub"], driver_id, business_date, body.comentario,
+        "comentario" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     updated = next((dict(r) for r in rows if r["driver_id"] == driver_id or str(r["driver_id"]) == driver_id), None)
@@ -438,7 +477,7 @@ def _pendientes_de_flota(pre_cierre: dict) -> list[dict]:
 
 
 @router.post("/close")
-async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user=Depends(require_editor)):
+async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user=Depends(require_writer)):
     """Bloqueo real de HU-03 — requisito explícito y no negociable de Pablo
     ("si no cierra el proceso lógico, el sistema debería no dejarlos
     avanzar"). El override (HU-03 + el riesgo "deadlock operativo" del

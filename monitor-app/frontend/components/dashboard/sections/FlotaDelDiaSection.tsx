@@ -6,6 +6,7 @@ import { AlertTriangle, FilePlus2, Search, ChevronLeft, ChevronRight } from 'luc
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi } from '@/lib/api/equipmentClosures'
 import { AlertStatTiles } from '../AlertStatTiles'
+import { CabeceraDeColumna, compararValores, type Orden } from '../CabeceraDeColumna'
 import type { DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
 import { Estado } from '@/components/ui/Estado'
 
@@ -18,8 +19,17 @@ import { Estado } from '@/components/ui/Estado'
  *  (conductores) junto a un error que decía "15 sin resolver" (tractos):
  *  dos números que nunca podían cuadrar porque no contaban lo mismo. */
 type Vista = 'CONDUCTORES' | 'TRACTOREO' | 'EQUIPO_COMPLETO'
-type RowCategory = 'total' | 'assigned' | 'unassigned' | 'mismatch'
-const PAGE_SIZE = 10
+/** "No trabajando" son los que YA tienen motivo. Antes caían en "No
+ *  asignados" junto a los que todavía nadie miró, así que el número de lo
+ *  pendiente no bajaba nunca aunque el trabajo avanzara. Pedido del usuario
+ *  (07/09): al marcar una Acción, la fila se descuenta de No asignados y pasa
+ *  a contarse acá. */
+type RowCategory = 'total' | 'assigned' | 'unassigned' | 'noTrabajando' | 'mismatch'
+
+/** Cuántas filas por página. El usuario pidió 20/50/100 "para que equilibre
+ *  con la paginación": con 10 fijas y 81 tractos, revisar el día eran nueve
+ *  saltos de página. */
+const TAMANOS_DE_PAGINA = [20, 50, 100] as const
 
 const STATUS_LABEL: Record<DriverDayStatusValue, string> = {
   ASSIGNED: 'Asignado', UNASSIGNED: 'No asignado', MISMATCH: 'Por regularizar',
@@ -73,6 +83,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const [category, setCategory] = useState<RowCategory | ''>('')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(TAMANOS_DE_PAGINA[0])
+  const [orden, setOrden] = useState<Orden>(null)
+  /** Un conjunto de valores elegidos por columna. Vacío = sin filtro. */
+  const [filtros, setFiltros] = useState<Record<string, Set<string>>>({})
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchReason, setBatchReason] = useState('')
@@ -88,17 +102,23 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     queryFn: () => equipmentClosuresApi.get(fecha),
   })
 
-  useEffect(() => { setCategory(''); setQ(''); setPage(1); setSelected(new Set()) }, [vista])
-  useEffect(() => { setPage(1) }, [category, q])
+  useEffect(() => {
+    setCategory(''); setQ(''); setPage(1); setSelected(new Set())
+    // Los filtros y el orden son de ESTA tabla: al cambiar de eje las columnas
+    // cambian de significado y un filtro heredado dejaría la tabla vacía sin
+    // que se vea por qué.
+    setOrden(null); setFiltros({})
+  }, [vista])
+  useEffect(() => { setPage(1) }, [category, q, pageSize, filtros, orden])
 
-  async function handleSetReason(entityId: string, reasonId: string) {
+  async function handleSetReason(entityId: string, reasonId: string, comentario?: string | null) {
     setSavingReason(entityId)
     try {
       if (vista === 'CONDUCTORES') {
-        await dailyClosuresApi.setReason(entityId, fecha, reasonId)
+        await dailyClosuresApi.setReason(entityId, fecha, reasonId, comentario)
         await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
       } else {
-        await equipmentClosuresApi.setReason(entityId, fecha, reasonId)
+        await equipmentClosuresApi.setReason(entityId, fecha, reasonId, comentario)
         await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
       }
     } finally {
@@ -164,6 +184,9 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     todayTripId?: string | null  // el viaje de hoy, para "Ver viaje" de una fila sana
     carrierId?: string | null
     unassignedReasonId?: string | null
+    tripCode?: string | null
+    origin?: string | null
+    comentario?: string | null
     driverPendingDocsCritical?: boolean | null
     suggestedReasonId?: string | null
     lastKnownOperationType?: string | null
@@ -185,6 +208,9 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         todayTripId: d.today_trip_id,
         carrierId: d.carrier_id,
         unassignedReasonId: d.unassigned_reason_id,
+        tripCode: d.today_trip_code,
+        origin: d.today_trip_origin,
+        comentario: d.comentario,
         driverPendingDocsCritical: d.driver_pending_docs_critical,
         suggestedReasonId: d.suggested_reason_id,
         lastKnownOperationType: d.last_known_operation_type,
@@ -212,27 +238,76 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         todayTripId: e.trip_id,
         carrierId: e.carrier_id,
         unassignedReasonId: e.unassigned_reason_id,
+        tripCode: e.today_trip_code,
+        origin: e.today_trip_origin,
+        comentario: e.comentario,
       }))
 
+  // "No asignado" se parte en dos: los que todavía nadie miró y los que ya
+  // tienen motivo. Antes eran el mismo número, así que resolver una fila no
+  // movía el contador de lo pendiente.
+  const sinResolver = (r: Row) => r.statusLabel === 'No asignado' && !r.unassignedReasonId
+  const noTrabajando = (r: Row) => r.statusLabel === 'No asignado' && !!r.unassignedReasonId
+
   const categoryFiltered = (
-    category === 'total'      ? rows :
-    category === 'assigned'   ? rows.filter(r => r.statusLabel === 'Asignado') :
-    category === 'unassigned' ? rows.filter(r => r.statusLabel === 'No asignado') :
-    category === 'mismatch'   ? rows.filter(r => r.statusLabel === 'Por regularizar') :
-    rows.filter(r => r.statusLabel === 'Por regularizar' || (r.statusLabel === 'No asignado' && !r.unassignedReasonId))
+    category === 'total'        ? rows :
+    category === 'assigned'     ? rows.filter(r => r.statusLabel === 'Asignado') :
+    category === 'unassigned'   ? rows.filter(sinResolver) :
+    category === 'noTrabajando' ? rows.filter(noTrabajando) :
+    category === 'mismatch'     ? rows.filter(r => r.statusLabel === 'Por regularizar') :
+    rows.filter(r => r.statusLabel === 'Por regularizar' || sinResolver(r))
   )
-  const filtered = qLower === '' ? categoryFiltered : categoryFiltered.filter(r =>
+
+  // ── Filtro por columna, orden y paginación ───────────────────────────────
+  // Los valores de cada filtro salen de las filas que hay, no de un catálogo:
+  // el desplegable nunca ofrece algo que no está en la tabla.
+  const valorDeColumna = (r: Row, col: string): string | null => (
+    col === 'primary'  ? r.primary :
+    col === 'carrier'  ? r.carrierName :
+    col === 'plate'    ? r.secondary :
+    col === 'tripCode' ? r.tripCode ?? null :
+    col === 'origin'   ? r.origin ?? null :
+    col === 'status'   ? r.statusLabel : null
+  )
+  const COLUMNAS_FILTRABLES = ['primary', 'carrier', 'plate', 'tripCode', 'origin', 'status']
+  const valoresPorColumna: Record<string, string[]> = Object.fromEntries(
+    COLUMNAS_FILTRABLES.map(col => [
+      col,
+      Array.from(new Set(categoryFiltered.map(r => valorDeColumna(r, col)).filter((v): v is string => !!v)))
+        .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true })),
+    ]),
+  )
+
+  const columnFiltered = categoryFiltered.filter(r =>
+    COLUMNAS_FILTRABLES.every(col => {
+      const elegidos = filtros[col]
+      if (!elegidos || elegidos.size === 0) return true
+      const v = valorDeColumna(r, col)
+      return v !== null && elegidos.has(v)
+    }),
+  )
+
+  const buscados = qLower === '' ? columnFiltered : columnFiltered.filter(r =>
     r.primary.toLowerCase().includes(qLower)
     || (r.carrierName ?? '').toLowerCase().includes(qLower)
-    || (r.secondary ?? '').toLowerCase().includes(qLower),
+    || (r.secondary ?? '').toLowerCase().includes(qLower)
+    || (r.tripCode ?? '').toLowerCase().includes(qLower)
+    || (r.origin ?? '').toLowerCase().includes(qLower),
   )
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+
+  const filtered = orden
+    ? [...buscados].sort((a, b) =>
+        compararValores(valorDeColumna(a, orden.columna), valorDeColumna(b, orden.columna), orden.dir))
+    : buscados
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, totalPages)
-  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   const totalCount = rows.length
   const assignedCount = rows.filter(r => r.statusLabel === 'Asignado').length
-  const unassignedCount = rows.filter(r => r.statusLabel === 'No asignado').length
+  const unassignedCount = rows.filter(sinResolver).length
+  const noTrabajandoCount = rows.filter(noTrabajando).length
   const mismatchCount = rows.filter(r => r.statusLabel === 'Por regularizar').length
   const conductoresUtilizacionPct = drivers.total_drivers
     ? Math.round((drivers.assigned_count / drivers.total_drivers) * 1000) / 10
@@ -277,6 +352,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
           { id: 'total', label: 'Total', value: totalCount, tone: 'neutral' },
           { id: 'assigned', label: 'Asignados', value: assignedCount, tone: 'success' },
           { id: 'unassigned', label: 'No asignados', value: unassignedCount, tone: 'neutral' },
+          { id: 'noTrabajando', label: 'No trabajando', value: noTrabajandoCount, tone: 'neutral' },
           // MISMATCH sólo existe en el eje conductores: un tracto no puede
           // estar "en la empresa equivocada", esa pregunta es del conductor.
           ...(esConductores ? [{ id: 'mismatch', label: 'Por regularizar', value: mismatchCount, tone: 'danger' as const }] : []),
@@ -322,19 +398,34 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
       <div className="bg-white rounded-xl border border-border overflow-hidden">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+            <tr className="bg-gray-50 text-etiqueta font-bold text-informativo uppercase tracking-wide">
               <th className="text-left px-3 py-2 w-8" />
-              <th className="text-left px-3 py-2">Conductor</th>
-              <th className="text-left px-3 py-2">Empresa</th>
-              <th className="text-left px-3 py-2">{esConductores ? 'Tracto habitual' : 'Patente'}</th>
-              <th className="text-left px-3 py-2">Estado</th>
+              {([
+                ['primary',  'Conductor'],
+                ['carrier',  'Empresa'],
+                ['plate',    esConductores ? 'Tracto habitual' : 'Patente'],
+                ['tripCode', 'Nº viaje'],
+                ['origin',   'Local de origen'],
+                ['status',   'Estado'],
+              ] as const).map(([id, titulo]) => (
+                <CabeceraDeColumna
+                  key={id}
+                  id={id}
+                  titulo={titulo}
+                  valores={valoresPorColumna[id] ?? []}
+                  orden={orden}
+                  onOrden={setOrden}
+                  seleccionados={filtros[id] ?? new Set()}
+                  onFiltro={sel => setFiltros(f => ({ ...f, [id]: sel }))}
+                />
+              ))}
               <th className="text-left px-3 py-2">Acción</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
             {paged.length === 0 && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={8}>
                   {/* gray-300 en italica no llegaba a 4.5:1 de contraste, y
                       "sin resultados" hace dudar de si algo se rompio. */}
                   <Estado
@@ -369,8 +460,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                     )}
                   </div>
                 </td>
+                <td className="px-3 py-2 font-identificador text-informativo">{r.tripCode ?? '—'}</td>
+                <td className="px-3 py-2 text-informativo">{r.origin ?? '—'}</td>
                 <td className="px-3 py-2">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${r.statusCls}`}>
+                  <span className={`text-etiqueta font-semibold px-2 py-0.5 rounded-full border ${r.statusCls}`}>
                     {r.statusLabel}
                   </span>
                 </td>
@@ -388,6 +481,14 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                           <option key={reason.id} value={reason.id}>{reason.label}</option>
                         ))}
                       </select>
+                      {r.unassignedReasonId && (
+                        <ComentarioDeFila
+                          valor={r.comentario ?? ''}
+                          guardando={savingReason === r.entityId}
+                          onGuardar={texto => handleSetReason(r.entityId, r.unassignedReasonId!, texto)}
+                          etiqueta={`Comentario de ${r.primary}`}
+                        />
+                      )}
                       {!r.unassignedReasonId && r.driverPendingDocsCritical && r.suggestedReasonId && (
                         <button
                           type="button"
@@ -444,9 +545,26 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
 
       {filtered.length > 0 && (
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] text-gray-400">
-            {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
-          </p>
+          <div className="flex items-center gap-2.5">
+            <p className="text-etiqueta text-informativo">
+              {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
+              {filtered.length !== rows.length && ` de ${rows.length}`}
+            </p>
+            {/* Con 10 filas fijas y 81 tractos, revisar el día eran nueve
+                saltos de página. El usuario pidió 20/50/100 "para que
+                equilibre con la paginación". */}
+            <label className="flex items-center gap-1.5 text-etiqueta text-informativo">
+              Ver
+              <select
+                value={pageSize}
+                aria-label="Filas por página"
+                onChange={e => setPageSize(Number(e.target.value))}
+                className="text-etiqueta border border-border rounded-lg px-1.5 py-1 bg-white"
+              >
+                {TAMANOS_DE_PAGINA.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-3">
               <button
@@ -506,5 +624,40 @@ function TarjetaVista({
       <p className="text-etiqueta text-informativo mt-0.5">{utilizacionPct}% utilización</p>
       {alerta && <p className="text-etiqueta text-status-incidente mt-0.5">{alerta}</p>}
     </button>
+  )
+}
+
+/** El comentario de una fila del cierre.
+ *
+ *  Guarda al salir del campo y no con cada tecla: son 81 filas y un PATCH por
+ *  letra sería una tormenta de escrituras sobre la misma tabla que el GET ya
+ *  recalcula. Y sólo si cambió — volver a mandar el mismo texto reescribiría
+ *  `resolved_at` y movería la hora de una decisión que nadie tomó de nuevo.
+ *
+ *  El draft se resincroniza desde el prop: es la clase de bug que este
+ *  frontend ya vio tres veces (ContactCard, TransporterDocumentsPanel). */
+function ComentarioDeFila({
+  valor, guardando, onGuardar, etiqueta,
+}: {
+  valor:     string
+  guardando: boolean
+  onGuardar: (texto: string) => void
+  etiqueta:  string
+}) {
+  const [texto, setTexto] = useState(valor)
+  useEffect(() => { setTexto(valor) }, [valor])
+
+  return (
+    <input
+      type="text"
+      value={texto}
+      disabled={guardando}
+      aria-label={etiqueta}
+      placeholder="Comentario (opcional)"
+      onChange={e => setTexto(e.target.value)}
+      onBlur={() => { if (texto.trim() !== valor.trim()) onGuardar(texto) }}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      className="w-full text-etiqueta border border-border rounded-lg px-2 py-1 bg-white placeholder:text-informativo/60 focus:outline-none focus:ring-2 focus:ring-accent/20"
+    />
   )
 }

@@ -2324,7 +2324,7 @@ async def get_trip(
 
 @router.patch("/bulk-close")
 async def bulk_close_trips(
-    body: TripBulkCloseBody, pool=Depends(get_pool), user=Depends(require_editor),
+    body: TripBulkCloseBody, pool=Depends(get_pool), user=Depends(require_writer),
 ):
     """Selección masiva en el Diario (TripTable) para cerrar/finalizar
     varios viajes de una — mismo mecanismo que ya usa IndicatorSwitches por
@@ -2448,6 +2448,30 @@ async def patch_trip(
     # Antes de cualquier escritura, y antes de los `pop` de más abajo: acá
     # `data` todavía tiene los nombres tal como los mandó el cliente.
     _exigir_campos_permitidos(user, data)
+
+    # EL MOTIVO DE UN VIAJE ES DEL CATALOGO DEL VIAJE.
+    #
+    # `app.trips.unassigned_reason_id` tuvo dos escritores con catalogos
+    # distintos: bulk-close validaba el dominio desde el 2026-08-18 y este
+    # PATCH no, asi que el detalle del viaje en el Monitor escribia ids de
+    # DRIVER_REASON —"Vacaciones", "Panne"— sobre un campo que significa "por
+    # que WebCarga no tomo este viaje". Pedido del usuario (07/09): que se
+    # sincronice con el motivo de no asignacion DEL VIAJE.
+    #
+    # Se valida aca y no en el schema porque hace falta la base: el dominio
+    # vive en app.status_taxonomies. Medido antes de arreglarlo: 0 viajes
+    # tenian motivo escrito, asi que no hubo dato sucio que limpiar.
+    if data.get("unassigned_reason_id"):
+        del_dominio = await pool.fetchval(
+            "SELECT 1 FROM app.status_taxonomies "
+            "WHERE id = $1 AND domain = 'TRIP_UNASSIGNED_REASON'",
+            data["unassigned_reason_id"],
+        )
+        if not del_dominio:
+            raise HTTPException(
+                422,
+                "Motivo inválido: no existe o no pertenece al catálogo de no asignación del viaje",
+            )
 
     # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
     if "driver_name" in data:
