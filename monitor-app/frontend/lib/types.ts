@@ -1246,6 +1246,42 @@ export type CloseDayPending = {
 
 // ── Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md) ──
 // Fila plana por conductor×día — sin agregar, el pivot se arma en el cliente.
+/** GET /carriers/buscar — el buscador único del Directorio: un texto, tres
+ *  tipos de resultado. Existe porque el Directorio buscaba SOLO por nombre o
+ *  RUT de empresa: escribir el apellido de un conductor devolvía "Sin
+ *  resultados" sobre alguien que existe, y la patente igual. Pablo, 04/09:
+ *  *"en el directorio debería ser capaz de buscar todo: empresa, conductor,
+ *  patente"*. */
+export type DirectorioBusqueda = {
+  q: string
+  empresas: {
+    id: string
+    business_name: string
+    tax_id: string | null
+    operational_status: CarrierOperationalStatus
+  }[]
+  conductores: {
+    id: string
+    full_name: string
+    tax_id: string | null
+    operational_status: OperationalStatus
+    /** null cuando el padrón no le conoce empresa activa. Son 10 personas hoy,
+     *  y no tienen ficha donde abrirse: la propuesta de vínculo vive en el
+     *  pre-cierre. */
+    carrier_id: string | null
+    carrier_name: string | null
+  }[]
+  vehiculos: {
+    id: string
+    license_plate: string
+    asset_type: string
+    operational_status: OperationalStatus
+    webcarga_operation_type_label: string | null
+    carrier_id: string | null
+    carrier_name: string | null
+  }[]
+}
+
 export type DailyClosureReportRow = Omit<
   DriverDayStatusRow,
   | 'resolved_by' | 'resolved_at' | 'driver_pending_docs_critical' | 'suggested_reason_id' | 'trip_id'

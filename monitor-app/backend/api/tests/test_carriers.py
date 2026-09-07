@@ -1106,3 +1106,62 @@ def test_get_fleet_driver_gap_no_colisiona_con_ruta_carrier_id():
 
     assert res.status_code == 200
     assert res.json() == {"rows": []}
+
+# ── El buscador unico del Directorio (2026-09-07) ──────────────────────────
+# Pablo, 04/09: *"en el directorio deberia ser capaz de buscar todo: empresa,
+# conductor, patente"*. Buscar "Pardo" devolvia "Sin resultados, 0 empresas"
+# sobre un conductor que existe; la patente, igual.
+
+
+def test_buscar_devuelve_los_tres_grupos():
+    pool = AsyncMock()
+    pool.fetch.side_effect = [
+        [{"id": "c1", "business_name": "Acme", "tax_id": "1-9", "operational_status": "ACTIVE"}],
+        [{"id": "d1", "full_name": "Juan Perez", "tax_id": "11111111-1",
+          "operational_status": "ACTIVE", "carrier_id": "c1", "carrier_name": "Acme"}],
+        [{"id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION",
+          "operational_status": "ACTIVE", "webcarga_operation_type_label": "Tractoreo",
+          "carrier_id": "c1", "carrier_name": "Acme"}],
+    ]
+    client = make_client(pool)
+
+    body = client.get("/api/v1/carriers/buscar?q=acme").json()
+
+    assert [e["business_name"] for e in body["empresas"]] == ["Acme"]
+    assert [d["full_name"] for d in body["conductores"]] == ["Juan Perez"]
+    assert [v["license_plate"] for v in body["vehiculos"]] == ["ABCD12"]
+
+
+def test_buscar_no_dispara_consultas_con_una_sola_letra():
+    """Una letra devuelve el padron entero, que no es una respuesta: es la
+    lista completa con otro nombre, y tres consultas a la base por tecla."""
+    pool = AsyncMock()
+    client = make_client(pool)
+
+    body = client.get("/api/v1/carriers/buscar?q=a").json()
+
+    assert body == {"q": "a", "empresas": [], "conductores": [], "vehiculos": []}
+    pool.fetch.assert_not_called()
+
+
+def test_buscar_compara_rut_y_patente_por_su_forma_canonica():
+    """`canonical_rut` y `canonical_plate` viven en Postgres desde el 17/08 y
+    durante meses no las llamaba nadie desde Python — ese fue el bug critico #1
+    de la minuta del 25/08. Aca se usan para que "18.659.820-2" y "dt by52"
+    encuentren lo mismo que el texto exacto."""
+    from app.routers.carriers import (
+        _SQL_BUSCAR_CONDUCTORES, _SQL_BUSCAR_EMPRESAS, _SQL_BUSCAR_VEHICULOS,
+    )
+    assert "public.canonical_rut($1)" in _SQL_BUSCAR_EMPRESAS
+    assert "public.canonical_rut($1)" in _SQL_BUSCAR_CONDUCTORES
+    assert "public.canonical_plate($1)" in _SQL_BUSCAR_VEHICULOS
+
+
+def test_buscar_lee_las_tablas_base_no_las_vistas_materializadas():
+    """El Directorio es donde se edita: un alta hecha hace un minuto tiene que
+    aparecer, y `app.carrier_*_roster` se refresca aparte."""
+    from app.routers.carriers import _SQL_BUSCAR_CONDUCTORES, _SQL_BUSCAR_VEHICULOS
+    assert "public.drivers" in _SQL_BUSCAR_CONDUCTORES
+    assert "public.assets" in _SQL_BUSCAR_VEHICULOS
+    assert "carrier_driver_roster" not in _SQL_BUSCAR_CONDUCTORES
+    assert "carrier_asset_roster" not in _SQL_BUSCAR_VEHICULOS

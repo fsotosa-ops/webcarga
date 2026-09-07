@@ -10,7 +10,7 @@ import type { CarrierListResponse } from '@/lib/types'
 vi.mock('next/navigation', () => ({ useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { list: vi.fn(), create: vi.fn() },
+  carriersApi: { list: vi.fn(), create: vi.fn(), buscar: vi.fn() },
 }))
 
 function emptyResponse(): CarrierListResponse {
@@ -38,6 +38,9 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof createClient>)
   vi.mocked(carriersApi.list).mockReset().mockResolvedValue(emptyResponse())
   vi.mocked(carriersApi.create).mockReset()
+  vi.mocked(carriersApi.buscar).mockReset().mockResolvedValue({
+    q: '', empresas: [], conductores: [], vehiculos: [],
+  })
 })
 
 describe('EmpresasTransportePage', () => {
@@ -71,5 +74,105 @@ describe('EmpresasTransportePage', () => {
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalledWith(
       expect.objectContaining({ operational_status: ['LEGACY_INACTIVE', 'INACTIVE'] }),
     ))
+  })
+  // ── El buscador único (2026-09-07) ────────────────────────────────────────
+  // Buscar "Pardo" —un conductor que existe— devolvía "Sin resultados, 0
+  // empresas". La búsqueda por conductor y por patente vivía en Certificación,
+  // donde no se puede dar de baja a nadie ni moverlo de empresa.
+
+  it('buscar un apellido muestra al conductor, con su RUT y su empresa', async () => {
+    vi.mocked(carriersApi.buscar).mockResolvedValue({
+      q: 'pardo',
+      empresas: [],
+      conductores: [{
+        id: 'd1', full_name: 'Manuel Pardo', tax_id: '11111111-1',
+        operational_status: 'ACTIVE', carrier_id: 'c9', carrier_name: 'Transportes Sur',
+      }],
+      vehiculos: [],
+    })
+    renderPage()
+
+    fireEvent.change(screen.getByLabelText('Buscar empresa, conductor o patente'), {
+      target: { value: 'pardo' },
+    })
+
+    expect(await screen.findByText('Manuel Pardo')).toBeInTheDocument()
+    // El RUT en la fila: es el dato con el que se decide cuál duplicado queda,
+    // y vivía en un solo lugar de la app, adentro del panel.
+    expect(screen.getByText('11111111-1')).toBeInTheDocument()
+    expect(screen.getByText('Transportes Sur')).toBeInTheDocument()
+  })
+
+  it('el conductor encontrado lleva a su panel ya abierto, sin pasar por la empresa', async () => {
+    vi.mocked(carriersApi.buscar).mockResolvedValue({
+      q: 'pardo',
+      empresas: [],
+      conductores: [{
+        id: 'd1', full_name: 'Manuel Pardo', tax_id: '11111111-1',
+        operational_status: 'ACTIVE', carrier_id: 'c9', carrier_name: 'Transportes Sur',
+      }],
+      vehiculos: [],
+    })
+    renderPage()
+    fireEvent.change(screen.getByLabelText('Buscar empresa, conductor o patente'), {
+      target: { value: 'pardo' },
+    })
+
+    const fila = await screen.findByRole('link', { name: /Manuel Pardo/ })
+    expect(fila).toHaveAttribute('href', '/dashboard/carriers/c9?tab=conductores&driver=d1')
+  })
+
+  it('la patente encontrada lleva al equipo ya abierto', async () => {
+    vi.mocked(carriersApi.buscar).mockResolvedValue({
+      q: 'DTBY52',
+      empresas: [],
+      conductores: [],
+      vehiculos: [{
+        id: 'a1', license_plate: 'DTBY52', asset_type: 'TRACTOCAMION',
+        operational_status: 'ACTIVE', webcarga_operation_type_label: 'Tractoreo',
+        carrier_id: 'cf', carrier_name: 'La Fortaleza',
+      }],
+    })
+    renderPage()
+    fireEvent.change(screen.getByLabelText('Buscar empresa, conductor o patente'), {
+      target: { value: 'DTBY52' },
+    })
+
+    const fila = await screen.findByRole('link', { name: /DTBY52/ })
+    expect(fila).toHaveAttribute('href', '/dashboard/carriers/cf?tab=equipos&asset=a1')
+  })
+
+  it('un conductor sin empresa se muestra igual, y no finge un destino', async () => {
+    // Son 10 personas hoy. No tienen ficha donde abrirse; un link que lleva a
+    // una lista vacía es peor que decir que no hay a dónde ir.
+    vi.mocked(carriersApi.buscar).mockResolvedValue({
+      q: 'huerfano',
+      empresas: [],
+      conductores: [{
+        id: 'd2', full_name: 'Conductor Huerfano', tax_id: '22222222-2',
+        operational_status: 'ACTIVE', carrier_id: null, carrier_name: null,
+      }],
+      vehiculos: [],
+    })
+    renderPage()
+    fireEvent.change(screen.getByLabelText('Buscar empresa, conductor o patente'), {
+      target: { value: 'huerfano' },
+    })
+
+    expect(await screen.findByText('Conductor Huerfano')).toBeInTheDocument()
+    expect(screen.getByText('sin empresa')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Conductor Huerfano/ })).not.toBeInTheDocument()
+  })
+
+  it('con una sola letra no pide nada: el padrón entero no es una respuesta', async () => {
+    renderPage()
+    await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText('Buscar empresa, conductor o patente'), {
+      target: { value: 'a' },
+    })
+
+    await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
+    expect(carriersApi.buscar).not.toHaveBeenCalled()
   })
 })

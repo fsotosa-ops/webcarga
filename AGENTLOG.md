@@ -11,6 +11,65 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-09-07 — Ronda 154: el Directorio sale de Certificación, y busca las tres cosas
+
+Auditoría pedida por el usuario: *"¿por qué no están separados? La UX de empresas tiene muchos
+clics"*. Medido en la app desplegada, no leído.
+
+## Estaban cruzados al revés
+
+El menú tenía `Certificación → { Empresas, Sin clasificar, Directorio }`. Y cada módulo tenía el
+trabajo del otro:
+
+- **Certificación** —el módulo documental— era el que sabía buscar por Conductor, Vehículo y
+  Requisito, y el que mostraba el resumen del padrón (250 empresas, 80 tractos, 80 conductores).
+- **El Directorio** —donde se da de baja, se transfiere y se activa— buscaba **sólo** por nombre o
+  RUT de empresa. Medido: "Pardo" → *Sin resultados, 0 empresas*, sobre un conductor que existe.
+  "DTBY52" → *Sin resultados*, sobre un tracto que existe.
+
+El caso de Pablo —*"necesito el RUT para saber qué conductor dejar"*— costaba **6 clics y saber la
+empresa de antemano**, porque el RUT vivía en un solo lugar de toda la app: dentro del panel de
+detalle. Por Certificación eran 3 clics a un callejón sin salida: esa tabla no muestra RUT.
+
+Y el resto de la app ya le daba la razón a Pablo: de los diez enlaces con que el Monitor y el Cierre
+mandan a arreglar algo, **nueve apuntan a `/dashboard/carriers`** y uno solo a
+`/dashboard/compliance`. Las pantallas operativas ya trataban al Directorio como el lugar donde se
+gestiona; el menú lo escondía adentro del módulo documental.
+
+## Lo que se hizo
+
+1. **El Directorio salió del grupo** y quedó como módulo propio, entre Operaciones y Certificación.
+   El render pasó a una sola lista ordenada: antes grupos y hojas iban en dos bloques, así que una
+   hoja no podía ir *entre* dos grupos.
+2. **Un solo buscador, tres tipos de resultado** (`GET /carriers/buscar`). RUT y patente se comparan
+   por su forma canónica, así que "18.659.820-2" y "dt by52" encuentran lo mismo que el texto
+   exacto — `canonical_rut` y `canonical_plate` estaban en Postgres desde el 17/08 sin que las
+   llamara nadie.
+3. **Cada resultado abre su panel directo**, con `?driver=` / `?asset=`. Esos dos parámetros **ya
+   los leía la ficha** desde antes y no apuntaba nadie: otra capacidad sin puerta. De 6 clics a 1, y
+   la vista pasa a ser direccionable.
+4. Un conductor **sin empresa** se muestra igual, con la marca, y sin link: no tiene ficha donde
+   abrirse. Son 10 personas, y su vínculo lo propone el pre-cierre.
+
+## Lo que NO se hizo, y por qué
+
+- **Facturación queda fuera de alcance** (definición del usuario). Eso cierra P1 de la reunión del
+  04/09 sin discutirla.
+- **El bug de Fabián** —"crear el conductor desde Empresas no lo asigna"— no se pudo verificar sin
+  crear registros reales en producción. El alta se unificó en un componente compartido el 27/08 y
+  las dos pantallas le pasan el `carrierId`; Felipe ya le había dicho en la reunión que *"está
+  marcando bien en la asignación"*. Lo tiene que reproducir Fabián sobre el build de hoy.
+- La búsqueda de Certificación **sigue sin ser direccionable** (`?group=driver` se ignora, siempre
+  arranca en "Empresa"). Anotado, no tocado.
+
+## Lo medido
+
+**Frontend 1.353 en verde, backend 997** (con los 190 de integración). Los dos trinquetes visuales
+sin moverse: 1.721 y 262. Las tres consultas del buscador corridas contra la base real —"Pardo",
+"DTBY52", "dt by52" y un RUT con puntos— antes de escribir un solo mock, y los cuatro tests nuevos
+de la UI verificados por mutación. Click-through local: buscar el apellido devuelve al conductor con
+su RUT y su empresa, y el clic abre el panel con Transferir / Dar de baja / Quitar del roster.
+
 ### 2026-09-07 — Ronda 153: el eje de bajas, y una alarma que yo mismo había inflado
 
 Bloque 2 del plan. Tres arreglos y **una corrección a lo que había escrito en la Ronda 152**.

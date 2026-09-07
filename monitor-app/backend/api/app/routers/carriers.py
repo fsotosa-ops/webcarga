@@ -370,6 +370,90 @@ SELECT
 """
 
 
+# El buscador unico del Directorio.
+#
+# POR QUE EXISTE. Pablo, 04/09: *"en el directorio deberia ser capaz de buscar
+# todo. Ya todo, me refiero a empresa, conductor, patente"*. Hasta el
+# 2026-09-07 el Directorio buscaba SOLO por nombre o RUT de empresa: escribir
+# el apellido de un conductor devolvia "Sin resultados", y la patente tambien.
+# La busqueda por conductor y por vehiculo existia, pero en Certificacion —el
+# modulo documental—, donde no se puede dar de baja ni transferir a nadie.
+#
+# Va contra las tablas base y no contra `app.carrier_*_roster`: son vistas
+# materializadas, y esta es la pantalla donde se edita. Un alta hecha hace un
+# minuto tiene que aparecer.
+#
+# El RUT y la patente se comparan por su forma canonica —`canonical_rut` y
+# `canonical_plate` viven en Postgres desde el 17/08— para que "18.659.820-2",
+# "186598202" y "dt by52" encuentren lo mismo que el texto exacto.
+_SQL_BUSCAR_EMPRESAS = """
+SELECT c.id, c.business_name, c.tax_id, c.operational_status
+FROM public.carriers c
+WHERE c.business_name ILIKE '%' || $1 || '%'
+   OR c.tax_id ILIKE '%' || $1 || '%'
+   OR c.tax_id = public.canonical_rut($1)
+ORDER BY (c.operational_status = 'ACTIVE') DESC, c.business_name
+LIMIT $2
+"""
+
+_SQL_BUSCAR_CONDUCTORES = """
+SELECT d.id, d.full_name, d.tax_id, d.operational_status,
+       c.id AS carrier_id, c.business_name AS carrier_name
+FROM public.drivers d
+LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
+LEFT JOIN public.carriers c ON c.id = da.carrier_id
+WHERE d.full_name ILIKE '%' || $1 || '%'
+   OR d.tax_id ILIKE '%' || $1 || '%'
+   OR d.tax_id = public.canonical_rut($1)
+ORDER BY (d.operational_status = 'ACTIVE') DESC, d.full_name
+LIMIT $2
+"""
+
+_SQL_BUSCAR_VEHICULOS = """
+SELECT a.id, a.license_plate, a.asset_type, a.operational_status,
+       wot.label AS webcarga_operation_type_label,
+       c.id AS carrier_id, c.business_name AS carrier_name
+FROM public.assets a
+LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+LEFT JOIN public.carriers c ON c.id = aa.carrier_id
+LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
+WHERE a.license_plate ILIKE '%' || $1 || '%'
+   OR a.license_plate = public.canonical_plate($1)
+ORDER BY (a.operational_status = 'ACTIVE') DESC, a.license_plate
+LIMIT $2
+"""
+
+
+@router.get("/buscar")
+async def buscar_en_el_directorio(
+    q: str = Query("", description="Empresa, conductor o patente — un solo campo para los tres"),
+    limit: int = Query(10, ge=1, le=50, description="Por grupo, no en total"),
+    pool=Depends(get_pool),
+    _=Depends(get_current_user),
+):
+    """Un texto, tres tipos de resultado.
+
+    Va ANTES de `GET /{carrier_id}` por la misma razon que /directorio: si se
+    declarara despues, un GET a /buscar entraria por esa ruta y contestaria
+    404 de empresa no encontrada.
+    """
+    termino = q.strip()
+    if len(termino) < 2:
+        # Con una letra sola el resultado es todo el padron, que no es una
+        # respuesta: es la lista completa con otro nombre.
+        return {"q": termino, "empresas": [], "conductores": [], "vehiculos": []}
+
+    empresas = await pool.fetch(_SQL_BUSCAR_EMPRESAS, termino, limit)
+    conductores = await pool.fetch(_SQL_BUSCAR_CONDUCTORES, termino, limit)
+    vehiculos = await pool.fetch(_SQL_BUSCAR_VEHICULOS, termino, limit)
+    return {
+        "q": termino,
+        "empresas": [dict(r) for r in empresas],
+        "conductores": [dict(r) for r in conductores],
+        "vehiculos": [dict(r) for r in vehiculos],
+    }
+
+
 @router.get("/directorio")
 async def get_directorio(pool=Depends(get_pool), _=Depends(get_current_user)):
     """Cuántas empresas hay, cuántas operan, y con qué flota.

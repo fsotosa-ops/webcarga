@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
-  Truck, Users, LogOut,
+  Truck, Users, LogOut, BookUser,
   ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -45,26 +45,23 @@ const NAV_GROUPS: NavGroupDef[] = [
   // NO se parten: siguen adentro de Empresas, porque ésas sí son cuatro
   // maneras de mirar la misma lista.
   //
-  // El Directorio (/dashboard/carriers) VOLVIÓ acá el 2026-08-27. El rediseño
-  // del 19/08 (e75d7d93) reemplazó su entrada por las dos de Certificación y no
-  // dejó ninguna en su lugar, así que quedó inalcanzable por navegación: es la
-  // ÚNICA pantalla donde se da de alta un conductor o un vehículo dentro de una
-  // empresa, donde se edita el tipo de operación del tracto, y es el destino al
-  // que apuntan los enlaces de escape del pre-cierre
-  // (PreCierrePendingSection.tsx). Sin ella, un "conductor no registrado" que
-  // bloquea el cierre no se puede resolver desde ninguna parte.
+  // El Directorio SALIÓ de acá el 2026-09-07 y quedó como módulo propio, más
+  // arriba. Pablo, 04/09: *"lo que yo haría para no confundir es directorio
+  // sacarlo de certificación. Y dejarlo arriba"* / *"lo que es empresas,
+  // manténlo solo para subir documentos"*.
   //
-  // Se llama "Directorio" y no "Empresas" a propósito: ya hay una entrada
-  // "Empresas" cinco líneas más arriba y son objetos distintos vistos desde
-  // trabajos distintos. Dos ítems con el mismo nombre no son navegación, son
-  // una adivinanza.
+  // No es una preferencia de menú: son dos trabajos. El Directorio responde
+  // "quién está operando, y quiénes son su gente" —y es donde se da de baja, se
+  // transfiere y se activa—; Certificación responde "qué documento le falta a
+  // esta empresa". Y el resto de la app ya lo trataba así: de los diez enlaces
+  // con que el Monitor y el Cierre mandan a arreglar algo, NUEVE apuntan a
+  // /dashboard/carriers y uno solo a /dashboard/compliance.
   {
     label: 'Certificación',
     icon:  BadgeCheck,
     items: [
       { href: '/dashboard/compliance',       label: 'Empresas' },
       { href: '/dashboard/compliance/inbox', label: 'Sin clasificar', badge: 'inbox' },
-      { href: '/dashboard/carriers',         label: 'Directorio' },
     ],
   },
 ]
@@ -75,9 +72,23 @@ const NAV_GROUPS: NavGroupDef[] = [
 // se fue con ella. Un campo del tipo y una rama de render inalcanzables se leen
 // como una capacidad que existe, y no existe.
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: '/dashboard/insurance', label: 'Seguros',   icon: Shield },
-  { href: '/dashboard/pricing',   label: 'Tarifario', icon: Receipt },
+  { href: '/dashboard/carriers',  label: 'Directorio', icon: BookUser },
+  { href: '/dashboard/insurance', label: 'Seguros',    icon: Shield },
+  { href: '/dashboard/pricing',   label: 'Tarifario',  icon: Receipt },
 ]
+
+// El orden del menu, con grupos y hojas mezclados. Antes se renderizaban en
+// dos bloques —primero todos los grupos, despues todas las hojas—, asi que una
+// hoja no podia ir ENTRE dos grupos: el Directorio habria caido debajo de
+// Certificacion, que es de donde acaba de salir.
+const NAV_ORDEN: (NavGroupDef | (typeof NAV_ITEMS)[number])[] = [
+  NAV_GROUPS[0],                                              // Operaciones
+  NAV_ITEMS[0],                                               // Directorio
+  NAV_GROUPS[1],                                              // Certificación
+  NAV_ITEMS[1], NAV_ITEMS[2],                                 // Seguros, Tarifario
+]
+
+const esGrupo = (e: (typeof NAV_ORDEN)[number]): e is NavGroupDef => 'items' in e
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahi, se listan
 // los items de los grupos ya aplanados junto a los demas.
@@ -286,17 +297,19 @@ export default function Sidebar({ role }: SidebarProps) {
 
         {/* ── Main nav ── */}
         <nav className="flex-1 flex flex-col px-2.5 py-3 gap-0.5 overflow-hidden">
-          {NAV_GROUPS.map(group => (
-            <NavGroup
-              key={group.label}
-              group={group}
-              pathname={pathname}
-              collapsed={collapsed}
-              inboxCount={inboxCount}
-            />
-          ))}
-
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {NAV_ORDEN.map(entrada => {
+            if (esGrupo(entrada)) {
+              return (
+                <NavGroup
+                  key={entrada.label}
+                  group={entrada}
+                  pathname={pathname}
+                  collapsed={collapsed}
+                  inboxCount={inboxCount}
+                />
+              )
+            }
+            const { href, label, icon: Icon } = entrada
             const active = href === activeHref
             return (
               <Link

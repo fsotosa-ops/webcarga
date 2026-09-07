@@ -13,6 +13,7 @@ import type {
   FleetDriverGapRow,
   PolicyStatus,
   Directorio,
+  DirectorioBusqueda,
 } from '@/lib/types'
 import { apiFetch, apiFetchBlob } from './client'
 
@@ -108,6 +109,12 @@ export const carriersApi = {
    *  ocho viajes a la base para dibujar una tira de cifras es lo que vuelve
    *  lenta una portada. */
   directorio: () => apiFetch<Directorio>('/api/v1/carriers/directorio'),
+
+  /** Un texto, tres tipos de resultado: empresa, conductor y patente. El
+   *  backend compara RUT y patente por su forma canónica, así que "18.659.820-2"
+   *  y "dt by52" encuentran lo mismo que el texto exacto. */
+  buscar: (q: string) =>
+    apiFetch<DirectorioBusqueda>(`/api/v1/carriers/buscar?q=${encodeURIComponent(q)}`),
 
   list: (params?: CarrierListParams) => {
     const qs = new URLSearchParams()

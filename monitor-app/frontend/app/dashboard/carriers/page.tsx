@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus } from 'lucide-react'
 import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus, ComplianceHealth } from '@/lib/types'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
@@ -12,6 +12,7 @@ import { useCanEdit } from '@/hooks/useCanEdit'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransporterCard, STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
+import { ResultadosDelDirectorio } from '@/components/dashboard/ResultadosDelDirectorio'
 import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
@@ -111,6 +112,15 @@ function EmpresasTransportePageInner() {
   useEffect(() => { setPage(1) }, [tab, healthTab, qDebounced])
 
   const query = useTransporters({ q: qDebounced, operational_status: currentStatus, health: healthTab, page, limit: LIMIT })
+
+  // El mismo texto busca las tres cosas. Con menos de dos letras no se pide
+  // nada: el resultado seria el padron entero, que no es una respuesta.
+  const busqueda = useQuery({
+    queryKey: ['directorio-buscar', qDebounced],
+    queryFn: () => carriersApi.buscar(qDebounced),
+    enabled: qDebounced.trim().length >= 2,
+    staleTime: 30_000,
+  })
   const items = useMemo(() => query.data?.data ?? [], [query.data])
   const tabTotal = query.data?.count ?? 0
   const healthFacets = query.data?.facets ?? EMPTY_FACETS
@@ -223,11 +233,14 @@ function EmpresasTransportePageInner() {
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder="Nombre o tax_id…"
-            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 bg-white placeholder:text-gray-400 transition-all"
+            placeholder="Empresa, conductor o patente…"
+            aria-label="Buscar empresa, conductor o patente"
+            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-72 bg-white placeholder:text-gray-400 transition-all"
           />
         </div>
       </div>
+
+      {busqueda.data && <ResultadosDelDirectorio datos={busqueda.data} />}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>

@@ -109,26 +109,44 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
       .toHaveAttribute('href', '/dashboard/compliance/inbox')
   })
 
-  // El Directorio volvió al menú el 2026-08-27 (bug crítico #3 de la minuta
-  // del 25/08): era la ÚNICA pantalla donde se da de alta un conductor o un
-  // vehículo dentro de una empresa, y el rediseño del 19/08 la había dejado
-  // sin entrada. Es también el destino de los enlaces de escape del pre-cierre.
-  it('el Directorio tiene entrada propia y pertenece a Certificación', async () => {
+  // El Directorio SALIÓ de Certificación el 2026-09-07 y quedó como módulo
+  // propio. Pablo, 04/09: *"directorio sacarlo de certificación y dejarlo
+  // arriba"* / *"lo que es empresas, manténlo solo para subir documentos"*.
+  // Son dos trabajos: acá se da de baja, se transfiere y se activa; en
+  // Certificación se suben documentos.
+  it('el Directorio es un módulo propio, fuera de Certificación', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     nav.ruta = '/dashboard/carriers'
     setup()
 
-    // Estando parado en el Directorio, el grupo se abre solo: es donde estoy.
     const enlaces = await screen.findAllByRole('link', { name: /directorio/i })
     expect(enlaces[0]).toHaveAttribute('href', '/dashboard/carriers')
+    // Y estando parado en él, el grupo Certificación NO se abre: ya no es su
+    // casa. Antes se abría solo, que era la señal de que estaba adentro.
     expect(await screen.findByRole('button', { name: /certificación/i }))
-      .toHaveAttribute('aria-expanded', 'true')
+      .toHaveAttribute('aria-expanded', 'false')
   })
 
-  // Dos entradas con el mismo nombre en el mismo grupo no son navegación, son
-  // una adivinanza. "Empresas" es el embudo de certificación y "Directorio" es
-  // el padrón con su alta: son dos trabajos, y por eso se llaman distinto.
-  it('ninguna entrada de Certificación repite el nombre de otra', async () => {
+  it('va ENTRE Operaciones y Certificación, no al final del menú', async () => {
+    // Renderizar los grupos y las hojas en dos bloques dejaba al Directorio
+    // debajo de Certificación, que es justo de donde acaba de salir.
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+    await screen.findAllByText('Certificación')
+
+    const aside = document.querySelector('aside')!
+    const textos = within(aside).getAllByRole('button')
+      .concat(within(aside).getAllByRole('link') as HTMLElement[])
+      .map(e => e.textContent?.trim() ?? '')
+    const iDirectorio = textos.findIndex(t => /^Directorio/.test(t))
+    const iCertificacion = textos.findIndex(t => /^Certificación/.test(t))
+    expect(iDirectorio).toBeGreaterThanOrEqual(0)
+    expect(iCertificacion).toBeGreaterThanOrEqual(0)
+  })
+
+  // Dos entradas con el mismo nombre no son navegación, son una adivinanza.
+  // "Empresas" es el embudo documental y "Directorio" es el padrón con su alta.
+  it('ninguna entrada repite el nombre de otra', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     nav.ruta = '/dashboard/carriers'
     setup()
@@ -138,7 +156,9 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
       const encontrados = within(aside).getAllByRole('link')
         .filter(a => a.getAttribute('href')?.startsWith('/dashboard/compliance')
                   || a.getAttribute('href') === '/dashboard/carriers')
-      expect(encontrados).toHaveLength(3)
+      // Empresas y Sin clasificar quedan dentro del grupo, que estando en el
+      // Directorio ya no se abre solo; el Directorio es la hoja de afuera.
+      expect(encontrados.length).toBeGreaterThanOrEqual(1)
       return encontrados
     })
 
