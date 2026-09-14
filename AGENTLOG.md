@@ -87,6 +87,30 @@ rojo su test.
 Ojo con las corridas del frontend: la suite completa da timeouts de 5000 ms si hay otra corrida en
 paralelo. En limpio da 1.371/1.371 y cero timeouts.
 
+## El UAT encontró tres defectos que las 1.371 pruebas no podían ver
+
+El usuario preguntó si había hecho regresión **y UAT**. Regresión sí; UAT no, y ahí estaba el hueco.
+Se levantó la app local contra la base real y se hizo el click-through sobre el 07-09.
+
+1. **La barra de selección de "Viajes" no se pegaba.** `position: sticky` no puede salirse de la caja
+   de su padre, y el lienzo del cierre tenía `overflow-hidden` para redondear esquinas — eso lo
+   convierte en el *scrollport* de cualquier sticky de adentro, y como no scrollea, la barra no se
+   movía. **2.751 px fuera de lo visible** con la página arriba.
+2. **El generador de carga salía en minúsculas** en "Viajes" (`walmart`) mientras "Flota del día"
+   mostraba `Walmart` en la columna que se llama **igual**.
+3. **En teléfono la tabla quedaba cortada**: 1.030 px dentro de un contenedor con
+   `overflow-x: hidden`, sin manera de llegar a Acción ni a Comentario.
+
+**Y mi test de la barra no probaba nada**: afirmaba que el `className` contenía `sticky`, y eso era
+cierto con la barra rota. jsdom no tiene layout. Peor: el test de reemplazo, el que fija la causa
+raíz, **tampoco servía en su primera versión** — el selector agarraba otra card anterior del DOM y
+pasaba con el bug puesto. Lo delató la mutación, no la lectura.
+
+**Lo verificado en pantalla:** SVLT43 dice "No asignado"; la columna nueva muestra Walmart; se
+escribió un comentario en una fila **sin motivo** y otro en una fila **asignada**, y los dos
+sobrevivieron a un recompute posterior (`computed_at` 22:29:55 contra el comentario de 22:29:39) —
+los primeros comentarios guardados en la historia del proyecto, borrados después.
+
 ## Checklist — siguiente paso exacto
 
 1. **Las dos migraciones están APLICADAS y verificadas.** El usuario conectó el proyecto
