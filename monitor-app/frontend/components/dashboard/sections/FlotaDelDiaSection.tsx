@@ -403,8 +403,17 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
-        <table className="w-full text-xs">
+      {/* `overflow-x-auto`, no `hidden` (14/09): la tabla mide ~1.030 px y en un
+          telefono de 390 quedaba CORTADA sin manera de llegar a las dos ultimas
+          columnas — Accion y Comentario, justo las que se usan para cerrar el
+          dia. Medido en el navegador a 390 px. Ya pasaba con 9 columnas; la
+          decima lo empeoro.
+          Contrapartida asumida: el desplegable de filtro de `CabeceraDeColumna`
+          es `absolute` y cuelga del `th`, asi que con MUY pocas filas puede
+          quedar recortado por abajo. Medido con la tabla llena: le sobran 707
+          px. La solucion de fondo es un portal, y eso es otro alcance. */}
+      <div className="bg-white rounded-xl border border-border overflow-x-auto">
+        <table className="w-full min-w-[60rem] text-xs">
           <thead>
             <tr className="bg-gray-50 text-etiqueta font-bold text-informativo uppercase tracking-wide">
               <th className="text-left px-3 py-2 w-8" />

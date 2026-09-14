@@ -244,8 +244,15 @@ function ClosuresCenterPageInner() {
 
       {/* Un solo lienzo: tab bar arriba, panel de contenido abajo (solo la
           tab activa se renderiza), "Confirmar cierre" fijo al pie. */}
-      <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
-        <div role="tablist" className="flex items-center gap-1 bg-gray-50 border-b border-border px-3 py-2 overflow-x-auto">
+      {/* Sin `overflow-hidden` (14/09): recortaba para redondear las esquinas,
+          pero de paso convertia a esta card en el scrollport de cualquier
+          `position: sticky` de adentro — y como la card no scrollea, la barra
+          de seleccion de "Viajes" no se pegaba nunca. Medido en el navegador:
+          con la pagina arriba quedaba 2.751 px fuera de lo visible. Las
+          esquinas las redondean ahora la barra de pestanas y el pie, que son
+          los dos unicos hijos con fondo propio. */}
+      <div className="bg-white rounded-2xl border border-border shadow-sm">
+        <div role="tablist" className="flex items-center gap-1 bg-gray-50 border-b border-border px-3 py-2 overflow-x-auto rounded-t-2xl">
           {TABS.map(t => {
             const Icon = t.icon
             const isActive = tab === t.id
@@ -302,7 +309,7 @@ function ClosuresCenterPageInner() {
           {tab === 'reporte' && <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />}
         </div>
 
-        <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3">
+        <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">
           <div>
             <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
             <p className="text-xs text-gray-500 mt-0.5">

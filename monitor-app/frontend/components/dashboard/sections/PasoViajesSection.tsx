@@ -126,6 +126,38 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
         tono={bloquean && bloquean > 0 ? 'atencion' : 'resuelto'}
       />
 
+      {n > 0 && (
+        // Pegada al TECHO del area de scroll, no al pie. `position: sticky` no
+        // puede salirse de la caja de su padre, y como ultimo hijo de una
+        // seccion de 3.500 px la barra solo se "pegaba" cuando ya estabas
+        // abajo del todo — medido en el navegador: con la pagina arriba
+        // quedaba 2.751 px por debajo de lo visible, o sea no servia para
+        // nada. Arriba el padre la sostiene durante todo el recorrido.
+        //
+        // Ojo: esto NO lo puede verificar un test de jsdom, que no tiene
+        // layout. Afirmar la clase CSS no es afirmar que se ve.
+        <div className="sticky top-0 z-20 flex items-center gap-2 bg-white border border-accent/20 shadow-sm rounded-lg px-3 py-2">
+          <span className="text-etiqueta font-semibold text-text-primary">{n} seleccionado{n === 1 ? '' : 's'}</span>
+          <select
+            aria-label="Motivo"
+            value={motivoId}
+            onChange={e => setMotivoId(e.target.value)}
+            className="text-etiqueta border border-border rounded-lg px-2 py-1 bg-white"
+          >
+            <option value="">— Elige un motivo —</option>
+            {motivos.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          <button
+            type="button"
+            disabled={!motivoId || guardando}
+            onClick={handleCerrar}
+            className="text-etiqueta font-semibold bg-accent text-white rounded-lg px-3 py-1 disabled:opacity-50"
+          >
+            {guardando ? 'Cerrando…' : `No asignado por WebCarga · ${n} viaje${n === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
+
       {ORDEN_GRUPOS.map(grupo => {
         const info = GRUPO_INFO[grupo]
         const viajes = grupos[grupo]
@@ -198,33 +230,6 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
           </div>
         )
       })}
-
-      {n > 0 && (
-        // Pegada al pie del area de scroll (`<main>` de dashboard/layout.tsx),
-        // no al final del documento: con las cuatro tablas apiladas la barra
-        // quedaba a una pagina de distancia de la fila que se acababa de
-        // marcar.
-        <div className="sticky bottom-0 z-10 flex items-center gap-2 bg-accent/5 border border-accent/20 rounded-lg px-3 py-2 backdrop-blur-sm">
-          <span className="text-etiqueta font-semibold text-text-primary">{n} seleccionado{n === 1 ? '' : 's'}</span>
-          <select
-            aria-label="Motivo"
-            value={motivoId}
-            onChange={e => setMotivoId(e.target.value)}
-            className="text-etiqueta border border-border rounded-lg px-2 py-1 bg-white"
-          >
-            <option value="">— Elige un motivo —</option>
-            {motivos.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-          </select>
-          <button
-            type="button"
-            disabled={!motivoId || guardando}
-            onClick={handleCerrar}
-            className="text-etiqueta font-semibold bg-accent text-white rounded-lg px-3 py-1 disabled:opacity-50"
-          >
-            {guardando ? 'Cerrando…' : `No asignado por WebCarga · ${n} viaje${n === 1 ? '' : 's'}`}
-          </button>
-        </div>
-      )}
 
       {error && <Estado tipo="error" titulo={error} />}
     </div>

@@ -84,14 +84,24 @@ describe('PasoViajesSection', () => {
     expect(screen.getAllByRole('columnheader', { name: 'Motivo de no asignación' })).toHaveLength(4)
   })
 
-  it('la barra de lote queda fijada al pie del área visible', () => {
+  // ESTE TEST NO PRUEBA QUE LA BARRA SE VEA, y no puede: jsdom no tiene layout.
+  // La primera version afirmaba `className` contiene "sticky", y eso era cierto
+  // mientras la barra estaba ROTA — quedaba 2.751 px fuera de lo visible porque
+  // una card ancestro tenia `overflow-hidden` y se volvia su scrollport. Lo
+  // unico verificable aca es la PRECONDICION estructural: la barra va ANTES de
+  // las tablas, porque un sticky no puede salirse de la caja de su padre y como
+  // ultimo hijo solo se pegaba al llegar al final. Lo demas se mira en el
+  // navegador, y se miro.
+  it('la barra de lote se renderiza antes de las tablas, no al final', () => {
     render(<PasoViajesSection grupos={grupos} bloquean={2}
                               motivos={[{ id: 'm1', label: 'No da por tarifa' }]}
                               onCerrar={vi.fn()} />)
     fireEvent.click(screen.getAllByRole('checkbox')[0])
 
     const barra = screen.getByText('1 seleccionado').closest('div')!
-    expect(barra.className).toContain('sticky')
-    expect(barra.className).toContain('bottom-0')
+    const primeraTabla = document.querySelector('table')!
+    expect(barra.compareDocumentPosition(primeraTabla) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy()
+    expect(barra.className).toContain('sticky top-0')
   })
 })

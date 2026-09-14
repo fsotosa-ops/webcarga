@@ -251,4 +251,27 @@ describe('ClosuresCenterPage', () => {
     expect(screen.getByText('Ana Soto — sin motivo')).toBeInTheDocument()
     expect(screen.getByText('Luis Rojas — empresa por regularizar')).toBeInTheDocument()
   })
+
+  // La causa raiz de que la barra de seleccion de "Viajes" no se pegara nunca:
+  // esta card tenia `overflow-hidden` para redondear las esquinas, y eso la
+  // convertia en el scrollport de cualquier `position: sticky` de adentro. Como
+  // la card no scrollea, el sticky no se movia. Medido en el navegador el
+  // 14/09: con la pagina arriba la barra quedaba 2.751 px fuera de lo visible.
+  //
+  // Esto SI se puede fijar en jsdom, y es lo que de verdad importa: si alguien
+  // devuelve ese recorte, la barra se rompe otra vez y en silencio.
+  it('el lienzo del cierre no recorta a sus hijos, para que un sticky pueda pegarse', async () => {
+    const { container } = renderPage()
+    await waitFor(() => expect(screen.getByText('Centro de Cierre del Día')).toBeInTheDocument())
+
+    // El lienzo se identifica por ser el PADRE de la barra de pestanas, no por
+    // sus clases: `.rounded-2xl.shadow-sm` agarraba otra card anterior del DOM
+    // y el test pasaba con el bug puesto. Verificado por mutacion.
+    const tablist = container.querySelector('[role="tablist"]')!
+    const lienzo = tablist.parentElement!
+    expect(lienzo.className).toContain('rounded-2xl')
+    expect(lienzo.className).not.toContain('overflow-hidden')
+    // Las esquinas las redondean ahora sus dos hijos con fondo propio.
+    expect(tablist.className).toContain('rounded-t-2xl')
+  })
 })

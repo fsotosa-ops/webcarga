@@ -34,7 +34,13 @@ SQL_TOTAL_TRIPS_DEL_DIA = "SELECT count(*) FROM app.trips WHERE planning_date = 
 
 SQL_GRUPOS_CIERRE = f"""
 WITH base AS (
-    SELECT t.id AS trip_id, t.planning_date, t.client_name,
+    SELECT t.id AS trip_id, t.planning_date,
+           -- El nombre prolijo, no el crudo del TMS. Visto en pantalla el
+           -- 14/09: esta pestana mostraba "walmart"/"sodimac" en minusculas
+           -- mientras "Flota del dia" -que resuelve por public.shippers-
+           -- mostraba "Walmart" en la columna que se llama IGUAL. La misma
+           -- columna diciendo dos cosas distintas segun la pestana.
+           COALESCE(sh.name, t.client_name) AS client_name,
            t.source_system_trip_id, t.trip_status, t.unassigned_reason_id,
            t.is_active, t.is_assigned,
            round((EXTRACT(EPOCH FROM (now() - t.status_reported_at)) / 86400)::numeric, 1)
@@ -42,6 +48,8 @@ WITH base AS (
            s.group_id
     FROM app.trips t
     LEFT JOIN app.trip_statuses s ON s.id = t.trip_status
+    LEFT JOIN public.shippers sh
+           ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
     -- planning_date IS NULL sólo entra si NOT is_active: así el único grupo
     -- que puede alcanzar (abandonado, que no exige fecha) queda disponible
     -- para él, pero un viaje activo sin fecha sigue sin calzar en ningún
