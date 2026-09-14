@@ -57,21 +57,21 @@ SELECT trip_id, planning_date, client_name, source_system_trip_id, trip_status,
            ELSE 'abandonado'
        END AS grupo
 FROM base
-WHERE (is_active AND NOT is_assigned)
+-- Un viaje declarado sale de los CUATRO grupos: eso es lo que significa
+-- "resuelto". La regla estaba escrita desde el 18/08 pero aplicada solo a la
+-- rama "abandonado", asi que valia unicamente para bulk-close -que ademas
+-- apaga is_active- y no para el motivo puesto desde el detalle del viaje en
+-- el Monitor, que escribe la misma columna y nada mas. Ese viaje se quedaba
+-- en hoy/rezago/en_curso y seguia contando en `bloquean`.
+-- Sigue visible en el historial via el filtro no_asignado_webcarga.
+WHERE unassigned_reason_id IS NULL
+  AND ((is_active AND NOT is_assigned)
    OR (is_active AND is_assigned AND planning_date < $1::date)
    OR (NOT is_active
        AND group_id IN {GRUPOS_NO_TERMINALES}
        -- mismo valor redondeado que se devuelve en el SELECT: filtrar sobre
        -- el crudo y mostrar el redondeado dejaba pasar filas de 7.0x que el
        -- resultado mostraba como 7.0 exactos (parecia violar > 7 sin bug real).
-       AND dias_sin_novedad > {DIAS_SIN_NOVEDAD}
-       -- Critico 1 (revision de rama, 2026-08-18): cerrar un viaje en
-       -- bulk-close escribe is_active=false con un unassigned_reason_id. Sin
-       -- esta exclusion ese viaje YA declarado reaparecia aca, etiquetado
-       -- "abandonado por el TMS" -sin casilla, sin accion, para siempre-
-       -- cuando en realidad WebCarga ya lo cerro. Un viaje declarado tiene
-       -- que salir de los cuatro grupos: eso es lo que significa "resuelto".
-       -- Sigue visible en el historial via el filtro no_asignado_webcarga.
-       AND unassigned_reason_id IS NULL)
+       AND dias_sin_novedad > {DIAS_SIN_NOVEDAD}))
 ORDER BY grupo, planning_date DESC
 """

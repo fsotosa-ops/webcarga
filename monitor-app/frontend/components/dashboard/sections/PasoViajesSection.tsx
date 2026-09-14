@@ -65,6 +65,7 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [motivoId, setMotivoId] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [guardandoFila, setGuardandoFila] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   function toggleSelected(tripId: string) {
@@ -91,6 +92,23 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
       setError(e instanceof Error ? e.message : 'No se pudieron cerrar los viajes seleccionados.')
     } finally {
       setGuardando(false)
+    }
+  }
+
+  // Una fila sola se cierra con el MISMO escritor que el lote, con un solo
+  // elemento. No hay endpoint nuevo ni semantica nueva: declarar un viaje es
+  // un unico acto, y tenerlo escrito dos veces es como empiezan a decir cosas
+  // distintas.
+  async function handleCerrarFila(tripId: string, motivo: string) {
+    if (!motivo) return
+    setGuardandoFila(tripId)
+    setError(null)
+    try {
+      await onCerrar([tripId], motivo)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cerrar el viaje.')
+    } finally {
+      setGuardandoFila(null)
     }
   }
 
@@ -128,10 +146,15 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
                 <thead>
                   <tr className={`bg-bg-main text-etiqueta font-bold uppercase tracking-wide ${TEXTO_APOYO}`}>
                     {info.seleccionable && <th className="text-left px-3 py-2 w-8" />}
-                    <th className="text-left px-3 py-2">Cliente</th>
+                    <th className="text-left px-3 py-2">Generador de carga</th>
                     <th className="text-left px-3 py-2">Nº viaje TMS</th>
                     <th className="text-left px-3 py-2">Estado</th>
                     <th className="text-left px-3 py-2">Tiempo</th>
+                    {/* El motivo, por fila. Antes solo se podia elegir en la
+                        barra de lote del pie, despues de las CUATRO tablas:
+                        para declarar una fila que se ve arriba habia que
+                        recorrer toda la pagina y volver. */}
+                    <th className="text-left px-3 py-2">Motivo de no asignación</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -151,6 +174,22 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.source_system_trip_id ?? '—'}</td>
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.trip_status ?? '—'}</td>
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{formatDiasSinNovedad(v.dias_sin_novedad)}</td>
+                      <td className="px-3 py-2">
+                        {info.seleccionable ? (
+                          <select
+                            aria-label={`Motivo del viaje ${v.source_system_trip_id ?? v.trip_id}`}
+                            value={v.unassigned_reason_id ?? ''}
+                            disabled={guardandoFila === v.trip_id}
+                            onChange={e => handleCerrarFila(v.trip_id, e.target.value)}
+                            className="text-etiqueta border border-border rounded-lg px-2 py-1 bg-white"
+                          >
+                            <option value="">— Elige un motivo —</option>
+                            {motivos.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                          </select>
+                        ) : (
+                          <span className={TEXTO_APOYO}>{v.unassigned_reason_label ?? '—'}</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -161,7 +200,11 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
       })}
 
       {n > 0 && (
-        <div className="flex items-center gap-2 bg-accent/5 border border-accent/20 rounded-lg px-3 py-2">
+        // Pegada al pie del area de scroll (`<main>` de dashboard/layout.tsx),
+        // no al final del documento: con las cuatro tablas apiladas la barra
+        // quedaba a una pagina de distancia de la fila que se acababa de
+        // marcar.
+        <div className="sticky bottom-0 z-10 flex items-center gap-2 bg-accent/5 border border-accent/20 rounded-lg px-3 py-2 backdrop-blur-sm">
           <span className="text-etiqueta font-semibold text-text-primary">{n} seleccionado{n === 1 ? '' : 's'}</span>
           <select
             aria-label="Motivo"

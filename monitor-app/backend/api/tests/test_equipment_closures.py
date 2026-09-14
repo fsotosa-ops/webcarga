@@ -166,7 +166,14 @@ def test_set_batch_reason_actualiza_varios_equipos_en_un_llamado():
     assert res.status_code == 200
     assert len(res.json()) == 2
     update_sql = pool.execute.call_args_list[-1].args[0]
-    assert "unassigned_reason_id = $1" in update_sql
+    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
+    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
+    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
+    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
+    # Y lo que de verdad prueba el binding son los argumentos, no el texto:
+    # $1 el motivo, $7 la bandera de "vino la clave".
+    assert pool.execute.call_args_list[-1].args[1] == "r1"
+    assert pool.execute.call_args_list[-1].args[7] is True
     assert pool.execute.call_args_list[-1].args[4] == ["a1", "a2"]
 
 
@@ -210,7 +217,14 @@ def test_patch_equipment_day_status_sets_reason():
 
     assert res.status_code == 200
     update_sql = pool.execute.call_args_list[0].args[0]
-    assert "unassigned_reason_id = $1" in update_sql
+    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
+    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
+    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
+    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
+    # Y lo que de verdad prueba el binding son los argumentos, no el texto:
+    # $1 el motivo, $7 la bandera de "vino la clave".
+    assert pool.execute.call_args_list[0].args[1] == "pana"
+    assert pool.execute.call_args_list[0].args[7] is True
 
 
 def test_patch_equipment_day_status_404_when_not_found():
@@ -322,3 +336,84 @@ def test_close_equipment_day_override_as_admin_logs_and_closes():
     assert res.json()["overridden"] == 1
     audit_calls = [c.args[0] for c in conn.execute.call_args_list]
     assert any("audit_log" in s for s in audit_calls)
+
+
+def test_se_puede_comentar_una_fila_con_carga_y_sin_motivo():
+    """El bug que reporto el usuario: *"la columna de comentarios no permite
+    escribir"*. Medido el 14/09: 0 comentarios en las 4.540 filas de las dos
+    tablas del cierre, contra 287 con motivo.
+
+    Eran dos puertas cerradas, no un campo roto. El frontend solo dibujaba el
+    input si la fila YA tenia motivo guardado, y el backend respondia 422
+    sobre cualquier fila con carga. Desde el 14/09 se comenta cualquier fila:
+    el comentario es una nota del dia de esa fila, no un pie de pagina del
+    motivo."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "ASSIGNED"}
+    pool.fetch.return_value = [_equipment_row(asset_id="a1", status="ASSIGNED")]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-09-07",
+                       json={"comentario": "el tracto salio con carga parcial"})
+
+    assert res.status_code == 200, res.text
+    args = pool.execute.call_args_list[-1].args
+    assert args[5] == "el tracto salio con carga parcial"
+    # La bandera del comentario prendida y la del motivo apagada: el motivo que
+    # ya tuviera la fila no se toca.
+    assert args[6] is True
+    assert args[7] is False
+
+
+def test_el_motivo_sobre_una_fila_con_carga_sigue_siendo_422():
+    """El 422 no se levanto: gobierna el MOTIVO, no la fila. Un motivo de no
+    asignacion sobre un equipo que SI tuvo carga es una contradiccion, y eso
+    no cambio — lo que cambio es que comentar dejo de estar atado a el."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "ASSIGNED"}
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-09-07",
+                       json={"unassigned_reason_id": "pana"})
+
+    assert res.status_code == 422
+
+
+def test_el_detalle_trae_el_generador_de_carga():
+    """Pedido del usuario (14/09): la tabla mostraba la patente y la empresa
+    de transporte, y no para quien era la carga. El eje de conductores lo
+    tenia desde el 21/07 (`client_names`) y este no.
+
+    Sale del lateral `today_trip` que ya leia app.trips —no de una consulta
+    nueva— y se resuelve por public.shippers, porque el client_name crudo del
+    TMS viene en minusculas ("walmart")."""
+    from app.routers.equipment_closures import _DETAIL_SQL
+    assert "today_trip.client_name AS today_trip_client" in _DETAIL_SQL
+    assert "COALESCE(sh.name, t.client_name) AS client_name" in _DETAIL_SQL
+    assert "LEFT JOIN public.shippers sh" in _DETAIL_SQL
+
+
+def test_un_viaje_declarado_deja_de_contar_como_carga_del_tracto():
+    """El bug de sincronizacion que reporto el usuario, del lado de la flota.
+
+    Reproducido contra produccion el 14/09: el viaje de Walmart del 07-09
+    tenia motivo escrito desde el detalle del viaje en el Monitor, y el tracto
+    SVLT43 seguia en ASSIGNED ese mismo dia. La CTE solo preguntaba si EXISTIA
+    un viaje resuelto a ese tracto; no miraba el motivo en ninguna parte.
+
+    Medido sobre el 07-09 con el filtro puesto: los tractos con carga bajan de
+    25 a 24 y el unico que sale es SVLT43."""
+    from app.routers.equipment_closures import _RECOMPUTE_SQL
+    assert "AND t.unassigned_reason_id IS NULL" in _RECOMPUTE_SQL
+
+
+def test_el_recompute_conserva_el_comentario_y_sigue_limpiando_el_motivo():
+    """Gemelo del de daily_closures. Antes el recompute ponia el comentario en
+    NULL al pasar a ASSIGNED; ahora que se puede comentar una fila con carga,
+    borrarlo seria perder algo que una persona escribio a mano."""
+    from app.routers.equipment_closures import _RECOMPUTE_SQL
+    assert "comentario = app.equipment_day_status.comentario" in _RECOMPUTE_SQL
+    assert "comentario = CASE WHEN EXCLUDED.status" not in _RECOMPUTE_SQL
+    for campo in ("unassigned_reason_id", "resolved_by", "resolved_at"):
+        assert (f"{campo} = CASE WHEN EXCLUDED.status = 'UNASSIGNED' "
+                f"THEN app.equipment_day_status.{campo} ELSE NULL END") in _RECOMPUTE_SQL

@@ -31,7 +31,7 @@ function equipmentRow(overrides: Partial<EquipmentDayStatusRow> = {}): Equipment
     status: 'UNASSIGNED', requires_motivo: false, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, driver_id: null, driver_name: null, last_known_origin: null,
     trip_id: null, trip_driver_id: null, trip_driver_name: null,
-    today_trip_code: null, today_trip_origin: null, comentario: null,
+    today_trip_code: null, today_trip_origin: null, today_trip_client: null, comentario: null,
     ...overrides,
   }
 }
@@ -555,8 +555,11 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.blur(campo)
 
     await waitFor(() => {
+      // Sin motivo: el comentario viaja solo y el backend conserva el que
+      // haya. Mandarlo seria reescribirlo con el mismo valor sin motivo para
+      // hacerlo.
       expect(dailyClosuresApi.setReason).toHaveBeenCalledWith(
-        'd4', '2026-08-04', 'pana', 'llegó tarde el repuesto',
+        'd4', '2026-08-04', undefined, 'llegó tarde el repuesto',
       )
     })
   })
@@ -576,11 +579,46 @@ describe('FlotaDelDiaSection', () => {
       .getByRole('combobox')).toBeInTheDocument()
   })
 
-  it('sin motivo elegido la celda de comentario lo dice, no deja un campo que no guarda', async () => {
-    // Un texto libre sin categoría no se puede agrupar ni contar.
+  it('se puede comentar una fila sin motivo elegido', async () => {
+    // El bug que reportó el usuario: *"la columna de comentarios no permite
+    // escribir"*. El campo sólo existía si la fila YA tenía motivo guardado
+    // —287 de 4.540 filas en la base—, así que en el resto había un guion y
+    // ningún lugar donde escribir. Cero comentarios guardados en la vida.
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderSection()
     await screen.findByText('Ana Soto')
 
-    expect(screen.queryByLabelText('Comentario de Ana Soto')).not.toBeInTheDocument()
+    const campo = screen.getByLabelText('Comentario de Ana Soto')
+    fireEvent.change(campo, { target: { value: 'sin novedad' } })
+    fireEvent.blur(campo)
+
+    await waitFor(() => {
+      expect(dailyClosuresApi.setReason).toHaveBeenCalledWith(
+        'd1', '2026-08-04', undefined, 'sin novedad',
+      )
+    })
+  })
+
+  it('se puede comentar una fila asignada, que tuvo carga', async () => {
+    // Decisión del usuario (14/09): el comentario dejó de ser un pie de página
+    // del motivo y pasó a ser una nota del día de esa fila. Una fila con carga
+    // también se explica con palabras.
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('Total'))
+
+    const fila = screen.getByText('Juan Pérez').closest('tr')!
+    expect(within(fila).getByText('Asignado')).toBeInTheDocument()
+    expect(within(fila).getByLabelText('Comentario de Juan Pérez')).toBeInTheDocument()
+  })
+
+  it('la tabla muestra el generador de carga, y se puede ordenar y filtrar por él', async () => {
+    // Pedido del usuario (14/09): se veía la patente y la empresa que mueve la
+    // carga, y no para quién era. El dato es app.trips.client_name.
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    expect(screen.getByRole('columnheader', { name: /Generador de carga/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ordenar por Generador de carga' })).toBeInTheDocument()
   })
 })

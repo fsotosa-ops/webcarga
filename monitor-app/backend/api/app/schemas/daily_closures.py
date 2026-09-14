@@ -8,7 +8,15 @@ from pydantic import BaseModel, field_validator
 class DriverDayStatusPatchBody(BaseModel):
     """Captura el motivo de no asignación (HU-02) y su comentario — los únicos
     campos editables a mano de app.driver_day_status, el resto se recalcula."""
-    unassigned_reason_id: str
+    unassigned_reason_id: Optional[str] = None
+    """El motivo, ahora opcional: distingue "no mande la clave" de "quiero
+    que quede vacia", igual que `comentario`.
+
+    Se volvio opcional el 14/09 para que un PATCH pueda traer SOLO el
+    comentario. Antes el motivo era obligatorio, asi que no habia forma de
+    comentar una fila sin motivo -ni una fila con carga-, y el frontend ni
+    siquiera dibujaba el campo: 0 comentarios guardados en 4.540 filas.
+    """
     comentario: Optional[str] = None
     """El comentario de texto libre, opcional.
 
@@ -36,7 +44,7 @@ class DriverBatchReasonBody(BaseModel):
     solo motivo para varios conductores en un clic (Tarea 7, plan 2.4;
     mismo patrón que EquipmentBatchReasonBody en schemas/equipment_closures.py)."""
     driver_ids: list[str]
-    unassigned_reason_id: str
+    unassigned_reason_id: Optional[str] = None
     comentario: Optional[str] = None
 
     @field_validator("driver_ids")

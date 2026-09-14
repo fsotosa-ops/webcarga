@@ -98,6 +98,14 @@ day_trips AS (
       -- viajes y NINGÚN conductor cambia de estado (27 resueltos antes y
       -- después) — alinea la aritmética sin mover el cierre de nadie.
       AND t.source_system != 'sodimac'
+      -- Un viaje que YA fue declarado "no lo tomamos" deja de contar como
+      -- carga. Sin esto, poner el motivo desde el detalle del viaje en el
+      -- Monitor no movia nada acá: el viaje seguia existiendo y resolviendo a
+      -- esta fila, asi que seguia diciendo "Asignado" y el ON CONFLICT de mas
+      -- abajo ni siquiera admitia motivo ni comentario. Reproducido contra
+      -- produccion el 14/09 con el viaje de Walmart del 07-09 y el tracto
+      -- SVLT43. Es reversible por construccion: se borra el motivo y vuelve.
+      AND t.unassigned_reason_id IS NULL
 ),
 computed AS (
     SELECT
@@ -124,9 +132,14 @@ ON CONFLICT (driver_id, business_date) DO UPDATE SET
     unassigned_reason_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.unassigned_reason_id ELSE NULL END,
     resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_by ELSE NULL END,
     resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_at ELSE NULL END,
-    -- El comentario sigue al motivo: explica por que alguien no trabajo, asi
-    -- que no puede sobrevivir al dia en que si trabajo.
-    comentario = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.comentario ELSE NULL END
+    -- El comentario NO se limpia nunca (14/09). Antes seguia al motivo y se
+    -- borraba al pasar a ASSIGNED, con el argumento de que "explica por que
+    -- alguien no trabajo". Cambio el significado: ahora es una nota del dia de
+    -- esa fila, se puede escribir con carga o sin ella, y borrarlo en un
+    -- recalculo seria perder algo que una persona escribio a mano. El motivo,
+    -- `resolved_by` y `resolved_at` SI se siguen limpiando: esos son del
+    -- motivo y no tienen sentido en una fila con carga.
+    comentario = app.driver_day_status.comentario
 """
 
 _DETAIL_SQL = f"""
@@ -373,7 +386,7 @@ async def set_batch_reason(
     if missing:
         raise HTTPException(404, f"Conductor(es) no encontrados en la cuadratura de ese día: {missing}")
     not_unassigned = [str(r["driver_id"]) for r in rows if r["status"] != "UNASSIGNED"]
-    if not_unassigned:
+    if "unassigned_reason_id" in body.model_fields_set and not_unassigned:
         raise HTTPException(422, f"Solo se puede registrar motivo para conductores no asignados: {not_unassigned}")
 
     await pool.execute(
@@ -384,13 +397,17 @@ async def set_batch_reason(
         -- borraba en silencio el texto que alguien habia escrito. El booleano
         -- dice si la clave vino en el payload; Pydantic lo sabe por
         -- `model_fields_set`.
-        SET unassigned_reason_id = $1,
+        -- El motivo sigue la misma regla que el comentario: solo se escribe si
+        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
+        -- lo habria puesto en NULL en silencio.
+        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.driver_day_status.unassigned_reason_id END,
             comentario = CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END,
             resolved_by = $2::uuid, resolved_at = now()
         WHERE business_date = $3 AND driver_id = ANY($4::uuid[])
         """,
         body.unassigned_reason_id, user["sub"], business_date, body.driver_ids, body.comentario,
         "comentario" in body.model_fields_set,
+        "unassigned_reason_id" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     return [dict(r) for r in rows if str(r["driver_id"]) in found_ids]
@@ -413,7 +430,11 @@ async def patch_driver_day_status(
     )
     if not row:
         raise HTTPException(404, "Conductor no encontrado en la cuadratura de ese día")
-    if row["status"] != "UNASSIGNED":
+    # El 422 gobierna el MOTIVO, no la fila. Un PATCH que trae solo comentario
+    # se acepta en cualquier estado: desde el 14/09 el comentario es una nota
+    # del dia de esa fila y no un pie de pagina del motivo, asi que una fila
+    # con carga tambien puede explicarse con palabras.
+    if "unassigned_reason_id" in body.model_fields_set and row["status"] != "UNASSIGNED":
         raise HTTPException(422, "Solo se puede registrar motivo para un conductor no asignado")
 
     await pool.execute(
@@ -424,13 +445,17 @@ async def patch_driver_day_status(
         -- borraba en silencio el texto que alguien habia escrito. El booleano
         -- dice si la clave vino en el payload; Pydantic lo sabe por
         -- `model_fields_set`.
-        SET unassigned_reason_id = $1,
+        -- El motivo sigue la misma regla que el comentario: solo se escribe si
+        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
+        -- lo habria puesto en NULL en silencio.
+        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.driver_day_status.unassigned_reason_id END,
             comentario = CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END,
             resolved_by = $2::uuid, resolved_at = now()
         WHERE driver_id = $3 AND business_date = $4
         """,
         body.unassigned_reason_id, user["sub"], driver_id, business_date, body.comentario,
         "comentario" in body.model_fields_set,
+        "unassigned_reason_id" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     updated = next((dict(r) for r in rows if r["driver_id"] == driver_id or str(r["driver_id"]) == driver_id), None)

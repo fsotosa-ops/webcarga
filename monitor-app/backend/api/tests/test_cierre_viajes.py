@@ -147,6 +147,55 @@ async def test_un_viaje_declarado_sale_del_grupo_abandonado(conexion_revertida):
         "un viaje declarado por WebCarga reaparecio como abandonado por el TMS")
 
 
+async def test_un_viaje_declarado_desde_cualquier_pantalla_sale_de_los_cuatro_grupos(
+        conexion_revertida):
+    """El bug que reporto el usuario el 14/09.
+
+    La exclusion por motivo existia desde el 18/08 pero SOLO en la rama
+    `abandonado`, asi que valia unicamente para bulk-close -que ademas escribe
+    is_active=false, y eso es lo que lo sacaba de hoy/rezago/en_curso-. El
+    motivo puesto desde el detalle del viaje en el Monitor escribe la MISMA
+    columna y nada mas: el viaje se quedaba en su grupo y seguia contando en
+    `bloquean`, o sea la pantalla decia que faltaba resolver algo que ya
+    estaba resuelto.
+
+    Los tres grupos activos, porque la rama `abandonado` ya tiene el suyo
+    arriba y este es justamente el caso que aquel no cubria."""
+    from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
+
+    motivo = await conexion_revertida.fetchval(
+        "SELECT id FROM app.status_taxonomies "
+        "WHERE domain = 'TRIP_UNASSIGNED_REASON' AND code = 'SIN_CAMION'")
+    assert motivo is not None, "el motivo SIN_CAMION no existe: revisar el catalogo"
+
+    casos = {
+        "hoy":      dict(planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False),
+        "rezago":   dict(planning_date=FECHA_NEGOCIO - timedelta(days=3),
+                         is_active=True, is_assigned=False),
+        "en_curso": dict(planning_date=FECHA_NEGOCIO - timedelta(days=3),
+                         is_active=True, is_assigned=True),
+    }
+    ids = {g: await _crear_viaje(conexion_revertida, **kw) for g, kw in casos.items()}
+
+    filas = await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)
+    grupo_por_id = {f["trip_id"]: f["grupo"] for f in filas}
+    for grupo, trip_id in ids.items():
+        assert grupo_por_id.get(trip_id) == grupo, (
+            f"precondicion: el viaje sintetico tiene que arrancar en {grupo}")
+
+    # Lo unico que hace el PATCH del Monitor: escribe el motivo y nada mas.
+    # No toca is_active ni is_working, a diferencia de bulk-close.
+    for trip_id in ids.values():
+        await conexion_revertida.execute(
+            "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2", motivo, trip_id)
+
+    filas = await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)
+    grupo_por_id = {f["trip_id"]: f["grupo"] for f in filas}
+    for grupo, trip_id in ids.items():
+        assert trip_id not in grupo_por_id, (
+            f"un viaje declarado seguia en '{grupo}' y contando como pendiente")
+
+
 async def test_viaje_sin_planning_date_puede_ser_abandonado(conexion_revertida):
     """Bug real: la CTE excluia toda fila con planning_date IS NULL antes de
     que la rama `abandonado` pudiera verla, aunque esa rama no necesita
@@ -193,17 +242,9 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
     cubre porque llama al endpoint, no al SQL crudo."""
     from app.routers.trips import cierre_viajes
 
-    motivo = await conexion_revertida.fetchrow(
-        "SELECT id, label FROM app.status_taxonomies "
-        "WHERE domain = 'TRIP_UNASSIGNED_REASON' AND code = 'SIN_CAMION'")
-    assert motivo is not None, "el motivo SIN_CAMION no existe: revisar el catalogo"
-
     id_hoy = await _crear_viaje(
         conexion_revertida, planning_date=FECHA_NEGOCIO,
         is_active=True, is_assigned=False)
-    await conexion_revertida.execute(
-        "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2",
-        motivo["id"], id_hoy)
     id_rezago = await _crear_viaje(
         conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=3),
         is_active=True, is_assigned=False)
@@ -239,8 +280,10 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
     assert item_hoy["client_name"] == "TEST-CIERRE"
     assert item_hoy["planning_date"] == FECHA_NEGOCIO.isoformat()
     assert isinstance(item_hoy["dias_sin_novedad"], float)
-    assert item_hoy["unassigned_reason_id"] == str(motivo["id"])
-    assert item_hoy["unassigned_reason_label"] == motivo["label"]
+    # Sin motivo, porque desde el 14/09 tenerlo lo saca de los cuatro grupos
+    # (ver test_un_viaje_declarado_desde_cualquier_pantalla_sale_de_los_cuatro_grupos).
+    assert item_hoy["unassigned_reason_id"] is None
+    assert item_hoy["unassigned_reason_label"] is None
 
     item_abandonado = next(
         v for v in resp["grupos"]["abandonado"] if v["trip_id"] == str(id_abandonado))

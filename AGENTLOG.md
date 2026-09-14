@@ -11,6 +11,105 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-09-14 — Ronda 158: el cierre y el Monitor dejan de contarse cosas distintas
+
+Cinco pedidos del usuario sobre el Cierre, y uno más sobre el Monitor que apareció a mitad de la
+sesión. Los dos bugs se **reprodujeron contra la base de producción** antes de tocar una línea.
+
+## Los dos bugs, y qué eran
+
+**1. El motivo puesto en el Monitor no llegaba al Cierre.** `PATCH /trips/{id}` escribe UNA columna,
+`app.trips.unassigned_reason_id`. `bulk-close` —el mismo acto desde la pestaña "Viajes"— escribe esa
+y además `is_active=false, is_working=false`. Y del lado de la lectura, la CTE que decide si un
+tracto trabajó **no consultaba el motivo en ninguna parte**: sólo preguntaba si existía un viaje
+resuelto a ese tracto. La Ronda 155 alineó el vocabulario de los dos escritores; no alineó el efecto.
+
+Reproducido: viaje de Walmart del 07-09 con motivo escrito desde el Monitor, y el tracto **SVLT43**
+en `ASSIGNED` esa misma fecha. Con el filtro puesto, los tractos con carga del 07-09 bajan de **25 a
+24** y el único que sale es SVLT43.
+
+**2. Los viajes cerrados atascados en "En Curso"** (`2048268`, `30159194`, del 07-09). El override
+manual no tenía condición de salida: `IndicatorSwitches` marca el campo, `protect_manual_overrides`
+lo congela **para siempre**, el TMS cierra el viaje, el pipeline intenta apagarlo y el trigger lo
+revierte. Y "En Curso" es literalmente `is_active = true`.
+
+La prueba de que el pin era la causa: de **2.124** viajes de QAnalytics en estado de cierre, **2.120
+pasaron al histórico solos** y los **4** que quedaron tenían los cuatro la marca sobre `is_active`.
+
+## Lo que se hizo
+
+| # | Qué |
+|---|---|
+| 1 | **Columna "Generador de carga"** en las tres tablas. El eje de conductores ya recibía `client_names[]` y **no lo pintaba** (sólo lo usaba el pivot del reporte); el de tractos no lo traía y sale del LATERAL que ya leía `app.trips`, resuelto por `public.shippers`. En "Viajes", "Cliente" pasó a llamarse igual |
+| 2 | **Un viaje declarado deja de contar como carga**: filtro en las dos CTE de recompute y en el universo de `SQL_GRUPOS_CIERRE`, cuyo propio comentario ya decía la regla desde el 18/08 pero la aplicaba sólo a la rama "abandonado" |
+| 3 | **El comentario se escribe en cualquier fila**, con motivo o sin él, con carga o sin ella. El 422 pasó a gobernar el MOTIVO y no la fila, y el recompute dejó de borrarlo |
+| 4 | **Motivo por fila en "Viajes"**, reusando `bulk-close` con un elemento, y la barra de lote **fijada al pie** del área visible |
+| 5 | **El override manual vence** cuando el TMS llega a un estado del grupo `cerrado` |
+
+## Decisiones de arquitectura
+
+1. **Los dos catálogos de motivos quedan SEPARADOS.** El usuario frenó la unificación a mitad de
+   camino y los datos le dan la razón: `DRIVER_REASON` (21) responde *por qué una persona o un tracto
+   no trabajó* y `TRIP_UNASSIGNED_REASON` (12) *por qué WebCarga no tomó esa carga*; 287 filas usan el
+   primero, 8 viajes el segundo, **cero solapamiento**. Consecuencia: **la fila del cierre nunca
+   hereda el motivo del viaje** — está escrito en otro idioma. Se propaga el hecho, no la etiqueta.
+2. **El trigger se arregla en el post_hook de dbt, no en una migración.** `protect_manual_overrides`
+   la crea dbt con `CREATE OR REPLACE` en **cada corrida**: una migración habría quedado revertida en
+   la siguiente pasada. Se editó `dbt/tms/models/app/trips.sql` en Mage y se sincronizó.
+3. **Se liberan sólo `is_active`/`is_working`.** `is_assigned`, `manual_status` e `is_first_leg`
+   siguen protegidos aun con el viaje cerrado: responden *"¿tomamos nosotros esta carga?"*, que es una
+   corrección humana sobre algo que el TMS no sabe mejor. El grupo `problema` (Cancelado, En Pana,
+   Devuelto, Sin Registros) **no** libera.
+4. **El comentario cambió de significado**: de pie de página del motivo a nota del día de esa fila.
+   Por eso el recompute ya no lo borra.
+
+## Dos cosas que me pasaron y valen más que el código
+
+**`app_trips.sql` del repo era un espejo MENTIROSO**: 399 líneas de diferencia con el modelo real de
+Mage, que tiene triggers que el espejo no conocía. Casi edito el archivo equivocado. Quedó
+sincronizado con la copia real, y el diff grande es eso: ponerse al día, no un refactor.
+
+**Introduje un bug en el trigger y llegó a producción.** La primera versión hacía
+`NEW.manually_edited_fields := array_remove(OLD.manually_edited_fields, ...)`, que **pisa lo que el
+propio UPDATE acababa de escribir**: un `bulk_close_trips` sobre un viaje ya cerrado perdía su marca.
+Lo pescó `test_el_estado_del_tms_no_se_toca` —justamente el test que este proyecto tiene anotado como
+frágil por elegir su sujeto de producción sin `ORDER BY`—. Corregido a `NEW`, verificado con los tres
+casos contra la base, y ya está viva la versión buena.
+
+## Lo medido
+
+**Backend 1.015 en verde, cero salteados** (venía de 1.006); **frontend 1.371 en verde**, `tsc`
+limpio, `npm run build` OK, trinquetes visuales sin moverse. Las consultas nuevas corridas contra la
+base real antes de escribir un mock, el conteo de marcadores contra argumentos hecho a mano en los
+seis `UPDATE` (pasaron de 6 a 7), y **siete mutaciones verificadas**: revertir cada conducta pone en
+rojo su test.
+
+Ojo con las corridas del frontend: la suite completa da timeouts de 5000 ms si hay otra corrida en
+paralelo. En limpio da 1.371/1.371 y cero timeouts.
+
+## Checklist — siguiente paso exacto
+
+1. **Las dos migraciones están APLICADAS y verificadas.** El usuario conectó el proyecto
+   `webcarga-core-db` al MCP de Supabase y por ahí se aplicaron — `psql` sirve para leer, pero el
+   clasificador de permisos bloquea las escrituras a producción. Estado final: **0 filas trabadas,
+   0 viajes cerrados marcados como activos o trabajando, el trigger encendido (`tgenabled = 'O'`) y
+   los 11 `is_assigned` conservados.**
+   - `20260914180000` apaga el trigger dentro de su propia transacción **a propósito**: probado, sin
+     eso decía `UPDATE 10` y no cambiaba ningún valor.
+   - Los 4 viajes que el usuario reportó se habían destrabado **solos** en la corrida del pipeline
+     de las 21:09, antes de la migración: el trigger nuevo hizo su trabajo sobre los que el TMS
+     todavía reporta. La migración limpió las 6 restantes, que ya nadie volvía a actualizar.
+2. **Nada está comiteado.** 16 archivos modificados y 2 migraciones nuevas.
+   **Ojo con el historial de migraciones**: `list_migrations` de Supabase llega hasta
+   `20260823200047`; las 4 del repo posteriores a esa fecha se aplicaron a mano y **nunca se
+   registraron**. Las 2 de hoy tampoco. No se tocó — pero el historial de Supabase no es fuente de
+   verdad de este proyecto, el directorio `migrations/` sí.
+3. **Lo de Mage ya está desplegado** y la función corregida está viva — eso va por fuera del repo.
+4. **Click-through del usuario** sobre el 07-09: la columna nueva, SVLT43 ya sin "Asignado", comentar
+   una fila asignada y que sobreviva al recargar, y el motivo por fila en "Viajes".
+5. Sigue de antes: el cierre de prueba de Pablo, y agrupar el cierre por estado esperando la matriz
+   estado→grupo de Pablo y Fabián.
+
 ### 2026-09-07 — Ronda 157: el comentario del cierre, en su propia columna
 
 Ajuste pedido por el usuario sobre la Ronda 155: el comentario estaba **debajo del motivo**, dentro

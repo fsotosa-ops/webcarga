@@ -68,6 +68,14 @@ today_trips AS (
     WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
       AND t.source_system != 'sodimac'
       AND vfr.resolved_tractor_asset_id IS NOT NULL
+      -- Un viaje que YA fue declarado "no lo tomamos" deja de contar como
+      -- carga. Sin esto, poner el motivo desde el detalle del viaje en el
+      -- Monitor no movia nada acá: el viaje seguia existiendo y resolviendo a
+      -- esta fila, asi que seguia diciendo "Asignado" y el ON CONFLICT de mas
+      -- abajo ni siquiera admitia motivo ni comentario. Reproducido contra
+      -- produccion el 14/09 con el viaje de Walmart del 07-09 y el tracto
+      -- SVLT43. Es reversible por construccion: se borra el motivo y vuelve.
+      AND t.unassigned_reason_id IS NULL
 ),
 computed AS (
     SELECT
@@ -86,9 +94,14 @@ ON CONFLICT (asset_id, business_date) DO UPDATE SET
     unassigned_reason_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.unassigned_reason_id ELSE NULL END,
     resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.resolved_by ELSE NULL END,
     resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.resolved_at ELSE NULL END,
-    -- El comentario sigue al motivo: explica por que alguien no trabajo, asi
-    -- que no puede sobrevivir al dia en que si trabajo.
-    comentario = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.comentario ELSE NULL END
+    -- El comentario NO se limpia nunca (14/09). Antes seguia al motivo y se
+    -- borraba al pasar a ASSIGNED, con el argumento de que "explica por que
+    -- alguien no trabajo". Cambio el significado: ahora es una nota del dia de
+    -- esa fila, se puede escribir con carga o sin ella, y borrarlo en un
+    -- recalculo seria perder algo que una persona escribio a mano. El motivo,
+    -- `resolved_by` y `resolved_at` SI se siguen limpiando: esos son del
+    -- motivo y no tienen sentido en una fila con carga.
+    comentario = app.equipment_day_status.comentario
 """
 
 _DETAIL_SQL = """
@@ -127,7 +140,13 @@ SELECT
     -- —el origen del viaje mas reciente, sea de hoy o no— y por eso no se
     -- reusa: dos preguntas, dos columnas.
     today_trip.source_system_trip_id AS today_trip_code,
-    today_trip.origen AS today_trip_origin
+    today_trip.origen AS today_trip_origin,
+    -- Generador de carga (quien pone la carga: Walmart, Iansa, Colun). Sale
+    -- del MISMO lateral que ya lee app.trips, no de una consulta nueva. El
+    -- eje de conductores lo tiene desde el 21/07 como `client_names` y este
+    -- no lo tenia: el coordinador veia la patente y la empresa de transporte,
+    -- y no para quien era la carga.
+    today_trip.client_name AS today_trip_client
 FROM app.equipment_day_status eds
 JOIN public.assets a ON a.id = eds.asset_id
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
@@ -152,10 +171,16 @@ LEFT JOIN LATERAL (
 ) last_origin ON true
 LEFT JOIN LATERAL (
     SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name,
-           t.source_system_trip_id, ts_o.local AS origen
+           t.source_system_trip_id, ts_o.local AS origen,
+           COALESCE(sh.name, t.client_name) AS client_name
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     LEFT JOIN public.drivers td ON td.id = vfr.resolved_driver_id
+    -- Mismo criterio que daily_closures.py y trips.py (_TRIP_FROM): el
+    -- client_name crudo del TMS viene en minusculas ("walmart"), y
+    -- public.shippers tiene el nombre prolijo.
+    LEFT JOIN public.shippers sh
+           ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
     -- Mismo motivo que en daily_closures: trips.origin_tms esta vacia.
     LEFT JOIN app.trip_stops ts_o ON ts_o.trip_id = t.id AND ts_o.stop_type = 'ORIGIN'
     WHERE vfr.resolved_tractor_asset_id = eds.asset_id
@@ -266,7 +291,7 @@ async def set_batch_reason(
     if missing:
         raise HTTPException(404, f"Equipo(s) no encontrados en la cuadratura de ese día: {missing}")
     not_unassigned = [str(r["asset_id"]) for r in rows if r["status"] != "UNASSIGNED"]
-    if not_unassigned:
+    if "unassigned_reason_id" in body.model_fields_set and not_unassigned:
         raise HTTPException(422, f"Solo se puede registrar motivo para equipos sin carga: {not_unassigned}")
 
     await pool.execute(
@@ -277,13 +302,17 @@ async def set_batch_reason(
         -- borraba en silencio el texto que alguien habia escrito. El booleano
         -- dice si la clave vino en el payload; Pydantic lo sabe por
         -- `model_fields_set`.
-        SET unassigned_reason_id = $1,
+        -- El motivo sigue la misma regla que el comentario: solo se escribe si
+        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
+        -- lo habria puesto en NULL en silencio.
+        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.equipment_day_status.unassigned_reason_id END,
             comentario = CASE WHEN $6 THEN $5 ELSE app.equipment_day_status.comentario END,
             resolved_by = $2::uuid, resolved_at = now()
         WHERE business_date = $3 AND asset_id = ANY($4::uuid[])
         """,
         body.unassigned_reason_id, user["sub"], business_date, body.asset_ids, body.comentario,
         "comentario" in body.model_fields_set,
+        "unassigned_reason_id" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     updated = [dict(r) for r in rows if str(r["asset_id"]) in found_ids]
@@ -309,7 +338,11 @@ async def patch_equipment_day_status(
     )
     if not row:
         raise HTTPException(404, "Equipo no encontrado en la cuadratura de ese día")
-    if row["status"] != "UNASSIGNED":
+    # El 422 gobierna el MOTIVO, no la fila. Un PATCH que trae solo comentario
+    # se acepta en cualquier estado: desde el 14/09 el comentario es una nota
+    # del dia de esa fila y no un pie de pagina del motivo, asi que una fila
+    # con carga tambien puede explicarse con palabras.
+    if "unassigned_reason_id" in body.model_fields_set and row["status"] != "UNASSIGNED":
         raise HTTPException(422, "Solo se puede registrar motivo para un equipo sin carga")
 
     await pool.execute(
@@ -320,13 +353,17 @@ async def patch_equipment_day_status(
         -- borraba en silencio el texto que alguien habia escrito. El booleano
         -- dice si la clave vino en el payload; Pydantic lo sabe por
         -- `model_fields_set`.
-        SET unassigned_reason_id = $1,
+        -- El motivo sigue la misma regla que el comentario: solo se escribe si
+        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
+        -- lo habria puesto en NULL en silencio.
+        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.equipment_day_status.unassigned_reason_id END,
             comentario = CASE WHEN $6 THEN $5 ELSE app.equipment_day_status.comentario END,
             resolved_by = $2::uuid, resolved_at = now()
         WHERE asset_id = $3 AND business_date = $4
         """,
         body.unassigned_reason_id, user["sub"], asset_id, business_date, body.comentario,
         "comentario" in body.model_fields_set,
+        "unassigned_reason_id" in body.model_fields_set,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     updated = next((dict(r) for r in rows if r["asset_id"] == asset_id or str(r["asset_id"]) == asset_id), None)

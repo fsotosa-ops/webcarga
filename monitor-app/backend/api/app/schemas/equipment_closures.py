@@ -10,7 +10,15 @@ class EquipmentDayStatusPatchBody(BaseModel):
     DriverDayStatusPatchBody de daily_closures.py — pedido explícito del
     usuario 2026-08-04: "Flota del día" necesita la misma funcionalidad de
     edición fila-por-fila para Equipo Completo que ya tiene Tractoreo)."""
-    unassigned_reason_id: str
+    unassigned_reason_id: Optional[str] = None
+    """El motivo, ahora opcional: distingue "no mande la clave" de "quiero
+    que quede vacia", igual que `comentario`.
+
+    Se volvio opcional el 14/09 para que un PATCH pueda traer SOLO el
+    comentario. Antes el motivo era obligatorio, asi que no habia forma de
+    comentar una fila sin motivo -ni una fila con carga-, y el frontend ni
+    siquiera dibujaba el campo: 0 comentarios guardados en 4.540 filas.
+    """
     comentario: Optional[str] = None
     """El comentario de texto libre, opcional.
 
@@ -37,7 +45,7 @@ class EquipmentBatchReasonBody(BaseModel):
     """BLOQUE 1 de HU-03: selección masiva con checkbox — un solo motivo
     para varios tractos en un clic."""
     asset_ids: list[str]
-    unassigned_reason_id: str
+    unassigned_reason_id: Optional[str] = None
     comentario: Optional[str] = None
 
     @field_validator("asset_ids")

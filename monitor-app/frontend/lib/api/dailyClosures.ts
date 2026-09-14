@@ -48,7 +48,7 @@ export const dailyClosuresApi = {
   get: (fecha: string) =>
     apiFetch<DailyClosureStatus>(`/api/v1/daily-closures?fecha=${encodeURIComponent(fecha)}`),
 
-  setReason: (driverId: string, fecha: string, unassignedReasonId: string, comentario?: string | null) =>
+  setReason: (driverId: string, fecha: string, unassignedReasonId?: string, comentario?: string | null) =>
     apiFetch<DriverDayStatusRow>(
       `/api/v1/daily-closures/${driverId}?fecha=${encodeURIComponent(fecha)}`,
       { method: 'PATCH', body: JSON.stringify({ unassigned_reason_id: unassignedReasonId, comentario }) },

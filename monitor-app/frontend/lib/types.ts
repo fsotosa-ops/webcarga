@@ -1348,6 +1348,12 @@ export type EquipmentDayStatusRow = {
    *  dos preguntas, dos campos. */
   today_trip_code:         string | null
   today_trip_origin:       string | null
+  /** Generador de carga: quién pone la carga (Walmart, Iansa, Colun), no la
+   *  empresa de transporte que la mueve. Resuelto por `public.shippers` para
+   *  que llegue con el nombre prolijo y no el crudo del TMS. El eje de
+   *  conductores tiene el suyo aparte (`client_names`), porque ahí un
+   *  conductor puede servir a varios en el mismo día. */
+  today_trip_client:       string | null
   comentario:              string | null
 }
 

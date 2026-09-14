@@ -111,7 +111,11 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   }, [vista])
   useEffect(() => { setPage(1) }, [category, q, pageSize, filtros, orden])
 
-  async function handleSetReason(entityId: string, reasonId: string, comentario?: string | null) {
+  // `reasonId` undefined = "solo vengo a comentar": la clave no viaja en el
+  // JSON y el backend conserva el motivo que ya estaba. Es la misma distincion
+  // que el comentario ya hacia al reves — no mandar la clave no es pedir que
+  // quede vacia.
+  async function handleSetReason(entityId: string, reasonId?: string, comentario?: string | null) {
     setSavingReason(entityId)
     try {
       if (vista === 'CONDUCTORES') {
@@ -186,6 +190,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     unassignedReasonId?: string | null
     tripCode?: string | null
     origin?: string | null
+    cliente?: string | null   // generador de carga: quien pone la carga, no quien la mueve
     comentario?: string | null
     driverPendingDocsCritical?: boolean | null
     suggestedReasonId?: string | null
@@ -210,6 +215,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         unassignedReasonId: d.unassigned_reason_id,
         tripCode: d.today_trip_code,
         origin: d.today_trip_origin,
+        cliente: d.client_names.length ? d.client_names.join(', ') : null,
         comentario: d.comentario,
         driverPendingDocsCritical: d.driver_pending_docs_critical,
         suggestedReasonId: d.suggested_reason_id,
@@ -240,6 +246,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         unassignedReasonId: e.unassigned_reason_id,
         tripCode: e.today_trip_code,
         origin: e.today_trip_origin,
+        cliente: e.today_trip_client,
         comentario: e.comentario,
       }))
 
@@ -267,9 +274,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     col === 'plate'    ? r.secondary :
     col === 'tripCode' ? r.tripCode ?? null :
     col === 'origin'   ? r.origin ?? null :
+    col === 'cliente'  ? r.cliente ?? null :
     col === 'status'   ? r.statusLabel : null
   )
-  const COLUMNAS_FILTRABLES = ['primary', 'carrier', 'plate', 'tripCode', 'origin', 'status']
+  const COLUMNAS_FILTRABLES = ['primary', 'carrier', 'plate', 'tripCode', 'origin', 'cliente', 'status']
   const valoresPorColumna: Record<string, string[]> = Object.fromEntries(
     COLUMNAS_FILTRABLES.map(col => [
       col,
@@ -406,6 +414,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                 ['plate',    esConductores ? 'Tracto habitual' : 'Patente'],
                 ['tripCode', 'Nº viaje'],
                 ['origin',   'Local de origen'],
+                ['cliente',  'Generador de carga'],
                 ['status',   'Estado'],
               ] as const).map(([id, titulo]) => (
                 <CabeceraDeColumna
@@ -430,7 +439,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
           <tbody className="divide-y divide-border/60">
             {paged.length === 0 && (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   {/* gray-300 en italica no llegaba a 4.5:1 de contraste, y
                       "sin resultados" hace dudar de si algo se rompio. */}
                   <Estado
@@ -467,6 +476,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                 </td>
                 <td className="px-3 py-2 font-identificador text-informativo">{r.tripCode ?? '—'}</td>
                 <td className="px-3 py-2 text-informativo">{r.origin ?? '—'}</td>
+                <td className="px-3 py-2 text-informativo">{r.cliente ?? '—'}</td>
                 <td className="px-3 py-2">
                   <span className={`text-etiqueta font-semibold px-2 py-0.5 rounded-full border ${r.statusCls}`}>
                     {r.statusLabel}
@@ -534,21 +544,19 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                     </button>
                   )}
                 </td>
-                {/* El comentario acompaña al motivo: sin motivo elegido no hay
-                    qué comentar, porque un texto libre sin categoría no se
-                    agrupa ni se cuenta. La celda lo dice con un guion en vez de
-                    dejar un campo que no guarda nada. */}
+                {/* Se puede comentar CUALQUIER fila (pedido del usuario,
+                    14/09). Antes el campo solo existía si la fila ya tenía
+                    motivo guardado —287 de 4.540 filas—, así que en el 94%
+                    restante había un guion y no un lugar donde escribir: por
+                    eso no se guardó nunca ni un comentario. El motivo no se
+                    manda acá; el backend conserva el que haya. */}
                 <td className="px-3 py-2 min-w-[12rem]">
-                  {r.unassignedReasonId ? (
-                    <ComentarioDeFila
-                      valor={r.comentario ?? ''}
-                      guardando={savingReason === r.entityId}
-                      onGuardar={texto => handleSetReason(r.entityId, r.unassignedReasonId!, texto)}
-                      etiqueta={`Comentario de ${r.primary}`}
-                    />
-                  ) : (
-                    <span className="text-informativo">—</span>
-                  )}
+                  <ComentarioDeFila
+                    valor={r.comentario ?? ''}
+                    guardando={savingReason === r.entityId}
+                    onGuardar={texto => handleSetReason(r.entityId, undefined, texto)}
+                    etiqueta={`Comentario de ${r.primary}`}
+                  />
                 </td>
               </tr>
             ))}

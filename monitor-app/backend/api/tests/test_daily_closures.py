@@ -413,7 +413,13 @@ def test_patch_driver_day_status_sets_reason():
 
     assert res.status_code == 200
     update_sql = pool.execute.call_args_list[1].args[0]
-    assert "unassigned_reason_id = $1" in update_sql
+    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
+    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
+    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
+    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
+    # Y lo que prueba el binding son los argumentos, no el texto del SQL:
+    # $1 el motivo, $7 la bandera de "vino la clave".
+    assert pool.execute.call_args_list[1].args[7] is True
 
 
 def test_patch_driver_day_status_404_when_not_found():
@@ -454,7 +460,13 @@ def test_set_batch_reason_actualiza_varios_conductores_en_un_llamado():
     assert res.status_code == 200
     assert len(res.json()) == 2
     update_sql = pool.execute.call_args_list[-1].args[0]
-    assert "unassigned_reason_id = $1" in update_sql
+    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
+    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
+    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
+    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
+    # Y lo que prueba el binding son los argumentos, no el texto del SQL:
+    # $1 el motivo, $7 la bandera de "vino la clave".
+    assert pool.execute.call_args_list[-1].args[7] is True
     # Por posicion y no por `args[-1]`: el ultimo argumento dejo de ser la
     # lista de ids cuando se sumo el comentario, y un test que apunta "al
     # ultimo" se rompe cada vez que el UPDATE crece.
@@ -684,12 +696,21 @@ def test_cerrar_el_dia_lo_puede_hacer_un_writer():
     assert "ADMIN_ROLES" in fuente
 
 
-def test_el_comentario_se_guarda_y_el_recompute_lo_conserva_solo_si_sigue_sin_asignar():
+def test_el_recompute_conserva_el_comentario_y_sigue_limpiando_el_motivo():
+    """Cambio de regla el 14/09. Antes el comentario seguia al motivo y el
+    recompute lo borraba al pasar a ASSIGNED. Ahora se puede comentar
+    cualquier fila -con carga o sin ella-, asi que es una nota del dia de esa
+    fila y no un pie de pagina del motivo: borrarla en un recalculo seria
+    perder algo que una persona escribio a mano.
+
+    El motivo, `resolved_by` y `resolved_at` SI se siguen limpiando: esos son
+    del motivo y no significan nada en una fila con carga."""
     from app.routers.daily_closures import _RECOMPUTE_SQL
-    assert "comentario = CASE WHEN EXCLUDED.status = 'UNASSIGNED'" in _RECOMPUTE_SQL
-    # Sigue al motivo: explica por que alguien no trabajo, asi que no puede
-    # sobrevivir al dia en que si trabajo.
-    assert "ELSE NULL END" in _RECOMPUTE_SQL
+    assert "comentario = app.driver_day_status.comentario" in _RECOMPUTE_SQL
+    assert "comentario = CASE WHEN EXCLUDED.status" not in _RECOMPUTE_SQL
+    for campo in ("unassigned_reason_id", "resolved_by", "resolved_at"):
+        assert (f"{campo} = CASE WHEN EXCLUDED.status = 'UNASSIGNED' "
+                f"THEN app.driver_day_status.{campo} ELSE NULL END") in _RECOMPUTE_SQL
 
 
 def test_patch_guarda_el_comentario_junto_al_motivo():
@@ -741,3 +762,41 @@ def test_detail_sql_trae_numero_de_viaje_y_local_de_origen():
     # tambien en el comentario que explica por que no se usa.
     assert "ts3.local AS origen" in _DETAIL_SQL
     assert "ts3.stop_type = 'ORIGIN'" in _DETAIL_SQL
+
+
+def test_se_puede_comentar_un_conductor_con_carga_y_sin_motivo():
+    """Gemelo del de equipment_closures: el comentario dejo de exigir motivo y
+    dejo de exigir que la fila este sin asignar."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "ASSIGNED"}
+    pool.fetch.return_value = [_driver_row(driver_id="d1")]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-09-07",
+                       json={"comentario": "hizo media jornada"})
+
+    assert res.status_code == 200, res.text
+    args = pool.execute.call_args_list[-1].args
+    assert args[5] == "hizo media jornada"
+    assert args[6] is True
+    assert args[7] is False
+
+
+def test_el_motivo_sobre_un_conductor_con_carga_sigue_siendo_422():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"status": "ASSIGNED"}
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-09-07",
+                       json={"unassigned_reason_id": "r1"})
+
+    assert res.status_code == 422
+
+
+def test_un_viaje_declarado_deja_de_contar_como_carga_del_conductor():
+    """Gemelo del de equipment_closures. Un viaje declarado "no lo tomamos"
+    deja de contar como carga tambien en el eje de conductores: si era el
+    unico del dia, la fila cae a "No asignado" y recien ahi se le puede poner
+    motivo y comentario."""
+    from app.routers.daily_closures import _RECOMPUTE_SQL
+    assert "AND t.unassigned_reason_id IS NULL" in _RECOMPUTE_SQL
