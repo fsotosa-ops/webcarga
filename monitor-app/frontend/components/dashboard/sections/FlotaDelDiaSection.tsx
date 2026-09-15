@@ -24,12 +24,13 @@ type Vista = 'CONDUCTORES' | 'TRACTOREO' | 'EQUIPO_COMPLETO'
  *  pendiente no bajaba nunca aunque el trabajo avanzara. Pedido del usuario
  *  (07/09): al marcar una Acción, la fila se descuenta de No asignados y pasa
  *  a contarse acá. */
-// `porResolver` es la categoria con la que ABRE la pantalla: la union de
-// "No asignados" y "Por regularizar", o sea el trabajo que queda. Existia
-// desde el 04/08 como el string vacio y SIN TILE, asi que al entrar la tabla
-// aparecia filtrada por algo que ningun tile marcaba: se veia "43 Total" y una
-// sola fila, sin nada que explicara por que. Ahora tiene nombre y tile.
-type RowCategory = 'porResolver' | 'total' | 'assigned' | 'unassigned' | 'noTrabajando' | 'mismatch'
+// La pantalla ABRE en 'total' (decision del usuario, 14/09). Hasta el 04/08
+// abria en una categoria anonima —el string vacio, la union de "No asignados"
+// y "Por regularizar"— que NO tenia tile: se veia "43 Total" arriba y una sola
+// fila abajo, con los cinco tiles apagados y nada que explicara el recorte.
+// Con 'total' el numero de arriba es el numero de filas de abajo, y no hizo
+// falta inventar ninguna etiqueta nueva.
+type RowCategory = 'total' | 'assigned' | 'unassigned' | 'noTrabajando' | 'mismatch'
 
 /** Cuántas filas por página. El usuario pidió 20/50/100 "para que equilibre
  *  con la paginación": con 10 fijas y 81 tractos, revisar el día eran nueve
@@ -85,7 +86,7 @@ interface Props {
 export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onCreateManualTrip }: Props) {
   const queryClient = useQueryClient()
   const [vista, setVista] = useState<Vista>('CONDUCTORES')
-  const [category, setCategory] = useState<RowCategory>('porResolver')
+  const [category, setCategory] = useState<RowCategory>('total')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(TAMANOS_DE_PAGINA[0])
@@ -108,7 +109,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   })
 
   useEffect(() => {
-    setCategory('porResolver'); setQ(''); setPage(1); setSelected(new Set())
+    setCategory('total'); setQ(''); setPage(1); setSelected(new Set())
     // Los filtros y el orden son de ESTA tabla: al cambiar de eje las columnas
     // cambian de significado y un filtro heredado dejaría la tabla vacía sin
     // que se vea por qué.
@@ -262,12 +263,11 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const noTrabajando = (r: Row) => r.statusLabel === 'No asignado' && !!r.unassignedReasonId
 
   const categoryFiltered = (
-    category === 'total'        ? rows :
     category === 'assigned'     ? rows.filter(r => r.statusLabel === 'Asignado') :
     category === 'unassigned'   ? rows.filter(sinResolver) :
     category === 'noTrabajando' ? rows.filter(noTrabajando) :
     category === 'mismatch'     ? rows.filter(r => r.statusLabel === 'Por regularizar') :
-    rows.filter(r => r.statusLabel === 'Por regularizar' || sinResolver(r))  // porResolver
+    rows  // 'total', que es tambien con la que abre
   )
 
   // ── Filtro por columna, orden y paginación ───────────────────────────────
@@ -362,11 +362,6 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
 
       <AlertStatTiles
         tiles={[
-          // Va primero porque es con la que abre la pantalla, y porque es el
-          // trabajo que queda: lo que nadie miro mas lo que esta por
-          // regularizar. Sin este tile el estado inicial no se veia en ningun
-          // lado, que es justo lo que reporto el usuario.
-          { id: 'porResolver', label: 'Por resolver', value: unassignedCount + mismatchCount, tone: 'danger' },
           { id: 'total', label: 'Total', value: totalCount, tone: 'neutral' },
           { id: 'assigned', label: 'Asignados', value: assignedCount, tone: 'success' },
           { id: 'unassigned', label: 'No asignados', value: unassignedCount, tone: 'neutral' },
@@ -376,7 +371,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
           ...(esConductores ? [{ id: 'mismatch', label: 'Por regularizar', value: mismatchCount, tone: 'danger' as const }] : []),
         ]}
         active={category}
-        onSelect={id => setCategory(prev => (prev === id ? 'porResolver' : id) as RowCategory)}
+        onSelect={id => setCategory(prev => (prev === id ? 'total' : id) as RowCategory)}
       />
 
       <div className="relative">

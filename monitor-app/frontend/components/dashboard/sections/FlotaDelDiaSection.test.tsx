@@ -134,10 +134,25 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.getByRole('columnheader', { name: 'Patente' })).toBeInTheDocument()
   })
 
-  it('por defecto muestra Conductores, con los pendientes (no asignados sin motivo + mismatch)', async () => {
+  it('por defecto muestra Conductores con el roster completo', async () => {
+    // Cambio del 14/09: antes abria recortado por "no asignados sin motivo +
+    // mismatch", una categoria que ningun tile marcaba.
     renderSection()
     expect(await screen.findByText('Ana Soto')).toBeInTheDocument()
     expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
+    expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
+    expect(screen.getByText('Carla Díaz')).toBeInTheDocument()
+  })
+
+  it('el tile "No asignados" recorta a los que nadie miró todavía', async () => {
+    // El recorte que antes venia puesto de fabrica ahora se pide, y su tile
+    // queda marcado — que es lo que faltaba.
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    fireEvent.click(screen.getByText('No asignados'))
+
+    expect(screen.getByText('Ana Soto')).toBeInTheDocument()
     expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
     expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
   })
@@ -273,7 +288,10 @@ describe('FlotaDelDiaSection', () => {
     renderSection({ onCreateManualTrip })
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Crear viaje manual/ }))
+    // Con el roster completo hay un boton por fila sin asignar, asi que se
+    // acota a la de Ana Soto en vez de tomar "el unico".
+    const fila = screen.getByText('Ana Soto').closest('tr')!
+    fireEvent.click(within(fila).getByRole('button', { name: /Crear viaje manual/ }))
 
     expect(onCreateManualTrip).toHaveBeenCalledWith('d1', 'Ana Soto')
   })
@@ -622,36 +640,31 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.getByRole('button', { name: 'Ordenar por Generador de carga' })).toBeInTheDocument()
   })
 
-  it('la categoría con la que abre la pantalla tiene su tile, y se ve marcado', async () => {
+  it('la pantalla abre en "Total": el número de arriba es el de las filas de abajo', async () => {
     // Reportado por el usuario (14/09): *"al seleccionar los cards no se ve la
-    // categoría"*. La pantalla abría filtrada por la unión de "No asignados" y
-    // "Por regularizar" —el trabajo que queda— pero esa categoría era el string
-    // vacío y NO tenía tile: se veía "38 Total" y una sola fila, con los cuatro
-    // tiles apagados y nada que explicara el recorte. Viene así desde el 04/08.
+    // categoría"*. Abría filtrada por la unión de "No asignados" y "Por
+    // regularizar" —una categoría sin tile—, así que se veía "38 Total" y una
+    // sola fila, con los cinco tiles apagados y nada que lo explicara.
     renderSection()
     await screen.findByText('Ana Soto')
 
-    const tile = screen.getByRole('button', { name: /Por resolver/ })
-    expect(tile.className).toContain('border-accent')
-
-    // Y el número del tile es el de las filas que se están viendo: Ana Soto
-    // (sin motivo) y Luis Rojas (por regularizar). Carla ya tiene motivo y
-    // Juan está asignado, así que no entran.
-    expect(within(tile).getByText('2')).toBeInTheDocument()
-    expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
-    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+    const total = screen.getByRole('button', { name: /Total/ })
+    expect(total.className).toContain('border-accent')
+    // Los cuatro conductores del fixture, no un recorte silencioso.
+    expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
+    expect(screen.getByText('Carla Díaz')).toBeInTheDocument()
   })
 
-  it('al cambiar de eje vuelve a "Por resolver", no a una categoría sin tile', async () => {
+  it('al cambiar de eje vuelve a "Total", no a una categoría sin tile', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
-    expect(screen.getByRole('button', { name: /Total/ }).className).toContain('border-accent')
+    fireEvent.click(screen.getByText('No trabajando'))
+    expect(screen.getByRole('button', { name: /No trabajando/ }).className).toContain('border-accent')
 
     fireEvent.click(screen.getByText(/Tractos · Tractoreo/i))
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Por resolver/ }).className).toContain('border-accent')
+      expect(screen.getByRole('button', { name: /Total/ }).className).toContain('border-accent')
     })
   })
 })
