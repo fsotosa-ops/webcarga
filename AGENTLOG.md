@@ -11,6 +11,49 @@
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
 
+### 2026-09-14 — Ronda 159: los tres jobs que llevaban un mes encolados
+
+Tres filas de `ops.extraction_jobs` en `queued` con `started_at` nulo, entre 7 y 26 días:
+`cumplimiento-iansa` desde el **19/08**, y `cumplimiento-iansa` + `sodimac/trips` desde el **07-09**.
+
+## La causa
+
+El job corre en un `asyncio.create_task` **dentro del mismo proceso** que atendió el POST. La fila
+vive en Postgres; el trabajador vive en memoria. Si la instancia desaparece entre el `INSERT` y
+`try_claim_slot`, la fila queda en `queued` y no la recoge nadie.
+
+El servicio **ya tenía** un recuperador de huérfanos, puesto tras el incidente del 19/08 — pero mira
+sólo `status = 'running'`. La **misma caída** del 07-09 produjo los dos tipos a la vez y sólo uno se
+recuperó: de cinco jobs encolados a las 20:30, `cumplimiento-sap` alcanzó a estar `running` y salió
+marcado *"Slot huérfano recuperado"*, mientras los otros dos seguían en `queued` 26 días después. Y
+el de agosto se encoló **17 segundos después de un `deploy.yml` de este mismo servicio**
+(02:00:28Z contra 02:00:45Z).
+
+**Descartado en el camino**: la trampa clásica de Cloud Run —CPU no garantizada fuera de una
+request— ya estaba cubierta (`--no-cpu-throttling`, `--min-instances=1`). Por eso no está en el
+arreglo.
+
+## El arreglo
+
+Un segundo recuperador gemelo, en el mismo advisory lock, para `queued` + `started_at IS NULL` más
+viejo que `QUEUE_TIMEOUT_MS + ORPHAN_GRACE_MS`. Mismo invariante que el de `running`.
+
+Se marca `failed` y **no se reintenta**: estos jobs traen una ventana de fechas en el `request`, y
+reintentar uno de hace 26 días traería datos de otra época. El planificador los reencola cada 15
+minutos — el trabajo no se pierde, queda superado.
+
+**51 en verde**, 2 salteados (integración con `INTEGRATION=1`, verificado que no son fallos de
+conexión disfrazados). **Cuatro mutaciones** verificadas.
+
+Las tres filas se limpian solas en la primera reclamación de slot después de desplegar: llevan días
+y el umbral son 6 minutos.
+
+## Checklist — siguiente paso exacto
+
+1. **Desplegar el extraction service** (`deploy.yml`) y confirmar que las 3 filas pasan a `failed`.
+2. **Sin pushear**: este commit, el del diseño del modelo de cierre y el del AGENTLOG.
+3. El resto sigue como lo dejó la Ronda 158.
+
 ### 2026-09-14 — Ronda 158: el cierre y el Monitor dejan de contarse cosas distintas
 
 Cinco pedidos del usuario sobre el Cierre, y uno más sobre el Monitor que apareció a mitad de la
