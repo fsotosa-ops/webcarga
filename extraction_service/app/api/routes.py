@@ -45,7 +45,8 @@ async def _run_job(
     """
     queue_deadline = asyncio.get_event_loop().time() + settings.QUEUE_TIMEOUT_MS / 1000
     while not await store.try_claim_slot(
-        job_id, settings.MAX_CONCURRENT_JOBS, settings.JOB_TIMEOUT_MS
+        job_id, settings.MAX_CONCURRENT_JOBS, settings.JOB_TIMEOUT_MS,
+        settings.QUEUE_TIMEOUT_MS,
     ):
         if asyncio.get_event_loop().time() >= queue_deadline:
             await store.mark_failed(

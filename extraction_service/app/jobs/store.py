@@ -92,7 +92,8 @@ class JobStore:
     ORPHAN_GRACE_MS = 60_000
 
     async def try_claim_slot(
-        self, job_id: str, max_concurrent: int, job_timeout_ms: int
+        self, job_id: str, max_concurrent: int, job_timeout_ms: int,
+        queue_timeout_ms: int,
     ) -> bool:
         """Reclama un slot de ejecución global (todas las instancias de
         Cloud Run comparten el conteo). El advisory lock serializa el
@@ -121,6 +122,29 @@ class JobStore:
         detrás — está muerta, y su slot debe volver al pool. Se marca 'failed'
         en vez de sólo ignorarla para que el estado quede consistente y el
         incidente sea visible en la tabla.
+
+        HUÉRFANOS EN COLA (incidente 2026-09-07, encontrado el 14/09): la
+        recuperación de arriba sólo mira 'running', y esa es la mitad del
+        problema. Un job que muere ANTES de reclamar su slot se queda en
+        'queued' con `started_at` nulo, y ahí no lo ve nadie — ni el
+        recuperador, ni el operador, que lo lee como "está por correr".
+
+        La misma caída del 07-09 produjo los dos tipos a la vez, y sólo uno
+        se recuperó: de cinco jobs encolados a las 20:30, `cumplimiento-sap`
+        alcanzó a estar 'running' y salió como huérfano recuperado, mientras
+        que `cumplimiento-iansa` y `sodimac/trips` seguían en 'queued' **26
+        días después**. Un tercero llevaba encolado desde el 19/08, 17
+        segundos después de un despliegue de este mismo servicio.
+
+        El invariante es gemelo del de arriba: un job no puede estar en cola
+        más de QUEUE_TIMEOUT_MS, porque su propio proceso lo mata a esa
+        altura ("Timeout esperando un slot libre"). Si lo supera, no tiene
+        proceso detrás.
+
+        Se marca 'failed' y NO se reintenta a propósito: estos jobs traen una
+        ventana de fechas en el `request`, y reintentar uno de hace 26 días
+        traería datos de otra época. El planificador los vuelve a encolar
+        cada 15 minutos, así que el trabajo no se pierde — queda superado.
         """
         umbral_ms = job_timeout_ms + self.ORPHAN_GRACE_MS
         async with self._pool.acquire() as conn:
@@ -143,6 +167,28 @@ class JobStore:
                         "Recuperados %d slot(s) huérfanos (running > %dms sin proceso): %s",
                         len(huerfanos), umbral_ms,
                         ", ".join(str(r["job_id"]) for r in huerfanos),
+                    )
+                # El gemelo del de arriba, para los que murieron ANTES de
+                # reclamar slot. Se excluye el propio job: si por lo que sea
+                # este llamador ya superó su tope de cola, el que lo tiene que
+                # marcar es su `queue_deadline`, no su propia reclamación —
+                # marcarse a sí mismo y despues pasar a 'running' dejaria la
+                # fila contando dos historias.
+                en_cola = await conn.fetch(
+                    "UPDATE ops.extraction_jobs SET status = 'failed', completed_at = now(), "
+                    "error = 'Cola huérfana recuperada: el job nunca reclamó un slot y no tiene "
+                    "proceso detrás (instancia caída o reciclada). Ver JobStore.try_claim_slot.' "
+                    "WHERE status = 'queued' AND started_at IS NULL "
+                    "  AND job_id <> $1 "
+                    "  AND queued_at < now() - ($2::bigint * interval '1 millisecond') "
+                    "RETURNING job_id",
+                    uuid.UUID(job_id), queue_timeout_ms + self.ORPHAN_GRACE_MS,
+                )
+                if en_cola:
+                    logger.warning(
+                        "Recuperados %d job(s) huérfanos en cola (queued > %dms sin proceso): %s",
+                        len(en_cola), queue_timeout_ms + self.ORPHAN_GRACE_MS,
+                        ", ".join(str(r["job_id"]) for r in en_cola),
                     )
                 running = await conn.fetchval(
                     "SELECT count(*) FROM ops.extraction_jobs WHERE status = 'running'"
