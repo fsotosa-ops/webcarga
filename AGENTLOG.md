@@ -10,6 +10,71 @@
 > (**Rondas 147-148 archivadas al cerrar la Ronda 149**: el backlog y el roadmap, el click-through
 > de la app desplegada, el contrato, el rol `writer` y el test rojo. Lo que seguía abierto se
 > consolidó ABAJO antes de mover nada.)
+> (**Rondas 152-157 archivadas al cerrar la sesión del 2026-09-14**: todo su trabajo está
+> desplegado, y lo que seguía abierto se consolidó en el checklist de la Ronda 160.)
+
+### 2026-09-14 — Ronda 160: cierre de sesión
+
+Tres cosas más después de la 159, y una lección que vale más que las tres.
+
+## El tile que inventé, y por qué estuvo mal
+
+El usuario reportó que al seleccionar las tarjetas *"no se ve la categoría"*. Medido en el
+desplegado: la pantalla abría filtrada por la unión de "No asignados" y "Por regularizar" —una
+categoría que era el **string vacío y no tenía tile**—, así que se veía "38 Total" arriba y una sola
+fila abajo, con los cinco tiles apagados. Viene del commit `ea00362a`, del **04/08**; no es una
+regresión de esta sesión, pero mi arreglo de sincronización puso una fila en esa categoría y lo
+destapó.
+
+**Lo resolví agregando un tile "Por resolver" que me inventé**, y el usuario lo marcó: era una
+etiqueta nueva de producto decidida por mí, y encima fusionaba dos categorías **excluyentes** —una
+fila es una o la otra, nunca las dos—. El mismo patrón que él ya había frenado esa misma noche con
+las columnas de comentario: tapar un hueco agregando.
+
+Revertido. **La pantalla abre en "Total"**: el número de arriba es el de las filas de abajo, sin
+tile nuevo y sin palabra nueva. El recorte por pendientes no se pierde, se pide con el tile "No
+asignados" que ya existía, y queda marcado.
+
+**Hallazgo lateral**: el valor inicial del `useState` de `category` es **código muerto** — el
+`useEffect` con `[vista]` corre también al montar y lo pisa. Lo descubrí mutando: cambiar el
+`useState` no pone ningún test en rojo; cambiar el efecto pone dos.
+
+## La columna de comentarios en la pestaña "Viajes": NO existe, y es a propósito
+
+El usuario preguntó por qué no la ve en Abandonados / En curso / Rezago. **Nunca se construyó.** Se
+frenó al decidir el modelo de cierre: agregarla sobre `app.trips.comments` era el quinto lugar para
+guardar un comentario. Nace en la **ola 4** del diseño, con la línea `subject_type='TRIP'`.
+
+## Decisión de proceso del usuario
+
+**Pushear directo cuando esté verde**, sin preguntar. Se sigue esperando la ventana entre lotes de
+ingestión para el extraction y el monitor-api, y se sigue confirmando antes de escribir en
+producción algo que no sea un despliegue.
+
+## Estado al cerrar
+
+`dev` en `42b390db`, **todo pusheado y desplegado** (Frontend, Monitor API y Extraction Service en
+verde). Árbol limpio. **Frontend 1.375, backend 1.015, extraction 51** — todo en verde, `tsc`
+limpio, build OK, trinquetes sin moverse.
+
+**Verificado en producción**: los 4 viajes cerrados salieron de "En Curso"; los 3 jobs encolados
+hace un mes se recuperaron solos a las 01:00:47; el comentario del cierre se guarda en una fila
+asignada y sobrevive al recompute; SVLT43 dice "No asignado".
+
+## Checklist — siguiente paso exacto
+
+1. **Leer `docs/superpowers/specs/2026-09-14-modelo-de-cierre-design.md`** y decidir si va. Si va,
+   la **ola 1** son las dos tablas sin que nadie las lea — reversible con un `DROP`.
+2. **Los 46 abandonados siguen sin poder declararse**, y su columna de comentario tampoco existe.
+   Las dos cosas están en la ola 4. Si el cierre de prueba de Pablo es antes, se puede adelantar
+   sobre `app.trips.comments` asumiendo la deuda — el usuario ya rechazó eso una vez.
+3. **El cierre de prueba de Pablo**, que sigue siendo lo único que cierra el Bloque 1.
+4. **De negocio**: 32 viajes de Sodimac trabados (el más viejo del 30/07), la matriz estado→grupo de
+   Pablo y Fabián, y el bug que Fabián tiene que reproducir.
+5. **Deuda anotada hoy y no tocada**: 6 de 7 días firmados se siguen recalculando (lo arregla el
+   modelo nuevo); el historial de migraciones de Supabase está desfasado desde el 23/08 y la fuente
+   de verdad es el directorio `migrations/`; el desplegable de filtro puede recortarse con muy pocas
+   filas ahora que el contenedor scrollea.
 
 ### 2026-09-14 — Ronda 159: los tres jobs que llevaban un mes encolados
 
@@ -176,356 +241,6 @@ los primeros comentarios guardados en la historia del proyecto, borrados despué
    una fila asignada y que sobreviva al recargar, y el motivo por fila en "Viajes".
 5. Sigue de antes: el cierre de prueba de Pablo, y agrupar el cierre por estado esperando la matriz
    estado→grupo de Pablo y Fabián.
-
-### 2026-09-07 — Ronda 157: el comentario del cierre, en su propia columna
-
-Ajuste pedido por el usuario sobre la Ronda 155: el comentario estaba **debajo del motivo**, dentro
-de la celda "Acción". Metido ahí competía por el ancho con el desplegable y se leía como un pie de
-página del motivo, no como el dato que es. Pasó a ser **columna propia**, al final de la tabla y
-pegada a Acción, para que motivo y comentario se lean juntos de izquierda a derecha.
-
-Se mantiene la regla: sin motivo elegido no hay qué comentar —un texto libre sin categoría no se
-agrupa ni se cuenta—, y la celda lo dice con un guion en vez de ofrecer un campo que no guarda nada.
-
-**Frontend 1.366 en verde**, build limpio. La mutación que devuelve el comentario adentro de "Acción"
-pone en rojo dos tests. Click-through local sobre el 03-09: el encabezado "Comentario" como novena
-columna, y la fila con su motivo en una celda y su comentario en la de al lado.
-
-### 2026-09-07 — Ronda 156: la baja bloquea de verdad, un botón de menos, y el CD de origen
-
-## La empresa dada de baja: la pantalla lo prometía, la API no lo cumplía
-
-El frontend **ya estaba completo**: el banner *"no se le puede cargar nada nueva"* y
-`canEdit = canEditRol && empresaActiva`, que apaga los controles en todo el árbol. Lo que faltaba
-era que la API lo hiciera cumplir — un POST directo, la carga masiva o la Bandeja escribían igual.
-
-Se cerraron **los dos** caminos de escritura (`_apply_compliance_upload` y el de la Bandeja) con
-409. Guardar uno solo deja la puerta de atrás abierta.
-
-Tres decisiones que valen:
-- **Bloquea la escritura, no la lectura.** Dar de baja archiva, no oculta: al reactivar lo primero
-  que se necesita ver es qué se venció durante la baja. Eso ya estaba escrito en el docstring de
-  `_estado_de_empresa_a_mostrar` y se respetó.
-- **Va en la consulta que ya traía el record**, no en una segunda: una vuelta más por cada archivo
-  de una carga masiva de 30 no se paga sola.
-- **`entity_id` es polimórfico** — carrier, conductor o vehículo según `entity_type`—, así que el
-  CASE resuelve al dueño por los tres caminos. Verificado contra la base: activa → None, empresa de
-  baja → su nombre, conductor de empresa de baja → su nombre.
-
-Los conteos globales ya excluían a las no activas desde antes (`_estado_de_empresa_a_mostrar`).
-
-## El botón "Editar Empresa", retirado sin perder nada
-
-El cajón ofrecía dos cosas: renombrar y cambiar el estado operativo. Lo segundo lo hacían ya los
-botones "Dar de baja"/"Reactivar" de al lado — **dos caminos para el mismo acto, con nombres
-distintos**, que es exactamente cómo dos superficies terminan diciendo cosas distintas del mismo
-dato. Lo único que no se duplicaba era el renombre, así que quedó sobre el nombre, con un lápiz.
-
-## El CD de origen: el argumento era cierto, pero de los destinos
-
-El filtro de Origen era un autocomplete, con este comentario: *"no chips estáticas: cientos de
-locales reales"*. Medido el 07/09: **23 orígenes distintos contra 279 destinos**, y cinco
-concentran el 98% del volumen. El argumento vale para los destinos y no para los orígenes. Ahora
-son chips dinámicas desde la base, ordenadas **por volumen y no alfabéticamente** —los CD que mueven
-la operación van arriba—, igual que Fuente y Cliente.
-
-## Lo medido
-
-**Frontend 1.365 en verde, backend 1.006** (con los 190 de integración), build limpio. Trinquete de
-color **1.719 → 1.717**. Las tres consultas nuevas corridas contra la base real antes de escribir un
-mock. Click-through local: las chips de CD ordenadas por volumen, la ficha sin "Editar Empresa" y
-con el lápiz sobre el nombre, y la certificación de una empresa de baja mostrando su historial
-completo bajo el cartel que ahora la API respalda.
-
-## Checklist — siguiente paso exacto
-
-1. **El cierre de prueba de Pablo**, que sigue siendo lo único que cierra el Bloque 1.
-2. **Agrupar el cierre de viajes por estado**, esperando la matriz estado→grupo de Pablo y Fabián.
-   Facturación quedó fuera de alcance.
-3. Que Fabián reproduzca el bug de "crear conductor desde Empresas no lo asigna".
-
-### 2026-09-07 — Ronda 155: siete pedidos del usuario sobre el cierre
-
-## Los siete, y qué era cada uno
-
-1. **`writer` puede cerrar.** Los endpoints del cierre exigían `require_editor`,
-   que deja fuera justamente al rol de quien opera el Diario todos los días. Pasaron a
-   `require_writer`. El **override no se movió**: forzar con pendientes sigue siendo de admin —
-   abrir la puerta no es dar la llave del cuarto de atrás.
-2. **Comentario de texto libre por fila** (migración `20260907200000`). El motivo dice la
-   categoría —"Panne"— y no dice el caso. Va donde está la decisión que justifica, y sólo cuando
-   hay motivo elegido: un texto sin categoría no se agrupa ni se cuenta.
-3. **Card "No trabajando".** "No asignados" mezclaba a los que nadie miró con los ya resueltos, así
-   que el número de lo pendiente no bajaba nunca aunque el trabajo avanzara. Medido en vivo sobre
-   el 03-09: pasó de decir **10** a decir **1 sin resolver y 9 no trabajando**.
-4. **El motivo del viaje es del catálogo del viaje.** El detalle del viaje en el Monitor ofrecía
-   `DRIVER_REASON` —"Vacaciones", "Panne"— y escribía el id en
-   `app.trips.unassigned_reason_id`, que significa "por qué WebCarga no tomó este viaje". El propio
-   backend ya lo tenía anotado como *un campo con dos escritores y dos catálogos*: bulk-close
-   validaba el dominio desde agosto y este camino no. Ahora ofrece los doce de
-   `TRIP_UNASSIGNED_REASON` y el `PATCH` rechaza el otro dominio con 422. **Medido antes de
-   tocarlo: 0 viajes tenían motivo escrito**, así que el arreglo llegó antes que el dato sucio.
-5. **Dos columnas nuevas**: Nº de viaje del TMS y local de origen. El origen sale de
-   `app.trip_stops`, no de `trips.origin_tms` — esa columna está **vacía en las 2.204 filas**.
-6. **La tabla funciona como una planilla**: orden asc/desc/sin orden por columna y filtro múltiple
-   por los valores presentes. Los valores del filtro salen de las filas que hay, no de un catálogo:
-   verificado en vivo, la columna Empresa ofrece las 8 que están en pantalla y no las 250 del
-   padrón.
-7. **20/50/100 filas por página.** Eran 10 fijas; con 81 tractos, revisar el día eran nueve saltos.
-
-## Un bug que me hice y me pesqué el guardia
-
-Al sumar el comentario, cambiar el motivo lo habría **borrado en silencio**: el frontend no manda
-el campo y el UPDATE lo ponía en NULL. Se arregló en el backend, que es la capa correcta —
-`model_fields_set` distingue "no mandé la clave" de "quiero que quede vacía"—, con test que lo fija.
-
-Y el test de español neutral me pescó cuatro *"ponelo"* en mis propios comentarios. Ese guardia
-existe porque llegaron ocho casos a producción sin que nada los detectara; esta vez detectó.
-
-## Lo medido
-
-**Frontend 1.363 en verde, backend 1.004** (con los 190 de integración), build limpio. Trinquetes
-bajados: color crudo **1.721 → 1.719**, tamaños <11px **262 → 260**. Las consultas nuevas corridas
-contra la base real antes de confiar en mocks, y el conteo de placeholders contra argumentos hecho a
-mano en los cuatro UPDATE. Tres mutaciones sobre la tabla —quitar el corte de "No trabajando", el
-orden y el filtro— ponen en rojo cinco tests distintos.
-
-Click-through local sobre el 03-09: las cinco cards, las siete columnas con su botón de orden y de
-filtro, el selector de filas, y el campo de comentario apareciendo sólo en las filas con motivo.
-
-## Checklist — siguiente paso exacto
-
-1. **El cierre de prueba de Pablo**, que sigue siendo lo único que cierra el Bloque 1.
-2. Lo que resta del Bloque 3: **agrupar el cierre de viajes por estado**, esperando la matriz
-   estado→grupo de Pablo y Fabián. **Facturación quedó fuera de alcance.**
-3. Que Fabián reproduzca sobre el build de hoy el bug de "crear conductor desde Empresas no lo
-   asigna": no se puede verificar sin crear registros reales.
-
-### 2026-09-07 — Ronda 154: el Directorio sale de Certificación, y busca las tres cosas
-
-Auditoría pedida por el usuario: *"¿por qué no están separados? La UX de empresas tiene muchos
-clics"*. Medido en la app desplegada, no leído.
-
-## Estaban cruzados al revés
-
-El menú tenía `Certificación → { Empresas, Sin clasificar, Directorio }`. Y cada módulo tenía el
-trabajo del otro:
-
-- **Certificación** —el módulo documental— era el que sabía buscar por Conductor, Vehículo y
-  Requisito, y el que mostraba el resumen del padrón (250 empresas, 80 tractos, 80 conductores).
-- **El Directorio** —donde se da de baja, se transfiere y se activa— buscaba **sólo** por nombre o
-  RUT de empresa. Medido: "Pardo" → *Sin resultados, 0 empresas*, sobre un conductor que existe.
-  "DTBY52" → *Sin resultados*, sobre un tracto que existe.
-
-El caso de Pablo —*"necesito el RUT para saber qué conductor dejar"*— costaba **6 clics y saber la
-empresa de antemano**, porque el RUT vivía en un solo lugar de toda la app: dentro del panel de
-detalle. Por Certificación eran 3 clics a un callejón sin salida: esa tabla no muestra RUT.
-
-Y el resto de la app ya le daba la razón a Pablo: de los diez enlaces con que el Monitor y el Cierre
-mandan a arreglar algo, **nueve apuntan a `/dashboard/carriers`** y uno solo a
-`/dashboard/compliance`. Las pantallas operativas ya trataban al Directorio como el lugar donde se
-gestiona; el menú lo escondía adentro del módulo documental.
-
-## Lo que se hizo
-
-1. **El Directorio salió del grupo** y quedó como módulo propio, entre Operaciones y Certificación.
-   El render pasó a una sola lista ordenada: antes grupos y hojas iban en dos bloques, así que una
-   hoja no podía ir *entre* dos grupos.
-2. **Un solo buscador, tres tipos de resultado** (`GET /carriers/buscar`). RUT y patente se comparan
-   por su forma canónica, así que "18.659.820-2" y "dt by52" encuentran lo mismo que el texto
-   exacto — `canonical_rut` y `canonical_plate` estaban en Postgres desde el 17/08 sin que las
-   llamara nadie.
-3. **Cada resultado abre su panel directo**, con `?driver=` / `?asset=`. Esos dos parámetros **ya
-   los leía la ficha** desde antes y no apuntaba nadie: otra capacidad sin puerta. De 6 clics a 1, y
-   la vista pasa a ser direccionable.
-4. Un conductor **sin empresa** se muestra igual, con la marca, y sin link: no tiene ficha donde
-   abrirse. Son 10 personas, y su vínculo lo propone el pre-cierre.
-
-## Lo que NO se hizo, y por qué
-
-- **Facturación queda fuera de alcance** (definición del usuario). Eso cierra P1 de la reunión del
-  04/09 sin discutirla.
-- **El bug de Fabián** —"crear el conductor desde Empresas no lo asigna"— no se pudo verificar sin
-  crear registros reales en producción. El alta se unificó en un componente compartido el 27/08 y
-  las dos pantallas le pasan el `carrierId`; Felipe ya le había dicho en la reunión que *"está
-  marcando bien en la asignación"*. Lo tiene que reproducir Fabián sobre el build de hoy.
-- La búsqueda de Certificación **sigue sin ser direccionable** (`?group=driver` se ignora, siempre
-  arranca en "Empresa"). Anotado, no tocado.
-
-## Lo medido
-
-**Frontend 1.353 en verde, backend 997** (con los 190 de integración). Los dos trinquetes visuales
-sin moverse: 1.721 y 262. Las tres consultas del buscador corridas contra la base real —"Pardo",
-"DTBY52", "dt by52" y un RUT con puntos— antes de escribir un solo mock, y los cuatro tests nuevos
-de la UI verificados por mutación. Click-through local: buscar el apellido devuelve al conductor con
-su RUT y su empresa, y el clic abre el panel con Transferir / Dar de baja / Quitar del roster.
-
-### 2026-09-07 — Ronda 153: el eje de bajas, y una alarma que yo mismo había inflado
-
-Bloque 2 del plan. Tres arreglos y **una corrección a lo que había escrito en la Ronda 152**.
-
-## Las empresas dadas de baja no estaban en ninguna pestaña
-
-`_SQL_DIRECTORIO` cuenta `LEGACY_INACTIVE + INACTIVE` como "inactivas" —**214**— y la pestaña del
-Directorio filtraba sólo el primero —**206**—. La cifra del encabezado y la lista de abajo, en la
-misma pantalla, no podían coincidir. Las **8** que faltaban son justo las dadas de baja **desde la
-app**, y entre ellas está *Transportes Cristian González E.i.r.l.*: la que Pablo dijo el 04/09
-—*"yo di de baja esa empresa y no aparece"*— y también *Transporte Cribas*, de la minuta del 25/08.
-
-`operational_status` acepta ahora varios estados separados por coma (`= ANY($n::text[])`); un solo
-valor se comporta igual que antes. La pestaña se llama **"Inactivas"** y manda los dos. Lo mismo en
-Seguros, que tenía el mismo corte. Verificado en pantalla: la pestaña dice **214** y la empresa de
-Pablo aparece al buscarla.
-
-## La baja, dicha en la lista
-
-`DriverRosterCard` y `VehicleRosterCard` recibían `operational_status` en el payload y no lo
-dibujaban: había que abrir cada ficha para ver que el botón decía "Reactivar". Ahora hay un
-`ChipDeBaja`, y va **en lugar** del pill de documentación, no al lado — un conductor de baja con los
-papeles al día se veía con un "Al día" verde, la lectura exactamente contraria. Verificado en
-pantalla con los 3 conductores de *Inversiones Casilla Spa*, que es la captura de Pablo.
-
-Y el chip de estado de la ficha de empresa **imprimía el enum crudo**: decía `ACTIVE` en una
-interfaz en español. Eso alimentaba su pregunta de la reunión —*"¿lo da de baja o le pone
-inactivo?"*—: son el mismo eje escrito de dos maneras. Ahora hay `OPERATIONAL_STATUS_LABELS`, y
-`LEGACY_INACTIVE` e `INACTIVE` se dicen igual a propósito.
-
-## La corrección: "53 de 90 conductores fuera del cierre" era alarmista
-
-En la Ronda 152 escribí que 53 de 90 conductores activos no pueden aparecer nunca en el cierre. La
-aritmética era correcta y la lectura no. Desglosado:
-
-| | conductores | ¿es un defecto? |
-|---|---|---|
-| entran al roster | 37 | — |
-| empresa **100% Equipo Completo** | **34** | **no** — correcto que no estén en el cierre de Tractoreo |
-| sin empresa asignada | 10 | ya lo cubre `CONDUCTOR_SIN_EMPRESA` en el pre-cierre |
-| empresa dada de baja | 8 | correcto, si la baja lo es |
-| empresa con tractos sin clasificar | **1** | sí, y se arregla con el selector de la Ronda 152 |
-
-O sea el criterio del roster **está bien** y no se tocó. El ítem 11 del plan queda cerrado sin
-código. Escribir "53 de 90" sin abrir el porqué era exactamente el error que este proyecto ya tiene
-anotado: un número sin sus filas no dice qué pasa.
-
-## Lo medido
-
-**Backend 993 en verde** (incluidos los 190 de integración), **frontend 1.347**, `tsc` limpio,
-build OK. Dos trinquetes bajados: color crudo **1.744 → 1.721** y tamaños por debajo de 11px
-**268 → 262**. Este segundo apareció en rojo: el `ChipDeBaja` nació a 10px. Pasa que la suite lo
-habría dejado pasar por compensación —había quitado tantos como agregué—, así que la tira de chips
-de `VehicleRosterCard` subió entera al mínimo de la escala en vez de aprovechar el margen.
-
-## Checklist — siguiente paso exacto
-
-1. **Sigue sin comitear.** Rondas 152 y 153 juntas en el árbol.
-2. **El cierre de prueba de Pablo**, que es lo único que cierra el Bloque 1.
-3. **Bloque 3**: **Facturación queda FUERA** (definición del usuario, 07/09) — la pregunta P1 de la
-   reunión del 04/09 se cierra sola y no hay que dividir el cierre por área. Lo que sigue vivo del
-   bloque es agrupar el cierre de viajes **por estado** y sacar el Directorio de Certificación;
-   ambos siguen esperando la matriz estado→grupo de Pablo y Fabián.
-4. Deuda anotada y no tocada: abrir el cierre de un día ya firmado le recalcula las cifras.
-
-### 2026-09-07 — Ronda 152: los 43 tractos que ninguna pantalla mostraba
-
-Pablo entregó `monitor-app/bugs/20260907/Bugs Cierre de viaje.docx` —12 capturas del **segundo
-cierre de prueba**, sobre el día **03-09**— y el 04/09 las revisamos en vivo con él y Fabián. Cuatro
-de esos comentarios eran **un solo bug**.
-
-## La causa raíz
-
-`GET /equipment-closures` devuelve DOS listas, `tractoreo` y `equipos_completos`. El frontend leía
-sólo la segunda (`FlotaDelDiaSection.tsx:131`), y la pestaña rotulada **"Tractoreo" mostraba
-CONDUCTORES**, traídos de `GET /daily-closures`. Los **43 tractos** de `tractoreo.equipment` del
-03-09 no los pintaba nadie. Por eso el badge decía "18 sin asignar" (conductores) al lado de un
-error que decía "15 sin resolver" (tractos): dos números que no podían cuadrar porque no contaban
-lo mismo.
-
-| Comentario de Pablo | Patente | Qué era en realidad |
-|---|---|---|
-| "este viaje no aparece en el cierre" | HKXW55 | `ASSIGNED` en el bucket invisible |
-| "faltaban 4 casos, ni asignados ni no asignados" | FCCP42, BSYF60, CZZG66, SVLT42 | los cuatro `ASSIGNED` en el bucket invisible |
-| "este equipo no aparece como tractoreo" | DTBY52 | `UNASSIGNED`: **uno de los 15 que bloqueaban** |
-| "cuál es el listado de estos 15, ni hay un detalle" | — | esos mismos 15 |
-
-Y el detalle **sí venía**: el 409 trae `pending[{asset_id, tractor_plate}]` desde siempre;
-`page.tsx` guardaba `detail.message` y tiraba el resto. Es la misma lección que `SinFlotaList` ya
-tenía escrita en su docstring desde agosto — *"un número sin sus filas no dice qué hacer"*—, sin
-aplicar a las otras dos listas.
-
-## Lo que se hizo
-
-1. **Tres vistas, una tabla.** El cabezal pasó de dos tarjetas a tres —Conductores / Tractos ·
-   Tractoreo / Tractos · Equipo Completo—, y son la misma tarjeta con props. La de Tractoreo
-   anuncia *"N sin motivo — bloquean el cierre"*.
-2. **El 409 se despliega**, en los dos pasos: patente + empresa con link a la ficha para tractos,
-   nombre y estado para conductores (`PendientesDelCierre.tsx`, nuevo).
-3. **El override llega a equipos.** `page.tsx:164` llamaba `close(fecha)` sin override, así que con
-   tractos pendientes el día no se podía firmar **ni forzando**. Eso explica que
-   `app.equipment_closures` esté **vacía desde que existe**.
-4. **El tipo de operación se edita.** El `PATCH` lo aceptaba desde el 03/08 y no había pantalla: el
-   `GET` no lo devolvía, el cliente TS no lo tipaba y la vista materializada no lo exponía. Ahora
-   se ve como chip en el roster y se elige en el panel del equipo. Se lee **en vivo** de
-   `public.assets`, no del roster materializado, porque es un campo que ahora se edita ahí mismo.
-5. **El conductor del tracto es el del VIAJE**, no sólo el habitual de `vehicle_driver_assignments`
-   (cobertura baja). Campos separados: `driver_name` / `trip_driver_name`. Medido: 3 filas del
-   03-09 traen conductor sólo por el viaje.
-6. **"Ver viaje" en un conductor asignado.** `trip_id` sale del LATERAL de mismatch, así que en un
-   ASSIGNED sano es NULL por diseño: de 25 asignados del 03-09, **1** tenía link. Con
-   `today_trip_id`, los 25.
-7. **`SIN_TIPO_OPERACION` dice la verdad**: nombra la patente y dice que bloquea. No es una
-   contradicción con `_ESCALACIONES_QUE_BLOQUEAN` —esa lista gobierna el cierre de CONDUCTORES—,
-   era la copia la que se quedaba corta.
-8. **El botón "Crear viaje manual" ya no miente**: su handler era un `TODO` vacío. La prop pasó a
-   opcional y la página dejó de pasarla.
-
-## Un test rojo que no era mío
-
-`test_se_puede_vincular_un_conductor_sin_empresa` fallaba **también en HEAD** (verificado en un
-worktree limpio). Elegía su sujeto con `SELECT id FROM public.drivers ... LIMIT 1` sin ORDER BY:
-hoy 87 de 96 conductores con RUT tienen empresa, así que el test cruzaba por accidente la rama
-contraria a la que dice probar. La causa real está en `app.resolve_trip_fleet()`:
-
-```sql
-UPDATE app.trip_fleet_links SET carrier_id = da.carrier_id
-WHERE fl.link_source = 'manual' AND fl.carrier_id IS NULL ...
-```
-
-O sea la inferencia **llena un silencio y nunca contradice** — la regla del modelo de resolución de
-flota, funcionando. El test elige ahora su sujeto a propósito, y se escribió el que faltaba para la
-otra rama.
-
-## Lo medido, y una advertencia
-
-Suites: **backend 991 en verde** (incluidos los 190 de integración contra la base real), **frontend
-1.343 en verde**, `tsc` limpio, `npm run build` OK. El trinquete de color crudo **bajó de 1.744 a
-1.721**. Las cuatro consultas SQL nuevas se corrieron contra la base de producción antes de
-confiar en ningún mock, y los tests de regresión se verificaron por mutación: revertir la conducta
-vieja los pone en rojo.
-
-**Click-through hecho en local** (uvicorn + next contra la base real): las tres tarjetas cargan,
-Tractoreo lista los tractos con patente y motivo —DTBY52 entre ellos—, los asignados muestran el
-conductor del viaje, y la ficha de Comercializadora De Los Rios marca HKXW55 como *"Sin tipo de
-operación"* con su selector.
-
-**Ojo con el número: no es estable.** El `GET` recalcula. El 03-09 tenía 15 tractos bloqueando
-cuando lo medí a las 12:50, y 17 después de abrir la pantalla a las 13:43 —`computed_at` lo
-confirma—, sobre un día que **ya estaba firmado** en `app.daily_closures`. Abrir el cierre de un día
-cerrado le cambia las cifras. Está anotado como deuda, no se tocó.
-
-## Checklist — siguiente paso exacto
-
-1. **Nada está comiteado ni desplegado.** Revisar el diff y decidir el commit.
-2. **El cierre de prueba de Pablo, otra vez**, ahora que hay listas: poner motivo a los 17 tractos y
-   ver que `app.equipment_closures` deje de estar vacía. Es la única verificación que cuenta.
-3. **Bloque 2 del plan** (un solo eje de bajas): hoy hay cinco definiciones de "dado de baja", 53 de
-   90 conductores activos no pueden aparecer en el cierre, y el listado de empresas **no tiene
-   pestaña `INACTIVE`** — que es justo lo que escribe el botón "Dar de baja".
-4. **Bloque 3** (Directorio fuera de Certificación; cierre de viajes agrupado por estado):
-   **Facturación queda fuera** por definición del usuario (07/09), así que el corte por área no va y
-   P1 deja de ser una pregunta abierta. Sigue esperando la matriz estado→grupo de Pablo y Fabián.
-5. **Los 31 viajes trabados son todos de Sodimac** (24/07 al 07/09, hasta 42 días). El mecanismo ya
-   los detecta; falta cerrarlos, que es negocio. Lo que sí es desarrollo: `SQL_GRUPOS_CIERRE` es el
-   único SQL del cierre sin filtro anti-Sodimac.
 
 ### 2026-08-27 — STAND BY. Estado y punto de retomada
 
