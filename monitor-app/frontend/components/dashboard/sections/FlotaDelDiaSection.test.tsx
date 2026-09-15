@@ -621,4 +621,37 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.getByRole('columnheader', { name: /Generador de carga/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ordenar por Generador de carga' })).toBeInTheDocument()
   })
+
+  it('la categoría con la que abre la pantalla tiene su tile, y se ve marcado', async () => {
+    // Reportado por el usuario (14/09): *"al seleccionar los cards no se ve la
+    // categoría"*. La pantalla abría filtrada por la unión de "No asignados" y
+    // "Por regularizar" —el trabajo que queda— pero esa categoría era el string
+    // vacío y NO tenía tile: se veía "38 Total" y una sola fila, con los cuatro
+    // tiles apagados y nada que explicara el recorte. Viene así desde el 04/08.
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    const tile = screen.getByRole('button', { name: /Por resolver/ })
+    expect(tile.className).toContain('border-accent')
+
+    // Y el número del tile es el de las filas que se están viendo: Ana Soto
+    // (sin motivo) y Luis Rojas (por regularizar). Carla ya tiene motivo y
+    // Juan está asignado, así que no entran.
+    expect(within(tile).getByText('2')).toBeInTheDocument()
+    expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('al cambiar de eje vuelve a "Por resolver", no a una categoría sin tile', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('Total'))
+    expect(screen.getByRole('button', { name: /Total/ }).className).toContain('border-accent')
+
+    fireEvent.click(screen.getByText(/Tractos · Tractoreo/i))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Por resolver/ }).className).toContain('border-accent')
+    })
+  })
 })
