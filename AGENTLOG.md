@@ -49,37 +49,41 @@ brainstorming aparte con Operaciones.
 
 Muñoz Godoy quedó fuera de la reparación a propósito: dado de baja el 04/09 y desvinculado el 08/09.
 
-## Hecho, SIN comitear, SIN desplegar (esperando suite completa del backend)
+## Olas 2-4: DESPLEGADAS (commits `40488828` backend, `b0290db9` frontend, en `dev`)
 
 - `services/cierre_lineas.py`: recalcular (congela si CLOSED), poner_motivo (vigencia + propagación
   "Sin conductor" al tracto habitual, sólo llenando silencio), cerrar (una transacción, FOR UPDATE),
   reabrir (admin + nota). Tablas viejas = proyección en la misma transacción.
-- Routers de conductores/tractos leen `closure_lines`; `POST /closures/{fecha}/close|reopen` nuevo;
-  los dos `/close` viejos se retiraron. Los 16 lectores de la regla vieja usan `trips_del_dia`.
-- Reporte Sección 4: columnas de motivo desde el catálogo; no incluye "trabajó sin asignación".
-- Configuración: grupo por dominio (validado por dominio en el backend); `/trips/meta` trae `group`.
+- `POST /closures/{fecha}/close|reopen`; los dos `/close` viejos se retiraron. Los 16 lectores de la
+  regla vieja usan `trips_del_dia`. Reporte Sección 4 con columnas del catálogo. Grupos de motivo
+  validados por dominio; `/trips/meta` trae `group`.
 - Frontend: tiles por `category`, "Hasta", sólo lectura con día cerrado, error visible al guardar,
   una sola llamada para cerrar, pie "Día cerrado por X el dd/mm hh:mm" + "Reabrir día" (admin).
-  `CloseDayDialog` retirado (nadie lo importaba). Trinquete visual 1.717 → 1.685.
-- Migración de datos `20260917010000`: probada en seco y RE-EJECUTABLE. **NO aplicada.**
+  `CloseDayDialog` retirado. Trinquete visual 1.717 → 1.685.
+- Migración de datos `20260917010000` aplicada ANTES del push y RE-CORRIDA después del deploy.
+  Estado verificado en producción: 4.782 líneas, 342 motivos, 9 días firmados, **0 diferencias
+  fila por fila** entre líneas y tablas viejas.
+- Deploy Monitor API y Deploy Frontend en verde (`e799c528`). `/health` 200, la ruta nueva responde
+  401 sin credenciales. Sin errores en logs. Sólo existe `webcarga-monitor-api-dev` (no hay otro
+  escritor de las tablas viejas).
 
-Medido: frontend 1.365 en verde, `tsc` limpio, build OK. Backend: suites de cierre en verde; tests
-de integración nuevos `test_cierre_lineas.py` (21), `test_modelo_de_cierre.py` (5),
-`test_trips_del_dia.py` (6). Mutaciones verificadas: congelamiento, herencia de vigencia,
-unicidad/trigger/RLS, guardia de la regla vieja, marcado de transferencia, patente→activo.
+Medido: backend suite completa en verde (1.011 + las 6 que fijaban la regla vieja, corregidas);
+frontend 1.365 en verde, `tsc` limpio, build OK. Mutaciones verificadas: congelamiento, herencia de
+vigencia, unicidad/trigger/RLS, guardia de la regla vieja, marcado de transferencia, patente→activo.
 
 ## Checklist — siguiente paso exacto
 
-1. Suite completa del backend en verde → comitear (backend, frontend, migraciones, AGENTLOG).
-2. **Orden de despliegue obligatorio**: aplicar `20260917010000` → push inmediato → cuando Deploy
-   Monitor API termine, **volver a correr `20260917010000`** (trae ediciones del intervalo).
-   El backend nuevo sin la migración recalcularía días firmados y su proyección pisaría motivos.
-3. Verificar en producción: un día firmado no cambia `computed_at` al abrirlo; Efrain 13/09 sigue
-   como estaba (decisión: no se recalculan firmados — se reabre con nota si Operaciones lo pide).
-4. UAT en la app desplegada: tiles, "Hasta", propagación al tracto, cerrar con aviso, reabrir.
-5. Pendiente del plan: ola 4.4 (líneas TRIP del paso Viajes) y ola 5 (retirar tablas viejas tras
-   días de paridad). Operaciones valida la matriz de grupos (Conductor backup y Adelanto de ruta
-   quedaron en "no trabajó").
+1. **UAT: NO hecha.** No tengo credenciales para entrar a la app; al cierre de la ronda nadie había
+   abierto el cierre con el código nuevo. Click-through del usuario sobre el desplegado: tiles
+   (Esperando carga en No asignados), "Hasta" y que el día siguiente lo herede, el tracto que recibe
+   "Sin conductor", Confirmar cierre con el aviso, Reabrir con nota.
+2. **Verificar el congelamiento con tráfico real**: después de que alguien abra un día firmado,
+   `max(computed_at)` de sus líneas tiene que seguir en `2026-09-16 12:12` (hora Chile).
+3. Operaciones valida la matriz de grupos en Configuración › Motivos de conductor (Conductor backup y
+   Adelanto de ruta quedaron en "no trabajó"). Efrain 13/09: si lo quieren corregido, reabrir el día.
+4. Pendiente del plan: ola 4.4 (líneas TRIP del paso Viajes) y ola 5 (retirar tablas viejas y la
+   proyección tras días de paridad — la consulta de paridad está en la ronda). Operación/CD:
+   brainstorming aparte.
 
 ## Decisiones de arquitectura
 
