@@ -13,69 +13,85 @@
 > (**Rondas 152-157 archivadas al cerrar la sesión del 2026-09-14**: todo su trabajo está
 > desplegado, y lo que seguía abierto se consolidó en el checklist de la Ronda 160.)
 
-### 2026-09-16 — Ronda 161: "Solicitud de Cambios Diario 2.0" — causa raíz y primeras olas
+### 2026-09-16 — Ronda 161: "Solicitud de Cambios Diario 2.0" — causa raíz, olas 0 a 4
 
 Operaciones mandó `monitor-app/bugs/20260916/Solicitud de Cambios Diario 2.0.docx` (13 temas, 20
-capturas). Investigado con systematic-debugging, cada caso con nombre reproducido contra producción
-en sólo lectura. **Plan aprobado**: `~/.claude/plans/graceful-cuddling-avalanche.md` (Olas 0-5).
+capturas). Investigado con systematic-debugging, cada caso con nombre reproducido contra producción.
+**Plan aprobado**: `~/.claude/plans/graceful-cuddling-avalanche.md`. Operación/CD queda para un
+brainstorming aparte con Operaciones.
 
 ## Las cuatro causas raíz (verificadas)
 
-- **R1, la empresa del conductor.** El loader de Mage `load_driver_assignments_06` reimporta desde el
-  Excel Centralizador EETT y pisaba las transferencias de la app, que no marcaban
-  `is_manual_override`. Villegas fue reasignado 5 veces. **Hoy hay 5 revertidos** (no 6: la primera
-  cifra salió de una consulta imprecisa), y 3 de ellos quedaron **sin ninguna empresa** (Deiby, Brian
-  Celis, Muñoz Godoy).
-- **R2, fechas.** El cierre decide si un viaje ocupa el día D con el `is_active` de AHORA. 83 de 476
-  viajes (01-15/09) son multi-día.
-- **R3, cancelados.** Un CANCELADO cuenta como carga (50 de 51 tienen `is_assigned=true`).
-- **R4, motivos.** "No trabajando" vs "Trabajando sin asignación" está escrito en el frontend, no hay
-  vigencia de un día para otro, y los ejes no se hablan.
-- Más el modelo de cierre del 14/09 (día firmado que se recalcula, cierre sin aviso).
+- **R1, la empresa del conductor.** El loader de Mage `load_driver_assignments_06` reimportaba
+  desde el Excel Centralizador EETT y pisaba las transferencias de la app, que no marcaban
+  `is_manual_override`. Villegas fue reasignado 5 veces.
+- **R2, fechas.** El cierre decidía si un viaje ocupa el día D con el `is_active` de AHORA. 83 de
+  476 viajes (01-15/09) son multi-día.
+- **R3, cancelados.** Un CANCELADO contaba como carga (50 de 51).
+- **R4, motivos.** "No trabajando" vs "Trabajando sin asignación" estaba escrito en el frontend; no
+  había vigencia; los ejes no se hablaban.
+- Lateral: vínculos manuales con la patente contradicha (el formulario autocompleta id + patente del
+  tracto habitual y la patente editable no invalidaba el id). Partía las vueltas de Lara.
 
-## Hecho
+## Hecho y DESPLEGADO/APLICADO (producción)
 
-1. **Ola 0.1** (commit `2737df9c`, **sin pushear**): transferir marca las dos filas; el upsert le
-   gana a un desvincular anterior. 2 tests de integración y mutación verificada.
-2. **Ola 0.2, DESPLEGADO en Mage**: guardia `NOT EXISTS` sobre filas marcadas en las dos sentencias
-   del loader. Probado en 6 escenarios en transacción revertida. **Sin guardia, un cambio del Excel a
-   una tercera empresa tumbaba el bloque** (`UniqueViolation`). Por eso el orden fue Mage primero.
-3. **Ola 1.3** (commit `9c30f7a9`, **sin pushear**): el tracto de un vínculo manual sale de la
-   patente (`_activo_de_la_patente`). Causa: `FleetAssignSection` autocompleta id + patente del
-   habitual y la patente editable no invalidaba el id (viaje 2048292 de Lara → FWKL67).
-4. **Ola 1.1, migración `20260916210000_los_dias_que_ocupa_un_viaje.sql` APLICADA a producción**
-   (execute_sql): `trip_statuses.counts_as_load` + 3 estados sin catalogar + vista
-   `app.v_trip_activity_days`. **Nadie la lee todavía.** No quedó verificada después de aplicarla:
-   el clasificador bloqueó la consulta. **Sin comitear.**
-   - Comparación vieja/nueva del 01 al 15/09 en transacción revertida: Efrain aparece el 12 y el 13,
-     el 2048098 sólo el 07, y el cancelado 2048056 en ningún día. Las 12 diferencias "sólo en la
-     regla vieja": 7 son CANCELADO; 3 son viajes que el TMS dejó de informar; 2 son del Wingsuite
-     453041 (RUTA, último reporte 13/09 22:00), que ya no cuenta el 14 ni el 15. **Ese último es el
-     único discutible.**
+| Qué | Dónde |
+|---|---|
+| Transferir marca las dos filas; reasignar le gana a un desvincular anterior | commit `2737df9c`, desplegado |
+| Guardia `NOT EXISTS` en el loader (sin él, un cambio del Excel a una 3ª empresa tumbaba el bloque) | Mage, vivo |
+| El tracto del vínculo manual sale de la patente (`_activo_de_la_patente`) | commit `9c30f7a9`, desplegado |
+| `trip_statuses.counts_as_load` + 3 estados sin catalogar | migración `20260916210000`, aplicada |
+| `app.trips_del_dia(fecha)`: función acotada (la vista tardaba 91 ms y crecía) | `20260916233000`, aplicada |
+| Reparación: 4 transferencias revertidas (Villegas, Ulloa, Deiby, Brian Celis) | `20260916220000`, aplicada |
+| Reparación: 3 vínculos con patente contradicha → Lara vueltas 1 y 2 | `20260916230000`, aplicada |
+| Tablas `closure_periods` + `closure_lines` con RLS, trigger del sujeto polimórfico, `valid_until` | `20260916235000`, aplicada |
+| Grupos de `DRIVER_REASON` + `code` SIN_CONDUCTOR | `20260917000000`, aplicada |
 
-Suite backend: **1.017 en verde** tras la 0.1. Después de la 1.3 se corrieron los archivos
-afectados (51 en verde), no la suite completa.
+Muñoz Godoy quedó fuera de la reparación a propósito: dado de baja el 04/09 y desvinculado el 08/09.
+
+## Hecho, SIN comitear, SIN desplegar (esperando suite completa del backend)
+
+- `services/cierre_lineas.py`: recalcular (congela si CLOSED), poner_motivo (vigencia + propagación
+  "Sin conductor" al tracto habitual, sólo llenando silencio), cerrar (una transacción, FOR UPDATE),
+  reabrir (admin + nota). Tablas viejas = proyección en la misma transacción.
+- Routers de conductores/tractos leen `closure_lines`; `POST /closures/{fecha}/close|reopen` nuevo;
+  los dos `/close` viejos se retiraron. Los 16 lectores de la regla vieja usan `trips_del_dia`.
+- Reporte Sección 4: columnas de motivo desde el catálogo; no incluye "trabajó sin asignación".
+- Configuración: grupo por dominio (validado por dominio en el backend); `/trips/meta` trae `group`.
+- Frontend: tiles por `category`, "Hasta", sólo lectura con día cerrado, error visible al guardar,
+  una sola llamada para cerrar, pie "Día cerrado por X el dd/mm hh:mm" + "Reabrir día" (admin).
+  `CloseDayDialog` retirado (nadie lo importaba). Trinquete visual 1.717 → 1.685.
+- Migración de datos `20260917010000`: probada en seco y RE-EJECUTABLE. **NO aplicada.**
+
+Medido: frontend 1.365 en verde, `tsc` limpio, build OK. Backend: suites de cierre en verde; tests
+de integración nuevos `test_cierre_lineas.py` (21), `test_modelo_de_cierre.py` (5),
+`test_trips_del_dia.py` (6). Mutaciones verificadas: congelamiento, herencia de vigencia,
+unicidad/trigger/RLS, guardia de la regla vieja, marcado de transferencia, patente→activo.
 
 ## Checklist — siguiente paso exacto
 
-1. **Pedirle al usuario autorización para las escrituras en producción** que quedan: verificar la
-   migración aplicada, pushear (esperar a que termine el lote de ingestión en vuelo) y la reparación
-   0.3 de los 5 revertidos.
-2. Comitear la migración 1.1. Correr la suite completa. Pushear en la ventana de ingestión y
-   verificar que corrió Deploy Monitor API.
-3. Ola 1.1, parte 2: pasar las dos CTE de recompute, `status_report.py` y `cierre_viajes` a
-   `v_trip_activity_days`. Ola 1.2: legs por eje sin el `OR`. Reparar los 3 vínculos contradictorios.
-4. Olas 2-5 según el plan.
+1. Suite completa del backend en verde → comitear (backend, frontend, migraciones, AGENTLOG).
+2. **Orden de despliegue obligatorio**: aplicar `20260917010000` → push inmediato → cuando Deploy
+   Monitor API termine, **volver a correr `20260917010000`** (trae ediciones del intervalo).
+   El backend nuevo sin la migración recalcularía días firmados y su proyección pisaría motivos.
+3. Verificar en producción: un día firmado no cambia `computed_at` al abrirlo; Efrain 13/09 sigue
+   como estaba (decisión: no se recalculan firmados — se reabre con nota si Operaciones lo pide).
+4. UAT en la app desplegada: tiles, "Hasta", propagación al tracto, cerrar con aviso, reabrir.
+5. Pendiente del plan: ola 4.4 (líneas TRIP del paso Viajes) y ola 5 (retirar tablas viejas tras
+   días de paridad). Operaciones valida la matriz de grupos (Conductor backup y Adelanto de ruta
+   quedaron en "no trabajó").
 
 ## Decisiones de arquitectura
 
-- **La app manda sobre la empresa del conductor**: un conductor con cualquier fila marcada es de la
-  app y el Centralizador no lo toca.
-- **Qué no es carga lo dice el catálogo** (`trip_statuses.counts_as_load`), no un literal. Los grupos
-  existentes no sirven, porque CANCELADO comparte `problema` con EN PANA.
-- **Un día de un viaje sale de la evidencia** (marcas de paradas en hora de Chile, o el último
-  reporte si sigue activo), no del `is_active` de ahora.
-- Operación/CD queda para un brainstorming aparte con Operaciones.
+- **La app manda sobre la empresa del conductor**; un conductor con una fila marcada es de la app.
+- **Qué no es carga lo dice el catálogo** (`counts_as_load`); **qué significa un motivo, también**
+  (`group_id`). Ninguna pantalla deriva categorías.
+- **Un día de un viaje sale de su evidencia** (paradas en hora de Chile o último reporte), en una
+  función acotada a 45 días.
+- **La 1.2 del plan (vueltas sin `OR`) NO se hizo**: el `OR` es la regla de la HU §7.3; el caso de
+  Lara venía del vínculo con tracto equivocado, ya reparado.
+- **Los días firmados se migran tal cual** ("lo que manda es lo que viene haciendo operaciones en la
+  app"): corregir uno es reabrirlo con nota.
 
 ### 2026-09-14 — Ronda 160: cierre de sesión
 
