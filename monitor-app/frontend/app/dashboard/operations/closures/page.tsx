@@ -5,15 +5,15 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2, UserX,
+  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2, UserX, CheckCircle2, LockOpen,
 } from 'lucide-react'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { shippersApi } from '@/lib/api/locations'
-import { dailyClosuresApi, isClosePendingError, type SinFlota } from '@/lib/api/dailyClosures'
+import { dailyClosuresApi } from '@/lib/api/dailyClosures'
+import { closuresApi, isCierrePendienteError, type SinFlota } from '@/lib/api/closures'
 import { SinFlotaList } from '@/components/dashboard/SinFlotaList'
 import { PendientesDelCierre, type ItemPendiente } from '@/components/dashboard/PendientesDelCierre'
-import { equipmentClosuresApi, isEquipmentClosePendingError } from '@/lib/api/equipmentClosures'
 import { tripsApi } from '@/lib/api/trips'
 import { taxonomiesApi } from '@/lib/api/config'
 import { FlotaDelDiaSection } from '@/components/dashboard/sections/FlotaDelDiaSection'
@@ -23,7 +23,7 @@ import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSec
 import { AvisoPosteriorAlCierre } from '@/components/dashboard/AvisoPosteriorAlCierre'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
-import type { TripsMeta } from '@/lib/types'
+import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
 
 
 function todayISO() {
@@ -55,16 +55,14 @@ export default function ClosuresCenterPage() {
  *  mismo lienzo, visible sin importar qué tab esté activa — es la acción
  *  primaria de la página, no algo que dependa de estar en "Reporte".
  *
- *  Encadena 2 llamados: primero los CONDUCTORES (dailyClosuresApi.close) y,
- *  sólo si ese tuvo éxito, los TRACTOS (equipmentClosuresApi.close). Si el
- *  primero falla, el segundo no se llama, y el override viaja a los dos.
+ *  Firmar el día es UNA llamada (`closuresApi.cerrar`, 16/09): conductores y
+ *  tractos en una transacción. Hasta entonces eran dos POST encadenados desde
+ *  acá, y si el segundo fallaba el día quedaba medio firmado sin que nada lo
+ *  dijera; y al salir bien la pantalla no decía nada — "no me figura ningún
+ *  mensaje, de bien o mal" (Operaciones).
  *
- *  "Equipos Completos nunca bloquea" describía sólo la mitad del segundo
- *  paso: los tractos de Equipo Completo puro son pasivos, pero los de
- *  Tractoreo —y los que no tienen tipo de operación, que caen ahí— exigen
- *  motivo y devuelven 409. Ese 409 es el que dejó `app.equipment_closures`
- *  vacía desde que existe: el override no llegaba y el detalle no se
- *  mostraba. */
+ *  Que el día está cerrado lo dice el PERÍODO que trae el GET, no un aviso
+ *  efímero: quien entra después, o recarga, ve lo mismo. */
 function ClosuresCenterPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -86,6 +84,9 @@ function ClosuresCenterPageInner() {
   const [pendientesEquipos, setPendientesEquipos] = useState<ItemPendiente[]>([])
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [overrideNote, setOverrideNote] = useState('')
+  const [reabrirOpen, setReabrirOpen] = useState(false)
+  const [notaReabrir, setNotaReabrir] = useState('')
+  const [reabriendo, setReabriendo] = useState(false)
   const [tab, setTab] = useState<TabId>('flota')
 
   // Las dos consultas que alimentan el cierre las dispara FlotaDelDiaSection;
@@ -107,6 +108,8 @@ function ClosuresCenterPageInner() {
     queryKey: ['daily-closure', fecha],
     queryFn: () => dailyClosuresApi.get(fecha),
   })
+
+  const diaCerrado = cierreQuery.data?.closed ?? false
 
   useEffect(() => {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en la sección */ })
@@ -156,41 +159,33 @@ function ClosuresCenterPageInner() {
     router.replace(`/dashboard/operations/closures?${params.toString()}`)
   }
 
+  async function refrescarCierre() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] }),
+      queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] }),
+    ])
+  }
+
   async function handleConfirmClose(override?: boolean) {
     setClosing(true)
     setCloseError(null); setSinFlota(null)
     setPendientesConductores([]); setPendientesEquipos([])
     try {
-      await dailyClosuresApi.close(fecha, override, overrideNote)
+      await closuresApi.cerrar(fecha, override, overrideNote)
+      setOverridePending(false); setOverrideOpen(false); setOverrideNote('')
+      await refrescarCierre()
     } catch (e) {
-      setClosing(false)
-      if (isClosePendingError(e)) {
+      if (isCierrePendienteError(e)) {
         setOverridePending(true)
-        setSinFlota(e.detail.sin_flota ?? null)
+        setSinFlota(e.detail.sin_flota?.length ? e.detail.sin_flota : null)
         setPendientesConductores(
           (e.detail.pending ?? []).map(d => ({
             clave: d.driver_id,
             texto: `${d.full_name} — ${d.status === 'MISMATCH' ? 'empresa por regularizar' : 'sin motivo'}`,
           })),
         )
-        setCloseError(e.detail.message)
-      } else {
-        setCloseError(e instanceof Error ? e.message : 'No se pudo cerrar el día')
-      }
-      return
-    }
-    // El override del admin también viaja acá. Antes se llamaba sin él, así que
-    // con equipos pendientes el segundo paso devolvía 409 siempre y el día no
-    // se podía firmar ni forzando: `app.equipment_closures` quedó vacía desde
-    // que existe.
-    try {
-      await equipmentClosuresApi.close(fecha, override, overrideNote)
-      setOverridePending(false); setOverrideOpen(false); setOverrideNote('')
-    } catch (e) {
-      if (isEquipmentClosePendingError(e)) {
-        setOverridePending(true)
         setPendientesEquipos(
-          (e.detail.pending ?? []).map(p => ({
+          (e.detail.pending_equipment ?? []).map(p => ({
             clave: p.asset_id,
             texto: p.carrier_name ? `${p.tractor_plate} — ${p.carrier_name}` : p.tractor_plate,
             href: p.carrier_id ? `/dashboard/carriers/${p.carrier_id}?tab=equipos` : undefined,
@@ -198,10 +193,26 @@ function ClosuresCenterPageInner() {
         )
         setCloseError(e.detail.message)
       } else {
-        setCloseError(e instanceof Error ? e.message : 'No se pudo cerrar equipos completos')
+        // Incluye "el día ya está cerrado" (otra persona firmó antes): se
+        // refresca para que la pantalla muestre esa firma.
+        setCloseError(e instanceof Error ? e.message : 'No se pudo cerrar el día')
+        await refrescarCierre()
       }
     } finally {
       setClosing(false)
+    }
+  }
+
+  async function handleReabrir() {
+    setReabriendo(true); setCloseError(null)
+    try {
+      await closuresApi.reabrir(fecha, notaReabrir)
+      setReabrirOpen(false); setNotaReabrir('')
+      await refrescarCierre()
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : 'No se pudo reabrir el día')
+    } finally {
+      setReabriendo(false)
     }
   }
 
@@ -310,12 +321,16 @@ function ClosuresCenterPageInner() {
         </div>
 
         <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">
-          <div>
-            <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Cierra primero los conductores y después los tractos. Los dos exigen motivo en sus pendientes; Equipo Completo nunca bloquea.
-            </p>
-          </div>
+          {diaCerrado ? (
+            <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} />
+          ) : (
+            <div>
+              <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Firma conductores y tractos juntos. Los dos exigen motivo en sus pendientes; Equipo Completo nunca bloquea.
+              </p>
+            </div>
+          )}
 
           {closeError && (
             <div className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
@@ -361,18 +376,91 @@ function ClosuresCenterPageInner() {
               datos que todavia no llegaron. El boton solo miraba `closing` (si
               el cierre esta en curso), asi que quedaba habilitado mientras el
               area de datos mostraba el spinner. */}
-          <button
-            type="button"
-            disabled={closing || cargandoDatos}
-            onClick={() => handleConfirmClose(false)}
-            className="text-sm font-semibold bg-accent text-white rounded-lg px-4 py-2.5 disabled:opacity-40 flex items-center gap-2 hover:bg-accent/90 transition-colors"
-          >
-            {closing || cargandoDatos
-              ? <Loader2 size={14} className="motion-safe:animate-spin" />
-              : <ClipboardCheck size={14} />}
-            Confirmar cierre
-          </button>
+          {!diaCerrado && (
+            <button
+              type="button"
+              disabled={closing || cargandoDatos}
+              onClick={() => handleConfirmClose(false)}
+              className="text-sm font-semibold bg-accent text-white rounded-lg px-4 py-2.5 disabled:opacity-40 flex items-center gap-2 hover:bg-accent/90 transition-colors"
+            >
+              {closing || cargandoDatos
+                ? <Loader2 size={14} className="motion-safe:animate-spin" />
+                : <ClipboardCheck size={14} />}
+              Confirmar cierre
+            </button>
+          )}
+          {/* Reabrir es un acto explícito: admin, con una nota que diga por
+              qué. Antes un día "se reabría" solo, con entrar a la pantalla. */}
+          {diaCerrado && canAdmin && !reabrirOpen && (
+            <button
+              type="button"
+              onClick={() => setReabrirOpen(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-informativo border border-border rounded-lg px-3 py-1.5 bg-white hover:border-accent/40"
+            >
+              <LockOpen size={12} /> Reabrir día
+            </button>
+          )}
+          {diaCerrado && reabrirOpen && (
+            <div className="space-y-2">
+              <textarea
+                value={notaReabrir}
+                onChange={e => setNotaReabrir(e.target.value)}
+                aria-label="Motivo para reabrir el día"
+                placeholder="Por qué se reabre (obligatorio)"
+                className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-white"
+                rows={2}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={reabriendo || !notaReabrir.trim()}
+                  onClick={handleReabrir}
+                  className="text-xs font-semibold bg-text-primary text-white rounded-lg px-3 py-1.5 disabled:opacity-50"
+                >
+                  {reabriendo ? 'Reabriendo…' : 'Confirmar y reabrir'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setReabrirOpen(false); setNotaReabrir('') }}
+                  className="text-xs text-informativo hover:text-text-primary"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+const HORA = new Intl.DateTimeFormat('es-CL', {
+  timeZone: 'America/Santiago', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+})
+
+/** El día firmado, dicho con nombre, hora y cifras. Lo que Operaciones pidió
+ *  ver al cerrar ("no entrega ningún aviso de cierre finalizado"), y lo que ve
+ *  cualquiera que abra el día después. */
+function DiaCerrado({ periodo }: { periodo: PeriodoDeCierre | null }) {
+  const t = periodo?.frozen_totals
+  return (
+    <div role="status" className="flex items-start gap-2.5 rounded-xl border border-resuelto/20 bg-resuelto/5 px-4 py-3">
+      <CheckCircle2 size={16} className="text-resuelto shrink-0 mt-0.5" />
+      <div className="text-xs text-text-primary space-y-0.5">
+        <p className="font-bold">
+          Día cerrado
+          {periodo?.closed_by_name && <> por {periodo.closed_by_name}</>}
+          {periodo?.closed_at && <> el {HORA.format(new Date(periodo.closed_at))}</>}
+        </p>
+        {t && (
+          <p className="text-informativo tabular-nums">
+            {t.conductores_resueltos ?? 0} de {t.conductores ?? 0} conductores
+            {t.tractos != null && <> · {t.tractos_resueltos ?? 0} de {t.tractos} tractos</>}
+            {' '}resueltos
+            {(periodo?.override_count ?? 0) > 0 && <> · {periodo!.override_count} forzados con nota</>}
+          </p>
+        )}
       </div>
     </div>
   )

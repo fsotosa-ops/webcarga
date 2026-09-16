@@ -113,6 +113,41 @@ export type TemperatureRangeMeta = {
 export type UnassignedReasonMeta = {
   id:    string
   label: string
+  /** Qué significa el motivo, desde el catálogo (Configuración › Motivos de
+   *  conductor). Sólo lo traen los motivos de conductor; sin grupo se lee como
+   *  "no trabajó". */
+  group?: GrupoDeMotivo
+}
+
+/** Si el conductor trabajó sin asignación (Esperando carga, Camino al CD) o
+ *  no trabajó (Vacaciones, Panne). Decide en qué tile cae la fila y si el
+ *  motivo puede tener vigencia. */
+export type GrupoDeMotivo = 'no_trabajando' | 'trabajando_sin_asignacion'
+
+/** La categoría de una línea del cierre, calculada por el backend
+ *  (services/cierre_lineas.py). La pantalla, el reporte y el bloqueo del
+ *  cierre leen ésta; ninguno la deriva por su cuenta. */
+export type CategoriaDeLinea =
+  | 'ASIGNADO'
+  | 'TRABAJANDO_SIN_ASIGNACION'
+  | 'NO_TRABAJANDO'
+  | 'SIN_RESOLVER'
+  | 'POR_REGULARIZAR'
+
+/** El día como período: abierto o cerrado, los dos ejes juntos. */
+export type PeriodoDeCierre = {
+  status:          'OPEN' | 'CLOSED'
+  closed_by:       string | null
+  closed_by_name:  string | null
+  closed_at:       string | null
+  override_count:  number
+  frozen_totals:   {
+    conductores?: number; conductores_resueltos?: number
+    tractos?: number; tractos_resueltos?: number; viajes?: number
+  } | null
+  reopened_by:     string | null
+  reopened_at:     string | null
+  reopen_note:     string | null
 }
 
 /** Clasificación RM/Zona Cero por local (public.locations.operation_type,
@@ -1132,8 +1167,11 @@ export type DriverDayStatusRow = {
   carrier_id:                  string | null
   carrier_name:                string | null
   status:                     DriverDayStatusValue
+  category:                   CategoriaDeLinea
   unassigned_reason_id:        string | null
   unassigned_reason_label:     string | null
+  /** Hasta qué día sigue vigente el motivo. Los días siguientes lo heredan. */
+  valid_until:                 string | null
   resolved_by:                 string | null
   resolved_at:                 string | null
   /** Cliente(s) servidos ese día (Fase 1.5) — denominador común de los 3
@@ -1172,6 +1210,7 @@ export type DriverDayStatusRow = {
 
 export type DailyClosureInfo = {
   closed_by:      string
+  closed_by_name?: string | null
   closed_at:      string
   total_drivers:  number
   resolved_count: number
@@ -1238,6 +1277,7 @@ export type DailyClosureStatus = {
   business_date:    string
   closed:           boolean
   closure:          DailyClosureInfo | null
+  periodo?:         PeriodoDeCierre | null
   /** Opcional en el tipo porque son varios los fixtures de test que arman
    *  este objeto a mano y no les concierne — el backend real siempre lo
    *  manda (ver `daily_closures.py::get_daily_closure_status`). */
@@ -1248,13 +1288,9 @@ export type DailyClosureStatus = {
   mismatch_count:   number
   pending_count:    number
   drivers:          DriverDayStatusRow[]
-  pre_cierre:       PreCierreResult
-}
-
-export type CloseDayPending = {
-  driver_id: string
-  full_name: string
-  status:    DriverDayStatusValue
+  /** null con el día cerrado: un día firmado no vuelve a correr el pre-cierre,
+   *  que escribe en el directorio como efecto. */
+  pre_cierre:       PreCierreResult | null
 }
 
 // ── Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md) ──
@@ -1301,7 +1337,7 @@ export type DailyClosureReportRow = Omit<
   // Tarea 7 (plan 2.4): _REPORT_SQL (backend) no trae estos campos —
   // solo _DETAIL_SQL (GET /daily-closures) los expone.
   | 'last_known_tractor_plate' | 'last_known_operation_type' | 'today_trip_id'
-  | 'today_trip_code' | 'today_trip_origin' | 'comentario'
+  | 'today_trip_code' | 'today_trip_origin' | 'comentario' | 'valid_until'
 > & {
   business_date: string
 }
@@ -1325,8 +1361,10 @@ export type EquipmentDayStatusRow = {
   /** true = Tractoreo o Sin clasificar (cierre activo, exige motivo);
    *  false = Equipo Completo puro (cierre pasivo, nunca bloquea). */
   requires_motivo:         boolean
+  category:                CategoriaDeLinea
   unassigned_reason_id:    string | null
   unassigned_reason_label: string | null
+  valid_until:             string | null
   resolved_by:             string | null
   resolved_at:             string | null
   driver_id:               string | null
@@ -1384,6 +1422,7 @@ export type EquipmentClosureStatus = {
   business_date: string
   closed:        boolean
   closure:       EquipmentClosureInfo | null
+  periodo?:      PeriodoDeCierre | null
   tractoreo: {
     summary:       EquipmentCategorySummary
     equipment:     EquipmentDayStatusRow[]
@@ -1508,6 +1547,10 @@ export type StatusReport = {
     por_cd:           MotivoCrossTab[]
     por_empresa_y_cd: MotivoCrossTab[]
     driver_detail:    DriverDetailRow[]
+    /** Las columnas de motivo, en orden: los motivos de "no trabajó" del
+     *  catálogo más los retirados que aparezcan ese día. Opcional porque
+     *  backend y frontend se despliegan por separado. */
+    motivos?:         string[]
   }
   section_tractoreo_por_empresa: CarrierUtilizationRow[]
   section5_equipos_completos: CarrierUtilizationRow[]

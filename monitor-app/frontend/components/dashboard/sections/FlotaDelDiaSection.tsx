@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, FilePlus2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
-import { dailyClosuresApi } from '@/lib/api/dailyClosures'
+import { dailyClosuresApi, type CambiosDeLinea } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi } from '@/lib/api/equipmentClosures'
 import { AlertStatTiles } from '../AlertStatTiles'
 import { CabeceraDeColumna, compararValores, type Orden } from '../CabeceraDeColumna'
-import type { DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
+import type { CategoriaDeLinea, DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
 import { Estado } from '@/components/ui/Estado'
 
 /** Las tres vistas del cierre de flota. Conductores y tractos son DOS EJES
@@ -19,11 +19,13 @@ import { Estado } from '@/components/ui/Estado'
  *  (conductores) junto a un error que decía "15 sin resolver" (tractos):
  *  dos números que nunca podían cuadrar porque no contaban lo mismo. */
 type Vista = 'CONDUCTORES' | 'TRACTOREO' | 'EQUIPO_COMPLETO'
-/** "No trabajando" son los que YA tienen motivo. Antes caían en "No
- *  asignados" junto a los que todavía nadie miró, así que el número de lo
- *  pendiente no bajaba nunca aunque el trabajo avanzara. Pedido del usuario
- *  (07/09): al marcar una Acción, la fila se descuenta de No asignados y pasa
- *  a contarse acá. */
+/** Qué tile cuenta qué lo decide la CATEGORÍA que manda el backend, y ésta
+ *  sale del grupo del motivo en el catálogo:
+ *  - "No asignados": sin carga y trabajando — los que nadie miró todavía y los
+ *    que tienen un motivo de "trabajó sin asignación" (Esperando carga, Camino
+ *    al CD, Se retira sin carga). Solicitud de Operaciones, 16/09.
+ *  - "No trabajando": motivo de "no trabajó" (Vacaciones, Panne).
+ *  Hasta el 16/09 la regla vivía acá como "tiene motivo = no trabajó". */
 // La pantalla ABRE en 'total' (decision del usuario, 14/09). Hasta el 04/08
 // abria en una categoria anonima —el string vacio, la union de "No asignados"
 // y "Por regularizar"— que NO tenia tile: se veia "43 Total" arriba y una sola
@@ -98,6 +100,9 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const [batchReason, setBatchReason] = useState('')
   const [savingBatch, setSavingBatch] = useState(false)
   const [savingReason, setSavingReason] = useState<string | null>(null)
+  /** Un guardado que falla tiene que decirlo: antes el error se perdía y el
+   *  desplegable volvía a su valor como si nada. */
+  const [errorAlGuardar, setErrorAlGuardar] = useState<string | null>(null)
 
   const driversQuery = useQuery({
     queryKey: ['daily-closure', fecha],
@@ -117,21 +122,26 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   }, [vista])
   useEffect(() => { setPage(1) }, [category, q, pageSize, filtros, orden])
 
-  // `reasonId` undefined = "solo vengo a comentar": la clave no viaja en el
-  // JSON y el backend conserva el motivo que ya estaba. Es la misma distincion
-  // que el comentario ya hacia al reves — no mandar la clave no es pedir que
-  // quede vacia.
-  async function handleSetReason(entityId: string, reasonId?: string, comentario?: string | null) {
+  // Sólo viajan las claves de lo que cambió: comentar no manda el motivo, y el
+  // backend conserva el que había. No mandar la clave no es pedir que quede
+  // vacía.
+  async function handleSetReason(entityId: string, cambios: CambiosDeLinea) {
     setSavingReason(entityId)
+    setErrorAlGuardar(null)
     try {
       if (vista === 'CONDUCTORES') {
-        await dailyClosuresApi.setReason(entityId, fecha, reasonId, comentario)
-        await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
+        await dailyClosuresApi.setReason(entityId, fecha, cambios)
       } else {
-        await equipmentClosuresApi.setReason(entityId, fecha, reasonId, comentario)
-        await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
+        await equipmentClosuresApi.setReason(entityId, fecha, cambios)
       }
+    } catch (e) {
+      setErrorAlGuardar(e instanceof Error ? e.message : 'No se pudo guardar el cambio')
     } finally {
+      // Los dos ejes: un motivo de conductor puede escribirse solo en su tracto.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] }),
+        queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] }),
+      ])
       setSavingReason(null)
     }
   }
@@ -148,15 +158,20 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     if (!batchReason || selected.size === 0) return
     setSavingBatch(true)
     try {
+      setErrorAlGuardar(null)
       if (vista === 'CONDUCTORES') {
-        await dailyClosuresApi.setReasonBatch(fecha, Array.from(selected), batchReason)
-        await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
+        await dailyClosuresApi.setReasonBatch(fecha, Array.from(selected), { unassigned_reason_id: batchReason })
       } else {
-        await equipmentClosuresApi.setReasonBatch(fecha, Array.from(selected), batchReason)
-        await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
+        await equipmentClosuresApi.setReasonBatch(fecha, Array.from(selected), { unassigned_reason_id: batchReason })
       }
       setSelected(new Set()); setBatchReason('')
+    } catch (e) {
+      setErrorAlGuardar(e instanceof Error ? e.message : 'No se pudo aplicar el motivo')
     } finally {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] }),
+        queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] }),
+      ])
       setSavingBatch(false)
     }
   }
@@ -175,6 +190,11 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const equiposCompletos = equipmentQuery.data.equipos_completos
   const equipos = vista === 'TRACTOREO' ? tractoreo : equiposCompletos
   const esConductores = vista === 'CONDUCTORES'
+  // Un día firmado no se edita: el backend responde 409, y la tabla no
+  // ofrece lo que no se puede hacer. Se reabre desde el pie del cierre.
+  const cerrado = drivers.closed
+  const grupoDeMotivo = (id: string | null | undefined) =>
+    unassignedReasons.find(r => r.id === id)?.group ?? 'no_trabajando'
   const qLower = q.trim().toLowerCase()
 
   // ── Filas normalizadas a una sola forma, para que la tabla sea 100% la
@@ -187,6 +207,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     carrierName: string | null
     statusLabel: string
     statusCls: string
+    categoria: CategoriaDeLinea
     selectable: boolean
     selected: boolean
     driverId?: string | null  // conductor real, solo si se conoce — habilita "Crear viaje manual"
@@ -194,6 +215,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     todayTripId?: string | null  // el viaje de hoy, para "Ver viaje" de una fila sana
     carrierId?: string | null
     unassignedReasonId?: string | null
+    validUntil?: string | null
     tripCode?: string | null
     origin?: string | null
     cliente?: string | null   // generador de carga: quien pone la carga, no quien la mueve
@@ -212,13 +234,15 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         carrierName: d.carrier_name,
         statusLabel: STATUS_LABEL[d.status],
         statusCls: STATUS_CLS[d.status],
-        selectable: d.status === 'UNASSIGNED',
+        categoria: d.category,
+        selectable: d.status === 'UNASSIGNED' && !cerrado,
         selected: selected.has(d.driver_id),
         driverId: d.driver_id,
         tripId: d.trip_id,
         todayTripId: d.today_trip_id,
         carrierId: d.carrier_id,
         unassignedReasonId: d.unassigned_reason_id,
+        validUntil: d.valid_until,
         tripCode: d.today_trip_code,
         origin: d.today_trip_origin,
         cliente: d.client_names.length ? d.client_names.join(', ') : null,
@@ -243,30 +267,29 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         carrierName: e.carrier_name,
         statusLabel: STATUS_LABEL[e.status],
         statusCls: STATUS_CLS[e.status],
-        selectable: e.status === 'UNASSIGNED',
+        categoria: e.category,
+        selectable: e.status === 'UNASSIGNED' && !cerrado,
         selected: selected.has(e.asset_id),
         driverId: e.trip_driver_id ?? e.driver_id,
         tripId: e.trip_id,
         todayTripId: e.trip_id,
         carrierId: e.carrier_id,
         unassignedReasonId: e.unassigned_reason_id,
+        validUntil: e.valid_until,
         tripCode: e.today_trip_code,
         origin: e.today_trip_origin,
         cliente: e.today_trip_client,
         comentario: e.comentario,
       }))
 
-  // "No asignado" se parte en dos: los que todavía nadie miró y los que ya
-  // tienen motivo. Antes eran el mismo número, así que resolver una fila no
-  // movía el contador de lo pendiente.
-  const sinResolver = (r: Row) => r.statusLabel === 'No asignado' && !r.unassignedReasonId
-  const noTrabajando = (r: Row) => r.statusLabel === 'No asignado' && !!r.unassignedReasonId
+  const noAsignado = (r: Row) => r.categoria === 'SIN_RESOLVER' || r.categoria === 'TRABAJANDO_SIN_ASIGNACION'
+  const noTrabajando = (r: Row) => r.categoria === 'NO_TRABAJANDO'
 
   const categoryFiltered = (
-    category === 'assigned'     ? rows.filter(r => r.statusLabel === 'Asignado') :
-    category === 'unassigned'   ? rows.filter(sinResolver) :
+    category === 'assigned'     ? rows.filter(r => r.categoria === 'ASIGNADO') :
+    category === 'unassigned'   ? rows.filter(noAsignado) :
     category === 'noTrabajando' ? rows.filter(noTrabajando) :
-    category === 'mismatch'     ? rows.filter(r => r.statusLabel === 'Por regularizar') :
+    category === 'mismatch'     ? rows.filter(r => r.categoria === 'POR_REGULARIZAR') :
     rows  // 'total', que es tambien con la que abre
   )
 
@@ -318,10 +341,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   const totalCount = rows.length
-  const assignedCount = rows.filter(r => r.statusLabel === 'Asignado').length
-  const unassignedCount = rows.filter(sinResolver).length
+  const assignedCount = rows.filter(r => r.categoria === 'ASIGNADO').length
+  const unassignedCount = rows.filter(noAsignado).length
   const noTrabajandoCount = rows.filter(noTrabajando).length
-  const mismatchCount = rows.filter(r => r.statusLabel === 'Por regularizar').length
+  const mismatchCount = rows.filter(r => r.categoria === 'POR_REGULARIZAR').length
   const conductoresUtilizacionPct = drivers.total_drivers
     ? Math.round((drivers.assigned_count / drivers.total_drivers) * 1000) / 10
     : 0
@@ -385,7 +408,13 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         />
       </div>
 
-      {selected.size > 0 && (
+      {errorAlGuardar && (
+        <p role="alert" className="text-xs text-status-incidente bg-status-incidente/5 border border-status-incidente/20 rounded-lg px-3 py-2">
+          {errorAlGuardar}
+        </p>
+      )}
+
+      {selected.size > 0 && !cerrado && (
         <div className="flex items-center gap-2 bg-accent/5 border border-accent/20 rounded-lg px-3 py-2">
           <span className="text-[11px] font-semibold text-text-primary">{selected.size} seleccionados</span>
           <select
@@ -501,8 +530,9 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                     <div className="space-y-1">
                       <select
                         value={r.unassignedReasonId ?? ''}
-                        disabled={savingReason === r.entityId}
-                        onChange={e => handleSetReason(r.entityId, e.target.value)}
+                        aria-label={`Motivo de ${r.primary}`}
+                        disabled={cerrado || savingReason === r.entityId}
+                        onChange={e => handleSetReason(r.entityId, { unassigned_reason_id: e.target.value || null })}
                         className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
                       >
                         <option value="">— Sin especificar —</option>
@@ -510,16 +540,34 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                           <option key={reason.id} value={reason.id}>{reason.label}</option>
                         ))}
                       </select>
-                      {!r.unassignedReasonId && r.driverPendingDocsCritical && r.suggestedReasonId && (
+                      {/* Vigencia: sólo un motivo de "no trabajó" puede
+                          arrastrarse a los días siguientes (Vacaciones,
+                          Licencia). Trabajar sin asignación es un hecho de
+                          ese día. */}
+                      {r.unassignedReasonId && grupoDeMotivo(r.unassignedReasonId) === 'no_trabajando' && (
+                        <label className="flex items-center gap-1 text-[10px] text-informativo">
+                          Hasta
+                          <input
+                            type="date"
+                            min={fecha}
+                            value={r.validUntil ?? ''}
+                            aria-label={`Vigencia del motivo de ${r.primary}`}
+                            disabled={cerrado || savingReason === r.entityId}
+                            onChange={e => handleSetReason(r.entityId, { valid_until: e.target.value || null })}
+                            className="text-[10px] border border-border rounded-lg px-1.5 py-0.5 bg-white"
+                          />
+                        </label>
+                      )}
+                      {!cerrado && !r.unassignedReasonId && r.driverPendingDocsCritical && r.suggestedReasonId && (
                         <button
                           type="button"
-                          onClick={() => handleSetReason(r.entityId, r.suggestedReasonId!)}
+                          onClick={() => handleSetReason(r.entityId, { unassigned_reason_id: r.suggestedReasonId! })}
                           className="block text-[10px] text-amber-600 hover:text-amber-800 hover:underline"
                         >
                           Sugerido: {unassignedReasons.find(reason => reason.id === r.suggestedReasonId)?.label ?? 'Documentación vencida'}
                         </button>
                       )}
-                      {r.driverId && onCreateManualTrip && (
+                      {!cerrado && r.driverId && onCreateManualTrip && (
                         <button
                           type="button"
                           onClick={() => onCreateManualTrip(r.driverId!, r.primary)}
@@ -567,8 +615,8 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                 <td className="px-3 py-2 min-w-[12rem]">
                   <ComentarioDeFila
                     valor={r.comentario ?? ''}
-                    guardando={savingReason === r.entityId}
-                    onGuardar={texto => handleSetReason(r.entityId, undefined, texto)}
+                    guardando={cerrado || savingReason === r.entityId}
+                    onGuardar={texto => handleSetReason(r.entityId, { comentario: texto })}
                     etiqueta={`Comentario de ${r.primary}`}
                   />
                 </td>

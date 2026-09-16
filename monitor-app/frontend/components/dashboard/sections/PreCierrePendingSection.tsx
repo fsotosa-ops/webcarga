@@ -9,6 +9,7 @@ import { NewCarrierPanel } from '../NewCarrierPanel'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { AltaConductorDesdeCierre } from './AltaConductorDesdeCierre'
 import { VincularConductorPropuesto } from './VincularConductorPropuesto'
+import { Estado } from '@/components/ui/Estado'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
 
 interface Props {
@@ -78,6 +79,18 @@ export function PreCierrePendingSection({ fecha }: Props) {
   }
 
   if (!data) return null
+
+  // Un día cerrado no vuelve a correr el pre-cierre (escribe en el directorio
+  // como efecto), así que no hay pendientes que mostrar: el día ya se firmó.
+  if (!data.pre_cierre) {
+    return (
+      <Estado
+        tipo="vacio"
+        titulo="El día está cerrado"
+        detalle="Los pendientes se revisan antes de firmar. Para cambiar algo hay que reabrir el día."
+      />
+    )
+  }
 
   const { auto_resolved, escalations } = data.pre_cierre
   // El `?.length` cubre la clave que llega explícitamente en `undefined`.

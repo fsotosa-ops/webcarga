@@ -10,7 +10,9 @@ interface Props {
   grupos:    CierreViajesResponse['grupos'] | undefined
   bloquean:  number | undefined
   cargando?: boolean
-  motivos:   UnassignedReasonMeta[]
+  /** Motivos de NO ASIGNACIÓN de viaje: sólo id y etiqueta. El grupo de un
+   *  motivo de conductor no aplica acá. */
+  motivos:   Pick<UnassignedReasonMeta, 'id' | 'label'>[]
   onCerrar:  (tripIds: string[], motivoId: string) => void | Promise<void>
 }
 

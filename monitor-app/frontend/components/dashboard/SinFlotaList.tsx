@@ -1,7 +1,7 @@
 'use client'
 
 import { Truck } from 'lucide-react'
-import type { SinFlota } from '@/lib/api/dailyClosures'
+import type { SinFlota } from '@/lib/api/closures'
 
 /**
  * Los viajes que bloquean el cierre porque su flota no está en el directorio.

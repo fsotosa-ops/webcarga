@@ -16,6 +16,34 @@ export const GROUP_OPTIONS = [
   { id: 'otro',       label: 'Otro'       },
 ]
 
+/** Qué significa el grupo de un valor, por vocabulario. Un vocabulario que no
+ *  está acá no tiene grupo, y la columna no se dibuja. El backend valida los
+ *  mismos ids (schemas/status_taxonomy.py, GRUPOS_POR_DOMINIO). */
+export const GRUPOS_POR_DOMINIO: Partial<Record<string, {
+  titulo:     string
+  ayuda:      string
+  porDefecto: string
+  opciones:   { id: string; label: string }[]
+}>> = {
+  OPERATIONAL_STATE: {
+    titulo:     'Columna del tablero',
+    ayuda:      'Define en qué columna del tablero aparecen los viajes con este estado',
+    porDefecto: 'otro',
+    opciones:   GROUP_OPTIONS,
+  },
+  // Decide en qué tile del cierre del día cae el conductor, y si el motivo
+  // puede arrastrarse a los días siguientes (Solicitud de Operaciones, 16/09).
+  DRIVER_REASON: {
+    titulo:     'Qué significa',
+    ayuda:      'Define si el conductor cuenta como No asignado (trabajó sin carga) o como No trabajando en el cierre del día',
+    porDefecto: 'no_trabajando',
+    opciones:   [
+      { id: 'no_trabajando',             label: 'No trabajó' },
+      { id: 'trabajando_sin_asignacion', label: 'Trabajó sin asignación' },
+    ],
+  },
+}
+
 export const COLOR_PALETTE = [
   { bg: '#eff6ff', text: '#1d4ed8', label: 'Azul'     },
   { bg: '#f0fdf4', text: '#166534', label: 'Verde'    },

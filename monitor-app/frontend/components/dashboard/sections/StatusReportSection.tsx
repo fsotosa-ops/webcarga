@@ -85,11 +85,9 @@ function exportReportCsv(report: StatusReport, fecha: string) {
 }
 
 const ZONE_COLS: (keyof ZoneCrossTab)[] = ['RM', 'Z0', 'Región', 'Sin clasificar', 'total']
-const MOTIVO_COLS = [
-  'Panne', 'Mantención', 'Sin conductor', 'No se presentó', 'Vacaciones', 'Licencia',
-  'Descanso', 'Se retiró sin carga', 'Sin carga disponible', 'Conductor no disponible',
-  'A confirmar', 'Otro', 'total',
-]
+// Las columnas de motivo las manda el backend (`section4.motivos`), desde el
+// catálogo: la lista escrita acá dejaba fuera 9 motivos, que sólo sumaban al
+// total sin que se viera cuáles eran.
 const OPERATION_TYPE_CLS: Record<string, string> = {
   Tractoreo:         'bg-indigo-50 text-indigo-700 border-indigo-100',
   'Equipo Completo': 'bg-gray-100 text-gray-600 border-transparent',
@@ -344,8 +342,10 @@ export function StatusReportSection({ fecha, shippers }: Props) {
 
           {tab === 'sin_trabajar' && (
             <div className="space-y-4">
-              <MotivoTable title="Por CD" rows={data.section4_tractoreo_no_trabajando.por_cd} />
-              <MotivoTable title="Por empresa dentro de cada CD" rows={data.section4_tractoreo_no_trabajando.por_empresa_y_cd} showCarrier />
+              <MotivoTable title="Por CD" rows={data.section4_tractoreo_no_trabajando.por_cd}
+                motivos={columnasDeMotivo(data.section4_tractoreo_no_trabajando)} />
+              <MotivoTable title="Por empresa dentro de cada CD" rows={data.section4_tractoreo_no_trabajando.por_empresa_y_cd}
+                motivos={columnasDeMotivo(data.section4_tractoreo_no_trabajando)} showCarrier />
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Detalle por conductor</p>
                 <div className="bg-white rounded-xl border border-border overflow-hidden">
@@ -539,7 +539,23 @@ function ZoneTable({ title, rows, showCarrier }: { title: string; rows: ZoneCros
   )
 }
 
-function MotivoTable({ title, rows, showCarrier }: { title: string; rows: MotivoCrossTab[]; showCarrier?: boolean }) {
+/** Las columnas que manda el backend; si todavía no las manda (despliegues
+ *  separados), las que traen las filas. */
+function columnasDeMotivo(seccion: { motivos?: string[]; por_cd: MotivoCrossTab[] }): string[] {
+  if (seccion.motivos) return seccion.motivos
+  const claves = new Set<string>()
+  for (const fila of seccion.por_cd) {
+    for (const clave of Object.keys(fila)) {
+      if (!['cd', 'carrier_name', 'total'].includes(clave)) claves.add(clave)
+    }
+  }
+  return Array.from(claves)
+}
+
+function MotivoTable({ title, rows, motivos, showCarrier }: {
+  title: string; rows: MotivoCrossTab[]; motivos: string[]; showCarrier?: boolean
+}) {
+  const columnas = [...motivos, 'total']
   return (
     <div>
       <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">{title}</p>
@@ -549,18 +565,18 @@ function MotivoTable({ title, rows, showCarrier }: { title: string; rows: Motivo
             <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
               <th className="text-left px-3 py-2 whitespace-nowrap">CD</th>
               {showCarrier && <th className="text-left px-3 py-2 whitespace-nowrap">Empresa</th>}
-              {MOTIVO_COLS.map(c => <th key={c} className="text-right px-2 py-2 whitespace-nowrap">{c}</th>)}
+              {columnas.map(c => <th key={c} className="text-right px-2 py-2 whitespace-nowrap">{c}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
             {rows.length === 0 && (
-              <tr><td colSpan={(showCarrier ? 2 : 1) + MOTIVO_COLS.length} className="px-3 py-4 text-center text-gray-300 italic">Sin datos</td></tr>
+              <tr><td colSpan={(showCarrier ? 2 : 1) + columnas.length} className="px-3 py-4 text-center text-gray-300 italic">Sin datos</td></tr>
             )}
             {rows.map((r, i) => (
               <tr key={i}>
                 <td className="px-3 py-2 whitespace-nowrap">{r.cd}</td>
                 {showCarrier && <td className="px-3 py-2 whitespace-nowrap">{r.carrier_name}</td>}
-                {MOTIVO_COLS.map(c => (
+                {columnas.map(c => (
                   <td key={c} className={`px-2 py-2 text-right ${c === 'total' ? 'font-bold' : ''}`}>{(r[c] as number) ?? 0}</td>
                 ))}
               </tr>

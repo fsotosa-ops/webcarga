@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react'
 import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react'
 import { taxonomiesApi, type Direccion, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
 import {
-  GROUP_OPTIONS, INPUT, useConfigList, LoadState, useRowFeedback,
+  GRUPOS_POR_DOMINIO, INPUT, useConfigList, LoadState, useRowFeedback,
   SaveRowButton, SwatchPicker, SortArrows,
 } from './shared'
 import { CeldaDeRevision, useRevisiones } from './revision'
@@ -19,8 +19,6 @@ function Badge({ label, bg, text }: { label: string; bg: string; text: string })
   )
 }
 
-const GROUP_HINT = 'Define en qué columna del tablero aparecen los viajes con este estado'
-
 // Los estados del tablero (`app.trip_statuses`) se editan en `estados-tabla.tsx`
 // y `EstadoPanel.tsx` — lista con panel, en vez de las 25 filas de 8 pastillas
 // que tenía esta pestaña. Este archivo se queda sólo con `TaxonomyTab` y sus
@@ -30,8 +28,8 @@ const GROUP_HINT = 'Define en qué columna del tablero aparecen los viajes con e
 // Reemplaza el cuerpo de EstadosOperacionalesTab — parametrizado por domain,
 // reusado también para "Estados de Equipo" (EQUIPMENT_STATE).
 
-const emptyNew = (withGroup: boolean) =>
-  ({ label: '', bg_color: '#f3f4f6', text_color: '#374151', group: withGroup ? 'otro' : undefined })
+const emptyNew = (grupoPorDefecto: string | undefined) =>
+  ({ label: '', bg_color: '#f3f4f6', text_color: '#374151', group: grupoPorDefecto })
 
 interface TaxonomyTabProps {
   domain:   TaxonomyDomain
@@ -50,7 +48,9 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
   const fetcher = useCallback(() => taxonomiesApi.list(domain), [domain])
   const { items, setItems, loading, error, reload } = useConfigList<TaxonomyRow>(fetcher)
   const [drafts, setDrafts]     = useState<Record<string, Partial<TaxonomyRow>>>({})
-  const showGroup = domain === 'OPERATIONAL_STATE'
+  // El grupo es una prop del vocabulario, no un componente hermano: estados del
+  // tablero agrupan por columna; motivos de conductor, por si trabajó.
+  const grupo = GRUPOS_POR_DOMINIO[domain]
   const [nuevo, setNuevo]       = useState<ReturnType<typeof emptyNew> | null>(null)
   const [creating, setCreating] = useState(false)
   const [createErr, setCreateErr] = useState<string | null>(null)
@@ -145,7 +145,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                   <th className="py-2 pr-3 text-left">Nombre</th>
                   <th className="py-2 pr-3 text-left">Color</th>
                   <th className="py-2 pr-3 text-left">Revisión</th>
-                  {showGroup && <th className="py-2 pr-3 text-left" title={GROUP_HINT}>Columna del tablero</th>}
+                  {grupo && <th className="py-2 pr-3 text-left" title={grupo.ayuda}>{grupo.titulo}</th>}
                   <th className="py-2 text-right w-[120px]" aria-label="Acciones" />
                 </tr>
               </thead>
@@ -172,11 +172,11 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                       <td className="py-2 pr-3">
                         <CeldaDeRevision id={row.id} revisiones={revisiones} />
                       </td>
-                      {showGroup && (
+                      {grupo && (
                         <td className="py-2 pr-3">
-                          <select value={m.group ?? 'otro'} onChange={e => setDraft(row.id, { group: e.target.value })}
-                            aria-label={`Columna del tablero de ${row.label}`} title={GROUP_HINT} className={INPUT}>
-                            {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                          <select value={m.group ?? grupo.porDefecto} onChange={e => setDraft(row.id, { group: e.target.value })}
+                            aria-label={`${grupo.titulo} de ${row.label}`} title={grupo.ayuda} className={INPUT}>
+                            {grupo.opciones.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
                           </select>
                         </td>
                       )}
@@ -203,10 +203,10 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                   placeholder="Nombre" aria-label={`Nombre de ${newLabel} nuevo`} className={INPUT + ' w-44'} />
                 <SwatchPicker name={`nuevo ${newLabel}`} bg={nuevo.bg_color} text={nuevo.text_color}
                   onPick={c => setNuevo({ ...nuevo, bg_color: c.bg, text_color: c.text })} />
-                {showGroup && (
+                {grupo && (
                   <select value={nuevo.group} onChange={e => setNuevo({ ...nuevo, group: e.target.value })}
-                    aria-label={`Columna del tablero de ${newLabel} nuevo`} className={INPUT}>
-                    {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                    aria-label={`${grupo.titulo} de ${newLabel} nuevo`} className={INPUT}>
+                    {grupo.opciones.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
                   </select>
                 )}
                 <Badge label={nuevo.label || 'Vista previa'} bg={nuevo.bg_color} text={nuevo.text_color} />
@@ -223,7 +223,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
               </div>
             </div>
           ) : (
-            <button type="button" onClick={() => setNuevo(emptyNew(showGroup))}
+            <button type="button" onClick={() => setNuevo(emptyNew(grupo?.porDefecto))}
               className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent/80">
               <Plus size={13} /> Nuevo {newLabel}
             </button>

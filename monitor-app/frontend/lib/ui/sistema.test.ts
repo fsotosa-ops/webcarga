@@ -91,7 +91,11 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1.721 -> 1.719 en la Ronda 155: la cabecera de la tabla del cierre y el
     // chip de estado pasaron a tokens al volverse ordenables.
     // 1.719 -> 1.717 en la Ronda 156: se retiro el cajon "Editar Empresa".
-    const DEUDA = 1717
+    // 1.717 -> 1.685 en la Ronda 161 (2026-09-16): se retiro CloseDayDialog, que
+    // nadie importaba y firmaba contra un endpoint que dejo de existir, y la UI
+    // nueva del cierre (dia cerrado, reabrir, error al guardar) nacio con
+    // tokens — `resuelto`, `status-incidente`, `informativo`.
+    const DEUDA = 1685
 
     const total = usosDeColorCrudo()
     expect(

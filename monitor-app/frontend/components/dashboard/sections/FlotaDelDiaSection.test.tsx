@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { FlotaDelDiaSection } from './FlotaDelDiaSection'
-import type { DailyClosureStatus, EquipmentClosureStatus, EquipmentDayStatusRow, UnassignedReasonMeta } from '@/lib/types'
+import type {
+  CategoriaDeLinea, DailyClosureStatus, EquipmentClosureStatus, EquipmentDayStatusRow, UnassignedReasonMeta,
+} from '@/lib/types'
 
 vi.mock('@/lib/api/dailyClosures', () => ({
   dailyClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn() },
@@ -12,28 +14,44 @@ vi.mock('@/lib/api/equipmentClosures', () => ({
   equipmentClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn() },
 }))
 
-const REASONS: UnassignedReasonMeta[] = [{ id: 'pana', label: 'Pana' }]
+const REASONS: UnassignedReasonMeta[] = [
+  { id: 'pana', label: 'Pana', group: 'no_trabajando' },
+  { id: 'esperando', label: 'Esperando carga', group: 'trabajando_sin_asignacion' },
+]
+
+/** La categoría la calcula el backend; en las filas de ejemplo se deriva con
+ *  la misma regla, y un test puede fijarla a mano. */
+function categoria(fila: { status: string; unassigned_reason_id: string | null }): CategoriaDeLinea {
+  if (fila.status === 'ASSIGNED') return 'ASIGNADO'
+  if (fila.status === 'MISMATCH') return 'POR_REGULARIZAR'
+  if (!fila.unassigned_reason_id) return 'SIN_RESOLVER'
+  return fila.unassigned_reason_id === 'esperando' ? 'TRABAJANDO_SIN_ASIGNACION' : 'NO_TRABAJANDO'
+}
 
 function driverRow(overrides: Partial<DailyClosureStatus['drivers'][number]> = {}) {
-  return {
+  const base = {
     driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur',
     status: 'UNASSIGNED' as const, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null,
     suggested_reason_id: null, trip_id: null, today_trip_id: null, today_trip_code: null, today_trip_origin: null, comentario: null, last_known_tractor_plate: null, last_known_operation_type: null,
+    valid_until: null,
     ...overrides,
   }
+  return { ...base, category: overrides.category ?? categoria(base) }
 }
 
 function equipmentRow(overrides: Partial<EquipmentDayStatusRow> = {}): EquipmentDayStatusRow {
-  return {
+  const base: EquipmentDayStatusRow = {
     asset_id: 'a1', tractor_plate: 'XYZ111', carrier_id: 'c2', carrier_name: 'RPS Logística',
     fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null,
     status: 'UNASSIGNED', requires_motivo: false, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, driver_id: null, driver_name: null, last_known_origin: null,
     trip_id: null, trip_driver_id: null, trip_driver_name: null,
     today_trip_code: null, today_trip_origin: null, today_trip_client: null, comentario: null,
+    valid_until: null, category: 'SIN_RESOLVER',
     ...overrides,
   }
+  return { ...base, category: overrides.category ?? categoria(base) }
 }
 
 const DRIVERS_STATUS: DailyClosureStatus = {
@@ -202,7 +220,7 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.change(within(row).getByRole('combobox'), { target: { value: 'pana' } })
 
     await waitFor(() => {
-      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('a2', '2026-08-04', 'pana', undefined)
+      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('a2', '2026-08-04', { unassigned_reason_id: 'pana' })
     })
   })
 
@@ -264,7 +282,7 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar a todos' }))
 
     await waitFor(() => {
-      expect(dailyClosuresApi.setReasonBatch).toHaveBeenCalledWith('2026-08-04', ['d1'], 'pana')
+      expect(dailyClosuresApi.setReasonBatch).toHaveBeenCalledWith('2026-08-04', ['d1'], { unassigned_reason_id: 'pana' })
     })
   })
 
@@ -279,7 +297,7 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar a todos' }))
 
     await waitFor(() => {
-      expect(equipmentClosuresApi.setReasonBatch).toHaveBeenCalledWith('2026-08-04', ['a2'], 'pana')
+      expect(equipmentClosuresApi.setReasonBatch).toHaveBeenCalledWith('2026-08-04', ['a2'], { unassigned_reason_id: 'pana' })
     })
   })
 
@@ -449,9 +467,9 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.change(within(fila).getByRole('combobox'), { target: { value: 'pana' } })
 
     await waitFor(() => {
-      // Sin comentario: `undefined` no viaja en el JSON, y el backend distingue
-      // "no mandé el campo" de "ponelo en null" para no borrar lo escrito.
-      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('tr3', '2026-08-04', 'pana', undefined)
+      // Sólo el motivo: la clave del comentario no viaja, y el backend distingue
+      // "no mandé el campo" de "déjalo vacío" para no borrar lo escrito.
+      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('tr3', '2026-08-04', { unassigned_reason_id: 'pana' })
     })
     expect(dailyClosuresApi.setReason).not.toHaveBeenCalled()
   })
@@ -577,7 +595,7 @@ describe('FlotaDelDiaSection', () => {
       // haya. Mandarlo seria reescribirlo con el mismo valor sin motivo para
       // hacerlo.
       expect(dailyClosuresApi.setReason).toHaveBeenCalledWith(
-        'd4', '2026-08-04', undefined, 'llegó tarde el repuesto',
+        'd4', '2026-08-04', { comentario: 'llegó tarde el repuesto' },
       )
     })
   })
@@ -612,7 +630,7 @@ describe('FlotaDelDiaSection', () => {
 
     await waitFor(() => {
       expect(dailyClosuresApi.setReason).toHaveBeenCalledWith(
-        'd1', '2026-08-04', undefined, 'sin novedad',
+        'd1', '2026-08-04', { comentario: 'sin novedad' },
       )
     })
   })
@@ -667,4 +685,71 @@ describe('FlotaDelDiaSection', () => {
       expect(screen.getByRole('button', { name: /Total/ }).className).toContain('border-accent')
     })
   })
+
+  // ── Solicitud de Cambios Diario 2.0 (16/09) ─────────────────────────────
+
+  it('un motivo de "trabajó sin asignación" queda en No asignados y no pasa a No trabajando', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [
+        driverRow({ driver_id: 'd1', full_name: 'Ana Soto', unassigned_reason_id: 'esperando' }),
+        driverRow({ driver_id: 'd4', full_name: 'Carla Díaz', unassigned_reason_id: 'pana' }),
+      ],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    fireEvent.click(screen.getByText('No asignados'))
+    expect(screen.getByText('Ana Soto')).toBeInTheDocument()
+    expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('No trabajando'))
+    expect(await screen.findByText('Carla Díaz')).toBeInTheDocument()
+    expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
+  })
+
+  it('"Hasta" aparece sólo con un motivo de no trabajó, y guarda la vigencia', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [
+        driverRow({ driver_id: 'd1', full_name: 'Ana Soto', unassigned_reason_id: 'esperando' }),
+        driverRow({ driver_id: 'd4', full_name: 'Carla Díaz', unassigned_reason_id: 'pana' }),
+      ],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+    fireEvent.click(screen.getByText('Total'))
+
+    expect(screen.queryByLabelText('Vigencia del motivo de Ana Soto')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Vigencia del motivo de Carla Díaz'), { target: { value: '2026-08-10' } })
+
+    await waitFor(() => {
+      expect(dailyClosuresApi.setReason).toHaveBeenCalledWith('d4', '2026-08-04', { valid_until: '2026-08-10' })
+    })
+  })
+
+  it('con el día cerrado la tabla es de sólo lectura', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({ ...DRIVERS_STATUS, closed: true })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    expect(screen.getByLabelText('Motivo de Ana Soto')).toBeDisabled()
+    expect(screen.getByLabelText('Comentario de Ana Soto')).toBeDisabled()
+    expect(screen.queryByRole('checkbox', { name: /Ana Soto/ })).not.toBeInTheDocument()
+  })
+
+  it('si guardar falla, la pantalla lo dice', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.setReason).mockRejectedValue(new Error('El día está cerrado. Para cambiarlo hay que reabrirlo.'))
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    fireEvent.change(screen.getByLabelText('Motivo de Ana Soto'), { target: { value: 'pana' } })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('reabrirlo')
+  })
 })
+

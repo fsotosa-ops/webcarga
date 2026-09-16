@@ -30,14 +30,19 @@ vi.mock('@/lib/api/tripsMeta', () => ({
 }))
 
 vi.mock('@/lib/api/dailyClosures', () => ({
-  dailyClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn(), close: vi.fn() },
-  isClosePendingError: vi.fn(() => false),
+  dailyClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn() },
 }))
 
 vi.mock('@/lib/api/equipmentClosures', () => ({
-  equipmentClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn(), close: vi.fn() },
-  isEquipmentClosePendingError: vi.fn(() => false),
+  equipmentClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn() },
 }))
+
+vi.mock('@/lib/api/closures', () => ({
+  closuresApi: { cerrar: vi.fn(), reabrir: vi.fn() },
+  isCierrePendienteError: vi.fn(() => false),
+}))
+
+vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: vi.fn(() => false) }))
 
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
@@ -73,15 +78,28 @@ function renderPage() {
   )
 }
 
+const CERRADO: DailyClosureStatus = {
+  ...EMPTY_STATUS,
+  closed: true,
+  periodo: {
+    status: 'CLOSED', closed_by: 'u1', closed_by_name: 'Pablo Soto', closed_at: '2026-08-04T23:40:00Z',
+    override_count: 0,
+    frozen_totals: { conductores: 38, conductores_resueltos: 38, tractos: 79, tractos_resueltos: 79, viajes: 42 },
+    reopened_by: null, reopened_at: null, reopen_note: null,
+  },
+}
+
 beforeEach(async () => {
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  const { closuresApi, isCierrePendienteError } = await import('@/lib/api/closures')
+  const { useCanAdmin } = await import('@/hooks/useCanAdmin')
   vi.mocked(dailyClosuresApi.get).mockReset().mockResolvedValue(EMPTY_STATUS)
-  vi.mocked(dailyClosuresApi.close).mockReset()
   vi.mocked(equipmentClosuresApi.get).mockReset().mockResolvedValue(EMPTY_EQUIPMENT)
-  vi.mocked(equipmentClosuresApi.close).mockReset()
-  const { isEquipmentClosePendingError } = await import('@/lib/api/equipmentClosures')
-  vi.mocked(isEquipmentClosePendingError).mockReset().mockReturnValue(false)
+  vi.mocked(closuresApi.cerrar).mockReset()
+  vi.mocked(closuresApi.reabrir).mockReset()
+  vi.mocked(isCierrePendienteError).mockReset().mockReturnValue(false)
+  vi.mocked(useCanAdmin).mockReset().mockReturnValue(false)
   push.mockReset(); replace.mockReset()
 })
 
@@ -123,11 +141,14 @@ describe('ClosuresCenterPage', () => {
     expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeInTheDocument()
   })
 
-  it('Confirmar cierre: si el cierre de Tractoreo tiene éxito, encadena el de Equipos Completos', async () => {
-    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
-    vi.mocked(dailyClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-08-04', overridden: 0 })
-    vi.mocked(equipmentClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-08-04', overridden: 0 })
+  it('Confirmar cierre firma los dos ejes en una sola llamada', async () => {
+    // Antes eran dos POST encadenados desde la pantalla: si el segundo fallaba,
+    // el día quedaba medio firmado y nada lo decía.
+    const { closuresApi } = await import('@/lib/api/closures')
+    vi.mocked(closuresApi.cerrar).mockResolvedValue({
+      business_date: '2026-08-04', closed_at: '2026-08-04T23:40:00Z', overridden: 0,
+      totales: { conductores: 0, conductores_resueltos: 0, tractos: 0, tractos_resueltos: 0, viajes: 0 },
+    })
     renderPage()
 
     // El boton espera a que las consultas del dia resuelvan: firmar sobre
@@ -138,36 +159,47 @@ describe('ClosuresCenterPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
 
-    await waitFor(() => expect(dailyClosuresApi.close).toHaveBeenCalledWith('2026-08-04', false, ''))
-    // Los mismos tres argumentos que el primer paso: el override tiene que
-    // llegar a los dos. Antes se llamaba con la fecha sola, así que con
-    // tractos pendientes el segundo paso devolvía 409 aunque el admin lo
-    // hubiera forzado — `app.equipment_closures` nunca llegó a tener una fila.
-    await waitFor(() => expect(equipmentClosuresApi.close).toHaveBeenCalledWith('2026-08-04', false, ''))
+    await waitFor(() => expect(closuresApi.cerrar).toHaveBeenCalledWith('2026-08-04', false, ''))
+    expect(closuresApi.cerrar).toHaveBeenCalledTimes(1)
   })
 
-  it('Confirmar cierre: si Tractoreo falla con pendientes (409), NO llama a Equipos Completos', async () => {
-    const { dailyClosuresApi, isClosePendingError } = await import('@/lib/api/dailyClosures')
-    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
-    const pendingError = Object.assign(new Error('pending'), {
-      status: 409, detail: { message: '2 conductores sin resolver', pending: [] },
-    })
-    vi.mocked(dailyClosuresApi.close).mockRejectedValue(pendingError)
-    vi.mocked(isClosePendingError).mockImplementation(
-      (e: unknown): e is never => e === pendingError,
-    )
+  it('un día cerrado dice quién lo firmó, a qué hora y con qué cifras, y no ofrece volver a firmarlo', async () => {
+    // Operaciones (16/09): "al momento de realizar el cierre no entrega ningún
+    // aviso, de cierre finalizado o de todo OK".
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(CERRADO)
     renderPage()
 
-    // El boton espera a que las consultas del dia resuelvan: firmar sobre
-    // datos a medio cargar produce un cierre falso.
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled(),
-    )
+    // Hay otro role="status" en la pantalla (el cargando de la flota): el
+    // aviso se busca por lo que dice.
+    const aviso = (await screen.findByText(/Día cerrado por Pablo Soto/)).closest('[role="status"]')!
+    expect(aviso).toHaveTextContent('Día cerrado por Pablo Soto')
+    expect(aviso).toHaveTextContent('38 de 38 conductores · 79 de 79 tractos resueltos')
+    expect(screen.queryByRole('button', { name: 'Confirmar cierre' })).not.toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
+  it('reabrir es sólo de admin y exige una nota', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { closuresApi } = await import('@/lib/api/closures')
+    const { useCanAdmin } = await import('@/hooks/useCanAdmin')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(CERRADO)
+    vi.mocked(closuresApi.reabrir).mockResolvedValue({ business_date: '2026-08-04', status: 'OPEN' })
 
-    await waitFor(() => expect(screen.getByText('2 conductores sin resolver')).toBeInTheDocument())
-    expect(equipmentClosuresApi.close).not.toHaveBeenCalled()
+    const sinAdmin = renderPage()
+    await screen.findByText(/Día cerrado por/)
+    expect(screen.queryByRole('button', { name: /Reabrir día/ })).not.toBeInTheDocument()
+    sinAdmin.unmount()
+
+    vi.mocked(useCanAdmin).mockReturnValue(true)
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Reabrir día/ }))
+    const confirmar = screen.getByRole('button', { name: 'Confirmar y reabrir' })
+    expect(confirmar).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Motivo para reabrir el día'), { target: { value: 'faltaba un viaje' } })
+    fireEvent.click(confirmar)
+
+    await waitFor(() => expect(closuresApi.reabrir).toHaveBeenCalledWith('2026-08-04', 'faltaba un viaje'))
   })
 
   it('cambiar el selector de fecha actualiza la URL', () => {
@@ -199,49 +231,26 @@ describe('ClosuresCenterPage', () => {
   // detalle"*. El 409 traía patente y empresa de cada uno desde siempre; la
   // pantalla guardaba `detail.message` y tiraba `detail.pending`.
 
-  it('el 409 de equipos se despliega con la patente y la empresa de cada tracto que bloquea', async () => {
-    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { equipmentClosuresApi, isEquipmentClosePendingError } = await import('@/lib/api/equipmentClosures')
-    vi.mocked(dailyClosuresApi.close).mockResolvedValue({ ok: true, business_date: '2026-08-04', overridden: 0 })
-    vi.mocked(equipmentClosuresApi.close).mockRejectedValue(Object.assign(new Error('pending'), {
+  it('el 409 nombra cada tracto con su empresa y cada conductor con su causa', async () => {
+    // Pablo: *"cuál es el listado de estos 15 equipos sin resolver, ni hay un
+    // detalle"*. Un número sin sus filas no dice qué hacer.
+    const { closuresApi, isCierrePendienteError } = await import('@/lib/api/closures')
+    vi.mocked(closuresApi.cerrar).mockRejectedValue(Object.assign(new Error('pending'), {
       status: 409,
       detail: {
-        message: '2 equipo(s) sin resolver — no se puede cerrar el día',
-        pending: [
-          { asset_id: 'a1', tractor_plate: 'DTBY52', carrier_id: 'cf', carrier_name: 'Transportes La Fortaleza Spa' },
-          { asset_id: 'a2', tractor_plate: 'LCSR30', carrier_id: null, carrier_name: null },
-        ],
-      },
-    }))
-    vi.mocked(isEquipmentClosePendingError).mockReturnValue(true)
-    renderPage()
-
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
-
-    expect(await screen.findByText('Tractos sin motivo (2)')).toBeInTheDocument()
-    const conEmpresa = screen.getByText('DTBY52 — Transportes La Fortaleza Spa')
-    expect(conEmpresa).toBeInTheDocument()
-    expect(conEmpresa.closest('a')).toHaveAttribute('href', '/dashboard/carriers/cf?tab=equipos')
-    // Sin empresa no se inventa un destino: se nombra igual, sin link.
-    expect(screen.getByText('LCSR30')).toBeInTheDocument()
-    expect(screen.getByText('LCSR30').closest('a')).toBeNull()
-  })
-
-  it('el 409 de conductores nombra a cada uno, no sólo cuántos son', async () => {
-    const { dailyClosuresApi, isClosePendingError } = await import('@/lib/api/dailyClosures')
-    vi.mocked(dailyClosuresApi.close).mockRejectedValue(Object.assign(new Error('pending'), {
-      status: 409,
-      detail: {
-        message: '2 conductor(es) sin resolver — no se puede cerrar el día',
+        message: '2 conductor(es) sin resolver y 2 tracto(s) sin motivo — no se puede cerrar el día',
         pending: [
           { driver_id: 'd1', full_name: 'Ana Soto', status: 'UNASSIGNED' },
           { driver_id: 'd2', full_name: 'Luis Rojas', status: 'MISMATCH' },
         ],
+        pending_equipment: [
+          { asset_id: 'a1', tractor_plate: 'DTBY52', carrier_id: 'cf', carrier_name: 'Transportes La Fortaleza Spa' },
+          { asset_id: 'a2', tractor_plate: 'LCSR30', carrier_id: null, carrier_name: null },
+        ],
         sin_flota: [],
       },
     }))
-    vi.mocked(isClosePendingError).mockReturnValue(true)
+    vi.mocked(isCierrePendienteError).mockReturnValue(true)
     renderPage()
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled())
@@ -250,6 +259,11 @@ describe('ClosuresCenterPage', () => {
     expect(await screen.findByText('Conductores sin resolver (2)')).toBeInTheDocument()
     expect(screen.getByText('Ana Soto — sin motivo')).toBeInTheDocument()
     expect(screen.getByText('Luis Rojas — empresa por regularizar')).toBeInTheDocument()
+    expect(screen.getByText('Tractos sin motivo (2)')).toBeInTheDocument()
+    const conEmpresa = screen.getByText('DTBY52 — Transportes La Fortaleza Spa')
+    expect(conEmpresa.closest('a')).toHaveAttribute('href', '/dashboard/carriers/cf?tab=equipos')
+    // Sin empresa no se inventa un destino: se nombra igual, sin link.
+    expect(screen.getByText('LCSR30').closest('a')).toBeNull()
   })
 
   // La causa raiz de que la barra de seleccion de "Viajes" no se pegara nunca:
