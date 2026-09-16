@@ -435,3 +435,61 @@ async def test_una_empresa_elegida_a_mano_NO_se_pisa(conexion_revertida):
         "SELECT carrier_id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
     assert str(quedo) == otra, (
         f"se piso la empresa elegida a mano ({otra}) con la del padron ({carrier_del_padron})")
+
+
+# ── La patente corregida a mano manda sobre el tracto habitual ───────────
+
+
+async def _tracto(conn) -> tuple[str, str]:
+    import uuid as _u
+    patente = f"ZZ{_u.uuid4().hex[:4].upper()}"
+    asset_id = await conn.fetchval(
+        "INSERT INTO public.assets (license_plate, asset_type) VALUES ($1, 'TRACTOCAMION') RETURNING id",
+        patente,
+    )
+    return str(asset_id), patente
+
+
+async def test_la_patente_corregida_manda_sobre_el_tracto_habitual(conexion_revertida):
+    """Lara, viaje 2048292 (16/09): al elegir el conductor, el formulario
+    autocompleta el tracto habitual (id Y patente); la persona corrige la
+    patente a la que manejo ese dia, y el id viaja igual. El vinculo quedaba
+    diciendo "CVZP50" y apuntando al activo de FWKL67, y las vueltas del dia
+    se repartian entre dos tractos. La patente es el dato que la persona ve y
+    corrige: el tracto se deriva de ella, no se confia en el par."""
+    conn = conexion_revertida
+    trip_id = await _un_viaje(conn)
+    habitual_id, _ = await _tracto(conn)
+    corregido_id, patente_corregida = await _tracto(conn)
+    carrier_id = str(await conn.fetchval("SELECT id FROM public.carriers LIMIT 1"))
+
+    await assign_fleet_link(
+        trip_id,
+        {"carrier_id": carrier_id, "tractor_asset_id": habitual_id, "tractor_plate": patente_corregida},
+        PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    fila = await conn.fetchrow(
+        "SELECT tractor_asset_id, tractor_plate FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+    assert fila["tractor_plate"] == patente_corregida
+    assert str(fila["tractor_asset_id"]) == corregido_id
+
+
+async def test_una_patente_fuera_del_directorio_no_hereda_el_tracto_habitual(conexion_revertida):
+    """Si la patente escrita no esta en el directorio, el vinculo no sabe que
+    activo es — y decir "ninguno" es verdad; decir el habitual, no."""
+    conn = conexion_revertida
+    trip_id = await _un_viaje(conn)
+    habitual_id, _ = await _tracto(conn)
+    carrier_id = str(await conn.fetchval("SELECT id FROM public.carriers LIMIT 1"))
+
+    await assign_fleet_link(
+        trip_id,
+        {"carrier_id": carrier_id, "tractor_asset_id": habitual_id, "tractor_plate": "NOEXISTE99"},
+        PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    fila = await conn.fetchrow(
+        "SELECT tractor_asset_id, tractor_plate FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+    assert fila["tractor_plate"] == "NOEXISTE99"
+    assert fila["tractor_asset_id"] is None

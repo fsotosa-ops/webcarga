@@ -117,7 +117,7 @@ export function FleetAssignSection({ value, onChange, suggested = [], suggestedL
         </div>
       </div>
       <p className="text-[10px] text-gray-400">
-        Autocompletado editable desde la asignación activa del conductor — corregí acá si ese día manejó otro equipo.
+        Autocompletado editable desde la asignación activa del conductor — corrige aquí si ese día manejó otro equipo.
       </p>
     </div>
   )

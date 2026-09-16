@@ -1757,6 +1757,29 @@ async def _auto_resolve_fleet_link(conn, tractor_plate: str | None, trailer_plat
     return dict(row)
 
 
+async def _activo_de_la_patente(conn, patente: str | None, asset_id: str | None) -> tuple[str | None, str | None]:
+    """(asset_id, patente) coherentes para un vínculo manual.
+
+    El formulario manda las dos cosas: al elegir el conductor autocompleta el
+    tracto habitual (id y patente) y deja la patente editable para corregirla
+    si ese día manejó otro. Corregir el texto no cambia el id, así que confiar
+    en el par guardaba "CVZP50" apuntando al activo de FWKL67 (viaje 2048292,
+    16/09). La patente es lo que la persona ve y corrige: si viene, el activo
+    sale de ella —o ninguno, si no está en el directorio—. Sin patente, se
+    toma la del activo."""
+    patente = (patente or "").strip().upper() or None
+    if patente:
+        encontrado = await conn.fetchval(
+            "SELECT id::text FROM public.assets WHERE upper(trim(license_plate)) = $1 LIMIT 1", patente,
+        )
+        return encontrado, patente
+    if asset_id:
+        return asset_id, await conn.fetchval(
+            "SELECT license_plate FROM public.assets WHERE id = $1", asset_id,
+        )
+    return None, None
+
+
 async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: set[str]) -> str:
     """Crea un viaje manual: fuente de verdad en app.trips_manual (sobrevive al
     full-refresh de dbt vía la rama UNION del modelo) + espejo inmediato en
@@ -1837,6 +1860,10 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
 
     # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
     if body.carrier_id:
+        tractor_asset_id, tractor_plate = await _activo_de_la_patente(
+            conn, body.tractor_plate, body.tractor_asset_id)
+        trailer_asset_id, trailer_plate = await _activo_de_la_patente(
+            conn, body.trailer_plate, body.trailer_asset_id)
         link_id = await conn.fetchval(
             """
             INSERT INTO app.trip_fleet_links
@@ -1849,10 +1876,10 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             trip_id,
             body.carrier_id,
             body.driver_id,
-            body.tractor_asset_id,
-            body.trailer_asset_id,
-            body.tractor_plate,
-            body.trailer_plate,
+            tractor_asset_id,
+            trailer_asset_id,
+            tractor_plate,
+            trailer_plate,
             body.driver_name,
             body.driver_phone,
             user["sub"],
@@ -2699,6 +2726,10 @@ async def assign_fleet_link(
     if old_link_id:
         await pool.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", old_link_id)
 
+    tractor_asset_id, tractor_plate = await _activo_de_la_patente(
+        pool, body.get("tractor_plate"), body.get("tractor_asset_id"))
+    trailer_asset_id, trailer_plate = await _activo_de_la_patente(
+        pool, body.get("trailer_plate"), body.get("trailer_asset_id"))
     link_id = await pool.fetchval(
         """
         INSERT INTO app.trip_fleet_links
@@ -2710,10 +2741,10 @@ async def assign_fleet_link(
         trip_id,
         carrier_id,
         driver_id,
-        body.get("tractor_asset_id"),
-        body.get("trailer_asset_id"),
-        body.get("tractor_plate"),
-        body.get("trailer_plate"),
+        tractor_asset_id,
+        trailer_asset_id,
+        tractor_plate,
+        trailer_plate,
         body.get("driver_name"),
         user["sub"],
     )

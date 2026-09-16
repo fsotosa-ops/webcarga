@@ -46,8 +46,10 @@ def test_assign_fleet_link_inserts_carrier_and_driver_id():
     # 5 valores desde 2026-08-18: cuando viene driver_id el endpoint busca
     # ademas su full_name, para que la nota de bitacora diga lo que realmente
     # se vinculo. El orden es: existe -> link viejo -> INSERT -> conductor ->
-    # empresa.
-    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Juan Perez", "Transportes Sur Spa"]
+    # empresa. Desde el 16/09 la patente se resuelve a su activo antes del
+    # INSERT (`_activo_de_la_patente`): existe -> link viejo -> activo de la
+    # patente -> INSERT -> conductor -> empresa.
+    pool.fetchval.side_effect = ["trip-1", None, "a-abcd12", "link-1", "Juan Perez", "Transportes Sur Spa"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={
@@ -62,7 +64,9 @@ def test_assign_fleet_link_inserts_carrier_and_driver_id():
 
 def test_assign_fleet_link_accepts_tractor_and_trailer_asset_id():
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
+    # Sin patente, cada activo aporta la suya: existe -> link viejo ->
+    # patente del tracto -> patente de la rampla -> INSERT -> empresa.
+    pool.fetchval.side_effect = ["trip-1", None, "TRAC01", "RAMP01", "link-1", "Transportes Sur Spa"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={
