@@ -13,6 +13,70 @@
 > (**Rondas 152-157 archivadas al cerrar la sesión del 2026-09-14**: todo su trabajo está
 > desplegado, y lo que seguía abierto se consolidó en el checklist de la Ronda 160.)
 
+### 2026-09-16 — Ronda 161: "Solicitud de Cambios Diario 2.0" — causa raíz y primeras olas
+
+Operaciones mandó `monitor-app/bugs/20260916/Solicitud de Cambios Diario 2.0.docx` (13 temas, 20
+capturas). Investigado con systematic-debugging, cada caso con nombre reproducido contra producción
+en sólo lectura. **Plan aprobado**: `~/.claude/plans/graceful-cuddling-avalanche.md` (Olas 0-5).
+
+## Las cuatro causas raíz (verificadas)
+
+- **R1, la empresa del conductor.** El loader de Mage `load_driver_assignments_06` reimporta desde el
+  Excel Centralizador EETT y pisaba las transferencias de la app, que no marcaban
+  `is_manual_override`. Villegas fue reasignado 5 veces. **Hoy hay 5 revertidos** (no 6: la primera
+  cifra salió de una consulta imprecisa), y 3 de ellos quedaron **sin ninguna empresa** (Deiby, Brian
+  Celis, Muñoz Godoy).
+- **R2, fechas.** El cierre decide si un viaje ocupa el día D con el `is_active` de AHORA. 83 de 476
+  viajes (01-15/09) son multi-día.
+- **R3, cancelados.** Un CANCELADO cuenta como carga (50 de 51 tienen `is_assigned=true`).
+- **R4, motivos.** "No trabajando" vs "Trabajando sin asignación" está escrito en el frontend, no hay
+  vigencia de un día para otro, y los ejes no se hablan.
+- Más el modelo de cierre del 14/09 (día firmado que se recalcula, cierre sin aviso).
+
+## Hecho
+
+1. **Ola 0.1** (commit `2737df9c`, **sin pushear**): transferir marca las dos filas; el upsert le
+   gana a un desvincular anterior. 2 tests de integración y mutación verificada.
+2. **Ola 0.2, DESPLEGADO en Mage**: guardia `NOT EXISTS` sobre filas marcadas en las dos sentencias
+   del loader. Probado en 6 escenarios en transacción revertida. **Sin guardia, un cambio del Excel a
+   una tercera empresa tumbaba el bloque** (`UniqueViolation`). Por eso el orden fue Mage primero.
+3. **Ola 1.3** (commit `9c30f7a9`, **sin pushear**): el tracto de un vínculo manual sale de la
+   patente (`_activo_de_la_patente`). Causa: `FleetAssignSection` autocompleta id + patente del
+   habitual y la patente editable no invalidaba el id (viaje 2048292 de Lara → FWKL67).
+4. **Ola 1.1, migración `20260916210000_los_dias_que_ocupa_un_viaje.sql` APLICADA a producción**
+   (execute_sql): `trip_statuses.counts_as_load` + 3 estados sin catalogar + vista
+   `app.v_trip_activity_days`. **Nadie la lee todavía.** No quedó verificada después de aplicarla:
+   el clasificador bloqueó la consulta. **Sin comitear.**
+   - Comparación vieja/nueva del 01 al 15/09 en transacción revertida: Efrain aparece el 12 y el 13,
+     el 2048098 sólo el 07, y el cancelado 2048056 en ningún día. Las 12 diferencias "sólo en la
+     regla vieja": 7 son CANCELADO; 3 son viajes que el TMS dejó de informar; 2 son del Wingsuite
+     453041 (RUTA, último reporte 13/09 22:00), que ya no cuenta el 14 ni el 15. **Ese último es el
+     único discutible.**
+
+Suite backend: **1.017 en verde** tras la 0.1. Después de la 1.3 se corrieron los archivos
+afectados (51 en verde), no la suite completa.
+
+## Checklist — siguiente paso exacto
+
+1. **Pedirle al usuario autorización para las escrituras en producción** que quedan: verificar la
+   migración aplicada, pushear (esperar a que termine el lote de ingestión en vuelo) y la reparación
+   0.3 de los 5 revertidos.
+2. Comitear la migración 1.1. Correr la suite completa. Pushear en la ventana de ingestión y
+   verificar que corrió Deploy Monitor API.
+3. Ola 1.1, parte 2: pasar las dos CTE de recompute, `status_report.py` y `cierre_viajes` a
+   `v_trip_activity_days`. Ola 1.2: legs por eje sin el `OR`. Reparar los 3 vínculos contradictorios.
+4. Olas 2-5 según el plan.
+
+## Decisiones de arquitectura
+
+- **La app manda sobre la empresa del conductor**: un conductor con cualquier fila marcada es de la
+  app y el Centralizador no lo toca.
+- **Qué no es carga lo dice el catálogo** (`trip_statuses.counts_as_load`), no un literal. Los grupos
+  existentes no sirven, porque CANCELADO comparte `problema` con EN PANA.
+- **Un día de un viaje sale de la evidencia** (marcas de paradas en hora de Chile, o el último
+  reporte si sigue activo), no del `is_active` de ahora.
+- Operación/CD queda para un brainstorming aparte con Operaciones.
+
 ### 2026-09-14 — Ronda 160: cierre de sesión
 
 Tres cosas más después de la 159, y una lección que vale más que las tres.
