@@ -1059,6 +1059,7 @@ class TemperatureRangeMeta(BaseModel):
 class UnassignedReasonMeta(BaseModel):
     id:    str
     label: str
+    group: str = "no_trabajando"
 
 
 class OperationTypeMeta(BaseModel):
@@ -1124,7 +1125,10 @@ async def get_trips_meta(pool=Depends(get_pool)):
         "FROM app.temperature_ranges ORDER BY cargo_type"
     )
     unassigned_reason_rows = await pool.fetch(
-        "SELECT id::text, label FROM app.status_taxonomies "
+        # `group`: si el motivo es "no trabajó" o "trabajó sin asignación"
+        # (migración 20260917000000). Sin grupo se lee como "no trabajó".
+        "SELECT id::text, label, COALESCE(group_id, 'no_trabajando') AS \"group\" "
+        "FROM app.status_taxonomies "
         "WHERE domain = 'DRIVER_REASON' AND active = true ORDER BY sort_order"
     )
     # Bug 5.2: dinámico según quién realmente tiene viajes en el Diario, no
@@ -1235,14 +1239,11 @@ async def available_drivers(
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
             LEFT JOIN app.trip_fleet_links fl ON fl.trip_id = t.id
-            -- FIX 2026-08-02 (ítem 16 de la minuta, "los números no cuadran"):
-            -- antes solo miraba planning_date = fecha exacta — un conductor
-            -- con viaje multi-día abierto desde un día anterior aparecía acá
-            -- como "disponible" cuando en realidad seguía ocupado. Ahora
-            -- también cuenta el viaje de un día anterior mientras siga
-            -- is_active=true (ya considera la recencia por fuente, ver
-            -- trips.sql).
-            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+            -- Los viajes del día salen de app.trips_del_dia() (16/09), la
+            -- misma definición que el Cierre: cuenta el multi-día abierto
+            -- desde un día anterior y ya no cuenta un CANCELADO — antes un
+            -- conductor con la ruta cancelada no aparecía como disponible.
+            WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
               AND t.source_system != 'sodimac'
               AND vfr.resolved_driver_id IS NOT NULL
             GROUP BY vfr.resolved_driver_id
@@ -1346,7 +1347,7 @@ async def available_assets(
             -- FIX 2026-08-02 (ítem 16 de la minuta) — mismo criterio que
             -- available_drivers arriba: un equipo con viaje multi-día
             -- abierto desde un día anterior cuenta como ocupado.
-            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+            WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
               AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
             GROUP BY vfr.resolved_tractor_asset_id
@@ -1401,7 +1402,7 @@ async def available_assets(
             -- FIX 2026-08-02 (ítem 16 de la minuta) — mismo criterio que las
             -- 2 queries de arriba: un viaje multi-día abierto desde un día
             -- anterior sigue haciendo "ocupado" al equipo hoy.
-            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+            WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
               AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
               AND NOT (t.trip_status LIKE 'CERRADO%'
@@ -1450,10 +1451,9 @@ async def fleet_daily_overview(
     vez de perderse silenciosamente — HU-02 ya contempla esto como
     inconsistencia Tipo B ("falta tipo de operación").
 
-    "CON CARGA hoy" reusa el mismo criterio ya verificado en
-    /available-drivers y /available-assets (ítem 16 de la minuta): viaje con
-    planning_date de hoy O viaje de un día anterior que siga is_active=true
-    (multi-día) — un equipo que YA CERRÓ su viaje de hoy sigue contando como
+    "CON CARGA hoy" usa la misma definición que /available-drivers y
+    /available-assets: app.trips_del_dia(), que incluye el multi-día y excluye
+    cancelados y declarados — un equipo que YA CERRÓ su viaje de hoy sigue contando como
     CON CARGA (criterio de aceptación #4 de la HU), porque no se exige
     is_active, solo que exista el viaje de hoy. Excluye Sodimac, mismo
     criterio heredado de /available-assets (esa fuente no resuelve
@@ -1497,7 +1497,7 @@ async def fleet_daily_overview(
                 ) AS origin_local
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-            WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+            WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
               AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
             ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST

@@ -31,11 +31,10 @@ from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import ADMIN_ROLES, get_current_user, require_writer
+from ..auth import get_current_user, require_writer
 from ..db import get_pool
-from ..schemas.equipment_closures import CloseEquipmentDayBody, EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
-from ..services.audit import log_change
-from ..services.pre_cierre import run_pre_cierre
+from ..schemas.equipment_closures import EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
+from ..services.cierre_lineas import LINEAS_TRACTOS, periodo, poner_motivo, recalcular
 
 router = APIRouter(prefix="/equipment-closures", tags=["equipment-closures"])
 
@@ -47,64 +46,11 @@ def _parse_business_date(fecha: str) -> _date:
         raise HTTPException(422, f"Fecha inválida: '{fecha}' (formato esperado YYYY-MM-DD)")
 
 
-# "Con carga hoy" — mismo criterio verificado en Fase 0.1/Fase 2
-# (planning_date=fecha O multi-día activo, excluyendo Sodimac — esa fuente
-# no resuelve tracto por la misma cadena, ver /available-assets).
-_RECOMPUTE_SQL = """
-WITH active_roster AS (
-    SELECT a.id AS asset_id, aa.carrier_id,
-           wot.code = 'TRACTOREO' AS is_tractoreo,
-           wot.code = 'EQUIPO_COMPLETO' AS is_equipo_completo
-    FROM public.assets a
-    JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-    JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-    LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-    WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
-),
-today_trips AS (
-    SELECT DISTINCT vfr.resolved_tractor_asset_id AS asset_id
-    FROM app.trips t
-    JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-    WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
-      AND t.source_system != 'sodimac'
-      AND vfr.resolved_tractor_asset_id IS NOT NULL
-      -- Un viaje que YA fue declarado "no lo tomamos" deja de contar como
-      -- carga. Sin esto, poner el motivo desde el detalle del viaje en el
-      -- Monitor no movia nada acá: el viaje seguia existiendo y resolviendo a
-      -- esta fila, asi que seguia diciendo "Asignado" y el ON CONFLICT de mas
-      -- abajo ni siquiera admitia motivo ni comentario. Reproducido contra
-      -- produccion el 14/09 con el viaje de Walmart del 07-09 y el tracto
-      -- SVLT43. Es reversible por construccion: se borra el motivo y vuelve.
-      AND t.unassigned_reason_id IS NULL
-),
-computed AS (
-    SELECT
-        ar.asset_id,
-        CASE WHEN tt.asset_id IS NOT NULL THEN 'ASSIGNED' ELSE 'UNASSIGNED' END AS status,
-        NOT (COALESCE(ar.is_equipo_completo, false) AND NOT COALESCE(ar.is_tractoreo, false)) AS requires_motivo
-    FROM active_roster ar
-    LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
-)
-INSERT INTO app.equipment_day_status (asset_id, business_date, status, requires_motivo, computed_at)
-SELECT asset_id, $1, status, requires_motivo, now() FROM computed
-ON CONFLICT (asset_id, business_date) DO UPDATE SET
-    status = EXCLUDED.status,
-    requires_motivo = EXCLUDED.requires_motivo,
-    computed_at = EXCLUDED.computed_at,
-    unassigned_reason_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.unassigned_reason_id ELSE NULL END,
-    resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.resolved_by ELSE NULL END,
-    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.equipment_day_status.resolved_at ELSE NULL END,
-    -- El comentario NO se limpia nunca (14/09). Antes seguia al motivo y se
-    -- borraba al pasar a ASSIGNED, con el argumento de que "explica por que
-    -- alguien no trabajo". Cambio el significado: ahora es una nota del dia de
-    -- esa fila, se puede escribir con carga o sin ella, y borrarlo en un
-    -- recalculo seria perder algo que una persona escribio a mano. El motivo,
-    -- `resolved_by` y `resolved_at` SI se siguen limpiando: esos son del
-    -- motivo y no tienen sentido en una fila con carga.
-    comentario = app.equipment_day_status.comentario
-"""
+# El estado de cada tracto ese día (ASSIGNED / UNASSIGNED) y si exige motivo
+# lo deriva y lo guarda services/cierre_lineas.py en app.closure_lines, junto
+# con los conductores. Este router sólo lee y delega las escrituras.
 
-_DETAIL_SQL = """
+_DETAIL_SQL = f"""
 SELECT
     eds.asset_id, a.license_plate AS tractor_plate, c.id AS carrier_id, c.business_name AS carrier_name,
     -- "Tipo Vehículo" (Ronda 80/82) — columna nueva del Excel de vehículos,
@@ -112,8 +58,8 @@ SELECT
     -- coordinador vea la misma clasificación que ya decide el bloque.
     st.label AS fleet_service_type_label, st.bg_color AS fleet_service_type_bg_color,
     st.text_color AS fleet_service_type_text_color,
-    eds.status, eds.requires_motivo, eds.unassigned_reason_id, ur.label AS unassigned_reason_label,
-    eds.comentario,
+    eds.status, eds.category, eds.requires_motivo, eds.unassigned_reason_id, ur.label AS unassigned_reason_label,
+    eds.valid_until, eds.comentario,
     eds.resolved_by, eds.resolved_at,
     -- Conductor habitual del equipo (sigue mostrándose junto al tracto,
     -- HU-03 §BLOQUE 1 — ya no es la unidad que se cierra, ver docstring).
@@ -147,7 +93,7 @@ SELECT
     -- no lo tenia: el coordinador veia la patente y la empresa de transporte,
     -- y no para quien era la carga.
     today_trip.client_name AS today_trip_client
-FROM app.equipment_day_status eds
+FROM {LINEAS_TRACTOS} eds
 JOIN public.assets a ON a.id = eds.asset_id
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = aa.carrier_id
@@ -184,7 +130,7 @@ LEFT JOIN LATERAL (
     -- Mismo motivo que en daily_closures: trips.origin_tms esta vacia.
     LEFT JOIN app.trip_stops ts_o ON ts_o.trip_id = t.id AND ts_o.stop_type = 'ORIGIN'
     WHERE vfr.resolved_tractor_asset_id = eds.asset_id
-      AND (t.planning_date = eds.business_date OR (t.planning_date < eds.business_date AND t.is_active))
+      AND t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
       AND t.source_system != 'sodimac'
     ORDER BY t.status_reported_at DESC NULLS LAST
     LIMIT 1
@@ -194,13 +140,9 @@ ORDER BY a.license_plate
 """
 
 
-async def _recompute(pool, business_date: _date) -> dict:
-    """Mismo pipeline que daily_closures.py: el pre-cierre (Tipo A/Tipo B,
-    HU-02) corre primero, así el directorio ya está corregido cuando se
-    calcula quién tiene carga hoy."""
-    pre_cierre = await run_pre_cierre(pool, business_date)
-    await pool.execute(_RECOMPUTE_SQL, business_date)
-    return pre_cierre
+async def _recompute(pool, business_date: _date) -> dict | None:
+    """None si el día está cerrado: un día firmado no se recalcula."""
+    return await recalcular(pool, business_date)
 
 
 @router.get("")
@@ -211,11 +153,9 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     equipment = [dict(r) for r in rows]
 
-    closure = await pool.fetchrow(
-        "SELECT closed_by, closed_at, total_equipment, resolved_count, override_count "
-        "FROM app.equipment_closures WHERE business_date = $1",
-        business_date,
-    )
+    info = await periodo(pool, business_date)
+    cerrado = bool(info and info["status"] == "CLOSED")
+    totales = (info or {}).get("frozen_totals") or {}
 
     tractoreo = [e for e in equipment if e["requires_motivo"]]
     equipos_completos = [e for e in equipment if not e["requires_motivo"]]
@@ -228,7 +168,7 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
             "utilization_pct": round(assigned / total * 100, 1) if total else 0.0,
         }
 
-    tractoreo_pending = [e for e in tractoreo if e["status"] == "UNASSIGNED" and not e["unassigned_reason_id"]]
+    tractoreo_pending = [e for e in tractoreo if e["category"] == "SIN_RESOLVER"]
 
     # BLOQUE 2 (pasivo) — resumen por empresa, HU-03: "Empresa X — 7 equipos
     # enrolados / 2 asignados / 5 no asignados".
@@ -244,8 +184,16 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
 
     return {
         "business_date": business_date.isoformat(),
-        "closed": closure is not None,
-        "closure": dict(closure) if closure else None,
+        "closed": cerrado,
+        "closure": {
+            "closed_by": info["closed_by"],
+            "closed_by_name": info["closed_by_name"],
+            "closed_at": info["closed_at"],
+            "total_equipment": totales.get("tractos"),
+            "resolved_count": totales.get("tractos_resueltos"),
+            "override_count": info["override_count"],
+        } if cerrado else None,
+        "periodo": info,
         "tractoreo": {
             "summary": _summary(tractoreo),
             "equipment": tractoreo,
@@ -264,59 +212,23 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
     }
 
 
-# QUIEN PUEDE CERRAR. `require_writer` y no `require_editor` desde el
-# 2026-09-07, por definicion del usuario: *"ambos pueden hacer cierres de
-# viaje"*. `writer` es el rol de quien opera el Diario todos los dias —el
-# equipo de operaciones— y era justamente el que no podia terminar el trabajo
-# que hace: elegir un motivo y firmar el dia.
-#
-# El OVERRIDE no se movio: forzar el cierre con pendientes sigue exigiendo
-# ADMIN_ROLES, y eso se resuelve dentro del endpoint, no en el guardia. Abrir
-# la puerta no es dar la llave del cuarto de atras.
+# QUIEN PUEDE ESCRIBIR: `require_writer` (definicion del usuario, 07/09). Las
+# reglas viven en services/cierre_lineas.poner_motivo, iguales para los dos ejes.
 @router.patch("/reason")
 async def set_batch_reason(
     body: EquipmentBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_writer),
 ):
-    """BLOQUE 1 de HU-03: selección masiva con checkbox — mismo motivo para
-    varios tractos en un clic (criterio de aceptación #2)."""
+    """Selección masiva con checkbox — mismo motivo para varios tractos en un
+    clic. Declarada ANTES de PATCH /{asset_id}."""
     business_date = _parse_business_date(fecha)
-
-    rows = await pool.fetch(
-        "SELECT asset_id, requires_motivo, status FROM app.equipment_day_status "
-        "WHERE business_date = $1 AND asset_id = ANY($2::uuid[])",
-        business_date, body.asset_ids,
-    )
-    found_ids = {str(r["asset_id"]) for r in rows}
-    missing = [aid for aid in body.asset_ids if aid not in found_ids]
-    if missing:
-        raise HTTPException(404, f"Equipo(s) no encontrados en la cuadratura de ese día: {missing}")
-    not_unassigned = [str(r["asset_id"]) for r in rows if r["status"] != "UNASSIGNED"]
-    if "unassigned_reason_id" in body.model_fields_set and not_unassigned:
-        raise HTTPException(422, f"Solo se puede registrar motivo para equipos sin carga: {not_unassigned}")
-
-    await pool.execute(
-        """
-        UPDATE app.equipment_day_status
-        -- "No mande el campo" no es lo mismo que pedir que quede en null.
-        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
-        -- borraba en silencio el texto que alguien habia escrito. El booleano
-        -- dice si la clave vino en el payload; Pydantic lo sabe por
-        -- `model_fields_set`.
-        -- El motivo sigue la misma regla que el comentario: solo se escribe si
-        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
-        -- lo habria puesto en NULL en silencio.
-        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.equipment_day_status.unassigned_reason_id END,
-            comentario = CASE WHEN $6 THEN $5 ELSE app.equipment_day_status.comentario END,
-            resolved_by = $2::uuid, resolved_at = now()
-        WHERE business_date = $3 AND asset_id = ANY($4::uuid[])
-        """,
-        body.unassigned_reason_id, user["sub"], business_date, body.asset_ids, body.comentario,
-        "comentario" in body.model_fields_set,
-        "unassigned_reason_id" in body.model_fields_set,
+    await poner_motivo(
+        pool, business_date, "ASSET", body.asset_ids,
+        campos=body.model_fields_set, reason_id=body.unassigned_reason_id,
+        valid_until=body.valid_until, comentario=body.comentario, user=user,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
-    updated = [dict(r) for r in rows if str(r["asset_id"]) in found_ids]
-    return updated
+    pedidos = set(body.asset_ids)
+    return [dict(r) for r in rows if str(r["asset_id"]) in pedidos]
 
 
 @router.patch("/{asset_id}")
@@ -324,117 +236,12 @@ async def patch_equipment_day_status(
     asset_id: str, fecha: str, body: EquipmentDayStatusPatchBody,
     pool=Depends(get_pool), user=Depends(require_writer),
 ):
-    """Captura el motivo de un equipo individual — paridad con
-    patch_driver_day_status (daily_closures.py), pedida explícitamente para
-    que Equipo Completo tenga la misma funcionalidad de edición fila-por-
-    fila que Tractoreo en "Flota del día". Declarada DESPUÉS de /reason
-    (ruta literal debe ganarle a esta con path param, mismo cuidado que ya
-    aplica en daily_closures.py)."""
+    """El motivo, su vigencia y el comentario de un tracto ese día."""
     business_date = _parse_business_date(fecha)
-
-    row = await pool.fetchrow(
-        "SELECT status FROM app.equipment_day_status WHERE asset_id = $1 AND business_date = $2",
-        asset_id, business_date,
-    )
-    if not row:
-        raise HTTPException(404, "Equipo no encontrado en la cuadratura de ese día")
-    # El 422 gobierna el MOTIVO, no la fila. Un PATCH que trae solo comentario
-    # se acepta en cualquier estado: desde el 14/09 el comentario es una nota
-    # del dia de esa fila y no un pie de pagina del motivo, asi que una fila
-    # con carga tambien puede explicarse con palabras.
-    if "unassigned_reason_id" in body.model_fields_set and row["status"] != "UNASSIGNED":
-        raise HTTPException(422, "Solo se puede registrar motivo para un equipo sin carga")
-
-    await pool.execute(
-        """
-        UPDATE app.equipment_day_status
-        -- "No mande el campo" no es lo mismo que pedir que quede en null.
-        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
-        -- borraba en silencio el texto que alguien habia escrito. El booleano
-        -- dice si la clave vino en el payload; Pydantic lo sabe por
-        -- `model_fields_set`.
-        -- El motivo sigue la misma regla que el comentario: solo se escribe si
-        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
-        -- lo habria puesto en NULL en silencio.
-        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.equipment_day_status.unassigned_reason_id END,
-            comentario = CASE WHEN $6 THEN $5 ELSE app.equipment_day_status.comentario END,
-            resolved_by = $2::uuid, resolved_at = now()
-        WHERE asset_id = $3 AND business_date = $4
-        """,
-        body.unassigned_reason_id, user["sub"], asset_id, business_date, body.comentario,
-        "comentario" in body.model_fields_set,
-        "unassigned_reason_id" in body.model_fields_set,
+    await poner_motivo(
+        pool, business_date, "ASSET", [asset_id],
+        campos=body.model_fields_set, reason_id=body.unassigned_reason_id,
+        valid_until=body.valid_until, comentario=body.comentario, user=user,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
-    updated = next((dict(r) for r in rows if r["asset_id"] == asset_id or str(r["asset_id"]) == asset_id), None)
-    return updated
-
-
-@router.post("/close")
-async def close_equipment_day(
-    fecha: str, body: CloseEquipmentDayBody, pool=Depends(get_pool), user=Depends(require_writer),
-):
-    """Confirmar cierre (HU-03): bloquea si hay tractos de Tractoreo/Sin
-    clasificar sin motivo — 'A confirmar' cuenta como motivo válido
-    (criterio #1), Equipos Completos nunca bloquea (cierre pasivo)."""
-    business_date = _parse_business_date(fecha)
-    await _recompute(pool, business_date)
-
-    rows = await pool.fetch(_DETAIL_SQL, business_date)
-    equipment = [dict(r) for r in rows]
-    pending = [
-        e for e in equipment
-        if e["requires_motivo"] and e["status"] == "UNASSIGNED" and not e["unassigned_reason_id"]
-    ]
-
-    if pending and not body.override:
-        raise HTTPException(
-            409,
-            {
-                "message": f"{len(pending)} equipo(s) sin resolver — no se puede cerrar el día",
-                # Con empresa: una patente suelta no dice a que ficha ir a
-                # resolverla. Pablo, 04/09: *"cual es el listado de estos 15
-                # equipos sin resolver, ni hay un detalle"*.
-                "pending": [
-                    {
-                        "asset_id": str(e["asset_id"]),
-                        "tractor_plate": e["tractor_plate"],
-                        "carrier_id": str(e["carrier_id"]) if e["carrier_id"] else None,
-                        "carrier_name": e["carrier_name"],
-                    }
-                    for e in pending
-                ],
-            },
-        )
-
-    if pending and body.override:
-        if user["role"] not in ADMIN_ROLES:
-            raise HTTPException(403, "Forzar el cierre con pendientes requiere rol admin o superior")
-        if not body.override_note or not body.override_note.strip():
-            raise HTTPException(422, "El override requiere un comentario de justificación")
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                for e in pending:
-                    await log_change(
-                        conn, actor=user["sub"], entity_type="ASSET", entity_id=e["asset_id"],
-                        action="cierre_override", field="status",
-                        old_value="UNASSIGNED",
-                        new_value={"business_date": business_date.isoformat(), "note": body.override_note},
-                    )
-
-    await pool.execute(
-        """
-        INSERT INTO app.equipment_closures (business_date, closed_by, total_equipment, resolved_count, override_count)
-        VALUES ($1, $2::uuid, $3, $4, $5)
-        ON CONFLICT (business_date) DO UPDATE SET
-            closed_by = EXCLUDED.closed_by, closed_at = now(),
-            total_equipment = EXCLUDED.total_equipment, resolved_count = EXCLUDED.resolved_count,
-            override_count = EXCLUDED.override_count
-        """,
-        business_date, user["sub"], len(equipment), len(equipment) - len(pending),
-        len(pending) if body.override else 0,
-    )
-    return {
-        "ok": True, "business_date": business_date.isoformat(),
-        "overridden": len(pending) if body.override else 0,
-    }
+    return next((dict(r) for r in rows if str(r["asset_id"]) == asset_id), None)

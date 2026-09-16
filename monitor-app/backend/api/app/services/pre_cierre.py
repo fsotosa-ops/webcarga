@@ -95,7 +95,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 SELECT upper(trim(t.fleet->>'tractor_plate')) AS plate,
                        array_agg(t.fleet->>'transporter_name_tms') AS carrier_names
                 FROM app.trips t
-                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND t.fleet->>'tractor_plate' IS NOT NULL
+                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
                 GROUP BY 1
                 """,
                 business_date,
@@ -219,7 +219,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                        bool_or(public.canonical_rut(t.fleet->>'driver_rut_tms') IS NOT NULL) AS es_canonico,
                        array_agg(t.fleet->>'driver_name_tms') AS names
                 FROM app.trips t
-                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND t.fleet->>'driver_rut_tms' IS NOT NULL
+                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'driver_rut_tms' IS NOT NULL
                   AND trim(t.fleet->>'driver_rut_tms') != ''
                 GROUP BY 1
                 """,
@@ -278,7 +278,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 """
                 SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate, t.client_name
                 FROM app.trips t
-                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND t.fleet->>'tractor_plate' IS NOT NULL
+                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
                   AND t.client_name IS NOT NULL
                 """,
                 business_date,
@@ -326,7 +326,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
                 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
                 JOIN public.carriers c ON c.id = aa.carrier_id
-                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active)) AND c.operational_status != 'ACTIVE'
+                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND c.operational_status != 'ACTIVE'
                 """,
                 business_date,
             )
@@ -353,7 +353,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
                 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
                 JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
                   AND a.webcarga_operation_type_id IS NULL
                 """,
                 business_date,
@@ -394,7 +394,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
             #      ES la sincronización entre los dos módulos: no hace falta
             #      ningún mecanismo aparte.
             #
-            # NO entra a `_ESCALACIONES_QUE_BLOQUEAN` (daily_closures.py): es
+            # NO entra a `ESCALACIONES_QUE_BLOQUEAN` (services/cierre_lineas.py): es
             # una propuesta, y bloquear el cierre con ella cambiaría la
             # operación diaria sin que nadie lo haya pedido.
             sin_empresa_rows = await conn.fetch(
@@ -410,7 +410,7 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                                      AND d.operational_status = 'ACTIVE'
                 JOIN public.carriers c ON c.id = vfr.resolved_carrier_id
                                       AND c.operational_status = 'ACTIVE'
-                WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
                   AND NOT EXISTS (
                         SELECT 1 FROM public.driver_assignments da
                         WHERE da.driver_id = vfr.resolved_driver_id AND da.status = 'ACTIVE')

@@ -304,7 +304,8 @@ def test_available_drivers_counts_multi_day_active_trip_from_earlier_date():
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/available-drivers?fecha=2026-08-02")
     query = pool.fetch.call_args.args[0]
-    assert "t.planning_date < $1 AND t.is_active" in query
+    # Desde el 16/09 el multi-día lo resuelve app.trips_del_dia() (tests/test_trips_del_dia.py).
+    assert "app.trips_del_dia($1)" in query
 
 
 def test_available_assets_today_trips_counts_multi_day_active_trip():
@@ -314,7 +315,8 @@ def test_available_assets_today_trips_counts_multi_day_active_trip():
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/available-assets?fecha=2026-08-02")
     query = pool.fetch.call_args_list[0].args[0]
-    assert "t.planning_date < $1 AND t.is_active" in query
+    # Desde el 16/09 el multi-día lo resuelve app.trips_del_dia() (tests/test_trips_del_dia.py).
+    assert "app.trips_del_dia($1)" in query
 
 
 def test_available_assets_busy_trip_counts_multi_day_active_trip():
@@ -324,7 +326,7 @@ def test_available_assets_busy_trip_counts_multi_day_active_trip():
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/available-assets?fecha=2026-08-02")
     busy_query = pool.fetch.call_args_list[1].args[0]
-    assert "t.planning_date < $1 AND t.is_active" in busy_query
+    assert "app.trips_del_dia($1)" in busy_query
 
 
 # ── /trips/fleet-daily-overview (Fase 2, HU-01 Cierre del Día) ──────────────
@@ -356,7 +358,8 @@ def test_fleet_daily_overview_query_scopes_to_active_tractocamiones_excluding_so
     query = pool.fetch.call_args_list[0].args[0]
     assert "asset_type = 'TRACTOCAMION'" in query
     assert "sodimac" in query
-    assert "t.planning_date < $1 AND t.is_active" in query
+    # Desde el 16/09 el multi-día lo resuelve app.trips_del_dia() (tests/test_trips_del_dia.py).
+    assert "app.trips_del_dia($1)" in query
 
 
 def test_fleet_daily_overview_categorizes_tractoreo_con_carga():

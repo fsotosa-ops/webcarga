@@ -548,11 +548,13 @@ async def test_los_viajes_posteriores_al_cierre_se_cuentan_como_delta(conexion_r
     await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
     await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
 
+    # La firma vive en el período desde el 16/09 (app.closure_periods); las
+    # cifras al firmar, en `frozen_totals`.
+    firmante = await conexion_revertida.fetchval("SELECT id FROM public.profiles LIMIT 1")
     await conexion_revertida.execute(
-        "INSERT INTO app.daily_closures "
-        "(business_date, closed_by, total_drivers, resolved_count, override_count, total_trips) "
-        "VALUES ($1, $2, 0, 0, 0, $3)",
-        fecha_cierre, uuid.uuid4(), 2)
+        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at, frozen_totals) "
+        "VALUES ($1, 'CLOSED', $2, now(), $3::jsonb)",
+        fecha_cierre, firmante, '{"viajes": 2}')
 
     # Llega un viaje despues de firmar (fecha retroactiva del TMS).
     await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)

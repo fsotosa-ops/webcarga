@@ -72,8 +72,10 @@ def test_meta_exposes_active_unassigned_reasons_ordered_by_sort_order():
 
     assert res.status_code == 200
     body = res.json()
+    # Sin `group` en la fila, el motivo se lee como "no trabajó" (16/09).
     assert body["unassigned_reasons"] == [
-        {"id": "pana", "label": "Pana"}, {"id": "sin_conductor", "label": "Sin conductor"},
+        {"id": "pana", "label": "Pana", "group": "no_trabajando"},
+        {"id": "sin_conductor", "label": "Sin conductor", "group": "no_trabajando"},
     ]
     reasons_query = consulta_con(pool, "DRIVER_REASON")
     assert "app.status_taxonomies" in reasons_query

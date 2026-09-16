@@ -1,5 +1,6 @@
 """Pydantic schemas para app.equipment_day_status/equipment_closures
 (Fase 4, HU-03 — cierre por tracto/equipo, no por conductor)."""
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel, field_validator
@@ -19,6 +20,17 @@ class EquipmentDayStatusPatchBody(BaseModel):
     comentar una fila sin motivo -ni una fila con carga-, y el frontend ni
     siquiera dibujaba el campo: 0 comentarios guardados en 4.540 filas.
     """
+    valid_until: Optional[date] = None
+    """Hasta qué día sigue vigente el motivo (Vacaciones, Licencia). Los días
+    siguientes lo heredan mientras no tengan carga. Sólo para motivos de
+    "no trabajó"; lo valida services/cierre_lineas.poner_motivo."""
+
+    @field_validator("unassigned_reason_id")
+    @classmethod
+    def vacio_es_sin_motivo(cls, v: Optional[str]) -> Optional[str]:
+        # "— Sin especificar —" manda "": es quitar el motivo, no un uuid.
+        return v or None
+
     comentario: Optional[str] = None
     """El comentario de texto libre, opcional.
 
@@ -46,6 +58,17 @@ class EquipmentBatchReasonBody(BaseModel):
     para varios tractos en un clic."""
     asset_ids: list[str]
     unassigned_reason_id: Optional[str] = None
+    valid_until: Optional[date] = None
+    """Hasta qué día sigue vigente el motivo (Vacaciones, Licencia). Los días
+    siguientes lo heredan mientras no tengan carga. Sólo para motivos de
+    "no trabajó"; lo valida services/cierre_lineas.poner_motivo."""
+
+    @field_validator("unassigned_reason_id")
+    @classmethod
+    def vacio_es_sin_motivo(cls, v: Optional[str]) -> Optional[str]:
+        # "— Sin especificar —" manda "": es quitar el motivo, no un uuid.
+        return v or None
+
     comentario: Optional[str] = None
 
     @field_validator("asset_ids")
@@ -54,8 +77,3 @@ class EquipmentBatchReasonBody(BaseModel):
         if not v:
             raise ValueError("asset_ids no puede estar vacío")
         return v
-
-
-class CloseEquipmentDayBody(BaseModel):
-    override: bool = False
-    override_note: Optional[str] = None

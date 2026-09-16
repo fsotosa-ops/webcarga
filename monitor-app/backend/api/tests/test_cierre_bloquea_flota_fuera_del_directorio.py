@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.routers.daily_closures import (
-    _ESCALACIONES_QUE_BLOQUEAN,
-    _pendientes_de_flota,
+# La regla vive en services/cierre_lineas.py desde el 16/09, cuando el cierre
+# de los dos ejes pasó a ser uno solo.
+from app.services.cierre_lineas import (
+    ESCALACIONES_QUE_BLOQUEAN as _ESCALACIONES_QUE_BLOQUEAN,
+    pendientes_de_flota as _pendientes_de_flota,
 )
 
 # Estos no tocan la base: verifican la REGLA, que es lo que cambio.

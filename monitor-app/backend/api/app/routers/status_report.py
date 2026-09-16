@@ -48,9 +48,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user
 from ..db import get_pool
+from ..services.cierre_lineas import GRUPO_NO_TRABAJANDO, LINEAS_CONDUCTORES, LINEAS_TRACTOS, recalcular
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
-from .daily_closures import _recompute as _recompute_drivers
-from .equipment_closures import _recompute
 from .trips import _load_operation_type_buckets, _resolve_operation_type
 
 router = APIRouter(prefix="/status-report", tags=["status-report"])
@@ -103,7 +102,7 @@ SELECT
     ) AS last_destination_local
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
+WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
   AND t.source_system != 'sodimac'
   AND vfr.resolved_tractor_asset_id IS NOT NULL
 """
@@ -133,9 +132,9 @@ JOIN public.drivers d ON d.id = r.driver_id
 JOIN public.carriers c ON c.id = r.home_carrier_id
 """
 
-_DRIVER_STATUS_SQL = """
-SELECT dds.driver_id, dds.status, ur.label AS unassigned_reason_label
-FROM app.driver_day_status dds
+_DRIVER_STATUS_SQL = f"""
+SELECT dds.driver_id, dds.status, dds.category, ur.label AS unassigned_reason_label
+FROM {LINEAS_CONDUCTORES} dds
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 WHERE dds.business_date = $1
 """
@@ -175,7 +174,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     # HU-02 (pre-cierre) + cuadratura por equipo (HU-03) corren primero —
     # el reporte debe reflejar el directorio ya corregido y los motivos ya
     # capturados por el coordinador.
-    await _recompute(pool, business_date)
+    await recalcular(pool, business_date)
 
     roster_rows = await pool.fetch(_ROSTER_SQL)
 
@@ -194,9 +193,9 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     leg_by_trip = {r["trip_id"]: r["leg_number"] for r in leg_rows}
 
     status_rows = await pool.fetch(
-        """
+        f"""
         SELECT eds.asset_id, eds.status, eds.requires_motivo, st.label AS unassigned_reason_label
-        FROM app.equipment_day_status eds
+        FROM {LINEAS_TRACTOS} eds
         LEFT JOIN app.status_taxonomies st ON st.id = eds.unassigned_reason_id
         WHERE eds.business_date = $1
         """,
@@ -266,8 +265,8 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
     reporte). con_carga queda fijo en False: es un campo "de compatibilidad"
     para que _cross_tab_by_motivo (que ya filtra internamente con
     `if r["con_carga"]: continue`) acepte todas las filas sin modificarla."""
-    await _recompute_drivers(pool, business_date)
-
+    # Ya recalculado por _build_asset_rows en el mismo request: las líneas de
+    # conductores y tractos se derivan juntas.
     roster_rows = await pool.fetch(_DRIVER_ROSTER_SQL)
 
     status_rows = await pool.fetch(_DRIVER_STATUS_SQL, business_date)
@@ -291,6 +290,7 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
             "full_name": r["full_name"],
             "carrier_name": r["carrier_name"],
             "status": status_row.get("status"),
+            "category": status_row.get("category"),
             "unassigned_reason_label": status_row.get("unassigned_reason_label"),
             "origin_cd": origin_by_driver.get(driver_id),
             "tractor_plate": tractor_row.get("tractor_plate"),
@@ -298,7 +298,10 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
             "con_carga": False,
         })
 
-    return [r for r in rows if r["status"] == "UNASSIGNED"]
+    # "No trabajando" es lo que dice su nombre: quien trabajó sin asignación
+    # (Esperando carga, Camino al CD...) no entra. Un conductor sin motivo
+    # todavía sí, como hasta ahora: no se sabe si trabajó.
+    return [r for r in rows if r["category"] in ("NO_TRABAJANDO", "SIN_RESOLVER")]
 
 
 def _filter_by_client(rows: list[dict], client: str | None) -> list[dict]:
@@ -371,16 +374,31 @@ def _section3_vueltas(rows: list[dict]) -> list[dict]:
     ]
 
 
-_MOTIVO_LABELS = [
-    "Panne", "Mantención", "Sin conductor", "No se presentó", "Vacaciones", "Licencia",
-    "Descanso", "Se retiró sin carga", "Sin carga disponible", "Conductor no disponible",
-    "A confirmar", "Otro",
-]
+# Las columnas de motivo salen del catálogo, no de una lista escrita a mano:
+# la que había (y su copia en StatusReportSection.tsx) dejaba fuera 9 motivos
+# que sólo sumaban al total.
+_SQL_MOTIVOS_NO_TRABAJANDO = f"""
+SELECT label FROM app.status_taxonomies
+WHERE domain = 'DRIVER_REASON' AND active
+  AND COALESCE(group_id, '{GRUPO_NO_TRABAJANDO}') = '{GRUPO_NO_TRABAJANDO}'
+ORDER BY sort_order, label
+"""
 
 
-def _cross_tab_by_motivo(rows: list[dict], key_fn) -> dict:
+def _columnas_de_motivo(catalogo: list[str], rows: list[dict]) -> list[str]:
+    """Los motivos activos del catálogo, más los que aparezcan en las filas
+    aunque ya estén desactivados: un día pasado puede tener uno retirado."""
+    columnas = list(catalogo)
+    for r in rows:
+        label = r["unassigned_reason_label"]
+        if label and label not in columnas:
+            columnas.append(label)
+    return columnas
+
+
+def _cross_tab_by_motivo(rows: list[dict], key_fn, motivos: list[str]) -> dict:
     """Igual forma que _cross_tab_by_zone (dict keyed por key_fn(row)) —
-    columnas = una por cada motivo del catálogo (Fase 0.4) + total."""
+    columnas = una por cada motivo + total."""
     buckets: dict = {}
     for r in rows:
         if r["con_carga"]:
@@ -388,7 +406,7 @@ def _cross_tab_by_motivo(rows: list[dict], key_fn) -> dict:
         key = key_fn(r)
         if key is None:
             continue
-        b = buckets.setdefault(key, {m: 0 for m in _MOTIVO_LABELS} | {"total": 0})
+        b = buckets.setdefault(key, {m: 0 for m in motivos} | {"total": 0})
         label = r["unassigned_reason_label"]
         if label in b:
             b[label] += 1
@@ -396,14 +414,16 @@ def _cross_tab_by_motivo(rows: list[dict], key_fn) -> dict:
     return buckets
 
 
-def _section4_tractoreo_no_trabajando(driver_rows: list[dict]) -> dict:
+def _section4_tractoreo_no_trabajando(driver_rows: list[dict], motivos: list[str]) -> dict:
     """Tarea 6 (plan 2.3): agrupada por CONDUCTOR — el caller (_build_driver_rows)
     ya acota a Tractoreo + UNASSIGNED por construcción, no se filtra de
     nuevo acá. `driver_detail` es la lista plana que permite ver el tipo de
     operación del tracto habitual de cada conductor (puede diferir del
     roster, que se arma a nivel empresa)."""
-    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["origin_cd"] or "Sin CD")
-    por_empresa_y_cd = _cross_tab_by_motivo(driver_rows, lambda r: (r["origin_cd"] or "Sin CD", r["carrier_name"]))
+    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["origin_cd"] or "Sin CD", motivos)
+    por_empresa_y_cd = _cross_tab_by_motivo(
+        driver_rows, lambda r: (r["origin_cd"] or "Sin CD", r["carrier_name"]), motivos,
+    )
     driver_detail = [
         {
             "driver_id": str(r["driver_id"]), "full_name": r["full_name"], "carrier_name": r["carrier_name"],
@@ -418,6 +438,9 @@ def _section4_tractoreo_no_trabajando(driver_rows: list[dict]) -> dict:
             {"cd": k[0], "carrier_name": k[1], **v} for k, v in sorted(por_empresa_y_cd.items())
         ],
         "driver_detail": driver_detail,
+        # El orden de las columnas de motivo: el frontend las dibuja de acá, no
+        # de una lista propia.
+        "motivos": motivos,
     }
 
 
@@ -491,6 +514,9 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
     # cliente) — mismo criterio que ya deja pasar siempre a los equipos
     # idle en _filter_by_client.
     driver_rows = await _build_driver_rows(pool, business_date)
+    motivos = _columnas_de_motivo(
+        [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_NO_TRABAJANDO)], driver_rows,
+    )
     rows = _filter_by_client(all_rows, client)
 
     return {
@@ -499,7 +525,7 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
         "section1_resumen": _section1_resumen(rows),
         "section2_tractoreo_asignado": _section2_tractoreo_asignado(rows),
         "section3_vueltas": _section3_vueltas(rows),
-        "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(driver_rows),
+        "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(driver_rows, motivos),
         "section_tractoreo_por_empresa": _section_tractoreo_por_empresa(rows),
         "section5_equipos_completos": _section5_equipos_completos(rows),
         "section6_resumen_general": _section6_resumen_general(rows),

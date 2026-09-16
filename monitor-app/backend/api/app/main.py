@@ -15,6 +15,7 @@ from .routers.config_reviews import router as config_reviews_router
 from .routers.document_ingest import router as document_ingest_router
 from .routers.contacts import router as contacts_router
 from .routers.coverage_types import router as coverage_types_router
+from .routers.closures import router as closures_router
 from .routers.daily_closures import router as daily_closures_router
 from .routers.drivers import router as drivers_router
 from .routers.equipment_closures import router as equipment_closures_router
@@ -109,6 +110,8 @@ app.include_router(daily_closures_router,      prefix="/api/v1")
 # Cierre del día por tracto/equipo (Fase 4, HU-03) — reemplaza a
 # daily_closures_router como el flujo que usa la UI.
 app.include_router(equipment_closures_router,  prefix="/api/v1")
+# Firmar y reabrir el día, los dos ejes en una transacción (16/09).
+app.include_router(closures_router,            prefix="/api/v1")
 # Reporte de estatus del día, 6 secciones (Fase 5, HU-04)
 app.include_router(status_report_router,       prefix="/api/v1")
 

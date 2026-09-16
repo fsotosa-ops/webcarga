@@ -126,7 +126,7 @@ def test_section4_por_conductor_cruza_por_motivo_y_arma_driver_detail():
         _driver_row(driver_id="d3", full_name="Luis Rojas", carrier_name="Otra Spa",
                     origin_cd="CD El Peñón", unassigned_reason_label="A confirmar", operation_type="Tractoreo"),
     ]
-    result = _section4_tractoreo_no_trabajando(driver_rows)
+    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"])
 
     cd_row = next(r for r in result["por_cd"] if r["cd"] == "CD El Peñón")
     assert cd_row["Panne"] == 2
@@ -162,7 +162,7 @@ def test_section4_driver_detail_muestra_operation_type_del_tracto_habitual_no_de
     driver_rows = [
         _driver_row(driver_id="d1", carrier_name="Transportes Mixta", operation_type="Equipo Completo"),
     ]
-    result = _section4_tractoreo_no_trabajando(driver_rows)
+    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"])
     assert result["driver_detail"][0]["operation_type"] == "Equipo Completo"
 
 
@@ -171,7 +171,7 @@ def test_section4_driver_sin_historial_no_rompe_y_cae_en_sin_cd():
         _driver_row(driver_id="d1", origin_cd=None, tractor_plate=None, operation_type=None,
                     unassigned_reason_label="A confirmar"),
     ]
-    result = _section4_tractoreo_no_trabajando(driver_rows)
+    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"])
 
     cd_row = next(r for r in result["por_cd"] if r["cd"] == "Sin CD")
     assert cd_row["A confirmar"] == 1
@@ -284,7 +284,10 @@ def test_get_status_report_returns_all_sections_with_empty_roster():
 # _build_asset_rows con el tracto), y filtro final a solo UNASSIGNED (ni
 # ASSIGNED ni MISMATCH, que queda para Pendientes/pre-cierre). ──────────
 
-async def test_build_driver_rows_recomputa_y_filtra_a_solo_unassigned():
+async def test_build_driver_rows_deja_solo_a_quien_no_trabajo_o_no_se_sabe():
+    """Solicitud 16/09: quien trabajó sin asignación ("Esperando carga",
+    "Se retira sin carga") no es "No trabajando". Un conductor sin motivo sí
+    entra, como hasta ahora: no se sabe si trabajó."""
     pool = AsyncMock()
     conn = AsyncMock()
     conn.fetch.return_value = []
@@ -294,10 +297,17 @@ async def test_build_driver_rows_recomputa_y_filtra_a_solo_unassigned():
         {"driver_id": "d2", "full_name": "Ana Soto", "carrier_id": "c1", "carrier_name": "Transportes Sur"},
         {"driver_id": "d3", "full_name": "Luis Rojas", "carrier_id": "c1", "carrier_name": "Transportes Sur"},
     ]
+    roster_rows.append(
+        {"driver_id": "d4", "full_name": "Pía Díaz", "carrier_id": "c1", "carrier_name": "Transportes Sur"})
+    roster_rows.append(
+        {"driver_id": "d5", "full_name": "Eva Ríos", "carrier_id": "c1", "carrier_name": "Transportes Sur"})
     status_rows = [
-        {"driver_id": "d1", "status": "UNASSIGNED", "unassigned_reason_label": "Panne"},
-        {"driver_id": "d2", "status": "ASSIGNED", "unassigned_reason_label": None},
-        {"driver_id": "d3", "status": "MISMATCH", "unassigned_reason_label": None},
+        {"driver_id": "d1", "status": "UNASSIGNED", "category": "NO_TRABAJANDO", "unassigned_reason_label": "Panne"},
+        {"driver_id": "d2", "status": "ASSIGNED", "category": "ASIGNADO", "unassigned_reason_label": None},
+        {"driver_id": "d3", "status": "MISMATCH", "category": "POR_REGULARIZAR", "unassigned_reason_label": None},
+        {"driver_id": "d4", "status": "UNASSIGNED", "category": "TRABAJANDO_SIN_ASIGNACION",
+         "unassigned_reason_label": "Esperando carga"},
+        {"driver_id": "d5", "status": "UNASSIGNED", "category": "SIN_RESOLVER", "unassigned_reason_label": None},
     ]
     origin_rows = [{"driver_id": "d1", "origin_cd": "CD Lo Aguirre"}]
     tractor_rows = [{"driver_id": "d1", "tractor_plate": "ABCD12", "operation_type": "Tractoreo"}]
@@ -305,7 +315,7 @@ async def test_build_driver_rows_recomputa_y_filtra_a_solo_unassigned():
 
     result = await _build_driver_rows(pool, date(2026, 8, 2))
 
-    assert [r["driver_id"] for r in result] == ["d1"]
+    assert [r["driver_id"] for r in result] == ["d1", "d5"]
     row = result[0]
     assert row["full_name"] == "Juan Pérez"
     assert row["carrier_name"] == "Transportes Sur"
@@ -314,9 +324,6 @@ async def test_build_driver_rows_recomputa_y_filtra_a_solo_unassigned():
     assert row["tractor_plate"] == "ABCD12"
     assert row["operation_type"] == "Tractoreo"
     assert row["con_carga"] is False  # compatibilidad con _cross_tab_by_motivo
-    # el recompute (pre-cierre + INSERT en app.driver_day_status) corrió
-    # antes de leer el roster/status.
-    assert pool.execute.await_count >= 1
 
 
 async def test_build_driver_rows_sin_historial_no_rompe():
@@ -327,7 +334,8 @@ async def test_build_driver_rows_sin_historial_no_rompe():
     roster_rows = [
         {"driver_id": "d1", "full_name": "Juan Pérez", "carrier_id": "c1", "carrier_name": "Transportes Sur"},
     ]
-    status_rows = [{"driver_id": "d1", "status": "UNASSIGNED", "unassigned_reason_label": "A confirmar"}]
+    status_rows = [{"driver_id": "d1", "status": "UNASSIGNED", "category": "NO_TRABAJANDO",
+                    "unassigned_reason_label": "A confirmar"}]
     pool.fetch.side_effect = [roster_rows, status_rows, [], []]
 
     result = await _build_driver_rows(pool, date(2026, 8, 2))
@@ -386,3 +394,14 @@ def test_roster_sql_lee_el_codigo_no_la_etiqueta():
     from app.routers.status_report import _ROSTER_SQL
     assert "wot.code AS webcarga_operation_type_code" in _ROSTER_SQL
     assert "wot.label AS webcarga_operation_type_label" not in _ROSTER_SQL
+
+
+def test_las_columnas_de_motivo_salen_del_catalogo_y_suman_las_retiradas_que_aparecen():
+    """Antes eran una lista escrita a mano en dos lugares, y 9 motivos del
+    catálogo sólo sumaban al total."""
+    from app.routers.status_report import _columnas_de_motivo
+
+    filas = [{"unassigned_reason_label": "Panne"}, {"unassigned_reason_label": "En abstención"},
+             {"unassigned_reason_label": None}]
+
+    assert _columnas_de_motivo(["Panne", "Vacaciones"], filas) == ["Panne", "Vacaciones", "En abstención"]

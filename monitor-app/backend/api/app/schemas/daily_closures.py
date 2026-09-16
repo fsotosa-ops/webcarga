@@ -1,5 +1,6 @@
 """Pydantic schemas para app.driver_day_status/daily_closures (Fase 1 del
 plan de refinamiento del backlog de 17 HU, 2026-07-21 — ver AGENTLOG.md)."""
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel, field_validator
@@ -17,6 +18,17 @@ class DriverDayStatusPatchBody(BaseModel):
     comentar una fila sin motivo -ni una fila con carga-, y el frontend ni
     siquiera dibujaba el campo: 0 comentarios guardados en 4.540 filas.
     """
+    valid_until: Optional[date] = None
+    """Hasta qué día sigue vigente el motivo (Vacaciones, Licencia). Los días
+    siguientes lo heredan mientras no tengan carga. Sólo para motivos de
+    "no trabajó"; lo valida services/cierre_lineas.poner_motivo."""
+
+    @field_validator("unassigned_reason_id")
+    @classmethod
+    def vacio_es_sin_motivo(cls, v: Optional[str]) -> Optional[str]:
+        # "— Sin especificar —" manda "": es quitar el motivo, no un uuid.
+        return v or None
+
     comentario: Optional[str] = None
     """El comentario de texto libre, opcional.
 
@@ -45,6 +57,17 @@ class DriverBatchReasonBody(BaseModel):
     mismo patrón que EquipmentBatchReasonBody en schemas/equipment_closures.py)."""
     driver_ids: list[str]
     unassigned_reason_id: Optional[str] = None
+    valid_until: Optional[date] = None
+    """Hasta qué día sigue vigente el motivo (Vacaciones, Licencia). Los días
+    siguientes lo heredan mientras no tengan carga. Sólo para motivos de
+    "no trabajó"; lo valida services/cierre_lineas.poner_motivo."""
+
+    @field_validator("unassigned_reason_id")
+    @classmethod
+    def vacio_es_sin_motivo(cls, v: Optional[str]) -> Optional[str]:
+        # "— Sin especificar —" manda "": es quitar el motivo, no un uuid.
+        return v or None
+
     comentario: Optional[str] = None
 
     @field_validator("driver_ids")
@@ -53,8 +76,3 @@ class DriverBatchReasonBody(BaseModel):
         if not v:
             raise ValueError("driver_ids no puede estar vacío")
         return v
-
-
-class CloseDayBody(BaseModel):
-    override: bool = False
-    override_note: Optional[str] = None

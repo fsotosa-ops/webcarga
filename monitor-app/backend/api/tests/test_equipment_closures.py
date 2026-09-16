@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -10,6 +11,19 @@ from app.routers.equipment_closures import router
 from tests.conftest import USER, wire_transactional_conn
 
 ADMIN_USER = {"sub": "22222222-2222-2222-2222-222222222222", "email": "admin@webcarga.cl", "role": "admin"}
+
+
+@pytest.fixture(autouse=True)
+def servicio_de_cierre(monkeypatch):
+    """Desde el 16/09 el recalculo y el periodo viven en services/cierre_lineas.py
+    y se prueban contra la base (tests/test_cierre_lineas.py). Aca se prueba
+    solo la forma de la respuesta del router: el servicio queda como stub, y un
+    test puede darle a `periodo` un dia cerrado."""
+    import app.routers.equipment_closures as modulo
+    stubs = {"recalcular": AsyncMock(return_value={}), "periodo": AsyncMock(return_value=None)}
+    for nombre, stub in stubs.items():
+        monkeypatch.setattr(modulo, nombre, stub)
+    return stubs
 
 
 def make_client(pool, user=None):
@@ -28,6 +42,15 @@ def make_client(pool, user=None):
     return TestClient(app)
 
 
+def _categoria(fila):
+    """La que calcula LINEAS_CONDUCTORES/LINEAS_TRACTOS, para filas de ejemplo."""
+    if fila["status"] == "ASSIGNED":
+        return "ASIGNADO"
+    if fila["status"] == "MISMATCH":
+        return "POR_REGULARIZAR"
+    return "SIN_RESOLVER" if not fila["unassigned_reason_id"] else "NO_TRABAJANDO"
+
+
 def _equipment_row(**overrides):
     base = {
         "asset_id": "a1", "tractor_plate": "ABCD12", "carrier_id": "c1", "carrier_name": "Transportes Sur",
@@ -38,6 +61,7 @@ def _equipment_row(**overrides):
         "trip_id": None, "trip_driver_id": None, "trip_driver_name": None,
     }
     base.update(overrides)
+    base.setdefault("category", _categoria(base))
     return base
 
 
@@ -93,14 +117,6 @@ def test_get_equipment_closure_status_pending_count_solo_cuenta_tractoreo_sin_mo
     assert res.json()["tractoreo"]["pending_count"] == 1
 
 
-def test_recompute_sql_requires_motivo_trata_sin_clasificar_como_tractoreo():
-    from app.routers.equipment_closures import _RECOMPUTE_SQL
-    assert "NOT (COALESCE(ar.is_equipo_completo, false) AND NOT COALESCE(ar.is_tractoreo, false))" in _RECOMPUTE_SQL
-    assert "asset_type = 'TRACTOCAMION'" in _RECOMPUTE_SQL
-    assert "t.planning_date < $1 AND t.is_active" in _RECOMPUTE_SQL
-    assert "sodimac" in _RECOMPUTE_SQL
-
-
 def test_detail_sql_incluye_tipo_vehiculo():
     from app.routers.equipment_closures import _DETAIL_SQL
     assert "fleet_service_type_label" in _DETAIL_SQL
@@ -149,34 +165,6 @@ def test_get_equipment_closure_status_incluye_tipo_vehiculo_por_tracto():
     assert row["fleet_service_type_bg_color"] == "#eff6ff"
 
 
-def test_set_batch_reason_actualiza_varios_equipos_en_un_llamado():
-    pool = AsyncMock()
-    pool.fetch.side_effect = [
-        [{"asset_id": "a1", "requires_motivo": True, "status": "UNASSIGNED"},
-         {"asset_id": "a2", "requires_motivo": True, "status": "UNASSIGNED"}],
-        [_equipment_row(asset_id="a1"), _equipment_row(asset_id="a2")],
-    ]
-    client = make_client(pool)
-
-    res = client.patch(
-        "/api/v1/equipment-closures/reason?fecha=2026-08-02",
-        json={"asset_ids": ["a1", "a2"], "unassigned_reason_id": "r1"},
-    )
-
-    assert res.status_code == 200
-    assert len(res.json()) == 2
-    update_sql = pool.execute.call_args_list[-1].args[0]
-    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
-    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
-    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
-    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
-    # Y lo que de verdad prueba el binding son los argumentos, no el texto:
-    # $1 el motivo, $7 la bandera de "vino la clave".
-    assert pool.execute.call_args_list[-1].args[1] == "r1"
-    assert pool.execute.call_args_list[-1].args[7] is True
-    assert pool.execute.call_args_list[-1].args[4] == ["a1", "a2"]
-
-
 def test_set_batch_reason_404_cuando_falta_un_equipo():
     pool = AsyncMock()
     pool.fetch.return_value = [{"asset_id": "a1", "requires_motivo": True, "status": "UNASSIGNED"}]
@@ -190,42 +178,7 @@ def test_set_batch_reason_404_cuando_falta_un_equipo():
     assert res.status_code == 404
 
 
-def test_set_batch_reason_422_cuando_ya_tiene_carga():
-    pool = AsyncMock()
-    pool.fetch.return_value = [{"asset_id": "a1", "requires_motivo": True, "status": "ASSIGNED"}]
-    client = make_client(pool)
-
-    res = client.patch(
-        "/api/v1/equipment-closures/reason?fecha=2026-08-02",
-        json={"asset_ids": ["a1"], "unassigned_reason_id": "r1"},
-    )
-
-    assert res.status_code == 422
-
-
 # ── PATCH /equipment-closures/{asset_id} (paridad Equipo Completo, 2026-08-04) ──
-
-def test_patch_equipment_day_status_sets_reason():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "UNASSIGNED"}
-    pool.fetch.return_value = [
-        _equipment_row(asset_id="a1", status="UNASSIGNED", unassigned_reason_id="pana"),
-    ]
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-08-04", json={"unassigned_reason_id": "pana"})
-
-    assert res.status_code == 200
-    update_sql = pool.execute.call_args_list[0].args[0]
-    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
-    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
-    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
-    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
-    # Y lo que de verdad prueba el binding son los argumentos, no el texto:
-    # $1 el motivo, $7 la bandera de "vino la clave".
-    assert pool.execute.call_args_list[0].args[1] == "pana"
-    assert pool.execute.call_args_list[0].args[7] is True
-
 
 def test_patch_equipment_day_status_404_when_not_found():
     pool = AsyncMock()
@@ -235,148 +188,6 @@ def test_patch_equipment_day_status_404_when_not_found():
     res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-08-04", json={"unassigned_reason_id": "pana"})
 
     assert res.status_code == 404
-
-
-def test_patch_equipment_day_status_422_when_not_unassigned():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "ASSIGNED"}
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-08-04", json={"unassigned_reason_id": "pana"})
-
-    assert res.status_code == 422
-
-
-def test_close_equipment_day_succeeds_when_nothing_pending():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_equipment_row(asset_id="a1", status="ASSIGNED")]
-    client = make_client(pool)
-
-    res = client.post("/api/v1/equipment-closures/close?fecha=2026-08-02", json={})
-
-    assert res.status_code == 200
-    assert res.json() == {"ok": True, "business_date": "2026-08-02", "overridden": 0}
-
-
-def test_close_equipment_day_409_when_tractoreo_pending():
-    pool = AsyncMock()
-    pool.fetch.return_value = [
-        _equipment_row(asset_id="a1", requires_motivo=True, status="UNASSIGNED"),
-    ]
-    client = make_client(pool)
-
-    res = client.post("/api/v1/equipment-closures/close?fecha=2026-08-02", json={})
-
-    assert res.status_code == 409
-    assert res.json()["detail"]["pending"][0]["asset_id"] == "a1"
-
-
-def test_close_equipment_day_409_nombra_patente_y_empresa_de_cada_pendiente():
-    """El 409 es lo unico que el coordinador ve cuando no puede cerrar: si
-    dice "15 equipo(s) sin resolver" sin decir cuales, no hay accion posible.
-    La empresa va porque la patente sola no dice a que ficha ir."""
-    pool = AsyncMock()
-    pool.fetch.return_value = [
-        _equipment_row(asset_id="a1", tractor_plate="DTBY52", carrier_id="cf",
-                       carrier_name="Transportes La Fortaleza Spa"),
-        _equipment_row(asset_id="a2", tractor_plate="LCSR30", carrier_id=None, carrier_name=None),
-    ]
-    client = make_client(pool)
-
-    res = client.post("/api/v1/equipment-closures/close?fecha=2026-09-03", json={})
-
-    assert res.status_code == 409
-    assert res.json()["detail"]["pending"] == [
-        {"asset_id": "a1", "tractor_plate": "DTBY52", "carrier_id": "cf",
-         "carrier_name": "Transportes La Fortaleza Spa"},
-        {"asset_id": "a2", "tractor_plate": "LCSR30", "carrier_id": None, "carrier_name": None},
-    ]
-
-
-def test_close_equipment_day_no_bloquea_por_equipos_completos_sin_motivo():
-    """HU-03 criterio: Equipos Completos SIN CARGA nunca bloquea el cierre
-    (cierre pasivo) — ni siquiera tienen unassigned_reason_id."""
-    pool = AsyncMock()
-    pool.fetch.return_value = [
-        _equipment_row(asset_id="a1", requires_motivo=False, status="UNASSIGNED", unassigned_reason_id=None),
-    ]
-    client = make_client(pool)
-
-    res = client.post("/api/v1/equipment-closures/close?fecha=2026-08-02", json={})
-
-    assert res.status_code == 200
-
-
-def test_close_equipment_day_override_requires_admin_role():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_equipment_row(asset_id="a1", requires_motivo=True, status="UNASSIGNED")]
-    client = make_client(pool)  # USER es editor, no admin
-
-    res = client.post(
-        "/api/v1/equipment-closures/close?fecha=2026-08-02",
-        json={"override": True, "override_note": "Autorizo cerrar igual"},
-    )
-
-    assert res.status_code == 403
-
-
-def test_close_equipment_day_override_as_admin_logs_and_closes():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    pool.fetch.return_value = [_equipment_row(asset_id="a1", requires_motivo=True, status="UNASSIGNED")]
-    client = make_client(pool, user=ADMIN_USER)
-
-    res = client.post(
-        "/api/v1/equipment-closures/close?fecha=2026-08-02",
-        json={"override": True, "override_note": "Autorizo cerrar igual"},
-    )
-
-    assert res.status_code == 200
-    assert res.json()["overridden"] == 1
-    audit_calls = [c.args[0] for c in conn.execute.call_args_list]
-    assert any("audit_log" in s for s in audit_calls)
-
-
-def test_se_puede_comentar_una_fila_con_carga_y_sin_motivo():
-    """El bug que reporto el usuario: *"la columna de comentarios no permite
-    escribir"*. Medido el 14/09: 0 comentarios en las 4.540 filas de las dos
-    tablas del cierre, contra 287 con motivo.
-
-    Eran dos puertas cerradas, no un campo roto. El frontend solo dibujaba el
-    input si la fila YA tenia motivo guardado, y el backend respondia 422
-    sobre cualquier fila con carga. Desde el 14/09 se comenta cualquier fila:
-    el comentario es una nota del dia de esa fila, no un pie de pagina del
-    motivo."""
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "ASSIGNED"}
-    pool.fetch.return_value = [_equipment_row(asset_id="a1", status="ASSIGNED")]
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-09-07",
-                       json={"comentario": "el tracto salio con carga parcial"})
-
-    assert res.status_code == 200, res.text
-    args = pool.execute.call_args_list[-1].args
-    assert args[5] == "el tracto salio con carga parcial"
-    # La bandera del comentario prendida y la del motivo apagada: el motivo que
-    # ya tuviera la fila no se toca.
-    assert args[6] is True
-    assert args[7] is False
-
-
-def test_el_motivo_sobre_una_fila_con_carga_sigue_siendo_422():
-    """El 422 no se levanto: gobierna el MOTIVO, no la fila. Un motivo de no
-    asignacion sobre un equipo que SI tuvo carga es una contradiccion, y eso
-    no cambio — lo que cambio es que comentar dejo de estar atado a el."""
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "ASSIGNED"}
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/equipment-closures/a1?fecha=2026-09-07",
-                       json={"unassigned_reason_id": "pana"})
-
-    assert res.status_code == 422
 
 
 def test_el_detalle_trae_el_generador_de_carga():
@@ -392,28 +203,3 @@ def test_el_detalle_trae_el_generador_de_carga():
     assert "COALESCE(sh.name, t.client_name) AS client_name" in _DETAIL_SQL
     assert "LEFT JOIN public.shippers sh" in _DETAIL_SQL
 
-
-def test_un_viaje_declarado_deja_de_contar_como_carga_del_tracto():
-    """El bug de sincronizacion que reporto el usuario, del lado de la flota.
-
-    Reproducido contra produccion el 14/09: el viaje de Walmart del 07-09
-    tenia motivo escrito desde el detalle del viaje en el Monitor, y el tracto
-    SVLT43 seguia en ASSIGNED ese mismo dia. La CTE solo preguntaba si EXISTIA
-    un viaje resuelto a ese tracto; no miraba el motivo en ninguna parte.
-
-    Medido sobre el 07-09 con el filtro puesto: los tractos con carga bajan de
-    25 a 24 y el unico que sale es SVLT43."""
-    from app.routers.equipment_closures import _RECOMPUTE_SQL
-    assert "AND t.unassigned_reason_id IS NULL" in _RECOMPUTE_SQL
-
-
-def test_el_recompute_conserva_el_comentario_y_sigue_limpiando_el_motivo():
-    """Gemelo del de daily_closures. Antes el recompute ponia el comentario en
-    NULL al pasar a ASSIGNED; ahora que se puede comentar una fila con carga,
-    borrarlo seria perder algo que una persona escribio a mano."""
-    from app.routers.equipment_closures import _RECOMPUTE_SQL
-    assert "comentario = app.equipment_day_status.comentario" in _RECOMPUTE_SQL
-    assert "comentario = CASE WHEN EXCLUDED.status" not in _RECOMPUTE_SQL
-    for campo in ("unassigned_reason_id", "resolved_by", "resolved_at"):
-        assert (f"{campo} = CASE WHEN EXCLUDED.status = 'UNASSIGNED' "
-                f"THEN app.equipment_day_status.{campo} ELSE NULL END") in _RECOMPUTE_SQL

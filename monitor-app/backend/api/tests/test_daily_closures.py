@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -12,6 +13,19 @@ from tests.conftest import USER, wire_transactional_conn
 ADMIN_USER = {"sub": "22222222-2222-2222-2222-222222222222", "email": "admin@webcarga.cl", "role": "admin"}
 
 
+@pytest.fixture(autouse=True)
+def servicio_de_cierre(monkeypatch):
+    """Desde el 16/09 el recalculo y el periodo viven en services/cierre_lineas.py
+    y se prueban contra la base (tests/test_cierre_lineas.py). Aca se prueba
+    solo la forma de la respuesta del router: el servicio queda como stub, y un
+    test puede darle a `periodo` un dia cerrado."""
+    import app.routers.daily_closures as modulo
+    stubs = {"recalcular": AsyncMock(return_value={}), "periodo": AsyncMock(return_value=None)}
+    for nombre, stub in stubs.items():
+        monkeypatch.setattr(modulo, nombre, stub)
+    return stubs
+
+
 def make_client(pool, user=None):
     """HU-02 (Fase 3): _recompute ahora corre run_pre_cierre primero, que
     usa pool.acquire()/conn.transaction() — se wirea acá un stub vacío por
@@ -19,8 +33,7 @@ def make_client(pool, user=None):
     este archivo (que no ejercitan pre-cierre, ver test_pre_cierre.py) no
     tengan que repetir el wiring uno por uno."""
     if isinstance(pool.acquire, AsyncMock):
-        # Todavía no wireado a mano (ver test_close_day_override_as_admin_logs_and_closes,
-        # que sí lo hace explícito para inspeccionar conn.execute) — stub vacío.
+        # Todavía no wireado a mano — stub vacío.
         conn = AsyncMock()
         conn.fetch.return_value = []
         wire_transactional_conn(pool, conn)
@@ -30,6 +43,15 @@ def make_client(pool, user=None):
     app.dependency_overrides[get_current_user] = lambda: (user or USER)
     app.dependency_overrides[require_editor] = lambda: (user or USER)
     return TestClient(app)
+
+
+def _categoria(fila):
+    """La que calcula LINEAS_CONDUCTORES/LINEAS_TRACTOS, para filas de ejemplo."""
+    if fila["status"] == "ASSIGNED":
+        return "ASIGNADO"
+    if fila["status"] == "MISMATCH":
+        return "POR_REGULARIZAR"
+    return "SIN_RESOLVER" if not fila["unassigned_reason_id"] else "NO_TRABAJANDO"
 
 
 def _driver_row(**overrides):
@@ -43,6 +65,7 @@ def _driver_row(**overrides):
         "last_known_tractor_plate": None, "last_known_operation_type": None,
     }
     base.update(overrides)
+    base.setdefault("category", _categoria(base))
     return base
 
 
@@ -57,17 +80,6 @@ def _driver_row(**overrides):
 # arriba. Este test verifica que day_trips usa la vista compartida en vez de
 # reconstruir su propia copia. ──────────
 
-def test_recompute_sql_uses_shared_fleet_resolution_view():
-    from app.routers.daily_closures import _RECOMPUTE_SQL
-    assert "app.v_trip_fleet_resolution" in _RECOMPUTE_SQL
-    assert "vfr.resolved_driver_id" in _RECOMPUTE_SQL
-    assert "vfr.resolved_carrier_id" in _RECOMPUTE_SQL
-    # No debe reconstruir la cadena inline — si aparece un JOIN real a
-    # vehicle_driver_assignments (no solo la mención en un comentario
-    # explicativo), alguien la duplicó de nuevo en vez de usar la vista.
-    assert "JOIN public.vehicle_driver_assignments" not in _RECOMPUTE_SQL
-
-
 # ── Bug real reportado por el usuario en vivo 2026-08-02: "veo 30 viajes en
 # curso pero solo 14 asignados en la cuadratura, ¿tiene sentido?" — no lo
 # tenía. day_trips solo miraba planning_date = fecha exacta (mismo bug
@@ -77,14 +89,12 @@ def test_recompute_sql_uses_shared_fleet_resolution_view():
 # 100% invisibles para day_trips — aparecían "No asignado" con un viaje
 # activo real en curso. ──────────
 
-def test_recompute_sql_counts_multi_day_active_trip():
-    from app.routers.daily_closures import _RECOMPUTE_SQL
-    assert "t.planning_date < $1 AND t.is_active" in _RECOMPUTE_SQL
-
-
-def test_detail_sql_mismatch_trip_counts_multi_day_active_trip():
+# Desde el 16/09 el multi-día lo resuelve app.trips_del_dia() — la conducta
+# se prueba contra la base en tests/test_trips_del_dia.py. Estos dos tests
+# fijaban el string de la regla vieja (`is_active` de AHORA), que era el defecto.
+def test_detail_sql_lee_los_viajes_del_dia_de_la_funcion():
     from app.routers.daily_closures import _DETAIL_SQL
-    assert "t.planning_date < dds.business_date AND t.is_active" in _DETAIL_SQL
+    assert _DETAIL_SQL.count("app.trips_del_dia($1)") == 2
 
 
 # ── Tarea 4 (minuta 2026-08-03): roster acotado a conductores de empresas
@@ -97,13 +107,6 @@ def test_tractoreo_roster_cte_filters_by_operation_type_code():
     assert "app.status_taxonomies" in TRACTOREO_ROSTER_CTE
     assert "wot.code = 'TRACTOREO'" in TRACTOREO_ROSTER_CTE
     assert "a.asset_type = 'TRACTOCAMION'" in TRACTOREO_ROSTER_CTE
-
-
-def test_recompute_sql_uses_shared_tractoreo_roster_cte():
-    from app.routers.daily_closures import _RECOMPUTE_SQL, TRACTOREO_ROSTER_CTE
-    assert TRACTOREO_ROSTER_CTE in _RECOMPUTE_SQL
-    assert "app.status_taxonomies" in _RECOMPUTE_SQL
-    assert "wot.code = 'TRACTOREO'" in _RECOMPUTE_SQL
 
 
 def test_detail_sql_uses_shared_tractoreo_roster_cte():
@@ -153,9 +156,6 @@ def test_get_daily_closure_status_returns_counts_and_drivers():
     assert body["unassigned_count"] == 1
     assert body["mismatch_count"] == 1
     assert body["pending_count"] == 2  # 1 unassigned sin motivo + 1 mismatch
-    recompute_sql = pool.execute.call_args_list[0].args[0]
-    assert "app.driver_day_status" in recompute_sql
-    assert "ON CONFLICT (driver_id, business_date)" in recompute_sql
 
 
 def test_get_daily_closure_status_includes_carrier_id_for_linking_to_empresas():
@@ -272,13 +272,16 @@ def test_get_daily_closure_status_pending_excludes_unassigned_with_reason():
     assert res.json()["pending_count"] == 0
 
 
-def test_get_daily_closure_status_reports_closed_day():
+def test_get_daily_closure_status_reports_closed_day(servicio_de_cierre):
     pool = AsyncMock()
     pool.fetch.return_value = [_driver_row()]
-    pool.fetchrow.return_value = {
-        "closed_by": "u1", "closed_at": datetime(2026, 7, 21, 20, 0, tzinfo=timezone.utc),
-        "total_drivers": 1, "resolved_count": 1, "override_count": 0,
+    servicio_de_cierre["periodo"].return_value = {
+        "status": "CLOSED", "closed_by": "u1", "closed_by_name": "Pablo",
+        "closed_at": datetime(2026, 7, 21, 20, 0, tzinfo=timezone.utc), "override_count": 0,
+        "frozen_totals": {"conductores": 1, "conductores_resueltos": 1, "viajes": 3},
+        "reopened_by": None, "reopened_at": None, "reopen_note": None,
     }
+    pool.fetchval.return_value = 3
     client = make_client(pool)
 
     res = client.get("/api/v1/daily-closures?fecha=2026-07-21")
@@ -401,27 +404,6 @@ def test_get_daily_closures_report_422_invalid_dates():
 
 # ── PATCH /cuadratura/{driver_id} ────────────────────────────────────────
 
-def test_patch_driver_day_status_sets_reason():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "UNASSIGNED"}
-    pool.fetch.return_value = [
-        _driver_row(driver_id="d1", status="UNASSIGNED", unassigned_reason_id="pana", unassigned_reason_label="Pana"),
-    ]
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-07-21", json={"unassigned_reason_id": "pana"})
-
-    assert res.status_code == 200
-    update_sql = pool.execute.call_args_list[1].args[0]
-    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
-    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
-    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
-    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
-    # Y lo que prueba el binding son los argumentos, no el texto del SQL:
-    # $1 el motivo, $7 la bandera de "vino la clave".
-    assert pool.execute.call_args_list[1].args[7] is True
-
-
 def test_patch_driver_day_status_404_when_not_found():
     pool = AsyncMock()
     pool.fetchrow.return_value = None
@@ -432,46 +414,7 @@ def test_patch_driver_day_status_404_when_not_found():
     assert res.status_code == 404
 
 
-def test_patch_driver_day_status_422_when_not_unassigned():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "ASSIGNED"}
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-07-21", json={"unassigned_reason_id": "pana"})
-
-    assert res.status_code == 422
-
-
 # ── PATCH /cuadratura/reason (Tarea 7, plan 2.4) ────────────────────────
-
-def test_set_batch_reason_actualiza_varios_conductores_en_un_llamado():
-    pool = AsyncMock()
-    pool.fetch.side_effect = [
-        [{"driver_id": "d1", "status": "UNASSIGNED"}, {"driver_id": "d2", "status": "UNASSIGNED"}],
-        [_driver_row(driver_id="d1"), _driver_row(driver_id="d2")],
-    ]
-    client = make_client(pool)
-
-    res = client.patch(
-        "/api/v1/daily-closures/reason?fecha=2026-08-02",
-        json={"driver_ids": ["d1", "d2"], "unassigned_reason_id": "r1"},
-    )
-
-    assert res.status_code == 200
-    assert len(res.json()) == 2
-    update_sql = pool.execute.call_args_list[-1].args[0]
-    # El motivo ya no se escribe incondicionalmente: sigue la misma regla que el
-    # comentario —solo si la clave vino en el payload—, porque desde el 14/09 un
-    # PATCH puede traer SOLO comentario y no debe borrar el motivo en silencio.
-    assert "unassigned_reason_id = CASE WHEN $7 THEN $1" in update_sql
-    # Y lo que prueba el binding son los argumentos, no el texto del SQL:
-    # $1 el motivo, $7 la bandera de "vino la clave".
-    assert pool.execute.call_args_list[-1].args[7] is True
-    # Por posicion y no por `args[-1]`: el ultimo argumento dejo de ser la
-    # lista de ids cuando se sumo el comentario, y un test que apunta "al
-    # ultimo" se rompe cada vez que el UPDATE crece.
-    assert pool.execute.call_args_list[-1].args[4] == ["d1", "d2"]
-
 
 def test_set_batch_reason_404_cuando_falta_un_conductor():
     pool = AsyncMock()
@@ -484,19 +427,6 @@ def test_set_batch_reason_404_cuando_falta_un_conductor():
     )
 
     assert res.status_code == 404
-
-
-def test_set_batch_reason_422_cuando_ya_esta_asignado():
-    pool = AsyncMock()
-    pool.fetch.return_value = [{"driver_id": "d1", "status": "ASSIGNED"}]
-    client = make_client(pool)
-
-    res = client.patch(
-        "/api/v1/daily-closures/reason?fecha=2026-08-02",
-        json={"driver_ids": ["d1"], "unassigned_reason_id": "r1"},
-    )
-
-    assert res.status_code == 422
 
 
 def test_set_batch_reason_422_cuando_driver_ids_vacio():
@@ -513,140 +443,6 @@ def test_set_batch_reason_422_cuando_driver_ids_vacio():
 
 # ── POST /cuadratura/close ───────────────────────────────────────────────
 
-def test_close_day_succeeds_when_nothing_pending():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_driver_row(driver_id="d1", status="ASSIGNED")]
-    client = make_client(pool)
-
-    res = client.post("/api/v1/daily-closures/close?fecha=2026-07-21", json={})
-
-    assert res.status_code == 200
-    assert res.json() == {
-        "ok": True, "business_date": "2026-07-21",
-        # `overridden` cuenta TODO lo forzado; `overridden_sin_flota` separa la
-        # mitad que es de viaje y no de conductor. Un cierre firmado sobre 2
-        # patentes fuera del directorio con overridden=0 diria que no se forzo
-        # nada.
-        "overridden": 0, "overridden_sin_flota": 0,
-    }
-    insert_sql = pool.execute.call_args_list[-1].args[0]
-    assert "app.daily_closures" in insert_sql
-
-
-def test_close_day_409_when_pending_without_override():
-    pool = AsyncMock()
-    pool.fetch.return_value = [
-        _driver_row(driver_id="d2", status="UNASSIGNED", full_name="Ana Soto"),
-    ]
-    client = make_client(pool)
-
-    res = client.post("/api/v1/daily-closures/close?fecha=2026-07-21", json={})
-
-    assert res.status_code == 409
-    detail = res.json()["detail"]
-    assert detail["pending"][0]["full_name"] == "Ana Soto"
-
-
-def test_close_day_409_cuando_la_flota_no_esta_en_el_directorio(monkeypatch):
-    """El bloqueo nuevo. Es de VIAJE y no de conductor: un dia sin ningun
-    conductor pendiente igual no se puede firmar si hay una patente que no
-    existe en el directorio, porque ese viaje no tiene empresa a la que
-    atribuirse.
-
-    Antes del cambio, el pre-cierre detectaba esto y el dia se firmaba igual.
-    """
-    from app.routers import daily_closures as dc
-
-    async def _recompute_falso(pool, business_date):
-        return {"escalations": {"PATENTE_NO_REGISTRADA": [
-            {"tractor_plate": "ABCD12", "reason": "La patente no existe en public.assets"}]}}
-
-    monkeypatch.setattr(dc, "_recompute", _recompute_falso)
-    pool = AsyncMock()
-    # Ningun conductor pendiente: lo unico que bloquea es la flota.
-    pool.fetch.return_value = [_driver_row(driver_id="d1", status="ASSIGNED")]
-    client = make_client(pool)
-
-    res = client.post("/api/v1/daily-closures/close?fecha=2026-07-21", json={})
-
-    assert res.status_code == 409
-    detail = res.json()["detail"]
-    assert detail["pending"] == [], "no habia conductores pendientes"
-    assert detail["sin_flota"][0]["tractor_plate"] == "ABCD12"
-    assert detail["sin_flota"][0]["tipo"] == "PATENTE_NO_REGISTRADA"
-    assert "flota fuera del directorio" in detail["message"]
-
-
-def test_close_day_deja_firmar_con_override_y_lo_cuenta(monkeypatch):
-    """La valvula que ya existia sigue siendo la valvula: admin + comentario.
-    Es la que el propio refinamiento diseno contra el "deadlock operativo"."""
-    from app.routers import daily_closures as dc
-
-    async def _recompute_falso(pool, business_date):
-        return {"escalations": {"PATENTE_NO_REGISTRADA": [{"tractor_plate": "ABCD12"}]}}
-
-    monkeypatch.setattr(dc, "_recompute", _recompute_falso)
-    pool = AsyncMock()
-    pool.fetch.return_value = [_driver_row(driver_id="d1", status="ASSIGNED")]
-    client = make_client(pool, user=ADMIN_USER)
-
-    res = client.post(
-        "/api/v1/daily-closures/close?fecha=2026-07-21",
-        json={"override": True, "override_note": "la patente se da de alta manana"},
-    )
-
-    assert res.status_code == 200
-    assert res.json()["overridden_sin_flota"] == 1
-    assert res.json()["overridden"] == 1
-
-
-def test_close_day_override_requires_admin_role():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_driver_row(driver_id="d2", status="UNASSIGNED")]
-    client = make_client(pool)  # USER es editor, no admin
-
-    res = client.post(
-        "/api/v1/daily-closures/close?fecha=2026-07-21",
-        json={"override": True, "override_note": "Ok, autorizo cierre"},
-    )
-
-    assert res.status_code == 403
-
-
-def test_close_day_override_requires_note():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_driver_row(driver_id="d2", status="UNASSIGNED")]
-    client = make_client(pool, user=ADMIN_USER)
-
-    res = client.post("/api/v1/daily-closures/close?fecha=2026-07-21", json={"override": True})
-
-    assert res.status_code == 422
-
-
-def test_close_day_override_as_admin_logs_and_closes():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    pool.fetch.return_value = [
-        _driver_row(driver_id="d2", status="UNASSIGNED", full_name="Ana Soto"),
-        _driver_row(driver_id="d3", status="MISMATCH", full_name="Luis Rojas"),
-    ]
-    client = make_client(pool, user=ADMIN_USER)
-
-    res = client.post(
-        "/api/v1/daily-closures/close?fecha=2026-07-21",
-        json={"override": True, "override_note": "Datos sucios de medianoche, autorizo cerrar igual"},
-    )
-
-    assert res.status_code == 200
-    body = res.json()
-    assert body["overridden"] == 2
-    audit_calls = [c.args[0] for c in conn.execute.call_args_list]
-    assert sum("audit_log" in s for s in audit_calls) == 2
-    insert_sql = pool.execute.call_args_list[-1].args[0]
-    assert "app.daily_closures" in insert_sql
-
-
 # ── FIX 2026-08-18: las 3 pantallas del Cierre no miraban el mismo universo.
 # daily_closures no excluía Sodimac mientras equipment_closures.py:69 y
 # status_report.py:107 sí lo hacen ("esa fuente no resuelve tracto por la
@@ -654,11 +450,6 @@ def test_close_day_override_as_admin_logs_and_closes():
 # lo mirara. Medido sobre el 2026-08-14 antes de aplicarlo: el universo baja
 # de 63 a 49 viajes y ningún conductor cambia de estado (27 antes y
 # después). ──────────
-
-def test_recompute_sql_excluye_sodimac():
-    from app.routers.daily_closures import _RECOMPUTE_SQL
-    assert "t.source_system != 'sodimac'" in _RECOMPUTE_SQL
-
 
 def test_detail_sql_excluye_sodimac_en_el_lateral_de_mismatch():
     from app.routers.daily_closures import _DETAIL_SQL
@@ -680,74 +471,6 @@ def test_tractoreo_roster_cte_excluye_conductores_de_baja():
 # ── Permiso, comentario y las dos columnas nuevas (2026-09-07) ─────────────
 
 
-def test_cerrar_el_dia_lo_puede_hacer_un_writer():
-    """Definicion del usuario (07/09): *"ambos pueden hacer cierres de viaje"*.
-    `writer` es el rol de quien opera el Diario todos los dias y era justamente
-    el que no podia terminar su propio trabajo."""
-    from app.auth import WRITER_ROLES
-    assert "writer" in WRITER_ROLES
-    from app.routers import daily_closures
-    fuente = open(daily_closures.__file__, encoding="utf-8").read()
-    # Sobre el uso real, no sobre la palabra: "require_editor" tambien aparece
-    # en el comentario que explica por que ya no se usa.
-    assert "Depends(require_editor)" not in fuente
-    assert "Depends(require_writer)" in fuente
-    # El override NO se abrio: forzar con pendientes sigue siendo de admin.
-    assert "ADMIN_ROLES" in fuente
-
-
-def test_el_recompute_conserva_el_comentario_y_sigue_limpiando_el_motivo():
-    """Cambio de regla el 14/09. Antes el comentario seguia al motivo y el
-    recompute lo borraba al pasar a ASSIGNED. Ahora se puede comentar
-    cualquier fila -con carga o sin ella-, asi que es una nota del dia de esa
-    fila y no un pie de pagina del motivo: borrarla en un recalculo seria
-    perder algo que una persona escribio a mano.
-
-    El motivo, `resolved_by` y `resolved_at` SI se siguen limpiando: esos son
-    del motivo y no significan nada en una fila con carga."""
-    from app.routers.daily_closures import _RECOMPUTE_SQL
-    assert "comentario = app.driver_day_status.comentario" in _RECOMPUTE_SQL
-    assert "comentario = CASE WHEN EXCLUDED.status" not in _RECOMPUTE_SQL
-    for campo in ("unassigned_reason_id", "resolved_by", "resolved_at"):
-        assert (f"{campo} = CASE WHEN EXCLUDED.status = 'UNASSIGNED' "
-                f"THEN app.driver_day_status.{campo} ELSE NULL END") in _RECOMPUTE_SQL
-
-
-def test_patch_guarda_el_comentario_junto_al_motivo():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "UNASSIGNED"}
-    pool.fetch.return_value = [_driver_row(driver_id="d1")]
-    client = make_client(pool)
-
-    res = client.patch(
-        "/api/v1/daily-closures/d1?fecha=2026-09-03",
-        json={"unassigned_reason_id": "r1", "comentario": "llegó tarde el repuesto"},
-    )
-
-    assert res.status_code == 200
-    # args[0] es el SQL; los parametros van (motivo, actor, driver_id, fecha,
-    # comentario), asi que el comentario es el quinto parametro.
-    assert pool.execute.call_args_list[-1].args[5] == "llegó tarde el repuesto"
-    assert pool.execute.call_args_list[-1].args[6] is True  # la clave vino en el payload
-
-
-def test_cambiar_solo_el_motivo_no_borra_el_comentario():
-    """"No mandé el campo" no es lo mismo que pedir que quede en null. Sin esto, elegir otro motivo
-    —que no manda comentario— borraba en silencio el texto que alguien había
-    escrito."""
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "UNASSIGNED"}
-    pool.fetch.return_value = [_driver_row(driver_id="d1")]
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-09-03", json={"unassigned_reason_id": "r2"})
-
-    assert res.status_code == 200
-    assert pool.execute.call_args_list[-1].args[6] is False
-    update_sql = pool.execute.call_args_list[-1].args[0]
-    assert "CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END" in update_sql
-
-
 def test_detail_sql_trae_numero_de_viaje_y_local_de_origen():
     """Pablo, 04/09: *"para no estar adivinando por que esta la patente nomas,
     no esta el numero de viaje, nada"*.
@@ -763,40 +486,3 @@ def test_detail_sql_trae_numero_de_viaje_y_local_de_origen():
     assert "ts3.local AS origen" in _DETAIL_SQL
     assert "ts3.stop_type = 'ORIGIN'" in _DETAIL_SQL
 
-
-def test_se_puede_comentar_un_conductor_con_carga_y_sin_motivo():
-    """Gemelo del de equipment_closures: el comentario dejo de exigir motivo y
-    dejo de exigir que la fila este sin asignar."""
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "ASSIGNED"}
-    pool.fetch.return_value = [_driver_row(driver_id="d1")]
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-09-07",
-                       json={"comentario": "hizo media jornada"})
-
-    assert res.status_code == 200, res.text
-    args = pool.execute.call_args_list[-1].args
-    assert args[5] == "hizo media jornada"
-    assert args[6] is True
-    assert args[7] is False
-
-
-def test_el_motivo_sobre_un_conductor_con_carga_sigue_siendo_422():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {"status": "ASSIGNED"}
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/daily-closures/d1?fecha=2026-09-07",
-                       json={"unassigned_reason_id": "r1"})
-
-    assert res.status_code == 422
-
-
-def test_un_viaje_declarado_deja_de_contar_como_carga_del_conductor():
-    """Gemelo del de equipment_closures. Un viaje declarado "no lo tomamos"
-    deja de contar como carga tambien en el eje de conductores: si era el
-    unico del dia, la fila cae a "No asignado" y recien ahi se le puede poner
-    motivo y comentario."""
-    from app.routers.daily_closures import _RECOMPUTE_SQL
-    assert "AND t.unassigned_reason_id IS NULL" in _RECOMPUTE_SQL

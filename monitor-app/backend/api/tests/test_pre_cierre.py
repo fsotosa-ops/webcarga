@@ -352,7 +352,9 @@ async def test_tipo_b_onboarding_y_sin_tipo_de_operacion():
 # El test mira el SQL realmente enviado, no una constante de módulo — acá las
 # queries son inline. ──────────
 
-_CRITERIO_MULTIDIA = "(t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))"
+# Desde el 16/09 los viajes del día salen de app.trips_del_dia(): la misma
+# definición que el Cierre, probada contra la base en test_trips_del_dia.py.
+_CRITERIO_MULTIDIA = "t.id IN (SELECT trip_id FROM app.trips_del_dia($1))"
 
 
 # ── Conductor con viaje y sin empresa: se PROPONE, no se escribe ────────────
@@ -401,15 +403,6 @@ async def test_la_propuesta_no_escribe_nada():
     # Y no se cuela como correccion automatica, que es lo que la pantalla
     # muestra como "ya lo resolvi solo".
     assert result["auto_resolved"] == []
-
-
-@pytest.mark.asyncio
-async def test_la_propuesta_no_bloquea_el_cierre():
-    """No entra a _ESCALACIONES_QUE_BLOQUEAN: bloquear el dia con una
-    propuesta cambiaria la operacion sin que nadie lo haya pedido."""
-    from app.routers.daily_closures import _ESCALACIONES_QUE_BLOQUEAN
-
-    assert "CONDUCTOR_SIN_EMPRESA" not in _ESCALACIONES_QUE_BLOQUEAN
 
 
 @pytest.mark.asyncio

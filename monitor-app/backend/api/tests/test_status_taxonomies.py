@@ -177,3 +177,43 @@ def test_deactivate_taxonomy_404_when_missing():
     client = make_client(pool)
     res = client.delete("/api/v1/config/taxonomies/t1")
     assert res.status_code == 404
+
+
+# ── Los grupos válidos dependen del vocabulario (16/09) ──────────────────────
+# Motivos de conductor gana `group_id` (trabajó sin asignación / no trabajó), y
+# la lista única de grupos del tablero lo rechazaba.
+
+def test_un_motivo_de_conductor_acepta_sus_grupos():
+    pool = AsyncMock()
+    pool.fetchrow.side_effect = [
+        {"id": "t1", "domain": "DRIVER_REASON"},
+        {"id": "t1", "domain": "DRIVER_REASON", "code": None, "label": "Esperando carga",
+         "bg_color": "#fff", "text_color": "#000", "group": "trabajando_sin_asignacion",
+         "sort_order": 1, "active": True},
+    ]
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/config/taxonomies/t1", json={"group_id": "trabajando_sin_asignacion"})
+
+    assert res.status_code == 200
+
+
+def test_un_motivo_de_conductor_rechaza_un_grupo_del_tablero():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": "t1", "domain": "DRIVER_REASON"}
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/config/taxonomies/t1", json={"group_id": "en_ruta"})
+
+    assert res.status_code == 422
+    pool.execute.assert_not_awaited()
+
+
+def test_un_estado_del_tablero_rechaza_un_grupo_de_motivo():
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": "t1", "domain": "OPERATIONAL_STATE"}
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/config/taxonomies/t1", json={"group_id": "no_trabajando"})
+
+    assert res.status_code == 422

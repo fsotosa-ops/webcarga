@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import require_admin
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
-from ..schemas.status_taxonomy import StatusTaxonomyBody, StatusTaxonomyPatch
+from ..schemas.status_taxonomy import GRUPOS_POR_DOMINIO, StatusTaxonomyBody, StatusTaxonomyPatch
 from ..services.reordenamiento import TAXONOMIAS, MovimientoBody, mover_una_posicion
 from ..services.revisiones import SECCION_DE_TAXONOMIA, registrar_revision
 
@@ -46,6 +46,16 @@ async def _exigir_dominio_conocido(domain: str, pool) -> None:
         raise HTTPException(422, f"domain desconocido: {domain}. Los que existen son: {nombres}")
 
 
+def _exigir_grupo_valido(domain: str, group_id: str | None) -> None:
+    if group_id is None:
+        return
+    validos = GRUPOS_POR_DOMINIO.get(domain)
+    if not validos or group_id not in validos:
+        raise HTTPException(
+            422, f"group_id '{group_id}' no es valido para {domain}. Validos: {sorted(validos or [])}",
+        )
+
+
 @router.get("")
 async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool)):
     await _exigir_dominio_conocido(domain, pool)
@@ -55,6 +65,7 @@ async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool)):
 @router.post("")
 async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usuario=Depends(require_admin)):
     await _exigir_dominio_conocido(body.domain, pool)
+    _exigir_grupo_valido(body.domain, body.group_id)
     row = await pool.fetchrow(
         f"""INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, sort_order, group_id)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -79,6 +90,7 @@ async def patch_taxonomy(
     data = body.model_dump(exclude_none=True)
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
+    _exigir_grupo_valido(existing["domain"], data.get("group_id"))
 
     sets, vals = [], [taxonomy_id]
     for field, value in data.items():

@@ -21,13 +21,12 @@ forma pasiva y por tracto, en equipment_closures.py."""
 from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
-from ..auth import ADMIN_ROLES, get_current_user, require_writer
+from ..auth import get_current_user, require_writer
 from ..db import get_pool
-from ..schemas.daily_closures import CloseDayBody, DriverBatchReasonBody, DriverDayStatusPatchBody
-from ..services.audit import log_change
+from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
+from ..services.cierre_lineas import LINEAS_CONDUCTORES, periodo, poner_motivo, recalcular
 from ..services.cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
-from ..services.pre_cierre import run_pre_cierre
 from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
 
 router = APIRouter(prefix="/daily-closures", tags=["daily-closures"])
@@ -40,113 +39,15 @@ def _parse_business_date(fecha: str) -> _date:
         raise HTTPException(422, f"Fecha inválida: '{fecha}' (formato esperado YYYY-MM-DD)")
 
 
-# Roster activo + viajes del día: mismo criterio que available_drivers en
-# trips.py (public.driver_assignments/carriers ACTIVE). MISMATCH es la
-# subcategoría de HU-04 (Fase 0) llevada al grano conductor×día: cualquier
-# viaje del conductor ese día sin empresa resuelta, o con una empresa
-# distinta a la propia, tira todo el día a MISMATCH — necesita
-# regularización antes de poder cerrarse limpio.
-#
-# BUG REAL corregido 2026-07-22 (reportado por el usuario: "no veo
-# conductores asignados si el Diario reporta viajes con conductores"):
-# day_trips solo miraba trip_fleet_links.driver_id, sin replicar el mismo
-# fallback en vivo que ya usa _TRIP_FROM/available_drivers en trips.py —
-# y trip_fleet_links no tiene ninguna fila nueva desde el 2026-07-19 (nada
-# la puebla para viajes que llegan del TMS, solo existía el bootstrap
-# histórico + altas manuales). Se agrega la misma cadena de resolución en
-# vivo (patente → public.assets → vehicle_driver_assignments), MÁS un
-# tercer nivel nuevo confirmado con el usuario: si ninguno de los dos
-# anteriores resuelve pero el nombre que reporta el TMS coincide EXACTO
-# (case-insensitive) con un conductor real del roster, se toma como
-# asignado — mismo nivel de confianza que ya usa trips.py para MOSTRAR ese
-# nombre en el Diario, no una regla nueva más laxa.
-
-# Roster de conductores que caen en el cierre ACTIVO de Tractoreo (minuta
-# 2026-08-03) — ver TRACTOREO_ROSTER_CTE en ..services.driver_roster
-# (Tarea 6, plan 2.3: extraída a servicio compartido porque status_report.py
-# también la necesita para la Sección 4, agrupada por conductor).
-
-_RECOMPUTE_SQL = f"""
-WITH {TRACTOREO_ROSTER_CTE},
--- Fase B (ítem 5, feedback post-weekly 2026-07-22): la cadena de
--- resolución (stored → auto por patente → auto por
--- vehicle_driver_assignments → match exacto de nombre) vivía inline acá y
--- en 3 lugares más (_TRIP_FROM, available_drivers, available_assets en
--- trips.py) — la duplicación fue justo la causa del bug que esta misma
--- ronda arregló acá (Ronda 38). Consolidada en app.v_trip_fleet_resolution
--- (migración 20260722030000) para que no vuelva a divergir.
--- FIX 2026-08-02 (mismo bug "ítem 16 de la minuta" ya corregido en Fase 0.1
--- para Centro de Flota — nunca se replicó acá): planning_date = $1 exacto
--- dejaba invisibles para la cuadratura del día a los conductores con un
--- viaje multi-día abierto desde un día anterior. Confirmado con datos
--- reales (2026-08-02): de 29 viajes is_active=true, 26 eran multi-día, y
--- los 14 conductores resueltos en esos viajes eran 100% invisibles acá —
--- aparecían como "No asignado" en la cuadratura pese a tener un viaje
--- activo en curso ese mismo día.
-day_trips AS (
-    SELECT
-        t.id AS trip_id,
-        vfr.resolved_driver_id AS driver_id,
-        vfr.resolved_carrier_id AS trip_carrier_id
-    FROM app.trips t
-    JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-    WHERE (t.planning_date = $1 OR (t.planning_date < $1 AND t.is_active))
-      -- FIX 2026-08-18: faltaba excluir Sodimac, que equipment_closures.py:69
-      -- y status_report.py:107 sí excluyen ("esa fuente no resuelve tracto por
-      -- la misma cadena"). El mismo día daba conteos distintos según la
-      -- pantalla. Medido sobre el 2026-08-14: el universo baja de 63 a 49
-      -- viajes y NINGÚN conductor cambia de estado (27 resueltos antes y
-      -- después) — alinea la aritmética sin mover el cierre de nadie.
-      AND t.source_system != 'sodimac'
-      -- Un viaje que YA fue declarado "no lo tomamos" deja de contar como
-      -- carga. Sin esto, poner el motivo desde el detalle del viaje en el
-      -- Monitor no movia nada acá: el viaje seguia existiendo y resolviendo a
-      -- esta fila, asi que seguia diciendo "Asignado" y el ON CONFLICT de mas
-      -- abajo ni siquiera admitia motivo ni comentario. Reproducido contra
-      -- produccion el 14/09 con el viaje de Walmart del 07-09 y el tracto
-      -- SVLT43. Es reversible por construccion: se borra el motivo y vuelve.
-      AND t.unassigned_reason_id IS NULL
-),
-computed AS (
-    SELECT
-        r.driver_id,
-        CASE
-            WHEN count(dt.trip_id) > 0
-                 AND bool_or(dt.trip_carrier_id IS NULL OR dt.trip_carrier_id IS DISTINCT FROM r.home_carrier_id)
-                THEN 'MISMATCH'
-            WHEN count(dt.trip_id) > 0 THEN 'ASSIGNED'
-            ELSE 'UNASSIGNED'
-        END AS status
-    FROM active_roster r
-    LEFT JOIN day_trips dt ON dt.driver_id = r.driver_id
-    GROUP BY r.driver_id, r.home_carrier_id
-)
-INSERT INTO app.driver_day_status (driver_id, business_date, status, computed_at)
-SELECT driver_id, $1, status, now() FROM computed
-ON CONFLICT (driver_id, business_date) DO UPDATE SET
-    status = EXCLUDED.status,
-    computed_at = EXCLUDED.computed_at,
-    -- Un motivo capturado a mano solo sigue teniendo sentido si el
-    -- conductor sigue UNASSIGNED — si ahora tiene viaje o mismatch, el
-    -- motivo viejo queda obsoleto.
-    unassigned_reason_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.unassigned_reason_id ELSE NULL END,
-    resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_by ELSE NULL END,
-    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.driver_day_status.resolved_at ELSE NULL END,
-    -- El comentario NO se limpia nunca (14/09). Antes seguia al motivo y se
-    -- borraba al pasar a ASSIGNED, con el argumento de que "explica por que
-    -- alguien no trabajo". Cambio el significado: ahora es una nota del dia de
-    -- esa fila, se puede escribir con carga o sin ella, y borrarlo en un
-    -- recalculo seria perder algo que una persona escribio a mano. El motivo,
-    -- `resolved_by` y `resolved_at` SI se siguen limpiando: esos son del
-    -- motivo y no tienen sentido en una fila con carga.
-    comentario = app.driver_day_status.comentario
-"""
+# El estado de cada conductor ese día (ASSIGNED / UNASSIGNED / MISMATCH) lo
+# deriva y lo guarda services/cierre_lineas.py en app.closure_lines, junto con
+# los tractos. Este router sólo lee y delega las escrituras.
 
 _DETAIL_SQL = f"""
 WITH {TRACTOREO_ROSTER_CTE}
 SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name,
-       dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
-       dds.comentario,
+       dds.status, dds.category, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
+       dds.valid_until, dds.comentario,
        dds.resolved_by, dds.resolved_at,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
        dcomp.has_critical_pending AS driver_pending_docs_critical,
@@ -161,7 +62,7 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        today_trip.origen AS today_trip_origin,
        last_tractor.tractor_plate AS last_known_tractor_plate,
        last_tractor.operation_type AS last_known_operation_type
-FROM app.driver_day_status dds
+FROM {LINEAS_CONDUCTORES} dds
 JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
@@ -190,15 +91,14 @@ LEFT JOIN app.status_taxonomies sugg
 -- mismo criterio que _RECOMPUTE_SQL usa para marcar el estado (carrier nulo
 -- o distinto al del roster), pero a nivel de una fila puntual en vez de un
 -- bool_or agregado. El más reciente si hubo más de uno.
--- FIX 2026-08-02: mismo criterio multi-día que day_trips arriba — si no,
--- un MISMATCH detectado por un viaje de ayer (todavía is_active) quedaba
--- con trip_id NULL acá (el link "Ver viaje" no encontraba nada).
+-- Mismos viajes del día que day_trips arriba (app.trips_del_dia): si no, un
+-- MISMATCH detectado por un viaje de ayer quedaba con trip_id NULL acá.
 LEFT JOIN LATERAL (
     SELECT t.id AS trip_id
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE vfr.resolved_driver_id = dds.driver_id
-      AND (t.planning_date = dds.business_date OR (t.planning_date < dds.business_date AND t.is_active))
+      AND t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
       AND t.source_system != 'sodimac'  -- mismo criterio que equipment_closures.py:141
       AND (vfr.resolved_carrier_id IS NULL OR vfr.resolved_carrier_id IS DISTINCT FROM c.id)
     ORDER BY t.status_reported_at DESC NULLS LAST
@@ -240,7 +140,7 @@ LEFT JOIN LATERAL (
     -- ya lo lee el Diario.
     LEFT JOIN app.trip_stops ts3 ON ts3.trip_id = t3.id AND ts3.stop_type = 'ORIGIN'
     WHERE vfr3.resolved_driver_id = dds.driver_id
-      AND (t3.planning_date = dds.business_date OR (t3.planning_date < dds.business_date AND t3.is_active))
+      AND t3.id IN (SELECT trip_id FROM app.trips_del_dia($1))
       AND t3.source_system != 'sodimac'
     ORDER BY t3.status_reported_at DESC NULLS LAST
     LIMIT 1
@@ -259,9 +159,9 @@ ORDER BY d.full_name
 _REPORT_SQL = f"""
 WITH {TRACTOREO_ROSTER_CTE}
 SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name AS carrier_name,
-       dds.status, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
+       dds.status, dds.category, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names
-FROM app.driver_day_status dds
+FROM {LINEAS_CONDUCTORES} dds
 JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
@@ -279,14 +179,9 @@ ORDER BY dds.business_date, d.full_name
 """
 
 
-async def _recompute(pool, business_date: _date) -> dict:
-    """HU-02 (Fase 3): el pre-cierre corre SIEMPRE antes de recalcular la
-    cuadratura — corrige lo que puede (Tipo A) para que MISMATCH, calculado
-    justo después, ya refleje el directorio corregido en vez de la
-    inconsistencia cruda."""
-    pre_cierre = await run_pre_cierre(pool, business_date)
-    await pool.execute(_RECOMPUTE_SQL, business_date)
-    return pre_cierre
+async def _recompute(pool, business_date: _date) -> dict | None:
+    """None si el día está cerrado: un día firmado no se recalcula."""
+    return await recalcular(pool, business_date)
 
 
 @router.get("")
@@ -297,17 +192,25 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     drivers = [dict(r) for r in rows]
 
-    closure = await pool.fetchrow(
-        "SELECT closed_by, closed_at, total_drivers, resolved_count, override_count, total_trips "
-        "FROM app.daily_closures WHERE business_date = $1",
-        business_date,
-    )
-    closure_dict = dict(closure) if closure else None
+    # El estado del día sale del período, no de una cabecera por eje: un día
+    # está cerrado o abierto, no "cerrado en conductores y abierto en tractos".
+    info = await periodo(pool, business_date)
+    cerrado = bool(info and info["status"] == "CLOSED")
+    totales = (info or {}).get("frozen_totals") or {}
+    closure_dict = {
+        "closed_by": info["closed_by"],
+        "closed_by_name": info["closed_by_name"],
+        "closed_at": info["closed_at"],
+        "total_drivers": totales.get("conductores"),
+        "resolved_count": totales.get("conductores_resueltos"),
+        "override_count": info["override_count"],
+        "total_trips": totales.get("viajes"),
+    } if cerrado else None
 
     assigned = sum(1 for d in drivers if d["status"] == "ASSIGNED")
     unassigned = [d for d in drivers if d["status"] == "UNASSIGNED"]
     mismatch = [d for d in drivers if d["status"] == "MISMATCH"]
-    unassigned_without_reason = [d for d in unassigned if not d["unassigned_reason_id"]]
+    unassigned_without_reason = [d for d in unassigned if d["category"] == "SIN_RESOLVER"]
 
     # El dia sigue cerrado: la firma sigue siendo verdadera sobre lo que
     # existia cuando se firmo, y no se recalcula. Lo que llega despues es un
@@ -321,8 +224,9 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
 
     return {
         "business_date": business_date.isoformat(),
-        "closed": closure is not None,
+        "closed": cerrado,
         "closure": closure_dict,
+        "periodo": info,
         "cierre": {
             "total_trips_al_firmar": total_trips_al_firmar,
             "posteriores_al_cierre": posteriores_al_cierre,
@@ -357,60 +261,28 @@ async def get_daily_closures_report(
     }
 
 
-# QUIEN PUEDE CERRAR. `require_writer` y no `require_editor` desde el
+# QUIEN PUEDE ESCRIBIR. `require_writer` y no `require_editor` desde el
 # 2026-09-07, por definicion del usuario: *"ambos pueden hacer cierres de
-# viaje"*. `writer` es el rol de quien opera el Diario todos los dias —el
-# equipo de operaciones— y era justamente el que no podia terminar el trabajo
-# que hace: elegir un motivo y firmar el dia.
+# viaje"*. `writer` es el rol de quien opera el Diario todos los dias.
 #
-# El OVERRIDE no se movio: forzar el cierre con pendientes sigue exigiendo
-# ADMIN_ROLES, y eso se resuelve dentro del endpoint, no en el guardia. Abrir
-# la puerta no es dar la llave del cuarto de atras.
+# Las reglas (404, 422, vigencia, dia cerrado, propagacion al tracto) viven en
+# services/cierre_lineas.poner_motivo: son las mismas para los dos ejes.
 @router.patch("/reason")
 async def set_batch_reason(
     body: DriverBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_writer),
 ):
-    """BLOQUE 1 de HU-03 (conductor, Tarea 7 plan 2.4): selección masiva con
-    checkbox — mismo motivo para varios conductores en un clic (criterio de
-    aceptación #2). Declarada ANTES de PATCH /{driver_id} — ruta literal
-    debe ganarle a la ruta con path param, mismo cuidado que ya resuelve
-    equipment_closures.py entre /reason y /{asset_id}."""
+    """Selección masiva con checkbox — mismo motivo para varios conductores en
+    un clic. Declarada ANTES de PATCH /{driver_id}: la ruta literal debe
+    ganarle a la ruta con path param."""
     business_date = _parse_business_date(fecha)
-
-    rows = await pool.fetch(
-        "SELECT driver_id, status FROM app.driver_day_status WHERE business_date = $1 AND driver_id = ANY($2::uuid[])",
-        business_date, body.driver_ids,
-    )
-    found_ids = {str(r["driver_id"]) for r in rows}
-    missing = [did for did in body.driver_ids if did not in found_ids]
-    if missing:
-        raise HTTPException(404, f"Conductor(es) no encontrados en la cuadratura de ese día: {missing}")
-    not_unassigned = [str(r["driver_id"]) for r in rows if r["status"] != "UNASSIGNED"]
-    if "unassigned_reason_id" in body.model_fields_set and not_unassigned:
-        raise HTTPException(422, f"Solo se puede registrar motivo para conductores no asignados: {not_unassigned}")
-
-    await pool.execute(
-        """
-        UPDATE app.driver_day_status
-        -- "No mande el campo" no es lo mismo que pedir que quede en null.
-        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
-        -- borraba en silencio el texto que alguien habia escrito. El booleano
-        -- dice si la clave vino en el payload; Pydantic lo sabe por
-        -- `model_fields_set`.
-        -- El motivo sigue la misma regla que el comentario: solo se escribe si
-        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
-        -- lo habria puesto en NULL en silencio.
-        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.driver_day_status.unassigned_reason_id END,
-            comentario = CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END,
-            resolved_by = $2::uuid, resolved_at = now()
-        WHERE business_date = $3 AND driver_id = ANY($4::uuid[])
-        """,
-        body.unassigned_reason_id, user["sub"], business_date, body.driver_ids, body.comentario,
-        "comentario" in body.model_fields_set,
-        "unassigned_reason_id" in body.model_fields_set,
+    await poner_motivo(
+        pool, business_date, "DRIVER", body.driver_ids,
+        campos=body.model_fields_set, reason_id=body.unassigned_reason_id,
+        valid_until=body.valid_until, comentario=body.comentario, user=user,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
-    return [dict(r) for r in rows if str(r["driver_id"]) in found_ids]
+    pedidos = set(body.driver_ids)
+    return [dict(r) for r in rows if str(r["driver_id"]) in pedidos]
 
 
 @router.patch("/{driver_id}")
@@ -418,185 +290,13 @@ async def patch_driver_day_status(
     driver_id: str, fecha: str, body: DriverDayStatusPatchBody,
     pool=Depends(get_pool), user=Depends(require_writer),
 ):
-    """Captura el motivo de no asignación (HU-02) — el punto de captura
-    estructurado que pidió el usuario explícitamente (reusa app.unassigned_reasons,
-    no texto libre)."""
+    """El motivo, su vigencia y el comentario de un conductor ese día."""
     business_date = _parse_business_date(fecha)
     await _recompute(pool, business_date)
-
-    row = await pool.fetchrow(
-        "SELECT status FROM app.driver_day_status WHERE driver_id = $1 AND business_date = $2",
-        driver_id, business_date,
-    )
-    if not row:
-        raise HTTPException(404, "Conductor no encontrado en la cuadratura de ese día")
-    # El 422 gobierna el MOTIVO, no la fila. Un PATCH que trae solo comentario
-    # se acepta en cualquier estado: desde el 14/09 el comentario es una nota
-    # del dia de esa fila y no un pie de pagina del motivo, asi que una fila
-    # con carga tambien puede explicarse con palabras.
-    if "unassigned_reason_id" in body.model_fields_set and row["status"] != "UNASSIGNED":
-        raise HTTPException(422, "Solo se puede registrar motivo para un conductor no asignado")
-
-    await pool.execute(
-        """
-        UPDATE app.driver_day_status
-        -- "No mande el campo" no es lo mismo que pedir que quede en null.
-        -- Sin esto, cambiar el motivo de una fila —que no manda comentario—
-        -- borraba en silencio el texto que alguien habia escrito. El booleano
-        -- dice si la clave vino en el payload; Pydantic lo sabe por
-        -- `model_fields_set`.
-        -- El motivo sigue la misma regla que el comentario: solo se escribe si
-        -- la clave vino en el payload. Sin esto, un PATCH de solo-comentario
-        -- lo habria puesto en NULL en silencio.
-        SET unassigned_reason_id = CASE WHEN $7 THEN $1 ELSE app.driver_day_status.unassigned_reason_id END,
-            comentario = CASE WHEN $6 THEN $5 ELSE app.driver_day_status.comentario END,
-            resolved_by = $2::uuid, resolved_at = now()
-        WHERE driver_id = $3 AND business_date = $4
-        """,
-        body.unassigned_reason_id, user["sub"], driver_id, business_date, body.comentario,
-        "comentario" in body.model_fields_set,
-        "unassigned_reason_id" in body.model_fields_set,
+    await poner_motivo(
+        pool, business_date, "DRIVER", [driver_id],
+        campos=body.model_fields_set, reason_id=body.unassigned_reason_id,
+        valid_until=body.valid_until, comentario=body.comentario, user=user,
     )
     rows = await pool.fetch(_DETAIL_SQL, business_date)
-    updated = next((dict(r) for r in rows if r["driver_id"] == driver_id or str(r["driver_id"]) == driver_id), None)
-    return updated
-
-
-# LAS ESCALACIONES QUE BLOQUEAN EL CIERRE.
-#
-# Pedido de Pablo, reunion del 21/08: *"yo aqui deberia el sistema obligarme a
-# asignarle una empresa, y si la empresa no la tenemos, crearla nomas, ponerle
-# el RUT y el nombre"*. El pre-cierre YA detectaba estos casos desde el
-# 2026-08-18 y no bloqueaba nada: el dia se podia firmar con todos pendientes,
-# asi que la deteccion no cambiaba ninguna conducta.
-#
-# Son las tres que significan lo MISMO: la flota de ese viaje no esta en el
-# directorio, asi que el viaje no tiene empresa resoluble. `SIN_TIPO_OPERACION`
-# queda AFUERA a proposito — ahi el vehiculo SI esta en el directorio y lo que
-# falta es otro dato; mezclarlas seria volver a un mensaje con dos causas.
-#
-# Medido sobre 5 dias reales (14, 17, 20, 21 y 22 de agosto): entre 2 y 4 casos
-# por dia. Bloquear es operable; no congela la operacion. Y `EMPRESA_NO_RECONOCIDA`
-# da 0 todos los dias — lo que dispara es patente y conductor sin registrar, que
-# es exactamente la escena que describio Pablo.
-_ESCALACIONES_QUE_BLOQUEAN = (
-    "PATENTE_NO_REGISTRADA",
-    "CONDUCTOR_NO_REGISTRADO",
-    "EMPRESA_NO_RECONOCIDA",
-    "EMPRESA_ONBOARDING",
-)
-
-
-def _pendientes_de_flota(pre_cierre: dict) -> list[dict]:
-    """Aplana las escalaciones que bloquean, conservando de cual vino cada una.
-
-    Sin el tipo, la pantalla no puede decir QUE hacer: no es lo mismo "esta
-    patente no existe en el directorio" que "esta empresa esta en onboarding".
-    """
-    escalaciones = pre_cierre.get("escalations", {})
-    return [
-        {"tipo": tipo, **caso}
-        for tipo in _ESCALACIONES_QUE_BLOQUEAN
-        for caso in escalaciones.get(tipo, [])
-    ]
-
-
-@router.post("/close")
-async def close_day(fecha: str, body: CloseDayBody, pool=Depends(get_pool), user=Depends(require_writer)):
-    """Bloqueo real de HU-03 — requisito explícito y no negociable de Pablo
-    ("si no cierra el proceso lógico, el sistema debería no dejarlos
-    avanzar"). El override (HU-03 + el riesgo "deadlock operativo" del
-    refinamiento) reusa public.audit_log en vez de un esquema de
-    excepciones nuevo — requiere rol admin/owner y un comentario
-    obligatorio, uno por conductor pendiente."""
-    business_date = _parse_business_date(fecha)
-    pre_cierre = await _recompute(pool, business_date)
-
-    rows = await pool.fetch(_DETAIL_SQL, business_date)
-    drivers = [dict(r) for r in rows]
-    pending = [
-        d for d in drivers
-        if d["status"] == "MISMATCH" or (d["status"] == "UNASSIGNED" and not d["unassigned_reason_id"])
-    ]
-    # El segundo motivo de bloqueo, y es de VIAJE y no de conductor: un viaje
-    # cuya flota no está en el directorio no tiene empresa a la que atribuirse.
-    sin_flota = _pendientes_de_flota(pre_cierre or {})
-
-    if (pending or sin_flota) and not body.override:
-        # Los dos motivos van separados en la respuesta: no es lo mismo "a este
-        # conductor le falta un motivo" que "esta patente no existe". Fundirlos
-        # en un solo contador daría un número que no dice qué hacer.
-        partes = []
-        if pending:
-            partes.append(f"{len(pending)} conductor(es) sin resolver")
-        if sin_flota:
-            partes.append(f"{len(sin_flota)} viaje(s) con flota fuera del directorio")
-        raise HTTPException(
-            409,
-            {
-                "message": " y ".join(partes) + " — no se puede cerrar el día",
-                "pending": [{"driver_id": str(d["driver_id"]), "full_name": d["full_name"], "status": d["status"]} for d in pending],
-                "sin_flota": sin_flota,
-            },
-        )
-
-    if (pending or sin_flota) and body.override:
-        if user["role"] not in ADMIN_ROLES:
-            raise HTTPException(403, "Forzar el cierre con pendientes requiere rol admin o superior")
-        if not body.override_note or not body.override_note.strip():
-            raise HTTPException(422, "El override requiere un comentario de justificación")
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                for d in pending:
-                    await log_change(
-                        conn, actor=user["sub"], entity_type="DRIVER", entity_id=d["driver_id"],
-                        action="cuadratura_override", field="status",
-                        old_value=d["status"],
-                        new_value={"business_date": business_date.isoformat(), "note": body.override_note},
-                    )
-                # El forzado de flota tambien queda auditado, en UN renglon con
-                # todos los casos adentro.
-                #
-                # Va contra el USUARIO y no contra una entidad del viaje porque
-                # lo que falta es justamente la entidad: la patente no existe en
-                # el directorio, asi que no hay uuid al que atribuirlo —
-                # `audit_log.entity_id` es NOT NULL— y las escalaciones vienen
-                # agrupadas por patente, sin id de viaje. Lo que SI existe y es
-                # verdadero es quien tomo la decision de firmar igual.
-                if sin_flota:
-                    await log_change(
-                        conn, actor=user["sub"], entity_type="USER",
-                        entity_id=user["sub"],
-                        action="cierre_forzado_con_flota_fuera_del_directorio",
-                        field="daily_closure",
-                        old_value=sin_flota,
-                        new_value={"business_date": business_date.isoformat(), "note": body.override_note},
-                    )
-
-    # Cuantos viajes tenia el dia AL MOMENTO DE FIRMAR — el unico dato que
-    # despues permite detectar viajes posteriores al cierre (ver GET ""),
-    # sin el cual el caso no se puede reconstruir retroactivamente.
-    total_trips = await pool.fetchval(SQL_TOTAL_TRIPS_DEL_DIA, business_date)
-
-    await pool.execute(
-        """
-        INSERT INTO app.daily_closures
-            (business_date, closed_by, total_drivers, resolved_count, override_count, total_trips)
-        VALUES ($1, $2::uuid, $3, $4, $5, $6)
-        ON CONFLICT (business_date) DO UPDATE SET
-            closed_by = EXCLUDED.closed_by, closed_at = now(),
-            total_drivers = EXCLUDED.total_drivers, resolved_count = EXCLUDED.resolved_count,
-            override_count = EXCLUDED.override_count, total_trips = EXCLUDED.total_trips
-        """,
-        business_date, user["sub"], len(drivers), len(drivers) - len(pending),
-        # Cuenta TODO lo que se forzo, no solo los conductores: un cierre
-        # firmado sobre 2 patentes fuera del directorio con `override_count = 0`
-        # diria que no se forzo nada.
-        (len(pending) + len(sin_flota)) if body.override else 0, total_trips,
-    )
-    return {
-        "ok": True,
-        "business_date": business_date.isoformat(),
-        "overridden": (len(pending) + len(sin_flota)) if body.override else 0,
-        "overridden_sin_flota": len(sin_flota) if body.override else 0,
-    }
+    return next((dict(r) for r in rows if str(r["driver_id"]) == driver_id), None)

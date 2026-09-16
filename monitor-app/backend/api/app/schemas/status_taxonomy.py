@@ -16,7 +16,14 @@ from pydantic import BaseModel, field_validator
 # migracion que siembra su primera fila, que es lo correcto — un tipo de
 # vocabulario nuevo es una decision de producto, no un string suelto en un set.
 # La validacion vive en app/routers/status_taxonomies.py, que si puede consultar.
-VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
+# Los grupos validos dependen del vocabulario, asi que se validan en el router
+# (que conoce el `domain` de la fila), no en el schema.
+GRUPOS_POR_DOMINIO = {
+    # En que columna del tablero aparece un viaje con este estado.
+    "OPERATIONAL_STATE": {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"},
+    # Si el conductor trabajo sin asignacion o no trabajo (migracion 20260917000000).
+    "DRIVER_REASON": {"no_trabajando", "trabajando_sin_asignacion"},
+}
 
 
 class StatusTaxonomyBody(BaseModel):
@@ -35,12 +42,6 @@ class StatusTaxonomyBody(BaseModel):
             raise ValueError("label debe tener entre 1 y 60 caracteres")
         return v
 
-    @field_validator("group_id")
-    @classmethod
-    def group_valid(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in VALID_GROUP_IDS:
-            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
-        return v
 
 
 class StatusTaxonomyPatch(BaseModel):
@@ -54,9 +55,3 @@ class StatusTaxonomyPatch(BaseModel):
     active:     Optional[bool] = None
     group_id:   Optional[str] = None
 
-    @field_validator("group_id")
-    @classmethod
-    def group_valid(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in VALID_GROUP_IDS:
-            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
-        return v
