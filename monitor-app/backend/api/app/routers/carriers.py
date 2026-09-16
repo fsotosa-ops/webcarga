@@ -740,30 +740,44 @@ async def assign_driver(
                     "Quítale la protección antes de transferirlo.",
                 )
 
-            # Desactivar la asignación ACTIVE previa en otra empresa (mismo
-            # criterio que los loaders de Mage — Checkpoint M.5) salvo que
-            # esté protegida por un override manual.
-            await conn.execute(
+            # Transferir es una decisión humana sobre DOS filas: "está acá" y
+            # "ya no está allá". Las dos quedan con is_manual_override, porque
+            # el loader del Centralizador EETT (Mage, load_driver_assignments_06)
+            # pisa toda fila sin esa marca: hasta el 16/09 revirtió 6 de 21
+            # transferencias hechas desde la app (Villegas, Ulloa).
+            anteriores = await conn.fetch(
                 """
                 UPDATE public.driver_assignments
                 SET status = 'INACTIVE'
                 WHERE driver_id = $1 AND carrier_id <> $2 AND status = 'ACTIVE'
-                  AND NOT is_manual_override
+                RETURNING carrier_id::text
                 """,
                 body.driver_id, carrier_id,
             )
+            for anterior in anteriores:
+                await record_manual_edit(
+                    conn, table="driver_assignments",
+                    where={"driver_id": body.driver_id, "carrier_id": anterior["carrier_id"]},
+                    actor=user["sub"], entity_type="DRIVER", entity_id=body.driver_id,
+                    action="unassign", field="carrier_id", old_value=anterior["carrier_id"],
+                )
+            # Sin `WHERE NOT is_manual_override` en el upsert: si la fila destino
+            # quedó protegida por un desvincular anterior, esta asignación es una
+            # decisión humana más nueva y le gana. Con el filtro, el upsert no
+            # hacía nada, respondía ok, y el conductor quedaba sin empresa (Deiby).
             await conn.execute(
                 """
                 INSERT INTO public.driver_assignments (driver_id, carrier_id, status)
                 VALUES ($1, $2, 'ACTIVE')
                 ON CONFLICT (driver_id, carrier_id) DO UPDATE SET status = 'ACTIVE'
-                WHERE NOT driver_assignments.is_manual_override
                 """,
                 body.driver_id, carrier_id,
             )
-            await log_change(
-                conn, actor=user["sub"], entity_type="DRIVER", entity_id=body.driver_id,
-                action="assign", field="carrier_id", new_value=carrier_id, source="api",
+            await record_manual_edit(
+                conn, table="driver_assignments",
+                where={"driver_id": body.driver_id, "carrier_id": carrier_id},
+                actor=user["sub"], entity_type="DRIVER", entity_id=body.driver_id,
+                action="assign", field="carrier_id", new_value=carrier_id,
             )
     return {"ok": True}
 

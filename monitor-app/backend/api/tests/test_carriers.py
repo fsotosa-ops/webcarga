@@ -578,7 +578,9 @@ def test_assign_driver_deactivates_previous_and_activates_new():
     res = client.post("/api/v1/carriers/c1/drivers", json={"driver_id": "d1", "carrier_id": "c1"})
 
     assert res.status_code == 201
-    sqls = [c.args[0] for c in conn.execute.call_args_list]
+    # La conducta (qué filas quedan activas y protegidas) la fija
+    # test_integracion_transferir_deja_las_dos_filas_como_decision_humana.
+    sqls = [c.args[0] for c in conn.execute.call_args_list + conn.fetch.call_args_list]
     assert any("SET status = 'INACTIVE'" in s and "carrier_id <> $2" in s for s in sqls)
     assert any("INSERT INTO public.driver_assignments" in s for s in sqls)
 
@@ -698,6 +700,78 @@ async def test_integracion_transferir_conductor_protegido_da_409_y_no_deja_dos_a
     assert len(filas) == 1, "la asignacion protegida no debia tocarse ni debia crearse una segunda"
     assert str(filas[0]["carrier_id"]) == carrier_a
     assert filas[0]["status"] == "ACTIVE"
+
+
+async def _conductor_y_dos_empresas(conn):
+    """El sujeto lo crea el test: elegir filas reales con LIMIT 1 ata el
+    resultado a lo que haya en produccion ese dia."""
+    driver_id = str(await conn.fetchval(
+        "INSERT INTO public.drivers (full_name) VALUES ('Conductor de prueba transferencia') RETURNING id"))
+    carrier_a = str(await conn.fetchval(
+        "INSERT INTO public.carriers (business_name) VALUES ('Empresa A de prueba') RETURNING id"))
+    carrier_b = str(await conn.fetchval(
+        "INSERT INTO public.carriers (business_name) VALUES ('Empresa B de prueba') RETURNING id"))
+    return driver_id, carrier_a, carrier_b
+
+
+async def _asignaciones(conn, driver_id):
+    filas = await conn.fetch(
+        "SELECT carrier_id::text, status, is_manual_override FROM public.driver_assignments "
+        "WHERE driver_id = $1",
+        driver_id,
+    )
+    return {f["carrier_id"]: (f["status"], f["is_manual_override"]) for f in filas}
+
+
+@pytest.mark.integracion
+async def test_integracion_transferir_deja_las_dos_filas_como_decision_humana(conexion_revertida):
+    """Villegas, Ulloa (16/09): la transferencia hecha en la app no quedaba
+    marcada, y el loader del Centralizador la revertia en su proxima corrida.
+    Transferir decide dos cosas —"esta aca" y "ya no esta alla"— y las dos
+    tienen que quedar protegidas: si la fila vieja queda sin marca, el loader
+    la reactiva."""
+    conn = conexion_revertida
+    driver_id, carrier_a, carrier_b = await _conductor_y_dos_empresas(conn)
+    await conn.execute(
+        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
+        driver_id, carrier_a,
+    )
+
+    await assign_driver(
+        carrier_b, DriverAssignmentCreateBody(driver_id=driver_id, carrier_id=carrier_b),
+        PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    assert await _asignaciones(conn, driver_id) == {
+        carrier_a: ("INACTIVE", True),
+        carrier_b: ("ACTIVE", True),
+    }
+
+
+@pytest.mark.integracion
+async def test_integracion_reasignar_a_una_empresa_desvinculada_antes_la_reactiva(conexion_revertida):
+    """Deiby Diaz (16/09): lo desvincularon de A (fila INACTIVE protegida) y
+    despues alguien lo volvio a asignar a A. El upsert saltaba la fila por
+    estar protegida y respondia {"ok": true}: el conductor quedaba sin
+    empresa y nadie se enteraba. Una decision humana nueva le gana a una
+    anterior."""
+    conn = conexion_revertida
+    driver_id, carrier_a, carrier_b = await _conductor_y_dos_empresas(conn)
+    await conn.execute(
+        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, is_manual_override) "
+        "VALUES ($1, $2, 'INACTIVE', true), ($1, $3, 'ACTIVE', false)",
+        driver_id, carrier_a, carrier_b,
+    )
+
+    await assign_driver(
+        carrier_a, DriverAssignmentCreateBody(driver_id=driver_id, carrier_id=carrier_a),
+        PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    assert await _asignaciones(conn, driver_id) == {
+        carrier_a: ("ACTIVE", True),
+        carrier_b: ("INACTIVE", True),
+    }
 
 
 @pytest.mark.integracion
