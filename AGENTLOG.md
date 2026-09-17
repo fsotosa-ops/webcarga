@@ -79,6 +79,10 @@ vigencia, unicidad/trigger/RLS, guardia de la regla vieja, marcado de transferen
    "Sin conductor", Confirmar cierre con el aviso, Reabrir con nota.
 2. **Verificar el congelamiento con tráfico real**: después de que alguien abra un día firmado,
    `max(computed_at)` de sus líneas tiene que seguir en `2026-09-16 12:12` (hora Chile).
+   Al cerrar la sesión (17/09 02:38): sigue en 12:12, pero no hay evidencia de que alguien haya
+   abierto un día firmado con el código nuevo — no cuenta como verificado. **El 16/09 quedó ABIERTO**
+   (Operaciones no lo firmó); será el primer día que se firme con el cierre unificado: revisar que el
+   período quede CLOSED con `frozen_totals` y que el pie muestre el aviso.
 3. Operaciones valida la matriz de grupos en Configuración › Motivos de conductor (Conductor backup y
    Adelanto de ruta quedaron en "no trabajó"). Efrain 13/09: si lo quieren corregido, reabrir el día.
 4. Pendiente del plan: ola 4.4 (líneas TRIP del paso Viajes) y ola 5 (retirar tablas viejas y la
