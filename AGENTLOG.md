@@ -82,8 +82,21 @@ vigencia, unicidad/trigger/RLS, guardia de la regla vieja, marcado de transferen
 3. Operaciones valida la matriz de grupos en Configuración › Motivos de conductor (Conductor backup y
    Adelanto de ruta quedaron en "no trabajó"). Efrain 13/09: si lo quieren corregido, reabrir el día.
 4. Pendiente del plan: ola 4.4 (líneas TRIP del paso Viajes) y ola 5 (retirar tablas viejas y la
-   proyección tras días de paridad — la consulta de paridad está en la ronda). Operación/CD:
-   brainstorming aparte.
+   proyección tras días de paridad — la consulta de paridad está en la ronda).
+5. **Operación/CD: esperando la historia de usuario de Operaciones** (el usuario les compartió las
+   preguntas el 17/09). Ya decidido por el usuario:
+   - El día se cierra UNA vez para todos: Operaciones no se separa por cliente. La operación sirve
+     para ver, filtrar y sumar por separado (Walmart, IANSA, Colun…), no para firmas distintas.
+     `closure_periods` sigue siendo por día.
+   - La operación y el CD de cada camión los ingresa Operaciones directamente en la app (sin Excel).
+   - "LOA" = CD LO AGUIRRE; "QL" = CD QUILICURA. Orígenes desde el 01/08: Peñón 653, Lo Aguirre 457,
+     Quilicura 222, Noviciado 55, Puerto Santiago 55, La Farfana 74 (tres bodegas), otros menores.
+   Preguntas abiertas: ¿un camión trabaja para una sola operación?; ¿el CD es del camión, del
+   conductor o de ambos?; ¿los otros orígenes van en "Otros"?; ¿asistencia por CD cuenta conductores
+   o camiones?
+   Idea de diseño conversada (no aprobada): operación y CD habitual con vigencia en el Directorio,
+   catálogo de CD que normalice los nombres del TMS, y la línea del cierre guardando la operación y
+   el CD del día.
 
 ## Decisiones de arquitectura
 
