@@ -109,9 +109,10 @@ activo, **0 conductores con CD base** — que es la carga de negocio, no un pend
 ## Lo medido
 
 Frontend **1.375 en verde**, `tsc` limpio, `npm run build` OK, trinquete visual **1.685** sin
-moverse (el primer intento lo rompió con 1.687 y se corrigió con tokens). **Backend 1.033 en verde,
-cero fallas** (venía de 1.017): **16 tests nuevos de integración** en 3 archivos, todos contra
-Postgres real en transacción revertida.
+moverse. **Backend 1.037 en verde, cero fallas** (venía de 1.017): **16 tests nuevos de integración**
+en 3 archivos, todos contra Postgres real en transacción revertida. Frontend final: **1.379**.
+Los trinquetes atajaron tres veces (1.687 de color, y tamaño bajo 11px); las tres se corrigieron con
+tokens y ninguno subió.
 
 **Mutaciones verificadas, 15 en total**: el trigger del CD (probado sacándolo dentro de una
 transacción revertida), el borrado con cadena vacía, el campo en la lista `touched`, la sugerencia
@@ -120,6 +121,54 @@ el error de catálogo que no dibuja un desplegable vacío, el upsert que guarda 
 tracto, las operaciones habilitadas, los tiles que siguen al filtro, y las dos columnas que no se
 funden. **Ojo con una**: sacar la primera guarda del congelamiento NO pone nada en rojo — hay dos, y
 hay que sacar las dos para que el test lo note. Defensa en profundidad, no test flojo.
+
+## Un test mío que cambiaba de color solo, y cómo se cerró
+
+La suite completa falló 1 de 1.037 — y dos veces, en tests DISTINTOS del mismo archivo. No era flake
+ni presión de conexiones: `_conductor()` de `test_cd_base_conductor_integracion.py` sorteaba un RUT
+completo confiando en que `public.canonical_rut()` lo aceptara, pero esa función **valida el dígito
+verificador**. Un número al azar sirve 1 de cada 11 veces; con 40 reintentos cada llamada fallaba el
+~2%, y el archivo la llama 7 veces → **~14% de que la corrida se cayera**.
+
+Sólo apareció corriendo la suite ENTERA: el archivo solo pasaba, y los tres archivos nuevos juntos
+(16 tests) también.
+
+Arreglado sin reimplementar la regla en Python —lo que el propio docstring del test prohibía—: se le
+preguntan a la base los 11 dígitos posibles y se toma el que califica. Evidencia en dos formas: **5
+corridas seguidas en verde** (con el helper viejo, ~53% de que al menos una fallara) y la propiedad
+directa medida contra producción — sobre **500 cuerpos al azar, exactamente 1 dígito válido cada
+uno**, sin excepción.
+
+## Ola 4: construida, NO desplegada (a propósito)
+
+Retira las dos adivinanzas —`_LAST_KNOWN_ORIGIN_SQL` y su gemela por conductor en
+`status_report.py`, y el LATERAL `last_origin` de `equipment_closures.py`— y hace que las
+**Secciones 2, 4 y 7 agrupen por el CD base declarado**. La **Sección 3 (vueltas) se queda con el
+origen real**: es volumen, no asistencia. La Sección 2 tiene que ir por el declarado para que cuadre
+con la 7, donde "enrolados" incluye a quien no salió y ése no tiene origen.
+
+**Sección 7 nueva — "Cargaron en otro CD"** (ola 4.1). Es la mitad del valor del estándar: declarar
+el CD base no sirve para que todos calcen, sino para poder VER cuándo no calzan. Sale de datos que
+ya están en la fila, sin una consulta más.
+
+### Por qué NO se desplegó, con los números
+
+| 16/09 | |
+|---|---|
+| Conductores en el cierre | 41 |
+| **Antes** (adivinanza) | 40 con CD |
+| **Después** (declarado) | **0 con CD** |
+
+Desplegarla hoy deja el reporte entero en "Sin CD", porque **nadie tiene CD base cargado todavía**.
+Es la condición que el plan ya fijaba: va después de que Operaciones cargue el roster.
+
+Y de paso quedó medido el defecto que la ola retira: la adivinanza atribuía al 16/09 orígenes de
+viajes **desde el 23/07** y hasta el **17/09** — o sea le ponía a un día el CD de un viaje
+*posterior*. Eso es reescribir el pasado, literal.
+
+**Impacto proyectado** si los CD se cargan con la sugerencia (dominante ≥80%): en los últimos 15
+días, **4 desvíos de 354 viajes (1,1%)**, en 2 conductores. La Sección 7 va a ser corta y legible,
+no ruido.
 
 ## Checklist — siguiente paso exacto
 
@@ -131,10 +180,9 @@ hay que sacar las dos para que el test lo note. Defensa en profundidad, no test 
    `webcarga-monitor-api-dev-00166-t6p` y `webcarga-frontend-dev-00236-qms`.
    **La HU no está en git**: `monitor-app/docs/` está en `.gitignore` por diseño y ninguna HU del
    proyecto está trackeada. No se forzó con `git add -f`.
-2. **Ola 4, sin hacer**: retirar la adivinanza de `status_report.py:144-149`
-   (`_LAST_KNOWN_ORIGIN_BY_DRIVER_SQL`) y `equipment_closures.py:109-117`, y que las Secciones 2, 4 y
-   7 agrupen por el CD de la línea. Cambia números que Operaciones ya mira: va con el antes/después
-   medido, y **después** de que el CD esté cargado para el grueso del roster.
+2. **Ola 4: CONSTRUIDA y comiteada en local, SIN pushear.** Pushear = desplegar, y hoy dejaría el
+   reporte en "Sin CD" para los 41. Se despliega cuando Operaciones tenga cargado el grueso del
+   roster. El antes/después ya está medido (arriba).
 3. **La carga de los 41 CD la hace Operaciones**, con la sugerencia de un clic. No es criterio de
    completitud de desarrollo.
 4. **Dos preguntas abiertas para Operaciones**, anotadas en la HU: si los 5 orígenes de cola

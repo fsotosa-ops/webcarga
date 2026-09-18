@@ -33,14 +33,33 @@ async def _shipper(conn) -> str:
     )
 
 
+# El digito verificador lo decide la BASE, no Python: el CHECK
+# `drivers_tax_id_is_canonical` usa `public.canonical_rut()`, y reescribir esa
+# regla acá daria dos definiciones que se separan el dia que alguien toca una.
+#
+# La primera version de este helper sorteaba el RUT COMPLETO y confiaba en que
+# `canonical_rut` lo aceptara — pero esa funcion VALIDA el digito, asi que un
+# numero al azar servia 1 de cada 11 veces. Con 40 reintentos, cada llamada
+# fallaba el ~2%, y el archivo la llama 7 veces: ~14% de que la corrida se
+# cayera, en un test distinto cada vez. Paso dos veces en la suite completa y
+# ninguna corriendo el archivo solo. Un test que cambia de color solo no es un
+# test verde, asi que ahora es determinista: se prueban los 11 digitos posibles
+# y exactamente uno califica.
+_SQL_RUT_LIBRE = """
+SELECT r.rut
+FROM unnest(ARRAY['0','1','2','3','4','5','6','7','8','9','K']) AS d
+CROSS JOIN LATERAL (SELECT public.canonical_rut($1 || d) AS rut) r
+WHERE r.rut IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.drivers dr WHERE dr.tax_id = r.rut)
+LIMIT 1
+"""
+
+
 async def _conductor(conn) -> str:
-    """El RUT lo canoniza la propia base: el CHECK `drivers_tax_id_is_canonical`
-    usa `public.canonical_rut()`, y reescribir esa regla en Python daría dos
-    definiciones que se separan el día que alguien toca una."""
-    for _ in range(40):
-        n = int(uuid4().int % 90_000_000) + 1_000_000
-        rut = await conn.fetchval("SELECT public.canonical_rut($1)", str(n))
-        if rut and not await conn.fetchval("SELECT 1 FROM public.drivers WHERE tax_id = $1", rut):
+    for _ in range(20):
+        cuerpo = str(int(uuid4().int % 9_000_000) + 1_000_000)
+        rut = await conn.fetchval(_SQL_RUT_LIBRE, cuerpo)
+        if rut:
             return await conn.fetchval(
                 "INSERT INTO public.drivers (tax_id, full_name, operational_status) "
                 "VALUES ($1, $2, 'ACTIVE') RETURNING id",
