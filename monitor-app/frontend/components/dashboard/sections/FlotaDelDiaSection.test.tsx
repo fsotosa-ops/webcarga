@@ -60,7 +60,7 @@ function equipmentRow(overrides: Partial<EquipmentDayStatusRow> = {}): Equipment
     asset_id: 'a1', tractor_plate: 'XYZ111', carrier_id: 'c2', carrier_name: 'RPS Logística',
     fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null,
     status: 'UNASSIGNED', requires_motivo: false, unassigned_reason_id: null, unassigned_reason_label: null,
-    resolved_by: null, resolved_at: null, driver_id: null, driver_name: null, last_known_origin: null,
+    resolved_by: null, resolved_at: null, driver_id: null, driver_name: null,
     trip_id: null, trip_driver_id: null, trip_driver_name: null,
     today_trip_code: null, today_trip_origin: null, today_trip_client: null, comentario: null,
     home_cd_id: null, home_cd_name: null, carrier_shipper_names: [],

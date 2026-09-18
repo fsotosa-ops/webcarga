@@ -1409,9 +1409,6 @@ export type EquipmentDayStatusRow = {
   resolved_at:             string | null
   driver_id:               string | null
   driver_name:              string | null
-  /** Mejor esfuerzo — origen de su viaje más reciente, no un "CD habitual"
-   *  real (ese dato no existe en el modelo hoy). null si nunca tuvo viaje. */
-  last_known_origin:       string | null
   /** Viaje de HOY, si el equipo está ASSIGNED — paridad con Tractoreo
    *  (2026-08-04), necesario para "Ver viaje" en Flota del día. */
   trip_id:                 string | null
@@ -1421,9 +1418,9 @@ export type EquipmentDayStatusRow = {
    *  maneja normalmente este tracto vs. quién lo manejó hoy. */
   trip_driver_id:          string | null
   trip_driver_name:        string | null
-  /** Nº de viaje del TMS y local de origen de HOY. `last_known_origin` de
-   *  arriba es otra cosa —el origen del viaje más reciente, sea de hoy o no—:
-   *  dos preguntas, dos campos. */
+  /** Nº de viaje del TMS y local de origen de HOY: el hecho del TMS.
+   *  `home_cd_name` es la otra pregunta —de quién es la asistencia—, y por eso
+   *  van en campos distintos. */
   today_trip_code:         string | null
   today_trip_origin:       string | null
   /** Generador de carga: quién pone la carga (Walmart, Iansa, Colun), no la
@@ -1433,7 +1430,8 @@ export type EquipmentDayStatusRow = {
    *  conductor puede servir a varios en el mismo día. */
   today_trip_client:       string | null
   /** CD base del conductor habitual del tracto (HU-28), congelado en la línea.
-   *  `last_known_origin` de arriba era la adivinanza que esto reemplaza. */
+   *  Reemplazó a `last_known_origin`, que atribuía a un equipo sin carga el
+   *  origen de su viaje más reciente de cualquier fecha. */
   home_cd_id:              string | null
   home_cd_name:            string | null
   carrier_shipper_names:   string[]
@@ -1602,9 +1600,21 @@ export type StatusReport = {
   section6_resumen_general: {
     tractoreo:          EquipmentCategorySummary
     equipos_completos:  EquipmentCategorySummary
+    /** Enrolados vs asignados por CD BASE DECLARADO (HU-28, ola 4). "Enrolados"
+     *  incluye a quien no salió, y ése no tiene origen: por eso la clave es el
+     *  CD declarado y no el del viaje. */
     por_cd:      { cd: string; enrolled: number; assigned: number }[]
     por_cliente: { client_name: string; assigned: number }[]
   }
+  /** Los que cargaron en un CD distinto al suyo (HU-28, ola 4.1). Declarar el
+   *  CD base no sirve para que todos calcen, sino para poder ver cuándo no. */
+  section7_desvios_de_cd: {
+    tractor_plate: string | null
+    carrier_name:  string | null
+    home_cd:       string
+    origin_cd:     string
+    client_name:   string | null
+  }[]
 }
 
 // ── Bandeja de documentos sin clasificar (HU-01) ──────────────────────────

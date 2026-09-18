@@ -71,6 +71,13 @@ function exportReportCsv(report: StatusReport, fecha: string) {
     lines.push([c.cd, c.enrolled, c.assigned].map(csvEscape).join(';'))
   }
   lines.push('')
+  lines.push('')
+  lines.push('SECCIÓN 7 — Cargaron en otro CD')
+  lines.push(['Patente', 'Empresa', 'CD base', 'Cargó en', 'Generador de carga'].map(csvEscape).join(';'))
+  for (const d of report.section7_desvios_de_cd) {
+    lines.push([d.tractor_plate ?? '', d.carrier_name ?? '', d.home_cd, d.origin_cd, d.client_name ?? ''].map(csvEscape).join(';'))
+  }
+  lines.push('')
   lines.push('SECCIÓN 7 — Resumen general por cliente')
   lines.push(['Cliente', 'Asignados'].map(csvEscape).join(';'))
   for (const c of report.section6_resumen_general.por_cliente) {
@@ -416,7 +423,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Por CD de origen</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Por CD base</p>
                   <div className="bg-white rounded-xl border border-border overflow-hidden">
                     <table className="w-full text-xs">
                       <thead>
@@ -460,6 +467,38 @@ export function StatusReportSection({ fecha, shippers }: Props) {
                   </div>
                 </div>
               </div>
+
+              {data.section7_desvios_de_cd.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-etiqueta font-bold text-informativo uppercase mb-1.5">
+                    Cargaron en otro CD ({data.section7_desvios_de_cd.length})
+                  </p>
+                  <div className="bg-white rounded-xl border border-border overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-etiqueta font-bold text-informativo uppercase border-b border-border">
+                          <th className="text-left px-3 py-2">Patente</th>
+                          <th className="text-left px-3 py-2">Empresa</th>
+                          <th className="text-left px-3 py-2">CD base</th>
+                          <th className="text-left px-3 py-2">Cargó en</th>
+                          <th className="text-left px-3 py-2">Generador de carga</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {data.section7_desvios_de_cd.map((d, i) => (
+                          <tr key={`${d.tractor_plate ?? i}-${d.origin_cd}`}>
+                            <td className="px-3 py-2 font-identificador">{d.tractor_plate ?? '—'}</td>
+                            <td className="px-3 py-2">{d.carrier_name ?? '—'}</td>
+                            <td className="px-3 py-2 text-informativo">{d.home_cd}</td>
+                            <td className="px-3 py-2">{d.origin_cd}</td>
+                            <td className="px-3 py-2 text-informativo">{d.client_name ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

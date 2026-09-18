@@ -64,10 +64,10 @@ SELECT
     -- Conductor habitual del equipo (sigue mostrándose junto al tracto,
     -- HU-03 §BLOQUE 1 — ya no es la unidad que se cierra, ver docstring).
     sd.driver_id, sd.full_name AS driver_name,
-    -- "CD de origen" — no existe un CD habitual por equipo/empresa en el
-    -- modelo hoy (mismo gap documentado en Fase 2); mejor esfuerzo: el
-    -- origen de su viaje más reciente, sea de hoy o no.
-    last_origin.local AS last_known_origin,
+    -- HU-28 (ola 4): acá salía `last_known_origin`, el origen del viaje más
+    -- reciente del equipo *de cualquier fecha*, presentado como su CD. Ese gap
+    -- ("no existe un CD habitual en el modelo") dejó de existir: ahora está
+    -- `home_cd_name` más abajo, declarado y congelado en la línea.
     -- Viaje de HOY (Tarea de paridad Equipo Completo, 2026-08-04): mismo
     -- criterio que day_trips en daily_closures.py — necesario para que
     -- "Ver viaje" funcione en la fila de un equipo ASSIGNED, igual que ya
@@ -82,9 +82,8 @@ SELECT
     today_trip.trip_driver_id,
     today_trip.trip_driver_name,
     -- Mismo par que en el cierre por conductor: el numero de viaje del TMS y
-    -- el local de origen de HOY. `last_known_origin` de arriba es otra cosa
-    -- —el origen del viaje mas reciente, sea de hoy o no— y por eso no se
-    -- reusa: dos preguntas, dos columnas.
+    -- el local de origen de HOY: el hecho del TMS. `home_cd_name` es la otra
+    -- pregunta —de quien es la asistencia— y por eso van en columnas distintas.
     today_trip.source_system_trip_id AS today_trip_code,
     today_trip.origen AS today_trip_origin,
     -- Generador de carga (quien pone la carga: Walmart, Iansa, Colun). Sale
@@ -122,15 +121,6 @@ LEFT JOIN LATERAL (
     WHERE vda.asset_id = eds.asset_id AND vda.status = 'ACTIVE'
     LIMIT 1
 ) sd ON true
-LEFT JOIN LATERAL (
-    SELECT ts.local
-    FROM app.trips t
-    JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-    JOIN app.trip_stops ts ON ts.trip_id = t.id AND ts.stop_type = 'ORIGIN'
-    WHERE vfr.resolved_tractor_asset_id = eds.asset_id
-    ORDER BY t.status_reported_at DESC NULLS LAST
-    LIMIT 1
-) last_origin ON true
 LEFT JOIN LATERAL (
     SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name,
            t.source_system_trip_id, ts_o.local AS origen,

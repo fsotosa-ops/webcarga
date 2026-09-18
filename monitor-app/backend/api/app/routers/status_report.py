@@ -107,18 +107,11 @@ WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
   AND vfr.resolved_tractor_asset_id IS NOT NULL
 """
 
-# CD de origen "mejor esfuerzo" para equipos SIN CARGA hoy — mismo gap y
-# mismo criterio que EquipmentCloseDayDialog (Fase 4): el origen de su
-# viaje más reciente, sea de hoy o no.
-_LAST_KNOWN_ORIGIN_SQL = """
-SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
-    vfr.resolved_tractor_asset_id AS asset_id, ts.local AS origin_cd
-FROM app.trips t
-JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-JOIN app.trip_stops ts ON ts.trip_id = t.id AND ts.stop_type = 'ORIGIN'
-WHERE vfr.resolved_tractor_asset_id = ANY($1::uuid[])
-ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST
-"""
+# HU-28 (ola 4): acá vivía `_LAST_KNOWN_ORIGIN_SQL`, que le atribuía a un equipo
+# SIN CARGA el origen de su viaje más reciente *de cualquier fecha* — un dato
+# inventado presentado como hecho, y que además reescribía el pasado: cada viaje
+# nuevo le cambiaba el CD a días ya firmados. Lo reemplaza el CD base declarado,
+# que viaja congelado en la línea del cierre (app.closure_lines.home_location_id).
 
 
 # Tarea 6 (plan 2.3, minuta 2026-08-03): insumo para la Sección 4 por
@@ -133,23 +126,16 @@ JOIN public.carriers c ON c.id = r.home_carrier_id
 """
 
 _DRIVER_STATUS_SQL = f"""
-SELECT dds.driver_id, dds.status, dds.category, ur.label AS unassigned_reason_label
+SELECT dds.driver_id, dds.status, dds.category, ur.label AS unassigned_reason_label,
+       -- El CD base DECLARADO, congelado en la línea al calcularla (HU-28).
+       hcd.name AS home_cd
 FROM {LINEAS_CONDUCTORES} dds
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
+LEFT JOIN public.locations hcd ON hcd.id = dds.home_location_id
 WHERE dds.business_date = $1
 """
 
-# CD de origen "mejor esfuerzo" para conductores SIN CARGA — mismo criterio
-# que _LAST_KNOWN_ORIGIN_SQL (equipo), pero resuelto por conductor.
-_LAST_KNOWN_ORIGIN_BY_DRIVER_SQL = """
-SELECT DISTINCT ON (vfr.resolved_driver_id)
-    vfr.resolved_driver_id AS driver_id, ts.local AS origin_cd
-FROM app.trips t
-JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-JOIN app.trip_stops ts ON ts.trip_id = t.id AND ts.stop_type = 'ORIGIN'
-WHERE vfr.resolved_driver_id = ANY($1::uuid[])
-ORDER BY vfr.resolved_driver_id, t.status_reported_at DESC NULLS LAST
-"""
+# Su gemelo por conductor se retiró en la misma ola y por el mismo motivo.
 
 # Tracto habitual + tipo de operación de ESE tracto — mismo criterio
 # "mejor esfuerzo" que la Tarea 5 agregó a _DETAIL_SQL de daily_closures.py,
@@ -194,18 +180,16 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
 
     status_rows = await pool.fetch(
         f"""
-        SELECT eds.asset_id, eds.status, eds.requires_motivo, st.label AS unassigned_reason_label
+        SELECT eds.asset_id, eds.status, eds.requires_motivo, st.label AS unassigned_reason_label,
+               hcd.name AS home_cd
         FROM {LINEAS_TRACTOS} eds
         LEFT JOIN app.status_taxonomies st ON st.id = eds.unassigned_reason_id
+        LEFT JOIN public.locations hcd ON hcd.id = eds.home_location_id
         WHERE eds.business_date = $1
         """,
         business_date,
     )
     status_by_asset = {r["asset_id"]: r for r in status_rows}
-
-    idle_asset_ids = [aid for aid in (r["asset_id"] for r in roster_rows) if not trips_by_asset.get(aid)]
-    last_origin_rows = await pool.fetch(_LAST_KNOWN_ORIGIN_SQL, idle_asset_ids) if idle_asset_ids else []
-    last_origin_by_asset = {r["asset_id"]: r["origin_cd"] for r in last_origin_rows}
 
     rows = []
     for r in roster_rows:
@@ -247,7 +231,12 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             "carrier_name": r["carrier_name"],
             "categories": categories,
             "con_carga": con_carga,
-            "origin_cd": (latest["origin_cd"] if latest else None) or last_origin_by_asset.get(asset_id),
+            # El origen REAL del viaje de hoy, sin relleno: si no hubo viaje, no
+            # hay origen, y decirlo es más honesto que atribuirle uno viejo.
+            "origin_cd": latest["origin_cd"] if latest else None,
+            # El CD base declarado: la dimensión de la ASISTENCIA, que vale
+            # también —sobre todo— para el que no trabajó.
+            "home_cd": (status_row or {}).get("home_cd"),
             "client_name": latest["client_name"] if latest else None,
             "destination_zone": destination_zone,
             "dias_en_curso": dias_en_curso,
@@ -274,9 +263,6 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
 
     driver_ids = [r["driver_id"] for r in roster_rows]
 
-    origin_rows = await pool.fetch(_LAST_KNOWN_ORIGIN_BY_DRIVER_SQL, driver_ids) if driver_ids else []
-    origin_by_driver = {r["driver_id"]: r["origin_cd"] for r in origin_rows}
-
     tractor_rows = await pool.fetch(_LAST_KNOWN_TRACTOR_BY_DRIVER_SQL, driver_ids) if driver_ids else []
     tractor_by_driver = {r["driver_id"]: r for r in tractor_rows}
 
@@ -292,7 +278,9 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
             "status": status_row.get("status"),
             "category": status_row.get("category"),
             "unassigned_reason_label": status_row.get("unassigned_reason_label"),
-            "origin_cd": origin_by_driver.get(driver_id),
+            # Estas filas son conductores SIN carga por definicion, asi que no
+            # tienen origen real: su CD es el declarado, y punto.
+            "home_cd": status_row.get("home_cd"),
             "tractor_plate": tractor_row.get("tractor_plate"),
             "operation_type": tractor_row.get("operation_type"),
             "con_carga": False,
@@ -353,9 +341,14 @@ def _cross_tab_by_zone(rows: list[dict], key_fn) -> list[dict]:
 
 
 def _section2_tractoreo_asignado(rows: list[dict]) -> dict:
+    """Agrupa por el CD BASE declarado, no por el origen del viaje (HU-28, ola 4).
+
+    Tiene que ser el declarado para que cuadre con la Sección 7: ahí "enrolados"
+    incluye a quien no salió, que no tiene origen. Con dos claves distintas, el
+    "asignados" de una y el de la otra no darían el mismo número."""
     tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
-    por_cd = _cross_tab_by_zone(tractoreo, lambda r: r["origin_cd"] or "Sin CD")
-    por_empresa_y_cd = _cross_tab_by_zone(tractoreo, lambda r: (r["origin_cd"] or "Sin CD", r["carrier_name"]))
+    por_cd = _cross_tab_by_zone(tractoreo, lambda r: r["home_cd"] or "Sin CD")
+    por_empresa_y_cd = _cross_tab_by_zone(tractoreo, lambda r: (r["home_cd"] or "Sin CD", r["carrier_name"]))
     return {
         "por_cd": [{"cd": k, **v} for k, v in sorted(por_cd.items())],
         "por_empresa_y_cd": [
@@ -420,14 +413,17 @@ def _section4_tractoreo_no_trabajando(driver_rows: list[dict], motivos: list[str
     nuevo acá. `driver_detail` es la lista plana que permite ver el tipo de
     operación del tracto habitual de cada conductor (puede diferir del
     roster, que se arma a nivel empresa)."""
-    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["origin_cd"] or "Sin CD", motivos)
+    # Por el CD BASE: son conductores que NO trabajaron, así que no hay origen
+    # real que agrupar. Antes se les atribuía el de su viaje más reciente, de
+    # cualquier fecha.
+    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["home_cd"] or "Sin CD", motivos)
     por_empresa_y_cd = _cross_tab_by_motivo(
-        driver_rows, lambda r: (r["origin_cd"] or "Sin CD", r["carrier_name"]), motivos,
+        driver_rows, lambda r: (r["home_cd"] or "Sin CD", r["carrier_name"]), motivos,
     )
     driver_detail = [
         {
             "driver_id": str(r["driver_id"]), "full_name": r["full_name"], "carrier_name": r["carrier_name"],
-            "cd_origen": r["origin_cd"], "unassigned_reason_label": r["unassigned_reason_label"],
+            "cd_origen": r["home_cd"], "unassigned_reason_label": r["unassigned_reason_label"],
             "tractor_plate": r["tractor_plate"], "operation_type": r["operation_type"],
         }
         for r in driver_rows
@@ -472,14 +468,47 @@ def _section_tractoreo_por_empresa(rows: list[dict]) -> list[dict]:
     return _carrier_utilization_table(rows, "TRACTOREO")
 
 
+def _section_desvios_de_cd(rows: list[dict]) -> list[dict]:
+    """Los que cargaron en un CD distinto al suyo (HU-28, ola 4.1).
+
+    Es la mitad del valor del estandar: declarar el CD base no sirve para que
+    todos calcen, sino para poder VER cuando no calzan. Medido el 2026-09-17:
+    el 35% de los conductores de Walmart cargan en mas de un CD, con el
+    dominante en 90,5% — o sea el desvio es real y regular, y hasta ahora se
+    perdia porque el reporte agrupaba por el origen adivinado y nunca podia
+    contradecirse a si mismo.
+
+    Sale de datos que ya estan en la fila: no cuesta ni una consulta mas."""
+    return sorted(
+        (
+            {
+                "tractor_plate": r["tractor_plate"],
+                "carrier_name": r["carrier_name"],
+                "home_cd": r["home_cd"],
+                "origin_cd": r["origin_cd"],
+                "client_name": r["client_name"],
+            }
+            for r in rows
+            # Los tres tienen que existir: sin CD base no hay con que comparar,
+            # y sin carga no hay origen. Ninguno de los dos casos es un desvio.
+            if r["con_carga"] and r["home_cd"] and r["origin_cd"]
+            and r["home_cd"] != r["origin_cd"]
+        ),
+        key=lambda d: (d["home_cd"], d["origin_cd"], d["tractor_plate"] or ""),
+    )
+
+
 def _section6_resumen_general(rows: list[dict]) -> dict:
     tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
     equipos_completos = [r for r in rows if "EQUIPO_COMPLETO" in r["categories"]]
 
     def _by_cd(items: list[dict]) -> list[dict]:
+        """Enrolados vs asignados por CD: ES la asistencia por CD que pidió
+        Operaciones. Va por el CD declarado porque "enrolados" incluye a los que
+        no salieron, y esos no tienen origen."""
         acc: dict = {}
         for r in items:
-            key = r["origin_cd"] or "Sin CD"
+            key = r["home_cd"] or "Sin CD"
             b = acc.setdefault(key, {"cd": key, "enrolled": 0, "assigned": 0})
             b["enrolled"] += 1
             if r["con_carga"]:
@@ -529,4 +558,5 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
         "section_tractoreo_por_empresa": _section_tractoreo_por_empresa(rows),
         "section5_equipos_completos": _section5_equipos_completos(rows),
         "section6_resumen_general": _section6_resumen_general(rows),
+        "section7_desvios_de_cd": _section_desvios_de_cd(rows),
     }

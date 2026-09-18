@@ -50,6 +50,7 @@ const REPORT: StatusReport = {
     por_cd: [{ cd: 'CD Lo Aguirre', enrolled: 4, assigned: 4 }],
     por_cliente: [{ client_name: 'Walmart', assigned: 4 }],
   },
+  section7_desvios_de_cd: [],
 }
 
 function renderSection(props: Partial<Parameters<typeof StatusReportSection>[0]> = {}) {
@@ -174,5 +175,34 @@ describe('StatusReportSection', () => {
 
     expect(clickSpy).toHaveBeenCalled()
     vi.mocked(document.createElement).mockRestore()
+  })
+
+  it('en la Sección 7 muestra los que cargaron en un CD distinto al suyo', async () => {
+    vi.mocked(statusReportApi.get).mockResolvedValue({
+      ...REPORT,
+      section7_desvios_de_cd: [{
+        tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur',
+        home_cd: 'CD El Peñón', origin_cd: 'CD Quilicura', client_name: 'Walmart',
+      }],
+    })
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '7. General' }))
+
+    // Declarar el CD base no sirve para que todos calcen: sirve para ver cuándo
+    // no calzan. Antes se perdía, porque el reporte agrupaba por el origen
+    // adivinado y no podía contradecirse a sí mismo.
+    expect(await body.findByText(/Cargaron en otro CD \(1\)/)).toBeInTheDocument()
+    expect(body.getByText('CD Quilicura')).toBeInTheDocument()
+    expect(body.getByText('ABCD12')).toBeInTheDocument()
+  })
+
+  it('sin desvíos no dibuja la sección', async () => {
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '7. General' }))
+
+    expect(await body.findByText('Por CD base')).toBeInTheDocument()
+    expect(body.queryByText(/Cargaron en otro CD/)).not.toBeInTheDocument()
   })
 })
