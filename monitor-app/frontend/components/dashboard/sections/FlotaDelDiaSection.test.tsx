@@ -14,6 +14,20 @@ vi.mock('@/lib/api/equipmentClosures', () => ({
   equipmentClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn() },
 }))
 
+vi.mock('@/lib/api/locations', () => ({
+  locationsApi: { list: vi.fn() },
+}))
+
+// La forma real de locationsApi.list (LocationListResponse en lib/api/locations.ts),
+// copiada y no inferida del nombre.
+const CATALOGO_DE_CDS = ['CD EL PEÑON', 'CD LO AGUIRRE', 'CD QUILICURA']
+function respuestaDeCds(nombres = CATALOGO_DE_CDS) {
+  return {
+    data: nombres.map((name, i) => ({ id: `cd-${i}`, name })) as never,
+    count: nombres.length, page: 1, limit: 200,
+  }
+}
+
 const REASONS: UnassignedReasonMeta[] = [
   { id: 'pana', label: 'Pana', group: 'no_trabajando' },
   { id: 'esperando', label: 'Esperando carga', group: 'trabajando_sin_asignacion' },
@@ -34,6 +48,7 @@ function driverRow(overrides: Partial<DailyClosureStatus['drivers'][number]> = {
     status: 'UNASSIGNED' as const, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null,
     suggested_reason_id: null, trip_id: null, today_trip_id: null, today_trip_code: null, today_trip_origin: null, comentario: null, last_known_tractor_plate: null, last_known_operation_type: null,
+    home_cd_id: null, home_cd_name: null, carrier_shipper_names: [] as string[],
     valid_until: null,
     ...overrides,
   }
@@ -48,6 +63,7 @@ function equipmentRow(overrides: Partial<EquipmentDayStatusRow> = {}): Equipment
     resolved_by: null, resolved_at: null, driver_id: null, driver_name: null, last_known_origin: null,
     trip_id: null, trip_driver_id: null, trip_driver_name: null,
     today_trip_code: null, today_trip_origin: null, today_trip_client: null, comentario: null,
+    home_cd_id: null, home_cd_name: null, carrier_shipper_names: [],
     valid_until: null, category: 'SIN_RESOLVER',
     ...overrides,
   }
@@ -129,6 +145,8 @@ function renderSection(props: Partial<Parameters<typeof FlotaDelDiaSection>[0]> 
 beforeEach(async () => {
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  const { locationsApi } = await import('@/lib/api/locations')
+  vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
   vi.mocked(dailyClosuresApi.get).mockReset().mockResolvedValue(DRIVERS_STATUS)
   vi.mocked(dailyClosuresApi.setReason).mockReset()
   vi.mocked(dailyClosuresApi.setReasonBatch).mockReset().mockResolvedValue([])
@@ -212,6 +230,8 @@ describe('FlotaDelDiaSection', () => {
 
   it('en Equipo Completo, una fila "No asignado" tiene la misma funcionalidad editable que Conductores: motivo select', async () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  const { locationsApi } = await import('@/lib/api/locations')
+  vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
     renderSection()
     fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
     await screen.findByText('Sin conductor habitual')
@@ -288,6 +308,8 @@ describe('FlotaDelDiaSection', () => {
 
   it('selección masiva en Equipo Completo: usa equipmentClosuresApi, no dailyClosuresApi', async () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  const { locationsApi } = await import('@/lib/api/locations')
+  vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
     renderSection()
     fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
     await screen.findByText('Sin conductor habitual')
@@ -382,6 +404,8 @@ describe('FlotaDelDiaSection', () => {
 
   it('pagina Equipo Completo de a 20', async () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  const { locationsApi } = await import('@/lib/api/locations')
+  vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
     const many = Array.from({ length: 25 }, (_, i) =>
       equipmentRow({ asset_id: `e${i}`, tractor_plate: `PLT${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
     )
@@ -458,6 +482,8 @@ describe('FlotaDelDiaSection', () => {
 
   it('el motivo de un tracto Tractoreo se escribe por equipmentClosuresApi, no por el de conductores', async () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  const { locationsApi } = await import('@/lib/api/locations')
+  vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderSection()
     await screen.findByText('Ana Soto')
@@ -751,5 +777,112 @@ describe('FlotaDelDiaSection', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('reabrirlo')
   })
-})
 
+  // ── CD y operación (HU-28, ola 3) ────────────────────────────────────────
+
+  it('muestra el CD base y el local de origen en columnas distintas', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({
+        driver_id: 'dx', full_name: 'Ana Soto', status: 'ASSIGNED',
+        home_cd_name: 'CD EL PEÑON', today_trip_origin: 'CD QUILICURA',
+      })],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    // Son dos preguntas distintas: de quién es la asistencia, y de dónde salió
+    // la carga de hoy. Fundirlas sería un campo con dos significados.
+    expect(screen.getByRole('columnheader', { name: 'CD' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Local de origen' })).toBeInTheDocument()
+    const fila = screen.getByText('Ana Soto').closest('tr')!
+    expect(within(fila).getByText('CD EL PEÑON')).toBeInTheDocument()
+    expect(within(fila).getByText('CD QUILICURA')).toBeInTheDocument()
+  })
+
+  it('el filtro de CD ofrece un CD del catálogo aunque no tenga a nadie ese día', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({ driver_id: 'dx', full_name: 'Ana Soto', home_cd_name: 'CD EL PEÑON' })],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    fireEvent.click(within(screen.getByRole('columnheader', { name: 'CD' })).getByRole('button', { name: /filtr/i }))
+
+    // Nadie está hoy en Lo Aguirre, y aun así se puede pedir su asistencia.
+    await waitFor(() => expect(screen.getByLabelText('CD LO AGUIRRE')).toBeInTheDocument())
+    expect(screen.getByLabelText('CD EL PEÑON')).toBeInTheDocument()
+  })
+
+  it('una fila sin carga muestra las operaciones habilitadas de su empresa', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({
+        driver_id: 'dx', full_name: 'Ana Soto', status: 'UNASSIGNED',
+        client_names: [], carrier_shipper_names: ['IANSA', 'Sodimac'],
+      })],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    // Es lo que pidió la línea 9 del documento: un equipo parado sigue
+    // apareciendo bajo la operación a la que se lo puede ofrecer.
+    const fila = screen.getByText('Ana Soto').closest('tr')!
+    expect(within(fila).getByText('IANSA · Sodimac')).toBeInTheDocument()
+  })
+
+  it('al filtrar por un CD, los tiles muestran la asistencia de ESE CD', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [
+        driverRow({ driver_id: 'p1', full_name: 'Ana Soto', status: 'ASSIGNED', home_cd_name: 'CD EL PEÑON' }),
+        driverRow({ driver_id: 'p2', full_name: 'Luis Rojas', status: 'ASSIGNED', home_cd_name: 'CD EL PEÑON' }),
+        driverRow({ driver_id: 'q1', full_name: 'Carla Díaz', status: 'ASSIGNED', home_cd_name: 'CD QUILICURA' }),
+      ],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    const total = () => screen.getByRole('button', { name: /Total/ })
+    expect(within(total()).getByText('3')).toBeInTheDocument()
+
+    fireEvent.click(within(screen.getByRole('columnheader', { name: 'CD' })).getByRole('button', { name: /filtr/i }))
+    fireEvent.click(await screen.findByLabelText('CD EL PEÑON'))
+
+    // Sin esto, elegir un CD mostraba sus filas pero dejaba arriba el número
+    // del día completo, y la asistencia por CD había que contarla a mano.
+    await waitFor(() => expect(within(total()).getByText('2')).toBeInTheDocument())
+  })
+
+  it('sin CD base en nadie, lo dice y ofrece dónde arreglarlo', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({ driver_id: 'dx', full_name: 'Ana Soto', home_cd_name: null })],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    // Nunca una columna llena de "Sin CD" sin explicar qué hacer.
+    expect(screen.getByText(/nadie tiene CD base/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Asignar desde el Directorio' }))
+      .toHaveAttribute('href', '/dashboard/carriers')
+  })
+
+  it('con el CD base cargado en todos, el aviso desaparece', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({ driver_id: 'dx', full_name: 'Ana Soto', home_cd_name: 'CD EL PEÑON' })],
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    expect(screen.queryByText(/CD base/)).not.toBeInTheDocument()
+  })
+})

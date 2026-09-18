@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DriverDetailPanel } from './DriverDetailPanel'
 import { driversApi } from '@/lib/api/drivers'
 import { contactsApi } from '@/lib/api/contacts'
+import { locationsApi } from '@/lib/api/locations'
 import type { Driver, ComplianceRecord, Contact } from '@/lib/types'
 
 vi.mock('@/lib/api/drivers', () => ({
@@ -12,6 +13,18 @@ vi.mock('@/lib/api/drivers', () => ({
 vi.mock('@/lib/api/contacts', () => ({
   contactsApi: { patch: vi.fn(), delete: vi.fn() },
 }))
+vi.mock('@/lib/api/locations', () => ({
+  locationsApi: { list: vi.fn() },
+}))
+
+// La forma real de locationsApi.list, copiada de lib/api/locations.ts
+// (LocationListResponse) y no inferida del nombre: un mock con la forma
+// equivocada hace pasar el test por la razón incorrecta.
+const CD_PENON = { id: 'cd-penon', name: 'CD EL PEÑON' }
+const CD_QUILICURA = { id: 'cd-quilicura', name: 'CD QUILICURA' }
+function respuestaDeCds(cds = [CD_PENON, CD_QUILICURA]) {
+  return { data: cds as never, count: cds.length, page: 1, limit: 200 }
+}
 
 function renderWithClient(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -22,6 +35,8 @@ const DRIVER: Driver = {
   id: 'd1', tax_id: '11111111-1', country_code: 'CL', full_name: 'Juan Pérez',
   operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
   total_requirements: 1, last_document_update: null,
+  home_location_id: null, home_location_name: null,
+  home_location_shipper: null, suggested_home_location: null,
 }
 
 const RECORDS: ComplianceRecord[] = [{
@@ -57,6 +72,7 @@ const CONTACTS: Contact[] = [{
 
 describe('DriverDetailPanel', () => {
   beforeEach(() => {
+    vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
     vi.mocked(driversApi.listComplianceRecords).mockResolvedValue(RECORDS)
     vi.mocked(driversApi.listContacts).mockReset().mockResolvedValue([])
     vi.mocked(driversApi.createContact).mockReset()
@@ -101,7 +117,11 @@ describe('DriverDetailPanel', () => {
     renderPanel(DRIVER, { onPatch })
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Juan Pablo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-    await waitFor(() => expect(onPatch).toHaveBeenCalledWith('d1', { full_name: 'Juan Pablo' }))
+    // `home_location_id: ''` viaja a propósito: significa "sin CD base", y es
+    // distinto de omitir la clave, que significaría "no lo toques".
+    await waitFor(() => expect(onPatch).toHaveBeenCalledWith(
+      'd1', { full_name: 'Juan Pablo', home_location_id: '' },
+    ))
   })
 
   it('shows a "Transferir a otra empresa" button only for canEdit', () => {
@@ -204,5 +224,90 @@ describe('DriverDetailPanel', () => {
     renderPanel(DRIVER, { canEdit: false })
     expect(await screen.findByText('Sin contactos registrados')).toBeInTheDocument()
     expect(screen.queryByText('+ Agregar contacto')).not.toBeInTheDocument()
+  })
+
+  // ── CD base (HU-28) ───────────────────────────────────────────────────────
+
+  it('el desplegable de CD se alimenta del catálogo, no de los viajes del conductor', async () => {
+    renderPanel(DRIVER)
+    // Se pide sólo lo que es CD de origen y está activo.
+    await waitFor(() => expect(locationsApi.list).toHaveBeenCalledWith(
+      expect.objectContaining({ origin_cd: true, operational_status: 'ACTIVE' }),
+    ))
+    const select = await screen.findByLabelText('CD base') as HTMLSelectElement
+    expect([...select.options].map(o => o.textContent))
+      .toEqual(['Sin asignar', 'CD EL PEÑON', 'CD QUILICURA'])
+  })
+
+  it('propone el CD dominante sin escribirlo: hay que apretar y guardar', async () => {
+    const onPatch = vi.fn().mockResolvedValue(undefined)
+    renderPanel({
+      ...DRIVER,
+      suggested_home_location: { id: 'cd-penon', name: 'CD EL PEÑON', viajes: 34, total: 36, pct: 94.4 },
+    }, { onPatch })
+
+    // El botón dice el CD concreto, no "Aceptar sugerencia".
+    const boton = await screen.findByRole('button', { name: 'Asignar CD EL PEÑON' })
+    expect(onPatch).not.toHaveBeenCalled()   // proponer no es escribir
+
+    fireEvent.click(boton)
+    expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe('cd-penon')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(onPatch).toHaveBeenCalledWith(
+      'd1', expect.objectContaining({ home_location_id: 'cd-penon' }),
+    ))
+  })
+
+  it('con CD base puesto no ofrece ninguna sugerencia', async () => {
+    renderPanel({
+      ...DRIVER, home_location_id: 'cd-quilicura', home_location_name: 'CD QUILICURA',
+      home_location_shipper: 'Walmart',
+    })
+    // Se espera al catálogo: un <select> cuyo value no tiene <option> que
+    // calce todavía se renderiza vacío, y afirmar antes probaría otra cosa.
+    await waitFor(() =>
+      expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe('cd-quilicura'))
+    expect(screen.queryByRole('button', { name: /^Asignar / })).not.toBeInTheDocument()
+    expect(screen.getByText('Walmart')).toBeInTheDocument()
+  })
+
+  it('el borrador se resincroniza al abrir otro conductor', async () => {
+    const { rerender } = renderPanel({
+      ...DRIVER, home_location_id: 'cd-penon', home_location_name: 'CD EL PEÑON',
+    })
+    await waitFor(() =>
+      expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe('cd-penon'))
+
+    // Sin resincronizar desde el prop, el segundo conductor hereda el CD del
+    // primero — el bug de draft que este repo ya vio cuatro veces.
+    rerender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DriverDetailPanel
+          driver={{ ...DRIVER, id: 'd2', home_location_id: null }}
+          carrierId="c1" canEdit canAdmin={false}
+          onClose={vi.fn()} onPatch={vi.fn()} onRemove={vi.fn()} onTransferClick={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+    await waitFor(() =>
+      expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe(''))
+  })
+
+  it('sin permiso de edición se lee el CD pero no se puede cambiar', async () => {
+    renderPanel({
+      ...DRIVER, home_location_id: 'cd-penon', home_location_name: 'CD EL PEÑON',
+      suggested_home_location: { id: 'cd-penon', name: 'CD EL PEÑON', viajes: 34, total: 36, pct: 94.4 },
+    }, { canEdit: false })
+
+    expect(await screen.findByLabelText('CD base')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /^Asignar / })).not.toBeInTheDocument()
+  })
+
+  it('si el catálogo no carga, lo dice en vez de dibujar un desplegable vacío', async () => {
+    vi.mocked(locationsApi.list).mockRejectedValue(new Error('boom'))
+    renderPanel(DRIVER)
+    expect(await screen.findByText(/No se pudieron cargar los centros/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('CD base')).not.toBeInTheDocument()
   })
 })

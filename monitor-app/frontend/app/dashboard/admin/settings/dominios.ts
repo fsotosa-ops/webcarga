@@ -14,6 +14,7 @@ import {
   SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab, MotivosNoAsignacionTab,
 } from './flota-tabs'
 import { UsuariosTab } from './usuarios-tab'
+import { CentrosDeDistribucionTab } from './centros-de-distribucion'
 
 export interface Seccion {
   clave:     string
@@ -82,6 +83,8 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Por qué un conductor no está disponible', Panel: MotivosConductorTab },
       { clave: 'unassigned-reasons', titulo: 'Motivos de no asignación',
         proposito: 'Por qué WebCarga no tomó una carga que le ofrecieron', Panel: MotivosNoAsignacionTab },
+      { clave: 'distribution-centers', titulo: 'Centros de distribución',
+        proposito: 'Los lugares desde los que sale carga', Panel: CentrosDeDistribucionTab },
     ],
   },
   {

@@ -17,6 +17,9 @@ export type LocationListParams = {
   needs_manual_classification?: boolean
   /** Fase 5 (Tarifario 1.0): agrega la tarifa vigente de cada local. */
   include_rate?:          boolean
+  /** HU-28: sólo centros de distribución de ORIGEN. No es excluyente con ser
+   *  local de entrega — un lugar puede recibir y despachar. */
+  origin_cd?:             boolean
   /** Ronda 43 (Fase C, Tarea 7): paginación de servidor — verificado que el
    *  generador de carga con más volumen tiene 566 locales activos. */
   page?:                  number
@@ -47,6 +50,7 @@ export const locationsApi = {
     if (params?.incomplete)         qs.set('incomplete', 'true')
     if (params?.needs_manual_classification) qs.set('needs_manual_classification', 'true')
     if (params?.include_rate)       qs.set('include_rate', 'true')
+    if (params?.origin_cd)          qs.set('origin_cd', 'true')
     if (params?.page)               qs.set('page', String(params.page))
     if (params?.limit)              qs.set('limit', String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''

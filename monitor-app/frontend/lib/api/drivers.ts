@@ -7,11 +7,18 @@ export type DriverCreateBody = {
   country_code?:       string
   full_name:           string
   operational_status?: OperationalStatus
+  /** CD base (HU-28), opcional: se puede enrolar a alguien antes de saber de
+   *  qué CD va a salir. */
+  home_location_id?:   string
 }
 
 export type DriverPatchBody = {
   full_name?:          string
   operational_status?: OperationalStatus
+  /** Cadena vacía = quitarlo. Omitirlo = no tocarlo. No es lo mismo, y
+   *  confundirlos es como el cierre llegó a borrar comentarios al cambiar un
+   *  motivo. */
+  home_location_id?:   string
 }
 
 /** POST /drivers RETURNING es más angosto que GET /drivers/{id} — sin

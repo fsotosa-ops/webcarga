@@ -47,7 +47,7 @@ describe('LocationPicker', () => {
         id: 'loc-1', entity_type: 'SHIPPER', entity_id: 's1', site_number: '72',
         name: 'CD Puerto Santiago 1', country_code: 'CL', format: null, address: null,
         region_name: null, region_number: null, opens_at: null, closes_at: null,
-        operation_type: 'RM', operational_status: 'ACTIVE', is_manual_override: false,
+        operation_type: 'RM', operational_status: 'ACTIVE', is_manual_override: false, is_origin_cd: false,
         created_at: null, updated_at: null,
       }],
       count: 1, page: 1, limit: 8,
@@ -65,7 +65,7 @@ describe('LocationPicker', () => {
         id: 'loc-1', entity_type: 'SHIPPER', entity_id: 's1', site_number: null,
         name: 'CD PUERTO SANTIAGO 1', country_code: 'CL', format: null, address: null,
         region_name: null, region_number: null, opens_at: null, closes_at: null,
-        operation_type: null, operational_status: 'ACTIVE', is_manual_override: false,
+        operation_type: null, operational_status: 'ACTIVE', is_manual_override: false, is_origin_cd: false,
         created_at: null, updated_at: null,
       }],
       count: 1, page: 1, limit: 8,
@@ -89,7 +89,7 @@ describe('LocationPicker', () => {
       id: 'loc-1', entity_type: 'SHIPPER' as const, entity_id: 's1', site_number: null,
       name: 'Bod La Farfana 1', country_code: 'CL', format: null, address: null,
       region_name: 'RM. Metropolitana', region_number: 13, opens_at: null, closes_at: null,
-      operation_type: 'RM', operational_status: 'ACTIVE' as const, is_manual_override: false,
+      operation_type: 'RM', operational_status: 'ACTIVE' as const, is_manual_override: false, is_origin_cd: false,
       created_at: null, updated_at: null,
     }
     vi.mocked(locationsApi.list).mockResolvedValue({ data: [loc], count: 1, page: 1, limit: 8 })

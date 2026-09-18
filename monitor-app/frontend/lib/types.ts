@@ -566,6 +566,10 @@ export type Location = {
    *  (operation_type) fue elegida a mano — el trigger de auto-registro de
    *  locales nunca la pisa en ese caso. */
   is_manual_override:  boolean
+  /** HU-28: desde este lugar SALE carga (centro de distribución de origen).
+   *  No es excluyente con ser local de entrega: 14 de los 24 orígenes
+   *  observados el 2026-09-17 eran las dos cosas. */
+  is_origin_cd:        boolean
   created_at:          string | null
   updated_at:          string | null
   /** Solo presentes cuando se pide ?include_rate=true (Fase 5, Tarifario
@@ -612,6 +616,9 @@ export type LocationCreatePayload = {
   opens_at?:       string | null
   closes_at?:      string | null
   operation_type?: string | null
+  /** HU-28. Omitirlo deja el lugar como local de entrega: el catálogo de CD no
+   *  se llena solo. */
+  is_origin_cd?:   boolean
 }
 
 export type LocationPatchPayload = Partial<Omit<LocationCreatePayload, 'entity_type' | 'entity_id'>> & {
@@ -996,6 +1003,26 @@ export type Driver = {
   created_at:            string | null
   total_requirements:    number | null
   last_document_update:  string | null
+  /** CD base (HU-28). Dato maestro declarado por Operaciones, NO derivado de
+   *  los viajes: es la dimensión por la que se agrupa la ASISTENCIA. El origen
+   *  real de cada viaje es otra cosa y viaja aparte. null = pendiente del
+   *  directorio, y se dice así en pantalla. */
+  home_location_id:      string | null
+  home_location_name:    string | null
+  /** El generador de carga dueño del CD: "cada Cliente tiene sus CD de carga". */
+  home_location_shipper: string | null
+  /** Sólo cuando NO tiene CD base y su historial señala uno solo con claridad
+   *  (>= 80% de sus viajes en 90 días). PROPONE, nunca escribe: la confirma
+   *  una persona, mismo criterio que CONDUCTOR_SIN_EMPRESA en el pre-cierre. */
+  suggested_home_location: SugerenciaDeCd | null
+}
+
+export type SugerenciaDeCd = {
+  id:     string
+  name:   string
+  viajes: number
+  total:  number
+  pct:    number
 }
 
 export type Asset = {
@@ -1206,6 +1233,16 @@ export type DriverDayStatusRow = {
   /** Tipo de operación (Tractoreo/Equipo Completo) de ESE tracto puntual —
    *  no el del roster de la empresa, que puede operar ambos tipos. */
   last_known_operation_type:   string | null
+  /** CD base DECLARADO (HU-28), congelado en la línea al calcularla. Es la
+   *  dimensión de la ASISTENCIA y por eso vale también para quien no trabajó.
+   *  `today_trip_origin` es otra cosa —de dónde salió la carga de hoy— y las
+   *  dos se muestran en columnas distintas: un solo campo con los dos
+   *  significados es la clase de bug que este proyecto ya vio cinco veces. */
+  home_cd_id:                  string | null
+  home_cd_name:                string | null
+  /** Las operaciones habilitadas de su empresa (public.carrier_shippers). Lo
+   *  que hace que una fila SIN carga siga apareciendo bajo su operación. */
+  carrier_shipper_names:       string[]
 }
 
 export type DailyClosureInfo = {
@@ -1338,6 +1375,9 @@ export type DailyClosureReportRow = Omit<
   // solo _DETAIL_SQL (GET /daily-closures) los expone.
   | 'last_known_tractor_plate' | 'last_known_operation_type' | 'today_trip_id'
   | 'today_trip_code' | 'today_trip_origin' | 'comentario' | 'valid_until'
+  // home_cd_name SÍ viaja en _REPORT_SQL (el pivot puede cortar por CD); el id
+  // y las operaciones habilitadas, no.
+  | 'home_cd_id' | 'carrier_shipper_names'
 > & {
   business_date: string
 }
@@ -1392,6 +1432,11 @@ export type EquipmentDayStatusRow = {
    *  conductores tiene el suyo aparte (`client_names`), porque ahí un
    *  conductor puede servir a varios en el mismo día. */
   today_trip_client:       string | null
+  /** CD base del conductor habitual del tracto (HU-28), congelado en la línea.
+   *  `last_known_origin` de arriba era la adivinanza que esto reemplaza. */
+  home_cd_id:              string | null
+  home_cd_name:            string | null
+  carrier_shipper_names:   string[]
   comentario:              string | null
 }
 

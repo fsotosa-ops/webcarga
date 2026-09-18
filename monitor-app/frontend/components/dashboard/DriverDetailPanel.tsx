@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Check, Loader2, X, ArrowRightLeft, Trash2, ExternalLink } from 'lucide-react'
 import type { Driver } from '@/lib/types'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
+import { locationsApi } from '@/lib/api/locations'
 import { contactsApi } from '@/lib/api/contacts'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
@@ -37,7 +38,7 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
-  const [draft, setDraft] = useState({ full_name: '' })
+  const [draft, setDraft] = useState({ full_name: '', home_location_id: '' })
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -57,9 +58,21 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
     enabled: !!driver,
   })
 
+  // El desplegable de CD base sale del CATÁLOGO, no de lo que el conductor haya
+  // recorrido: se le puede asignar un CD al que todavía no fue nunca.
+  const cdsQuery = useQuery({
+    queryKey: ['centros-de-distribucion'],
+    queryFn: () => locationsApi.list({ origin_cd: true, operational_status: 'ACTIVE', limit: 200 }),
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  })
+
   useEffect(() => {
     if (!driver) return
-    setDraft({ full_name: driver.full_name })
+    // El borrador se resincroniza desde el prop en cada apertura. Un useState
+    // inicial se queda con el valor viejo, y ese bug ya apareció cuatro veces
+    // en este repo.
+    setDraft({ full_name: driver.full_name, home_location_id: driver.home_location_id ?? '' })
     setErr(null)
   }, [driver])
 
@@ -113,7 +126,12 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
     if (!driver) return
     setSaving(true); setErr(null)
     try {
-      await onPatch(driver.id, { full_name: draft.full_name })
+      // home_location_id viaja SIEMPRE: '' significa "quítaselo", y omitirlo
+      // significaría "no lo toques". Son cosas distintas.
+      await onPatch(driver.id, {
+        full_name: draft.full_name,
+        home_location_id: draft.home_location_id,
+      })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
@@ -186,9 +204,67 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
                 aria-label="Nombre"
                 value={draft.full_name}
                 disabled={!canEdit}
-                onChange={e => setDraft({ full_name: e.target.value })}
+                onChange={e => setDraft(d => ({ ...d, full_name: e.target.value }))}
                 className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-gray-50"
               />
+            </div>
+            <div className="space-y-1 mb-2">
+              <label
+                htmlFor="cd-base"
+                className="text-[10px] font-bold text-informativo uppercase tracking-wide"
+              >
+                CD base
+              </label>
+              {/* Si el catálogo no carga, NO se dibuja un desplegable vacío que
+                  parezca "no hay CD": se dice qué pasó. */}
+              {cdsQuery.isError ? (
+                <p className="text-[11px] text-status-incidente">
+                  No se pudieron cargar los centros de distribución.
+                </p>
+              ) : (
+                <select
+                  id="cd-base"
+                  aria-label="CD base"
+                  value={draft.home_location_id}
+                  disabled={!canEdit || cdsQuery.isLoading}
+                  onChange={e => setDraft(d => ({ ...d, home_location_id: e.target.value }))}
+                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:opacity-60"
+                >
+                  <option value="">Sin asignar</option>
+                  {(cdsQuery.data?.data ?? []).map(cd => (
+                    <option key={cd.id} value={cd.id}>{cd.name}</option>
+                  ))}
+                </select>
+              )}
+              {driver.home_location_shipper && draft.home_location_id === driver.home_location_id && (
+                <p className="text-[11px] text-informativo">{driver.home_location_shipper}</p>
+              )}
+              {/* PROPONE, nunca escribe. El botón dice el CD concreto: quien lo
+                  aprieta tiene que poder leer qué va a quedar guardado sin abrir
+                  el desplegable. */}
+              {canEdit && driver.suggested_home_location && !draft.home_location_id && (
+                <div className="pt-1">
+                  <p className="text-[11px] text-informativo">
+                    Salió {driver.suggested_home_location.viajes} de{' '}
+                    {driver.suggested_home_location.total} veces desde{' '}
+                    {driver.suggested_home_location.name} en los últimos 90 días.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setDraft(d => ({
+                      ...d, home_location_id: driver.suggested_home_location!.id,
+                    }))}
+                    className="mt-1 text-[11px] font-semibold text-accion hover:underline"
+                  >
+                    Asignar {driver.suggested_home_location.name}
+                  </button>
+                </div>
+              )}
+              {canEdit && !driver.suggested_home_location && !driver.home_location_id && (
+                <p className="text-[11px] text-informativo">
+                  Sus viajes no señalan un CD claro. Elige uno.
+                </p>
+              )}
             </div>
             {canEdit && (
               <button

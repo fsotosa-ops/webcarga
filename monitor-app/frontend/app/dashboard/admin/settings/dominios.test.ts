@@ -48,9 +48,9 @@ describe('registro de dominios', () => {
     expect(mapa).toEqual({
       certification: ['conditions', 'expiry-alerts'],
       operations: [
-        'alert-thresholds', 'driver-reasons', 'equipment-statuses',
-        'operational-statuses', 'temperature-ranges', 'tms-statuses',
-        'unassigned-reasons',
+        'alert-thresholds', 'distribution-centers', 'driver-reasons',
+        'equipment-statuses', 'operational-statuses', 'temperature-ranges',
+        'tms-statuses', 'unassigned-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
       people:   ['users'],

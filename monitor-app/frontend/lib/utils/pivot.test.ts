@@ -7,7 +7,7 @@ function row(overrides: Partial<DailyClosureReportRow> = {}): DailyClosureReport
     driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1',
     carrier_id: 'c1', carrier_name: 'Transportes Sur', status: 'ASSIGNED', category: 'ASIGNADO',
     unassigned_reason_id: null, unassigned_reason_label: null,
-    client_names: [], business_date: '2026-07-21',
+    client_names: [], business_date: '2026-07-21', home_cd_name: null,
     ...overrides,
   }
 }

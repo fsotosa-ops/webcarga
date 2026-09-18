@@ -6,6 +6,7 @@ import { Loader2, Plus, X } from 'lucide-react'
 import { driversApi } from '@/lib/api/drivers'
 import { assetsApi } from '@/lib/api/assets'
 import { carriersApi } from '@/lib/api/carriers'
+import { locationsApi } from '@/lib/api/locations'
 import { taxonomiesApi } from '@/lib/api/config'
 import { ApiError } from '@/lib/api/client'
 import type { AssetType, ManagementType } from '@/lib/types'
@@ -81,6 +82,7 @@ export function AltaDeFlota({
   const [patente, setPatente] = useState(tipo === 'equipo' ? prefill ?? '' : '')
   const [subtipoId, setSubtipoId] = useState('')
   const [gestionId, setGestionId] = useState('')
+  const [cdBaseId, setCdBaseId] = useState('')
 
   const esEquipo = tipo === 'equipo'
 
@@ -94,6 +96,14 @@ export function AltaDeFlota({
     queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
     queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
     enabled: abierto && esEquipo,
+    staleTime: 5 * 60_000,
+  })
+  // CD base (HU-28), sólo para conductores: el CD se le asigna a la persona,
+  // no a la patente, porque puede cambiar de tracto cuando queda en panne.
+  const cdsQuery = useQuery({
+    queryKey: ['centros-de-distribucion'],
+    queryFn: () => locationsApi.list({ origin_cd: true, operational_status: 'ACTIVE', limit: 200 }),
+    enabled: abierto && !esEquipo,
     staleTime: 5 * 60_000,
   })
 
@@ -127,9 +137,13 @@ export function AltaDeFlota({
         await carriersApi.assignAsset(carrierId, creado.id)
         setPatente(''); setSubtipoId('')
       } else {
-        const creado = await driversApi.create({ tax_id: taxId.trim(), full_name: nombre.trim() })
+        const creado = await driversApi.create({
+          tax_id: taxId.trim(), full_name: nombre.trim(),
+          // Opcional: se puede enrolar a alguien antes de saber de qué CD sale.
+          ...(cdBaseId ? { home_location_id: cdBaseId } : {}),
+        })
         await carriersApi.assignDriver(carrierId, creado.id)
-        setTaxId(''); setNombre('')
+        setTaxId(''); setNombre(''); setCdBaseId('')
       }
       await onCreado()
       setAbierto(false)
@@ -191,6 +205,14 @@ export function AltaDeFlota({
             <input aria-label="Nombre completo" placeholder="Nombre completo" value={nombre}
                    onChange={e => setNombre(e.target.value)}
                    className={`${INPUT} flex-1 min-w-40`} />
+            <select aria-label="CD base" value={cdBaseId}
+                    onChange={e => setCdBaseId(e.target.value)}
+                    className={`${INPUT} w-44`}>
+              <option value="">CD base (opcional)</option>
+              {(cdsQuery.data?.data ?? []).map(cd => (
+                <option key={cd.id} value={cd.id}>{cd.name}</option>
+              ))}
+            </select>
           </>
         )}
         <button type="button" onClick={guardar} disabled={guardando || !completo}

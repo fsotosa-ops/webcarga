@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, FilePlus2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { dailyClosuresApi, type CambiosDeLinea } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi } from '@/lib/api/equipmentClosures'
+import { locationsApi } from '@/lib/api/locations'
 import { AlertStatTiles } from '../AlertStatTiles'
 import { CabeceraDeColumna, compararValores, type Orden } from '../CabeceraDeColumna'
 import type { CategoriaDeLinea, DriverDayStatusValue, UnassignedReasonMeta } from '@/lib/types'
@@ -112,6 +114,15 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     queryKey: ['equipment-closures', fecha],
     queryFn: () => equipmentClosuresApi.get(fecha),
   })
+  // El catálogo de CD, para que el filtro pueda ofrecer uno que no tenga a
+  // nadie ese día. Si falla, el filtro se arma igual con lo que haya en la
+  // tabla: la pantalla del cierre no se cae por el desplegable.
+  const cdsQuery = useQuery({
+    queryKey: ['centros-de-distribucion'],
+    queryFn: () => locationsApi.list({ origin_cd: true, operational_status: 'ACTIVE', limit: 200 }),
+    staleTime: 5 * 60 * 1000,
+  })
+  const catalogoDeCds = (cdsQuery.data?.data ?? []).map(cd => cd.name)
 
   useEffect(() => {
     setCategory('total'); setQ(''); setPage(1); setSelected(new Set())
@@ -217,8 +228,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     unassignedReasonId?: string | null
     validUntil?: string | null
     tripCode?: string | null
-    origin?: string | null
+    origin?: string | null    // de dónde salió la carga HOY (el hecho del TMS)
+    cd?: string | null        // CD base DECLARADO: de quién es la asistencia
     cliente?: string | null   // generador de carga: quien pone la carga, no quien la mueve
+    clienteEsHabilitado?: boolean  // true = operaciones de la empresa, no el cliente de un viaje
     comentario?: string | null
     driverPendingDocsCritical?: boolean | null
     suggestedReasonId?: string | null
@@ -245,7 +258,14 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         validUntil: d.valid_until,
         tripCode: d.today_trip_code,
         origin: d.today_trip_origin,
-        cliente: d.client_names.length ? d.client_names.join(', ') : null,
+        cd: d.home_cd_name,
+        // Sin viaje no hay cliente real, pero sí se sabe a qué operaciones
+        // está habilitada su empresa. Se muestran distinto para no hacerlas
+        // pasar por un hecho del día.
+        cliente: d.client_names.length
+          ? d.client_names.join(', ')
+          : (d.carrier_shipper_names?.length ? d.carrier_shipper_names.join(' · ') : null),
+        clienteEsHabilitado: d.client_names.length === 0,
         comentario: d.comentario,
         driverPendingDocsCritical: d.driver_pending_docs_critical,
         suggestedReasonId: d.suggested_reason_id,
@@ -278,7 +298,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         validUntil: e.valid_until,
         tripCode: e.today_trip_code,
         origin: e.today_trip_origin,
-        cliente: e.today_trip_client,
+        cd: e.home_cd_name,
+        cliente: e.today_trip_client
+          ?? (e.carrier_shipper_names?.length ? e.carrier_shipper_names.join(' · ') : null),
+        clienteEsHabilitado: !e.today_trip_client,
         comentario: e.comentario,
       }))
 
@@ -301,15 +324,24 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     col === 'carrier'  ? r.carrierName :
     col === 'plate'    ? r.secondary :
     col === 'tripCode' ? r.tripCode ?? null :
+    col === 'cd'       ? r.cd ?? null :
     col === 'origin'   ? r.origin ?? null :
     col === 'cliente'  ? r.cliente ?? null :
     col === 'status'   ? r.statusLabel : null
   )
-  const COLUMNAS_FILTRABLES = ['primary', 'carrier', 'plate', 'tripCode', 'origin', 'cliente', 'status']
+  const COLUMNAS_FILTRABLES = ['primary', 'carrier', 'plate', 'tripCode', 'cd', 'origin', 'cliente', 'status']
   const valoresPorColumna: Record<string, string[]> = Object.fromEntries(
     COLUMNAS_FILTRABLES.map(col => [
       col,
-      Array.from(new Set(categoryFiltered.map(r => valorDeColumna(r, col)).filter((v): v is string => !!v)))
+      Array.from(new Set([
+        ...categoryFiltered.map(r => valorDeColumna(r, col)).filter((v): v is string => !!v),
+        // CD es la ÚNICA columna cuyo desplegable se alimenta del catálogo y no
+        // sólo de las filas presentes. Es a propósito y contra el criterio
+        // general de arriba: un CD sin nadie ese día es exactamente el CD cuya
+        // asistencia hay que poder pedir. Si desaparece del filtro, la pregunta
+        // no se puede hacer.
+        ...(col === 'cd' ? catalogoDeCds : []),
+      ]))
         .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true })),
     ]),
   )
@@ -340,11 +372,28 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const currentPage = Math.min(page, totalPages)
   const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
-  const totalCount = rows.length
-  const assignedCount = rows.filter(r => r.categoria === 'ASIGNADO').length
-  const unassignedCount = rows.filter(noAsignado).length
-  const noTrabajandoCount = rows.filter(noTrabajando).length
-  const mismatchCount = rows.filter(r => r.categoria === 'POR_REGULARIZAR').length
+  // Los tiles cuentan sobre las filas FILTRADAS por columna, no sobre el día
+  // entero: elegir un CD tiene que dar la asistencia de ese CD, que es el
+  // pedido de Operaciones. Se usa `alcance` y no `filtered` a propósito —
+  // filtered ya aplicó el recorte por categoría, y entonces cada tile se
+  // contaría a sí mismo.
+  const alcance = rows.filter(r =>
+    COLUMNAS_FILTRABLES.every(col => {
+      const elegidos = filtros[col]
+      if (!elegidos || elegidos.size === 0) return true
+      const v = valorDeColumna(r, col)
+      return v !== null && elegidos.has(v)
+    }),
+  )
+  const totalCount = alcance.length
+  const assignedCount = alcance.filter(r => r.categoria === 'ASIGNADO').length
+  const unassignedCount = alcance.filter(noAsignado).length
+  const noTrabajandoCount = alcance.filter(noTrabajando).length
+  const mismatchCount = alcance.filter(r => r.categoria === 'POR_REGULARIZAR').length
+  // Cuántos no tienen CD base. Es un pendiente del directorio, no un dato
+  // faltante: la pantalla lo nombra y dice dónde se arregla, en vez de dejar
+  // una columna llena de "Sin CD" sin explicación.
+  const sinCd = rows.filter(r => !r.cd).length
   const conductoresUtilizacionPct = drivers.total_drivers
     ? Math.round((drivers.assigned_count / drivers.total_drivers) * 1000) / 10
     : 0
@@ -396,6 +445,17 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         active={category}
         onSelect={id => setCategory(prev => (prev === id ? 'total' : id) as RowCategory)}
       />
+
+      {sinCd > 0 && (
+        <p className="text-[11px] text-informativo">
+          {sinCd === rows.length
+            ? 'Todavía nadie tiene CD base, así que la asistencia por CD no se puede medir.'
+            : `${sinCd} de ${rows.length} sin CD base: quedan fuera del corte por CD.`}{' '}
+          <Link href="/dashboard/carriers" className="font-semibold text-accion hover:underline">
+            Asignar desde el Directorio
+          </Link>
+        </p>
+      )}
 
       <div className="relative">
         <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -456,6 +516,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                 ['carrier',  'Empresa'],
                 ['plate',    esConductores ? 'Tracto habitual' : 'Patente'],
                 ['tripCode', 'Nº viaje'],
+                ['cd',       'CD'],
                 ['origin',   'Local de origen'],
                 ['cliente',  'Generador de carga'],
                 ['status',   'Estado'],
@@ -518,8 +579,19 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                   </div>
                 </td>
                 <td className="px-3 py-2 font-identificador text-informativo">{r.tripCode ?? '—'}</td>
+                {/* CD base DECLARADO. "Sin CD" no es un dato faltante: es un
+                    pendiente del directorio, y por eso se nombra en vez de
+                    poner una raya como en las columnas que sí pueden ir vacías. */}
+                <td className="px-3 py-2 text-informativo">{r.cd ?? 'Sin CD'}</td>
                 <td className="px-3 py-2 text-informativo">{r.origin ?? '—'}</td>
-                <td className="px-3 py-2 text-informativo">{r.cliente ?? '—'}</td>
+                <td className="px-3 py-2 text-informativo">
+                  {/* Sin viaje, lo que se muestra son las operaciones a las que
+                      su empresa está habilitada — no un hecho del día. Va en
+                      cursiva para que no se lea como el cliente de un viaje. */}
+                  {r.cliente
+                    ? <span className={r.clienteEsHabilitado ? 'italic' : ''}>{r.cliente}</span>
+                    : '—'}
+                </td>
                 <td className="px-3 py-2">
                   <span className={`text-etiqueta font-semibold px-2 py-0.5 rounded-full border ${r.statusCls}`}>
                     {r.statusLabel}

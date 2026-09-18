@@ -149,6 +149,8 @@ describe('EmpresaDetailPage', () => {
       id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
+  home_location_id: null, home_location_name: null,
+  home_location_shipper: null, suggested_home_location: null,
     })
     renderPage()
     await clickTab(/Conductores/)
@@ -176,6 +178,8 @@ describe('EmpresaDetailPage', () => {
     const manyDrivers: CarrierDriverRosterItem[] = Array.from({ length: 12 }, (_, i) => ({
       id: `d${i}`, tax_id: `${i}-1`, full_name: `Conductor ${i}`,
       operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
+  home_location_id: null, home_location_name: null,
+  home_location_shipper: null, suggested_home_location: null,
       pending_mandatory: 0, compliance_health: 'OK',
     }))
     vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
@@ -337,6 +341,8 @@ describe('EmpresaDetailPage', () => {
       id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
+  home_location_id: null, home_location_name: null,
+  home_location_shipper: null, suggested_home_location: null,
     })
     renderPage()
     await clickTab(/Conductores/)

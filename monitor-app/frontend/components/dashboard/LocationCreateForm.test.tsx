@@ -14,7 +14,7 @@ const CREATED: Location = {
   id: 'loc-1', entity_type: 'SHIPPER', entity_id: 'shipper-1', site_number: null,
   name: 'Local Nuevo', country_code: 'CL', format: null, address: null,
   region_name: null, region_number: null, opens_at: null, closes_at: null,
-  operation_type: null, operational_status: 'ACTIVE', is_manual_override: false,
+  operation_type: null, operational_status: 'ACTIVE', is_manual_override: false, is_origin_cd: false,
   created_at: null, updated_at: null,
 }
 
