@@ -27,7 +27,7 @@ class LocationCreateBody(BaseModel):
     operation_type: Optional[OperationType] = None
     # HU-28: desde este lugar SALE carga. No es excluyente con ser local de
     # entrega — 14 de los 24 orígenes observados son las dos cosas.
-    is_origin_cd: Optional[bool] = None
+    is_origin: Optional[bool] = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -52,7 +52,7 @@ class LocationPatchBody(BaseModel):
     closes_at: Optional[time] = None
     operation_type: Optional[OperationType] = None
     operational_status: Optional[LocationOperationalStatus] = None
-    is_origin_cd: Optional[bool] = None
+    is_origin: Optional[bool] = None
 
     @field_validator("name", mode="before")
     @classmethod

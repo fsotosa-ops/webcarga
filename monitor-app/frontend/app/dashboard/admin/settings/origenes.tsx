@@ -6,21 +6,21 @@ import { locationsApi, shippersApi } from '@/lib/api/locations'
 import type { Location } from '@/lib/types'
 import { INPUT, LoadState, useConfigList, useRowFeedback } from './shared'
 
-/** Los CD de origen (HU-28).
+/** Los lugares de ORIGEN (HU-28).
  *
- *  NO es una taxonomía: un CD es una ubicación real que cuelga de un generador
+ *  NO es una taxonomía: un origen es una ubicación real que cuelga de un generador
  *  de carga —"cada Cliente tiene sus CD de carga"—, así que vive en
  *  public.locations con el resto del maestro de lugares y no en
  *  app.status_taxonomies. Por eso este panel no usa TaxonomyTab.
  *
- *  Ser CD de origen NO es excluyente con ser local de entrega: medido el
+ *  Ser lugar de origen NO es excluyente con ser local de entrega: medido el
  *  2026-09-17, 14 de los 24 orígenes observados eran las dos cosas. Por eso lo
  *  que se marca es un rol, no un tipo. */
-export function CentrosDeDistribucionTab() {
+export function OrigenesTab() {
   // `useConfigList` mete el fetcher en un useCallback: un arrow inline cambia
   // en cada render y lo haría recargar en bucle.
   const traerCds = useCallback(
-    () => locationsApi.list({ origin_cd: true, limit: 200 }).then(r => r.data), [],
+    () => locationsApi.list({ origin: true, limit: 200 }).then(r => r.data), [],
   )
   const traerGeneradores = useCallback(() => shippersApi.list(), [])
   const { items: cds, loading, error, reload } = useConfigList<Location>(traerCds)
@@ -44,7 +44,7 @@ export function CentrosDeDistribucionTab() {
         entity_type: 'SHIPPER', entity_id: generadorId, q: busqueda.trim(),
         operational_status: 'ACTIVE', limit: 50,
       })
-      setCandidatos(r.data.filter(l => !l.is_origin_cd))
+      setCandidatos(r.data.filter(l => !l.is_origin))
     } finally {
       setBuscando(false)
     }
@@ -52,7 +52,7 @@ export function CentrosDeDistribucionTab() {
 
   async function marcar(l: Location, esCd: boolean) {
     await run(l.id, async () => {
-      await locationsApi.patch(l.id, { is_origin_cd: esCd })
+      await locationsApi.patch(l.id, { is_origin: esCd })
       setCandidatos(c => (c ?? []).filter(x => x.id !== l.id))
       reload()
     })
@@ -65,7 +65,7 @@ export function CentrosDeDistribucionTab() {
       <p className="text-xs text-informativo">
         Los lugares desde los que sale carga. Son la dimensión con la que se mide
         la asistencia del cierre y con la que se filtra Flota del día. Un lugar
-        puede ser CD de origen y local de entrega a la vez.
+        puede ser lugar de origen y local de entrega a la vez.
       </p>
 
       {cds.length === 0 ? (

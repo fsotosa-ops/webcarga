@@ -283,7 +283,7 @@ export type TripsMeta = {
   unassigned_reasons:  UnassignedReasonMeta[]
   operation_types:     OperationTypeMeta[]
   clients:             ClientMeta[]
-  /** Los CD de origen que EXISTEN en la base, ordenados por volumen. Dinámico
+  /** Los lugares de origen que EXISTEN en la base, ordenados por volumen. Dinámico
    *  como `clients` y no un catálogo: si un CD deja de operar, deja de estar.
    *  Medido el 2026-09-07: 23 orígenes distintos contra 279 destinos — por eso
    *  el origen se puede listar y el destino no. */
@@ -569,7 +569,7 @@ export type Location = {
   /** HU-28: desde este lugar SALE carga (centro de distribución de origen).
    *  No es excluyente con ser local de entrega: 14 de los 24 orígenes
    *  observados el 2026-09-17 eran las dos cosas. */
-  is_origin_cd:        boolean
+  is_origin:        boolean
   created_at:          string | null
   updated_at:          string | null
   /** Solo presentes cuando se pide ?include_rate=true (Fase 5, Tarifario
@@ -618,7 +618,7 @@ export type LocationCreatePayload = {
   operation_type?: string | null
   /** HU-28. Omitirlo deja el lugar como local de entrega: el catálogo de CD no
    *  se llena solo. */
-  is_origin_cd?:   boolean
+  is_origin?:   boolean
 }
 
 export type LocationPatchPayload = Partial<Omit<LocationCreatePayload, 'entity_type' | 'entity_id'>> & {
@@ -1003,7 +1003,7 @@ export type Driver = {
   created_at:            string | null
   total_requirements:    number | null
   last_document_update:  string | null
-  /** CD base (HU-28). Dato maestro declarado por Operaciones, NO derivado de
+  /** Origen habitual (HU-28). Dato maestro declarado por Operaciones, NO derivado de
    *  los viajes: es la dimensión por la que se agrupa la ASISTENCIA. El origen
    *  real de cada viaje es otra cosa y viaja aparte. null = pendiente del
    *  directorio, y se dice así en pantalla. */
@@ -1011,7 +1011,7 @@ export type Driver = {
   home_location_name:    string | null
   /** El generador de carga dueño del CD: "cada Cliente tiene sus CD de carga". */
   home_location_shipper: string | null
-  /** Sólo cuando NO tiene CD base y su historial señala uno solo con claridad
+  /** Sólo cuando NO tiene Origen habitual y su historial señala uno solo con claridad
    *  (>= 80% de sus viajes en 90 días). PROPONE, nunca escribe: la confirma
    *  una persona, mismo criterio que CONDUCTOR_SIN_EMPRESA en el pre-cierre. */
   suggested_home_location: SugerenciaDeCd | null
@@ -1233,7 +1233,7 @@ export type DriverDayStatusRow = {
   /** Tipo de operación (Tractoreo/Equipo Completo) de ESE tracto puntual —
    *  no el del roster de la empresa, que puede operar ambos tipos. */
   last_known_operation_type:   string | null
-  /** CD base DECLARADO (HU-28), congelado en la línea al calcularla. Es la
+  /** Origen habitual DECLARADO (HU-28), congelado en la línea al calcularla. Es la
    *  dimensión de la ASISTENCIA y por eso vale también para quien no trabajó.
    *  `today_trip_origin` es otra cosa —de dónde salió la carga de hoy— y las
    *  dos se muestran en columnas distintas: un solo campo con los dos
@@ -1429,7 +1429,7 @@ export type EquipmentDayStatusRow = {
    *  conductores tiene el suyo aparte (`client_names`), porque ahí un
    *  conductor puede servir a varios en el mismo día. */
   today_trip_client:       string | null
-  /** CD base del conductor habitual del tracto (HU-28), congelado en la línea.
+  /** Origen habitual del conductor habitual del tracto (HU-28), congelado en la línea.
    *  Reemplazó a `last_known_origin`, que atribuía a un equipo sin carga el
    *  origen de su viaje más reciente de cualquier fecha. */
   home_cd_id:              string | null
@@ -1607,7 +1607,7 @@ export type StatusReport = {
     por_cliente: { client_name: string; assigned: number }[]
   }
   /** Los que cargaron en un CD distinto al suyo (HU-28, ola 4.1). Declarar el
-   *  CD base no sirve para que todos calcen, sino para poder ver cuándo no. */
+   *  Origen habitual no sirve para que todos calcen, sino para poder ver cuándo no. */
   section7_desvios_de_cd: {
     tractor_plate: string | null
     carrier_name:  string | null

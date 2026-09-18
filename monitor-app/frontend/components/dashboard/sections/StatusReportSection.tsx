@@ -30,22 +30,22 @@ function csvEscape(v: string | number | null | undefined): string {
 function exportReportCsv(report: StatusReport, fecha: string) {
   const lines: string[] = [`Reporte de Estatus del Día;${fecha}`, '']
 
-  lines.push('SECCIÓN 2 — Tractoreo asignado por empresa y CD')
-  lines.push(['CD', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total'].map(csvEscape).join(';'))
+  lines.push('SECCIÓN 2 — Tractoreo asignado por empresa y origen habitual')
+  lines.push(['Origen habitual', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total'].map(csvEscape).join(';'))
   for (const r of report.section2_tractoreo_asignado.por_empresa_y_cd) {
     lines.push([r.cd, r.carrier_name, r.RM, r.Z0, r['Región'], r['Sin clasificar'], r.total].map(csvEscape).join(';'))
   }
   lines.push('')
 
   lines.push('SECCIÓN 3 — Segundas y terceras vueltas')
-  lines.push(['Empresa', 'CD de origen', 'Tipo de destino', 'Vueltas'].map(csvEscape).join(';'))
+  lines.push(['Empresa', 'Origen del viaje', 'Tipo de destino', 'Vueltas'].map(csvEscape).join(';'))
   for (const v of report.section3_vueltas) {
     lines.push([v.carrier_name, v.cd_origen, v.tipo_destino, v.vueltas].map(csvEscape).join(';'))
   }
   lines.push('')
 
   lines.push('SECCIÓN 4 — Tractoreo no trabajando, detalle por conductor')
-  lines.push(['Conductor', 'Empresa', 'CD', 'Motivo', 'Tracto habitual', 'Tipo de operación'].map(csvEscape).join(';'))
+  lines.push(['Conductor', 'Empresa', 'Origen habitual', 'Motivo', 'Tracto habitual', 'Tipo de operación'].map(csvEscape).join(';'))
   for (const d of report.section4_tractoreo_no_trabajando.driver_detail) {
     lines.push([d.full_name, d.carrier_name, d.cd_origen, d.unassigned_reason_label, d.tractor_plate, d.operation_type].map(csvEscape).join(';'))
   }
@@ -65,15 +65,15 @@ function exportReportCsv(report: StatusReport, fecha: string) {
   }
   lines.push('')
 
-  lines.push('SECCIÓN 7 — Resumen general por CD')
-  lines.push(['CD', 'Enrolados', 'Asignados'].map(csvEscape).join(';'))
+  lines.push('SECCIÓN 7 — Resumen general por origen habitual')
+  lines.push(['Origen habitual', 'Enrolados', 'Asignados'].map(csvEscape).join(';'))
   for (const c of report.section6_resumen_general.por_cd) {
     lines.push([c.cd, c.enrolled, c.assigned].map(csvEscape).join(';'))
   }
   lines.push('')
   lines.push('')
-  lines.push('SECCIÓN 7 — Cargaron en otro CD')
-  lines.push(['Patente', 'Empresa', 'CD base', 'Cargó en', 'Generador de carga'].map(csvEscape).join(';'))
+  lines.push('SECCIÓN 7 — Cargaron en otro origen')
+  lines.push(['Patente', 'Empresa', 'Origen habitual', 'Cargó en', 'Generador de carga'].map(csvEscape).join(';'))
   for (const d of report.section7_desvios_de_cd) {
     lines.push([d.tractor_plate ?? '', d.carrier_name ?? '', d.home_cd, d.origin_cd, d.client_name ?? ''].map(csvEscape).join(';'))
   }
@@ -314,8 +314,8 @@ export function StatusReportSection({ fecha, shippers }: Props) {
 
           {tab === 'asignado' && (
             <div className="space-y-4">
-              <ZoneTable title="Por CD de origen" rows={data.section2_tractoreo_asignado.por_cd} />
-              <ZoneTable title="Por empresa dentro de cada CD" rows={data.section2_tractoreo_asignado.por_empresa_y_cd} showCarrier />
+              <ZoneTable title="Por origen habitual" rows={data.section2_tractoreo_asignado.por_cd} />
+              <ZoneTable title="Por empresa dentro de cada origen" rows={data.section2_tractoreo_asignado.por_empresa_y_cd} showCarrier />
             </div>
           )}
 
@@ -325,7 +325,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
                 <thead>
                   <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
                     <th className="text-left px-3 py-2">Empresa</th>
-                    <th className="text-left px-3 py-2">CD de origen</th>
+                    <th className="text-left px-3 py-2">Origen del viaje</th>
                     <th className="text-left px-3 py-2">Tipo de destino</th>
                     <th className="text-right px-3 py-2">Vueltas</th>
                   </tr>
@@ -349,9 +349,9 @@ export function StatusReportSection({ fecha, shippers }: Props) {
 
           {tab === 'sin_trabajar' && (
             <div className="space-y-4">
-              <MotivoTable title="Por CD" rows={data.section4_tractoreo_no_trabajando.por_cd}
+              <MotivoTable title="Por origen habitual" rows={data.section4_tractoreo_no_trabajando.por_cd}
                 motivos={columnasDeMotivo(data.section4_tractoreo_no_trabajando)} />
-              <MotivoTable title="Por empresa dentro de cada CD" rows={data.section4_tractoreo_no_trabajando.por_empresa_y_cd}
+              <MotivoTable title="Por empresa dentro de cada origen" rows={data.section4_tractoreo_no_trabajando.por_empresa_y_cd}
                 motivos={columnasDeMotivo(data.section4_tractoreo_no_trabajando)} showCarrier />
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Detalle por conductor</p>
@@ -361,7 +361,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
                       <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
                         <th className="text-left px-3 py-2">Conductor</th>
                         <th className="text-left px-3 py-2">Empresa</th>
-                        <th className="text-left px-3 py-2">CD</th>
+                        <th className="text-left px-3 py-2">Origen habitual</th>
                         <th className="text-left px-3 py-2">Motivo</th>
                         <th className="text-left px-3 py-2">Tracto habitual</th>
                       </tr>
@@ -374,7 +374,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
                         <tr key={d.driver_id}>
                           <td className="px-3 py-2 font-medium">{d.full_name}</td>
                           <td className="px-3 py-2 text-gray-500">{d.carrier_name ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-500">{d.cd_origen ?? 'Sin CD'}</td>
+                          <td className="px-3 py-2 text-gray-500">{d.cd_origen ?? 'Sin origen'}</td>
                           <td className="px-3 py-2 text-gray-500">{d.unassigned_reason_label ?? '—'}</td>
                           <td className="px-3 py-2">
                             <div className="flex items-center gap-1.5">
@@ -423,12 +423,12 @@ export function StatusReportSection({ fecha, shippers }: Props) {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Por CD base</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Por Origen habitual</p>
                   <div className="bg-white rounded-xl border border-border overflow-hidden">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-                          <th className="text-left px-3 py-2">CD</th>
+                          <th className="text-left px-3 py-2">Origen habitual</th>
                           <th className="text-right px-3 py-2">Enrolados</th>
                           <th className="text-right px-3 py-2">Asignados</th>
                         </tr>
@@ -471,7 +471,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
               {data.section7_desvios_de_cd.length > 0 && (
                 <div className="mt-4">
                   <p className="text-etiqueta font-bold text-informativo uppercase mb-1.5">
-                    Cargaron en otro CD ({data.section7_desvios_de_cd.length})
+                    Cargaron en otro origen ({data.section7_desvios_de_cd.length})
                   </p>
                   <div className="bg-white rounded-xl border border-border overflow-hidden">
                     <table className="w-full text-xs">
@@ -479,7 +479,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
                         <tr className="text-etiqueta font-bold text-informativo uppercase border-b border-border">
                           <th className="text-left px-3 py-2">Patente</th>
                           <th className="text-left px-3 py-2">Empresa</th>
-                          <th className="text-left px-3 py-2">CD base</th>
+                          <th className="text-left px-3 py-2">Origen habitual</th>
                           <th className="text-left px-3 py-2">Cargó en</th>
                           <th className="text-left px-3 py-2">Generador de carga</th>
                         </tr>
@@ -553,7 +553,7 @@ function ZoneTable({ title, rows, showCarrier }: { title: string; rows: ZoneCros
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-              <th className="text-left px-3 py-2">CD</th>
+              <th className="text-left px-3 py-2">Origen habitual</th>
               {showCarrier && <th className="text-left px-3 py-2">Empresa</th>}
               {ZONE_COLS.map(c => <th key={c} className="text-right px-3 py-2">{c}</th>)}
             </tr>
@@ -602,7 +602,7 @@ function MotivoTable({ title, rows, motivos, showCarrier }: {
         <table className="w-full text-xs" style={{ minWidth: 900 }}>
           <thead>
             <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-              <th className="text-left px-3 py-2 whitespace-nowrap">CD</th>
+              <th className="text-left px-3 py-2 whitespace-nowrap">Origen habitual</th>
               {showCarrier && <th className="text-left px-3 py-2 whitespace-nowrap">Empresa</th>}
               {columnas.map(c => <th key={c} className="text-right px-2 py-2 whitespace-nowrap">{c}</th>)}
             </tr>

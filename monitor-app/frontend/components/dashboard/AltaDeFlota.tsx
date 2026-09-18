@@ -98,11 +98,11 @@ export function AltaDeFlota({
     enabled: abierto && esEquipo,
     staleTime: 5 * 60_000,
   })
-  // CD base (HU-28), sólo para conductores: el CD se le asigna a la persona,
+  // Origen habitual (HU-28), sólo para conductores: el CD se le asigna a la persona,
   // no a la patente, porque puede cambiar de tracto cuando queda en panne.
   const cdsQuery = useQuery({
-    queryKey: ['centros-de-distribucion'],
-    queryFn: () => locationsApi.list({ origin_cd: true, operational_status: 'ACTIVE', limit: 200 }),
+    queryKey: ['origenes'],
+    queryFn: () => locationsApi.list({ origin: true, operational_status: 'ACTIVE', limit: 200 }),
     enabled: abierto && !esEquipo,
     staleTime: 5 * 60_000,
   })
@@ -205,10 +205,10 @@ export function AltaDeFlota({
             <input aria-label="Nombre completo" placeholder="Nombre completo" value={nombre}
                    onChange={e => setNombre(e.target.value)}
                    className={`${INPUT} flex-1 min-w-40`} />
-            <select aria-label="CD base" value={cdBaseId}
+            <select aria-label="Origen habitual" value={cdBaseId}
                     onChange={e => setCdBaseId(e.target.value)}
                     className={`${INPUT} w-44`}>
-              <option value="">CD base (opcional)</option>
+              <option value="">Origen habitual (opcional)</option>
               {(cdsQuery.data?.data ?? []).map(cd => (
                 <option key={cd.id} value={cd.id}>{cd.name}</option>
               ))}

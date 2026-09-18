@@ -780,7 +780,7 @@ describe('FlotaDelDiaSection', () => {
 
   // ── CD y operación (HU-28, ola 3) ────────────────────────────────────────
 
-  it('muestra el CD base y el local de origen en columnas distintas', async () => {
+  it('muestra el origen habitual y el local de origen en columnas distintas', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -794,14 +794,14 @@ describe('FlotaDelDiaSection', () => {
 
     // Son dos preguntas distintas: de quién es la asistencia, y de dónde salió
     // la carga de hoy. Fundirlas sería un campo con dos significados.
-    expect(screen.getByRole('columnheader', { name: 'CD' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Origen habitual' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Local de origen' })).toBeInTheDocument()
     const fila = screen.getByText('Ana Soto').closest('tr')!
     expect(within(fila).getByText('CD EL PEÑON')).toBeInTheDocument()
     expect(within(fila).getByText('CD QUILICURA')).toBeInTheDocument()
   })
 
-  it('el filtro de CD ofrece un CD del catálogo aunque no tenga a nadie ese día', async () => {
+  it('el filtro de origen ofrece uno del catálogo aunque no tenga a nadie ese día', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -810,7 +810,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(within(screen.getByRole('columnheader', { name: 'CD' })).getByRole('button', { name: /filtr/i }))
+    fireEvent.click(within(screen.getByRole('columnheader', { name: 'Origen habitual' })).getByRole('button', { name: /filtr/i }))
 
     // Nadie está hoy en Lo Aguirre, y aun así se puede pedir su asistencia.
     await waitFor(() => expect(screen.getByLabelText('CD LO AGUIRRE')).toBeInTheDocument())
@@ -835,7 +835,7 @@ describe('FlotaDelDiaSection', () => {
     expect(within(fila).getByText('IANSA · Sodimac')).toBeInTheDocument()
   })
 
-  it('al filtrar por un CD, los tiles muestran la asistencia de ESE CD', async () => {
+  it('al filtrar por un origen, los tiles muestran la asistencia de ESE origen', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -851,7 +851,7 @@ describe('FlotaDelDiaSection', () => {
     const total = () => screen.getByRole('button', { name: /Total/ })
     expect(within(total()).getByText('3')).toBeInTheDocument()
 
-    fireEvent.click(within(screen.getByRole('columnheader', { name: 'CD' })).getByRole('button', { name: /filtr/i }))
+    fireEvent.click(within(screen.getByRole('columnheader', { name: 'Origen habitual' })).getByRole('button', { name: /filtr/i }))
     fireEvent.click(await screen.findByLabelText('CD EL PEÑON'))
 
     // Sin esto, elegir un CD mostraba sus filas pero dejaba arriba el número
@@ -859,7 +859,7 @@ describe('FlotaDelDiaSection', () => {
     await waitFor(() => expect(within(total()).getByText('2')).toBeInTheDocument())
   })
 
-  it('sin CD base en nadie, lo dice y ofrece dónde arreglarlo', async () => {
+  it('sin origen habitual en nadie, lo dice y ofrece dónde arreglarlo', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -868,13 +868,13 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    // Nunca una columna llena de "Sin CD" sin explicar qué hacer.
-    expect(screen.getByText(/nadie tiene CD base/)).toBeInTheDocument()
+    // Nunca una columna llena de "Sin origen" sin explicar qué hacer.
+    expect(screen.getByText(/nadie tiene origen habitual/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Asignar desde el Directorio' }))
       .toHaveAttribute('href', '/dashboard/carriers')
   })
 
-  it('con el CD base cargado en todos, el aviso desaparece', async () => {
+  it('con el origen habitual cargado en todos, el aviso desaparece', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -883,6 +883,9 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    expect(screen.queryByText(/CD base/)).not.toBeInTheDocument()
+    // Se apunta al AVISO, no a "Origen habitual" a secas: eso ahora calza también
+    // con el encabezado de la columna, que está siempre.
+    expect(screen.queryByText(/nadie tiene origen habitual/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/sin origen habitual/)).not.toBeInTheDocument()
   })
 })

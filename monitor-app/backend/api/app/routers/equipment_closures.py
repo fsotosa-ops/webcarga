@@ -92,7 +92,7 @@ SELECT
     -- no lo tenia: el coordinador veia la patente y la empresa de transporte,
     -- y no para quien era la carga.
     today_trip.client_name AS today_trip_client,
-    -- CD base (HU-28): el del conductor habitual del tracto, congelado en la
+    -- Origen habitual (HU-28): el del conductor habitual del tracto, congelado en la
     -- linea. Vale tambien para un equipo que no salio, que es justo el que hay
     -- que justificar. `today_trip_origin` de arriba es de donde salio HOY.
     eds.home_location_id::text AS home_cd_id,

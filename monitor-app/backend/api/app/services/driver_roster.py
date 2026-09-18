@@ -15,7 +15,7 @@ daily_closures.py (cuadratura por conductor) y status_report.py (Sección
 
 TRACTOREO_ROSTER_CTE = """
     active_roster AS (
-        -- home_location_id (HU-28): el CD base viaja con el roster porque la
+        -- home_location_id (HU-28): el origen habitual viaja con el roster porque la
         -- línea del cierre lo copia. DISTINCT no cambia de cardinalidad: es
         -- una columna de la propia fila de `drivers`.
         SELECT DISTINCT d.id AS driver_id, da.carrier_id AS home_carrier_id,

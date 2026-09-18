@@ -105,7 +105,7 @@ SELECT
         ELSE 'UNASSIGNED'
     END AS status,
     true AS requires_reason,
-    -- El CD base DECLARADO, no el origen del viaje. Son dos preguntas: de quién
+    -- El origen habitual DECLARADO, no el origen del viaje. Son dos preguntas: de quién
     -- es la asistencia, y de dónde salió la carga. La segunda se lee de
     -- app.trip_stops y no se guarda acá.
     r.home_location_id

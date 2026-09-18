@@ -7,7 +7,7 @@ export type DriverCreateBody = {
   country_code?:       string
   full_name:           string
   operational_status?: OperationalStatus
-  /** CD base (HU-28), opcional: se puede enrolar a alguien antes de saber de
+  /** Origen habitual (HU-28), opcional: se puede enrolar a alguien antes de saber de
    *  qué CD va a salir. */
   home_location_id?:   string
 }

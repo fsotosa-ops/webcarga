@@ -118,8 +118,8 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   // nadie ese día. Si falla, el filtro se arma igual con lo que haya en la
   // tabla: la pantalla del cierre no se cae por el desplegable.
   const cdsQuery = useQuery({
-    queryKey: ['centros-de-distribucion'],
-    queryFn: () => locationsApi.list({ origin_cd: true, operational_status: 'ACTIVE', limit: 200 }),
+    queryKey: ['origenes'],
+    queryFn: () => locationsApi.list({ origin: true, operational_status: 'ACTIVE', limit: 200 }),
     staleTime: 5 * 60 * 1000,
   })
   const catalogoDeCds = (cdsQuery.data?.data ?? []).map(cd => cd.name)
@@ -229,7 +229,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     validUntil?: string | null
     tripCode?: string | null
     origin?: string | null    // de dónde salió la carga HOY (el hecho del TMS)
-    cd?: string | null        // CD base DECLARADO: de quién es la asistencia
+    cd?: string | null        // Origen habitual DECLARADO: de quién es la asistencia
     cliente?: string | null   // generador de carga: quien pone la carga, no quien la mueve
     clienteEsHabilitado?: boolean  // true = operaciones de la empresa, no el cliente de un viaje
     comentario?: string | null
@@ -390,10 +390,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
   const unassignedCount = alcance.filter(noAsignado).length
   const noTrabajandoCount = alcance.filter(noTrabajando).length
   const mismatchCount = alcance.filter(r => r.categoria === 'POR_REGULARIZAR').length
-  // Cuántos no tienen CD base. Es un pendiente del directorio, no un dato
+  // Cuántos no tienen Origen habitual. Es un pendiente del directorio, no un dato
   // faltante: la pantalla lo nombra y dice dónde se arregla, en vez de dejar
-  // una columna llena de "Sin CD" sin explicación.
-  const sinCd = rows.filter(r => !r.cd).length
+  // una columna llena de "Sin origen" sin explicación.
+  const sinOrigen = rows.filter(r => !r.cd).length
   const conductoresUtilizacionPct = drivers.total_drivers
     ? Math.round((drivers.assigned_count / drivers.total_drivers) * 1000) / 10
     : 0
@@ -446,11 +446,11 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
         onSelect={id => setCategory(prev => (prev === id ? 'total' : id) as RowCategory)}
       />
 
-      {sinCd > 0 && (
+      {sinOrigen > 0 && (
         <p className="text-[11px] text-informativo">
-          {sinCd === rows.length
-            ? 'Todavía nadie tiene CD base, así que la asistencia por CD no se puede medir.'
-            : `${sinCd} de ${rows.length} sin CD base: quedan fuera del corte por CD.`}{' '}
+          {sinOrigen === rows.length
+            ? 'Todavía nadie tiene origen habitual, así que la asistencia por origen no se puede medir.'
+            : `${sinOrigen} de ${rows.length} sin origen habitual: quedan fuera del corte por origen.`}{' '}
           <Link href="/dashboard/carriers" className="font-semibold text-accion hover:underline">
             Asignar desde el Directorio
           </Link>
@@ -516,7 +516,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                 ['carrier',  'Empresa'],
                 ['plate',    esConductores ? 'Tracto habitual' : 'Patente'],
                 ['tripCode', 'Nº viaje'],
-                ['cd',       'CD'],
+                ['cd',       'Origen habitual'],
                 ['origin',   'Local de origen'],
                 ['cliente',  'Generador de carga'],
                 ['status',   'Estado'],
@@ -579,10 +579,10 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                   </div>
                 </td>
                 <td className="px-3 py-2 font-identificador text-informativo">{r.tripCode ?? '—'}</td>
-                {/* CD base DECLARADO. "Sin CD" no es un dato faltante: es un
+                {/* Origen habitual DECLARADO. "Sin origen" no es un dato faltante: es un
                     pendiente del directorio, y por eso se nombra en vez de
                     poner una raya como en las columnas que sí pueden ir vacías. */}
-                <td className="px-3 py-2 text-informativo">{r.cd ?? 'Sin CD'}</td>
+                <td className="px-3 py-2 text-informativo">{r.cd ?? 'Sin origen'}</td>
                 <td className="px-3 py-2 text-informativo">{r.origin ?? '—'}</td>
                 <td className="px-3 py-2 text-informativo">
                   {/* Sin viaje, lo que se muestra son las operaciones a las que

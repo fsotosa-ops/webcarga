@@ -117,7 +117,7 @@ describe('DriverDetailPanel', () => {
     renderPanel(DRIVER, { onPatch })
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Juan Pablo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-    // `home_location_id: ''` viaja a propósito: significa "sin CD base", y es
+    // `home_location_id: ''` viaja a propósito: significa "sin origen habitual", y es
     // distinto de omitir la clave, que significaría "no lo toques".
     await waitFor(() => expect(onPatch).toHaveBeenCalledWith(
       'd1', { full_name: 'Juan Pablo', home_location_id: '' },
@@ -226,15 +226,15 @@ describe('DriverDetailPanel', () => {
     expect(screen.queryByText('+ Agregar contacto')).not.toBeInTheDocument()
   })
 
-  // ── CD base (HU-28) ───────────────────────────────────────────────────────
+  // ── Origen habitual (HU-28) ───────────────────────────────────────────────────────
 
   it('el desplegable de CD se alimenta del catálogo, no de los viajes del conductor', async () => {
     renderPanel(DRIVER)
     // Se pide sólo lo que es CD de origen y está activo.
     await waitFor(() => expect(locationsApi.list).toHaveBeenCalledWith(
-      expect.objectContaining({ origin_cd: true, operational_status: 'ACTIVE' }),
+      expect.objectContaining({ origin: true, operational_status: 'ACTIVE' }),
     ))
-    const select = await screen.findByLabelText('CD base') as HTMLSelectElement
+    const select = await screen.findByLabelText('Origen habitual') as HTMLSelectElement
     expect([...select.options].map(o => o.textContent))
       .toEqual(['Sin asignar', 'CD EL PEÑON', 'CD QUILICURA'])
   })
@@ -251,7 +251,7 @@ describe('DriverDetailPanel', () => {
     expect(onPatch).not.toHaveBeenCalled()   // proponer no es escribir
 
     fireEvent.click(boton)
-    expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe('cd-penon')
+    expect((screen.getByLabelText('Origen habitual') as HTMLSelectElement).value).toBe('cd-penon')
 
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(onPatch).toHaveBeenCalledWith(
@@ -259,7 +259,7 @@ describe('DriverDetailPanel', () => {
     ))
   })
 
-  it('con CD base puesto no ofrece ninguna sugerencia', async () => {
+  it('con origen habitual puesto no ofrece ninguna sugerencia', async () => {
     renderPanel({
       ...DRIVER, home_location_id: 'cd-quilicura', home_location_name: 'CD QUILICURA',
       home_location_shipper: 'Walmart',
@@ -267,7 +267,7 @@ describe('DriverDetailPanel', () => {
     // Se espera al catálogo: un <select> cuyo value no tiene <option> que
     // calce todavía se renderiza vacío, y afirmar antes probaría otra cosa.
     await waitFor(() =>
-      expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe('cd-quilicura'))
+      expect((screen.getByLabelText('Origen habitual') as HTMLSelectElement).value).toBe('cd-quilicura'))
     expect(screen.queryByRole('button', { name: /^Asignar / })).not.toBeInTheDocument()
     expect(screen.getByText('Walmart')).toBeInTheDocument()
   })
@@ -277,7 +277,7 @@ describe('DriverDetailPanel', () => {
       ...DRIVER, home_location_id: 'cd-penon', home_location_name: 'CD EL PEÑON',
     })
     await waitFor(() =>
-      expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe('cd-penon'))
+      expect((screen.getByLabelText('Origen habitual') as HTMLSelectElement).value).toBe('cd-penon'))
 
     // Sin resincronizar desde el prop, el segundo conductor hereda el CD del
     // primero — el bug de draft que este repo ya vio cuatro veces.
@@ -291,7 +291,7 @@ describe('DriverDetailPanel', () => {
       </QueryClientProvider>,
     )
     await waitFor(() =>
-      expect((screen.getByLabelText('CD base') as HTMLSelectElement).value).toBe(''))
+      expect((screen.getByLabelText('Origen habitual') as HTMLSelectElement).value).toBe(''))
   })
 
   it('sin permiso de edición se lee el CD pero no se puede cambiar', async () => {
@@ -300,14 +300,14 @@ describe('DriverDetailPanel', () => {
       suggested_home_location: { id: 'cd-penon', name: 'CD EL PEÑON', viajes: 34, total: 36, pct: 94.4 },
     }, { canEdit: false })
 
-    expect(await screen.findByLabelText('CD base')).toBeDisabled()
+    expect(await screen.findByLabelText('Origen habitual')).toBeDisabled()
     expect(screen.queryByRole('button', { name: /^Asignar / })).not.toBeInTheDocument()
   })
 
   it('si el catálogo no carga, lo dice en vez de dibujar un desplegable vacío', async () => {
     vi.mocked(locationsApi.list).mockRejectedValue(new Error('boom'))
     renderPanel(DRIVER)
-    expect(await screen.findByText(/No se pudieron cargar los centros/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('CD base')).not.toBeInTheDocument()
+    expect(await screen.findByText(/No se pudieron cargar los orígenes/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Origen habitual')).not.toBeInTheDocument()
   })
 })

@@ -122,6 +122,29 @@ tracto, las operaciones habilitadas, los tiles que siguen al filtro, y las dos c
 funden. **Ojo con una**: sacar la primera guarda del congelamiento NO pone nada en rojo — hay dos, y
 hay que sacar las dos para que el test lo note. Defensa en profundidad, no test flojo.
 
+## Dos correcciones del usuario que cambiaron el modelo y el nombre
+
+**1. No hay umbral: si el TMS lo reporta como origen, lo es.** *"si aparecen dentro de la
+trazabilidad de origen es porque lo son"*. Mi siembra usaba un umbral de 5 viajes en 90 días —una
+heurística mía que separaba "CD de verdad" de "ruido" sin tener con qué decidirlo— y dejaba 12
+lugares afuera. El catálogo pasó de 12 a **24**. Y se retiró la exclusión del trigger
+`app.reconcile_new_trip_stop_location()`, que sólo sembraba DESTINATION con este argumento: *"el
+ORIGIN casi siempre es un CD del transportista, no un local de cliente"*. Era cierto cuando una fila
+de `locations` sólo podía significar "local de entrega"; con el rol aparte deja de serlo, y sin el
+trigger el catálogo se quedaba viejo en silencio.
+
+**2. No todos los orígenes son CD.** *"no todos se llaman CD porque no lo son... pero sí son un
+origen"*. Medido sobre los 24: **sólo 7 se llaman "CD"**. Los otros 17 son bodegas
+(`Bod La Farfana 1`), operadores logísticos (`SITRANS`, `Saam Renca`), una devolución
+(`Logistica Inversa`) y tiendas despachando (`Express Maipú`, `VIÑA DEL MAR`, `HIPER SANTA CRUZ`).
+Estaba nombrando la categoría por su caso más frecuente, que es justo lo que este proyecto prohíbe.
+
+`is_origin_cd` → **`is_origin`**; en pantalla, **"Origen habitual"**. El primer intento fue *"Origen
+base"* y el usuario lo frenó — *"¿qué es eso? no se entiende"*—: era una traducción literal de *home
+terminal*. El nombre bueno estaba **a una columna de distancia**: la tabla ya dice "Tracto habitual".
+La lección: cuando hace falta un término nuevo, mirar primero el vocabulario que la propia pantalla
+ya usa.
+
 ## Un test mío que cambiaba de color solo, y cómo se cerró
 
 La suite completa falló 1 de 1.037 — y dos veces, en tests DISTINTOS del mismo archivo. No era flake

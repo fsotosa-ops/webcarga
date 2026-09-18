@@ -62,7 +62,7 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        today_trip.origen AS today_trip_origin,
        last_tractor.tractor_plate AS last_known_tractor_plate,
        last_tractor.operation_type AS last_known_operation_type,
-       -- CD base (HU-28): el DECLARADO, congelado en la línea al calcularla.
+       -- Origen habitual (HU-28): el DECLARADO, congelado en la línea al calcularla.
        -- Es la dimensión con la que se mide la ASISTENCIA, y por eso vale
        -- también para quien no trabajó. `today_trip_origin` de acá arriba es
        -- otra cosa —de dónde salió la carga de hoy— y van por separado.
@@ -178,7 +178,7 @@ WITH {TRACTOREO_ROSTER_CTE}
 SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name AS carrier_name,
        dds.status, dds.category, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
-       -- CD base (HU-28): el pivot de Reportería puede cortar por CD sin
+       -- Origen habitual (HU-28): el pivot de Reportería puede cortar por CD sin
        -- recalcular nada, porque la línea ya lo trae congelado.
        hcd.name AS home_cd_name
 FROM {LINEAS_CONDUCTORES} dds

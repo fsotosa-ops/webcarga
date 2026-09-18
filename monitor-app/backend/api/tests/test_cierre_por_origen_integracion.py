@@ -1,7 +1,7 @@
 """El CD en la línea del cierre, contra Postgres de verdad (HU-28, ola 3).
 
 Lo que se fija acá es la propiedad que justifica toda la decisión de
-arquitectura: **cambiar el CD base de un conductor no puede mover un día ya
+arquitectura: **cambiar el origen habitual de un conductor no puede mover un día ya
 firmado**. Si la asistencia por CD se resolviera con un join en tiempo de
 lectura, esa propiedad no existiría — y es exactamente el defecto que
 status_report.py tiene hoy, reescribiendo el pasado en cada viaje nuevo.
@@ -30,7 +30,7 @@ async def _cd(conn, nombre="CD EL PEÑON"):
         "INSERT INTO public.shippers (name, status) VALUES ($1, 'ACTIVE') RETURNING id",
         f"{PREFIJO} {uuid.uuid4().hex[:8]}")
     return await conn.fetchval(
-        "INSERT INTO public.locations (entity_type, entity_id, name, operational_status, is_origin_cd) "
+        "INSERT INTO public.locations (entity_type, entity_id, name, operational_status, is_origin) "
         "VALUES ('SHIPPER', $1, $2, 'ACTIVE', true) RETURNING id",
         shipper, f"{PREFIJO} {nombre}")
 
@@ -126,7 +126,7 @@ async def test_un_dia_firmado_no_cambia_de_cd(conexion_revertida):
     admin = {**actor, "role": "admin"}
     await cierre_lineas.cerrar(pool, D, override=True, override_note="test", user=admin)
 
-    # Ahora se le cambia el CD base al conductor.
+    # Ahora se le cambia el origen habitual al conductor.
     await conexion_revertida.execute(
         "UPDATE public.drivers SET home_location_id = $1 WHERE id = $2", cd_nuevo, esc["conductor"])
     await cierre_lineas.recalcular(pool, D)   # no-op: el día está CLOSED

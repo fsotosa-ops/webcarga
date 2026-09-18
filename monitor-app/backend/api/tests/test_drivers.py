@@ -124,7 +124,7 @@ def test_patch_driver_updates_and_sets_override():
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {"full_name": "Juan", "operational_status": "ACTIVE"}
     # Desde HU-28 `get_driver` hace DOS fetchrow: la fila del conductor y,
-    # sólo si viene sin CD base, la consulta de sugerencia. `None` = su
+    # sólo si viene sin origen habitual, la consulta de sugerencia. `None` = su
     # historial no señala ningún CD con claridad.
     pool.fetchrow.side_effect = [{
         "id": "d1", "tax_id": "1-9", "country_code": "CL", "full_name": "Juan Pablo",
@@ -321,7 +321,7 @@ def test_driver_detail_carries_its_carrier():
     propio panel: no habria migas ni contexto."""
     pool = AsyncMock()
     # Desde HU-28 `get_driver` hace DOS fetchrow: la fila del conductor y, sólo
-    # si viene sin CD base, la consulta de sugerencia. `None` = su historial no
+    # si viene sin origen habitual, la consulta de sugerencia. `None` = su historial no
     # señala ningún CD con claridad.
     pool.fetchrow.side_effect = [{
         "id": "d1", "tax_id": "11111111-1", "country_code": "CL",
@@ -345,7 +345,7 @@ def test_driver_detail_without_active_assignment():
     hacer desaparecer al conductor."""
     pool = AsyncMock()
     # Desde HU-28 `get_driver` hace DOS fetchrow: la fila del conductor y,
-    # sólo si viene sin CD base, la consulta de sugerencia. `None` = su
+    # sólo si viene sin origen habitual, la consulta de sugerencia. `None` = su
     # historial no señala ningún CD con claridad.
     pool.fetchrow.side_effect = [{
         "id": "d1", "tax_id": None, "country_code": "CL",

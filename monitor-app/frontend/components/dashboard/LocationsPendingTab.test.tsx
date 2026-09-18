@@ -12,7 +12,7 @@ const LOCATION: Location = {
   id: 'loc-9', entity_type: 'SHIPPER', entity_id: 'shipper-1', site_number: null,
   name: 'Empresas Carozzi S.A.', country_code: 'CL', format: null, address: null,
   region_name: null, region_number: null, opens_at: null, closes_at: null,
-  operation_type: null, operational_status: 'ACTIVE', is_manual_override: false, is_origin_cd: false,
+  operation_type: null, operational_status: 'ACTIVE', is_manual_override: false, is_origin: false,
   created_at: null, updated_at: null,
 }
 

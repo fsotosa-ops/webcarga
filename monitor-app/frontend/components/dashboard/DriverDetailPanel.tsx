@@ -58,11 +58,11 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
     enabled: !!driver,
   })
 
-  // El desplegable de CD base sale del CATÁLOGO, no de lo que el conductor haya
+  // El desplegable de origen habitual sale del CATÁLOGO, no de lo que el conductor haya
   // recorrido: se le puede asignar un CD al que todavía no fue nunca.
   const cdsQuery = useQuery({
-    queryKey: ['centros-de-distribucion'],
-    queryFn: () => locationsApi.list({ origin_cd: true, operational_status: 'ACTIVE', limit: 200 }),
+    queryKey: ['origenes'],
+    queryFn: () => locationsApi.list({ origin: true, operational_status: 'ACTIVE', limit: 200 }),
     enabled: open,
     staleTime: 5 * 60 * 1000,
   })
@@ -213,18 +213,18 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
                 htmlFor="cd-base"
                 className="text-[10px] font-bold text-informativo uppercase tracking-wide"
               >
-                CD base
+                Origen habitual
               </label>
               {/* Si el catálogo no carga, NO se dibuja un desplegable vacío que
                   parezca "no hay CD": se dice qué pasó. */}
               {cdsQuery.isError ? (
                 <p className="text-[11px] text-status-incidente">
-                  No se pudieron cargar los centros de distribución.
+                  No se pudieron cargar los orígenes.
                 </p>
               ) : (
                 <select
                   id="cd-base"
-                  aria-label="CD base"
+                  aria-label="Origen habitual"
                   value={draft.home_location_id}
                   disabled={!canEdit || cdsQuery.isLoading}
                   onChange={e => setDraft(d => ({ ...d, home_location_id: e.target.value }))}

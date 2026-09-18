@@ -279,7 +279,7 @@ export function FilterPopover({
             </div>
           )}
 
-          {/* CD de origen — chips dinámicas desde la base, igual que Fuente y
+          {/* Origen — chips dinámicas desde la base, igual que Fuente y
               Cliente. Era un autocomplete con el argumento de que son
               "cientos de locales reales": cierto para los DESTINOS —279
               distintos— y falso para los orígenes, que medidos el 2026-09-07
@@ -290,7 +290,7 @@ export function FilterPopover({
               Vienen ordenadas por volumen y no alfabéticamente: los CD que
               mueven la operación tienen que estar arriba. */}
           <div>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">CD de origen</p>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Origen</p>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(meta?.origins ?? []).map(name => {
                 const active = f.fOrigin.includes(name)

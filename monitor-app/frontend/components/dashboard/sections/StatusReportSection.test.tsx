@@ -189,10 +189,10 @@ describe('StatusReportSection', () => {
     await body.findByText('Total equipos activos')
     fireEvent.click(body.getByRole('button', { name: '7. General' }))
 
-    // Declarar el CD base no sirve para que todos calcen: sirve para ver cuándo
+    // Declarar el origen habitual no sirve para que todos calcen: sirve para ver cuándo
     // no calzan. Antes se perdía, porque el reporte agrupaba por el origen
     // adivinado y no podía contradecirse a sí mismo.
-    expect(await body.findByText(/Cargaron en otro CD \(1\)/)).toBeInTheDocument()
+    expect(await body.findByText(/Cargaron en otro origen \(1\)/)).toBeInTheDocument()
     expect(body.getByText('CD Quilicura')).toBeInTheDocument()
     expect(body.getByText('ABCD12')).toBeInTheDocument()
   })
@@ -202,7 +202,7 @@ describe('StatusReportSection', () => {
     await body.findByText('Total equipos activos')
     fireEvent.click(body.getByRole('button', { name: '7. General' }))
 
-    expect(await body.findByText('Por CD base')).toBeInTheDocument()
-    expect(body.queryByText(/Cargaron en otro CD/)).not.toBeInTheDocument()
+    expect(await body.findByText('Por Origen habitual')).toBeInTheDocument()
+    expect(body.queryByText(/Cargaron en otro origen/)).not.toBeInTheDocument()
   })
 })

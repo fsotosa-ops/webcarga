@@ -1,4 +1,4 @@
-"""El CD base del conductor, contra Postgres de verdad (HU-28).
+"""El origen habitual del conductor, contra Postgres de verdad (HU-28).
 
 Las reglas que se fijan acá viven en SQL —un trigger, un COALESCE y una rama de
 borrado—, y un AsyncMock no ejecuta ninguna. Todo corre dentro de la transacción
@@ -72,7 +72,7 @@ async def _ubicacion(pool, shipper, *, nombre, es_cd):
     """El USER sintético alcanza acá: `create_location` sólo escribe audit_log."""
     return await create_location(
         LocationCreateBody(entity_type="SHIPPER", entity_id=str(shipper),
-                           name=f"{PREFIJO} {nombre}", is_origin_cd=es_cd),
+                           name=f"{PREFIJO} {nombre}", is_origin=es_cd),
         pool=pool, user=USER,
     )
 
@@ -97,9 +97,9 @@ async def test_se_le_asigna_un_cd_base_y_vuelve_con_su_nombre(conexion_revertida
     assert salida["home_location_shipper"] is not None
 
 
-async def test_un_local_de_entrega_no_puede_ser_cd_base(conexion_revertida):
+async def test_un_local_de_entrega_no_puede_ser_origen_habitual(conexion_revertida):
     """Lo rechaza el trigger, no la pantalla. Una FK sola diría que apunta a UNA
-    ubicación, no que apunte a un CD de origen."""
+    ubicación, no que apunte a un lugar de ORIGEN."""
     pool, actor, local, driver = await _escenario(
         conexion_revertida, nombre_cd="Tienda Maipú", es_cd=False,
     )
@@ -109,7 +109,7 @@ async def test_un_local_de_entrega_no_puede_ser_cd_base(conexion_revertida):
             str(driver), DriverPatchBody(home_location_id=str(local["id"])), pool=pool, user=actor,
         )
     assert e.value.status_code == 422
-    assert "centro de distribución" in str(e.value.detail)
+    assert "lugar de origen" in str(e.value.detail)
 
 
 async def test_un_cd_dado_de_baja_tampoco(conexion_revertida):
@@ -157,7 +157,7 @@ async def test_se_le_puede_quitar_el_cd_base(conexion_revertida):
 
 async def test_sin_cd_base_y_sin_viajes_no_se_propone_nada(conexion_revertida):
     """El silencio se dice, no se rellena: un conductor sin historial queda
-    "Sin CD", y eso es un pendiente del directorio, no un dato que inventar."""
+    "Sin origen", y eso es un pendiente del directorio, no un dato que inventar."""
     pool = PoolDeUnaConexion(conexion_revertida)
     driver = await _conductor(conexion_revertida)
 

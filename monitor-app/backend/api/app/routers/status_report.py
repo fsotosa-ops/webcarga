@@ -110,7 +110,7 @@ WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
 # HU-28 (ola 4): acá vivía `_LAST_KNOWN_ORIGIN_SQL`, que le atribuía a un equipo
 # SIN CARGA el origen de su viaje más reciente *de cualquier fecha* — un dato
 # inventado presentado como hecho, y que además reescribía el pasado: cada viaje
-# nuevo le cambiaba el CD a días ya firmados. Lo reemplaza el CD base declarado,
+# nuevo le cambiaba el CD a días ya firmados. Lo reemplaza el origen habitual declarado,
 # que viaja congelado en la línea del cierre (app.closure_lines.home_location_id).
 
 
@@ -127,7 +127,7 @@ JOIN public.carriers c ON c.id = r.home_carrier_id
 
 _DRIVER_STATUS_SQL = f"""
 SELECT dds.driver_id, dds.status, dds.category, ur.label AS unassigned_reason_label,
-       -- El CD base DECLARADO, congelado en la línea al calcularla (HU-28).
+       -- El origen habitual DECLARADO, congelado en la línea al calcularla (HU-28).
        hcd.name AS home_cd
 FROM {LINEAS_CONDUCTORES} dds
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
@@ -234,7 +234,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             # El origen REAL del viaje de hoy, sin relleno: si no hubo viaje, no
             # hay origen, y decirlo es más honesto que atribuirle uno viejo.
             "origin_cd": latest["origin_cd"] if latest else None,
-            # El CD base declarado: la dimensión de la ASISTENCIA, que vale
+            # El origen habitual declarado: la dimensión de la ASISTENCIA, que vale
             # también —sobre todo— para el que no trabajó.
             "home_cd": (status_row or {}).get("home_cd"),
             "client_name": latest["client_name"] if latest else None,
@@ -347,8 +347,8 @@ def _section2_tractoreo_asignado(rows: list[dict]) -> dict:
     incluye a quien no salió, que no tiene origen. Con dos claves distintas, el
     "asignados" de una y el de la otra no darían el mismo número."""
     tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
-    por_cd = _cross_tab_by_zone(tractoreo, lambda r: r["home_cd"] or "Sin CD")
-    por_empresa_y_cd = _cross_tab_by_zone(tractoreo, lambda r: (r["home_cd"] or "Sin CD", r["carrier_name"]))
+    por_cd = _cross_tab_by_zone(tractoreo, lambda r: r["home_cd"] or "Sin origen")
+    por_empresa_y_cd = _cross_tab_by_zone(tractoreo, lambda r: (r["home_cd"] or "Sin origen", r["carrier_name"]))
     return {
         "por_cd": [{"cd": k, **v} for k, v in sorted(por_cd.items())],
         "por_empresa_y_cd": [
@@ -416,9 +416,9 @@ def _section4_tractoreo_no_trabajando(driver_rows: list[dict], motivos: list[str
     # Por el CD BASE: son conductores que NO trabajaron, así que no hay origen
     # real que agrupar. Antes se les atribuía el de su viaje más reciente, de
     # cualquier fecha.
-    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["home_cd"] or "Sin CD", motivos)
+    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["home_cd"] or "Sin origen", motivos)
     por_empresa_y_cd = _cross_tab_by_motivo(
-        driver_rows, lambda r: (r["home_cd"] or "Sin CD", r["carrier_name"]), motivos,
+        driver_rows, lambda r: (r["home_cd"] or "Sin origen", r["carrier_name"]), motivos,
     )
     driver_detail = [
         {
@@ -471,7 +471,7 @@ def _section_tractoreo_por_empresa(rows: list[dict]) -> list[dict]:
 def _section_desvios_de_cd(rows: list[dict]) -> list[dict]:
     """Los que cargaron en un CD distinto al suyo (HU-28, ola 4.1).
 
-    Es la mitad del valor del estandar: declarar el CD base no sirve para que
+    Es la mitad del valor del estandar: declarar el origen habitual no sirve para que
     todos calcen, sino para poder VER cuando no calzan. Medido el 2026-09-17:
     el 35% de los conductores de Walmart cargan en mas de un CD, con el
     dominante en 90,5% — o sea el desvio es real y regular, y hasta ahora se
@@ -489,7 +489,7 @@ def _section_desvios_de_cd(rows: list[dict]) -> list[dict]:
                 "client_name": r["client_name"],
             }
             for r in rows
-            # Los tres tienen que existir: sin CD base no hay con que comparar,
+            # Los tres tienen que existir: sin origen habitual no hay con que comparar,
             # y sin carga no hay origen. Ninguno de los dos casos es un desvio.
             if r["con_carga"] and r["home_cd"] and r["origin_cd"]
             and r["home_cd"] != r["origin_cd"]
@@ -508,7 +508,7 @@ def _section6_resumen_general(rows: list[dict]) -> dict:
         no salieron, y esos no tienen origen."""
         acc: dict = {}
         for r in items:
-            key = r["home_cd"] or "Sin CD"
+            key = r["home_cd"] or "Sin origen"
             b = acc.setdefault(key, {"cd": key, "enrolled": 0, "assigned": 0})
             b["enrolled"] += 1
             if r["con_carga"]:

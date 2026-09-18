@@ -11,7 +11,7 @@ class DriverCreateBody(BaseModel):
     country_code: str = "CL"
     full_name: str
     operational_status: OperationalStatus = "ACTIVE"
-    # CD base (HU-28). Opcional en el alta: se puede enrolar a alguien antes de
+    # Origen habitual (HU-28). Opcional en el alta: se puede enrolar a alguien antes de
     # saber de qué CD va a salir, y queda como pendiente del directorio.
     home_location_id: Optional[str] = None
 

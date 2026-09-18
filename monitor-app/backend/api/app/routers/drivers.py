@@ -137,7 +137,7 @@ async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(get_curre
                -- conductor sin asignación tiene que seguir apareciendo.
                c.id::text      AS carrier_id,
                c.business_name AS carrier_name,
-               -- CD base (HU-28). Declarado, nunca derivado: el origen real de
+               -- Origen habitual (HU-28). Declarado, nunca derivado: el origen real de
                -- cada viaje vive en app.trip_stops y responde otra pregunta.
                d.home_location_id::text AS home_location_id,
                hl.name                  AS home_location_name,
@@ -172,7 +172,7 @@ _UMBRAL_SUGERENCIA_CD = 80.0
 
 # PROPONE, NUNCA ESCRIBE. Es el mismo criterio que `CONDUCTOR_SIN_EMPRESA` en
 # services/pre_cierre.py: una inferencia llena un silencio y jamás contradice un
-# hecho. El CD base es dato maestro declarado; esto sólo evita que Operaciones
+# hecho. El origen habitual es dato maestro declarado; esto sólo evita que Operaciones
 # tenga que llenar 41 campos a ciegas.
 _SQL_SUGERENCIA_CD = """
 WITH viajes AS (
@@ -192,7 +192,7 @@ WITH viajes AS (
     JOIN public.locations l
       ON l.entity_type = 'SHIPPER' AND l.entity_id = sh.id
      AND lower(l.name) = lower(btrim(ts.local))
-     AND l.is_origin_cd AND l.operational_status = 'ACTIVE'
+     AND l.is_origin AND l.operational_status = 'ACTIVE'
     WHERE fl.driver_id = $1::uuid
       AND t.planning_date >= current_date - $2::int
 ),
@@ -297,7 +297,7 @@ async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Dep
                 })
             except ForeignKeyViolationError:
                 raise HTTPException(
-                    422, "El CD base tiene que ser un centro de distribución de origen activo",
+                    422, "El origen habitual tiene que ser un lugar de origen activo",
                 )
             await log_change(
                 conn, actor=user["sub"], entity_type="DRIVER", entity_id=row["id"],
@@ -351,7 +351,7 @@ async def patch_driver(
                 # Lo levanta drivers_home_location_es_un_cd(): la ubicación
                 # existe pero no es un CD de origen activo.
                 raise HTTPException(
-                    422, "El CD base tiene que ser un centro de distribución de origen activo",
+                    422, "El origen habitual tiene que ser un lugar de origen activo",
                 )
             for field in touched:
                 await record_manual_edit(

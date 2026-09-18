@@ -175,7 +175,7 @@ def test_section4_driver_detail_muestra_operation_type_del_tracto_habitual_no_de
 
 
 def test_section4_driver_sin_cd_base_cae_en_sin_cd():
-    """"Sin CD" cambio de significado con HU-28: antes era "no pudimos
+    """"Sin origen" cambio de significado con HU-28: antes era "no pudimos
     adivinar"; ahora es "este conductor no tiene CD asignado", que es un
     pendiente accionable del directorio."""
     driver_rows = [
@@ -184,7 +184,7 @@ def test_section4_driver_sin_cd_base_cae_en_sin_cd():
     ]
     result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"])
 
-    cd_row = next(r for r in result["por_cd"] if r["cd"] == "Sin CD")
+    cd_row = next(r for r in result["por_cd"] if r["cd"] == "Sin origen")
     assert cd_row["A confirmar"] == 1
     assert cd_row["total"] == 1
     detail = result["driver_detail"][0]
@@ -287,7 +287,7 @@ def test_get_status_report_returns_all_sections_with_empty_roster():
         "section4_tractoreo_no_trabajando", "section_tractoreo_por_empresa",
         "section5_equipos_completos", "section6_resumen_general",
         # HU-28 (ola 4.1): los que cargaron en un CD distinto al suyo. Declarar
-        # el CD base no sirve para que todos calcen, sino para poder VER cuando
+        # el origen habitual no sirve para que todos calcen, sino para poder VER cuando
         # no calzan.
         "section7_desvios_de_cd",
     }
@@ -461,7 +461,7 @@ def test_el_desvio_se_reporta_solo_cuando_hay_con_que_comparar():
         # Calza: no es desvío.
         _row(asset_id="a2", tractor_plate="BBBB22", home_cd="CD El Peñón",
              origin_cd="CD El Peñón", con_carga=True),
-        # Sin CD base: no hay contra qué comparar, no es un desvío.
+        # Sin Origen habitual: no hay contra qué comparar, no es un desvío.
         _row(asset_id="a3", tractor_plate="CCCC33", home_cd=None,
              origin_cd="CD Quilicura", con_carga=True),
         # Sin carga: no hay origen, tampoco es un desvío.
@@ -486,5 +486,5 @@ def test_sin_cd_base_ya_no_significa_no_pudimos_adivinar():
 
     resumen = _section6_resumen_general(rows)
 
-    assert {"cd": "Sin CD", "enrolled": 1, "assigned": 1} in resumen["por_cd"]
+    assert {"cd": "Sin origen", "enrolled": 1, "assigned": 1} in resumen["por_cd"]
     assert {"cd": "CD El Peñón", "enrolled": 1, "assigned": 1} in resumen["por_cd"]
