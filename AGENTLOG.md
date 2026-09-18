@@ -211,7 +211,9 @@ no ruido.
    un botón que ya dice el origen concreto; 3 tienen dominante entre 60-80% (se muestra el reparto y
    elige la persona), 2 bajo 60% y 1 sin historial. Mientras tanto el Cierre y el Reporte dicen
    "Sin origen", que es correcto. **No es criterio de completitud de desarrollo.**
-3. **Dos preguntas para Operaciones**, anotadas en la HU:
+3. **Las cuatro preguntas para Operaciones están escritas** en
+   `monitor-app/bugs/20260916/preguntas-abiertas-a-operaciones.md` (sí está en git, junto al
+   documento original y al levantamiento). Las dos que pesan:
    - **La cara**: si *"dejar abierto el filtro de CD Origen para modificación"* quiso decir el
      **valor** y no el filtro, hay que **rediseñar**, no ajustar.
    - Qué hacer con los desvíos de la Sección 7. Proyectado con la sugerencia puesta: **4 sobre 354
