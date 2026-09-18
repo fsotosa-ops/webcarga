@@ -92,11 +92,27 @@ SELECT
     -- eje de conductores lo tiene desde el 21/07 como `client_names` y este
     -- no lo tenia: el coordinador veia la patente y la empresa de transporte,
     -- y no para quien era la carga.
-    today_trip.client_name AS today_trip_client
+    today_trip.client_name AS today_trip_client,
+    -- CD base (HU-28): el del conductor habitual del tracto, congelado en la
+    -- linea. Vale tambien para un equipo que no salio, que es justo el que hay
+    -- que justificar. `today_trip_origin` de arriba es de donde salio HOY.
+    eds.home_location_id::text AS home_cd_id,
+    hcd.name                   AS home_cd_name,
+    -- Las operaciones habilitadas de su empresa: un equipo parado sigue
+    -- apareciendo bajo la operacion a la que se lo puede ofrecer. Un Sider
+    -- trabaja en Sodimac y en IANSA, asi que son varias.
+    COALESCE(carrier_shippers.names, ARRAY[]::text[]) AS carrier_shipper_names
 FROM {LINEAS_TRACTOS} eds
 JOIN public.assets a ON a.id = eds.asset_id
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = aa.carrier_id
+LEFT JOIN public.locations hcd ON hcd.id = eds.home_location_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(DISTINCT sh2.name ORDER BY sh2.name) AS names
+    FROM public.carrier_shippers cs
+    JOIN public.shippers sh2 ON sh2.id = cs.shipper_id AND sh2.status = 'ACTIVE'
+    WHERE cs.carrier_id = c.id AND cs.status = 'ACTIVE'
+) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
 LEFT JOIN app.status_taxonomies ur ON ur.id = eds.unassigned_reason_id
 LEFT JOIN LATERAL (

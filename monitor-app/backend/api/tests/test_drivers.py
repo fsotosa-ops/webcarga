@@ -123,11 +123,15 @@ def test_patch_driver_updates_and_sets_override():
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {"full_name": "Juan", "operational_status": "ACTIVE"}
-    pool.fetchrow.return_value = {
+    # Desde HU-28 `get_driver` hace DOS fetchrow: la fila del conductor y,
+    # sólo si viene sin CD base, la consulta de sugerencia. `None` = su
+    # historial no señala ningún CD con claridad.
+    pool.fetchrow.side_effect = [{
         "id": "d1", "tax_id": "1-9", "country_code": "CL", "full_name": "Juan Pablo",
         "operational_status": "ACTIVE", "is_manual_override": True, "created_at": None,
         "total_requirements": 12, "last_document_update": None,
-    }
+        "home_location_id": None, "home_location_name": None, "home_location_shipper": None,
+    }, None]
     client = make_client(pool)
 
     res = client.patch("/api/v1/drivers/d1", json={"full_name": "juan pablo"})
@@ -316,37 +320,45 @@ def test_driver_detail_carries_its_carrier():
     """Un conductor sin la empresa a la que pertenece no se puede mostrar en su
     propio panel: no habria migas ni contexto."""
     pool = AsyncMock()
-    pool.fetchrow.return_value = {
+    # Desde HU-28 `get_driver` hace DOS fetchrow: la fila del conductor y, sólo
+    # si viene sin CD base, la consulta de sugerencia. `None` = su historial no
+    # señala ningún CD con claridad.
+    pool.fetchrow.side_effect = [{
         "id": "d1", "tax_id": "11111111-1", "country_code": "CL",
         "full_name": "Juan Perez", "operational_status": "ACTIVE",
         "is_manual_override": False, "created_at": None,
         "total_requirements": 12, "last_document_update": None,
         "carrier_id": "c1", "carrier_name": "Transportes Sur Spa",
-    }
+        "home_location_id": None, "home_location_name": None, "home_location_shipper": None,
+    }, None]
     client = make_client(pool)
 
     res = client.get("/api/v1/drivers/d1")
 
     assert res.status_code == 200
     assert res.json()["carrier_name"] == "Transportes Sur Spa"
-    assert "driver_assignments" in pool.fetchrow.call_args.args[0]
+    assert "driver_assignments" in pool.fetchrow.call_args_list[0].args[0]
 
 
 def test_driver_detail_without_active_assignment():
     """Sin asignacion activa la empresa viaja en null: el LEFT JOIN no puede
     hacer desaparecer al conductor."""
     pool = AsyncMock()
-    pool.fetchrow.return_value = {
+    # Desde HU-28 `get_driver` hace DOS fetchrow: la fila del conductor y,
+    # sólo si viene sin CD base, la consulta de sugerencia. `None` = su
+    # historial no señala ningún CD con claridad.
+    pool.fetchrow.side_effect = [{
         "id": "d1", "tax_id": None, "country_code": "CL",
         "full_name": "Sin Asignar", "operational_status": "ACTIVE",
         "is_manual_override": False, "created_at": None,
         "total_requirements": 0, "last_document_update": None,
         "carrier_id": None, "carrier_name": None,
-    }
+        "home_location_id": None, "home_location_name": None, "home_location_shipper": None,
+    }, None]
     client = make_client(pool)
 
     res = client.get("/api/v1/drivers/d1")
 
     assert res.status_code == 200
     assert res.json()["carrier_id"] is None
-    assert "LEFT JOIN public.carriers" in pool.fetchrow.call_args.args[0]
+    assert "LEFT JOIN public.carriers" in pool.fetchrow.call_args_list[0].args[0]

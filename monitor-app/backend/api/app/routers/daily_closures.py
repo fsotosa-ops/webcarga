@@ -61,12 +61,29 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        today_trip.source_system_trip_id AS today_trip_code,
        today_trip.origen AS today_trip_origin,
        last_tractor.tractor_plate AS last_known_tractor_plate,
-       last_tractor.operation_type AS last_known_operation_type
+       last_tractor.operation_type AS last_known_operation_type,
+       -- CD base (HU-28): el DECLARADO, congelado en la línea al calcularla.
+       -- Es la dimensión con la que se mide la ASISTENCIA, y por eso vale
+       -- también para quien no trabajó. `today_trip_origin` de acá arriba es
+       -- otra cosa —de dónde salió la carga de hoy— y van por separado.
+       dds.home_location_id::text AS home_cd_id,
+       hcd.name                   AS home_cd_name,
+       -- Las operaciones habilitadas de su empresa. Es lo que hace que una fila
+       -- SIN carga siga apareciendo bajo su operación; misma fuente que ya usa
+       -- el filtro por cliente de /trips/fleet-daily-overview.
+       COALESCE(carrier_shippers.names, ARRAY[]::text[]) AS carrier_shipper_names
 FROM {LINEAS_CONDUCTORES} dds
 JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
+LEFT JOIN public.locations hcd ON hcd.id = dds.home_location_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(DISTINCT sh2.name ORDER BY sh2.name) AS names
+    FROM public.carrier_shippers cs
+    JOIN public.shippers sh2 ON sh2.id = cs.shipper_id AND sh2.status = 'ACTIVE'
+    WHERE cs.carrier_id = c.id AND cs.status = 'ACTIVE'
+) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 -- Fase 1.5 (2026-07-21): cliente(s) que el conductor sirvió ese día — el
 -- denominador común de los 3 reportes manuales hoy armados a mano
@@ -160,12 +177,22 @@ _REPORT_SQL = f"""
 WITH {TRACTOREO_ROSTER_CTE}
 SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name AS carrier_name,
        dds.status, dds.category, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
-       COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names
+       COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
+       -- CD base (HU-28): el pivot de Reportería puede cortar por CD sin
+       -- recalcular nada, porque la línea ya lo trae congelado.
+       hcd.name AS home_cd_name
 FROM {LINEAS_CONDUCTORES} dds
 JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
+LEFT JOIN public.locations hcd ON hcd.id = dds.home_location_id
+LEFT JOIN LATERAL (
+    SELECT array_agg(DISTINCT sh2.name ORDER BY sh2.name) AS names
+    FROM public.carrier_shippers cs
+    JOIN public.shippers sh2 ON sh2.id = cs.shipper_id AND sh2.status = 'ACTIVE'
+    WHERE cs.carrier_id = c.id AND cs.status = 'ACTIVE'
+) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name)) AS client_names

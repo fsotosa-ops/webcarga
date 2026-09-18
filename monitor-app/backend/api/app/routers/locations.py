@@ -18,7 +18,7 @@ router = APIRouter(prefix="/locations", tags=["locations"])
 _LOCATION_FIELDS = (
     "id, entity_type, entity_id, site_number, name, country_code, format, address, "
     "region_name, region_number, opens_at, closes_at, operation_type, "
-    "operational_status, is_manual_override, created_at, updated_at"
+    "operational_status, is_manual_override, is_origin_cd, created_at, updated_at"
 )
 
 
@@ -34,6 +34,9 @@ async def list_locations(
         "", description="true = sin región disponible en su historial de viajes, requiere elegir zona a mano "
                          "(Robustecer Tarifario 2026-07-27) — subconjunto de `incomplete`, no todo lo incompleto."),
     include_rate: str = Query("", description="true = agrega la tarifa vigente (Fase 5, Tarifario 1.0)"),
+    origin_cd: str = Query(
+        "", description="true = sólo centros de distribución de ORIGEN (HU-28). No es excluyente con "
+                        "ser local de entrega: un lugar puede recibir y despachar."),
     # Ronda 43 (Fase C, Tarea 7): verificado contra datos reales antes de
     # agregar esto — el generador de carga con más volumen tiene 566 locales
     # activos (bien lejos de las "decenas" que hubieran hecho innecesaria la
@@ -56,6 +59,8 @@ async def list_locations(
     if q:
         params.append(q)
         clauses.append(f"(name ILIKE '%' || ${len(params)} || '%' OR site_number ILIKE '%' || ${len(params)} || '%')")
+    if origin_cd == "true":
+        clauses.append("is_origin_cd")
     if operation_type:
         params.append(operation_type)
         clauses.append(f"operation_type = ${len(params)}")
@@ -223,13 +228,13 @@ async def create_location(
                 f"""
                 INSERT INTO public.locations
                     (entity_type, entity_id, site_number, name, country_code, format, address,
-                     region_name, region_number, opens_at, closes_at, operation_type)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                     region_name, region_number, opens_at, closes_at, operation_type, is_origin_cd)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, false))
                 RETURNING {_LOCATION_FIELDS}
                 """,
                 body.entity_type, body.entity_id, body.site_number, body.name, body.country_code,
                 body.format, body.address, body.region_name, body.region_number, body.opens_at,
-                body.closes_at, body.operation_type,
+                body.closes_at, body.operation_type, body.is_origin_cd,
             )
             await log_change(
                 conn, actor=user["sub"], entity_type=body.entity_type, entity_id=body.entity_id,
@@ -277,12 +282,17 @@ async def patch_location(
                     is_manual_override = CASE WHEN $13 THEN true ELSE is_manual_override END,
                     overridden_by      = CASE WHEN $13 THEN $14 ELSE overridden_by END,
                     overridden_at      = CASE WHEN $13 THEN NOW() ELSE overridden_at END,
+                    -- COALESCE y no CASE: acá `false` es un valor que se quiere
+                    -- guardar (quitarle el rol de CD), y `sent_fields()` lo
+                    -- distingue de "no mandó la clave" porque False no es None.
+                    is_origin_cd       = COALESCE($15, is_origin_cd),
                     updated_at         = NOW()
                 WHERE id = $1
                 """,
                 location_id, body.name, body.site_number, body.country_code, body.format,
                 body.address, body.region_name, body.region_number, body.opens_at, body.closes_at,
                 body.operation_type, body.operational_status, manual_override, user["sub"],
+                body.is_origin_cd,
             )
             for field in touched:
                 await log_change(

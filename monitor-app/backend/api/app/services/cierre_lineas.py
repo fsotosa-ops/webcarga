@@ -60,6 +60,7 @@ LINEAS_CONDUCTORES = f"""(
     SELECT l.business_date, l.subject_id AS driver_id, l.status,
            l.reason_id AS unassigned_reason_id, l.valid_until,
            l.resolved_by, l.resolved_at, l.computed_at, l.comentario,
+           l.home_location_id,
            {_CATEGORIA} AS category
     FROM app.closure_lines l
     LEFT JOIN app.status_taxonomies lr ON lr.id = l.reason_id
@@ -71,6 +72,7 @@ LINEAS_TRACTOS = f"""(
            l.requires_reason AS requires_motivo,
            l.reason_id AS unassigned_reason_id, l.valid_until,
            l.resolved_by, l.resolved_at, l.computed_at, l.comentario,
+           l.home_location_id,
            {_CATEGORIA} AS category
     FROM app.closure_lines l
     LEFT JOIN app.status_taxonomies lr ON lr.id = l.reason_id
@@ -102,10 +104,14 @@ SELECT
         WHEN count(dt.trip_id) > 0 THEN 'ASSIGNED'
         ELSE 'UNASSIGNED'
     END AS status,
-    true AS requires_reason
+    true AS requires_reason,
+    -- El CD base DECLARADO, no el origen del viaje. Son dos preguntas: de quién
+    -- es la asistencia, y de dónde salió la carga. La segunda se lee de
+    -- app.trip_stops y no se guarda acá.
+    r.home_location_id
 FROM active_roster r
 LEFT JOIN day_trips dt ON dt.driver_id = r.driver_id
-GROUP BY r.driver_id, r.home_carrier_id
+GROUP BY r.driver_id, r.home_carrier_id, r.home_location_id
 """
 
 # Un tracto de Equipo Completo puro no exige motivo (cierre pasivo); uno sin
@@ -132,20 +138,36 @@ today_trips AS (
 SELECT
     ar.asset_id AS subject_id,
     CASE WHEN tt.asset_id IS NOT NULL THEN 'ASSIGNED' ELSE 'UNASSIGNED' END AS status,
-    NOT (COALESCE(ar.is_equipo_completo, false) AND NOT COALESCE(ar.is_tractoreo, false)) AS requires_reason
+    NOT (COALESCE(ar.is_equipo_completo, false) AND NOT COALESCE(ar.is_tractoreo, false)) AS requires_reason,
+    -- El tracto hereda el CD de su conductor habitual, y no al revés: Operaciones
+    -- dijo que el CD se le asigna a la persona, que puede cambiar de patente
+    -- cuando queda en panne. Misma tabla que usa _propagar_al_tracto_habitual.
+    hd.home_location_id
 FROM active_roster ar
 LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
+LEFT JOIN LATERAL (
+    SELECT d.home_location_id
+    FROM public.vehicle_driver_assignments vda
+    JOIN public.drivers d ON d.id = vda.driver_id
+    WHERE vda.asset_id = ar.asset_id AND vda.status = 'ACTIVE'
+    LIMIT 1
+) hd ON true
 """
 
 
 def _sql_upsert(subject_type: str, sql_estado: str) -> str:
     return f"""
-INSERT INTO app.closure_lines (business_date, subject_type, subject_id, status, requires_reason, computed_at)
-SELECT $1, '{subject_type}', e.subject_id, e.status, e.requires_reason, now()
+INSERT INTO app.closure_lines
+    (business_date, subject_type, subject_id, status, requires_reason, home_location_id, computed_at)
+SELECT $1, '{subject_type}', e.subject_id, e.status, e.requires_reason, e.home_location_id, now()
 FROM ({sql_estado}) e
 ON CONFLICT (business_date, subject_type, subject_id) DO UPDATE SET
     status = EXCLUDED.status,
     requires_reason = EXCLUDED.requires_reason,
+    -- El CD se refresca mientras el día está abierto; con el día CLOSED este
+    -- upsert no corre y por eso queda congelado. No se limpia al pasar a
+    -- ASSIGNED: es una dimensión, no un motivo.
+    home_location_id = EXCLUDED.home_location_id,
     computed_at = EXCLUDED.computed_at,
     -- El motivo y su vigencia sólo tienen sentido en una línea sin carga: si
     -- ahora la tiene, se limpian. El comentario NO: es una nota del día que

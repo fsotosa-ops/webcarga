@@ -11,6 +11,9 @@ class DriverCreateBody(BaseModel):
     country_code: str = "CL"
     full_name: str
     operational_status: OperationalStatus = "ACTIVE"
+    # CD base (HU-28). Opcional en el alta: se puede enrolar a alguien antes de
+    # saber de qué CD va a salir, y queda como pendiente del directorio.
+    home_location_id: Optional[str] = None
 
     @field_validator("full_name", mode="before")
     @classmethod
@@ -32,6 +35,9 @@ class DriverCreateBody(BaseModel):
 class DriverPatchBody(BaseModel):
     full_name: Optional[str] = None
     operational_status: Optional[OperationalStatus] = None
+    # Cadena vacía = "quítaselo". None = "no mandó la clave", que no es lo
+    # mismo: sin esa distinción, cambiar el nombre le borraba el CD.
+    home_location_id: Optional[str] = None
 
     @field_validator("full_name", mode="before")
     @classmethod

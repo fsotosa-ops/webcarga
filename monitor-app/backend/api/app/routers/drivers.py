@@ -2,7 +2,7 @@
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
 import re
 
-from asyncpg.exceptions import CheckViolationError, UniqueViolationError
+from asyncpg.exceptions import CheckViolationError, ForeignKeyViolationError, UniqueViolationError
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase, require_editor
@@ -136,8 +136,15 @@ async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(get_curre
                -- migas ni contexto en su panel de detalle. LEFT JOIN: un
                -- conductor sin asignación tiene que seguir apareciendo.
                c.id::text      AS carrier_id,
-               c.business_name AS carrier_name
+               c.business_name AS carrier_name,
+               -- CD base (HU-28). Declarado, nunca derivado: el origen real de
+               -- cada viaje vive en app.trip_stops y responde otra pregunta.
+               d.home_location_id::text AS home_location_id,
+               hl.name                  AS home_location_name,
+               hs.name                  AS home_location_shipper
         FROM public.drivers d
+        LEFT JOIN public.locations hl ON hl.id = d.home_location_id
+        LEFT JOIN public.shippers  hs ON hs.id = hl.entity_id AND hl.entity_type = 'SHIPPER'
         LEFT JOIN app.driver_compliance_status dcs ON dcs.driver_id = d.id
         LEFT JOIN public.driver_assignments da
                ON da.driver_id = d.id AND da.status = 'ACTIVE'
@@ -148,7 +155,63 @@ async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(get_curre
     )
     if not row:
         raise HTTPException(404, "Conductor no encontrado")
-    return dict(row)
+
+    datos = dict(row)
+    if datos.get("home_location_id") is None:
+        datos["suggested_home_location"] = await _sugerir_cd_base(pool, driver_id)
+    else:
+        datos["suggested_home_location"] = None
+    return datos
+
+
+# Umbral de la sugerencia. Medido el 2026-09-17 sobre los 41 conductores del
+# roster de Tractoreo: con 80% quedan 35 sugerencias, 5 dominantes débiles y 1
+# sin historial. Debajo de 80 no se propone nada — se muestra el reparto y
+# decide una persona, porque proponer ahí sería elegir por otro.
+_UMBRAL_SUGERENCIA_CD = 80.0
+
+# PROPONE, NUNCA ESCRIBE. Es el mismo criterio que `CONDUCTOR_SIN_EMPRESA` en
+# services/pre_cierre.py: una inferencia llena un silencio y jamás contradice un
+# hecho. El CD base es dato maestro declarado; esto sólo evita que Operaciones
+# tenga que llenar 41 campos a ciegas.
+_SQL_SUGERENCIA_CD = """
+WITH viajes AS (
+    SELECT l.id AS cd_id, l.name AS cd_name
+    FROM app.trip_fleet_links fl
+    JOIN app.trips t ON t.id = fl.trip_id
+    -- ORDER BY stop_order: Sodimac tiene viajes con más de una parada ORIGIN.
+    JOIN LATERAL (
+        SELECT s.local FROM app.trip_stops s
+        WHERE s.trip_id = t.id AND s.stop_type = 'ORIGIN'
+        ORDER BY s.stop_order ASC LIMIT 1
+    ) ts ON true
+    JOIN public.shippers sh
+      ON lower(btrim(sh.name)) = lower(btrim(t.client_name)) AND sh.status = 'ACTIVE'
+    -- lower(name) y no lower(btrim(name)): es la expresión exacta del índice
+    -- único locations_entity_name_site_number_ci_key.
+    JOIN public.locations l
+      ON l.entity_type = 'SHIPPER' AND l.entity_id = sh.id
+     AND lower(l.name) = lower(btrim(ts.local))
+     AND l.is_origin_cd AND l.operational_status = 'ACTIVE'
+    WHERE fl.driver_id = $1::uuid
+      AND t.planning_date >= current_date - $2::int
+),
+conteo AS (
+    SELECT cd_id, cd_name, count(*) AS n, sum(count(*)) OVER () AS total
+    FROM viajes GROUP BY cd_id, cd_name
+)
+SELECT cd_id::text AS id, cd_name AS name, n AS viajes, total,
+       round(100.0 * n / total, 1) AS pct
+FROM conteo ORDER BY n DESC LIMIT 1
+"""
+
+
+async def _sugerir_cd_base(pool, driver_id: str, dias: int = 90) -> dict | None:
+    """El CD desde el que más salió este conductor, si es claramente uno solo."""
+    fila = await pool.fetchrow(_SQL_SUGERENCIA_CD, driver_id, dias)
+    if not fila or float(fila["pct"]) < _UMBRAL_SUGERENCIA_CD:
+        return None
+    return dict(fila)
 
 
 @router.post("", status_code=201)
@@ -211,11 +274,14 @@ async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Dep
             try:
                 row = await conn.fetchrow(
                     """
-                    INSERT INTO public.drivers (tax_id, country_code, full_name, operational_status)
-                    VALUES ($1, $2, $3, $4)
-                    RETURNING id, tax_id, country_code, full_name, operational_status, created_at
+                    INSERT INTO public.drivers
+                        (tax_id, country_code, full_name, operational_status, home_location_id)
+                    VALUES ($1, $2, $3, $4, $5::uuid)
+                    RETURNING id, tax_id, country_code, full_name, operational_status,
+                              home_location_id::text AS home_location_id, created_at
                     """,
                     canonico, body.country_code, body.full_name, body.operational_status,
+                    body.home_location_id or None,
                 )
             except UniqueViolationError:
                 raise HTTPException(409, {
@@ -229,6 +295,10 @@ async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Dep
                     "message": f"El RUT '{body.tax_id}' no es válido.",
                     "tax_id": body.tax_id,
                 })
+            except ForeignKeyViolationError:
+                raise HTTPException(
+                    422, "El CD base tiene que ser un centro de distribución de origen activo",
+                )
             await log_change(
                 conn, actor=user["sub"], entity_type="DRIVER", entity_id=row["id"],
                 action="create", source="api",
@@ -243,24 +313,46 @@ async def patch_driver(
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
-                "SELECT full_name, operational_status FROM public.drivers WHERE id = $1", driver_id,
+                "SELECT full_name, operational_status, home_location_id "
+                "FROM public.drivers WHERE id = $1", driver_id,
             )
             if not current:
                 raise HTTPException(404, "Conductor no encontrado")
 
-            touched = [f for f in ("full_name", "operational_status") if getattr(body, f) is not None]
+            # Los tres nombres tienen que existir en las TRES listas: la que lee
+            # (`current`), la que escribe (el UPDATE) y la que devuelve
+            # (`get_driver`). Derivar sólo una dejó un SELECT corto y un 500 con
+            # toda la suite en verde.
+            touched = [
+                f for f in ("full_name", "operational_status", "home_location_id")
+                if getattr(body, f) is not None
+            ]
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
 
-            await conn.execute(
-                """
-                UPDATE public.drivers SET
-                    full_name = COALESCE($2, full_name),
-                    operational_status = COALESCE($3, operational_status)
-                WHERE id = $1
-                """,
-                driver_id, body.full_name, body.operational_status,
-            )
+            # `home_location_id = ""` es "quítaselo": un COALESCE no puede
+            # expresar el borrado, así que el vaciado va por su propia rama.
+            borra_cd = "home_location_id" in touched and body.home_location_id == ""
+
+            try:
+                await conn.execute(
+                    """
+                    UPDATE public.drivers SET
+                        full_name = COALESCE($2, full_name),
+                        operational_status = COALESCE($3, operational_status),
+                        home_location_id = CASE WHEN $5 THEN NULL
+                                                ELSE COALESCE($4::uuid, home_location_id) END
+                    WHERE id = $1
+                    """,
+                    driver_id, body.full_name, body.operational_status,
+                    (body.home_location_id or None) if not borra_cd else None, borra_cd,
+                )
+            except ForeignKeyViolationError:
+                # Lo levanta drivers_home_location_es_un_cd(): la ubicación
+                # existe pero no es un CD de origen activo.
+                raise HTTPException(
+                    422, "El CD base tiene que ser un centro de distribución de origen activo",
+                )
             for field in touched:
                 await record_manual_edit(
                     conn, table="drivers", where={"id": driver_id}, actor=user["sub"],
