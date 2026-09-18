@@ -13,6 +13,139 @@
 > (**Rondas 152-157 archivadas al cerrar la sesión del 2026-09-14**: todo su trabajo está
 > desplegado, y lo que seguía abierto se consolidó en el checklist de la Ronda 160.)
 
+### 2026-09-17 — Ronda 162: HU-28, asistencia y cierre por CD y por operación
+
+Operaciones respondió las cuatro preguntas abiertas de la Ronda 161
+(`monitor-app/bugs/20260916/levantamiento-user-story.md`) y con eso se diseñó y se implementó la
+dimensión que al cierre le faltaba. **HU escrita en
+`monitor-app/docs/user-stories/20260917/01-hu-asistencia-y-cierre-por-cd.md`** (es la fuente: el
+mockup manda). Plan aprobado en `~/.claude/plans/jiggly-rolling-blum.md`.
+
+## La objeción del usuario, y cómo se resolvió
+
+El usuario frenó el diseño dos veces con la misma idea: *"nada de lo que viene desde la TMS es
+editable"*. Cruzado el documento de Operaciones con el levantamiento, **ninguna de las 24 líneas pide
+editar un dato que el TMS reportó**: todo es agrupar, filtrar y contar. Y las dos frases ambiguas se
+desambiguan solas con las respuestas —"dejar abierto el filtro de CD Origen" significa que el filtro
+liste **todos** los CD y no sólo Peñón/QL/LOA (respuesta 3), y "modificar el campo en los no
+asignados" es fijar a qué operación se ofrece un camión **sin viaje**, del que el TMS no dice nada
+(respuesta 1). Operaciones escribió el mismo criterio del usuario en su línea 21: *"se puede
+modificar con la asignación de TMS"*.
+
+Después pidió el estándar de la industria. Es **home terminal / domicile**: dato maestro declarado
+del conductor (Samsara, Motive, McLeod LoadMaster, Trimble/TMW; en EE.UU. lo exige la FMCSA). De ahí
+salieron las tres reglas que se adoptaron, y **una de ellas descartó mi propia propuesta anterior**
+de derivar el CD del historial.
+
+## Decisiones de arquitectura
+
+1. **Un atributo maestro no se deriva de transacciones.** Calcular el CD desde "dónde cargó más
+   veces" lo haría cambiar solo, y con él la asistencia de meses ya firmados.
+2. **Asistencia y volumen son dos dimensiones distintas**: la asistencia agrupa por el **CD base
+   declarado**; el volumen, por el **origen real del viaje**. Dos columnas, nunca un `COALESCE`.
+3. **Un maestro de ubicaciones con roles, no una tabla por rol.** `is_origin_cd` es un **booleano**
+   y no un `kind` de valor único porque **14 de los 24 orígenes observados YA existían como local de
+   entrega**: un valor único obligaba a duplicar esas filas.
+4. **La línea del cierre guarda su propia dimensión** (Kimball). El congelamiento sale gratis:
+   `recalcular` ya es no-op con el día CLOSED.
+5. **Descartado a propósito**: tabla de alias (el dato no está sucio), vigencia SCD2 del CD
+   (`end_date` está en **0 de 402 filas** en las 4 tablas de asignación del repo — una quinta
+   vigencia que nadie puebla es el frankenstein), y un maestro de "operación" por equipo
+   (`carrier_shippers` ya existe y el filtro del cierre ya lo usa).
+6. **Nomenclatura**: ninguna columna nueva se llama `operation_*` — el nombre ya está tomado dos
+   veces (`assets.webcarga_operation_type_id` = Tractoreo/Equipo Completo; `locations.operation_type`
+   = zona RM/Z0/Región).
+
+## Lo medido contra producción, que corrigió dos supuestos del plan
+
+- **Los nombres de CD NO vienen sucios.** 18 orígenes distintos en 47 días, escritos canónicos por el
+  TMS; no existe ninguna fila "LOA" ni "QL" — eso es cómo habla Operaciones. La mitad del trabajo que
+  el plan proponía (normalizar) no hacía falta.
+- **Origen poblado en 1.571 de 1.572 viajes (99,94%)**, sólo en `app.trip_stops.local`.
+  `trips.origin_tms`/`origin_city`/`origin_region` son columnas muertas (100% NULL).
+- **El CD no es fijo y por eso se declara**: 35% de los conductores de Walmart cargan en más de un
+  CD, pero el dominante concentra el **90,5%** de sus viajes.
+- **Roster de Tractoreo: 41 conductores**; 35 tienen un CD dominante ≥80%, 3 entre 60-80%, 2 bajo 60%
+  y 1 sin historial. Por eso la carga inicial es una **sugerencia de un clic**, no 41 campos vacíos.
+- **Siembra del catálogo**: 12 CD (8 marcas sobre filas existentes + 4 nuevas de Walmart), **99,26%
+  de los viajes cubiertos**, 0 ambigüedades. Los 12 pares que quedan fuera son tiendas con 1-2 viajes
+  de logística inversa, no CD.
+
+## Aplicado a producción (3 migraciones, todas ensayadas con ROLLBACK antes)
+
+| Qué | Dónde |
+|---|---|
+| `locations.is_origin_cd` + índice parcial + 12 CD sembrados | `20260917020000`, aplicada |
+| `drivers.home_location_id` + trigger `drivers_home_location_es_un_cd()` | `20260917030000`, aplicada |
+| `closure_lines.home_location_id` + índice `(business_date, home_location_id)` | `20260917040000`, aplicada |
+
+Estado verificado en producción: 12 CD en catálogo, columna e índice de la línea creados, trigger
+activo, **0 conductores con CD base** — que es la carga de negocio, no un pendiente de desarrollo.
+
+## Lo construido, por ola
+
+- **Ola 1**: `GET /locations?origin_cd=true`; `is_origin_cd` en el alta y el PATCH.
+- **Ola 2**: el CD base entra y sale por el detalle y el alta de conductor; **sugerencia que propone
+  y nunca escribe** (umbral 80%, ventana 90 días), campo en `DriverDetailPanel` y en `AltaDeFlota`, y
+  sección **Configuración › Operaciones › Centros de distribución**.
+- **Ola 3**: la línea del cierre guarda el CD (el tracto lo hereda de su conductor habitual);
+  `home_cd_id`/`home_cd_name` y `carrier_shipper_names` en los dos ejes y en el pivot de Reportería;
+  columna **"CD"** al lado de "Local de origen"; **el desplegable de CD se alimenta del catálogo y no
+  de las filas presentes** (única excepción al criterio de la tabla, comentada en el código); las
+  filas sin carga muestran las operaciones habilitadas de su empresa en cursiva; **los tiles pasan a
+  contar sobre las filas filtradas**; y el aviso de "nadie tiene CD base" con enlace al Directorio.
+
+## Tres hallazgos que valen más que el código
+
+1. **El `UNIQUE` que la migración de julio declara sobre `public.locations` no existe en
+   producción**: lo que hay es un índice único *case-insensitive* con otro nombre
+   (`locations_entity_name_site_number_ci_key`). Un `ON CONFLICT ON CONSTRAINT` habría reventado en
+   el deploy. Lo atrapó el ensayo contra la base, no los tests.
+2. **`routers/locations.py` no tenía NINGÚN test de integración**: sus tests mockeados pasaban con
+   una columna inexistente en el `SELECT`. Ahora tiene 4.
+3. **Inferí tres firmas en vez de abrirlas** (`shippersApi`, `useRowFeedback`, `useConfigList`) y las
+   tres estaban mal; `useConfigList` además habría recargado en bucle con un arrow inline.
+
+## Lo medido
+
+Frontend **1.375 en verde**, `tsc` limpio, `npm run build` OK, trinquete visual **1.685** sin
+moverse (el primer intento lo rompió con 1.687 y se corrigió con tokens). **Backend 1.033 en verde,
+cero fallas** (venía de 1.017): **16 tests nuevos de integración** en 3 archivos, todos contra
+Postgres real en transacción revertida.
+
+**Mutaciones verificadas, 15 en total**: el trigger del CD (probado sacándolo dentro de una
+transacción revertida), el borrado con cadena vacía, el campo en la lista `touched`, la sugerencia
+que no se ofrece con dato puesto, el filtro alimentado por catálogo, el borrador que se resincroniza,
+el error de catálogo que no dibuja un desplegable vacío, el upsert que guarda el CD, la herencia del
+tracto, las operaciones habilitadas, los tiles que siguen al filtro, y las dos columnas que no se
+funden. **Ojo con una**: sacar la primera guarda del congelamiento NO pone nada en rojo — hay dos, y
+hay que sacar las dos para que el test lo note. Defensa en profundidad, no test flojo.
+
+## Checklist — siguiente paso exacto
+
+1. **DESPLEGADO** (17/09). Dos commits y dos pushes a propósito, para respetar el orden: backend
+   `2f96a519` (Deploy Monitor API en verde, 2m03s) y recién después frontend `bedc48b4` (Deploy
+   Frontend en verde). El filtro de rutas de Actions funcionó: el primer push **no** disparó Deploy
+   Frontend. Verificado en el desplegado: `/health` 200, `/locations?origin_cd=true` responde 401 sin
+   credenciales, las dos rutas del frontend redirigen al login, sin errores en los logs. Revisiones
+   `webcarga-monitor-api-dev-00166-t6p` y `webcarga-frontend-dev-00236-qms`.
+   **La HU no está en git**: `monitor-app/docs/` está en `.gitignore` por diseño y ninguna HU del
+   proyecto está trackeada. No se forzó con `git add -f`.
+2. **Ola 4, sin hacer**: retirar la adivinanza de `status_report.py:144-149`
+   (`_LAST_KNOWN_ORIGIN_BY_DRIVER_SQL`) y `equipment_closures.py:109-117`, y que las Secciones 2, 4 y
+   7 agrupen por el CD de la línea. Cambia números que Operaciones ya mira: va con el antes/después
+   medido, y **después** de que el CD esté cargado para el grueso del roster.
+3. **La carga de los 41 CD la hace Operaciones**, con la sugerencia de un clic. No es criterio de
+   completitud de desarrollo.
+4. **Dos preguntas abiertas para Operaciones**, anotadas en la HU: si los 5 orígenes de cola
+   (`Sitrans`, `BIO BIO`, `VIÑA DEL MAR`, `PILU - UHT`, `HIPER SANTA CRUZ`) son CD o ruido; y
+   confirmar que "dejar abierto el filtro de CD Origen para modificación" es el filtro y no el valor.
+   **Si fuera el valor, hay que rediseñar.**
+5. **El cambio de conducta de los tiles** (ahora siguen al filtro) necesita el visto bueno de
+   Operaciones antes de darse por cerrado.
+6. Sigue de la Ronda 161: la UAT del cierre unificado, el congelamiento con tráfico real, la matriz
+   de grupos de motivos, y la ola 4.4 (líneas TRIP) y ola 5 (retirar tablas viejas).
+
 ### 2026-09-16 — Ronda 161: "Solicitud de Cambios Diario 2.0" — causa raíz, olas 0 a 4
 
 Operaciones mandó `monitor-app/bugs/20260916/Solicitud de Cambios Diario 2.0.docx` (13 temas, 20
