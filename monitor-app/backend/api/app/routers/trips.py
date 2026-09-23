@@ -13,10 +13,13 @@ from ..auth import EDITOR_ROLES, get_current_user, get_supabase, require_editor,
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
-    AsignarConductorBody, TripBulkCloseBody, TripPatch, TripStopPatch,
+    AsignarConductorBody, TripBulkCloseBody, TripBulkDeleteBody, TripPatch, TripStopPatch,
     CAMPOS_BASICOS_DEL_DIARIO, CAMPOS_BASICOS_DE_PARADA,
 )
 from ..services.audit import log_change
+from ..services.eliminar_viajes import (
+    SQL_COLUMNAS_ELIMINABLE, SQL_JOIN_ELIMINABLE, anotar_eliminable, eliminar_viajes_manuales,
+)
 from ..services.cierre_viajes import SQL_GRUPOS_CIERRE
 
 
@@ -574,7 +577,7 @@ _TRIP_SELECT = """
 """
 
 # HU-04 (Fase 0, 2026-07-21): antes, cuando un viaje no lograba cruzar con
-# empresa/conductor (_auto_resolve_fleet_link/el fallback en vivo de acá
+# empresa/conductor (el fallback en vivo de acá
 # abajo no encontraban match), el caso se perdía en silencio — no quedaba
 # ningún flag ni fila que lo distinguiera de "todavía no se intentó
 # resolver". Este CASE se repite en el WHERE de list_trips (mismo patrón ya
@@ -595,7 +598,7 @@ _FLEET_MATCH_CASE = """
       ELSE 'MATCHED'
     END
 """
-_TRIP_SELECT = _TRIP_SELECT.format(fleet_match_case=_FLEET_MATCH_CASE)
+_TRIP_SELECT = _TRIP_SELECT.format(fleet_match_case=_FLEET_MATCH_CASE) + ",\n" + SQL_COLUMNAS_ELIMINABLE
 
 
 def _compliance_alert_lateral(alias: str, entity_type: str, id_expr: str, critical_codes: tuple[str, ...] = ()) -> str:
@@ -653,6 +656,9 @@ _DRIVER_CRITICAL_DOC_CODES = ("LICENCIA_CONDUCIR", "COPIA_CI_CONDUCTOR")
 
 _TRIP_FROM = """
     FROM app.trips t
+    -- Quién creó un viaje manual: decide si se puede eliminar (ver
+    -- services/eliminar_viajes.py). 1:1 por PK, no multiplica filas.
+    """ + SQL_JOIN_ELIMINABLE + """
     -- FIX 2026-07-18 (Fase 1 del hardening): antes unía por fl.id = t.fleet_link_id,
     -- una columna que dbt resetea a NULL en cada --full-refresh de app.trips
     -- (protegida solo en el MERGE incremental, no en un full-refresh que
@@ -771,7 +777,7 @@ async def list_trips(
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
     filters: list[str] = [
         "($1 = '' OR t.fleet->>'tractor_plate' ILIKE '%'||$1||'%' "
@@ -922,6 +928,7 @@ async def list_trips(
         _attach_origin(d)
         _apply_operation_types(d, op_type_buckets)
         d["tms_dropped"] = _tms_dropped(d, dropped_ctx)
+        anotar_eliminable(d, user)
 
     return {"data": data, "count": count, "page": page, "limit": limit}
 
@@ -1731,32 +1738,6 @@ def _validate_create_body(body: TripCreateBody, valid_statuses: set[str]) -> Non
         raise HTTPException(422, "Un viaje no puede tener más de un origen")
 
 
-async def _auto_resolve_fleet_link(conn, tractor_plate: str | None, trailer_plate: str | None):
-    """Resuelve carrier_id/driver_id/tractor_asset_id por patente — mismo
-    mecanismo que el fallback en vivo de _TRIP_FROM (public.assets +
-    asset_assignments + vehicle_driver_assignments). Se usa al crear un
-    viaje manual/CSV sin empresa seleccionada explícitamente, para que nazca
-    con el mismo nivel de trazabilidad que uno vinculado a mano vía
-    EmpresaSelector — unificación de la carga masiva con el alta individual
-    (Fase 1 del hardening del Diario, 2026-07-18)."""
-    plate = (tractor_plate or trailer_plate or "").strip().upper()
-    if not plate:
-        return None
-    row = await conn.fetchrow(
-        """
-        SELECT a.id AS tractor_asset_id, aa.carrier_id, vda.driver_id
-        FROM public.assets a
-        LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-        LEFT JOIN public.vehicle_driver_assignments vda ON vda.asset_id = a.id AND vda.status = 'ACTIVE'
-        WHERE upper(trim(a.license_plate)) = $1
-        """,
-        plate,
-    )
-    if not row or (row["carrier_id"] is None and row["driver_id"] is None and row["tractor_asset_id"] is None):
-        return None
-    return dict(row)
-
-
 async def _activo_de_la_patente(conn, patente: str | None, asset_id: str | None) -> tuple[str | None, str | None]:
     """(asset_id, patente) coherentes para un vínculo manual.
 
@@ -1778,6 +1759,57 @@ async def _activo_de_la_patente(conn, patente: str | None, asset_id: str | None)
             "SELECT license_plate FROM public.assets WHERE id = $1", asset_id,
         )
     return None, None
+
+
+async def _escribir_link_manual(
+    conn, trip_id: str, *, user: dict,
+    carrier_id: str | None, driver_id: str | None,
+    tractor_asset_id: str | None, tractor_plate: str | None,
+    trailer_asset_id: str | None, trailer_plate: str | None,
+    driver_name: str | None, driver_phone: str | None = None,
+) -> str:
+    """Único punto que escribe el vínculo MANUAL de un viaje.
+
+    El vínculo tiene dos dueños posibles y UNA sola fila por viaje
+    (UNIQUE(trip_id)): el trigger `trg_trips_resolve_fleet_*` escribe el
+    `auto` (capas 1-4 de app.resolve_trip_fleet) y la persona escribe el
+    `manual`, que es terminal. Por eso es un upsert que CONVIERTE la fila:
+    la elección humana reemplaza a la inferencia, y lo que era propio de la
+    inferencia (regla de match, fecha de resolución) se limpia.
+
+    Antes había dos escrituras distintas: el alta hacía un INSERT pelado y
+    chocaba contra el `auto` que el trigger acababa de escribir (500 del
+    23/09, nunca funcionó desde el 17/08), y la reasignación hacía
+    SELECT+DELETE+INSERT para esquivar el mismo choque."""
+    link_id = await conn.fetchval(
+        """
+        INSERT INTO app.trip_fleet_links
+          (trip_id, carrier_id, driver_id, tractor_asset_id, trailer_asset_id,
+           tractor_plate, trailer_plate, driver_name_raw, driver_phone,
+           link_source, created_by)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'manual',$10::uuid)
+        ON CONFLICT (trip_id) DO UPDATE SET
+            carrier_id           = EXCLUDED.carrier_id,
+            driver_id            = EXCLUDED.driver_id,
+            tractor_asset_id     = EXCLUDED.tractor_asset_id,
+            trailer_asset_id     = EXCLUDED.trailer_asset_id,
+            tractor_plate        = EXCLUDED.tractor_plate,
+            trailer_plate        = EXCLUDED.trailer_plate,
+            driver_name_raw      = EXCLUDED.driver_name_raw,
+            driver_phone         = EXCLUDED.driver_phone,
+            transporter_name_raw = NULL,
+            link_source          = 'manual',
+            driver_match_rule    = NULL,
+            resolved_at          = NULL,
+            created_by           = EXCLUDED.created_by,
+            updated_at           = NOW()
+        RETURNING id
+        """,
+        trip_id, carrier_id, driver_id, tractor_asset_id, trailer_asset_id,
+        tractor_plate, trailer_plate, driver_name, driver_phone, user["sub"],
+    )
+    await conn.execute("UPDATE app.trips SET fleet_link_id = $1 WHERE id = $2", link_id, trip_id)
+    return link_id
 
 
 async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: set[str]) -> str:
@@ -1858,77 +1890,27 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
 
     await _insert_trip_stops(conn, body.stops, trip_id)
 
-    # Si se seleccionó una empresa del módulo de Empresas, crear fleet_link
+    # Vínculo manual sólo si la persona eligió empresa. Sin empresa (carga
+    # masiva CSV) no se escribe nada acá: el INSERT de arriba ya disparó
+    # `trg_trips_resolve_fleet_ins`, que resuelve por patente, RUT y nombre
+    # con las 4 capas del modelo de flota. Una segunda resolución en Python
+    # —la que había acá— sólo podía duplicarlo o contradecirlo.
     if body.carrier_id:
         tractor_asset_id, tractor_plate = await _activo_de_la_patente(
             conn, body.tractor_plate, body.tractor_asset_id)
         trailer_asset_id, trailer_plate = await _activo_de_la_patente(
             conn, body.trailer_plate, body.trailer_asset_id)
-        link_id = await conn.fetchval(
-            """
-            INSERT INTO app.trip_fleet_links
-              (trip_id, carrier_id, driver_id, tractor_asset_id, trailer_asset_id,
-               tractor_plate, trailer_plate, driver_name_raw, driver_phone,
-               link_source, created_by)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'manual',$10::uuid)
-            RETURNING id
-            """,
-            trip_id,
-            body.carrier_id,
-            body.driver_id,
-            tractor_asset_id,
-            trailer_asset_id,
-            tractor_plate,
-            trailer_plate,
-            body.driver_name,
-            body.driver_phone,
-            user["sub"],
-        )
-        await conn.execute(
-            "UPDATE app.trips SET fleet_link_id = $1 WHERE id = $2",
-            link_id, trip_id,
+        link_id = await _escribir_link_manual(
+            conn, trip_id, user=user,
+            carrier_id=body.carrier_id, driver_id=body.driver_id,
+            tractor_asset_id=tractor_asset_id, tractor_plate=tractor_plate,
+            trailer_asset_id=trailer_asset_id, trailer_plate=trailer_plate,
+            driver_name=body.driver_name, driver_phone=body.driver_phone,
         )
         await conn.execute(
             "UPDATE app.trips_manual SET fleet_link_id = $1 WHERE id = $2",
             link_id, trip_id,
         )
-    elif body.tractor_plate or body.trailer_plate:
-        # Sin empresa seleccionada a mano (típicamente carga masiva CSV,
-        # que hoy no tiene ningún picker de empresa): intentar resolver por
-        # patente antes de dejar el viaje sin ningún vínculo. El fallback en
-        # vivo de _TRIP_FROM ya cubriría esto en lectura, pero crear el
-        # trip_fleet_links acá deja el viaje con la misma trazabilidad
-        # explícita que uno vinculado a mano — mismo trato para viajes
-        # cargados de a uno y en lote.
-        resolved = await _auto_resolve_fleet_link(conn, body.tractor_plate, body.trailer_plate)
-        if resolved:
-            link_id = await conn.fetchval(
-                """
-                INSERT INTO app.trip_fleet_links
-                  (trip_id, carrier_id, driver_id, tractor_asset_id,
-                   tractor_plate, trailer_plate, driver_name_raw, driver_phone,
-                   link_source, created_by)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'auto',$9::uuid)
-                RETURNING id
-                """,
-                trip_id,
-                resolved["carrier_id"],
-                resolved["driver_id"],
-                resolved["tractor_asset_id"],
-                body.tractor_plate,
-                body.trailer_plate,
-                body.driver_name,
-                body.driver_phone,
-                user["sub"],
-            )
-            await conn.execute(
-                "UPDATE app.trips SET fleet_link_id = $1 WHERE id = $2",
-                link_id, trip_id,
-            )
-            await conn.execute(
-                "UPDATE app.trips_manual SET fleet_link_id = $1 WHERE id = $2",
-                link_id, trip_id,
-            )
 
     return trip_id
 
@@ -1971,7 +1953,12 @@ async def create_trip(
     user=Depends(require_editor),
 ):
     valid_statuses = await _valid_status_ids(pool)
-    trip_id = await _insert_trip(pool, body, user, valid_statuses)
+    # Todo o nada, igual que /bulk: sin transacción, un error a mitad de
+    # camino dejaba el viaje, sus paradas y el vínculo ya confirmados, y cada
+    # reintento del usuario creaba otro (7 copias del mismo viaje el 23/09).
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            trip_id = await _insert_trip(conn, body, user, valid_statuses)
     await _log_system_note(pool, trip_id, user, "Creó el viaje manualmente")
     return await get_trip(trip_id, pool, user)
 
@@ -2364,7 +2351,41 @@ async def get_trip(
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
     _apply_operation_types(d, op_type_buckets)
     await _log_tms_divergence_once(pool, trip_id, user, d)
+    anotar_eliminable(d, user)
     return d
+
+
+async def _eliminar(pool, supabase, trip_ids: list[str], user: dict) -> dict:
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            rutas = await eliminar_viajes_manuales(conn, trip_ids, user)
+    # Después del commit: un archivo borrado no vuelve con un rollback. Si
+    # Storage falla, queda un archivo huérfano, nunca un viaje a medias.
+    if rutas:
+        try:
+            supabase.storage.from_(ATTACHMENT_BUCKET).remove(rutas)
+        except Exception:
+            pass
+    return {"ok": True, "deleted": len(dict.fromkeys(trip_ids))}
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_trips(
+    body: TripBulkDeleteBody, pool=Depends(get_pool),
+    supabase=Depends(get_supabase), user=Depends(require_writer),
+):
+    """Elimina viajes manuales en lote, todo o nada. El permiso fino (creador
+    o admin/owner, día no firmado) se decide por viaje en
+    services/eliminar_viajes.py; la ruta sólo exige poder escribir."""
+    return await _eliminar(pool, supabase, [str(t) for t in body.trip_ids], user)
+
+
+@router.delete("/{trip_id}")
+async def delete_trip(
+    trip_id: UUID, pool=Depends(get_pool),
+    supabase=Depends(get_supabase), user=Depends(require_writer),
+):
+    return await _eliminar(pool, supabase, [str(trip_id)], user)
 
 
 @router.patch("/bulk-close")
@@ -2715,43 +2736,16 @@ async def assign_fleet_link(
     if not carrier_id and not driver_id:
         raise HTTPException(422, "Indica al menos un conductor o una empresa")
 
-    # FIX 2026-07-18: buscar por trip_id en trip_fleet_links, no por
-    # trips.fleet_link_id (se desincroniza con cada --full-refresh de dbt —
-    # ver comentario en _TRIP_FROM). Sin este fix, reasignar la empresa de un
-    # viaje con un vínculo huérfano fallaba con 23505 (unique violation en
-    # trip_id) porque el INSERT de abajo no encontraba nada que borrar antes.
-    old_link_id = await pool.fetchval(
-        "SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id
-    )
-    if old_link_id:
-        await pool.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", old_link_id)
-
     tractor_asset_id, tractor_plate = await _activo_de_la_patente(
         pool, body.get("tractor_plate"), body.get("tractor_asset_id"))
     trailer_asset_id, trailer_plate = await _activo_de_la_patente(
         pool, body.get("trailer_plate"), body.get("trailer_asset_id"))
-    link_id = await pool.fetchval(
-        """
-        INSERT INTO app.trip_fleet_links
-          (trip_id, carrier_id, driver_id, tractor_asset_id, trailer_asset_id,
-           tractor_plate, trailer_plate, driver_name_raw, link_source, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'manual', $9)
-        RETURNING id
-        """,
-        trip_id,
-        carrier_id,
-        driver_id,
-        tractor_asset_id,
-        trailer_asset_id,
-        tractor_plate,
-        trailer_plate,
-        body.get("driver_name"),
-        user["sub"],
-    )
-
-    await pool.execute(
-        "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
-        link_id, trip_id,
+    await _escribir_link_manual(
+        pool, trip_id, user=user,
+        carrier_id=carrier_id, driver_id=driver_id,
+        tractor_asset_id=tractor_asset_id, tractor_plate=tractor_plate,
+        trailer_asset_id=trailer_asset_id, trailer_plate=trailer_plate,
+        driver_name=body.get("driver_name"),
     )
 
     # La nota registra lo que efectivamente se vinculó, no siempre la empresa:

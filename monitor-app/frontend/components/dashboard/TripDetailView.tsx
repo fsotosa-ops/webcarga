@@ -15,6 +15,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { AccordionSection } from './AccordionSection'
 import { GestionPanel } from './GestionPanel'
+import { EliminarViaje } from './EliminarViaje'
 
 interface Props {
   trip:        Trip
@@ -156,9 +157,11 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
           <span className="text-etiqueta text-white/35 truncate hidden sm:inline">· {trip.client_name}</span>
         )}
 
+        <span className="ml-auto" />
+        <EliminarViaje trip={trip} onEliminado={onDismiss} />
         <button
           onClick={onDismiss}
-          className="text-white/50 hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-white/10 ml-auto"
+          className="text-white/50 hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-white/10"
           aria-label="Cerrar detalle"
         >
           <X size={18} />

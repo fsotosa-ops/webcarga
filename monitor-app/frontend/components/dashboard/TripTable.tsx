@@ -149,6 +149,14 @@ interface Props {
    *  mostrando el dato pero deja de ser un control — que es exactamente el
    *  comportamiento correcto para quien no puede editar. */
   onAsignarConductor?: (trip: Trip) => void
+  /** Selección múltiple para eliminar viajes manuales en lote. Sin esto, o si
+   *  ningún viaje de la vista se puede eliminar, no hay casillas: a quien no
+   *  puede eliminar nada no se le ofrece una selección que no sirve. */
+  seleccion?: {
+    ids:         Set<string>
+    onToggle:    (id: string) => void
+    onToggleAll: () => void
+  }
 }
 
 /** El TMS devuelve el nombre como venga: "SUAREZ LOPEZ EFRAIN EDUARDO" en una
@@ -159,7 +167,7 @@ interface Props {
  *  Se normaliza SOLO en presentacion. El dato del TMS no se toca (regla 1 de
  *  Pablo): lo que se guarda, se exporta y se compara sigue siendo el original,
  *  y el nombre completo queda en el `title` para quien lo necesite. */
-export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort, onAsignarConductor }: Props) {
+export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort, onAsignarConductor, seleccion }: Props) {
   // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): solo
   // Patente queda sticky (izquierda) — es fácil no notar que hay más
   // columnas fuera de vista sin scrollear. Sombra/gradiente en el borde que
@@ -186,6 +194,10 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
       window.removeEventListener('resize', update)
     }
   }, [trips])
+
+  const eliminables = trips.filter(t => t.can_delete)
+  const sel = seleccion && eliminables.length > 0 ? seleccion : null
+  const todosMarcados = !!sel && eliminables.every(t => sel.ids.has(t.id))
 
   if (trips.length === 0) {
     return (
@@ -310,6 +322,18 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     estado es lo primero que filtran"). Reemplaza a Patente
                     como única columna sticky al hacer scroll horizontal. */}
                 <th onClick={() => onSort('current_status')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
+                  {/* La casilla vive dentro de la columna fija: una columna
+                      propia a su izquierda obligaría a mover el sticky. */}
+                  {sel && (
+                    <input
+                      type="checkbox"
+                      aria-label="Seleccionar todos los viajes que puedes eliminar"
+                      checked={todosMarcados}
+                      onChange={() => {}}
+                      onClick={e => { e.stopPropagation(); sel.onToggleAll() }}
+                      className="mr-2 align-middle cursor-pointer accent-accent focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
+                    />
+                  )}
                   Estado<OrdenIcono activo={sortKey === 'current_status'} direccion={sortDir} />
                   <span className="sr-only">, Abrir detalle</span>
                 </th>
@@ -361,7 +385,19 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         horizontal (Hito 11, reemplaza a Patente). */}
                     <td className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5">
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
+                        {sel && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Seleccionar viaje ${trip.source_system_trip_id ?? trip.client_name ?? trip.id}`}
+                            checked={sel.ids.has(trip.id)}
+                            disabled={!trip.can_delete}
+                            title={trip.can_delete ? undefined : (trip.delete_blocked_reason ?? undefined)}
+                            onChange={() => {}}
+                            onClick={e => { e.stopPropagation(); if (trip.can_delete) sel.onToggle(trip.id) }}
+                            className="mt-0.5 shrink-0 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
                           <StatusBadge status={currentStatus} meta={meta} variante="punto" origen={origenExterno(trip)} />
                           {trip.manual_status && (
                             <span className="text-etiqueta text-accent block mt-0.5">override</span>

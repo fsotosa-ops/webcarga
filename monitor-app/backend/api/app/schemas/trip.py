@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel
 from typing import Optional
 
@@ -43,6 +45,12 @@ CAMPOS_BASICOS_DEL_DIARIO = frozenset({
     "notes", "comments",                                       # observaciones
     "driver_phone",                                            # teléfono
 })
+
+
+class TripBulkDeleteBody(BaseModel):
+    """Viajes manuales a eliminar. UUID, no str: un id mal formado es un 422
+    de validación, no un DataError de asyncpg convertido en 500."""
+    trip_ids: list[UUID]
 
 
 class TripBulkCloseBody(BaseModel):

@@ -30,6 +30,9 @@ import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { AsignarConductorPopover } from '@/components/dashboard/AsignarConductorPopover'
 import { useCanEdit } from '@/hooks/useCanEdit'
+import { useEliminarViajes } from '@/hooks/useEliminarViajes'
+import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
+import { cuantos } from '@/lib/utils/cuantos'
 import { driversApi } from '@/lib/api/drivers'
 import { carriersApi } from '@/lib/api/carriers'
 import { Estado } from '@/components/ui/Estado'
@@ -236,6 +239,10 @@ export default function DiarioPage() {
     }
     return result
   }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules, soloSinIdentificar])
+
+  // Eliminar viajes manuales, uno o varios (23/09). La selección vive sobre
+  // lo que se ve: un viaje que sale de la vista se desmarca solo.
+  const eliminacion = useEliminarViajes(visibleTrips)
 
   // PERSONAS, no viajes. 27 personas explican 208 viajes: contar viajes
   // exagera el trabajo por 7,7 y hace que la tarea parezca infinita.
@@ -607,8 +614,33 @@ export default function DiarioPage() {
                   updatedIds={updatedIds}
                 />
               ) : (
+                <>
+                {/* Sólo si hay algo que esta persona pueda eliminar en la vista:
+                    los viajes manuales que creó (o todos, si es admin/owner). */}
+                {eliminacion.hayEliminables && (
+                  <div className="mb-2 rounded-lg overflow-hidden border border-border bg-white">
+                    <BarraDeSeleccion
+                      seleccionados={eliminacion.seleccion.ids.size}
+                      ayuda="marca los viajes manuales que quieras eliminar"
+                      onLimpiar={eliminacion.limpiar}
+                      destructiva={{
+                        etiqueta:     `Eliminar ${cuantos(eliminacion.seleccion.ids.size, 'viaje')}`,
+                        advertencia:  'Se eliminan definitivamente, con sus paradas y notas',
+                        confirmacion: `Sí, eliminar ${eliminacion.seleccion.ids.size}`,
+                        onConfirmar:  () => { void eliminacion.eliminarSeleccion() },
+                        ocupado:      eliminacion.ocupado,
+                      }}
+                    />
+                    {eliminacion.error && (
+                      <p role="alert" className="px-3 py-2 text-[11px] text-status-incidente bg-status-incidente/5 border-t border-status-incidente/20">
+                        {eliminacion.error}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <TripTable
                   trips={visibleTrips}
+                  seleccion={eliminacion.seleccion}
                   selectedId={openTripId}
                   onSelect={trip => {
                     queryClient.setQueryData(['trip', trip.id], trip)
@@ -622,6 +654,7 @@ export default function DiarioPage() {
                   onSort={col => dispatch({ type: 'toggleSort', col })}
                   onAsignarConductor={puedeEditar ? setAsignando : undefined}
                 />
+                </>
               )}
             </div>
           )}

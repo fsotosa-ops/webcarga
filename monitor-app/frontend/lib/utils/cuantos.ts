@@ -9,6 +9,6 @@
  *  de mover, y una sola de las dos lo aplicaba: "Mover 3 a otra empresa"
  *  junto a "Descartar los 3".
  */
-export function cuantos(n: number) {
-  return n === 1 ? '1 archivo' : `los ${n}`
+export function cuantos(n: number, cosa = 'archivo') {
+  return n === 1 ? `1 ${cosa}` : `los ${n}`
 }

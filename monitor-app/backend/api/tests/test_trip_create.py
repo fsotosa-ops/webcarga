@@ -11,6 +11,7 @@ from app.routers.trips import (
 )
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_editor
+from tests.conftest import wire_transactional_conn
 
 USER = {
     "sub": "11111111-1111-1111-1111-111111111111",
@@ -42,6 +43,9 @@ def make_pool(trip_exists=False):
 
     # get_trip al final del create
     pool.fetchrow.return_value = {"id": "x"}
+    # El alta corre en una transacción: la conexión prestada ES el mismo
+    # mock, así las aserciones sobre pool.execute siguen viendo cada INSERT.
+    wire_transactional_conn(pool, pool)
     return pool
 
 

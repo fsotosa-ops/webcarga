@@ -49,7 +49,7 @@ def test_assign_fleet_link_inserts_carrier_and_driver_id():
     # empresa. Desde el 16/09 la patente se resuelve a su activo antes del
     # INSERT (`_activo_de_la_patente`): existe -> link viejo -> activo de la
     # patente -> INSERT -> conductor -> empresa.
-    pool.fetchval.side_effect = ["trip-1", None, "a-abcd12", "link-1", "Juan Perez", "Transportes Sur Spa"]
+    pool.fetchval.side_effect = ["trip-1", "a-abcd12", "link-1", "Juan Perez", "Transportes Sur Spa"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={
@@ -66,7 +66,7 @@ def test_assign_fleet_link_accepts_tractor_and_trailer_asset_id():
     pool = make_pool()
     # Sin patente, cada activo aporta la suya: existe -> link viejo ->
     # patente del tracto -> patente de la rampla -> INSERT -> empresa.
-    pool.fetchval.side_effect = ["trip-1", None, "TRAC01", "RAMP01", "link-1", "Transportes Sur Spa"]
+    pool.fetchval.side_effect = ["trip-1", "TRAC01", "RAMP01", "link-1", "Transportes Sur Spa"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={
@@ -82,7 +82,7 @@ def test_assign_fleet_link_accepts_tractor_and_trailer_asset_id():
 
 def test_assign_fleet_link_looks_up_business_name_from_public_carriers():
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
+    pool.fetchval.side_effect = ["trip-1", "link-1", "Transportes Sur Spa"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={"carrier_id": "c1"})
@@ -104,7 +104,7 @@ def test_assign_fleet_link_requires_carrier_id():
 def test_assign_fleet_link_works_without_driver_id():
     """driver_id es opcional — vincular solo la empresa sigue funcionando."""
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Transportes Sur Spa"]
+    pool.fetchval.side_effect = ["trip-1", "link-1", "Transportes Sur Spa"]
     client = make_client(pool)
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={"carrier_id": "c1"})
     assert res.status_code == 200
@@ -197,7 +197,7 @@ def test_list_trips_ignores_invalid_fleet_match_value():
 
 def test_assign_fleet_link_acepta_solo_conductor_sin_empresa():
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Juan Perez"]
+    pool.fetchval.side_effect = ["trip-1", "link-1", "Juan Perez"]
     client = make_client(pool)
 
     res = client.post("/api/v1/trips/trip-1/fleet-link", json={"driver_id": "d1"})
@@ -224,7 +224,7 @@ def test_la_nota_dice_lo_que_se_vinculo_no_siempre_la_empresa():
     """Una nota que dice 'empresa' sobre un vinculo sin empresa convierte la
     bitacora en ruido."""
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", None, "link-1", "Juan Perez"]
+    pool.fetchval.side_effect = ["trip-1", "link-1", "Juan Perez"]
     client = make_client(pool)
 
     client.post("/api/v1/trips/trip-1/fleet-link", json={"driver_id": "d1"})

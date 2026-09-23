@@ -585,7 +585,7 @@ async def test_se_puede_filtrar_lo_no_asignado_por_webcarga(conexion_revertida):
         "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2", motivo, trip_id)
 
     resp = await list_trips(no_asignado_webcarga=True,
-                            pool=PoolDeUnaConexion(conn), _=None)
+                            pool=PoolDeUnaConexion(conn), user={"sub": None, "role": "viewer"})
 
     ids = [str(t["id"]) for t in resp["data"]]
     assert str(trip_id) in ids
@@ -610,7 +610,7 @@ async def test_el_filtro_no_mira_is_active(conexion_revertida):
         motivo, id_apagado_hace_meses)
 
     resp = await list_trips(no_asignado_webcarga=True,
-                            pool=PoolDeUnaConexion(conn), _=None)
+                            pool=PoolDeUnaConexion(conn), user={"sub": None, "role": "viewer"})
 
     ids = [str(t["id"]) for t in resp["data"]]
     assert str(id_apagado_hace_meses) in ids, \

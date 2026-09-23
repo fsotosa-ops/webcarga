@@ -1,6 +1,9 @@
+import logging
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
@@ -49,6 +52,30 @@ app = FastAPI(
 )
 
 settings = get_settings()
+
+logger = logging.getLogger("webcarga.api")
+
+
+@app.exception_handler(Exception)
+async def error_inesperado(request: Request, exc: Exception) -> JSONResponse:
+    """Ningún 500 vuelve a llegar mudo.
+
+    Los errores de dominio siguen siendo HTTPException con su mensaje en
+    español (409/422); esto es la red para lo que nadie previó. Sin él,
+    Starlette respondía "Internal Server Error" en texto plano y el frontend
+    sólo podía mostrar "Error 500" — así se reportó el bug del 23/09 sin
+    ninguna pista. La referencia está en el mensaje y en el log de Cloud Run,
+    así un reporte del usuario lleva directo al traceback."""
+    ref = uuid.uuid4().hex[:8]
+    logger.exception("Error inesperado ref=%s %s %s", ref, request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": (
+            f"Error inesperado al procesar la solicitud (ref. {ref}). "
+            "Si se repite, avisa a soporte con esa referencia."
+        )},
+    )
+
 
 # Orden de middlewares (Starlette: último agregado = más externo para requests)
 # CacheMiddleware primero → queda interno a CORS (CORS agrega headers incluso en hits)
