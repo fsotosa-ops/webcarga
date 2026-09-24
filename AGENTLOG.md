@@ -48,7 +48,7 @@ Reportados en `monitor-app/bugs/20260923/` (dos screenshots). Plan aprobado en
 2. **`create_trip` en transacción**, como `/bulk`. **Manejador global** en `main.py`: un 500
    imprevisto responde JSON `detail` con `ref.` que también queda en el log.
 3. **Eliminar viajes**: sólo `source_system='manual'`; admin/owner o el creador
-   (`trips_manual.created_by`); nunca con `closure_lines` de un día CLOSED. La regla vive en
+   (`trips_manual.created_by`); nunca si `app.trips_del_dia(D)` lo incluye con D CLOSED. La regla vive en
    `services/eliminar_viajes.py` y decide también `can_delete` en el listado (la UI nunca ofrece lo
    que el backend rechaza). **No hay FK hacia `app.trips` en producción** (dbt las borra): el servicio
    borra a mano `closure_lines`, `trip_notes` (adjuntos por cascada, Storage después del commit),
