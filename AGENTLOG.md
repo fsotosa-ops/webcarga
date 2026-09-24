@@ -16,6 +16,80 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-09-23 — Ronda 163: bugs del 23/09 (alta manual 500, cierre del 22/09) + eliminar viajes
+
+Reportados en `monitor-app/bugs/20260923/` (dos screenshots). Plan aprobado en
+`~/.claude/plans/necesito-que-revises-los-fluffy-quilt.md`.
+
+## Causa raíz, medida (no supuesta)
+
+- **Bug 1, alta manual "Error 500"**: 8 POST /trips con `UniqueViolationError uq_trip_fleet_link`
+  en Cloud Run. El INSERT en `app.trips` dispara `trg_trips_resolve_fleet_ins`, que ya escribe el
+  vínculo `auto`, y `_insert_trip` insertaba el `manual` sin ON CONFLICT. **Nunca funcionó desde el
+  17/08**: hay 1 viaje manual con link manual en toda la historia (07/07). Sin transacción, cada
+  reintento dejó un viaje a medias: **9 viajes huérfanos** (7 copias de SAN BERNARDO→IANSA del 23/09,
+  1 HBC del 23/09 y 1 del 21/09). La rama CSV por patente chocaba igual.
+- **Bug 2, cierre del 22/09**: **el POST de cierre nunca llegó a la API**. La base de Supabase se
+  saturó de 22:30 a 02:00 UTC (142 statement timeouts, un `SELECT` de catálogo de 11 s, checkpoints
+  de 127 s, con pocas conexiones activas: es hambre de CPU/IO, no locks ni conexiones). Supabase Auth
+  usa esa base, así que cayó con ella (85/93 `/token` con 504). La app llamaba a Auth por HTTP en
+  CADA request (middleware, layout, API síncrona que bloqueaba el event loop): cada página tardó
+  ~35 s → `307 /login` → el login de Microsoft dio el Gateway Timeout del screenshot.
+- **El 23/09 se REPITIÓ** desde las 21:00 UTC (18:00 CL): 140 statement timeouts y 169 errores 5xx
+  de Auth hasta las 00:00 UTC; el JWKS de Auth tampoco respondía. La noche del 21/09: cero.
+  **Es recurrente, no un evento aislado.**
+
+## Decisiones de arquitectura
+
+1. **Un solo dueño por escritura del vínculo manual**: `_escribir_link_manual` es un upsert que
+   CONVIERTE el `auto` del trigger en `manual` (terminal). Lo usan el alta y `assign_fleet_link`, que
+   esquivaba el mismo choque con SELECT+DELETE+INSERT. La resolución automática es sólo del trigger:
+   se retiró `_auto_resolve_fleet_link`.
+2. **`create_trip` en transacción**, como `/bulk`. **Manejador global** en `main.py`: un 500
+   imprevisto responde JSON `detail` con `ref.` que también queda en el log.
+3. **Eliminar viajes**: sólo `source_system='manual'`; admin/owner o el creador
+   (`trips_manual.created_by`); nunca con `closure_lines` de un día CLOSED. La regla vive en
+   `services/eliminar_viajes.py` y decide también `can_delete` en el listado (la UI nunca ofrece lo
+   que el backend rechaza). **No hay FK hacia `app.trips` en producción** (dbt las borra): el servicio
+   borra a mano `closure_lines`, `trip_notes` (adjuntos por cascada, Storage después del commit),
+   `trip_fleet_links`, `trip_stops`, `trips` y **`trips_manual`** (si no, dbt lo resucita). Deja una
+   fila `delete` en `audit_log`.
+4. **La barra de selección de Certificación se volvió `components/ui/BarraDeSeleccion`**, y
+   `TriageBulkBar` la compone. No se creó una barra hermana.
+5. **Sesión verificada localmente** (patrón oficial de Supabase para llaves asimétricas, ES256):
+   PyJWT en la API y `getClaims` en Next, a través de `leerSesion()` (lib/supabase/sesion.ts), la
+   única lectura de sesión del servidor. **Auth caído ≠ sin sesión**: lleva a `/auth/no-disponible`,
+   no a `/login`. JWKS inalcanzable = 503, no 401.
+6. **La llave PÚBLICA va versionada** (`backend/api/app/supabase_jwks.json` y
+   `frontend/lib/supabase/jwks.json`), porque el JWKS de Auth tampoco respondía y Cloud Run arranca
+   en frío (min-instances=0). Un kid desconocido se busca en vivo. **Revocar una llave exige sacarla
+   de los dos archivos.**
+
+## Estado
+
+- Dos commits **locales, SIN push**: `91b69bc0` (alta + eliminar) y `72bcccda` (auth).
+- Verde: backend unit 804, frontend 1395 + tsc + build, integración del alta manual 4/4 (+17 de
+  `test_asignar_conductor`; 1 cayó por statement timeout DURANTE la saturación, no por el cambio).
+- **Pendiente de verificar con la base sana**: `tests/test_eliminar_viajes_integracion.py` (se cortó
+  para no sumar carga) y el tiempo del listado con el JOIN nuevo (el SQL planifica bien: columnas y
+  joins válidos; ejecutar dio timeout, igual que todo durante la saturación).
+
+## Checklist — siguiente paso exacto
+
+1. Con la base sana: correr `test_eliminar_viajes_integracion.py`, repetir
+   `test_asignar_conductor.py::test_una_patente_fuera_del_directorio_no_hereda_el_tracto_habitual`, y
+   medir `list_trips` (antes/después del JOIN).
+2. Push a `dev` y verificar que corran **los dos** workflows (API y frontend).
+3. **Limpieza (decisión del usuario: 1 por viaje)**: con el endpoint desplegado, eliminar 6 de las 7
+   copias IANSA del 23/09 (conservar `747ebcec…`, la primera). Conservar HBC `da0d3f18…`. **No tocar**
+   `554a1c7a…` (21/09, día CERRADO). A las conservadas, pasarles el vínculo a manual. **Antes de que
+   se cierre el 23/09.**
+4. Click-through en dev: crear un viaje manual con conductor, patente y empresa; eliminar uno y en lote.
+5. **Parte E, infraestructura (el usuario)**: Supabase → Reports → Database, 22/09 22:00-02:30 UTC y
+   23/09 21:00-00:30 UTC: CPU, **Disk IO budget %** y conexiones. La hipótesis es que se agota el
+   burst de IO con las ingestas nocturnas de Mage. Según lo que salga: subir el compute o espaciar y
+   aligerar las corridas. No se toca Mage sin preguntar.
+
 ### 2026-09-17/18 — Ronda 162: HU-28, asistencia y cierre por ORIGEN y por operación
 
 Operaciones respondió las cuatro preguntas abiertas de la Ronda 161
