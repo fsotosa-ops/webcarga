@@ -7,9 +7,13 @@ manual (mismo id md5), deja de ser manual (`source_system`) y tampoco se puede.
 Quién: admin/owner, o quien lo creó (`app.trips_manual.created_by`). El resto
 no, aunque sea editor: eliminar lo de otro no es corregir un error propio.
 
-Cuándo no: si el viaje está en un día ya firmado. Un día cerrado no se
-recalcula (modelo de cierre, Ronda 161), y borrar una línea suya cambiaría sus
-cifras sin reabrirlo. Para eliminarlo, se reabre el día primero.
+Cuándo no: si el viaje ocupó un día ya firmado. Un día cerrado no se
+recalcula (modelo de cierre, Ronda 161), y quitarle un viaje cambiaría sus
+cifras sin reabrirlo. Para eliminarlo, se reabre el día primero. "Ocupó el
+día" es `app.trips_del_dia(D)`, la MISMA definición con que el cierre cuenta
+los viajes — no `closure_lines`, que hoy no tiene líneas TRIP (la primera
+versión de esta regla miraba ahí y nunca bloqueaba nada: su test fabricaba
+una línea TRIP que en producción no existe).
 
 Qué se borra: en producción NO hay ninguna FK hacia app.trips (el
 --full-refresh de dbt las borra al recrear la tabla), así que cada dependiente
@@ -36,12 +40,13 @@ MAXIMO_POR_LOTE = 200
 SQL_COLUMNAS_ELIMINABLE = """
     tm.created_by::text AS manual_created_by,
     CASE WHEN t.source_system = 'manual' THEN ARRAY(
-        SELECT DISTINCT cl.business_date
-        FROM app.closure_lines cl
-        JOIN app.closure_periods cp
-          ON cp.business_date = cl.business_date AND cp.status = 'CLOSED'
-        WHERE cl.subject_type = 'TRIP' AND cl.subject_id = t.id
-        ORDER BY cl.business_date
+        SELECT cp.business_date
+        FROM app.closure_periods cp
+        WHERE cp.status = 'CLOSED'
+          -- la misma cota de 45 días que usa app.trips_del_dia
+          AND cp.business_date BETWEEN t.planning_date AND t.planning_date + 45
+          AND t.id IN (SELECT trip_id FROM app.trips_del_dia(cp.business_date))
+        ORDER BY cp.business_date
     ) END AS manual_closed_dates
 """
 
@@ -131,7 +136,7 @@ async def eliminar_viajes_manuales(conn, trip_ids: list[str], user: dict) -> lis
         ids,
     )]
 
-    # Sólo quedan líneas de días ABIERTOS: las de días cerrados bloquearon arriba.
+    # Sólo días ABIERTOS a esta altura: un viaje de un día firmado bloqueó arriba.
     await conn.execute(
         "DELETE FROM app.closure_lines WHERE subject_type = 'TRIP' AND subject_id = ANY($1::uuid[])", ids)
     # Los adjuntos caen por su FK ON DELETE CASCADE a trip_notes.

@@ -22,10 +22,10 @@ pytestmark = pytest.mark.integracion
 DIA_LEJANO = date(2099, 1, 1)
 
 
-async def _viaje_manual(conn, usuario) -> str:
+async def _viaje_manual(conn, usuario, fecha="2026-09-23") -> str:
     viaje = await create_trip(
         TripCreateBody(
-            planning_date="2026-09-23",
+            planning_date=fecha,
             client_name=f"TEST-{uuid.uuid4().hex[:8]}",
             driver_name="CONDUCTOR DE PRUEBA",
             stops=[TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"),
@@ -97,16 +97,16 @@ async def test_un_viaje_del_tms_no_se_elimina(conexion_revertida):
 
 
 async def test_un_viaje_de_un_dia_firmado_no_se_elimina(conexion_revertida):
+    """"Ocupó un día firmado" es app.trips_del_dia(D) con D CLOSED: la misma
+    definición con que el cierre cuenta los viajes. La primera versión miraba
+    closure_lines TRIP, que en producción no existen, y este test pasaba
+    porque fabricaba una. Ahora no se fabrica nada: se firma un día y basta."""
     conn = conexion_revertida
     usuario = await _usuario_real(conn)
-    tid = await _viaje_manual(conn, usuario)
-    await conn.execute("INSERT INTO app.closure_periods (business_date) VALUES ($1)", DIA_LEJANO)
+    tid = await _viaje_manual(conn, usuario, fecha=DIA_LEJANO.isoformat())
     await conn.execute(
-        "INSERT INTO app.closure_lines (business_date, subject_type, subject_id, status) "
-        "VALUES ($1, 'TRIP', $2::uuid, 'ASSIGNED')", DIA_LEJANO, tid)
-    await conn.execute(
-        "UPDATE app.closure_periods SET status='CLOSED', closed_by=$2::uuid, closed_at=now() "
-        "WHERE business_date=$1", DIA_LEJANO, usuario["sub"])
+        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
+        "VALUES ($1, 'CLOSED', $2::uuid, now())", DIA_LEJANO, usuario["sub"])
 
     detalle = await get_trip(tid, pool=PoolDeUnaConexion(conn), user=usuario)
     assert detalle["can_delete"] is False
@@ -114,7 +114,18 @@ async def test_un_viaje_de_un_dia_firmado_no_se_elimina(conexion_revertida):
     with pytest.raises(HTTPException) as err:
         await eliminar_viajes_manuales(conn, [tid], usuario)
     assert err.value.status_code == 409
-    assert (await _restos(conn, tid))["app.closure_lines"] == 1
+    assert (await _restos(conn, tid))["app.trips"] == 1
+
+
+async def test_el_mismo_viaje_con_el_dia_abierto_si_se_elimina(conexion_revertida):
+    """El control del anterior: sin firmar el día, se puede."""
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario, fecha=DIA_LEJANO.isoformat())
+    await conn.execute("INSERT INTO app.closure_periods (business_date) VALUES ($1)", DIA_LEJANO)
+
+    await eliminar_viajes_manuales(conn, [tid], usuario)
+    assert (await _restos(conn, tid))["app.trips"] == 0
 
 
 async def test_un_lote_con_un_viaje_invalido_no_elimina_ninguno(conexion_revertida):
