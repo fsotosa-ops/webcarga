@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { leerSesion, RUTA_AUTH_NO_DISPONIBLE } from '@/lib/supabase/sesion'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 
@@ -56,7 +57,7 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const sesion = await leerSesion(supabase)
 
   const isPublic =
     pathname.startsWith('/login') ||
@@ -66,13 +67,20 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/api/')
 
-  if (!user && !isPublic) {
+  // Auth caído no es "sin sesión": /login tampoco respondería.
+  if (sesion.estado === 'auth-no-disponible' && !isPublic) {
+    const url = request.nextUrl.clone()
+    url.pathname = RUTA_AUTH_NO_DISPONIBLE
+    return NextResponse.redirect(url)
+  }
+
+  if (sesion.estado === 'sin-sesion' && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  if (user && pathname === '/login') {
+  if (sesion.estado === 'activa' && pathname === '/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard/operations/monitor'
     return NextResponse.redirect(url)

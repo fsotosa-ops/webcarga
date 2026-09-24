@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir \
     "upstash-redis>=1.1.0" \
     "python-multipart>=0.0.9" \
     "openpyxl>=3.1" \
-    "httpx>=0.27"
+    "httpx>=0.27" \
+    "PyJWT[crypto]>=2.10"
 
 # Copy app code
 COPY app/ ./app/

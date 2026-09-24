@@ -18,6 +18,18 @@ export async function getToken(): Promise<string> {
   return data.session?.access_token ?? ''
 }
 
+/** Cuando el servidor no explica el error. Un 502/503/504 lo produce la
+ *  infraestructura (el backend no respondió, o no a tiempo), no la operación:
+ *  lo que la persona necesita saber es que NO se aplicó y que puede
+ *  reintentar. Es lo que no supo quien intentó firmar el cierre del 22/09
+ *  mientras la base estaba saturada. */
+export function mensajeSinDetalle(status: number): string {
+  if (status === 502 || status === 503 || status === 504) {
+    return 'El servidor no respondió a tiempo; la operación no se aplicó. Reintenta en unos minutos.'
+  }
+  return `Error ${status}`
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getToken()
   // Con FormData el browser setea el Content-Type (incluye el boundary del multipart)
@@ -37,7 +49,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     const message =
       typeof detail === 'string' ? detail
       : detail && typeof detail === 'object' && 'message' in detail ? String((detail as { message: unknown }).message)
-      : `Error ${res.status}`
+      : mensajeSinDetalle(res.status)
     const e = new ApiError(message, res.status, detail)
     throw e
   }

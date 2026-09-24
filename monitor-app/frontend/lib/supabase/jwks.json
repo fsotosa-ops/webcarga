@@ -1,0 +1,17 @@
+{
+  "keys": [
+    {
+      "alg": "ES256",
+      "crv": "P-256",
+      "ext": true,
+      "key_ops": [
+        "verify"
+      ],
+      "kid": "818a6468-6da2-4d7c-9f97-cd58ce005b00",
+      "kty": "EC",
+      "use": "sig",
+      "x": "u_OBrwT2oKBfUUmnNwy7bWDzarA_na929JuGl8_33Hw",
+      "y": "pBBQGDYY3J5LvPraQ8VvicGxL1knrL3lC2jzWAlSOhI"
+    }
+  ]
+}

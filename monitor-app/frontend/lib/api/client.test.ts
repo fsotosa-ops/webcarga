@@ -41,3 +41,25 @@ describe('apiFetch — respuestas sin cuerpo', () => {
     await expect(apiFetch('/api/v1/x')).rejects.toThrow(/Documento no encontrado/)
   })
 })
+
+describe('apiFetch — errores sin detalle', () => {
+  // El 22/09 la base se saturó y el cierre del día "falló" con un mensaje que
+  // no decía si se había aplicado. Un 502/503/504 lo produce la
+  // infraestructura: lo que sirve saber es que NO se aplicó y que se puede
+  // reintentar.
+  it.each([502, 503, 504])('un %i sin detalle dice que no se aplicó y que se puede reintentar', async status => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Gateway Timeout', { status })))
+
+    await expect(apiFetch('/api/v1/closures/2026-09-22/close', { method: 'POST' }))
+      .rejects.toThrow(/no se aplicó.*reintenta/i)
+  })
+
+  it('un 500 del backend con detalle muestra ese detalle', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ detail: 'Error inesperado al procesar la solicitud (ref. ab12cd34).' }),
+      { status: 500, headers: { 'content-type': 'application/json' } },
+    )))
+
+    await expect(apiFetch('/api/v1/trips', { method: 'POST' })).rejects.toThrow(/ref\. ab12cd34/)
+  })
+})

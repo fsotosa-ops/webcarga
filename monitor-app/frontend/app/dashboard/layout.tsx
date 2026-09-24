@@ -1,14 +1,16 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { leerSesion, RUTA_AUTH_NO_DISPONIBLE } from '@/lib/supabase/sesion'
 import Sidebar from '@/components/dashboard/Sidebar'
 import Topbar from '@/components/dashboard/Topbar'
 import { Providers } from './providers'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
+  const sesion = await leerSesion(supabase)
+  if (sesion.estado === 'auth-no-disponible') redirect(RUTA_AUTH_NO_DISPONIBLE)
+  if (sesion.estado === 'sin-sesion') redirect('/login')
+  const user = { id: sesion.userId, email: sesion.email }
 
   // Se pide `full_name` acá aunque el layout no lo use: el Topbar lo necesita
   // y antes lo consultaba por su cuenta, repitiendo getUser() y la consulta a
