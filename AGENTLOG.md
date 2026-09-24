@@ -65,30 +65,46 @@ Reportados en `monitor-app/bugs/20260923/` (dos screenshots). Plan aprobado en
    en frío (min-instances=0). Un kid desconocido se busca en vivo. **Revocar una llave exige sacarla
    de los dos archivos.**
 
-## Estado
+## Estado: DESPLEGADO en dev (24/09, ~01:50 UTC)
 
-- Dos commits **locales, SIN push**: `91b69bc0` (alta + eliminar) y `72bcccda` (auth).
-- Verde: backend unit 804, frontend 1395 + tsc + build, integración del alta manual 4/4 (+17 de
-  `test_asignar_conductor`; 1 cayó por statement timeout DURANTE la saturación, no por el cambio).
-- **Pendiente de verificar con la base sana**: `tests/test_eliminar_viajes_integracion.py` (se cortó
-  para no sumar carga) y el tiempo del listado con el JOIN nuevo (el SQL planifica bien: columnas y
-  joins válidos; ejecutar dio timeout, igual que todo durante la saturación).
+- Commits en `dev`: `91b69bc0` (alta + eliminar), `72bcccda` (auth), `73db5e1e` (fix de la regla de
+  día firmado). Workflows API y Frontend en verde; `/health` 200; sin token → 401; cero errores en
+  Cloud Run; el middleware nuevo reconoce la sesión (Playwright entró directo al Monitor).
+- Verde con la base sana: integración de alta manual 4/4, eliminación 6/6 (con mutación comprobada
+  sobre el borrado de `trips_manual`), backend unit 804, frontend 1395 + tsc + build. Listado del
+  Monitor: 213 ms antes y después del JOIN nuevo.
+- **Error mío atrapado en vivo**: la regla de "día firmado" miraba `closure_lines` TRIP, que en
+  producción NO existen (sólo ASSET/DRIVER; la ola 4.4 sigue pendiente). El test pasaba porque
+  fabricaba una. Ahora usa `app.trips_del_dia(D)`, la misma definición con que el cierre cuenta los
+  viajes, y el test firma un día real.
+- **El 23/09 lo firmó Operaciones a las 22:51 CL con `viajes: 38`, que INCLUYE las 6 copias
+  sobrantes de IANSA.** Por la regla nueva, hoy los 9 viajes huérfanos están bloqueados para
+  eliminar (21/09 y 23/09 cerrados). No se reabrió nada: es decisión de Operaciones.
+
+## Causa de la saturación (investigada 24/09, parcial)
+
+- Ocurre casi todos los días HÁBILES (15, 16, 17, 18, 21, 22, 23/09), y ninguno el sábado ni el
+  domingo. Normalmente entre 03:00 y 08:00 CL, sin que nadie la vea; el 22 y el 23 se corrió a la tarde.
+- Instancia muy chica: base de 239 MB, `shared_buffers` de 224 MB, `max_connections` 60 → Micro
+  (CPU compartida con créditos). La transición es brusca: la recarga del esquema pasa de ~1 s a más
+  de 10 s de golpe. Encaja con créditos de CPU agotados. **Sin confirmar**: el endpoint de métricas
+  daba 504 y el MCP no tiene historial.
+- Carga de fondo propia: ~5-6 mil sentencias dbt/día (incluye `dbt test` desde al menos el 14/09) y
+  **~116 recargas por hora del caché de esquema de PostgREST, las 24 horas**, disparadas por el DDL
+  de la ingesta. Cada una cuesta ~2 s de catálogo más una reconexión.
 
 ## Checklist — siguiente paso exacto
 
-1. Con la base sana: correr `test_eliminar_viajes_integracion.py`, repetir
-   `test_asignar_conductor.py::test_una_patente_fuera_del_directorio_no_hereda_el_tracto_habitual`, y
-   medir `list_trips` (antes/después del JOIN).
-2. Push a `dev` y verificar que corran **los dos** workflows (API y frontend).
-3. **Limpieza (decisión del usuario: 1 por viaje)**: con el endpoint desplegado, eliminar 6 de las 7
-   copias IANSA del 23/09 (conservar `747ebcec…`, la primera). Conservar HBC `da0d3f18…`. **No tocar**
-   `554a1c7a…` (21/09, día CERRADO). A las conservadas, pasarles el vínculo a manual. **Antes de que
-   se cierre el 23/09.**
-4. Click-through en dev: crear un viaje manual con conductor, patente y empresa; eliminar uno y en lote.
-5. **Parte E, infraestructura (el usuario)**: Supabase → Reports → Database, 22/09 22:00-02:30 UTC y
-   23/09 21:00-00:30 UTC: CPU, **Disk IO budget %** y conexiones. La hipótesis es que se agota el
-   burst de IO con las ingestas nocturnas de Mage. Según lo que salga: subir el compute o espaciar y
-   aligerar las corridas. No se toca Mage sin preguntar.
+1. **Decisión de Operaciones sobre el 23/09**: reabrir el día → eliminar desde el Monitor 6 de las
+   7 copias de IANSA (conservar `747ebcec…`, la primera) → volver a firmar. La herramienta ya existe
+   y lo permite a admin/owner/creador. El 21/09 (`554a1c7a…`) cuenta en los cierres del 21 y del 22:
+   misma decisión.
+2. Click-through del usuario: crear un viaje manual con conductor, patente y empresa (ya no da 500);
+   eliminar en lote.
+3. **Infraestructura (el usuario)**: dashboard → Settings → Compute (confirmar Micro) y Reports →
+   Database (CPU / Disk IO) del 22/09 19-23 CL. Si se confirma → subir la instancia (Small/Medium).
+4. Después, con OK del usuario (toca Mage): cortar la tormenta de recargas de PostgREST (tablas
+   temporales de la ingesta, o que PostgREST no mire `bronze`/`silver`). Medir antes cuál funciona.
 
 ### 2026-09-17/18 — Ronda 162: HU-28, asistencia y cierre por ORIGEN y por operación
 
