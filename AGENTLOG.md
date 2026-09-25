@@ -16,6 +16,122 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-09-24 — Ronda 164: caída de la tarde (Disk IO agotado) y recorte del IO de la ingesta
+
+Plan aprobado: `~/.claude/plans/purring-hugging-meteor.md`.
+
+## Diagnóstico (medido)
+
+- **16:45 CL**: la base (org `webcarga`, **plan free**, confirmado con `get_organization`) agotó
+  el Disk IO. Hubo `statement timeout` a razón de 140/h, checkpoints de 4 páginas/s y el MCP no
+  podía conectarse. Supabase Auth comparte esa base, así que `/token` daba 10 s de timeout y el
+  login devolvía **504 "Gateway Timeout"**. El "304" que vio el usuario es caché del navegador,
+  no un error.
+- **No fue la concurrencia** (el tráfico web es de decenas de requests cada 15 min) **ni el
+  tamaño** (239 MB contra 500). Esto corrige la hipótesis "Micro/CPU" de la Ronda 163: el cuello
+  es el disco.
+- **La ingesta corre cada 15 min las 24 h**, no cada 30. Cada corrida dura 7-8 min, así que la
+  base pasa la mitad del día bajo carga. El usuario decidió **mantener 15 min**.
+- **Causa principal**: los 5 `insert_raw_*.sql` reescribían TODAS las filas de cada archivo
+  (payload jsonb, índices, WAL) aunque nada cambiara. Dos cosas dependían de esa reescritura:
+  - La marca de agua de los 5 processors: `SELECT file_name ... ORDER BY last_updated_at DESC`.
+  - La alarma de SAP caído: `stg_qanalytics_trips.sap_block_liveness`.
+  Según la macro `is_stale`, el 98 % de las filas SAP no cambia en 24 h.
+- Otras fuentes de carga:
+  - `slv_milestone_trips` se reconstruye con `--full-refresh` en cada corrida.
+  - `+trips` vuelve a correr todo el upstream.
+  - `dbt test` corre cada 15 min.
+  - 5 CREATE y 5 DROP de `tmp_raw_*` generan unas 400 líneas de recarga de esquema de
+    PostgREST por hora.
+- La API `pipeline_list` de mage-agent devuelve un DAG desactualizado (del 19/08, sin
+  `app_trips_tests`). **La verdad es el `metadata.yaml`**, que coincide con los logs.
+
+## Hecho (LOCAL, sin desplegar; el mirror de Mage no está en git)
+
+1. **Registro de archivos**, en reemplazo de la marca de agua. El usuario pidió la versión robusta,
+   no un parche:
+   - Migración `monitor-app/backend/supabase/migrations/20260924100000_bronze_ingested_files.sql`.
+     Crea `bronze.ingested_files` y la siembra desde `bronze.tms_trips`. **No aplicada.**
+   - `utils/ingested_files.py`: `select_new_files` elige los archivos que no están cerrados, con
+     una ventana de gracia de 6 h para los atrasados. `register` los marca `pending` o `empty`.
+     Probado en local con una conexión falsa.
+   - Los 5 processors usan el registro. Wingsuite marca `empty` los archivos vacíos.
+   - Los 5 `insert_raw_*.sql` agregan `AND payload IS DISTINCT FROM EXCLUDED.payload`, cierran los
+     archivos que aterrizaron como `loaded` y los `pending` sin filas como `empty`.
+   - `stg_qanalytics_trips.sap_block_liveness` lee `MAX(loaded_at)` del stream SAP.
+     `sources.yml` declara `ingested_files`.
+   - `status_reported_at` / "Ya no está en el TMS" no cambia: sale del snapshot, que ya solo
+     versionaba cuando cambiaba el payload.
+2. `dbts/app_trips_update.yaml` pasa de `+trips` a `trips trip_stops`. El DAG ya ordena
+   `slv_milestone_trips → stg_qanalytics_trips → int → app_trips_update`. Se quitó el
+   `--full-refresh` de los 3 yaml de vistas.
+3. `app_trips_tests` sale de `batch_tms_monitor_trips` y pasa al pipeline nuevo
+   `pipelines/tms_daily_tests/`. `batch_tms_monitor_trips` queda con
+   `concurrency_config: pipeline_run_limit 1, skip`.
+
+## Estado al cerrar la sesión (24/09, ~21:10 CL)
+
+- **El trigger de `batch_tms_monitor_trips` está PAUSADO** (lo pausó el usuario; la última
+  actividad de Mage fue a las 23:38 UTC). **Nada de Mage está desplegado todavía.** El pipeline
+  en vivo es el de siempre: al reactivarlo sin sincronizar vuelve la carga vieja.
+- **La migración 20260924100000 NO está aplicada** (commiteada, sin aplicar). Hubo tres intentos
+  y ninguno terminó:
+  - `execute_sql` del MCP: timeout.
+  - SQL Editor del Studio: "failed fetch api.supabase.com". El Studio corta a 58 s
+    (`statement_timeout='58s'`) y además tiene timeout HTTP.
+  - `psql` por el pooler: `ECHECKOUTTIMEOUT`, el pool estaba agotado.
+  El `CREATE`/`INSERT` es idempotente, así que se puede reintentar tal cual. Antes hay que mirar
+  `pg_stat_activity` por si un intento anterior quedó colgado.
+- **La base seguía estrangulada con Mage quieto.** Los checkpoints escribían 124 buffers en 33 s,
+  y el catálogo del Studio, las recargas de PostgREST y `pgbouncer.get_auth` tardaban 11-21 s.
+  El presupuesto de IO del plan free solo se recarga con uso bajo el nivel base: **no conviene
+  consultar la base mientras tanto**, porque cada intento lo gasta. Además aparece
+  `archive command failed` en los logs.
+- La línea base medida antes del bloqueo (`pg_stat_statements` acumula desde el 17/04, 47 GB
+  de WAL en total):
+  - **Una sola sentencia de dbt = 21 GB de WAL y 2,87 millones de bloques escritos**, en 7.354
+    llamadas. No alcancé a ver qué nodo es: la consulta excedió el timeout.
+    **Es lo primero que hay que identificar**; sospechosos: el `create table` con
+    `--full-refresh` de `slv_milestone_trips` o el merge de `app.trips`.
+  - `bronze.tms_trips`: **2,5 millones de updates sobre 8.889 filas**, 0 HOT.
+  - Los `COPY` a `tmp_raw_*` suman 2,7 GB (SAP), 1 GB (Sodimac) y 0,8 GB (Wingsuite).
+  - `bronze.raw_bd_ot` pesa 80 MB, la tabla más grande (pipeline `legacy_drivers_transporters`).
+- Conexión por `psql` desde este equipo: el host directo `db.<ref>` es solo IPv6 y no resuelve.
+  Hay que usar `aws-1-us-east-1.pooler.supabase.com:5432` con el usuario
+  `postgres.viclzoftiudkepqnhekv` y la clave de `monitor-app/backend/api/.env`.
+
+## Checklist — siguiente paso exacto
+
+1. **Revisar solo los logs** (`query_logs`): que no haya `statement timeout` y que los
+   checkpoints escriban a ritmo normal (menos de 5 s por cada ~300 buffers). Si pasada ~1 h
+   sigue igual o el pool sigue agotado, **el usuario reinicia el proyecto** (Settings → General →
+   Restart). El reinicio no recarga el IO, pero libera las sesiones colgadas.
+2. Con la base respondiendo:
+   - aplicar la migración con
+     `psql <pooler> -f monitor-app/backend/supabase/migrations/20260924100000_bronze_ingested_files.sql`,
+     sin pasar por el Studio;
+   - verificar con `select stream, count(*), to_timestamp(max(file_ts)) from bronze.ingested_files group by 1`.
+     Deben aparecer 5 streams, con el último cerca de las 23:30 UTC del 24/09.
+3. `sync_status`, luego `sync_local_to_remote`. Confirmar en `metadata.yaml` remoto que ya no
+   está `app_trips_tests` y que `concurrency_config` quedó en `pipeline_run_limit 1, skip`.
+   El usuario confirmó `skip`: `wait` tampoco recupera el estado del turno saltado, porque el
+   scraper baja el estado actual.
+4. **Usuario**: reactivar el trigger. Crear el trigger diario de `tms_daily_tests` a las ~07:30 CL.
+5. Verificar la primera corrida:
+   - verde;
+   - `ingested_files` con `loaded` por stream;
+   - `last_sap_ingest_at` avanza;
+   - `n_tup_upd` de `bronze.tms_trips` cae;
+   - sin `CREATE ... tms_milestone_trips` duplicado.
+6. Identificar el nodo dbt de 21 GB de WAL:
+   `select calls, wal_bytes, left(query,700) from extensions.pg_stat_statements order by wal_bytes desc limit 3`,
+   con la base sana y `statement_timeout` holgado.
+   Medir las filas de `silver.tms_milestone_trips` que ya no están vigentes en `tms_sap_snapshot`.
+   Si son ~0, quitar `--full-refresh` de `dbts/slv_milestone_trips.yaml`.
+   Después, `select extensions.pg_stat_statements_reset()` para medir el antes/después por corrida.
+7. Paso 5 del plan: staging `tmp_raw_*` permanente con TRUNCATE, para cortar la recarga de
+   PostgREST. Va en un despliegue separado, después de medir el 5.
+
 ### 2026-09-23 — Ronda 163: bugs del 23/09 (alta manual 500, cierre del 22/09) + eliminar viajes
 
 Reportados en `monitor-app/bugs/20260923/` (dos screenshots). Plan aprobado en
