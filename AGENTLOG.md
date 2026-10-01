@@ -73,7 +73,7 @@ llamada con Fabián del 01/10 (Granola). Plan: `~/.claude/plans/mossy-enchanting
      9 caen en días firmados — sus `closure_lines` NO cambiaron (0 tocadas), pero una pantalla que
      lea los vínculos en vivo de esos días ahora muestra conductor donde antes había vacío.
    - `20261001120000`: la columna ya estaba aplicada desde antes.
-3. Commit + push a `dev`; verificar workflows de backend y frontend.
+3. ~~Commit + push~~ HECHO: `f947c419` en `dev`; Deploy Monitor API y Deploy Frontend en verde.
 4. Mage: sincronizar `load_asset_asignments_07.sql` — el mirror tiene la Ronda 164 SIN sincronizar;
    decidir con el usuario si va todo junto.
 5. Click-through en dev: motivo al conductor → tracto con "Heredado de"; GPRZ30 en ámbar y
