@@ -707,78 +707,88 @@ async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depend
     return [dict(r) for r in rows]
 
 
+# ── Transferir conductor o tracto de empresa ──────────────────────────────────
+# Una sola implementación para los dos sujetos. Hasta el 01/10 eran dos copias,
+# y el arreglo del 16/09 (la transferencia como decisión humana) llegó sólo a la
+# de conductores: el tracto BDLC92 se transfirió 6 veces en un mes porque el
+# loader del Centralizador revertía la otra copia.
+_TRANSFERIBLES = {
+    "DRIVER": ("driver_assignments", "driver_id", "drivers", "Conductor no encontrado",
+               "Ese conductor tiene una asignación protegida en otra empresa. "
+               "Quítale la protección antes de transferirlo."),
+    "ASSET": ("asset_assignments", "asset_id", "assets", "Activo no encontrado",
+              "Ese vehículo tiene una asignación protegida en otra empresa. "
+              "Quítale la protección antes de transferirlo."),
+}
+
+
+async def _transferir(conn, entity_type: str, sujeto_id: str, carrier_id: str, user: dict) -> None:
+    tabla, columna, maestro, no_existe, protegida_msg = _TRANSFERIBLES[entity_type]
+    if not await conn.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
+        raise HTTPException(404, "Empresa no encontrada")
+    if not await conn.fetchval(f"SELECT 1 FROM public.{maestro} WHERE id = $1", sujeto_id):
+        raise HTTPException(404, no_existe)
+
+    # La asignación previa protegida no se desactiva —es una decisión humana
+    # que la ingesta tampoco pisa—, y sin esta pregunta el INSERT de abajo
+    # dejaría dos filas ACTIVE que el índice único parcial rechaza con un
+    # 23505 crudo. Preguntarlo antes convierte un error de base en una frase.
+    protegida = await conn.fetchval(
+        f"""
+        SELECT carrier_id::text FROM public.{tabla}
+        WHERE {columna} = $1 AND carrier_id <> $2
+          AND status = 'ACTIVE' AND is_manual_override
+        LIMIT 1
+        """,
+        sujeto_id, carrier_id,
+    )
+    if protegida:
+        raise HTTPException(409, protegida_msg)
+
+    # Transferir decide DOS cosas —"está acá" y "ya no está allá"— y las dos
+    # quedan con is_manual_override: los loaders del Centralizador EETT (Mage,
+    # load_driver_assignments_06 y load_asset_asignments_07) pisan toda fila
+    # sin esa marca.
+    anteriores = await conn.fetch(
+        f"""
+        UPDATE public.{tabla}
+        SET status = 'INACTIVE'
+        WHERE {columna} = $1 AND carrier_id <> $2 AND status = 'ACTIVE'
+        RETURNING carrier_id::text
+        """,
+        sujeto_id, carrier_id,
+    )
+    for anterior in anteriores:
+        await record_manual_edit(
+            conn, table=tabla, where={columna: sujeto_id, "carrier_id": anterior["carrier_id"]},
+            actor=user["sub"], entity_type=entity_type, entity_id=sujeto_id,
+            action="unassign", field="carrier_id", old_value=anterior["carrier_id"],
+        )
+    # Sin `WHERE NOT is_manual_override` en el upsert: si la fila destino quedó
+    # protegida por un desvincular anterior, esta decisión es más nueva y le
+    # gana. Con el filtro respondía ok y el sujeto quedaba sin empresa (Deiby).
+    await conn.execute(
+        f"""
+        INSERT INTO public.{tabla} ({columna}, carrier_id, status)
+        VALUES ($1, $2, 'ACTIVE')
+        ON CONFLICT ({columna}, carrier_id) DO UPDATE SET status = 'ACTIVE'
+        """,
+        sujeto_id, carrier_id,
+    )
+    await record_manual_edit(
+        conn, table=tabla, where={columna: sujeto_id, "carrier_id": carrier_id},
+        actor=user["sub"], entity_type=entity_type, entity_id=sujeto_id,
+        action="assign", field="carrier_id", new_value=carrier_id,
+    )
+
+
 @router.post("/{carrier_id}/drivers", status_code=201)
 async def assign_driver(
     carrier_id: str, body: DriverAssignmentCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
-            if not await conn.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
-                raise HTTPException(404, "Empresa no encontrada")
-            if not await conn.fetchval("SELECT 1 FROM public.drivers WHERE id = $1", body.driver_id):
-                raise HTTPException(404, "Conductor no encontrado")
-
-            # La asignacion previa protegida no se desactiva —y esta bien, es
-            # una decision humana que la ingesta tampoco pisa— pero el INSERT
-            # de abajo sigue igual, y entonces quedan dos filas ACTIVE que el
-            # indice unico parcial `idx_driver_assignments_one_active` rechaza
-            # con un 23505 crudo. Preguntarlo antes convierte un error de base
-            # en una frase que dice que hacer.
-            protegida = await conn.fetchval(
-                """
-                SELECT carrier_id::text FROM public.driver_assignments
-                WHERE driver_id = $1 AND carrier_id <> $2
-                  AND status = 'ACTIVE' AND is_manual_override
-                LIMIT 1
-                """,
-                body.driver_id, carrier_id,
-            )
-            if protegida:
-                raise HTTPException(
-                    409,
-                    "Ese conductor tiene una asignación protegida en otra empresa. "
-                    "Quítale la protección antes de transferirlo.",
-                )
-
-            # Transferir es una decisión humana sobre DOS filas: "está acá" y
-            # "ya no está allá". Las dos quedan con is_manual_override, porque
-            # el loader del Centralizador EETT (Mage, load_driver_assignments_06)
-            # pisa toda fila sin esa marca: hasta el 16/09 revirtió 6 de 21
-            # transferencias hechas desde la app (Villegas, Ulloa).
-            anteriores = await conn.fetch(
-                """
-                UPDATE public.driver_assignments
-                SET status = 'INACTIVE'
-                WHERE driver_id = $1 AND carrier_id <> $2 AND status = 'ACTIVE'
-                RETURNING carrier_id::text
-                """,
-                body.driver_id, carrier_id,
-            )
-            for anterior in anteriores:
-                await record_manual_edit(
-                    conn, table="driver_assignments",
-                    where={"driver_id": body.driver_id, "carrier_id": anterior["carrier_id"]},
-                    actor=user["sub"], entity_type="DRIVER", entity_id=body.driver_id,
-                    action="unassign", field="carrier_id", old_value=anterior["carrier_id"],
-                )
-            # Sin `WHERE NOT is_manual_override` en el upsert: si la fila destino
-            # quedó protegida por un desvincular anterior, esta asignación es una
-            # decisión humana más nueva y le gana. Con el filtro, el upsert no
-            # hacía nada, respondía ok, y el conductor quedaba sin empresa (Deiby).
-            await conn.execute(
-                """
-                INSERT INTO public.driver_assignments (driver_id, carrier_id, status)
-                VALUES ($1, $2, 'ACTIVE')
-                ON CONFLICT (driver_id, carrier_id) DO UPDATE SET status = 'ACTIVE'
-                """,
-                body.driver_id, carrier_id,
-            )
-            await record_manual_edit(
-                conn, table="driver_assignments",
-                where={"driver_id": body.driver_id, "carrier_id": carrier_id},
-                actor=user["sub"], entity_type="DRIVER", entity_id=body.driver_id,
-                action="assign", field="carrier_id", new_value=carrier_id,
-            )
+            await _transferir(conn, "DRIVER", body.driver_id, carrier_id, user)
     return {"ok": True}
 
 
@@ -842,53 +852,7 @@ async def assign_asset(
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
-            if not await conn.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
-                raise HTTPException(404, "Empresa no encontrada")
-            if not await conn.fetchval("SELECT 1 FROM public.assets WHERE id = $1", body.asset_id):
-                raise HTTPException(404, "Activo no encontrado")
-
-            # Mismo criterio que en assign_driver: una asignacion protegida
-            # en otra empresa no se desactiva, y sin esta guarda el INSERT de
-            # abajo seguiria igual y dejaria dos filas ACTIVE que el indice
-            # unico parcial rechaza con un 23505 crudo.
-            protegida = await conn.fetchval(
-                """
-                SELECT carrier_id::text FROM public.asset_assignments
-                WHERE asset_id = $1 AND carrier_id <> $2
-                  AND status = 'ACTIVE' AND is_manual_override
-                LIMIT 1
-                """,
-                body.asset_id, carrier_id,
-            )
-            if protegida:
-                raise HTTPException(
-                    409,
-                    "Ese vehículo tiene una asignación protegida en otra empresa. "
-                    "Quítale la protección antes de transferirlo.",
-                )
-
-            await conn.execute(
-                """
-                UPDATE public.asset_assignments
-                SET status = 'INACTIVE'
-                WHERE asset_id = $1 AND carrier_id <> $2 AND status = 'ACTIVE'
-                  AND NOT is_manual_override
-                """,
-                body.asset_id, carrier_id,
-            )
-            await conn.execute(
-                """
-                INSERT INTO public.asset_assignments (asset_id, carrier_id, status)
-                VALUES ($1, $2, 'ACTIVE')
-                ON CONFLICT (asset_id, carrier_id) DO UPDATE SET status = 'ACTIVE'
-                WHERE NOT asset_assignments.is_manual_override
-                """,
-                body.asset_id, carrier_id,
-            )
-            await log_change(
-                conn, actor=user["sub"], entity_type="ASSET", entity_id=body.asset_id,
-                action="assign", field="carrier_id", new_value=carrier_id, source="api",
-            )
+            await _transferir(conn, "ASSET", body.asset_id, carrier_id, user)
     return {"ok": True}
 
 

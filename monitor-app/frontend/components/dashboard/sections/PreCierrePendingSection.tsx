@@ -144,14 +144,22 @@ export function PreCierrePendingSection({ fecha }: Props) {
             />
           ))}
 
+          {/* No bloquea el cierre desde el 01/10 (requirements-bug-12.md, RF-01
+              / CA-01): GPRZ30 fue de una EETT nuestra, el TMS la informa en
+              otra empresa y trababa el día entero. Por eso va en ámbar y no en
+              rojo, y dice la empresa que informa el TMS: es el dato para
+              decidir a quién asignarla. */}
           {escalations.PATENTE_NO_REGISTRADA.map(esc => (
-            <div key={esc.tractor_plate} className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 space-y-2">
-              <p className="text-xs text-red-700">
-                Patente no registrada: <span className="font-semibold">{esc.tractor_plate}</span> — {esc.reason}. ¿A qué empresa pertenece?
+            <div key={esc.tractor_plate} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-2">
+              <p className="text-xs text-amber-800">
+                Patente sin empresa: <span className="font-semibold">{esc.tractor_plate}</span> — {esc.reason}
+                {esc.tms_carrier_name ? <>. El TMS la informa en &quot;{esc.tms_carrier_name}&quot;</> : null}.
+                {' '}No bloquea el cierre. ¿A qué empresa pertenece?
               </p>
               {creatingFor === esc.tractor_plate ? (
                 <NewCarrierPanel
                   open
+                  initialBusinessName={esc.tms_carrier_name ?? undefined}
                   onClose={() => setCreatingFor(null)}
                   onCreated={(carrier: CarrierCreateResult) => {
                     setCreatingFor(null)
@@ -287,8 +295,8 @@ export function PreCierrePendingSection({ fecha }: Props) {
             <Info size={11} className="mt-0.5 shrink-0" />
             <span>
               Estos pendientes bloquean el cierre del día, salvo la falta de tipo
-              de operación. Resuélvelos aquí, o pide a un administrador que fuerce
-              el cierre dejando una nota.
+              de operación y las patentes sin empresa. Resuélvelos aquí, o pide a
+              un administrador que fuerce el cierre dejando una nota.
             </span>
           </p>
         </div>

@@ -1269,7 +1269,12 @@ export type PreCierreAutoResolved = {
   message: string
 }
 export type PreCierreEscalations = {
-  PATENTE_NO_REGISTRADA:   { tractor_plate: string; reason: string }[]
+  /** No bloquea el cierre desde el 01/10 (requirements-bug-12.md, RF-01 /
+   *  CA-01): se informa con su acción y el día se puede firmar igual.
+   *  `tms_carrier_name` es la empresa que el TMS informa para esa patente
+   *  (GPRZ30: Transporte Vicente Bugarin); null si calla o nombra a varias.
+   *  Opcional porque backend y frontend se despliegan por separado. */
+  PATENTE_NO_REGISTRADA:   { tractor_plate: string; reason: string; tms_carrier_name?: string | null }[]
   /** `directory_carrier_id` viaja desde el 2026-08-27: es la empresa que el
    *  directorio tiene para esa patente, y con ella el panel enlaza derecho a
    *  la ficha donde se corrige. Opcional porque backend y frontend se
@@ -1410,6 +1415,9 @@ export type EquipmentDayStatusRow = {
   category:                CategoriaDeLinea
   unassigned_reason_id:    string | null
   unassigned_reason_label: string | null
+  /** Conductor habitual del que el tracto heredó el motivo (punto 5 del
+   *  Diario 2.0, 01/10). null = el motivo lo escribió una persona, o no hay. */
+  reason_from_driver_name?: string | null
   valid_until:             string | null
   resolved_by:             string | null
   resolved_at:             string | null

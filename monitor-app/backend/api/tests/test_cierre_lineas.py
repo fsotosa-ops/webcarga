@@ -11,7 +11,8 @@ cuyo tracto habitual es ése, y un día (2026-06-10) sin datos reales.
 
 Casos de la Solicitud de Cambios Diario 2.0 (16/09): "Se retira sin carga"
 queda Trabajando sin asignación, Vacaciones con vigencia llega al día
-siguiente, el motivo del conductor llega al tracto, un día firmado no se
+siguiente, el motivo del conductor llega al tracto (el mismo motivo desde el
+01/10), un día firmado no se
 recalcula, y cerrar es un solo acto.
 """
 from __future__ import annotations
@@ -90,7 +91,7 @@ async def _linea(conn, dia, subject_type, subject_id):
     return await conn.fetchrow(
         f"""
         SELECT l.status, l.reason_id::text AS reason_id, l.valid_until, l.comentario, l.computed_at,
-               lin.category
+               l.reason_from_driver_id::text AS heredado_de, lin.category
         FROM app.closure_lines l
         JOIN {cierre_lineas.LINEAS_CONDUCTORES if subject_type == 'DRIVER' else cierre_lineas.LINEAS_TRACTOS} lin
           ON lin.business_date = l.business_date
@@ -269,21 +270,59 @@ async def test_trabajar_sin_asignacion_no_tiene_vigencia(conexion_revertida):
 
 # ── los ejes se hablan ───────────────────────────────────────────────────────
 
-async def test_el_motivo_del_conductor_llega_a_su_tracto_habitual(conexion_revertida):
-    """Solicitud 16/09: marcaban el motivo en Conductores y tenían que volver a
-    ponerlo en Tractos."""
+async def test_el_tracto_hereda_el_mismo_motivo_del_conductor(conexion_revertida):
+    """Punto 5 del Diario 2.0 (01/10): Operaciones escribía a mano en el tracto
+    EL MISMO motivo del conductor — 108 veces en dos semanas. Antes se le
+    escribía "Sin conductor"."""
+    conn = conexion_revertida
+    esc = await _escenario(conn)
+    user = await _usuario_real(conn)
+    licencia = await _motivo(conn, "Licencia")
+    await cierre_lineas.recalcular(PoolDeUnaConexion(conn), D)
+
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=licencia)
+
+    tracto = await _linea(conn, D, "ASSET", esc["tractor"])
+    assert tracto["reason_id"] == licencia
+    assert tracto["heredado_de"] == str(esc["conductor"])
+    assert tracto["category"] == "NO_TRABAJANDO"
+
+
+async def test_trabajar_sin_asignacion_tambien_llega_al_tracto(conexion_revertida):
+    """21 de las 108 cargas dobles eran de este grupo (Esperando carga, Camino
+    al CD...)."""
+    conn = conexion_revertida
+    esc = await _escenario(conn)
+    user = await _usuario_real(conn)
+    esperando = await _motivo(conn, "Esperando carga")
+    await cierre_lineas.recalcular(PoolDeUnaConexion(conn), D)
+
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=esperando)
+
+    tracto = await _linea(conn, D, "ASSET", esc["tractor"])
+    assert tracto["reason_id"] == esperando
+    assert tracto["category"] == "TRABAJANDO_SIN_ASIGNACION"
+
+
+async def test_cambiar_o_borrar_el_motivo_del_conductor_arrastra_al_tracto(conexion_revertida):
     conn = conexion_revertida
     esc = await _escenario(conn)
     user = await _usuario_real(conn)
     await cierre_lineas.recalcular(PoolDeUnaConexion(conn), D)
-
     await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=await _motivo(conn, "Licencia"))
 
+    vacaciones = await _motivo(conn, "Vacaciones")
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=vacaciones)
+    assert (await _linea(conn, D, "ASSET", esc["tractor"]))["reason_id"] == vacaciones
+
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=None)
     tracto = await _linea(conn, D, "ASSET", esc["tractor"])
-    assert tracto["reason_id"] == await _motivo(conn, "Sin conductor")
+    assert tracto["reason_id"] is None
+    assert tracto["heredado_de"] is None
+    assert tracto["category"] == "SIN_RESOLVER"
 
 
-async def test_la_propagacion_no_pisa_lo_que_escribio_una_persona_en_el_tracto(conexion_revertida):
+async def test_la_herencia_no_pisa_lo_que_escribio_una_persona_en_el_tracto(conexion_revertida):
     conn = conexion_revertida
     esc = await _escenario(conn)
     user = await _usuario_real(conn)
@@ -293,18 +332,76 @@ async def test_la_propagacion_no_pisa_lo_que_escribio_una_persona_en_el_tracto(c
 
     await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=await _motivo(conn, "Licencia"))
 
-    assert (await _linea(conn, D, "ASSET", esc["tractor"]))["reason_id"] == panne
+    tracto = await _linea(conn, D, "ASSET", esc["tractor"])
+    assert tracto["reason_id"] == panne
+    assert tracto["heredado_de"] is None
 
 
-async def test_trabajar_sin_asignacion_no_se_propaga_al_tracto(conexion_revertida):
+async def test_escribir_en_el_tracto_corta_la_herencia(conexion_revertida):
+    """Una persona que cambia el motivo heredado se queda con la línea: los
+    cambios posteriores del conductor ya no la tocan. Un comentario solo, sí
+    la deja seguir heredando."""
     conn = conexion_revertida
     esc = await _escenario(conn)
     user = await _usuario_real(conn)
+    licencia = await _motivo(conn, "Licencia")
+    panne = await _motivo(conn, "Panne")
     await cierre_lineas.recalcular(PoolDeUnaConexion(conn), D)
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=licencia)
 
-    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=await _motivo(conn, "Esperando carga"))
+    await _poner(conn, D, "ASSET", esc["tractor"], user, comentario="en taller")
+    assert (await _linea(conn, D, "ASSET", esc["tractor"]))["heredado_de"] == str(esc["conductor"])
 
-    assert (await _linea(conn, D, "ASSET", esc["tractor"]))["reason_id"] is None
+    await _poner(conn, D, "ASSET", esc["tractor"], user, unassigned_reason_id=panne)
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=await _motivo(conn, "Vacaciones"))
+
+    tracto = await _linea(conn, D, "ASSET", esc["tractor"])
+    assert tracto["reason_id"] == panne
+    assert tracto["heredado_de"] is None
+
+
+async def test_la_vigencia_del_conductor_tambien_llega_al_tracto_al_dia_siguiente(conexion_revertida):
+    """Antes la propagación corría sólo al escribir: el día siguiente el
+    conductor heredaba Vacaciones por vigencia y el tracto volvía a bloquear."""
+    conn = conexion_revertida
+    esc = await _escenario(conn)
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    vacaciones = await _motivo(conn, "Vacaciones")
+    await cierre_lineas.recalcular(pool, D)
+    await _poner(conn, D, "DRIVER", esc["conductor"], user,
+                 unassigned_reason_id=vacaciones, valid_until=D + timedelta(days=2))
+
+    await cierre_lineas.recalcular(pool, D + timedelta(days=1))
+
+    tracto = await _linea(conn, D + timedelta(days=1), "ASSET", esc["tractor"])
+    assert tracto["reason_id"] == vacaciones
+    assert tracto["heredado_de"] == str(esc["conductor"])
+
+
+async def test_si_el_conductor_trabaja_la_herencia_se_limpia(conexion_revertida):
+    """El conductor salió en otro tracto: el suyo sigue sin carga y vuelve a
+    pedir motivo propio en vez de decir que su conductor no trabajó."""
+    conn = conexion_revertida
+    esc = await _escenario(conn)
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    await cierre_lineas.recalcular(pool, D)
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=await _motivo(conn, "Licencia"))
+    assert (await _linea(conn, D, "ASSET", esc["tractor"]))["heredado_de"] == str(esc["conductor"])
+
+    otro_tracto = await conn.fetchval(
+        "INSERT INTO public.assets (license_plate, asset_type) VALUES ($1, 'TRACTOCAMION') RETURNING id",
+        _patente())
+    viaje = await _viaje(conn, esc, D)
+    await conn.execute("UPDATE app.trip_fleet_links SET tractor_asset_id = $2 WHERE trip_id = $1",
+                       viaje, otro_tracto)
+    await cierre_lineas.recalcular(pool, D)
+
+    assert (await _linea(conn, D, "DRIVER", esc["conductor"]))["category"] == "ASIGNADO"
+    tracto = await _linea(conn, D, "ASSET", esc["tractor"])
+    assert tracto["category"] == "SIN_RESOLVER"
+    assert tracto["heredado_de"] is None
 
 
 # ── cerrar / reabrir ─────────────────────────────────────────────────────────
@@ -410,11 +507,43 @@ async def test_las_tablas_viejas_quedan_como_proyeccion_de_las_lineas(conexion_r
     assert (vieja["r"], vieja["comentario"]) == (panne, "nota")
 
 
+# ── patente sin empresa (punto 12, 01/10) ───────────────────────────────────
+
+async def test_una_patente_sin_empresa_queda_en_pendientes_y_no_traba_el_dia(conexion_revertida):
+    """requirements-bug-12.md, CA-01: la patente "no genera bloqueos por falta
+    de empresa asignada". GPRZ30 fue de una EETT nuestra, existe en el
+    directorio sin empresa y el TMS la informa en otra."""
+    conn = conexion_revertida
+    patente = _patente()
+    await conn.execute(
+        "INSERT INTO public.assets (license_plate, asset_type) VALUES ($1, 'TRACTOCAMION')", patente)
+    trip_id = uuid.uuid4()
+    await conn.execute(
+        """
+        INSERT INTO app.trips (id, planning_date, client_name, source_system, source_system_trip_id,
+                               trip_status, status_reported_at, is_active, is_assigned, fleet)
+        VALUES ($1, $2, 'TEST-CIERRE-LINEAS', 'qanalytics', $3, 'CERRADO FINALIZADO', $4, false, true,
+                jsonb_build_object('tractor_plate', $5::text, 'transporter_name_tms', 'TRANSPORTES ZZQX SPA'))
+        """,
+        trip_id, D, str(trip_id), datetime.combine(D, datetime.min.time()), patente)
+
+    pre = await cierre_lineas.run_pre_cierre(PoolDeUnaConexion(conn), D)
+
+    informada = [e for e in pre["escalations"]["PATENTE_NO_REGISTRADA"] if e["tractor_plate"] == patente]
+    assert informada and informada[0]["tms_carrier_name"] == "TRANSPORTES ZZQX SPA"
+    assert patente not in {p.get("tractor_plate") for p in cierre_lineas.pendientes_de_flota(pre)}
+
+
 def test_las_escalaciones_de_propuesta_no_bloquean_el_cierre():
     """CONDUCTOR_SIN_EMPRESA propone y no escribe: bloquear el día con una
     propuesta cambiaría la operación sin que nadie lo haya pedido."""
     assert "CONDUCTOR_SIN_EMPRESA" not in cierre_lineas.ESCALACIONES_QUE_BLOQUEAN
     assert "SIN_TIPO_OPERACION" not in cierre_lineas.ESCALACIONES_QUE_BLOQUEAN
+
+
+def test_una_patente_sin_empresa_no_bloquea_el_cierre():
+    """requirements-bug-12.md, RF-01 / CA-01 (01/10)."""
+    assert "PATENTE_NO_REGISTRADA" not in cierre_lineas.ESCALACIONES_QUE_BLOQUEAN
 
 
 def test_sodimac_no_entra_al_estado_de_ningun_eje():

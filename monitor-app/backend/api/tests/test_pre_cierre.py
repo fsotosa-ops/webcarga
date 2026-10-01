@@ -138,7 +138,7 @@ async def test_tipo_b_patente_no_registrada_cuando_el_asset_no_existe():
     result = await run_pre_cierre(pool, DAY)
 
     assert result["escalations"]["PATENTE_NO_REGISTRADA"] == [
-        {"tractor_plate": "XXXX99", "reason": "La patente no existe en public.assets"}
+        {"tractor_plate": "XXXX99", "reason": "La patente no existe en public.assets", "tms_carrier_name": None}
     ]
 
 
@@ -156,8 +156,31 @@ async def test_tipo_b_patente_no_registrada_cuando_no_tiene_asignacion_activa():
     result = await run_pre_cierre(pool, DAY)
 
     assert result["escalations"]["PATENTE_NO_REGISTRADA"] == [
-        {"tractor_plate": "ABCD12", "reason": "La patente existe pero no tiene empresa asignada"}
+        {"tractor_plate": "ABCD12", "reason": "La patente existe pero no tiene empresa asignada",
+         "tms_carrier_name": None}
     ]
+
+
+@pytest.mark.asyncio
+async def test_patente_sin_empresa_dice_en_que_empresa_la_informa_el_tms():
+    """GPRZ30 (01/10): sin empresa en el directorio y el TMS la informa en
+    Transporte Vicente Bugarin. Es el dato que la persona necesita para
+    decidir a quién asignarla."""
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [{"plate": "GPRZ30", "carrier_names": ["TRANSPORTE VICENTE BUGARIN SPA"] * 3}],
+        [], [], [], [],
+        [],  # conductor sin empresa scan
+    ]
+    conn.fetchrow.side_effect = [{"id": "asset1"}, None]
+    pool = _pool_with(conn)
+
+    result = await run_pre_cierre(pool, DAY)
+
+    assert result["escalations"]["PATENTE_NO_REGISTRADA"] == [{
+        "tractor_plate": "GPRZ30", "reason": "La patente existe pero no tiene empresa asignada",
+        "tms_carrier_name": "TRANSPORTE VICENTE BUGARIN SPA",
+    }]
 
 
 @pytest.mark.asyncio

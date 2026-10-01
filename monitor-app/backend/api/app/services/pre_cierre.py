@@ -106,10 +106,16 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                 asset = await conn.fetchrow(
                     "SELECT id FROM public.assets WHERE upper(trim(license_plate)) = $1", plate,
                 )
+                # Con la empresa que informa el TMS, si es una sola: GPRZ30 no
+                # tiene empresa en el directorio y el TMS la informa en
+                # Transporte Vicente Bugarin. Es lo que la persona necesita
+                # para decidir a quién asignarla.
+                tms_carrier_name = _single_value(r["carrier_names"])
                 if not asset:
-                    escalations["PATENTE_NO_REGISTRADA"].append(
-                        {"tractor_plate": plate, "reason": "La patente no existe en public.assets"}
-                    )
+                    escalations["PATENTE_NO_REGISTRADA"].append({
+                        "tractor_plate": plate, "reason": "La patente no existe en public.assets",
+                        "tms_carrier_name": tms_carrier_name,
+                    })
                     continue
                 assignment = await conn.fetchrow(
                     """
@@ -121,9 +127,10 @@ async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
                     asset["id"],
                 )
                 if not assignment:
-                    escalations["PATENTE_NO_REGISTRADA"].append(
-                        {"tractor_plate": plate, "reason": "La patente existe pero no tiene empresa asignada"}
-                    )
+                    escalations["PATENTE_NO_REGISTRADA"].append({
+                        "tractor_plate": plate, "reason": "La patente existe pero no tiene empresa asignada",
+                        "tms_carrier_name": tms_carrier_name,
+                    })
                     continue
                 resolved_carrier_by_plate[plate] = assignment["carrier_id"]
 

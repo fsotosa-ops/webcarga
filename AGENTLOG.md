@@ -16,6 +16,70 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-01 — Ronda 165: Diario 2.0, puntos 5 y 12 (bugs del 01/10)
+
+Fuentes: `monitor-app/bugs/20261001/` (docx + `requirements-bug-12.md`, que ES el punto 12) y la
+llamada con Fabián del 01/10 (Granola). Plan: `~/.claude/plans/mossy-enchanting-cupcake.md`
+(la parte de GPRZ30 del plan quedó SUPERADA, ver abajo).
+
+## Causas raíz (medidas contra producción)
+
+- **Doble carga de motivos (punto 5)**: `_propagar_al_tracto_habitual` solo propagaba "no trabajó",
+  escribía "Sin conductor" y no seguía cambios ni vigencias. 18/09–01/10: Operaciones escribió
+  a mano en el tracto **el mismo motivo** del conductor 108 veces (87 + 21).
+- **Rafael / BDLC92 (RF-02)**: `POST /carriers/{id}/assets` nunca marcaba `is_manual_override`
+  (el arreglo del 16/09 llegó solo a conductores) y el loader `load_asset_asignments_07` lo
+  revertía: BDLC92 se transfirió 6 veces en un mes. 18 tractos transferidos en la app; 3 revertidos.
+- **Brian Celis**: ficha duplicada (18659820-2 ACTIVA, 19003069-5 INACTIVA, con 12 documentos);
+  el matcher exigía un único candidato → 27 vínculos a mano en 30 días. FCCP42 colgaba del
+  inactivo en `vehicle_driver_assignments` (padrón legacy con el RUT viejo).
+- **GPRZ30 (RF-01)**: fue de Transportes Miraflores hasta 2024; el TMS la informa en Moneda (jul)
+  y Bugarin (desde 09/09), ninguna en el directorio. `PATENTE_NO_REGISTRADA` bloqueaba el día.
+
+## Hecho (LOCAL, sin comitear; suites corriendo/verdes salvo lo anotado)
+
+1. **Herencia del motivo** — `cierre_lineas.py`: `_SQL_SINCRONIZAR_TRACTOS` (por conjuntos, todo
+   el día) reemplaza a `_propagar_al_tracto_habitual`; corre en `poner_motivo` (conductor) y en
+   `recalcular` tras la vigencia. Columna `closure_lines.reason_from_driver_id` = procedencia
+   (no nulo = heredado, sigue al conductor; nulo = lo escribió una persona, nunca se pisa).
+   Elegir/borrar motivo en el tracto corta la herencia; un comentario no. UI: "Heredado de X".
+   Migración `20261001120000` — **la columna YA ESTÁ APLICADA en producción** (sin backfill, a
+   propósito: no adivinar los "Sin conductor" viejos).
+2. **Traspaso único** — `carriers.py::_transferir` sirve a conductores y tractos (eran dos copias).
+   Migración de reparación `20261001100000` (18 tractos, sin revivir filas INACTIVE marcadas a mano:
+   HYXB37/JDYY73). Guarda por equipo en el mirror de Mage `custom/load_asset_asignments_07.sql`.
+3. **Matcher** — migración `20261001110000`: con varios candidatos por nombre gana la ÚNICA ficha
+   activa; `sync_habitual_drivers` ya no cuelga tractos de fichas inactivas; repunta los vínculos
+   habituales a la ficha activa homónima (FCCP42; FLPY18 queda para Operaciones); re-resuelve
+   45 días de viajes auto sin conductor.
+4. **GPRZ30 — decisión del usuario (opción A, 01/10)**: `PATENTE_NO_REGISTRADA` sale de
+   `ESCALACIONES_QUE_BLOQUEAN` (RF-01/CA-01 literal: ninguna patente sin empresa bloquea). Sigue en
+   Pendientes, en ámbar, con la empresa que informa el TMS (`tms_carrier_name`) y "Crear empresa
+   nueva" prellenado. **Revierte la regla de Pablo del 21/08**. Se descartaron "flota de
+   terceros" y la auto-asignación (nadie las pidió).
+
+## Checklist — siguiente paso exacto
+
+1. ~~Suites~~ HECHO: backend 1.069 verdes + 3 rojos preexistentes (`test_eliminar_viajes_integracion.py`
+   falla igual en el código comiteado: elige viajes reales que hoy son de días firmados — arreglar
+   aparte, el sujeto lo tiene que crear el test). Frontend: secciones 68 verdes, `tsc` limpio,
+   trinquete de escala en verde (la suite completa dio 1.397/1.398 antes de corregir el trinquete).
+2. ~~Migraciones~~ HECHO 01/10 ~21:05 UTC, con la base quieta:
+   - `20261001100000`: 16 tractos reparados y marcados (BDLC92 → Villegom, DTBY52 → La Fortaleza;
+     HYXB37/JDYY73 sin tocar, a propósito).
+   - `20261001110000`: aplicada en 3 partes por el MCP (la llamada entera dio "Invalid or expired
+     requestState" y no aplicó nada). FCCP42 → 18659820-2. **32 viajes re-resueltos**: 2 de Brian y
+     30 de conductores cuya ficha se creó DESPUÉS del viaje (Paredes, Navarro, Suárez, Toro, Mejías);
+     9 caen en días firmados — sus `closure_lines` NO cambiaron (0 tocadas), pero una pantalla que
+     lea los vínculos en vivo de esos días ahora muestra conductor donde antes había vacío.
+   - `20261001120000`: la columna ya estaba aplicada desde antes.
+3. Commit + push a `dev`; verificar workflows de backend y frontend.
+4. Mage: sincronizar `load_asset_asignments_07.sql` — el mirror tiene la Ronda 164 SIN sincronizar;
+   decidir con el usuario si va todo junto.
+5. Click-through en dev: motivo al conductor → tracto con "Heredado de"; GPRZ30 en ámbar y
+   "Confirmar cierre" sin bloqueo. Avisar a Fabián (y a Pablo por el cambio de regla del 21/08).
+6. Pendiente de la llamada, fuera de alcance: "Eliminar viaje" no aparece en manuales previos al 30/09.
+
 ### 2026-09-24 — Ronda 164: caída de la tarde (Disk IO agotado) y recorte del IO de la ingesta
 
 Plan aprobado: `~/.claude/plans/purring-hugging-meteor.md`.

@@ -801,6 +801,69 @@ async def test_integracion_transferir_vehiculo_protegido_da_409_y_no_deja_dos_ac
     assert filas[0]["status"] == "ACTIVE"
 
 
+async def _tracto_y_dos_empresas(conn):
+    asset_id = str(await conn.fetchval(
+        "INSERT INTO public.assets (license_plate, asset_type) VALUES ('ZZTR01', 'TRACTOCAMION') RETURNING id"))
+    carrier_a = str(await conn.fetchval(
+        "INSERT INTO public.carriers (business_name) VALUES ('Empresa A de prueba') RETURNING id"))
+    carrier_b = str(await conn.fetchval(
+        "INSERT INTO public.carriers (business_name) VALUES ('Empresa B de prueba') RETURNING id"))
+    return asset_id, carrier_a, carrier_b
+
+
+async def _asignaciones_del_tracto(conn, asset_id):
+    filas = await conn.fetch(
+        "SELECT carrier_id::text, status, is_manual_override FROM public.asset_assignments "
+        "WHERE asset_id = $1",
+        asset_id,
+    )
+    return {f["carrier_id"]: (f["status"], f["is_manual_override"]) for f in filas}
+
+
+@pytest.mark.integracion
+async def test_integracion_transferir_tracto_deja_las_dos_filas_como_decision_humana(conexion_revertida):
+    """Rafael Villegas / BDLC92 (01/10): la transferencia del tracto no quedaba
+    marcada y el loader del Centralizador la revertía cada día — 6 veces en un
+    mes. Mismo defecto que el de conductores del 16/09, en el otro endpoint."""
+    conn = conexion_revertida
+    asset_id, carrier_a, carrier_b = await _tracto_y_dos_empresas(conn)
+    await conn.execute(
+        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
+        asset_id, carrier_a,
+    )
+
+    await assign_asset(
+        carrier_b, AssetAssignmentCreateBody(asset_id=asset_id, carrier_id=carrier_b),
+        PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    assert await _asignaciones_del_tracto(conn, asset_id) == {
+        carrier_a: ("INACTIVE", True),
+        carrier_b: ("ACTIVE", True),
+    }
+
+
+@pytest.mark.integracion
+async def test_integracion_reasignar_tracto_a_una_empresa_desvinculada_antes_la_reactiva(conexion_revertida):
+    conn = conexion_revertida
+    asset_id, carrier_a, carrier_b = await _tracto_y_dos_empresas(conn)
+    await conn.execute(
+        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status, is_manual_override) "
+        "VALUES ($1, $2, 'INACTIVE', true), ($1, $3, 'ACTIVE', false)",
+        asset_id, carrier_a, carrier_b,
+    )
+
+    await assign_asset(
+        carrier_a, AssetAssignmentCreateBody(asset_id=asset_id, carrier_id=carrier_a),
+        PoolDeUnaConexion(conn), await _usuario_real(conn),
+    )
+
+    assert await _asignaciones_del_tracto(conn, asset_id) == {
+        carrier_a: ("ACTIVE", True),
+        carrier_b: ("INACTIVE", True),
+    }
+
+
 def test_assign_driver_404_when_driver_missing():
     pool = AsyncMock()
     conn = AsyncMock()

@@ -36,8 +36,9 @@ def test_sin_tipo_de_operacion_no_bloquea():
 
 
 def test_bloquean_las_que_significan_flota_fuera_del_directorio():
+    """PATENTE_NO_REGISTRADA dejó de bloquear el 01/10 (requirements-bug-12.md,
+    RF-01 / CA-01): se informa en Pendientes y no impide firmar el día."""
     assert set(_ESCALACIONES_QUE_BLOQUEAN) == {
-        "PATENTE_NO_REGISTRADA",
         "CONDUCTOR_NO_REGISTRADO",
         "EMPRESA_NO_RECONOCIDA",
         "EMPRESA_ONBOARDING",
@@ -48,17 +49,18 @@ def test_cada_pendiente_dice_de_que_tipo_es():
     """Sin el tipo, la pantalla no puede decir QUE hacer: no es lo mismo "esta
     patente no existe en el directorio" que "esta empresa esta en onboarding"."""
     pre = {"escalations": {
-        "PATENTE_NO_REGISTRADA": [{"tractor_plate": "ABCD12", "reason": "no existe"}],
+        "CONDUCTOR_NO_REGISTRADO": [{"driver_rut": "11111111-1"}],
         "EMPRESA_ONBOARDING": [{"carrier": "Transportes X"}],
         "SIN_TIPO_OPERACION": [{"tractor_plate": "ZZZZ99"}],
+        "PATENTE_NO_REGISTRADA": [{"tractor_plate": "ABCD12", "reason": "no existe"}],
     }}
     pendientes = _pendientes_de_flota(pre)
 
-    assert [p["tipo"] for p in pendientes] == ["PATENTE_NO_REGISTRADA", "EMPRESA_ONBOARDING"]
-    assert pendientes[0]["tractor_plate"] == "ABCD12"
-    # El caso que no bloquea no viaja: si viajara, la pantalla lo mostraria
-    # como bloqueante y el usuario no podria hacerlo desaparecer.
-    assert all(p["tipo"] != "SIN_TIPO_OPERACION" for p in pendientes)
+    assert [p["tipo"] for p in pendientes] == ["CONDUCTOR_NO_REGISTRADO", "EMPRESA_ONBOARDING"]
+    assert pendientes[0]["driver_rut"] == "11111111-1"
+    # Los casos que no bloquean no viajan: si viajaran, la pantalla los
+    # mostraria como bloqueantes y el usuario no podria hacerlos desaparecer.
+    assert {p["tipo"] for p in pendientes}.isdisjoint({"SIN_TIPO_OPERACION", "PATENTE_NO_REGISTRADA"})
 
 
 def test_un_dia_limpio_no_bloquea_nada():

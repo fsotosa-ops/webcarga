@@ -72,7 +72,7 @@ LINEAS_TRACTOS = f"""(
            l.requires_reason AS requires_motivo,
            l.reason_id AS unassigned_reason_id, l.valid_until,
            l.resolved_by, l.resolved_at, l.computed_at, l.comentario,
-           l.home_location_id,
+           l.home_location_id, l.reason_from_driver_id,
            {_CATEGORIA} AS category
     FROM app.closure_lines l
     LEFT JOIN app.status_taxonomies lr ON lr.id = l.reason_id
@@ -141,7 +141,7 @@ SELECT
     NOT (COALESCE(ar.is_equipo_completo, false) AND NOT COALESCE(ar.is_tractoreo, false)) AS requires_reason,
     -- El tracto hereda el CD de su conductor habitual, y no al revés: Operaciones
     -- dijo que el CD se le asigna a la persona, que puede cambiar de patente
-    -- cuando queda en panne. Misma tabla que usa _propagar_al_tracto_habitual.
+    -- cuando queda en panne. Misma tabla que usa _SQL_SINCRONIZAR_TRACTOS.
     hd.home_location_id
 FROM active_roster ar
 LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
@@ -175,7 +175,8 @@ ON CONFLICT (business_date, subject_type, subject_id) DO UPDATE SET
     reason_id   = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.reason_id END,
     valid_until = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.valid_until END,
     resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.resolved_by END,
-    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.resolved_at END
+    resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.resolved_at END,
+    reason_from_driver_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.reason_from_driver_id END
 """
 
 
@@ -197,11 +198,52 @@ FROM (
            p.subject_type, p.subject_id, p.reason_id, p.valid_until, p.resolved_by, p.resolved_at
     FROM app.closure_lines p
     WHERE p.business_date < $1 AND p.valid_until >= $1 AND p.reason_id IS NOT NULL
+      -- Un motivo heredado del conductor no se arrastra por su cuenta: lo
+      -- vuelve a calcular _SQL_SINCRONIZAR_TRACTOS desde el conductor del día.
+      AND p.reason_from_driver_id IS NULL
     ORDER BY p.subject_type, p.subject_id, p.business_date DESC
 ) h
 WHERE l.business_date = $1
   AND l.subject_type = h.subject_type AND l.subject_id = h.subject_id
   AND l.status = 'UNASSIGNED' AND l.reason_id IS NULL AND l.resolved_at IS NULL
+"""
+
+# El tracto hereda el motivo de su conductor habitual (punto 5 del Diario 2.0,
+# 01/10). Operaciones escribía a mano en el tracto EL MISMO motivo del
+# conductor: 108 veces en dos semanas, en los dos grupos.
+#
+# Se calcula por conjuntos para todo el día, así sirve igual después de que una
+# persona escribe, de un cambio, de un borrado o de una vigencia heredada.
+# Sólo toca líneas de tracto sin carga y que exigen motivo, y de esas sólo las
+# que están SIN TOCAR (sin motivo y sin autor) o YA HEREDADAS
+# (`reason_from_driver_id`): lo que escribió una persona en el tracto no se
+# pisa. Si el conductor ya no tiene motivo —lo borraron, o trabajó— la herencia
+# se limpia y la línea vuelve a estar sin tocar.
+_SQL_SINCRONIZAR_TRACTOS = """
+WITH herencia AS (
+    SELECT a.id AS line_id, d.subject_id AS driver_id, d.reason_id, d.valid_until,
+           d.resolved_by, d.resolved_at
+    FROM app.closure_lines a
+    -- LEFT: si el tracto dejó de tener conductor habitual, la herencia vieja
+    -- también se limpia.
+    LEFT JOIN public.vehicle_driver_assignments vda
+      ON vda.asset_id = a.subject_id AND vda.status = 'ACTIVE'
+    LEFT JOIN app.closure_lines d
+      ON d.business_date = a.business_date AND d.subject_type = 'DRIVER'
+     AND d.subject_id = vda.driver_id
+     AND d.status = 'UNASSIGNED' AND d.reason_id IS NOT NULL
+    WHERE a.business_date = $1 AND a.subject_type = 'ASSET'
+      AND a.status = 'UNASSIGNED' AND a.requires_reason
+      AND ((a.reason_id IS NULL AND a.resolved_at IS NULL) OR a.reason_from_driver_id IS NOT NULL)
+)
+UPDATE app.closure_lines a
+SET reason_id = h.reason_id, valid_until = h.valid_until,
+    resolved_by = h.resolved_by, resolved_at = h.resolved_at,
+    reason_from_driver_id = h.driver_id
+FROM herencia h
+WHERE a.id = h.line_id
+  AND (a.reason_id, a.valid_until, a.reason_from_driver_id, a.resolved_at)
+      IS DISTINCT FROM (h.reason_id, h.valid_until, h.driver_id, h.resolved_at)
 """
 
 # ── Proyección a las tablas viejas (se retira en la ola 5) ───────────────────
@@ -289,6 +331,7 @@ async def recalcular(pool, fecha: date) -> dict | None:
             await conn.execute(_SQL_UPSERT_CONDUCTORES, fecha)
             await conn.execute(_SQL_UPSERT_TRACTOS, fecha)
             await conn.execute(_SQL_HEREDAR_VIGENCIA, fecha)
+            await conn.execute(_SQL_SINCRONIZAR_TRACTOS, fecha)
             await _proyectar(conn, fecha)
     return pre_cierre
 
@@ -365,6 +408,10 @@ async def poner_motivo(
                     -- vacía: la vieja era de OTRO motivo.
                     valid_until = CASE WHEN $6 THEN $7::date WHEN $4 THEN NULL ELSE valid_until END,
                     comentario  = CASE WHEN $8 THEN $9 ELSE comentario END,
+                    -- Una persona que elige (o borra) el motivo de un tracto se
+                    -- queda con la línea: deja de seguir al conductor. Un
+                    -- comentario solo no rompe la herencia.
+                    reason_from_driver_id = CASE WHEN $4 OR $6 THEN NULL ELSE reason_from_driver_id END,
                     resolved_by = $10::uuid, resolved_at = now()
                 WHERE business_date = $1 AND subject_type = $2 AND subject_id = ANY($3::uuid[])
                 """,
@@ -375,44 +422,25 @@ async def poner_motivo(
                 user["sub"],
             )
 
-            if subject_type == "DRIVER" and pone_motivo and grupo_nuevo == GRUPO_NO_TRABAJANDO:
-                await _propagar_al_tracto_habitual(conn, fecha, sujetos, user)
+            if subject_type == "DRIVER" and (pone_motivo or pone_vigencia):
+                await conn.execute(_SQL_SINCRONIZAR_TRACTOS, fecha)
 
             await _proyectar(conn, fecha)
 
 
-async def _propagar_al_tracto_habitual(conn, fecha: date, conductores: list[str], user: dict) -> None:
-    """Si el conductor no trabajó, su tracto habitual tampoco: se le escribe
-    'Sin conductor'. Pedido de Operaciones (16/09): marcaban el motivo en
-    Conductores y tenían que volver a ponerlo en Tractos.
-
-    La inferencia SÓLO llena silencio: la línea del tracto tiene que estar sin
-    carga, sin motivo y sin autor. Nunca pisa lo que escribió una persona, ni
-    toca un tracto que trabajó con otro conductor."""
-    await conn.execute(
-        """
-        UPDATE app.closure_lines a
-        SET reason_id = sc.id, resolved_by = $3::uuid, resolved_at = now()
-        FROM public.vehicle_driver_assignments vda,
-             (SELECT id FROM app.status_taxonomies
-              WHERE domain = 'DRIVER_REASON' AND code = 'SIN_CONDUCTOR' AND active) sc
-        WHERE vda.driver_id = ANY($2::uuid[]) AND vda.status = 'ACTIVE'
-          AND a.business_date = $1 AND a.subject_type = 'ASSET' AND a.subject_id = vda.asset_id
-          AND a.status = 'UNASSIGNED' AND a.requires_reason
-          AND a.reason_id IS NULL AND a.resolved_at IS NULL
-        """,
-        fecha, conductores, user["sub"],
-    )
-
-
 # ── cerrar / reabrir ─────────────────────────────────────────────────────────
 
-# Las escalaciones del pre-cierre que bloquean: las cuatro significan que la
-# flota de ese viaje no está en el directorio, así que el viaje no tiene
-# empresa resoluble (Pablo, 21/08). SIN_TIPO_OPERACION y CONDUCTOR_SIN_EMPRESA
-# quedan afuera a propósito.
+# Las escalaciones del pre-cierre que bloquean: significan que la flota de ese
+# viaje no está en el directorio, así que el viaje no tiene empresa resoluble
+# (Pablo, 21/08). SIN_TIPO_OPERACION y CONDUCTOR_SIN_EMPRESA quedan afuera a
+# propósito.
+#
+# PATENTE_NO_REGISTRADA salió el 01/10 (requirements-bug-12.md, RF-01 / CA-01:
+# "la patente … no genera bloqueos por falta de empresa asignada"). GPRZ30 fue
+# de una EETT nuestra y hoy el TMS la informa en otra empresa; bloqueaba el día
+# entero. Sigue en Pendientes con su acción (asignar o crear la empresa): es un
+# estado no vinculante, no un dato que se esconde.
 ESCALACIONES_QUE_BLOQUEAN = (
-    "PATENTE_NO_REGISTRADA",
     "CONDUCTOR_NO_REGISTRADO",
     "EMPRESA_NO_RECONOCIDA",
     "EMPRESA_ONBOARDING",

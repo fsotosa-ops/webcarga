@@ -236,6 +236,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     driverPendingDocsCritical?: boolean | null
     suggestedReasonId?: string | null
     lastKnownOperationType?: string | null
+    reasonFromDriverName?: string | null
   }
 
   const rows: Row[] = esConductores
@@ -303,6 +304,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
           ?? (e.carrier_shipper_names?.length ? e.carrier_shipper_names.join(' · ') : null),
         clienteEsHabilitado: !e.today_trip_client,
         comentario: e.comentario,
+        reasonFromDriverName: e.reason_from_driver_name,
       }))
 
   const noAsignado = (r: Row) => r.categoria === 'SIN_RESOLVER' || r.categoria === 'TRABAJANDO_SIN_ASIGNACION'
@@ -612,6 +614,11 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                           <option key={reason.id} value={reason.id}>{reason.label}</option>
                         ))}
                       </select>
+                      {/* El motivo se escribió en el conductor y el tracto lo
+                          sigue solo (01/10): decirlo evita que lo repitan a mano. */}
+                      {r.unassignedReasonId && r.reasonFromDriverName && (
+                        <p className="text-etiqueta text-informativo">Heredado de {r.reasonFromDriverName}</p>
+                      )}
                       {/* Vigencia: sólo un motivo de "no trabajó" puede
                           arrastrarse a los días siguientes (Vacaciones,
                           Licencia). Trabajar sin asignación es un hecho de

@@ -72,6 +72,27 @@ describe('PreCierrePendingSection', () => {
     expect(screen.getByText('Nueva empresa')).toBeInTheDocument()
   })
 
+  it('una patente sin empresa dice que no bloquea y en qué empresa la informa el TMS (GPRZ30, 01/10)', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [{
+          tractor_plate: 'GPRZ30', reason: 'La patente existe pero no tiene empresa asignada',
+          tms_carrier_name: 'TRANSPORTE VICENTE BUGARIN SPA',
+        }],
+        EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [], EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+      },
+    }))
+    renderSection()
+
+    expect(await screen.findByText(/TRANSPORTE VICENTE BUGARIN SPA/)).toBeInTheDocument()
+    expect(screen.getByText(/No bloquea el cierre/)).toBeInTheDocument()
+
+    // Crear la empresa parte con el nombre que informa el TMS.
+    fireEvent.click(screen.getByRole('button', { name: 'Crear empresa nueva' }))
+    expect(screen.getByDisplayValue('TRANSPORTE VICENTE BUGARIN SPA')).toBeInTheDocument()
+  })
+
   it('EMPRESA_ONBOARDING: "Activar empresa" llama a carriersApi.patch con operational_status ACTIVE', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     const { carriersApi } = await import('@/lib/api/carriers')

@@ -446,6 +446,52 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.queryByText('Luis Rojas')).not.toBeInTheDocument()
   })
 
+  it('un tracto con motivo heredado del conductor dice de quién lo heredó (punto 5, 01/10)', async () => {
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
+      ...EQUIPMENT_STATUS,
+      tractoreo: {
+        ...EQUIPMENT_STATUS.tractoreo,
+        equipment: [equipmentRow({
+          asset_id: 'tr9', tractor_plate: 'BDLC92', status: 'UNASSIGNED', requires_motivo: true,
+          driver_id: 'h9', driver_name: 'Villegas Ruiz Rafael David',
+          unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana',
+          reason_from_driver_name: 'Villegas Ruiz Rafael David',
+        })],
+      },
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
+    fireEvent.click(await screen.findByText('Total'))
+
+    const fila = (await screen.findByText('BDLC92')).closest('tr')!
+    expect(within(fila).getByText('Heredado de Villegas Ruiz Rafael David')).toBeInTheDocument()
+  })
+
+  it('un motivo escrito a mano en el tracto no se presenta como heredado', async () => {
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
+      ...EQUIPMENT_STATUS,
+      tractoreo: {
+        ...EQUIPMENT_STATUS.tractoreo,
+        equipment: [equipmentRow({
+          asset_id: 'tr9', tractor_plate: 'BDLC92', status: 'UNASSIGNED', requires_motivo: true,
+          unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', reason_from_driver_name: null,
+        })],
+      },
+    })
+    renderSection()
+    await screen.findByText('Ana Soto')
+
+    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
+    fireEvent.click(await screen.findByText('Total'))
+
+    const fila = (await screen.findByText('BDLC92')).closest('tr')!
+    expect(within(fila).queryByText(/Heredado de/)).not.toBeInTheDocument()
+  })
+
   it('un tracto asignado muestra el conductor DEL VIAJE, no el habitual del maestro', async () => {
     renderSection()
     await screen.findByText('Ana Soto')

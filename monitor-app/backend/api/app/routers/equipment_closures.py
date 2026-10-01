@@ -61,6 +61,9 @@ SELECT
     eds.status, eds.category, eds.requires_motivo, eds.unassigned_reason_id, ur.label AS unassigned_reason_label,
     eds.valid_until, eds.comentario,
     eds.resolved_by, eds.resolved_at,
+    -- El motivo lo heredó del conductor habitual (punto 5, 01/10): la pantalla
+    -- lo dice, para que nadie lo vuelva a escribir a mano.
+    rfd.full_name AS reason_from_driver_name,
     -- Conductor habitual del equipo (sigue mostrándose junto al tracto,
     -- HU-03 §BLOQUE 1 — ya no es la unidad que se cierra, ver docstring).
     sd.driver_id, sd.full_name AS driver_name,
@@ -114,6 +117,7 @@ LEFT JOIN LATERAL (
 ) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
 LEFT JOIN app.status_taxonomies ur ON ur.id = eds.unassigned_reason_id
+LEFT JOIN public.drivers rfd ON rfd.id = eds.reason_from_driver_id
 LEFT JOIN LATERAL (
     SELECT vda.driver_id, d.full_name
     FROM public.vehicle_driver_assignments vda
