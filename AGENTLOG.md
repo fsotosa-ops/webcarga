@@ -83,7 +83,18 @@ Fuentes:
    - **Migración 20260924100000 APLICADA** el 06/10 a las 18:27 CL. Registro sembrado: 5 streams, últimos
      archivos de las 18:15-18:18. Mientras no se sincronice la 164 es inocua, porque el código viejo no lee
      la tabla.
-   - **Bloqueo**: `sync_status` marca conflicto en `pipelines/batch_tms_monitor_trips/metadata.yaml`
+   - **RONDA 164 DESPLEGADA (06/10, 18:40 CL).** `sync_local_to_remote` subió 20 archivos: la 164, la
+     guarda de la 165 y el pipeline `tms_daily_tests`. **Sin crear el trigger diario**, que lo crea el
+     usuario. El conflicto de `metadata.yaml` queda sin subir porque el sync salta los conflictos.
+     - Conclusión al leer `mage_agent/tools/sync.py`: compara mtimes por IGUALDAD exacta. El usuario
+       corrió en su terminal un comando que fijaba la marca remota en "ahora" y no sirvió.
+     - **Falta** que el usuario ponga a mano el `concurrency_config` en la UI de Mage: límite 1, skip.
+     - Primera corrida (18:45-19:01): los 5 streams cerraron sus archivos en el registro.
+       **Wingsuite recuperó 22 archivos con datos y 992 vacíos posteriores al 25/09**, que la marca de
+       agua vieja nunca tomó.
+     - `app.trips` se actualizó a las 19:01 tocando solo 7 viajes.
+     - El clasificador bloqueó leer `n_tup_upd` con psql, así que no hay medición de antes/después.
+   - Bloqueo anterior: `sync_status` marca conflicto en `pipelines/batch_tms_monitor_trips/metadata.yaml`
      (remoto modificado el 24/09 23:44). Contra `pipeline_get`, el remoto tiene los mismos 34 bloques y
      el mismo grafo; solo le falta el `concurrency_config` (run_limit 1, skip).
      `pipeline_update` da 405. Marcar el remoto como revisado en `.mage-agent-sync-state.json` lo bloqueó
