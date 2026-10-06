@@ -78,7 +78,29 @@ Fuentes:
 ## Checklist — siguiente paso exacto
 
 1. ~~Commit + push~~ HECHO: `b1f30296` en `dev`; Deploy Monitor API y Deploy Frontend en verde.
-2. Proponer D4/D5 rediseñado. **No implementar sin OK**, porque toca Mage:
+2. **D4/D5 aprobado (06/10) con reconciliación diaria. Orden decidido por el usuario: Ronda 164 primero y
+   D4/D5 después.**
+   - **Migración 20260924100000 APLICADA** el 06/10 a las 18:27 CL. Registro sembrado: 5 streams, últimos
+     archivos de las 18:15-18:18. Mientras no se sincronice la 164 es inocua, porque el código viejo no lee
+     la tabla.
+   - **Bloqueo**: `sync_status` marca conflicto en `pipelines/batch_tms_monitor_trips/metadata.yaml`
+     (remoto modificado el 24/09 23:44). Contra `pipeline_get`, el remoto tiene los mismos 34 bloques y
+     el mismo grafo; solo le falta el `concurrency_config` (run_limit 1, skip).
+     `pipeline_update` da 405. Marcar el remoto como revisado en `.mage-agent-sync-state.json` lo bloqueó
+     el clasificador: **lo decide el usuario**.
+   - Los 5 upserts ya tienen la guarda "file_ts nuevo > vigente", así que reprocesar archivos viejos
+     en la primera corrida no hace retroceder datos.
+   - `status_reported_at` viene del snapshot, que solo versiona cuando el payload cambia: ya significa
+     "último cambio" y la 164 no lo altera. Por eso **la presencia en el TMS no se puede leer de ahí**:
+     hay que sacarla de los archivos.
+   - Confirmado en dbt: `trip_status` prioriza el SAP CERRADO, y el OR 3 del incremental vuelve a
+     procesar los qanalytics cuyo milestone pasa a CERRADO. **Ampliar la ventana del SAP basta para que
+     los 19 cerrados se cierren solos.**
+   - Para marcar eliminados (los 21 que no están): un bloque lee los Nro SAP del archivo ancho y marca
+     los viajes abiertos de Walmart con planificación dentro de la ventana que no aparecen. Va en una
+     tabla aparte que dbt no toca (`app.trip_source_presence`).
+   - **Wingsuite no trae archivos desde el 25/09** (último archivo en el registro). Hay que revisarlo aparte.
+   Diseño original, antes de medir:
    - corrida diaria de **reconciliación** con la ventana desde el viaje abierto más antiguo, con tope;
      las de 15 min quedan como están (el disco de Supabase es el cuello, Ronda 164);
    - eliminado = ausente dentro de la ventana cubierta por la reconciliación, marcado y no borrado;
