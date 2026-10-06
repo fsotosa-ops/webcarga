@@ -257,7 +257,12 @@ class QAnalyticsExtractor(BaseTMSExtractor):
         """
         logger.info("[STEP export] Click botón de exportación")
         async with page.expect_download(timeout=timeout_ms) as download_info:
-            await page.locator(SEL_BTN_EXPORT).click(timeout=10000)
+            # Mismo tope que la búsqueda, no 10 s fijos: con un reporte grande
+            # (la reconciliación diaria pide ~3 meses, 5.000 filas) la página
+            # sigue renderizando la tabla y el botón no responde a tiempo.
+            # Visto el 06/10 en Cloud Run: "Timeout 10000ms exceeded" en este
+            # clic, 22 s después de que la búsqueda ya había vuelto.
+            await page.locator(SEL_BTN_EXPORT).click(timeout=min(timeout_ms, 60_000))
         download = await download_info.value
 
         ext = os.path.splitext(download.suggested_filename)[1] or ".xls"
