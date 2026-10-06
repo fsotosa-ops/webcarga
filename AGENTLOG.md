@@ -16,6 +16,78 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-06 — Ronda 166: minuta del 02/10 (Pablo) — HUs y fixes del Diario 2.0
+
+Fuentes:
+- Minuta de Pablo: `monitor-app/bugs/20261006/Minuta_Revision_01_02oct2026.docx`.
+- Llamada del 02/10 "Webcarga 2.0" en Granola.
+- Plan: `~/.claude/plans/starry-percolating-marble.md`.
+- **HUs**: `monitor-app/docs/user-stories/20261006/01-hu-diario-2.0-revision-02oct.md` (fuera de git
+  por diseño). Incluye D1-D5 para el Diario y C1-C4 y O1 solo como HU, para la reunión con Pablo.
+
+## Hecho (D1-D3, sin migraciones)
+
+1. **D1 — Cierre fusionado por tracto.** Se retira la tarjeta Conductores. Tractoreo queda con una fila
+   por patente y el conductor habitual al lado.
+   - Si conductor y tracto están los dos sin carga, la fila ES el conductor: el motivo va a la línea
+     DRIVER y el tracto lo hereda con `_SQL_SINCRONIZAR_TRACTOS`.
+   - Si el tracto tiene un motivo propio distinto del conductor, aparece un segundo selector, "Tracto".
+   - "Otros conductores del día" agrupa a los que no tienen tracto habitual, a los que su tracto lo
+     manejó otro ese día y a los que están por regularizar.
+   - La fusión se hace en el frontend: los dos endpoints ya se pedían. Las dos familias de
+     `closure_lines` siguen intactas, igual que `cerrar`.
+   - Medido el 02/10: 47 tractos (7 sin habitual) y 1 conductor sin tracto, sin casos raros.
+   - `vehicle_driver_assignments` tiene un índice único sobre el ACTIVE por tracto, así que el `LIMIT 1`
+     ya era determinista.
+2. **D2 — Viajes del cierre con contexto del Monitor.** `SQL_BASE` en `cierre_viajes.py` agrega
+   TMS, patente, conductor y empresa, con las mismas expresiones de `_TRIP_SELECT`. El endpoint suma
+   origen y destinos vía `_load_trip_stops`.
+3. **D3 — Guardar y deshacer.**
+   - En la fila, elegir un motivo deja un borrador; el viaje se cierra recién con "Guardar".
+   - Grupo nuevo `con_motivo`: viajes declarados desde el cierre de D en adelante, según `audit_log`
+     en hora de Chile.
+   - `PATCH /trips/bulk-reopen` deshace la declaración:
+     - restaura `is_active`/`is_working` desde la traza que ahora deja `bulk-close` (`field='is_active'`);
+     - va en **dos UPDATE**, porque el trigger `protect_manual_overrides` revierte `is_active` mientras
+       OLD lo marque como manual;
+     - devuelve 409 si el viaje volvería a contar en un día firmado. El chequeo se hace DESPUÉS de
+       deshacer, dentro de la transacción, porque `trips_del_dia` excluye los viajes con motivo.
+   - En la Flota, "Sin especificar" en un tracto vuelve a heredar, **solo si su conductor tiene motivo**.
+     Si no, la vigencia del propio tracto volvería a llenar lo que la persona borró a propósito.
+- Verificado:
+  - backend: cierre 61/61 y suite completa (ver checklist);
+  - frontend: 1.405 tests, `tsc` y build en verde, trinquete en verde (atajó dos `text-[10px]`);
+  - SQL nuevo probado con parámetros contra producción;
+  - 4 mutaciones atrapadas: herencia, 409 y dos del ruteo de la fusión.
+
+## Hallazgo que cambia D4/D5 (medido 06/10)
+
+- El grupo "Abandonados por el TMS" del cierre tenía 52 viajes. Los 40 de Walmart, bajados del portal
+  con una ventana 01/07–13/10 (en local, sin GCS):
+  - **17 RETORNANDO figuran CERRADO FINALIZADO** en el TMS;
+  - 2 figuran CERRADO INCOMPLETO;
+  - **21 no están** en el TMS: son eliminados.
+- **Causa raíz**: el scraper baja una ventana por fecha de planificación de hoy-7 a hoy+7. Un viaje
+  que sale de la ventana no vuelve a actualizarse nunca, y su cierre no llega. Es la queja de Pablo:
+  *"cuando el TMS se lo cambia a cerrado finalizado… no nos está generando ese cambio"*.
+- La señal "Ya no está en el TMS" (`_tms_dropped`) **confunde salir de la ventana con ser eliminado**.
+- El portal acepta 3,5 meses: 75 s y 1,3 MB, 5.083 filas.
+- **Pablo no quiere eliminar ni que el sistema decida**: *"que se replique lo que dice el TMS"*. Los
+  que sigan abiertos en el TMS sirven en el cierre para gestionar el cobro.
+
+## Checklist — siguiente paso exacto
+
+1. Commit + push de D1-D3 a `dev` (pedido por el usuario) y verificar que corran los dos workflows.
+2. Proponer D4/D5 rediseñado. **No implementar sin OK**, porque toca Mage:
+   - corrida diaria de **reconciliación** con la ventana desde el viaje abierto más antiguo, con tope;
+     las de 15 min quedan como están (el disco de Supabase es el cuello, Ronda 164);
+   - eliminado = ausente dentro de la ventana cubierta por la reconciliación, marcado y no borrado;
+   - pegados de verdad: siguen en el cierre para gestionar el cobro y salen del Diario a los X días
+     de la entrega.
+   - Precondición: el mirror de Mage tiene las Rondas 164 y 165 sin sincronizar.
+3. Click-through en dev: cierre fusionado, viajes con contexto, Guardar/Deshacer, GPRZ30 en ámbar.
+4. Avisar a Pablo que "Conductores" y "Tractos" quedaron en una sola vista.
+
 ### 2026-10-01 — Ronda 165: Diario 2.0, puntos 5 y 12 (bugs del 01/10)
 
 Fuentes: `monitor-app/bugs/20261001/` (docx + `requirements-bug-12.md`, que ES el punto 12) y la

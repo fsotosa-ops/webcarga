@@ -158,7 +158,15 @@ export const tripsApi = {
       body: JSON.stringify({ trip_ids: tripIds, unassigned_reason_id: unassignedReasonId }),
     }),
 
-  /** Los cuatro grupos del paso "Viajes" del Cierre (Tarea 3/6): hoy/rezago
+  /** Deshace "No asignado por WebCarga" (HU-D3). 409 si el viaje contaría en
+   *  un día ya firmado. */
+  bulkReopen: (tripIds: string[]) =>
+    apiFetch<{ ok: boolean; reopened: number }>(`/api/v1/trips/bulk-reopen`, {
+      method: 'PATCH',
+      body: JSON.stringify({ trip_ids: tripIds }),
+    }),
+
+  /** Los grupos del paso "Viajes" del Cierre (Tarea 3/6): hoy/rezago
    *  bloquean el cierre del día si no se resuelven, en_curso/abandonado son
    *  de sólo lectura. */
   cierreViajes: (fecha: string) =>

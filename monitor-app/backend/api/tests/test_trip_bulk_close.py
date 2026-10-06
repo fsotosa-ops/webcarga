@@ -58,7 +58,7 @@ def test_bulk_close_422_when_reason_does_not_exist_or_is_wrong_domain():
     tiene que dar 422 de negocio ANTES de escribir nada — no un 500 por FK
     después de dejar la nota/audit_log con "None"."""
     pool = AsyncMock()
-    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": [], "is_active": True, "is_working": False}]
     pool.fetchrow.return_value = None  # ni existe, ni es del dominio correcto
     client = make_client(pool)
 
@@ -73,7 +73,7 @@ def test_bulk_close_422_when_reason_does_not_exist_or_is_wrong_domain():
 
 def test_bulk_close_404_when_a_trip_is_missing():
     pool = AsyncMock()
-    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": [], "is_active": True, "is_working": False}]
     client = make_client(pool)
     res = client.patch(
         "/api/v1/trips/bulk-close",
@@ -91,8 +91,8 @@ def test_bulk_close_sets_is_active_and_is_working_false_for_all_selected():
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     pool.fetch.return_value = [
-        {"id": "t1", "manually_edited_fields": []},
-        {"id": "t2", "manually_edited_fields": []},
+        {"id": "t1", "manually_edited_fields": [], "is_active": True, "is_working": False},
+        {"id": "t2", "manually_edited_fields": [], "is_active": True, "is_working": False},
     ]
     pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
@@ -121,7 +121,7 @@ def test_bulk_close_logs_a_system_note_per_trip():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": [], "is_active": True, "is_working": False}]
     pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
 
@@ -145,7 +145,7 @@ def test_bulk_close_logs_to_audit_log_per_trip():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": [], "is_active": True, "is_working": False}]
     pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
 
@@ -155,9 +155,12 @@ def test_bulk_close_logs_to_audit_log_per_trip():
     )
 
     audit_calls = [c for c in conn.execute.call_args_list if "public.audit_log" in c.args[0]]
-    assert len(audit_calls) == 1
-    assert audit_calls[0].args[4] == "no_asignado_por_webcarga"
-    assert audit_calls[0].args[5] == "unassigned_reason_id"
+    # Dos por viaje: la declaración, y lo que el viaje era antes de apagarlo
+    # (de ahí lee "Deshacer", HU-D3).
+    assert [(c.args[4], c.args[5]) for c in audit_calls] == [
+        ("no_asignado_por_webcarga", "unassigned_reason_id"),
+        ("no_asignado_por_webcarga", "is_active"),
+    ]
 
 
 def test_bulk_close_route_does_not_collide_with_single_trip_patch():
@@ -167,7 +170,7 @@ def test_bulk_close_route_does_not_collide_with_single_trip_patch():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": []}]
+    pool.fetch.return_value = [{"id": "t1", "manually_edited_fields": [], "is_active": True, "is_working": False}]
     pool.fetchrow.return_value = {"label": "Sin camión disponible"}
     client = make_client(pool)
 

@@ -246,6 +246,29 @@ WHERE a.id = h.line_id
       IS DISTINCT FROM (h.reason_id, h.valid_until, h.driver_id, h.resolved_at)
 """
 
+# "Sin especificar" en un tracto cuyo conductor habitual TIENE motivo ese día:
+# la persona está deshaciendo su propio motivo, no declarando "en blanco", así
+# que la línea vuelve a sin tocar y la herencia la llena en el mismo acto.
+# Antes quedaba con autor y _SQL_SINCRONIZAR_TRACTOS la saltaba para siempre.
+# Sólo en ese caso: sin un conductor del que heredar, borrar sigue siendo
+# borrar a propósito, y una línea sin autor la volvería a llenar la vigencia
+# del tracto (_SQL_HEREDAR_VIGENCIA), justo lo que quien la borró no quería.
+_SQL_TRACTO_VUELVE_A_HEREDAR = """
+UPDATE app.closure_lines a
+SET resolved_by = NULL, resolved_at = NULL
+WHERE a.business_date = $1 AND a.subject_type = 'ASSET' AND a.subject_id = ANY($2::uuid[])
+  AND a.reason_id IS NULL AND a.reason_from_driver_id IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM public.vehicle_driver_assignments vda
+      JOIN app.closure_lines d
+        ON d.business_date = a.business_date AND d.subject_type = 'DRIVER'
+       AND d.subject_id = vda.driver_id
+       AND d.status = 'UNASSIGNED' AND d.reason_id IS NOT NULL
+      WHERE vda.asset_id = a.subject_id AND vda.status = 'ACTIVE'
+  )
+"""
+
 # ── Proyección a las tablas viejas (se retira en la ola 5) ───────────────────
 _SQL_PROYECTAR_CONDUCTORES = """
 INSERT INTO app.driver_day_status
@@ -400,6 +423,8 @@ async def poner_motivo(
                         "trabajar sin asignación es un hecho de ese día",
                     )
 
+            # "Sin especificar" en un tracto (HU-D3, minuta 02/10).
+            vuelve_a_heredar = pone_motivo and not reason_id and not (pone_vigencia and valid_until)
             await conn.execute(
                 """
                 UPDATE app.closure_lines
@@ -422,7 +447,10 @@ async def poner_motivo(
                 user["sub"],
             )
 
-            if subject_type == "DRIVER" and (pone_motivo or pone_vigencia):
+            if subject_type == "ASSET" and vuelve_a_heredar:
+                await conn.execute(_SQL_TRACTO_VUELVE_A_HEREDAR, fecha, sujetos)
+
+            if pone_motivo or pone_vigencia:
                 await conn.execute(_SQL_SINCRONIZAR_TRACTOS, fecha)
 
             await _proyectar(conn, fecha)

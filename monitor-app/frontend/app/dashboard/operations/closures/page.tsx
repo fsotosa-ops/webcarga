@@ -152,6 +152,17 @@ function ClosuresCenterPageInner() {
     }
   }
 
+  // Mismo contrato que handleCerrarViajes: el error de escritura sube a la
+  // sección, el refetch fallido no se disfraza de "no se deshizo".
+  async function handleDeshacerViajes(tripIds: string[]) {
+    await tripsApi.bulkReopen(tripIds)
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['cierre-viajes', fecha] })
+    } catch {
+      // Ver handleCerrarViajes.
+    }
+  }
+
 
   function setFecha(next: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -313,6 +324,9 @@ function ClosuresCenterPageInner() {
                 cargando={cierreViajesQuery.isLoading}
                 motivos={motivosViajesQuery.data ?? []}
                 onCerrar={handleCerrarViajes}
+                onDeshacer={handleDeshacerViajes}
+                meta={tripsMeta}
+                soloLectura={diaCerrado}
               />
             )
           )}

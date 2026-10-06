@@ -67,6 +67,12 @@ class TripBulkCloseBody(BaseModel):
     unassigned_reason_id: str | None = None
 
 
+class TripBulkReopenBody(BaseModel):
+    """Deshacer "No asignado por WebCarga" (HU-D3, minuta 02/10): el
+    coordinador no podía revertir un motivo puesto por error."""
+    trip_ids: list[str]
+
+
 class AsignarConductorBody(BaseModel):
     """Asignar una persona a TODOS sus viajes de una (Monitor, 2026-08-18).
 

@@ -4,7 +4,8 @@ import { PasoViajesSection } from './PasoViajesSection'
 
 const viaje = (id: string, nroTms: string, extra = {}) => ({
   trip_id: id, planning_date: '2026-08-18', client_name: 'Walmart',
-  source_system_trip_id: nroTms, trip_status: 'Asignado',
+  source_system: 'qanalytics', source_system_trip_id: nroTms, trip_status: 'Asignado',
+  tractor_plate: null, driver_name: null, carrier_name: null, origin: null, destinations: [],
   dias_sin_novedad: 0.2, unassigned_reason_id: null, unassigned_reason_label: null, ...extra,
 })
 
@@ -14,6 +15,7 @@ const grupos = {
   hoy: [viaje('t1', '2032999')], rezago: [viaje('t2', '2033000')],
   en_curso: [viaje('t3', '2033001')],
   abandonado: [viaje('t4', '2033002', { dias_sin_novedad: 31.6 })],
+  con_motivo: [],
 }
 
 describe('PasoViajesSection', () => {
@@ -68,8 +70,60 @@ describe('PasoViajesSection', () => {
 
     const selectDeFila = screen.getByLabelText('Motivo del viaje 2032999', { selector: 'select' })
     fireEvent.change(selectDeFila, { target: { value: 'm1' } })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Guardar' })[0])
 
     await waitFor(() => expect(onCerrar).toHaveBeenCalledWith(['t1'], 'm1'))
+  })
+
+  // HU-D3 (minuta 02/10): elegir en el desplegable cerraba el viaje al
+  // instante y desaparecía. Ahora elegir no escribe nada; "Guardar" sí.
+  it('elegir un motivo en la fila no cierra el viaje hasta apretar Guardar', () => {
+    const onCerrar = vi.fn()
+    render(<PasoViajesSection grupos={grupos} bloquean={2}
+                              motivos={[{ id: 'm1', label: 'No da por tarifa' }]}
+                              onCerrar={onCerrar} />)
+    const guardar = screen.getAllByRole('button', { name: 'Guardar' })[0]
+    expect(guardar).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Motivo del viaje 2032999', { selector: 'select' }),
+                     { target: { value: 'm1' } })
+
+    expect(onCerrar).not.toHaveBeenCalled()
+    expect(guardar).toBeEnabled()
+  })
+
+  it('lo declarado se ve en "Con motivo" y se puede deshacer', async () => {
+    const onDeshacer = vi.fn().mockResolvedValue(undefined)
+    const conMotivo = { ...grupos, con_motivo: [viaje('t5', '2033003', {
+      unassigned_reason_id: 'm1', unassigned_reason_label: 'No da por tarifa' })] }
+    render(<PasoViajesSection grupos={conMotivo} bloquean={2} motivos={[]}
+                              onCerrar={vi.fn()} onDeshacer={onDeshacer} />)
+
+    expect(screen.getByText('No da por tarifa')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Deshacer el motivo del viaje 2033003' }))
+
+    await waitFor(() => expect(onDeshacer).toHaveBeenCalledWith(['t5']))
+  })
+
+  it('con el día firmado no se ofrece deshacer', () => {
+    const conMotivo = { ...grupos, con_motivo: [viaje('t5', '2033003', {
+      unassigned_reason_id: 'm1', unassigned_reason_label: 'No da por tarifa' })] }
+    render(<PasoViajesSection grupos={conMotivo} bloquean={0} motivos={[]}
+                              onCerrar={vi.fn()} onDeshacer={vi.fn()} soloLectura />)
+
+    expect(screen.queryByRole('button', { name: /Deshacer/ })).toBeNull()
+  })
+
+  // HU-D2: identificar el viaje sin salir del cierre.
+  it('cada fila trae patente, conductor, empresa, origen y destinos', () => {
+    const conContexto = { ...grupos, hoy: [viaje('t1', '2032999', {
+      tractor_plate: 'LRTD13', driver_name: 'Juan Pérez', carrier_name: 'Transportes Uno',
+      origin: 'Bod La Farfana 1', destinations: ['Melipilla', 'Talagante'] })] }
+    render(<PasoViajesSection grupos={conContexto} bloquean={1} motivos={[]} onCerrar={vi.fn()} />)
+
+    for (const texto of ['LRTD13', 'Juan Pérez', 'Transportes Uno', 'Bod La Farfana 1', 'Melipilla · Talagante']) {
+      expect(screen.getByText(texto)).toBeInTheDocument()
+    }
   })
 
   it('en curso y abandonado muestran el motivo como texto, no como selector', () => {

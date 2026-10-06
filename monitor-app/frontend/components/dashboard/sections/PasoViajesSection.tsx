@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { Estado } from '@/components/ui/Estado'
 import { Cifra } from '@/components/ui/Cifra'
+import { TmsChip } from '@/components/dashboard/TripTable'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
-import type { CierreViajesResponse, GrupoDelCierre, UnassignedReasonMeta, ViajeDelCierre } from '@/lib/types'
+import type { CierreViajesResponse, GrupoDelCierre, TripsMeta, UnassignedReasonMeta, ViajeDelCierre } from '@/lib/types'
 
 interface Props {
   grupos:    CierreViajesResponse['grupos'] | undefined
@@ -14,9 +15,15 @@ interface Props {
    *  motivo de conductor no aplica acá. */
   motivos:   Pick<UnassignedReasonMeta, 'id' | 'label'>[]
   onCerrar:  (tripIds: string[], motivoId: string) => void | Promise<void>
+  /** Quita el motivo y devuelve el viaje a su grupo (HU-D3). */
+  onDeshacer?: (tripIds: string[]) => void | Promise<void>
+  /** Para los colores del TMS, los mismos del Monitor. */
+  meta?:      TripsMeta | null
+  /** Día firmado: nada se deshace (el backend también lo rechaza). */
+  soloLectura?: boolean
 }
 
-const ORDEN_GRUPOS: GrupoDelCierre[] = ['hoy', 'rezago', 'en_curso', 'abandonado']
+const ORDEN_GRUPOS: GrupoDelCierre[] = ['hoy', 'rezago', 'en_curso', 'abandonado', 'con_motivo']
 
 // Sólo hoy/rezago bloquean el cierre — son los que se pueden resolver acá.
 // en_curso/abandonado se muestran para que no desaparezcan de la vista (Regla
@@ -40,6 +47,20 @@ const GRUPO_INFO: Record<GrupoDelCierre, { titulo: string; bajada: string; selec
     titulo: 'Abandonados por el TMS', bajada: 'Sin novedad hace semanas — igual hay que cerrarlos.',
     seleccionable: false, vacio: 'Nada abandonado por el TMS.',
   },
+  // HU-D3 (minuta 02/10): poner el motivo sacaba el viaje de los cuatro
+  // grupos y no aparecía en ninguna parte — "no sé dónde queda". Acá se ve, y
+  // se deshace si fue un error.
+  con_motivo: {
+    titulo: 'Con motivo', bajada: 'Declarados como no asignados por WebCarga. Se pueden deshacer.',
+    seleccionable: false, vacio: 'Todavía no se declaró ningún viaje.',
+  },
+}
+
+/** Fecha de planificación corta, como la lee el coordinador: 02/10. */
+function formatFecha(iso: string | null): string {
+  if (!iso) return '—'
+  const [, m, d] = iso.split('-')
+  return `${d}/${m}`
 }
 
 /** Cuenta desde el último reporte del TMS, no desde la planificación — ver
@@ -49,7 +70,8 @@ function formatDiasSinNovedad(dias: number): string {
 }
 
 /** Paso "Viajes" del Cierre del Día (Tarea 6) — cuarta pestaña del Centro de
- *  Cierre. Muestra los cuatro grupos que devuelve `GET /trips/cierre-viajes`
+ *  Cierre. Muestra los grupos que devuelve `GET /trips/cierre-viajes`, más
+ *  "Con motivo" (HU-D3), donde lo declarado se ve y se deshace,
  *  y deja declarar en lote, con motivo obligatorio, por qué WebCarga no tomó
  *  una carga (hoy/rezago). en_curso/abandonado son de sólo lectura: se
  *  listan para que no desaparezcan de la vista, no bloquean el cierre.
@@ -63,9 +85,15 @@ function formatDiasSinNovedad(dias: number): string {
  *  tiene su propio encabezado de nivel 1 ("Centro de Cierre del Día"). Sus
  *  tres pestañas hermanas (`FlotaDelDiaSection`, `PreCierrePendingSection`,
  *  `StatusReportSection`) tampoco llevan uno — se mantiene consistente. */
-export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos, onCerrar }: Props) {
+export function PasoViajesSection({
+  grupos, bloquean, cargando = false, motivos, onCerrar, onDeshacer, meta, soloLectura = false,
+}: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [motivoId, setMotivoId] = useState('')
+  // El motivo elegido en una fila, todavía sin guardar (HU-D3): elegir no
+  // cierra el viaje; "Guardar" sí. Antes el cambio del desplegable lo cerraba
+  // al instante y el viaje desaparecía.
+  const [borrador, setBorrador] = useState<Record<string, string>>({})
   const [guardando, setGuardando] = useState(false)
   const [guardandoFila, setGuardandoFila] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -101,14 +129,32 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
   // elemento. No hay endpoint nuevo ni semantica nueva: declarar un viaje es
   // un unico acto, y tenerlo escrito dos veces es como empiezan a decir cosas
   // distintas.
-  async function handleCerrarFila(tripId: string, motivo: string) {
+  async function handleCerrarFila(tripId: string) {
+    const motivo = borrador[tripId]
     if (!motivo) return
     setGuardandoFila(tripId)
     setError(null)
     try {
       await onCerrar([tripId], motivo)
+      setBorrador(prev => {
+        const { [tripId]: _, ...resto } = prev
+        return resto
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cerrar el viaje.')
+    } finally {
+      setGuardandoFila(null)
+    }
+  }
+
+  async function handleDeshacer(tripId: string) {
+    if (!onDeshacer) return
+    setGuardandoFila(tripId)
+    setError(null)
+    try {
+      await onDeshacer([tripId])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo deshacer.')
     } finally {
       setGuardandoFila(null)
     }
@@ -180,8 +226,17 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
                 <thead>
                   <tr className={`bg-bg-main text-etiqueta font-bold uppercase tracking-wide ${TEXTO_APOYO}`}>
                     {info.seleccionable && <th className="text-left px-3 py-2 w-8" />}
-                    <th className="text-left px-3 py-2">Generador de carga</th>
-                    <th className="text-left px-3 py-2">Nº viaje TMS</th>
+                    {/* Las mismas columnas que el Monitor (HU-D2, minuta 02/10):
+                        con el número solo, el coordinador lo copiaba y salía a
+                        buscarlo. Sin filas desplegables: "lo más simple
+                        posible". */}
+                    <th className="text-left px-3 py-2">TMS · Cliente</th>
+                    <th className="text-left px-3 py-2">Nº viaje</th>
+                    <th className="text-left px-3 py-2">Fecha</th>
+                    <th className="text-left px-3 py-2">Patente</th>
+                    <th className="text-left px-3 py-2">Conductor</th>
+                    <th className="text-left px-3 py-2">Empresa</th>
+                    <th className="text-left px-3 py-2">Origen · Destinos</th>
                     <th className="text-left px-3 py-2">Estado</th>
                     <th className="text-left px-3 py-2">Tiempo</th>
                     {/* El motivo, por fila. Antes solo se podia elegir en la
@@ -204,22 +259,60 @@ export function PasoViajesSection({ grupos, bloquean, cargando = false, motivos,
                           />
                         </td>
                       )}
-                      <td className="px-3 py-2 font-medium text-text-primary">{v.client_name ?? '—'}</td>
-                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.source_system_trip_id ?? '—'}</td>
+                      <td className="px-3 py-2">
+                        <TmsChip tms={v.source_system ?? ''} meta={meta} sourceTripId={v.source_system_trip_id} />
+                        <span className={`block mt-1 text-etiqueta ${TEXTO_APOYO}`}>{v.client_name ?? '—'}</span>
+                      </td>
+                      <td className={`px-3 py-2 font-identificador ${TEXTO_CUERPO}`}>{v.source_system_trip_id ?? '—'}</td>
+                      <td className={`px-3 py-2 tabular-nums ${TEXTO_CUERPO}`}>{formatFecha(v.planning_date)}</td>
+                      <td className="px-3 py-2 font-identificador font-semibold text-text-primary">{v.tractor_plate ?? '—'}</td>
+                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.driver_name ?? '—'}</td>
+                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.carrier_name ?? '—'}</td>
+                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
+                        <span className="font-medium text-text-primary">{v.origin ?? '—'}</span>
+                        {v.destinations.length > 0 && (
+                          <span className={`block text-etiqueta ${TEXTO_APOYO}`}>{v.destinations.join(' · ')}</span>
+                        )}
+                      </td>
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.trip_status ?? '—'}</td>
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{formatDiasSinNovedad(v.dias_sin_novedad)}</td>
                       <td className="px-3 py-2">
                         {info.seleccionable ? (
-                          <select
-                            aria-label={`Motivo del viaje ${v.source_system_trip_id ?? v.trip_id}`}
-                            value={v.unassigned_reason_id ?? ''}
-                            disabled={guardandoFila === v.trip_id}
-                            onChange={e => handleCerrarFila(v.trip_id, e.target.value)}
-                            className="text-etiqueta border border-border rounded-lg px-2 py-1 bg-white"
-                          >
-                            <option value="">— Elige un motivo —</option>
-                            {motivos.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                          </select>
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              aria-label={`Motivo del viaje ${v.source_system_trip_id ?? v.trip_id}`}
+                              value={borrador[v.trip_id] ?? ''}
+                              disabled={guardandoFila === v.trip_id}
+                              onChange={e => setBorrador(prev => ({ ...prev, [v.trip_id]: e.target.value }))}
+                              className="text-etiqueta border border-border rounded-lg px-2 py-1 bg-white"
+                            >
+                              <option value="">— Elige un motivo —</option>
+                              {motivos.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={!borrador[v.trip_id] || guardandoFila === v.trip_id}
+                              onClick={() => handleCerrarFila(v.trip_id)}
+                              className="text-etiqueta font-semibold bg-accent text-white rounded-lg px-2.5 py-1 disabled:opacity-50"
+                            >
+                              {guardandoFila === v.trip_id ? 'Guardando…' : 'Guardar'}
+                            </button>
+                          </div>
+                        ) : grupo === 'con_motivo' ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className={TEXTO_CUERPO}>{v.unassigned_reason_label ?? '—'}</span>
+                            {onDeshacer && !soloLectura && (
+                              <button
+                                type="button"
+                                aria-label={`Deshacer el motivo del viaje ${v.source_system_trip_id ?? v.trip_id}`}
+                                disabled={guardandoFila === v.trip_id}
+                                onClick={() => handleDeshacer(v.trip_id)}
+                                className="text-etiqueta font-semibold border border-border rounded-lg px-2.5 py-1 bg-white text-text-primary hover:bg-bg-main disabled:opacity-50"
+                              >
+                                {guardandoFila === v.trip_id ? 'Deshaciendo…' : 'Deshacer'}
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <span className={TEXTO_APOYO}>{v.unassigned_reason_label ?? '—'}</span>
                         )}

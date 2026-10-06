@@ -13,14 +13,14 @@ from ..auth import EDITOR_ROLES, get_current_user, get_supabase, require_editor,
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
-    AsignarConductorBody, TripBulkCloseBody, TripBulkDeleteBody, TripPatch, TripStopPatch,
+    AsignarConductorBody, TripBulkCloseBody, TripBulkDeleteBody, TripBulkReopenBody, TripPatch, TripStopPatch,
     CAMPOS_BASICOS_DEL_DIARIO, CAMPOS_BASICOS_DE_PARADA,
 )
 from ..services.audit import log_change
 from ..services.eliminar_viajes import (
     SQL_COLUMNAS_ELIMINABLE, SQL_JOIN_ELIMINABLE, anotar_eliminable, eliminar_viajes_manuales,
 )
-from ..services.cierre_viajes import SQL_GRUPOS_CIERRE
+from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 
 
 def _parse_date(s: str) -> _date | None:
@@ -2302,7 +2302,7 @@ async def cierre_viajes(
 
     filas = await pool.fetch(
         f"""
-        WITH g AS ({SQL_GRUPOS_CIERRE})
+        WITH g AS (({SQL_GRUPOS_CIERRE}) UNION ALL ({SQL_CON_MOTIVO}))
         SELECT g.*, ur.label AS unassigned_reason_label
         FROM g
         LEFT JOIN app.status_taxonomies ur ON ur.id = g.unassigned_reason_id
@@ -2311,14 +2311,28 @@ async def cierre_viajes(
         day,
     )
 
-    grupos: dict[str, list] = {"hoy": [], "rezago": [], "en_curso": [], "abandonado": []}
+    # Origen y destinos con la misma lectura de paradas que el Monitor
+    # (_load_trip_stops colapsa los duplicados por posición): HU-D2.
+    paradas = await _load_trip_stops(pool, {str(r["trip_id"]) for r in filas})
+
+    grupos: dict[str, list] = {
+        "hoy": [], "rezago": [], "en_curso": [], "abandonado": [], "con_motivo": [],
+    }
     for r in filas:
+        stops = paradas.get(str(r["trip_id"]), [])
+        origen = next((p["local"] for p in stops if p.get("stop_type") == "ORIGIN"), None)
         grupos[r["grupo"]].append({
             "trip_id": str(r["trip_id"]),
             "planning_date": r["planning_date"].isoformat() if r["planning_date"] else None,
             "client_name": r["client_name"],
+            "source_system": r["source_system"],
             "source_system_trip_id": r["source_system_trip_id"],
             "trip_status": r["trip_status"],
+            "tractor_plate": r["tractor_plate"],
+            "driver_name": r["driver_name"],
+            "carrier_name": r["carrier_name"],
+            "origin": origen,
+            "destinations": [p["local"] for p in stops if p.get("stop_type") == "DESTINATION" and p.get("local")],
             "dias_sin_novedad": float(r["dias_sin_novedad"] or 0),
             "unassigned_reason_id": str(r["unassigned_reason_id"]) if r["unassigned_reason_id"] else None,
             "unassigned_reason_label": r["unassigned_reason_label"],
@@ -2404,7 +2418,8 @@ async def bulk_close_trips(
         raise HTTPException(422, "Indica el motivo por el que no se tomó la carga")
 
     rows = await pool.fetch(
-        "SELECT id, manually_edited_fields FROM app.trips WHERE id = ANY($1::uuid[])",
+        "SELECT id, manually_edited_fields, is_active, is_working "
+        "FROM app.trips WHERE id = ANY($1::uuid[])",
         body.trip_ids,
     )
     found_ids = {str(r["id"]) for r in rows}
@@ -2455,11 +2470,21 @@ async def bulk_close_trips(
                 """,
                 body.trip_ids, user["sub"], body.unassigned_reason_id,
             )
-            for tid in body.trip_ids:
+            for r in rows:
+                tid = str(r["id"])
                 await log_change(
                     conn, actor=user["sub"], entity_type="TRIP", entity_id=tid,
                     action="no_asignado_por_webcarga", field="unassigned_reason_id",
                     old_value=None, new_value=motivo, source="cierre_viajes",
+                )
+                # Lo que el viaje era antes de apagarlo: "Deshacer" (HU-D3)
+                # lo devuelve a esto en vez de adivinar con la fórmula de dbt.
+                await log_change(
+                    conn, actor=user["sub"], entity_type="TRIP", entity_id=tid,
+                    action="no_asignado_por_webcarga", field="is_active",
+                    old_value={"is_active": r["is_active"], "is_working": r["is_working"]},
+                    new_value={"is_active": False, "is_working": False},
+                    source="cierre_viajes",
                 )
 
     # Deliberadamente FUERA de la transacción de arriba: `_log_system_note`
@@ -2474,6 +2499,105 @@ async def bulk_close_trips(
     for tid in body.trip_ids:
         await _log_system_note(pool, tid, user, f"No asignado por WebCarga · {motivo}")
     return {"ok": True, "closed": len(body.trip_ids)}
+
+
+@router.patch("/bulk-reopen")
+async def bulk_reopen_trips(
+    body: TripBulkReopenBody, pool=Depends(get_pool), user=Depends(require_writer),
+):
+    """Deshace "No asignado por WebCarga" (HU-D3). El viaje vuelve a lo que
+    era antes de apagarlo —leído de la traza que deja bulk-close— y a su grupo
+    del cierre. Sin traza (viajes cerrados antes del 06/10) vuelve activo:
+    si el TMS ya no lo reporta, la corrida siguiente de dbt lo apaga sola,
+    porque se le quitan las marcas manuales.
+
+    Nunca sobre un día firmado: sin motivo, el viaje volvería a contar en ese
+    día y le cambiaría las cifras sin reabrirlo (misma regla que eliminar).
+    Declarado ANTES de PATCH /{trip_id}, mismo motivo que /bulk-close."""
+    if not body.trip_ids:
+        raise HTTPException(422, "trip_ids no puede estar vacío")
+    ids = list(dict.fromkeys(body.trip_ids))
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            filas = await conn.fetch(
+                """
+                SELECT t.id, t.unassigned_reason_id,
+                       (SELECT a.old_value FROM public.audit_log a
+                         WHERE a.entity_type = 'TRIP' AND a.entity_id = t.id
+                           AND a.action = 'no_asignado_por_webcarga' AND a.field = 'is_active'
+                         ORDER BY a.occurred_at DESC LIMIT 1) AS antes
+                FROM app.trips t
+                WHERE t.id = ANY($1::uuid[])
+                FOR UPDATE OF t
+                """,
+                ids,
+            )
+            encontrados = {str(f["id"]) for f in filas}
+            faltan = [i for i in ids if i not in encontrados]
+            if faltan:
+                raise HTTPException(404, f"Viaje(s) no encontrado(s): {faltan}")
+
+            for f in filas:
+                antes = json.loads(f["antes"]) if isinstance(f["antes"], str) else f["antes"]
+                activo = bool(antes.get("is_active", True)) if antes else True
+                trabajando = bool(antes.get("is_working")) if antes else False
+                # Dos sentencias a propósito: el trigger app.protect_manual_overrides
+                # devuelve is_active/is_working a su valor anterior mientras
+                # OLD.manually_edited_fields los marque como manuales. Primero se
+                # sueltan las marcas; recién entonces se pueden restaurar.
+                await conn.execute(
+                    """
+                    UPDATE app.trips
+                    SET unassigned_reason_id = NULL,
+                        manually_edited_fields = array_remove(array_remove(array_remove(
+                            COALESCE(manually_edited_fields, '{}'),
+                            'is_active'), 'is_working'), 'unassigned_reason_id'),
+                        edited_by = $2::uuid, edited_at = NOW(), updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    f["id"], user["sub"],
+                )
+                await conn.execute(
+                    "UPDATE app.trips SET is_active = $2, is_working = $3 WHERE id = $1",
+                    f["id"], activo, trabajando,
+                )
+                await log_change(
+                    conn, actor=user["sub"], entity_type="TRIP", entity_id=str(f["id"]),
+                    action="deshacer_no_asignado", field="unassigned_reason_id",
+                    old_value=str(f["unassigned_reason_id"]) if f["unassigned_reason_id"] else None,
+                    new_value=None, source="cierre_viajes",
+                )
+
+            # El día firmado se mira DESPUÉS de deshacer y en la misma
+            # transacción: app.trips_del_dia excluye los viajes con motivo, así
+            # que antes de quitarlo ningún día "lo contaba". Lo que importa es
+            # si, sin motivo, entraría en un día ya firmado y le cambiaría las
+            # cifras. Si es así, el 409 revierte todo.
+            firmados = await conn.fetch(
+                """
+                SELECT DISTINCT cp.business_date
+                FROM app.trips t
+                JOIN app.closure_periods cp
+                  ON cp.status = 'CLOSED'
+                 AND cp.business_date BETWEEN t.planning_date AND t.planning_date + 45
+                WHERE t.id = ANY($1::uuid[])
+                  AND t.id IN (SELECT trip_id FROM app.trips_del_dia(cp.business_date))
+                ORDER BY 1
+                """,
+                ids,
+            )
+            if firmados:
+                raise HTTPException(
+                    409,
+                    "No se puede deshacer: el viaje contaría en un día ya firmado ("
+                    + ", ".join(f["business_date"].strftime("%d/%m") for f in firmados)
+                    + "). Reabre el día primero.",
+                )
+
+    for tid in ids:
+        await _log_system_note(pool, tid, user, "Se deshizo \"No asignado por WebCarga\"")
+    return {"ok": True, "reopened": len(ids)}
 
 
 def _exigir_campos_permitidos(user: dict, enviados, permitidos=None) -> None:

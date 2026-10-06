@@ -155,12 +155,26 @@ beforeEach(async () => {
   vi.mocked(equipmentClosuresApi.setReasonBatch).mockReset().mockResolvedValue([])
 })
 
+/** Sin tractos de Tractoreo: los tests que miden la mecánica de la tabla
+ *  (paginar, ordenar, filtrar, contar) sobre el roster de conductores. Desde la
+ *  fusión (HU-D1) la vista también trae los tractos, y sus filas cambiarían
+ *  las cuentas sin que el test mida nada nuevo. */
+async function soloConductores() {
+  const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+  vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
+    ...EQUIPMENT_STATUS,
+    tractoreo: { ...EQUIPMENT_STATUS.tractoreo, equipment: [], pending_count: 0 },
+  })
+}
+
 describe('FlotaDelDiaSection', () => {
-  it('la columna 2 siempre se llama "Conductor" y la 4 pasa de "Tracto habitual" a "Patente" al cambiar de eje', async () => {
+  it('la columna 2 siempre se llama "Conductor" y la 4 "Patente", en los dos ejes', async () => {
+    // Desde la fusión (HU-D1, 06/10) la unidad de la fila es la patente en las
+    // dos vistas; un conductor sin tracto dice que no lo tiene.
     renderSection()
     await screen.findByText('Ana Soto')
     expect(screen.getByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Tracto habitual' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Patente' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Equipo Completo/ }))
 
@@ -193,11 +207,15 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
   })
 
-  it('muestra el tracto habitual y el chip de tipo de operación en la fila de Conductores', async () => {
+  it('un conductor sin tracto habitual lo dice, con el chip de su tipo de operación', async () => {
+    // Antes la columna mostraba el tracto de su ÚLTIMO viaje de cualquier fecha
+    // (`last_known_tractor_plate`) bajo el título "Tracto habitual": no era el
+    // habitual, y podía contradecir la fila del tracto en la misma tabla.
     renderSection()
-    await screen.findByText('ABCD12')
-    const row = screen.getByText('ABCD12').closest('tr')!
+    const row = (await screen.findByText('Ana Soto')).closest('tr')!
+    expect(within(row).getByText('Sin tracto habitual')).toBeInTheDocument()
     expect(within(row).getByText('Tractoreo')).toBeInTheDocument()
+    expect(within(row).queryByText('ABCD12')).not.toBeInTheDocument()
   })
 
   it('el toggle Equipo Completo muestra el nombre del conductor habitual (o "Sin conductor habitual")', async () => {
@@ -363,6 +381,7 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('pagina Conductores de a 20, no de a 10', async () => {
+    await soloConductores()
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     const many = Array.from({ length: 25 }, (_, i) =>
       driverRow({ driver_id: `p${i}`, full_name: `Conductor ${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
@@ -431,19 +450,18 @@ describe('FlotaDelDiaSection', () => {
   // decía "Tractoreo" mostraba conductores y `tractoreo.equipment` no lo leía
   // nadie. Estos tests fallan si esa lista vuelve a quedarse sin superficie.
 
-  it('la vista "Tractos · Tractoreo" lista TRACTOS, no conductores', async () => {
+  it('la vista Tractoreo lista los TRACTOS y, aparte, los conductores sin tracto', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-
-    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
-    fireEvent.click(await screen.findByText('Total'))
 
     expect(await screen.findByText('FCCP42')).toBeInTheDocument()
     expect(screen.getByText('HKXW55')).toBeInTheDocument()
     expect(screen.getByText('DTBY52')).toBeInTheDocument()
-    // Ningún conductor del otro eje se cuela en esta tabla.
-    expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
-    expect(screen.queryByText('Luis Rojas')).not.toBeInTheDocument()
+    // Ningún conductor desaparece: los que no son habituales de un tracto van
+    // en su grupo, después de los tractos.
+    const grupo = screen.getByText('Otros conductores del día')
+    expect(grupo.compareDocumentPosition(screen.getByText('Ana Soto')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('DTBY52').compareDocumentPosition(grupo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('un tracto con motivo heredado del conductor dice de quién lo heredó (punto 5, 01/10)', async () => {
@@ -463,7 +481,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
     fireEvent.click(await screen.findByText('Total'))
 
     const fila = (await screen.findByText('BDLC92')).closest('tr')!
@@ -485,7 +503,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
     fireEvent.click(await screen.findByText('Total'))
 
     const fila = (await screen.findByText('BDLC92')).closest('tr')!
@@ -496,7 +514,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
     fireEvent.click(await screen.findByText('Total'))
 
     const fila = (await screen.findByText('FCCP42')).closest('tr')!
@@ -508,7 +526,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
     fireEvent.click(await screen.findByText('Total'))
 
     const fila = (await screen.findByText('HKXW55')).closest('tr')!
@@ -517,12 +535,81 @@ describe('FlotaDelDiaSection', () => {
     expect(within(fila).getByText('Asignado')).toBeInTheDocument()
   })
 
-  it('la tarjeta de Tractoreo dice cuántos tractos bloquean el cierre', async () => {
+  // ── Fusión por tracto (HU-D1, minuta 02/10) ──────────────────────────────
+  // Operaciones cerraba el conductor y después repetía lo mismo en su tracto.
+
+  async function conTractoYConductorSinCarga(extraTracto: Partial<EquipmentDayStatusRow> = {}) {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({ driver_id: 'h7', full_name: 'Rafael Villegas', status: 'UNASSIGNED' })],
+    })
+    vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
+      ...EQUIPMENT_STATUS,
+      tractoreo: {
+        ...EQUIPMENT_STATUS.tractoreo,
+        equipment: [equipmentRow({
+          asset_id: 'tr7', tractor_plate: 'BDLC92', status: 'UNASSIGNED', requires_motivo: true,
+          driver_id: 'h7', driver_name: 'Rafael Villegas', ...extraTracto,
+        })],
+      },
+    })
+  }
+
+  it('el conductor y su tracto sin carga son UNA fila, y el motivo va al conductor', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    await conTractoYConductorSinCarga()
+    renderSection()
+
+    const fila = (await screen.findByText('BDLC92')).closest('tr')!
+    expect(within(fila).getByText('Rafael Villegas')).toBeInTheDocument()
+    expect(screen.getAllByText('Rafael Villegas')).toHaveLength(1)
+    expect(screen.queryByText('Otros conductores del día')).not.toBeInTheDocument()
+
+    fireEvent.change(within(fila).getByRole('combobox', { name: 'Motivo de Rafael Villegas' }),
+                     { target: { value: 'pana' } })
+
+    await waitFor(() => {
+      expect(dailyClosuresApi.setReason).toHaveBeenCalledWith('h7', '2026-08-04', { unassigned_reason_id: 'pana' })
+    })
+    expect(equipmentClosuresApi.setReason).not.toHaveBeenCalled()
+  })
+
+  it('un tracto con motivo propio distinto del conductor se ve y se edita aparte', async () => {
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    await conTractoYConductorSinCarga({ unassigned_reason_id: 'esperando', reason_from_driver_name: null })
+    renderSection()
+
+    const fila = (await screen.findByText('BDLC92')).closest('tr')!
+    const delTracto = within(fila).getByRole('combobox', { name: 'Motivo del tracto BDLC92' })
+    expect(delTracto).toHaveValue('esperando')
+
+    fireEvent.change(delTracto, { target: { value: '' } })
+
+    await waitFor(() => {
+      expect(equipmentClosuresApi.setReason).toHaveBeenCalledWith('tr7', '2026-08-04', { unassigned_reason_id: null })
+    })
+  })
+
+  it('si el tracto lo manejó otro, el conductor habitual sin carga va aparte con su patente', async () => {
+    await conTractoYConductorSinCarga({ status: 'ASSIGNED', trip_id: 'tt7', trip_driver_name: 'Otro Conductor' })
+    renderSection()
+
+    await screen.findByText('Otros conductores del día')
+    const filaConductor = screen.getByText('Rafael Villegas').closest('tr')!
+    expect(within(filaConductor).getByText('BDLC92')).toBeInTheDocument()
+    expect(within(filaConductor).getByText('No asignado')).toBeInTheDocument()
+  })
+
+  it('la tarjeta de Tractoreo cuenta lo que bloquea el cierre en tractos y conductores', async () => {
+    // DTBY52 (tracto sin motivo) y Ana Soto (conductor sin tracto, sin motivo).
     renderSection()
     await screen.findByText('Ana Soto')
 
     expect(
-      screen.getByRole('button', { name: /1 sin motivo — bloquean el cierre/ }),
+      screen.getByRole('button', { name: /2 sin motivo — bloquean el cierre/ }),
     ).toBeInTheDocument()
   })
 
@@ -534,7 +621,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Tractos · Tractoreo/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
     const fila = (await screen.findByText('DTBY52')).closest('tr')!
     fireEvent.change(within(fila).getByRole('combobox'), { target: { value: 'pana' } })
 
@@ -567,6 +654,7 @@ describe('FlotaDelDiaSection', () => {
   // ── Pedidos del 2026-09-07 ────────────────────────────────────────────────
 
   it('marcar un motivo descuenta de "No asignados" y suma en "No trabajando"', async () => {
+    await soloConductores()
     // Antes los dos estados caían en el mismo número, así que resolver una
     // fila no movía el contador de lo pendiente.
     renderSection()
@@ -601,6 +689,7 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('ordenar por una columna cicla asc, desc y sin orden', async () => {
+    await soloConductores()
     renderSection()
     await screen.findByText('Ana Soto')
     fireEvent.click(screen.getByText('Total'))
@@ -636,6 +725,7 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('los valores del filtro salen de las filas, no de un catálogo', async () => {
+    await soloConductores()
     // Un desplegable que lista todo el padrón obliga a elegir a ojo — la misma
     // lección del click-through de agosto.
     renderSection()
@@ -746,12 +836,14 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('al cambiar de eje vuelve a "Total", no a una categoría sin tile', async () => {
+    await soloConductores()
     renderSection()
     await screen.findByText('Ana Soto')
     fireEvent.click(screen.getByText('No trabajando'))
     expect(screen.getByRole('button', { name: /No trabajando/ }).className).toContain('border-accent')
 
-    fireEvent.click(screen.getByText(/Tractos · Tractoreo/i))
+    // Tractoreo ya es la vista de entrada: el cambio de eje es a Equipo Completo.
+    fireEvent.click(screen.getByRole('button', { name: /Equipo Completo/ }))
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Total/ }).className).toContain('border-accent')
@@ -882,6 +974,7 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('al filtrar por un origen, los tiles muestran la asistencia de ESE origen', async () => {
+    await soloConductores()
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -921,6 +1014,7 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('con el origen habitual cargado en todos, el aviso desaparece', async () => {
+    await soloConductores()
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,

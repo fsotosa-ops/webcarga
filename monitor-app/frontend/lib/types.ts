@@ -1520,14 +1520,22 @@ export type ViajeDelCierre = {
   trip_id:                 string
   planning_date:           string
   client_name:             string | null
+  /** Contexto del Monitor (HU-D2): mismas fuentes que la lista del Monitor. */
+  source_system:           string | null
   source_system_trip_id:   string | null
   trip_status:             string | null
+  tractor_plate:           string | null
+  driver_name:             string | null
+  carrier_name:            string | null
+  origin:                  string | null
+  destinations:            string[]
   dias_sin_novedad:        number
   unassigned_reason_id:    string | null
   unassigned_reason_label: string | null
 }
 
-export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado'
+/** `con_motivo` (HU-D3): declarados desde el cierre de ese día o después. */
+export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado' | 'con_motivo'
 
 export type CierreViajesResponse = {
   grupos:   Record<GrupoDelCierre, ViajeDelCierre[]>

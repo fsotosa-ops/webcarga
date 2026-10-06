@@ -258,7 +258,7 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
     resp = await cierre_viajes(fecha="2026-08-18",
                                pool=PoolDeUnaConexion(conexion_revertida), _=None)
 
-    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado"}
+    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado", "con_motivo"}
     assert resp["bloquean"] == len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"])
 
     grupo_por_id = {
@@ -448,7 +448,7 @@ async def test_la_declaracion_queda_en_audit_log(conexion_revertida):
 
     fila_auditoria = await conn.fetchrow(
         "SELECT entity_type, entity_id, action, field, new_value FROM public.audit_log "
-        "WHERE entity_type = 'TRIP' AND entity_id = $1::uuid "
+        "WHERE entity_type = 'TRIP' AND entity_id = $1::uuid AND field = 'unassigned_reason_id' "
         "ORDER BY occurred_at DESC LIMIT 1", str(trip_id))
     assert fila_auditoria is not None, "la declaracion no quedo en audit_log"
     assert fila_auditoria["action"] == "no_asignado_por_webcarga"
@@ -615,3 +615,112 @@ async def test_el_filtro_no_mira_is_active(conexion_revertida):
     ids = [str(t["id"]) for t in resp["data"]]
     assert str(id_apagado_hace_meses) in ids, \
         "el filtro miro is_active y se comio un viaje apagado del historial"
+
+
+# ── HU-D2/D3 (minuta 02/10): contexto del viaje, "Con motivo" y Deshacer ─────
+
+async def _motivo_de_viaje(conn):
+    return str(await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain = 'TRIP_UNASSIGNED_REASON' AND active LIMIT 1"))
+
+
+async def _grupo_de(resp, trip_id):
+    return next((g for g, items in resp["grupos"].items()
+                 for v in items if v["trip_id"] == str(trip_id)), None)
+
+
+async def test_cada_viaje_trae_el_contexto_del_monitor(conexion_revertida):
+    """El coordinador lo identifica sin salir del cierre: TMS, patente,
+    conductor, empresa, origen y destinos, con las mismas fuentes que el
+    Monitor (aquí, el texto del TMS, porque el viaje no cruza con el maestro)."""
+    from app.routers.trips import cierre_viajes
+
+    conn = conexion_revertida
+    trip_id = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
+    await conn.execute(
+        "UPDATE app.trips SET source_system = 'sodimac', fleet = jsonb_build_object("
+        "'tractor_plate', 'ZZTEST', 'driver_name_tms', 'Conductor TMS', 'transporter_name_tms', 'EETT TMS') "
+        "WHERE id = $1", trip_id)
+    for orden, (tipo, local) in enumerate([("ORIGIN", "CD Prueba"), ("DESTINATION", "Tienda A"), ("DESTINATION", "Tienda B")]):
+        await conn.execute(
+            "INSERT INTO app.trip_stops (stop_id, trip_id, stop_type, stop_order, local) VALUES ($1, $2, $3, $4, $5)",
+            f"test-{trip_id}-{orden}", trip_id, tipo, orden, local)
+
+    resp = await cierre_viajes(fecha="2026-08-18", pool=PoolDeUnaConexion(conn), _=None)
+
+    v = next(v for v in resp["grupos"]["hoy"] if v["trip_id"] == str(trip_id))
+    assert v["source_system"] == "sodimac"
+    assert v["tractor_plate"] == "ZZTEST"
+    assert v["driver_name"] == "Conductor TMS"
+    assert v["carrier_name"] == "EETT TMS"
+    assert v["origin"] == "CD Prueba"
+    assert v["destinations"] == ["Tienda A", "Tienda B"]
+
+
+async def test_un_viaje_declarado_queda_en_con_motivo_y_deshacer_lo_devuelve(conexion_revertida):
+    """Antes, poner el motivo lo sacaba de los cuatro grupos y no aparecía en
+    ninguna parte del cierre: "no sé dónde queda"."""
+    from app.routers.trips import bulk_close_trips, bulk_reopen_trips, cierre_viajes
+    from app.schemas.trip import TripBulkCloseBody, TripBulkReopenBody
+
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    hoy = await conn.fetchval("SELECT (now() AT TIME ZONE 'America/Santiago')::date")
+    trip_id = await _crear_viaje(conn, planning_date=hoy, is_active=True, is_assigned=False)
+
+    await bulk_close_trips(
+        TripBulkCloseBody(trip_ids=[str(trip_id)], unassigned_reason_id=await _motivo_de_viaje(conn)), pool, user)
+    assert await _grupo_de(await cierre_viajes(fecha=hoy.isoformat(), pool=pool, _=None), trip_id) == "con_motivo"
+
+    await bulk_reopen_trips(TripBulkReopenBody(trip_ids=[str(trip_id)]), pool, user)
+
+    assert await _grupo_de(await cierre_viajes(fecha=hoy.isoformat(), pool=pool, _=None), trip_id) == "hoy"
+    fila = await conn.fetchrow(
+        "SELECT is_active, unassigned_reason_id, manually_edited_fields FROM app.trips WHERE id = $1", trip_id)
+    assert fila["is_active"] is True
+    assert fila["unassigned_reason_id"] is None
+    assert not {"is_active", "is_working", "unassigned_reason_id"} & set(fila["manually_edited_fields"] or [])
+
+
+async def test_deshacer_devuelve_lo_que_el_viaje_era_no_lo_activa_a_ciegas(conexion_revertida):
+    """Un abandonado (is_active=false) declarado y deshecho vuelve a abandonado."""
+    from app.routers.trips import bulk_close_trips, bulk_reopen_trips
+    from app.schemas.trip import TripBulkCloseBody, TripBulkReopenBody
+
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    trip_id = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO - timedelta(days=30),
+                                 is_active=False, is_assigned=False, dias_sin_novedad=10)
+
+    await bulk_close_trips(
+        TripBulkCloseBody(trip_ids=[str(trip_id)], unassigned_reason_id=await _motivo_de_viaje(conn)), pool, user)
+    await bulk_reopen_trips(TripBulkReopenBody(trip_ids=[str(trip_id)]), pool, user)
+
+    assert await conn.fetchval("SELECT is_active FROM app.trips WHERE id = $1", trip_id) is False
+
+
+async def test_deshacer_sobre_un_dia_firmado_es_409_y_no_cambia_nada(conexion_revertida):
+    from fastapi import HTTPException
+    from app.routers.trips import bulk_close_trips, bulk_reopen_trips
+    from app.schemas.trip import TripBulkCloseBody, TripBulkReopenBody
+
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    dia = date.fromisoformat("2026-06-11")
+    trip_id = await _crear_viaje(conn, planning_date=dia, is_active=True, is_assigned=False)
+    motivo = await _motivo_de_viaje(conn)
+    await bulk_close_trips(TripBulkCloseBody(trip_ids=[str(trip_id)], unassigned_reason_id=motivo), pool, user)
+    await conn.execute(
+        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
+        "VALUES ($1, 'CLOSED', $2::uuid, now()) "
+        "ON CONFLICT (business_date) DO UPDATE SET status = 'CLOSED', closed_by = $2::uuid, closed_at = now()",
+        dia, user["sub"])
+
+    with pytest.raises(HTTPException) as exc:
+        await bulk_reopen_trips(TripBulkReopenBody(trip_ids=[str(trip_id)]), pool, user)
+
+    assert exc.value.status_code == 409
+    assert str(await conn.fetchval("SELECT unassigned_reason_id FROM app.trips WHERE id = $1", trip_id)) == motivo

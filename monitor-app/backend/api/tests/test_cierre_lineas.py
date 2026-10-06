@@ -360,6 +360,45 @@ async def test_escribir_en_el_tracto_corta_la_herencia(conexion_revertida):
     assert tracto["heredado_de"] is None
 
 
+async def test_sin_especificar_en_el_tracto_vuelve_a_heredar_del_conductor(conexion_revertida):
+    """HU-D3 (minuta 02/10): la persona que puso un motivo propio en el tracto
+    y lo deshace con "Sin especificar" vuelve a ver el del conductor. Antes la
+    línea quedaba con autor y la herencia la saltaba para siempre."""
+    conn = conexion_revertida
+    esc = await _escenario(conn)
+    user = await _usuario_real(conn)
+    licencia = await _motivo(conn, "Licencia")
+    await cierre_lineas.recalcular(PoolDeUnaConexion(conn), D)
+    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=licencia)
+    await _poner(conn, D, "ASSET", esc["tractor"], user, unassigned_reason_id=await _motivo(conn, "Panne"))
+
+    await _poner(conn, D, "ASSET", esc["tractor"], user, unassigned_reason_id=None)
+
+    tracto = await _linea(conn, D, "ASSET", esc["tractor"])
+    assert tracto["reason_id"] == licencia
+    assert tracto["heredado_de"] == str(esc["conductor"])
+
+
+async def test_sin_conductor_con_motivo_borrar_el_del_tracto_sigue_siendo_borrar(conexion_revertida):
+    """Sin nada que heredar, la línea queda con autor: si no, la vigencia del
+    propio tracto la volvería a llenar con lo que la persona acaba de borrar."""
+    conn = conexion_revertida
+    esc = await _escenario(conn)
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    panne = await _motivo(conn, "Panne")
+    await cierre_lineas.recalcular(pool, D)
+    await _poner(conn, D, "ASSET", esc["tractor"], user,
+                 unassigned_reason_id=panne, valid_until=D + timedelta(days=3))
+    await cierre_lineas.recalcular(pool, D + timedelta(days=1))
+
+    await _poner(conn, D + timedelta(days=1), "ASSET", esc["tractor"], user, unassigned_reason_id=None)
+    await cierre_lineas.recalcular(pool, D + timedelta(days=1))
+
+    tracto = await _linea(conn, D + timedelta(days=1), "ASSET", esc["tractor"])
+    assert tracto["reason_id"] is None
+
+
 async def test_la_vigencia_del_conductor_tambien_llega_al_tracto_al_dia_siguiente(conexion_revertida):
     """Antes la propagación corría sólo al escribir: el día siguiente el
     conductor heredaba Vacaciones por vigencia y el tracto volvía a bloquear."""
