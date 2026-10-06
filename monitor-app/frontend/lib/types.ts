@@ -271,6 +271,9 @@ export type MonitorAlertRules = {
    *  se marque como "Ya no está en el TMS" (Ronda 126). Configurable porque el
    *  criterio de negocio lo define operaciones — GitHub issue #3. */
   tms_dropped_hours:      number
+  /** D5 (minuta 02/10): días desde la última entrega tras los cuales un viaje
+   *  que el TMS dejó abierto sale del cierre. null = no ocultar nada. */
+  stale_trip_days?:       number | null
 }
 
 export type TripsMeta = {
@@ -481,6 +484,10 @@ export type Trip = {
    *  la propia TMS, no contra ahora, así que no se enciende cuando el que
    *  está caído es nuestro scraper. Sólo viajes abiertos. */
   tms_dropped?:           boolean
+  /** D4 (minuta 02/10): la reconciliación diaria anotó que el TMS ya no trae
+   *  el viaje dentro de la ventana que cubrió. El viaje no se borra: sale de
+   *  "En curso" y del cierre, y en el historial se ve con esta marca. */
+  tms_missing_since?:     string | null
   stops:                  TripStop[]
   is_active:              boolean
   is_working:             boolean

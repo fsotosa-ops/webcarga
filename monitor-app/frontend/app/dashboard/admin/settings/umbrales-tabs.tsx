@@ -245,7 +245,7 @@ export function RangosTemperaturaTab() {
 
 // ── Alertas del Monitor (umbrales de las alertas operacionales) ───────────────
 
-const RULE_FIELDS: { key: keyof MonitorAlertRules; label: string; hint: string; unit: string; step: string }[] = [
+const RULE_FIELDS: { key: keyof MonitorAlertRules; label: string; hint: string; unit: string; step: string; opcional?: boolean }[] = [
   { key: 'stale_report_hours', label: 'Sin actualización del TMS', hint: 'Horas sin actualización del TMS en un viaje abierto para encender la alerta', unit: 'horas', step: '0.5' },
   // Ronda 126 — el portal del mandante dejó de listar el viaje. Distinto del
   // anterior, que mide cuánto hace que no sabemos nada (puede ser nuestro
@@ -259,6 +259,9 @@ const RULE_FIELDS: { key: keyof MonitorAlertRules; label: string; hint: string; 
   { key: 'dwell_yellow_min', label: 'Semáforo local — amarillo', hint: 'Minutos en la parada activa para pasar de verde a amarillo', unit: 'min', step: '5' },
   { key: 'dwell_orange_min', label: 'Semáforo local — naranja',  hint: 'Minutos en la parada activa para pasar a naranja', unit: 'min', step: '5' },
   { key: 'dwell_red_min',    label: 'Semáforo local — rojo',     hint: 'Minutos en la parada activa para pasar a rojo', unit: 'min', step: '5' },
+  // D5 (minuta 02/10): lo define WebCarga. Vacío = no ocultar nada, por eso es
+  // el único campo que se puede dejar en blanco.
+  { key: 'stale_trip_days', label: 'Viaje entregado sin cierre del TMS', hint: 'Días desde la última entrega en destino tras los cuales un viaje que el TMS no cerró sale del cierre del día. Sigue en el historial. Vacío = no ocultar ninguno', unit: 'días', step: '1', opcional: true },
 ]
 
 export function AlertasMonitorTab() {
@@ -323,8 +326,12 @@ export function AlertasMonitorTab() {
               <div className="flex items-center gap-1.5 shrink-0">
                 <input
                   type="number" min={0} step={f.step}
-                  value={merged[f.key] as number}
-                  onChange={e => setDraft(d => ({ ...d, [f.key]: Number(e.target.value) }))}
+                  value={(merged[f.key] as number | null | undefined) ?? ''}
+                  placeholder={f.opcional ? '—' : undefined}
+                  onChange={e => setDraft(d => ({
+                    ...d,
+                    [f.key]: f.opcional && e.target.value === '' ? null : Number(e.target.value),
+                  }))}
                   aria-label={f.label}
                   className={INPUT + ' w-20 text-right'}
                 />

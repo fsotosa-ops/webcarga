@@ -750,3 +750,74 @@ async def test_deshacer_un_viaje_de_un_dia_firmado_antes_de_declararlo_se_puede(
     await bulk_reopen_trips(TripBulkReopenBody(trip_ids=[str(trip_id)]), pool, user)
 
     assert await conn.fetchval("SELECT unassigned_reason_id FROM app.trips WHERE id = $1", trip_id) is None
+
+
+# ── D4/D5 (minuta 02/10): lo que el TMS borró y lo que quedó pegado ───────────
+
+async def _anotar_ausente(conn, trip_id):
+    # Lo que escribe dbt (stg_tms_presence) cuando la reconciliación no lo trajo.
+    await conn.execute(
+        "UPDATE app.trips SET tms_missing_since = now() - interval '1 day' WHERE id = $1", trip_id)
+
+
+async def _entregado_hace(conn, trip_id, dias):
+    await conn.execute(
+        "INSERT INTO app.trip_stops (stop_id, trip_id, stop_type, stop_order, local, departure_date) "
+        "VALUES ($1, $2, 'DESTINATION', 1, 'Tienda prueba', now() - make_interval(days => $3))",
+        f"test-{trip_id}-d", trip_id, dias)
+
+
+async def test_un_viaje_que_el_tms_borro_sale_de_todos_los_grupos(conexion_revertida):
+    from app.routers.trips import cierre_viajes
+
+    conn = conexion_revertida
+    activo = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
+    abandonado = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO - timedelta(days=30),
+                                    is_active=False, is_assigned=False, dias_sin_novedad=10)
+    for t in (activo, abandonado):
+        await _anotar_ausente(conn, t)
+
+    resp = await cierre_viajes(fecha="2026-08-18", pool=PoolDeUnaConexion(conn), _=None)
+
+    assert await _grupo_de(resp, activo) is None
+    assert await _grupo_de(resp, abandonado) is None
+
+
+async def test_un_pegado_entregado_sale_del_cierre_solo_pasado_el_umbral(conexion_revertida):
+    """D5: sin umbral no se oculta nada (WebCarga todavía no lo define); con
+    umbral, el entregado hace más días sale y el reciente se queda."""
+    from app.routers.trips import cierre_viajes
+
+    conn = conexion_revertida
+    viejo = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO - timedelta(days=60),
+                               is_active=False, is_assigned=True, dias_sin_novedad=50)
+    reciente = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO - timedelta(days=20),
+                                  is_active=False, is_assigned=True, dias_sin_novedad=10)
+    await _entregado_hace(conn, viejo, 50)
+    await _entregado_hace(conn, reciente, 3)
+
+    await conn.execute("UPDATE app.monitor_alert_rules SET stale_trip_days = NULL WHERE id = 1")
+    resp = await cierre_viajes(fecha="2026-08-18", pool=PoolDeUnaConexion(conn), _=None)
+    assert await _grupo_de(resp, viejo) == "abandonado"
+
+    await conn.execute("UPDATE app.monitor_alert_rules SET stale_trip_days = 7 WHERE id = 1")
+    resp = await cierre_viajes(fecha="2026-08-18", pool=PoolDeUnaConexion(conn), _=None)
+    assert await _grupo_de(resp, viejo) is None
+    assert await _grupo_de(resp, reciente) == "abandonado"
+
+
+async def test_en_curso_del_monitor_no_trae_lo_que_el_tms_borro_y_el_historial_si(conexion_revertida):
+    from app.routers.trips import list_trips
+
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    trip_id = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
+    await _anotar_ausente(conn, trip_id)
+
+    en_curso = await list_trips(q=str(trip_id), is_active="true", pool=pool, user=user)
+    historial = await list_trips(q=str(trip_id), pool=pool, user=user)
+
+    assert en_curso["count"] == 0
+    assert historial["count"] == 1
+    assert historial["data"][0]["tms_missing_since"] is not None

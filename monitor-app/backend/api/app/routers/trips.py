@@ -573,7 +573,10 @@ _TRIP_SELECT = """
     tcomp.has_critical_pending AS tractor_pending_docs_critical,
     ccomp.pending_count AS carrier_pending_docs,
     ccomp.has_critical_pending AS carrier_pending_docs_critical,
-    notes.last_human_note_at
+    notes.last_human_note_at,
+    -- D4 (minuta 02/10): desde cuándo el TMS ya no trae el viaje, según la
+    -- reconciliación diaria (dbt). NULL = presente o nunca juzgado.
+    t.tms_missing_since
 """
 
 # HU-04 (Fase 0, 2026-07-21): antes, cuando un viaje no lograba cruzar con
@@ -816,6 +819,9 @@ async def list_trips(
         add("t.trip_status = ANY(?)", statuses)
     if is_active == "true":
         filters.append("t.is_active = true")
+        # "El TMS es la Biblia" (minuta 02/10): lo que el TMS borró no sigue en
+        # curso aunque dbt todavía no lo haya apagado. Queda en el historial.
+        filters.append("t.tms_missing_since IS NULL")
     elif is_active == "false":
         filters.append("t.is_active = false")
     if is_working == "true":
@@ -1038,6 +1044,7 @@ class MonitorAlertRulesMeta(BaseModel):
     dwell_orange_min:       int
     dwell_red_min:          int
     tms_dropped_hours:      float
+    stale_trip_days:        Optional[int] = None
 
 
 class AlertThresholdMeta(BaseModel):
@@ -1110,7 +1117,7 @@ async def get_trips_meta(pool=Depends(get_pool)):
     try:
         alert_rules_row = await pool.fetchrow(
             "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
-            "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours "
+            "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours, stale_trip_days "
             "FROM app.monitor_alert_rules WHERE id = 1"
         )
     except Exception:

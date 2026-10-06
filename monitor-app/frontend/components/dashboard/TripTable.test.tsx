@@ -455,4 +455,15 @@ describe('TripTable — selección para eliminar', () => {
     expect(seleccion.onToggle).toHaveBeenCalledWith('t1')
     expect(onSelect).not.toHaveBeenCalled()
   })
+
+  // D4 (minuta 02/10): en el historial, lo que el TMS borró se ve como tal.
+  it('un viaje que el TMS borró dice "Eliminado en el TMS"', () => {
+    render(<TripTable trips={[makeTrip('t1', { tms_missing_since: '2026-10-07T09:30:00Z' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.getAllByText('Eliminado en el TMS').length).toBeGreaterThan(0)
+  })
+
+  it('un viaje presente en el TMS no lleva la marca', () => {
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.queryByText('Eliminado en el TMS')).toBeNull()
+  })
 })

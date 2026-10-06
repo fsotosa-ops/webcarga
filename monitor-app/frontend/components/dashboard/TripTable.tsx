@@ -263,6 +263,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       : null
                   })()}
                   <StatusBadge status={currentStatus} meta={meta} origen={origenExterno(trip)} />
+                  {trip.tms_missing_since && (
+                    <span className="text-etiqueta font-semibold text-status-incidente">Eliminado en el TMS</span>
+                  )}
                   <DwellSeverityBadge
                     severity={dwell?.severity ?? null}
                     label={dwell?.label ?? null}
@@ -399,6 +402,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         )}
                         <div className="min-w-0 flex-1">
                           <StatusBadge status={currentStatus} meta={meta} variante="punto" origen={origenExterno(trip)} />
+                          {trip.tms_missing_since && (
+                            <span className="text-etiqueta font-semibold text-status-incidente block mt-0.5">Eliminado en el TMS</span>
+                          )}
                           {trip.manual_status && (
                             <span className="text-etiqueta text-accent block mt-0.5">override</span>
                           )}

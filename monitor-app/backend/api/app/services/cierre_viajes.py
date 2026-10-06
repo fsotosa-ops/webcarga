@@ -51,7 +51,15 @@ SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
            t.source_system,
            COALESCE(ta.license_plate, fl.tractor_plate, t.fleet->>'tractor_plate') AS tractor_plate,
            COALESCE(d.full_name, fl.driver_name_raw, t.fleet->>'driver_name_tms')  AS driver_name,
-           COALESCE(c.business_name, t.fleet->>'transporter_name_tms')             AS carrier_name
+           COALESCE(c.business_name, t.fleet->>'transporter_name_tms')             AS carrier_name,
+           -- D4 (minuta 02/10): la reconciliación diaria marcó que el TMS ya no lo
+           -- trae (dbt: stg_tms_presence → app.trips). Sale del cierre; sigue en
+           -- el historial del Monitor.
+           (t.tms_missing_since IS NOT NULL) AS eliminado_en_tms,
+           -- D5: la última entrega en destino, sólo si TODOS los destinos tienen
+           -- una. Mismo orden que _cargo_delivered en trips.py: lo manual, después
+           -- el GPS, después el TMS.
+           entrega.ultima AS ultima_entrega
     FROM app.trips t
     LEFT JOIN app.trip_statuses s ON s.id = t.trip_status
     -- 1:1 por trip_id (uq_trip_fleet_link y la vista devuelve una fila por
@@ -61,6 +69,15 @@ SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
     LEFT JOIN public.carriers c ON c.id = vfr.resolved_carrier_id
     LEFT JOIN public.drivers d ON d.id = vfr.resolved_driver_id
     LEFT JOIN public.assets ta ON ta.id = vfr.resolved_tractor_asset_id
+    LEFT JOIN LATERAL (
+        SELECT CASE WHEN bool_and(x.ts IS NOT NULL) THEN max(x.ts) END AS ultima
+        FROM (
+            SELECT COALESCE(st.departure_date_manual, st.gps_departure_date, st.departure_date,
+                            st.desc_fin_manual, st.unload_end) AS ts
+            FROM app.trip_stops st
+            WHERE st.trip_id = t.id AND st.stop_type = 'DESTINATION'
+        ) x
+    ) entrega ON true
     LEFT JOIN public.shippers sh
            ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
     -- planning_date IS NULL sólo entra si NOT is_active: así el único grupo
@@ -92,6 +109,7 @@ FROM base
 -- en hoy/rezago/en_curso y seguia contando en `bloquean`.
 -- Sigue visible en el historial via el filtro no_asignado_webcarga.
 WHERE unassigned_reason_id IS NULL
+  AND NOT eliminado_en_tms
   AND ((is_active AND NOT is_assigned)
    OR (is_active AND is_assigned AND planning_date < $1::date)
    OR (NOT is_active
@@ -99,7 +117,11 @@ WHERE unassigned_reason_id IS NULL
        -- mismo valor redondeado que se devuelve en el SELECT: filtrar sobre
        -- el crudo y mostrar el redondeado dejaba pasar filas de 7.0x que el
        -- resultado mostraba como 7.0 exactos (parecia violar > 7 sin bug real).
-       AND dias_sin_novedad > {DIAS_SIN_NOVEDAD}))
+       AND dias_sin_novedad > {DIAS_SIN_NOVEDAD}
+       -- D5 (minuta 02/10): entregado y sin cierre del TMS por más de
+       -- stale_trip_days sale del cierre. Sin umbral definido, no oculta nada.
+       AND NOT COALESCE(ultima_entrega < now() - make_interval(days => (
+               SELECT stale_trip_days FROM app.monitor_alert_rules WHERE id = 1)), false)))
 ORDER BY grupo, planning_date DESC
 """
 

@@ -111,6 +111,45 @@ Fuentes:
      los viajes abiertos de Walmart con planificación dentro de la ventana que no aparecen. Va en una
      tabla aparte que dbt no toca (`app.trip_source_presence`).
    - **Wingsuite no trae archivos desde el 25/09** (último archivo en el registro). Hay que revisarlo aparte.
+   - **D4/D5 DESPLEGADO (06/10, noche), según el patrón Mage → bronze → dbt → app.** La primera
+     versión creaba una tabla `app.trip_source_absences` que escribía directamente el bloque de Mage.
+     El usuario la objetó por salirse del patrón y **se retiró ese mismo día** con un DROP aplicado;
+     estaba vacía y nada la leía.
+     - Migraciones:
+       - `20261006120000`: solo `monitor_alert_rules.stale_trip_days`, que puede quedar vacío. El
+         archivo explica la historia.
+       - `20261006130000`: `bronze.tms_reconciliations`, con una fila por reconciliación y `trip_ids`
+         crudos.
+     - Mage, pipeline `tms_daily_reconciliation`:
+       - El bloque `reconciliacion_qanalytics_sap` baja el reporte SAP desde el viaje abierto más
+         antiguo (tope de 120 días) y escribe la fila cruda en bronze. No compara nada.
+       - El bloque dbt `stg_tms_presence` es una **TABLA**, no una vista. Las vistas de silver se
+         recrean en cada corrida de 15 min con `DROP CASCADE`. La primera versión, como vista, falló
+         al crearse; el log de Mage se corta antes del error.
+       - Macro `trip_planning_date` compartida con `app/trips.sql`.
+       - `app.trips.tms_missing_since` se agrega con OR 5 en el incremental. Ese OR tiene una guarda
+         `adapter.get_columns_in_relation` para la primera corrida, cuando la columna todavía no
+         existe.
+       - Despliegue en 2 fases: primero la vista, luego `trips.sql`, para no romper la corrida de 15 min.
+     - extraction_service `11f9a906`: el clic de exportar usa `min(timeout_ms, 60 s)` en vez de 10 s.
+       Con el reporte ancho, Cloud Run daba "Timeout 10000ms".
+     - **Resultado medido (20:50 CL):**
+       - la reconciliación trajo **2.774 viajes** (02/07 → 13/10);
+       - `stg_tms_presence` marcó **22 ausentes** (los 21 esperados más 2064048) y ningún falso positivo;
+       - `app.trips` tiene las 22 marcas;
+       - **los 17 RETORNANDO viejos pasaron a CERRADO solos** cuando entró el reporte ancho.
+     - Efecto colateral: al redesplegar extraction se reinicia su cola en memoria. La corrida de
+       las 20:00 perdió el archivo de Walmart y su transformador cayó con un error de pod (transitorio);
+       `app.trips` quedó sin actualizarse de 19:40 a 20:28.
+     - API: el cierre excluye `tms_missing_since` de todos los grupos y "abandonado" excluye los
+       entregados hace más de `stale_trip_days`; "En curso" excluye `tms_missing_since`.
+     - UI: "Eliminado en el TMS" en TripTable, y el umbral en Configuración › Umbrales.
+     - Tests: backend con 1.079 en verde y los 3 rojos preexistentes de eliminar; frontend con 1.408.
+       Las mutaciones de las guardas se detectaron.
+     - **Pendiente del usuario**: crear el trigger diario de `tms_daily_reconciliation` (~06:30 CL) y
+       definir `stale_trip_days` con Pablo.
+     - **Alcance**: solo Walmart. IANSA, Sodimac (9 abandonados, nunca expira) y Wingsuite necesitan
+       cada uno su reconciliación y su parser.
    Diseño original, antes de medir:
    - corrida diaria de **reconciliación** con la ventana desde el viaje abierto más antiguo, con tope;
      las de 15 min quedan como están (el disco de Supabase es el cuello, Ronda 164);

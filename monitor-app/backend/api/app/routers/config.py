@@ -51,6 +51,17 @@ class MonitorAlertRulesPatch(BaseModel):
     # criterio de cuándo una ausencia cuenta como baja lo define operaciones
     # (issue #3), y moverlo no puede exigir un despliegue.
     tms_dropped_hours:      Optional[float] = None
+    # D5 (minuta 02/10): días desde la última entrega tras los cuales un viaje
+    # que el TMS dejó abierto sale del cierre. NULL es un valor válido —"no
+    # ocultar nada"—, por eso es el único campo que viaja aunque venga vacío.
+    stale_trip_days:        Optional[int]   = None
+
+    @field_validator("stale_trip_days")
+    @classmethod
+    def days_positive(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v <= 0:
+            raise ValueError("los días deben ser mayores a 0")
+        return v
 
     @field_validator("stale_report_hours", "dwell_hours", "tms_dropped_hours")
     @classmethod
@@ -343,7 +354,7 @@ async def delete_temperature_range(
 
 _ALERT_RULES_SELECT = (
     "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
-    "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours "
+    "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours, stale_trip_days "
     "FROM app.monitor_alert_rules WHERE id = 1"
 )
 
@@ -363,6 +374,10 @@ async def patch_monitor_alert_rules(
     usuario=Depends(require_admin),
 ):
     data = body.model_dump(exclude_none=True)
+    # stale_trip_days acepta NULL a propósito (desactivar el umbral): se manda
+    # si vino en el cuerpo, aunque sea vacío.
+    if "stale_trip_days" in body.model_fields_set:
+        data["stale_trip_days"] = body.stale_trip_days
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
 
