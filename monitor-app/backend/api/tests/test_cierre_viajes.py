@@ -701,7 +701,7 @@ async def test_deshacer_devuelve_lo_que_el_viaje_era_no_lo_activa_a_ciegas(conex
     assert await conn.fetchval("SELECT is_active FROM app.trips WHERE id = $1", trip_id) is False
 
 
-async def test_deshacer_sobre_un_dia_firmado_es_409_y_no_cambia_nada(conexion_revertida):
+async def test_deshacer_sobre_un_dia_firmado_despues_de_declarar_es_409_y_no_cambia_nada(conexion_revertida):
     from fastapi import HTTPException
     from app.routers.trips import bulk_close_trips, bulk_reopen_trips
     from app.schemas.trip import TripBulkCloseBody, TripBulkReopenBody
@@ -724,3 +724,29 @@ async def test_deshacer_sobre_un_dia_firmado_es_409_y_no_cambia_nada(conexion_re
 
     assert exc.value.status_code == 409
     assert str(await conn.fetchval("SELECT unassigned_reason_id FROM app.trips WHERE id = $1", trip_id)) == motivo
+
+
+async def test_deshacer_un_viaje_de_un_dia_firmado_antes_de_declararlo_se_puede(conexion_revertida):
+    """Caso real del 06/10 (881496): un rezago planificado el 02/10, día ya
+    firmado CON el viaje adentro. Declararlo lo sacó de ese día; deshacer lo
+    devuelve a lo que se firmó, así que no hay nada que proteger."""
+    from app.routers.trips import bulk_close_trips, bulk_reopen_trips
+    from app.schemas.trip import TripBulkCloseBody, TripBulkReopenBody
+
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    dia = date.fromisoformat("2026-06-12")
+    trip_id = await _crear_viaje(conn, planning_date=dia, is_active=True, is_assigned=False)
+    await conn.execute(
+        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
+        "VALUES ($1, 'CLOSED', $2::uuid, now() - interval '1 day') "
+        "ON CONFLICT (business_date) DO UPDATE SET status = 'CLOSED', closed_by = $2::uuid, "
+        "closed_at = now() - interval '1 day'",
+        dia, user["sub"])
+    await bulk_close_trips(
+        TripBulkCloseBody(trip_ids=[str(trip_id)], unassigned_reason_id=await _motivo_de_viaje(conn)), pool, user)
+
+    await bulk_reopen_trips(TripBulkReopenBody(trip_ids=[str(trip_id)]), pool, user)
+
+    assert await conn.fetchval("SELECT unassigned_reason_id FROM app.trips WHERE id = $1", trip_id) is None

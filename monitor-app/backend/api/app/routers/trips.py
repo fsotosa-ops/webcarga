@@ -2571,9 +2571,13 @@ async def bulk_reopen_trips(
 
             # El día firmado se mira DESPUÉS de deshacer y en la misma
             # transacción: app.trips_del_dia excluye los viajes con motivo, así
-            # que antes de quitarlo ningún día "lo contaba". Lo que importa es
-            # si, sin motivo, entraría en un día ya firmado y le cambiaría las
-            # cifras. Si es así, el 409 revierte todo.
+            # que antes de quitarlo ningún día "lo contaba". Bloquea sólo un día
+            # firmado DESPUÉS de la declaración: ése se firmó sin el viaje, y
+            # devolverlo le cambiaría las cifras. Si el día se firmó ANTES
+            # (con el viaje adentro), deshacer devuelve el día a lo que se firmó
+            # — caso real del 06/10: un rezago planificado el 02/10, día ya
+            # firmado, no se podía deshacer. Sin traza de la declaración no hay
+            # cómo saberlo, y se bloquea.
             firmados = await conn.fetch(
                 """
                 SELECT DISTINCT cp.business_date
@@ -2581,8 +2585,16 @@ async def bulk_reopen_trips(
                 JOIN app.closure_periods cp
                   ON cp.status = 'CLOSED'
                  AND cp.business_date BETWEEN t.planning_date AND t.planning_date + 45
+                LEFT JOIN LATERAL (
+                    SELECT max(a.occurred_at) AS declarado_at
+                    FROM public.audit_log a
+                    WHERE a.entity_type = 'TRIP' AND a.entity_id = t.id
+                      AND a.action = 'no_asignado_por_webcarga'
+                      AND a.field = 'unassigned_reason_id'
+                ) decl ON true
                 WHERE t.id = ANY($1::uuid[])
                   AND t.id IN (SELECT trip_id FROM app.trips_del_dia(cp.business_date))
+                  AND (decl.declarado_at IS NULL OR cp.closed_at >= decl.declarado_at)
                 ORDER BY 1
                 """,
                 ids,
