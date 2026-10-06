@@ -146,6 +146,10 @@ Fuentes:
      - UI: "Eliminado en el TMS" en TripTable, y el umbral en Configuración › Umbrales.
      - Tests: backend con 1.079 en verde y los 3 rojos preexistentes de eliminar; frontend con 1.408.
        Las mutaciones de las guardas se detectaron.
+     - **Verificado en vivo** (21:00 CL, despliegue `56dca9cc`):
+       - 2064048 no aparece en "En curso" y sí en el historial, con `tms_missing_since`;
+       - "Abandonados" del cierre del 06/10 bajó **de 52 a 12** y ya no queda ninguno de Walmart.
+         Quedan Sodimac 9, Wingsuite 2 y manual 1: las fuentes que todavía no tienen reconciliación.
      - **Pendiente del usuario**: crear el trigger diario de `tms_daily_reconciliation` (~06:30 CL) y
        definir `stale_trip_days` con Pablo.
      - **Alcance**: solo Walmart. IANSA, Sodimac (9 abandonados, nunca expira) y Wingsuite necesitan
