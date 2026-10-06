@@ -85,7 +85,17 @@ Fuentes:
    - pegados de verdad: siguen en el cierre para gestionar el cobro y salen del Diario a los X días
      de la entrega.
    - Precondición: el mirror de Mage tiene las Rondas 164 y 165 sin sincronizar.
-3. Click-through en dev: cierre fusionado, viajes con contexto, Guardar/Deshacer, GPRZ30 en ámbar.
+3. ~~Click-through en dev~~ HECHO 06/10 con Playwright:
+   - **05/10 (firmado)**: 47 filas = 46 tractos + 1 conductor en "Otros conductores del día".
+     Cuadra con la base. La tabla está en solo lectura.
+   - **Viajes 06/10**: se ven las columnas de contexto. Elegir un motivo no escribe nada.
+     "Guardar" escribe y el viaje pasa a "Con motivo".
+   - **Bug real atrapado ahí**: "Deshacer" dio 409 sobre el 881496, un rezago planificado el 02/10,
+     día firmado CON el viaje adentro. Corregido en `30c839ad`: solo bloquea un día firmado DESPUÉS
+     de la declaración. Tras desplegar, el viaje volvió idéntico (`is_active=t`, sin motivo, `{}`).
+   - **GPRZ30** sigue en ámbar en Pendientes y no bloquea.
+   - Queda anotado, sin resolver, el caso inverso: `bulk-close` sobre un viaje de un día firmado
+     también le cambia el `trips_del_dia` en vivo. Los `frozen_totals` no cambian.
 4. Avisar a Pablo que "Conductores" y "Tractos" quedaron en una sola vista.
 
 ### 2026-10-01 — Ronda 165: Diario 2.0, puntos 5 y 12 (bugs del 01/10)
