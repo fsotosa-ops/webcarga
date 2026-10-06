@@ -77,7 +77,7 @@ Fuentes:
 
 ## Checklist — siguiente paso exacto
 
-1. Commit + push de D1-D3 a `dev` (pedido por el usuario) y verificar que corran los dos workflows.
+1. ~~Commit + push~~ HECHO: `b1f30296` en `dev`; Deploy Monitor API y Deploy Frontend en verde.
 2. Proponer D4/D5 rediseñado. **No implementar sin OK**, porque toca Mage:
    - corrida diaria de **reconciliación** con la ventana desde el viaje abierto más antiguo, con tope;
      las de 15 min quedan como están (el disco de Supabase es el cuello, Ronda 164);
