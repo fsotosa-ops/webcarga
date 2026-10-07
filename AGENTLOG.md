@@ -219,7 +219,8 @@ Fuentes:
        definir `stale_trip_days` con Pablo.
      - **Alcance final**: Walmart (SAP), Sodimac y Wingsuite. IANSA no lo necesita (172/172 coinciden).
      - **Sigue abierto**:
-       - 3 tests preexistentes que fallan en `test_eliminar_viajes_integracion.py`;
+       - ~~3 tests de `test_eliminar_viajes_integracion.py`~~ RESUELTO en `e733f97a`: usaban el 23/09, que se
+         firmó en producción; ahora usan el 01/01/2099;
        - la cola en memoria del extraction_service, frágil ante un redeploy;
        - estados crudos de Sodimac fuera del catálogo: Carga finalizada, Salida rechazada y
          Presentada en origen;
