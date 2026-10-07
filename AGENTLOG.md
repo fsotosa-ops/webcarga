@@ -84,7 +84,12 @@ Fuentes:
    - `tms_daily_reconciliation`: el usuario lo habilitó el 07/10. La API de mage-agent no muestra la
      hora del trigger. **Mañana, al empezar**, revisar que `bronze.tms_reconciliations` tenga filas
      nuevas del 08/10 para qanalytics, sodimac y wingsuite. Si están, el trigger corrió.
-   - Pendiente del usuario: el trigger de `tms_daily_tests`.
+   - `tms_daily_tests`: **no crear el trigger todavía.** Decidido con el usuario el 07/10. Antes, mañana:
+     (a) sumar `stg_tms_presence` a `dbts/app_trips_tests.yaml`, que hoy solo selecciona `trips`,
+     `trip_stops` y `stg_qanalytics_trips`; (b) configurar un aviso en caso de falla
+     (`notification_config` vacío; preguntar si va por correo o Slack). Un test que nadie lee no
+     protege nada. Después, el usuario crea el trigger (~07:30 CL). Subir a Mage fuera de las ventanas
+     :58–:02, :13–:17, :28–:32 y :43–:47.
 
 1. ~~Commit + push~~ HECHO: `b1f30296` en `dev`; Deploy Monitor API y Deploy Frontend en verde.
 2. **D4/D5 aprobado (06/10) con reconciliación diaria. Orden decidido por el usuario: Ronda 164 primero y
