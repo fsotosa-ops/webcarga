@@ -16,6 +16,86 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-07 (noche) — HU-C1 entrega 2: llegó la planilla de WebCarga, plan escrito (sin código)
+
+**Fuente:** `monitor-app/bugs/20261006/Tabla_Resumen_General_IANSA.xlsx`. Trae 96 tipos de documento con
+periodicidad, fecha tope, vigencia, responsable y "cuándo se carga". Es la "HU de vencimientos actualizada" que
+esperaba el checklist de abajo.
+
+**Decisiones del usuario (07/10):**
+1. La planilla es el **estándar WebCarga**, la regla base para todos los clientes.
+2. Se cargan **los 96** al catálogo.
+3. **"Cuándo se carga" (exigibilidad por evento) entra** en la entrega 2.
+4. **Un archivo por empresa y período**, evaluado contra el corte de cada cliente; la ficha muestra el peor estado.
+   Con esto queda respondida la pregunta abierta del 02/10.
+5. *"Tienes que cumplir con el patrón de diseño de la app. Nada de parches."*
+
+**Plan aprobado (alto nivel):** `~/.claude/plans/swift-floating-pancake.md`, fases F0-F6.
+- F0: hoy en Chile + copia a mano de "vencido".
+- F1: esquema.
+- F2: cálculo al leer.
+- F3: siembra según `exigible_on` + "Solicitar documento".
+- F4: carga y clasificación.
+- F5: selector e interfaz.
+- F6: mapeo y carga de los 96.
+
+**Plan de implementación de F0-F2 escrito:** `docs/superpowers/plans/2026-10-07-c1-entrega-2-vigencia-y-exigibilidad.md`,
+5 tasks. **No ejecutado.**
+
+**Decisiones de arquitectura:**
+- **Tipos de vigencia**: `expiration_policy` gana `ISSUE_PLUS_MONTHS` y `CALENDAR_PERIOD`. REQUIRED y OPTIONAL
+  siguen siendo "fecha del documento", así que el mapeo es la identidad y no se migra ningún dato.
+- **Parámetros en una sola tabla**: `compliance_requirement_rules`. La regla base va con `shipper_id` NULL y la de
+  un cliente es una variante del mismo requisito, no un requisito aparte.
+  - `vigente_desde` versiona la regla: mover un corte no reescribe lo aprobado.
+  - Un `CONSTRAINT TRIGGER` diferido exige que la política y sus parámetros sean coherentes.
+- **El cálculo vive en funciones SQL `STABLE`**, con el mismo patrón que `carrier_management_types()`:
+  - `hoy_chile()`
+  - `documento_vence_el()`
+  - `documento_aviso_desde()`
+  - `documento_exigible()`
+  `vencimientos.py` sigue siendo la única puerta desde Python y conserva la firma `predicado(alias)`. El alias
+  debe exponer `requirement_id, entity_type, entity_id, status, expiration_date, issue_date, period_start`.
+- **Aviso general**: la fila `app.alert_thresholds` `documento_por_vencer` (30) reemplaza a `DIAS_POR_VENCER`. Las
+  8 filas por documento (claves viejas, no ligadas a requisitos) se retiran en F5.
+- **Exigibilidad** (`exigible_on`): `MONTH_AFTER_START` se calcula desde `driver_assignments.start_date`, y
+  `ON_ENTITY_END` = el conductor ya no tiene asignación ACTIVE.
+  - No hace falta `end_date`: los loaders del Centralizador no lo escriben.
+  - `ON_REQUEST` lo filtra la siembra (F3).
+
+**Medido el 07/10 (psql, solo lectura):**
+- La base corre con `TimeZone = UTC`, así que `CURRENT_DATE` adelanta "vencido" desde las 21:00 de Chile.
+- `plantilla_certificacion.py:151` repite a mano la regla de "vencido".
+- **12 registros NONE con fecha**, todos `APPROVED_MANUAL`; 10 hoy figuran vencidos (REGLAMENTO_INTERNO 3,
+  ENTREGA_EPP 2, CONTRATO_TRABAJO 2, y uno de cada uno: CONTRATO_WEBCARGA, ANEXO_GC_CONDUCTOR, ROLL_SII,
+  CAPACITACION_EPP, PLAN_EMERGENCIA). Con la política como única fuente, dejan de verse vencidos: es el **gate de
+  la Task 5**.
+- `carrier_shippers`: 47 vínculos, todos ACTIVE.
+- `driver_assignments.end_date` nunca se escribió (0 de 104).
+
+**Para WebCarga, junto al mapeo de F6:**
+- combinaciones contradictorias:
+  - "No aplica" con Vigencia Sí;
+  - "Anual" con Vigencia No;
+- "Al término del trabajador" en EPP, IPER y OS10, que parece un error;
+- Responsabilidad "En cuanto se solicita" en vehículos;
+- el cronograma mensual sin corte;
+- si el período es "mes anterior" en cada mensual;
+- si el ingreso del trabajador es la fecha del vínculo en el sistema;
+- erratas.
+
+**Siguiente paso exacto:**
+- [ ] El usuario revisa `docs/superpowers/plans/2026-10-07-c1-entrega-2-vigencia-y-exigibilidad.md` y elige cómo
+  ejecutarlo: con subagentes o en esta sesión.
+- [ ] Ejecutar las Tasks 1-4. Las migraciones se ensayan con ROLLBACK por MCP, nunca con un job de ingesta en vuelo.
+- [ ] Task 5:
+  - medir `EXPLAIN ANALYZE`: el nuevo tiene que tardar menos de 2× el viejo y menos de 1,5 s;
+  - contar antes y después;
+  - **gate de los 10 NONE con fecha, a decidir por el usuario**;
+  - desplegar y verificar con Playwright.
+- [ ] Después: escribir los planes de F3, F4, F5 y F6. El mapeo de los 96 va en xlsx para que WebCarga lo apruebe.
+- La Task 7b de la entrega 1 (`DROP has_expiration`) sigue esperando la confirmación del usuario.
+
 ### 2026-10-07 — Memoria técnica I+D para Corfo (entregable, sin cambios de código)
 
 Pedido: `docs/reports/contexto-report.md`. Es una memoria de ~2 páginas que acredita I+D. Se hizo con la estrategia
