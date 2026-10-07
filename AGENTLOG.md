@@ -77,12 +77,57 @@ Fuentes:
 
 ## Checklist — siguiente paso exacto
 
-0. **MAÑANA (08/10), primero: HUs de Certificación** (C1 a C4 y O1). Están escritas en
-   `monitor-app/docs/user-stories/20261006/01-hu-diario-2.0-revision-02oct.md`. Hay que revisarlas y
-   llevarlas a la reunión bilateral con Pablo. El Diario 2.0 quedó cerrado y desplegado al 07/10
-   (`c73d7127`, verificado en vivo), con la suite del backend sin rojos (`e733f97a`).
+0. ~~HUs de Certificación~~ **REVISADAS (07/10, Ronda 167)**. La sección de Certificación de
+   `monitor-app/docs/user-stories/20261006/01-hu-diario-2.0-revision-02oct.md` se reescribió contra
+   la minuta, la transcripción de Granola del 02/10 y el código; los datos se verificaron con psql.
+   - **C4 queda fuera de esta fase** (decisión del usuario): es un rediseño y va con plan aparte.
+   - **Hallazgos**:
+     - el F30-1 se creó el 01/10 con `expiration_policy=NONE`, porque `NuevoDocumentoPanel` no envía
+       la política;
+     - `has_expiration` sigue con lectores vivos (Sin clasificar, triage, planilla) aunque la fuente
+       de verdad es `expiration_policy`;
+     - "opcional" se siembra como pendiente (38 y 39 registros "falta");
+     - no hay exención por empresa;
+     - la póliza no se vincula a Seguros.
+   - **HUs nuevas**: C5 (opcionales) y C6 (póliza, remite a HU-06).
+   - **Decisión del usuario (07/10)**: *"no hagas parches, sigue el diseño de arquitectura de la
+     app"*. Por eso C1 retira `has_expiration` en vez de sincronizarlo, y la recurrencia va como dato
+     del catálogo.
+   - **HU-C1 con patrón de vigencia** (pedido del usuario): 4 tipos cerrados (no vence, fecha del
+     documento, plazo desde emisión, período de calendario), con días de aviso y de gracia.
+     - El documento guarda el período que cubre, y el estado se calcula al leer.
+     - La regla por cliente es una variante de parámetros del mismo requisito, **no** un requisito
+       con `shipper_id`, que sembraría un registro duplicado.
+     - Cambiar la política no reescribe documentos aprobados.
+   - **Plan de la entrega 1 de C1 escrito (07/10)**, sin ejecutar:
+     `docs/superpowers/plans/2026-10-07-c1-una-sola-politica-de-vencimiento.md`.
+     - Contenido: todos los lectores pasan a `expiration_policy`, un selector compartido para crear y
+       editar, Sin clasificar muestra la fecha si es OPTIONAL, y `DROP COLUMN has_expiration`.
+     - El DROP tiene compuerta: `webcarga-monitor-api` (rama `main`, 01/08) usa la misma base y lee la
+       columna.
+   - **Entrega 1 de C1: Tasks 1-5 HECHAS y pusheadas a `dev` (07/10)**, commits `adc0977a..5ae76d43`
+     más la corrección del plan `721ee5c2`.
+     - Suites: backend 1.089 en verde (19 min, con integración); frontend 1.412 en verde, `tsc` y
+       build en verde.
+     - Revisión final (opus): 0 hallazgos críticos o importantes.
+     - Ledger: `.superpowers/sdd/2026-10-07-c1-una-sola-politica-de-vencimiento/progress.md`.
+   - **PENDIENTE Task 6**: GitHub tuvo una caída mayor el 07/10 (Git Operations y Actions). El push
+     entró, pero no hay evidencia de que corrieran Deploy Monitor API y Deploy Frontend.
+     **Al retomar**: `gh run list --branch dev`. Si no corrieron, redisparar con
+     `gh workflow run deploy-monitor-api.yml --ref dev` y `gh workflow run deploy-frontend.yml --ref dev`.
+     Después, click-through con Playwright en Configuración › Nuevo documento.
+   - **PENDIENTE Task 7 (DROP has_expiration)**: esperar un día estable en dev y confirmar con el
+     usuario.
+     - La API de `main` NO lee la columna (la premisa del plan era falsa).
+     - El riesgo es un rollback de dev a una revisión anterior a `5ae76d43`.
+   - **Menores diferidos**:
+     - classify-batch guarda una fecha en un documento NONE (preexistente);
+     - el test guardián solo cubre `app/*.py`.
+   - **Siguiente paso**: bilateral con Pablo con la agenda al final del archivo de HU. Orden
+     propuesto: C1 base → C5 → C3 → C2 → C1 recurrente → C6. Nada de esto está implementado.
    - `tms_daily_reconciliation`: el usuario lo habilitó el 07/10. La API de mage-agent no muestra la
-     hora del trigger. **Mañana, al empezar**, revisar que `bronze.tms_reconciliations` tenga filas
+     hora del trigger. Al 07/10 hay 1 fila del día por stream (qanalytics, sodimac, wingsuite).
+     **El 08/10**, revisar que `bronze.tms_reconciliations` tenga filas
      nuevas del 08/10 para qanalytics, sodimac y wingsuite. Si están, el trigger corrió.
    - `tms_daily_tests`: **no crear el trigger.** Queda registrado como deuda técnica en `TECH_DEBT.md`
      (07/10). No avisa ante una falla, no hay Slack ni casilla en esta fase, y no incluye
