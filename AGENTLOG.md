@@ -190,10 +190,13 @@ Fuentes:
      opciones (por defecto "No aplica"). No se creó nada.
      - De paso se vio en vivo el rótulo engañoso de "Opcional" ("No se le pide a nadie por defecto"),
        que es la HU-C5.
-   - **PENDIENTE Task 7 (DROP has_expiration)**: desde el 08/10 en adelante (un día estable sin rollback)
-     y con confirmación del usuario. El ledger del plan queda vivo hasta entonces.
-     - La API de `main` NO lee la columna (la premisa del plan era falsa).
-     - El riesgo es un rollback de dev a una revisión anterior a `5ae76d43`.
+   - **Task 7a HECHA (07/10, a pedido del usuario: expand/contract)**: `has_expiration` es ahora una
+     columna GENERADA (`expiration_policy <> 'NONE'`), con la migración `20261007120000` aplicada vía MCP.
+     - Datos iguales: 21 true y 17 false.
+     - Test de integración en verde; 0 errores 5xx en la API.
+     - Un rollback de la API anterior a `5ae76d43` ya no da 500.
+   - **PENDIENTE Task 7b (DROP has_expiration)**: solo limpieza, sin fecha. Va cuando el usuario
+     confirme que la entrega 1 está estable. El ledger del plan sigue vivo hasta entonces.
    - **Menores diferidos**:
      - classify-batch guarda una fecha en un documento NONE (preexistente);
      - el test guardián solo cubre `app/*.py`.

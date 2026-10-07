@@ -705,7 +705,17 @@ del "Diseño".
   "Obligatoria" lo decide WebCarga desde Configuración, y ahora tiene efecto en todas las pantallas. Se
   anota en la agenda de la bilateral.
 
-### Task 7: Retirar la columna (con compuerta)
+### Task 7a: `has_expiration` pasa a columna generada — HECHA (07/10)
+
+*Agregada a pedido del usuario: patrón expand/contract antes del DROP.*
+- Migración: `20261007120000_has_expiration_generada.sql`, aplicada el 07/10.
+  `has_expiration GENERATED ALWAYS AS (expiration_policy <> 'NONE') STORED`.
+- Así, un rollback de la API anterior a `5ae76d43` sigue funcionando, y la columna no se puede
+  desincronizar.
+- Test: `tests/test_has_expiration_generada.py`. Estuvo en rojo antes de la migración y en verde
+  después.
+
+### Task 7b: Retirar la columna (con compuerta)
 
 **Files:**
 - Create: `monitor-app/backend/supabase/migrations/20261008100000_retira_has_expiration.sql`
