@@ -24,6 +24,7 @@ from ..schemas.document_ingest import (
 from ..services.audit import log_change
 from ..services.document_matcher import classify_match, match_document
 from ..services.matcher_io import cargar_catalogo, cargar_universo
+from ..services.vencimientos import exige_fecha
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
 )
@@ -414,6 +415,7 @@ async def classify_batch(
             record = await conn.fetchrow(
                 """
                 SELECT cr.id::text, cr.entity_id::text, cr.entity_type, cr.status, cr.expiration_date,
+                       req.expiration_policy,
                        -- Misma regla que en el camino de carga directa
                        -- (`_apply_compliance_upload`): una empresa dada de baja
                        -- deja de pedir documentos. La Bandeja es el OTRO camino
@@ -428,6 +430,7 @@ async def classify_batch(
                                   WHERE aa.asset_id = cr.entity_id AND aa.status = 'ACTIVE' LIMIT 1)
                          END) AS empresa_de_baja
                 FROM public.compliance_records cr
+                JOIN public.compliance_requirements req ON req.id = cr.requirement_id
                 WHERE cr.entity_id = $1 AND cr.requirement_id = $2 AND cr.is_current = true
                 """,
                 body.entity_id, body.requirement_id,
@@ -444,14 +447,8 @@ async def classify_batch(
                     "bloqueada. Reactívala desde el Directorio para clasificarle documentos.",
                 )
 
-            if body.expiration_date is None:
-                needs_date = await conn.fetchval(
-                    "SELECT COALESCE(has_expiration, false) "
-                    "FROM public.compliance_requirements WHERE id = $1",
-                    body.requirement_id,
-                )
-                if needs_date:
-                    raise HTTPException(422, "Este documento requiere fecha de vencimiento")
+            if body.expiration_date is None and exige_fecha(record["expiration_policy"]):
+                raise HTTPException(422, "Este documento requiere fecha de vencimiento")
 
             for item in items:
                 if item["match_status"] == "DISCARDED":

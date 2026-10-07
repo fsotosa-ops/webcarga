@@ -53,6 +53,7 @@ from ..services.plantilla_certificacion import (
     sql_filas_plantilla,
 )
 from ..services.vencimientos import (
+    exige_fecha,
     pendiente_predicate,
     por_vencer_predicate,
     vencido_predicate,
@@ -1368,7 +1369,7 @@ async def _apply_compliance_upload(
     # blob huerfano — que es exactamente el defecto que este trabajo viene a
     # eliminar del camino de la bandeja, donde subir precedia a clasificar y
     # cada 422 dejaba un archivo varado con el requisito vacio.
-    if current["expiration_policy"] == "REQUIRED" and expiration_date is None:
+    if exige_fecha(current["expiration_policy"]) and expiration_date is None:
         raise HTTPException(422, "Este documento requiere su fecha de vencimiento")
 
     key_prefix = f"{current['entity_type'].lower()}/{current['entity_id']}/{record_id}"

@@ -86,3 +86,26 @@ def pendiente_predicate(alias: str = "cr") -> str:
         f"OR {vencido_predicate(alias)} "
         f"OR {por_vencer_predicate(alias)})"
     )
+
+
+# ── Si un documento vence ────────────────────────────────────────────────────
+#
+# `compliance_requirements.expiration_policy` es la ÚNICA fuente. Reemplazó a
+# has_expiration, un booleano que cargaba tres significados y que Configuración
+# no edita: todo lector que lo siguiera usando se desincronizaba con la primera
+# política cambiada desde la pantalla (HU-C1, entrega 1).
+
+
+def lleva_fecha(politica: str) -> bool:
+    """El documento admite una fecha de vencimiento: obligatoria u opcional."""
+    return politica != "NONE"
+
+
+def exige_fecha(politica: str) -> bool:
+    """Sin fecha, el documento no se acepta."""
+    return politica == "REQUIRED"
+
+
+def lleva_fecha_sql(alias: str = "req") -> str:
+    """`lleva_fecha` para un SELECT, sobre el alias del requisito."""
+    return f"({alias}.expiration_policy <> 'NONE')"

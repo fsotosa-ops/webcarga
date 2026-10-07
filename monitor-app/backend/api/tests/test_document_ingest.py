@@ -743,10 +743,11 @@ def test_delete_item_404_when_missing():
 # Son las que hacen viable clasificar 2.000 documentos: el mismo requisito
 # aplicado a N archivos, y N archivos movidos de empresa en un solo statement.
 
-def _record_row(record_id="rec-1"):
+def _record_row(record_id="rec-1", expiration_policy="NONE"):
     return {
         "id": record_id, "entity_id": "a1", "entity_type": "ASSET",
         "status": "MISSING", "expiration_date": None,
+        "expiration_policy": expiration_policy,
     }
 
 
@@ -848,8 +849,7 @@ def test_classify_batch_requires_the_expiration_date_when_the_requirement_has_on
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     conn.fetch.return_value = [_tray_item()]
-    conn.fetchrow.return_value = _record_row()
-    conn.fetchval.return_value = True  # has_expiration
+    conn.fetchrow.return_value = _record_row(expiration_policy="REQUIRED")
     client = make_client(pool)
 
     res = client.post(
@@ -860,6 +860,39 @@ def test_classify_batch_requires_the_expiration_date_when_the_requirement_has_on
 
     assert res.status_code == 422
     assert "fecha de vencimiento" in res.json()["detail"]
+
+
+def test_classify_batch_accepts_an_optional_expiration_without_a_date():
+    """OPTIONAL dice "se acepta y la fecha queda pendiente". Antes se leía
+    `has_expiration`, que Configuración no edita: un documento OPTIONAL creado
+    ahí era imposible de fechar o, al revés, se exigía sin pedirse."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_tray_item()]
+    conn.fetchrow.side_effect = [
+        _record_row(expiration_policy="OPTIONAL"),
+        {"metadata": {}, "expiration_date": None},
+    ]
+    conn.fetchval.return_value = True  # si alguien vuelve a leer has_expiration, esto lo delata
+    client = make_client(pool)
+
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["applied"] == ["i1"]
+
+
+def test_la_politica_dice_si_lleva_y_si_exige_fecha():
+    from app.services.vencimientos import exige_fecha, lleva_fecha
+
+    assert (lleva_fecha("REQUIRED"), exige_fecha("REQUIRED")) == (True, True)
+    assert (lleva_fecha("OPTIONAL"), exige_fecha("OPTIONAL")) == (True, False)
+    assert (lleva_fecha("NONE"), exige_fecha("NONE")) == (False, False)
 
 
 def test_classify_batch_skips_a_discarded_item_instead_of_applying_it():
