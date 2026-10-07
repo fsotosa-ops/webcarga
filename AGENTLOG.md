@@ -16,6 +16,80 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-07 — Memoria técnica I+D para Corfo (entregable, sin cambios de código)
+
+Pedido: `docs/reports/contexto-report.md`. Es una memoria de ~2 páginas que acredita I+D. Se hizo con la estrategia
+de `one-pagers/proposals/santa-isabel`: HTML con estilos inline, pegado con Playwright en Google Docs, y figuras
+en pptx nativo → Slides → PDF → PNG a 300 ppi.
+
+**Entregables en Drive, carpeta `Webcarga` (`1rdqv1pwn0oW4ks9JP1dKVqEpR4bd4Cm5`):**
+- `memoria-tecnica-id-webcarga` (Doc `11ZevqUpWMRMNvH0LjSWas7sUkLxKKUJogt433yxayd8`): 5 páginas,
+  9 figuras y un glosario.
+- `figuras-memoria-id-webcarga` (Slides `1_dLj9YWz1ufXLctQsoXyxdXbya8Rm375j9Gu0GYD9uE`): 9 láminas.
+- `nota-interna-id-vs-rutinario` (Doc `1JUXh7kDMyDLoufjcisj5B3EosOIh22rB7NiI96ymPOk`): solo para
+  WebCarga; separa I+D defendible, de apoyo, en curso y rutinario.
+- Fuentes locales: `~/Desktop/projects/one-pagers/proposals/webcarga-corfo/` (`build_memoria.py`,
+  `figuras/build_slides.py`, `figuras/export_pngs.py`, `check/revisar_pdf.sh`).
+
+**Cifras contrastadas el 07/10 contra Supabase (solo lectura) y `origin/dev`:**
+- 3.217 viajes.
+- 19 de 3.101 traen RUT del TMS; 2.535 se resuelven por nombre.
+- Cobertura de conductor: 94,6 / 95,7 / 94,3 % en ago/sep/oct.
+- 43.436 versiones de 5.091 viajes; 5.270 archivos ingeridos.
+- 22 días firmados con 2.682 líneas y 0 reaperturas.
+- 88 viajes ausentes (61 ofertas retiradas + 27 eliminados).
+- 149 endpoints en 23 routers (22 archivos).
+
+**Lecciones:**
+- El "141 endpoints" que venía del grep subestimaba la cifra: `requirements.py` usa `@requirements_router.`.
+- El "93–100 %" del AGENTLOG ya no es cierto hoy (en las últimas 3 semanas la cobertura diaria va de 76 a 100 %).
+- El clasificador documental tiene muy poco uso real: 152 archivos, 15/67 propuestos con confianza alta. Por eso quedó fuera
+  de la memoria y en la nota interna como I+D en curso.
+
+**Decisiones del usuario:**
+- La memoria cuenta resultados medidos, no proceso.
+- La API WebCarga aparece explícita en la figura de arquitectura.
+- La concentración de la API (`trips.py`: 25 endpoints, 3.192 líneas, 20 % del backend) se declara como
+  "endurecimiento planificado" en la memoria y se detalla en la nota interna.
+- Los términos de negocio se definen en la primera aparición y hay un glosario al final.
+
+**Estado:** entregable CERRADO (07/10). El usuario lo da por suficiente: es un reporte documental para la
+postulación y Pablo no necesita más relato. No se agregan anexos ni secciones nuevas.
+
+**Siguiente paso:**
+- [x] Revisión de los 3 archivos: el usuario los da por suficientes.
+- Anexos descartados por el usuario (07/10): ni las specs en PDF ni el commit de las specs al repo.
+- [x] Deuda revisada el 07/10:
+  - Los 9 endpoints del cierre (`daily-closures` 4, `equipment-closures` 3, `closures` 2) están **vivos**:
+    los usan Cierre, Monitor e Historial, y ya leen y escriben `closure_lines` vía `services/cierre_lineas.py`.
+  - Lo muerto son las 4 tablas viejas: `driver_day_status` (2.787 filas), `equipment_day_status` (4.356),
+    `daily_closures` (22) y `equipment_closures` (21).
+    - `cierre_lineas` las sigue escribiendo como "proyección" en la misma transacción.
+    - Ningún código, vista ni función las lee.
+    - Su último seq_scan del día-estado fue el 16/09.
+  - Es la **ola 5** de `docs/superpowers/specs/2026-09-14-modelo-de-cierre-design.md`, junto con el `DROP` de
+    `app.trips.comments`/`.notes`.
+  - Memoria y nota corregidas: antes decían "retirar endpoints sin uso".
+- [ ] Ola 5 del cierre:
+  - quitar `_proyectar` y los INSERT a las cabeceras viejas;
+  - después, `DROP` de las 4 tablas, que tienen FK a drivers, assets y status_taxonomies.
+  - No es reversible: hacerlo entre corridas de ingesta.
+  - Exploración del 07/10 (solo lectura, sin cambios; el usuario cortó: esa sesión era solo para el informe):
+    - Puntos de escritura en `services/cierre_lineas.py`:
+      - `_proyectar()` (líneas ~273-301, llamado en ~358 y ~456);
+      - los INSERT a `daily_closures`/`equipment_closures` (~602/616);
+      - los DELETE al reabrir (~655-656).
+    - Tests que leen las tablas viejas: `test_cierre_lineas.py` (~508-544) y `test_modelo_de_cierre.py:102`.
+    - **`app.trips.comments`/`.notes` NO van en esta ola:**
+      - tienen 0 datos, pero los usan el modelo dbt `app/trips.sql` (`merge_exclude_columns`, `NULL AS notes`),
+        `routers/trips.py` (SELECT y los campos válidos del PATCH), `schemas/trip.py` y `frontend/lib/types.ts`;
+      - un DROP rompería la corrida de dbt. Requieren una tarea aparte que toque Mage.
+    - Orden seguro:
+      1. desplegar el código sin la doble escritura;
+      2. verificar una firma y una reapertura reales;
+      3. recién entonces, la migración DROP por `execute_sql`, entre corridas de ingesta.
+    - Ojo: el 07/10 había otra sesión trabajando en C1 en `dev` (commits 12:04-12:21).
+
 ### 2026-10-06 — Ronda 166: minuta del 02/10 (Pablo) — HUs y fixes del Diario 2.0
 
 Fuentes:
@@ -111,13 +185,13 @@ Fuentes:
        build en verde.
      - Revisión final (opus): 0 hallazgos críticos o importantes.
      - Ledger: `.superpowers/sdd/2026-10-07-c1-una-sola-politica-de-vencimiento/progress.md`.
-   - **PENDIENTE Task 6**: GitHub tuvo una caída mayor el 07/10 (Git Operations y Actions). El push
-     entró, pero no hay evidencia de que corrieran Deploy Monitor API y Deploy Frontend.
-     **Al retomar**: `gh run list --branch dev`. Si no corrieron, redisparar con
-     `gh workflow run deploy-monitor-api.yml --ref dev` y `gh workflow run deploy-frontend.yml --ref dev`.
-     Después, click-through con Playwright en Configuración › Nuevo documento.
-   - **PENDIENTE Task 7 (DROP has_expiration)**: esperar un día estable en dev y confirmar con el
-     usuario.
+   - **Task 6 HECHA (07/10)**: Deploy Monitor API y Deploy Frontend en verde sobre `721ee5c2`.
+     Click-through con Playwright en dev: "Nuevo documento" muestra "Fecha de vencimiento" con las 3
+     opciones (por defecto "No aplica"). No se creó nada.
+     - De paso se vio en vivo el rótulo engañoso de "Opcional" ("No se le pide a nadie por defecto"),
+       que es la HU-C5.
+   - **PENDIENTE Task 7 (DROP has_expiration)**: desde el 08/10 en adelante (un día estable sin rollback)
+     y con confirmación del usuario. El ledger del plan queda vivo hasta entonces.
      - La API de `main` NO lee la columna (la premisa del plan era falsa).
      - El riesgo es un rollback de dev a una revisión anterior a `5ae76d43`.
    - **Menores diferidos**:
