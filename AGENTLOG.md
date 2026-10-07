@@ -77,6 +77,13 @@ Fuentes:
 
 ## Checklist — siguiente paso exacto
 
+0. **MAÑANA (08/10), primero: HUs de Certificación** (C1 a C4 y O1). Están escritas en
+   `monitor-app/docs/user-stories/20261006/01-hu-diario-2.0-revision-02oct.md`. Hay que revisarlas y
+   llevarlas a la reunión bilateral con Pablo. El Diario 2.0 quedó cerrado y desplegado al 07/10
+   (`c73d7127`, verificado en vivo), con la suite del backend sin rojos (`e733f97a`).
+   Pendientes del usuario: el trigger de `tms_daily_reconciliation` (~06:30 CL) y el de
+   `tms_daily_tests`.
+
 1. ~~Commit + push~~ HECHO: `b1f30296` en `dev`; Deploy Monitor API y Deploy Frontend en verde.
 2. **D4/D5 aprobado (06/10) con reconciliación diaria. Orden decidido por el usuario: Ronda 164 primero y
    D4/D5 después.**
