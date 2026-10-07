@@ -156,10 +156,9 @@ class RequirementOption(BaseModel):
     requirement_code: str
     name: str
     requirement_level: Literal["LEGAL_MANDATORY", "SHIPPER_REQUIRED", "CONDITIONAL_OPTIONAL"]
-    has_expiration: bool
-    # Reemplaza a `has_expiration` como fuente de verdad. Aquel es un booleano
-    # que cargaba tres significados, y por eso la carga rechazaba con 422
-    # documentos cuya fecha la pantalla nunca pedia.
+    # Reemplazó a has_expiration (retirado en HU-C1), un booleano que cargaba
+    # tres significados: por eso la carga rechazaba con 422 documentos cuya
+    # fecha la pantalla nunca pedía.
     expiration_policy: Literal["REQUIRED", "OPTIONAL", "NONE"]
     is_active: bool
     applies_to_fleet_service_type_ids: Optional[list[str]] = None

@@ -40,7 +40,7 @@ def test_list_requirements_returns_catalog():
     pool.fetch.return_value = [{
         "id": "req-1", "target_entity": "DRIVER", "requirement_id": "req-1", "requirement_code": "LICENCIA_CONDUCIR",
         "name": "Licencia de Conducir", "requirement_level": "LEGAL_MANDATORY",
-        "has_expiration": True, "expiration_policy": "REQUIRED", "is_active": True,
+        "expiration_policy": "REQUIRED", "is_active": True,
         "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None,
         "alcanzadas": 80, "universo": 80,
     }]
@@ -51,7 +51,8 @@ def test_list_requirements_returns_catalog():
     assert res.status_code == 200
     body = res.json()
     assert body[0]["requirement_code"] == "LICENCIA_CONDUCIR"
-    assert body[0]["has_expiration"] is True
+    assert "has_expiration" not in body[0]
+    assert body[0]["expiration_policy"] == "REQUIRED"
 
 
 def test_list_requirements_returns_current_conditions():
@@ -65,7 +66,7 @@ def test_list_requirements_returns_current_conditions():
     pool.fetch.return_value = [{
         "id": "req-1", "target_entity": "ASSET", "requirement_id": "req-1", "requirement_code": "MANTENCION_FRIO",
         "name": "Mantención Cámara de Frío", "requirement_level": "CONDITIONAL_OPTIONAL",
-        "has_expiration": True, "expiration_policy": "REQUIRED", "is_active": True,
+        "expiration_policy": "REQUIRED", "is_active": True,
         "applies_to_fleet_service_type_ids": ["ft-1", "ft-2"], "applies_to_management_types": None,
         "alcanzadas": 36, "universo": 118,
     }]
@@ -91,7 +92,7 @@ def test_el_catalogo_dice_a_cuantas_entidades_alcanza_cada_regla():
     pool.fetch.return_value = [{
         "id": "r1", "target_entity": "ASSET", "requirement_code": "MANTENCION_FRIO",
         "name": "Mantención Cámara de Frío", "requirement_level": "CONDITIONAL_OPTIONAL",
-        "has_expiration": True, "expiration_policy": "REQUIRED", "is_active": True,
+        "expiration_policy": "REQUIRED", "is_active": True,
         "applies_to_fleet_service_type_ids": ["t1"], "applies_to_management_types": None,
         "alcanzadas": 36, "universo": 118,
     }]

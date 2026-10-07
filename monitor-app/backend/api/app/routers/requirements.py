@@ -80,10 +80,8 @@ def _columna(campo: str) -> str:
 
 SQL_CATALOGO = f"""
     SELECT req.id::text, req.target_entity, req.requirement_code, req.name,
-           req.requirement_level, COALESCE(req.has_expiration, false) AS has_expiration,
-           -- La fuente de verdad de la fecha. `has_expiration` sigue viajando
-           -- porque tiene lectores vivos, pero es el booleano de dos valores
-           -- que cargaba tres significados: quien decida algo mira esta.
+           req.requirement_level,
+           -- La única fuente de la fecha: el booleano viejo se retiró (HU-C1).
            req.expiration_policy,
            req.is_active,
            req.applies_to_fleet_service_type_ids::text[] AS applies_to_fleet_service_type_ids,
