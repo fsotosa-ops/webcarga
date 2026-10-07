@@ -171,7 +171,34 @@ Fuentes:
          `app.trips` actualizado a las 00:24.
        - **Regla: nunca subir un cambio de GRAFO de `batch_tms_monitor_trips` con una corrida en vuelo.
          Esperar a que termine y subir antes de la siguiente.**
-     - **Sodimac: NO desplegado.** Su lista retira las ofertas (crudo `Publicada`) que WebCarga no tomó.
+     - **Sodimac (07/10, 00:46–01:50 CL), resuelto por el catálogo y sin reglas por fuente:**
+       - Medido en el historial: Sodimac nunca dijo "ASIGNADO".
+         - `Publicada` es una oferta. Después pasa a Aceptada, Removida o Declinada, o desaparece.
+         - `Presentada` significa que el camión está en origen.
+         - El tooltip "· Sodimac" del 25/08 corregía en pantalla la traducción nuestra.
+       - Migración `20261007100000`: `Publicada` en el grupo `otro` con `counts_as_load=false`, y
+         `Presentada` en `en_ruta`. `int_tms_trips_conformed` ya no los traduce; `is_assigned` excluye
+         `Publicada`.
+       - `stg_tms_presence.tms_absence_kind` sale del CATÁLOGO: un estado no terminal que no cuenta como
+         carga y desaparece es una `oferta_retirada`; si no, es un `eliminado`. El freno del 50 % no
+         cuenta las ofertas. Fuente dbt nueva: `app.trip_statuses`.
+       - Migración `20261007110000`: pasada única que lleva los 64 viajes ASIGNADO de Sodimac a
+         `Publicada`, copiando lo que da la homologación.
+       - El bloque `reconciliacion_sodimac` volvió al pipeline diario. La reconciliación 14286 trajo
+         Walmart 2.799, Sodimac 357 y Wingsuite 0 (vacío, contenido por el freno).
+       - **Resultado (01:47):**
+         - Sodimac: 61 ofertas retiradas, 12 sin declarar y 49 declaradas; 5 eliminados, ya declarados.
+         - Walmart: 22 eliminados.
+         - Coincide exactamente con la simulación previa contra la lista real.
+       - API: grupo nuevo `oferta_sin_declarar` en el cierre (se puede seleccionar y no bloquea); el
+         Monitor expone `tms_absence_kind`. UI: "Oferta retirada por el TMS" frente a "Eliminado en el
+         TMS", y **se retiró el parche `origenExterno`/`origen` del StatusBadge**.
+       - **Incidente 2:** la corrida 14279 (00:45) quedó en "0/0" porque subí los cambios de dbt a las
+         00:46, mientras arrancaba. Por el límite (1, skip), las siguientes se saltaron. El usuario la
+         canceló. **Regla: no subir nada a Mage en las ventanas :58–:02, :13–:17, :28–:32 ni :43–:47.**
+       - mage-agent dio "[404] Email/username and/or password invalid" un rato y después se recuperó
+         solo.
+     - Sodimac, versión anterior (descartada): Su lista retira las ofertas (crudo `Publicada`) que WebCarga no tomó.
        No son viajes eliminados.
        - Hoy la homologación traduce `Publicada`/`Presentada` → `ASIGNADO` (grupo `en_ruta`,
          `counts_as_load` true). El usuario rechazó resolverlo con una regla escrita a mano por fuente.

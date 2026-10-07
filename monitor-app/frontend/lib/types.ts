@@ -488,6 +488,9 @@ export type Trip = {
    *  el viaje dentro de la ventana que cubrió. El viaje no se borra: sale de
    *  "En curso" y del cierre, y en el historial se ve con esta marca. */
   tms_missing_since?:     string | null
+  /** 'eliminado' | 'oferta_retirada' (el catálogo dice que su estado no era
+   *  una carga: una oferta que el TMS retiró porque nadie la tomó). */
+  tms_absence_kind?:      'eliminado' | 'oferta_retirada' | null
   stops:                  TripStop[]
   is_active:              boolean
   is_working:             boolean
@@ -1542,7 +1545,7 @@ export type ViajeDelCierre = {
 }
 
 /** `con_motivo` (HU-D3): declarados desde el cierre de ese día o después. */
-export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado' | 'con_motivo'
+export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado' | 'con_motivo' | 'oferta_sin_declarar'
 
 export type CierreViajesResponse = {
   grupos:   Record<GrupoDelCierre, ViajeDelCierre[]>

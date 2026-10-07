@@ -61,18 +61,16 @@ describe('TripTable', () => {
     expect(screen.queryByText('19:33:00')).toBeNull()
   })
 
-  // Punto 9 de la minuta del 25/08: "Viajes de Sodimac sin conductor ni empresa
-  // pero el sistema los marca como asignados". La insignia mostraba el estado
-  // del PORTAL de Sodimac —cuyo "ASIGNADO" significa que el mandante nos
-  // asignó el viaje— con la misma pinta que un estado propio.
-  it('marca de qué portal viene el estado cuando la palabra choca con la nuestra', () => {
-    render(<TripTable trips={[makeTrip('t1', { source_system: 'sodimac', current_status: 'ASIGNADO' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
-    expect(screen.getAllByText('· Sodimac').length).toBeGreaterThan(0)
-  })
-
-  it('un viaje que no es de Sodimac no lleva marca de origen', () => {
-    render(<TripTable trips={[makeTrip('t1', { source_system: 'qanalytics', current_status: 'RUTA' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
-    expect(screen.queryByText(/· (Sodimac|QAnalytics)/)).toBeNull()
+  // Punto 9 de la minuta del 25/08 ("Viajes de Sodimac sin conductor ni empresa
+  // pero el sistema los marca como asignados"). Se resolvió con una marca
+  // "· Sodimac" que explicaba que su "ASIGNADO" significaba otra cosa. El
+  // 07/10 se vio que Sodimac nunca dijo "ASIGNADO": lo traducía nuestra
+  // homologación desde "Publicada". Ahora el estado llega tal cual y la marca
+  // sobra.
+  it('un viaje de Sodimac muestra el estado como lo dice su TMS, sin marca de origen', () => {
+    render(<TripTable trips={[makeTrip('t1', { source_system: 'sodimac', current_status: 'Publicada' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.getAllByText('Publicada').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/· Sodimac/)).toBeNull()
   })
 
   it('calls onSelect directly when a row is clicked (no intermediate expand step)', () => {
@@ -457,6 +455,12 @@ describe('TripTable — selección para eliminar', () => {
   })
 
   // D4 (minuta 02/10): en el historial, lo que el TMS borró se ve como tal.
+  it('una oferta que el TMS retiró lo dice, distinto de un viaje eliminado', () => {
+    render(<TripTable trips={[makeTrip('t1', { tms_missing_since: '2026-10-07T09:30:00Z', tms_absence_kind: 'oferta_retirada' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.getAllByText('Oferta retirada por el TMS').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Eliminado en el TMS')).toBeNull()
+  })
+
   it('un viaje que el TMS borró dice "Eliminado en el TMS"', () => {
     render(<TripTable trips={[makeTrip('t1', { tms_missing_since: '2026-10-07T09:30:00Z' })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByText('Eliminado en el TMS').length).toBeGreaterThan(0)

@@ -53,9 +53,15 @@ SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
            COALESCE(d.full_name, fl.driver_name_raw, t.fleet->>'driver_name_tms')  AS driver_name,
            COALESCE(c.business_name, t.fleet->>'transporter_name_tms')             AS carrier_name,
            -- D4 (minuta 02/10): la reconciliación diaria marcó que el TMS ya no lo
-           -- trae (dbt: stg_tms_presence → app.trips). Sale del cierre; sigue en
-           -- el historial del Monitor.
-           (t.tms_missing_since IS NOT NULL) AS eliminado_en_tms,
+           -- trae (dbt: stg_tms_presence → app.trips), y el catálogo de estados
+           -- dice qué significa:
+           --   eliminado       → sale del cierre; sigue en el historial.
+           --   oferta_retirada → una oferta (Publicada de Sodimac) que WebCarga
+           --                     no tomó. Va a su grupo, donde se declara el
+           --                     motivo (Pablo: el "acusete" de operaciones).
+           (t.tms_missing_since IS NOT NULL
+            AND COALESCE(t.tms_absence_kind, 'eliminado') = 'eliminado') AS eliminado_en_tms,
+           (t.tms_absence_kind = 'oferta_retirada') AS oferta_retirada,
            -- D5: la última entrega en destino, sólo si TODOS los destinos tienen
            -- una. Mismo orden que _cargo_delivered en trips.py: lo manual, después
            -- el GPS, después el TMS.
@@ -95,6 +101,7 @@ SELECT trip_id, planning_date, client_name, source_system_trip_id, trip_status,
        unassigned_reason_id, dias_sin_novedad,
        source_system, tractor_plate, driver_name, carrier_name,
        CASE
+           WHEN oferta_retirada THEN 'oferta_sin_declarar'
            WHEN is_active AND NOT is_assigned AND planning_date = $1::date THEN 'hoy'
            WHEN is_active AND NOT is_assigned AND planning_date < $1::date THEN 'rezago'
            WHEN is_active AND is_assigned     AND planning_date < $1::date THEN 'en_curso'
@@ -110,7 +117,8 @@ FROM base
 -- Sigue visible en el historial via el filtro no_asignado_webcarga.
 WHERE unassigned_reason_id IS NULL
   AND NOT eliminado_en_tms
-  AND ((is_active AND NOT is_assigned)
+  AND (oferta_retirada
+   OR (is_active AND NOT is_assigned)
    OR (is_active AND is_assigned AND planning_date < $1::date)
    OR (NOT is_active
        AND group_id IN {GRUPOS_NO_TERMINALES}

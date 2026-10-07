@@ -576,7 +576,9 @@ _TRIP_SELECT = """
     notes.last_human_note_at,
     -- D4 (minuta 02/10): desde cuándo el TMS ya no trae el viaje, según la
     -- reconciliación diaria (dbt). NULL = presente o nunca juzgado.
-    t.tms_missing_since
+    t.tms_missing_since,
+    -- 'eliminado' | 'oferta_retirada', según el catálogo de estados.
+    t.tms_absence_kind
 """
 
 # HU-04 (Fase 0, 2026-07-21): antes, cuando un viaje no lograba cruzar con
@@ -2324,6 +2326,7 @@ async def cierre_viajes(
 
     grupos: dict[str, list] = {
         "hoy": [], "rezago": [], "en_curso": [], "abandonado": [], "con_motivo": [],
+        "oferta_sin_declarar": [],
     }
     for r in filas:
         stops = paradas.get(str(r["trip_id"]), [])

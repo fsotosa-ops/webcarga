@@ -258,7 +258,7 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
     resp = await cierre_viajes(fecha="2026-08-18",
                                pool=PoolDeUnaConexion(conexion_revertida), _=None)
 
-    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado", "con_motivo"}
+    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado", "con_motivo", "oferta_sin_declarar"}
     assert resp["bloquean"] == len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"])
 
     grupo_por_id = {
@@ -821,3 +821,32 @@ async def test_en_curso_del_monitor_no_trae_lo_que_el_tms_borro_y_el_historial_s
     assert en_curso["count"] == 0
     assert historial["count"] == 1
     assert historial["data"][0]["tms_missing_since"] is not None
+
+
+async def test_una_oferta_retirada_sin_declarar_va_a_su_grupo_y_no_bloquea(conexion_revertida):
+    """Sodimac retira de su lista las ofertas (Publicada) que WebCarga no tomó.
+    No es un viaje eliminado: el cierre la pide declarar (el "acusete" de
+    Pablo), en un grupo propio que no bloquea la firma. Declarada, sale."""
+    from app.routers.trips import cierre_viajes
+
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    oferta = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
+    eliminado = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
+    await conn.execute(
+        "UPDATE app.trips SET tms_missing_since = now() - interval '1 day', tms_absence_kind = 'oferta_retirada' "
+        "WHERE id = $1", oferta)
+    await conn.execute(
+        "UPDATE app.trips SET tms_missing_since = now() - interval '1 day', tms_absence_kind = 'eliminado' "
+        "WHERE id = $1", eliminado)
+
+    resp = await cierre_viajes(fecha="2026-08-18", pool=pool, _=None)
+    assert await _grupo_de(resp, oferta) == "oferta_sin_declarar"
+    assert await _grupo_de(resp, eliminado) is None
+    assert str(oferta) not in {v["trip_id"] for v in resp["grupos"]["hoy"]}
+
+    await conn.execute(
+        "UPDATE app.trips SET unassigned_reason_id = $2::uuid WHERE id = $1",
+        oferta, await _motivo_de_viaje(conn))
+    resp = await cierre_viajes(fecha="2026-08-18", pool=pool, _=None)
+    assert await _grupo_de(resp, oferta) is None

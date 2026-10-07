@@ -9,12 +9,13 @@ import { fmtDate, fmtShort } from '@/lib/utils/datetime'
 import { OrdenIcono } from '@/components/ui/tabla/OrdenIcono'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 
-/** Cuándo el estado que muestra la insignia es de OTRO sistema y su palabra
- *  choca con la nuestra. Hoy sólo Sodimac: su "ASIGNADO" quiere decir que el
- *  mandante nos asignó el viaje, no que nosotros le asignamos un conductor
- *  —de sus 71 viajes, ninguno trae patente—. Punto 9 de la minuta del 25/08. */
-const origenExterno = (t: { source_system: string | null }) =>
-  t.source_system === 'sodimac' ? 'Sodimac' : undefined
+/** Lo que la reconciliación diaria dice de un viaje que el TMS ya no trae
+ *  (D4, minuta 02/10). El tipo sale del catálogo de estados: una oferta que
+ *  nadie tomó no es un viaje borrado. */
+const marcaDeAusencia = (t: { tms_missing_since?: string | null; tms_absence_kind?: string | null }) =>
+  !t.tms_missing_since ? null
+    : t.tms_absence_kind === 'oferta_retirada' ? 'Oferta retirada por el TMS'
+    : 'Eliminado en el TMS'
 
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
@@ -262,9 +263,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       ? <span className={`rounded-full px-1.5 py-0.5 text-etiqueta font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                       : null
                   })()}
-                  <StatusBadge status={currentStatus} meta={meta} origen={origenExterno(trip)} />
-                  {trip.tms_missing_since && (
-                    <span className="text-etiqueta font-semibold text-status-incidente">Eliminado en el TMS</span>
+                  <StatusBadge status={currentStatus} meta={meta} />
+                  {marcaDeAusencia(trip) && (
+                    <span className="text-etiqueta font-semibold text-status-incidente">{marcaDeAusencia(trip)}</span>
                   )}
                   <DwellSeverityBadge
                     severity={dwell?.severity ?? null}
@@ -401,9 +402,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           />
                         )}
                         <div className="min-w-0 flex-1">
-                          <StatusBadge status={currentStatus} meta={meta} variante="punto" origen={origenExterno(trip)} />
-                          {trip.tms_missing_since && (
-                            <span className="text-etiqueta font-semibold text-status-incidente block mt-0.5">Eliminado en el TMS</span>
+                          <StatusBadge status={currentStatus} meta={meta} variante="punto" />
+                          {marcaDeAusencia(trip) && (
+                            <span className="text-etiqueta font-semibold text-status-incidente block mt-0.5">{marcaDeAusencia(trip)}</span>
                           )}
                           {trip.manual_status && (
                             <span className="text-etiqueta text-accent block mt-0.5">override</span>

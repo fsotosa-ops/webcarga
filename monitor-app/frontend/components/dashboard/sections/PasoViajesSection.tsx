@@ -23,7 +23,7 @@ interface Props {
   soloLectura?: boolean
 }
 
-const ORDEN_GRUPOS: GrupoDelCierre[] = ['hoy', 'rezago', 'en_curso', 'abandonado', 'con_motivo']
+const ORDEN_GRUPOS: GrupoDelCierre[] = ['hoy', 'rezago', 'oferta_sin_declarar', 'en_curso', 'abandonado', 'con_motivo']
 
 // Sólo hoy/rezago bloquean el cierre — son los que se pueden resolver acá.
 // en_curso/abandonado se muestran para que no desaparezcan de la vista (Regla
@@ -50,6 +50,13 @@ const GRUPO_INFO: Record<GrupoDelCierre, { titulo: string; bajada: string; selec
   // HU-D3 (minuta 02/10): poner el motivo sacaba el viaje de los cuatro
   // grupos y no aparecía en ninguna parte — "no sé dónde queda". Acá se ve, y
   // se deshace si fue un error.
+  // Ofertas que el TMS retiró porque WebCarga no las tomó (Publicada de
+  // Sodimac, 07/10). Se declaran con motivo —el "acusete" de Pablo— pero no
+  // bloquean la firma: ya no hay carga que responder.
+  oferta_sin_declarar: {
+    titulo: 'Ofertas sin declarar', bajada: 'El TMS las retiró porque no se tomaron. Declara el motivo.',
+    seleccionable: true, vacio: 'No hay ofertas retiradas sin declarar.',
+  },
   con_motivo: {
     titulo: 'Con motivo', bajada: 'Declarados como no asignados por WebCarga. Se pueden deshacer.',
     seleccionable: false, vacio: 'Todavía no se declaró ningún viaje.',

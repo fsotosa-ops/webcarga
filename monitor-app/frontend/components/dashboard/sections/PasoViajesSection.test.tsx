@@ -16,6 +16,7 @@ const grupos = {
   en_curso: [viaje('t3', '2033001')],
   abandonado: [viaje('t4', '2033002', { dias_sin_novedad: 31.6 })],
   con_motivo: [],
+  oferta_sin_declarar: [],
 }
 
 describe('PasoViajesSection', () => {
@@ -157,5 +158,17 @@ describe('PasoViajesSection', () => {
     expect(barra.compareDocumentPosition(primeraTabla) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy()
     expect(barra.className).toContain('sticky top-0')
+  })
+
+  // Ofertas que Sodimac retiró porque no se tomaron (07/10): se declaran con
+  // motivo como las de hoy y rezago, pero no suman a "por resolver".
+  it('las ofertas sin declarar se pueden declarar con motivo', () => {
+    const conOfertas = { ...grupos, oferta_sin_declarar: [viaje('t9', '808702', { source_system: 'sodimac' })] }
+    render(<PasoViajesSection grupos={conOfertas} bloquean={2}
+                              motivos={[{ id: 'm1', label: 'No da por tarifa' }]}
+                              onCerrar={vi.fn()} />)
+    expect(screen.getByText('Ofertas sin declarar')).toBeInTheDocument()
+    expect(screen.getByLabelText('Motivo del viaje 808702', { selector: 'select' })).toBeInTheDocument()
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3)
   })
 })
