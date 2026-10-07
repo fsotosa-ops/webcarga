@@ -18,15 +18,16 @@ import { carriersApi } from '@/lib/api/carriers'
 
 const REQ = {
   id: 'req-1', target_entity: 'ASSET' as const, requirement_code: 'PADRON',
-  name: 'Padrón', requirement_level: 'LEGAL_MANDATORY' as const, has_expiration: false,
+  name: 'Padrón', requirement_level: 'LEGAL_MANDATORY' as const,
   expiration_policy: 'NONE' as const,
   is_active: true, applies_to_fleet_service_type_ids: null, applies_to_management_types: null,
   // El desplegable de clasificación no muestra el alcance, pero la fila del
   // catálogo lo trae: el mock refleja la respuesta real, no la recortada.
   alcance: { alcanzadas: 118, universo: 118 },
 }
-const REQ_FECHA = { ...REQ, id: 'req-2', name: 'SOAP', has_expiration: true,
-                    expiration_policy: 'REQUIRED' as const }
+const REQ_FECHA = { ...REQ, id: 'req-2', name: 'SOAP', expiration_policy: 'REQUIRED' as const }
+const REQ_OPCIONAL = { ...REQ, id: 'req-3', name: 'Certificado GPS',
+                       expiration_policy: 'OPTIONAL' as const }
 const SUBJECTS = [{ entity_type: 'ASSET' as const, entity_id: 'a1', label: 'HKXW55' }]
 
 const PENDIENTE = {
@@ -51,12 +52,12 @@ async function elegir(reqName = 'Padrón') {
   fireEvent.change(screen.getByLabelText(/a quién pertenece/i), { target: { value: 'ASSET:a1' } })
   await screen.findByRole('option', { name: reqName })
   fireEvent.change(screen.getByLabelText(/qué documento es/i), {
-    target: { value: reqName === 'Padrón' ? 'req-1' : 'req-2' },
+    target: { value: [REQ, REQ_FECHA, REQ_OPCIONAL].find(r => r.name === reqName)!.id },
   })
 }
 
 beforeEach(() => {
-  vi.mocked(complianceApi.listRequirements).mockReset().mockResolvedValue([REQ, REQ_FECHA])
+  vi.mocked(complianceApi.listRequirements).mockReset().mockResolvedValue([REQ, REQ_FECHA, REQ_OPCIONAL])
   vi.mocked(documentIngestApi.classifyBatch).mockReset()
     .mockResolvedValue({ applied: ['i1'], errors: [] })
 })
@@ -151,6 +152,19 @@ describe('TriageClassifyForm', () => {
     await elegir('SOAP')
     expect(screen.getByLabelText(/fecha de vencimiento/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /clasificar/i })).toBeDisabled()
+  })
+
+  it('con fecha opcional la ofrece pero no la exige', async () => {
+    setup()
+    await elegir('Certificado GPS')
+    expect(screen.getByLabelText(/fecha de vencimiento/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /clasificar/i })).toBeEnabled()
+  })
+
+  it('un documento que no vence no pide fecha', async () => {
+    setup()
+    await elegir('Padrón')
+    expect(screen.queryByLabelText(/fecha de vencimiento/i)).not.toBeInTheDocument()
   })
 
   it('no deja aplicar sin selección', () => {

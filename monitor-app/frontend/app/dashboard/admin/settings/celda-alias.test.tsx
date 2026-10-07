@@ -16,7 +16,7 @@ function requisito(patch: Partial<RequirementOption> = {}): RequirementOption {
   return {
     id: 'r1', target_entity: 'CARRIER', requirement_code: 'F30_MULTAS',
     name: 'F30 Multas', requirement_level: 'LEGAL_MANDATORY',
-    has_expiration: true, expiration_policy: 'REQUIRED', is_active: true,
+    expiration_policy: 'REQUIRED', is_active: true,
     applies_to_fleet_service_type_ids: null, applies_to_management_types: null,
     alcance: { alcanzadas: 39, universo: 39 },
     aliases: ['F30'],

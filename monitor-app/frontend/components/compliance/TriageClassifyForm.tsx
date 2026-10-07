@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
+import { exigeFecha, llevaFecha } from '@/lib/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
@@ -62,7 +63,8 @@ export function TriageClassifyForm({
   }
   const requisitoElegido = requirementId || slot?.requirement_id || ''
   const selected = requirements.find(r => r.id === requisitoElegido) ?? null
-  const needsDate = selected?.has_expiration ?? false
+  const muestraFecha = selected ? llevaFecha(selected.expiration_policy) : false
+  const needsDate = selected ? exigeFecha(selected.expiration_policy) : false
   const loteInvalido = targetIds.length > 1
   const canApply = targetIds.length > 0 && !loteInvalido && !!subject && !!requisitoElegido
     && (!needsDate || !!expiration) && !saving
@@ -225,7 +227,7 @@ export function TriageClassifyForm({
         </>
       )}
 
-      {needsDate && (
+      {muestraFecha && (
         <label className="block">
           <span className="text-[11px] font-semibold text-gray-600">Fecha de vencimiento</span>
           <input

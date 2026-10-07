@@ -1786,10 +1786,9 @@ export type RequirementOption = {
   requirement_code:  string
   name:              string
   requirement_level: 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
-  has_expiration:    boolean
-  /** Qué hace el sistema con la fecha de vencimiento. Es la fuente de verdad;
-   *  `has_expiration` sigue viajando por sus lectores vivos, pero es el
-   *  booleano de dos valores que cargaba estos tres significados. */
+  /** Qué hace el sistema con la fecha de vencimiento. Es la única fuente de
+   *  verdad: `has_expiration`, el booleano de dos valores que cargaba estos
+   *  tres significados, se retiró en HU-C1. */
   expiration_policy: PoliticaVencimiento
   /** Tramo 3: la regla de a quién se le exige este documento es dato del
    *  catálogo, no código. `null` en los dos `applies_to_*` significa "sin

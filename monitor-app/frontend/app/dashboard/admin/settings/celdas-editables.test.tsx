@@ -12,7 +12,7 @@ import { CeldaNivel, CeldaNombre, CeldaVigencia } from './celdas-editables'
 const REQ: RequirementOption = {
   id: 'r1', requirement_code: 'F30_MULTAS', name: 'F30 Multas',
   target_entity: 'CARRIER', requirement_level: 'LEGAL_MANDATORY',
-  has_expiration: true, expiration_policy: 'REQUIRED', is_active: true,
+  expiration_policy: 'REQUIRED', is_active: true,
   applies_to_fleet_service_type_ids: null, applies_to_management_types: null,
   alcance: { alcanzadas: 39, universo: 248 },
 } as RequirementOption

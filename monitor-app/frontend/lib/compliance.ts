@@ -1,4 +1,4 @@
-import type { ComplianceStatus } from './types'
+import type { ComplianceStatus, PoliticaVencimiento } from './types'
 
 /** Estilo compartido para el estado de un compliance_record (7 valores del
  *  CHECK constraint real de public.compliance_records.status, ver lib/types.ts)
@@ -92,3 +92,9 @@ export function formatExpiry(dateStr: string | null | undefined): string {
     day: '2-digit', month: '2-digit', year: '2-digit',
   })
 }
+
+/** Si un documento admite y si exige fecha de vencimiento. Lo decide la
+ *  política del catálogo, que es la única fuente (HU-C1): el mismo
+ *  significado que `lleva_fecha`/`exige_fecha` en el backend. */
+export const llevaFecha = (p: PoliticaVencimiento): boolean => p !== 'NONE'
+export const exigeFecha = (p: PoliticaVencimiento): boolean => p === 'REQUIRED'
