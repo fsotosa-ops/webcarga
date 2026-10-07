@@ -54,6 +54,7 @@ from ..services.plantilla_certificacion import (
 )
 from ..services.vencimientos import (
     exige_fecha,
+    lleva_fecha,
     pendiente_predicate,
     por_vencer_predicate,
     vencido_predicate,
@@ -1004,7 +1005,7 @@ async def cargar_planilla(
     actuales = await pool.fetch(
         """
         SELECT cr.id::text AS id_registro, cr.entity_type, cr.entity_id::text,
-               cr.status, cr.expiration_date, req.has_expiration, req.name AS tipo_documento
+               cr.status, cr.expiration_date, req.expiration_policy, req.name AS tipo_documento
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.id = ANY($1::uuid[]) AND cr.is_current = true
@@ -1021,7 +1022,7 @@ async def cargar_planilla(
             errores.append({"fila": None, "registro_id": registro_id,
                             "error": "Ese registro no existe o ya no está vigente"})
             continue
-        if pedido["fecha"] is not None and not actual["has_expiration"]:
+        if pedido["fecha"] is not None and not lleva_fecha(actual["expiration_policy"]):
             errores.append({"fila": None, "registro_id": registro_id,
                             "error": f'"{actual["tipo_documento"]}" no lleva fecha de vencimiento'})
             continue
@@ -1037,7 +1038,7 @@ async def cargar_planilla(
         # aprobados con expiration_date NULL y desaparecen de pendientes para
         # siempre, aunque el papel real venza el mes que viene.
         vence_final = pedido["fecha"] or actual["expiration_date"]
-        if estado_nuevo == "APPROVED_MANUAL" and actual["has_expiration"] and vence_final is None:
+        if estado_nuevo == "APPROVED_MANUAL" and exige_fecha(actual["expiration_policy"]) and vence_final is None:
             errores.append({"fila": None, "registro_id": registro_id,
                             "error": f'"{actual["tipo_documento"]}" necesita su fecha de vencimiento para darse por recibido'})
             continue

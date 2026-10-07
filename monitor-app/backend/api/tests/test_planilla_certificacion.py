@@ -61,6 +61,31 @@ async def _empresa_activa(conn) -> str:
     )
 
 
+async def _requisito_de_empresa(conn, politica: str) -> str:
+    """Un requisito creado como lo crea Configuración: sólo con la política.
+    `has_expiration` queda en su default, que es justo el estado desincronizado
+    que hacía fallar la planilla."""
+    suf = uuid4().hex[:8].upper()
+    return await conn.fetchval(
+        """
+        INSERT INTO public.compliance_requirements
+            (requirement_code, name, target_entity, requirement_level,
+             expiration_policy, is_active)
+        VALUES ($1, $2, 'CARRIER', 'LEGAL_MANDATORY', $3, true)
+        RETURNING id
+        """,
+        f"ZZ_TEST_PLANILLA_{suf}", f"{PREFIJO} doc {suf}", politica,
+    )
+
+
+async def _registro_de(conn, empresa, requisito) -> str:
+    return await conn.fetchval(
+        "SELECT id::text FROM public.compliance_records "
+        "WHERE entity_id = $1 AND requirement_id = $2 AND is_current = true",
+        empresa, requisito,
+    )
+
+
 async def _registros_de(conn, empresa, *, con_vencimiento: bool) -> list:
     return await conn.fetch(
         """
@@ -69,7 +94,7 @@ async def _registros_de(conn, empresa, *, con_vencimiento: bool) -> list:
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.entity_type = 'CARRIER' AND cr.entity_id = $1
           AND cr.is_current = true AND req.is_active = true
-          AND req.has_expiration = $2
+          AND (req.expiration_policy <> 'NONE') = $2
         ORDER BY req.name
         """,
         empresa, con_vencimiento,
@@ -177,6 +202,59 @@ async def test_la_fecha_sola_no_aprueba_el_documento(conexion_revertida):
     assert guardado["status"] == "MISSING"
     assert guardado["file_url"] is None
     assert guardado["expiration_date"] == date.today() + timedelta(days=60)
+
+
+async def test_un_documento_de_fecha_opcional_admite_fecha(conexion_revertida):
+    """Creado desde Configuración con fecha OPCIONAL: la planilla tiene que
+    dejar escribirla. Leyendo has_expiration la rechazaba."""
+    pool = PoolDeUnaConexion(conexion_revertida)
+    usuario = await _usuario_real(conexion_revertida)
+    requisito = await _requisito_de_empresa(conexion_revertida, "OPTIONAL")
+    empresa = await _empresa_activa(conexion_revertida)
+    registro = await _registro_de(conexion_revertida, empresa, requisito)
+    assert registro, "la siembra no creó el registro: revisar el trigger, no el test"
+
+    fila = await _fila(pool, registro)
+    fila[COLUMNA_VENCIMIENTO] = (date.today() + timedelta(days=40)).strftime("%d-%m-%Y")
+    await cargar_planilla(file=_subir([fila]), dry_run=False, pool=pool, user=usuario)
+
+    assert await conexion_revertida.fetchval(
+        "SELECT expiration_date FROM public.compliance_records WHERE id = $1::uuid", registro,
+    ) == date.today() + timedelta(days=40)
+
+
+async def test_un_documento_de_fecha_opcional_se_recibe_sin_fecha(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    usuario = await _usuario_real(conexion_revertida)
+    requisito = await _requisito_de_empresa(conexion_revertida, "OPTIONAL")
+    empresa = await _empresa_activa(conexion_revertida)
+    registro = await _registro_de(conexion_revertida, empresa, requisito)
+
+    fila = await _fila(pool, registro)
+    fila[COLUMNA_TENENCIA] = "Sí"
+    fila[COLUMNA_VENCIMIENTO] = ""
+    await cargar_planilla(file=_subir([fila]), dry_run=False, pool=pool, user=usuario)
+
+    assert await conexion_revertida.fetchval(
+        "SELECT status FROM public.compliance_records WHERE id = $1::uuid", registro,
+    ) == "APPROVED_MANUAL"
+
+
+async def test_un_documento_de_fecha_obligatoria_creado_en_configuracion_la_exige(conexion_revertida):
+    """REQUIRED con has_expiration en su default: es el F30-1 si se le hubiera
+    puesto fecha obligatoria desde la pantalla."""
+    pool = PoolDeUnaConexion(conexion_revertida)
+    usuario = await _usuario_real(conexion_revertida)
+    requisito = await _requisito_de_empresa(conexion_revertida, "REQUIRED")
+    empresa = await _empresa_activa(conexion_revertida)
+    registro = await _registro_de(conexion_revertida, empresa, requisito)
+
+    fila = await _fila(pool, registro)
+    fila[COLUMNA_TENENCIA] = "Sí"
+    fila[COLUMNA_VENCIMIENTO] = ""
+    with pytest.raises(HTTPException) as caso:
+        await cargar_planilla(file=_subir([fila]), dry_run=False, pool=pool, user=usuario)
+    assert "necesita su fecha de vencimiento" in str(caso.value.detail)
 
 
 async def test_no_acepta_fecha_en_un_documento_que_no_vence(conexion_revertida):

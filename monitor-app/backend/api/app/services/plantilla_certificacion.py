@@ -39,6 +39,8 @@ sube. Escribirla dos veces es como este router llegó a tener una lista de
 columnas escrita tres veces y un 500 con toda la suite en verde.
 """
 
+from .vencimientos import lleva_fecha_sql
+
 COLUMNA_LLAVE = "id_registro"
 COLUMNA_TENENCIA = "documento_recibido"
 COLUMNA_VENCIMIENTO = "fecha_vencimiento"
@@ -95,7 +97,7 @@ def sql_filas_plantilla(pendiente: str) -> str:
 WITH pendientes AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
            cr.file_url IS NOT NULL AS tiene_archivo,
-           req.name AS tipo_documento, req.has_expiration
+           req.name AS tipo_documento, req.expiration_policy
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
     WHERE cr.is_current = true
@@ -164,13 +166,13 @@ SELECT r.id::text                                   AS {COLUMNA_LLAVE},
        END                                          AS {COLUMNA_TENENCIA},
        -- Los que no vencen van en blanco: no hay fecha que declarar, y el
        -- parser rechaza que se les escriba una.
-       CASE WHEN r.has_expiration
+       CASE WHEN {lleva_fecha_sql("r")}
             THEN COALESCE(to_char(r.expiration_date, 'DD-MM-YYYY'), '')
             ELSE '' END                             AS {COLUMNA_VENCIMIENTO},
        -- No es una columna de la planilla: el escritor sólo emite las claves de
        -- COLUMNAS. Viaja para que el resumen pueda decir cuántas filas son de
        -- cada eje sin volver a consultar la base.
-       r.has_expiration                             AS lleva_vencimiento
+       {lleva_fecha_sql("r")}                       AS lleva_vencimiento
 FROM resueltas r
 LEFT JOIN public.carriers c ON c.id = r.carrier_id
 -- 'activas' descarta por construcción las filas sin empresa (c es NULL), que
