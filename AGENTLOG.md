@@ -150,6 +150,38 @@ Fuentes:
        - 2064048 no aparece en "En curso" y sí en el historial, con `tms_missing_since`;
        - "Abandonados" del cierre del 06/10 bajó **de 52 a 12** y ya no queda ninguno de Walmart.
          Quedan Sodimac 9, Wingsuite 2 y manual 1: las fuentes que todavía no tienen reconciliación.
+     - **Wingsuite agregado (06-07/10, noche).** Utilidad compartida `utils/reconciliacion.py` y bloques
+       `reconciliacion_qanalytics_sap` y `reconciliacion_wingsuite`.
+       - Medido antes de construir: IANSA no necesita reconciliación (172/172 coinciden). Wingsuite: los 2
+         en RUTA estaban Terminado en el TMS; su id es `ID_VIAJE`.
+       - **Resultado**: 439974 y 444473 → CERRADO FINALIZADO. "Abandonados" bajó a 10: 9 ofertas de
+         Sodimac y 1 manual.
+     - **`stg_tms_presence` ahora es una VISTA dentro de `batch_tms_monitor_trips`**, entre
+       `int_tms_trips_conformed` y `app_trips_update`.
+       - Construirla en el pipeline diario falló dos veces: chocaba con el `DROP CASCADE` de
+         `int_tms_trips_conformed` (cotejado con los tiempos de los bloques: 22:38 y 00:28 UTC).
+       - El pipeline diario ahora solo escribe en bronze.
+     - **INCIDENTE (mío): ingesta detenida de 21:30 a ~00:20 CL.**
+       - Subí el grafo nuevo de batch con una corrida en vuelo (14266). Su `app_trips_update` quedó
+         esperando un bloque que esa corrida no tenía, y el mismo sync activó el límite de concurrencia
+         (`skip`), así que las corridas siguientes se saltaban.
+       - Quité el límite para destrabar. Mage lanzó corridas en paralelo, chocaron en las tablas
+         `tmp_raw_*` y saturaron extraction.
+       - El usuario canceló la 14266 en la UI. Límite restaurado (1, skip) y verificado:
+         `app.trips` actualizado a las 00:24.
+       - **Regla: nunca subir un cambio de GRAFO de `batch_tms_monitor_trips` con una corrida en vuelo.
+         Esperar a que termine y subir antes de la siguiente.**
+     - **Sodimac: NO desplegado.** Su lista retira las ofertas (crudo `Publicada`) que WebCarga no tomó.
+       No son viajes eliminados.
+       - Hoy la homologación traduce `Publicada`/`Presentada` → `ASIGNADO` (grupo `en_ruta`,
+         `counts_as_load` true). El usuario rechazó resolverlo con una regla escrita a mano por fuente.
+       - Propuesta acordada: dejar de traducir y mostrar `Publicada` tal como lo dice el TMS, como ya pasa
+         con Aceptada, Creada y Control de salida. `Publicada` se agrega al catálogo con un grupo de
+         oferta, y la presencia lee de ahí el tipo de ausencia.
+       - **Pendiente**: medir el impacto (`is_assigned`, grupos del cierre, Monitor, qué es
+         `Presentada`) antes de tocarlo.
+       - Datos: 64 ofertas, 51 ya declaradas con motivo; 0 a 1 por día cuentan en `trips_del_dia`.
+       - El bloque está guardado fuera del mirror (scratchpad: `reconciliacion_sodimac.py.pendiente`).
      - **Pendiente del usuario**: crear el trigger diario de `tms_daily_reconciliation` (~06:30 CL) y
        definir `stale_trip_days` con Pablo.
      - **Alcance**: solo Walmart. IANSA, Sodimac (9 abandonados, nunca expira) y Wingsuite necesitan
