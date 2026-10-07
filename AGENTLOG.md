@@ -198,6 +198,13 @@ Fuentes:
          canceló. **Regla: no subir nada a Mage en las ventanas :58–:02, :13–:17, :28–:32 ni :43–:47.**
        - mage-agent dio "[404] Email/username and/or password invalid" un rato y después se recuperó
          solo.
+       - **Desplegado y verificado en vivo (07/10, 02:05, Playwright en dev):** `c73d7127`, con API y
+         Frontend en verde. Cierre del 07/10: Hoy 2, Rezago 13, **Ofertas sin declarar 12**, En curso 10
+         y Abandonados 1 (es el viaje manual de prueba HBC(test) 100). Historial: el 881457 dice
+         "PUBLICADA · Oferta retirada por el TMS" y el 2000691 (Walmart) dice "Eliminado en el TMS". Ya
+         no aparece la marca "· Sodimac".
+       - Detalle visual menor: una oferta retirada muestra "115h desde despacho" aunque nunca se
+         despachó. Lo hereda el reloj genérico; no se toca sin hablarlo.
      - Sodimac, versión anterior (descartada): Su lista retira las ofertas (crudo `Publicada`) que WebCarga no tomó.
        No son viajes eliminados.
        - Hoy la homologación traduce `Publicada`/`Presentada` → `ASIGNADO` (grupo `en_ruta`,
@@ -205,14 +212,19 @@ Fuentes:
        - Propuesta acordada: dejar de traducir y mostrar `Publicada` tal como lo dice el TMS, como ya pasa
          con Aceptada, Creada y Control de salida. `Publicada` se agrega al catálogo con un grupo de
          oferta, y la presencia lee de ahí el tipo de ausencia.
-       - **Pendiente**: medir el impacto (`is_assigned`, grupos del cierre, Monitor, qué es
-         `Presentada`) antes de tocarlo.
+       - ~~Pendiente: medir el impacto~~ HECHO y desplegado (ver arriba).
        - Datos: 64 ofertas, 51 ya declaradas con motivo; 0 a 1 por día cuentan en `trips_del_dia`.
        - El bloque está guardado fuera del mirror (scratchpad: `reconciliacion_sodimac.py.pendiente`).
      - **Pendiente del usuario**: crear el trigger diario de `tms_daily_reconciliation` (~06:30 CL) y
        definir `stale_trip_days` con Pablo.
-     - **Alcance**: solo Walmart. IANSA, Sodimac (9 abandonados, nunca expira) y Wingsuite necesitan
-       cada uno su reconciliación y su parser.
+     - **Alcance final**: Walmart (SAP), Sodimac y Wingsuite. IANSA no lo necesita (172/172 coinciden).
+     - **Sigue abierto**:
+       - 3 tests preexistentes que fallan en `test_eliminar_viajes_integracion.py`;
+       - la cola en memoria del extraction_service, frágil ante un redeploy;
+       - estados crudos de Sodimac fuera del catálogo: Carga finalizada, Salida rechazada y
+         Presentada en origen;
+       - con Pablo: `stale_trip_days`, la vista fusionada, la cifra en vivo de un día firmado y las HUs
+         de Certificación.
    Diseño original, antes de medir:
    - corrida diaria de **reconciliación** con la ventana desde el viaje abierto más antiguo, con tope;
      las de 15 min quedan como están (el disco de Supabase es el cuello, Ronda 164);
