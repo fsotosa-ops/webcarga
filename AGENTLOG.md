@@ -87,7 +87,8 @@ Fuentes:
    - `tms_daily_tests`: **no crear el trigger todavía.** Decidido con el usuario el 07/10. Antes, mañana:
      (a) sumar `stg_tms_presence` a `dbts/app_trips_tests.yaml`, que hoy solo selecciona `trips`,
      `trip_stops` y `stg_qanalytics_trips`; (b) configurar un aviso en caso de falla
-     (`notification_config` vacío; preguntar si va por correo o Slack). Un test que nadie lee no
+     (`notification_config` vacío). **Va por correo: WebCarga no tiene Slack (07/10).** Preguntar a qué
+     casilla llega. Un test que nadie lee no
      protege nada. Después, el usuario crea el trigger (~07:30 CL). Subir a Mage fuera de las ventanas
      :58–:02, :13–:17, :28–:32 y :43–:47.
 
