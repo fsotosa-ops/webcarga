@@ -19,10 +19,14 @@ from tests.conftest import PoolDeUnaConexion, _usuario_real
 
 pytestmark = pytest.mark.integracion
 
+# Un día que Operaciones nunca va a firmar. Los viajes de prueba van ahí: la
+# primera versión usaba el 23/09, y cuando se firmó ese día en producción los
+# tests de "se puede eliminar" empezaron a fallar con el código correcto. El
+# estado del día lo pone cada test, no la base.
 DIA_LEJANO = date(2099, 1, 1)
 
 
-async def _viaje_manual(conn, usuario, fecha="2026-09-23") -> str:
+async def _viaje_manual(conn, usuario, fecha=DIA_LEJANO.isoformat()) -> str:
     viaje = await create_trip(
         TripCreateBody(
             planning_date=fecha,
