@@ -200,8 +200,27 @@ Fuentes:
    - **Menores diferidos**:
      - classify-batch guarda una fecha en un documento NONE (preexistente);
      - el test guardián solo cubre `app/*.py`.
+   - **CIERRE 07/10 — EN ESPERA**: WebCarga va a compartir la **HU de vencimientos actualizada** para
+     implementarla. Al recibirla:
+     - contrastarla con el diseño de HU-C1 en el archivo de HU (4 tipos, período cubierto, aviso y
+       gracia, regla por cliente) y marcar qué coincide, qué cambia y qué sigue abierto;
+     - recién después, armar el plan de la entrega 2.
+     - Lo que dijeron el 02/10 sobre el corte por cliente (transcripción):
+       - ventanas configurables por cliente: Pronexo/IANSA corta el F30 el día 5 y el F30-1 el 18;
+       - un estándar de WebCarga más variantes por cliente;
+       - granularidad "específico documento";
+       - una frase cortada: *"nos acostumbraremos a la plataforma de Pronexo, que es el 18"*.
+     - **No se respondió** si un mismo archivo le sirve a dos clientes.
+     - Propuesta (no aplicada en el archivo de HU): preguntar con 3 opciones: un archivo evaluado contra
+       el corte de cada cliente / un solo corte, el más estricto / un registro por cliente.
+   - Resto de Certificación sin implementar:
+     - C2 se puede hacer ya;
+     - C5 espera qué significa "opcional";
+     - C3 espera lo que tenga Enrique;
+     - C6 espera una auditoría de Seguros;
+     - C4 va con plan aparte.
    - **Siguiente paso**: bilateral con Pablo con la agenda al final del archivo de HU. Orden
-     propuesto: C1 base → C5 → C3 → C2 → C1 recurrente → C6. Nada de esto está implementado.
+     propuesto: C1 base (HECHA) → C5 → C3 → C2 → C1 recurrente → C6.
    - `tms_daily_reconciliation`: el usuario lo habilitó el 07/10. La API de mage-agent no muestra la
      hora del trigger. Al 07/10 hay 1 fila del día por stream (qanalytics, sodimac, wingsuite).
      **El 08/10**, revisar que `bronze.tms_reconciliations` tenga filas
