@@ -5,7 +5,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2 } from 'lucide-react'
 import { requirementsApi } from '@/lib/api/requirements'
 import { PanelLateral } from '@/components/ui/PanelLateral'
+import type { PoliticaVencimiento } from '@/lib/types'
 import { INPUT } from './shared'
+import { SelectorPoliticaVencimiento } from './SelectorPoliticaVencimiento'
 
 type Entidad = 'CARRIER' | 'DRIVER' | 'ASSET'
 type Nivel = 'LEGAL_MANDATORY' | 'CONDITIONAL_OPTIONAL'
@@ -38,10 +40,12 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
   const [nombre, setNombre] = useState('')
   const [entidad, setEntidad] = useState<Entidad>('CARRIER')
   const [nivel, setNivel] = useState<Nivel>('LEGAL_MANDATORY')
+  const [politica, setPolitica] = useState<PoliticaVencimiento>('NONE')
 
   const crear = useMutation({
     mutationFn: () => requirementsApi.create({
       name: nombre.trim(), target_entity: entidad, requirement_level: nivel,
+      expiration_policy: politica,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['compliance-requirements'] })
@@ -120,6 +124,8 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
           </label>
         ))}
       </fieldset>
+
+      <SelectorPoliticaVencimiento value={politica} onChange={setPolitica} />
 
       {/* Que nace apagado se DICE, no se descubre: si no, alguien crea el
           documento, no lo ve en ninguna empresa y cree que falló. */}

@@ -7,6 +7,7 @@ import { PanelLateral } from '@/components/ui/PanelLateral'
 import { requirementsApi } from '@/lib/api/requirements'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import type { ManagementType, PoliticaVencimiento, RequirementOption } from '@/lib/types'
+import { SelectorPoliticaVencimiento } from './SelectorPoliticaVencimiento'
 import type { Revision } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision } from './revision'
 
@@ -415,27 +416,7 @@ export function CondicionPanel({
         </p>
       )}
 
-      {/* Antes esto era `has_expiration`, un booleano con tres significados:
-          "no vence" y "vence" compartían casilla con "la fecha es
-          obligatoria", y por eso la carga rechazaba con 422 documentos cuya
-          fecha la pantalla nunca pedía. Los tres estados se nombran, y quien
-          decide cuál es cada documento es negocio, no un despliegue. */}
-      <label className="mt-4 block">
-        <span className="text-etiqueta font-semibold uppercase tracking-wider text-informativo">
-          Fecha de vencimiento
-        </span>
-        <select
-          value={politica}
-          disabled={!canEdit}
-          onChange={e => setPolitica(e.target.value as PoliticaVencimiento)}
-          className="mt-1 w-full text-dato border border-border rounded-lg px-2 py-1.5 bg-white
-                     disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-accent/30"
-        >
-          <option value="REQUIRED">Obligatoria — sin ella el documento no se acepta</option>
-          <option value="OPTIONAL">Opcional — se acepta y la fecha queda pendiente</option>
-          <option value="NONE">No aplica — este documento no vence</option>
-        </select>
-      </label>
+      <SelectorPoliticaVencimiento value={politica} onChange={setPolitica} disabled={!canEdit} />
 
       {errorGuardar && <p className="mt-2 text-[10.5px] text-red-600">{errorGuardar}</p>}
       {errorAplicar && <p className="mt-2 text-[10.5px] text-red-600">{errorAplicar}</p>}

@@ -41,8 +41,20 @@ describe('NuevoDocumentoPanel', () => {
       name: 'Certificado de Antecedentes',
       target_entity: 'DRIVER',
       requirement_level: 'CONDITIONAL_OPTIONAL',
+      expiration_policy: 'NONE',
     }))
     await waitFor(() => expect(onCerrar).toHaveBeenCalled())
+  })
+
+  it('crea con la política de vencimiento elegida, con el mismo control que la edición', async () => {
+    montar()
+    escribirNombre('F30-1')
+    fireEvent.change(screen.getByLabelText(/fecha de vencimiento/i), { target: { value: 'REQUIRED' } })
+    fireEvent.click(screen.getByRole('button', { name: /^crear$/i }))
+
+    await waitFor(() => expect(requirementsApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'F30-1', expiration_policy: 'REQUIRED' }),
+    ))
   })
 
   // El codigo es la llave de los alias y del motor de match. Verlo ANTES de
