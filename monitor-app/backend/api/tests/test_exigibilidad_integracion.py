@@ -236,8 +236,10 @@ async def test_lo_que_aun_no_se_exige_no_cuenta_como_cubierto(conexion_revertida
         group="driver", scope="active", carrier_id=None, q=nombre, limit=5,
         pool=PoolDeUnaConexion(conexion_revertida), _=USER)
     fila = next(f for f in estado["rows"] if f["entity_id"] == str(conductor))
-    total = fila["total_count"]
-    assert fila["satisfied_count"] + fila["pending_count"] == total - 1
+    # Lo que aún no se exige queda FUERA del total: si contara, una empresa con
+    # un finiquito sembrado a cada conductor activo no llegaría nunca a "al
+    # día" (revisión final, I1).
+    assert fila["satisfied_count"] + fila["pending_count"] == fila["total_count"]
 
 
 # ── Al término: a quién se le atribuye ──────────────────────────────────────
@@ -249,3 +251,19 @@ async def test_el_finiquito_aparece_en_la_empresa_que_el_conductor_dejo(conexion
     await _conductor(conexion_revertida, empresa, estado="INACTIVE")
     fila = await _fila_de_la_cola(conexion_revertida, empresa, requisito)
     assert fila is not None and fila["urgencia"] == "FALTA"
+
+
+async def test_quitar_una_solicitud_ya_recibida_por_planilla_no_se_puede(conexion_revertida):
+    """Recibido sin archivo (la planilla lo permite) sigue siendo recibido."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    requisito = await _requisito(conexion_revertida, exigible_on="ON_REQUEST")
+    usuario = await _usuario_real(conexion_revertida)
+    fila = await solicitar_documento(
+        SolicitudBody(requirement_id=str(requisito), entity_type="CARRIER", entity_id=str(empresa)),
+        pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    await conexion_revertida.execute(
+        "UPDATE public.compliance_records SET status = 'APPROVED_MANUAL' WHERE id = $1::uuid", fila["id"])
+    with pytest.raises(HTTPException) as error:
+        await quitar_solicitud(fila["id"], pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    assert error.value.status_code == 409

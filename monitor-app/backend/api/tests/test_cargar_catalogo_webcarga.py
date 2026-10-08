@@ -61,6 +61,8 @@ def test_ningun_codigo_choca(resultado):
     assert len(codigos) == len(set(codigos))
     for entidad, codigo in codigos:
         assert codigo not in CODIGOS_EXISTENTES[entidad], codigo
+        # Un código es una llave para siempre: sin "_" colgando del corte a 60.
+        assert not codigo.endswith("_"), codigo
 
 
 def test_los_coincidentes_apuntan_a_codigos_que_existen(resultado):

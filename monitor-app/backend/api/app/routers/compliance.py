@@ -338,9 +338,15 @@ async def get_certification_status(
     # por vencer cambio de etapa. Ampliar `renovar` a lo proximo a vencer
     # cambiaria el significado de una etiqueta que operaciones ya usa, asi que
     # es decision de negocio y no se toma desde aca.
-    vencido = f"({fuente}.status = 'EXPIRED' OR {vencido_predicate(fuente)})"
-    # Al día = se exige y no le falta nada. Lo que todavía no se exige
-    # (exigible_on) no es cubierto ni pendiente (HU-C1, entrega 2b, I5).
+    # Lo que todavía no se exige (exigible_on, HU-C1 entrega 2b) queda FUERA
+    # del embudo: no es vencido, ni cubierto, ni cuenta en el total. Si contara
+    # en el total, una empresa con un "finiquito" sembrado a cada conductor
+    # activo —que no se exige mientras siga en la empresa— no podría volver a
+    # quedar "al día" nunca (revisión final, I1).
+    exigido = f"({fuente}.status IS NOT NULL AND {exigible_sql(fuente)})"
+    vencido = (f"({exigible_sql(fuente)} AND "
+               f"({fuente}.status = 'EXPIRED' OR {vencido_predicate(fuente)}))")
+    # Al día = se exige y no le falta nada (I5).
     cubierto = f"({fuente}.status IS NOT NULL AND {cubierto_predicate(fuente)})"
 
     if group == "carrier":
@@ -356,9 +362,9 @@ async def get_certification_status(
                    WHEN NOT (e.operational_status = ANY($1)
                              OR COALESCE(d.unclassified, 0) > 0)      THEN 'catalogo'
                    WHEN count(*) FILTER (WHERE {vencido}) > 0          THEN 'renovar'
-                   WHEN count({fuente}.status) > 0
+                   WHEN count(*) FILTER (WHERE {exigido}) > 0
                         AND count(*) FILTER (WHERE {cubierto})
-                            = count({fuente}.status)                   THEN 'al_dia'
+                            = count(*) FILTER (WHERE {exigido})        THEN 'al_dia'
                    WHEN count(*) FILTER (WHERE {cubierto}) = 0         THEN 'sin_documentos'
                    ELSE                                                     'en_proceso'
                END                                                                 AS funnel_group,"""
@@ -395,7 +401,7 @@ async def get_certification_status(
         ){extra_cte}
         SELECT e.id::text AS entity_id, e.{cfg["name_col"]} AS entity_name,
                {carrier_cols},{funnel_cols}
-               count({fuente}.status)                                              AS total_count,
+               count(*) FILTER (WHERE {exigido})                                   AS total_count,
                count(*) FILTER (WHERE {cubierto})                                   AS satisfied_count,
                count(*) FILTER (WHERE {pendiente})                                   AS pending_count,
                count(*) FILTER (WHERE {pendiente}
@@ -1252,7 +1258,7 @@ _SQL_SOLICITABLE = """
 """
 
 
-@router.get("/requestable")
+@router.get("/requests/available")
 async def listar_solicitables(
     entity_type: Literal["CARRIER", "DRIVER", "ASSET"] = Query(...),
     entity_id: str = Query(...),
@@ -1311,7 +1317,7 @@ async def quitar_solicitud(
         async with conn.transaction():
             fila = await conn.fetchrow(
                 """
-                SELECT cr.entity_id, cr.entity_type, cr.requirement_id, cr.file_url
+                SELECT cr.entity_id, cr.entity_type, cr.requirement_id, cr.file_url, cr.status
                 FROM public.compliance_records cr
                 JOIN public.compliance_requirements req ON req.id = cr.requirement_id
                 WHERE cr.id = $1::uuid AND cr.is_current AND req.exigible_on = 'ON_REQUEST'
@@ -1320,8 +1326,10 @@ async def quitar_solicitud(
             )
             if not fila:
                 raise HTTPException(404, "Solicitud no encontrada")
-            if fila["file_url"] is not None:
-                raise HTTPException(409, "El documento ya tiene archivo: no se puede quitar la solicitud.")
+            # Recibido es recibido, con o sin archivo: la planilla puede darlo
+            # por recibido sin escaneo, y quitarlo lo sacaría de circulación.
+            if fila["file_url"] is not None or fila["status"] != "MISSING":
+                raise HTTPException(409, "El documento ya se recibió: no se puede quitar la solicitud.")
             await conn.execute(
                 "UPDATE public.compliance_records SET is_current = false WHERE id = $1::uuid",
                 record_id,

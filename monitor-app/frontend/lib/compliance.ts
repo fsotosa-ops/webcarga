@@ -135,7 +135,13 @@ export type DatosDelDocumento = {
  *  viaja a la API; vacío no viaja. El período se manda como su día 1. */
 export function datosDelDocumento(dato: DatoDeCarga, valor: string): DatosDelDocumento {
   if (!valor) return {}
-  if (dato === 'periodo') return { period_start: `${valor.slice(0, 7)}-01` }
+  if (dato === 'periodo') {
+    // El input de mes da `YYYY-MM`; donde el navegador lo muestra como texto
+    // libre (Safari, Firefox de escritorio) llega `MM/AAAA` o `M-AAAA`.
+    const libre = valor.trim().match(/^(\d{1,2})[/-](\d{4})$/)
+    const mes = libre ? `${libre[2]}-${libre[1].padStart(2, '0')}` : valor.slice(0, 7)
+    return { period_start: `${mes}-01` }
+  }
   if (dato === 'emision') return { issue_date: valor }
   return { expiration_date: valor }
 }

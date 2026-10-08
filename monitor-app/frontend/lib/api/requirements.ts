@@ -57,7 +57,7 @@ export const requirementsApi = {
   /** Qué pasaría con los documentos de este tipo si se guardara esta
    *  vigencia. No guarda nada: el backend la prueba y revierte. */
   previewVigencia: (id: string, vigencia: Vigencia) =>
-    apiFetch<VistaPreviaDeVigencia>(`${BASE}/${id}/vigencia/preview`, {
+    apiFetch<VistaPreviaDeVigencia>(`${BASE}/${id}/expiration-rule/preview`, {
       method: 'POST', body: JSON.stringify(vigencia),
     }),
 }

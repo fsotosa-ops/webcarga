@@ -32,7 +32,8 @@ from ..services.requirement_conditions import (
     calcular_diferencias,
 )
 from ..services.vencimientos import (
-    pendiente_predicate,
+    cubierto_predicate,
+    exigible_sql,
     por_vencer_predicate,
     vencido_predicate,
 )
@@ -384,10 +385,10 @@ class _Ensayo(Exception):
 async def _contar_estados(conn, requirement_id: str) -> dict:
     fila = await conn.fetchrow(
         f"""
-        SELECT count(*) FILTER (WHERE {vencido_predicate('cr')})    AS vencidos,
-               count(*) FILTER (WHERE {por_vencer_predicate('cr')}) AS por_vencer,
-               count(*) FILTER (WHERE NOT {pendiente_predicate('cr')}) AS al_dia,
-               count(*) FILTER (WHERE cr.status = 'MISSING')        AS falta
+        SELECT count(*) FILTER (WHERE {exigible_sql('cr')} AND {vencido_predicate('cr')})    AS vencidos,
+               count(*) FILTER (WHERE {exigible_sql('cr')} AND {por_vencer_predicate('cr')}) AS por_vencer,
+               count(*) FILTER (WHERE {cubierto_predicate('cr')})   AS al_dia,
+               count(*) FILTER (WHERE cr.status = 'MISSING' AND {exigible_sql('cr')}) AS falta
         FROM public.compliance_records cr
         WHERE cr.requirement_id = $1 AND cr.is_current
         """,
@@ -396,10 +397,10 @@ async def _contar_estados(conn, requirement_id: str) -> dict:
     return dict(fila)
 
 
-@requirements_router.post("/{requirement_id}/vigencia/preview")
+@requirements_router.post("/{requirement_id}/expiration-rule/preview")
 async def preview_vigencia(
     requirement_id: str, body: VigenciaBody,
-    pool=Depends(get_pool), _=Depends(get_current_user),
+    pool=Depends(get_pool), _=Depends(require_admin),
 ):
     """Qué pasaría con los documentos de este tipo si se guardara esta
     vigencia, ANTES de guardarla.

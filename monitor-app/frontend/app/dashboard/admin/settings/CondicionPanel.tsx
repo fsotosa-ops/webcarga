@@ -6,6 +6,7 @@ import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { requirementsApi } from '@/lib/api/requirements'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { ExigibleOn, ManagementType, RequirementOption } from '@/lib/types'
 import { mismaVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
 import { EditorVigencia } from './EditorVigencia'
@@ -189,10 +190,13 @@ export function CondicionPanel({
   // vence" que pasa a anual deja vencidos a los que no tienen emisión). Se
   // muestra ANTES de guardar, con la regla en borrador; el backend la prueba y
   // revierte, con la misma definición que usa la pantalla después.
+  // Se pide al dejar de escribir: cada vista previa es una transacción de
+  // escritura que se revierte, y escribir "12" eran dos (revisión final, I3).
+  const vigenciaParaVer = useDebouncedValue(vigencia, 400)
   const efecto = useQuery({
-    queryKey: ['vigencia-preview', requisito.id, JSON.stringify(vigencia)],
-    queryFn: () => requirementsApi.previewVigencia(requisito.id, vigencia),
-    enabled: canEdit && vigenciaSucia,
+    queryKey: ['vigencia-preview', requisito.id, JSON.stringify(vigenciaParaVer)],
+    queryFn: () => requirementsApi.previewVigencia(requisito.id, vigenciaParaVer),
+    enabled: canEdit && vigenciaSucia && !mismaVigencia(vigenciaParaVer, vigenciaGuardada),
     retry: false,
   })
 

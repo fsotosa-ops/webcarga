@@ -261,3 +261,53 @@ async def test_la_vista_previa_dice_si_rige_desde_hoy(conexion_revertida):
         requisito, VigenciaBody(**{**F30_1, "cutoff_day": 15}),
         pool=PoolDeUnaConexion(conexion_revertida), _=USER)
     assert efecto["rige_desde_hoy"] is True
+
+
+
+# ── Aviso y gracia rigen de inmediato (decisión del usuario, 08/10) ──────────
+
+async def test_en_uso_cambiar_el_aviso_rige_de_inmediato(conexion_revertida):
+    """Versionarlo dejaba el F30-1 ya cargado avisando con los días viejos."""
+    await _cargar_m6(conexion_revertida)
+    requisito = await _nuevo(conexion_revertida, vigencia=F30_1)
+    await _registro_con_archivo(conexion_revertida, requisito)
+    await _patch(conexion_revertida, requisito, vigencia={**F30_1, "warning_days": 10})
+    filas = await conexion_revertida.fetch(
+        "SELECT warning_days FROM public.compliance_requirement_rules "
+        "WHERE requirement_id = $1 AND shipper_id IS NULL", requisito)
+    assert [f["warning_days"] for f in filas] == [10]
+
+
+async def test_en_uso_corte_nuevo_versiona_y_el_aviso_va_a_todas(conexion_revertida):
+    await _cargar_m6(conexion_revertida)
+    await _hoy(conexion_revertida, dt.date(2026, 10, 8))
+    requisito = await _nuevo(conexion_revertida, vigencia=F30_1)
+    await _registro_con_archivo(conexion_revertida, requisito)
+    await _patch(conexion_revertida, requisito,
+                 vigencia={**F30_1, "cutoff_day": 15, "warning_days": 10})
+    filas = await conexion_revertida.fetch(
+        "SELECT cutoff_day, warning_days FROM public.compliance_requirement_rules "
+        "WHERE requirement_id = $1 AND shipper_id IS NULL ORDER BY vigente_desde", requisito)
+    assert [(f["cutoff_day"], f["warning_days"]) for f in filas] == [(18, 10), (15, 10)]
+
+
+async def test_la_vista_previa_no_cuenta_como_al_dia_lo_que_no_se_exige(conexion_revertida):
+    """Revisión final, I2: la misma definición que /status y /pending."""
+    await _cargar_m6(conexion_revertida)
+    requisito = await _nuevo(conexion_revertida, entidad="DRIVER", exigible_on="ON_ENTITY_END")
+    empresa = await conexion_revertida.fetchval(
+        "INSERT INTO public.carriers (business_name, tax_id) VALUES ($1, $2) RETURNING id",
+        f"ZZ-TEST-VIGCONF {uuid4().hex[:8]}", f"ZZ-TEST-VIGCONF-{uuid4().hex[:8]}")
+    conductor = await conexion_revertida.fetchval(
+        "INSERT INTO public.drivers (full_name) VALUES ($1) RETURNING id", f"ZZ-TEST-VIGCONF {uuid4().hex[:8]}")
+    await conexion_revertida.execute(
+        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
+        conductor, empresa)
+    await conexion_revertida.execute(
+        "INSERT INTO public.compliance_records (entity_id, entity_type, requirement_id, status) "
+        "VALUES ($1, 'DRIVER', $2, 'MISSING')", conductor, requisito)
+
+    efecto = await preview_vigencia(
+        requisito, VigenciaBody(politica="REQUIRED"),
+        pool=PoolDeUnaConexion(conexion_revertida), _=USER)
+    assert (efecto["antes"]["al_dia"], efecto["antes"]["falta"]) == (0, 0)

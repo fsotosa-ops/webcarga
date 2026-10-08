@@ -109,6 +109,9 @@ describe('camposQuePide', () => {
 
   it('el período viaja como el día 1 del mes', () => {
     expect(datosDelDocumento('periodo', '2026-09')).toEqual({ period_start: '2026-09-01' })
+    // Safari y Firefox de escritorio muestran el campo de mes como texto libre.
+    expect(datosDelDocumento('periodo', '09/2026')).toEqual({ period_start: '2026-09-01' })
+    expect(datosDelDocumento('periodo', '9-2026')).toEqual({ period_start: '2026-09-01' })
     expect(datosDelDocumento('emision', '2026-03-10')).toEqual({ issue_date: '2026-03-10' })
     expect(datosDelDocumento('vencimiento', '')).toEqual({})
   })

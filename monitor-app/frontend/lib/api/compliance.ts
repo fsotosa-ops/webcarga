@@ -151,7 +151,7 @@ export const complianceApi = {
    *  pidieron a este sujeto. */
   solicitables: (entityType: 'CARRIER' | 'DRIVER' | 'ASSET', entityId: string) =>
     apiFetch<{ id: string; name: string; requirement_code: string }[]>(
-      `/api/v1/compliance-records/requestable?entity_type=${entityType}&entity_id=${entityId}`),
+      `/api/v1/compliance-records/requests/available?entity_type=${entityType}&entity_id=${entityId}`),
 
   solicitar: (body: { requirement_id: string; entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string }) =>
     apiFetch<{ id: string; status: string }>('/api/v1/compliance-records/requests', {

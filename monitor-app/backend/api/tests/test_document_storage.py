@@ -145,7 +145,26 @@ async def test_log_document_replacement_inserts_audit_row_with_old_values():
         "status": "ok",
         "expiry_date": "2026-01-01",
         "storage_path": "driver/abc-123/licencia/v1_x.pdf",
+        "issue_date": None,
+        "period_start": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_log_document_replacement_guarda_la_emision_y_el_periodo_anteriores():
+    """El período reemplazado solo queda en audit_log: la fila de
+    compliance_records se pisa con el nuevo."""
+    pool = AsyncMock()
+
+    await log_document_replacement(
+        pool, entity_type="carrier", entity_id="abc-123", doc_name="F30_1",
+        old_status="ok", old_expiry_date=None, old_storage_path="carrier/abc-123/F30_1/v1_x.pdf",
+        actor="user-1", old_issue_date=date(2026, 8, 20), old_period_start=date(2026, 8, 1),
+    )
+
+    old_value = json.loads(pool.execute.call_args[0][-1])
+    assert old_value["issue_date"] == "2026-08-20"
+    assert old_value["period_start"] == "2026-08-01"
 
 
 @pytest.mark.asyncio

@@ -36,7 +36,9 @@ def codigo_desde_nombre(nombre: str) -> str:
     """
     sin_acentos = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
     limpio = re.sub(r"[^A-Za-z0-9]+", "_", sin_acentos).strip("_").upper()
-    return limpio[:60] or "REQUISITO"
+    # Cortar a 60 puede dejar un "_" colgando al final (un código es una llave
+    # para siempre: mejor que nazca limpio).
+    return limpio[:60].rstrip("_") or "REQUISITO"
 
 
 async def crear_requisito(conn, body: RequirementCreateBody, *, actor: str | None) -> dict:

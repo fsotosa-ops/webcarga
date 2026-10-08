@@ -78,7 +78,7 @@ async def test_los_tipos_nuevos_entran_y_uno_inventado_no(conexion_revertida):
         if politica == "ISSUE_PLUS_MONTHS":
             await _regla(conexion_revertida, requisito, validity_months=12)
         else:
-            await _regla(conexion_revertida, requisito, frequency_months=1,
+            await _regla(conexion_revertida, requisito, frequency_months=1, warning_days=5,
                          cutoff_day=18, period_offset_months=1)
         await _confirmar(conexion_revertida)
     with pytest.raises(asyncpg.CheckViolationError):
@@ -96,7 +96,7 @@ async def test_un_plazo_desde_la_emision_exige_sus_meses(conexion_revertida):
 async def test_un_periodo_de_calendario_exige_frecuencia_y_corte(conexion_revertida):
     async def caso():
         requisito = await _requisito(conexion_revertida, "CALENDAR_PERIOD")
-        await _regla(conexion_revertida, requisito, frequency_months=1)
+        await _regla(conexion_revertida, requisito, frequency_months=1, warning_days=5)
     await _falla_al_confirmar(conexion_revertida, caso)
 
 
@@ -120,7 +120,7 @@ async def test_cambiar_la_politica_sin_sus_parametros_no_se_guarda(conexion_reve
 
 async def test_borrar_la_regla_base_de_un_mensual_no_se_guarda(conexion_revertida):
     requisito = await _requisito(conexion_revertida, "CALENDAR_PERIOD")
-    await _regla(conexion_revertida, requisito, frequency_months=1,
+    await _regla(conexion_revertida, requisito, frequency_months=1, warning_days=5,
                  cutoff_day=5, period_offset_months=1)
     await _confirmar(conexion_revertida)
 
@@ -208,7 +208,7 @@ async def test_la_regla_base_rige_desde_siempre(conexion_revertida):
     async def caso():
         requisito = await _requisito(conexion_revertida, "CALENDAR_PERIOD")
         await _regla(conexion_revertida, requisito, vigente_desde=date(2026, 11, 1),
-                     frequency_months=1, cutoff_day=5, period_offset_months=1)
+                     frequency_months=1, warning_days=5, cutoff_day=5, period_offset_months=1)
     await _falla_al_confirmar(conexion_revertida, caso)
 
 
@@ -216,7 +216,7 @@ async def test_mover_la_base_a_otro_requisito_no_deja_huerfano_al_primero(conexi
     """I3a: en un UPDATE se validaba solo el requisito nuevo."""
     await _cargar_correcciones(conexion_revertida)
     origen = await _requisito(conexion_revertida, "CALENDAR_PERIOD")
-    await _regla(conexion_revertida, origen, frequency_months=1, cutoff_day=5, period_offset_months=1)
+    await _regla(conexion_revertida, origen, frequency_months=1, warning_days=5, cutoff_day=5, period_offset_months=1)
     destino = await _requisito(conexion_revertida, "REQUIRED")
     await _confirmar(conexion_revertida)
 
