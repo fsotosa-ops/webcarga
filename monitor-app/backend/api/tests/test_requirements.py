@@ -536,11 +536,19 @@ def test_recalc_vuelve_a_encender_un_registro_apagado_sin_pisarle_el_documento()
     # `true` sobre `true`, entra en el RETURNING, infla `creados` y deja en
     # audit_log un id que este recalculo nunca cambio. Hallazgo de /code-review
     # (2026-08-16): la guarda estaba en un lado del espejo y no en el otro.
+    # Desde HU-C1 (entrega 2b) el mismo encendido sirve a "Solicitar
+    # documento" (services/solicitudes.py): puede ademas MARCAR la decision
+    # humana, pero sigue sin tocar status/file_url/metadata/fechas.
     assert sql[sql.index("ON CONFLICT"):] == (
-        "ON CONFLICT (entity_id, requirement_id) DO UPDATE SET is_current = true "
+        "ON CONFLICT (entity_id, requirement_id) DO UPDATE SET is_current = true, "
+        "is_manual_override = public.compliance_records.is_manual_override OR EXCLUDED.is_manual_override "
         "WHERE NOT public.compliance_records.is_current "
+        "OR (EXCLUDED.is_manual_override AND NOT public.compliance_records.is_manual_override) "
         "RETURNING id"
     )
+    # Recalcular NO marca como decision humana: la regla decide.
+    insert = [c for c in conn.fetch.call_args_list if "INSERT" in c.args[0].upper()][0]
+    assert insert.args[-1] is False
 
 
 def test_recalc_reports_rows_actually_turned_off_not_the_planned_count():

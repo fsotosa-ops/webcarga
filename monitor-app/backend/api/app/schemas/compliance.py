@@ -74,7 +74,9 @@ class PendingComplianceRow(BaseModel):
     # nunca se alcanzaba, asi que el valor no hacia falta; con
     # estado='todos' si, y sin el una fila cubierta salia 'FALTA' igual que
     # una que de verdad falta.
-    urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA", "AL_DIA"]
+    urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA", "AL_DIA", "NO_EXIGIBLE"]
+    # Desde cuándo se exige, si todavía no (MONTH_AFTER_START).
+    exigible_desde: Optional[date] = None
     # Que hace su requisito con la fecha de vencimiento. El renglon de carga lo
     # necesita para pedir la fecha ANTES de subir: sin el, o pregunta siempre,
     # o no pregunta nunca y /file rechaza con 422 el archivo ya subido.
@@ -99,6 +101,8 @@ class ComplianceSummaryCounts(BaseModel):
     al_dia: int
     por_vencer: int
     falta: int
+    # Lo que todavía no se exige (HU-C1, entrega 2b): ni falta ni al día.
+    no_exigible: int = 0
 
 
 class ComplianceSummarySubject(ComplianceSummaryCounts):
@@ -190,3 +194,11 @@ class RequirementOption(BaseModel):
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None
     alcance: Alcance
+
+
+class SolicitudBody(BaseModel):
+    """Pedir un documento "solo cuando se solicita" a una entidad (HU-C1,
+    entrega 2b): trabajo en altura, soldador, guardias…"""
+    requirement_id: str
+    entity_type: Literal["CARRIER", "DRIVER", "ASSET"]
+    entity_id: str

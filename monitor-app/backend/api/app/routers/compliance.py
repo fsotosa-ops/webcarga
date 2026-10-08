@@ -33,6 +33,7 @@ from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
 # no al catálogo del fondo.
 FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
 from ..schemas.compliance import (
+    SolicitudBody,
     ReassignBody,
     ComplianceRecordPatchBody,
     ComplianceSummaryResponse,
@@ -40,6 +41,7 @@ from ..schemas.compliance import (
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
+from ..services.solicitudes import encender_registros
 from ..services.plantilla_certificacion import (
     COLUMNAS,
     COLUMNA_LLAVE,
@@ -55,6 +57,9 @@ from ..services.plantilla_certificacion import (
 from ..services.vencimientos import (
     exige_fecha,
     lleva_fecha,
+    cubierto_predicate,
+    exigible_desde_sql,
+    exigible_sql,
     pendiente_predicate,
     por_vencer_predicate,
     vencido_predicate,
@@ -65,6 +70,20 @@ from ..utils.document_storage import (
 )
 
 router = APIRouter(prefix="/compliance-records", tags=["compliance"])
+
+
+def _empresa_que_dejo_sql(alias: str) -> str:
+    """La empresa de un documento "al término" (exigible_on = ON_ENTITY_END):
+    el conductor ya no tiene asignación ACTIVE, así que se le atribuye a la
+    última que tuvo. Solo para ese tipo: el resto de los documentos de un
+    conductor sin empresa siguen sin empresa, como antes."""
+    return (
+        f"(CASE WHEN {alias}.requirement_id IN (SELECT vg_t.id FROM public.compliance_requirements vg_t "
+        f"WHERE vg_t.exigible_on = 'ON_ENTITY_END') "
+        f"THEN (SELECT vg_u.carrier_id FROM public.driver_assignments vg_u "
+        f"WHERE vg_u.driver_id = {alias}.entity_id "
+        f"ORDER BY vg_u.start_date DESC, vg_u.created_at DESC LIMIT 1) END)"
+    )
 
 _CATEGORY_BY_ENTITY_TYPE = {"CARRIER": "EMPRESA", "DRIVER": "CHOFER", "ASSET": "EQUIPO"}
 
@@ -315,7 +334,9 @@ async def get_certification_status(
     # cambiaria el significado de una etiqueta que operaciones ya usa, asi que
     # es decision de negocio y no se toma desde aca.
     vencido = f"({fuente}.status = 'EXPIRED' OR {vencido_predicate(fuente)})"
-    cubierto = f"({fuente}.status IS NOT NULL AND NOT {pendiente})"
+    # Al día = se exige y no le falta nada. Lo que todavía no se exige
+    # (exigible_on) no es cubierto ni pendiente (HU-C1, entrega 2b, I5).
+    cubierto = f"({fuente}.status IS NOT NULL AND {cubierto_predicate(fuente)})"
 
     if group == "carrier":
         # El embudo decide la etapa en SQL, de UNA definición. Calcularlo en el
@@ -358,7 +379,7 @@ async def get_certification_status(
                    r.entity_type, r.entity_id, r.issue_date, r.period_start,
                 CASE r.entity_type
                     WHEN 'CARRIER' THEN r.entity_id
-                    WHEN 'DRIVER'  THEN da.carrier_id
+                    WHEN 'DRIVER'  THEN COALESCE(da.carrier_id, {_empresa_que_dejo_sql('r')})
                     WHEN 'ASSET'   THEN aa.carrier_id
                 END AS carrier_id
             FROM records r
@@ -444,8 +465,8 @@ WITH pending AS (
       -- ver lo que la empresa TIENE y no solo lo que le falta.
       AND CASE $10::text
             WHEN 'todos'      THEN true
-            WHEN 'por_vencer' THEN {por_vencer_predicate('cr')}
-            WHEN 'al_dia'     THEN NOT {pendiente_predicate('cr')}
+            WHEN 'por_vencer' THEN {exigible_sql('cr')} AND {por_vencer_predicate('cr')}
+            WHEN 'al_dia'     THEN {cubierto_predicate('cr')}
             ELSE {pendiente_predicate('cr')}
           END
 ),
@@ -453,7 +474,9 @@ resolved AS (
     SELECT p.*,
         CASE p.entity_type
             WHEN 'CARRIER' THEN p.entity_id
-            WHEN 'DRIVER'  THEN da.carrier_id
+            -- Un documento "al término" (finiquito) es de la empresa que el
+            -- conductor dejó: sin asignación ACTIVE, la última que tuvo.
+            WHEN 'DRIVER'  THEN COALESCE(da.carrier_id, {_empresa_que_dejo_sql('p')})
             WHEN 'ASSET'   THEN aa.carrier_id
         END AS resolved_carrier_id,
         CASE p.entity_type
@@ -546,11 +569,16 @@ SELECT
     -- primera es sobre legibilidad: el `CASE` se lee como la particion que
     -- es, "al dia o no", antes de entrar al detalle de POR QUE no lo esta.
     CASE
+        -- Primero lo que todavía no se exige (HU-C1, entrega 2b, I5): no es
+        -- falta ni al día, y sin esta rama caería en 'AL_DIA' porque
+        -- `pendiente_predicate` ya es falso para lo no exigible.
+        WHEN NOT {exigible_sql('r')} THEN 'NO_EXIGIBLE'
         WHEN NOT {pendiente_predicate('r')} THEN 'AL_DIA'
         WHEN r.status = 'EXPIRED' OR {vencido_predicate('r')} THEN 'VENCIDO'
         WHEN {por_vencer_predicate('r')} THEN 'POR_VENCER'
         ELSE 'FALTA'
     END AS urgencia,
+    {exigible_desde_sql('r')} AS exigible_desde,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
     count(*) OVER() AS total_count
@@ -646,6 +674,7 @@ async def list_pending_compliance_records(
             # subir (sin ella el renglon preguntaria siempre, y /file
             # rechazaria con 422 despues de haber subido).
             "urgencia": r["urgencia"],
+            "exigible_desde": r["exigible_desde"],
             "expiration_policy": r["expiration_policy"],
         }
         for r in rows
@@ -686,7 +715,8 @@ SELECT
     count(*) AS todos,
     count(*) FILTER (WHERE urgencia = 'AL_DIA') AS al_dia,
     count(*) FILTER (WHERE urgencia = 'POR_VENCER') AS por_vencer,
-    count(*) FILTER (WHERE urgencia IN ('FALTA', 'VENCIDO')) AS falta
+    count(*) FILTER (WHERE urgencia IN ('FALTA', 'VENCIDO')) AS falta,
+    count(*) FILTER (WHERE urgencia = 'NO_EXIGIBLE') AS no_exigible
 FROM pending_rows
 -- `carrier_operation_types` es constante en toda la respuesta -esta consulta
 -- va acotada a UNA empresa (c.id = $1)-, asi que sumarla al agrupado no
@@ -744,6 +774,7 @@ async def get_compliance_summary(
             "al_dia": f["al_dia"],
             "por_vencer": f["por_vencer"],
             "falta": f["falta"],
+            "no_exigible": f["no_exigible"],
             "asset_type": f["asset_type"],
             "fleet_service_type_label": f["fleet_service_type_label"],
             "fleet_service_type_bg_color": f["fleet_service_type_bg_color"],
@@ -753,7 +784,7 @@ async def get_compliance_summary(
     ]
     totales = {
         clave: sum(s[clave] for s in sujetos)
-        for clave in ("todos", "al_dia", "por_vencer", "falta")
+        for clave in ("todos", "al_dia", "por_vencer", "falta", "no_exigible")
     }
     return {
         "totales": totales,
@@ -1120,6 +1151,101 @@ async def cargar_planilla(
             )
     resumen["aplicado"] = True
     return resumen
+
+
+# ── Solicitar un documento (HU-C1, entrega 2b, F3) ──────────────────────────
+#
+# Un documento "solo cuando se solicita" (exigible_on = ON_REQUEST) no se le
+# exige a nadie por regla: la siembra lo salta. Existe para una entidad solo
+# si una persona lo pide, y esa decisión queda marcada con
+# `is_manual_override`, que ningún proceso automático apaga.
+
+_SQL_SOLICITABLE = """
+    SELECT req.id, req.target_entity
+    FROM public.compliance_requirements req
+    WHERE req.id = $1::uuid AND req.is_active AND req.exigible_on = 'ON_REQUEST'
+"""
+
+
+@router.get("/requestable")
+async def listar_solicitables(
+    entity_type: Literal["CARRIER", "DRIVER", "ASSET"] = Query(...),
+    entity_id: str = Query(...),
+    pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    """Los documentos "a pedido" vigentes que todavía no se le pidieron a esta
+    entidad: la lista de la acción "Solicitar documento"."""
+    filas = await pool.fetch(
+        """
+        SELECT req.id::text, req.name, req.requirement_code
+        FROM public.compliance_requirements req
+        WHERE req.target_entity = $1 AND req.is_active AND req.exigible_on = 'ON_REQUEST'
+          AND NOT EXISTS (
+              SELECT 1 FROM public.compliance_records cr
+              WHERE cr.requirement_id = req.id AND cr.entity_id = $2::uuid AND cr.is_current)
+        ORDER BY req.name
+        """,
+        entity_type, entity_id,
+    )
+    return [dict(f) for f in filas]
+
+
+@router.post("/requests", status_code=201)
+async def solicitar_documento(
+    body: SolicitudBody, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """Pide un documento "a pedido" a una entidad. Idempotente: pedirlo dos
+    veces no crea dos pendientes."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            req = await conn.fetchrow(_SQL_SOLICITABLE, body.requirement_id)
+            if not req or req["target_entity"] != body.entity_type:
+                raise HTTPException(
+                    409, "Ese documento no se solicita a pedido, o no está vigente.")
+            await encender_registros(
+                conn, [body.entity_id], body.entity_type, body.requirement_id, manual=True)
+            fila = await conn.fetchrow(
+                "SELECT id::text, status FROM public.compliance_records "
+                "WHERE entity_id = $1::uuid AND requirement_id = $2::uuid",
+                body.entity_id, body.requirement_id,
+            )
+            await log_change(
+                conn, actor=user["sub"], entity_type=body.entity_type, entity_id=body.entity_id,
+                action="request", field="requirement_id", new_value=body.requirement_id,
+            )
+    return dict(fila)
+
+
+@router.delete("/requests/{record_id}")
+async def quitar_solicitud(
+    record_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+):
+    """Retira una solicitud mientras no tenga archivo: un documento ya
+    cargado no se saca de circulación por acá."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            fila = await conn.fetchrow(
+                """
+                SELECT cr.entity_id, cr.entity_type, cr.requirement_id, cr.file_url
+                FROM public.compliance_records cr
+                JOIN public.compliance_requirements req ON req.id = cr.requirement_id
+                WHERE cr.id = $1::uuid AND cr.is_current AND req.exigible_on = 'ON_REQUEST'
+                """,
+                record_id,
+            )
+            if not fila:
+                raise HTTPException(404, "Solicitud no encontrada")
+            if fila["file_url"] is not None:
+                raise HTTPException(409, "El documento ya tiene archivo: no se puede quitar la solicitud.")
+            await conn.execute(
+                "UPDATE public.compliance_records SET is_current = false WHERE id = $1::uuid",
+                record_id,
+            )
+            await log_change(
+                conn, actor=user["sub"], entity_type=fila["entity_type"], entity_id=fila["entity_id"],
+                action="unrequest", field="requirement_id", old_value=str(fila["requirement_id"]),
+            )
+    return {"ok": True}
 
 
 @router.get("/{record_id}")

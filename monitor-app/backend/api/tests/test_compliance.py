@@ -425,7 +425,7 @@ def _pending_row(**overrides):
         # Los produce el SELECT (Ronda 129): por que esta pendiente, y que
         # exige su requisito. El renglon de carga necesita la politica para
         # saber si pedir la fecha ANTES de subir.
-        "urgencia": "FALTA", "expiration_policy": "REQUIRED",
+        "urgencia": "FALTA", "exigible_desde": None, "expiration_policy": "REQUIRED",
         # Si la fila tiene un archivo cargado. Sale de `file_url`, no de una
         # lectura de `status` — ver el test de mas abajo.
         "tiene_archivo": False,
@@ -1616,7 +1616,7 @@ def test_summary_agrupa_por_sujeto_desde_urgencia():
     pool = AsyncMock()
     pool.fetch.return_value = [
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
-         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1, "no_exigible": 0,
          "carrier_operation_types": ["Tractoreo"],
          "asset_type": None, "fleet_service_type_label": None,
          "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
@@ -1629,14 +1629,14 @@ def test_summary_agrupa_por_sujeto_desde_urgencia():
     body = res.json()
     assert body["sujetos"] == [{
         "entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
-        "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+        "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1, "no_exigible": 0,
         # Nulos porque es la EMPRESA: el tipo de vehiculo no le aplica. Se
         # enumeran en vez de omitirse para que el test siga afirmando la
         # forma completa de la respuesta, que es lo que consume el frontend.
         "asset_type": None, "fleet_service_type_label": None,
         "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
     }]
-    assert body["totales"] == {"todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1}
+    assert body["totales"] == {"todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1, "no_exigible": 0}
     assert body["carrier_operation_types"] == ["Tractoreo"]
     assert body["completo"] is True
 
@@ -1659,7 +1659,7 @@ def test_summary_completo_false_cuando_el_conteo_toca_el_tope():
     # redondo de requisitos.
     pool.fetch.return_value = [
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
-         "todos": SUMMARY_LIMIT, "al_dia": SUMMARY_LIMIT, "por_vencer": 0, "falta": 0,
+         "todos": SUMMARY_LIMIT, "al_dia": SUMMARY_LIMIT, "por_vencer": 0, "falta": 0, "no_exigible": 0,
          "carrier_operation_types": [],
          "asset_type": None, "fleet_service_type_label": None,
          "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
@@ -1676,7 +1676,7 @@ def test_summary_completo_true_cuando_el_conteo_no_toca_el_tope():
     pool = AsyncMock()
     pool.fetch.return_value = [
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
-         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1,
+         "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1, "no_exigible": 0,
          "carrier_operation_types": [],
          "asset_type": None, "fleet_service_type_label": None,
          "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
@@ -1742,7 +1742,7 @@ async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_rev
     assert resumen["totales"]["todos"] == len(filas)
     assert sum(s["todos"] for s in resumen["sujetos"]) == len(filas)
     t = resumen["totales"]
-    assert t["al_dia"] + t["por_vencer"] + t["falta"] == t["todos"]
+    assert t["al_dia"] + t["por_vencer"] + t["falta"] + t["no_exigible"] == t["todos"]
 
     # Cada balde contra Postgres real, no solo la suma.
     filas_al_dia = await _pedir_pending(conexion_revertida, carrier_id, estado="al_dia", limit=1000)

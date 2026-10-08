@@ -39,6 +39,7 @@ from ..services.vencimientos import (
     por_vencer_predicate,
     vencido_predicate,
 )
+from ..services.solicitudes import encender_registros
 from ..services.vigencia import PARAMETROS, guardar_vigencia
 
 requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compliance"])
@@ -548,19 +549,8 @@ async def recalc(
                 # `creados`, y deja en `audit_log` un id que este recálculo
                 # nunca cambió. Con el WHERE, encender es idempotente igual que
                 # apagar.
-                creados_rows = await conn.fetch(
-                    """
-                    INSERT INTO public.compliance_records
-                        (entity_id, entity_type, requirement_id, status, is_current)
-                    SELECT unnest($1::uuid[]), $2, $3, 'MISSING', true
-                    ON CONFLICT (entity_id, requirement_id) DO UPDATE SET
-                        is_current = true
-                    WHERE NOT public.compliance_records.is_current
-                    RETURNING id
-                    """,
-                    d["crear"], d["target_entity"], requirement_id,
-                )
-                creados_ids = [str(r["id"]) for r in creados_rows]
+                creados_ids = await encender_registros(
+                    conn, d["crear"], d["target_entity"], requirement_id, manual=False)
             if d["quitar"]:
                 # D13, sin depender del reloj: la vista previa se calculó
                 # fuera de esta transacción, así que el UPDATE vuelve a

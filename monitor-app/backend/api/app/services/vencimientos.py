@@ -156,6 +156,26 @@ def exigible_sql(alias: str = "cr") -> str:
     )
 
 
+def exigible_desde_sql(alias: str = "cr") -> str:
+    """Desde qué fecha se exige, cuando todavía no: el día 1 del mes siguiente
+    al ingreso del conductor (MONTH_AFTER_START). NULL en los demás casos:
+    "al ingreso" y "a pedido" se exigen siempre, y "al término" no tiene una
+    fecha que anunciar (depende de que el conductor se vaya)."""
+    return (
+        f"(CASE WHEN {_es(alias, 'exigible_on', 'MONTH_AFTER_START')} THEN "
+        f"(SELECT (date_trunc('month', vg_da.start_date) + interval '1 month')::date "
+        f"FROM public.driver_assignments vg_da "
+        f"WHERE vg_da.driver_id = {alias}.entity_id AND vg_da.status = 'ACTIVE') END)"
+    )
+
+
+def cubierto_predicate(alias: str = "cr") -> str:
+    """Al día: se exige y no le falta nada. Un documento que todavía no se
+    exige NO está al día (HU-C1, entrega 2b, hallazgo I5): mostrarlo así haría
+    pasar por cumplido algo que falta."""
+    return f"({exigible_sql(alias)} AND NOT {pendiente_predicate(alias)})"
+
+
 def por_vencer_predicate(alias: str = "cr") -> str:
     """Vence pronto pero TODAVIA NO vencio.
 

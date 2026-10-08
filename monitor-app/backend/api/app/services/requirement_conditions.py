@@ -87,6 +87,10 @@ SQL_ENTIDADES_QUE_APLICAN = {
         SELECT e.id
         FROM {TABLA_DE_ENTIDAD[entidad]} e, public.compliance_requirements req
         WHERE req.id = $1 AND req.is_active
+          -- Un documento "solo cuando se solicita" no se le exige a nadie por
+          -- regla: existe solo si alguien lo solicita (HU-C1, entrega 2b). Es
+          -- la misma puerta que las 5 funciones reconcile_* (20261009110000).
+          AND req.exigible_on <> 'ON_REQUEST'
           AND ({condicion})
     """
     for entidad, condicion in SQL_CONDICION_DE_ENTIDAD.items()
