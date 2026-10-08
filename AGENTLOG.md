@@ -16,84 +16,74 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-07 (noche) — HU-C1 entrega 2: llegó la planilla de WebCarga, plan escrito (sin código)
+### 2026-10-08 — HU-C1 entrega 2, F0-F2: DESPLEGADA en dev (`c81e86af..bdcba04a`)
 
-**Fuente:** `monitor-app/bugs/20261006/Tabla_Resumen_General_IANSA.xlsx`. Trae 96 tipos de documento con
-periodicidad, fecha tope, vigencia, responsable y "cuándo se carga". Es la "HU de vencimientos actualizada" que
-esperaba el checklist de abajo.
+**Fuente:** `monitor-app/bugs/20261006/Tabla_Resumen_General_IANSA.xlsx`, con 96 tipos de documento. Es la "HU de
+vencimientos actualizada".
 
-**Decisiones del usuario (07/10):**
-1. La planilla es el **estándar WebCarga**, la regla base para todos los clientes.
-2. Se cargan **los 96** al catálogo.
-3. **"Cuándo se carga" (exigibilidad por evento) entra** en la entrega 2.
-4. **Un archivo por empresa y período**, evaluado contra el corte de cada cliente; la ficha muestra el peor estado.
-   Con esto queda respondida la pregunta abierta del 02/10.
-5. *"Tienes que cumplir con el patrón de diseño de la app. Nada de parches."*
+**Decisiones del usuario (07-08/10):**
+- La planilla es el **estándar WebCarga**.
+- Se cargan **los 96**.
+- **"Cuándo se carga" (exigibilidad) entra**.
+- **Un archivo por empresa y período**, con el corte de cada cliente; la ficha muestra el peor estado.
+- *"Nada de parches, sigue el patrón de la app."*
+- Se aceptan los 11 registros NONE con fecha manual, que dejan de verse vencidos.
+- Se pidió optimizar antes de publicar.
 
-**Plan aprobado (alto nivel):** `~/.claude/plans/swift-floating-pancake.md`, fases F0-F6.
-- F0: hoy en Chile + copia a mano de "vencido".
-- F1: esquema.
-- F2: cálculo al leer.
-- F3: siembra según `exigible_on` + "Solicitar documento".
-- F4: carga y clasificación.
-- F5: selector e interfaz.
-- F6: mapeo y carga de los 96.
+**Planes:**
+- alto nivel: `~/.claude/plans/swift-floating-pancake.md` (F0-F6);
+- implementación de F0-F2: `docs/superpowers/plans/2026-10-07-c1-entrega-2-vigencia-y-exigibilidad.md`.
 
-**Plan de implementación de F0-F2 escrito:** `docs/superpowers/plans/2026-10-07-c1-entrega-2-vigencia-y-exigibilidad.md`,
-5 tasks. **No ejecutado.**
+**Qué quedó (5 migraciones aplicadas a prod vía MCP, todas ensayadas con ROLLBACK):**
 
-**Decisiones de arquitectura:**
-- **Tipos de vigencia**: `expiration_policy` gana `ISSUE_PLUS_MONTHS` y `CALENDAR_PERIOD`. REQUIRED y OPTIONAL
-  siguen siendo "fecha del documento", así que el mapeo es la identidad y no se migra ningún dato.
-- **Parámetros en una sola tabla**: `compliance_requirement_rules`. La regla base va con `shipper_id` NULL y la de
-  un cliente es una variante del mismo requisito, no un requisito aparte.
-  - `vigente_desde` versiona la regla: mover un corte no reescribe lo aprobado.
-  - Un `CONSTRAINT TRIGGER` diferido exige que la política y sus parámetros sean coherentes.
-- **El cálculo vive en funciones SQL `STABLE`**, con el mismo patrón que `carrier_management_types()`:
-  - `hoy_chile()`
-  - `documento_vence_el()`
-  - `documento_aviso_desde()`
-  - `documento_exigible()`
-  `vencimientos.py` sigue siendo la única puerta desde Python y conserva la firma `predicado(alias)`. El alias
-  debe exponer `requirement_id, entity_type, entity_id, status, expiration_date, issue_date, period_start`.
-- **Aviso general**: la fila `app.alert_thresholds` `documento_por_vencer` (30) reemplaza a `DIAS_POR_VENCER`. Las
-  8 filas por documento (claves viejas, no ligadas a requisitos) se retiran en F5.
-- **Exigibilidad** (`exigible_on`): `MONTH_AFTER_START` se calcula desde `driver_assignments.start_date`, y
-  `ON_ENTITY_END` = el conductor ya no tiene asignación ACTIVE.
-  - No hace falta `end_date`: los loaders del Centralizador no lo escriben.
-  - `ON_REQUEST` lo filtra la siembra (F3).
+| Migración | Qué hace |
+| :--- | :--- |
+| `20261008100000` | `public.hoy_chile()`. La base corre en UTC y "vencido" se adelantaba desde las 21:00 de Chile. |
+| `20261008110000` | Esquema expand: `ISSUE_PLUS_MONTHS`/`CALENDAR_PERIOD`, `exigible_on`, `issue_date`/`period_start`, `compliance_requirement_rules` (base `shipper_id` NULL + variante por cliente, versionada por `vigente_desde`, coherencia por CONSTRAINT TRIGGER diferido) y la fila `alert_thresholds.documento_por_vencer` (30). |
+| `20261008120000` → `20261008130000` | Primero funciones `documento_*`. Medido: `/compliance/status` pasó de 0,28 a 0,76 s, porque Postgres no inlinea funciones con subconsultas. Se retiraron: el cálculo se arma en `app/services/vencimientos.py` (única definición) y viaja dentro de la consulta. En la base quedan solo `reglas_aplicables`, `clientes_de_entidad`, `corte_del_periodo` y `vence_segun_regla`. |
+| `20261008140000` | Correcciones de la revisión final (opus): la fecha de referencia la dicta el tipo; gracia en todos los tipos; toda variante exige una base vigente desde `-infinity`; mover una regla valida también el requisito de origen. |
 
-**Medido el 07/10 (psql, solo lectura):**
-- La base corre con `TimeZone = UTC`, así que `CURRENT_DATE` adelanta "vencido" desde las 21:00 de Chile.
-- `plantilla_certificacion.py:151` repite a mano la regla de "vencido".
-- **12 registros NONE con fecha**, todos `APPROVED_MANUAL`; 10 hoy figuran vencidos (REGLAMENTO_INTERNO 3,
-  ENTREGA_EPP 2, CONTRATO_TRABAJO 2, y uno de cada uno: CONTRATO_WEBCARGA, ANEXO_GC_CONDUCTOR, ROLL_SII,
-  CAPACITACION_EPP, PLAN_EMERGENCIA). Con la política como única fuente, dejan de verse vencidos: es el **gate de
-  la Task 5**.
-- `carrier_shippers`: 47 vínculos, todos ACTIVE.
-- `driver_assignments.end_date` nunca se escribió (0 de 104).
+**Velocidad final** (endpoints reales, misma tanda; antes → ahora):
 
-**Para WebCarga, junto al mapeo de F6:**
-- combinaciones contradictorias:
-  - "No aplica" con Vigencia Sí;
-  - "Anual" con Vigencia No;
-- "Al término del trabajador" en EPP, IPER y OS10, que parece un error;
-- Responsabilidad "En cuanto se solicita" en vehículos;
-- el cronograma mensual sin corte;
-- si el período es "mes anterior" en cada mensual;
-- si el ingreso del trabajador es la fecha del vínculo en el sistema;
-- erratas.
+| Lectura | Antes | Ahora |
+| :--- | ---: | ---: |
+| `status` por empresa | 0,19 s | 0,26 s |
+| `status` por conductor | 0,16 s | 0,18 s |
+| Cola | 0,19 s | 0,25 s |
+
+El tipo se pregunta como pertenencia sin correlación (hashed SubPlan), no con una búsqueda por registro.
+
+**Verificado:**
+- Suite completa: 1.147 en verde.
+- Diferencia contra el cálculo viejo sobre los 5.691 registros vigentes: solo los 11 NONE con fecha (aceptados), y 0 NULL.
+- Deploy Monitor API en verde sobre `bdcba04a`.
+- Playwright en dev: Certificación, Monitor y la ficha (`/status`, `/trips`, `/summary` y `/pending`, todos 200, sin errores en consola).
+
+**Compuertas antes de F3 en adelante** (hallazgos de la revisión, latentes porque hoy hay 0 reglas, 0 fechas nuevas y ningún tipo nuevo):
+- **I5**: un documento "aún no exigible" (MONTH_AFTER_START / ON_ENTITY_END) sale como AL_DIA. Hay que resolverlo junto con la siembra de F3, con una de dos opciones:
+  - no sembrar esos documentos hasta que sean exigibles;
+  - crear un estado propio.
+- **I6 en `main`**: la API de `main` solo conoce 3 tipos. No cargar ningún requisito con un tipo nuevo hasta desplegar `main` o retirarla. En dev, las respuestas ya aceptan los 5; la entrada se amplía en F5.
+- Tipos mensuales: con el aviso general de 30 días quedan siempre "por vencer". Al cargarlos hay que fijar `warning_days` (~5); conviene exigirlo en el trigger (M6).
+
+**Menores diferidos:**
+- `test_hoy_chile` es tautológico.
+- El frontend calcula su propio "hoy" (UTC) y muestra la fecha cruda. Hay que exponer `vence_el` en F3/F4.
+- Volver a medir la velocidad en F5, con reglas cargadas.
 
 **Siguiente paso exacto:**
-- [ ] El usuario revisa `docs/superpowers/plans/2026-10-07-c1-entrega-2-vigencia-y-exigibilidad.md` y elige cómo
-  ejecutarlo: con subagentes o en esta sesión.
-- [ ] Ejecutar las Tasks 1-4. Las migraciones se ensayan con ROLLBACK por MCP, nunca con un job de ingesta en vuelo.
-- [ ] Task 5:
-  - medir `EXPLAIN ANALYZE`: el nuevo tiene que tardar menos de 2× el viejo y menos de 1,5 s;
-  - contar antes y después;
-  - **gate de los 10 NONE con fecha, a decidir por el usuario**;
-  - desplegar y verificar con Playwright.
-- [ ] Después: escribir los planes de F3, F4, F5 y F6. El mapeo de los 96 va en xlsx para que WebCarga lo apruebe.
+- [ ] Escribir el plan de **F6.1**: el mapeo de los 96 en xlsx para que WebCarga lo apruebe, con sus preguntas:
+  - combinaciones contradictorias;
+  - "al término" en EPP, IPER y OS10;
+  - vehículos;
+  - cronograma sin corte;
+  - "mes anterior";
+  - fecha de ingreso;
+  - erratas.
+
+  Puede hacerse en paralelo con F3.
+- [ ] Escribir el plan de **F3**: siembra según `exigible_on` (ON_REQUEST no se siembra) y "Solicitar documento". Resolver I5 dentro de F3.
+- [ ] Después **F4** (carga y clasificación: fecha, emisión y período) y **F5** (selector de 4 tipos, ventanas por cliente y contract de las filas viejas de `alert_thresholds`).
 - La Task 7b de la entrega 1 (`DROP has_expiration`) sigue esperando la confirmación del usuario.
 
 ### 2026-10-07 — Memoria técnica I+D para Corfo (entregable, sin cambios de código)
