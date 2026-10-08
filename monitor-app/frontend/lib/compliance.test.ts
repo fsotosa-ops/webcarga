@@ -87,3 +87,91 @@ describe('evidenciaDeDocumento — dónde se ve de verdad', () => {
       .not.toBe('Falta el archivo')
   })
 })
+
+// ── Qué pide la carga según el tipo (HU-C1, entrega 2b) ─────────────────────
+import { camposQuePide, datoQuePide, datosDelDocumento, periodoSugerido } from './compliance'
+
+describe('camposQuePide', () => {
+  it('es la misma tabla que el backend', () => {
+    expect(camposQuePide('NONE')).toEqual({ fecha: 'no', emision: false, periodo: false })
+    expect(camposQuePide('REQUIRED')).toEqual({ fecha: 'obligatoria', emision: false, periodo: false })
+    expect(camposQuePide('OPTIONAL')).toEqual({ fecha: 'opcional', emision: false, periodo: false })
+    expect(camposQuePide('ISSUE_PLUS_MONTHS')).toEqual({ fecha: 'no', emision: true, periodo: false })
+    expect(camposQuePide('CALENDAR_PERIOD')).toEqual({ fecha: 'no', emision: false, periodo: true })
+  })
+
+  it('cada tipo pide a lo sumo un dato al cargar', () => {
+    expect(datoQuePide('NONE')).toBeNull()
+    expect(datoQuePide('OPTIONAL')).toEqual({ dato: 'vencimiento', obligatorio: false })
+    expect(datoQuePide('ISSUE_PLUS_MONTHS')).toEqual({ dato: 'emision', obligatorio: true })
+    expect(datoQuePide('CALENDAR_PERIOD')).toEqual({ dato: 'periodo', obligatorio: true })
+  })
+
+  it('el período viaja como el día 1 del mes', () => {
+    expect(datosDelDocumento('periodo', '2026-09')).toEqual({ period_start: '2026-09-01' })
+    expect(datosDelDocumento('emision', '2026-03-10')).toEqual({ issue_date: '2026-03-10' })
+    expect(datosDelDocumento('vencimiento', '')).toEqual({})
+  })
+
+  it('propone el período siguiente al cargado, o el mes anterior si no hay', () => {
+    const hoy = new Date(2026, 9, 8)
+    expect(periodoSugerido('2026-09-01', hoy)).toBe('2026-10')
+    expect(periodoSugerido(null, hoy)).toBe('2026-09')
+    expect(periodoSugerido('2026-12-01', hoy)).toBe('2027-01')
+  })
+})
+
+import { vigenciaDeLaFila } from './compliance'
+
+describe('vigenciaDeLaFila', () => {
+  const HOY = '2026-10-08'
+  const base = {
+    urgencia: 'AL_DIA' as const, expiration_date: null, vence_el: null, exigible_desde: null,
+    falta_dato_de_vigencia: false, issue_date: null, period_start: null,
+    expiration_policy: 'NONE' as const,
+  }
+
+  it('lo que aún no se exige dice desde cuándo', () => {
+    expect(vigenciaDeLaFila({ ...base, urgencia: 'NO_EXIGIBLE', exigible_desde: '2026-11-01' }, HOY))
+      .toBe('Se exige desde el 01-11-26')
+  })
+
+  it('un mensual al día dice qué mes cubre y hasta cuándo sirve', () => {
+    expect(vigenciaDeLaFila({
+      ...base, expiration_policy: 'CALENDAR_PERIOD', period_start: '2026-09-01', vence_el: '2026-11-18',
+    }, HOY)).toBe('Septiembre 2026 · sirve hasta el 18-11-26')
+  })
+
+  it('un mensual vencido lo dice con su mes', () => {
+    expect(vigenciaDeLaFila({
+      ...base, urgencia: 'VENCIDO', expiration_policy: 'CALENDAR_PERIOD',
+      period_start: '2026-08-01', vence_el: '2026-10-05',
+    }, HOY)).toBe('Agosto 2026 · vencido hace 3 días')
+  })
+
+  it('cargado sin el dato que su tipo necesita dice cuál falta', () => {
+    expect(vigenciaDeLaFila({
+      ...base, urgencia: 'VENCIDO', expiration_policy: 'CALENDAR_PERIOD', falta_dato_de_vigencia: true,
+    }, HOY)).toBe('Falta indicar el período')
+    expect(vigenciaDeLaFila({
+      ...base, urgencia: 'VENCIDO', expiration_policy: 'ISSUE_PLUS_MONTHS', falta_dato_de_vigencia: true,
+    }, HOY)).toBe('Falta indicar la fecha de emisión')
+  })
+
+  it('un plazo desde la emisión dice cuándo se emitió y cuándo vence', () => {
+    expect(vigenciaDeLaFila({
+      ...base, expiration_policy: 'ISSUE_PLUS_MONTHS', issue_date: '2026-03-10', vence_el: '2027-03-10',
+    }, HOY)).toBe('Emitido el 10-03-26 · vence el 10-03-27')
+  })
+
+  it('la fecha del documento por vencer usa el relativo de siempre', () => {
+    expect(vigenciaDeLaFila({
+      ...base, urgencia: 'POR_VENCER', expiration_policy: 'REQUIRED',
+      expiration_date: '2026-10-13', vence_el: '2026-10-13',
+    }, HOY)).toBe('vence en 5 días')
+  })
+
+  it('lo que falta no dice nada: el renglón ya pide el archivo', () => {
+    expect(vigenciaDeLaFila({ ...base, urgencia: 'FALTA' }, HOY)).toBeNull()
+  })
+})

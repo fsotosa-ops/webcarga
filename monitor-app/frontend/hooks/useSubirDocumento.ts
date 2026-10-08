@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import type { DatosDelDocumento } from '@/lib/compliance'
 import { complianceApi } from '@/lib/api/compliance'
 import { invalidarCertificacion } from '@/lib/queries/certificacion'
 
@@ -27,8 +28,8 @@ export function useSubirDocumento() {
   const queryClient = useQueryClient()
 
   return useCallback(
-    async (recordId: string, archivo: File, vencimiento?: string) => {
-      await complianceApi.uploadFile(recordId, archivo, vencimiento)
+    async (recordId: string, archivo: File, datos?: DatosDelDocumento) => {
+      await complianceApi.uploadFile(recordId, archivo, datos)
       // Sólo si salió bien. Invalidar tras un fallo haría refetch de datos que
       // no cambiaron y borraría el estado de la pantalla donde el usuario está
       // por reintentar.

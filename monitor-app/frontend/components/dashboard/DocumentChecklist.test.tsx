@@ -75,7 +75,7 @@ describe('DocumentChecklist', () => {
     fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
 
     await waitFor(() => expect(onUpload).toHaveBeenCalledWith(
-      'cr3', expect.any(File), '2027-01-31',
+      'cr3', expect.any(File), { expiration_date: '2027-01-31' },
     ))
   })
 

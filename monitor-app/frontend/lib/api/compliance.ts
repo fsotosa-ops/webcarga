@@ -4,6 +4,7 @@ import type {
   DocumentVersion, EstadoDocumental, PendingComplianceListResponse, RequirementOption,
   ResultadoDePlanilla, ResumenDePlanilla,
 } from '@/lib/types'
+import type { DatosDelDocumento } from '@/lib/compliance'
 import { apiFetch, apiFetchBlob } from './client'
 
 export type ListPendingParams = {
@@ -107,10 +108,13 @@ export const complianceApi = {
    *  maneja `FormData` sin pisar el `Content-Type` (necesita poner el boundary
    *  del multipart él mismo) y propaga el `detail` del backend como mensaje,
    *  así que el motivo del rechazo llega legible al renglón que lo pidió. */
-  uploadFile: (id: string, file: File, expirationDate?: string) => {
+  uploadFile: (id: string, file: File, datos: DatosDelDocumento = {}) => {
     const form = new FormData()
     form.append('file', file)
-    if (expirationDate) form.append('expiration_date', expirationDate)
+    // Lo que pide el tipo (HU-C1, entrega 2b): vencimiento, emisión o período.
+    if (datos.expiration_date) form.append('expiration_date', datos.expiration_date)
+    if (datos.issue_date) form.append('issue_date', datos.issue_date)
+    if (datos.period_start) form.append('period_start', datos.period_start)
     return apiFetch<ComplianceFileUploadResult>(
       `/api/v1/compliance-records/${id}/file`,
       { method: 'POST', body: form },
@@ -141,6 +145,22 @@ export const complianceApi = {
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<CertificationStatus>(`/api/v1/compliance-records/status${suffix}`)
   },
+
+  // ── Solicitar un documento "a pedido" (HU-C1, entrega 2b) ──────────────
+  /** Los documentos "solo cuando se solicita" vigentes que todavía no se le
+   *  pidieron a este sujeto. */
+  solicitables: (entityType: 'CARRIER' | 'DRIVER' | 'ASSET', entityId: string) =>
+    apiFetch<{ id: string; name: string; requirement_code: string }[]>(
+      `/api/v1/compliance-records/requestable?entity_type=${entityType}&entity_id=${entityId}`),
+
+  solicitar: (body: { requirement_id: string; entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string }) =>
+    apiFetch<{ id: string; status: string }>('/api/v1/compliance-records/requests', {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+
+  /** Retira una solicitud mientras no tenga archivo. */
+  quitarSolicitud: (recordId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/compliance-records/requests/${recordId}`, { method: 'DELETE' }),
 
   listPending: (params: ListPendingParams = {}) => {
     const qs = new URLSearchParams()

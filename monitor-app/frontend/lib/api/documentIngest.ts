@@ -7,7 +7,10 @@ export type ClassifyBatchBody = {
   entity_type:      'CARRIER' | 'DRIVER' | 'ASSET'
   entity_id:        string
   requirement_id:   string
+  // Lo que pide el tipo (HU-C1, entrega 2b): vencimiento, emisión o período.
   expiration_date?: string
+  issue_date?:      string
+  period_start?:    string
 }
 
 export type ClassifyBatchResult = {

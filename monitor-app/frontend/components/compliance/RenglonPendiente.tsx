@@ -4,14 +4,16 @@ import { AlertTriangle, Check, Eye, Loader2, Upload } from 'lucide-react'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
 import { AvisoDeFila } from './AvisoDeFila'
 import { ExpirationDateCell } from '@/components/dashboard/ExpirationDateCell'
-import { expiryRelative } from '@/lib/compliance'
+import { vigenciaDeLaFila, type DatosDelDocumento } from '@/lib/compliance'
 import type { PendingComplianceRow, PoliticaVencimiento } from '@/lib/types'
+import { PedirDatoDelDocumento } from './PedirDatoDelDocumento'
 
 interface Props {
   fila:        PendingComplianceRow
   puedeEditar: boolean
-  /** Sube el documento. Recibe la fecha sólo si el requisito la contempla. */
-  onSubir:     (fila: PendingComplianceRow, archivo: File, vencimiento?: string) => Promise<void>
+  /** Sube el documento con lo que su tipo pide: vencimiento, emisión o
+   *  período (HU-C1, entrega 2b). */
+  onSubir:     (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) => Promise<void>
   /** Si no llega, el renglón NO ofrece deshacer: prometer una vuelta atrás
    *  que no existe es peor que no ofrecerla. */
   onDeshacer?: () => void
@@ -35,21 +37,9 @@ interface Props {
    *  Sólo lo pasa quien sabe que hay archivo (`fila.tiene_archivo`), igual que
    *  `onVer`. */
   onFechaCorregida?: () => void
-}
-
-/** Por qué este renglón está pendiente, dicho con la fecha en la mano.
- *
- *  Sale de `urgencia` y no de `status`: los 9 registros vencidos por fecha
- *  del módulo están en `APPROVED_MANUAL`, así que leer el status los
- *  anunciaba como "Aprobado (manual)" mientras el filtro que los contenía
- *  decía "Falta". `urgencia` es la única fuente de esa verdad y la calcula
- *  el SQL, que es también quien arma el filtro. */
-function porQue(fila: PendingComplianceRow): string | null {
-  if (fila.urgencia === 'AL_DIA' || fila.urgencia === 'FALTA') return null
-  const vencido = fila.urgencia === 'VENCIDO'
-  // Sin fecha no hay relativo que calcular, pero un vencido sin fecha
-  // —marcado a mano— sigue estando vencido y tiene que decirlo.
-  return expiryRelative(fila.expiration_date, vencido) ?? (vencido ? 'vencido' : null)
+  /** Retirar un documento "a pedido" que se solicitó y todavía no tiene
+   *  archivo (HU-C1, entrega 2b). Sólo lo pasa quien sabe que es a pedido. */
+  onQuitarSolicitud?: () => void
 }
 
 /** Qué hacer con la fecha, cuando el catálogo todavía no lo dice.
@@ -80,22 +70,27 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
 export function RenglonPendiente({
-  fila, puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida,
+  fila, puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
 }: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
   const politica = politicaDe(fila)
-  const motivo = porQue(fila)
+  // Por qué está pendiente, o qué cubre, dicho con la fecha en la mano. Sale de
+  // lo que calculó el backend (`urgencia`, `vence_el`), no de comparar fechas
+  // acá: los vencidos por fecha están en APPROVED_MANUAL, así que leer el
+  // status los anunciaba como aprobados.
+  const motivo = vigenciaDeLaFila(fila)
 
   /** La regla —recibir, pedir la fecha si el requisito la exige, y recién
    *  entonces subir— vive en el hook, compartida con la ficha legacy. Acá
    *  queda sólo el layout de este renglón. */
-  const { estado, vencimiento, setVencimiento, guardar, reintentar, propsDeZona, propsDeInput } =
-    useGestoDeCarga({
-      politica,
-      puedeEditar,
-      onSubir: (archivo, fecha) => onSubir(fila, archivo, fecha),
-    })
+  const carga = useGestoDeCarga({
+    politica,
+    puedeEditar,
+    onSubir: (archivo, datos) => onSubir(fila, archivo, datos),
+    periodoCargado: fila.period_start,
+  })
+  const { estado, reintentar, propsDeZona, propsDeInput } = carga
 
   const fondo =
     estado.tipo === 'recibiendo'     ? 'bg-accent/10 outline outline-2 -outline-offset-2 outline-accent'
@@ -116,7 +111,10 @@ export function RenglonPendiente({
         </span>
 
         {motivo && estado.tipo === 'reposo' && (
-          <span className="shrink-0 text-etiqueta text-espera">{motivo}</span>
+          <span className={`shrink-0 text-etiqueta ${
+            fila.urgencia === 'AL_DIA' || fila.urgencia === 'NO_EXIGIBLE' ? 'text-informativo' : 'text-espera'}`}>
+            {motivo}
+          </span>
         )}
 
         {onFechaCorregida && estado.tipo === 'reposo' && (
@@ -129,6 +127,16 @@ export function RenglonPendiente({
               onSaved={onFechaCorregida}
             />
           </span>
+        )}
+
+        {onQuitarSolicitud && puedeEditar && estado.tipo === 'reposo' && (
+          <button
+            type="button"
+            onClick={onQuitarSolicitud}
+            className="shrink-0 text-etiqueta font-semibold text-informativo transition-opacity hover:opacity-70"
+          >
+            Quitar solicitud
+          </button>
         )}
 
         {onVer && estado.tipo === 'reposo' && (
@@ -188,33 +196,7 @@ export function RenglonPendiente({
         )}
       </div>
 
-      {estado.tipo === 'pidiendo-fecha' && (
-        <div className="flex items-center gap-2 flex-wrap mt-2 pl-1">
-          <label htmlFor={fechaId} className="text-etiqueta text-informativo">
-            Vence el
-          </label>
-          <input
-            id={fechaId}
-            type="date"
-            value={vencimiento}
-            onChange={e => setVencimiento(e.target.value)}
-            className="text-dato border border-border rounded-lg px-2 py-1"
-          />
-          <button
-            type="button"
-            onClick={guardar}
-            className="text-etiqueta font-semibold text-accion cursor-pointer transition-opacity hover:opacity-70"
-          >
-            Guardar
-          </button>
-          <span className="text-etiqueta text-informativo truncate">
-            {estado.archivo.name}
-            {politica === 'REQUIRED'
-              ? ' · este documento no vale sin su vencimiento'
-              : ' · puedes guardarlo sin la fecha'}
-          </span>
-        </div>
-      )}
+      <PedirDatoDelDocumento carga={carga} id={fechaId} className="pl-1" />
 
       {avisoVer && onVer && <AvisoDeFila mensaje={avisoVer} onReintentar={onVer} />}
 

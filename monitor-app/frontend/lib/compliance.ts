@@ -1,4 +1,4 @@
-import type { ComplianceStatus, PoliticaVencimiento } from './types'
+import type { ComplianceStatus, PoliticaVencimiento, Urgencia } from './types'
 
 /** Estilo compartido para el estado de un compliance_record (7 valores del
  *  CHECK constraint real de public.compliance_records.status, ver lib/types.ts)
@@ -93,8 +93,110 @@ export function formatExpiry(dateStr: string | null | undefined): string {
   })
 }
 
-/** Si un documento admite y si exige fecha de vencimiento. Lo decide la
- *  política del catálogo, que es la única fuente (HU-C1): el mismo
- *  significado que `lleva_fecha`/`exige_fecha` en el backend. */
-export const llevaFecha = (p: PoliticaVencimiento): boolean => p !== 'NONE'
-export const exigeFecha = (p: PoliticaVencimiento): boolean => p === 'REQUIRED'
+/** Qué pide cada tipo al cargar el documento (HU-C1, entrega 2b): la misma
+ *  tabla que `campos_que_pide` del backend (app/services/vencimientos.py),
+ *  que es quien rechaza. Reemplaza a `llevaFecha`/`exigeFecha`, que desde la
+ *  entrega 2 le pedían fecha de vencimiento a un mensual. */
+export type CamposQuePide = {
+  fecha:   'obligatoria' | 'opcional' | 'no'
+  emision: boolean
+  periodo: boolean
+}
+
+const CAMPOS: Record<PoliticaVencimiento, CamposQuePide> = {
+  NONE:              { fecha: 'no',          emision: false, periodo: false },
+  REQUIRED:          { fecha: 'obligatoria', emision: false, periodo: false },
+  OPTIONAL:          { fecha: 'opcional',    emision: false, periodo: false },
+  ISSUE_PLUS_MONTHS: { fecha: 'no',          emision: true,  periodo: false },
+  CALENDAR_PERIOD:   { fecha: 'no',          emision: false, periodo: true },
+}
+
+export const camposQuePide = (p: PoliticaVencimiento): CamposQuePide => CAMPOS[p]
+
+/** El dato que se pide al subir: cada tipo pide a lo sumo uno. */
+export type DatoDeCarga = 'vencimiento' | 'emision' | 'periodo'
+
+export function datoQuePide(p: PoliticaVencimiento): { dato: DatoDeCarga; obligatorio: boolean } | null {
+  const c = camposQuePide(p)
+  if (c.periodo) return { dato: 'periodo', obligatorio: true }
+  if (c.emision) return { dato: 'emision', obligatorio: true }
+  if (c.fecha !== 'no') return { dato: 'vencimiento', obligatorio: c.fecha === 'obligatoria' }
+  return null
+}
+
+/** Lo que viaja con el archivo. */
+export type DatosDelDocumento = {
+  expiration_date?: string
+  issue_date?:      string
+  period_start?:    string
+}
+
+/** El valor de un campo (`YYYY-MM-DD`, o `YYYY-MM` para un período) como
+ *  viaja a la API; vacío no viaja. El período se manda como su día 1. */
+export function datosDelDocumento(dato: DatoDeCarga, valor: string): DatosDelDocumento {
+  if (!valor) return {}
+  if (dato === 'periodo') return { period_start: `${valor.slice(0, 7)}-01` }
+  if (dato === 'emision') return { issue_date: valor }
+  return { expiration_date: valor }
+}
+
+/** El período que se propone al cargar un mensual (`YYYY-MM`): el siguiente
+ *  al que ya está cargado, o el mes anterior a hoy si no hay ninguno (lo más
+ *  común en la planilla: "el documento del mes anterior"). */
+export function periodoSugerido(cargado: string | null | undefined, hoy: Date = new Date()): string {
+  const base = cargado
+    ? new Date(Number(cargado.slice(0, 4)), Number(cargado.slice(5, 7)), 1)
+    : new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}`
+}
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+  'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+/** "septiembre 2026", desde un `YYYY-MM-DD`. */
+export function nombreDelPeriodo(inicio: string): string {
+  return `${MESES[Number(inicio.slice(5, 7)) - 1]} ${inicio.slice(0, 4)}`
+}
+
+/** Lo que una fila dice de su vigencia, en una línea (HU-C1, entrega 2b).
+ *
+ *  Sale de lo que calculó el backend —`urgencia`, `vence_el`, `exigible_desde`,
+ *  `falta_dato_de_vigencia`—, no de comparar fechas acá: el vencimiento tiene
+ *  una sola definición (`app/services/vencimientos.py`). Lo único que se hace
+ *  en el cliente es decirlo en palabras, con el mes o la emisión a la vista. */
+export function vigenciaDeLaFila(fila: {
+  urgencia: Urgencia
+  expiration_policy?: PoliticaVencimiento
+  expiration_date?: string | null
+  vence_el?: string | null
+  exigible_desde?: string | null
+  falta_dato_de_vigencia?: boolean
+  issue_date?: string | null
+  period_start?: string | null
+}, hoy: string = new Date().toISOString().slice(0, 10)): string | null {
+  if (fila.urgencia === 'NO_EXIGIBLE') {
+    return fila.exigible_desde ? `Se exige desde el ${formatExpiry(fila.exigible_desde)}` : 'Todavía no se exige'
+  }
+  if (fila.urgencia === 'FALTA') return null
+  if (fila.falta_dato_de_vigencia) {
+    return camposQuePide(fila.expiration_policy ?? 'NONE').periodo
+      ? 'Falta indicar el período'
+      : 'Falta indicar la fecha de emisión'
+  }
+  const vence = fila.vence_el ?? fila.expiration_date ?? null
+  const vencido = fila.urgencia === 'VENCIDO'
+  const relativo = vence ? expiryRelative(vence, vencido, hoy) : null
+  const mes = fila.period_start
+    ? nombreDelPeriodo(fila.period_start).replace(/^./, c => c.toUpperCase())
+    : null
+
+  if (fila.urgencia === 'AL_DIA') {
+    if (mes && vence) return `${mes} · sirve hasta el ${formatExpiry(vence)}`
+    if (fila.issue_date && vence) return `Emitido el ${formatExpiry(fila.issue_date)} · vence el ${formatExpiry(vence)}`
+    return null
+  }
+  // VENCIDO o POR_VENCER. Un vencido sin fecha —marcado a mano— sigue
+  // estando vencido y tiene que decirlo.
+  const texto = relativo ?? (vencido ? 'vencido' : null)
+  return mes && texto ? `${mes} · ${texto}` : texto
+}

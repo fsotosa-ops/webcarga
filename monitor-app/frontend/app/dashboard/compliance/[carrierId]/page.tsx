@@ -11,6 +11,8 @@ import { carriersApi } from '@/lib/api/carriers'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
+import { camposQuePide, type DatosDelDocumento } from '@/lib/compliance'
+import { SolicitarDocumento } from '@/components/compliance/SolicitarDocumento'
 import { AccionesDeSujeto } from '@/components/compliance/AccionesDeSujeto'
 import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
@@ -359,7 +361,7 @@ function TarjetaDeSujeto({
   avisoVer:        string | null
   previewFetching: boolean
   onVer:  (fila: PendingComplianceRow) => void
-  subir:  (fila: PendingComplianceRow, archivo: File, vencimiento?: string) => Promise<void>
+  subir:  (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) => Promise<void>
 }) {
   // `estado='todos'` FIJO, sin importar `estadoFiltro` (Task 1, ronda de
   // arreglo 2): el detalle de un sujeto se pide UNA sola vez —son ~13 filas,
@@ -377,6 +379,11 @@ function TarjetaDeSujeto({
     enabled: abierto,
   })
   const filas = filasDelEstado(filasQuery.data?.rows ?? [], estadoFiltro)
+  const queryClient = useQueryClient()
+  async function quitarSolicitud(recordId: string) {
+    await complianceApi.quitarSolicitud(recordId)
+    await invalidarCertificacion(queryClient)
+  }
 
   return (
     <div className="border border-border rounded-xl bg-white overflow-hidden">
@@ -433,12 +440,20 @@ function TarjetaDeSujeto({
               puedeEditar={canEdit}
               onSubir={subir}
               onVer={f.tiene_archivo ? () => onVer(f) : undefined}
-              onFechaCorregida={f.expiration_policy !== 'NONE' ? onFechaCorregida : undefined}
+              onFechaCorregida={camposQuePide(f.expiration_policy ?? 'OPTIONAL').fecha !== 'no'
+                ? onFechaCorregida : undefined}
+              onQuitarSolicitud={f.a_pedido && !f.tiene_archivo
+                ? () => { void quitarSolicitud(f.id) } : undefined}
               viendo={viendoId === f.id && previewFetching}
               avisoVer={viendoId === f.id ? avisoVer : null}
             />
           )
       ))}
+      {/* Pedir un documento "solo cuando se solicita" (HU-C1, entrega 2b):
+          al pie de los documentos del sujeto, no en otra pantalla. */}
+      {abierto && canEdit && !filasQuery.isPending && (
+        <SolicitarDocumento entityType={sujeto.entity_type} entityId={sujeto.entity_id} />
+      )}
     </div>
   )
 }
@@ -675,8 +690,8 @@ export default function FichaEmpresaPage() {
     setViendoLabel(fila.document_name)
   }
 
-  const subir = (fila: PendingComplianceRow, archivo: File, vencimiento?: string) =>
-    subirDocumento(fila.id, archivo, vencimiento)
+  const subir = (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) =>
+    subirDocumento(fila.id, archivo, datos)
 
   /** Cuántos documentos CON archivo tiene el sujeto que se está por dar de
    *  baja. No depende del filtro activo — con el filtro en "Falta", que es

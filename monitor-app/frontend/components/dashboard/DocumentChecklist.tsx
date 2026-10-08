@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { Check, Circle, AlertTriangle, Upload, Eye } from 'lucide-react'
 import { COMPLIANCE_STATUS_CONFIG, expiryRelative, formatExpiry } from '@/lib/compliance'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
+import type { DatosDelDocumento } from '@/lib/compliance'
+import { PedirDatoDelDocumento } from '@/components/compliance/PedirDatoDelDocumento'
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import type { ComplianceStatus, PoliticaVencimiento } from '@/lib/types'
@@ -40,7 +42,7 @@ interface Props {
    *  reales (`DriverDetailPanel`, `VehicleDetailPanel`) llaman al backend, y
    *  tipar esto como `void` hacía que el renglón dijera "listo" mientras la
    *  subida fallaba, con el motivo perdiéndose como un rechazo no manejado. */
-  onUpload?:           (recordId: string, file: File, vencimiento?: string) => void | Promise<void>
+  onUpload?:           (recordId: string, file: File, datos?: DatosDelDocumento) => void | Promise<void>
   onStatusChange?:     (recordId: string, status: ComplianceStatus) => void
   onExpirationChange?: (recordId: string, expirationDate: string) => void
   onDelete?:           (recordId: string) => Promise<void>
@@ -81,7 +83,7 @@ export function checklistCompletion(items: ChecklistItem[]): { ok: number; total
 function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationChange, onDelete, carrierId, onReassigned }: {
   item: ChecklistItem
   canEdit: boolean
-  onUpload?: (recordId: string, file: File, vencimiento?: string) => void | Promise<void>
+  onUpload?: (recordId: string, file: File, datos?: DatosDelDocumento) => void | Promise<void>
   onStatusChange?: (recordId: string, status: ComplianceStatus) => void
   onExpirationChange?: (recordId: string, expirationDate: string) => void
   onDelete?: (recordId: string) => Promise<void>
@@ -98,7 +100,7 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
   const carga = useGestoDeCarga({
     politica: item.expiration_policy ?? 'OPTIONAL',
     puedeEditar: canEdit && !!onUpload,
-    onSubir: async (archivo, vencimiento) => { await onUpload?.(item.id, archivo, vencimiento) },
+    onSubir: async (archivo, datos) => { await onUpload?.(item.id, archivo, datos) },
   })
   /** Soltar un archivo encima sólo carga lo que FALTA. Sobre una fila que ya
    *  tiene documento, un arrastre accidental lo reemplazaría sin que nadie lo
@@ -222,33 +224,7 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
         archivo para un requisito que exige fecha no mostraría nada y el
         usuario leería "no pasó nada" — que es literalmente el reporte que
         originó este trabajo. */}
-    {carga.estado.tipo === 'pidiendo-fecha' && (
-      <div className="flex items-center gap-2 flex-wrap mt-2">
-        <label htmlFor={fechaId} className="text-etiqueta text-informativo">
-          Vence el
-        </label>
-        <input
-          id={fechaId}
-          type="date"
-          value={carga.vencimiento}
-          onChange={e => carga.setVencimiento(e.target.value)}
-          className="text-dato border border-border rounded-lg px-2 py-1 bg-white"
-        />
-        <button
-          type="button"
-          onClick={carga.guardar}
-          className="text-etiqueta font-semibold text-accion cursor-pointer transition-opacity hover:opacity-70"
-        >
-          Guardar
-        </button>
-        <span className="text-etiqueta text-informativo truncate">
-          {carga.estado.archivo.name}
-          {(item.expiration_policy ?? 'OPTIONAL') === 'REQUIRED'
-            ? ' · este documento no vale sin su vencimiento'
-            : ' · puedes guardarlo sin la fecha'}
-        </span>
-      </div>
-    )}
+    <PedirDatoDelDocumento carga={carga} id={fechaId} />
 
     {carga.estado.tipo === 'error' && (
       <div role="alert" className="flex items-center gap-2 flex-wrap mt-2">

@@ -24,9 +24,10 @@ describe('useSubirDocumento', () => {
     const client = new QueryClient()
     const { result } = renderHook(() => useSubirDocumento(), { wrapper: envoltorio(client) })
 
-    await act(() => result.current('rec-1', archivo(), '2027-01-31'))
+    await act(() => result.current('rec-1', archivo(), { expiration_date: '2027-01-31' }))
 
-    expect(complianceApi.uploadFile).toHaveBeenCalledWith('rec-1', expect.any(File), '2027-01-31')
+    expect(complianceApi.uploadFile).toHaveBeenCalledWith(
+      'rec-1', expect.any(File), { expiration_date: '2027-01-31' })
     // La otra puerta —subir primero y clasificar despues— ya no existe: se
     // borro al quedarse sin llamadores. Lo que se fija aca es que este hook
     // llame al endpoint DIRECTO, que es de una sola operacion y no puede

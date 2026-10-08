@@ -128,6 +128,8 @@ async def test_solicitar_crea_el_pendiente_como_decision_humana(conexion_reverti
 
     await solicitar_documento(cuerpo, pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
     await solicitar_documento(cuerpo, pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    fila = await _fila_de_la_cola(conexion_revertida, empresa, requisito)
+    assert fila["a_pedido"] is True
 
     filas = await conexion_revertida.fetch(
         "SELECT status, is_manual_override FROM public.compliance_records "

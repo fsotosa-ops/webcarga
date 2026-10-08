@@ -342,8 +342,8 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
                    bandeja y el requisito vacío. Dos implementaciones de
                    "subir un documento a un requisito" es como este módulo
                    terminó con dos caminos que se estorbaban. */
-                onUpload={async (recordId, file, vencimiento) => {
-                  await subirDocumento(recordId, file, vencimiento)
+                onUpload={async (recordId, file, datos) => {
+                  await subirDocumento(recordId, file, datos)
                   await complianceQuery.refetch()
                 }}
                 carrierId={carrierId}

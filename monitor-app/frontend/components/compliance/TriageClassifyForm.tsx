@@ -4,11 +4,17 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
-import { exigeFecha, llevaFecha } from '@/lib/compliance'
+import { datoQuePide, datosDelDocumento } from '@/lib/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
+
+const ETIQUETA_DEL_DATO = {
+  vencimiento: 'Fecha de vencimiento',
+  emision:     'Fecha de emisión',
+  periodo:     'Período que cubre',
+} as const
 
 type Subject = { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string; label: string }
 
@@ -63,8 +69,10 @@ export function TriageClassifyForm({
   }
   const requisitoElegido = requirementId || slot?.requirement_id || ''
   const selected = requirements.find(r => r.id === requisitoElegido) ?? null
-  const muestraFecha = selected ? llevaFecha(selected.expiration_policy) : false
-  const needsDate = selected ? exigeFecha(selected.expiration_policy) : false
+  // Lo que pide el tipo (HU-C1, entrega 2b): vencimiento, emisión o período,
+  // con la misma regla que la carga directa y que el backend.
+  const pide = selected ? datoQuePide(selected.expiration_policy) : null
+  const needsDate = !!pide?.obligatorio
   const loteInvalido = targetIds.length > 1
   const canApply = targetIds.length > 0 && !loteInvalido && !!subject && !!requisitoElegido
     && (!needsDate || !!expiration) && !saving
@@ -79,7 +87,7 @@ export function TriageClassifyForm({
         entity_type: subject.entity_type,
         entity_id: subject.entity_id,
         requirement_id: requisitoElegido,
-        ...(expiration ? { expiration_date: expiration } : {}),
+        ...(pide ? datosDelDocumento(pide.dato, expiration) : {}),
       })
       setRequirementId('')
       setExpiration('')
@@ -227,12 +235,12 @@ export function TriageClassifyForm({
         </>
       )}
 
-      {muestraFecha && (
+      {pide && (
         <label className="block">
-          <span className="text-[11px] font-semibold text-gray-600">Fecha de vencimiento</span>
+          <span className="text-[11px] font-semibold text-gray-600">{ETIQUETA_DEL_DATO[pide.dato]}</span>
           <input
-            type="date"
-            aria-label="Fecha de vencimiento"
+            type={pide.dato === 'periodo' ? 'month' : 'date'}
+            aria-label={ETIQUETA_DEL_DATO[pide.dato]}
             value={expiration}
             onChange={e => setExpiration(e.target.value)}
             className={SELECT}

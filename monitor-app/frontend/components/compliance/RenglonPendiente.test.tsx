@@ -43,7 +43,23 @@ describe('RenglonPendiente — lo que el requisito exige', () => {
     fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
 
     await waitFor(() => expect(onSubir).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'p1' }), expect.any(File), '2027-01-31',
+      expect.objectContaining({ id: 'p1' }), expect.any(File), { expiration_date: '2027-01-31' },
+    ))
+  })
+
+  it('un mensual pide el período, propuesto, y lo manda como día 1', async () => {
+    const onSubir = vi.fn().mockResolvedValue(undefined)
+    render(<RenglonPendiente
+      fila={fila({ expiration_policy: 'CALENDAR_PERIOD', period_start: '2026-09-01' })}
+      puedeEditar onSubir={onSubir} />)
+
+    elegir()
+    // El siguiente al cargado: octubre.
+    expect(await screen.findByLabelText('Período')).toHaveValue('2026-10')
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+
+    await waitFor(() => expect(onSubir).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'p1' }), expect.any(File), { period_start: '2026-10-01' },
     ))
   })
 

@@ -5,6 +5,7 @@ import { Check, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
+import type { DatosDelDocumento } from '@/lib/compliance'
 import { PuenteALaBandeja } from './PuenteALaBandeja'
 import { RenglonPendiente } from './RenglonPendiente'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
@@ -114,8 +115,8 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
   /** El renglón sabe dónde mostrar su propio error, así que el error se deja
    *  propagar: acá no hay un aviso global. Uno solo, arriba del cajón, no
    *  diría de cuál de los 91 renglones está hablando. */
-  const subir = (fila: PendingComplianceRow, archivo: File, vencimiento?: string) =>
-    subirDocumento(fila.id, archivo, vencimiento)
+  const subir = (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) =>
+    subirDocumento(fila.id, archivo, datos)
 
   return (
     <div className="bg-accent/5 border-b border-border px-4 py-3 pl-8 space-y-3">

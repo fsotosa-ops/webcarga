@@ -453,6 +453,9 @@ WITH pending AS (
            -- El vencimiento calculado (HU-C1, entrega 2b): lo que la pantalla
            -- muestra en vez de la fecha suelta.
            {vence_el_sql('cr')} AS vence_calculado,
+           -- Un documento "a pedido" existe porque alguien lo solicitó: la
+           -- ficha ofrece quitar la solicitud mientras no tenga archivo.
+           req.exigible_on = 'ON_REQUEST' AS a_pedido,
            -- El HECHO de si hay un archivo, para que la pantalla deje de
            -- deducirlo del estado. `status IN ('MISSING','EXPIRED')` se venia
            -- usando como si significara "no tiene archivo", y significa dos
@@ -591,7 +594,7 @@ SELECT
     -- fecha que mostrar, es un dato que falta.
     NULLIF(r.vence_calculado, '-infinity') AS vence_el,
     COALESCE(r.vence_calculado = '-infinity', false) AS falta_dato_de_vigencia,
-    r.issue_date, r.period_start,
+    r.issue_date, r.period_start, r.a_pedido,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
     count(*) OVER() AS total_count
@@ -692,6 +695,7 @@ async def list_pending_compliance_records(
             "falta_dato_de_vigencia": r["falta_dato_de_vigencia"],
             "issue_date": r["issue_date"],
             "period_start": r["period_start"],
+            "a_pedido": r["a_pedido"],
             "expiration_policy": r["expiration_policy"],
         }
         for r in rows

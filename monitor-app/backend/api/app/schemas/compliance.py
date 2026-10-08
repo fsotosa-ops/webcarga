@@ -84,6 +84,8 @@ class PendingComplianceRow(BaseModel):
     falta_dato_de_vigencia: bool = False
     issue_date: Optional[date] = None
     period_start: Optional[date] = None
+    # Existe porque alguien lo solicitó (exigible_on = ON_REQUEST).
+    a_pedido: bool = False
     # Que hace su requisito con la fecha de vencimiento. El renglon de carga lo
     # necesita para pedir la fecha ANTES de subir: sin el, o pregunta siempre,
     # o no pregunta nunca y /file rechaza con 422 el archivo ya subido.

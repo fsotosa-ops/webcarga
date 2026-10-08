@@ -774,6 +774,8 @@ export type VistaPreviaDeVigencia = {
  *  'FALTA' igual que una que de verdad falta — un valor cargando dos
  *  sentidos, la misma clase de bug que este módulo ya tuvo cinco veces. */
 export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA' | 'AL_DIA'
+  /** Todavía no se exige (HU-C1, entrega 2b): ni falta ni al día. */
+  | 'NO_EXIGIBLE'
 
 /** Qué mostrar de la documentación de una empresa. `falta` es el default del
  *  backend y reproduce el comportamiento anterior a la ficha. */
@@ -812,6 +814,17 @@ export type PendingComplianceRow = {
    *  ANTES de subir; sin él pregunta siempre o no pregunta nunca, y no
    *  preguntar nunca es un 422 con el archivo ya subido. */
   expiration_policy:          PoliticaVencimiento
+  /** HU-C1, entrega 2b. Opcionales: frontend y API se despliegan por separado. */
+  /** Desde cuándo se exige, si todavía no (`urgencia` = NO_EXIGIBLE). */
+  exigible_desde?:            string | null
+  /** El vencimiento calculado según el tipo y la regla de cada cliente. */
+  vence_el?:                  string | null
+  /** Cargado pero sin la emisión o el período que su tipo necesita. */
+  falta_dato_de_vigencia?:    boolean
+  issue_date?:                string | null
+  period_start?:              string | null
+  /** Existe porque alguien lo solicitó ("solo cuando se solicita"). */
+  a_pedido?:                  boolean
 }
 
 export type PendingComplianceListResponse = {
@@ -833,6 +846,8 @@ export type ComplianceSummaryCounts = {
   al_dia:     number
   por_vencer: number
   falta:      number
+  /** Lo que todavía no se exige (HU-C1, entrega 2b): ni falta ni al día. */
+  no_exigible?: number
 }
 
 /** Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
