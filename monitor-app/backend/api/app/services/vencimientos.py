@@ -18,6 +18,13 @@ llego a tener cuatro errores de conteo distintos.
 DIAS_POR_VENCER = 30
 
 
+def hoy_sql() -> str:
+    """El dia de hoy en Chile. La base corre en UTC: CURRENT_DATE adelanta un
+    dia desde las 21:00. La definicion vive en la funcion de la migracion
+    20261008100000; aca solo se la nombra."""
+    return "public.hoy_chile()"
+
+
 def por_vencer_predicate(alias: str = "cr") -> str:
     """Vence pronto pero TODAVIA NO vencio.
 
@@ -27,8 +34,8 @@ def por_vencer_predicate(alias: str = "cr") -> str:
     """
     return (
         f"({alias}.expiration_date IS NOT NULL "
-        f"AND {alias}.expiration_date >= CURRENT_DATE "
-        f"AND {alias}.expiration_date <= CURRENT_DATE + INTERVAL '{DIAS_POR_VENCER} days')"
+        f"AND {alias}.expiration_date >= {hoy_sql()} "
+        f"AND {alias}.expiration_date <= {hoy_sql()} + INTERVAL '{DIAS_POR_VENCER} days')"
     )
 
 
@@ -38,7 +45,7 @@ def vencido_predicate(alias: str = "cr") -> str:
     aparecio el desfase que documenta `pendiente_predicate`."""
     return (
         f"({alias}.expiration_date IS NOT NULL "
-        f"AND {alias}.expiration_date < CURRENT_DATE)"
+        f"AND {alias}.expiration_date < {hoy_sql()})"
     )
 
 

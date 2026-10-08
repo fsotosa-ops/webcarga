@@ -547,8 +547,8 @@ def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():
     "vencido" y la urgencia de la fila mentiria."""
     sql = pendiente_predicate("cr")
 
-    assert "cr.expiration_date < CURRENT_DATE" in sql
-    assert "cr.expiration_date >= CURRENT_DATE" in sql
+    assert "cr.expiration_date < public.hoy_chile()" in sql
+    assert "cr.expiration_date >= public.hoy_chile()" in sql
     assert "INTERVAL '30 days'" in sql
 
 

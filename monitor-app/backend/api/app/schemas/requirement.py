@@ -44,10 +44,10 @@ class RequirementConditionsPatchBody(BaseModel):
     # motor de match (`document_matcher`) y el catalogo de vencimientos.
     # Renombrarlo dejaria al clasificador sin poder resolver ese documento.
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    # A quien se le EXIGE. No es una etiqueta de presentacion: los disparadores
-    # de siembra (`reconcile_new_*`) sólo siembran LEGAL_MANDATORY, así que
-    # cambiar esto agrega o quita registros. Por eso pasa por la misma vista
-    # previa que las condiciones.
+    # Cuan obligatorio es: lo leen la ficha (`pending_mandatory`) y el
+    # semaforo del Diario, que cuentan solo LEGAL_MANDATORY. NO decide la
+    # siembra: desde 20260816010000 los disparadores (`reconcile_new_*`) leen
+    # `is_active` y las condiciones `applies_to_*`, no el nivel.
     requirement_level: Optional[Literal["LEGAL_MANDATORY", "CONDITIONAL_OPTIONAL"]] = None
 
     # mode="after", no "before": para cuando estos corren, Pydantic ya

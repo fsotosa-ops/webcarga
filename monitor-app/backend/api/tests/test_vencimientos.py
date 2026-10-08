@@ -31,10 +31,38 @@ def test_el_predicado_de_por_vencer_usa_la_constante():
 
 
 def test_por_vencer_excluye_lo_ya_vencido():
-    """Sin la mitad `>= CURRENT_DATE`, "por vencer" se come a "vencido" y un
+    """Sin la mitad `>= hoy`, "por vencer" se come a "vencido" y un
     documento caducado se muestra como si solo estuviera proximo."""
     from app.services.vencimientos import por_vencer_predicate
 
     sql = por_vencer_predicate("cr")
-    assert ">= CURRENT_DATE" in sql
-    assert "<= CURRENT_DATE" in sql
+    assert ">= public.hoy_chile()" in sql
+    assert "<= public.hoy_chile()" in sql
+
+
+APP = pathlib.Path(__file__).parent.parent / "app"
+
+
+def test_nadie_compara_expiration_date_a_mano():
+    """`plantilla_certificacion.py` tenia su propia copia de "vencido". Una
+    segunda copia es como el embudo y el cajon ya divergieron una vez."""
+    culpables = []
+    for archivo in sorted(APP.rglob("*.py")):
+        if archivo.name == "vencimientos.py":
+            continue
+        for n, linea in enumerate(archivo.read_text().splitlines(), 1):
+            if re.search(r"expiration_date\s*<", linea):
+                culpables.append(f"{archivo.relative_to(APP)}:{n}")
+    assert not culpables, "Usa vencido_predicate: " + ", ".join(culpables)
+
+
+def test_vencimientos_no_usa_el_dia_utc():
+    """CURRENT_DATE es el dia UTC (la base corre en UTC): entre las 21 y las
+    24 de Chile adelanta un vencimiento. Todo corte se compara con
+    public.hoy_chile()."""
+    from app.services import vencimientos as v
+
+    for sql in (v.por_vencer_predicate("cr"), v.vencido_predicate("cr"),
+                v.pendiente_predicate("cr")):
+        assert "CURRENT_DATE" not in sql
+        assert "public.hoy_chile()" in sql

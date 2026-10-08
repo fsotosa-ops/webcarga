@@ -122,10 +122,10 @@ _CONDITION_COLUMN_CASTS: dict[str, Optional[str]] = {
     # Sin cast: TEXT y TEXT. `name` es el nombre visible y renombrarlo es
     # inocuo -- nadie guarda copia, todas las pantallas hacen JOIN vivo.
     "name": None,
-    # `requirement_level` decide A QUIEN SE LE EXIGE: los disparadores de
-    # siembra sólo siembran LEGAL_MANDATORY. Cambiarlo agrega o quita
-    # registros, y por eso -- como las condiciones -- guardar no aplica: eso
-    # es POST /recalc.
+    # `requirement_level` dice cuan obligatorio es (la ficha y el Diario
+    # cuentan solo LEGAL_MANDATORY). No decide la siembra: desde
+    # 20260816010000 los disparadores leen `is_active` y `applies_to_*`, no
+    # el nivel, asi que cambiarlo no agrega ni quita registros.
     "requirement_level": None,
     # `requirement_code` NO ESTA, y no es un olvido: es la llave de
     # `requirement_filename_aliases`, del motor de match y del catalogo de

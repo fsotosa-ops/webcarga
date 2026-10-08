@@ -39,7 +39,7 @@ sube. Escribirla dos veces es como este router llegó a tener una lista de
 columnas escrita tres veces y un 500 con toda la suite en verde.
 """
 
-from .vencimientos import lleva_fecha_sql
+from .vencimientos import lleva_fecha_sql, vencido_predicate
 
 COLUMNA_LLAVE = "id_registro"
 COLUMNA_TENENCIA = "documento_recibido"
@@ -148,7 +148,7 @@ SELECT r.id::text                                   AS {COLUMNA_LLAVE},
            WHEN r.status = 'MISSING'  THEN 'Falta'
            WHEN r.status = 'EXPIRED'  THEN 'Vencido'
            WHEN r.status = 'REJECTED' THEN 'Rechazado'
-           WHEN r.expiration_date IS NOT NULL AND r.expiration_date < CURRENT_DATE THEN 'Vencido'
+           WHEN {vencido_predicate("r")} THEN 'Vencido'
            ELSE 'Recibido'
        END                                          AS estado_actual,
        -- Sólo se pre-llena lo que esta columna PUEDE expresar. `EXPIRED`,
