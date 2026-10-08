@@ -40,7 +40,8 @@ def test_list_requirements_returns_catalog():
     pool.fetch.return_value = [{
         "id": "req-1", "target_entity": "DRIVER", "requirement_id": "req-1", "requirement_code": "LICENCIA_CONDUCIR",
         "name": "Licencia de Conducir", "requirement_level": "LEGAL_MANDATORY",
-        "expiration_policy": "REQUIRED", "is_active": True,
+        "expiration_policy": "REQUIRED", "vigencia": None, "tiene_versiones": False,
+        "exigible_on": "ON_ENTITY_START", "is_active": True,
         "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None,
         "alcanzadas": 80, "universo": 80,
     }]
@@ -66,7 +67,8 @@ def test_list_requirements_returns_current_conditions():
     pool.fetch.return_value = [{
         "id": "req-1", "target_entity": "ASSET", "requirement_id": "req-1", "requirement_code": "MANTENCION_FRIO",
         "name": "Mantención Cámara de Frío", "requirement_level": "CONDITIONAL_OPTIONAL",
-        "expiration_policy": "REQUIRED", "is_active": True,
+        "expiration_policy": "REQUIRED", "vigencia": None, "tiene_versiones": False,
+        "exigible_on": "ON_ENTITY_START", "is_active": True,
         "applies_to_fleet_service_type_ids": ["ft-1", "ft-2"], "applies_to_management_types": None,
         "alcanzadas": 36, "universo": 118,
     }]
@@ -92,7 +94,8 @@ def test_el_catalogo_dice_a_cuantas_entidades_alcanza_cada_regla():
     pool.fetch.return_value = [{
         "id": "r1", "target_entity": "ASSET", "requirement_code": "MANTENCION_FRIO",
         "name": "Mantención Cámara de Frío", "requirement_level": "CONDITIONAL_OPTIONAL",
-        "expiration_policy": "REQUIRED", "is_active": True,
+        "expiration_policy": "REQUIRED", "vigencia": None, "tiene_versiones": False,
+        "exigible_on": "ON_ENTITY_START", "is_active": True,
         "applies_to_fleet_service_type_ids": ["t1"], "applies_to_management_types": None,
         "alcanzadas": 36, "universo": 118,
     }]
@@ -229,33 +232,19 @@ def test_patch_conditions_empty_list_resets_fleet_service_type_ids_to_null_not_5
     assert update_call.args[-1] is None
 
 
-def test_patch_conditions_guarda_la_politica_de_vencimiento():
-    """Negocio decide si un documento exige su fecha, sin desplegar.
-
-    El backfill de la migracion dejo a todos como estaban (REQUIRED/NONE, cero
-    OPTIONAL): mover uno es una decision que se toma desde Configuracion, no
-    desde una migracion."""
+def test_patch_conditions_no_acepta_la_politica_suelta():
+    """La politica se escribe SOLO junto con sus parametros, por `vigencia`
+    (HU-C1, entrega 2b): un tipo sin parametros es una regla a medias, y dos
+    caminos para la misma columna son dos verdades. Mandarla suelta no
+    escribe nada."""
     pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.side_effect = [
-        {"id": "r1", "is_active": True, "applies_to_fleet_service_type_ids": None,
-         "applies_to_management_types": None, "expiration_policy": "REQUIRED"},
-        {"id": "r1", "requirement_code": "ANEXO_GC_CONDUCTOR", "is_active": True,
-         "applies_to_fleet_service_type_ids": None, "applies_to_management_types": None,
-         "expiration_policy": "OPTIONAL"},
-    ]
     client = make_client(pool)
 
     res = client.patch("/api/v1/compliance-requirements/r1/conditions",
                        json={"expiration_policy": "OPTIONAL"})
 
-    assert res.status_code == 200
-    assert res.json()["expiration_policy"] == "OPTIONAL"
-    update_sql = conn.fetchrow.call_args_list[1].args[0]
-    assert "expiration_policy" in update_sql
-    # El UPDATE de ancho variable: solo entra lo enviado, nunca COALESCE.
-    assert "COALESCE" not in update_sql
+    assert res.status_code == 422
+    pool.acquire.assert_not_called()
 
 
 def test_patch_conditions_rechaza_una_politica_inventada():
@@ -265,7 +254,7 @@ def test_patch_conditions_rechaza_una_politica_inventada():
     client = make_client(pool)
 
     res = client.patch("/api/v1/compliance-requirements/r1/conditions",
-                       json={"expiration_policy": "SIEMPRE"})
+                       json={"vigencia": {"politica": "SIEMPRE"}})
 
     assert res.status_code == 422
 

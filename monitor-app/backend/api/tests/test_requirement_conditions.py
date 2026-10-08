@@ -314,7 +314,9 @@ VALOR_DE_PRUEBA = {
     "is_active": True,
     "applies_to_fleet_service_type_ids": [],
     "applies_to_management_types": [],
-    "expiration_policy": "REQUIRED",
+    # Vale para cualquier entidad (MONTH_AFTER_START y ON_ENTITY_END son solo
+    # de conductor, y el requisito de prueba sale del catalogo sin elegir).
+    "exigible_on": "ON_REQUEST",
     "name": "ZZ-TEST-INTEGRACION Documento Renombrado",
     "requirement_level": "CONDITIONAL_OPTIONAL",
 }

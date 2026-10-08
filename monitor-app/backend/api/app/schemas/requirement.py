@@ -8,6 +8,30 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .common import ManagementType, normalize_management_types, normalize_nonempty_list
 
 
+# Desde cuándo se exige un documento (HU-C1, entrega 2b). La regla la evalúan
+# la siembra (`reconcile_*`, `SQL_ENTIDADES_QUE_APLICAN`) y la lectura
+# (`exigible_sql` en services/vencimientos.py).
+ExigibleOn = Literal["ON_ENTITY_START", "MONTH_AFTER_START", "ON_ENTITY_END", "ON_REQUEST"]
+
+
+class VigenciaBody(BaseModel):
+    """Cómo vence un tipo de documento: el tipo y sus parámetros.
+
+    La forma la valida Pydantic (tipos y rangos). La COHERENCIA —qué
+    parámetros pide cada tipo— la hace cumplir la base
+    (`validar_vigencia_de_requisito`), y su mensaje vuelve como 422: así hay
+    una sola definición, la que también protege una escritura que no pase por
+    la API."""
+    politica: Literal["NONE", "REQUIRED", "OPTIONAL", "ISSUE_PLUS_MONTHS", "CALENDAR_PERIOD"]
+    validity_months: Optional[int] = Field(None, gt=0)
+    frequency_months: Optional[int] = Field(None, gt=0)
+    cutoff_day: Optional[int] = Field(None, ge=1, le=31)
+    period_offset_months: Optional[int] = Field(None, ge=0)
+    # None = rige el aviso general de Configuración › Alertas.
+    warning_days: Optional[int] = Field(None, ge=0)
+    grace_days: int = Field(0, ge=0)
+
+
 class RequirementConditionsPatchBody(BaseModel):
     """Todo opcional: se puede tocar la vigencia sin tocar las condiciones.
 
@@ -27,13 +51,14 @@ class RequirementConditionsPatchBody(BaseModel):
     is_active: Optional[bool] = None
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None
-    # Que hace el sistema con la fecha de vencimiento de este requisito.
-    # `Literal` y no `str`: un valor fuera de los tres rebota como 422 legible
-    # en vez de llegar al CHECK de la base y volver como 500. La columna es
-    # NOT NULL, asi que `null` explicito no significa nada — pero a diferencia
-    # de `is_active` no hace falta rechazarlo aparte, porque `Literal` ya no
-    # admite None y Pydantic lo corta antes.
-    expiration_policy: Optional[Literal["REQUIRED", "OPTIONAL", "NONE"]] = None
+    # Cómo vence: el tipo y sus parámetros, juntos. No hay un campo suelto para
+    # `expiration_policy`: el tipo sin sus parámetros es una regla a medias, y
+    # dos caminos para escribir la misma columna son dos verdades.
+    vigencia: Optional[VigenciaBody] = None
+    # Desde cuándo se exige. Cambiarlo puede agregar o quitar pendientes (un
+    # documento "solo cuando se solicita" no se siembra), así que, como las
+    # condiciones, se aplica con POST /recalc y su vista previa.
+    exigible_on: Optional[ExigibleOn] = None
     # El nombre VISIBLE del documento. Renombrarlo es inocuo: ninguna tabla
     # guarda copia -- `compliance_records` referencia por id y todas las
     # pantallas hacen JOIN vivo contra `req.name` --, asi que el cambio se ve
@@ -86,7 +111,7 @@ class RequirementConditionsPatchBody(BaseModel):
     def sent_fields(self) -> list[str]:
         fields = (
             "is_active", "applies_to_fleet_service_type_ids", "applies_to_management_types",
-            "expiration_policy", "name", "requirement_level",
+            "name", "requirement_level", "exigible_on", "vigencia",
         )
         return [f for f in fields if f in self.model_fields_set]
 
@@ -111,7 +136,10 @@ class RequirementCreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     target_entity: Literal["CARRIER", "DRIVER", "ASSET"]
     requirement_level: Literal["LEGAL_MANDATORY", "CONDITIONAL_OPTIONAL"] = "LEGAL_MANDATORY"
-    expiration_policy: Literal["REQUIRED", "OPTIONAL", "NONE"] = "NONE"
+    # Nace sin vencimiento salvo que se diga otra cosa: el mismo default que
+    # "Nuevo documento" mostraba antes de la entrega 2b.
+    vigencia: VigenciaBody = Field(default_factory=lambda: VigenciaBody(politica="NONE"))
+    exigible_on: ExigibleOn = "ON_ENTITY_START"
     # Acota el requisito a un generador de carga. La siembra de empresas ya lo
     # respeta (`req.shipper_id IS NULL` para los generales), asi que "lo que
     # Sodimac pide y Walmart no" ya esta en el modelo -- faltaba exponerlo.

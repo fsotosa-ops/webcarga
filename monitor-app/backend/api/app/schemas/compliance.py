@@ -154,6 +154,16 @@ class Alcance(BaseModel):
     universo:   int
 
 
+class ReglaDeVigencia(BaseModel):
+    """La regla base VIGENTE de un tipo de documento (HU-C1, entrega 2b)."""
+    validity_months: Optional[int] = None
+    frequency_months: Optional[int] = None
+    cutoff_day: Optional[int] = None
+    period_offset_months: Optional[int] = None
+    warning_days: Optional[int] = None
+    grace_days: int = 0
+
+
 class RequirementOption(BaseModel):
     """Una fila del catálogo de tipos de documento. La consume el desplegable
     de clasificación de la bandeja de sin clasificar, y —desde el Tramo 3—
@@ -169,6 +179,13 @@ class RequirementOption(BaseModel):
     # tres significados: por eso la carga rechazaba con 422 documentos cuya
     # fecha la pantalla nunca pedía.
     expiration_policy: PoliticaVencimiento
+    # Los parámetros de la regla base vigente; None si el tipo no tiene regla
+    # (no vence, o fecha del documento con el aviso general).
+    vigencia: Optional[ReglaDeVigencia] = None
+    # Si la regla ya cambió alguna vez estando en uso: entonces un cambio más
+    # "rige desde hoy" y la pantalla lo dice.
+    tiene_versiones: bool = False
+    exigible_on: Literal["ON_ENTITY_START", "MONTH_AFTER_START", "ON_ENTITY_END", "ON_REQUEST"]
     is_active: bool
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None

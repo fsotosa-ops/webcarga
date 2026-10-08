@@ -6,8 +6,10 @@ estado de un compliance_record concreto, así que no cuelga de
 para poder crecer con la configuración de condiciones y el recálculo sin
 seguir engordando ese archivo.
 """
+import json
 import re
 import unicodedata
+from contextlib import asynccontextmanager
 from typing import Literal, Optional
 
 import asyncpg
@@ -23,6 +25,7 @@ from ..schemas.requirement import (
     RequirementAliasBody,
     RequirementConditionsPatchBody,
     RequirementCreateBody,
+    VigenciaBody,
 )
 from ..services.audit import log_change
 from ..services.revisiones import registrar_revision
@@ -31,6 +34,12 @@ from ..services.requirement_conditions import (
     TABLA_DE_ENTIDAD,
     calcular_diferencias,
 )
+from ..services.vencimientos import (
+    pendiente_predicate,
+    por_vencer_predicate,
+    vencido_predicate,
+)
+from ..services.vigencia import PARAMETROS, guardar_vigencia
 
 requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compliance"])
 
@@ -83,6 +92,16 @@ SQL_CATALOGO = f"""
            req.requirement_level,
            -- La única fuente de la fecha: el booleano viejo se retiró (HU-C1).
            req.expiration_policy,
+           -- La regla base que rige HOY (HU-C1, entrega 2b). Es la misma
+           -- consulta de services/vigencia.py, correlacionada con `req`.
+           (SELECT jsonb_build_object({", ".join(f"'{c}', r.{c}" for c in PARAMETROS)})
+            FROM public.compliance_requirement_rules r
+            WHERE r.requirement_id = req.id AND r.shipper_id IS NULL
+              AND r.vigente_desde <= public.hoy_chile()
+            ORDER BY r.vigente_desde DESC LIMIT 1) AS vigencia,
+           (SELECT count(*) > 1 FROM public.compliance_requirement_rules r
+            WHERE r.requirement_id = req.id AND r.shipper_id IS NULL) AS tiene_versiones,
+           req.exigible_on,
            req.is_active,
            req.applies_to_fleet_service_type_ids::text[] AS applies_to_fleet_service_type_ids,
            req.applies_to_management_types,
@@ -115,10 +134,10 @@ _CONDITION_COLUMN_CASTS: dict[str, Optional[str]] = {
     "is_active": None,
     "applies_to_fleet_service_type_ids": "uuid[]",
     "applies_to_management_types": "text[]",
-    # Sin cast: es TEXT con CHECK, y el CHECK es la ultima red. La primera es
-    # el `Literal` del schema, que devuelve 422 en vez de dejar reventar la
-    # base con 500.
-    "expiration_policy": None,
+    # Sin cast: TEXT con CHECK. Desde cuándo se exige (HU-C1, entrega 2b).
+    # `expiration_policy` ya no está: se escribe solo junto con sus
+    # parámetros, por `vigencia` (services/vigencia.py).
+    "exigible_on": None,
     # Sin cast: TEXT y TEXT. `name` es el nombre visible y renombrarlo es
     # inocuo -- nadie guarda copia, todas las pantallas hacen JOIN vivo.
     "name": None,
@@ -166,6 +185,9 @@ async def list_compliance_requirements(
         fila = dict(row)
         fila["alcance"] = {"alcanzadas": fila.pop("alcanzadas"),
                            "universo":   fila.pop("universo")}
+        # jsonb llega como texto: el pool no registra un codec para jsonb.
+        if fila["vigencia"] is not None:
+            fila["vigencia"] = json.loads(fila["vigencia"])
         catalogo.append(fila)
     return catalogo
 
@@ -181,6 +203,36 @@ def _codigo_desde_nombre(nombre: str) -> str:
     sin_acentos = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
     limpio = re.sub(r"[^A-Za-z0-9]+", "_", sin_acentos).strip("_").upper()
     return limpio[:60] or "REQUISITO"
+
+
+# Los mensajes de la base, legibles. La coherencia de la vigencia la valida
+# un CONSTRAINT TRIGGER diferido, que falla al CONFIRMAR la transacción: el
+# error sale del `async with conn.transaction()`, no de la sentencia. Su
+# mensaje ya está escrito para una persona (20261009100000); los CHECK de
+# columna no, y se traducen acá por nombre de restricción.
+_MENSAJE_DE_RESTRICCION = {
+    "compliance_requirements_exigible_on_entity_check":
+        "Desde el mes siguiente al ingreso y al término solo aplican a conductores.",
+}
+
+
+@asynccontextmanager
+async def _transaccion_legible(conn):
+    try:
+        async with conn.transaction():
+            # Diferidos durante el bloque (el tipo y su regla se escriben en
+            # dos sentencias), e inmediatos al final.
+            await conn.execute("SET CONSTRAINTS ALL DEFERRED")
+            yield
+            # Los chequeos diferidos corren al confirmar la transacción de
+            # NIVEL SUPERIOR. Forzarlos acá hace que fallen dentro de este
+            # `try` —con su mensaje— y no después, como un 500; y que también
+            # fallen cuando esta transacción es un savepoint de otra.
+            await conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    except asyncpg.CheckViolationError as error:
+        raise HTTPException(
+            422, _MENSAJE_DE_RESTRICCION.get(error.constraint_name, error.message)
+        ) from error
 
 
 @requirements_router.post("", status_code=201)
@@ -200,7 +252,7 @@ async def create_requirement(
     disparada por un formulario de alta.
     """
     codigo = _codigo_desde_nombre(body.name)
-    async with pool.acquire() as conn:
+    async with pool.acquire() as conn, _transaccion_legible(conn):
         ya_existe = await conn.fetchval(
             "SELECT 1 FROM public.compliance_requirements "
             "WHERE target_entity = $1 AND requirement_code = $2",
@@ -216,14 +268,17 @@ async def create_requirement(
             """
             INSERT INTO public.compliance_requirements
                 (requirement_code, name, target_entity, requirement_level,
-                 expiration_policy, shipper_id, is_active)
-            VALUES ($1, $2, $3, $4, $5, $6::uuid, false)
+                 expiration_policy, exigible_on, shipper_id, is_active)
+            VALUES ($1, $2, $3, $4, 'NONE', $5, $6::uuid, false)
             RETURNING id::text, requirement_code, name, target_entity,
-                      requirement_level, expiration_policy, is_active
+                      requirement_level, exigible_on, is_active
             """,
             codigo, body.name, body.target_entity, body.requirement_level,
-            body.expiration_policy, body.shipper_id,
+            body.exigible_on, body.shipper_id,
         )
+        # El tipo y sus parámetros, por el mismo camino que la edición: crear y
+        # editar no pueden tener dos ideas de qué es una vigencia válida.
+        await guardar_vigencia(conn, fila["id"], body.vigencia)
         # UN DOCUMENTO NUEVO NO PUEDE NACER INVISIBLE.
         #
         # El motor de match resuelve buscando alias dentro del nombre del
@@ -250,7 +305,7 @@ async def create_requirement(
                 "ON CONFLICT DO NOTHING",
                 fila["id"], alias,
             )
-    return dict(fila)
+    return {**dict(fila), "expiration_policy": body.vigencia.politica}
 
 
 @requirements_router.get("/{requirement_id}/aliases")
@@ -314,19 +369,20 @@ async def patch_requirement_conditions(
     touched = body.sent_fields()
     if not touched:
         raise HTTPException(422, "Ningún campo enviado")
+    columnas = [campo for campo in touched if campo in _CONDITION_COLUMN_CASTS]
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            current = await conn.fetchrow(
-                f"""
-                SELECT id, {_COLUMNAS_EDITABLES}
-                FROM public.compliance_requirements WHERE id = $1
-                """,
-                requirement_id,
-            )
-            if not current:
-                raise HTTPException(404, "Requisito no encontrado")
+    async with pool.acquire() as conn, _transaccion_legible(conn):
+        current = await conn.fetchrow(
+            f"""
+            SELECT id, {_COLUMNAS_EDITABLES}
+            FROM public.compliance_requirements WHERE id = $1
+            """,
+            requirement_id,
+        )
+        if not current:
+            raise HTTPException(404, "Requisito no encontrado")
 
+        if columnas:
             # UPDATE de ancho variable: solo entran las columnas efectivamente
             # enviadas, cada una con SU valor por placeholder — nunca COALESCE.
             # Con COALESCE, NULL solo puede significar "no lo mandaron", y
@@ -335,38 +391,100 @@ async def patch_requirement_conditions(
             # fija); jamás del request.
             values: list = [requirement_id]
             set_parts = []
-            for field in touched:
+            for field in columnas:
                 values.append(getattr(body, field))
                 cast = _CONDITION_COLUMN_CASTS[field]
                 placeholder = f"${len(values)}" + (f"::{cast}" if cast else "")
                 set_parts.append(f"{field} = {placeholder}")
-
             row = await conn.fetchrow(
                 f"""
-                UPDATE public.compliance_requirements SET
-                    {", ".join(set_parts)}
+                UPDATE public.compliance_requirements SET {', '.join(set_parts)}
                 WHERE id = $1
-                RETURNING id, requirement_code, {_COLUMNAS_EDITABLES}
+                RETURNING id, requirement_code, expiration_policy, {_COLUMNAS_EDITABLES}
                 """,
                 *values,
             )
-            for field in touched:
+            for field in columnas:
                 await log_change(
                     conn, actor=user["sub"], entity_type="REQUIREMENT", entity_id=requirement_id,
                     action="update", field=field,
                     old_value=current[field], new_value=getattr(body, field),
                 )
-            # GUARDAR CUENTA COMO REVISAR, y va en la MISMA transaccion que el
-            # cambio: si el UPDATE se revierte, el registro de revision no puede
-            # quedar diciendo que alguien decidio algo que no ocurrio.
-            #
-            # No se deduce de `audit_log` —que se acaba de escribir dos lineas
-            # arriba— a proposito: "hay una fila en el log" significaria a la vez
-            # "alguien lo cambio" y "alguien lo confirmo", y separar esos dos es
-            # justamente para lo que existe el registro.
-            await registrar_revision(
-                conn, "certification", "conditions", requirement_id, user["sub"])
+        if "vigencia" in touched:
+            # El tipo y sus parámetros van juntos y versionados
+            # (services/vigencia.py); la base valida su coherencia al confirmar.
+            cambio = await guardar_vigencia(conn, requirement_id, body.vigencia)
+            await log_change(
+                conn, actor=user["sub"], entity_type="REQUIREMENT", entity_id=requirement_id,
+                action="update", field="vigencia",
+                old_value=cambio["antes"], new_value=cambio["despues"],
+            )
+        if "vigencia" in touched:
+            # La vigencia cambió después del UPDATE (o sin él): se relee la fila.
+            row = await conn.fetchrow(
+                f"""
+                SELECT id, requirement_code, expiration_policy, {_COLUMNAS_EDITABLES}
+                FROM public.compliance_requirements WHERE id = $1
+                """,
+                requirement_id,
+            )
+        # GUARDAR CUENTA COMO REVISAR, y va en la MISMA transaccion que el
+        # cambio: si el UPDATE se revierte, el registro de revision no puede
+        # quedar diciendo que alguien decidio algo que no ocurrio.
+        #
+        # No se deduce de `audit_log` —que se acaba de escribir dos lineas
+        # arriba— a proposito: "hay una fila en el log" significaria a la vez
+        # "alguien lo cambio" y "alguien lo confirmo", y separar esos dos es
+        # justamente para lo que existe el registro.
+        await registrar_revision(
+            conn, "certification", "conditions", requirement_id, user["sub"])
     return dict(row)
+
+
+class _Ensayo(Exception):
+    """Se lanza para revertir el ensayo de la vista previa de vigencia."""
+
+
+async def _contar_estados(conn, requirement_id: str) -> dict:
+    fila = await conn.fetchrow(
+        f"""
+        SELECT count(*) FILTER (WHERE {vencido_predicate('cr')})    AS vencidos,
+               count(*) FILTER (WHERE {por_vencer_predicate('cr')}) AS por_vencer,
+               count(*) FILTER (WHERE NOT {pendiente_predicate('cr')}) AS al_dia,
+               count(*) FILTER (WHERE cr.status = 'MISSING')        AS falta
+        FROM public.compliance_records cr
+        WHERE cr.requirement_id = $1 AND cr.is_current
+        """,
+        requirement_id,
+    )
+    return dict(fila)
+
+
+@requirements_router.post("/{requirement_id}/vigencia/preview")
+async def preview_vigencia(
+    requirement_id: str, body: VigenciaBody,
+    pool=Depends(get_pool), _=Depends(get_current_user),
+):
+    """Qué pasaría con los documentos de este tipo si se guardara esta
+    vigencia, ANTES de guardarla.
+
+    No hay una estimación aparte: se guarda de verdad dentro de una
+    transacción, se cuenta con los mismos predicados de vencimientos.py y se
+    revierte siempre. Así la vista previa no puede decir algo distinto de lo
+    que la pantalla va a mostrar después."""
+    async with pool.acquire() as conn:
+        antes = await _contar_estados(conn, requirement_id)
+        resultado: dict = {}
+        try:
+            async with _transaccion_legible(conn):
+                cambio = await guardar_vigencia(conn, requirement_id, body)
+                await conn.execute("SET CONSTRAINTS ALL IMMEDIATE")  # validar antes de contar
+                resultado = {"despues": await _contar_estados(conn, requirement_id),
+                             "rige_desde_hoy": cambio["rige_desde_hoy"]}
+                raise _Ensayo
+        except _Ensayo:
+            pass
+    return {"antes": antes, **resultado}
 
 
 @requirements_router.get("/{requirement_id}/recalc-preview", response_model=RecalcPreview)
