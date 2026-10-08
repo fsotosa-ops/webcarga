@@ -1,8 +1,10 @@
 """La vigencia de un documento, calculada al leer (HU-C1, entrega 2).
 
 Cada test es un criterio de aceptacion de la HU o un borde que el spec
-implica. Las funciones se cargan desde el archivo de migracion dentro de la
-transaccion revertida: se prueba el SQL que se va a desplegar.
+implica. Se evalua la EXPRESION real de app/services/vencimientos.py (la unica
+definicion) sobre una fila armada con los parametros. Las piezas de la base
+que usa se cargan desde las migraciones dentro de la transaccion revertida: se
+prueba el SQL que se va a desplegar.
 
 "Hoy" se fija reemplazando public.hoy_chile() dentro de la misma
 transaccion, asi los casos no dependen del dia en que corra la suite.
@@ -14,21 +16,32 @@ from uuid import uuid4
 
 import pytest
 
+from app.services.vencimientos import aviso_desde_sql, exigible_sql, vence_el_sql
+
 pytestmark = pytest.mark.integracion
 
-MIGRACION = (
-    Path(__file__).resolve().parents[2]
-    / "supabase/migrations/20261008120000_vigencia_de_documentos.sql"
-)
+MIGRACIONES = [
+    Path(__file__).resolve().parents[2] / "supabase/migrations" / nombre
+    for nombre in (
+        "20261008120000_vigencia_de_documentos.sql",
+        # El calculo pasa a la consulta; quedan las formulas (Task 5).
+        "20261008130000_vigencia_en_la_consulta.sql",
+    )
+]
 PREFIJO = "ZZ-TEST-VIGENCIA"
 D = dt.date
 F30_1 = dict(frequency_months=1, cutoff_day=18, period_offset_months=1)
 
 
 async def _cargar(conn) -> None:
-    sql = MIGRACION.read_text()
-    for funcion in re.findall(r"CREATE OR REPLACE FUNCTION.*?\$\$;", sql, re.S):
-        await conn.execute(funcion)
+    """Carga las migraciones de la vigencia en orden, sentencia por sentencia
+    (funciones y DROP), dentro de la transaccion revertida."""
+    for migracion in MIGRACIONES:
+        sql = migracion.read_text()
+        for sentencia in re.findall(
+            r"(?:CREATE OR REPLACE FUNCTION.*?\$\$;|DROP FUNCTION[^;]*;)", sql, re.S
+        ):
+            await conn.execute(sentencia)
 
 
 async def _hoy(conn, dia: dt.date) -> None:
@@ -101,25 +114,32 @@ async def _requisito(conn, politica, *, entidad="CARRIER", exigible_on="ON_ENTIT
     return requisito
 
 
-async def _vence(conn, requisito, entidad_tipo, entidad, *, status="APPROVED",
-                 expiration_date=None, issue_date=None, period_start=None):
+_FILA = (
+    "(SELECT $1::uuid AS requirement_id, $2::text AS entity_type, $3::uuid AS entity_id, "
+    "$4::text AS status, $5::date AS expiration_date, $6::date AS issue_date, "
+    "$7::date AS period_start) d"
+)
+
+
+async def _evaluar(conn, expresion, requisito, entidad_tipo, entidad, *, status="APPROVED",
+                   expiration_date=None, issue_date=None, period_start=None):
     return await conn.fetchval(
-        "SELECT public.documento_vence_el($1, $2, $3, $4, $5, $6, $7)",
+        f"SELECT {expresion} FROM {_FILA}",
         requisito, entidad_tipo, entidad, status, expiration_date, issue_date, period_start,
     )
 
 
+async def _vence(conn, requisito, entidad_tipo, entidad, **kw):
+    return await _evaluar(conn, vence_el_sql("d"), requisito, entidad_tipo, entidad, **kw)
+
+
 async def _aviso(conn, requisito, entidad_tipo, entidad, *, expiration_date):
-    return await conn.fetchval(
-        "SELECT public.documento_aviso_desde($1, $2, $3, 'APPROVED', $4, NULL, NULL)",
-        requisito, entidad_tipo, entidad, expiration_date,
-    )
+    return await _evaluar(conn, aviso_desde_sql("d"), requisito, entidad_tipo, entidad,
+                          expiration_date=expiration_date)
 
 
 async def _exigible(conn, requisito, tipo, entidad):
-    return await conn.fetchval(
-        "SELECT public.documento_exigible($1, $2, $3)", requisito, tipo, entidad,
-    )
+    return await _evaluar(conn, exigible_sql("d"), requisito, tipo, entidad)
 
 
 # ── Periodo de calendario (criterio 2) ───────────────────────────────────────
@@ -166,11 +186,8 @@ async def test_un_mensual_aprobado_sin_periodo_no_cubre_nada(conexion_revertida)
     await _cargar(conexion_revertida)
     empresa = await _empresa(conexion_revertida)
     req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base=F30_1)
-    assert await conexion_revertida.fetchval(
-        "SELECT public.documento_vence_el($1, 'CARRIER', $2, 'APPROVED', NULL, NULL, NULL)"
-        " = '-infinity'::date",
-        req, empresa,
-    )
+    assert await _evaluar(conexion_revertida, f"{vence_el_sql('d')} = '-infinity'::date",
+                          req, "CARRIER", empresa)
 
 
 async def test_un_mensual_que_falta_no_esta_vencido_sino_faltante(conexion_revertida):
@@ -336,3 +353,23 @@ async def test_al_ingreso_y_a_pedido_se_exigen_si_hay_registro(conexion_revertid
     for exigible_on in ("ON_ENTITY_START", "ON_REQUEST"):
         req = await _requisito(conexion_revertida, "NONE", exigible_on=exigible_on)
         assert await _exigible(conexion_revertida, req, "CARRIER", empresa) is True
+
+
+# ── Costo de leer (Task 5) ───────────────────────────────────────────────────
+
+async def test_el_calculo_no_llama_funciones_por_registro(conexion_revertida):
+    """Medido el 08/10: con funciones documento_* (no inlineables, porque
+    tienen subconsultas) /compliance/status por empresa paso de 0,28 s a
+    0,76 s. La expresion vive en la consulta: en el plan no puede quedar una
+    llamada por registro, solo las formulas puras (que Postgres despliega)."""
+    await _cargar(conexion_revertida)
+    from app.services.vencimientos import pendiente_predicate
+
+    plan = await conexion_revertida.fetch(
+        f"EXPLAIN (VERBOSE) SELECT {pendiente_predicate('cr')} "
+        "FROM public.compliance_records cr WHERE cr.is_current"
+    )
+    texto = "\n".join(r[0] for r in plan)
+    for funcion in ("documento_vence_el", "documento_aviso_desde",
+                    "documento_exigible", "hoy_chile"):
+        assert funcion not in texto, f"{funcion} se llama por registro"

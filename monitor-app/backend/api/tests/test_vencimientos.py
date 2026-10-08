@@ -24,16 +24,17 @@ def test_ningun_router_escribe_la_ventana_a_mano():
 
 def test_los_predicados_leen_la_vigencia_calculada():
     """El aviso es dato (regla del tipo o Configuracion > Alertas), no una
-    constante; y el vencimiento sale de la politica, no de la fecha suelta."""
+    constante; el vencimiento sale de la politica y de las reglas, no de la
+    fecha suelta; y no hay llamadas por registro a funciones no inlineables."""
     from app.services import vencimientos as v
 
     assert not hasattr(v, "DIAS_POR_VENCER")
-    args = ("cr.requirement_id, cr.entity_type, cr.entity_id, cr.status, "
-            "cr.expiration_date, cr.issue_date, cr.period_start")
-    assert f"public.documento_vence_el({args})" in v.vencido_predicate("cr")
-    assert f"public.documento_aviso_desde({args})" in v.por_vencer_predicate("cr")
-    assert ("public.documento_exigible(cr.requirement_id, cr.entity_type, cr.entity_id)"
-            in v.pendiente_predicate("cr"))
+    vencido, por_vencer, pendiente = (
+        v.vencido_predicate("cr"), v.por_vencer_predicate("cr"), v.pendiente_predicate("cr"))
+    assert "expiration_policy" in vencido and "reglas_aplicables(" in vencido
+    assert "'documento_por_vencer'" in por_vencer
+    assert "exigible_on" in pendiente
+    assert "documento_vence_el" not in pendiente
 
 
 def test_por_vencer_excluye_lo_ya_vencido():

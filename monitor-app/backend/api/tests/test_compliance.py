@@ -547,10 +547,9 @@ def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():
     "vencido" y la urgencia de la fila mentiria."""
     sql = pendiente_predicate("cr")
 
-    assert "public.documento_vence_el(" in sql
-    assert ") < public.hoy_chile()" in sql
-    assert ") >= public.hoy_chile()" in sql
-    assert "public.documento_aviso_desde(" in sql
+    assert "< public.hoy_chile()" in sql
+    assert ">= public.hoy_chile()" in sql
+    assert "<= public.hoy_chile()" in sql
 
 
 def test_la_urgencia_cuenta_lo_marcado_vencido_igual_que_el_embudo():
@@ -562,9 +561,12 @@ def test_la_urgencia_cuenta_lo_marcado_vencido_igual_que_el_embudo():
     las dos. Hoy hay 0 filas asi en produccion; el test existe para que la
     primera no reabra el desfase."""
     from app.routers.compliance import _PENDING_ROWS_SQL
+    from app.services.vencimientos import vencido_predicate
 
-    rama = _PENDING_ROWS_SQL.split("AS urgencia")[0].split("CASE")[-1]
-    assert "r.status = 'EXPIRED'" in rama, (
+    # Se busca la rama entera y no un corte por "CASE": desde HU-C1 (entrega 2)
+    # el predicado de vencido trae CASE anidados.
+    rama = f"WHEN r.status = 'EXPIRED' OR {vencido_predicate('r')} THEN 'VENCIDO'"
+    assert rama in _PENDING_ROWS_SQL.split("AS urgencia")[0], (
         "la urgencia dejo de contar lo marcado vencido a mano; el embudo si lo cuenta"
     )
 
@@ -725,8 +727,9 @@ def test_pending_estado_falta_arma_el_mismo_predicado_que_pendiente():
     verificar sin tocar Postgres."""
     from app.routers.compliance import _PENDING_ROWS_SQL, pendiente_predicate
 
-    rama = _PENDING_ROWS_SQL.split("CASE $10::text")[1].split("END")[0]
-    assert f"ELSE {pendiente_predicate('cr')}" in rama, (
+    # Sin cortar por "END": el predicado trae CASE anidados (HU-C1, entrega 2).
+    rama = _PENDING_ROWS_SQL.split("CASE $10::text")[1]
+    assert f"ELSE {pendiente_predicate('cr')}\n          END" in rama, (
         "el default de 'estado' dejo de armar el mismo predicado que 'pendiente'; "
         "es el desfase que ya tuvo este modulo entre el embudo y el cajon"
     )
