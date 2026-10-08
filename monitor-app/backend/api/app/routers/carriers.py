@@ -16,7 +16,7 @@ from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
-from ..services.vencimientos import por_vencer_predicate, vencido_predicate
+from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
 
 router = APIRouter(prefix="/carriers", tags=["carriers"])
@@ -302,7 +302,11 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
                cr.status, cr.expiration_date, cr.file_url, cr.metadata,
                cr.is_manual_override, cr.updated_at,
                {vencido_predicate('cr')} AS is_expired,
-               {por_vencer_predicate('cr')} AS is_expiring_soon
+               {por_vencer_predicate('cr')} AS is_expiring_soon,
+               -- El vencimiento calculado según el tipo (HU-C1, entrega 2b);
+               -- -infinity (falta la emisión o el período) no es una fecha.
+               NULLIF({vence_el_sql('cr')}, '-infinity') AS vence_el,
+               cr.issue_date, cr.period_start
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.entity_id = $1 AND cr.entity_type = 'CARRIER' AND cr.is_current = true

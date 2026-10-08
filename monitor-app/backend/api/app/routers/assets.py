@@ -6,7 +6,7 @@ from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
 from ..schemas.asset import AssetCreateBody, AssetPatchBody
 from ..services.audit import log_change, record_manual_edit
-from ..services.vencimientos import por_vencer_predicate, vencido_predicate
+from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..utils.document_storage import resolve_signed_url
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -241,7 +241,11 @@ async def list_asset_compliance_records(
                cr.status, cr.expiration_date, cr.file_url, cr.metadata,
                cr.is_manual_override, cr.updated_at,
                {vencido_predicate('cr')} AS is_expired,
-               {por_vencer_predicate('cr')} AS is_expiring_soon
+               {por_vencer_predicate('cr')} AS is_expiring_soon,
+               -- El vencimiento calculado según el tipo (HU-C1, entrega 2b);
+               -- -infinity (falta la emisión o el período) no es una fecha.
+               NULLIF({vence_el_sql('cr')}, '-infinity') AS vence_el,
+               cr.issue_date, cr.period_start
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.entity_id = $1 AND cr.entity_type = 'ASSET' AND cr.is_current = true

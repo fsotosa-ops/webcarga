@@ -32,7 +32,9 @@ from app.routers.compliance import (
 )
 from app.services.plantilla_certificacion import (
     COLUMNAS,
+    COLUMNA_EMISION,
     COLUMNA_LLAVE,
+    COLUMNA_PERIODO,
     COLUMNA_TENENCIA,
     COLUMNA_VENCIMIENTO,
     FUENTE_AUDITORIA,
@@ -424,7 +426,7 @@ async def test_el_resumen_separa_los_dos_ejes(conexion_revertida):
 
 
 @pytest.mark.parametrize("sql, argumentos_que_pasa_el_endpoint",
-                         [(SQL_APLICAR, 4), (SQL_AUDITAR, 7)])
+                         [(SQL_APLICAR, 6), (SQL_AUDITAR, 7)])
 def test_los_placeholders_coinciden_con_los_argumentos(sql, argumentos_que_pasa_el_endpoint):
     """Sustituir $n por literales para probar una consulta no prueba el binding.
     Un placeholder de más o de menos revienta recién en producción, con un
@@ -480,3 +482,88 @@ async def test_un_ida_y_vuelta_sin_tocar_nada_no_cambia_nada(conexion_revertida)
         assert fila[COLUMNA_TENENCIA] == "", (
             f'{fila["estado_actual"]} bajó como "{fila[COLUMNA_TENENCIA]}"'
         )
+
+
+
+# ── Emisión y período (HU-C1, entrega 2b, F4) ────────────────────────────────
+
+
+async def _mensual_de_empresa(conn) -> str:
+    """Un F30-1: mensual, tope el 18, mes anterior, aviso 5. La regla va en la
+    misma transacción (el CONSTRAINT TRIGGER valida al confirmar)."""
+    requisito = await _requisito_de_empresa(conn, "CALENDAR_PERIOD")
+    await conn.execute(
+        "INSERT INTO public.compliance_requirement_rules "
+        "(requirement_id, frequency_months, cutoff_day, period_offset_months, warning_days) "
+        "VALUES ($1, 1, 18, 1, 5)", requisito)
+    return requisito
+
+
+async def test_un_mensual_se_recibe_con_su_periodo(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    usuario = await _usuario_real(conexion_revertida)
+    requisito = await _mensual_de_empresa(conexion_revertida)
+    empresa = await _empresa_activa(conexion_revertida)
+    registro = await _registro_de(conexion_revertida, empresa, requisito)
+
+    fila = await _fila(pool, registro)
+    assert fila[COLUMNA_VENCIMIENTO] == ""  # un mensual no lleva fecha impresa
+    fila[COLUMNA_TENENCIA] = "Sí"
+    fila[COLUMNA_PERIODO] = "09-2026"
+    await cargar_planilla(file=_subir([fila]), dry_run=False, pool=pool, user=usuario)
+
+    guardado = await conexion_revertida.fetchrow(
+        "SELECT status, period_start FROM public.compliance_records WHERE id = $1::uuid", registro)
+    assert (guardado["status"], guardado["period_start"]) == ("APPROVED_MANUAL", date(2026, 9, 1))
+    # Al día, sale de la planilla (lista pendientes). El 01/12 el de
+    # septiembre ya venció (sirve hasta el 18/11) y vuelve, con su período.
+    await conexion_revertida.execute(
+        "CREATE OR REPLACE FUNCTION public.hoy_chile() RETURNS date "
+        "LANGUAGE sql STABLE AS $$ SELECT DATE '2026-12-01' $$")
+    assert (await _fila(pool, registro))[COLUMNA_PERIODO] == "09-2026"
+
+
+async def test_un_mensual_sin_periodo_no_se_da_por_recibido(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    usuario = await _usuario_real(conexion_revertida)
+    requisito = await _mensual_de_empresa(conexion_revertida)
+    empresa = await _empresa_activa(conexion_revertida)
+    fila = await _fila(pool, await _registro_de(conexion_revertida, empresa, requisito))
+    fila[COLUMNA_TENENCIA] = "Sí"
+
+    with pytest.raises(HTTPException) as caso:
+        await cargar_planilla(file=_subir([fila]), dry_run=False, pool=pool, user=usuario)
+    assert "período" in str(caso.value.detail)
+
+
+async def test_no_acepta_periodo_en_un_documento_que_no_es_mensual(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    empresa = await _empresa_activa(conexion_revertida)
+    objetivo = (await _registros_de(conexion_revertida, empresa, con_vencimiento=False))[0]
+    fila = await _fila(pool, objetivo["id"])
+    fila[COLUMNA_PERIODO] = "09-2026"
+
+    resumen = await cargar_planilla(file=_subir([fila]), dry_run=True, pool=pool,
+                                    user=await _usuario_real(conexion_revertida))
+    assert resumen["total_errores"] == 1
+    assert "período" in resumen["errores"][0]["error"]
+
+
+async def test_un_anual_se_recibe_con_su_fecha_de_emision(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    usuario = await _usuario_real(conexion_revertida)
+    requisito = await _requisito_de_empresa(conexion_revertida, "ISSUE_PLUS_MONTHS")
+    await conexion_revertida.execute(
+        "INSERT INTO public.compliance_requirement_rules (requirement_id, validity_months) "
+        "VALUES ($1, 12)", requisito)
+    empresa = await _empresa_activa(conexion_revertida)
+    registro = await _registro_de(conexion_revertida, empresa, requisito)
+
+    fila = await _fila(pool, registro)
+    fila[COLUMNA_TENENCIA] = "Sí"
+    fila[COLUMNA_EMISION] = "10-03-2026"
+    await cargar_planilla(file=_subir([fila]), dry_run=False, pool=pool, user=usuario)
+
+    assert await conexion_revertida.fetchval(
+        "SELECT issue_date FROM public.compliance_records WHERE id = $1::uuid", registro
+    ) == date(2026, 3, 10)

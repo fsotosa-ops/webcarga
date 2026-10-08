@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_editor
 from ..db import get_pool
-from ..routers.compliance import _apply_stored_document
+from ..routers.compliance import _apply_stored_document, _validar_periodo
 from ..schemas.document_ingest import (
     ClassifyBatchBody, IngestUploadResult, MoveItemsBody, TrayPage,
     UndoClassifyBody, UndoClassifyResult, unclassified_predicate,
@@ -24,7 +24,7 @@ from ..schemas.document_ingest import (
 from ..services.audit import log_change
 from ..services.document_matcher import classify_match, match_document
 from ..services.matcher_io import cargar_catalogo, cargar_universo
-from ..services.vencimientos import exige_fecha
+from ..services.vencimientos import falta_para_aprobar
 from ..utils.document_storage import (
     delete_document_version, resolve_signed_url, upload_document_version,
 )
@@ -415,7 +415,7 @@ async def classify_batch(
             record = await conn.fetchrow(
                 """
                 SELECT cr.id::text, cr.entity_id::text, cr.entity_type, cr.status, cr.expiration_date,
-                       req.expiration_policy,
+                       cr.period_start, req.expiration_policy,
                        -- Misma regla que en el camino de carga directa
                        -- (`_apply_compliance_upload`): una empresa dada de baja
                        -- deja de pedir documentos. La Bandeja es el OTRO camino
@@ -447,8 +447,14 @@ async def classify_batch(
                     "bloqueada. Reactívala desde el Directorio para clasificarle documentos.",
                 )
 
-            if body.expiration_date is None and exige_fecha(record["expiration_policy"]):
-                raise HTTPException(422, "Este documento requiere fecha de vencimiento")
+            # Qué pide el tipo (HU-C1, entrega 2b): fecha, emisión o período —
+            # la misma regla que la carga directa.
+            period_start = _validar_periodo(body.period_start, record["period_start"])
+            falta = falta_para_aprobar(
+                record["expiration_policy"], expiration_date=body.expiration_date,
+                issue_date=body.issue_date, period_start=period_start)
+            if falta:
+                raise HTTPException(422, falta)
 
             for item in items:
                 if item["match_status"] == "DISCARDED":
@@ -461,6 +467,7 @@ async def classify_batch(
                     expiration_date=body.expiration_date, actor=user["sub"],
                     entity_type=record["entity_type"], entity_id=record["entity_id"],
                     old_status=record["status"],
+                    issue_date=body.issue_date, period_start=period_start,
                 )
                 applied.append(item["id"])
 

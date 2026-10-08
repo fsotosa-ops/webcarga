@@ -39,11 +39,21 @@ sube. Escribirla dos veces es como este router llegó a tener una lista de
 columnas escrita tres veces y un 500 con toda la suite en verde.
 """
 
-from .vencimientos import lleva_fecha_sql, vencido_predicate
+from .vencimientos import (
+    lleva_emision_sql,
+    lleva_fecha_sql,
+    lleva_periodo_sql,
+    vencido_predicate,
+)
 
 COLUMNA_LLAVE = "id_registro"
 COLUMNA_TENENCIA = "documento_recibido"
 COLUMNA_VENCIMIENTO = "fecha_vencimiento"
+# HU-C1, entrega 2b: un anual se declara por su emisión y un mensual por el mes
+# que cubre. Columnas aparte, igual que los dos ejes: cada una dice una sola
+# cosa, y una planilla vieja sin ellas sigue sirviendo.
+COLUMNA_EMISION = "fecha_emision"
+COLUMNA_PERIODO = "periodo"
 
 COLUMNAS = [
     {"csv_key": COLUMNA_LLAVE,       "label": "Registro",           "editable": False, "ancho": 38},
@@ -55,6 +65,8 @@ COLUMNAS = [
     {"csv_key": "estado_actual",     "label": "Estado actual",      "editable": False, "ancho": 15},
     {"csv_key": COLUMNA_TENENCIA,    "label": "Documento recibido", "editable": True,  "ancho": 20},
     {"csv_key": COLUMNA_VENCIMIENTO, "label": "Fecha de vencimiento", "editable": True, "ancho": 20},
+    {"csv_key": COLUMNA_EMISION,     "label": "Fecha de emisión",   "editable": True,  "ancho": 18},
+    {"csv_key": COLUMNA_PERIODO,     "label": "Período (MM-AAAA)",  "editable": True,  "ancho": 18},
 ]
 
 COLUMNAS_EDITABLES = [c["csv_key"] for c in COLUMNAS if c["editable"]]
@@ -175,6 +187,14 @@ SELECT r.id::text                                   AS {COLUMNA_LLAVE},
        -- No es una columna de la planilla: el escritor sólo emite las claves de
        -- COLUMNAS. Viaja para que el resumen pueda decir cuántas filas son de
        -- cada eje sin volver a consultar la base.
+       -- Emisión y período, sólo en los tipos que se cargan así (vacíos en el
+       -- resto: el parser rechaza que se les escriba uno).
+       CASE WHEN {lleva_emision_sql("r")}
+            THEN COALESCE(to_char(r.issue_date, 'DD-MM-YYYY'), '')
+            ELSE '' END                             AS {COLUMNA_EMISION},
+       CASE WHEN {lleva_periodo_sql("r")}
+            THEN COALESCE(to_char(r.period_start, 'MM-YYYY'), '')
+            ELSE '' END                             AS {COLUMNA_PERIODO},
        {lleva_fecha_sql("r")}                       AS lleva_vencimiento
 FROM resueltas r
 LEFT JOIN public.carriers c ON c.id = r.carrier_id
@@ -210,11 +230,14 @@ SQL_APLICAR = """
 UPDATE public.compliance_records cr
 SET status             = COALESCE(v.estado, cr.status),
     expiration_date    = COALESCE(v.vence, cr.expiration_date),
+    issue_date         = COALESCE(v.emision, cr.issue_date),
+    period_start       = COALESCE(v.periodo, cr.period_start),
     is_manual_override = true,
     overridden_by      = $4::uuid,
     overridden_at      = now(),
     updated_at         = now()
-FROM unnest($1::uuid[], $2::text[], $3::date[]) AS v(id, estado, vence)
+FROM unnest($1::uuid[], $2::text[], $3::date[], $5::date[], $6::date[])
+     AS v(id, estado, vence, emision, periodo)
 WHERE cr.id = v.id AND cr.is_current = true
 RETURNING cr.id::text AS id_registro
 """

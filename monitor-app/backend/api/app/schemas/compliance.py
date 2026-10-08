@@ -77,6 +77,13 @@ class PendingComplianceRow(BaseModel):
     urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA", "AL_DIA", "NO_EXIGIBLE"]
     # Desde cuándo se exige, si todavía no (MONTH_AFTER_START).
     exigible_desde: Optional[date] = None
+    # El vencimiento calculado según su tipo y la regla de cada cliente
+    # (HU-C1, entrega 2b). `falta_dato_de_vigencia`: está cargado pero sin la
+    # emisión o el período que su tipo necesita.
+    vence_el: Optional[date] = None
+    falta_dato_de_vigencia: bool = False
+    issue_date: Optional[date] = None
+    period_start: Optional[date] = None
     # Que hace su requisito con la fecha de vencimiento. El renglon de carga lo
     # necesita para pedir la fecha ANTES de subir: sin el, o pregunta siempre,
     # o no pregunta nunca y /file rechaza con 422 el archivo ya subido.

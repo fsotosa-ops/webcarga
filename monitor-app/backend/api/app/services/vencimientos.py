@@ -30,6 +30,12 @@ predicado tiene que proyectarlos (ver compliance.py y
 plantilla_certificacion.py). Los alias internos empiezan con `vg_` para no
 tapar los de la consulta que los recibe.
 """
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from typing import Literal, Optional
+
 
 
 def hoy_sql() -> str:
@@ -256,16 +262,80 @@ def pendiente_predicate(alias: str = "cr") -> str:
 # política cambiada desde la pantalla (HU-C1, entrega 1).
 
 
-def lleva_fecha(politica: str) -> bool:
-    """El documento admite una fecha de vencimiento: obligatoria u opcional."""
-    return politica != "NONE"
+# Qué pide cada tipo al cargar el documento (HU-C1, entrega 2b, F4). Una sola
+# tabla para la carga directa, la masiva, la bandeja y la planilla; el
+# frontend la espeja en `camposQuePide` (lib/compliance.ts).
+#
+#   fecha    la fecha de vencimiento impresa (obligatoria, opcional o no se pide)
+#   emision  la fecha de emisión (plazo desde la emisión)
+#   periodo  el mes que cubre (período de calendario)
+@dataclass(frozen=True)
+class CamposQuePide:
+    fecha: Literal["obligatoria", "opcional", "no"]
+    emision: bool
+    periodo: bool
 
 
-def exige_fecha(politica: str) -> bool:
-    """Sin fecha, el documento no se acepta."""
-    return politica == "REQUIRED"
+_CAMPOS = {
+    "NONE":              CamposQuePide("no", False, False),
+    "REQUIRED":          CamposQuePide("obligatoria", False, False),
+    "OPTIONAL":          CamposQuePide("opcional", False, False),
+    "ISSUE_PLUS_MONTHS": CamposQuePide("no", True, False),
+    "CALENDAR_PERIOD":   CamposQuePide("no", False, True),
+}
+
+
+def campos_que_pide(politica: str) -> CamposQuePide:
+    return _CAMPOS[politica]
+
+
+def dato_que_falta(politica: str, *, expiration_date, issue_date, period_start) -> Optional[str]:
+    """Qué dato le falta a un documento para darse por recibido, dicho como
+    lo dice una persona ("su fecha de vencimiento"), o None."""
+    campos = campos_que_pide(politica)
+    if campos.fecha == "obligatoria" and expiration_date is None:
+        return "su fecha de vencimiento"
+    if campos.emision and issue_date is None:
+        return "su fecha de emisión"
+    if campos.periodo and period_start is None:
+        return "el período que cubre"
+    return None
+
+
+def falta_para_aprobar(politica: str, *, expiration_date, issue_date, period_start) -> Optional[str]:
+    """El mensaje de rechazo de una carga a la que le falta un dato, o None."""
+    dato = dato_que_falta(politica, expiration_date=expiration_date,
+                          issue_date=issue_date, period_start=period_start)
+    return f"Este documento requiere {dato}" if dato else None
+
+
+def _pide_sql(alias: str, campo: str) -> str:
+    tipos = ", ".join(f"'{p}'" for p, c in _CAMPOS.items() if getattr(c, campo))
+    return f"({alias}.expiration_policy IN ({tipos}))"
+
+
+def lleva_emision_sql(alias: str = "req") -> str:
+    """Si el tipo se carga con fecha de emisión, para un SELECT."""
+    return _pide_sql(alias, "emision")
+
+
+def lleva_periodo_sql(alias: str = "req") -> str:
+    """Si el tipo se carga por período, para un SELECT."""
+    return _pide_sql(alias, "periodo")
 
 
 def lleva_fecha_sql(alias: str = "req") -> str:
-    """`lleva_fecha` para un SELECT, sobre el alias del requisito."""
-    return f"({alias}.expiration_policy <> 'NONE')"
+    """Si el tipo admite la fecha de vencimiento impresa, para un SELECT. Es
+    `campos_que_pide(...).fecha != "no"` sobre el alias del requisito: un
+    anual o un mensual NO la llevan (llevan emisión o período)."""
+    tipos = ", ".join(f"'{p}'" for p, c in _CAMPOS.items() if c.fecha != "no")
+    return f"({alias}.expiration_policy IN ({tipos}))"
+
+
+_MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+          "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+
+
+def nombre_del_periodo(inicio: date) -> str:
+    """"octubre 2026": como lo dice una persona, para los mensajes."""
+    return f"{_MESES[inicio.month - 1]} {inicio.year}"

@@ -139,10 +139,16 @@ def delete_document_version(supabase, storage_path: str | None) -> None:
 async def log_document_replacement(
     pool, *, entity_type: str, entity_id, doc_name: str,
     old_status, old_expiry_date, old_storage_path, actor: str,
+    old_issue_date=None, old_period_start=None,
 ) -> None:
+    # El período y la emisión viajan con el reemplazo (HU-C1, entrega 2b): el
+    # registro guarda solo el período vigente, así que el historial de qué mes
+    # cubría cada archivo vive acá.
     old_value = json.dumps({
         "status": old_status,
         "expiry_date": old_expiry_date.isoformat() if old_expiry_date else None,
+        "issue_date": old_issue_date.isoformat() if old_issue_date else None,
+        "period_start": old_period_start.isoformat() if old_period_start else None,
         "storage_path": old_storage_path,
     })
     await pool.execute(

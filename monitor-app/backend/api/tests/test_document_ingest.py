@@ -746,7 +746,7 @@ def test_delete_item_404_when_missing():
 def _record_row(record_id="rec-1", expiration_policy="NONE"):
     return {
         "id": record_id, "entity_id": "a1", "entity_type": "ASSET",
-        "status": "MISSING", "expiration_date": None,
+        "status": "MISSING", "expiration_date": None, "period_start": None,
         "expiration_policy": expiration_policy,
     }
 
@@ -887,12 +887,24 @@ def test_classify_batch_accepts_an_optional_expiration_without_a_date():
     assert res.json()["applied"] == ["i1"]
 
 
-def test_la_politica_dice_si_lleva_y_si_exige_fecha():
-    from app.services.vencimientos import exige_fecha, lleva_fecha
+def test_classify_batch_pide_el_periodo_de_un_mensual():
+    """La bandeja pide lo que pide el tipo, igual que la carga directa (HU-C1,
+    entrega 2b): un mensual sin período no se clasifica."""
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetch.return_value = [_tray_item()]
+    conn.fetchrow.return_value = _record_row(expiration_policy="CALENDAR_PERIOD")
+    client = make_client(pool)
 
-    assert (lleva_fecha("REQUIRED"), exige_fecha("REQUIRED")) == (True, True)
-    assert (lleva_fecha("OPTIONAL"), exige_fecha("OPTIONAL")) == (True, False)
-    assert (lleva_fecha("NONE"), exige_fecha("NONE")) == (False, False)
+    res = client.post(
+        "/api/v1/document-ingest/items/classify-batch",
+        json={"item_ids": ["i1"], "entity_type": "ASSET",
+              "entity_id": "a1", "requirement_id": "req-1"},
+    )
+
+    assert res.status_code == 422
+    assert "período" in res.json()["detail"]
 
 
 def test_classify_batch_skips_a_discarded_item_instead_of_applying_it():

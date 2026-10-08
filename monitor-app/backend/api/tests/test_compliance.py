@@ -426,6 +426,7 @@ def _pending_row(**overrides):
         # exige su requisito. El renglon de carga necesita la politica para
         # saber si pedir la fecha ANTES de subir.
         "urgencia": "FALTA", "exigible_desde": None, "expiration_policy": "REQUIRED",
+        "vence_el": None, "falta_dato_de_vigencia": False, "issue_date": None, "period_start": None,
         # Si la fila tiene un archivo cargado. Sale de `file_url`, no de una
         # lectura de `status` — ver el test de mas abajo.
         "tiene_archivo": False,
@@ -1341,6 +1342,7 @@ def _record_with_file(record_id="rec-1", **over):
     row = {
         "id": record_id, "entity_type": "ASSET", "entity_id": "a1",
         "status": "APPROVED_MANUAL", "expiration_date": None,
+        "issue_date": None, "period_start": None,
         "file_url": "staging/b1/x.png",
         "metadata": {"file_name": "x.png", "mime_type": "image/png", "size_bytes": 9},
     }
@@ -1356,7 +1358,7 @@ def test_reassign_moves_the_file_to_another_requirement():
     conn.fetchrow.side_effect = [
         _record_with_file(),
         {"id": "rec-2", "entity_id": "a1", "entity_type": "ASSET", "status": "MISSING", "expiration_date": None},
-        {"metadata": {}, "expiration_date": None},
+        {"metadata": {}, "expiration_date": None, "issue_date": None, "period_start": None},
     ]
     client = make_client(pool)
 
@@ -1381,7 +1383,7 @@ def test_reassign_never_deletes_the_blob():
     conn.fetchrow.side_effect = [
         _record_with_file(),
         {"id": "rec-2", "entity_id": "d1", "entity_type": "DRIVER", "status": "MISSING", "expiration_date": None},
-        {"metadata": {}, "expiration_date": None},
+        {"metadata": {}, "expiration_date": None, "issue_date": None, "period_start": None},
     ]
     supabase = MagicMock()
     client = make_client(pool, supabase=supabase)

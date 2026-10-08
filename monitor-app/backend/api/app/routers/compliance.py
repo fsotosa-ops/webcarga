@@ -45,6 +45,8 @@ from ..services.solicitudes import encender_registros
 from ..services.plantilla_certificacion import (
     COLUMNAS,
     COLUMNA_LLAVE,
+    COLUMNA_EMISION,
+    COLUMNA_PERIODO,
     COLUMNA_TENENCIA,
     COLUMNA_VENCIMIENTO,
     FUENTE_AUDITORIA,
@@ -55,12 +57,15 @@ from ..services.plantilla_certificacion import (
     sql_filas_plantilla,
 )
 from ..services.vencimientos import (
-    exige_fecha,
-    lleva_fecha,
+    campos_que_pide,
+    dato_que_falta,
+    falta_para_aprobar,
+    nombre_del_periodo,
     cubierto_predicate,
     exigible_desde_sql,
     exigible_sql,
     pendiente_predicate,
+    vence_el_sql,
     por_vencer_predicate,
     vencido_predicate,
 )
@@ -445,6 +450,9 @@ WITH pending AS (
            -- predicado calcula el vencimiento con ellas (contrato del alias en
            -- services/vencimientos.py). `resolved` las hereda por `p.*`.
            cr.issue_date, cr.period_start,
+           -- El vencimiento calculado (HU-C1, entrega 2b): lo que la pantalla
+           -- muestra en vez de la fecha suelta.
+           {vence_el_sql('cr')} AS vence_calculado,
            -- El HECHO de si hay un archivo, para que la pantalla deje de
            -- deducirlo del estado. `status IN ('MISSING','EXPIRED')` se venia
            -- usando como si significara "no tiene archivo", y significa dos
@@ -579,6 +587,11 @@ SELECT
         ELSE 'FALTA'
     END AS urgencia,
     {exigible_desde_sql('r')} AS exigible_desde,
+    -- -infinity = presente pero sin el dato que su tipo necesita: no es una
+    -- fecha que mostrar, es un dato que falta.
+    NULLIF(r.vence_calculado, '-infinity') AS vence_el,
+    COALESCE(r.vence_calculado = '-infinity', false) AS falta_dato_de_vigencia,
+    r.issue_date, r.period_start,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
     count(*) OVER() AS total_count
@@ -675,6 +688,10 @@ async def list_pending_compliance_records(
             # rechazaria con 422 despues de haber subido).
             "urgencia": r["urgencia"],
             "exigible_desde": r["exigible_desde"],
+            "vence_el": r["vence_el"],
+            "falta_dato_de_vigencia": r["falta_dato_de_vigencia"],
+            "issue_date": r["issue_date"],
+            "period_start": r["period_start"],
             "expiration_policy": r["expiration_policy"],
         }
         for r in rows
@@ -831,6 +848,21 @@ def _parsear_fecha(crudo) -> Optional[date]:
         except ValueError:
             continue
     return None
+
+
+def _parsear_periodo(crudo) -> Optional[date]:
+    """Un mes: "09-2026", "09/2026" o una fecha de ese mes (una celda con
+    formato de fecha llega como datetime). Se guarda como su día 1."""
+    if isinstance(crudo, (datetime, date)):
+        return _parsear_fecha(crudo).replace(day=1)
+    texto = str(crudo).strip()
+    for formato in ("%m-%Y", "%m/%Y", "%Y-%m"):
+        try:
+            return datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    fecha = _parsear_fecha(texto)
+    return fecha.replace(day=1) if fecha else None
 
 
 # Un tercer resultado además de sí/no/vacío: "escribió algo que no se
@@ -1017,8 +1049,15 @@ async def cargar_planilla(
         crudo_tenencia = str(fila.get(COLUMNA_TENENCIA) or "").strip()
         crudo_fecha = fila.get(COLUMNA_VENCIMIENTO)
         crudo_fecha = "" if crudo_fecha is None else str(crudo_fecha).strip()
+        # Emisión y período son opcionales en el archivo: una planilla bajada
+        # antes de la entrega 2b no las trae, y sigue sirviendo.
+        crudo_emision = fila.get(COLUMNA_EMISION)
+        crudo_emision = "" if crudo_emision is None else crudo_emision
+        crudo_periodo = fila.get(COLUMNA_PERIODO)
+        crudo_periodo = "" if crudo_periodo is None else crudo_periodo
 
-        if not crudo_tenencia and not crudo_fecha:
+        if not crudo_tenencia and not crudo_fecha and not str(crudo_emision).strip() \
+                and not str(crudo_periodo).strip():
             vacias += 1
             continue
         if not registro_id:
@@ -1033,10 +1072,19 @@ async def cargar_planilla(
         if crudo_fecha and fecha is None:
             errores.append({"fila": numero, "error": f'Fecha no reconocida: "{crudo_fecha}"'})
             continue
-        if registro_id in pedidas and pedidas[registro_id] != {"tenencia": tenencia, "fecha": fecha}:
+        emision = _parsear_fecha(crudo_emision) if str(crudo_emision).strip() else None
+        if str(crudo_emision).strip() and emision is None:
+            errores.append({"fila": numero, "error": f'Fecha de emisión no reconocida: "{crudo_emision}"'})
+            continue
+        periodo = _parsear_periodo(crudo_periodo) if str(crudo_periodo).strip() else None
+        if str(crudo_periodo).strip() and periodo is None:
+            errores.append({"fila": numero, "error": f'Período no reconocido: "{crudo_periodo}". Escribe MM-AAAA.'})
+            continue
+        pedido = {"tenencia": tenencia, "fecha": fecha, "emision": emision, "periodo": periodo}
+        if registro_id in pedidas and pedidas[registro_id] != pedido:
             errores.append({"fila": numero, "error": "El mismo registro aparece dos veces con valores distintos"})
             continue
-        pedidas[registro_id] = {"tenencia": tenencia, "fecha": fecha}
+        pedidas[registro_id] = pedido
 
     # Una sola vuelta a la base para saber qué existe, qué ya vale eso, y qué
     # documento no admite fecha. Sin esto la vista previa contaría como
@@ -1044,7 +1092,8 @@ async def cargar_planilla(
     actuales = await pool.fetch(
         """
         SELECT cr.id::text AS id_registro, cr.entity_type, cr.entity_id::text,
-               cr.status, cr.expiration_date, req.expiration_policy, req.name AS tipo_documento
+               cr.status, cr.expiration_date, cr.issue_date, cr.period_start,
+               req.expiration_policy, req.name AS tipo_documento
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.id = ANY($1::uuid[]) AND cr.is_current = true
@@ -1061,9 +1110,26 @@ async def cargar_planilla(
             errores.append({"fila": None, "registro_id": registro_id,
                             "error": "Ese registro no existe o ya no está vigente"})
             continue
-        if pedido["fecha"] is not None and not lleva_fecha(actual["expiration_policy"]):
+        campos = campos_que_pide(actual["expiration_policy"])
+        tipo = actual["tipo_documento"]
+        if pedido["fecha"] is not None and campos.fecha == "no":
             errores.append({"fila": None, "registro_id": registro_id,
-                            "error": f'"{actual["tipo_documento"]}" no lleva fecha de vencimiento'})
+                            "error": f'"{tipo}" no lleva fecha de vencimiento'})
+            continue
+        if pedido["emision"] is not None and not campos.emision:
+            errores.append({"fila": None, "registro_id": registro_id,
+                            "error": f'"{tipo}" no se carga con fecha de emisión'})
+            continue
+        if pedido["periodo"] is not None and not campos.periodo:
+            errores.append({"fila": None, "registro_id": registro_id,
+                            "error": f'"{tipo}" no se carga por período'})
+            continue
+        if (pedido["periodo"] is not None and actual["period_start"] is not None
+                and pedido["periodo"] < actual["period_start"]):
+            errores.append({"fila": None, "registro_id": registro_id,
+                            "error": f'"{tipo}" ya tiene cargado el de '
+                                     f'{nombre_del_periodo(actual["period_start"])}: no se reemplaza '
+                                     f'por uno anterior'})
             continue
 
         estado_nuevo = None
@@ -1076,23 +1142,34 @@ async def cargar_planilla(
         # exactamente el defecto que dejó 14 documentos invisibles: quedan
         # aprobados con expiration_date NULL y desaparecen de pendientes para
         # siempre, aunque el papel real venza el mes que viene.
-        vence_final = pedido["fecha"] or actual["expiration_date"]
-        if estado_nuevo == "APPROVED_MANUAL" and exige_fecha(actual["expiration_policy"]) and vence_final is None:
+        falta = dato_que_falta(
+            actual["expiration_policy"],
+            expiration_date=pedido["fecha"] or actual["expiration_date"],
+            issue_date=pedido["emision"] or actual["issue_date"],
+            period_start=pedido["periodo"] or actual["period_start"],
+        )
+        if estado_nuevo == "APPROVED_MANUAL" and falta:
             errores.append({"fila": None, "registro_id": registro_id,
-                            "error": f'"{actual["tipo_documento"]}" necesita su fecha de vencimiento para darse por recibido'})
+                            "error": f'"{tipo}" necesita {falta} para darse por recibido'})
             continue
 
         cambia_estado = estado_nuevo is not None and estado_nuevo != actual["status"]
         cambia_fecha = pedido["fecha"] is not None and pedido["fecha"] != actual["expiration_date"]
-        if not cambia_estado and not cambia_fecha:
+        cambia_emision = pedido["emision"] is not None and pedido["emision"] != actual["issue_date"]
+        cambia_periodo = pedido["periodo"] is not None and pedido["periodo"] != actual["period_start"]
+        if not (cambia_estado or cambia_fecha or cambia_emision or cambia_periodo):
             sin_cambios += 1
             continue
         cambios.append({
             "id": registro_id,
             "estado": estado_nuevo if cambia_estado else None,
             "fecha": pedido["fecha"] if cambia_fecha else None,
+            "emision": pedido["emision"] if cambia_emision else None,
+            "periodo": pedido["periodo"] if cambia_periodo else None,
             "estado_antes": actual["status"],
             "fecha_antes": actual["expiration_date"],
+            "emision_antes": actual["issue_date"],
+            "periodo_antes": actual["period_start"],
             "entity_type": actual["entity_type"],
             "entity_id": actual["entity_id"],
         })
@@ -1126,6 +1203,8 @@ async def cargar_planilla(
         for campo, antes, despues in (
             ("status", c["estado_antes"], c["estado"]),
             ("expiration_date", c["fecha_antes"], c["fecha"]),
+            ("issue_date", c["emision_antes"], c["emision"]),
+            ("period_start", c["periodo_antes"], c["periodo"]),
         ):
             if despues is None:
                 continue
@@ -1143,6 +1222,8 @@ async def cargar_planilla(
                 [c["estado"] for c in cambios],  # $2
                 [c["fecha"] for c in cambios],   # $3
                 user["sub"],                     # $4
+                [c["emision"] for c in cambios], # $5
+                [c["periodo"] for c in cambios], # $6
             )
             await conn.execute(
                 SQL_AUDITAR,
@@ -1286,7 +1367,7 @@ async def reassign_compliance_document(
         async with conn.transaction():
             origen = await conn.fetchrow(
                 "SELECT id::text, entity_type, entity_id::text, status, expiration_date, "
-                "file_url, metadata FROM public.compliance_records "
+                "issue_date, period_start, file_url, metadata FROM public.compliance_records "
                 "WHERE id = $1 AND is_current = true",
                 record_id,
             )
@@ -1370,6 +1451,7 @@ async def reassign_compliance_document(
                     expiration_date=origen["expiration_date"], actor=user["sub"],
                     entity_type=destino["entity_type"], entity_id=destino["entity_id"],
                     old_status=destino["status"],
+                    issue_date=origen["issue_date"], period_start=origen["period_start"],
                 )
 
             # El origen queda como estaba antes de la carga equivocada.
@@ -1377,7 +1459,8 @@ async def reassign_compliance_document(
                 """
                 UPDATE public.compliance_records SET
                     status = 'MISSING', file_url = NULL, metadata = '{}'::jsonb,
-                    expiration_date = NULL, updated_at = NOW()
+                    expiration_date = NULL, issue_date = NULL, period_start = NULL,
+                    updated_at = NOW()
                 WHERE id = $1
                 """,
                 record_id,
@@ -1438,9 +1521,27 @@ async def patch_compliance_record(
 
 
 
+def _validar_periodo(period_start: Optional[date], cargado: Optional[date]) -> Optional[date]:
+    """El período es un MES: se guarda como su día 1, venga el día que venga.
+    Uno anterior al ya cargado se rechaza: retrocedería el estado del
+    documento (el de agosto no reemplaza al de octubre)."""
+    if period_start is None:
+        return None
+    period_start = period_start.replace(day=1)
+    if cargado is not None and period_start < cargado:
+        raise HTTPException(
+            409,
+            f"Ya está cargado el de {nombre_del_periodo(cargado)}: "
+            f"no se reemplaza por uno anterior ({nombre_del_periodo(period_start)}).",
+        )
+    return period_start
+
+
 async def _apply_compliance_upload(
     record_id: str, file: UploadFile, pool, supabase, user,
     expiration_date: date | None = None,
+    issue_date: date | None = None,
+    period_start: date | None = None,
 ) -> dict:
     """Extraído de upload_compliance_file (endpoint singular) para reusar
     exactamente la misma lógica de status/metadata/auditoría desde el
@@ -1473,7 +1574,7 @@ async def _apply_compliance_upload(
     # error que este proyecto ya cometio.
     current = await pool.fetchrow(
         "SELECT cr.entity_id, cr.entity_type, cr.status, cr.expiration_date, cr.metadata, "
-        "       req.expiration_policy, "
+        "       cr.issue_date, cr.period_start, req.expiration_policy, "
         "       (SELECT c.business_name FROM public.carriers c "
         "         WHERE c.operational_status <> 'ACTIVE' AND c.id = CASE cr.entity_type "
         "           WHEN 'CARRIER' THEN cr.entity_id "
@@ -1504,8 +1605,13 @@ async def _apply_compliance_upload(
     # blob huerfano — que es exactamente el defecto que este trabajo viene a
     # eliminar del camino de la bandeja, donde subir precedia a clasificar y
     # cada 422 dejaba un archivo varado con el requisito vacio.
-    if exige_fecha(current["expiration_policy"]) and expiration_date is None:
-        raise HTTPException(422, "Este documento requiere su fecha de vencimiento")
+    # Qué pide el tipo (HU-C1, entrega 2b): fecha, emisión o período.
+    period_start = _validar_periodo(period_start, current.get("period_start"))
+    falta = falta_para_aprobar(
+        current["expiration_policy"], expiration_date=expiration_date,
+        issue_date=issue_date, period_start=period_start)
+    if falta:
+        raise HTTPException(422, falta)
 
     key_prefix = f"{current['entity_type'].lower()}/{current['entity_id']}/{record_id}"
     uploaded = await upload_document_version(supabase, key_prefix=key_prefix, file=file)
@@ -1531,11 +1637,13 @@ async def _apply_compliance_upload(
                     file_url = $2,
                     metadata = $3::jsonb,
                     expiration_date = COALESCE($4, expiration_date),
+                    issue_date = COALESCE($5, issue_date),
+                    period_start = COALESCE($6, period_start),
                     updated_at = NOW()
                 WHERE id = $1
                 """,
                 record_id, uploaded["storage_path"], json.dumps(new_metadata),
-                expiration_date,
+                expiration_date, issue_date, period_start,
             )
             await record_manual_edit(
                 conn, table="compliance_records", where={"id": record_id}, actor=user["sub"],
@@ -1549,6 +1657,8 @@ async def _apply_compliance_upload(
                     doc_name=f"compliance_record:{record_id}",
                     old_status=current["status"], old_expiry_date=current["expiration_date"],
                     old_storage_path=old_storage_path, actor=user["sub"],
+                    old_issue_date=current.get("issue_date"),
+                    old_period_start=current.get("period_start"),
                 )
 
     return {"status": "APPROVED_MANUAL", **uploaded}
@@ -1559,6 +1669,7 @@ async def _apply_stored_document(
     mime_type: str | None, size_bytes: int | None,
     expiration_date: date | None, actor: str, entity_type: str, entity_id: str,
     old_status: str,
+    issue_date: date | None = None, period_start: date | None = None,
 ) -> None:
     """Aplica a un compliance_record un archivo que YA está en storage.
 
@@ -1577,7 +1688,8 @@ async def _apply_stored_document(
     sobrescribe) pero nada permite volver a encontrarlo.
     """
     current = await conn.fetchrow(
-        "SELECT metadata, expiration_date FROM public.compliance_records WHERE id = $1",
+        "SELECT metadata, expiration_date, issue_date, period_start "
+        "FROM public.compliance_records WHERE id = $1",
         record_id,
     )
     old_metadata = (current["metadata"] if current else None) or {}
@@ -1591,6 +1703,8 @@ async def _apply_stored_document(
             old_status=old_status,
             old_expiry_date=current["expiration_date"] if current else None,
             old_storage_path=old_storage_path, actor=actor,
+            old_issue_date=current["issue_date"] if current else None,
+            old_period_start=current["period_start"] if current else None,
         )
 
     metadata = {
@@ -1609,10 +1723,12 @@ async def _apply_stored_document(
             file_url = $2,
             metadata = $3::jsonb,
             expiration_date = COALESCE($4, expiration_date),
+            issue_date = COALESCE($5, issue_date),
+            period_start = COALESCE($6, period_start),
             updated_at = NOW()
         WHERE id = $1
         """,
-        record_id, storage_path, json.dumps(metadata), expiration_date,
+        record_id, storage_path, json.dumps(metadata), expiration_date, issue_date, period_start,
     )
     await record_manual_edit(
         conn, table="compliance_records", where={"id": record_id}, actor=actor,
@@ -1627,11 +1743,14 @@ async def upload_compliance_file(
     record_id: str,
     file: UploadFile = File(...),
     expiration_date: Optional[date] = Form(None),
+    issue_date: Optional[date] = Form(None),
+    period_start: Optional[date] = Form(None),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
     user=Depends(require_editor),
 ):
-    return await _apply_compliance_upload(record_id, file, pool, supabase, user, expiration_date)
+    return await _apply_compliance_upload(
+        record_id, file, pool, supabase, user, expiration_date, issue_date, period_start)
 
 
 _BULK_UPLOAD_MAX_FILES = 30
@@ -1749,6 +1868,10 @@ async def delete_compliance_file(
                     -- si la limpiaba: eran dos caminos haciendo cosas
                     -- distintas para llegar al mismo lugar.
                     expiration_date = NULL,
+                    -- La emisión y el período también (HU-C1, entrega 2b):
+                    -- describen el documento que se borró.
+                    issue_date = NULL,
+                    period_start = NULL,
                     updated_at = NOW()
                 WHERE id = $1
                 """,

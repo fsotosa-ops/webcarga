@@ -124,6 +124,9 @@ class ClassifyBatchBody(BaseModel):
     entity_id: str
     requirement_id: str
     expiration_date: Optional[date] = None
+    # Lo que pide el tipo de vigencia (HU-C1, entrega 2b, F4).
+    issue_date: Optional[date] = None
+    period_start: Optional[date] = None
 
 
 class MoveItemsBody(BaseModel):
