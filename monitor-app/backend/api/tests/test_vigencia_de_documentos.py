@@ -1,0 +1,338 @@
+"""La vigencia de un documento, calculada al leer (HU-C1, entrega 2).
+
+Cada test es un criterio de aceptacion de la HU o un borde que el spec
+implica. Las funciones se cargan desde el archivo de migracion dentro de la
+transaccion revertida: se prueba el SQL que se va a desplegar.
+
+"Hoy" se fija reemplazando public.hoy_chile() dentro de la misma
+transaccion, asi los casos no dependen del dia en que corra la suite.
+Los nombres son SINTETICOS."""
+import datetime as dt
+import re
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+
+pytestmark = pytest.mark.integracion
+
+MIGRACION = (
+    Path(__file__).resolve().parents[2]
+    / "supabase/migrations/20261008120000_vigencia_de_documentos.sql"
+)
+PREFIJO = "ZZ-TEST-VIGENCIA"
+D = dt.date
+F30_1 = dict(frequency_months=1, cutoff_day=18, period_offset_months=1)
+
+
+async def _cargar(conn) -> None:
+    sql = MIGRACION.read_text()
+    for funcion in re.findall(r"CREATE OR REPLACE FUNCTION.*?\$\$;", sql, re.S):
+        await conn.execute(funcion)
+
+
+async def _hoy(conn, dia: dt.date) -> None:
+    await conn.execute(
+        "CREATE OR REPLACE FUNCTION public.hoy_chile() RETURNS date "
+        f"LANGUAGE sql STABLE AS $$ SELECT DATE '{dia.isoformat()}' $$"
+    )
+
+
+def _suf() -> str:
+    return uuid4().hex[:8].upper()
+
+
+async def _empresa(conn):
+    s = _suf()
+    return await conn.fetchval(
+        "INSERT INTO public.carriers (business_name, tax_id) VALUES ($1, $2) RETURNING id",
+        f"{PREFIJO} {s}", f"{PREFIJO}-{s}",
+    )
+
+
+async def _cliente(conn, empresa=None):
+    cliente = await conn.fetchval(
+        "INSERT INTO public.shippers (name) VALUES ($1) RETURNING id", f"{PREFIJO} {_suf()}",
+    )
+    if empresa:
+        await conn.execute(
+            "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) "
+            "VALUES ($1, $2, 'ACTIVE')", empresa, cliente,
+        )
+    return cliente
+
+
+async def _conductor(conn, empresa=None, *, desde=None, estado="ACTIVE"):
+    conductor = await conn.fetchval(
+        "INSERT INTO public.drivers (full_name) VALUES ($1) RETURNING id", f"{PREFIJO} {_suf()}",
+    )
+    if empresa:
+        await conn.execute(
+            "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date) "
+            "VALUES ($1, $2, $3, COALESCE($4::date, CURRENT_DATE))",
+            conductor, empresa, estado, desde,
+        )
+    return conductor
+
+
+async def _regla(conn, requisito, **params):
+    columnas = ["requirement_id", *params]
+    marcas = ", ".join(f"${i}" for i in range(1, len(columnas) + 1))
+    await conn.execute(
+        f"INSERT INTO public.compliance_requirement_rules ({', '.join(columnas)}) "
+        f"VALUES ({marcas})", requisito, *params.values(),
+    )
+
+
+async def _requisito(conn, politica, *, entidad="CARRIER", exigible_on="ON_ENTITY_START",
+                     base: dict | None = None):
+    requisito = await conn.fetchval(
+        """
+        INSERT INTO public.compliance_requirements
+            (requirement_code, name, target_entity, requirement_level,
+             expiration_policy, exigible_on, is_active)
+        VALUES ($1, $2, $3, 'LEGAL_MANDATORY', $4, $5, false)
+        RETURNING id
+        """,
+        f"ZZ_VIG_{_suf()}", f"{PREFIJO} requisito", entidad, politica, exigible_on,
+    )
+    if base is not None:
+        await _regla(conn, requisito, **base)
+    return requisito
+
+
+async def _vence(conn, requisito, entidad_tipo, entidad, *, status="APPROVED",
+                 expiration_date=None, issue_date=None, period_start=None):
+    return await conn.fetchval(
+        "SELECT public.documento_vence_el($1, $2, $3, $4, $5, $6, $7)",
+        requisito, entidad_tipo, entidad, status, expiration_date, issue_date, period_start,
+    )
+
+
+async def _aviso(conn, requisito, entidad_tipo, entidad, *, expiration_date):
+    return await conn.fetchval(
+        "SELECT public.documento_aviso_desde($1, $2, $3, 'APPROVED', $4, NULL, NULL)",
+        requisito, entidad_tipo, entidad, expiration_date,
+    )
+
+
+async def _exigible(conn, requisito, tipo, entidad):
+    return await conn.fetchval(
+        "SELECT public.documento_exigible($1, $2, $3)", requisito, tipo, entidad,
+    )
+
+
+# ── Periodo de calendario (criterio 2) ───────────────────────────────────────
+
+async def test_f30_1_de_septiembre_cubre_hasta_el_corte_de_noviembre(conexion_revertida):
+    """El de septiembre se pide el 18/10 y cubre hasta que se pide el de
+    octubre, el 18/11."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base=F30_1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 9, 1)) == D(2026, 11, 18)
+
+
+async def test_con_el_de_agosto_vence_el_18_de_octubre(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base=F30_1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 8, 1)) == D(2026, 10, 18)
+
+
+async def test_la_gracia_corre_el_corte(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base={**F30_1, "grace_days": 3})
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 8, 1)) == D(2026, 10, 21)
+
+
+async def test_corte_31_en_febrero_es_el_ultimo_dia_de_febrero(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD",
+                           base=dict(frequency_months=1, cutoff_day=31, period_offset_months=1))
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 12, 1)) == D(2027, 2, 28)
+
+
+async def test_un_mensual_aprobado_sin_periodo_no_cubre_nada(conexion_revertida):
+    """Review Focus 1: sin periodo no hay de que periodo es. Cuenta como
+    vencido, no como al dia. -infinity se compara en SQL: asyncpg no tiene un
+    equivalente fiel en datetime.date."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base=F30_1)
+    assert await conexion_revertida.fetchval(
+        "SELECT public.documento_vence_el($1, 'CARRIER', $2, 'APPROVED', NULL, NULL, NULL)"
+        " = '-infinity'::date",
+        req, empresa,
+    )
+
+
+async def test_un_mensual_que_falta_no_esta_vencido_sino_faltante(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base=F30_1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa, status="MISSING") is None
+
+
+# ── Corte por cliente (criterio 3) ───────────────────────────────────────────
+
+async def test_un_solo_registro_se_evalua_contra_el_corte_de_cada_cliente(conexion_revertida):
+    """Base dia 15; el cliente A corta el 5 y el B no tiene variante. Gana el
+    peor: el de septiembre vence el 05/11, que es el de A."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    cliente_a = await _cliente(conexion_revertida, empresa)
+    await _cliente(conexion_revertida, empresa)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD",
+                           base=dict(frequency_months=1, cutoff_day=15, period_offset_months=1))
+    await _regla(conexion_revertida, req, shipper_id=cliente_a,
+                 frequency_months=1, cutoff_day=5, period_offset_months=1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 9, 1)) == D(2026, 11, 5)
+
+
+async def test_la_variante_reemplaza_a_la_base_para_su_cliente(conexion_revertida):
+    """Si el unico cliente tiene variante, la base no le aplica: una variante
+    MAS permisiva (dia 25) tambien se respeta."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    cliente = await _cliente(conexion_revertida, empresa)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD",
+                           base=dict(frequency_months=1, cutoff_day=15, period_offset_months=1))
+    await _regla(conexion_revertida, req, shipper_id=cliente,
+                 frequency_months=1, cutoff_day=25, period_offset_months=1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 9, 1)) == D(2026, 11, 25)
+
+
+async def test_la_variante_de_un_cliente_ajeno_no_aplica(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    ajeno = await _cliente(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base=F30_1)
+    await _regla(conexion_revertida, req, shipper_id=ajeno,
+                 frequency_months=1, cutoff_day=5, period_offset_months=1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 9, 1)) == D(2026, 11, 18)
+
+
+async def test_el_conductor_hereda_los_clientes_de_su_empresa(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    cliente = await _cliente(conexion_revertida, empresa)
+    conductor = await _conductor(conexion_revertida, empresa)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", entidad="DRIVER",
+                           base=dict(frequency_months=1, cutoff_day=15, period_offset_months=1))
+    await _regla(conexion_revertida, req, shipper_id=cliente,
+                 frequency_months=1, cutoff_day=5, period_offset_months=1)
+    assert await _vence(conexion_revertida, req, "DRIVER", conductor,
+                        period_start=D(2026, 9, 1)) == D(2026, 11, 5)
+
+
+# ── Cambiar la politica no reescribe el pasado (criterio 6) ──────────────────
+
+async def test_mover_el_corte_no_cambia_un_periodo_anterior(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD",
+                           base=dict(frequency_months=1, cutoff_day=15, period_offset_months=1))
+    # Desde octubre, el corte pasa al 5.
+    await _regla(conexion_revertida, req, vigente_desde=D(2026, 10, 1),
+                 frequency_months=1, cutoff_day=5, period_offset_months=1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 9, 1)) == D(2026, 11, 15)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        period_start=D(2026, 10, 1)) == D(2026, 12, 5)
+
+
+# ── Plazo desde la emision ───────────────────────────────────────────────────
+
+async def test_anual_vence_doce_meses_despues_de_la_emision(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "ISSUE_PLUS_MONTHS", base=dict(validity_months=12))
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        issue_date=D(2026, 3, 10)) == D(2027, 3, 10)
+
+
+# ── Fecha del documento y no vence ───────────────────────────────────────────
+
+async def test_fecha_del_documento_no_necesita_regla(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "REQUIRED")
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        expiration_date=D(2026, 12, 1)) == D(2026, 12, 1)
+
+
+async def test_un_documento_que_no_vence_no_vence_aunque_traiga_fecha(conexion_revertida):
+    """La politica es la unica fuente. Hay 12 registros asi en produccion
+    (07/10): ver el gate de la Task 5 del plan."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "NONE")
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        expiration_date=D(2020, 1, 1)) is None
+
+
+# ── Aviso (criterio 5) ───────────────────────────────────────────────────────
+
+async def test_sin_dias_propios_avisa_con_el_general(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "REQUIRED")
+    await conexion_revertida.execute(
+        "UPDATE app.alert_thresholds SET warning_days = 11 WHERE doc_type = 'documento_por_vencer'")
+    assert await _aviso(conexion_revertida, req, "CARRIER", empresa,
+                        expiration_date=D(2026, 12, 31)) == D(2026, 12, 20)
+
+
+async def test_los_dias_del_tipo_cambian_el_aviso(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "REQUIRED", base=dict(warning_days=7))
+    assert await _aviso(conexion_revertida, req, "CARRIER", empresa,
+                        expiration_date=D(2026, 12, 31)) == D(2026, 12, 24)
+
+
+# ── Exigibilidad ────────────────────────────────────────────────────────────
+
+async def test_mes_siguiente_al_ingreso(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    conductor = await _conductor(conexion_revertida, empresa, desde=D(2026, 10, 7))
+    req = await _requisito(conexion_revertida, "NONE", entidad="DRIVER",
+                           exigible_on="MONTH_AFTER_START")
+    await _hoy(conexion_revertida, D(2026, 10, 31))
+    assert await _exigible(conexion_revertida, req, "DRIVER", conductor) is False
+    await _hoy(conexion_revertida, D(2026, 11, 1))
+    assert await _exigible(conexion_revertida, req, "DRIVER", conductor) is True
+
+
+async def test_al_termino_solo_si_ya_no_tiene_empresa(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    activo = await _conductor(conexion_revertida, empresa)
+    desvinculado = await _conductor(conexion_revertida, empresa, estado="INACTIVE")
+    nunca_vinculado = await _conductor(conexion_revertida)
+    req = await _requisito(conexion_revertida, "NONE", entidad="DRIVER",
+                           exigible_on="ON_ENTITY_END")
+    assert await _exigible(conexion_revertida, req, "DRIVER", activo) is False
+    assert await _exigible(conexion_revertida, req, "DRIVER", desvinculado) is True
+    assert await _exigible(conexion_revertida, req, "DRIVER", nunca_vinculado) is False
+
+
+async def test_al_ingreso_y_a_pedido_se_exigen_si_hay_registro(conexion_revertida):
+    """ON_REQUEST no lo decide la lectura: lo decide la siembra (F3). Si hay
+    registro, es porque alguien lo pidio."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    for exigible_on in ("ON_ENTITY_START", "ON_REQUEST"):
+        req = await _requisito(conexion_revertida, "NONE", exigible_on=exigible_on)
+        assert await _exigible(conexion_revertida, req, "CARRIER", empresa) is True
