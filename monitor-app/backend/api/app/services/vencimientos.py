@@ -13,9 +13,19 @@ ninguna pantalla del modulo. La renovacion no tenia superficie.
 
 Una sola definicion, porque tres definiciones de lo mismo es como este repo
 llego a tener cuatro errores de conteo distintos.
-"""
 
-DIAS_POR_VENCER = 30
+HU-C1, entrega 2: cuando vence, desde cuando avisa y desde cuando se exige un
+documento ya no se lee de la fecha suelta. Lo calculan al leer las funciones
+de la migracion 20261008120000 (documento_vence_el, documento_aviso_desde,
+documento_exigible), segun la politica del tipo y la regla de cada cliente.
+Este modulo solo las nombra, y sigue siendo la unica puerta desde Python.
+
+CONTRATO DEL ALIAS: el alias que recibe cada predicado debe exponer
+requirement_id, entity_type, entity_id, status, expiration_date, issue_date y
+period_start. Sobre la tabla (`cr`) los tiene todos; una CTE que alimente a un
+predicado tiene que proyectarlos (ver compliance.py y
+plantilla_certificacion.py).
+"""
 
 
 def hoy_sql() -> str:
@@ -25,6 +35,30 @@ def hoy_sql() -> str:
     return "public.hoy_chile()"
 
 
+def _vigencia_args(alias: str) -> str:
+    return (f"{alias}.requirement_id, {alias}.entity_type, {alias}.entity_id, "
+            f"{alias}.status, {alias}.expiration_date, {alias}.issue_date, "
+            f"{alias}.period_start")
+
+
+def vence_el_sql(alias: str = "cr") -> str:
+    """Cuando vence, segun la politica y la regla de cada cliente (el peor).
+    NULL = no vence, o falta."""
+    return f"public.documento_vence_el({_vigencia_args(alias)})"
+
+
+def aviso_desde_sql(alias: str = "cr") -> str:
+    """Desde que dia esta "por vencer": los dias de aviso del tipo o, si no
+    los fija, el aviso general de Configuracion > Alertas."""
+    return f"public.documento_aviso_desde({_vigencia_args(alias)})"
+
+
+def exigible_sql(alias: str = "cr") -> str:
+    """Si ya se le exige (exigible_on: al ingreso, mes siguiente, al termino)."""
+    return (f"public.documento_exigible({alias}.requirement_id, "
+            f"{alias}.entity_type, {alias}.entity_id)")
+
+
 def por_vencer_predicate(alias: str = "cr") -> str:
     """Vence pronto pero TODAVIA NO vencio.
 
@@ -32,10 +66,11 @@ def por_vencer_predicate(alias: str = "cr") -> str:
     "vencido" y la pantalla mostraria un documento caducado como si solo
     estuviera proximo a caducar.
     """
+    # COALESCE: un documento que no vence da NULL, y un predicado de tres
+    # valores hace que `NOT pendiente` deje de ser "al dia".
     return (
-        f"({alias}.expiration_date IS NOT NULL "
-        f"AND {alias}.expiration_date >= {hoy_sql()} "
-        f"AND {alias}.expiration_date <= {hoy_sql()} + INTERVAL '{DIAS_POR_VENCER} days')"
+        f"COALESCE({vence_el_sql(alias)} >= {hoy_sql()} "
+        f"AND {aviso_desde_sql(alias)} <= {hoy_sql()}, false)"
     )
 
 
@@ -43,10 +78,7 @@ def vencido_predicate(alias: str = "cr") -> str:
     """Ya paso su fecha. Se define aca junto al anterior porque las dos son la
     misma regla mirada desde sus dos lados, y separarlas es exactamente como
     aparecio el desfase que documenta `pendiente_predicate`."""
-    return (
-        f"({alias}.expiration_date IS NOT NULL "
-        f"AND {alias}.expiration_date < {hoy_sql()})"
-    )
+    return f"COALESCE({vence_el_sql(alias)} < {hoy_sql()}, false)"
 
 
 # ── El criterio de "pendiente", que ahora es UNO ──────────────────────────────
@@ -87,11 +119,15 @@ def pendiente_predicate(alias: str = "cr") -> str:
     hoy son 0 filas y ningun codigo lo escribe, asi que la eleccion es inerte.
     El dia que se defina si "rechazar un documento" existe como gesto, entra o
     se retira de las capas — y es una linea, en un lugar.
+
+    Y solo si ya es exigible (`exigible_on`): un documento que se pide el mes
+    siguiente al ingreso no le falta a nadie el mes del ingreso.
     """
     return (
-        f"({alias}.status IN ('MISSING','EXPIRED') "
+        f"({exigible_sql(alias)} AND ("
+        f"{alias}.status IN ('MISSING','EXPIRED') "
         f"OR {vencido_predicate(alias)} "
-        f"OR {por_vencer_predicate(alias)})"
+        f"OR {por_vencer_predicate(alias)}))"
     )
 
 

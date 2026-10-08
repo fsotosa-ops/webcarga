@@ -96,6 +96,9 @@ def sql_filas_plantilla(pendiente: str) -> str:
     return f"""
 WITH pendientes AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+           -- Las lee `vencido_predicate("r")` del estado actual (contrato del
+           -- alias en services/vencimientos.py).
+           cr.requirement_id, cr.issue_date, cr.period_start,
            cr.file_url IS NOT NULL AS tiene_archivo,
            req.name AS tipo_documento, req.expiration_policy
     FROM public.compliance_records cr

@@ -764,6 +764,12 @@ async def test_pending_proyecta_tiene_archivo_desde_file_url(conexion_revertida)
 
     # Vencido a la fecha Y con archivo: el caso que la ficha escondia — venció
     # porque alguien lo subió, y su documento tiene que poder verse.
+    # El requisito tiene que ser uno que VENCE: `_requisito` lo crea NONE, y
+    # desde HU-C1 (entrega 2) la politica es la unica fuente — un NONE no vence
+    # aunque traiga fecha.
+    await conn.execute(
+        "UPDATE public.compliance_requirements SET expiration_policy = 'REQUIRED' WHERE id = $1",
+        requisito)
     await conn.execute(
         "UPDATE public.compliance_records "
         "SET status = 'APPROVED_MANUAL', expiration_date = CURRENT_DATE - INTERVAL '30 days', "

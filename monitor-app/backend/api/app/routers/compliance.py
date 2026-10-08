@@ -345,13 +345,17 @@ async def get_certification_status(
         f"""
         WITH records AS (
             SELECT cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+                   cr.issue_date, cr.period_start,
                    cr.requirement_id, req.requirement_level
             FROM public.compliance_records cr
             JOIN public.compliance_requirements req ON req.id = cr.requirement_id
             WHERE cr.is_current = true
         ),
         attributed AS (
+            -- entity_type/entity_id/issue_date/period_start: los lee el
+            -- predicado de vencimiento sobre `a` (contrato del alias).
             SELECT r.status, r.requirement_level, r.expiration_date, r.requirement_id,
+                   r.entity_type, r.entity_id, r.issue_date, r.period_start,
                 CASE r.entity_type
                     WHEN 'CARRIER' THEN r.entity_id
                     WHEN 'DRIVER'  THEN da.carrier_id
@@ -416,6 +420,10 @@ def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[str]:
 _PENDING_ROWS_SQL = f"""
 WITH pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
+           -- Las lee la urgencia de abajo (`pendiente_predicate('r')`): el
+           -- predicado calcula el vencimiento con ellas (contrato del alias en
+           -- services/vencimientos.py). `resolved` las hereda por `p.*`.
+           cr.issue_date, cr.period_start,
            -- El HECHO de si hay un archivo, para que la pantalla deje de
            -- deducirlo del estado. `status IN ('MISSING','EXPIRED')` se venia
            -- usando como si significara "no tiene archivo", y significa dos
