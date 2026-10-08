@@ -48,8 +48,20 @@ _AVISO_GENERAL = (
 
 
 def _requisito(alias: str, columna: str) -> str:
+    """El valor de una columna del requisito: una busqueda por registro. Solo
+    donde hace falta el VALOR (la politica que recibe vence_segun_regla)."""
     return (f"(SELECT vg_q.{columna} FROM public.compliance_requirements vg_q "
             f"WHERE vg_q.id = {alias}.requirement_id)")
+
+
+def _es(alias: str, columna: str, *valores: str) -> str:
+    """Si el requisito tiene uno de esos valores. Se pregunta como pertenencia
+    a un conjunto sin correlacion: Postgres lo arma UNA vez por consulta
+    (hashed SubPlan). Como busqueda por registro, el tipo se leia ~10 veces
+    por fila y la cola tardaba el doble (medido el 08/10)."""
+    lista = ", ".join(f"'{v}'" for v in valores)
+    return (f"{alias}.requirement_id IN (SELECT vg_c.id FROM public.compliance_requirements vg_c "
+            f"WHERE vg_c.{columna} IN ({lista}))")
 
 
 def _reglas(alias: str, fecha_ref: str) -> str:
@@ -59,11 +71,16 @@ def _reglas(alias: str, fecha_ref: str) -> str:
             f"{alias}.entity_id, {fecha_ref})")
 
 
-def _segun_reglas(alias: str, agregado: str) -> str:
+def _con_parametros(alias: str, agregado: str) -> str:
     """Para los tipos con parametros (plazo, periodo): un registro MISSING
     falta (NULL); uno presente sin la fecha que su tipo necesita no cubre
-    nada (-infinity); si no, `agregado` sobre las reglas aplicables."""
-    ref = f"COALESCE({alias}.issue_date, {alias}.period_start)"
+    nada (-infinity); si no, `agregado` sobre las reglas aplicables.
+
+    La fecha de referencia la dicta el TIPO, no la que haya: un F30-1 de
+    septiembre se emite en octubre, y versionarlo por la emision dejaria que
+    un corte movido en octubre reescriba septiembre (regla 6)."""
+    ref = (f"(CASE WHEN {_es(alias, 'expiration_policy', 'ISSUE_PLUS_MONTHS')} "
+           f"THEN {alias}.issue_date ELSE {alias}.period_start END)")
     return (
         f"CASE WHEN {alias}.status = 'MISSING' THEN NULL::date "
         f"WHEN {ref} IS NULL THEN '-infinity'::date "
@@ -71,45 +88,50 @@ def _segun_reglas(alias: str, agregado: str) -> str:
     )
 
 
+def _fecha_del_documento(alias: str, agregado: str, sin_reglas: str) -> str:
+    """Para la fecha del documento, las reglas son opcionales: aportan dias
+    de aviso y de gracia. Si el tipo no tiene ninguna -- lo comun --, no se las
+    busca por cliente, que por cada registro sale caro. Se pregunta con IN y
+    no con EXISTS: sin correlacion, Postgres arma el conjunto UNA vez por
+    consulta (hashed SubPlan) en vez de una busqueda por registro."""
+    return (
+        f"CASE WHEN {alias}.requirement_id IN "
+        f"(SELECT vg_x.requirement_id FROM public.compliance_requirement_rules vg_x) "
+        f"THEN (SELECT {agregado} FROM {_reglas(alias, 'NULL')} vg_rg) "
+        f"ELSE {sin_reglas} END"
+    )
+
+
 def _vence_segun_regla(alias: str) -> str:
     return (f"public.vence_segun_regla({_requisito(alias, 'expiration_policy')}, vg_rg, "
-            f"{alias}.issue_date, {alias}.period_start)")
+            f"{alias}.expiration_date, {alias}.issue_date, {alias}.period_start)")
 
 
 def vence_el_sql(alias: str = "cr") -> str:
-    """Cuando vence. El peor entre los clientes. NULL = no vence, o falta.
+    """Cuando vence, con los dias de gracia. El peor entre los clientes.
+    NULL = no vence, o falta.
       NONE               no vence, traiga o no una fecha
       REQUIRED/OPTIONAL  la fecha que trae el documento
       con parametros     segun la regla de cada cliente"""
-    politica = _requisito(alias, "expiration_policy")
+    vence = f"min({_vence_segun_regla(alias)})"
     return (
-        f"(CASE WHEN {politica} = 'NONE' THEN NULL::date "
-        f"WHEN {politica} IN ('REQUIRED', 'OPTIONAL') THEN {alias}.expiration_date "
-        f"ELSE {_segun_reglas(alias, f'min({_vence_segun_regla(alias)})')} END)"
+        f"(CASE WHEN {_es(alias, 'expiration_policy', 'NONE')} THEN NULL::date "
+        f"WHEN {_es(alias, 'expiration_policy', 'REQUIRED', 'OPTIONAL')} "
+        f"THEN {_fecha_del_documento(alias, vence, f'{alias}.expiration_date')} "
+        f"ELSE {_con_parametros(alias, vence)} END)"
     )
 
 
 def aviso_desde_sql(alias: str = "cr") -> str:
-    """Desde que dia esta "por vencer": el vencimiento menos los dias de aviso
-    de la regla de cada cliente, o el aviso general si no los fija. El peor.
-
-    Para la fecha del documento, las reglas solo aportan los dias: si el tipo
-    no tiene ninguna, no se las busca por cliente (es lo comun y sale caro
-    hacerlo por cada registro)."""
-    politica = _requisito(alias, "expiration_policy")
-    dias = f"COALESCE(vg_rg.warning_days, {_AVISO_GENERAL})"
-    dias_fecha_del_documento = (
-        f"CASE WHEN EXISTS (SELECT 1 FROM public.compliance_requirement_rules vg_x "
-        f"WHERE vg_x.requirement_id = {alias}.requirement_id) "
-        f"THEN COALESCE((SELECT max({dias}) FROM {_reglas(alias, 'NULL')} vg_rg), "
-        f"{_AVISO_GENERAL}) "
-        f"ELSE {_AVISO_GENERAL} END"
-    )
+    """Desde que dia esta "por vencer": el vencimiento segun la regla de cada
+    cliente menos sus dias de aviso, o el aviso general si no los fija. El
+    peor (el mas temprano)."""
+    aviso = f"min({_vence_segun_regla(alias)} - COALESCE(vg_rg.warning_days, {_AVISO_GENERAL}))"
     return (
-        f"(CASE WHEN {politica} = 'NONE' THEN NULL::date "
-        f"WHEN {politica} IN ('REQUIRED', 'OPTIONAL') "
-        f"THEN {alias}.expiration_date - ({dias_fecha_del_documento}) "
-        f"ELSE {_segun_reglas(alias, f'min({_vence_segun_regla(alias)} - {dias})')} END)"
+        f"(CASE WHEN {_es(alias, 'expiration_policy', 'NONE')} THEN NULL::date "
+        f"WHEN {_es(alias, 'expiration_policy', 'REQUIRED', 'OPTIONAL')} "
+        f"THEN {_fecha_del_documento(alias, aviso, f'{alias}.expiration_date - {_AVISO_GENERAL}')} "
+        f"ELSE {_con_parametros(alias, aviso)} END)"
     )
 
 
@@ -120,14 +142,12 @@ def exigible_sql(alias: str = "cr") -> str:
                          conductor (start_date de su asignacion ACTIVE; sin
                          asignacion, se exige)
       ON_ENTITY_END      el conductor ya no tiene asignacion ACTIVE y tuvo alguna"""
-    exigible_on = _requisito(alias, "exigible_on")
     return (
-        f"(CASE {exigible_on} "
-        f"WHEN 'MONTH_AFTER_START' THEN COALESCE("
+        f"(CASE WHEN {_es(alias, 'exigible_on', 'MONTH_AFTER_START')} THEN COALESCE("
         f"(SELECT {hoy_sql()} >= (date_trunc('month', vg_da.start_date) + interval '1 month')::date "
         f"FROM public.driver_assignments vg_da "
         f"WHERE vg_da.driver_id = {alias}.entity_id AND vg_da.status = 'ACTIVE'), true) "
-        f"WHEN 'ON_ENTITY_END' THEN "
+        f"WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} THEN "
         f"NOT EXISTS (SELECT 1 FROM public.driver_assignments vg_da "
         f"WHERE vg_da.driver_id = {alias}.entity_id AND vg_da.status = 'ACTIVE') "
         f"AND EXISTS (SELECT 1 FROM public.driver_assignments vg_da "

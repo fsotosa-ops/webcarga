@@ -14,6 +14,15 @@ ComplianceStatus = Literal[
 ]
 
 
+# Los cinco tipos que admite la base (HU-C1, entrega 2). Las RESPUESTAS los
+# aceptan todos: si conocieran solo tres, el primer requisito con un tipo nuevo
+# tiraria 500 en /pending y en el catalogo. La ENTRADA (schemas/requirement.py)
+# sigue en tres hasta que el alta y la edicion manden sus parametros (F5).
+PoliticaVencimiento = Literal[
+    "NONE", "REQUIRED", "OPTIONAL", "ISSUE_PLUS_MONTHS", "CALENDAR_PERIOD"
+]
+
+
 class ComplianceRecordPatchBody(BaseModel):
     """Override manual de un compliance_record (ej. un admin aprueba a mano
     sin subir archivo). El upload de archivo real usa un endpoint separado
@@ -69,7 +78,7 @@ class PendingComplianceRow(BaseModel):
     # Que hace su requisito con la fecha de vencimiento. El renglon de carga lo
     # necesita para pedir la fecha ANTES de subir: sin el, o pregunta siempre,
     # o no pregunta nunca y /file rechaza con 422 el archivo ya subido.
-    expiration_policy: Literal["REQUIRED", "OPTIONAL", "NONE"]
+    expiration_policy: PoliticaVencimiento
 
 
 class PendingComplianceListResponse(BaseModel):
@@ -159,7 +168,7 @@ class RequirementOption(BaseModel):
     # Reemplazó a has_expiration (retirado en HU-C1), un booleano que cargaba
     # tres significados: por eso la carga rechazaba con 422 documentos cuya
     # fecha la pantalla nunca pedía.
-    expiration_policy: Literal["REQUIRED", "OPTIONAL", "NONE"]
+    expiration_policy: PoliticaVencimiento
     is_active: bool
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None

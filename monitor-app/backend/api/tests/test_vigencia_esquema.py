@@ -1,12 +1,28 @@
 """El esquema de la vigencia (HU-C1, entrega 2). Lo que se prueba es lo que
 Postgres hace cumplir, no lo que la API promete: una regla incoherente con la
 politica no puede quedar guardada, venga de donde venga la escritura."""
+import re
+from datetime import date
+from pathlib import Path
 from uuid import uuid4
 
 import asyncpg
 import pytest
 
 pytestmark = pytest.mark.integracion
+
+CORRECCIONES = (
+    Path(__file__).resolve().parents[2]
+    / "supabase/migrations/20261008140000_vigencia_correcciones.sql"
+)
+
+
+async def _cargar_correcciones(conn) -> None:
+    """La validacion corregida en la revision final, cargada desde su
+    migracion dentro de la transaccion revertida."""
+    for sentencia in re.findall(r"CREATE OR REPLACE FUNCTION.*?\$\$;",
+                                CORRECCIONES.read_text(), re.S):
+        await conn.execute(sentencia)
 
 
 async def _requisito(conn, politica: str, *, exigible_on: str | None = None,
@@ -166,3 +182,46 @@ async def test_existe_el_aviso_general(conexion_revertida):
         "SELECT warning_days FROM app.alert_thresholds WHERE doc_type = 'documento_por_vencer'"
     )
     assert dias == 30
+
+
+# ── Revision final (I2, I3) ──────────────────────────────────────────────────
+
+async def test_una_variante_de_cliente_exige_una_regla_base(conexion_revertida):
+    """I2: sin base, un cliente sin variante se quedaba sin dias de aviso. Toda
+    regla de cliente es variante DE una base."""
+    await _cargar_correcciones(conexion_revertida)
+    cliente = await conexion_revertida.fetchval(
+        "INSERT INTO public.shippers (name) VALUES ($1) RETURNING id",
+        f"ZZ-TEST-VIG {uuid4().hex[:8]}")
+
+    async def caso():
+        requisito = await _requisito(conexion_revertida, "REQUIRED")
+        await _regla(conexion_revertida, requisito, shipper_id=cliente, warning_days=5)
+    await _falla_al_confirmar(conexion_revertida, caso)
+
+
+async def test_la_regla_base_rige_desde_siempre(conexion_revertida):
+    """I3b: una base que empieza en noviembre deja sin regla a todo documento
+    anterior, y su vencimiento salia NULL (al dia) en vez de vencido."""
+    await _cargar_correcciones(conexion_revertida)
+
+    async def caso():
+        requisito = await _requisito(conexion_revertida, "CALENDAR_PERIOD")
+        await _regla(conexion_revertida, requisito, vigente_desde=date(2026, 11, 1),
+                     frequency_months=1, cutoff_day=5, period_offset_months=1)
+    await _falla_al_confirmar(conexion_revertida, caso)
+
+
+async def test_mover_la_base_a_otro_requisito_no_deja_huerfano_al_primero(conexion_revertida):
+    """I3a: en un UPDATE se validaba solo el requisito nuevo."""
+    await _cargar_correcciones(conexion_revertida)
+    origen = await _requisito(conexion_revertida, "CALENDAR_PERIOD")
+    await _regla(conexion_revertida, origen, frequency_months=1, cutoff_day=5, period_offset_months=1)
+    destino = await _requisito(conexion_revertida, "REQUIRED")
+    await _confirmar(conexion_revertida)
+
+    async def caso():
+        await conexion_revertida.execute(
+            "UPDATE public.compliance_requirement_rules SET requirement_id = $2 "
+            "WHERE requirement_id = $1", origen, destino)
+    await _falla_al_confirmar(conexion_revertida, caso)

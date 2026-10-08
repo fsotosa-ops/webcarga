@@ -1827,3 +1827,15 @@ def test_el_bloqueo_resuelve_al_dueno_por_los_tres_caminos():
     # En la MISMA consulta que ya traia el record: una vuelta mas a la base por
     # cada archivo de una carga masiva de 30 no se paga sola.
     assert fuente.count("await pool.fetchrow(") == 1
+
+
+def test_la_respuesta_acepta_los_tipos_de_vigencia_nuevos():
+    """I6 (revision final de HU-C1 entrega 2): la base ya admite
+    ISSUE_PLUS_MONTHS y CALENDAR_PERIOD. Si la respuesta solo conoce tres,
+    el primer requisito con un tipo nuevo tira 500 en /pending y en el
+    catalogo."""
+    from app.schemas.compliance import PendingComplianceRow, RequirementOption
+
+    for politica in ("ISSUE_PLUS_MONTHS", "CALENDAR_PERIOD"):
+        assert politica in PendingComplianceRow.model_fields["expiration_policy"].annotation.__args__
+        assert politica in RequirementOption.model_fields["expiration_policy"].annotation.__args__

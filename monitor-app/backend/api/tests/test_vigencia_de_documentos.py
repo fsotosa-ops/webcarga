@@ -26,6 +26,9 @@ MIGRACIONES = [
         "20261008120000_vigencia_de_documentos.sql",
         # El calculo pasa a la consulta; quedan las formulas (Task 5).
         "20261008130000_vigencia_en_la_consulta.sql",
+        # Correcciones de la revision final (gracia en todos los tipos,
+        # coherencia de reglas).
+        "20261008140000_vigencia_correcciones.sql",
     )
 ]
 PREFIJO = "ZZ-TEST-VIGENCIA"
@@ -373,3 +376,68 @@ async def test_el_calculo_no_llama_funciones_por_registro(conexion_revertida):
     for funcion in ("documento_vence_el", "documento_aviso_desde",
                     "documento_exigible", "hoy_chile"):
         assert funcion not in texto, f"{funcion} se llama por registro"
+
+
+# ── Revision final (I1, I4) ──────────────────────────────────────────────────
+
+async def test_un_mensual_con_emision_pero_sin_periodo_no_cubre_nada(conexion_revertida):
+    """I1: la fecha de referencia la dicta el tipo. Un mensual que trae fecha de
+    emision pero no periodo no dice de que mes es."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD", base=F30_1)
+    assert await _evaluar(conexion_revertida, f"{vence_el_sql('d')} = '-infinity'::date",
+                          req, "CARRIER", empresa, issue_date=D(2026, 10, 10))
+
+
+async def test_un_mensual_con_las_dos_fechas_se_versiona_por_el_periodo(conexion_revertida):
+    """I1 y regla 6: el F30-1 de septiembre se emite en octubre. Mover el corte
+    desde el 01/10 no puede cambiar el de septiembre."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "CALENDAR_PERIOD",
+                           base=dict(frequency_months=1, cutoff_day=15, period_offset_months=1))
+    await _regla(conexion_revertida, req, vigente_desde=D(2026, 10, 1),
+                 frequency_months=1, cutoff_day=5, period_offset_months=1)
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        issue_date=D(2026, 10, 12), period_start=D(2026, 9, 1)) == D(2026, 11, 15)
+
+
+async def test_la_gracia_corre_tambien_la_fecha_del_documento(conexion_revertida):
+    """I4: "Todos los tipos llevan ademas dos parametros: dias de aviso y dias
+    de gracia" (HU-C1)."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "REQUIRED", base=dict(grace_days=10))
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        expiration_date=D(2026, 12, 1)) == D(2026, 12, 11)
+
+
+async def test_la_gracia_corre_tambien_el_plazo_desde_la_emision(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "ISSUE_PLUS_MONTHS",
+                           base=dict(validity_months=12, grace_days=5))
+    assert await _vence(conexion_revertida, req, "CARRIER", empresa,
+                        issue_date=D(2026, 3, 10)) == D(2027, 3, 15)
+
+
+async def test_el_aviso_de_la_fecha_del_documento_cuenta_desde_la_gracia(conexion_revertida):
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    req = await _requisito(conexion_revertida, "REQUIRED", base=dict(grace_days=10, warning_days=7))
+    assert await _aviso(conexion_revertida, req, "CARRIER", empresa,
+                        expiration_date=D(2026, 12, 1)) == D(2026, 12, 4)
+
+
+async def test_la_variante_mas_estricta_gana_en_la_fecha_del_documento(conexion_revertida):
+    """Con base y una variante de un cliente: gana el peor (el aviso mas
+    temprano), igual que en los tipos con parametros."""
+    await _cargar(conexion_revertida)
+    empresa = await _empresa(conexion_revertida)
+    cliente_a = await _cliente(conexion_revertida, empresa)
+    await _cliente(conexion_revertida, empresa)
+    req = await _requisito(conexion_revertida, "REQUIRED", base=dict(warning_days=10))
+    await _regla(conexion_revertida, req, shipper_id=cliente_a, warning_days=20)
+    assert await _aviso(conexion_revertida, req, "CARRIER", empresa,
+                        expiration_date=D(2026, 12, 31)) == D(2026, 12, 11)
