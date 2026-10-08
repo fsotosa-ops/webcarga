@@ -41,19 +41,36 @@ describe('NuevoDocumentoPanel', () => {
       name: 'Certificado de Antecedentes',
       target_entity: 'DRIVER',
       requirement_level: 'CONDITIONAL_OPTIONAL',
-      expiration_policy: 'NONE',
+      vigencia: { politica: 'NONE' },
+      exigible_on: 'ON_ENTITY_START',
     }))
     await waitFor(() => expect(onCerrar).toHaveBeenCalled())
   })
 
-  it('crea con la política de vencimiento elegida, con el mismo control que la edición', async () => {
+  it('crea con cómo vence y cuándo se exige, con el mismo control que la edición', async () => {
     montar()
-    escribirNombre('F30-1')
-    fireEvent.change(screen.getByLabelText(/fecha de vencimiento/i), { target: { value: 'REQUIRED' } })
+    escribirNombre('Revisión técnica')
+    fireEvent.click(screen.getByRole('radio', { name: /vence en la fecha del documento/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /solo cuando se le solicita/i }))
     fireEvent.click(screen.getByRole('button', { name: /^crear$/i }))
 
     await waitFor(() => expect(requirementsApi.create).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'F30-1', expiration_policy: 'REQUIRED' }),
+      expect.objectContaining({
+        name: 'Revisión técnica', vigencia: { politica: 'REQUIRED' }, exigible_on: 'ON_REQUEST',
+      }),
+    ))
+  })
+
+  it('al elegir una entidad que no es conductor, "al término" vuelve al default', async () => {
+    montar()
+    escribirNombre('Finiquito')
+    fireEvent.click(screen.getByRole('radio', { name: 'Conductor' }))
+    fireEvent.click(screen.getByRole('radio', { name: /deja la empresa/i }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Empresa' }))
+    fireEvent.click(screen.getByRole('button', { name: /^crear$/i }))
+
+    await waitFor(() => expect(requirementsApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({ exigible_on: 'ON_ENTITY_START' }),
     ))
   })
 

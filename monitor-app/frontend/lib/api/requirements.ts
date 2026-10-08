@@ -1,5 +1,6 @@
 import { apiFetch } from './client'
-import type { RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementOption, RecalcPreview, RecalcResult } from '@/lib/types'
+import type { ExigibleOn, RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementOption, RecalcPreview, RecalcResult, VistaPreviaDeVigencia } from '@/lib/types'
+import type { Vigencia } from '@/lib/vigencia'
 
 const BASE = '/api/v1/compliance-requirements'
 
@@ -9,7 +10,11 @@ export const requirementsApi = {
    *  NULL) — el backend lo rechaza con 422. */
   patchConditions: (id: string, body: Partial<Pick<RequirementConditions,
     'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'
-    | 'name' | 'requirement_level'>>) =>
+    | 'name' | 'requirement_level'>> & {
+    /** El tipo de vencimiento y sus parámetros, juntos (HU-C1, entrega 2b). */
+    vigencia?: Vigencia
+    exigible_on?: ExigibleOn
+  }) =>
     apiFetch<RequirementConditionsPatchResult>(`${BASE}/${id}/conditions`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
@@ -26,7 +31,8 @@ export const requirementsApi = {
     name: string
     target_entity: 'CARRIER' | 'DRIVER' | 'ASSET'
     requirement_level?: 'LEGAL_MANDATORY' | 'CONDITIONAL_OPTIONAL'
-    expiration_policy?: 'REQUIRED' | 'OPTIONAL' | 'NONE'
+    vigencia?: Vigencia
+    exigible_on?: ExigibleOn
     shipper_id?: string | null
   }) => apiFetch<RequirementOption>(BASE, { method: 'POST', body: JSON.stringify(body) }),
 
@@ -47,4 +53,11 @@ export const requirementsApi = {
   recalcPreview: (id: string) => apiFetch<RecalcPreview>(`${BASE}/${id}/recalc-preview`),
 
   recalc: (id: string) => apiFetch<RecalcResult>(`${BASE}/${id}/recalc`, { method: 'POST' }),
+
+  /** Qué pasaría con los documentos de este tipo si se guardara esta
+   *  vigencia. No guarda nada: el backend la prueba y revierte. */
+  previewVigencia: (id: string, vigencia: Vigencia) =>
+    apiFetch<VistaPreviaDeVigencia>(`${BASE}/${id}/vigencia/preview`, {
+      method: 'POST', body: JSON.stringify(vigencia),
+    }),
 }

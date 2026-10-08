@@ -733,7 +733,35 @@ export type DocumentVersion = {
  *  vencimiento" como "el vencimiento es obligatorio", rechazando con 422 la
  *  carga de 19 de los 35 requisitos activos sin que la pantalla pidiera nunca
  *  la fecha. */
-export type PoliticaVencimiento = 'REQUIRED' | 'OPTIONAL' | 'NONE'
+export type PoliticaVencimiento =
+  | 'REQUIRED' | 'OPTIONAL' | 'NONE'
+  /** Plazo desde la emisión (anual, bienal): HU-C1, entrega 2. */
+  | 'ISSUE_PLUS_MONTHS'
+  /** Período de calendario (mensual con día tope, como el F30-1). */
+  | 'CALENDAR_PERIOD'
+
+/** Los parámetros de la regla base vigente de un tipo de documento. Los
+ *  valida la base (`validar_vigencia_de_requisito`): qué pide cada tipo. */
+export type ReglaDeVigencia = {
+  validity_months:      number | null
+  frequency_months:     number | null
+  cutoff_day:           number | null
+  period_offset_months: number | null
+  /** `null` = rige el aviso general de Configuración › Alertas. */
+  warning_days:         number | null
+  grace_days:           number
+}
+
+/** Desde cuándo se exige un documento (HU-C1, entrega 2b). */
+export type ExigibleOn = 'ON_ENTITY_START' | 'MONTH_AFTER_START' | 'ON_ENTITY_END' | 'ON_REQUEST'
+
+/** Lo que pasaría con los documentos de un tipo si se guardara una vigencia. */
+export type ConteoDeEstados = { vencidos: number; por_vencer: number; al_dia: number; falta: number }
+export type VistaPreviaDeVigencia = {
+  antes:          ConteoDeEstados
+  despues:        ConteoDeEstados
+  rige_desde_hoy: boolean
+}
 
 /** Por qué un requisito cuenta como pendiente, o si no cuenta. Excluyentes y
  *  exhaustivos: 'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30
@@ -1790,6 +1818,12 @@ export type RequirementOption = {
    *  verdad: `has_expiration`, el booleano de dos valores que cargaba estos
    *  tres significados, se retiró en HU-C1. */
   expiration_policy: PoliticaVencimiento
+  /** La regla base vigente (HU-C1, entrega 2b); `null` si el tipo no tiene.
+   *  Opcional: frontend y API se despliegan por separado. */
+  vigencia?:         ReglaDeVigencia | null
+  /** La regla ya cambió estando en uso: un cambio más rige desde hoy. */
+  tiene_versiones?:  boolean
+  exigible_on?:      ExigibleOn
   /** Tramo 3: la regla de a quién se le exige este documento es dato del
    *  catálogo, no código. `null` en los dos `applies_to_*` significa "sin
    *  restricción" (aplica a todos), no "no cargado". */

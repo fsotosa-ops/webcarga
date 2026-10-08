@@ -5,9 +5,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2 } from 'lucide-react'
 import { requirementsApi } from '@/lib/api/requirements'
 import { PanelLateral } from '@/components/ui/PanelLateral'
-import type { PoliticaVencimiento } from '@/lib/types'
+import type { ExigibleOn } from '@/lib/types'
+import type { Vigencia } from '@/lib/vigencia'
 import { INPUT } from './shared'
-import { SelectorPoliticaVencimiento } from './SelectorPoliticaVencimiento'
+import { EditorVigencia } from './EditorVigencia'
+import { SelectorExigibilidad } from './SelectorExigibilidad'
 
 type Entidad = 'CARRIER' | 'DRIVER' | 'ASSET'
 type Nivel = 'LEGAL_MANDATORY' | 'CONDITIONAL_OPTIONAL'
@@ -40,12 +42,24 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
   const [nombre, setNombre] = useState('')
   const [entidad, setEntidad] = useState<Entidad>('CARRIER')
   const [nivel, setNivel] = useState<Nivel>('LEGAL_MANDATORY')
-  const [politica, setPolitica] = useState<PoliticaVencimiento>('NONE')
+  // Crear y editar usan el MISMO control (HU-C1, regla 7).
+  const [vigencia, setVigencia] = useState<Vigencia>({ politica: 'NONE' })
+  const [exigible, setExigible] = useState<ExigibleOn>('ON_ENTITY_START')
+
+  // "Mes siguiente al ingreso" y "al término" son de conductor: si se elige
+  // otra entidad, se vuelve al default en vez de mandar algo que la base
+  // rechaza.
+  function elegirEntidad(valor: Entidad) {
+    setEntidad(valor)
+    if (valor !== 'DRIVER' && (exigible === 'MONTH_AFTER_START' || exigible === 'ON_ENTITY_END')) {
+      setExigible('ON_ENTITY_START')
+    }
+  }
 
   const crear = useMutation({
     mutationFn: () => requirementsApi.create({
       name: nombre.trim(), target_entity: entidad, requirement_level: nivel,
-      expiration_policy: politica,
+      vigencia, exigible_on: exigible,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['compliance-requirements'] })
@@ -103,7 +117,7 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
           <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
             <input
               type="radio" name="entidad-del-documento" aria-label={etiqueta}
-              checked={entidad === valor} onChange={() => setEntidad(valor)}
+              checked={entidad === valor} onChange={() => elegirEntidad(valor)}
               className="mt-0.5 accent-accent"
             />
             <span>{etiqueta}<span className="block text-etiqueta text-informativo">{ayuda}</span></span>
@@ -125,7 +139,8 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
         ))}
       </fieldset>
 
-      <SelectorPoliticaVencimiento value={politica} onChange={setPolitica} />
+      <EditorVigencia value={vigencia} onChange={setVigencia} />
+      <SelectorExigibilidad value={exigible} onChange={setExigible} entidad={entidad} />
 
       {/* Que nace apagado se DICE, no se descubre: si no, alguien crea el
           documento, no lo ve en ninguna empresa y cree que falló. */}

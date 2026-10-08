@@ -6,8 +6,10 @@ import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { requirementsApi } from '@/lib/api/requirements'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
-import type { ManagementType, PoliticaVencimiento, RequirementOption } from '@/lib/types'
-import { SelectorPoliticaVencimiento } from './SelectorPoliticaVencimiento'
+import type { ExigibleOn, ManagementType, RequirementOption } from '@/lib/types'
+import { mismaVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
+import { EditorVigencia } from './EditorVigencia'
+import { SelectorExigibilidad } from './SelectorExigibilidad'
 import type { Revision } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision } from './revision'
 
@@ -103,7 +105,14 @@ export function CondicionPanel({
   const [alcance, setAlcance] = useState<'todos' | 'algunos'>(guardadas.length ? 'algunos' : 'todos')
   const [elegidos, setElegidos] = useState<string[]>(guardadas)
   const [marcadoActivo, setMarcadoActivo] = useState(requisito.is_active)
-  const [politica, setPolitica] = useState<PoliticaVencimiento>(requisito.expiration_policy)
+  // La vigencia guardada se memoiza por CONTENIDO, por el mismo motivo que la
+  // condición: un refetch idéntico trae un objeto nuevo y no puede borrar el
+  // borrador de quien está editando.
+  const claveVigencia = JSON.stringify(vigenciaDe(requisito))
+  const vigenciaGuardada = useMemo<Vigencia>(() => JSON.parse(claveVigencia), [claveVigencia])
+  const exigibleGuardado: ExigibleOn = requisito.exigible_on ?? 'ON_ENTITY_START'
+  const [vigencia, setVigencia] = useState<Vigencia>(vigenciaGuardada)
+  const [exigible, setExigible] = useState<ExigibleOn>(exigibleGuardado)
   // El nombre VISIBLE. Renombrarlo es inocuo -- nadie guarda copia, todas las
   // pantallas hacen JOIN vivo contra `req.name` --, y por eso no pasa por la
   // vista previa: no cambia a quien se le exige nada.
@@ -121,7 +130,8 @@ export function CondicionPanel({
     setAlcance(guardadas.length ? 'algunos' : 'todos')
     setElegidos(guardadas)
     setMarcadoActivo(requisito.is_active)
-    setPolitica(requisito.expiration_policy)
+    setVigencia(vigenciaGuardada)
+    setExigible(exigibleGuardado)
     setNombre(requisito.name)
     setNivel(requisito.requirement_level)
     // La vista previa NO se cierra acá. Este efecto corre también después de
@@ -130,16 +140,17 @@ export function CondicionPanel({
     // a ser interesante. `guardar` invalida ['recalc-preview', id], así que si
     // está abierta se recalcula sola. Cambiar de documento no necesita
     // limpieza: la lista monta el panel con `key={id}`, o sea uno nuevo.
-  }, [requisito.id, requisito.is_active, requisito.expiration_policy,
+  }, [requisito.id, requisito.is_active, vigenciaGuardada, exigibleGuardado,
       requisito.name, requisito.requirement_level, guardadas])
 
   const elegidosEfectivos = alcance === 'todos' ? [] : elegidos
   const condicionSucia = (esAsset || esCarrier) && !mismoConjunto(elegidosEfectivos, guardadas)
   const activoSucio = marcadoActivo !== requisito.is_active
-  const politicaSucia = politica !== requisito.expiration_policy
+  const vigenciaSucia = !mismaVigencia(vigencia, vigenciaGuardada)
+  const exigibleSucio = exigible !== exigibleGuardado
   const nombreSucio = nombre.trim() !== requisito.name && nombre.trim().length > 0
   const nivelSucio = nivel !== requisito.requirement_level
-  const sucio = condicionSucia || activoSucio || politicaSucia || nombreSucio || nivelSucio
+  const sucio = condicionSucia || activoSucio || vigenciaSucia || exigibleSucio || nombreSucio || nivelSucio
 
   // GET /config/taxonomies filtra active=true: un subtipo dado de baja que
   // siga en la condición no tiene casilla. El id sigue viajando en `elegidos`
@@ -148,9 +159,7 @@ export function CondicionPanel({
 
   const guardar = useMutation({
     mutationFn: () => {
-      const body: Partial<Pick<RequirementOption,
-        'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'
-        | 'expiration_policy' | 'name' | 'requirement_level'>> = {}
+      const body: Parameters<typeof requirementsApi.patchConditions>[1] = {}
       if (esAsset) body.applies_to_fleet_service_type_ids = elegidosEfectivos
       if (esCarrier) body.applies_to_management_types = elegidosEfectivos as ManagementType[]
       // `is_active` sólo viaja si de verdad cambió: nunca manda `null` (el
@@ -159,7 +168,10 @@ export function CondicionPanel({
       // Mismo criterio que `is_active`: sólo si de verdad cambió. Mandarla
       // siempre escribiría un UPDATE sin efecto y, peor, dejaría una fila de
       // auditoría diciendo que alguien decidió algo que no decidió.
-      if (politicaSucia) body.expiration_policy = politica
+      // El tipo de vencimiento viaja con sus parámetros: uno sin los otros es
+      // una regla a medias (HU-C1, entrega 2b).
+      if (vigenciaSucia) body.vigencia = vigencia
+      if (exigibleSucio) body.exigible_on = exigible
       // Mismo criterio para los dos: sólo si cambió, para no dejar una fila de
       // auditoría diciendo que alguien decidió algo que no decidió.
       if (nombreSucio) body.name = nombre.trim()
@@ -171,6 +183,17 @@ export function CondicionPanel({
       qc.invalidateQueries({ queryKey: ['recalc-preview', requisito.id] })
       onGuardado()
     },
+  })
+
+  // Cambiar cómo vence cambia el estado de documentos YA cargados (un "no
+  // vence" que pasa a anual deja vencidos a los que no tienen emisión). Se
+  // muestra ANTES de guardar, con la regla en borrador; el backend la prueba y
+  // revierte, con la misma definición que usa la pantalla después.
+  const efecto = useQuery({
+    queryKey: ['vigencia-preview', requisito.id, JSON.stringify(vigencia)],
+    queryFn: () => requirementsApi.previewVigencia(requisito.id, vigencia),
+    enabled: canEdit && vigenciaSucia,
+    retry: false,
   })
 
   const preview = useQuery({
@@ -416,7 +439,34 @@ export function CondicionPanel({
         </p>
       )}
 
-      <SelectorPoliticaVencimiento value={politica} onChange={setPolitica} disabled={!canEdit} />
+      <EditorVigencia value={vigencia} onChange={setVigencia} disabled={!canEdit} />
+
+      {vigenciaSucia && efecto.data && (
+        <div className="mt-2 rounded-lg border border-border px-3 py-2 text-etiqueta text-text-primary">
+          <p>
+            Con esta regla: <b>{efecto.data.despues.vencidos} vencidos</b> (hoy {efecto.data.antes.vencidos})
+            {' · '}{efecto.data.despues.por_vencer} por vencer
+            {' · '}{efecto.data.despues.al_dia} al día.
+          </p>
+          {efecto.data.rige_desde_hoy && (
+            <p className="mt-1 text-informativo">
+              Rige desde hoy; los períodos anteriores se evalúan con la regla anterior.
+            </p>
+          )}
+        </div>
+      )}
+      {vigenciaSucia && efecto.isError && (
+        <p className="mt-2 text-etiqueta text-status-incidente">
+          {efecto.error instanceof Error ? efecto.error.message : 'La regla está incompleta.'}
+        </p>
+      )}
+
+      <SelectorExigibilidad
+        value={exigible}
+        onChange={setExigible}
+        entidad={requisito.target_entity}
+        disabled={!canEdit}
+      />
 
       {errorGuardar && <p className="mt-2 text-[10.5px] text-red-600">{errorGuardar}</p>}
       {errorAplicar && <p className="mt-2 text-[10.5px] text-red-600">{errorAplicar}</p>}

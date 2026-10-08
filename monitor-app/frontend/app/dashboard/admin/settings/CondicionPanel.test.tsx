@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RequirementOption } from '@/lib/types'
 
 vi.mock('@/lib/api/requirements', () => ({
-  requirementsApi: { patchConditions: vi.fn(), recalcPreview: vi.fn(), recalc: vi.fn() },
+  requirementsApi: { patchConditions: vi.fn(), recalcPreview: vi.fn(), recalc: vi.fn(), previewVigencia: vi.fn() },
 }))
 const puedeAdministrar = vi.fn(() => true)
 vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => puedeAdministrar() }))
@@ -73,33 +73,59 @@ beforeEach(() => {
   vi.mocked(requirementsApi.recalcPreview).mockResolvedValue({ crear: 4, quitar: 1, bloqueados: 0 })
 })
 
-describe('CondicionPanel — la fecha de vencimiento', () => {
-  it('muestra la politica que el requisito tiene hoy', () => {
+describe('CondicionPanel — cuándo vence y cuándo se exige', () => {
+  it('muestra el tipo que el requisito tiene hoy', () => {
     montarPanel(requisito({ expiration_policy: 'OPTIONAL' }))
-    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveValue('OPTIONAL')
+    expect(screen.getByRole('radio', { name: 'Fecha opcional' })).toBeChecked()
   })
 
-  it('guarda la politica elegida', async () => {
-    montarPanel()
-    fireEvent.change(screen.getByLabelText(/fecha de vencimiento/i), { target: { value: 'OPTIONAL' } })
-    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+  it('guarda el tipo con sus parámetros, juntos', async () => {
+    montarPanel(requisito({ expiration_policy: 'NONE' }))
+    fireEvent.click(screen.getByRole('radio', { name: /dura un plazo desde que se emite/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }))
 
     await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalledWith(
-      'r1', expect.objectContaining({ expiration_policy: 'OPTIONAL' }),
+      'r1', expect.objectContaining({
+        vigencia: { politica: 'ISSUE_PLUS_MONTHS', validity_months: 12 },
+      }),
     ))
   })
 
-  it('NO la manda si no se toco', async () => {
+  it('NO la manda si no se tocó', async () => {
     montarPanel()
     // Se cambia otra cosa, para que haya algo que guardar.
     fireEvent.click(screen.getByRole('checkbox', { name: /vigente/i }))
-    fireEvent.click(screen.getByRole('button', { name: /guardar/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }))
 
     await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalled())
-    // Mandarla siempre escribiria un UPDATE sin efecto y dejaria una fila de
-    // auditoria diciendo que alguien decidio algo que no decidio.
+    // Mandarla siempre dejaria una fila de auditoria diciendo que alguien
+    // decidio algo que no decidio.
     const body = vi.mocked(requirementsApi.patchConditions).mock.calls[0][1]
-    expect(body).not.toHaveProperty('expiration_policy')
+    expect(body).not.toHaveProperty('vigencia')
+    expect(body).not.toHaveProperty('exigible_on')
+  })
+
+  it('muestra el efecto de la regla ANTES de guardar', async () => {
+    vi.mocked(requirementsApi.previewVigencia).mockResolvedValue({
+      antes:   { vencidos: 0, por_vencer: 0, al_dia: 2, falta: 0 },
+      despues: { vencidos: 2, por_vencer: 0, al_dia: 0, falta: 0 },
+      rige_desde_hoy: false,
+    })
+    montarPanel(requisito({ expiration_policy: 'NONE' }))
+    fireEvent.click(screen.getByRole('radio', { name: /dura un plazo desde que se emite/i }))
+
+    expect(await screen.findByText(/2 vencidos/)).toBeInTheDocument()
+    expect(requirementsApi.patchConditions).not.toHaveBeenCalled()
+  })
+
+  it('cambiar cuándo se exige manda exigible_on', async () => {
+    montarPanel()
+    fireEvent.click(screen.getByRole('radio', { name: /solo cuando se le solicita/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }))
+
+    await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalledWith(
+      'r1', expect.objectContaining({ exigible_on: 'ON_REQUEST' }),
+    ))
   })
 
   it('resincroniza el borrador cuando llega otro requisito', () => {
@@ -107,7 +133,7 @@ describe('CondicionPanel — la fecha de vencimiento', () => {
     // El bug de draft sin resincronizar ya aparecio tres veces en este
     // frontend: el prop cambia y la pantalla sigue mostrando lo viejo.
     redibujar(requisito({ expiration_policy: 'NONE' }))
-    expect(screen.getByLabelText(/fecha de vencimiento/i)).toHaveValue('NONE')
+    expect(screen.getByRole('radio', { name: 'No vence' })).toBeChecked()
   })
 })
 
