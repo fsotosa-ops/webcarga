@@ -64,8 +64,8 @@ export function CeldaNombre({ requisito, puedeEditar }: {
   if (!puedeEditar) {
     return (
       <>
-        <div className="text-xs font-semibold text-text-primary truncate">{requisito.name}</div>
-        <div className="text-etiqueta text-gray-400 truncate">{requisito.requirement_code}</div>
+        <div className="text-xs font-semibold text-text-primary line-clamp-2" title={requisito.name}>{requisito.name}</div>
+        <div className="text-etiqueta text-informativo truncate" title={requisito.requirement_code}>{requisito.requirement_code}</div>
       </>
     )
   }
@@ -97,14 +97,14 @@ export function CeldaNombre({ requisito, puedeEditar }: {
                      text-text-primary hover:bg-accent/5 focus-visible:outline-none
                      focus-visible:ring-2 focus-visible:ring-accent/40"
         >
-          <span className="truncate">{requisito.name}</span>
+          <span className="line-clamp-2" title={requisito.name}>{requisito.name}</span>
           {guardar.isPending && <Loader2 size={11} className="shrink-0 animate-spin text-informativo" />}
         </button>
       )}
       {/* El CÓDIGO se muestra y no se edita: es la llave de los alias de
           nombre de archivo y del motor de match. Cambiarlo dejaría al
           clasificador sin poder resolver este documento. */}
-      <div className="text-etiqueta text-gray-400 truncate">{requisito.requirement_code}</div>
+      <div className="text-etiqueta text-informativo truncate" title={requisito.requirement_code}>{requisito.requirement_code}</div>
       {guardar.isError && (
         <div className="text-etiqueta text-status-incidente">No se pudo renombrar</div>
       )}
