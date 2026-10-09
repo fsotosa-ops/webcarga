@@ -16,6 +16,26 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-09 — Roles y permisos (RBAC NIST): diseño en revisión
+
+Pedido del usuario: modelo de roles y permisos de estándar de industria, *"sin parche, respetando el diseño del
+backend, mantenible, robusto y escalable"*. Spec: `docs/superpowers/specs/2026-10-09-roles-y-permisos-design.md`
+(`3db8062d`). Proceso: superpowers:brainstorming, ruta arquitectónica (spec → plan → ejecución).
+
+**Decisiones del usuario:** áreas Operaciones, Certificación, Seguros, Comercial (+ Directorio); Operador y
+Supervisor por área; Lectura, Administración, **Propietario/Super admin = WebCarga** (mín. 2, nunca 0),
+**Soporte técnico = Sumadots** (lectura; el acceso técnico va por GCP/Supabase/GitHub, no por la app); firma del
+cierre en Operador y Supervisor (como hoy con writer); estándar NIST: permisos en código, roles y asignación como
+datos (roles de sistema por migración + roles personalizados), `require(Permission.X)` reemplaza a
+require_writer/editor/admin sin alias; permisos por campo dentro del modelo; `GET /me` + `can()` en el frontend con
+códigos generados; expand/contract con compuerta por la API de `main` (lee `profiles.role`).
+
+**Siguiente paso exacto:**
+- [ ] El usuario revisa la spec. Abierto en §9: los `editor` actuales **ganan** `*.configure` (hoy solo admin) —
+      decidir si el Supervisor configura su área o solo Administración.
+- [ ] Con la spec aprobada: skill writing-plans → plan de implementación → elegir método de ejecución.
+- [ ] Pendiente previo, independiente: probar invitación por correo y recuperación con f.soto.santibanez@gmail.com.
+
 ### 2026-10-09 — Seguridad de acceso: solo por invitación, mínimo privilegio, MFA para admin
 
 Pedido de Pablo (Granola "Webcarga 2.0", 09/10): *"Hoy día cualquier persona puede entrar a la plataforma y ver
