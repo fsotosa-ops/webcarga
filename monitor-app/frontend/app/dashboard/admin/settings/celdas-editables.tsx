@@ -177,7 +177,7 @@ export function CeldaAlias({ requisito, puedeEditar, maximo }: {
           key={a}
           title={a}
           className={`inline-block truncate rounded bg-bg-main px-1.5 py-0.5 text-etiqueta font-mono
-                      text-text-primary ${maximo === undefined ? 'max-w-[9rem]' : 'max-w-[5.5rem]'}`}
+                      text-text-primary ${maximo === undefined ? 'max-w-[9rem]' : 'max-w-[5rem]'}`}
         >
           {a}
         </span>
