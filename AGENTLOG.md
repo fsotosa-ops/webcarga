@@ -54,6 +54,22 @@ clave pública → "permission denied" (carriers, drivers, insurance_policies, l
 `authenticated` lee 1 tabla, `anon` 0; hook → 403 a no invitada; Playwright: la cuenta owner va a
 `/auth/mfa/setup` y se genera el QR (TOTP habilitado). No se completó la inscripción (requiere el teléfono).
 
+**Después del despliegue (09/10, tarde):**
+- Hook activado y "Allow new users to sign up" OFF por el usuario; probado: cuenta Google no invitada →
+  "Tu cuenta no tiene acceso", 0 filas nuevas en auth.users (11 cuentas). `disable_signup: true` verificado.
+- `0e7aa162` invitación por correo (`invite_user_by_email`, cae a `create_user` si el correo falla;
+  `invitation_sent`) + mensaje para copiar en el alta + `/auth/confirm` (token_hash, patrón SSR).
+- `d3c435e7`/`c3aea6a2` plantillas `templates/invite.html` y `templates/recovery.html` (look del login, bajada
+  "Plataforma logística", botón y título centrados); `config.toml` las referencia (local).
+- `1016ac5e` MFA: Fabián (admin) no podía activar: 0 filas en `auth.mfa_challenges` → el navegador bloqueaba el
+  envío (`maxLength=6` + `pattern`, el código de Microsoft Authenticator trae espacio). `lib/auth/codigo.ts`
+  se queda con los dígitos. Bajada "Plataforma logística" en login/título/menú.
+- `da60eb7e` recuperar/cambiar contraseña: `/auth/confirm?type=recovery&next=` (`lib/auth/destino.ts`, solo rutas
+  internas), `/auth/reset-password` con sesión/code/enlace, 12 caracteres, aal2 → verify y vuelve; "Cambiar
+  contraseña" en el pie del menú. `b46a15a5` MFA sin sesión → /login.
+- Abierto: Fabián recargó 16:41 (factor nuevo) y aún 0 intentos; confirmar con él. No pude probar el verify de
+  punta a punta: la sesión del navegador de pruebas expiró.
+
 **Siguiente paso exacto:**
 - [ ] Usuario: inscribir su MFA al entrar (owner); avisar a los otros 2 admin y al otro owner que se les pedirá.
 - [ ] **Usuario, en el panel de Supabase** (producción):
@@ -61,8 +77,10 @@ clave pública → "permission denied" (carriers, drivers, insurance_policies, l
       2. Probar con una cuenta de Google NO invitada → debe ver "Tu cuenta no tiene acceso".
       3. Authentication › Sign In / Providers → "Allow new users to sign up" OFF (después de probar que una cuenta
          invitada entra con Google).
-      4. Authentication › Multi-Factor → TOTP habilitado (enroll y verify).
+      4. Authentication › Multi-Factor → TOTP habilitado (enroll y verify) — confirmado: genera el QR.
       5. Email provider → contraseña mínima 12 y "Confirm email" ON.
+      6. Emails › Invite user y Reset password: pegar `templates/invite.html` y `templates/recovery.html`
+         (asuntos en config.toml); Site URL = frontend dev.
 - [ ] WebCarga revisa las 11 cuentas (3 @gmail.com) en Configuración › Personas y accesos.
 - [ ] Fuera de este plan (misma llamada): estado "Asignado, no cerrado por el TMS" al final del Cierre; acceso de
       Pablo a Google Cloud y GitHub.
