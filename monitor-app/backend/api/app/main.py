@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
+from .authz.sync import sync_catalog
 from .db import close_pool, init_pool
 from .middleware.cache import CacheMiddleware
 from .routers.assets import router as assets_router
@@ -39,6 +40,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     pool = await init_pool(settings.database_url)
     app.state.pool = pool
+    # El catálogo de permisos y los roles de sistema viven en el código
+    # (app/authz/permissions.py); la base se alinea al arrancar.
+    async with pool.acquire() as conn:
+        await sync_catalog(conn)
     yield
     await close_pool()
 
