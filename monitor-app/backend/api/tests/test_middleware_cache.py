@@ -12,7 +12,7 @@ def make_app():
 
     call_count = {"n": 0}
 
-    @app.get("/api/v1/roles")
+    @app.get("/api/v1/publica")
     def list_roles():
         call_count["n"] += 1
         return {"roles": [], "call": call_count["n"]}
@@ -29,12 +29,18 @@ def make_app():
     return app, call_count
 
 
+# El mecanismo se prueba con una ruta pública de prueba: desde el 09/10 la app
+# no cachea ninguna ruta real en el middleware (test_cache_no_salta_la_sesion).
+PUBLICA = {"/api/v1/publica": 300}
+
+
 def test_static_route_cache_miss_returns_x_cache_miss():
     app, _ = make_app()
-    with patch("app.middleware.cache.cache_get", AsyncMock(return_value=None)):
+    with patch.dict("app.middleware.cache._STATIC_ROUTES", PUBLICA), \
+         patch("app.middleware.cache.cache_get", AsyncMock(return_value=None)):
         with patch("app.middleware.cache.cache_set", AsyncMock()):
             client = TestClient(app)
-            res = client.get("/api/v1/roles")
+            res = client.get("/api/v1/publica")
             assert res.status_code == 200
             assert res.headers.get("x-cache") == "MISS"
 
@@ -42,9 +48,10 @@ def test_static_route_cache_miss_returns_x_cache_miss():
 def test_static_route_cache_hit_returns_cached_body():
     app, _ = make_app()
     cached = json.dumps({"roles": [{"id": "admin"}], "call": 1})
-    with patch("app.middleware.cache.cache_get", AsyncMock(return_value=cached)):
+    with patch.dict("app.middleware.cache._STATIC_ROUTES", PUBLICA), \
+         patch("app.middleware.cache.cache_get", AsyncMock(return_value=cached)):
         client = TestClient(app)
-        res = client.get("/api/v1/roles")
+        res = client.get("/api/v1/publica")
         assert res.status_code == 200
         assert res.headers.get("x-cache") == "HIT"
         assert res.json()["roles"][0]["id"] == "admin"

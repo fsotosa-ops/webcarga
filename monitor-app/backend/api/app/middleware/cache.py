@@ -9,10 +9,12 @@ from ..cache import cache_get, cache_set
 # Only public (no-auth) endpoints are cached at middleware level.
 # Auth-protected routes must not be cached here — the middleware executes
 # before FastAPI's Depends(get_current_user), so early returns skip auth entirely.
-_STATIC_ROUTES: dict[str, int] = {
-    "/api/v1/roles": 300,
-    "/api/v1/trips/meta": 300,
-}
+#
+# 09/10: /roles y /trips/meta salieron de acá al exigir sesión (seguridad de
+# acceso). Con el middleware respondiendo antes de Depends, cualquiera sin
+# token recibía la respuesta cacheada de otra persona. Hoy no queda ninguna
+# ruta pública que cachear; tests/test_cache_no_salta_la_sesion.py lo protege.
+_STATIC_ROUTES: dict[str, int] = {}
 
 
 def _get_ttl(path: str) -> int | None:
