@@ -58,8 +58,9 @@ def sin_cache():
 
 
 async def test_token_valido_da_el_usuario_con_el_rol_de_profiles(sin_cache):
-    user = await auth.get_current_user(_cred(_token()), settings=MagicMock(supabase_url=URL), pool=_pool("admin"))
-    assert user == {"sub": "11111111-1111-1111-1111-111111111111", "email": "op@webcarga.cl", "role": "admin"}
+    user = await auth.get_current_user(_cred(_token(aal="aal2")), settings=MagicMock(supabase_url=URL), pool=_pool("admin"))
+    assert user == {"sub": "11111111-1111-1111-1111-111111111111", "email": "op@webcarga.cl",
+                    "role": "admin", "aal": "aal2"}
     assert sin_cache.call_args.kwargs["ex"] == 60
 
 
@@ -114,9 +115,38 @@ async def test_cuenta_desactivada_es_403_aunque_el_token_siga_vigente(sin_cache)
     assert err.value.status_code == 403
 
 
+async def test_sin_perfil_no_hay_acceso(sin_cache):
+    """Solo por invitación (09/10): antes una cuenta sin perfil entraba como
+    viewer, y con el registro abierto eso era cualquier cuenta de Google."""
+    pool = _pool()
+    pool.fetchrow = AsyncMock(return_value=None)
+    with pytest.raises(HTTPException) as err:
+        await auth.get_current_user(_cred(_token()), settings=MagicMock(supabase_url=URL), pool=pool)
+    assert err.value.status_code == 403
+
+
 async def test_el_rol_cacheado_evita_la_consulta_a_profiles():
     pool = _pool()
     with patch("app.auth.cache_get", AsyncMock(return_value=json.dumps({"role": "owner", "active": True}))):
         user = await auth.get_current_user(_cred(_token()), settings=MagicMock(supabase_url=URL), pool=pool)
     assert user["role"] == "owner"
     pool.fetchrow.assert_not_called()
+
+
+# MFA para roles privilegiados (seguridad, 09/10) --------------------------------
+
+async def test_admin_sin_verificacion_en_dos_pasos_no_administra():
+    with pytest.raises(HTTPException) as err:
+        await auth.require_admin({"sub": "x", "role": "owner", "aal": "aal1"})
+    assert err.value.status_code == 403
+    assert err.value.detail == auth.MFA_REQUERIDO
+
+
+async def test_admin_con_verificacion_en_dos_pasos_administra():
+    user = {"sub": "x", "role": "admin", "aal": "aal2"}
+    assert await auth.require_admin(user) == user
+
+
+async def test_un_editor_no_necesita_mfa_para_editar():
+    user = {"sub": "x", "role": "editor", "aal": "aal1"}
+    assert await auth.require_editor(user) == user

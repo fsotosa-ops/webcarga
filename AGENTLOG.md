@@ -16,6 +16,57 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-09 — Seguridad de acceso: solo por invitación, mínimo privilegio, MFA para admin
+
+Pedido de Pablo (Granola "Webcarga 2.0", 09/10): *"Hoy día cualquier persona puede entrar a la plataforma y ver
+todo... el administrador o alguien crea la cuenta... el que nosotros le damos acceso, se acabó."*
+Plan: `~/.claude/plans/viajes-de-sodimac-asignados-sunny-nebula.md`. Decisiones del usuario: invitadas entran con
+Google, Microsoft o email+clave; una sola entrega; rutas en inglés (`/auth/access-denied`, `/auth/mfa/*`).
+
+**Auditoría (09/10, código + base en solo lectura):**
+- C1 `frontend/lib/actions/users.ts` (createUser/deleteUser) usaba la clave de servicio sin verificar al que llama
+  (server action = POST público): cualquiera podía crearse un owner. Clave configurada en Cloud Run.
+- C2 `public.compliance_requirement_rules` sin RLS y con todos los permisos para `anon` (53 reglas).
+- C3 `authenticated` podía hacer UPDATE de `profiles.role` sobre su propia fila (`self_update`) → owner.
+- A1 registro abierto: `handle_new_user` daba `viewer`; backend "sin perfil" = viewer; pestaña Registrarse.
+- A3 9 rutas sin sesión (`/config/*`, `/config/taxonomies`, `/roles`, `/trips/meta`).
+- A4 PostgREST: 24 tablas de `public` con permisos, escritura abierta en locations/location_rates, 26 funciones
+  ejecutables por RPC. PostgREST expone public, graphql_public, silver, gold, app (app/silver sin grants).
+- M1 sin MFA (0 factores), contraseña mínima 6, `auth.audit_log_entries` vacía (historial en logs de Supabase).
+
+**Aplicado en producción:** `20261009160000_cierra_escalada_de_rol_y_reglas_publicas.sql` (C2+C3, `2029f3d8`),
+ensayada con ROLLBACK y verificada con la clave pública: "permission denied" en ambas tablas; app funcionando.
+
+**Implementado LOCAL (sin commit al escribir esto):**
+- API: `POST /users` y `DELETE /users/{id}` (`routers/users.py`, require_admin, invitación antes de crear en Auth,
+  `invited_by`); `GET /users` con último ingreso, métodos y MFA; `auth.py` sin perfil → 403, `aal` en el usuario,
+  `require_admin` exige aal2 (`MFA_REQUERIDO`); sesión a nivel de router en config/config_reviews/status_taxonomies/
+  roles y en `/trips/meta`. Tests: `test_alta_y_baja_de_usuarios.py` (10), `test_toda_ruta_exige_sesion.py`,
+  `test_auth.py` (+4).
+- Frontend: borradas `lib/actions/users.ts` y `components/auth/RegisterForm.tsx`; `usersApi.create/remove`;
+  login sin "Registrarse"; `/auth/access-denied?reason=not-invited|deactivated` (cierra sesión; evita el bucle con
+  /login); layout: sin perfil/inactivo → access-denied, MFA → `/auth/mfa/verify` o `/auth/mfa/setup` (admin/owner);
+  clave mínima 12; tabla de usuarios con "Último ingreso" + método + MFA; `fetchRolesServer` (sin token) retirada.
+  `deploy-frontend.yml` ya no inyecta `SUPABASE_SERVICE_ROLE_KEY`.
+- Migración `20261009170000_invitation_only_access.sql` (ENSAYADA con ROLLBACK, NO aplicada): admin_whitelist =
+  invitaciones (+invited_by/at, sembrada con las 11 cuentas), `before_user_created_hook`, handle_new_user sin
+  perfil si no hay invitación, revoke de anon/authenticated en public (queda SELECT profiles + EXECUTE is_admin),
+  default privileges cerrados. Ensayo: 11 invitaciones, hook {} / 403, auth lee 1 tabla, anon 0, 1 función.
+
+**Siguiente paso exacto:**
+- [ ] Suite backend completa → aplicar `20261009170000` → commit + push (API y Frontend) → Playwright en dev
+      (entrar, MFA del owner, Configuración › Personas y accesos).
+- [ ] **Usuario, en el panel de Supabase** (producción):
+      1. Authentication › Hooks › Before User Created → Postgres → `public.before_user_created_hook` → Enable.
+      2. Probar con una cuenta de Google NO invitada → debe ver "Tu cuenta no tiene acceso".
+      3. Authentication › Sign In / Providers → "Allow new users to sign up" OFF (después de probar que una cuenta
+         invitada entra con Google).
+      4. Authentication › Multi-Factor → TOTP habilitado (enroll y verify).
+      5. Email provider → contraseña mínima 12 y "Confirm email" ON.
+- [ ] WebCarga revisa las 11 cuentas (3 @gmail.com) en Configuración › Personas y accesos.
+- [ ] Fuera de este plan (misma llamada): estado "Asignado, no cerrado por el TMS" al final del Cierre; acceso de
+      Pablo a Google Cloud y GitHub.
+
 ### 2026-10-09 — Bug: viajes asignados/cerrados en el grupo equivocado del Cierre (Sodimac, manuales, 2065805) — DESPLEGADO
 
 Plan: `~/.claude/plans/viajes-de-sodimac-asignados-sunny-nebula.md`. Diagnóstico medido en producción (solo lectura).

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { deleteUser } from '@/lib/actions/users'
 import CreateUserForm from './CreateUserForm'
 import type { Profile, UserRole } from '@/lib/types'
 import { canManage, hasRole } from '@/lib/types'
@@ -22,6 +21,8 @@ const ROLE_BADGE_MAP: Record<string, { pill: string; avatar: string; dot: string
 }
 const FALLBACK_BADGE = { pill: 'bg-gray-100 text-gray-600 border-gray-200', avatar: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' }
 function getRoleBadge(role: string) { return ROLE_BADGE_MAP[role] ?? FALLBACK_BADGE }
+
+const METODO: Record<string, string> = { google: 'Google', azure: 'Microsoft', email: 'Email' }
 
 type FilterTab = 'all' | 'privileged' | 'active' | 'inactive'
 
@@ -78,9 +79,13 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
     if (!confirm(`¿Eliminar permanentemente a ${user.full_name ?? user.email}?\nEsta acción no se puede deshacer.`)) return
     setActionMenuId(null)
     setDeletingId(user.id)
-    const result = await deleteUser(user.id)
-    if (result.error) { alert(`Error: ${result.error}`); setDeletingId(null) }
-    else setUsers(prev => prev.filter(u => u.id !== user.id))
+    try {
+      await usersApi.remove(user.id)
+      setUsers(prev => prev.filter(u => u.id !== user.id))
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : 'No se pudo eliminar'}`)
+      setDeletingId(null)
+    }
   }
 
   // Roles actorRole can assign to others (strictly below actor's level)
@@ -182,7 +187,7 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
           <table className="w-full text-sm" style={{ minWidth: 680 }}>
             <thead>
               <tr className="border-b border-border bg-gray-50/60">
-                {['Usuario', 'Rol', 'Estado', 'Miembro desde', ''].map(h => (
+                {['Usuario', 'Rol', 'Estado', 'Último ingreso', ''].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wide">
                     {h}
                   </th>
@@ -287,9 +292,13 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
                       </span>
                     </td>
 
-                    {/* Fecha */}
+                    {/* Último ingreso, cómo entra y si tiene MFA (seguridad, 09/10) */}
                     <td className="px-5 py-3.5 text-xs text-gray-400 whitespace-nowrap">
-                      {fmtDate(user.created_at)}
+                      {user.last_sign_in_at ? fmtDate(user.last_sign_in_at) : 'Nunca'}
+                      <span className="block text-informativo">
+                        {(user.providers ?? []).map(p => METODO[p] ?? p).join(' · ') || '—'}
+                        {user.mfa ? ' · MFA' : ''}
+                      </span>
                     </td>
 
                     {/* Acciones */}

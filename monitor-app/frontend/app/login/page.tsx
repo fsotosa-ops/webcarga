@@ -1,14 +1,10 @@
 'use client'
 
-import { useState } from 'react'
 import LoginForm from '@/components/auth/LoginForm'
 import OAuthButtons from '@/components/auth/OAuthButtons'
-import RegisterForm from '@/components/auth/RegisterForm'
 import Link from 'next/link'
 
 export default function LoginPage() {
-  const [tab, setTab] = useState<'login' | 'register'>('login')
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
       style={{ background: 'radial-gradient(ellipse at 55% 35%, #1a3347 0%, #111d28 55%, #0c1620 100%)' }}
@@ -57,68 +53,35 @@ export default function LoginPage() {
         <div className="rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.5)]"
           style={{ background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(20px)' }}
         >
-          {/* Tabs */}
-          <div className="flex border-b border-gray-100">
-            {(['login', 'register'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`flex-1 py-3.5 text-[13px] font-semibold transition-all tracking-wide ${
-                  tab === t
-                    ? 'text-accent border-b-2 border-accent'
-                    : 'text-gray-400 hover:text-gray-500 border-b-2 border-transparent'
-                }`}
-              >
-                {t === 'login' ? 'Ingresar' : 'Registrarse'}
-              </button>
-            ))}
-          </div>
-
+          {/* Solo por invitación (seguridad, 09/10): ya no hay "Registrarse". La
+              cuenta la crea un administrador; una no invitada la rechaza el hook
+              de Supabase Auth, venga de Google, Microsoft o email. */}
           <div className="px-7 py-7">
-            {tab === 'login' ? (
-              <>
-                {/* OAuth — solo iconos */}
-                <OAuthButtons />
+            {/* OAuth — solo iconos */}
+            <OAuthButtons />
 
-                {/* Divider */}
-                <div className="relative my-5">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-100" />
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="bg-white px-3 text-[10px] font-semibold text-gray-300 uppercase tracking-[0.15em]">
-                      o con email
-                    </span>
-                  </div>
-                </div>
+            {/* Divider */}
+            <div className="relative my-5">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-100" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-white px-3 text-[10px] font-semibold text-gray-300 uppercase tracking-[0.15em]">
+                  o con email
+                </span>
+              </div>
+            </div>
 
-                <LoginForm />
+            <LoginForm />
 
-                <p className="text-center mt-4">
-                  <Link
-                    href="/forgot-password"
-                    className="text-[11px] text-gray-400 hover:text-accent transition-colors"
-                  >
-                    ¿Olvidaste tu contraseña?
-                  </Link>
-                </p>
-              </>
-            ) : (
-              <>
-                <OAuthButtons />
-                <div className="relative my-5">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-100" />
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="bg-white px-3 text-[10px] font-semibold text-gray-300 uppercase tracking-[0.15em]">
-                      o con email
-                    </span>
-                  </div>
-                </div>
-                <RegisterForm onSwitchToLogin={() => setTab('login')} />
-              </>
-            )}
+            <p className="text-center mt-4">
+              <Link
+                href="/forgot-password"
+                className="text-[11px] text-gray-400 hover:text-accent transition-colors"
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </p>
           </div>
         </div>
 

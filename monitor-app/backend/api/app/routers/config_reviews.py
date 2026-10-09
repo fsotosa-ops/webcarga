@@ -6,7 +6,8 @@ from ..auth import get_current_user, require_admin
 from ..db import get_pool
 from ..services.revisiones import SQL_BUSQUEDA, exigir_seccion, registrar_revision
 
-router = APIRouter(prefix="/config/reviews", tags=["config"])
+# Toda ruta exige sesión (seguridad, 09/10): ver tests/test_toda_ruta_exige_sesion.py.
+router = APIRouter(prefix="/config/reviews", tags=["config"], dependencies=[Depends(get_current_user)])
 
 
 class ConfirmacionBody(BaseModel):
@@ -61,7 +62,7 @@ async def confirm_review(
 # simple: comparte la enumeración con el registro de revisión, que es lo que le
 # permite buscar sobre el CONTENIDO (una condición, un rango de temperatura, un
 # subtipo) en vez de sobre los títulos de las secciones.
-buscador = APIRouter(prefix="/config/search", tags=["config"])
+buscador = APIRouter(prefix="/config/search", tags=["config"], dependencies=[Depends(get_current_user)])
 
 
 @buscador.get("")

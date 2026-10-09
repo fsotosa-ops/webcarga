@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import require_admin
+from ..auth import get_current_user, require_admin
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..schemas.status_taxonomy import GRUPOS_POR_DOMINIO, StatusTaxonomyBody, StatusTaxonomyPatch
 from ..services.reordenamiento import TAXONOMIAS, MovimientoBody, mover_una_posicion
 from ..services.revisiones import SECCION_DE_TAXONOMIA, registrar_revision
 
-router = APIRouter(prefix="/config/taxonomies", tags=["config"])
+# Toda ruta exige sesión (seguridad, 09/10): ver tests/test_toda_ruta_exige_sesion.py.
+router = APIRouter(prefix="/config/taxonomies", tags=["config"], dependencies=[Depends(get_current_user)])
 
 # `code` viaja pero NO se crea ni se edita desde la app: es el identificador
 # estable con el que OTRAS tablas apuntan a un valor del catalogo

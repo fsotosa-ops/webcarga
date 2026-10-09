@@ -1255,7 +1255,15 @@ export function canManage(actorRole: UserRole, targetRole: UserRole): boolean {
   return false
 }
 
-export type Profile = Database['public']['Tables']['profiles']['Row'] & { active: boolean }
+export type Profile = Database['public']['Tables']['profiles']['Row'] & {
+  active: boolean
+  /** GET /users (seguridad, 09/10): para revisar quién tiene acceso. */
+  last_sign_in_at?: string | null
+  /** 'google' | 'azure' | 'email' — cómo entra. */
+  providers?: string[]
+  /** Tiene verificación en dos pasos inscrita. */
+  mfa?: boolean
+}
 
 // ── Cuadratura diaria (Fase 1, HU-01/02/03 — ver AGENTLOG.md) ───────────────
 export type DriverDayStatusValue = 'ASSIGNED' | 'UNASSIGNED' | 'MISMATCH'

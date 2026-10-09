@@ -1105,7 +1105,7 @@ class TripsMeta(BaseModel):
 
 
 @router.get("/meta", response_model=TripsMeta)
-async def get_trips_meta(pool=Depends(get_pool)):
+async def get_trips_meta(pool=Depends(get_pool), _=Depends(get_current_user)):
     status_rows = await pool.fetch(
         "SELECT id, label, bg_color, text_color, group_id AS group "
         "FROM app.trip_statuses WHERE active = true ORDER BY sort_order"

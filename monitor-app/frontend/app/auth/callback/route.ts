@@ -15,6 +15,12 @@ export async function GET(request: NextRequest) {
     ? `${forwardedProto}://${forwardedHost}`
     : new URL(request.url).origin
 
+  // Una cuenta que nadie invitó: el hook before_user_created de Supabase Auth
+  // la rechaza y el proveedor vuelve acá con `error` y sin `code`.
+  if (searchParams.get('error')) {
+    return NextResponse.redirect(`${origin}/auth/access-denied?reason=not-invited`)
+  }
+
   if (code) {
     const cookieStore = await cookies()
     const supabase = createServerClient(

@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
-from ..auth import require_admin
+from ..auth import get_current_user, require_admin
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..services.reordenamiento import (
@@ -11,7 +11,8 @@ from ..services.reordenamiento import (
 )
 from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
 
-router = APIRouter(prefix="/config", tags=["config"])
+# Toda ruta exige sesión (seguridad, 09/10): ver tests/test_toda_ruta_exige_sesion.py.
+router = APIRouter(prefix="/config", tags=["config"], dependencies=[Depends(get_current_user)])
 
 # Taxonomía de grupos del tablero — compartida entre estados TMS y operacionales
 VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}

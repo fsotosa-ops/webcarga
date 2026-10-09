@@ -7,7 +7,7 @@ export interface PasswordCheck {
 
 export function getPasswordChecks(password: string): PasswordCheck[] {
   return [
-    { label: 'Mínimo 8 caracteres',      ok: password.length >= 8 },
+    { label: `Mínimo ${LARGO_MINIMO} caracteres`, ok: password.length >= LARGO_MINIMO },
     { label: 'Letra mayúscula',           ok: /[A-Z]/.test(password) },
     { label: 'Letra minúscula',           ok: /[a-z]/.test(password) },
     { label: 'Número',                    ok: /\d/.test(password) },
@@ -24,8 +24,12 @@ export function getStrength(checks: PasswordCheck[]): { score: number; label: st
   return               { score: passed, label: 'Muy fuerte', color: '#053bfa' }
 }
 
+// El largo es obligatorio (lo que más pesa, NIST SP 800-63B) y coincide con
+// el mínimo de la API (POST /users) y de Supabase Auth. Seguridad, 09/10.
+export const LARGO_MINIMO = 12
+
 export function isPasswordValid(password: string): boolean {
-  return getPasswordChecks(password).filter(c => c.ok).length >= 4
+  return password.length >= LARGO_MINIMO && getPasswordChecks(password).filter(c => c.ok).length >= 4
 }
 
 interface Props {

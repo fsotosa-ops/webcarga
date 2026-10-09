@@ -4,6 +4,7 @@ import { leerSesion, RUTA_AUTH_NO_DISPONIBLE } from '@/lib/supabase/sesion'
 import Sidebar from '@/components/dashboard/Sidebar'
 import Topbar from '@/components/dashboard/Topbar'
 import { Providers } from './providers'
+import { hasRole } from '@/lib/types'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -21,7 +22,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('id', user.id)
     .single()
 
-  if (profile?.active === false) redirect('/login?error=cuenta_desactivada')
+  // Solo por invitación (seguridad, 09/10): sin perfil no hay acceso. Antes
+  // una cuenta cualquiera de Google entraba como lectora. A /auth/access-denied y
+  // no a /login: con la sesión todavía abierta, /login la devolvía acá (bucle).
+  if (!profile) redirect('/auth/access-denied?reason=not-invited')
+  if (profile.active === false) redirect('/auth/access-denied?reason=deactivated')
+
+  // Verificación en dos pasos (seguridad, 09/10). Si la cuenta la tiene, la
+  // sesión tiene que haberla pasado. Si el rol administra (admin, owner) y no
+  // la inscribió, se inscribe antes de entrar: la API exige aal2 para esos roles.
+  const { data: nivel } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+  if (nivel?.nextLevel === 'aal2' && nivel.currentLevel !== 'aal2') redirect('/auth/mfa/verify')
+  if (hasRole(profile.role, 'admin') && nivel?.nextLevel !== 'aal2') redirect('/auth/mfa/setup')
 
   const displayName = profile?.full_name ?? user.email?.split('@')[0] ?? 'Usuario'
 

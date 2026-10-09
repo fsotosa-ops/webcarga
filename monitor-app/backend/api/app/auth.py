@@ -106,14 +106,19 @@ async def get_current_user(
         row = await pool.fetchrow(
             "SELECT role, active FROM public.profiles WHERE id = $1", sub
         )
-        perfil = {"role": row["role"] if row else "viewer",
-                  "active": row["active"] if row else True}
+        # Sin perfil no hay acceso (seguridad, 09/10). Antes era "viewer": con el
+        # registro abierto, cualquier cuenta de Google leía toda la API.
+        perfil = {"role": row["role"], "active": row["active"]} if row else {"role": None, "active": None}
         await cache_set(rol_key, json.dumps(perfil), ex=60)
 
+    if perfil.get("role") is None:
+        raise HTTPException(status_code=403, detail="Tu cuenta no tiene acceso. Pide a un administrador que te invite.")
     # Una cuenta desactivada no espera a que venza su token (hasta 1 h).
     if perfil.get("active") is False:
         raise HTTPException(status_code=403, detail="Tu cuenta está desactivada")
-    return {"sub": sub, "email": claims.get("email"), "role": perfil["role"]}
+    # `aal` (authenticator assurance level): aal2 = la sesión pasó la
+    # verificación en dos pasos. Lo exige require_admin.
+    return {"sub": sub, "email": claims.get("email"), "role": perfil["role"], "aal": claims.get("aal")}
 
 
 async def require_editor(user: dict = Depends(get_current_user)) -> dict:
@@ -132,7 +137,16 @@ async def require_writer(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+# Mensaje fijo: el frontend lo reconoce para llevar a inscribir el factor.
+MFA_REQUERIDO = "Activa la verificación en dos pasos para administrar WebCarga."
+
+
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Se requiere rol admin o superior")
+    # MFA para los roles privilegiados (seguridad, 09/10): crean usuarios y
+    # cambian la configuración, así que una contraseña o una cuenta de Google
+    # robada no debe alcanzar.
+    if user.get("aal") != "aal2":
+        raise HTTPException(status_code=403, detail=MFA_REQUERIDO)
     return user

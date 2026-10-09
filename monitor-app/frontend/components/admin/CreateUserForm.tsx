@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { createUser } from '@/lib/actions/users'
+import { usersApi } from '@/lib/api/users'
 import { X, UserPlus, Eye, EyeOff } from 'lucide-react'
 import PasswordStrength, { isPasswordValid } from '@/components/auth/PasswordStrength'
 import type { UserRole } from '@/lib/types'
@@ -35,13 +35,19 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
     }
     setError(null)
     const formData = new FormData(e.currentTarget)
-    formData.set('password', oauthOnly ? '' : password)
-    formData.set('role', selectedRole)
 
     startTransition(async () => {
-      const result = await createUser(formData)
-      if (result.error) setError(result.error)
-      else onCreated()
+      try {
+        await usersApi.create({
+          email:     String(formData.get('email') ?? ''),
+          full_name: String(formData.get('full_name') ?? ''),
+          role:      selectedRole as UserRole,
+          ...(oauthOnly ? {} : { password }),
+        })
+        onCreated()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'No se pudo crear el usuario')
+      }
     })
   }
 
