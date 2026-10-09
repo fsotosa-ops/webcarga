@@ -2,6 +2,7 @@
 (app/routers/requirements.py). Ver app/services/requirement_conditions.py
 para la regla de aplicabilidad que estos endpoints exponen."""
 from typing import Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -114,6 +115,32 @@ class RequirementConditionsPatchBody(BaseModel):
             "name", "requirement_level", "exigible_on", "vigencia",
         )
         return [f for f in fields if f in self.model_fields_set]
+
+
+class CambioDeRequisito(BaseModel):
+    """Un documento del borrador y lo que se le cambia. El `patch` es el MISMO
+    cuerpo del PATCH de uno: los dos caminos escriben con la misma función
+    (services/edicion_catalogo.py)."""
+    # UUID y no str: un id mal formado es un 422 al validar, no un 500 de la base.
+    requirement_id: UUID
+    patch: RequirementConditionsPatchBody
+
+
+class LoteDeCambios(BaseModel):
+    """El borrador de la tabla de Configuración (HU-C1, entrega 2c). Se ensaya
+    entero ("Ver efecto") y se publica entero, o no se publica."""
+    # El tope cubre el catálogo completo (96 de la planilla + los propios)
+    # y acota cuánto se siembra en una sola transacción.
+    cambios: list[CambioDeRequisito] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def _sin_repetidos(self):
+        ids = [c.requirement_id for c in self.cambios]
+        if len(ids) != len(set(ids)):
+            # Dos cambios al mismo documento se pisarían en un orden que nadie
+            # eligió.
+            raise ValueError("Un documento aparece dos veces en el lote")
+        return self
 
 
 class RequirementCreateBody(BaseModel):

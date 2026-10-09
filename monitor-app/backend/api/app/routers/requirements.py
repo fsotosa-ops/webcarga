@@ -17,6 +17,7 @@ from ..auth import get_current_user, require_admin
 from ..db import get_pool
 from ..schemas.compliance import RequirementOption
 from ..schemas.requirement import (
+    LoteDeCambios,
     RecalcPreview,
     RecalcResult,
     RequirementAliasBody,
@@ -24,21 +25,20 @@ from ..schemas.requirement import (
     RequirementCreateBody,
     VigenciaBody,
 )
-from ..services.audit import log_change
-from ..services.revisiones import registrar_revision
 from ..services.requirement_conditions import (
     SQL_CONDICION_DE_ENTIDAD,
     TABLA_DE_ENTIDAD,
     calcular_diferencias,
+    diferencias_en,
 )
-from ..services.vencimientos import (
-    cubierto_predicate,
-    exigible_sql,
-    por_vencer_predicate,
-    vencido_predicate,
+from ..services.edicion_catalogo import (
+    _CONDITION_COLUMN_CASTS,  # noqa: F401 — lo recorren los tests de la whitelist
+    RequisitoNoEncontrado,
+    aplicar_cambio,
+    aplicar_recalculo,
+    contar_estados,
 )
 from ..services.catalogo import DocumentoYaExiste, crear_requisito
-from ..services.solicitudes import encender_registros
 from ..services.vigencia import PARAMETROS, guardar_vigencia
 
 requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compliance"])
@@ -126,39 +126,8 @@ SQL_CATALOGO = f"""
     ORDER BY req.target_entity, req.name
 """
 
-# Lista blanca de columnas tocables por PATCH /conditions — nunca se
-# interpolan nombres que vengan del request, solo estas tres literales.
-# `sent_fields()` ya está acotado al mismo conjunto, pero se repite acá para
-# que el cast SQL de cada columna quede a la vista de quien lea el router.
-_CONDITION_COLUMN_CASTS: dict[str, Optional[str]] = {
-    "is_active": None,
-    "applies_to_fleet_service_type_ids": "uuid[]",
-    "applies_to_management_types": "text[]",
-    # Sin cast: TEXT con CHECK. Desde cuándo se exige (HU-C1, entrega 2b).
-    # `expiration_policy` ya no está: se escribe solo junto con sus
-    # parámetros, por `vigencia` (services/vigencia.py).
-    "exigible_on": None,
-    # Sin cast: TEXT y TEXT. `name` es el nombre visible y renombrarlo es
-    # inocuo -- nadie guarda copia, todas las pantallas hacen JOIN vivo.
-    "name": None,
-    # `requirement_level` dice cuan obligatorio es (la ficha y el Diario
-    # cuentan solo LEGAL_MANDATORY). No decide la siembra: desde
-    # 20260816010000 los disparadores leen `is_active` y `applies_to_*`, no
-    # el nivel, asi que cambiarlo no agrega ni quita registros.
-    "requirement_level": None,
-    # `requirement_code` NO ESTA, y no es un olvido: es la llave de
-    # `requirement_filename_aliases`, del motor de match y del catalogo de
-    # vencimientos. Renombrarlo dejaria al clasificador sin poder resolver ese
-    # documento nunca mas.
-}
-
-# Las columnas editables, EN UN SOLO LUGAR. Leerlas antes del UPDATE y
-# devolverlas despues son dos listas mas que tienen que decir exactamente lo
-# mismo que la whitelist: escribirlas a mano ya dejo `name` fuera del SELECT y
-# el registro de auditoria reviento con KeyError sobre un campo recien
-# habilitado. Derivarlas hace imposible agregar un campo y olvidar uno de los
-# tres lugares.
-_COLUMNAS_EDITABLES = ", ".join(_CONDITION_COLUMN_CASTS)
+# La lista blanca de columnas editables vive con el UPDATE que la usa
+# (services/edicion_catalogo.py); se reexporta para los tests que la recorren.
 
 
 @requirements_router.get("", response_model=list[RequirementOption])
@@ -303,98 +272,17 @@ async def patch_requirement_conditions(
     Admin, no editor: esto redefine a quién se le exige cada documento del
     catálogo — la misma altura de permiso que el resto de la configuración
     de catálogo del backend (app/routers/config.py, status_taxonomies.py)."""
-    touched = body.sent_fields()
-    if not touched:
+    if not body.sent_fields():
         raise HTTPException(422, "Ningún campo enviado")
-    columnas = [campo for campo in touched if campo in _CONDITION_COLUMN_CASTS]
-
     async with pool.acquire() as conn, _transaccion_legible(conn):
-        current = await conn.fetchrow(
-            f"""
-            SELECT id, {_COLUMNAS_EDITABLES}
-            FROM public.compliance_requirements WHERE id = $1
-            """,
-            requirement_id,
-        )
-        if not current:
+        try:
+            return await aplicar_cambio(conn, requirement_id, body, actor=user["sub"])
+        except RequisitoNoEncontrado:
             raise HTTPException(404, "Requisito no encontrado")
-
-        if columnas:
-            # UPDATE de ancho variable: solo entran las columnas efectivamente
-            # enviadas, cada una con SU valor por placeholder — nunca COALESCE.
-            # Con COALESCE, NULL solo puede significar "no lo mandaron", y
-            # "lo mandaron NULL/[] a propósito" queda inexpresable. Los nombres
-            # de columna salen únicamente de _CONDITION_COLUMN_CASTS (whitelist
-            # fija); jamás del request.
-            values: list = [requirement_id]
-            set_parts = []
-            for field in columnas:
-                values.append(getattr(body, field))
-                cast = _CONDITION_COLUMN_CASTS[field]
-                placeholder = f"${len(values)}" + (f"::{cast}" if cast else "")
-                set_parts.append(f"{field} = {placeholder}")
-            row = await conn.fetchrow(
-                f"""
-                UPDATE public.compliance_requirements SET {', '.join(set_parts)}
-                WHERE id = $1
-                RETURNING id, requirement_code, expiration_policy, {_COLUMNAS_EDITABLES}
-                """,
-                *values,
-            )
-            for field in columnas:
-                await log_change(
-                    conn, actor=user["sub"], entity_type="REQUIREMENT", entity_id=requirement_id,
-                    action="update", field=field,
-                    old_value=current[field], new_value=getattr(body, field),
-                )
-        if "vigencia" in touched:
-            # El tipo y sus parámetros van juntos y versionados
-            # (services/vigencia.py); la base valida su coherencia al confirmar.
-            cambio = await guardar_vigencia(conn, requirement_id, body.vigencia)
-            await log_change(
-                conn, actor=user["sub"], entity_type="REQUIREMENT", entity_id=requirement_id,
-                action="update", field="vigencia",
-                old_value=cambio["antes"], new_value=cambio["despues"],
-            )
-        if "vigencia" in touched:
-            # La vigencia cambió después del UPDATE (o sin él): se relee la fila.
-            row = await conn.fetchrow(
-                f"""
-                SELECT id, requirement_code, expiration_policy, {_COLUMNAS_EDITABLES}
-                FROM public.compliance_requirements WHERE id = $1
-                """,
-                requirement_id,
-            )
-        # GUARDAR CUENTA COMO REVISAR, y va en la MISMA transaccion que el
-        # cambio: si el UPDATE se revierte, el registro de revision no puede
-        # quedar diciendo que alguien decidio algo que no ocurrio.
-        #
-        # No se deduce de `audit_log` —que se acaba de escribir dos lineas
-        # arriba— a proposito: "hay una fila en el log" significaria a la vez
-        # "alguien lo cambio" y "alguien lo confirmo", y separar esos dos es
-        # justamente para lo que existe el registro.
-        await registrar_revision(
-            conn, "certification", "conditions", requirement_id, user["sub"])
-    return dict(row)
 
 
 class _Ensayo(Exception):
     """Se lanza para revertir el ensayo de la vista previa de vigencia."""
-
-
-async def _contar_estados(conn, requirement_id: str) -> dict:
-    fila = await conn.fetchrow(
-        f"""
-        SELECT count(*) FILTER (WHERE {exigible_sql('cr')} AND {vencido_predicate('cr')})    AS vencidos,
-               count(*) FILTER (WHERE {exigible_sql('cr')} AND {por_vencer_predicate('cr')}) AS por_vencer,
-               count(*) FILTER (WHERE {cubierto_predicate('cr')})   AS al_dia,
-               count(*) FILTER (WHERE cr.status = 'MISSING' AND {exigible_sql('cr')}) AS falta
-        FROM public.compliance_records cr
-        WHERE cr.requirement_id = $1 AND cr.is_current
-        """,
-        requirement_id,
-    )
-    return dict(fila)
 
 
 @requirements_router.post("/{requirement_id}/expiration-rule/preview")
@@ -410,13 +298,13 @@ async def preview_vigencia(
     revierte siempre. Así la vista previa no puede decir algo distinto de lo
     que la pantalla va a mostrar después."""
     async with pool.acquire() as conn:
-        antes = await _contar_estados(conn, requirement_id)
+        antes = await contar_estados(conn, requirement_id)
         resultado: dict = {}
         try:
             async with _transaccion_legible(conn):
                 cambio = await guardar_vigencia(conn, requirement_id, body)
                 await conn.execute("SET CONSTRAINTS ALL IMMEDIATE")  # validar antes de contar
-                resultado = {"despues": await _contar_estados(conn, requirement_id),
+                resultado = {"despues": await contar_estados(conn, requirement_id),
                              "rige_desde_hoy": cambio["rige_desde_hoy"]}
                 raise _Ensayo
         except _Ensayo:
@@ -449,84 +337,117 @@ async def recalc(
     que un DELETE físico era irreversible por definición. Es además el
     estándar del rubro (cumplimiento, nómina, contabilidad): un requisito que
     deja de corresponder se marca como tal, no se borra."""
-    d = await calcular_diferencias(pool, requirement_id)
-    if d["target_entity"] is None:
+    async with pool.acquire() as conn, conn.transaction():
+        resultado = await aplicar_recalculo(conn, requirement_id, actor=user["sub"])
+    if resultado is None:
         raise HTTPException(404, "Requisito no encontrado")
+    return resultado
 
-    creados_ids: list = []
-    quitados_ids: list = []
 
+# ── Editar en lote (HU-C1, entrega 2c) ────────────────────────────────────
+#
+# La tabla de Configuración junta cambios en un borrador. "Ver efecto" los
+# ensaya todos juntos y "Publicar" los guarda y aplica en UNA transacción: o
+# se publica el borrador entero, o nada. Cada documento pasa por la misma
+# función que el PATCH de uno (services/edicion_catalogo.py).
+#
+# Guardar y aplicar dejan de ser dos clics por fila, pero no dejan de ser dos
+# decisiones: el número de pendientes que se crean o se quitan se ve en "Ver
+# efecto" antes de publicar, que es para lo que existía la separación.
+
+# Los campos que cambian A QUIÉN se le exige: solo esos documentos se
+# recalculan al publicar. Renombrar o cambiar el aviso no siembra nada.
+_DECIDEN_LA_SIEMBRA = {
+    "is_active", "applies_to_fleet_service_type_ids",
+    "applies_to_management_types", "exigible_on",
+}
+
+
+def _siembra_cambia(cambio) -> bool:
+    return bool(_DECIDEN_LA_SIEMBRA & set(cambio.patch.sent_fields()))
+
+
+async def _nombres(conn, lote: LoteDeCambios) -> dict[str, str]:
+    ids = [str(c.requirement_id) for c in lote.cambios]
+    filas = await conn.fetch(
+        "SELECT id::text, name FROM public.compliance_requirements WHERE id = ANY($1::uuid[])",
+        ids)
+    nombres = {f["id"]: f["name"] for f in filas}
+    if len(nombres) != len(ids):
+        raise HTTPException(404, "Un documento del lote no existe")
+    return nombres
+
+
+async def _aplicar_cambios(conn, lote: LoteDeCambios, nombres: dict[str, str], *, actor: str):
+    for cambio in lote.cambios:
+        ident = str(cambio.requirement_id)
+        if not cambio.patch.sent_fields():
+            raise HTTPException(422, f"«{nombres[ident]}»: ningún campo enviado")
+        try:
+            # Un savepoint por documento, con sus chequeos diferidos forzados
+            # al final: así el error dice CUÁL documento falló. Con 75 en el
+            # borrador, "falta el día de corte" a secas no se puede corregir.
+            async with _transaccion_legible(conn):
+                await aplicar_cambio(conn, ident, cambio.patch, actor=actor)
+        except HTTPException as error:
+            raise HTTPException(error.status_code, f"«{nombres[ident]}»: {error.detail}") from error
+
+
+def _sumar(filas: list[dict]) -> dict:
+    return {clave: sum(f[clave] for f in filas) for clave in filas[0]} if filas else {}
+
+
+@requirements_router.post("/batch-preview")
+async def ver_efecto_del_lote(
+    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require_admin),
+):
+    """Qué pasaría si se publicara el borrador, ANTES de publicarlo.
+
+    Como la vista previa de un documento, no estima: aplica el lote de verdad
+    dentro de una transacción, cuenta con los mismos predicados que el resto
+    de la app y revierte siempre."""
     async with pool.acquire() as conn:
-        async with conn.transaction():
-            if d["crear"]:
-                # `crear` incluye tanto entidades sin registro como entidades
-                # con uno APAGADO (el `NOT EXISTS (... AND cr.is_current)` de
-                # `calcular_diferencias` no distingue: para la regla, un
-                # registro apagado es "no lo tiene"). El índice único
-                # (entity_id, requirement_id) es TOTAL, no parcial, así que la
-                # fila apagada sigue ocupando el lugar: con `DO NOTHING` el
-                # INSERT la saltearía en silencio y el endpoint reportaría
-                # "creados: N" sin haber encendido nada. El `DO UPDATE` toca
-                # SÓLO el interruptor: un registro apagado puede tener
-                # documento cargado (lo pudo apagar el trigger del vínculo
-                # empresa-cliente, que no mira D13), y pisarle status/file_url/
-                # metadata/expiration_date al resucitarlo sería destruir
-                # trabajo real. `updated_at` tampoco se toca: alimenta
-                # `last_document_update` de la lista de empresas, y volver a
-                # exigir un requisito no es haber actualizado un documento.
-                #
-                # El `WHERE NOT is_current` del DO UPDATE es el ESPEJO del
-                # `AND is_current` que el apagado de abajo lleva a propósito.
-                # `d["crear"]` se calculó en otra conexión y en otra
-                # transacción, así que entre el cálculo y este INSERT alguien
-                # pudo encender una fila —reactivando un vínculo empresa-cliente
-                # o recalculando en paralelo—. Sin el WHERE, esa fila se
-                # reescribe `true` sobre `true`: entra en el RETURNING, infla
-                # `creados`, y deja en `audit_log` un id que este recálculo
-                # nunca cambió. Con el WHERE, encender es idempotente igual que
-                # apagar.
-                creados_ids = await encender_registros(
-                    conn, d["crear"], d["target_entity"], requirement_id, manual=False)
-            if d["quitar"]:
-                # D13, sin depender del reloj: la vista previa se calculó
-                # fuera de esta transacción, así que el UPDATE vuelve a
-                # comprobar el predicado en vez de confiar ciegamente en los
-                # IDs que trajo `calcular_diferencias`. Si alguien subió un
-                # archivo entre el cálculo y acá, la fila ya no matchea y
-                # sigue vigente. `AND is_current` hace el apagado idempotente:
-                # recalcular dos veces no vuelve a contar lo ya apagado.
-                # `quitados` reporta lo efectivamente apagado (RETURNING), no
-                # lo planeado.
-                quitados_rows = await conn.fetch(
-                    """
-                    UPDATE public.compliance_records
-                       SET is_current = false
-                     WHERE id = ANY($1::uuid[])
-                       AND is_current
-                       AND file_url IS NULL AND NOT is_manual_override
-                       AND status IS NOT DISTINCT FROM 'MISSING'
-                    RETURNING id
-                    """,
-                    d["quitar"],
-                )
-                quitados_ids = [str(r["id"]) for r in quitados_rows]
-            # Rastro forense: compliance_records no tiene tabla de historial,
-            # así que aunque apagar ya no destruya nada, esto sigue siendo lo
-            # único que dice QUÉ filas tocó cada recálculo.
-            #
-            # OJO con los nombres: `old_value` NO son filas borradas — son las
-            # que se APAGARON (is_current = false), y siguen en la tabla con su
-            # documento intacto. `new_value` incluye tanto filas nuevas como
-            # filas que estaban apagadas y se volvieron a encender. Los nombres
-            # vienen del contrato viejo (cuando esto sí borraba) y se conservan
-            # a propósito para no partir a los consumidores en el mismo commit.
-            await log_change(
-                conn, actor=user["sub"], entity_type="REQUIREMENT", entity_id=requirement_id,
-                action="recalc", field="compliance_records",
-                old_value=quitados_ids, new_value=creados_ids, source="api",
-            )
-    # `quitados` = apagados, `creados` = creados o re-encendidos. Ver el
-    # comentario del log_change de arriba: los nombres son del contrato
-    # anterior al recálculo reversible; ninguna fila se borra acá.
-    return {"creados": len(creados_ids), "quitados": len(quitados_ids),
-            "bloqueados": len(d["bloqueados"])}
+        nombres = await _nombres(conn, body)
+        antes = {i: await contar_estados(conn, i) for i in nombres}
+        por_documento: list[dict] = []
+        try:
+            async with conn.transaction():
+                await _aplicar_cambios(conn, body, nombres, actor=user["sub"])
+                for cambio in body.cambios:
+                    ident = str(cambio.requirement_id)
+                    d = (await diferencias_en(conn, ident) if _siembra_cambia(cambio)
+                         else {"crear": [], "quitar": [], "bloqueados": []})
+                    por_documento.append({
+                        "requirement_id": ident, "nombre": nombres[ident],
+                        "antes": antes[ident],
+                        "despues": await contar_estados(conn, ident),
+                        "crear": len(d["crear"]), "quitar": len(d["quitar"]),
+                        "bloqueados": len(d["bloqueados"]),
+                    })
+                raise _Ensayo
+        except _Ensayo:
+            pass
+    total = {
+        "antes": _sumar([d["antes"] for d in por_documento]),
+        "despues": _sumar([d["despues"] for d in por_documento]),
+        **{k: sum(d[k] for d in por_documento) for k in ("crear", "quitar", "bloqueados")},
+    }
+    return {"por_documento": por_documento, "total": total}
+
+
+@requirements_router.post("/batch-update")
+async def publicar_lote(
+    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require_admin),
+):
+    """Guarda el borrador y aplica la siembra que cambió, todo o nada."""
+    resultado = {"actualizados": len(body.cambios), "creados": 0, "quitados": 0, "bloqueados": 0}
+    async with pool.acquire() as conn, conn.transaction():
+        nombres = await _nombres(conn, body)
+        await _aplicar_cambios(conn, body, nombres, actor=user["sub"])
+        for cambio in body.cambios:
+            if not _siembra_cambia(cambio):
+                continue
+            aplicado = await aplicar_recalculo(conn, str(cambio.requirement_id), actor=user["sub"])
+            for clave in ("creados", "quitados", "bloqueados"):
+                resultado[clave] += aplicado[clave]
+    return resultado

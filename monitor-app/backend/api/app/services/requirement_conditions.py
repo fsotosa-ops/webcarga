@@ -135,33 +135,43 @@ async def calcular_diferencias(pool, requirement_id: str) -> dict:
     cambio."""
     async with pool.acquire() as conn:
         async with conn.transaction(readonly=True):
-            req = await conn.fetchrow(
-                "SELECT target_entity FROM public.compliance_requirements WHERE id = $1",
-                requirement_id,
-            )
-            if not req:
-                return {"crear": [], "quitar": [], "bloqueados": [], "target_entity": None}
+            return await diferencias_en(conn, requirement_id)
 
-            aplican = SQL_ENTIDADES_QUE_APLICAN[req["target_entity"]]
 
-            crear = await conn.fetch(f"""
-                WITH aplican AS ({aplican})
-                SELECT a.id::text FROM aplican a
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM public.compliance_records cr
-                    WHERE cr.entity_id = a.id AND cr.requirement_id = $1 AND cr.is_current
-                )
-            """, requirement_id)
+async def diferencias_en(conn, requirement_id: str) -> dict:
+    """`calcular_diferencias` sobre una conexión que ya está en transacción.
 
-            sobran = await conn.fetch(f"""
-                WITH aplican AS ({aplican})
-                SELECT cr.id::text, cr.entity_id::text,
-                       (cr.file_url IS NOT NULL OR cr.is_manual_override
-                        OR cr.status IS DISTINCT FROM 'MISSING') AS bloqueado
-                FROM public.compliance_records cr
-                WHERE cr.requirement_id = $1 AND cr.is_current
-                  AND cr.entity_id NOT IN (SELECT id FROM aplican)
-            """, requirement_id)
+    Es lo que usan el recálculo y la publicación en lote: la diferencia se
+    calcula DENTRO de la transacción que después siembra, así que ve las
+    reglas que esa misma transacción acaba de escribir (un documento recién
+    activado en el borrador) y no un snapshot anterior."""
+    req = await conn.fetchrow(
+        "SELECT target_entity FROM public.compliance_requirements WHERE id = $1",
+        requirement_id,
+    )
+    if not req:
+        return {"crear": [], "quitar": [], "bloqueados": [], "target_entity": None}
+
+    aplican = SQL_ENTIDADES_QUE_APLICAN[req["target_entity"]]
+
+    crear = await conn.fetch(f"""
+        WITH aplican AS ({aplican})
+        SELECT a.id::text FROM aplican a
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.compliance_records cr
+            WHERE cr.entity_id = a.id AND cr.requirement_id = $1 AND cr.is_current
+        )
+    """, requirement_id)
+
+    sobran = await conn.fetch(f"""
+        WITH aplican AS ({aplican})
+        SELECT cr.id::text, cr.entity_id::text,
+               (cr.file_url IS NOT NULL OR cr.is_manual_override
+                OR cr.status IS DISTINCT FROM 'MISSING') AS bloqueado
+        FROM public.compliance_records cr
+        WHERE cr.requirement_id = $1 AND cr.is_current
+          AND cr.entity_id NOT IN (SELECT id FROM aplican)
+    """, requirement_id)
 
     return {
         "crear":      [r["id"] for r in crear],

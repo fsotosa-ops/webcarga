@@ -325,12 +325,12 @@ async def test_el_recalculo_revalida_d13_aunque_la_vista_previa_venga_mentida(
         "SELECT * FROM public.compliance_records WHERE id = $1::uuid", ident))
         for caso, ident in registros.items() if caso != "limpio"}
 
-    async def _vista_previa_mentida(pool, requirement_id):
+    async def _vista_previa_mentida(conn, requirement_id):
         return {"crear": [], "quitar": list(registros.values()),
                 "bloqueados": [], "target_entity": "ASSET"}
 
     monkeypatch.setattr(
-        "app.routers.requirements.calcular_diferencias", _vista_previa_mentida)
+        "app.services.edicion_catalogo.diferencias_en", _vista_previa_mentida)
 
     resultado = await recalc(str(requisito), pool=PoolDeUnaConexion(conn), user=USER)
 
