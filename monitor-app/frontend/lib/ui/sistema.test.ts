@@ -95,7 +95,10 @@ describe('el sistema visual se usa, no solo existe', () => {
     // nadie importaba y firmaba contra un endpoint que dejo de existir, y la UI
     // nueva del cierre (dia cerrado, reabrir, error al guardar) nacio con
     // tokens — `resuelto`, `status-incidente`, `informativo`.
-    const DEUDA = 1685
+    // 1.685 -> 1.672 en HU-C1 entrega 2c (2026-10-08): la tabla de documentos
+    // de Configuración paso a tokens al volverse editable en el lugar, y se
+    // retiraron CeldaVigencia, CeldaNivel y AplicarEnLaFila.
+    const DEUDA = 1672
 
     const total = usosDeColorCrudo()
     expect(

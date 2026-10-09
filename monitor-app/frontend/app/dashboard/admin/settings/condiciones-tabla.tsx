@@ -12,8 +12,12 @@ import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { CondicionPanel } from './CondicionPanel'
 import { NuevoDocumentoPanel } from './NuevoDocumentoPanel'
-import { CeldaAlias, CeldaNivel, CeldaNombre, CeldaVigencia } from './celdas-editables'
-import { AplicarEnLaFila } from './AplicarEnLaFila'
+import { CeldaAlias, CeldaNombre } from './celdas-editables'
+import {
+  CAMBIADA, CeldaAviso, CeldaExigible, CeldaNivel, CeldaRenovacion, CeldaVigente,
+} from './celdas-del-borrador'
+import { BarraDelBorrador } from './BarraDelBorrador'
+import { camposCambiados, editar, valorDe, type Borrador, type Edicion } from './borrador'
 import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
 import { celdaSeExigeA } from './frase-de-la-regla'
 import { INPUT, LoadState } from './shared'
@@ -26,16 +30,23 @@ const ENTIDAD: Record<string, { texto: string; clase: string }> = {
 }
 
 
+function esMensual(r: RequirementOption): boolean {
+  return r.expiration_policy === 'CALENDAR_PERIOD'
+}
+
 function tieneCondicion(r: RequirementOption): boolean {
   return Boolean(r.applies_to_fleet_service_type_ids?.length || r.applies_to_management_types?.length)
 }
 
-/** El catálogo de documentos exigidos, como lista.
+/** El catálogo de documentos exigidos, como tabla que se edita en el lugar.
  *
  *  Antes eran 37 formularios abiertos, uno debajo del otro: 5.849 px y 167
- *  casillas, de las cuales 35 requisitos no tenían ninguna marcada. La lista no
- *  dibuja ni una casilla — la regla se ENUNCIA en una frase derivada del dato, y
- *  se edita en el panel. */
+ *  casillas. Después, una lista que solo enunciaba la regla y la editaba en un
+ *  panel: con los 96 tipos de la planilla de WebCarga eran demasiados clics
+ *  (HU-C1, entrega 2c). Ahora cada celda es un control, varias filas se editan
+ *  juntas, y lo que cambia el estado de alguien se publica en lote después de
+ *  ver su efecto (BarraDelBorrador). La condición por subtipo, que es un
+ *  multiselector, sigue en el panel. */
 export function CondicionesTabla() {
   const req = useQuery({
     queryKey: ['compliance-requirements'],
@@ -69,15 +80,16 @@ export function CondicionesTabla() {
   const abierto = searchParams.get('doc')
   const canAdmin = useCanAdmin()
   const [creando, setCreando] = useState(false)
-  /** Las filas cuya REGLA se cambió en esta sesión, y que por eso ofrecen
-   *  "Ver qué cambia". Renombrar no entra acá: no mueve un registro. */
-  const [sinAplicar, setSinAplicar] = useState<Set<string>>(new Set())
-  const marcarSinAplicar = useCallback(
-    (id: string) => setSinAplicar(prev => new Set(prev).add(id)), [])
-  const desmarcar = useCallback(
-    (id: string) => setSinAplicar(prev => {
-      const s = new Set(prev); s.delete(id); return s
-    }), [])
+  const [borrador, setBorrador] = useState<Borrador>({})
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
+  const cambiar = useCallback((r: RequirementOption, e: Edicion) =>
+    setBorrador(b => editar(b, r, e)), [])
+  const alternar = useCallback((id: string) => setSeleccion(prev => {
+    const s = new Set(prev)
+    if (s.has(id)) s.delete(id)
+    else s.add(id)
+    return s
+  }), [])
 
   const abrir = useCallback((code: string | null) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -153,21 +165,25 @@ export function CondicionesTabla() {
     { id: SIN_REVISAR,     etiqueta: 'Sin revisar',   n: buscados.filter(r => revisiones.sinRevisar(r.id)).length },
     { id: 'con-condicion', etiqueta: 'Con condición', n: buscados.filter(tieneCondicion).length },
     { id: 'sin-vigencia',  etiqueta: 'Sin vigencia',  n: buscados.filter(r => !r.is_active).length },
+    { id: 'mensuales',     etiqueta: 'Mensuales',     n: buscados.filter(esMensual).length },
+    { id: 'con-cambios',   etiqueta: 'Con cambios',   n: buscados.filter(r => borrador[r.id]).length },
     // `revisiones.sinRevisar` se recrea en cada render; lo que cambia el
     // resultado son los datos.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [buscados, revisiones.datos])
+  ], [buscados, revisiones.datos, borrador])
 
   const filas = useMemo(() => {
     let f = buscados
     if (filtro === SIN_REVISAR) f = f.filter(r => revisiones.sinRevisar(r.id))
     if (filtro === 'con-condicion') f = f.filter(tieneCondicion)
     if (filtro === 'sin-vigencia') f = f.filter(r => !r.is_active)
+    if (filtro === 'mensuales') f = f.filter(esMensual)
+    if (filtro === 'con-cambios') f = f.filter(r => borrador[r.id])
     return comparar(f, r => (orden?.columna === 'documento' ? r.name : r.target_entity))
     // `comparar` y `revisiones.sinRevisar` se recrean en cada render y no
     // aportan identidad estable; lo que cambia el resultado ya está acá.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscados, filtro, orden, revisiones.datos])
+  }, [buscados, filtro, orden, revisiones.datos, borrador])
 
   // El panel se dibuja desde el dato del catalogo, no desde la fila clicada:
   // asi recargar con `?doc=` en la URL lo abre igual, sin haber pasado por la
@@ -230,78 +246,119 @@ export function CondicionesTabla() {
         )}
       </div>
 
-      <table className="w-full border-collapse">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[1100px] border-collapse">
         <thead>
-          <tr className="bg-gray-50/60 border-y border-border">
+          <tr className="bg-bg-main/60 border-y border-border">
+            {canAdmin && (
+              <th scope="col" className="w-8 pl-3">
+                <input
+                  type="checkbox"
+                  aria-label="Seleccionar todos los visibles"
+                  checked={filas.length > 0 && filas.every(r => seleccion.has(r.id))}
+                  onChange={e => setSeleccion(e.target.checked ? new Set(filas.map(r => r.id)) : new Set())}
+                  className="accent-accent"
+                />
+              </th>
+            )}
             <EncabezadoOrdenable columna="entidad" orden={orden} onOrdenar={ordenarPor}>Entidad</EncabezadoOrdenable>
             <EncabezadoOrdenable columna="documento" orden={orden} onOrdenar={ordenarPor}>Documento</EncabezadoOrdenable>
             <th scope="col" className={CABECERA}>Se exige a</th>
-            <th scope="col" className={CABECERA}>Vigencia</th>
+            <th scope="col" className={CABECERA}>Se renueva</th>
+            <th scope="col" className={CABECERA} title="Días antes del vencimiento. Vacío: el aviso general">Aviso</th>
+            <th scope="col" className={CABECERA}>Cuándo se exige</th>
+            <th scope="col" className={CABECERA}>Vigente</th>
             {/* Cómo lo encuentra el clasificador en el nombre del archivo.
                 Pedido de Fabián (21/08): que el nombre del archivo coincida con
                 el del documento para que el match funcione. Sin esta columna,
                 que un documento sea invisible para el motor no se veía en
                 ningún lado. */}
             <th scope="col" className={CABECERA}>Se reconoce como</th>
-            <th scope="col" className={CABECERA}>Revisión</th>
             <th scope="col" className="w-9" aria-label="Acciones" />
           </tr>
         </thead>
         <tbody>
           {filas.map(r => {
             const e = ENTIDAD[r.target_entity]
-            // El total sale del catálogo de subtipos, no de un número escrito
-            // a mano: si mañana se da de alta un subtipo, la frase se corrige
-            // sola.
-            const celda = celdaSeExigeA(r, vocabulario)
+            const valor = valorDe(r, borrador)
+            const cambiados = camposCambiados(borrador, r.id)
+            const marca = (campo: keyof Edicion) => (cambiados.has(campo) ? CAMBIADA : '')
+            // La frase se dice con el borrador puesto: activar en la celda
+            // tiene que verse en "Se exige a" antes de publicar. El total sale
+            // del catálogo de subtipos, no de un número escrito a mano.
+            const celda = celdaSeExigeA({ ...r, is_active: valor.is_active }, vocabulario)
             return (
-              <tr key={r.id} className="border-b border-border/70 hover:bg-gray-50/60">
-                <td className="px-3 py-2.5">
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${e?.clase ?? 'bg-gray-100 text-gray-600'}`}>
+              <tr
+                key={r.id}
+                className={`border-b border-border/70 ${seleccion.has(r.id) ? 'bg-accent/5' : 'hover:bg-bg-main/60'}`}
+              >
+                {canAdmin && (
+                  <td className="pl-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Seleccionar ${r.name}`}
+                      checked={seleccion.has(r.id)}
+                      onChange={() => alternar(r.id)}
+                      className="accent-accent"
+                    />
+                  </td>
+                )}
+                <td className="px-3 py-2">
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${e?.clase ?? 'bg-bg-main text-informativo'}`}>
                     {e?.texto ?? r.target_entity}
                   </span>
                 </td>
-                <td className="px-3 py-2.5 max-w-[22rem]">
+                <td className="px-3 py-2 max-w-[20rem]">
                   <CeldaNombre requisito={r} puedeEditar={canAdmin} />
-                  <div className="mt-1">
-                    <CeldaNivel requisito={r} puedeEditar={canAdmin} onReglaCambiada={marcarSinAplicar} />
+                  <div className={`mt-1 flex flex-wrap items-center gap-2 rounded ${marca('requirement_level')}`}>
+                    <CeldaNivel
+                      requisito={r} valor={valor.requirement_level} puedeEditar={canAdmin}
+                      onCambiar={v => cambiar(r, { requirement_level: v })}
+                    />
+                    {/* La marca se MUESTRA en la fila y el gesto de confirmar
+                        vive en el panel. */}
+                    <MarcaDeRevision revision={revisiones.revisionDe(r.id)} />
                   </div>
                 </td>
-                <td className="px-3 py-2.5">
-                  <div className={`text-xs ${r.is_active ? 'text-gray-700' : 'text-gray-400'}`}>{celda.regla}</div>
-                  <div className="text-etiqueta text-gray-400 tabular-nums">{celda.alcance}</div>
-                  {/* La CONDICIÓN sigue abriéndose aparte: es un multiselector
-                      de diez subtipos, y eso no entra en una celda sin volver
-                      a ser el formulario que este rediseño vino a sacar. */}
-                  {sinAplicar.has(r.id) && (
-                    <div className="mt-1">
-                      <AplicarEnLaFila
-                        requirementId={r.id}
-                        nombre={r.name}
-                        onAplicado={() => { desmarcar(r.id); revisiones.invalidar() }}
-                      />
-                    </div>
-                  )}
+                <td className="px-3 py-2">
+                  <div className={`text-xs ${valor.is_active ? 'text-text-primary' : 'text-informativo'}`}>{celda.regla}</div>
+                  <div className="text-etiqueta text-informativo tabular-nums">{celda.alcance}</div>
                 </td>
-                <td className="px-3 py-2.5">
-                  <CeldaVigencia requisito={r} puedeEditar={canAdmin} onReglaCambiada={marcarSinAplicar} />
+                <td className={`px-2 py-2 ${marca('vigencia')}`}>
+                  <CeldaRenovacion
+                    requisito={r} vigencia={valor.vigencia} puedeEditar={canAdmin}
+                    onCambiar={v => cambiar(r, { vigencia: v })}
+                  />
                 </td>
-                <td className="px-3 py-2.5">
+                <td className={`px-2 py-2 ${marca('vigencia')}`}>
+                  <CeldaAviso
+                    requisito={r} vigencia={valor.vigencia} puedeEditar={canAdmin}
+                    onCambiar={v => cambiar(r, { vigencia: v })}
+                  />
+                </td>
+                <td className={`px-2 py-2 ${marca('exigible_on')}`}>
+                  <CeldaExigible
+                    requisito={r} valor={valor.exigible_on} puedeEditar={canAdmin}
+                    onCambiar={v => cambiar(r, { exigible_on: v })}
+                  />
+                </td>
+                <td className={`px-3 py-2 ${marca('is_active')}`}>
+                  <CeldaVigente
+                    requisito={r} valor={valor.is_active} puedeEditar={canAdmin}
+                    onCambiar={v => cambiar(r, { is_active: v })}
+                  />
+                </td>
+                <td className="px-3 py-2">
                   <CeldaAlias requisito={r} puedeEditar={canAdmin} />
-                </td>
-                {/* La marca se MUESTRA en la fila y el gesto de confirmar vive
-                    en el panel: devolverle un botón a cada una de las 37 filas
-                    sería volver a los controles que este rediseño vino a sacar. */}
-                <td className="px-3 py-2.5">
-                  <MarcaDeRevision revision={revisiones.revisionDe(r.id)} />
                 </td>
                 <td className="pr-2">
                   <button
                     type="button"
                     onClick={() => abrir(r.requirement_code)}
                     aria-label={`Editar ${r.name}`}
-                    className="text-gray-300 hover:text-gray-500 focus-visible:outline-none
-                               focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
+                    title="Condición por subtipo, ventanas por cliente e historial"
+                    className="rounded text-informativo hover:text-text-primary focus-visible:outline-none
+                               focus-visible:ring-2 focus-visible:ring-accent/40"
                   >
                     <ChevronRight size={15} aria-hidden="true" />
                   </button>
@@ -311,13 +368,24 @@ export function CondicionesTabla() {
           })}
           {!filas.length && (
             <tr>
-              <td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400">
+              <td colSpan={10} className="px-3 py-6 text-center text-xs text-informativo">
                 Ningún documento coincide con el filtro.
               </td>
             </tr>
           )}
         </tbody>
       </table>
+      </div>
+
+      {canAdmin && (
+        <BarraDelBorrador
+          borrador={borrador}
+          onBorrador={setBorrador}
+          seleccion={todos.filter(r => seleccion.has(r.id))}
+          onLimpiarSeleccion={() => setSeleccion(new Set())}
+          onPublicado={revisiones.invalidar}
+        />
+      )}
 
       {requisitoAbierto && (
         <CondicionPanel

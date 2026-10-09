@@ -71,6 +71,7 @@ beforeEach(() => {
   })
   vi.mocked(requirementsApi.recalcPreview).mockReset()
   vi.mocked(requirementsApi.recalcPreview).mockResolvedValue({ crear: 4, quitar: 1, bloqueados: 0 })
+  vi.mocked(requirementsApi.previewVigencia).mockClear()
 })
 
 describe('CondicionPanel — cuándo vence y cuándo se exige', () => {
@@ -116,6 +117,19 @@ describe('CondicionPanel — cuándo vence y cuándo se exige', () => {
 
     expect(await screen.findByText(/2 vencidos/)).toBeInTheDocument()
     expect(requirementsApi.patchConditions).not.toHaveBeenCalled()
+  })
+
+  // Visto en dev: un mensual recién elegido no tiene día tope; la pantalla ya
+  // decía "Falta el día tope" y aun así pedía la vista previa, que volvía 422
+  // con el mensaje técnico del trigger debajo.
+  it('con la regla incompleta no pide la vista previa ni deja guardar', async () => {
+    montarPanel(requisito({ expiration_policy: 'NONE' }))
+    fireEvent.click(screen.getByRole('radio', { name: /se renueva cada período/i }))
+
+    expect(await screen.findByText('Falta el día tope.')).toBeInTheDocument()
+    await new Promise((r) => setTimeout(r, 450))
+    expect(requirementsApi.previewVigencia).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /^guardar$/i })).toBeDisabled()
   })
 
   it('cambiar cuándo se exige manda exigible_on', async () => {

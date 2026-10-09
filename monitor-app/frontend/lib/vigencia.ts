@@ -64,9 +64,27 @@ function frasesDeAviso(vence: Date, v: Vigencia, formato: (d: Date) => string): 
     : `Avisa desde el ${formato(sumarDias(vence, -v.warning_days))}.`
 }
 
+/** Lo primero que le falta a la regla para poder guardarse, o null si está
+ *  completa. Es la MISMA coherencia que hace cumplir la base
+ *  (`validar_vigencia_de_requisito`): la pantalla la usa para no pedir una
+ *  vista previa ni publicar algo que la base va a rechazar con su mensaje
+ *  técnico. */
+export function faltaDeVigencia(v: Vigencia): string | null {
+  if (v.politica === 'ISSUE_PLUS_MONTHS' && !v.validity_months) return 'Faltan los meses que dura.'
+  if (v.politica === 'CALENDAR_PERIOD') {
+    if (!v.frequency_months) return 'Falta cada cuántos meses se renueva.'
+    if (!v.cutoff_day) return 'Falta el día tope.'
+    if (v.period_offset_months == null) return 'Falta de qué mes es el documento.'
+    if (v.warning_days == null) return 'Falta indicar con cuántos días de aviso.'
+  }
+  return null
+}
+
 /** La regla escrita con fechas, contada desde `hoy`. Si a la regla le falta un
  *  parámetro, dice cuál en vez de inventar una fecha. */
 export function ejemploDeVigencia(v: Vigencia, hoy: Date): string {
+  const falta = faltaDeVigencia(v)
+  if (falta) return falta
   const gracia = v.grace_days ?? 0
   switch (v.politica) {
     case 'NONE':
@@ -80,27 +98,24 @@ export function ejemploDeVigencia(v: Vigencia, hoy: Date): string {
       return `Vence en la fecha que trae el documento${tolera}; ${aviso}.`
     }
     case 'ISSUE_PLUS_MONTHS': {
-      if (!v.validity_months) return 'Faltan los meses que dura.'
       // Como `issue_date + make_interval(months => n)` de Postgres: el 31/01
-      // más un mes es el 28/02, no el 03/03 de Date.
+      // más un mes es el 28/02, no el 03/03 de Date. `faltaDeVigencia` ya
+      // comprobó que los meses están.
       const vence = sumarDias(
-        corte(sumarMeses(new Date(hoy.getFullYear(), hoy.getMonth(), 1), v.validity_months),
+        corte(sumarMeses(new Date(hoy.getFullYear(), hoy.getMonth(), 1), v.validity_months!),
           hoy.getDate()),
         gracia)
       return `Así queda: uno emitido el ${larga(hoy)} vence el ${larga(vence)}. `
         + frasesDeAviso(vence, v, larga)
     }
     case 'CALENDAR_PERIOD': {
-      if (!v.frequency_months) return 'Falta cada cuántos meses se renueva.'
-      if (!v.cutoff_day) return 'Falta el día tope.'
-      if (v.period_offset_months == null) return 'Falta de qué mes es el documento.'
-      if (v.warning_days == null) return 'Falta indicar con cuántos días de aviso.'
+      // `faltaDeVigencia` ya comprobó que los cuatro parámetros están.
+      const offset = v.period_offset_months!, dia = v.cutoff_day!, cada = v.frequency_months!
       // El período que se exige hoy, y el mes en que se pide.
       const inicioDelMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-      const periodo = sumarMeses(inicioDelMes, -v.period_offset_months)
-      const sePide = corte(sumarMeses(periodo, v.period_offset_months), v.cutoff_day)
-      const sirveHasta = sumarDias(
-        corte(sumarMeses(periodo, v.period_offset_months + v.frequency_months), v.cutoff_day), gracia)
+      const periodo = sumarMeses(inicioDelMes, -offset)
+      const sePide = corte(sumarMeses(periodo, offset), dia)
+      const sirveHasta = sumarDias(corte(sumarMeses(periodo, offset + cada), dia), gracia)
       const vencidaDesde = sumarDias(sePide, gracia + 1)
       const mes = MESES[periodo.getMonth()]
       return `Así queda: el de ${mes} se pide el ${corta(sePide)} y sirve hasta el `

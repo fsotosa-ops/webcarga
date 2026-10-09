@@ -14,25 +14,23 @@ import type { RequirementOption } from '@/lib/types'
  *  decisión sigue en pie: lo que vuelve NO son 37 formularios simultáneos,
  *  sino una celda que se convierte en control al hacer clic, de a una.
  *
- *  LO QUE NO SE PIERDE AL MOVERLAS. Guardar la regla y aplicarla son dos
- *  actos: editar acá guarda, y la fila queda marcada "sin aplicar" con su
- *  "Ver qué cambia". Sin esa separación, tocar un interruptor en una tabla
- *  sembraría hasta 124 registros sin que nadie viera el número. */
+ *  SOLO LO QUE ES ETIQUETA. El nombre y las formas de reconocerlo en el
+ *  archivo se guardan al instante: no cambian el estado de nadie. Lo que sí
+ *  lo cambia (cómo vence, cuándo se exige, obligatorio, vigente) va al
+ *  borrador de la tabla y se publica junto, después de ver su efecto
+ *  (celdas-del-borrador.tsx, HU-C1 entrega 2c). */
 
 type Patch = Parameters<typeof requirementsApi.patchConditions>[1]
 
 /** Guarda un campo del requisito e invalida el catálogo. Uno solo para todas
  *  las celdas: si cada una escribiera su propia mutación, la lista de claves a
  *  invalidar se separaría — que es como este frontend ya perdió una raíz. */
-function useGuardarCampo(onGuardado?: (id: string) => void) {
+function useGuardarCampo() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Patch }) =>
       requirementsApi.patchConditions(id, patch),
-    onSuccess: (_d, { id }) => {
-      qc.invalidateQueries({ queryKey: ['compliance-requirements'] })
-      onGuardado?.(id)
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['compliance-requirements'] }),
   })
 }
 
@@ -111,89 +109,6 @@ export function CeldaNombre({ requisito, puedeEditar }: {
         <div className="text-etiqueta text-status-incidente">No se pudo renombrar</div>
       )}
     </>
-  )
-}
-
-/** La vigencia. SÍ marca la fila: activar un requisito le empieza a exigir el
- *  documento a todos los que califiquen. */
-export function CeldaVigencia({ requisito, puedeEditar, onReglaCambiada }: {
-  requisito: RequirementOption
-  puedeEditar: boolean
-  onReglaCambiada: (id: string) => void
-}) {
-  const guardar = useGuardarCampo(onReglaCambiada)
-  const texto = requisito.is_active ? 'Vigente' : 'Sin vigencia'
-  const clase = requisito.is_active ? 'text-resuelto' : 'text-gray-400'
-
-  if (!puedeEditar) return <span className={`text-xs ${clase}`}>{texto}</span>
-
-  return (
-    <button
-      type="button"
-      onClick={() => guardar.mutate({
-        id: requisito.id, patch: { is_active: !requisito.is_active },
-      })}
-      disabled={guardar.isPending}
-      aria-label={`${requisito.is_active ? 'Quitar vigencia a' : 'Dar vigencia a'} ${requisito.name}`}
-      className={`inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs ${clase}
-                  hover:bg-accent/5 disabled:opacity-50 focus-visible:outline-none
-                  focus-visible:ring-2 focus-visible:ring-accent/40`}
-    >
-      {guardar.isPending && <Loader2 size={11} className="animate-spin" />}
-      {texto}
-    </button>
-  )
-}
-
-/** El nivel: a quién se le exige. NO es una etiqueta — los disparadores de
- *  siembra sólo siembran los obligatorios, así que cambiarlo agrega o quita
- *  registros. Por eso marca la fila. */
-export function CeldaNivel({ requisito, puedeEditar, onReglaCambiada }: {
-  requisito: RequirementOption
-  puedeEditar: boolean
-  onReglaCambiada: (id: string) => void
-}) {
-  const guardar = useGuardarCampo(onReglaCambiada)
-  const obligatorio = requisito.requirement_level === 'LEGAL_MANDATORY'
-  const texto = obligatorio ? 'Obligatorio' : 'Opcional'
-  const clase = obligatorio
-    ? 'bg-accent/10 text-accent'
-    : 'bg-gray-100 text-gray-600'
-
-  // UN TERCER VALOR NO SE COLAPSA EN SILENCIO. El tipo admite
-  // `SHIPPER_REQUIRED` —cero filas en la base, un placeholder anterior a la
-  // taxonomía real, misma familia que los cinco `AssetType` de los que sólo
-  // existían dos—. Un interruptor de dos estados lo convertiría en
-  // "Obligatorio" sin que nadie lo pidiera, así que acá se muestra tal cual y
-  // no se toca. Si algún día vuelve a haber filas, esto lo hace visible en vez
-  // de perderlo.
-  const conocido = requisito.requirement_level === 'LEGAL_MANDATORY'
-    || requisito.requirement_level === 'CONDITIONAL_OPTIONAL'
-
-  if (!puedeEditar || !conocido) {
-    return (
-      <span className={`rounded px-2 py-0.5 text-etiqueta font-semibold ${clase}`}>
-        {conocido ? texto : requisito.requirement_level}
-      </span>
-    )
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => guardar.mutate({
-        id: requisito.id,
-        patch: { requirement_level: obligatorio ? 'CONDITIONAL_OPTIONAL' : 'LEGAL_MANDATORY' },
-      })}
-      disabled={guardar.isPending}
-      aria-label={`Cambiar ${requisito.name} a ${obligatorio ? 'opcional' : 'obligatorio'}`}
-      className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-etiqueta font-semibold
-                  ${clase} hover:opacity-80 disabled:opacity-50 focus-visible:outline-none
-                  focus-visible:ring-2 focus-visible:ring-accent/40`}
-    >
-      {guardar.isPending && <Loader2 size={10} className="animate-spin" />}
-      {texto}
-    </button>
   )
 }
 

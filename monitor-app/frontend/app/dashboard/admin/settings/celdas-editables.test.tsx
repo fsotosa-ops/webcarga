@@ -7,7 +7,7 @@ vi.mock('@/lib/api/requirements', () => ({
   requirementsApi: { patchConditions: vi.fn() },
 }))
 import { requirementsApi } from '@/lib/api/requirements'
-import { CeldaNivel, CeldaNombre, CeldaVigencia } from './celdas-editables'
+import { CeldaNombre } from './celdas-editables'
 
 const REQ: RequirementOption = {
   id: 'r1', requirement_code: 'F30_MULTAS', name: 'F30 Multas',
@@ -85,45 +85,5 @@ describe('CeldaNombre', () => {
     montar(<CeldaNombre requisito={REQ} puedeEditar={false} />)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.getByText('F30 Multas')).toBeInTheDocument()
-  })
-})
-
-describe('CeldaVigencia', () => {
-  it('el interruptor guarda, y avisa que la fila quedó sin aplicar', async () => {
-    const marcada = vi.fn()
-    montar(<CeldaVigencia requisito={REQ} puedeEditar onReglaCambiada={marcada} />)
-    fireEvent.click(screen.getByRole('button', { name: /Quitar vigencia a F30 Multas/ }))
-
-    await waitFor(() => expect(requirementsApi.patchConditions)
-      .toHaveBeenCalledWith('r1', { is_active: false }))
-    // ESTO es lo que conserva la separación entre guardar y aplicar.
-    await waitFor(() => expect(marcada).toHaveBeenCalledWith('r1'))
-  })
-})
-
-describe('CeldaNivel', () => {
-  it('alterna entre obligatorio y opcional, y marca la fila', async () => {
-    const marcada = vi.fn()
-    montar(<CeldaNivel requisito={REQ} puedeEditar onReglaCambiada={marcada} />)
-    fireEvent.click(screen.getByRole('button', { name: /Cambiar F30 Multas a opcional/ }))
-
-    await waitFor(() => expect(requirementsApi.patchConditions)
-      .toHaveBeenCalledWith('r1', { requirement_level: 'CONDITIONAL_OPTIONAL' }))
-    await waitFor(() => expect(marcada).toHaveBeenCalledWith('r1'))
-  })
-
-  // El tipo admite un tercer valor con cero filas en la base. Un interruptor de
-  // dos estados lo convertiria en "Obligatorio" sin que nadie lo pidiera --
-  // misma familia que los cinco AssetType de los que solo existian dos.
-  it('un tercer valor NO se colapsa: se muestra y no se toca', () => {
-    montar(
-      <CeldaNivel
-        requisito={{ ...REQ, requirement_level: 'SHIPPER_REQUIRED' } as RequirementOption}
-        puedeEditar
-        onReglaCambiada={vi.fn()}
-      />,
-    )
-    expect(screen.getByText('SHIPPER_REQUIRED')).toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ejemploDeVigencia, mismaVigencia, resumenDeVigencia, vigenciaDe } from './vigencia'
+import { ejemploDeVigencia, faltaDeVigencia, mismaVigencia, resumenDeVigencia, vigenciaDe } from './vigencia'
 import type { Vigencia } from './vigencia'
 
 const HOY = new Date(2026, 9, 8) // 08/10/2026
@@ -62,6 +62,22 @@ describe('ejemploDeVigencia', () => {
   it('los tipos sin parámetros lo dicen en una frase', () => {
     expect(ejemploDeVigencia({ politica: 'NONE' }, HOY)).toBe('No vence: se presenta una vez.')
     expect(ejemploDeVigencia({ politica: 'REQUIRED' }, HOY)).toContain('fecha que trae el documento')
+  })
+})
+
+describe('faltaDeVigencia', () => {
+  it('una regla completa no tiene faltas', () => {
+    expect(faltaDeVigencia(F30_1)).toBeNull()
+    expect(faltaDeVigencia({ ...F30_1, politica: 'NONE' })).toBeNull()
+  })
+
+  it('dice lo primero que falta, con las mismas palabras del ejemplo', () => {
+    expect(faltaDeVigencia({ ...F30_1, cutoff_day: null })).toBe('Falta el día tope.')
+    expect(faltaDeVigencia({ ...F30_1, warning_days: null }))
+      .toBe('Falta indicar con cuántos días de aviso.')
+    expect(faltaDeVigencia({ ...F30_1, politica: 'ISSUE_PLUS_MONTHS', validity_months: null }))
+      .toBe('Faltan los meses que dura.')
+    expect(ejemploDeVigencia({ ...F30_1, cutoff_day: null }, HOY)).toBe('Falta el día tope.')
   })
 })
 

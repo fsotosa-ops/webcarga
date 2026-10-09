@@ -11,9 +11,13 @@ vi.mock('@/lib/api/config', () => ({
   revisionesApi: { list: vi.fn(), confirm: vi.fn() },
 }))
 vi.mock('@/lib/api/requirements', () => ({
-  requirementsApi: { patchConditions: vi.fn(), recalcPreview: vi.fn(), recalc: vi.fn() },
+  requirementsApi: {
+    patchConditions: vi.fn(), recalcPreview: vi.fn(), recalc: vi.fn(),
+    verEfectoDelLote: vi.fn(), publicarLote: vi.fn(),
+  },
 }))
-vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => true }))
+let puedeAdministrar = true
+vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => puedeAdministrar }))
 
 // El documento abierto VIAJA EN LA URL, como un viaje del Monitor: cada test
 // elige qué trae.
@@ -28,6 +32,7 @@ vi.mock('next/navigation', () => ({
 
 import { complianceApi } from '@/lib/api/compliance'
 import { taxonomiesApi, revisionesApi } from '@/lib/api/config'
+import { requirementsApi } from '@/lib/api/requirements'
 import { CondicionesTabla } from './condiciones-tabla'
 
 const BASE = {
@@ -90,6 +95,10 @@ function montar() {
 
 beforeEach(() => {
   urlActual = ''
+  puedeAdministrar = true
+  vi.mocked(requirementsApi.patchConditions).mockReset()
+  vi.mocked(requirementsApi.verEfectoDelLote).mockReset()
+  vi.mocked(requirementsApi.publicarLote).mockReset()
   reemplazar.mockClear()
   empujar.mockClear()
   vi.mocked(complianceApi.listRequirements).mockReset()
@@ -112,7 +121,10 @@ describe('CondicionesTabla', () => {
     montar()
     await waitFor(() => expect(screen.getByText('Sólo Furgón Congelado')).toBeInTheDocument())
     expect(screen.getByText('Todos los vehículos')).toBeInTheDocument()
-    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    // La condición no vuelve a ser casillas de subtipos. Las únicas casillas
+    // son las de seleccionar filas para editarlas juntas (entrega 2c).
+    const casillas = screen.queryAllByRole('checkbox')
+    expect(casillas.every(c => /^Seleccionar /.test(c.getAttribute('aria-label') ?? ''))).toBe(true)
   })
 
   it('dice a cuántas entidades alcanza', async () => {
@@ -450,5 +462,131 @@ describe('CondicionesTabla', () => {
     expect(reemplazar).toHaveBeenCalledWith(
       '/dashboard/admin/settings/certification?section=conditions')
     expect(empujar).not.toHaveBeenCalled()
+  })
+})
+
+
+// ── La tabla edita en borrador (HU-C1, entrega 2c) ───────────────────────────
+//
+// Lo que cambia el estado de alguien se junta en un borrador: "Ver efecto" lo
+// ensaya entero y "Publicar" lo guarda entero. Antes cada celda guardaba sola,
+// y "cuándo vence" se calcula al leer: guardar una celda cambiaba el estado de
+// todas las empresas sin que nadie viera el número.
+
+const CONTEO = { vencidos: 0, por_vencer: 0, al_dia: 0, falta: 0 }
+const EFECTO = {
+  por_documento: [],
+  total: { antes: CONTEO, despues: { ...CONTEO, vencidos: 3 }, crear: 248, quitar: 0, bloqueados: 0 },
+}
+
+async function montarEditable() {
+  montar()
+  await waitFor(() => expect(screen.getByText('Seguro EETT')).toBeInTheDocument())
+}
+
+const renovacionDe = (nombre: string) =>
+  screen.getByRole('combobox', { name: `Cómo se renueva ${nombre}` })
+
+describe('CondicionesTabla — borrador', () => {
+  it('cambiar una celda no guarda: queda en el borrador', async () => {
+    await montarEditable()
+    fireEvent.change(renovacionDe('Seguro EETT'), { target: { value: 'anual' } })
+
+    expect(requirementsApi.patchConditions).not.toHaveBeenCalled()
+    expect(screen.getByText(/1 documento con cambios sin publicar/)).toBeInTheDocument()
+  })
+
+  it('descartar vuelve a lo guardado', async () => {
+    await montarEditable()
+    fireEvent.change(renovacionDe('Seguro EETT'), { target: { value: 'anual' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Descartar' }))
+
+    expect(renovacionDe('Seguro EETT')).toHaveValue('fecha')
+    expect(screen.queryByText(/con cambios sin publicar/)).not.toBeInTheDocument()
+  })
+
+  it('publicar exige ver el efecto del borrador tal como está', async () => {
+    vi.mocked(requirementsApi.verEfectoDelLote).mockResolvedValue(EFECTO)
+    vi.mocked(requirementsApi.publicarLote).mockResolvedValue(
+      { actualizados: 1, creados: 248, quitados: 0, bloqueados: 0 })
+    await montarEditable()
+    fireEvent.click(screen.getByRole('switch', { name: 'Seguro EETT vigente' }))
+
+    expect(screen.getByRole('button', { name: 'Publicar' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver efecto' }))
+
+    // El número que justificaba guardar y aplicar por separado se ve antes.
+    expect(await screen.findByText(/crea 248 pendientes/)).toBeInTheDocument()
+    expect(requirementsApi.verEfectoDelLote).toHaveBeenCalledWith(
+      [{ requirement_id: 'r3', patch: { is_active: true } }])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar' }))
+    await waitFor(() => expect(requirementsApi.publicarLote).toHaveBeenCalledWith(
+      [{ requirement_id: 'r3', patch: { is_active: true } }]))
+  })
+
+  it('cambiar el borrador después de ver el efecto pide verlo otra vez', async () => {
+    vi.mocked(requirementsApi.verEfectoDelLote).mockResolvedValue(EFECTO)
+    await montarEditable()
+    fireEvent.click(screen.getByRole('switch', { name: 'Seguro EETT vigente' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver efecto' }))
+    await screen.findByText(/crea 248 pendientes/)
+
+    fireEvent.change(renovacionDe('Seguro EETT'), { target: { value: 'anual' } })
+
+    expect(screen.getByRole('button', { name: 'Publicar' })).toBeDisabled()
+    expect(screen.queryByText(/crea 248 pendientes/)).not.toBeInTheDocument()
+  })
+
+  it('un mensual sin día tope no deja ver el efecto, y la fila dice qué falta', async () => {
+    await montarEditable()
+    fireEvent.change(renovacionDe('Seguro EETT'), { target: { value: 'mes' } })
+
+    expect(screen.getByText('Falta el día tope.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ver efecto' })).toBeDisabled()
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Día tope de Seguro EETT' }),
+      { target: { value: '18' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Días de aviso de Seguro EETT' }),
+      { target: { value: '5' } })
+    expect(screen.getByRole('button', { name: 'Ver efecto' })).toBeEnabled()
+  })
+
+  it('varios a la vez: el aviso de la barra va a todas las seleccionadas', async () => {
+    vi.mocked(requirementsApi.verEfectoDelLote).mockResolvedValue(EFECTO)
+    await montarEditable()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Revisión Técnica' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Pesaje de Ejes' }))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Días de aviso de los seleccionados' }),
+      { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar aviso' }))
+
+    expect(screen.getByText(/2 documentos con cambios sin publicar/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver efecto' }))
+    await waitFor(() => expect(requirementsApi.verEfectoDelLote).toHaveBeenCalled())
+    const ids = vi.mocked(requirementsApi.verEfectoDelLote).mock.calls[0][0].map(c => c.requirement_id)
+    expect(ids.sort()).toEqual(['r2', 'r4'])
+  })
+
+  it('si publicar falla, el borrador se conserva y se dice por qué', async () => {
+    vi.mocked(requirementsApi.verEfectoDelLote).mockResolvedValue(EFECTO)
+    vi.mocked(requirementsApi.publicarLote).mockRejectedValue(
+      new Error('«Seguro EETT»: Período de calendario: falta el día de corte'))
+    await montarEditable()
+    fireEvent.click(screen.getByRole('switch', { name: 'Seguro EETT vigente' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver efecto' }))
+    await screen.findByText(/crea 248 pendientes/)
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar' }))
+
+    expect(await screen.findByText(/«Seguro EETT»: Período de calendario/)).toBeInTheDocument()
+    expect(screen.getByText(/1 documento con cambios sin publicar/)).toBeInTheDocument()
+  })
+
+  it('sin permiso se lee, pero no se edita ni se selecciona', async () => {
+    puedeAdministrar = false
+    await montarEditable()
+    expect(screen.queryByRole('combobox', { name: /Cómo se renueva/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Seleccionar/ })).not.toBeInTheDocument()
+    expect(screen.getAllByText('Fecha del documento').length).toBeGreaterThan(0)
   })
 })

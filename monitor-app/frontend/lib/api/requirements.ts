@@ -1,20 +1,26 @@
 import { apiFetch } from './client'
-import type { ExigibleOn, RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementOption, RecalcPreview, RecalcResult, VistaPreviaDeVigencia } from '@/lib/types'
+import type { EfectoDelLote, ExigibleOn, LotePublicado, RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementOption, RecalcPreview, RecalcResult, VistaPreviaDeVigencia } from '@/lib/types'
 import type { Vigencia } from '@/lib/vigencia'
 
 const BASE = '/api/v1/compliance-requirements'
+
+/** Lo que se le cambia a un documento: el mismo cuerpo del PATCH de uno. */
+export type CambiosDeRequisito = Partial<Pick<RequirementConditions,
+  'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'
+  | 'name' | 'requirement_level'>> & {
+  /** El tipo de vencimiento y sus parámetros, juntos (HU-C1, entrega 2b). */
+  vigencia?: Vigencia
+  exigible_on?: ExigibleOn
+}
+
+/** Un documento del borrador y lo que se le cambia. */
+export type CambioEnLote = { requirement_id: string; patch: CambiosDeRequisito }
 
 export const requirementsApi = {
   /** Cambia la regla, NO los registros: aplicarla es POST /recalc, un acto
    *  aparte. `null` no es un valor válido para `is_active` (columna NOT
    *  NULL) — el backend lo rechaza con 422. */
-  patchConditions: (id: string, body: Partial<Pick<RequirementConditions,
-    'is_active' | 'applies_to_fleet_service_type_ids' | 'applies_to_management_types'
-    | 'name' | 'requirement_level'>> & {
-    /** El tipo de vencimiento y sus parámetros, juntos (HU-C1, entrega 2b). */
-    vigencia?: Vigencia
-    exigible_on?: ExigibleOn
-  }) =>
+  patchConditions: (id: string, body: CambiosDeRequisito) =>
     apiFetch<RequirementConditionsPatchResult>(`${BASE}/${id}/conditions`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
@@ -59,5 +65,18 @@ export const requirementsApi = {
   previewVigencia: (id: string, vigencia: Vigencia) =>
     apiFetch<VistaPreviaDeVigencia>(`${BASE}/${id}/expiration-rule/preview`, {
       method: 'POST', body: JSON.stringify(vigencia),
+    }),
+
+  /** Qué pasaría si se publicara el borrador entero. No guarda nada: el
+   *  backend lo aplica en una transacción y la revierte. */
+  verEfectoDelLote: (cambios: CambioEnLote[]) =>
+    apiFetch<EfectoDelLote>(`${BASE}/batch-preview`, {
+      method: 'POST', body: JSON.stringify({ cambios }),
+    }),
+
+  /** Guarda el borrador y siembra lo que cambió, todo o nada. */
+  publicarLote: (cambios: CambioEnLote[]) =>
+    apiFetch<LotePublicado>(`${BASE}/batch-update`, {
+      method: 'POST', body: JSON.stringify({ cambios }),
     }),
 }

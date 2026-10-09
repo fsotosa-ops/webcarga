@@ -8,7 +8,7 @@ import { requirementsApi } from '@/lib/api/requirements'
 import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { ExigibleOn, ManagementType, RequirementOption } from '@/lib/types'
-import { mismaVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
+import { faltaDeVigencia, mismaVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
 import { EditorVigencia } from './EditorVigencia'
 import { SelectorExigibilidad } from './SelectorExigibilidad'
 import type { Revision } from '@/lib/api/config'
@@ -148,6 +148,9 @@ export function CondicionPanel({
   const condicionSucia = (esAsset || esCarrier) && !mismoConjunto(elegidosEfectivos, guardadas)
   const activoSucio = marcadoActivo !== requisito.is_active
   const vigenciaSucia = !mismaVigencia(vigencia, vigenciaGuardada)
+  // Una regla a medias (un mensual sin día tope) no se ensaya ni se guarda: la
+  // base la rechazaría con su mensaje técnico, y el editor ya dice qué falta.
+  const vigenciaIncompleta = faltaDeVigencia(vigencia) !== null
   const exigibleSucio = exigible !== exigibleGuardado
   const nombreSucio = nombre.trim() !== requisito.name && nombre.trim().length > 0
   const nivelSucio = nivel !== requisito.requirement_level
@@ -196,7 +199,8 @@ export function CondicionPanel({
   const efecto = useQuery({
     queryKey: ['vigencia-preview', requisito.id, JSON.stringify(vigenciaParaVer)],
     queryFn: () => requirementsApi.previewVigencia(requisito.id, vigenciaParaVer),
-    enabled: canEdit && vigenciaSucia && !mismaVigencia(vigenciaParaVer, vigenciaGuardada),
+    enabled: canEdit && vigenciaSucia && !mismaVigencia(vigenciaParaVer, vigenciaGuardada)
+      && faltaDeVigencia(vigenciaParaVer) === null,
     retry: false,
   })
 
@@ -251,7 +255,7 @@ export function CondicionPanel({
             <button
               type="button"
               onClick={() => guardar.mutate()}
-              disabled={guardar.isPending}
+              disabled={guardar.isPending || vigenciaIncompleta}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs
                          font-semibold text-white hover:bg-accent/90 disabled:opacity-50
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"

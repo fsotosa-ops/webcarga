@@ -763,6 +763,23 @@ export type VistaPreviaDeVigencia = {
   rige_desde_hoy: boolean
 }
 
+/** El efecto de publicar el borrador de la tabla de Configuración (HU-C1,
+ *  entrega 2c): estados antes y después, y pendientes que se crean o quitan. */
+export type EfectoDeUnDocumento = {
+  requirement_id: string
+  nombre:         string
+  antes:          ConteoDeEstados
+  despues:        ConteoDeEstados
+  crear:          number
+  quitar:         number
+  bloqueados:     number
+}
+export type EfectoDelLote = {
+  por_documento: EfectoDeUnDocumento[]
+  total: Omit<EfectoDeUnDocumento, 'requirement_id' | 'nombre'>
+}
+export type LotePublicado = { actualizados: number; creados: number; quitados: number; bloqueados: number }
+
 /** Por qué un requisito cuenta como pendiente, o si no cuenta. Excluyentes y
  *  exhaustivos: 'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30
  *  días, 'FALTA' no tiene documento, 'AL_DIA' está cubierto y sin problema de
