@@ -16,7 +16,66 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-08 — HU-C1 entrega 2, F0-F2: DESPLEGADA en dev (`c81e86af..bdcba04a`)
+### 2026-10-08 — HU-C1 vencimientos: entrega 2 y 2b en dev; 2c (tabla editable) comiteada, por desplegar
+
+**Fuente:** `monitor-app/bugs/20261006/Tabla_Resumen_General_IANSA.xlsx` (96 tipos). Diseño y estados de pantalla:
+la HU `monitor-app/docs/user-stories/20261006/01-hu-diario-2.0-revision-02oct.md`, secciones "Diseño de interfaz"
+de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-entrega-2b-configuracion-exigibilidad-carga-design.md`.
+
+**Decisiones del usuario (07-08/10):**
+- La planilla es el **estándar WebCarga**; se cargan **los 96**; la exigibilidad ("cuándo se carga") entra.
+- Un archivo por empresa y período, con el corte de cada cliente; la ficha muestra el peor estado.
+- *"Nada de parches, sigue el patrón de la app."* La API de `main` no se usa (se ignora).
+- Aviso y gracia **rigen de inmediato** para todas las versiones; los parámetros de "cuándo vence" se versionan.
+- **Tabla editable en lugar del panel** ("tiene muchos clics"): borrador → Ver efecto → Publicar, y **Publicar
+  guarda Y aplica** (siembra), solo después de ver el efecto del borrador tal como está.
+- Las rutas fuera de estándar quedan como deuda (`TECH_DEBT.md`); las 2 nuevas de esta entrega se corrigieron.
+
+**Commits:**
+- Entrega 2 (F0-F2): `c81e86af..bdcba04a`, desplegada; 5 migraciones en prod (`20261008100000..140000`).
+- Entrega 2b (F3 siembra/solicitar, F4 carga con emisión/período, F5 editor, F6 script del catálogo):
+  `d98391f9..6e653623` + revisión final `633b3b38`. Migraciones `20261009100000` (mensual exige aviso) y
+  `20261009110000` (siembra respeta `exigible_on`) aplicadas. **Desplegada en dev** (API y Frontend en verde).
+- Entrega 2c: `08213a7f` (backend: `POST /compliance-requirements/batch-preview` y `/batch-update`; PATCH, recálculo
+  y lote escriben con `services/edicion_catalogo.py`) y `8f51343f` (frontend: tabla editable, `borrador.ts`,
+  `BarraDelBorrador`, `celdas-del-borrador.tsx`; se retiraron `CeldaVigencia`, `CeldaNivel`, `AplicarEnLaFila`;
+  color crudo 1.685 → 1.672). **Sin push todavía.**
+
+**Verificado:**
+- 2b: suite backend completa 1.213/1.213; frontend 1.449/1.449; dev desplegado; en el navegador se vio el editor
+  "¿Cuándo vence?" (encontró el defecto de la vista previa con regla incompleta, ya corregido en 2c).
+- 2c: tests afectados del backend 119/119 (incluye `test_catalogo_en_lote.py`, con mutación verificada);
+  frontend 1.473/1.473, tsc y build limpios (mutación de "Publicar exige ver el efecto" verificada).
+  Suite completa del backend de 2c **corriendo** al cerrar este registro.
+
+**Decisiones de arquitectura (2c):**
+- El lote es todo o nada, con un savepoint por documento para que el 422 nombre cuál falló.
+- Solo se recalcula la siembra de los documentos cuyo cambio la afecta (`is_active`, `applies_to_*`,
+  `exigible_on`); renombrar o cambiar el aviso no siembra.
+- La diferencia se calcula dentro de la transacción que siembra (`diferencias_en`), así ve lo recién activado.
+- Lo que cambia el estado de alguien va al borrador; nombre y alias se guardan al instante (son etiqueta).
+- `faltaDeVigencia` (lib/vigencia.ts) es la única regla de "qué le falta" en la pantalla; espeja el trigger.
+
+**Siguiente paso exacto:**
+- [ ] Ver terminar la suite completa del backend de 2c (`.superpowers/sdd/2026-10-08-c1-entrega-2b-configuracion-exigibilidad-carga/suite-2c.log`).
+- [ ] Push a `dev`; verificar Deploy Monitor API y Deploy Frontend.
+- [ ] Mirar la tabla en dev con Playwright (escritorio y teléfono), **sin publicar nada**: filtros, editar celdas,
+      selección y edición en masa, "Ver efecto" (ensayo revertido, no escribe), Descartar.
+- [ ] **Pedir el visto bueno del usuario** para `scripts/cargar_catalogo_webcarga.py --aplicar` (75 tipos nuevos,
+      apagados), mostrando las 11 dudas (2 coincidencias dudosas: F30↔F30_MULTAS, Contrato asociado↔CONTRATO_WEBCARGA).
+      Ojo: los 19 que ya existen conservan su regla vieja (ej. F30-1 figura "Fecha del documento", la planilla dice
+      mensual día 18): WebCarga los corrige en la tabla.
+- [ ] Guardar las 11 dudas como nota del documento y mostrar la marca "Duda" en la tabla (diferido de 2c).
+- [ ] Volver a medir la velocidad con reglas cargadas.
+- [ ] Borrar el workspace `.superpowers/sdd/2026-10-08-c1-entrega-2b-configuracion-exigibilidad-carga/` al cerrar.
+- Menores diferidos de la revisión 2b: M1 versión redundante el mismo día; M2 500 con solicitud huérfana; M3 la
+  carga acepta datos que el tipo no pide; M4 bulk-file sin emisión/período; M6 `vigenciaDeLaFila` usa hoy UTC;
+  M8 solicitados como "bloqueados" en recalc-preview; M10 nombres fijos de grupos de radio; M11 log de vigencia
+  sin cambio.
+- La Task 7b de la entrega 1 (`DROP has_expiration`) sigue esperando la confirmación del usuario.
+
+<details><summary>Detalle de la entrega 2 (F0-F2), 08/10</summary>
+
 
 **Fuente:** `monitor-app/bugs/20261006/Tabla_Resumen_General_IANSA.xlsx`, con 96 tipos de documento. Es la "HU de
 vencimientos actualizada".
@@ -85,6 +144,9 @@ El tipo se pregunta como pertenencia sin correlación (hashed SubPlan), no con u
 - [ ] Escribir el plan de **F3**: siembra según `exigible_on` (ON_REQUEST no se siembra) y "Solicitar documento". Resolver I5 dentro de F3.
 - [ ] Después **F4** (carga y clasificación: fecha, emisión y período) y **F5** (selector de 4 tipos, ventanas por cliente y contract de las filas viejas de `alert_thresholds`).
 - La Task 7b de la entrega 1 (`DROP has_expiration`) sigue esperando la confirmación del usuario.
+
+
+</details>
 
 ### 2026-10-07 — Memoria técnica I+D para Corfo (entregable, sin cambios de código)
 
