@@ -96,29 +96,25 @@ async def get_current_user(
     if not sub:
         raise HTTPException(status_code=401, detail="No autenticado")
 
-    # El rol vive en public.profiles, no en el token: cambiarlo tiene efecto
-    # en menos de un minuto, sin esperar a que la persona vuelva a entrar.
-    rol_key = f"rol:{sub}"
-    cached = await cache_get(rol_key)
-    if cached:
-        perfil = json.loads(cached)
-    else:
-        row = await pool.fetchrow(
-            "SELECT role, active FROM public.profiles WHERE id = $1", sub
-        )
-        # Sin perfil no hay acceso (seguridad, 09/10). Antes era "viewer": con el
-        # registro abierto, cualquier cuenta de Google leía toda la API.
-        perfil = {"role": row["role"], "active": row["active"]} if row else {"role": None, "active": None}
-        await cache_set(rol_key, json.dumps(perfil), ex=60)
+    # Los permisos viven en la base (RBAC, spec 2026-10-09): la unión de los
+    # permisos de los roles de la persona (app/authz/effective.py), cacheada
+    # 60 s e invalidada al cambiar sus roles. Import local: app.authz importa
+    # de este módulo (require usa get_current_user).
+    from .authz.effective import load_access
+    from .authz.permissions import legacy_role_for
 
-    if perfil.get("role") is None:
+    acceso = await load_access(pool, sub)
+    if acceso is None or not acceso["roles"]:
         raise HTTPException(status_code=403, detail="Tu cuenta no tiene acceso. Pide a un administrador que te invite.")
     # Una cuenta desactivada no espera a que venza su token (hasta 1 h).
-    if perfil.get("active") is False:
+    if acceso["active"] is False:
         raise HTTPException(status_code=403, detail="Tu cuenta está desactivada")
     # `aal` (authenticator assurance level): aal2 = la sesión pasó la
-    # verificación en dos pasos. Lo exige require_admin.
-    return {"sub": sub, "email": claims.get("email"), "role": perfil["role"], "aal": claims.get("aal")}
+    # verificación en dos pasos. `role` es transitorio: lo leen los guardias
+    # viejos hasta que las rutas declaren su permiso (se retira en la Task 11).
+    return {"sub": sub, "email": claims.get("email"), "aal": claims.get("aal"),
+            "roles": acceso["roles"], "permissions": frozenset(acceso["permissions"]),
+            "role": legacy_role_for(acceso["roles"])}
 
 
 async def require_editor(user: dict = Depends(get_current_user)) -> dict:

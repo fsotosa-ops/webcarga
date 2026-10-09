@@ -45,22 +45,33 @@ def _cred(token):
 
 
 def _pool(role="editor", active=True):
+    """La fila que devuelve la consulta de permisos efectivos
+    (app/authz/effective.py) para una persona con ese rol de la escalera vieja,
+    migrado según LEGACY_ROLE_MAP."""
+    from app.authz.permissions import LEGACY_ROLE_MAP, SYSTEM_ROLES, Permission
+    roles = list(LEGACY_ROLE_MAP[role])
+    por = {r.code: r for r in SYSTEM_ROLES}
+    perms = set()
+    for c in roles:
+        perms |= {p.value for p in Permission} if por[c].grants_all else {p.value for p in por[c].permissions}
     pool = MagicMock()
-    pool.fetchrow = AsyncMock(return_value={"role": role, "active": active})
+    pool.fetchrow = AsyncMock(return_value={"active": active, "roles": roles, "permissions": sorted(perms)})
     return pool
 
 
 @pytest.fixture
 def sin_cache():
-    with patch("app.auth.cache_get", AsyncMock(return_value=None)), \
-         patch("app.auth.cache_set", AsyncMock()) as guardar:
+    with patch("app.authz.effective.cache_get", AsyncMock(return_value=None)), \
+         patch("app.authz.effective.cache_set", AsyncMock()) as guardar:
         yield guardar
 
 
 async def test_token_valido_da_el_usuario_con_el_rol_de_profiles(sin_cache):
     user = await auth.get_current_user(_cred(_token(aal="aal2")), settings=MagicMock(supabase_url=URL), pool=_pool("admin"))
-    assert user == {"sub": "11111111-1111-1111-1111-111111111111", "email": "op@webcarga.cl",
-                    "role": "admin", "aal": "aal2"}
+    assert user["sub"] == "11111111-1111-1111-1111-111111111111" and user["aal"] == "aal2"
+    assert user["roles"] == ["admin", "certification_supervisor", "commercial_supervisor",
+                             "insurance_supervisor", "operations_supervisor"]
+    assert "users.manage" in user["permissions"] and user["role"] == "admin"
     assert sin_cache.call_args.kwargs["ex"] == 60
 
 
@@ -125,12 +136,30 @@ async def test_sin_perfil_no_hay_acceso(sin_cache):
     assert err.value.status_code == 403
 
 
-async def test_el_rol_cacheado_evita_la_consulta_a_profiles():
+async def test_el_acceso_cacheado_evita_la_consulta():
     pool = _pool()
-    with patch("app.auth.cache_get", AsyncMock(return_value=json.dumps({"role": "owner", "active": True}))):
+    cacheado = json.dumps({"active": True, "roles": ["owner"], "permissions": ["users.manage"]})
+    with patch("app.authz.effective.cache_get", AsyncMock(return_value=cacheado)):
         user = await auth.get_current_user(_cred(_token()), settings=MagicMock(supabase_url=URL), pool=pool)
-    assert user["role"] == "owner"
+    assert user["roles"] == ["owner"] and user["role"] == "owner"
     pool.fetchrow.assert_not_called()
+
+
+async def test_sin_roles_es_403(sin_cache):
+    """Review Focus 1: persona con perfil pero sin ningún rol."""
+    pool = MagicMock()
+    pool.fetchrow = AsyncMock(return_value={"active": True, "roles": [], "permissions": []})
+    with pytest.raises(HTTPException) as err:
+        await auth.get_current_user(_cred(_token()), settings=MagicMock(supabase_url=URL), pool=pool)
+    assert err.value.status_code == 403
+
+
+async def test_quitar_un_rol_invalida_el_cache():
+    """Review Focus 4: invalidate_access borra la clave; el próximo request relee."""
+    from app.authz.effective import invalidate_access
+    with patch("app.authz.effective.cache_delete", AsyncMock()) as borrar:
+        await invalidate_access("u-1")
+    borrar.assert_awaited_once_with("acceso:u-1")
 
 
 # MFA para roles privilegiados (seguridad, 09/10) --------------------------------
