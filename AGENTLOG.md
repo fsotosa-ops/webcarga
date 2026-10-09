@@ -37,25 +37,25 @@ Google, Microsoft o email+clave; una sola entrega; rutas en inglés (`/auth/acce
 **Aplicado en producción:** `20261009160000_cierra_escalada_de_rol_y_reglas_publicas.sql` (C2+C3, `2029f3d8`),
 ensayada con ROLLBACK y verificada con la clave pública: "permission denied" en ambas tablas; app funcionando.
 
-**Implementado LOCAL (sin commit al escribir esto):**
-- API: `POST /users` y `DELETE /users/{id}` (`routers/users.py`, require_admin, invitación antes de crear en Auth,
-  `invited_by`); `GET /users` con último ingreso, métodos y MFA; `auth.py` sin perfil → 403, `aal` en el usuario,
-  `require_admin` exige aal2 (`MFA_REQUERIDO`); sesión a nivel de router en config/config_reviews/status_taxonomies/
-  roles y en `/trips/meta`. Tests: `test_alta_y_baja_de_usuarios.py` (10), `test_toda_ruta_exige_sesion.py`,
-  `test_auth.py` (+4).
-- Frontend: borradas `lib/actions/users.ts` y `components/auth/RegisterForm.tsx`; `usersApi.create/remove`;
-  login sin "Registrarse"; `/auth/access-denied?reason=not-invited|deactivated` (cierra sesión; evita el bucle con
-  /login); layout: sin perfil/inactivo → access-denied, MFA → `/auth/mfa/verify` o `/auth/mfa/setup` (admin/owner);
-  clave mínima 12; tabla de usuarios con "Último ingreso" + método + MFA; `fetchRolesServer` (sin token) retirada.
-  `deploy-frontend.yml` ya no inyecta `SUPABASE_SERVICE_ROLE_KEY`.
-- Migración `20261009170000_invitation_only_access.sql` (ENSAYADA con ROLLBACK, NO aplicada): admin_whitelist =
-  invitaciones (+invited_by/at, sembrada con las 11 cuentas), `before_user_created_hook`, handle_new_user sin
-  perfil si no hay invitación, revoke de anon/authenticated en public (queda SELECT profiles + EXECUTE is_admin),
-  default privileges cerrados. Ensayo: 11 invitaciones, hook {} / 403, auth lee 1 tabla, anon 0, 1 función.
+**Desplegado (09/10):** `57f7f748` en `dev` (Deploy Monitor API y Frontend en verde) + migración
+`20261009170000_invitation_only_access.sql` aplicada (el primer intento cortó por ECONNRESET y no aplicó nada;
+reintento OK). Contenido:
+- API: `POST /users` y `DELETE /users/{id}` (require_admin, invitación antes de crear en Auth, `invited_by`);
+  `GET /users` con último ingreso, métodos y MFA; sin perfil → 403; `require_admin` exige aal2
+  (`MFA_REQUERIDO`); toda ruta exige sesión (router-level en config/config_reviews/status_taxonomies/roles y
+  `/trips/meta`), guarda `test_toda_ruta_exige_sesion.py` (excluye `/health` y `/__test__/`).
+- Frontend: sin `lib/actions/users.ts` ni `RegisterForm`; login sin "Registrarse"; `/auth/access-denied`
+  (cierra sesión), `/auth/mfa/setup`, `/auth/mfa/verify`; layout con perfil/MFA; clave mínima 12; tabla de
+  usuarios con "Último ingreso" + método + MFA. `deploy-frontend.yml` sin la clave de servicio.
+
+**Verificado:** suites backend 1.238 (+2 rojos: catálogo, ajeno; y la guarda, corregida) y frontend 1.479, build;
+sin sesión las 7 rutas → 401 y `/health` 200; Cloud Run del frontend sin `SUPABASE_SERVICE_ROLE_KEY`; PostgREST con
+clave pública → "permission denied" (carriers, drivers, insurance_policies, locations, profiles, reglas);
+`authenticated` lee 1 tabla, `anon` 0; hook → 403 a no invitada; Playwright: la cuenta owner va a
+`/auth/mfa/setup` y se genera el QR (TOTP habilitado). No se completó la inscripción (requiere el teléfono).
 
 **Siguiente paso exacto:**
-- [ ] Suite backend completa → aplicar `20261009170000` → commit + push (API y Frontend) → Playwright en dev
-      (entrar, MFA del owner, Configuración › Personas y accesos).
+- [ ] Usuario: inscribir su MFA al entrar (owner); avisar a los otros 2 admin y al otro owner que se les pedirá.
 - [ ] **Usuario, en el panel de Supabase** (producción):
       1. Authentication › Hooks › Before User Created → Postgres → `public.before_user_created_hook` → Enable.
       2. Probar con una cuenta de Google NO invitada → debe ver "Tu cuenta no tiene acceso".
