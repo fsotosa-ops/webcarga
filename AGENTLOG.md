@@ -16,7 +16,7 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-09 — Roles y permisos (RBAC NIST): diseño en revisión
+### 2026-10-09 — Roles y permisos (RBAC NIST): Tasks 1-11 DESPLEGADAS en dev
 
 Pedido del usuario: modelo de roles y permisos de estándar de industria, *"sin parche, respetando el diseño del
 backend, mantenible, robusto y escalable"*. Spec: `docs/superpowers/specs/2026-10-09-roles-y-permisos-design.md`
@@ -37,7 +37,26 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
       catálogo → migración expand + sync al arrancar → permisos efectivos/require() → permisos por campo → rutas
       por área (5-8, guarda + matriz) → administración de acceso → frontend /me + usePermiso → borrar escalera y
       desplegar → pantallas (maquetas primero) → contract con compuerta (API de `main`).
-- [ ] El usuario revisa el plan y elige método de ejecución (subagentes o nativo).
+- [x] Ejecución nativa (aprobada "si"). Ledger: `.superpowers/sdd/2026-10-09-roles-y-permisos/progress.md`
+      (todas las decisiones tomadas en el camino están ahí como `Ruling:`).
+- [x] Tasks 1-9 (backend): catálogo `app/authz/permissions.py`, migración expand aplicada en producción,
+      `sync_catalog` al arrancar, `load_access` (caché 60 s), `require()`/`require_fields()`, toda ruta declara
+      permiso (guarda `test_toda_ruta_declara_permiso.py` + `test_matriz_roles.py`), administración de acceso
+      (`/me`, `/permissions`, `/roles`, `PUT /users/{id}/roles`, regla anti-escalada y "al menos un Propietario").
+      Fuera de plan: CacheMiddleware servía `/trips/meta` y `/roles` sin sesión → corregido y desplegado.
+- [x] Task 10 (`195e45f3`): frontend con `PermisosProvider`/`usePermiso` desde `GET /me`; códigos generados
+      (`scripts/generar_permisos_ts.py` → `lib/authz/permisos.generated.ts`, test de sincronía); fuera
+      useRolMinimo/useCanEdit/useCanAdmin/hasRole/canManage. Alta de usuarios ofrece solo roles otorgables.
+- [x] Task 11 (`4c7d89f0`, push a dev, ambos deploys verdes): fuera require_writer/editor/admin y la clave `role`.
+      Verificado: 401 sin token; las 12 personas con exactamente los roles de LEGACY_ROLE_MAP; Playwright como
+      Propietario (Monitor, Personas y accesos, Cierre).
+- [ ] **Task 12 (siguiente):** pantallas de Personas y Roles. **Maquetas PRIMERO** (compuerta: aprobación del
+      usuario), después RolChips, roles-tab, accessApi, CreateUserForm multi-rol, editar roles de alguien existente.
+      Hoy (transitorio) los roles se ven en solo lectura; cambiar el rol de alguien exige borrarlo e invitarlo.
+- [ ] Task 13: contract (DROP `profiles.role` / `admin_whitelist.role`) — compuerta: la API de `main`
+      (`webcarga-monitor-api`) redesplegada o retirada, porque todavía lee `profiles.role`.
+- [ ] Revisión final de toda la rama (revisor fresco, modelo más capaz) → finishing-a-development-branch.
+- [ ] Nota: "Confirmar cierre" sigue visible sin `closures.sign` (la API da 403); candidato para la Task 12.
 - [ ] Pendiente previo, independiente: probar invitación por correo y recuperación con f.soto.santibanez@gmail.com.
 
 ### 2026-10-09 — Seguridad de acceso: solo por invitación, mínimo privilegio, MFA para admin
