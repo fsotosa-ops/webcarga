@@ -1,0 +1,13 @@
+-- HU-C1, entrega 1, Task 7b: expiration_policy es la única fuente de "este documento vence".
+--
+-- has_expiration quedó como columna GENERADA en 20261007120000, solo para que un
+-- rollback de la API anterior a 5ae76d43 no diera 500. Ya no tiene lectores
+-- (verificado el 08/10, con el visto bueno del usuario):
+--   - código: solo aparece en comentarios, en `dev` y en `main`;
+--   - base: 0 vistas, funciones, policies y vistas materializadas la mencionan;
+--   - Mage/dbt: 0 archivos en .mage-agent/local_sync.
+--
+-- Si alguna vez hiciera falta volver a una API anterior a 5ae76d43:
+--   ALTER TABLE public.compliance_requirements ADD COLUMN has_expiration boolean
+--     GENERATED ALWAYS AS (expiration_policy <> 'NONE') STORED;
+ALTER TABLE public.compliance_requirements DROP COLUMN has_expiration;
