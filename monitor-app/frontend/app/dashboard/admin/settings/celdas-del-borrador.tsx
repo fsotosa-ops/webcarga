@@ -39,43 +39,42 @@ export function CeldaRenovacion({ requisito, vigencia, puedeEditar, onCambiar }:
 
   return (
     <div>
-      <div className="flex items-center gap-0.5 whitespace-nowrap">
-        <select
-          value={actual}
-          onChange={e => onCambiar(vigenciaPara(e.target.value as Exclude<Renovacion, 'otra'>, vigencia))}
-          aria-label={`Cómo se renueva ${requisito.name}`}
-          className={`${CONTROL} max-w-[10.5rem]`}
-        >
-          {/* Una regla que la celda no sabe escribir se muestra tal cual y se
-              edita en el panel: colapsarla en la más parecida la cambiaría
-              sin que nadie lo pidiera. */}
-          {actual === 'otra' && <option value="otra" disabled>{resumenDeVigencia(vigencia)}</option>}
-          {RENOVACIONES.map(r => <option key={r.valor} value={r.valor}>{r.texto}</option>)}
-        </select>
-        {actual === 'mes' && (
-          <>
-            <span className="text-etiqueta text-informativo">día</span>
-            <input
-              type="number" min={1} max={31} inputMode="numeric"
-              value={vigencia.cutoff_day ?? ''}
-              placeholder="—"
-              onChange={e => onCambiar({ ...vigencia, cutoff_day: numero(e.target.value) })}
-              aria-label={`Día tope de ${requisito.name}`}
-              className={`${NUMERO} w-10`}
-            />
-            <span className="text-etiqueta text-informativo">con el del</span>
-            <select
-              value={vigencia.period_offset_months ?? 1}
-              onChange={e => onCambiar({ ...vigencia, period_offset_months: Number(e.target.value) })}
-              aria-label={`De qué mes es ${requisito.name}`}
-              className={CONTROL}
-            >
-              <option value={1}>mes anterior</option>
-              <option value={0}>mes en curso</option>
-            </select>
-          </>
-        )}
-      </div>
+      <select
+        value={actual}
+        onChange={e => onCambiar(vigenciaPara(e.target.value as Exclude<Renovacion, 'otra'>, vigencia))}
+        aria-label={`Cómo se renueva ${requisito.name}`}
+        className={`${CONTROL} max-w-[10.5rem]`}
+      >
+        {/* Una regla que la celda no sabe escribir se muestra tal cual y se
+            edita en el panel: colapsarla en la más parecida la cambiaría
+            sin que nadie lo pidiera. */}
+        {actual === 'otra' && <option value="otra" disabled>{resumenDeVigencia(vigencia)}</option>}
+        {RENOVACIONES.map(r => <option key={r.valor} value={r.valor}>{r.texto}</option>)}
+      </select>
+      {/* El día tope y el mes van en una SEGUNDA línea: en la misma, un solo
+          mensual ensanchaba la columna de las 96 filas y la tabla se salía. */}
+      {actual === 'mes' && (
+        <div className="flex items-center gap-0.5 whitespace-nowrap">
+          <span className="pl-1.5 text-etiqueta text-informativo">día</span>
+          <input
+            type="number" min={1} max={31} inputMode="numeric"
+            value={vigencia.cutoff_day ?? ''}
+            placeholder="—"
+            onChange={e => onCambiar({ ...vigencia, cutoff_day: numero(e.target.value) })}
+            aria-label={`Día tope de ${requisito.name}`}
+            className={`${NUMERO} w-10`}
+          />
+          <select
+            value={vigencia.period_offset_months ?? 1}
+            onChange={e => onCambiar({ ...vigencia, period_offset_months: Number(e.target.value) })}
+            aria-label={`De qué mes es ${requisito.name}`}
+            className={`${CONTROL} max-w-[8.5rem]`}
+          >
+            <option value={1}>del mes anterior</option>
+            <option value={0}>del mes en curso</option>
+          </select>
+        </div>
+      )}
       {falta && <div className="px-1.5 text-etiqueta text-status-incidente">{falta}</div>}
     </div>
   )
