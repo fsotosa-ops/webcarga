@@ -44,7 +44,7 @@ export function CeldaRenovacion({ requisito, vigencia, puedeEditar, onCambiar }:
           value={actual}
           onChange={e => onCambiar(vigenciaPara(e.target.value as Exclude<Renovacion, 'otra'>, vigencia))}
           aria-label={`Cómo se renueva ${requisito.name}`}
-          className={CONTROL}
+          className={`${CONTROL} max-w-[10.5rem]`}
         >
           {/* Una regla que la celda no sabe escribir se muestra tal cual y se
               edita en el panel: colapsarla en la más parecida la cambiaría
@@ -126,7 +126,7 @@ export function CeldaExigible({ requisito, valor, puedeEditar, onCambiar }: {
       value={valor}
       onChange={e => onCambiar(e.target.value as ExigibleOn)}
       aria-label={`Cuándo se exige ${requisito.name}`}
-      className={CONTROL}
+      className={`${CONTROL} max-w-[9.5rem]`}
     >
       {exigibilidadesPara(requisito.target_entity).map(o => (
         <option key={o.valor} value={o.valor} title={o.ayuda}>{o.corto}</option>

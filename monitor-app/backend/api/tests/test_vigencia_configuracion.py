@@ -22,6 +22,7 @@ from app.routers.requirements import (
     patch_requirement_conditions,
     preview_vigencia,
 )
+from app.schemas.compliance import RequirementOption
 from app.schemas.requirement import (
     RequirementConditionsPatchBody,
     RequirementCreateBody,
@@ -107,6 +108,19 @@ async def test_el_catalogo_devuelve_la_vigencia_y_cuando_se_exige(conexion_rever
     assert fila["exigible_on"] == "ON_REQUEST"
     assert (fila["vigencia"]["cutoff_day"], fila["vigencia"]["warning_days"]) == (18, 5)
     assert fila["tiene_versiones"] is False
+
+
+async def test_el_esquema_de_respuesta_no_descarta_columnas_del_catalogo(conexion_revertida):
+    """El endpoint declara `response_model=list[RequirementOption]`, y FastAPI
+    DESCARTA en silencio lo que el modelo no nombra. Los alias viajaban en la
+    consulta y nunca llegaban: "Se reconoce como" mostraba "—" en todas las
+    filas (visto en dev el 08/10). Los tests que llaman la función directo se
+    saltan ese filtro; este pasa cada fila por el modelo."""
+    catalogo = await list_compliance_requirements(
+        target_entity=None, pool=PoolDeUnaConexion(conexion_revertida), _=USER)
+    for fila in catalogo:
+        respuesta = RequirementOption.model_validate(fila).model_dump()
+        assert set(fila) <= set(respuesta), f"el esquema descarta {set(fila) - set(respuesta)}"
 
 
 async def test_guardar_la_vigencia_queda_auditado(conexion_revertida):

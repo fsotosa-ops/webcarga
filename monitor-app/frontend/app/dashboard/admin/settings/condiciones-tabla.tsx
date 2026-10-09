@@ -247,7 +247,9 @@ export function CondicionesTabla() {
       </div>
 
       <div className="overflow-x-auto">
-      <table className="w-full min-w-[1100px] border-collapse">
+      {/* 56rem cabe en el contenedor de Configuración a 1.440 px (943 px útiles)
+          y en teléfono se desplaza en vez de aplastarse. */}
+      <table className="w-full min-w-[56rem] border-collapse">
         <thead>
           <tr className="bg-bg-main/60 border-y border-border">
             {canAdmin && (
@@ -303,12 +305,12 @@ export function CondicionesTabla() {
                     />
                   </td>
                 )}
-                <td className="px-3 py-2">
+                <td className="px-1.5 py-2">
                   <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${e?.clase ?? 'bg-bg-main text-informativo'}`}>
                     {e?.texto ?? r.target_entity}
                   </span>
                 </td>
-                <td className="px-3 py-2 max-w-[20rem]">
+                <td className="px-1.5 py-2 max-w-[20rem]">
                   <CeldaNombre requisito={r} puedeEditar={canAdmin} />
                   <div className={`mt-1 flex flex-wrap items-center gap-2 rounded ${marca('requirement_level')}`}>
                     <CeldaNivel
@@ -320,35 +322,35 @@ export function CondicionesTabla() {
                     <MarcaDeRevision revision={revisiones.revisionDe(r.id)} />
                   </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-1.5 py-2">
                   <div className={`text-xs ${valor.is_active ? 'text-text-primary' : 'text-informativo'}`}>{celda.regla}</div>
                   <div className="text-etiqueta text-informativo tabular-nums">{celda.alcance}</div>
                 </td>
-                <td className={`px-2 py-2 ${marca('vigencia')}`}>
+                <td className={`px-1.5 py-2 ${marca('vigencia')}`}>
                   <CeldaRenovacion
                     requisito={r} vigencia={valor.vigencia} puedeEditar={canAdmin}
                     onCambiar={v => cambiar(r, { vigencia: v })}
                   />
                 </td>
-                <td className={`px-2 py-2 ${marca('vigencia')}`}>
+                <td className={`px-1.5 py-2 ${marca('vigencia')}`}>
                   <CeldaAviso
                     requisito={r} vigencia={valor.vigencia} puedeEditar={canAdmin}
                     onCambiar={v => cambiar(r, { vigencia: v })}
                   />
                 </td>
-                <td className={`px-2 py-2 ${marca('exigible_on')}`}>
+                <td className={`px-1.5 py-2 ${marca('exigible_on')}`}>
                   <CeldaExigible
                     requisito={r} valor={valor.exigible_on} puedeEditar={canAdmin}
                     onCambiar={v => cambiar(r, { exigible_on: v })}
                   />
                 </td>
-                <td className={`px-3 py-2 ${marca('is_active')}`}>
+                <td className={`px-1.5 py-2 ${marca('is_active')}`}>
                   <CeldaVigente
                     requisito={r} valor={valor.is_active} puedeEditar={canAdmin}
                     onCambiar={v => cambiar(r, { is_active: v })}
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-1.5 py-2">
                   <CeldaAlias requisito={r} puedeEditar={canAdmin} />
                 </td>
                 <td className="pr-2">

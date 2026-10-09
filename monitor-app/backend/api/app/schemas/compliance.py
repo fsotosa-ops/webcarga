@@ -203,6 +203,10 @@ class RequirementOption(BaseModel):
     applies_to_fleet_service_type_ids: Optional[list[str]] = None
     applies_to_management_types: Optional[list[ManagementType]] = None
     alcance: Alcance
+    # Cómo se reconoce el documento en el nombre del archivo. Sin este campo
+    # FastAPI lo descartaba de la respuesta y "Se reconoce como" mostraba "—"
+    # en todas las filas, aunque la consulta lo traía.
+    aliases: list[str] = []
 
 
 class SolicitudBody(BaseModel):
