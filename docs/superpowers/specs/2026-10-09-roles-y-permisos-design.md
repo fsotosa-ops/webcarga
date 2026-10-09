@@ -1,6 +1,6 @@
 # Roles y permisos (RBAC) — diseño
 
-Fecha: 2026-10-09 · Estado: para revisión del usuario · Rama: `dev`
+Fecha: 2026-10-09 · Estado: aprobada por el usuario (09/10) · Rama: `dev`
 
 ## 1. Contexto y objetivo
 
@@ -210,10 +210,10 @@ Administración de acceso:
 
    `admin_whitelist.role_codes` sembrado con el mismo mapeo.
 
-   **Diferencia conocida (decidir en la revisión):** hoy la configuración de cada área (estados, umbrales,
-   temperaturas, reglas de alerta, taxonomías, catálogo de requisitos, tipos de cobertura) es solo de `admin`. En
-   este diseño la tienen los Supervisores (`*.configure`), así que los 4 `editor` actuales **ganan** configurar
-   sus áreas. Alternativa: dejar `*.configure` solo en Administración y que el Supervisor no configure.
+   **Ganancia aprobada (usuario, 09/10): el Supervisor configura su área.** Hoy la configuración de cada área
+   (estados, umbrales, temperaturas, reglas de alerta, taxonomías, catálogo de requisitos, tipos de cobertura) es
+   solo de `admin`; con `*.configure` en los Supervisores, los 4 `editor` actuales ganan configurar sus áreas.
+   Es la única ganancia de la migración.
 2. **API + frontend** leyendo solo permisos (un despliegue). Sin guardias viejos.
 3. **Contract**: `DROP` de `profiles.role` y `admin_whitelist.role`. **Compuerta**: la API de `main`
    (`webcarga-monitor-api`, 01/08) usa la misma base y lee `profiles.role`; no se retira hasta desplegar `main`
