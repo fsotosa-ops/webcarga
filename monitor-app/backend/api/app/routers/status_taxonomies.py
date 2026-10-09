@@ -1,14 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, require_admin
+from ..authz import Permission, require
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..schemas.status_taxonomy import GRUPOS_POR_DOMINIO, StatusTaxonomyBody, StatusTaxonomyPatch
 from ..services.reordenamiento import TAXONOMIAS, MovimientoBody, mover_una_posicion
 from ..services.revisiones import SECCION_DE_TAXONOMIA, registrar_revision
 
-# Toda ruta exige sesión (seguridad, 09/10): ver tests/test_toda_ruta_exige_sesion.py.
-router = APIRouter(prefix="/config/taxonomies", tags=["config"], dependencies=[Depends(get_current_user)])
+# Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
+router = APIRouter(prefix="/config/taxonomies", tags=["config"])
 
 # `code` viaja pero NO se crea ni se edita desde la app: es el identificador
 # estable con el que OTRAS tablas apuntan a un valor del catalogo
@@ -58,13 +59,15 @@ def _exigir_grupo_valido(domain: str, group_id: str | None) -> None:
 
 
 @router.get("")
-async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool)):
+async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool),
+    _permiso=Depends(require(Permission.REFERENCE_READ)),
+):
     await _exigir_dominio_conocido(domain, pool)
     return [dict(r) for r in await pool.fetch(_SQL_LISTA, domain)]
 
 
 @router.post("")
-async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usuario=Depends(require_admin)):
+async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usuario=Depends(require(Permission.OPERATIONS_CONFIGURE))):
     await _exigir_dominio_conocido(body.domain, pool)
     _exigir_grupo_valido(body.domain, body.group_id)
     row = await pool.fetchrow(
@@ -81,7 +84,7 @@ async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usua
 @router.patch("/{taxonomy_id}")
 async def patch_taxonomy(
     taxonomy_id: str, body: StatusTaxonomyPatch, pool=Depends(get_pool),
-    usuario=Depends(require_admin),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
         "SELECT id, domain FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
@@ -125,7 +128,7 @@ async def move_taxonomy(
     taxonomy_id: str,
     body: MovimientoBody,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    _=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     """Sube o baja un valor una posicion dentro de SU dominio, en una sola
     transaccion. Devuelve el dominio completo ya ordenado."""
@@ -140,7 +143,7 @@ async def move_taxonomy(
 
 
 @router.delete("/{taxonomy_id}")
-async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), _=Depends(require_admin)):
+async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_CONFIGURE))):
     result = await pool.execute(
         "UPDATE app.status_taxonomies SET active = false, updated_at = NOW() WHERE id = $1", taxonomy_id,
     )

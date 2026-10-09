@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from typing import Optional
 from ..auth import get_current_user, get_supabase, require_admin
+from ..authz import Permission, require
 from ..db import get_pool
 from .roles import ROLE_ORDER
 
@@ -51,7 +52,7 @@ async def create_user(
     body: UserCreate,
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    actor=Depends(require_admin),
+    actor=Depends(require(Permission.USERS_MANAGE)),
 ):
     if body.role not in ROLE_ORDER:
         raise HTTPException(422, f"Rol inválido: {body.role}")
@@ -109,7 +110,7 @@ async def delete_user(
     user_id: str,
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    actor=Depends(require_admin),
+    actor=Depends(require(Permission.USERS_MANAGE)),
 ):
     if user_id == actor["sub"]:
         raise HTTPException(403, "No puedes eliminar tu propia cuenta")
@@ -128,7 +129,7 @@ async def delete_user(
 @router.get("")
 async def list_users(
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    _=Depends(require(Permission.USERS_MANAGE)),
 ):
     # Último ingreso, cómo entra y si tiene MFA (seguridad, 09/10): para que
     # WebCarga revise periódicamente quién tiene acceso. El historial completo
@@ -152,7 +153,7 @@ async def patch_user(
     user_id: str,
     body: UserPatch,
     pool=Depends(get_pool),
-    actor=Depends(require_admin),
+    actor=Depends(require(Permission.USERS_MANAGE)),
 ):
     if user_id == actor["sub"]:
         raise HTTPException(403, "No puedes editar tu propia cuenta desde aquí")

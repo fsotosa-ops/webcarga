@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
 from ..auth import get_current_user, require_admin
+from ..authz import Permission, require
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..services.reordenamiento import (
@@ -11,8 +12,8 @@ from ..services.reordenamiento import (
 )
 from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
 
-# Toda ruta exige sesión (seguridad, 09/10): ver tests/test_toda_ruta_exige_sesion.py.
-router = APIRouter(prefix="/config", tags=["config"], dependencies=[Depends(get_current_user)])
+# Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
+router = APIRouter(prefix="/config", tags=["config"])
 
 # Taxonomía de grupos del tablero — compartida entre estados TMS y operacionales
 VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
@@ -147,7 +148,9 @@ _SQL_ESTADOS = (
 
 
 @router.get("/statuses")
-async def list_statuses(pool=Depends(get_pool)):
+async def list_statuses(pool=Depends(get_pool),
+    _permiso=Depends(require(Permission.REFERENCE_READ)),
+):
     # group_id AS "group": el frontend (StatusMeta) usa la key `group` — antes
     # este endpoint devolvía group_id crudo y el select de Grupo en Configuración
     # nunca mostraba el valor guardado (bug de auditoría 2026-07-06)
@@ -159,7 +162,7 @@ async def patch_status(
     status_id: str,
     body: TripStatusPatch,
     pool=Depends(get_pool),
-    usuario=Depends(require_admin),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
         "SELECT id FROM app.trip_statuses WHERE id = $1", status_id
@@ -196,7 +199,7 @@ async def move_status(
     status_id: str,
     body: MovimientoBody,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    _=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     """Sube o baja un estado una posición, en una sola transacción.
 
@@ -213,7 +216,9 @@ async def move_status(
 # ── Alert thresholds ─────────────────────────────────────────────────────────
 
 @router.get("/alert-thresholds")
-async def list_alert_thresholds(pool=Depends(get_pool)):
+async def list_alert_thresholds(pool=Depends(get_pool),
+    _permiso=Depends(require(Permission.REFERENCE_READ)),
+):
     rows = await pool.fetch(
         "SELECT doc_type, label, warning_days, error_days "
         "FROM app.alert_thresholds ORDER BY doc_type"
@@ -226,7 +231,7 @@ async def patch_alert_threshold(
     doc_type: str,
     body: AlertThresholdPatch,
     pool=Depends(get_pool),
-    usuario=Depends(require_admin),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
         "SELECT doc_type FROM app.alert_thresholds WHERE doc_type = $1", doc_type
@@ -260,7 +265,9 @@ async def patch_alert_threshold(
 # ── Temperature ranges (full CRUD — cargo_type is free text, not a fixed enum) ─
 
 @router.get("/temperature-ranges")
-async def list_temperature_ranges(pool=Depends(get_pool)):
+async def list_temperature_ranges(pool=Depends(get_pool),
+    _permiso=Depends(require(Permission.REFERENCE_READ)),
+):
     rows = await pool.fetch(
         "SELECT cargo_type, label, min_c, max_c "
         "FROM app.temperature_ranges ORDER BY cargo_type"
@@ -272,7 +279,7 @@ async def list_temperature_ranges(pool=Depends(get_pool)):
 async def create_temperature_range(
     body: TemperatureRangeBody,
     pool=Depends(get_pool),
-    usuario=Depends(require_admin),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
         "SELECT cargo_type FROM app.temperature_ranges WHERE cargo_type = $1",
@@ -300,7 +307,7 @@ async def patch_temperature_range(
     cargo_type: str,
     body: TemperatureRangePatch,
     pool=Depends(get_pool),
-    usuario=Depends(require_admin),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
         "SELECT cargo_type, label, min_c, max_c FROM app.temperature_ranges WHERE cargo_type = $1",
@@ -340,7 +347,7 @@ async def patch_temperature_range(
 async def delete_temperature_range(
     cargo_type: str,
     pool=Depends(get_pool),
-    _=Depends(require_admin),
+    _=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     result = await pool.execute(
         "DELETE FROM app.temperature_ranges WHERE cargo_type = $1", cargo_type
@@ -361,7 +368,9 @@ _ALERT_RULES_SELECT = (
 
 
 @router.get("/monitor-alert-rules")
-async def get_monitor_alert_rules(pool=Depends(get_pool)):
+async def get_monitor_alert_rules(pool=Depends(get_pool),
+    _permiso=Depends(require(Permission.REFERENCE_READ)),
+):
     row = await pool.fetchrow(_ALERT_RULES_SELECT)
     if not row:
         raise HTTPException(404, "Reglas de alerta no configuradas")
@@ -372,7 +381,7 @@ async def get_monitor_alert_rules(pool=Depends(get_pool)):
 async def patch_monitor_alert_rules(
     body: MonitorAlertRulesPatch,
     pool=Depends(get_pool),
-    usuario=Depends(require_admin),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     data = body.model_dump(exclude_none=True)
     # stale_trip_days acepta NULL a propósito (desactivar el umbral): se manda
@@ -442,7 +451,7 @@ def _pares(fila, *campos: tuple[str, str, str]) -> list[dict]:
 
 
 @router.get("/inventario")
-async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require_admin)):
+async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require(Permission.SETTINGS_MANAGE))):
     """Qué gobierna cada dominio, en números reales.
 
     Las claves son los slugs de dominio del frontend, que van en INGLES por el

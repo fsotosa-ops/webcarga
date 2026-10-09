@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..auth import get_current_user
+from ..authz import Permission, require
 
-# Toda ruta exige sesión (seguridad, 09/10): ver tests/test_toda_ruta_exige_sesion.py.
-router = APIRouter(prefix="/roles", tags=["roles"], dependencies=[Depends(get_current_user)])
+# Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
+router = APIRouter(prefix="/roles", tags=["roles"])
 
 ROLE_ORDER = ["viewer", "writer", "editor", "admin", "owner"]
 
@@ -45,5 +46,7 @@ class RoleInfo(BaseModel):
 
 
 @router.get("", response_model=list[RoleInfo])
-def list_roles():
+def list_roles(
+    _permiso=Depends(require(Permission.USERS_MANAGE)),
+):
     return [RoleInfo(id=r, **ROLE_META[r]) for r in ROLE_ORDER]

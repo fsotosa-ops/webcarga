@@ -19,9 +19,10 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user, get_supabase
 from app.db import get_pool
 from app.routers.users import router
+from tests.conftest import usuario
 
-ADMIN = {"sub": "a-1", "email": "admin@webcarga.com", "role": "admin", "aal": "aal2"}
-VIEWER = {"sub": "v-1", "email": "viewer@webcarga.com", "role": "viewer"}
+ADMIN = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="a-1", aal="aal2")
+VIEWER = usuario("reader", sub="v-1")
 
 
 def _cliente(user, pool=None, supabase=None):

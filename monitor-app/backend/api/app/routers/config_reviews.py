@@ -3,11 +3,12 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin
+from ..authz import Permission, require
 from ..db import get_pool
 from ..services.revisiones import SQL_BUSQUEDA, exigir_seccion, registrar_revision
 
-# Toda ruta exige sesión (seguridad, 09/10): ver tests/test_toda_ruta_exige_sesion.py.
-router = APIRouter(prefix="/config/reviews", tags=["config"], dependencies=[Depends(get_current_user)])
+# Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
+router = APIRouter(prefix="/config/reviews", tags=["config"])
 
 
 class ConfirmacionBody(BaseModel):
@@ -21,6 +22,7 @@ async def list_reviews(
     domain: str = Query(...),
     section: str = Query(...),
     pool=Depends(get_pool),
+    _permiso=Depends(require(Permission.REFERENCE_READ)),
 ):
     """Los elementos YA revisados de una sección.
 
@@ -46,7 +48,7 @@ async def list_reviews(
 async def confirm_review(
     body: ConfirmacionBody,
     pool=Depends(get_pool),
-    usuario=Depends(get_current_user),
+    usuario=Depends(require(Permission.SETTINGS_MANAGE)),
     _=Depends(require_admin),
 ):
     """"Lo miré y está bien así".
@@ -62,11 +64,13 @@ async def confirm_review(
 # simple: comparte la enumeración con el registro de revisión, que es lo que le
 # permite buscar sobre el CONTENIDO (una condición, un rango de temperatura, un
 # subtipo) en vez de sobre los títulos de las secciones.
-buscador = APIRouter(prefix="/config/search", tags=["config"], dependencies=[Depends(get_current_user)])
+buscador = APIRouter(prefix="/config/search", tags=["config"])
 
 
 @buscador.get("")
-async def search_config(q: str = Query(..., min_length=2), pool=Depends(get_pool)):
+async def search_config(q: str = Query(..., min_length=2), pool=Depends(get_pool),
+    _permiso=Depends(require(Permission.REFERENCE_READ)),
+):
     """Busca un ajuste por su nombre, en todos los dominios a la vez.
 
     Dos caracteres como mínimo: con uno solo el resultado son casi todos los
