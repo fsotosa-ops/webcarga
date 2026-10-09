@@ -1,16 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { soloDigitos } from '@/lib/auth/codigo'
+import { destinoSeguro } from '@/lib/auth/destino'
 
 /** Segundo paso del ingreso (seguridad, 09/10): la cuenta tiene la
  *  verificación en dos pasos inscrita y la sesión todavía no la pasó. El
- *  layout del dashboard trae acá hasta que la sesión sea aal2. */
-export default function MfaVerifyPage() {
+ *  layout del dashboard trae acá hasta que la sesión sea aal2. También el cambio
+ *  de contraseña, que Supabase exige con la sesión verificada (`?next=`). */
+function Verificar() {
   const router = useRouter()
+  const next = destinoSeguro(useSearchParams().get('next'), '/dashboard/operations/monitor')
   const [factorId, setFactorId] = useState<string | null>(null)
   const [codigo, setCodigo] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +36,7 @@ export default function MfaVerifyPage() {
     const { error } = await createClient().auth.mfa.challengeAndVerify({ factorId, code: codigo })
     setEnviando(false)
     if (error) { setError('El código no coincide. Revisa la hora del teléfono y vuelve a intentarlo.'); return }
-    router.replace('/dashboard/operations/monitor')
+    router.replace(next)
     router.refresh()
   }
 
@@ -63,5 +66,13 @@ export default function MfaVerifyPage() {
         </button>
       </form>
     </main>
+  )
+}
+
+export default function MfaVerifyPage() {
+  return (
+    <Suspense fallback={null}>
+      <Verificar />
+    </Suspense>
   )
 }

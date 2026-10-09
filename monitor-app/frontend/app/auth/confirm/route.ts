@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { EmailOtpType } from '@supabase/supabase-js'
+import { destinoSeguro } from '@/lib/auth/destino'
 
 /** Enlace de los correos de Supabase Auth (invitación, 09/10).
  *
@@ -10,12 +11,20 @@ import type { EmailOtpType } from '@supabase/supabase-js'
  *  sesión en las cookies. El enlace por defecto de Supabase devuelve los
  *  tokens en el fragmento (#) de la URL, que un route handler no ve.
  *
- *  Plantilla "Invite user" (panel de Supabase › Authentication › Emails):
- *    {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite */
+ *  Plantillas (panel de Supabase › Authentication › Emails; fuente en
+ *  backend/supabase/templates/):
+ *    Invite user:    {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite
+ *    Reset password: {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset-password
+ *  Funciona aunque el correo se abra en otro dispositivo: el flujo con `code`
+ *  (PKCE) solo servía en el navegador donde se pidió el enlace. */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const tokenHash = searchParams.get('token_hash')
   const type = searchParams.get('type') as EmailOtpType | null
+  const next = destinoSeguro(
+    searchParams.get('next'),
+    type === 'recovery' ? '/auth/reset-password' : '/dashboard/operations/monitor',
+  )
 
   // Cloud Run: request.url trae la dirección interna; el origen público viene
   // en x-forwarded-host (mismo criterio que /auth/callback).
@@ -40,7 +49,7 @@ export async function GET(request: NextRequest) {
       }
     )
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
-    if (!error) return NextResponse.redirect(`${origin}/dashboard/operations/monitor`)
+    if (!error) return NextResponse.redirect(`${origin}${next}`)
   }
 
   return NextResponse.redirect(`${origin}/auth/access-denied?reason=invalid-link`)

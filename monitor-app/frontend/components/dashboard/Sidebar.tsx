@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
-  Truck, Users, LogOut, BookUser,
+  Truck, Users, LogOut, BookUser, KeyRound,
   ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -249,6 +249,10 @@ export default function Sidebar({ role }: SidebarProps) {
     return next
   })
 
+  const clasePie = `w-full group flex items-center rounded-xl text-[13px] text-white/35 hover:bg-white/6 hover:text-white/65 transition-all duration-150 ${
+    collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
+  }`
+
   async function signOut() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -364,14 +368,22 @@ export default function Sidebar({ role }: SidebarProps) {
           )}
         </nav>
 
-        {/* ── Footer: sign out ── */}
+        {/* ── Footer: cuenta y salida ── */}
         <div className="px-2.5 pb-3 border-t border-white/8 pt-2">
+          {/* Cambiar la contraseña con la sesión abierta (seguridad, 09/10).
+              Misma pantalla que la recuperación por correo. */}
+          <Link
+            href="/auth/reset-password"
+            title={collapsed ? 'Cambiar contraseña' : undefined}
+            className={clasePie}
+          >
+            <KeyRound size={15} className="shrink-0" />
+            {!collapsed && <span>Cambiar contraseña</span>}
+          </Link>
           <button
             onClick={signOut}
             title={collapsed ? 'Cerrar sesión' : undefined}
-            className={`w-full group flex items-center rounded-xl text-[13px] text-white/35 hover:bg-white/6 hover:text-white/65 transition-all duration-150 ${
-              collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
-            }`}
+            className={clasePie}
           >
             <LogOut size={15} className="shrink-0" />
             {!collapsed && <span>Cerrar sesión</span>}

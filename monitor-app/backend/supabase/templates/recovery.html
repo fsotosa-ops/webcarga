@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Cambia tu contraseña de WebCarga</title>
+  <!--
+    Correo de recuperación de contraseña de Supabase Auth (seguridad, 09/10).
+    Se pega en el panel: Authentication › Emails › Reset password.
+    Asunto: Cambia tu contraseña de WebCarga
+
+    El enlace va a /auth/confirm con token_hash y next=/auth/reset-password: la
+    app valida el token en el servidor y abre la pantalla de nueva contraseña.
+    Así sirve aunque el correo se abra en otro dispositivo (el enlace por
+    defecto de Supabase, con `code`, solo servía en el navegador donde se pidió).
+
+    Look & feel del login (bajada "Plataforma logística", usuario 09/10): fondo #111d28 → #1a3347, acento #1cb9ec, cuadro "W"
+    con degradé #1cb9ec → #0e8db5, tipografía Mulish. Solo tablas y estilos en
+    línea (Gmail y Outlook ignoran <style> y CSS moderno); el degradé tiene
+    color de respaldo para Outlook. El botón usa #0e8db5 y no #1cb9ec: el blanco
+    sobre el celeste claro no se lee bien.
+  -->
+</head>
+<body style="margin:0; padding:0; background-color:#f5f6f9;">
+  <!-- Texto de vista previa en la bandeja de entrada (no se ve en el cuerpo) -->
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#f5f6f9;">
+    Pediste cambiar tu contraseña de WebCarga.
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f6f9;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px; border-collapse:separate;">
+
+          <!-- Cabecera: la del login -->
+          <tr>
+            <td align="center" bgcolor="#111d28" style="background-color:#111d28; background-image:linear-gradient(160deg, #1a3347 0%, #111d28 60%, #0c1620 100%); border-radius:16px 16px 0 0; padding:36px 24px 30px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" width="52" height="52" bgcolor="#1cb9ec" style="width:52px; height:52px; background-color:#1cb9ec; background-image:linear-gradient(135deg, #1cb9ec 0%, #0e8db5 100%); border-radius:14px; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:52px; text-align:center;">W</td>
+                </tr>
+              </table>
+              <p style="margin:16px 0 0; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:22px; font-weight:700; letter-spacing:-0.3px; color:#ffffff; line-height:1.2;">WebCarga</p>
+              <p style="margin:6px 0 0; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#8a9aab; line-height:1.4;">Plataforma logística</p>
+            </td>
+          </tr>
+
+          <!-- Cuerpo -->
+          <tr>
+            <td bgcolor="#ffffff" style="background-color:#ffffff; padding:36px 36px 28px; border-left:1px solid #e6e8ef; border-right:1px solid #e6e8ef;">
+              <h1 style="margin:0 0 14px; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:20px; font-weight:700; color:#131c2b; line-height:1.3;">Cambia tu contraseña</h1>
+              <p style="margin:0 0 24px; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:15px; color:#4b5563; line-height:1.6;">
+                Recibimos un pedido para cambiar la contraseña de <strong style="color:#131c2b;">{{ .Email }}</strong>. Usa el botón para elegir una nueva.
+              </p>
+
+              <!-- Botón, centrado (tabla al 100% con la celda centrada: lo único que
+                   respetan todos los clientes, incluido Outlook) -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">
+                <tr>
+                  <td align="center">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" bgcolor="#0e8db5" style="background-color:#0e8db5; border-radius:10px;">
+                    <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset-password"
+                       style="display:inline-block; padding:13px 28px; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:15px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:10px;">Elegir nueva contraseña</a>
+                  </td>
+                </tr>
+              </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Cómo entrar después -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f6f9; border-radius:10px;">
+                <tr>
+                  <td style="padding:16px 18px; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:13px; color:#4b5563; line-height:1.6;">
+                    <strong style="color:#131c2b;">¿Entras con Google o Microsoft?</strong><br>
+                    No necesitas contraseña: entra en <a href="{{ .SiteURL }}/login" style="color:#0e8db5; text-decoration:none;">{{ .SiteURL }}/login</a> con el botón de Google o Microsoft, usando este mismo email.
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:24px 0 0; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:12px; color:#6b7280; line-height:1.6;">
+                El enlace sirve una sola vez y vence al poco tiempo; si venció, pide otro desde «¿Olvidaste tu contraseña?». Si no pediste este cambio, ignora este correo: tu contraseña sigue igual.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Pie -->
+          <tr>
+            <td align="center" bgcolor="#ffffff" style="background-color:#ffffff; border:1px solid #e6e8ef; border-top:1px solid #eef0f4; border-radius:0 0 16px 16px; padding:18px 24px;">
+              <p style="margin:0; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:11px; color:#6b7280; line-height:1.5;">
+                © WebCarga · Este correo se envió porque alguien pidió cambiar la contraseña de esta cuenta.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

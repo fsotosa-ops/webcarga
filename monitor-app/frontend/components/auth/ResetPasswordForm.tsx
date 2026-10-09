@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import PasswordStrength, { isPasswordValid, LARGO_MINIMO } from './PasswordStrength'
 
 export default function ResetPasswordForm() {
   const [password, setPassword] = useState('')
@@ -16,19 +17,17 @@ export default function ResetPasswordForm() {
   const searchParams = useSearchParams()
   const supabase = createClient()
 
+  // Tres entradas (09/10): el enlace del correo ya pasó por /auth/confirm y
+  // trae la sesión; un enlace viejo trae `code` (PKCE, solo sirve en el mismo
+  // navegador); o la persona la cambia desde el menú con su sesión abierta.
   useEffect(() => {
     const code = searchParams.get('code')
-    if (!code) {
-      setError('El enlace es inválido o ya expiró. Solicita uno nuevo.')
-      return
-    }
-
-    supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-      if (error) {
-        setError('El enlace expiró. Solicita uno nuevo.')
-      } else {
-        setReady(true)
-      }
+    const entrar = code
+      ? supabase.auth.exchangeCodeForSession(code).then(({ error }) => !error)
+      : supabase.auth.getUser().then(({ data }) => !!data.user)
+    void entrar.then(ok => {
+      if (ok) setReady(true)
+      else setError('El enlace es inválido o ya expiró. Solicita uno nuevo.')
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -39,8 +38,8 @@ export default function ResetPasswordForm() {
       setError('Las contraseñas no coinciden.')
       return
     }
-    if (password.length < 6) {
-      setError('Mínimo 6 caracteres.')
+    if (!isPasswordValid(password)) {
+      setError(`La contraseña necesita al menos ${LARGO_MINIMO} caracteres y combinar letras, números o símbolos.`)
       return
     }
 
@@ -48,6 +47,12 @@ export default function ResetPasswordForm() {
     setError(null)
 
     const { error } = await supabase.auth.updateUser({ password })
+    // Con verificación en dos pasos inscrita, Supabase exige la sesión
+    // verificada (aal2) para cambiar la contraseña: se pide el código y se vuelve.
+    if (error && /aal2/i.test(`${error.code ?? ''} ${error.message}`)) {
+      router.push('/auth/mfa/verify?next=/auth/reset-password')
+      return
+    }
     if (error) {
       setError('No se pudo actualizar la contraseña. Intenta nuevamente.')
       setLoading(false)
@@ -97,8 +102,9 @@ export default function ResetPasswordForm() {
           value={password}
           onChange={e => setPassword(e.target.value)}
           className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-          placeholder="Mínimo 6 caracteres"
+          placeholder={`Mínimo ${LARGO_MINIMO} caracteres`}
         />
+        <PasswordStrength password={password} />
       </div>
 
       <div>
