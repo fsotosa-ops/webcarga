@@ -27,7 +27,7 @@ from .routers.filter_groups import router as filter_groups_router
 from .routers.locations import router as locations_router
 from .routers.policies import router as policies_router
 from .routers.requirements import requirements_router as compliance_requirements_router
-from .routers.roles import router as roles_router
+from .routers.access import router as access_router
 from .routers.shippers import router as shippers_router
 from .routers.status_report import router as status_report_router
 from .routers.status_taxonomies import router as status_taxonomies_router
@@ -112,7 +112,7 @@ app.add_middleware(
 # tirado. `tests/test_compresion.py` se borro con este cambio: su sujeto dejo
 # de existir.
 
-app.include_router(roles_router,               prefix="/api/v1")
+app.include_router(access_router,              prefix="/api/v1")
 app.include_router(config_router,              prefix="/api/v1")
 app.include_router(config_reviews_router,      prefix="/api/v1")
 app.include_router(config_search_router,       prefix="/api/v1")
