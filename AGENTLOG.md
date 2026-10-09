@@ -69,6 +69,9 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
       75 tipos nuevos **apagados**. Verificado en la base: 113 documentos, 0 de los nuevos activos, 0 registros
       sembrados, todos con alias; los 15 sin regla son "Fecha del documento" (usan el aviso general). En la tabla de dev:
       113 filas, "Sin vigencia 77". Con estos datos la columna Documento sacaba la tabla (1.084 px): `d5080d3e`.
+      Después, a pedido del usuario, "Se exige a" en dos líneas sin cortes (`6e46e560`, `1f655ec5`): 113 filas,
+      943 de 943 px a 1.440, filas de ~85 px. El primer Deploy Frontend de `1f655ec5` falló bajando Fira Code de
+      Google Fonts (red del runner, no el código); `gh run rerun --failed` lo resolvió.
 - [ ] **WebCarga revisa en la tabla de dev** y responde las 11 dudas (2 coincidencias dudosas: F30↔F30_MULTAS,
       Contrato asociado↔CONTRATO_WEBCARGA; "al término" en EPP, IPER y OS10; "No aplica"+"Vigencia Sí"; "Anual"+
       "Vigencia No"; errata de Liquidación; Cronograma sin día tope). Los 19 que ya existían conservan su regla
@@ -76,7 +79,7 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
 - [ ] Activar documento por documento (o en lote, mirando "Ver efecto": activar siembra un pendiente por entidad).
 - [ ] Guardar las 11 dudas como nota del documento y mostrar la marca "Duda" en la tabla (diferido de 2c).
 - [ ] Volver a medir la velocidad con reglas cargadas.
-- [ ] Borrar el workspace `.superpowers/sdd/2026-10-08-c1-entrega-2b-configuracion-exigibilidad-carga/` al cerrar.
+- [x] Workspace del plan 2b borrado al cerrar la sesión del 08/10 (la historia queda en git).
 - Menores diferidos de la revisión 2b: M1 versión redundante el mismo día; M2 500 con solicitud huérfana; M3 la
   carga acepta datos que el tipo no pide; M4 bulk-file sin emisión/período; M6 `vigenciaDeLaFila` usa hoy UTC;
   M8 solicitados como "bloqueados" en recalc-preview; M10 nombres fijos de grupos de radio; M11 log de vigencia
