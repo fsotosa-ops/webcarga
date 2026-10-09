@@ -72,6 +72,18 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
       Después, a pedido del usuario, "Se exige a" en dos líneas sin cortes (`6e46e560`, `1f655ec5`): 113 filas,
       943 de 943 px a 1.440, filas de ~85 px. El primer Deploy Frontend de `1f655ec5` falló bajando Fira Code de
       Google Fonts (red del runner, no el código); `gh run rerun --failed` lo resolvió.
+- [x] **Los 19 que ya existían (09/10, decisión del usuario):** 7 ya coincidían con la planilla. De los 12 que no,
+      el ensayo ("Ver efecto") mostró vencidos 21 → 121 y al día 112 → 11, más 238 pendientes quitados (Política de
+      Seguridad pasa a "solo cuando se solicita"). Los vencidos NO son reales: los aprobados no tienen fecha de
+      emisión, que es lo que pide un tipo anual. Se publicó **solo F30-1** (mensual, día 18, mes anterior, aviso 5;
+      0 documentos cargados, 0 efecto). **Los otros 11 siguen con su regla vieja** hasta que WebCarga cargue las
+      fechas de emisión de ~100 documentos aprobados: Contrato de Trabajo (→ fecha del documento), Certificado
+      Mutual, Reglamento Interno, PTS Contratista, Política de Seguridad (+ "solo si se pide"), Entrega EPP, PTS
+      Conductor, Hoja de Vida, DAS ODI, Capacitación EPP y Plan de Emergencia (→ anual). Entrega EPP: la planilla
+      dice "al término" (una de las dudas); se aplicaría solo la vigencia, no eso.
+- [x] **`has_expiration` retirada (09/10, con visto bueno):** migración `20261009120000_retira_has_expiration`
+      aplicada vía MCP (`0a1591eb`). Antes: 0 lectores en código (dev y main), vistas, funciones, policies,
+      matviews y Mage. Después: catálogo, estado y bandeja en dev responden 200; 160 tests del catálogo en verde.
 - [ ] **WebCarga revisa en la tabla de dev** y responde las 11 dudas (2 coincidencias dudosas: F30↔F30_MULTAS,
       Contrato asociado↔CONTRATO_WEBCARGA; "al término" en EPP, IPER y OS10; "No aplica"+"Vigencia Sí"; "Anual"+
       "Vigencia No"; errata de Liquidación; Cronograma sin día tope). Los 19 que ya existían conservan su regla
@@ -84,7 +96,6 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
   carga acepta datos que el tipo no pide; M4 bulk-file sin emisión/período; M6 `vigenciaDeLaFila` usa hoy UTC;
   M8 solicitados como "bloqueados" en recalc-preview; M10 nombres fijos de grupos de radio; M11 log de vigencia
   sin cambio.
-- La Task 7b de la entrega 1 (`DROP has_expiration`) sigue esperando la confirmación del usuario.
 
 <details><summary>Detalle de la entrega 2 (F0-F2), 08/10</summary>
 
