@@ -102,7 +102,7 @@ export function CeldaAviso({ requisito, vigencia, puedeEditar, onCambiar }: {
     <input
       type="number" min={0} inputMode="numeric"
       value={vigencia.warning_days ?? ''}
-      placeholder={general ? 'general' : 'falta'}
+      placeholder={general ? 'gral.' : 'falta'}
       title={general ? 'Vacío: usa el aviso general de Configuración › Alertas' : undefined}
       onChange={e => onCambiar({ ...vigencia, warning_days: numero(e.target.value) })}
       aria-label={`Días de aviso de ${requisito.name}`}
