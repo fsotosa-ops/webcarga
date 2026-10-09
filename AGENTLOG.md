@@ -65,10 +65,15 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
 **Siguiente paso exacto:**
 - [x] Suite completa, push, despliegue y revisión en dev (ver arriba).
 - [ ] Que el usuario pruebe la tabla en dev (Configuración › Certificación).
-- [ ] **Pedir el visto bueno del usuario** para `scripts/cargar_catalogo_webcarga.py --aplicar` (75 tipos nuevos,
-      apagados), mostrando las 11 dudas (2 coincidencias dudosas: F30↔F30_MULTAS, Contrato asociado↔CONTRATO_WEBCARGA).
-      Ojo: los 19 que ya existen conservan su regla vieja (ej. F30-1 figura "Fecha del documento", la planilla dice
-      mensual día 18): WebCarga los corrige en la tabla.
+- [x] **Catálogo cargado (08/10, con el visto bueno del usuario):** `cargar_catalogo_webcarga.py --aplicar` creó los
+      75 tipos nuevos **apagados**. Verificado en la base: 113 documentos, 0 de los nuevos activos, 0 registros
+      sembrados, todos con alias; los 15 sin regla son "Fecha del documento" (usan el aviso general). En la tabla de dev:
+      113 filas, "Sin vigencia 77". Con estos datos la columna Documento sacaba la tabla (1.084 px): `d5080d3e`.
+- [ ] **WebCarga revisa en la tabla de dev** y responde las 11 dudas (2 coincidencias dudosas: F30↔F30_MULTAS,
+      Contrato asociado↔CONTRATO_WEBCARGA; "al término" en EPP, IPER y OS10; "No aplica"+"Vigencia Sí"; "Anual"+
+      "Vigencia No"; errata de Liquidación; Cronograma sin día tope). Los 19 que ya existían conservan su regla
+      vieja (ej. F30-1 figura "Fecha del documento", la planilla dice mensual día 18): se corrigen en la tabla.
+- [ ] Activar documento por documento (o en lote, mirando "Ver efecto": activar siembra un pendiente por entidad).
 - [ ] Guardar las 11 dudas como nota del documento y mostrar la marca "Duda" en la tabla (diferido de 2c).
 - [ ] Volver a medir la velocidad con reglas cargadas.
 - [ ] Borrar el workspace `.superpowers/sdd/2026-10-08-c1-entrega-2b-configuracion-exigibilidad-carga/` al cerrar.
