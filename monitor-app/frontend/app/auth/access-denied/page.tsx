@@ -21,6 +21,11 @@ const MENSAJES: Record<string, { titulo: string; detalle: string }> = {
     titulo: 'Tu cuenta está desactivada',
     detalle: 'Si crees que es un error, habla con un administrador de WebCarga.',
   },
+  'invalid-link': {
+    titulo: 'El enlace ya no sirve',
+    detalle:
+      'El enlace de la invitación expiró o ya se usó. Entra con Google o Microsoft con el mismo email, o pide al administrador una nueva invitación.',
+  },
   'not-invited': {
     titulo: 'Tu cuenta no tiene acceso',
     detalle:

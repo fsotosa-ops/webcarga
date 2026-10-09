@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { usersApi } from '@/lib/api/users'
-import { X, UserPlus, Eye, EyeOff } from 'lucide-react'
+import { X, UserPlus, Eye, EyeOff, Copy, Check } from 'lucide-react'
 import PasswordStrength, { isPasswordValid } from '@/components/auth/PasswordStrength'
 import type { UserRole } from '@/lib/types'
 import type { RoleInfo } from '@/lib/api/roles'
@@ -14,7 +14,21 @@ interface Props {
   onClose:   () => void
 }
 
+/** El mensaje que el admin le envía a la persona (pedido de Pablo, 09/10: "el
+ *  administrador crea la cuenta... con credenciales se la manda"). Va además
+ *  del correo de invitación, por si el correo no llega. */
+export function mensajeDeAcceso(p: {
+  nombre: string; email: string; rol: string; url: string; password?: string
+}): string {
+  const saludo = `Hola ${p.nombre}: te di acceso a WebCarga con el rol ${p.rol}.`
+  return p.password
+    ? `${saludo}\nEntra en ${p.url} con tu email ${p.email} y esta contraseña: ${p.password}`
+    : `${saludo}\nEntra en ${p.url} con el botón de Google o Microsoft, usando la cuenta ${p.email}.`
+}
+
 export default function CreateUserForm({ actorRole, roles, onCreated, onClose }: Props) {
+  const [creado, setCreado] = useState<{ mensaje: string; invitationSent: boolean } | null>(null)
+  const [copiado, setCopiado] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -37,14 +51,24 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
     const formData = new FormData(e.currentTarget)
 
     startTransition(async () => {
+      const email = String(formData.get('email') ?? '')
+      const nombre = String(formData.get('full_name') ?? '')
       try {
-        await usersApi.create({
-          email:     String(formData.get('email') ?? ''),
-          full_name: String(formData.get('full_name') ?? ''),
+        const res = await usersApi.create({
+          email,
+          full_name: nombre,
           role:      selectedRole as UserRole,
           ...(oauthOnly ? {} : { password }),
         })
-        onCreated()
+        setCreado({
+          invitationSent: res.invitation_sent,
+          mensaje: mensajeDeAcceso({
+            nombre, email,
+            rol: roles.find(r => r.id === selectedRole)?.label ?? selectedRole,
+            url: `${window.location.origin}/login`,
+            ...(oauthOnly ? {} : { password }),
+          }),
+        })
       } catch (err) {
         setError(err instanceof Error ? err.message : 'No se pudo crear el usuario')
       }
@@ -64,6 +88,37 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
           </button>
         </div>
 
+        {creado ? (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-text-primary">
+              {creado.invitationSent
+                ? 'Cuenta creada. Le enviamos un correo de invitación. Si no le llega, envíale este mensaje:'
+                : 'Cuenta creada. Envíale este mensaje por WhatsApp o correo:'}
+            </p>
+            <pre className="whitespace-pre-wrap text-sm text-text-primary bg-bg-main rounded-lg px-3 py-2.5 border border-border">
+              {creado.mensaje}
+            </pre>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(creado.mensaje).then(() => setCopiado(true))
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg border border-border text-sm text-text-primary hover:bg-bg-main transition-colors"
+              >
+                {copiado ? <Check size={15} /> : <Copy size={15} />}
+                {copiado ? 'Copiado' : 'Copiar mensaje'}
+              </button>
+              <button
+                type="button"
+                onClick={onCreated}
+                className="flex-1 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors"
+              >
+                Listo
+              </button>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1.5">Nombre completo</label>
@@ -179,7 +234,7 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
 
           {oauthOnly && (
             <p className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2.5">
-              El usuario recibirá acceso al sistema. Deberá ingresar usando el mismo email con Google o Microsoft.
+              Le llegará un correo de invitación. Entrará con su Google o Microsoft del mismo email.
             </p>
           )}
 
@@ -204,6 +259,7 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   )

@@ -68,11 +68,27 @@ async def create_user(
            SET role = EXCLUDED.role, invited_by = EXCLUDED.invited_by, invited_at = now()""",
         email, body.role, actor["sub"],
     )
+    # Sin contraseña: invitación por correo de Supabase (plantilla "Invite user"
+    # del panel, con enlace a /auth/confirm). Si el correo falla —el correo de
+    # Supabase tiene límite de envíos en el plan free— la cuenta se crea igual y
+    # la pantalla ofrece el mensaje para copiar. Con contraseña no hay correo: el
+    # admin le envía las credenciales (pedido de Pablo, 09/10).
     alta = {"email": email, "email_confirm": True, "user_metadata": {"full_name": body.full_name}}
     if body.password:
         alta["password"] = body.password
+    invitation_sent = False
     try:
-        creado = await asyncio.to_thread(supabase.auth.admin.create_user, alta)
+        if body.password:
+            creado = await asyncio.to_thread(supabase.auth.admin.create_user, alta)
+        else:
+            try:
+                creado = await asyncio.to_thread(
+                    supabase.auth.admin.invite_user_by_email, email, {"data": {"full_name": body.full_name}})
+                invitation_sent = True
+            except Exception as e:
+                if "already" in str(e).lower() or "registered" in str(e).lower():
+                    raise
+                creado = await asyncio.to_thread(supabase.auth.admin.create_user, alta)
     except Exception as e:
         await pool.execute("DELETE FROM public.admin_whitelist WHERE email = $1", email)
         if "already" in str(e).lower() or "registered" in str(e).lower():
@@ -85,7 +101,7 @@ async def create_user(
         user_id, body.role, body.full_name,
     )
     row = await pool.fetchrow(_PERFIL, user_id)
-    return dict(row)
+    return {**dict(row), "invitation_sent": invitation_sent}
 
 
 @router.delete("/{user_id}", status_code=204)

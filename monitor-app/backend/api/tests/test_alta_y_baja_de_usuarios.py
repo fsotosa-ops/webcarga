@@ -37,6 +37,7 @@ def _cliente(user, pool=None, supabase=None):
 def _supabase_que_crea(user_id="nuevo-1"):
     sb = MagicMock()
     sb.auth.admin.create_user.return_value = MagicMock(user=MagicMock(id=user_id))
+    sb.auth.admin.invite_user_by_email.return_value = MagicMock(user=MagicMock(id=user_id))
     return sb
 
 
@@ -79,28 +80,43 @@ def test_un_admin_no_puede_crear_otro_admin():
     sb.auth.admin.create_user.assert_not_called()
 
 
-def test_un_admin_crea_e_invita_con_el_rol_pedido():
+def test_sin_contrasena_invita_por_correo_con_el_rol_pedido():
     sb, pool = _supabase_que_crea(), _pool_con_perfil()
     res = _cliente(ADMIN, pool=pool, supabase=sb).post("/api/v1/users", json=ALTA)
 
     assert res.status_code == 201
+    assert res.json()["invitation_sent"] is True
     # La invitación (quién puede entrar y con qué rol) se escribe ANTES de crear
     # la cuenta: el alta en Auth dispara handle_new_user, que lee el rol de ahí.
     invitacion = pool.execute.call_args_list[0]
     assert "admin_whitelist" in invitacion.args[0]
     assert "ana@webcarga.com" in invitacion.args and "viewer" in invitacion.args
-    creado = sb.auth.admin.create_user.call_args.args[0]
-    assert creado["email"] == "ana@webcarga.com"
-    assert creado["email_confirm"] is True
-    assert "password" not in creado
+    email, opciones = sb.auth.admin.invite_user_by_email.call_args.args
+    assert email == "ana@webcarga.com"
+    assert opciones["data"]["full_name"] == "Ana"
+    sb.auth.admin.create_user.assert_not_called()
 
 
-def test_con_contrasena_la_pasa_a_auth():
+def test_si_el_correo_falla_igual_crea_la_cuenta_y_lo_dice():
+    """El correo de Supabase tiene límite de envíos en el plan free: la cuenta
+    se crea igual y la pantalla ofrece el mensaje para copiar."""
+    sb, pool = _supabase_que_crea(), _pool_con_perfil()
+    sb.auth.admin.invite_user_by_email.side_effect = Exception("email rate limit exceeded")
+    res = _cliente(ADMIN, pool=pool, supabase=sb).post("/api/v1/users", json=ALTA)
+
+    assert res.status_code == 201
+    assert res.json()["invitation_sent"] is False
+    assert sb.auth.admin.create_user.call_args.args[0]["email_confirm"] is True
+
+
+def test_con_contrasena_la_pasa_a_auth_sin_correo():
     sb, pool = _supabase_que_crea(), _pool_con_perfil()
     res = _cliente(ADMIN, pool=pool, supabase=sb).post(
         "/api/v1/users", json={**ALTA, "password": "una-clave-larga-y-segura"})
     assert res.status_code == 201
+    assert res.json()["invitation_sent"] is False
     assert sb.auth.admin.create_user.call_args.args[0]["password"] == "una-clave-larga-y-segura"
+    sb.auth.admin.invite_user_by_email.assert_not_called()
 
 
 def test_un_viewer_no_borra():
