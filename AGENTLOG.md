@@ -16,7 +16,7 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-09 — Bug: viajes asignados/cerrados en el grupo equivocado del Cierre (Sodimac, manuales, 2065805)
+### 2026-10-09 — Bug: viajes asignados/cerrados en el grupo equivocado del Cierre (Sodimac, manuales, 2065805) — DESPLEGADO
 
 Plan: `~/.claude/plans/viajes-de-sodimac-asignados-sunny-nebula.md`. Diagnóstico medido en producción (solo lectura).
 
@@ -39,28 +39,32 @@ Plan: `~/.claude/plans/viajes-de-sodimac-asignados-sunny-nebula.md`. Diagnóstic
 - Estados "no cuenta como carga" (Cancelado/Declinada/Removida) con patente: **revisar después**; sin cambio.
   Publicada nunca es asignada (07/10).
 
-**Implementado (LOCAL, sin commit todavía):**
-- dbt (mirror, NO está en git): `macros/viaje_activo_y_asignado.sql` (`viaje_abierto_por_estado`,
+**Hecho y desplegado (09/10):**
+- dbt (Mage, mirror NO en git): `macros/viaje_activo_y_asignado.sql` (`viaje_abierto_por_estado`,
   `viaje_activo_tms`, `viaje_asignado`), fuente `app.trip_fleet_links` en `models/sources.yml`, y
-  `models/app/trips.sql`: rama TMS y rama manual con las macros (la manual respeta `manually_edited_fields`),
-  sin la lista de estados, y **escotilla OR 6** (guardado ≠ derivado y sin marca manual → reentra; se apaga sola).
-  Dry-run de OR 6 replicado en SQL: qanalytics solo 2065805, sodimac 48 (activos: los 3), wingsuite 0.
-- API `routers/trips.py::patch_trip`: 422 si se manda `is_active`/`is_working` a un viaje no manual
-  (bulk-close/reopen intactos: las 68 marcas de Sodimac vienen de "No asignado por WebCarga").
-- Frontend `IndicatorSwitches.tsx`: Activo/Trabajando deshabilitados en viajes del TMS, "Lo define el TMS"
-  (`text-informativo`, sin color crudo).
-- Tests: `test_activo_lo_define_el_tms_integracion.py` (rojo antes, verde después),
-  `test_dbt_activo_y_asignado_una_definicion.py` (guarda sobre el mirror), `IndicatorSwitches.test.tsx`
-  (+4; el viaje base pasó a manual), mocks ajustados en `test_trip_hygiene_fields.py`/`test_trip_create.py`.
+  `models/app/trips.sql` con las macros en las dos ramas (la manual respeta `manually_edited_fields`), sin la
+  lista de estados, y **escotilla OR 6** (guardado ≠ derivado y sin marca manual → reentra; se apaga sola).
+  Subido con `sync_local_to_remote` a las 13:54 CL (3 archivos, 0 conflictos), entre corridas.
+- `af287530` en `dev` (Deploy Monitor API y Frontend en verde): `patch_trip` responde 422 a `is_active`/
+  `is_working` en un viaje no manual; `IndicatorSwitches` los deshabilita con "Lo define el TMS".
+- Tests: backend 1.224/1.225 (el rojo es ajeno, ver abajo); frontend 1.478 + el corregido de
+  `TripDetailView.test.tsx`, tsc y build limpios.
 
-**Siguiente paso exacto:**
-- [ ] Suites: backend completa, frontend vitest + tsc + build.
-- [ ] Commit + push a `dev` → Deploy Monitor API y Deploy Frontend.
-- [ ] Mage: subir `macros/viaje_activo_y_asignado.sql`, `models/sources.yml` y `models/app/trips.sql` fuera de
-      :58–:02, :13–:17, :28–:32, :43–:47 y sin corrida en vuelo (`sync_local_to_remote`).
-- [ ] Verificar tras la corrida: 887928/884386/881496 y los 10 manuales fuera de Hoy/Rezago, 2065805 fuera de
-      En curso, OR 6 selecciona 0 en la corrida siguiente; Playwright en el Cierre de dev. Días firmados:
-      `closure_lines` no cambia (los manuales CERRADO activos contaban en `trips_del_dia` todos los días).
+**Verificado en producción tras la corrida de las 14:00 (MERGE 14:08):**
+- 2065805 `is_active=f`; 881496/884386 asignados y activos; 887928 ya CERRADO FINALIZADO por el TMS; manuales
+  0 activos / 12 asignados; réplica de OR 6: 0 pendientes (salvo 803070, fuera del `start_date` del modelo
+  por zona horaria: dbt no lo procesa, no reentra, no afecta el Cierre).
+- Cierre del 09/10 (consulta del código y Playwright en dev): Hoy 0, Rezago 0, En curso 7 (881496, 884386 y
+  3 Sodimac que ya estaban asignados a mano + 2 QAnalytics vivos). Detalle QAnalytics: switches como se pidió.
+
+**Pendiente:**
+- [ ] Revisar con el usuario: estados "no cuenta como carga" (Cancelado/Declinada/Removida) con patente → ¿asignado?
+- [ ] Deuda ajena: `test_cargar_catalogo_webcarga.py::test_aplicar_crea_los_nuevos_apagados_y_sin_sembrar` falla
+      desde la carga del catálogo del 09/10 (choca con `CERTIFICADO_DE_VIGENCIA_DE_LA_SOCIEDAD` real): el test
+      depende de datos de producción; tiene que crear su propio sujeto.
+- [ ] Los 19 Sodimac con `is_assigned` marcado a mano ya coinciden con la regla; la marca puede quedar o
+      revertirse a automático desde el detalle (no se tocó).
+- [ ] Avisar a Operaciones: Activo/Trabajando ya no se cambian a mano en viajes del TMS.
 
 ### 2026-10-08 — HU-C1 vencimientos: entregas 2, 2b y 2c (tabla editable) desplegadas en dev
 
