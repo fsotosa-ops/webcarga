@@ -269,7 +269,7 @@ export function CondicionesTabla() {
             <th scope="col" className={CABECERA}>Se renueva</th>
             <th scope="col" className={CABECERA} title="Días antes del vencimiento. Vacío: el aviso general">Aviso</th>
             <th scope="col" className={CABECERA}>Cuándo se exige</th>
-            <th scope="col" className={CABECERA}>Vigente</th>
+            <th scope="col" className={`${CABECERA} w-14 px-1!`}>Vigente</th>
             {/* Cómo lo encuentra el clasificador en el nombre del archivo.
                 Pedido de Fabián (21/08): que el nombre del archivo coincida con
                 el del documento para que el match funcione. Sin esta columna,
@@ -311,9 +311,10 @@ export function CondicionesTabla() {
                   </span>
                 </td>
                 {/* 11rem y no más: con los nombres de la planilla (hasta 60 letras) la
-                    columna llegaba a 320 px y sacaba la tabla del contenedor. El
+                    columna llegaba a 320 px y sacaba la tabla del contenedor (10rem
+                    desde que "Se exige a" va sin cortes). El
                     nombre ocupa hasta dos líneas; el código se corta. */}
-                <td className="px-1.5 py-2 w-[11rem] max-w-[11rem]">
+                <td className="px-1.5 py-2 w-[10rem] max-w-[10rem]">
                   <CeldaNombre requisito={r} puedeEditar={canAdmin} />
                   <div className={`mt-1 flex flex-wrap items-center gap-2 rounded ${marca('requirement_level')}`}>
                     <CeldaNivel
@@ -325,7 +326,9 @@ export function CondicionesTabla() {
                     <MarcaDeRevision revision={revisiones.revisionDe(r.id)} />
                   </div>
                 </td>
-                <td className="px-1.5 py-2">
+                {/* Sin cortes: angosta, partía "No se exige · Alcanzaría a 251 de
+                    251" en cinco líneas y cada fila medía el doble. */}
+                <td className="px-1.5 py-2 whitespace-nowrap">
                   <div className={`text-xs ${valor.is_active ? 'text-text-primary' : 'text-informativo'}`}>{celda.regla}</div>
                   <div className="text-etiqueta text-informativo tabular-nums">{celda.alcance}</div>
                 </td>

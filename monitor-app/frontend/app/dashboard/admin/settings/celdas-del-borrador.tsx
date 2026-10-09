@@ -43,7 +43,7 @@ export function CeldaRenovacion({ requisito, vigencia, puedeEditar, onCambiar }:
         value={actual}
         onChange={e => onCambiar(vigenciaPara(e.target.value as Exclude<Renovacion, 'otra'>, vigencia))}
         aria-label={`Cómo se renueva ${requisito.name}`}
-        className={`${CONTROL} max-w-[10.5rem]`}
+        className={`${CONTROL} max-w-[9.5rem]`}
       >
         {/* Una regla que la celda no sabe escribir se muestra tal cual y se
             edita en el panel: colapsarla en la más parecida la cambiaría
@@ -69,10 +69,11 @@ export function CeldaRenovacion({ requisito, vigencia, puedeEditar, onCambiar }:
             value={vigencia.period_offset_months ?? 1}
             onChange={e => onCambiar({ ...vigencia, period_offset_months: Number(e.target.value) })}
             aria-label={`De qué mes es ${requisito.name}`}
-            className={`${CONTROL} max-w-[8rem]`}
+            title="De qué mes es el documento que se pide"
+            className={`${CONTROL} max-w-[7rem]`}
           >
-            <option value={1}>del mes anterior</option>
-            <option value={0}>del mes en curso</option>
+            <option value={1}>mes anterior</option>
+            <option value={0}>mes en curso</option>
           </select>
         </div>
       )}
