@@ -6,6 +6,7 @@ contexto del padre para identificarse (H2.2)."""
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.contact import ContactPatchBody
 from ..services.audit import log_change, record_manual_edit
@@ -17,7 +18,7 @@ _PATCHABLE_FIELDS = ("contact_role", "first_name", "last_name", "job_title", "em
 
 @router.patch("/{contact_id}")
 async def patch_contact(
-    contact_id: str, body: ContactPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    contact_id: str, body: ContactPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -66,7 +67,7 @@ async def patch_contact(
 
 
 @router.delete("/{contact_id}")
-async def delete_contact(contact_id: str, pool=Depends(get_pool), user=Depends(require_editor)):
+async def delete_contact(contact_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE))):
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(

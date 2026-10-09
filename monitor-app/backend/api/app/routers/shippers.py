@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 
 router = APIRouter(prefix="/shippers", tags=["shippers"])
@@ -17,7 +18,7 @@ class ShipperCreateBody(BaseModel):
 
 
 @router.get("")
-async def list_shippers(pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_shippers(pool=Depends(get_pool), _=Depends(require(Permission.COMMERCIAL_READ))):
     rows = await pool.fetch(
         "SELECT id, name, status FROM public.shippers ORDER BY name"
     )
@@ -28,7 +29,7 @@ async def list_shippers(pool=Depends(get_pool), _=Depends(get_current_user)):
 async def create_shipper(
     body: ShipperCreateBody,
     pool=Depends(get_pool),
-    _=Depends(require_editor),
+    _=Depends(require(Permission.COMMERCIAL_EDIT)),
 ):
     name = body.name.strip()
     if not name:

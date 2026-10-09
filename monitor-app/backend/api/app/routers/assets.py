@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, get_supabase, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.asset import AssetCreateBody, AssetPatchBody
 from ..services.audit import log_change, record_manual_edit
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 
 
 @router.get("/{asset_id}")
-async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     row = await pool.fetchrow(
         """
         SELECT a.id, a.license_plate, a.asset_type, a.operational_status, a.manufacture_year,
@@ -49,7 +50,7 @@ async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(get_current
 
 
 @router.post("", status_code=201)
-async def create_asset(body: AssetCreateBody, pool=Depends(get_pool), user=Depends(require_editor)):
+async def create_asset(body: AssetCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT))):
     """Alta de vehículo/rampla como master data — trg_reconcile_new_asset
     siembra los compliance_records MISSING al insertar."""
     async with pool.acquire() as conn:
@@ -88,7 +89,7 @@ async def create_asset(body: AssetCreateBody, pool=Depends(get_pool), user=Depen
 
 @router.patch("/{asset_id}")
 async def patch_asset(
-    asset_id: str, body: AssetPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    asset_id: str, body: AssetPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -133,7 +134,7 @@ async def patch_asset(
 
 @router.get("/{asset_id}/driver-assignment")
 async def get_asset_driver_assignment(
-    asset_id: str, pool=Depends(get_pool), _=Depends(get_current_user),
+    asset_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     """Conductor habitual actualmente asignado a este vehículo (Fase 1 del
     hardening del Diario, 2026-07-18) — ver POST para el porqué."""
@@ -151,7 +152,7 @@ async def get_asset_driver_assignment(
 
 @router.post("/{asset_id}/driver-assignment", status_code=201)
 async def assign_driver_to_asset(
-    asset_id: str, body: dict, pool=Depends(get_pool), user=Depends(require_editor),
+    asset_id: str, body: dict, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     """Asigna el conductor habitual de este vehículo. Reemplaza la
     dependencia de bronze.raw_bd_ot (bootstrap histórico de una sola vez,
@@ -207,7 +208,7 @@ async def assign_driver_to_asset(
 
 @router.delete("/{asset_id}/driver-assignment")
 async def unassign_driver_from_asset(
-    asset_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+    asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -230,7 +231,7 @@ async def unassign_driver_from_asset(
 
 @router.get("/{asset_id}/compliance-records")
 async def list_asset_compliance_records(
-    asset_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+    asset_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     """Checklist itemizado del activo — mismo shape que el anidado en
     GET /carriers/{id} (_assemble_carrier_detail), filtrado a ASSET."""

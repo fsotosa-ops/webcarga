@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..auth import get_current_user, get_supabase, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
@@ -104,7 +105,7 @@ async def list_carriers(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     if health and health not in _CARRIER_HEALTH_VALUES:
         raise HTTPException(422, "health inválido")
@@ -201,7 +202,7 @@ async def list_carriers_insurance_overview(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     if health and health != "NONE" and health not in _INSURANCE_HEALTH_VALUES:
         raise HTTPException(422, "health inválido")
@@ -328,7 +329,7 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
 
 
 @router.get("/fleet-driver-gap")
-async def get_fleet_driver_gap(pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_fleet_driver_gap(pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     """Tarea 8 (plan 3.1, minuta 2026-08-03): inconsistencias de dotación
     tracto/conductor por empresa Tractoreo — solo lectura, cálculo en vivo.
     Declarada ANTES de /{carrier_id} (ruta literal debe ganarle a la ruta
@@ -433,7 +434,7 @@ async def buscar_en_el_directorio(
     q: str = Query("", description="Empresa, conductor o patente — un solo campo para los tres"),
     limit: int = Query(10, ge=1, le=50, description="Por grupo, no en total"),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     """Un texto, tres tipos de resultado.
 
@@ -459,7 +460,7 @@ async def buscar_en_el_directorio(
 
 
 @router.get("/directorio")
-async def get_directorio(pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_directorio(pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     """Cuántas empresas hay, cuántas operan, y con qué flota.
 
     Va ANTES de `GET /{carrier_id}`: declarada después, un GET a /directorio
@@ -484,14 +485,14 @@ async def get_directorio(pool=Depends(get_pool), _=Depends(get_current_user)):
 
 @router.get("/{carrier_id}")
 async def get_carrier(
-    carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+    carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     return await _assemble_carrier_detail(carrier_id, pool, supabase)
 
 
 @router.get("/{carrier_id}/documents/export")
 async def export_carrier_documents(
-    carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+    carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     """HU-08 (Fase 0, 2026-07-21): exportar en bloque toda la documentación
     cargada de una empresa — pedido explícito de Fabián en la reunión del
@@ -527,7 +528,7 @@ async def export_carrier_documents(
 
 @router.post("", status_code=201)
 async def create_carrier(
-    body: CarrierCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    body: CarrierCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     """Onboarding manual de UNA empresa (distinto del bulk-load de Mage desde
     el Excel EETT). trg_reconcile_new_carrier siembra los compliance_records
@@ -561,7 +562,7 @@ async def create_carrier(
 @router.patch("/{carrier_id}")
 async def patch_carrier(
     carrier_id: str, body: CarrierPatchBody, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require_editor),
+    supabase=Depends(get_supabase), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -616,7 +617,7 @@ async def patch_carrier(
 
 
 @router.delete("/{carrier_id}")
-async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(require_editor)):
+async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE))):
     """Borrado real (a diferencia de 'Dar de baja', que solo cambia
     operational_status) — solo permitido si la empresa no tiene datos
     asociados todavía, para poder limpiar altas por error/duplicadas sin
@@ -694,7 +695,7 @@ async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(r
 # ── Roster de conductores/vehículos (alta/baja vía driver_assignments/asset_assignments) ──
 
 @router.get("/{carrier_id}/drivers")
-async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     rows = await pool.fetch(
         f"""
         SELECT r.driver_id AS id, r.tax_id, r.full_name, r.operational_status,
@@ -788,7 +789,7 @@ async def _transferir(conn, entity_type: str, sujeto_id: str, carrier_id: str, u
 
 @router.post("/{carrier_id}/drivers", status_code=201)
 async def assign_driver(
-    carrier_id: str, body: DriverAssignmentCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    carrier_id: str, body: DriverAssignmentCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -798,7 +799,7 @@ async def assign_driver(
 
 @router.delete("/{carrier_id}/drivers/{driver_id}")
 async def unassign_driver(
-    carrier_id: str, driver_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+    carrier_id: str, driver_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -818,7 +819,7 @@ async def unassign_driver(
 
 
 @router.get("/{carrier_id}/assets")
-async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     rows = await pool.fetch(
         f"""
         SELECT r.asset_id AS id, r.license_plate, r.asset_type, r.operational_status,
@@ -852,7 +853,7 @@ async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends
 
 @router.post("/{carrier_id}/assets", status_code=201)
 async def assign_asset(
-    carrier_id: str, body: AssetAssignmentCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    carrier_id: str, body: AssetAssignmentCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -862,7 +863,7 @@ async def assign_asset(
 
 @router.delete("/{carrier_id}/assets/{asset_id}")
 async def unassign_asset(
-    carrier_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+    carrier_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -884,7 +885,7 @@ async def unassign_asset(
 # ── Contactos (polimórfico — alta anidada bajo carrier, edición flat en routers/contacts.py) ──
 
 @router.get("/{carrier_id}/contacts")
-async def list_carrier_contacts(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_carrier_contacts(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     rows = await pool.fetch(
         "SELECT id, contact_role, first_name, last_name, job_title, email, phone, is_primary, is_active "
         "FROM public.contacts WHERE entity_type = 'CARRIER' AND entity_id = $1 AND is_active = true "
@@ -896,7 +897,7 @@ async def list_carrier_contacts(carrier_id: str, pool=Depends(get_pool), _=Depen
 
 @router.post("/{carrier_id}/contacts", status_code=201)
 async def create_carrier_contact(
-    carrier_id: str, body: ContactCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    carrier_id: str, body: ContactCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     if body.entity_type != "CARRIER" or body.entity_id != carrier_id:
         raise HTTPException(422, "entity_type/entity_id del body deben coincidir con la ruta")
@@ -924,7 +925,7 @@ async def create_carrier_contact(
 # ── Pólizas de seguro (H2.3 — ver routers/policies.py para el resto del CRUD) ──
 
 @router.get("/{carrier_id}/policies")
-async def list_carrier_policies(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_carrier_policies(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     rows = await pool.fetch(
         """
         SELECT policy_id AS id, insurance_company, policy_number, coverage_names,
@@ -940,7 +941,7 @@ async def list_carrier_policies(carrier_id: str, pool=Depends(get_pool), _=Depen
 
 @router.post("/{carrier_id}/policies", status_code=201)
 async def create_carrier_policy(
-    carrier_id: str, body: InsurancePolicyCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    carrier_id: str, body: InsurancePolicyCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     if body.carrier_id != carrier_id:
         raise HTTPException(422, "carrier_id del body debe coincidir con la ruta")
@@ -970,7 +971,7 @@ async def create_carrier_policy(
 # ── Generadores de carga (public.carrier_shippers M:N, solo lectura por ahora) ──
 
 @router.get("/{carrier_id}/shippers")
-async def list_carrier_shippers(carrier_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_carrier_shippers(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     rows = await pool.fetch(
         """
         SELECT s.id, s.name, cs.status, cs.start_date, cs.end_date

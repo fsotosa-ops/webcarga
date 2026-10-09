@@ -6,6 +6,7 @@ from asyncpg.exceptions import CheckViolationError, ForeignKeyViolationError, Un
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DriverCreateBody, DriverPatchBody
@@ -24,7 +25,7 @@ async def list_drivers(
     q: str = Query(""),
     limit: int = Query(10, ge=1, le=50),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     """Búsqueda de conductores activos por nombre/RUT, con su empresa y
     vehículo estándar ya resueltos — usada por TripAssignDialog (Ronda 26,
@@ -78,7 +79,7 @@ async def fuzzy_match_drivers(
     name: str = Query(..., min_length=2),
     limit: int = Query(5, ge=1, le=20),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     """Candidatos del roster por similitud de texto (pg_trgm) contra un
     nombre crudo del TMS — usado cuando un viaje no logra cruzar por nombre
@@ -125,7 +126,7 @@ async def fuzzy_match_drivers(
 
 
 @router.get("/{driver_id}")
-async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     row = await pool.fetchrow(
         """
         SELECT d.id, d.tax_id, d.country_code, d.full_name, d.operational_status,
@@ -215,7 +216,7 @@ async def _sugerir_cd_base(pool, driver_id: str, dias: int = 90) -> dict | None:
 
 
 @router.post("", status_code=201)
-async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Depends(require_editor)):
+async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT))):
     """Alta de conductor como master data (sin asignar a ninguna empresa
     todavía) — trg_reconcile_new_driver siembra los compliance_records
     MISSING al insertar. Para asignarlo a una empresa, POST /carriers/{id}/drivers.
@@ -308,7 +309,7 @@ async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Dep
 
 @router.patch("/{driver_id}")
 async def patch_driver(
-    driver_id: str, body: DriverPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    driver_id: str, body: DriverPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -364,7 +365,7 @@ async def patch_driver(
 
 @router.get("/{driver_id}/compliance-records")
 async def list_driver_compliance_records(
-    driver_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+    driver_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
 ):
     """Checklist itemizado del conductor — mismo shape que el anidado en
     GET /carriers/{id} (_assemble_carrier_detail), filtrado a DRIVER."""
@@ -396,7 +397,7 @@ async def list_driver_compliance_records(
 # ── Contactos (polimórfico — alta anidada bajo driver, edición flat en routers/contacts.py) ──
 
 @router.get("/{driver_id}/contacts")
-async def list_driver_contacts(driver_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_driver_contacts(driver_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     rows = await pool.fetch(
         "SELECT id, contact_role, first_name, last_name, job_title, email, phone, is_primary, is_active "
         "FROM public.contacts WHERE entity_type = 'DRIVER' AND entity_id = $1 AND is_active = true "
@@ -408,7 +409,7 @@ async def list_driver_contacts(driver_id: str, pool=Depends(get_pool), _=Depends
 
 @router.post("/{driver_id}/contacts", status_code=201)
 async def create_driver_contact(
-    driver_id: str, body: ContactCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    driver_id: str, body: ContactCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     if body.entity_type != "DRIVER" or body.entity_id != driver_id:
         raise HTTPException(422, "entity_type/entity_id del body deben coincidir con la ruta")

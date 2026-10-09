@@ -8,6 +8,7 @@ criterio que carriers (dar de baja vía operational_status)."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.location import LocationCreateBody, LocationPatchBody
 from ..schemas.location_rate import LocationRateCreateBody, LocationRatePatchBody
@@ -46,7 +47,7 @@ async def list_locations(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.COMMERCIAL_READ)),
 ):
     clauses: list[str] = []
     params: list = []
@@ -121,7 +122,7 @@ _LOCATION_RATE_FIELDS = "id, location_id, tarifa, valid_from, valid_to, created_
 
 
 @router.get("/{location_id}/rates")
-async def list_location_rates(location_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_location_rates(location_id: str, pool=Depends(get_pool), _=Depends(require(Permission.COMMERCIAL_READ))):
     rows = await pool.fetch(
         f"SELECT {_LOCATION_RATE_FIELDS} FROM public.location_rates "
         "WHERE location_id = $1 ORDER BY valid_from DESC",
@@ -132,7 +133,7 @@ async def list_location_rates(location_id: str, pool=Depends(get_pool), _=Depend
 
 @router.post("/{location_id}/rates", status_code=201)
 async def create_location_rate(
-    location_id: str, body: LocationRateCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    location_id: str, body: LocationRateCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.COMMERCIAL_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -159,7 +160,7 @@ async def create_location_rate(
 
 @router.patch("/{location_id}/rates/{rate_id}")
 async def patch_location_rate(
-    location_id: str, rate_id: str, body: LocationRatePatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    location_id: str, rate_id: str, body: LocationRatePatchBody, pool=Depends(get_pool), user=Depends(require(Permission.COMMERCIAL_EDIT)),
 ):
     touched = body.sent_fields()
     if not touched:
@@ -206,7 +207,7 @@ async def patch_location_rate(
 
 @router.post("", status_code=201)
 async def create_location(
-    body: LocationCreateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    body: LocationCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.COMMERCIAL_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -245,7 +246,7 @@ async def create_location(
 
 @router.patch("/{location_id}")
 async def patch_location(
-    location_id: str, body: LocationPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    location_id: str, body: LocationPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.COMMERCIAL_EDIT)),
 ):
     touched = body.sent_fields()
     if not touched:
