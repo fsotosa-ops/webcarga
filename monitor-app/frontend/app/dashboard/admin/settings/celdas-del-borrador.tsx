@@ -55,11 +55,12 @@ export function CeldaRenovacion({ requisito, vigencia, puedeEditar, onCambiar }:
           mensual ensanchaba la columna de las 96 filas y la tabla se salía. */}
       {actual === 'mes' && (
         <div className="flex items-center gap-0.5 whitespace-nowrap">
-          <span className="pl-1.5 text-etiqueta text-informativo">día</span>
+          {/* "día" va como ayuda DENTRO del campo: como texto aparte ensanchaba
+              la columna lo justo para sacar la tabla del contenedor. */}
           <input
             type="number" min={1} max={31} inputMode="numeric"
             value={vigencia.cutoff_day ?? ''}
-            placeholder="—"
+            placeholder="día"
             onChange={e => onCambiar({ ...vigencia, cutoff_day: numero(e.target.value) })}
             aria-label={`Día tope de ${requisito.name}`}
             className={`${NUMERO} w-10`}
@@ -68,7 +69,7 @@ export function CeldaRenovacion({ requisito, vigencia, puedeEditar, onCambiar }:
             value={vigencia.period_offset_months ?? 1}
             onChange={e => onCambiar({ ...vigencia, period_offset_months: Number(e.target.value) })}
             aria-label={`De qué mes es ${requisito.name}`}
-            className={`${CONTROL} max-w-[8.5rem]`}
+            className={`${CONTROL} max-w-[8rem]`}
           >
             <option value={1}>del mes anterior</option>
             <option value={0}>del mes en curso</option>
@@ -105,7 +106,7 @@ export function CeldaAviso({ requisito, vigencia, puedeEditar, onCambiar }: {
       title={general ? 'Vacío: usa el aviso general de Configuración › Alertas' : undefined}
       onChange={e => onCambiar({ ...vigencia, warning_days: numero(e.target.value) })}
       aria-label={`Días de aviso de ${requisito.name}`}
-      className={`${NUMERO} w-16`}
+      className={`${NUMERO} w-12`}
     />
   )
 }
@@ -125,7 +126,7 @@ export function CeldaExigible({ requisito, valor, puedeEditar, onCambiar }: {
       value={valor}
       onChange={e => onCambiar(e.target.value as ExigibleOn)}
       aria-label={`Cuándo se exige ${requisito.name}`}
-      className={`${CONTROL} max-w-[9.5rem]`}
+      className={`${CONTROL} max-w-[8rem]`}
     >
       {exigibilidadesPara(requisito.target_entity).map(o => (
         <option key={o.valor} value={o.valor} title={o.ayuda}>{o.corto}</option>

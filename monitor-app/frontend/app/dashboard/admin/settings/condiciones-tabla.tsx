@@ -306,7 +306,7 @@ export function CondicionesTabla() {
                   </td>
                 )}
                 <td className="px-1.5 py-2">
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${e?.clase ?? 'bg-bg-main text-informativo'}`}>
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${e?.clase ?? 'bg-bg-main text-informativo'}`}>
                     {e?.texto ?? r.target_entity}
                   </span>
                 </td>
