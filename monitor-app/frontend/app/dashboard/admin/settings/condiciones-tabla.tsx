@@ -351,7 +351,7 @@ export function CondicionesTabla() {
                   />
                 </td>
                 <td className="px-1.5 py-2">
-                  <CeldaAlias requisito={r} puedeEditar={canAdmin} />
+                  <CeldaAlias requisito={r} puedeEditar={canAdmin} maximo={1} />
                 </td>
                 <td className="pr-2">
                   <button

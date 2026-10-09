@@ -125,12 +125,16 @@ export function CeldaNombre({ requisito, puedeEditar }: {
  *  vez de quedar vacía — el vacío se lee como "no hay nada que ver", y acá hay
  *  algo que arreglar. Los documentos nuevos ya nacen con su alias (lo siembra
  *  `create_requirement`), así que este estado debería ser raro. */
-export function CeldaAlias({ requisito, puedeEditar }: {
+export function CeldaAlias({ requisito, puedeEditar, maximo }: {
   requisito: RequirementOption
   puedeEditar: boolean
+  /** Cuántos mostrar antes de "+N". En la tabla editable, con hasta 4 alias
+   *  por documento, mostrarlos todos sacaba la columna de la tabla. */
+  maximo?: number
 }) {
   const qc = useQueryClient()
   const [agregando, setAgregando] = useState(false)
+  const [desplegado, setDesplegado] = useState(false)
   const [valor, setValor] = useState('')
   const input = useRef<HTMLInputElement>(null)
 
@@ -166,14 +170,28 @@ export function CeldaAlias({ requisito, puedeEditar }: {
       {requisito.aliases?.length === 0 && !agregando && (
         <span className="text-etiqueta text-espera">No se reconoce en ningún archivo</span>
       )}
-      {requisito.aliases?.map(a => (
+      {(desplegado || maximo === undefined
+        ? requisito.aliases
+        : requisito.aliases?.slice(0, maximo))?.map(a => (
         <span
           key={a}
-          className="inline-flex items-center gap-1 rounded bg-bg-main px-1.5 py-0.5 text-etiqueta font-mono text-text-primary"
+          title={a}
+          className="inline-block max-w-[9rem] truncate rounded bg-bg-main px-1.5 py-0.5 text-etiqueta font-mono text-text-primary"
         >
           {a}
         </span>
       ))}
+      {!desplegado && maximo !== undefined && (requisito.aliases?.length ?? 0) > maximo && (
+        <button
+          type="button"
+          onClick={() => setDesplegado(true)}
+          aria-label={`Ver las ${requisito.aliases!.length - maximo} formas más de escribir ${requisito.name}`}
+          className="text-etiqueta font-semibold text-informativo hover:text-text-primary focus-visible:outline-none
+                     focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
+        >
+          +{requisito.aliases!.length - maximo}
+        </button>
+      )}
 
       {puedeEditar && !agregando && requisito.aliases !== undefined && (
         <button

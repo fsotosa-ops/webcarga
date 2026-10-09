@@ -85,3 +85,29 @@ describe('CeldaAlias', () => {
     expect(screen.queryByRole('button', { name: /agregar otra forma/i })).not.toBeInTheDocument()
   })
 })
+
+describe('CeldaAlias en la tabla (máximo)', () => {
+  function montarCon(r: RequirementOption, maximo: number) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <CeldaAlias requisito={r} puedeEditar maximo={maximo} />
+      </QueryClientProvider>,
+    )
+  }
+
+  // Visto en dev: con 4 alias por documento, la columna se salía de la tabla.
+  it('muestra los primeros y cuántos más, y despliega el resto al pedirlo', () => {
+    montarCon(requisito({ aliases: ['F30', 'F 30 MULTAS', 'MULTAS', 'CERT F30'] }), 1)
+    expect(screen.getByText('F30')).toBeInTheDocument()
+    expect(screen.queryByText('MULTAS')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver las 3 formas más de escribir F30 Multas' }))
+    expect(screen.getByText('MULTAS')).toBeInTheDocument()
+  })
+
+  it('sin más de los que caben no ofrece desplegar', () => {
+    montarCon(requisito({ aliases: ['F30'] }), 1)
+    expect(screen.queryByRole('button', { name: /formas más/ })).not.toBeInTheDocument()
+  })
+})
