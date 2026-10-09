@@ -29,7 +29,6 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from ..auth import ADMIN_ROLES
 from .audit import log_change
 
 MAXIMO_POR_LOTE = 200
@@ -60,7 +59,7 @@ def _bloqueo(fila: dict, user: dict) -> tuple[int, str] | None:
     (ver SQL_COLUMNAS_ELIMINABLE)."""
     if fila.get("source_system") != "manual":
         return 409, "Sólo se pueden eliminar viajes creados manualmente en la app"
-    if user.get("role") not in ADMIN_ROLES and fila.get("manual_created_by") != user.get("sub"):
+    if "trips.delete_any" not in user.get("permissions", ()) and fila.get("manual_created_by") != user.get("sub"):
         return 403, "Sólo quien creó el viaje o un administrador puede eliminarlo"
     cerrados = fila.get("manual_closed_dates") or []
     if cerrados:

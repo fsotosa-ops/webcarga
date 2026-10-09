@@ -21,8 +21,9 @@ from app.services.revisiones import (
     POR_SECCION, REVISABLES, SECCION_DE_TAXONOMIA, SQL_BUSQUEDA, SQL_PENDIENTES_POR_DOMINIO,
     exigir_seccion, registrar_revision,
 )
+from tests.conftest import usuario
 
-USER = {"sub": "11111111-1111-1111-1111-111111111111", "email": "a@b.c", "role": "admin"}
+USER = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
 
 def cliente(pool):

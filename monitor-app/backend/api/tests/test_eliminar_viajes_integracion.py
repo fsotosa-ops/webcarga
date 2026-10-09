@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 from app.routers.trips import TripCreateBody, TripStopCreate, create_trip, get_trip
 from app.services.eliminar_viajes import eliminar_viajes_manuales
-from tests.conftest import PoolDeUnaConexion, _usuario_real
+from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
 
 pytestmark = pytest.mark.integracion
 
@@ -57,7 +57,9 @@ async def _restos(conn, tid: str) -> dict:
 
 
 def _otro(usuario: dict, rol: str) -> dict:
-    return {"sub": str(uuid.uuid4()), "email": "otro@webcarga.cl", "role": rol}
+    """Otra persona con los roles nuevos equivalentes a `rol` de la escalera vieja."""
+    roles = {"writer": ("operations_operator",), "admin": ADMIN_EQUIVALENTE, "owner": ("owner",)}[rol]
+    return con_roles({"sub": str(uuid.uuid4()), "email": "otro@webcarga.cl"}, *roles)
 
 
 async def test_quien_lo_creo_lo_elimina_sin_dejar_restos(conexion_revertida):
@@ -95,7 +97,7 @@ async def test_un_viaje_del_tms_no_se_elimina(conexion_revertida):
     conn = conexion_revertida
     tms = str(await conn.fetchval("SELECT id FROM app.trips WHERE source_system <> 'manual' LIMIT 1"))
     with pytest.raises(HTTPException) as err:
-        await eliminar_viajes_manuales(conn, [tms], {"sub": str(uuid.uuid4()), "role": "owner"})
+        await eliminar_viajes_manuales(conn, [tms], con_roles({"sub": str(uuid.uuid4())}, "owner"))
     assert err.value.status_code == 409
     assert await conn.fetchval("SELECT count(*) FROM app.trips WHERE id = $1::uuid", tms) == 1
 

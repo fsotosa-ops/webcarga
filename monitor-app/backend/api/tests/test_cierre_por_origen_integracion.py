@@ -16,7 +16,7 @@ import pytest
 from app.routers.daily_closures import _DETAIL_SQL
 from app.routers.equipment_closures import _DETAIL_SQL as _DETAIL_TRACTOS_SQL
 from app.services import cierre_lineas
-from tests.conftest import PoolDeUnaConexion, _usuario_real
+from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
 
 pytestmark = pytest.mark.integracion
 
@@ -122,8 +122,8 @@ async def test_un_dia_firmado_no_cambia_de_cd(conexion_revertida):
             "SELECT id FROM app.status_taxonomies WHERE domain = 'DRIVER_REASON' AND active LIMIT 1"),
         valid_until=None, comentario=None, user=actor,
     )
-    # Forzar el cierre exige admin (ADMIN_ROLES); el perfil real viene como editor.
-    admin = {**actor, "role": "admin"}
+    # Forzar el cierre exige closures.override (Administración); el perfil real viene como editor.
+    admin = con_roles(actor, *ADMIN_EQUIVALENTE)
     await cierre_lineas.cerrar(pool, D, override=True, override_note="test", user=admin)
 
     # Ahora se le cambia el origen habitual al conductor.

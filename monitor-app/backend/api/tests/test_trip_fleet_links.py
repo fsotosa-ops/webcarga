@@ -6,12 +6,9 @@ from fastapi.testclient import TestClient
 from app.routers.trips import router, _TRIP_FROM, _TRIP_SELECT, _FLEET_MATCH_CASE
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_editor
+from tests.conftest import usuario
 
-USER = {
-    "sub": "11111111-1111-1111-1111-111111111111",
-    "email": "operador@webcarga.cl",
-    "role": "editor",
-}
+USER = usuario("operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
 
 def make_pool():

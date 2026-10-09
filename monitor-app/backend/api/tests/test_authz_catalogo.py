@@ -83,3 +83,15 @@ def test_legacy_role_for_es_la_inversa_del_mapa():
         assert legacy_role_for(list(nuevos)) == viejo
     assert legacy_role_for(["certification_operator"]) == "writer"
     assert legacy_role_for([]) == "viewer"
+
+
+def test_lo_que_hoy_es_solo_de_admin_queda_en_administracion():
+    """Chequeos que vivían dentro de los servicios (ADMIN_ROLES): forzar el
+    cierre con pendientes y eliminar viajes manuales de otra persona. Se
+    conservan en Administración: nadie gana ni pierde (spec §9)."""
+    admin = next(r for r in SYSTEM_ROLES if r.code == "admin")
+    assert {Permission.CLOSURES_OVERRIDE, Permission.TRIPS_DELETE_ANY} <= admin.permissions
+    for r in SYSTEM_ROLES:
+        if r.code not in ("admin", "owner"):
+            assert Permission.CLOSURES_OVERRIDE not in r.permissions, r.code
+            assert Permission.TRIPS_DELETE_ANY not in r.permissions, r.code

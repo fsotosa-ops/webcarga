@@ -783,7 +783,7 @@ async def list_trips(
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     pool=Depends(get_pool),
-    user=Depends(get_current_user),
+    user=Depends(require(Permission.OPERATIONS_READ)),
 ):
     filters: list[str] = [
         "($1 = '' OR t.fleet->>'tractor_plate' ILIKE '%'||$1||'%' "
@@ -1106,7 +1106,7 @@ class TripsMeta(BaseModel):
 
 
 @router.get("/meta", response_model=TripsMeta)
-async def get_trips_meta(pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     status_rows = await pool.fetch(
         "SELECT id, label, bg_color, text_color, group_id AS group "
         "FROM app.trip_statuses WHERE active = true ORDER BY sort_order"
@@ -1210,7 +1210,7 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(get_current_user)):
 async def available_drivers(
     fecha: str = Query(""),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     day = _parse_date(fecha)
     if day is None:
@@ -1298,7 +1298,7 @@ async def available_drivers(
 async def available_assets(
     fecha: str = Query(""),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     """Mismo diseño que /available-drivers, para equipos: parte de
     public.assets activos de una empresa transportista activa
@@ -1448,7 +1448,7 @@ async def fleet_daily_overview(
     client: str = Query(""),
     origin: str = Query(""),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     """HU-01 (Cierre del Día, "Vista de flota del día"): separa la flota
     activa en TRACTOREO / EQUIPO_COMPLETO / SIN_CLASIFICAR según
@@ -1960,7 +1960,7 @@ async def _mirror_manual_trip(pool, trip_id: str) -> None:
 async def create_trip(
     body: TripCreateBody,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_CREATE)),
 ):
     valid_statuses = await _valid_status_ids(pool)
     # Todo o nada, igual que /bulk: sin transacción, un error a mitad de
@@ -1977,7 +1977,7 @@ async def create_trip(
 async def bulk_create_trips(
     body: list[TripCreateBody],
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_CREATE)),
 ):
     if not body:
         raise HTTPException(422, "Lista vacía")
@@ -2064,7 +2064,7 @@ async def _log_tms_divergence_once(pool, trip_id: str, user: dict, d: dict) -> N
 async def assign_driver_bulk(
     body: AsignarConductorBody,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
     """Vincula una persona a varios viajes de una, en UNA transacción.
 
@@ -2140,7 +2140,7 @@ async def driver_candidates(
     nombre: str = Query("", description="Nombre tal como lo reporta el TMS"),
     limit: int = Query(5, ge=1, le=25),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     """Quién puede ser la persona que el TMS nombra así.
 
@@ -2243,7 +2243,7 @@ async def conteo_de_viajes_activos(
     entity_type: str = Query(..., pattern="^(DRIVER|ASSET)$"),
     entity_id: str = Query(...),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     """Cuántos viajes activos tiene hoy este conductor o este vehículo.
 
@@ -2293,7 +2293,7 @@ async def conteo_de_viajes_activos(
 async def cierre_viajes(
     fecha: str = Query(""),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     """Los cuatro grupos del paso "Viajes" del Cierre.
 
@@ -2356,7 +2356,7 @@ async def cierre_viajes(
 async def get_trip(
     trip_id: str,
     pool=Depends(get_pool),
-    user=Depends(get_current_user),
+    user=Depends(require(Permission.OPERATIONS_READ)),
 ):
     row = await pool.fetchrow(
         f"SELECT {_TRIP_SELECT} {_TRIP_FROM} WHERE t.id = $1",
@@ -2397,7 +2397,7 @@ async def _eliminar(pool, supabase, trip_ids: list[str], user: dict) -> dict:
 @router.post("/bulk-delete")
 async def bulk_delete_trips(
     body: TripBulkDeleteBody, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require_writer),
+    supabase=Depends(get_supabase), user=Depends(require(Permission.TRIPS_DELETE)),
 ):
     """Elimina viajes manuales en lote, todo o nada. El permiso fino (creador
     o admin/owner, día no firmado) se decide por viaje en
@@ -2408,14 +2408,14 @@ async def bulk_delete_trips(
 @router.delete("/{trip_id}")
 async def delete_trip(
     trip_id: UUID, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require_writer),
+    supabase=Depends(get_supabase), user=Depends(require(Permission.TRIPS_DELETE)),
 ):
     return await _eliminar(pool, supabase, [str(trip_id)], user)
 
 
 @router.patch("/bulk-close")
 async def bulk_close_trips(
-    body: TripBulkCloseBody, pool=Depends(get_pool), user=Depends(require_writer),
+    body: TripBulkCloseBody, pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_DECLARE)),
 ):
     """Selección masiva en el Diario (TripTable) para cerrar/finalizar
     varios viajes de una — mismo mecanismo que ya usa IndicatorSwitches por
@@ -2514,7 +2514,7 @@ async def bulk_close_trips(
 
 @router.patch("/bulk-reopen")
 async def bulk_reopen_trips(
-    body: TripBulkReopenBody, pool=Depends(get_pool), user=Depends(require_writer),
+    body: TripBulkReopenBody, pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_DECLARE)),
 ):
     """Deshace "No asignado por WebCarga" (HU-D3). El viaje vuelve a lo que
     era antes de apagarlo —leído de la traza que deja bulk-close— y a su grupo
@@ -2860,7 +2860,7 @@ async def assign_fleet_link(
     trip_id: str,
     body: dict,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
     """Create or replace a manual fleet link for a trip."""
     exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
@@ -2919,7 +2919,7 @@ async def assign_fleet_link(
 async def remove_fleet_link(
     trip_id: str,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
     """Remove the manual fleet link from a trip."""
     # FIX 2026-07-18: mismo motivo que assign_fleet_link — buscar por trip_id,
@@ -2943,7 +2943,7 @@ async def reset_field(
     trip_id: str,
     field: str,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
     VALID = {"manual_status", "notes", "comments",
              "is_active", "is_working", "is_assigned", "is_first_leg"}
@@ -3063,7 +3063,7 @@ async def list_trip_notes(
     trip_id: str,
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     rows = await pool.fetch(
         f"SELECT {_NOTE_SELECT} WHERE n.trip_id = $1 ORDER BY n.created_at ASC",
@@ -3088,7 +3088,7 @@ async def add_trip_note(
     files: list[UploadFile] = File(default=[]),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_writer),
+    user=Depends(require(Permission.TRIPS_EDIT_BASIC)),
 ):
     body = body.strip()
     if not body and not files:
@@ -3154,7 +3154,7 @@ async def pin_trip_note(
     note_id: str,
     payload: TripNotePin,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
     updated = await pool.fetchval(
         """
@@ -3175,7 +3175,7 @@ async def resolve_trip_note(
     note_id: str,
     payload: TripNoteResolve,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
     """Marca/desmarca una nota tipo 'incidente' como resuelta — mismo patrón
     que pin_trip_note. resolved_at nulo = abierto (Ronda 26, Fase 2)."""

@@ -6,8 +6,9 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user, require_admin
 from app.db import get_pool
 from app.routers.status_taxonomies import router
+from tests.conftest import usuario
 
-USER = {"sub": "11111111-1111-1111-1111-111111111111", "email": "a@b.c", "role": "admin"}
+USER = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
 
 def make_client(pool):

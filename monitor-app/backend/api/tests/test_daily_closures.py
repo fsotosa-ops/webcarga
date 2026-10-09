@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user, require_editor
 from app.db import get_pool
 from app.routers.daily_closures import router
-from tests.conftest import USER, wire_transactional_conn
+from tests.conftest import USER, wire_transactional_conn, usuario
 
-ADMIN_USER = {"sub": "22222222-2222-2222-2222-222222222222", "email": "admin@webcarga.cl", "role": "admin"}
+ADMIN_USER = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="22222222-2222-2222-2222-222222222222")
 
 
 @pytest.fixture(autouse=True)

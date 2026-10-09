@@ -16,11 +16,34 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-USER = {
-    "sub": "11111111-1111-1111-1111-111111111111",
-    "email": "editor@webcarga.cl",
-    "role": "editor",
-}
+# ── RBAC (spec 2026-10-09) ────────────────────────────────────────────────────
+def usuario(*roles: str, aal: str = "aal2", sub: str = "00000000-0000-0000-0000-000000000001") -> dict:
+    """Usuario de prueba con los permisos efectivos de los roles de sistema
+    dados: misma forma que devuelve get_current_user. `role` es el de la
+    escalera vieja, transitorio hasta la Task 11 del plan de RBAC."""
+    from app.authz.permissions import SYSTEM_ROLES, Permission, legacy_role_for
+
+    por_codigo = {r.code: r for r in SYSTEM_ROLES}
+    perms: set[str] = set()
+    for c in roles:
+        r = por_codigo[c]
+        perms |= {p.value for p in Permission} if r.grants_all else {p.value for p in r.permissions}
+    return {"sub": sub, "email": "test@webcarga.com", "aal": aal, "roles": list(roles),
+            "permissions": frozenset(perms), "role": legacy_role_for(list(roles))}
+
+
+# Lo que hoy tiene un `editor`: migra a los 4 Supervisores (spec RBAC §9).
+EDITOR_EQUIVALENTE = ("operations_supervisor", "certification_supervisor",
+                      "insurance_supervisor", "commercial_supervisor")
+USER = usuario(*EDITOR_EQUIVALENTE, sub="11111111-1111-1111-1111-111111111111")
+# Lo que hoy tiene un `admin`: Administración + los 4 Supervisores.
+ADMIN_EQUIVALENTE = ("admin", *EDITOR_EQUIVALENTE)
+
+
+def con_roles(base: dict, *roles: str) -> dict:
+    """`base` (p. ej. un perfil real de _usuario_real) con los permisos de otros roles."""
+    return {**base, **{k: v for k, v in usuario(*roles, sub=base["sub"], aal=base.get("aal", "aal2")).items()
+                       if k != "email"}}
 
 
 def wire_transactional_conn(pool: AsyncMock, conn: AsyncMock) -> None:
@@ -270,7 +293,7 @@ async def _usuario_real(conn) -> dict:
     archivo (test_cierre_viajes.py) lo necesitó (2026-08-18), en vez de
     copiarlo."""
     fila = await conn.fetchrow("SELECT id, email FROM public.profiles LIMIT 1")
-    return {"sub": str(fila["id"]), "email": fila["email"], "role": "editor"}
+    return {**usuario(*EDITOR_EQUIVALENTE, sub=str(fila["id"])), "email": fila["email"]}
 
 
 def pytest_report_header(config):
@@ -294,18 +317,3 @@ def pytest_configure(config):
             stacklevel=2,
         )
 
-
-# ── RBAC (spec 2026-10-09) ────────────────────────────────────────────────────
-def usuario(*roles: str, aal: str = "aal2", sub: str = "00000000-0000-0000-0000-000000000001") -> dict:
-    """Usuario de prueba con los permisos efectivos de los roles de sistema
-    dados: misma forma que devuelve get_current_user. `role` es el de la
-    escalera vieja, transitorio hasta la Task 11 del plan de RBAC."""
-    from app.authz.permissions import SYSTEM_ROLES, Permission, legacy_role_for
-
-    por_codigo = {r.code: r for r in SYSTEM_ROLES}
-    perms: set[str] = set()
-    for c in roles:
-        r = por_codigo[c]
-        perms |= {p.value for p in Permission} if r.grants_all else {p.value for p in r.permissions}
-    return {"sub": sub, "email": "test@webcarga.com", "aal": aal, "roles": list(roles),
-            "permissions": frozenset(perms), "role": legacy_role_for(list(roles))}

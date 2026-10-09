@@ -9,6 +9,7 @@ from datetime import date as _date
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import require_writer
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.closures import CerrarDiaBody, ReabrirDiaBody
 from ..services.cierre_lineas import cerrar, reabrir
@@ -26,10 +27,10 @@ def _fecha(fecha: str) -> _date:
 # `require_writer`: firmar el día es el trabajo de Operaciones (07/09). Forzar
 # con pendientes y reabrir exigen admin, y eso lo resuelve el servicio.
 @router.post("/{fecha}/close")
-async def cerrar_dia(fecha: str, body: CerrarDiaBody, pool=Depends(get_pool), user=Depends(require_writer)):
+async def cerrar_dia(fecha: str, body: CerrarDiaBody, pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_SIGN))):
     return await cerrar(pool, _fecha(fecha), override=body.override, override_note=body.override_note, user=user)
 
 
 @router.post("/{fecha}/reopen")
-async def reabrir_dia(fecha: str, body: ReabrirDiaBody, pool=Depends(get_pool), user=Depends(require_writer)):
+async def reabrir_dia(fecha: str, body: ReabrirDiaBody, pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_SIGN))):
     return await reabrir(pool, _fecha(fecha), nota=body.nota, user=user)

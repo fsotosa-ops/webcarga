@@ -7,8 +7,9 @@ from app.routers.config import router as config_router
 from app.routers.trips import router as trips_router
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_admin, require_editor
+from tests.conftest import usuario
 
-USER = {"sub": "11111111-1111-1111-1111-111111111111", "email": "a@b.c", "role": "admin"}
+USER = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
 RULES_ROW = {
     "stale_report_hours": 2.0, "dwell_hours": 2.0,

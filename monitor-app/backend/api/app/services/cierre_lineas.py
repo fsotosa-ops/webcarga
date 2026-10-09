@@ -27,7 +27,6 @@ from datetime import date
 
 from fastapi import HTTPException
 
-from ..auth import ADMIN_ROLES
 from .audit import log_change
 from .cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
 from .driver_roster import TRACTOREO_ROSTER_CTE
@@ -543,8 +542,8 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                 })
 
             if forzados:
-                if user["role"] not in ADMIN_ROLES:
-                    raise HTTPException(403, "Forzar el cierre con pendientes requiere rol admin o superior")
+                if "closures.override" not in user["permissions"]:
+                    raise HTTPException(403, "No tienes permiso para firmar el cierre con pendientes")
                 if not override_note or not override_note.strip():
                     raise HTTPException(422, "El override requiere un comentario de justificación")
                 nota = {"business_date": fecha.isoformat(), "note": override_note}
@@ -634,8 +633,8 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
 
 
 async def reabrir(pool, fecha: date, *, nota: str | None, user: dict) -> dict:
-    if user["role"] not in ADMIN_ROLES:
-        raise HTTPException(403, "Reabrir un día cerrado requiere rol admin o superior")
+    # Quién reabre lo decide el permiso de la ruta (closures.sign): Operador y
+    # Supervisor de Operaciones firman y reabren (usuario, 09/10).
     if not nota or not nota.strip():
         raise HTTPException(422, "Reabrir exige una nota que diga por qué")
 

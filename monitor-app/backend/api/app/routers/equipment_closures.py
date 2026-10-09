@@ -32,6 +32,7 @@ from datetime import date as _date
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, require_writer
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.equipment_closures import EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
 from ..services.cierre_lineas import LINEAS_TRACTOS, periodo, poner_motivo, recalcular
@@ -156,7 +157,7 @@ async def _recompute(pool, business_date: _date) -> dict | None:
 
 
 @router.get("")
-async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
     pre_cierre = await _recompute(pool, business_date)
 
@@ -226,7 +227,7 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
 # reglas viven en services/cierre_lineas.poner_motivo, iguales para los dos ejes.
 @router.patch("/reason")
 async def set_batch_reason(
-    body: EquipmentBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_writer),
+    body: EquipmentBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_DECLARE)),
 ):
     """Selección masiva con checkbox — mismo motivo para varios tractos en un
     clic. Declarada ANTES de PATCH /{asset_id}."""
@@ -244,7 +245,7 @@ async def set_batch_reason(
 @router.patch("/{asset_id}")
 async def patch_equipment_day_status(
     asset_id: str, fecha: str, body: EquipmentDayStatusPatchBody,
-    pool=Depends(get_pool), user=Depends(require_writer),
+    pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_DECLARE)),
 ):
     """El motivo, su vigencia y el comentario de un tracto ese día."""
     business_date = _parse_business_date(fecha)

@@ -47,6 +47,7 @@ from datetime import date as _date
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user
+from ..authz import Permission, require
 from ..db import get_pool
 from ..services.cierre_lineas import GRUPO_NO_TRABAJANDO, LINEAS_CONDUCTORES, LINEAS_TRACTOS, recalcular
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
@@ -533,7 +534,7 @@ def _section6_resumen_general(rows: list[dict]) -> dict:
 
 
 @router.get("")
-async def get_status_report(fecha: str, client: str | None = None, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_status_report(fecha: str, client: str | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
     all_rows = await _build_asset_rows(pool, business_date)
     # Tarea 6 (plan 2.3): la Sección 4 pasa a agruparse por conductor — su

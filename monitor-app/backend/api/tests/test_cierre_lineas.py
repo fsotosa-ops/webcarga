@@ -24,7 +24,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.services import cierre_lineas
-from tests.conftest import PoolDeUnaConexion, _usuario_real
+from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
 
 pytestmark = pytest.mark.integracion
 
@@ -462,8 +462,8 @@ async def test_forzar_el_cierre_exige_admin_y_nota(conexion_revertida):
     conn = conexion_revertida
     await _escenario(conn)
     pool = PoolDeUnaConexion(conn)
-    writer = {**(await _usuario_real(conn)), "role": "writer"}
-    admin = {**writer, "role": "admin"}
+    writer = con_roles(await _usuario_real(conn), "operations_operator")
+    admin = con_roles(writer, *ADMIN_EQUIVALENTE)
 
     with pytest.raises(HTTPException) as exc:
         await cierre_lineas.cerrar(pool, D, override=True, override_note="se fuerza", user=writer)
@@ -483,7 +483,7 @@ async def test_un_dia_cerrado_no_se_recalcula_ni_se_edita(conexion_revertida):
     conn = conexion_revertida
     esc = await _escenario(conn)
     pool = PoolDeUnaConexion(conn)
-    admin = {**(await _usuario_real(conn)), "role": "admin"}
+    admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
     await cierre_lineas.cerrar(pool, D, override=True, override_note="prueba", user=admin)
     antes = (await _linea(conn, D, "DRIVER", esc["conductor"]))["computed_at"]
 
@@ -500,7 +500,7 @@ async def test_un_dia_cerrado_no_se_recalcula_ni_se_edita(conexion_revertida):
 async def test_cerrar_firma_los_dos_ejes_en_el_periodo_y_en_las_cabeceras_viejas(conexion_revertida):
     conn = conexion_revertida
     await _escenario(conn)
-    admin = {**(await _usuario_real(conn)), "role": "admin"}
+    admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
 
     await cierre_lineas.cerrar(PoolDeUnaConexion(conn), D, override=True, override_note="prueba", user=admin)
 
@@ -509,21 +509,22 @@ async def test_cerrar_firma_los_dos_ejes_en_el_periodo_y_en_las_cabeceras_viejas
     assert await conn.fetchval("SELECT count(*) FROM app.equipment_closures WHERE business_date = $1", D) == 1
 
 
-async def test_reabrir_exige_admin_y_nota_y_vuelve_a_recalcular(conexion_revertida):
+async def test_reabrir_exige_nota_y_vuelve_a_recalcular(conexion_revertida):
+    """Quién reabre lo decide el permiso de la ruta (closures.sign): Operador y
+    Supervisor de Operaciones firman y reabren (usuario, 09/10). El servicio
+    exige la nota y vuelve a recalcular."""
     conn = conexion_revertida
     esc = await _escenario(conn)
     pool = PoolDeUnaConexion(conn)
-    admin = {**(await _usuario_real(conn)), "role": "admin"}
+    admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
     await cierre_lineas.cerrar(pool, D, override=True, override_note="prueba", user=admin)
 
+    operador = con_roles(admin, "operations_operator")
     with pytest.raises(HTTPException) as exc:
-        await cierre_lineas.reabrir(pool, D, nota="corregir", user={**admin, "role": "writer"})
-    assert exc.value.status_code == 403
-    with pytest.raises(HTTPException) as exc:
-        await cierre_lineas.reabrir(pool, D, nota="", user=admin)
+        await cierre_lineas.reabrir(pool, D, nota="", user=operador)
     assert exc.value.status_code == 422
 
-    await cierre_lineas.reabrir(pool, D, nota="faltaba el viaje de la tarde", user=admin)
+    await cierre_lineas.reabrir(pool, D, nota="faltaba el viaje de la tarde", user=operador)
     await _viaje(conn, esc, D)
     await cierre_lineas.recalcular(pool, D)
 

@@ -18,9 +18,9 @@ from app.routers.status_taxonomies import router as taxonomies_router
 from app.services.reordenamiento import (
     ABAJO, ARRIBA, ESTADOS_DEL_TABLERO, TAXONOMIAS, mover_una_posicion,
 )
-from .conftest import wire_transactional_conn
+from .conftest import usuario, wire_transactional_conn
 
-USER = {"sub": "11111111-1111-1111-1111-111111111111", "email": "a@b.c", "role": "admin"}
+USER = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
 
 def conexion_con(filas, fila_propia=None):

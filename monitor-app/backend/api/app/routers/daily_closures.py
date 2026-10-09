@@ -22,6 +22,7 @@ from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
 from ..auth import get_current_user, require_writer
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
 from ..services.cierre_lineas import LINEAS_CONDUCTORES, periodo, poner_motivo, recalcular
@@ -212,7 +213,7 @@ async def _recompute(pool, business_date: _date) -> dict | None:
 
 
 @router.get("")
-async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
     pre_cierre = await _recompute(pool, business_date)
 
@@ -270,7 +271,7 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
 
 @router.get("/report")
 async def get_daily_closures_report(
-    fecha_desde: str, fecha_hasta: str, pool=Depends(get_pool), _=Depends(get_current_user),
+    fecha_desde: str, fecha_hasta: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ)),
 ):
     """Dataset plano para Reportería — sin agregar, sin recompute. El rango
     puede abarcar días que nunca se cerraron explícitamente (quedan con lo
@@ -296,7 +297,7 @@ async def get_daily_closures_report(
 # services/cierre_lineas.poner_motivo: son las mismas para los dos ejes.
 @router.patch("/reason")
 async def set_batch_reason(
-    body: DriverBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require_writer),
+    body: DriverBatchReasonBody, fecha: str, pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_DECLARE)),
 ):
     """Selección masiva con checkbox — mismo motivo para varios conductores en
     un clic. Declarada ANTES de PATCH /{driver_id}: la ruta literal debe
@@ -315,7 +316,7 @@ async def set_batch_reason(
 @router.patch("/{driver_id}")
 async def patch_driver_day_status(
     driver_id: str, fecha: str, body: DriverDayStatusPatchBody,
-    pool=Depends(get_pool), user=Depends(require_writer),
+    pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_DECLARE)),
 ):
     """El motivo, su vigencia y el comentario de un conductor ese día."""
     business_date = _parse_business_date(fecha)
