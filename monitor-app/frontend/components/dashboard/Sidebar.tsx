@@ -283,7 +283,7 @@ export default function Sidebar({ role }: SidebarProps) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white font-mulish font-bold text-[13px] leading-tight tracking-tight">WebCarga</p>
-                <p className="text-white/35 text-[10px] tracking-wide">Monitor · Diario 2.0</p>
+                <p className="text-white/35 text-[10px] tracking-wide">Plataforma logística</p>
               </div>
               <button
                 onClick={toggle}

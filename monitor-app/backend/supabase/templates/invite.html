@@ -15,7 +15,7 @@
     servidor (patrón SSR de Supabase). El enlace por defecto de Supabase deja la
     sesión en el fragmento (#) de la URL, que la app no lee.
 
-    Look & feel del login: fondo #111d28 → #1a3347, acento #1cb9ec, cuadro "W"
+    Look & feel del login (bajada "Plataforma logística", usuario 09/10): fondo #111d28 → #1a3347, acento #1cb9ec, cuadro "W"
     con degradé #1cb9ec → #0e8db5, tipografía Mulish. Solo tablas y estilos en
     línea (Gmail y Outlook ignoran <style> y CSS moderno); el degradé tiene
     color de respaldo para Outlook. El botón usa #0e8db5 y no #1cb9ec: el blanco
@@ -43,7 +43,7 @@
                 </tr>
               </table>
               <p style="margin:16px 0 0; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:22px; font-weight:700; letter-spacing:-0.3px; color:#ffffff; line-height:1.2;">WebCarga</p>
-              <p style="margin:6px 0 0; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#8a9aab; line-height:1.4;">Diario 2.0 · Operaciones</p>
+              <p style="margin:6px 0 0; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#8a9aab; line-height:1.4;">Plataforma logística</p>
             </td>
           </tr>
 
@@ -55,12 +55,19 @@
                 Un administrador de WebCarga creó tu cuenta para <strong style="color:#131c2b;">{{ .Email }}</strong>. Entra con el botón para empezar.
               </p>
 
-              <!-- Botón -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">
+              <!-- Botón, centrado (tabla al 100% con la celda centrada: lo único que
+                   respetan todos los clientes, incluido Outlook) -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">
+                <tr>
+                  <td align="center">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" bgcolor="#0e8db5" style="background-color:#0e8db5; border-radius:10px;">
                     <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite"
                        style="display:inline-block; padding:13px 28px; font-family:Mulish, 'Segoe UI', Arial, sans-serif; font-size:15px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:10px;">Entrar a WebCarga</a>
+                  </td>
+                </tr>
+              </table>
                   </td>
                 </tr>
               </table>

@@ -25,7 +25,7 @@ const mulish = Mulish({
 })
 
 export const metadata: Metadata = {
-  title: 'Diario 2.0 — WebCarga',
+  title: 'WebCarga',
   description: 'Monitor operacional de viajes WebCarga',
 }
 

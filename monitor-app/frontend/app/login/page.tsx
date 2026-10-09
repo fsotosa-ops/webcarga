@@ -45,7 +45,7 @@ export default function LoginPage() {
             WebCarga
           </h1>
           <p className="text-white/35 text-xs mt-1.5 tracking-wider uppercase">
-            Diario 2.0 · Operaciones
+            Plataforma logística
           </p>
         </div>
 

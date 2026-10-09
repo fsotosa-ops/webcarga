@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { soloDigitos } from '@/lib/auth/codigo'
 
 /** Inscribir la verificación en dos pasos (seguridad, 09/10).
  *
@@ -43,7 +44,7 @@ export default function MfaSetupPage() {
     if (!factorId) return
     setEnviando(true)
     setError(null)
-    const { error } = await createClient().auth.mfa.challengeAndVerify({ factorId, code: codigo.trim() })
+    const { error } = await createClient().auth.mfa.challengeAndVerify({ factorId, code: codigo })
     setEnviando(false)
     if (error) { setError('El código no coincide. Revisa la hora del teléfono y vuelve a intentarlo.'); return }
     router.replace('/dashboard/operations/monitor')
@@ -65,6 +66,11 @@ export default function MfaSetupPage() {
         ) : (
           !error && <p className="text-sm text-informativo">Preparando el código…</p>
         )}
+        {qr && (
+          <p className="text-xs text-informativo">
+            Si recargas esta página, el código QR cambia: borra la entrada anterior de la app y vuelve a escanear.
+          </p>
+        )}
         {secreto && (
           <p className="text-xs text-informativo break-all">
             Si no puedes escanearlo, ingresa esta clave: <span className="font-mono text-text-primary">{secreto}</span>
@@ -73,18 +79,16 @@ export default function MfaSetupPage() {
         <input
           inputMode="numeric"
           autoComplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxLength={6}
           required
           value={codigo}
-          onChange={e => setCodigo(e.target.value)}
+          onChange={e => setCodigo(soloDigitos(e.target.value))}
           aria-label="Código de 6 dígitos"
           className="w-full px-3 py-2 rounded-lg border border-border text-center text-sm tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-accent"
         />
         {error && <p className="text-sm text-status-incidente">{error}</p>}
         <button
           type="submit"
-          disabled={!factorId || enviando || codigo.trim().length !== 6}
+          disabled={!factorId || enviando || codigo.length !== 6}
           className="w-full py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 disabled:opacity-60"
         >
           {enviando ? 'Verificando…' : 'Activar'}
