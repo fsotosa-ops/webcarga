@@ -19,9 +19,8 @@ import pytest
 # ── RBAC (spec 2026-10-09) ────────────────────────────────────────────────────
 def usuario(*roles: str, aal: str = "aal2", sub: str = "00000000-0000-0000-0000-000000000001") -> dict:
     """Usuario de prueba con los permisos efectivos de los roles de sistema
-    dados: misma forma que devuelve get_current_user. `role` es el de la
-    escalera vieja, transitorio hasta la Task 11 del plan de RBAC."""
-    from app.authz.permissions import SYSTEM_ROLES, Permission, legacy_role_for
+    dados: misma forma que devuelve get_current_user."""
+    from app.authz.permissions import SYSTEM_ROLES, Permission
 
     por_codigo = {r.code: r for r in SYSTEM_ROLES}
     perms: set[str] = set()
@@ -29,7 +28,7 @@ def usuario(*roles: str, aal: str = "aal2", sub: str = "00000000-0000-0000-0000-
         r = por_codigo[c]
         perms |= {p.value for p in Permission} if r.grants_all else {p.value for p in r.permissions}
     return {"sub": sub, "email": "test@webcarga.com", "aal": aal, "roles": list(roles),
-            "permissions": frozenset(perms), "role": legacy_role_for(list(roles))}
+            "permissions": frozenset(perms)}
 
 
 # Lo que hoy tiene un `editor`: migra a los 4 Supervisores (spec RBAC §9).

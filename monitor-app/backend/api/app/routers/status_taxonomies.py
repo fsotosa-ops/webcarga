@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user
 from ..authz import Permission, require
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool

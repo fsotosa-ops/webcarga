@@ -14,7 +14,7 @@ import json
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from ..auth import get_current_user, get_supabase, require_editor
+from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
 from ..db import get_pool
 from ..routers.compliance import _apply_stored_document, _validar_periodo

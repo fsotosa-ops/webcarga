@@ -10,7 +10,7 @@ from app.routers.trips import (
     router, _manual_trip_id, _build_manual_stops, TripCreateBody, TripStopCreate,
 )
 from app.db import get_pool
-from app.auth import get_current_user, get_supabase, require_editor
+from app.auth import get_current_user, get_supabase
 from tests.conftest import wire_transactional_conn, usuario
 
 # Lo que hoy tiene un `editor` (migra a los 4 Supervisores, spec RBAC §9).
@@ -53,7 +53,6 @@ def make_client(pool):
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_supabase] = lambda: MagicMock()
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_editor] = lambda: USER
     return TestClient(app)
 
 

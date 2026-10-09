@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth import get_current_user, require_admin
+from app.auth import get_current_user
 from app.db import get_pool
 from app.routers.status_taxonomies import router
 from tests.conftest import usuario
@@ -16,7 +16,6 @@ def make_client(pool):
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_admin] = lambda: USER
     return TestClient(app)
 
 

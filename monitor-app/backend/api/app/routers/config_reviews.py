@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..services.revisiones import SQL_BUSQUEDA, exigir_seccion, registrar_revision
@@ -49,7 +49,6 @@ async def confirm_review(
     body: ConfirmacionBody,
     pool=Depends(get_pool),
     usuario=Depends(require(Permission.SETTINGS_MANAGE)),
-    _=Depends(require_admin),
 ):
     """"Lo miré y está bien así".
 

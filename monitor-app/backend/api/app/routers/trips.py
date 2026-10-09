@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from ..auth import get_current_user, get_supabase, require_editor, require_writer
+from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate

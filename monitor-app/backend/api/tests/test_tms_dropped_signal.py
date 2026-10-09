@@ -96,7 +96,7 @@ from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.auth import get_current_user, get_supabase, require_editor  # noqa: E402
+from app.auth import get_current_user, get_supabase  # noqa: E402
 from app.db import get_pool  # noqa: E402
 from app.routers.trips import router  # noqa: E402
 from tests.conftest import usuario
@@ -110,7 +110,6 @@ def _meta_client(pool):
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_supabase] = lambda: MagicMock()
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_editor] = lambda: USER
     return TestClient(app)
 
 

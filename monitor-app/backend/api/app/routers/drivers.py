@@ -5,7 +5,7 @@ import re
 from asyncpg.exceptions import CheckViolationError, ForeignKeyViolationError, UniqueViolationError
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import get_current_user, get_supabase, require_editor
+from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.contact import ContactCreateBody

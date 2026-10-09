@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from ..auth import get_current_user, get_supabase, require_editor
+from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate

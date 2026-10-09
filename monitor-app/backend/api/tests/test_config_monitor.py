@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.routers.config import router as config_router
 from app.routers.trips import router as trips_router
 from app.db import get_pool
-from app.auth import get_current_user, get_supabase, require_admin, require_editor
+from app.auth import get_current_user, get_supabase
 from tests.conftest import usuario
 
 USER = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
@@ -24,8 +24,6 @@ def make_client(pool, router=config_router):
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_supabase] = lambda: MagicMock()
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_admin] = lambda: USER
-    app.dependency_overrides[require_editor] = lambda: USER
     return TestClient(app)
 
 

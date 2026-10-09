@@ -31,7 +31,7 @@ from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import get_current_user, require_writer
+from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.equipment_closures import EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
@@ -223,7 +223,7 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
     }
 
 
-# QUIEN PUEDE ESCRIBIR: `require_writer` (definicion del usuario, 07/09). Las
+# QUIEN PUEDE ESCRIBIR: closures.declare (definicion del usuario, 07/09). Las
 # reglas viven en services/cierre_lineas.poner_motivo, iguales para los dos ejes.
 @router.patch("/reason")
 async def set_batch_reason(

@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user
 from ..authz import Permission, require
 from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool

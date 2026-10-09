@@ -11,7 +11,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.auth import get_current_user, require_admin
+from app.auth import get_current_user
 from app.db import get_pool
 from app.routers.config import router as config_router
 from app.routers.status_taxonomies import router as taxonomies_router
@@ -192,7 +192,6 @@ def cliente(pool):
     app.include_router(taxonomies_router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_admin] = lambda: USER
     return TestClient(app)
 
 

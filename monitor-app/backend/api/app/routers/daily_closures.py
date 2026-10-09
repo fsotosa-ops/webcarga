@@ -21,7 +21,7 @@ forma pasiva y por tracto, en equipment_closures.py."""
 from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
-from ..auth import get_current_user, require_writer
+from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
@@ -289,9 +289,9 @@ async def get_daily_closures_report(
     }
 
 
-# QUIEN PUEDE ESCRIBIR. `require_writer` y no `require_editor` desde el
-# 2026-09-07, por definicion del usuario: *"ambos pueden hacer cierres de
-# viaje"*. `writer` es el rol de quien opera el Diario todos los dias.
+# QUIEN PUEDE ESCRIBIR: closures.declare, que tiene el Operador de
+# Operaciones (definicion del usuario, 2026-09-07: *"ambos pueden hacer
+# cierres de viaje"*); es quien opera el Diario todos los dias.
 #
 # Las reglas (404, 422, vigencia, dia cerrado, propagacion al tracto) viven en
 # services/cierre_lineas.poner_motivo: son las mismas para los dos ejes.

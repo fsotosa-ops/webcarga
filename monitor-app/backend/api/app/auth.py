@@ -14,15 +14,6 @@ from .db import get_pool
 
 bearer = HTTPBearer()
 
-EDITOR_ROLES = {"editor", "admin", "owner"}
-ADMIN_ROLES = {"admin", "owner"}
-# `writer` es un tercer nivel de escritura, por DEBAJO de editor: edita los
-# campos básicos del Diario y ninguno de los sensibles. Por eso no basta con
-# un guardia de endpoint —una ruta se da entera o se niega entera— y el
-# permiso se termina de resolver POR CAMPO en el endpoint que lo necesita
-# (ver CAMPOS_BASICOS_DEL_DIARIO en schemas/trip.py). Ver issue #1.
-WRITER_ROLES = EDITOR_ROLES | {"writer"}
-
 # El proyecto firma los JWT con una llave asimétrica (ES256). Su parte
 # PÚBLICA va versionada en `supabase_jwks.json` —no es un secreto— y se usa
 # primero: así verificar no depende de Supabase Auth ni en una instancia
@@ -101,7 +92,6 @@ async def get_current_user(
     # 60 s e invalidada al cambiar sus roles. Import local: app.authz importa
     # de este módulo (require usa get_current_user).
     from .authz.effective import load_access
-    from .authz.permissions import legacy_role_for
 
     acceso = await load_access(pool, sub)
     if acceso is None or not acceso["roles"]:
@@ -110,39 +100,11 @@ async def get_current_user(
     if acceso["active"] is False:
         raise HTTPException(status_code=403, detail="Tu cuenta está desactivada")
     # `aal` (authenticator assurance level): aal2 = la sesión pasó la
-    # verificación en dos pasos. `role` es transitorio: lo leen los guardias
-    # viejos hasta que las rutas declaren su permiso (se retira en la Task 11).
+    # verificación en dos pasos; la exigen los permisos privilegiados
+    # (app/authz/deps.py).
     return {"sub": sub, "email": claims.get("email"), "aal": claims.get("aal"),
-            "roles": acceso["roles"], "permissions": frozenset(acceso["permissions"]),
-            "role": legacy_role_for(acceso["roles"])}
-
-
-async def require_editor(user: dict = Depends(get_current_user)) -> dict:
-    if user["role"] not in EDITOR_ROLES:
-        raise HTTPException(status_code=403, detail="Se requiere rol editor o superior")
-    return user
-
-
-async def require_writer(user: dict = Depends(get_current_user)) -> dict:
-    """Deja pasar a writer y a todo lo que esté por encima.
-
-    Abre la puerta, no da la ruta entera: el endpoint que la use tiene que
-    filtrar por campo si distingue básicos de sensibles."""
-    if user["role"] not in WRITER_ROLES:
-        raise HTTPException(status_code=403, detail="Se requiere rol writer o superior")
-    return user
+            "roles": acceso["roles"], "permissions": frozenset(acceso["permissions"])}
 
 
 # Mensaje fijo: el frontend lo reconoce para llevar a inscribir el factor.
 MFA_REQUERIDO = "Activa la verificación en dos pasos para administrar WebCarga."
-
-
-async def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    if user["role"] not in ADMIN_ROLES:
-        raise HTTPException(status_code=403, detail="Se requiere rol admin o superior")
-    # MFA para los roles privilegiados (seguridad, 09/10): crean usuarios y
-    # cambian la configuración, así que una contraseña o una cuenta de Google
-    # robada no debe alcanzar.
-    if user.get("aal") != "aal2":
-        raise HTTPException(status_code=403, detail=MFA_REQUERIDO)
-    return user

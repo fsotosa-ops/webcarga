@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth import get_current_user, get_supabase, require_editor
+from app.auth import get_current_user, get_supabase
 from app.db import get_pool
 from app.routers.policies import router
 from tests.conftest import USER, wire_transactional_conn
@@ -15,7 +15,6 @@ def make_client(pool, supabase=None):
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_editor] = lambda: USER
     app.dependency_overrides[get_supabase] = lambda: supabase or MagicMock()
     return TestClient(app)
 

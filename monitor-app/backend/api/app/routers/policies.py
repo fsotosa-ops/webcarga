@@ -8,7 +8,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from ..auth import get_current_user, get_supabase, require_editor
+from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.insurance import (

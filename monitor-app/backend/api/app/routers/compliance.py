@@ -24,7 +24,7 @@ from openpyxl.utils import get_column_letter
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
-from ..auth import get_current_user, get_supabase, require_editor
+from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS

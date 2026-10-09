@@ -2,7 +2,7 @@
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import get_current_user, get_supabase, require_editor
+from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.asset import AssetCreateBody, AssetPatchBody

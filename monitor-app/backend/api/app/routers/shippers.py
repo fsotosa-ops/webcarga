@@ -6,7 +6,7 @@ todavía — antes client_name era texto libre sin ningún vínculo real."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_editor
+from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 

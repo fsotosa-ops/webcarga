@@ -10,7 +10,7 @@ from app.routers.trips import (
     _parse_timestamptz, _attach_origin,
 )
 from app.db import get_pool
-from app.auth import get_current_user, get_supabase, require_editor
+from app.auth import get_current_user, get_supabase
 
 from tests.conftest import usuario
 
@@ -33,7 +33,6 @@ def make_client(pool):
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_supabase] = lambda: MagicMock()
     app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[require_editor] = lambda: USER
     return TestClient(app)
 
 

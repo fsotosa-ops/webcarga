@@ -1,5 +1,5 @@
 # app/authz/deps.py
-"""Guardias por permiso. Reemplazan a require_writer/editor/admin."""
+"""Guardias por permiso: cada ruta declara el permiso que exige."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
