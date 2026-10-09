@@ -25,7 +25,8 @@ del backend, mantenible, robusto y escalable**.
 - Dos niveles por área: **Operador** y **Supervisor**; más **Lectura**, **Administración**, **Propietario
   (Super admin)** y **Soporte técnico (proveedor)**.
 - `closures.sign` (firmar y reabrir el cierre del día) en **Operador y Supervisor** de Operaciones (hoy `writer`
-  ya firma).
+  ya firma). `trips.delete` también en el Operador: hoy `writer` elimina viajes manuales (el servicio sigue
+  limitando cuáles); detectado al mapear las rutas para el plan.
 - **WebCarga es Propietario; Sumadots es Soporte técnico.** La cuenta de Sumadots sigue como Propietario mientras
   dure la implementación, anotado como transitorio.
 
@@ -91,6 +92,7 @@ privilegiado). Cubre las ~110 rutas de escritura actuales.
 | | `policies.edit` | pólizas, coberturas, vehículos asegurados, cuotas, archivo |
 | | `policies.delete` | eliminar pólizas |
 | | `insurance.configure` | tipos de cobertura |
+| Referencia | `reference.read` | datos que usan todas las pantallas: estados, umbrales, temperaturas, taxonomías, búsqueda de ajustes (en todos los roles) |
 | Comercial | `commercial.read` | tarifario, clientes, reportes |
 | | `commercial.edit` | tarifas, ubicaciones, clientes |
 | Administración | `users.manage` 🔒 | personas, invitaciones, asignación de roles |
@@ -114,8 +116,8 @@ puede restringir la lectura a su área.
 | Administración (`admin`) | `users.manage`, `roles.manage`, `settings.manage` |
 | Soporte técnico, proveedor (`support`) | nada (solo lectura) |
 | Lectura (`reader`) | nada |
-| Operador de Operaciones (`operations_operator`) | `trips.edit_basic`, `closures.declare`, `closures.sign` |
-| Supervisor de Operaciones (`operations_supervisor`) | Operador + `trips.edit_sensitive`, `trips.create`, `trips.delete`, `operations.configure`, `directory.edit` |
+| Operador de Operaciones (`operations_operator`) | `trips.edit_basic`, `trips.delete`, `closures.declare`, `closures.sign` |
+| Supervisor de Operaciones (`operations_supervisor`) | Operador + `trips.edit_sensitive`, `trips.create`, `operations.configure`, `directory.edit` |
 | Operador de Certificación (`certification_operator`) | `documents.upload` |
 | Supervisor de Certificación (`certification_supervisor`) | Operador + `documents.review`, `certification.configure`, `directory.edit`, `directory.delete` |
 | Operador de Seguros (`insurance_operator`) | `policies.edit` |
