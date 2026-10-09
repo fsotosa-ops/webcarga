@@ -9,6 +9,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.insurance import (
     InstallmentPatchBody, InstallmentScheduleGenerateBody, InsurancePolicyPatchBody,
@@ -86,7 +87,7 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
 
 @router.get("/{policy_id}")
 async def get_policy(
-    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.INSURANCE_READ)),
 ):
     return await _assemble_policy_detail(policy_id, pool, supabase)
 
@@ -94,7 +95,7 @@ async def get_policy(
 @router.patch("/{policy_id}")
 async def patch_policy(
     policy_id: str, body: InsurancePolicyPatchBody, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require_editor),
+    supabase=Depends(get_supabase), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -148,7 +149,7 @@ async def patch_policy(
 
 @router.delete("/{policy_id}")
 async def delete_policy(
-    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
+    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require(Permission.POLICIES_DELETE)),
 ):
     """Borra la póliza completa (coverages/assets/installments caen por
     ON DELETE CASCADE). Borra también los archivos físicos en Storage si
@@ -179,7 +180,7 @@ async def delete_policy(
 
 @router.post("/{policy_id}/coverages", status_code=201)
 async def link_coverage(
-    policy_id: str, body: PolicyCoverageLinkBody, pool=Depends(get_pool), user=Depends(require_editor),
+    policy_id: str, body: PolicyCoverageLinkBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -201,7 +202,7 @@ async def link_coverage(
 
 @router.delete("/{policy_id}/coverages/{coverage_type_id}")
 async def unlink_coverage(
-    policy_id: str, coverage_type_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+    policy_id: str, coverage_type_id: str, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -220,7 +221,7 @@ async def unlink_coverage(
 
 @router.post("/{policy_id}/assets", status_code=201)
 async def link_asset(
-    policy_id: str, body: PolicyAssetLinkBody, pool=Depends(get_pool), user=Depends(require_editor),
+    policy_id: str, body: PolicyAssetLinkBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -242,7 +243,7 @@ async def link_asset(
 
 @router.delete("/{policy_id}/assets/{asset_id}")
 async def unlink_asset(
-    policy_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+    policy_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -260,7 +261,7 @@ async def unlink_asset(
 
 
 @router.get("/{policy_id}/installments")
-async def list_installments(policy_id: str, pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_installments(policy_id: str, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
     rows = await pool.fetch(
         "SELECT id, installment_number, total_installments, amount_uf, due_date, payment_status, paid_at "
         "FROM public.insurance_installments WHERE policy_id = $1 ORDER BY installment_number",
@@ -271,7 +272,7 @@ async def list_installments(policy_id: str, pool=Depends(get_pool), _=Depends(ge
 
 @router.post("/{policy_id}/installments/generate", status_code=201)
 async def generate_installment_schedule(
-    policy_id: str, body: InstallmentScheduleGenerateBody, pool=Depends(get_pool), user=Depends(require_editor),
+    policy_id: str, body: InstallmentScheduleGenerateBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Genera el plan de cuotas completo de una póliza (mensual, monto fijo).
     Solo aplica cuando la póliza todavía no tiene ninguna cuota — no hay
@@ -313,7 +314,7 @@ async def generate_installment_schedule(
 
 @router.patch("/installments/{installment_id}")
 async def patch_installment(
-    installment_id: str, body: InstallmentPatchBody, pool=Depends(get_pool), user=Depends(require_editor),
+    installment_id: str, body: InstallmentPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -360,7 +361,7 @@ async def upload_policy_file(
     kind: str = "document",
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Sube el archivo físico de la póliza (kind='document', policy_document_url)
     o del endoso (kind='endorsement', endorsement_document_url) — gap real
@@ -415,7 +416,7 @@ async def delete_policy_file(
     kind: str = "document",
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Borra el archivo físico de la póliza o del endoso — mismo criterio
     que delete_compliance_file, sin estado intermedio."""

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user, require_admin
 from app.db import get_pool
 from app.routers.requirements import requirements_router
-from tests.conftest import USER, wire_transactional_conn
+from tests.conftest import USER, usuario, wire_transactional_conn
 
 
 def make_client(pool):
@@ -20,14 +20,14 @@ def make_client(pool):
     return TestClient(app)
 
 
-def make_client_without_admin_override(pool):
-    """Sin overridear require_admin: ejercita la dependencia real, con
-    USER (role 'editor') resuelto vía get_current_user. Sirve para probar
-    que el rol se exige de verdad, no solo que el mock lo deja pasar."""
+def make_client_without_admin_override(pool, user=None):
+    """Sin overridear el guardia: ejercita require(...) de verdad con el
+    usuario dado (por defecto, un Operador de Certificación, que carga
+    documentos pero no configura el catálogo)."""
     app = FastAPI()
     app.include_router(requirements_router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
-    app.dependency_overrides[get_current_user] = lambda: USER
+    app.dependency_overrides[get_current_user] = lambda: user or usuario("certification_operator")
     return TestClient(app)
 
 
@@ -357,16 +357,17 @@ def test_patch_conditions_404_when_requirement_missing():
     assert res.status_code == 404
 
 
-def test_patch_conditions_requires_admin_not_editor():
-    """Ronda de arreglo 1, punto 2: el brief pedia require_editor, corregido
-    a require_admin -- misma altura de permiso que el resto de la
-    configuracion de catalogo del backend."""
+def test_patch_conditions_exige_configurar_certificacion():
+    """El catálogo lo configura quien tiene certification.configure: el
+    Supervisor de Certificación (RBAC 09/10; antes, solo admin). El Operador
+    carga documentos pero no cambia qué se exige."""
     pool = AsyncMock()
     client = make_client_without_admin_override(pool)
 
     res = client.patch("/api/v1/compliance-requirements/r1/conditions", json={"is_active": False})
 
     assert res.status_code == 403
+    assert "requisitos" in res.json()["detail"]
 
 
 # ── Vista previa (GET /recalc-preview) ──────────────────────────────────────
@@ -614,10 +615,22 @@ def test_recalc_404_when_requirement_missing():
     assert res.status_code == 404
 
 
-def test_recalc_requires_admin_not_editor():
+def test_recalc_exige_configurar_certificacion():
     pool = AsyncMock()
     client = make_client_without_admin_override(pool)
 
     res = client.post("/api/v1/compliance-requirements/r1/recalc")
 
     assert res.status_code == 403
+
+
+def test_el_supervisor_de_certificacion_pasa_el_guardia():
+    """Solo el guardia: lo que pase después contra el pool simulado no importa acá."""
+    app = FastAPI()
+    app.include_router(requirements_router, prefix="/api/v1")
+    app.dependency_overrides[get_pool] = lambda: AsyncMock()
+    app.dependency_overrides[get_current_user] = lambda: usuario("certification_supervisor")
+
+    res = TestClient(app, raise_server_exceptions=False).post("/api/v1/compliance-requirements/r1/recalc")
+
+    assert res.status_code != 403

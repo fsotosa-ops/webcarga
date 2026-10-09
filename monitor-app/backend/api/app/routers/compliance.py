@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 
 from ..auth import get_current_user, get_supabase, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
 
@@ -158,7 +159,7 @@ async def get_certification_status(
     q: str = Query(""),
     limit: int = Query(200, le=500),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Cómo va la certificación, agrupada por empresa, conductor o vehículo.
 
@@ -657,7 +658,7 @@ async def list_pending_compliance_records(
                     "anterior; `todos` es lo que usa la ficha de empresa.",
     ),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Módulo Documentos (sábana) — un `compliance_record` pendiente por
     fila, cruzando toda la flota en vez de navegar empresa por empresa. Ver
@@ -768,7 +769,7 @@ ORDER BY entity_type, subject_name
 async def get_compliance_summary(
     carrier_id: str = Query(...),
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """La ficha de una empresa, resumida: cuantos requisitos tiene cada
     sujeto -la empresa, sus conductores, sus vehiculos- y como vienen, sin
@@ -977,7 +978,7 @@ async def _filas_de_planilla(pool, alcance: str) -> list[dict]:
 @router.get("/date-template/resumen")
 async def resumen_de_planilla(
     alcance: Literal["activas", "todas"] = Query("activas"),
-    pool=Depends(get_pool), _=Depends(get_current_user),
+    pool=Depends(get_pool), _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Qué trae la planilla ANTES de bajarla.
 
@@ -1008,7 +1009,7 @@ async def bajar_planilla(
         description="'activas' son las empresas operativas, que es lo que se "
                     "pidió cargar. 'todas' suma el histórico y las filas sin empresa.",
     ),
-    pool=Depends(get_pool), _=Depends(get_current_user),
+    pool=Depends(get_pool), _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     contenido = _planilla_a_xlsx(await _filas_de_planilla(pool, alcance))
     return Response(
@@ -1022,7 +1023,7 @@ async def bajar_planilla(
 async def cargar_planilla(
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
-    pool=Depends(get_pool), user=Depends(require_editor),
+    pool=Depends(get_pool), user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Devuelve a su lugar lo que la planilla declara.
 
@@ -1262,7 +1263,7 @@ _SQL_SOLICITABLE = """
 async def listar_solicitables(
     entity_type: Literal["CARRIER", "DRIVER", "ASSET"] = Query(...),
     entity_id: str = Query(...),
-    pool=Depends(get_pool), _=Depends(get_current_user),
+    pool=Depends(get_pool), _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Los documentos "a pedido" vigentes que todavía no se le pidieron a esta
     entidad: la lista de la acción "Solicitar documento"."""
@@ -1283,7 +1284,7 @@ async def listar_solicitables(
 
 @router.post("/requests", status_code=201)
 async def solicitar_documento(
-    body: SolicitudBody, pool=Depends(get_pool), user=Depends(require_editor),
+    body: SolicitudBody, pool=Depends(get_pool), user=Depends(require(Permission.DOCUMENTS_REVIEW)),
 ):
     """Pide un documento "a pedido" a una entidad. Idempotente: pedirlo dos
     veces no crea dos pendientes."""
@@ -1309,7 +1310,7 @@ async def solicitar_documento(
 
 @router.delete("/requests/{record_id}")
 async def quitar_solicitud(
-    record_id: str, pool=Depends(get_pool), user=Depends(require_editor),
+    record_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DOCUMENTS_REVIEW)),
 ):
     """Retira una solicitud mientras no tenga archivo: un documento ya
     cargado no se saca de circulación por acá."""
@@ -1343,7 +1344,7 @@ async def quitar_solicitud(
 
 @router.get("/{record_id}")
 async def get_compliance_record(
-    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     return await _fetch_record(record_id, pool, supabase)
 
@@ -1354,7 +1355,7 @@ async def reassign_compliance_document(
     body: ReassignBody,
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_REVIEW)),
 ):
     """Corrige un documento cargado en el lugar equivocado (HU-03).
 
@@ -1490,7 +1491,7 @@ async def reassign_compliance_document(
 @router.patch("/{record_id}")
 async def patch_compliance_record(
     record_id: str, body: ComplianceRecordPatchBody, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require_editor),
+    supabase=Depends(get_supabase), user=Depends(require(Permission.DOCUMENTS_REVIEW)),
 ):
     """Override manual libre (ej. un admin aprueba a mano sin archivo). Para
     subir evidencia real, usar POST /{record_id}/file — ese fuerza
@@ -1759,7 +1760,7 @@ async def upload_compliance_file(
     period_start: Optional[date] = Form(None),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     return await _apply_compliance_upload(
         record_id, file, pool, supabase, user, expiration_date, issue_date, period_start)
@@ -1775,7 +1776,7 @@ async def bulk_upload_compliance_files(
     files: list[UploadFile] = File(...),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Módulo Documentos — carga masiva restringida a UNA empresa por vez
     (regla de negocio del diseño validado en Figma: "no es posible subir
@@ -1840,7 +1841,7 @@ async def bulk_upload_compliance_files(
 
 @router.delete("/{record_id}/file")
 async def delete_compliance_file(
-    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require_editor),
+    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Borra la evidencia cargada y vuelve el registro a MISSING — mismo
     estado que un documento nunca subido (decisión explícita del usuario
@@ -1900,7 +1901,7 @@ async def delete_compliance_file(
 
 @router.get("/{record_id}/files")
 async def list_compliance_files(
-    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(get_current_user),
+    record_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     current = await pool.fetchrow(
         "SELECT entity_id, entity_type, status, expiration_date, file_url, updated_at, overridden_by "

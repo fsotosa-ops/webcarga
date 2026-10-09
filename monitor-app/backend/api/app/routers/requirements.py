@@ -14,6 +14,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, require_admin
+from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.compliance import RequirementOption
 from ..schemas.requirement import (
@@ -134,7 +135,7 @@ SQL_CATALOGO = f"""
 async def list_compliance_requirements(
     target_entity: Optional[Literal["CARRIER", "DRIVER", "ASSET"]] = None,
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Tipos de documento del catálogo, opcionalmente acotados a un tipo de
     entidad. Solo lectura: administrar el catálogo requiere migración (ver
@@ -194,7 +195,7 @@ async def _transaccion_legible(conn):
 @requirements_router.post("", status_code=201)
 async def create_requirement(
     body: RequirementCreateBody,
-    pool=Depends(get_pool), user=Depends(require_admin),
+    pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Da de alta un tipo de documento, APAGADO.
 
@@ -216,7 +217,7 @@ async def create_requirement(
 
 @requirements_router.get("/{requirement_id}/aliases")
 async def list_requirement_aliases(
-    requirement_id: str, pool=Depends(get_pool), _=Depends(get_current_user),
+    requirement_id: str, pool=Depends(get_pool), _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Las formas de escribir este documento en el nombre de un archivo."""
     rows = await pool.fetch(
@@ -230,7 +231,7 @@ async def list_requirement_aliases(
 @requirements_router.post("/{requirement_id}/aliases", status_code=201)
 async def create_requirement_alias(
     requirement_id: str, body: RequirementAliasBody,
-    pool=Depends(get_pool), user=Depends(require_admin),
+    pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Agrega una forma de escribirlo. Sin alias, un documento nuevo nace
     INVISIBLE para el clasificador."""
@@ -248,7 +249,7 @@ async def create_requirement_alias(
 @requirements_router.delete("/{requirement_id}/aliases/{alias_id}", status_code=204)
 async def delete_requirement_alias(
     requirement_id: str, alias_id: str,
-    pool=Depends(get_pool), user=Depends(require_admin),
+    pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Quita una forma de escribirlo. Acotado al requisito a proposito: sin el
     `requirement_id` en el WHERE, un id de otro documento se borraria igual."""
@@ -264,7 +265,7 @@ async def delete_requirement_alias(
 @requirements_router.patch("/{requirement_id}/conditions")
 async def patch_requirement_conditions(
     requirement_id: str, body: RequirementConditionsPatchBody,
-    pool=Depends(get_pool), user=Depends(require_admin),
+    pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Cambia la regla, NO los registros. Aplicarla es un acto aparte
     (POST /recalc): guardar y aplicar son dos decisiones distintas.
@@ -288,7 +289,7 @@ class _Ensayo(Exception):
 @requirements_router.post("/{requirement_id}/expiration-rule/preview")
 async def preview_vigencia(
     requirement_id: str, body: VigenciaBody,
-    pool=Depends(get_pool), _=Depends(require_admin),
+    pool=Depends(get_pool), _=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Qué pasaría con los documentos de este tipo si se guardara esta
     vigencia, ANTES de guardarla.
@@ -314,7 +315,7 @@ async def preview_vigencia(
 
 @requirements_router.get("/{requirement_id}/recalc-preview", response_model=RecalcPreview)
 async def recalc_preview(
-    requirement_id: str, pool=Depends(get_pool), _=Depends(get_current_user),
+    requirement_id: str, pool=Depends(get_pool), _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Sólo lectura. Sin esto la configuración miente: se cambia la regla y la
     pantalla sigue mostrando lo viejo."""
@@ -326,7 +327,7 @@ async def recalc_preview(
 
 @requirements_router.post("/{requirement_id}/recalc", response_model=RecalcResult)
 async def recalc(
-    requirement_id: str, pool=Depends(get_pool), user=Depends(require_admin),
+    requirement_id: str, pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Admin, no editor: puede sacar de circulación cientos de
     compliance_records de una (ver docstring de patch_requirement_conditions).
@@ -399,7 +400,7 @@ def _sumar(filas: list[dict]) -> dict:
 
 @requirements_router.post("/batch-preview")
 async def ver_efecto_del_lote(
-    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require_admin),
+    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Qué pasaría si se publicara el borrador, ANTES de publicarlo.
 
@@ -437,7 +438,7 @@ async def ver_efecto_del_lote(
 
 @requirements_router.post("/batch-update")
 async def publicar_lote(
-    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require_admin),
+    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     """Guarda el borrador y aplica la siembra que cambió, todo o nada."""
     resultado = {"actualizados": len(body.cambios), "creados": 0, "quitados": 0, "bloqueados": 0}

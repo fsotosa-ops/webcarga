@@ -3,13 +3,14 @@ frontend para el selector de coberturas al vincular una póliza."""
 from fastapi import APIRouter, Depends
 
 from ..auth import get_current_user
+from ..authz import Permission, require
 from ..db import get_pool
 
 router = APIRouter(prefix="/coverage-types", tags=["insurance"])
 
 
 @router.get("")
-async def list_coverage_types(pool=Depends(get_pool), _=Depends(get_current_user)):
+async def list_coverage_types(pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
     rows = await pool.fetch(
         "SELECT id, code, name, description FROM public.coverage_types "
         "WHERE is_active = true ORDER BY name",

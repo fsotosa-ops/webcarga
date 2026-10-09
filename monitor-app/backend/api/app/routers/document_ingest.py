@@ -15,6 +15,7 @@ import json
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from ..auth import get_current_user, get_supabase, require_editor
+from ..authz import Permission, require
 from ..db import get_pool
 from ..routers.compliance import _apply_stored_document, _validar_periodo
 from ..schemas.document_ingest import (
@@ -244,7 +245,7 @@ async def upload_to_global_tray(
     files: list[UploadFile] = File(...),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Sube N archivos a la bandeja global, sin empresa y sin clasificar.
 
@@ -266,7 +267,7 @@ async def upload_to_tray(
     files: list[UploadFile] = File(...),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Sube N archivos a la bandeja de una empresa, sin clasificarlos."""
     _check_upload_size(files)
@@ -284,7 +285,7 @@ async def list_queue(
     limit: int = 200,
     offset: int = 0,
     pool=Depends(get_pool),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """La cola global de documentos sin clasificar, agrupada por empresa.
 
@@ -328,7 +329,7 @@ async def get_preview_url(
     item_id: str,
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    _=Depends(get_current_user),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """Firma la URL de un solo archivo, al enfocarlo en la bandeja."""
     storage_path = await pool.fetchval(
@@ -345,7 +346,7 @@ async def delete_item(
     item_id: str,
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Descarta un documento de la bandeja.
 
@@ -378,7 +379,7 @@ _UN_SOLO_ARCHIVO_POR_SLOT = (
 async def classify_batch(
     body: ClassifyBatchBody,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Aplica un archivo de la bandeja a un requisito concreto.
 
@@ -491,7 +492,7 @@ async def classify_batch(
 async def move_items(
     body: MoveItemsBody,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Asigna archivos sin clasificar a una empresa, y VUELVE A CLASIFICARLOS.
 
@@ -577,7 +578,7 @@ async def move_items(
 async def undo_classify(
     body: UndoClassifyBody,
     pool=Depends(get_pool),
-    user=Depends(require_editor),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Revierte una clasificación en lote: vacía el requisito y devuelve el
     archivo a la bandeja.
