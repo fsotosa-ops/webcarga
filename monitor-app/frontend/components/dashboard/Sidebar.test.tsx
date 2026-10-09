@@ -25,7 +25,8 @@ import Sidebar from './Sidebar'
 function setup() {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <Sidebar role="admin" />
+      <Sidebar acceso={{ id: 'u', email: 'a@b.c', full_name: null, roles: ['admin'], role_names: ['Administración'],
+                         permissions: ['users.manage', 'operations.read'], aal: 'aal2' }} />
     </QueryClientProvider>,
   )
 }

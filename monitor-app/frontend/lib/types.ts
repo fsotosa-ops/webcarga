@@ -47,17 +47,6 @@ export type Database = {
   }
 }
 
-// Role hierarchy (ascending permissions)
-export type UserRole = 'viewer' | 'writer' | 'editor' | 'admin' | 'owner'
-
-// Returns true if role has at least the required permission level
-export function hasRole(userRole: string | undefined, required: UserRole): boolean {
-  const order: UserRole[] = ['viewer', 'writer', 'editor', 'admin', 'owner']
-  const userIdx = order.indexOf((userRole ?? 'viewer') as UserRole)
-  const reqIdx  = order.indexOf(required)
-  return userIdx >= reqIdx
-}
-
 // ── Trips metadata (from GET /api/v1/trips/meta) ───────────────────
 
 export type StatusMeta = {
@@ -1248,15 +1237,10 @@ export type InsurancePolicy = {
   installments:              InsuranceInstallment[]
 }
 
-// Can an admin manage (change role / deactivate) a target user?
-export function canManage(actorRole: UserRole, targetRole: UserRole): boolean {
-  if (actorRole === 'owner') return true
-  if (actorRole === 'admin') return targetRole !== 'owner' && targetRole !== 'admin'
-  return false
-}
-
 export type Profile = Database['public']['Tables']['profiles']['Row'] & {
   active: boolean
+  /** Códigos de sus roles (RBAC, GET /users). */
+  roles?: string[]
   /** GET /users (seguridad, 09/10): para revisar quién tiene acceso. */
   last_sign_in_at?: string | null
   /** 'google' | 'azure' | 'email' — cómo entra. */

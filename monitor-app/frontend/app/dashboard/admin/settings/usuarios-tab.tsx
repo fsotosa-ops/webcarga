@@ -2,21 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { Users, ShieldAlert, CircleCheck, CircleOff } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { usersApi } from '@/lib/api/users'
 import { fetchRoles, type RoleInfo } from '@/lib/api/roles'
-import type { Profile, UserRole } from '@/lib/types'
-import { hasRole } from '@/lib/types'
+import type { Profile } from '@/lib/types'
 import UsersTable from '@/components/admin/UsersTable'
+import { useAcceso } from '@/lib/authz/PermisosProvider'
 import { LoadState } from './shared'
-
-const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
-  viewer: { bg: 'bg-gray-100',   text: 'text-gray-600'   },
-  writer: { bg: 'bg-blue-50',    text: 'text-blue-700'   },
-  editor: { bg: 'bg-teal-50',    text: 'text-teal-700'   },
-  admin:  { bg: 'bg-purple-50',  text: 'text-purple-700' },
-  owner:  { bg: 'bg-amber-50',   text: 'text-amber-700'  },
-}
 
 /** Mudanza de app/dashboard/admin/usuarios/page.tsx (Configuración por
  *  dominios, Task 6). El original era un Server Component (Supabase server
@@ -30,20 +21,19 @@ const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
  *  fetchRolesServer). Los cálculos y la interfaz de abajo son los mismos
  *  que en el original — sólo cambia de dónde se piden los datos. */
 export function UsuariosTab() {
+  const currentUserId = useAcceso().id
   const [profiles, setProfiles]           = useState<Profile[] | null>(null)
   const [roles, setRoles]                 = useState<RoleInfo[]>([])
-  const [currentUserId, setCurrentUserId] = useState('')
   const [loading, setLoading]             = useState(true)
   const [error, setError]                 = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
     setError(null)
-    Promise.all([usersApi.list(), fetchRoles(), createClient().auth.getUser()])
-      .then(([users, rolesList, { data }]) => {
+    Promise.all([usersApi.list(), fetchRoles()])
+      .then(([users, rolesList]) => {
         setProfiles(users)
         setRoles(rolesList)
-        setCurrentUserId(data.user?.id ?? '')
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error al cargar'))
       .finally(() => setLoading(false))
@@ -55,38 +45,31 @@ export function UsuariosTab() {
     return <LoadState loading={loading} error={error} onRetry={load} />
   }
 
-  const actorProfile = profiles.find(p => p.id === currentUserId)
-  const actorRole     = (actorProfile?.role ?? 'admin') as UserRole
-
   const total     = profiles.length
   const activos   = profiles.filter(u => u.active !== false).length
-  const priv      = profiles.filter(u => hasRole(u.role, 'admin')).length
+  // Quienes administran: Propietario o Administración (RBAC).
+  const priv      = profiles.filter(u => (u.roles ?? []).some(r => r === 'owner' || r === 'admin')).length
   const inactivos = total - activos
 
-  // Role distribution (desc: highest privilege first)
-  const byRole = [...roles].reverse()
+  // Cuántas personas tiene cada rol (los que tienen alguna).
+  const conPersonas = roles.filter(r => r.assigned > 0)
 
   return (
     <div className="space-y-4">
       {/* ── Role distribution pills ──────────────────────────────── */}
       <div className="flex flex-wrap gap-1.5">
-        {byRole.map(r => {
-          const count = profiles.filter(u => u.role === r.id).length
-          if (!count) return null
-          const badge = ROLE_BADGE[r.id] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
-          return (
-            <span key={r.id} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${badge.bg} ${badge.text}`}>
-              {count} {r.label}
-            </span>
-          )
-        })}
+        {conPersonas.map(r => (
+          <span key={r.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border border-border bg-bg-main text-text-primary">
+            {r.assigned} {r.name}
+          </span>
+        ))}
       </div>
 
       {/* ── Stats row ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { icon: Users,       label: 'Usuarios',  value: total,     iconBg: 'bg-slate-100', iconColor: 'text-slate-500'  },
-          { icon: ShieldAlert, label: 'Admin+',    value: priv,      iconBg: 'bg-purple-50', iconColor: 'text-purple-500' },
+          { icon: ShieldAlert, label: 'Administran', value: priv,      iconBg: 'bg-purple-50', iconColor: 'text-purple-500' },
           { icon: CircleCheck, label: 'Activos',   value: activos,   iconBg: 'bg-green-50',  iconColor: 'text-green-500'  },
           { icon: CircleOff,   label: 'Inactivos', value: inactivos, iconBg: 'bg-red-50',    iconColor: 'text-red-400'    },
         ].map(({ icon: Icon, label, value, iconBg, iconColor }) => (
@@ -102,34 +85,23 @@ export function UsuariosTab() {
         ))}
       </div>
 
-      {/* ── Role legend ───────────────────────────────────────────── */}
+      {/* ── Roles: qué hace cada uno (la jerarquía dejó de existir: RBAC) ── */}
       <div className="bg-white rounded-xl border border-border px-5 py-4">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-          Jerarquía de permisos
-        </p>
-        <div className="flex items-start gap-2 flex-wrap">
-          {roles.map((r, i) => {
-            const badge = ROLE_BADGE[r.id] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
-            return (
-              <div key={r.id} className="flex items-center gap-1.5">
-                <div className="text-center">
-                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${badge.bg} ${badge.text}`}>{r.label}</span>
-                  <p className="text-[10px] text-gray-400 mt-0.5 max-w-[80px] text-center leading-tight">{r.description}</p>
-                </div>
-                {i < roles.length - 1 && (
-                  <span className="text-gray-200 text-sm mb-4">→</span>
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <p className="text-[11px] font-bold text-informativo uppercase tracking-widest mb-3">Roles</p>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {roles.map(r => (
+            <li key={r.id} className="text-sm">
+              <span className="font-semibold text-text-primary">{r.name}</span>
+              <span className="text-informativo"> · {r.description}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* ── Users table ───────────────────────────────────────────── */}
       <UsersTable
         users={profiles}
         currentUserId={currentUserId}
-        actorRole={actorRole}
         roles={roles}
       />
     </div>

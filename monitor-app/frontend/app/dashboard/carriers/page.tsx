@@ -8,7 +8,6 @@ import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, Shi
 import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus, ComplianceHealth } from '@/lib/types'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
-import { useCanEdit } from '@/hooks/useCanEdit'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransporterCard, STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
@@ -18,6 +17,7 @@ import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { updatedRelative } from '@/lib/compliance'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 
 type TransporterTab = 'active' | 'legacy' | 'onboarding'
@@ -83,7 +83,7 @@ function EmpresasTransportePageInner() {
   const [page, setPage]           = useState(1)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
-  const canEdit = useCanEdit()
+  const canEdit = usePermiso('directory.edit')
   const [addCarrierOpen, setAddCarrierOpen] = useState(searchParams.get('create') === '1')
   const qDebounced = useDebouncedValue(q, 300)
 

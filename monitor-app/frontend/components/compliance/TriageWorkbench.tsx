@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, X } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
-import { useCanEdit } from '@/hooks/useCanEdit'
 import type { IngestUploadResult } from '@/lib/types'
 import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { TriageBulkBar } from './TriageBulkBar'
@@ -17,6 +16,7 @@ import { TriageUndoNotice } from './TriageUndoNotice'
 import { Cifra } from '@/components/ui/Cifra'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { useEmpresaDeTrabajo } from '@/hooks/useEmpresaDeTrabajo'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 interface Props {
   /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
@@ -60,7 +60,7 @@ function motivosDe(errores: { error: string }[]) {
  *  clasifica ese, con quince aplica a los quince. */
 export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicial }: Props) {
   const qc = useQueryClient()
-  const canEdit = useCanEdit()
+  const canEdit = usePermiso('documents.upload')
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [errors, setErrors] = useState<{ file_name: string; error: string }[]>([])

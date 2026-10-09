@@ -15,6 +15,7 @@ def _cliente(user):
     app.include_router(router, prefix="/api/v1")
     pool = MagicMock()
     pool.fetchrow = AsyncMock(return_value={"full_name": "Ana", "email": "ana@webcarga.com", "active": True})
+    pool.fetch = AsyncMock(return_value=[{"name": "Operador de Operaciones"}])
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(app)
@@ -24,6 +25,7 @@ def test_me_devuelve_permisos():
     res = _cliente(usuario("operations_operator", aal="aal1")).get("/api/v1/me")
     assert res.status_code == 200
     assert "closures.sign" in res.json()["permissions"] and res.json()["roles"] == ["operations_operator"]
+    assert res.json()["role_names"] == ["Operador de Operaciones"]
 
 
 def test_catalogo_exige_gestionar_personas():

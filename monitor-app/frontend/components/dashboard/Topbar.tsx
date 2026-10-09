@@ -1,7 +1,8 @@
 interface Props {
   /** Nombre ya resuelto por el layout. */
   displayName: string
-  role?: string | null
+  /** Nombre del rol principal (GET /me). */
+  rol?: string | null
 }
 
 /** Recibe los datos del layout en vez de volver a pedirlos.
@@ -11,7 +12,7 @@ interface Props {
  *  Auth por cada render del dashboard. Con el prefetch de Next.js sobre una
  *  lista larga eso son cientos de llamadas por minuto y Supabase responde 429
  *  ("Many requests") — medido: 104 llamadas a /user en un solo minuto. */
-export default function Topbar({ displayName, role }: Props) {
+export default function Topbar({ displayName, rol }: Props) {
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
@@ -37,7 +38,7 @@ export default function Topbar({ displayName, role }: Props) {
           </div>
           <div className="hidden sm:block">
             <p className="text-sm font-medium text-text-primary leading-tight">{displayName}</p>
-            <p className="text-xs text-gray-400 capitalize">{role ?? 'operador'}</p>
+            <p className="text-xs text-gray-400">{rol ?? ''}</p>
           </div>
         </div>
       </div>

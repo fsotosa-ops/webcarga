@@ -29,7 +29,7 @@ vi.mock('@/lib/api/documentIngest', () => ({
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
 }))
-vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 // El panel de alta se simula: lo que se prueba acá no es el formulario, es a
 // donde lleva la pagina DESPUES de crear.
 vi.mock('@/components/dashboard/NewCarrierPanel', () => ({

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TransporterDocumentsPanel } from './TransporterDocumentsPanel'
 import { complianceApi } from '@/lib/api/compliance'
 
-vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 import type { ComplianceRecord } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({

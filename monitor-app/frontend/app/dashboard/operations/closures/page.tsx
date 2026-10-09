@@ -7,7 +7,6 @@ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2, UserX, CheckCircle2, LockOpen,
 } from 'lucide-react'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { shippersApi } from '@/lib/api/locations'
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
@@ -24,6 +23,7 @@ import { AvisoPosteriorAlCierre } from '@/components/dashboard/AvisoPosteriorAlC
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 
 function todayISO() {
@@ -70,7 +70,9 @@ function ClosuresCenterPageInner() {
   const fecha = searchParams.get('fecha') || todayISO()
 
   const [tripsMeta, setTripsMeta] = useState<TripsMeta | null>(null)
-  const canAdmin = useCanAdmin()
+  // Forzar con pendientes: closures.override; reabrir: closures.sign (RBAC).
+  const puedeForzar = usePermiso('closures.override')
+  const puedeReabrir = usePermiso('closures.sign')
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [overridePending, setOverridePending] = useState(false)
@@ -362,7 +364,7 @@ function ClosuresCenterPageInner() {
               {sinFlota && <SinFlotaList casos={sinFlota} />}
             </div>
           )}
-          {overridePending && canAdmin && !overrideOpen && (
+          {overridePending && puedeForzar && !overrideOpen && (
             <button type="button" onClick={() => setOverrideOpen(true)} className="block text-[11px] font-semibold text-amber-700 underline">
               Forzar cierre con override
             </button>
@@ -405,7 +407,7 @@ function ClosuresCenterPageInner() {
           )}
           {/* Reabrir es un acto explícito: admin, con una nota que diga por
               qué. Antes un día "se reabría" solo, con entrar a la pantalla. */}
-          {diaCerrado && canAdmin && !reabrirOpen && (
+          {diaCerrado && puedeReabrir && !reabrirOpen && (
             <button
               type="button"
               onClick={() => setReabrirOpen(true)}

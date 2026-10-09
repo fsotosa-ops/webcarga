@@ -16,7 +16,7 @@ vi.mock('@/lib/api/carriers', () => ({
 }))
 const searchParams = new URLSearchParams()
 vi.mock('next/navigation', () => ({ useSearchParams: () => searchParams }))
-vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { complianceApi } from '@/lib/api/compliance'

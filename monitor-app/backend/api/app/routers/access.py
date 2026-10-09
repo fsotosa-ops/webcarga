@@ -19,8 +19,14 @@ def _http(e: AccessError) -> HTTPException:
 @router.get("/me")
 async def me(pool=Depends(get_pool), user=Depends(get_current_user)):
     perfil = await pool.fetchrow("SELECT full_name, email, active FROM public.profiles WHERE id = $1", user["sub"])
+    # Los nombres de los roles, para mostrarlos (Topbar, menú): el frontend no
+    # repite el catálogo de roles.
+    nombres = [r["name"] for r in await pool.fetch(
+        "SELECT name FROM app.roles WHERE code = ANY($1::text[]) ORDER BY grants_all DESC, is_system DESC, name",
+        user["roles"])]
     return {"id": user["sub"], "email": perfil["email"], "full_name": perfil["full_name"],
-            "roles": user["roles"], "permissions": sorted(user["permissions"]), "aal": user["aal"]}
+            "roles": user["roles"], "role_names": nombres,
+            "permissions": sorted(user["permissions"]), "aal": user["aal"]}
 
 
 @router.get("/permissions")

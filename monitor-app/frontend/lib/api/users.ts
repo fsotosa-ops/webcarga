@@ -1,9 +1,9 @@
-import type { Profile, UserRole } from '@/lib/types'
+import type { Profile } from '@/lib/types'
 import { apiFetch } from './client'
 
 
+/** Los roles se cambian aparte (PUT /users/{id}/roles, RBAC). */
 export type UserPatch = {
-  role?:      UserRole
   active?:    boolean
   full_name?: string
 }
@@ -11,7 +11,8 @@ export type UserPatch = {
 export type UserCreate = {
   email:     string
   full_name: string
-  role:      UserRole
+  /** Códigos de rol (RBAC); la API rechaza dar permisos que quien invita no tiene. */
+  roles:     string[]
   /** Sin contraseña: entra con su Google o Microsoft del mismo email. */
   password?: string
 }

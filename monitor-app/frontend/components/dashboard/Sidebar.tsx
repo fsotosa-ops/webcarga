@@ -13,7 +13,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
-import { hasRole } from '@/lib/types'
+import { puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
 
 // "Operaciones" agrupa Monitor bajo un solo item expandible —
 // Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
@@ -96,14 +96,6 @@ const MOBILE_NAV_ITEMS = [
   ...NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, icon: g.icon }))),
   ...NAV_ITEMS,
 ]
-
-const ROLE_BADGE: Record<string, string> = {
-  owner:  'bg-amber-500/20 text-amber-300',
-  admin:  'bg-purple-500/20 text-purple-300',
-  editor: 'bg-teal-500/20 text-teal-300',
-  writer: 'bg-blue-500/20 text-blue-300',
-  viewer: 'bg-white/10 text-white/50',
-}
 
 /** Grupo expandible del sidebar. Existe una sola vez: antes el bloque estaba
  *  escrito a mano para Operaciones, y sumar un segundo grupo obligaba a
@@ -206,10 +198,10 @@ function NavGroup({
 }
 
 interface SidebarProps {
-  role?: string
+  acceso: Acceso
 }
 
-export default function Sidebar({ role }: SidebarProps) {
+export default function Sidebar({ acceso }: SidebarProps) {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
@@ -261,10 +253,9 @@ export default function Sidebar({ role }: SidebarProps) {
 
   const isAdmin       = pathname.startsWith('/dashboard/admin')
   const isConfig      = pathname.startsWith('/dashboard/admin/settings')
-  // La misma jerarquia que `useCanAdmin`. Aca no se usa el hook porque el
-  // rol ya llego —no hay que volver a consultarlo—, pero la REGLA es una.
-  const canAdmin      = hasRole(role, 'admin')
-  const roleBadge = ROLE_BADGE[role ?? 'viewer'] ?? ROLE_BADGE.viewer
+  // Configuración: quien administra o configura alguna área (misma regla que
+  // el layout de admin, lib/authz/acceso.ts).
+  const canAdmin      = puedeVerConfiguracion(acceso)
 
   return (
     <>

@@ -24,17 +24,18 @@ vi.mock('@/lib/api/carriers', () => ({
     patch: vi.fn(),
   },
 }))
-vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: vi.fn(() => true) }))
-// Por defecto NO es admin: el default de un mock de permisos tiene que ser
-// el permiso más chico, o un test que se olvide de declararlo pasa por la
-// puerta más ancha sin decirlo.
-vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: vi.fn(() => false) }))
+// `editor`: cargar, revisar y gestionar la flota; `admin`: dar de baja la
+// empresa (directory.delete). Por defecto NO es admin: el default de un mock
+// de permisos tiene que ser el permiso más chico, o un test que se olvide de
+// declararlo pasa por la puerta más ancha sin decirlo.
+const permisos = vi.hoisted(() => ({ editor: true, admin: false }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({
+  usePermiso: (p: string) => (p === 'directory.delete' ? permisos.admin : permisos.editor),
+}))
 
 import { useParams } from 'next/navigation'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
-import { useCanEdit } from '@/hooks/useCanEdit'
 
 const CARRIER: Carrier = {
   id: 'c1', tax_id: '1-9', country_code: 'CL', business_name: 'Transportes Demo Spa',
@@ -137,11 +138,10 @@ function montar(rows: FilaDePrueba[], empresa: Carrier = CARRIER) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // `clearAllMocks` no deshace un `mockReturnValue` puesto por un test
-  // anterior (sólo limpia el historial de llamadas): sin este reset, un
-  // test que apaga `canEdit` deja apagado a todos los que corren después.
-  vi.mocked(useCanEdit).mockReturnValue(true)
-  vi.mocked(useCanAdmin).mockReturnValue(false)
+  // Sin este reset, un test que apaga `editor` lo deja apagado para todos
+  // los que corren después.
+  permisos.editor = true
+  permisos.admin = false
 })
 
 describe('FichaEmpresaPage', () => {
@@ -674,7 +674,7 @@ describe('FichaEmpresaPage', () => {
   })
 
   it('un lector ve todo y no puede cargar nada', async () => {
-    vi.mocked(useCanEdit).mockReturnValue(false)
+    permisos.editor = false
     montar([fila({ id: 'p1', status: 'MISSING' })])
     expect(await screen.findByText('De la empresa')).toBeInTheDocument()
     // Espera el renglon (su detalle se pide al desplegar, y este sujeto
@@ -846,7 +846,7 @@ describe('FichaEmpresaPage', () => {
   })
 
   it('un viewer ve la fecha pero no puede corregirla', async () => {
-    vi.mocked(useCanEdit).mockReturnValue(false)
+    permisos.editor = false
     montar([fila({
       id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
       document_name: 'Licencia de Conducir',
@@ -862,7 +862,7 @@ describe('FichaEmpresaPage', () => {
   })
 
   it('un viewer no ve el menú', async () => {
-    vi.mocked(useCanEdit).mockReturnValue(false)
+    permisos.editor = false
     montar([fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
 
     fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
@@ -965,7 +965,7 @@ describe('FichaEmpresaPage', () => {
   // distinto permiso. Estos tests fijan esa frontera.
 
   it('un admin puede dar de baja a la empresa desde la ficha', async () => {
-    vi.mocked(useCanAdmin).mockReturnValue(true)
+    permisos.admin = true
     vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
     montar([fila()])
 
@@ -984,7 +984,7 @@ describe('FichaEmpresaPage', () => {
     // pestaña tampoco lo arreglaba). Las raíces de Certificación viven en
     // `RAICES_DE_CERTIFICACION` justamente porque esta lista "ya perdió una
     // raíz dos veces".
-    vi.mocked(useCanAdmin).mockReturnValue(true)
+    permisos.admin = true
     vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
     montar([fila()])
 
@@ -1011,7 +1011,7 @@ describe('FichaEmpresaPage', () => {
   const menuDeAcciones = () => screen.queryAllByRole('button', { name: /Acciones|Transferir|Dar de baja a/i })
 
   it('una empresa dada de baja no deja escribir, aunque el rol alcance', async () => {
-    vi.mocked(useCanEdit).mockReturnValue(true)
+    permisos.editor = true
     montar([fila({ entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })],
            { ...CARRIER, operational_status: 'INACTIVE' })
 
@@ -1025,7 +1025,7 @@ describe('FichaEmpresaPage', () => {
   it('una empresa activa sí deja escribir: el bloqueo es la baja, no la pantalla', async () => {
     // La otra mitad. Sin esto, `canEdit = false` siempre pasaría el test de
     // arriba y nadie lo notaría.
-    vi.mocked(useCanEdit).mockReturnValue(true)
+    permisos.editor = true
     montar([fila({ entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' })])
 
     fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
@@ -1035,8 +1035,8 @@ describe('FichaEmpresaPage', () => {
   })
 
   it('un editor no ve la baja de la empresa: sigue siendo de admin', async () => {
-    vi.mocked(useCanEdit).mockReturnValue(true)
-    vi.mocked(useCanAdmin).mockReturnValue(false)
+    permisos.editor = true
+    permisos.admin = false
     montar([fila()])
 
     // Algo del editor tiene que aparecer primero, o el test no distingue
@@ -1047,7 +1047,7 @@ describe('FichaEmpresaPage', () => {
   })
 
   it('una empresa dada de baja ofrece reactivarla, no darla de baja otra vez', async () => {
-    vi.mocked(useCanAdmin).mockReturnValue(true)
+    permisos.admin = true
     vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
     montar([fila()], { ...CARRIER, operational_status: 'INACTIVE' })
 

@@ -5,6 +5,7 @@ from datetime import date
 from typing import Literal, Optional
 
 from pydantic import BaseModel
+from ..authz.permissions import Permission
 
 from .common import ManagementType
 
@@ -29,6 +30,14 @@ class ComplianceRecordPatchBody(BaseModel):
     (H2.4) que fuerza status='APPROVED_MANUAL', no este PATCH libre."""
     status: Optional[ComplianceStatus] = None
     expiration_date: Optional[date] = None
+
+
+# Permiso por campo (RBAC): la fecha se declara al cargar —incluso antes de
+# tener el escaneo—; aprobar o rechazar es revisar.
+COMPLIANCE_RECORD_FIELD_PERMISSIONS: dict[str, Permission] = {
+    "status": Permission.DOCUMENTS_REVIEW,
+    "expiration_date": Permission.DOCUMENTS_UPLOAD,
+}
 
 
 class ReassignBody(BaseModel):

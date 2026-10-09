@@ -7,7 +7,7 @@ vi.mock('@/lib/api/requirements', () => ({
   requirementsApi: { patchConditions: vi.fn(), recalcPreview: vi.fn(), recalc: vi.fn(), previewVigencia: vi.fn() },
 }))
 const puedeAdministrar = vi.fn(() => true)
-vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => puedeAdministrar() }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => puedeAdministrar() }))
 
 import { requirementsApi } from '@/lib/api/requirements'
 import { CondicionPanel } from './CondicionPanel'

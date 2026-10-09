@@ -42,7 +42,9 @@ vi.mock('@/lib/api/closures', () => ({
   isCierrePendienteError: vi.fn(() => false),
 }))
 
-vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: vi.fn(() => false) }))
+// Por defecto sin ningún permiso de cierre: el default es la puerta más chica.
+const permisos = vi.hoisted(() => ({ dados: new Set<string>() }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: (p: string) => permisos.dados.has(p) }))
 
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
@@ -93,13 +95,12 @@ beforeEach(async () => {
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
   const { closuresApi, isCierrePendienteError } = await import('@/lib/api/closures')
-  const { useCanAdmin } = await import('@/hooks/useCanAdmin')
   vi.mocked(dailyClosuresApi.get).mockReset().mockResolvedValue(EMPTY_STATUS)
   vi.mocked(equipmentClosuresApi.get).mockReset().mockResolvedValue(EMPTY_EQUIPMENT)
   vi.mocked(closuresApi.cerrar).mockReset()
   vi.mocked(closuresApi.reabrir).mockReset()
   vi.mocked(isCierrePendienteError).mockReset().mockReturnValue(false)
-  vi.mocked(useCanAdmin).mockReset().mockReturnValue(false)
+  permisos.dados = new Set()
   push.mockReset(); replace.mockReset()
 })
 
@@ -178,19 +179,18 @@ describe('ClosuresCenterPage', () => {
     expect(screen.queryByRole('button', { name: 'Confirmar cierre' })).not.toBeInTheDocument()
   })
 
-  it('reabrir es sólo de admin y exige una nota', async () => {
+  it('reabrir exige firmar cierres (closures.sign) y una nota', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     const { closuresApi } = await import('@/lib/api/closures')
-    const { useCanAdmin } = await import('@/hooks/useCanAdmin')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(CERRADO)
     vi.mocked(closuresApi.reabrir).mockResolvedValue({ business_date: '2026-08-04', status: 'OPEN' })
 
-    const sinAdmin = renderPage()
+    const sinPermiso = renderPage()
     await screen.findByText(/Día cerrado por/)
     expect(screen.queryByRole('button', { name: /Reabrir día/ })).not.toBeInTheDocument()
-    sinAdmin.unmount()
+    sinPermiso.unmount()
 
-    vi.mocked(useCanAdmin).mockReturnValue(true)
+    permisos.dados = new Set(['closures.sign'])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /Reabrir día/ }))
     const confirmar = screen.getByRole('button', { name: 'Confirmar y reabrir' })

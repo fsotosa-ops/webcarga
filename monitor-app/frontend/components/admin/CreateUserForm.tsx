@@ -4,11 +4,11 @@ import { useState, useTransition } from 'react'
 import { usersApi } from '@/lib/api/users'
 import { X, UserPlus, Eye, EyeOff, Copy, Check } from 'lucide-react'
 import PasswordStrength, { isPasswordValid } from '@/components/auth/PasswordStrength'
-import type { UserRole } from '@/lib/types'
 import type { RoleInfo } from '@/lib/api/roles'
+import { useAcceso } from '@/lib/authz/PermisosProvider'
+import { puedeOtorgar } from '@/lib/authz/acceso'
 
 interface Props {
-  actorRole: UserRole
   roles:     RoleInfo[]
   onCreated: () => void
   onClose:   () => void
@@ -26,20 +26,19 @@ export function mensajeDeAcceso(p: {
     : `${saludo}\nEntra en ${p.url} con el botón de Google o Microsoft, usando la cuenta ${p.email}.`
 }
 
-export default function CreateUserForm({ actorRole, roles, onCreated, onClose }: Props) {
+export default function CreateUserForm({ roles, onCreated, onClose }: Props) {
+  const acceso = useAcceso()
+  const availableRoles = roles.filter(r => puedeOtorgar(acceso, r))
   const [creado, setCreado] = useState<{ mensaje: string; invitationSent: boolean } | null>(null)
   const [copiado, setCopiado] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [selectedRole, setSelectedRole] = useState<string>(roles[0]?.id ?? 'viewer')
+  const [selectedRole, setSelectedRole] = useState<string>(availableRoles[0]?.code ?? '')
   const [oauthOnly, setOauthOnly] = useState(true)
   const [isPending, startTransition] = useTransition()
 
-  const actorLevel = roles.find(r => r.id === actorRole)?.level ?? 0
-  const availableRoles = roles.filter(r => r.level < actorLevel)
-
-  const canSubmit = oauthOnly || isPasswordValid(password)
+  const canSubmit = selectedRole !== '' && (oauthOnly || isPasswordValid(password))
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -57,14 +56,14 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
         const res = await usersApi.create({
           email,
           full_name: nombre,
-          role:      selectedRole as UserRole,
+          roles:     [selectedRole],
           ...(oauthOnly ? {} : { password }),
         })
         setCreado({
           invitationSent: res.invitation_sent,
           mensaje: mensajeDeAcceso({
             nombre, email,
-            rol: roles.find(r => r.id === selectedRole)?.label ?? selectedRole,
+            rol: roles.find(r => r.code === selectedRole)?.name ?? selectedRole,
             url: `${window.location.origin}/login`,
             ...(oauthOnly ? {} : { password }),
           }),
@@ -208,9 +207,9 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
             <div className="space-y-2">
               {availableRoles.map(r => (
                 <label
-                  key={r.id}
+                  key={r.code}
                   className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                    selectedRole === r.id
+                    selectedRole === r.code
                       ? 'border-accent bg-accent/5'
                       : 'border-border hover:border-gray-300'
                   }`}
@@ -218,13 +217,13 @@ export default function CreateUserForm({ actorRole, roles, onCreated, onClose }:
                   <input
                     type="radio"
                     name="role_radio"
-                    value={r.id}
-                    checked={selectedRole === r.id}
-                    onChange={() => setSelectedRole(r.id)}
+                    value={r.code}
+                    checked={selectedRole === r.code}
+                    onChange={() => setSelectedRole(r.code)}
                     className="mt-0.5 accent-accent"
                   />
                   <div>
-                    <span className="text-sm font-medium text-text-primary">{r.label}</span>
+                    <span className="text-sm font-medium text-text-primary">{r.name}</span>
                     <p className="text-xs text-gray-400 mt-0.5">{r.description}</p>
                   </div>
                 </label>

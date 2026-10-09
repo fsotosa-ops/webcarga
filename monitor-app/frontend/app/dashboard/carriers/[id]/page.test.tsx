@@ -28,6 +28,11 @@ async function clickTab(name: RegExp) {
 
 vi.mock('next/navigation', () => ({ useParams: vi.fn(), useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
+// Por defecto Administración: edita y da de baja (directory.edit, directory.delete).
+const permisos = vi.hoisted(() => ({ darDeBaja: true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({
+  usePermiso: (p: string) => (p === 'directory.delete' ? permisos.darDeBaja : true),
+}))
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: {
     get: vi.fn(), patch: vi.fn(), delete: vi.fn(),
@@ -77,6 +82,7 @@ const ASSETS: CarrierAssetRosterItem[] = [
 const pushMock = vi.fn()
 
 beforeEach(() => {
+  permisos.darDeBaja = true
   vi.mocked(useParams).mockReturnValue({ id: 't1' })
   pushMock.mockReset()
   vi.mocked(useRouter).mockReturnValue({ push: pushMock } as unknown as ReturnType<typeof useRouter>)
@@ -357,17 +363,8 @@ describe('EmpresaDetailPage', () => {
   // operational_status de la EMPRESA, la familia que esta rama declaro fuera
   // de alcance para conductores y vehiculos - no corresponde ensancharla
   // tambien para la empresa por inercia.
-  it('un editor no ve "Dar de baja" de la empresa: sigue siendo de admin', async () => {
-    vi.mocked(createClient).mockReturnValue({
-      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } }) },
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({ data: { role: 'editor' } }),
-          }),
-        }),
-      }),
-    } as unknown as ReturnType<typeof createClient>)
+  it('sin directory.delete no ve "Dar de baja" de la empresa', async () => {
+    permisos.darDeBaja = false
     renderPage()
 
     // Algo del editor si tiene que aparecer, o el test no distingue "todavia

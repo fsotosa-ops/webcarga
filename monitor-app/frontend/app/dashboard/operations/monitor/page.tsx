@@ -29,7 +29,6 @@ import {
 import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { AsignarConductorPopover } from '@/components/dashboard/AsignarConductorPopover'
-import { useCanEdit } from '@/hooks/useCanEdit'
 import { useEliminarViajes } from '@/hooks/useEliminarViajes'
 import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
 import { cuantos } from '@/lib/utils/cuantos'
@@ -37,6 +36,7 @@ import { driversApi } from '@/lib/api/drivers'
 import { carriersApi } from '@/lib/api/carriers'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -194,7 +194,7 @@ export default function DiarioPage() {
   )
   const { pinned, togglePin } = usePinnedAlertSignals()
   // ── Identificar al conductor desde la tabla (2026-08-18) ───────────────
-  const puedeEditar = useCanEdit()
+  const puedeEditar = usePermiso('trips.edit_sensitive')
   const [asignando, setAsignando] = useState<Trip | null>(null)
   const [soloSinIdentificar, setSoloSinIdentificar] = useState(false)
 

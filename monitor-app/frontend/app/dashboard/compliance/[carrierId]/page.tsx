@@ -8,8 +8,7 @@ import { Ban, Building2, ChevronDown, ChevronRight, Eye, Loader2, Truck, User } 
 import { complianceApi } from '@/lib/api/compliance'
 import { tripsApi } from '@/lib/api/trips'
 import { carriersApi } from '@/lib/api/carriers'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
-import { useCanEdit } from '@/hooks/useCanEdit'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { camposQuePide, type DatosDelDocumento } from '@/lib/compliance'
 import { SolicitarDocumento } from '@/components/compliance/SolicitarDocumento'
@@ -340,7 +339,7 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorr
  *  como elemento) rompe las reglas de hooks — el número de sujetos cambia
  *  con el filtro, así que el número de llamadas también cambiaría. */
 function TarjetaDeSujeto({
-  sujeto, carrierId, estadoFiltro, abierto, onAlternar, canEdit, nombreEmpresa,
+  sujeto, carrierId, estadoFiltro, abierto, onAlternar, canEdit, puedeRevisar, puedeGestionarFlota, nombreEmpresa,
   onTransferir, onDarDeBaja, accionesDeshabilitadas,
   viendoId, avisoVer, previewFetching, onVer, subir, onFechaCorregida,
 }: {
@@ -349,7 +348,12 @@ function TarjetaDeSujeto({
   estadoFiltro:  EstadoDocumental
   abierto:       boolean
   onAlternar:    () => void
+  /** Cargar documentos y declarar su fecha (documents.upload). */
   canEdit:       boolean
+  /** Solicitar y quitar solicitudes de documentos (documents.review). */
+  puedeRevisar:  boolean
+  /** Transferir o dar de baja conductores y vehículos (directory.edit). */
+  puedeGestionarFlota: boolean
   /** Tras corregir una fecha hay que repedir: el resumen del servidor trae los
    *  conteos, y una fecha nueva puede mover un documento de balde. */
   onFechaCorregida: () => void
@@ -391,7 +395,7 @@ function TarjetaDeSujeto({
         sujeto={sujeto}
         abierto={abierto}
         onAlternar={onAlternar}
-        canEdit={canEdit}
+        canEdit={puedeGestionarFlota}
         nombreEmpresa={nombreEmpresa}
         onTransferir={onTransferir}
         onDarDeBaja={onDarDeBaja}
@@ -442,7 +446,7 @@ function TarjetaDeSujeto({
               onVer={f.tiene_archivo ? () => onVer(f) : undefined}
               onFechaCorregida={camposQuePide(f.expiration_policy ?? 'OPTIONAL').fecha !== 'no'
                 ? onFechaCorregida : undefined}
-              onQuitarSolicitud={f.a_pedido && !f.tiene_archivo
+              onQuitarSolicitud={puedeRevisar && f.a_pedido && !f.tiene_archivo
                 ? () => { void quitarSolicitud(f.id) } : undefined}
               viendo={viendoId === f.id && previewFetching}
               avisoVer={viendoId === f.id ? avisoVer : null}
@@ -451,7 +455,7 @@ function TarjetaDeSujeto({
       ))}
       {/* Pedir un documento "solo cuando se solicita" (HU-C1, entrega 2b):
           al pie de los documentos del sujeto, no en otra pantalla. */}
-      {abierto && canEdit && !filasQuery.isPending && (
+      {abierto && puedeRevisar && !filasQuery.isPending && (
         <SolicitarDocumento entityType={sujeto.entity_type} entityId={sujeto.entity_id} />
       )}
     </div>
@@ -474,8 +478,11 @@ function TarjetaDeSujeto({
  *  del estado activo (`TarjetaDeSujeto`). */
 export default function FichaEmpresaPage() {
   const { carrierId } = useParams<{ carrierId: string }>()
-  const canEditRol = useCanEdit()
-  const canAdmin = useCanAdmin()
+  // Cada acción con el permiso de la ruta que llama (RBAC).
+  const puedeCargarRol = usePermiso('documents.upload')
+  const puedeRevisarRol = usePermiso('documents.review')
+  const puedeGestionarFlotaRol = usePermiso('directory.edit')
+  const canAdmin = usePermiso('directory.delete')
   const subirDocumento = useSubirDocumento()
   const queryClient = useQueryClient()
 
@@ -590,7 +597,9 @@ export default function FichaEmpresaPage() {
    *  encabezado promete exactamente esto — y con el permiso a secas prometía
    *  algo que la pantalla no cumplía: medido en dev, 6 controles de carga
    *  seguían habilitados bajo el cartel que decía que no se podía cargar. */
-  const canEdit = canEditRol && empresaActiva
+  const canEdit = puedeCargarRol && empresaActiva
+  const puedeRevisar = puedeRevisarRol && empresaActiva
+  const puedeGestionarFlota = puedeGestionarFlotaRol && empresaActiva
 
   const resumen = resumenQuery.data
   const todosLosSujetos = resumen?.sujetos ?? []
@@ -799,7 +808,7 @@ export default function FichaEmpresaPage() {
             <GestionDeclarada
               carrierId={carrierId}
               declarado={carrier.management_types}
-              canEdit={canEdit}
+              canEdit={puedeGestionarFlota}
               onGuardado={async () => {
                 await queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })
                 await invalidarCertificacion(queryClient)
@@ -944,6 +953,8 @@ export default function FichaEmpresaPage() {
               abierto={estaAbierto(s)}
               onAlternar={() => alternar(claveDeSujeto(s))}
               canEdit={canEdit}
+              puedeRevisar={puedeRevisar}
+              puedeGestionarFlota={puedeGestionarFlota}
               onFechaCorregida={() => invalidarCertificacion(queryClient)}
               nombreEmpresa={carrier.business_name}
               onTransferir={() => setTransfiriendo(s)}
@@ -986,7 +997,7 @@ export default function FichaEmpresaPage() {
 
             El componente es compartido con la ficha vieja: dos formularios
             iguales en dos pantallas es la forma en que este arreglo vuelve. */}
-        {canEdit && (
+        {puedeGestionarFlota && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-dashed border-border px-3 py-2.5">
             <AltaDeFlota
               carrierId={carrierId}

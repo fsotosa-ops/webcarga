@@ -2,25 +2,14 @@
 
 import { useState, useTransition } from 'react'
 import CreateUserForm from './CreateUserForm'
-import type { Profile, UserRole } from '@/lib/types'
-import { canManage, hasRole } from '@/lib/types'
+import type { Profile } from '@/lib/types'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 import type { RoleInfo } from '@/lib/api/roles'
 import { usersApi } from '@/lib/api/users'
 import {
-  UserPlus, Trash2, Search, ChevronDown,
+  UserPlus, Trash2, Search,
   ShieldCheck, UserCheck, UserX, MoreHorizontal
 } from 'lucide-react'
-
-// ── Role styling ──────────────────────────────────────────────────────────────
-const ROLE_BADGE_MAP: Record<string, { pill: string; avatar: string; dot: string }> = {
-  viewer: { pill: 'bg-gray-100 text-gray-600 border-gray-200',     avatar: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400'   },
-  writer: { pill: 'bg-blue-50 text-blue-700 border-blue-200',      avatar: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-500'   },
-  editor: { pill: 'bg-teal-50 text-teal-700 border-teal-200',      avatar: 'bg-teal-100 text-teal-700',     dot: 'bg-teal-500'   },
-  admin:  { pill: 'bg-purple-50 text-purple-700 border-purple-200', avatar: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
-  owner:  { pill: 'bg-amber-50 text-amber-700 border-amber-200',   avatar: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500'  },
-}
-const FALLBACK_BADGE = { pill: 'bg-gray-100 text-gray-600 border-gray-200', avatar: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400' }
-function getRoleBadge(role: string) { return ROLE_BADGE_MAP[role] ?? FALLBACK_BADGE }
 
 const METODO: Record<string, string> = { google: 'Google', azure: 'Microsoft', email: 'Email' }
 
@@ -38,15 +27,19 @@ function fmtDate(iso: string) {
 interface Props {
   users:         Profile[]
   currentUserId: string
-  actorRole:     UserRole
   roles:         RoleInfo[]
 }
 
-export default function UsersTable({ users: initial, currentUserId, actorRole, roles }: Props) {
+/** Administran: Propietario o Administración (RBAC). */
+function administra(u: Profile): boolean {
+  return (u.roles ?? []).some(r => r === 'owner' || r === 'admin')
+}
+
+export default function UsersTable({ users: initial, currentUserId, roles }: Props) {
+  const puedeGestionar = usePermiso('users.manage')
   const [users,         setUsers]         = useState(initial)
   const [showCreate,    setShowCreate]    = useState(false)
   const [deletingId,    setDeletingId]    = useState<string | null>(null)
-  const [roleDropId,    setRoleDropId]    = useState<string | null>(null)
   const [actionMenuId,  setActionMenuId]  = useState<string | null>(null)
   const [search,        setSearch]        = useState('')
   const [tab,           setTab]           = useState<FilterTab>('all')
@@ -54,15 +47,6 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
 
   function updateLocal(id: string, patch: Partial<Profile>) {
     setUsers(prev => prev.map(u => (u.id === id ? { ...u, ...patch } : u)))
-  }
-
-  function changeRole(user: Profile, newRole: UserRole) {
-    setRoleDropId(null)
-    updateLocal(user.id, { role: newRole })
-    startTransition(async () => {
-      try { await usersApi.patch(user.id, { role: newRole }) }
-      catch { updateLocal(user.id, { role: user.role }) }
-    })
   }
 
   function toggleActive(user: Profile) {
@@ -88,13 +72,9 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
     }
   }
 
-  // Roles actorRole can assign to others (strictly below actor's level)
-  const actorLevel = roles.find(r => r.id === actorRole)?.level ?? 0
-  const assignableRoles = roles.filter(r => r.level < actorLevel)
-
   // Filtering
   const byTab = users.filter(u => {
-    if (tab === 'privileged') return hasRole(u.role, 'admin')
+    if (tab === 'privileged') return administra(u)
     if (tab === 'active')     return u.active !== false
     if (tab === 'inactive')   return u.active === false
     return true
@@ -105,14 +85,14 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
 
   const tabCounts = {
     all:        users.length,
-    privileged: users.filter(u => hasRole(u.role, 'admin')).length,
+    privileged: users.filter(administra).length,
     active:     users.filter(u => u.active !== false).length,
     inactive:   users.filter(u => u.active === false).length,
   }
 
   const TABS: { key: FilterTab; label: string }[] = [
     { key: 'all',        label: 'Todos'      },
-    { key: 'privileged', label: 'Admin+'     },
+    { key: 'privileged', label: 'Administran' },
     { key: 'active',     label: 'Activos'    },
     { key: 'inactive',   label: 'Inactivos'  },
   ]
@@ -121,7 +101,6 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
     <>
       {showCreate && (
         <CreateUserForm
-          actorRole={actorRole}
           roles={roles}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); window.location.reload() }}
@@ -129,10 +108,10 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
       )}
 
       {/* Close dropdowns on outside click */}
-      {(roleDropId || actionMenuId) && (
+      {actionMenuId && (
         <div
           className="fixed inset-0 z-10"
-          onClick={() => { setRoleDropId(null); setActionMenuId(null) }}
+          onClick={() => setActionMenuId(null)}
         />
       )}
 
@@ -196,9 +175,9 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
             </thead>
             <tbody className="divide-y divide-border/60">
               {filtered.map(user => {
-                const userRole  = (user.role as UserRole) ?? 'viewer'
-                const badge     = getRoleBadge(userRole)
-                const manageable = user.id !== currentUserId && canManage(actorRole, userRole)
+                // Las reglas finas (Propietarios, último Propietario) las aplica la API.
+                const manageable = user.id !== currentUserId && puedeGestionar
+                const nombresDeRol = (user.roles ?? []).map(c => roles.find(r => r.code === c)?.name ?? c)
                 const isMe       = user.id === currentUserId
                 const initStr    = initials(user.full_name, user.email)
 
@@ -210,7 +189,7 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
                     {/* Avatar + name + email */}
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${badge.avatar}`}>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-accent/10 text-accent">
                           {initStr}
                         </div>
                         <div className="min-w-0">
@@ -223,61 +202,15 @@ export default function UsersTable({ users: initial, currentUserId, actorRole, r
                       </div>
                     </td>
 
-                    {/* Role badge (clickable if manageable) */}
+                    {/* Roles (solo lectura hasta la pantalla de roles de la Task 12) */}
                     <td className="px-5 py-3.5">
-                      {(() => {
-                        const roleInfo = roles.find(r => r.id === userRole)
-                        const roleLabel = roleInfo?.label ?? userRole
-                        const roleDesc  = roleInfo?.description ?? ''
-                        return manageable ? (
-                          <div className="relative inline-block">
-                            <button
-                              onClick={() => setRoleDropId(roleDropId === user.id ? null : user.id)}
-                              className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-full text-xs font-semibold border transition-opacity hover:opacity-80 ${badge.pill}`}
-                              title={roleDesc}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                              {roleLabel}
-                              <ChevronDown size={10} />
-                            </button>
-
-                            {roleDropId === user.id && (
-                              <div className="absolute left-0 top-full mt-1.5 z-20 bg-white border border-border rounded-xl shadow-xl p-1.5 w-56">
-                                <p className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Cambiar rol</p>
-                                {assignableRoles.map(r => {
-                                  const rb = getRoleBadge(r.id)
-                                  return (
-                                    <button
-                                      key={r.id}
-                                      onClick={() => changeRole(user, r.id as UserRole)}
-                                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs hover:bg-gray-50 transition-colors ${userRole === r.id ? 'bg-accent/5' : ''}`}
-                                    >
-                                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${rb.avatar}`}>
-                                        {r.label[0]}
-                                      </span>
-                                      <div>
-                                        <p className="font-semibold text-text-primary">{r.label}</p>
-                                        <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{r.description}</p>
-                                      </div>
-                                      {userRole === r.id && (
-                                        <span className="ml-auto w-4 h-4 rounded-full bg-accent flex items-center justify-center">
-                                          <span className="text-white text-[8px] font-bold">✓</span>
-                                        </span>
-                                      )}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className={`inline-flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-full text-xs font-semibold border ${badge.pill}`}
-                            title={roleDesc}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                            {roleLabel}
+                      <div className="flex flex-wrap gap-1">
+                        {nombresDeRol.length ? nombresDeRol.map(n => (
+                          <span key={n} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-border bg-bg-main text-text-primary">
+                            {n}
                           </span>
-                        )
-                      })()}
+                        )) : <span className="text-[11px] text-informativo">Sin roles</span>}
+                      </div>
                     </td>
 
                     {/* Estado */}

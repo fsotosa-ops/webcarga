@@ -17,7 +17,7 @@ vi.mock('@/lib/api/compliance', () => ({
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
 }))
-vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 
 // TriageClassifyForm hace la llamada a classifyBatch y reporta hacia arriba
 // con onApplied. Acá interesa qué hace el Workbench con ese aviso, no volver

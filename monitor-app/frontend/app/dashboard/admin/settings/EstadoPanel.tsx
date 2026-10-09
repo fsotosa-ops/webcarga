@@ -6,8 +6,8 @@ import { Check, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { configApi, type Direccion, type Revision, type TripStatusRow } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision } from './revision'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { GROUP_OPTIONS, INPUT, SwatchPicker } from './shared'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const BOTON_ORDEN = 'inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 '
   + 'text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 '
@@ -50,7 +50,7 @@ export function EstadoPanel({
   // componente siga siendo correcto si algun dia se monta fuera de /admin.
   // NO se le escribe test a la rama falsa: hoy es inalcanzable, y un test sobre
   // un estado que no puede ocurrir es cobertura que no cubre.
-  const puedeEditar = useCanAdmin()
+  const puedeEditar = usePermiso('operations.configure')
   const qc = useQueryClient()
 
   const [label, setLabel] = useState(estado.label)

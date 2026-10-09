@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { requirementsApi } from '@/lib/api/requirements'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { ExigibleOn, ManagementType, RequirementOption } from '@/lib/types'
 import { faltaDeVigencia, mismaVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
@@ -13,6 +12,7 @@ import { EditorVigencia } from './EditorVigencia'
 import { SelectorExigibilidad } from './SelectorExigibilidad'
 import type { Revision } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision } from './revision'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const UNIVERSO: Record<string, string> = {
   ASSET:   'A todos los vehículos',
@@ -73,7 +73,7 @@ export function CondicionPanel({
   onGuardado:  () => void
   onCerrar:    () => void
 }) {
-  const canEdit = useCanAdmin()
+  const canEdit = usePermiso('certification.configure')
   const qc = useQueryClient()
 
   const esAsset   = requisito.target_entity === 'ASSET'

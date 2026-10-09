@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useQuery } from '@tanstack/react-query'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronRight, Plus } from 'lucide-react'
@@ -22,6 +21,7 @@ import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from '
 import { celdaSeExigeA } from './frase-de-la-regla'
 import { INPUT, LoadState } from './shared'
 import type { RequirementOption } from '@/lib/types'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const ENTIDAD: Record<string, { texto: string; clase: string }> = {
   ASSET:   { texto: 'VEHÍCULO',  clase: 'bg-blue-50 text-blue-700' },
@@ -78,7 +78,7 @@ export function CondicionesTabla() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const abierto = searchParams.get('doc')
-  const canAdmin = useCanAdmin()
+  const canAdmin = usePermiso('certification.configure')
   const [creando, setCreando] = useState(false)
   const [borrador, setBorrador] = useState<Borrador>({})
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set())

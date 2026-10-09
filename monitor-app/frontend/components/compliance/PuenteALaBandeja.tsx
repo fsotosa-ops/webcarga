@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { Inbox } from 'lucide-react'
-import { useCanEdit } from '@/hooks/useCanEdit'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 interface Props {
   carrierId:   string
@@ -26,7 +26,7 @@ interface Props {
  *  escrito verbatim en los dos y un cambio de copy había que hacerlo en dos
  *  lados sin que nada lo obligara. */
 export function PuenteALaBandeja({ carrierId, carrierName }: Props) {
-  const canEdit = useCanEdit()
+  const canEdit = usePermiso('documents.upload')
   if (!canEdit) return null
 
   return (

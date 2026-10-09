@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 
 from ..auth import get_current_user, get_supabase, require_editor
-from ..authz import Permission, require
+from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
 
@@ -36,6 +36,7 @@ FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
 from ..schemas.compliance import (
     SolicitudBody,
     ReassignBody,
+    COMPLIANCE_RECORD_FIELD_PERMISSIONS,
     ComplianceRecordPatchBody,
     ComplianceSummaryResponse,
     PendingComplianceListResponse,
@@ -1491,11 +1492,15 @@ async def reassign_compliance_document(
 @router.patch("/{record_id}")
 async def patch_compliance_record(
     record_id: str, body: ComplianceRecordPatchBody, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require(Permission.DOCUMENTS_REVIEW)),
+    supabase=Depends(get_supabase), user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
     """Override manual libre (ej. un admin aprueba a mano sin archivo). Para
     subir evidencia real, usar POST /{record_id}/file — ese fuerza
-    APPROVED_MANUAL en vez de dejar setear cualquier status a mano."""
+    APPROVED_MANUAL en vez de dejar setear cualquier status a mano.
+
+    Permiso por campo (COMPLIANCE_RECORD_FIELD_PERMISSIONS): la fecha es carga,
+    el estado es revisión."""
+    require_fields(user, body.model_dump(exclude_none=True), COMPLIANCE_RECORD_FIELD_PERMISSIONS)
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(

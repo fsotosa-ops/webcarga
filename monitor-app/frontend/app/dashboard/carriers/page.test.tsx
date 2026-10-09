@@ -9,6 +9,8 @@ import type { CarrierListResponse } from '@/lib/types'
 
 vi.mock('next/navigation', () => ({ useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
+// Sin sesión: sin permisos de escritura.
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => false }))
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { list: vi.fn(), create: vi.fn(), buscar: vi.fn() },
 }))

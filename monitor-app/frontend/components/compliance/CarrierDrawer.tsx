@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
-import { useCanEdit } from '@/hooks/useCanEdit'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import type { DatosDelDocumento } from '@/lib/compliance'
 import { PuenteALaBandeja } from './PuenteALaBandeja'
@@ -12,6 +11,7 @@ import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
 import { useQuery } from '@tanstack/react-query'
 import type { PendingComplianceRow } from '@/lib/types'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 interface Props {
   carrierId:   string
@@ -48,7 +48,7 @@ interface Props {
  *  donde los documentos llegan sin pedirlos, siempre como destino aparte. Acá
  *  quedó como eso: un enlace, no una zona encima del casillero. */
 export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
-  const canEdit = useCanEdit()
+  const canEdit = usePermiso('documents.upload')
   const subirDocumento = useSubirDocumento()
   /** Se guardan los ABIERTOS, no los plegados, para que el default —conjunto
    *  vacío— sea "todo plegado" sin depender de que lleguen los datos.

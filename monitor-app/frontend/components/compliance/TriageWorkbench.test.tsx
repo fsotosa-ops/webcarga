@@ -15,7 +15,7 @@ vi.mock('@/lib/api/compliance', () => ({
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
 }))
-vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'

@@ -8,8 +8,6 @@ import {
   ChevronRight, PenLine, Check, X,
   Loader2, Search, Users, Truck, ShieldCheck, FileText,
 } from 'lucide-react'
-import { useCanEdit } from '@/hooks/useCanEdit'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
@@ -33,6 +31,7 @@ import { CompletionRing } from '@/components/dashboard/CompletionRing'
 import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 import { expiryRelative, updatedRelative } from '@/lib/compliance'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const ROSTER_PAGE_SIZE = 9
 
@@ -146,8 +145,8 @@ function EmpresaDetailPageInner() {
   // vehículo, que es donde se carga su documentación.
   const requestedDriverId   = searchParams.get('driver')
   const requestedAssetId    = searchParams.get('asset')
-  const canEdit = useCanEdit()
-  const canAdmin = useCanAdmin()
+  const canEdit = usePermiso('directory.edit')
+  const canAdmin = usePermiso('directory.delete')
   const [activeTab, setActiveTab] = useState<Tab>(
     requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen'),
   )

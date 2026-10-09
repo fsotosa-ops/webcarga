@@ -17,7 +17,7 @@ vi.mock('@/lib/api/requirements', () => ({
   },
 }))
 let puedeAdministrar = true
-vi.mock('@/hooks/useCanAdmin', () => ({ useCanAdmin: () => puedeAdministrar }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => puedeAdministrar }))
 
 // El documento abierto VIAJA EN LA URL, como un viaje del Monitor: cada test
 // elige qué trae.

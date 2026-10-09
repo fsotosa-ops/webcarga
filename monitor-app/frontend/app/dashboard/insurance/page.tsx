@@ -5,14 +5,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
-import { useCanEdit } from '@/hooks/useCanEdit'
-import { useCanAdmin } from '@/hooks/useCanAdmin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { dueRelative } from '@/lib/utils/installments'
 import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
 import type { CarrierInsuranceOverviewItem, CarrierOperationalStatus, InsuranceOverviewFacets } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 
 const LIMIT = 50
@@ -66,8 +65,8 @@ function SegurosPageInner() {
   const [tab, setTab]       = useState<HealthTab>('')
   const [statusTab, setStatusTab] = useState<StatusTab>('active')
   const [page, setPage]     = useState(1)
-  const canEdit = useCanEdit()
-  const canAdmin = useCanAdmin()
+  const canEdit = usePermiso('policies.edit')
+  const canAdmin = usePermiso('policies.delete')
   const [selected, setSelected] = useState<CarrierInsuranceOverviewItem | null>(null)
   const qDebounced = useDebouncedValue(q, 300)
 

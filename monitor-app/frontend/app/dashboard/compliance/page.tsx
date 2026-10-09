@@ -12,7 +12,6 @@ import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { ActualizarPorPlanillaModal } from '@/components/compliance/ActualizarPorPlanillaModal'
-import { useCanEdit } from '@/hooks/useCanEdit'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import type { CertificationGroup, CertificationStatusRow } from '@/lib/types'
@@ -21,6 +20,7 @@ import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { useFilaAbierta } from '@/hooks/useFilaAbierta'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos'
 
@@ -83,7 +83,7 @@ function CertificationPageInner() {
   const [newCarrierOpen, setNewCarrierOpen] = useState(false)
   const [planillaOpen, setPlanillaOpen] = useState(false)
   const qc = useQueryClient()
-  const puedeEditar = useCanEdit()
+  const puedeEditar = usePermiso('directory.edit')
   const qDebounced = useDebouncedValue(q, 300)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)

@@ -17,7 +17,7 @@ vi.mock('./TriageWorkbench', () => ({
   TriageWorkbench: ({ carrierId }: { carrierId?: string }) =>
     <div data-testid="workbench">bandeja de {carrierId}</div>,
 }))
-vi.mock('@/hooks/useCanEdit', () => ({ useCanEdit: () => true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 
 import { complianceApi } from '@/lib/api/compliance'
 
@@ -191,7 +191,7 @@ describe('CarrierDrawer', () => {
 describe('CarrierDrawer sin permiso de edición', () => {
   it('un lector no ve el boton de subir', async () => {
     vi.resetModules()
-    vi.doMock('@/hooks/useCanEdit', () => ({ useCanEdit: () => false }))
+    vi.doMock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => false }))
     const { CarrierDrawer: SoloLectura } = await import('./CarrierDrawer')
     vi.mocked(complianceApi.listPending).mockResolvedValue({
       total: 1, rows: [pendiente()],

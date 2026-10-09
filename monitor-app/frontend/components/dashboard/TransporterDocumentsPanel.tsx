@@ -7,9 +7,9 @@ import type { ComplianceRecord, DocumentVersion } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { complianceAlertStatus, formatExpiry } from '@/lib/compliance'
-import { useCanEdit } from '@/hooks/useCanEdit'
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { ExpirationDateCell } from './ExpirationDateCell'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 // ── Una fila por compliance_record — solo lectura. La carga/edición real
 //    vive en el módulo Certificación (Ronda 88): acá se ve el estado, se
@@ -21,7 +21,7 @@ import { ExpirationDateCell } from './ExpirationDateCell'
 function DocumentRow({ record, carrierId, onChanged }: {
   record: ComplianceRecord; carrierId?: string; onChanged?: () => void
 }) {
-  const canEdit = useCanEdit()
+  const canEdit = usePermiso('documents.upload')
   const [previewOpen, setPreviewOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [versions, setVersions] = useState<DocumentVersion[] | null>(null)
