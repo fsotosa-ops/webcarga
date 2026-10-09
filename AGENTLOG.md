@@ -62,40 +62,54 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
 - Lo que cambia el estado de alguien va al borrador; nombre y alias se guardan al instante (son etiqueta).
 - `faltaDeVigencia` (lib/vigencia.ts) es la única regla de "qué le falta" en la pantalla; espeja el trigger.
 
-**Siguiente paso exacto:**
-- [x] Suite completa, push, despliegue y revisión en dev (ver arriba).
-- [ ] Que el usuario pruebe la tabla en dev (Configuración › Certificación).
-- [x] **Catálogo cargado (08/10, con el visto bueno del usuario):** `cargar_catalogo_webcarga.py --aplicar` creó los
-      75 tipos nuevos **apagados**. Verificado en la base: 113 documentos, 0 de los nuevos activos, 0 registros
-      sembrados, todos con alias; los 15 sin regla son "Fecha del documento" (usan el aviso general). En la tabla de dev:
-      113 filas, "Sin vigencia 77". Con estos datos la columna Documento sacaba la tabla (1.084 px): `d5080d3e`.
-      Después, a pedido del usuario, "Se exige a" en dos líneas sin cortes (`6e46e560`, `1f655ec5`): 113 filas,
-      943 de 943 px a 1.440, filas de ~85 px. El primer Deploy Frontend de `1f655ec5` falló bajando Fira Code de
-      Google Fonts (red del runner, no el código); `gh run rerun --failed` lo resolvió.
-- [x] **Los 19 que ya existían (09/10, decisión del usuario):** 7 ya coincidían con la planilla. De los 12 que no,
-      el ensayo ("Ver efecto") mostró vencidos 21 → 121 y al día 112 → 11, más 238 pendientes quitados (Política de
-      Seguridad pasa a "solo cuando se solicita"). Los vencidos NO son reales: los aprobados no tienen fecha de
-      emisión, que es lo que pide un tipo anual. Se publicó **solo F30-1** (mensual, día 18, mes anterior, aviso 5;
-      0 documentos cargados, 0 efecto). **Los otros 11 siguen con su regla vieja** hasta que WebCarga cargue las
-      fechas de emisión de ~100 documentos aprobados: Contrato de Trabajo (→ fecha del documento), Certificado
-      Mutual, Reglamento Interno, PTS Contratista, Política de Seguridad (+ "solo si se pide"), Entrega EPP, PTS
-      Conductor, Hoja de Vida, DAS ODI, Capacitación EPP y Plan de Emergencia (→ anual). Entrega EPP: la planilla
-      dice "al término" (una de las dudas); se aplicaría solo la vigencia, no eso.
-- [x] **`has_expiration` retirada (09/10, con visto bueno):** migración `20261009120000_retira_has_expiration`
-      aplicada vía MCP (`0a1591eb`). Antes: 0 lectores en código (dev y main), vistas, funciones, policies,
-      matviews y Mage. Después: catálogo, estado y bandeja en dev responden 200; 160 tests del catálogo en verde.
-- [ ] **WebCarga revisa en la tabla de dev** y responde las 11 dudas (2 coincidencias dudosas: F30↔F30_MULTAS,
-      Contrato asociado↔CONTRATO_WEBCARGA; "al término" en EPP, IPER y OS10; "No aplica"+"Vigencia Sí"; "Anual"+
-      "Vigencia No"; errata de Liquidación; Cronograma sin día tope). Los 19 que ya existían conservan su regla
-      vieja (ej. F30-1 figura "Fecha del documento", la planilla dice mensual día 18): se corrigen en la tabla.
-- [ ] Activar documento por documento (o en lote, mirando "Ver efecto": activar siembra un pendiente por entidad).
+**Hecho al cerrar (09/10):**
+- 2c desplegada y revisada en dev: tabla editable en borrador, Ver efecto, Publicar en lote. Cabe en 943 de 943 px
+  con los 113 documentos (`d5080d3e`, `6e46e560`, `1f655ec5`). El primer Deploy Frontend de `1f655ec5` falló bajando
+  Fira Code de Google Fonts (red del runner); `gh run rerun --failed` lo resolvió.
+- Catálogo de la planilla cargado con visto bueno: 75 tipos nuevos **apagados** (113 en total), 0 sembrados, todos
+  con alias.
+- De los 19 que ya existían, 7 coincidían y se publicó **solo F30-1** (mensual, día 18, mes anterior, aviso 5;
+  0 documentos cargados, 0 efecto).
+- `has_expiration` retirada (`20261009120000`, `0a1591eb`), con 0 lectores verificados antes y la app en 200 después.
+
+**PENDIENTE — de WebCarga** (en Configuración › Certificación de dev):
+- [ ] **Cargar la fecha de emisión** de los ~100 documentos aprobados de estos 11 tipos. Sin esa fecha, pasarlos a
+      la regla de la planilla los deja "vencidos, falta el dato" (ensayo del 09/10: vencidos 21 → 121, al día
+      112 → 11). Los tipos y la regla que les toca:
+      - → anual desde la emisión: Certificado Mutual, Reglamento Interno, PTS Contratista, Entrega EPP, PTS
+        Conductor, Hoja de Vida, DAS ODI, Capacitación EPP, Plan de Emergencia;
+      - → anual + "solo cuando se solicita": Política de Seguridad (quita 238 pendientes de empresas que no la
+        subieron; las 13 que la tienen la conservan);
+      - → fecha del documento: Contrato de Trabajo.
+      Con las fechas cargadas: elegir la regla en la tabla, "Ver efecto" (los vencidos deberían quedar cerca de
+      21) y "Publicar". El borrador del lote está en el scratchpad de la sesión (`lote19.json`), no en git: se
+      rehace con las funciones `_vigencia` / `_exigible` de `scripts/cargar_catalogo_webcarga.py`.
+- [ ] **Responder las 11 dudas** de la planilla:
+      1. ¿"Contrato asociado al servicio" = "Contrato Webcarga"? (coincidencia dudosa, no se tocó)
+      2. ¿F30 de la planilla = "F30 Multas"? (coincidencia dudosa, no se tocó)
+      3-5. "Al término del trabajador" que parece "al ingreso": Registro de entrega de EPP, Capacitación Matriz
+           IPER, Curso OS10. Los dos últimos se cargaron literal (apagados); a Entrega EPP NO se le cambiará el
+           "cuándo se exige" sin la respuesta (literal, le quitaría el pendiente a todos los conductores).
+      6-7. "No aplica" con "Vigencia: Sí": Resolución jornada excepcional, Inspección de equipos eléctricos
+           (cargados con fecha del documento).
+      8-9. "Anual" con "Vigencia: No": Capacitación PTS trabajo en caliente, Entrega EPP específicos (cargados anuales).
+      10. Liquidación: "10 de cada es" (se leyó día 10).
+      11. Cronograma de trabajos: mensual sin día tope (cargado al último día del mes en curso).
+- [ ] **Activar** los 75 nuevos por grupos, mirando "Ver efecto" (activar siembra un pendiente por empresa o
+      conductor; no activarlos todos juntos por el Disk IO del plan free).
+- [ ] Probar la tabla en dev y decir si algo molesta.
+
+**PENDIENTE — de desarrollo:**
 - [ ] Guardar las 11 dudas como nota del documento y mostrar la marca "Duda" en la tabla (diferido de 2c).
-- [ ] Volver a medir la velocidad con reglas cargadas.
-- [x] Workspace del plan 2b borrado al cerrar la sesión del 08/10 (la historia queda en git).
-- Menores diferidos de la revisión 2b: M1 versión redundante el mismo día; M2 500 con solicitud huérfana; M3 la
-  carga acepta datos que el tipo no pide; M4 bulk-file sin emisión/período; M6 `vigenciaDeLaFila` usa hoy UTC;
-  M8 solicitados como "bloqueados" en recalc-preview; M10 nombres fijos de grupos de radio; M11 log de vigencia
-  sin cambio.
+- [ ] Volver a medir la velocidad de `/status`, `/pending` y la cola con reglas activas (la última medición fue
+      con 0 reglas: 0,26 / 0,18 / 0,25 s).
+- [ ] Menores diferidos de la revisión 2b: M1 versión redundante el mismo día; M2 500 con solicitud huérfana; M3 la
+      carga acepta datos que el tipo no pide; M4 bulk-file sin emisión/período; M6 `vigenciaDeLaFila` usa hoy UTC;
+      M8 solicitados como "bloqueados" en recalc-preview; M10 nombres fijos de grupos de radio; M11 log de vigencia
+      sin cambio.
+- [ ] Deuda registrada en `TECH_DEBT.md` (08/10): rutas de la API fuera del estándar de nombres (plan aparte, con
+      ruta vieja y nueva conviviendo) y Configuración en teléfono, que no pliega el menú de secciones.
+- [ ] Si Deploy Frontend vuelve a fallar seguido bajando Google Fonts: servir la fuente local (`next/font/local`).
 
 <details><summary>Detalle de la entrega 2 (F0-F2), 08/10</summary>
 
