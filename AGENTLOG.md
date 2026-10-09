@@ -31,9 +31,13 @@ require_writer/editor/admin sin alias; permisos por campo dentro del modelo; `GE
 códigos generados; expand/contract con compuerta por la API de `main` (lee `profiles.role`).
 
 **Siguiente paso exacto:**
-- [ ] El usuario revisa la spec. Abierto en §9: los `editor` actuales **ganan** `*.configure` (hoy solo admin) —
-      decidir si el Supervisor configura su área o solo Administración.
-- [ ] Con la spec aprobada: skill writing-plans → plan de implementación → elegir método de ejecución.
+- [x] Spec aprobada (09/10): el Supervisor configura su área (única ganancia de la migración). Ajustes al
+      mapear rutas: `trips.delete` también en el Operador (hoy writer elimina viajes manuales) y `reference.read`.
+- [x] Plan: `docs/superpowers/plans/2026-10-09-roles-y-permisos.md` (`7d9de7c2`, spec `c5f1254e`), 13 tasks:
+      catálogo → migración expand + sync al arrancar → permisos efectivos/require() → permisos por campo → rutas
+      por área (5-8, guarda + matriz) → administración de acceso → frontend /me + usePermiso → borrar escalera y
+      desplegar → pantallas (maquetas primero) → contract con compuerta (API de `main`).
+- [ ] El usuario revisa el plan y elige método de ejecución (subagentes o nativo).
 - [ ] Pendiente previo, independiente: probar invitación por correo y recuperación con f.soto.santibanez@gmail.com.
 
 ### 2026-10-09 — Seguridad de acceso: solo por invitación, mínimo privilegio, MFA para admin
