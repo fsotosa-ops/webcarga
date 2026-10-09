@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel
+from ..authz.permissions import Permission
 from typing import Optional
 
 
@@ -40,11 +41,19 @@ class TripPatch(BaseModel):
 # `trailer_plate` son la identidad de la flota y alimentan toda la cadena de
 # resolución; `unassigned_reason_id` cruza con facturación; y `manual_status`
 # pisa el estado que reporta el TMS.
-CAMPOS_BASICOS_DEL_DIARIO = frozenset({
+_BASICOS_DEL_VIAJE = frozenset({
     "is_active", "is_working", "is_assigned", "is_first_leg",  # toggles
     "notes", "comments",                                       # observaciones
     "driver_phone",                                            # teléfono
 })
+# Permiso por campo (RBAC, spec 2026-10-09 §6): básicos → trips.edit_basic
+# (Operador), el resto → trips.edit_sensitive (Supervisor). Se arma sobre el
+# modelo entero: todo campo nuevo de TripPatch cae por defecto en sensible, y
+# test_permisos_por_campo.py obliga a revisarlo.
+TRIP_FIELD_PERMISSIONS: dict[str, Permission] = {
+    f: (Permission.TRIPS_EDIT_BASIC if f in _BASICOS_DEL_VIAJE else Permission.TRIPS_EDIT_SENSITIVE)
+    for f in TripPatch.model_fields
+}
 
 
 class TripBulkDeleteBody(BaseModel):
@@ -108,7 +117,11 @@ class TripStopPatch(BaseModel):
 # niega por omisión en vez de regalarlo, y el test de abajo falla para obligar
 # a decidir de qué lado cae. Un permiso que se amplía solo es el modo de falla
 # que este proyecto ya conoce.
-CAMPOS_BASICOS_DE_PARADA = frozenset({
+_BASICOS_DE_PARADA = frozenset({
     "desc_inicio", "desc_fin",   # inicio y fin de descarga
     "arrival", "departure",      # llegada y salida reales
 })
+STOP_FIELD_PERMISSIONS: dict[str, Permission] = {
+    f: (Permission.TRIPS_EDIT_BASIC if f in _BASICOS_DE_PARADA else Permission.TRIPS_EDIT_SENSITIVE)
+    for f in TripStopPatch.model_fields
+}

@@ -9,12 +9,13 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from ..auth import EDITOR_ROLES, get_current_user, get_supabase, require_editor, require_writer
+from ..auth import get_current_user, get_supabase, require_editor, require_writer
+from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
     AsignarConductorBody, TripBulkCloseBody, TripBulkDeleteBody, TripBulkReopenBody, TripPatch, TripStopPatch,
-    CAMPOS_BASICOS_DEL_DIARIO, CAMPOS_BASICOS_DE_PARADA,
+    STOP_FIELD_PERMISSIONS, TRIP_FIELD_PERMISSIONS,
 )
 from ..services.audit import log_change
 from ..services.eliminar_viajes import (
@@ -2622,32 +2623,12 @@ async def bulk_reopen_trips(
     return {"ok": True, "reopened": len(ids)}
 
 
-def _exigir_campos_permitidos(user: dict, enviados, permitidos=None) -> None:
-    """`writer` sólo toca los campos básicos del Diario.
-
-    Se chequea ACÁ y no en el guardia de la ruta porque un guardia de endpoint
-    da la ruta entera o la niega entera, y `PATCH /trips/{id}` recibe en el
-    mismo cuerpo el teléfono del conductor —básico— y la patente del tracto
-    —sensible—. Un campo prohibido invalida el cuerpo completo: aceptar la
-    parte permitida dejaría al cliente creyendo que guardó todo."""
-    if user["role"] in EDITOR_ROLES:
-        return
-    if permitidos is None:
-        permitidos = CAMPOS_BASICOS_DEL_DIARIO
-    prohibidos = sorted(set(enviados) - permitidos)
-    if prohibidos:
-        raise HTTPException(
-            403,
-            "El rol writer no puede editar estos campos: " + ", ".join(prohibidos),
-        )
-
-
 @router.patch("/{trip_id}")
 async def patch_trip(
     trip_id: str,
     body: TripPatch,
     pool=Depends(get_pool),
-    user=Depends(require_writer),
+    user=Depends(require(Permission.TRIPS_EDIT_BASIC)),
 ):
     source_system = await pool.fetchval("SELECT source_system FROM app.trips WHERE id = $1", trip_id)
     if source_system is None:
@@ -2658,8 +2639,11 @@ async def patch_trip(
         raise HTTPException(422, "Ningún campo enviado")
 
     # Antes de cualquier escritura, y antes de los `pop` de más abajo: acá
-    # `data` todavía tiene los nombres tal como los mandó el cliente.
-    _exigir_campos_permitidos(user, data)
+    # `data` todavía tiene los nombres tal como los mandó el cliente. El guardia
+    # de la ruta da o niega la ruta entera; este cuerpo mezcla el teléfono
+    # (básico) con la patente (sensible), así que el permiso es por campo, y un
+    # campo sin permiso invalida el cuerpo completo.
+    require_fields(user, data, TRIP_FIELD_PERMISSIONS)
 
     # EN UN VIAJE DEL TMS, ACTIVO Y TRABAJANDO LOS DEFINE EL TMS (09/10).
     #
@@ -2824,14 +2808,13 @@ async def patch_trip(
 
 @router.patch("/{trip_id}/stops/{stop_id}")
 async def patch_trip_stop(
-    # `writer` escribe acá: los cuatro campos de la parada son los que el
-    # equipo completa al operar, y ninguno es sensible. Ver
-    # CAMPOS_BASICOS_DE_PARADA.
+    # Los cuatro campos de la parada son los que el equipo completa al operar
+    # (trips.edit_basic). Ver STOP_FIELD_PERMISSIONS.
     trip_id: str,
     stop_id: str,
     body: TripStopPatch,
     pool=Depends(get_pool),
-    user=Depends(require_writer),
+    user=Depends(require(Permission.TRIPS_EDIT_BASIC)),
 ):
     """Override manual por parada — persiste en las columnas *_manual reales
     de app.trip_stops (desc_inicio_manual/desc_fin_manual, Fase 2 del
@@ -2851,7 +2834,7 @@ async def patch_trip_stop(
         raise HTTPException(404, "Parada no encontrada")
 
     patch = body.model_dump(exclude_none=True)
-    _exigir_campos_permitidos(user, patch, CAMPOS_BASICOS_DE_PARADA)
+    require_fields(user, patch, STOP_FIELD_PERMISSIONS)
     if not patch:
         raise HTTPException(422, "Ningún campo enviado")
 

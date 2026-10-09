@@ -11,13 +11,11 @@ from app.routers.trips import (
 )
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase, require_editor
-from tests.conftest import wire_transactional_conn
+from tests.conftest import wire_transactional_conn, usuario
 
-USER = {
-    "sub": "11111111-1111-1111-1111-111111111111",
-    "email": "operador@webcarga.cl",
-    "role": "editor",
-}
+# Lo que hoy tiene un `editor` (migra a los 4 Supervisores, spec RBAC §9).
+USER = usuario("operations_supervisor", "certification_supervisor", "insurance_supervisor",
+               "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
 STATUS_ROWS = [{"id": "ASIGNADO"}, {"id": "EN RUTA"}]
 
