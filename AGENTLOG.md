@@ -16,7 +16,7 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-08 — HU-C1 vencimientos: entrega 2 y 2b en dev; 2c (tabla editable) comiteada, por desplegar
+### 2026-10-08 — HU-C1 vencimientos: entregas 2, 2b y 2c (tabla editable) desplegadas en dev
 
 **Fuente:** `monitor-app/bugs/20261006/Tabla_Resumen_General_IANSA.xlsx` (96 tipos). Diseño y estados de pantalla:
 la HU `monitor-app/docs/user-stories/20261006/01-hu-diario-2.0-revision-02oct.md`, secciones "Diseño de interfaz"
@@ -39,14 +39,20 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
 - Entrega 2c: `08213a7f` (backend: `POST /compliance-requirements/batch-preview` y `/batch-update`; PATCH, recálculo
   y lote escriben con `services/edicion_catalogo.py`) y `8f51343f` (frontend: tabla editable, `borrador.ts`,
   `BarraDelBorrador`, `celdas-del-borrador.tsx`; se retiraron `CeldaVigencia`, `CeldaNivel`, `AplicarEnLaFila`;
-  color crudo 1.685 → 1.672). **Sin push todavía.**
+  color crudo 1.685 → 1.672). Ajustes vistos en dev: `9d9d19c0` (**`RequirementOption` no declaraba `aliases`
+  y FastAPI los descartaba: "Se reconoce como" mostraba "—" desde siempre**; test que pasa cada fila por el
+  modelo), `91b4fa3e`, `2f087e2c`, `f698f8d0`, `55acef4b` (la tabla cabe: 943 de 943 px a 1.440 con un mensual
+  abierto). **Desplegada en dev.**
 
 **Verificado:**
 - 2b: suite backend completa 1.213/1.213; frontend 1.449/1.449; dev desplegado; en el navegador se vio el editor
   "¿Cuándo vence?" (encontró el defecto de la vista previa con regla incompleta, ya corregido en 2c).
 - 2c: tests afectados del backend 119/119 (incluye `test_catalogo_en_lote.py`, con mutación verificada);
   frontend 1.473/1.473, tsc y build limpios (mutación de "Publicar exige ver el efecto" verificada).
-  Suite completa del backend de 2c **corriendo** al cerrar este registro.
+  Suite completa del backend de 2c: 1.219/1.219 (la primera corrida se colgó en una conexión muerta tras un
+  corte de red: 0 % CPU y sin consulta en `pg_stat_activity`; se relanzó con un monitor de estancamiento).
+  En dev con Playwright, sin publicar: editar celdas, mensual con "Falta el día tope.", Ver efecto (ensayo
+  revertido; la base quedó intacta), Descartar, barra fija al desplazarse, selección.
 
 **Decisiones de arquitectura (2c):**
 - El lote es todo o nada, con un savepoint por documento para que el 422 nombre cuál falló.
@@ -57,10 +63,8 @@ de HU-C1 (2b: panel; 2c: tabla). Spec 2b: `docs/superpowers/specs/2026-10-08-c1-
 - `faltaDeVigencia` (lib/vigencia.ts) es la única regla de "qué le falta" en la pantalla; espeja el trigger.
 
 **Siguiente paso exacto:**
-- [ ] Ver terminar la suite completa del backend de 2c (`.superpowers/sdd/2026-10-08-c1-entrega-2b-configuracion-exigibilidad-carga/suite-2c.log`).
-- [ ] Push a `dev`; verificar Deploy Monitor API y Deploy Frontend.
-- [ ] Mirar la tabla en dev con Playwright (escritorio y teléfono), **sin publicar nada**: filtros, editar celdas,
-      selección y edición en masa, "Ver efecto" (ensayo revertido, no escribe), Descartar.
+- [x] Suite completa, push, despliegue y revisión en dev (ver arriba).
+- [ ] Que el usuario pruebe la tabla en dev (Configuración › Certificación).
 - [ ] **Pedir el visto bueno del usuario** para `scripts/cargar_catalogo_webcarga.py --aplicar` (75 tipos nuevos,
       apagados), mostrando las 11 dudas (2 coincidencias dudosas: F30↔F30_MULTAS, Contrato asociado↔CONTRATO_WEBCARGA).
       Ojo: los 19 que ya existen conservan su regla vieja (ej. F30-1 figura "Fecha del documento", la planilla dice
