@@ -9,7 +9,7 @@ vi.mock('@/lib/api/trips', () => ({
 }))
 
 const baseTrip: Trip = {
-  id: 't1', source_system: 'qanalytics', client_name: null, planning_date: null,
+  id: 't1', source_system: 'manual', client_name: null, planning_date: null,
   status_reported_at: null, current_status: null, tractor_plate: null, tractor_plate_tms: null, trailer_plate: null,
   driver_name: null, driver_name_tms: null, driver_tax_id: null, driver_phone: null, carrier_name: null, carrier_name_tms: null,
   origin: null, cargo_type: null, cargo_delivered: false, temp_status: null, stops: [], is_active: false, is_working: false, is_assigned: false,
@@ -95,5 +95,38 @@ describe('IndicatorSwitches', () => {
     render(<IndicatorSwitches trip={trip} onSaved={vi.fn()} />)
     fireEvent.click(screen.getByText('Revertir a automático'))
     expect(await screen.findByText('revert failed')).toBeInTheDocument()
+  })
+
+  // 09/10: en un viaje del TMS, Activo y Trabajando los define el TMS (el
+  // 2065805 quedó "En curso" en el Cierre por un Activo encendido a mano
+  // sobre un viaje CERRADO FINALIZADO). Asignado sigue siendo editable.
+  describe('viaje del TMS', () => {
+    const tmsTrip: Trip = { ...baseTrip, source_system: 'qanalytics' }
+
+    it('deshabilita Activo y Trabajando y dice por qué', () => {
+      render(<IndicatorSwitches trip={tmsTrip} onSaved={vi.fn()} />)
+      expect(screen.getByRole('switch', { name: 'Activo' })).toBeDisabled()
+      expect(screen.getByRole('switch', { name: 'Trabajando' })).toBeDisabled()
+      expect(screen.getAllByText('Lo define el TMS')).toHaveLength(2)
+    })
+
+    it('no envía nada al hacer clic en Activo', () => {
+      render(<IndicatorSwitches trip={tmsTrip} onSaved={vi.fn()} />)
+      fireEvent.click(screen.getByRole('switch', { name: 'Activo' }))
+      expect(tripsApi.patch).not.toHaveBeenCalled()
+    })
+
+    it('deja Asignado editable', () => {
+      vi.mocked(tripsApi.patch).mockResolvedValue({ ...tmsTrip, is_assigned: true })
+      render(<IndicatorSwitches trip={tmsTrip} onSaved={vi.fn()} />)
+      fireEvent.click(screen.getByRole('switch', { name: 'Asignado' }))
+      expect(tripsApi.patch).toHaveBeenCalledWith('t1', { is_assigned: true })
+    })
+  })
+
+  it('en un viaje manual Activo y Trabajando siguen editables', () => {
+    render(<IndicatorSwitches trip={baseTrip} onSaved={vi.fn()} />)
+    expect(screen.getByRole('switch', { name: 'Activo' })).toBeEnabled()
+    expect(screen.queryByText('Lo define el TMS')).not.toBeInTheDocument()
   })
 })

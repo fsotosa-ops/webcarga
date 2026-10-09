@@ -284,7 +284,7 @@ def test_create_persists_origin_location_and_stop_destination():
 
 
 def test_patch_origin_location_updates_and_marks_manual_edit():
-    pool = make_pool()
+    pool = make_pool(trip_exists=True)
     client = make_client(pool)
     res = client.patch("/api/v1/trips/trip-1", json={
         "origin_region": "Biobío", "origin_city": "Concepción",

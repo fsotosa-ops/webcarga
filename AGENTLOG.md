@@ -16,6 +16,52 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-09 — Bug: viajes asignados/cerrados en el grupo equivocado del Cierre (Sodimac, manuales, 2065805)
+
+Plan: `~/.claude/plans/viajes-de-sodimac-asignados-sunny-nebula.md`. Diagnóstico medido en producción (solo lectura).
+
+**Causa común:** `is_active`/`is_assigned` se guardan en `app.trips` y los escribían varios caminos sin regla común.
+- **Sodimac 887928/884386/881496** (Control de salida) en Hoy/Rezago: `stg_sodimac_trips` deja tracto y
+  conductor en NULL (la única PATENTE es la rampla → `trailer_plate`), la regla de dbt miraba solo tracto/
+  conductor y forzaba "no asignado" en Creada/Aceptada/Control de salida (traen patente 286/286). El tracto y
+  conductor de Operaciones viven en `trip_fleet_links`, que dbt no leía. Los 19 asignados eran toggles.
+- **10 manuales Iansa/HBC** (CERRADO con flota) en Rezago: el alta fija `true/false` y la rama manual de dbt
+  los copiaba sin derivar.
+- **QAnalytics 2065805** (CERRADO FINALIZADO por SAP) en En curso: 03/10 17:36 CL alguien encendió Activo/
+  Trabajando en el detalle del Monitor; `protect_manual_overrides` borra la marca de un viaje cerrado pero
+  conserva el valor; dbt no lo reseleccionaba (`edited_at`, `xmin` de una sola fila, notas del viaje).
+
+**Decisiones del usuario (09/10):**
+- "Si tiene patente y/o conductor califica como asignado", del TMS o del vínculo en la app.
+- *"No hagas parches y sigue el patrón de la arquitectura de la app"*: **la regla vive solo en dbt**; la API no
+  la calcula (se descartó una versión con funciones en la base llamadas por dbt y la API).
+- En un viaje del TMS, Activo/Trabajando **los define el TMS**; Asignado sigue editable.
+- Estados "no cuenta como carga" (Cancelado/Declinada/Removida) con patente: **revisar después**; sin cambio.
+  Publicada nunca es asignada (07/10).
+
+**Implementado (LOCAL, sin commit todavía):**
+- dbt (mirror, NO está en git): `macros/viaje_activo_y_asignado.sql` (`viaje_abierto_por_estado`,
+  `viaje_activo_tms`, `viaje_asignado`), fuente `app.trip_fleet_links` en `models/sources.yml`, y
+  `models/app/trips.sql`: rama TMS y rama manual con las macros (la manual respeta `manually_edited_fields`),
+  sin la lista de estados, y **escotilla OR 6** (guardado ≠ derivado y sin marca manual → reentra; se apaga sola).
+  Dry-run de OR 6 replicado en SQL: qanalytics solo 2065805, sodimac 48 (activos: los 3), wingsuite 0.
+- API `routers/trips.py::patch_trip`: 422 si se manda `is_active`/`is_working` a un viaje no manual
+  (bulk-close/reopen intactos: las 68 marcas de Sodimac vienen de "No asignado por WebCarga").
+- Frontend `IndicatorSwitches.tsx`: Activo/Trabajando deshabilitados en viajes del TMS, "Lo define el TMS"
+  (`text-informativo`, sin color crudo).
+- Tests: `test_activo_lo_define_el_tms_integracion.py` (rojo antes, verde después),
+  `test_dbt_activo_y_asignado_una_definicion.py` (guarda sobre el mirror), `IndicatorSwitches.test.tsx`
+  (+4; el viaje base pasó a manual), mocks ajustados en `test_trip_hygiene_fields.py`/`test_trip_create.py`.
+
+**Siguiente paso exacto:**
+- [ ] Suites: backend completa, frontend vitest + tsc + build.
+- [ ] Commit + push a `dev` → Deploy Monitor API y Deploy Frontend.
+- [ ] Mage: subir `macros/viaje_activo_y_asignado.sql`, `models/sources.yml` y `models/app/trips.sql` fuera de
+      :58–:02, :13–:17, :28–:32, :43–:47 y sin corrida en vuelo (`sync_local_to_remote`).
+- [ ] Verificar tras la corrida: 887928/884386/881496 y los 10 manuales fuera de Hoy/Rezago, 2065805 fuera de
+      En curso, OR 6 selecciona 0 en la corrida siguiente; Playwright en el Cierre de dev. Días firmados:
+      `closure_lines` no cambia (los manuales CERRADO activos contaban en `trips_del_dia` todos los días).
+
 ### 2026-10-08 — HU-C1 vencimientos: entregas 2, 2b y 2c (tabla editable) desplegadas en dev
 
 **Fuente:** `monitor-app/bugs/20261006/Tabla_Resumen_General_IANSA.xlsx` (96 tipos). Diseño y estados de pantalla:

@@ -16,7 +16,9 @@ USER = {
 
 def make_pool():
     pool = AsyncMock()
-    pool.fetchval.return_value = "trip-1"  # SELECT id FROM app.trips (exists check)
+    # SELECT source_system (existe + fuente). Manual: es el único viaje donde
+    # Activo/Trabajando se editan a mano (en uno del TMS los define el TMS).
+    pool.fetchval.return_value = "manual"
     pool.fetchrow.return_value = {"id": "trip-1", "stops": "[]"}
     return pool
 

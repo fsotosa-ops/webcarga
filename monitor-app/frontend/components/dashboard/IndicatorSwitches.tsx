@@ -13,6 +13,11 @@ const INDICATORS: { field: IndicatorField; label: string }[] = [
   { field: 'is_assigned', label: 'Asignado' },
 ]
 
+// En un viaje del TMS, Activo y Trabajando los define el TMS (09/10): el
+// backend rechaza el cambio (PATCH /trips/{id}, 422). Asignado sigue siendo
+// una corrección de Operaciones.
+const DEL_TMS: IndicatorField[] = ['is_active', 'is_working']
+
 interface Props {
   trip:    Trip
   onSaved: (updated: Trip) => void
@@ -65,6 +70,7 @@ export function IndicatorSwitches({ trip, onSaved }: Props) {
       {INDICATORS.map(ind => {
         const active = optimistic[ind.field] ?? trip[ind.field]
         const frozen = trip.manually_edited_fields?.includes(ind.field) ?? false
+        const delTms = trip.source_system !== 'manual' && DEL_TMS.includes(ind.field)
         return (
           <div key={ind.field}>
             <div className="flex items-center justify-between">
@@ -74,7 +80,7 @@ export function IndicatorSwitches({ trip, onSaved }: Props) {
                 role="switch"
                 aria-checked={active}
                 aria-label={ind.label}
-                disabled={!!pending[ind.field]}
+                disabled={delTms || !!pending[ind.field]}
                 onClick={() => toggle(ind.field)}
                 className={`relative w-8 h-4 rounded-full transition-colors disabled:opacity-50 ${
                   active ? 'bg-accent' : 'bg-gray-300'
@@ -87,6 +93,7 @@ export function IndicatorSwitches({ trip, onSaved }: Props) {
                 />
               </button>
             </div>
+            {delTms && <p className="text-[11px] text-informativo mt-1">Lo define el TMS</p>}
             {frozen && (
               <p className="text-[10px] text-gray-400 mt-1">
                 Editado manualmente {trip.edited_by ? `por ${trip.edited_by} ` : ''}el {fmtDT(trip.edited_at)} ·{' '}

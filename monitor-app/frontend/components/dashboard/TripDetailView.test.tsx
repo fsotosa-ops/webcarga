@@ -390,11 +390,12 @@ describe('TripDetailView — indicadores (switches, Fase 2 Plan 5)', () => {
   })
 
   it('toggles a switch via tripsApi.patch', async () => {
-    // baseTrip.is_working arranca en false — el click debería togglearlo a true
-    vi.mocked(tripsApi.patch).mockResolvedValue({ ...baseTrip, is_working: true })
+    // baseTrip es de QAnalytics: Activo/Trabajando los define el TMS (09/10),
+    // Asignado sigue editable. Arranca en true — el click lo apaga.
+    vi.mocked(tripsApi.patch).mockResolvedValue({ ...baseTrip, is_assigned: false })
     renderDetailView(baseTrip)
-    fireEvent.click(screen.getByRole('switch', { name: 'Trabajando' }))
-    await waitFor(() => expect(tripsApi.patch).toHaveBeenCalledWith('t1', { is_working: true }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Asignado' }))
+    await waitFor(() => expect(tripsApi.patch).toHaveBeenCalledWith('t1', { is_assigned: false }))
   })
 
   it('shows explicit override attribution text and a revert control when a field is manually edited', () => {

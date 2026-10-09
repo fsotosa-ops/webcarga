@@ -2649,8 +2649,8 @@ async def patch_trip(
     pool=Depends(get_pool),
     user=Depends(require_writer),
 ):
-    exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
-    if not exists:
+    source_system = await pool.fetchval("SELECT source_system FROM app.trips WHERE id = $1", trip_id)
+    if source_system is None:
         raise HTTPException(404, "Viaje no encontrado")
 
     data = body.model_dump(exclude_none=True)
@@ -2660,6 +2660,23 @@ async def patch_trip(
     # Antes de cualquier escritura, y antes de los `pop` de más abajo: acá
     # `data` todavía tiene los nombres tal como los mandó el cliente.
     _exigir_campos_permitidos(user, data)
+
+    # EN UN VIAJE DEL TMS, ACTIVO Y TRABAJANDO LOS DEFINE EL TMS (09/10).
+    #
+    # El 2065805 llegó CERRADO FINALIZADO por SAP y alguien encendió Activo y
+    # Trabajando desde el detalle: el trigger protect_manual_overrides retira
+    # la marca de un viaje cerrado pero conserva el valor, y dbt no lo volvió
+    # a procesar, así que el Cierre lo mostraba "En curso". Decisión del
+    # usuario: "todo depende de la tms, uno no hace esos cambios cuando viene
+    # de una tms". En un viaje manual la persona sí manda. Declarar "No
+    # asignado por WebCarga" (bulk-close) y deshacerlo no pasan por acá.
+    if source_system != "manual":
+        del_tms = sorted(k for k in ("is_active", "is_working") if k in data)
+        if del_tms:
+            raise HTTPException(
+                422, "Activo y Trabajando los define el TMS en este viaje: "
+                     f"no se pueden cambiar a mano ({', '.join(del_tms)})",
+            )
 
     # EL MOTIVO DE UN VIAJE ES DEL CATALOGO DEL VIAJE.
     #
