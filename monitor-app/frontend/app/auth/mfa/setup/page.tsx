@@ -24,6 +24,10 @@ export default function MfaSetupPage() {
   useEffect(() => {
     const supabase = createClient()
     void (async () => {
+      // /auth/* es pública en el proxy: sin sesión, enroll() responde "missing
+      // sub claim". Al login, no un error técnico.
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.replace('/login'); return }
       const { data: lista } = await supabase.auth.mfa.listFactors()
       if (lista?.totp?.length) { router.replace('/auth/mfa/verify'); return }
       // Un intento anterior sin terminar deja un factor sin verificar con el

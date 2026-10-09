@@ -21,7 +21,10 @@ function Verificar() {
 
   useEffect(() => {
     void (async () => {
-      const { data } = await createClient().auth.mfa.listFactors()
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.replace('/login'); return }
+      const { data } = await supabase.auth.mfa.listFactors()
       const totp = data?.totp?.[0]
       if (!totp) { router.replace('/auth/mfa/setup'); return }
       setFactorId(totp.id)
