@@ -18,12 +18,12 @@ RULES_ROW = {
 }
 
 
-def make_client(pool, router=config_router):
+def make_client(pool, router=config_router, user=None):
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
     app.dependency_overrides[get_supabase] = lambda: MagicMock()
-    app.dependency_overrides[get_current_user] = lambda: USER
+    app.dependency_overrides[get_current_user] = lambda: user or USER
     return TestClient(app)
 
 
@@ -688,6 +688,29 @@ def test_un_dominio_sin_nada_revisable_no_trae_insignia():
 
     assert cuerpo["people"]["revision"] is None
     assert cuerpo["people"]["pares"]
+
+
+# Menor 2 de la revisión final RBAC: el inventario exigía settings.manage y un
+# Supervisor (que entra a Configuración) veía la portada sin conteos; y el
+# conteo de personas lo veía cualquiera que tuviera settings.manage.
+def test_un_supervisor_ve_el_inventario_sin_el_dominio_de_personas():
+    from tests.conftest import usuario
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _FILA_INVENTARIO
+    pool.fetch.return_value = []
+    res = make_client(pool, user=usuario("operations_supervisor", aal="aal1")).get("/api/v1/config/inventario")
+    assert res.status_code == 200
+    assert res.json()["operations"]["pares"]
+    assert "people" not in res.json()
+
+
+def test_quien_gestiona_personas_ve_su_conteo():
+    from tests.conftest import usuario
+    pool = AsyncMock()
+    pool.fetchrow.return_value = _FILA_INVENTARIO
+    pool.fetch.return_value = []
+    cuerpo = make_client(pool, user=usuario("admin")).get("/api/v1/config/inventario").json()
+    assert cuerpo["people"]["pares"][0] == {"n": 10, "etiqueta": "usuarios"}
 
 
 def test_inventario_omite_los_ceros():

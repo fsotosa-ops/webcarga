@@ -452,7 +452,7 @@ def _pares(fila, *campos: tuple[str, str, str]) -> list[dict]:
 
 
 @router.get("/inventario")
-async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require(Permission.SETTINGS_MANAGE))):
+async def inventario_configuracion(pool=Depends(get_pool), usuario=Depends(require(Permission.REFERENCE_READ))):
     """Qué gobierna cada dominio, en números reales.
 
     Las claves son los slugs de dominio del frontend, que van en INGLES por el
@@ -499,6 +499,11 @@ async def inventario_configuracion(pool=Depends(get_pool), _=Depends(require(Per
     # Un dominio sin nada revisable —Personas y accesos— no trae la clave, y la
     # portada no le dibuja insignia. Es opt-in a propósito: una cuenta de
     # usuario no es una decisión de configuración que alguien deba confirmar.
+    # Lo ve quien entra a Configuración (reference.read alcanza: son conteos).
+    # Cuántas personas tienen cuenta, solo quien las gestiona: es lo mismo que
+    # esconde el dominio en la portada (revisión final RBAC, menor 2).
+    if Permission.USERS_MANAGE.value not in usuario["permissions"]:
+        contenido.pop("people")
     return {
         clave: {"pares": pares, "revision": pendientes.get(clave)}
         for clave, pares in contenido.items()
