@@ -11,7 +11,7 @@ import {
 import { CondicionesTabla } from './condiciones-tabla'
 import { EstadosTabla } from './estados-tabla'
 import {
-  SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab, MotivosNoAsignacionTab,
+  SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab, MotivosNoAsignacionTab, MotivosAnulacionTab,
 } from './flota-tabs'
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
@@ -91,6 +91,8 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Por qué un conductor no está disponible', Panel: MotivosConductorTab },
       { clave: 'unassigned-reasons', titulo: 'Motivos de no asignación',
         proposito: 'Por qué WebCarga no tomó una carga que le ofrecieron', Panel: MotivosNoAsignacionTab },
+      { clave: 'void-reasons', titulo: 'Motivos de anulación',
+        proposito: 'Por qué se anula un viaje cargado en la app', Panel: MotivosAnulacionTab },
       { clave: 'origins', titulo: 'Orígenes',
         proposito: 'Los lugares desde los que sale carga', Panel: OrigenesTab },
     ],
@@ -157,6 +159,7 @@ export const SECCION_DE_TAXONOMIA: Record<string, [dominio: string, seccion: Cla
   EQUIPMENT_STATE:         ['operations', 'equipment-statuses'],
   DRIVER_REASON:           ['operations', 'driver-reasons'],
   TRIP_UNASSIGNED_REASON:  ['operations', 'unassigned-reasons'],
+  TRIP_VOID_REASON:        ['operations', 'void-reasons'],
   FLEET_SERVICE_TYPE:      ['fleet', 'subtypes'],
   WEBCARGA_OPERATION_TYPE: ['fleet', 'operation-types'],
 }

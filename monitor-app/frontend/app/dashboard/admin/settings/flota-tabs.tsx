@@ -63,3 +63,14 @@ export function MotivosNoAsignacionTab() {
     />
   )
 }
+
+export function MotivosAnulacionTab() {
+  return (
+    <TaxonomyTab
+      domain="TRIP_VOID_REASON"
+      title="Motivos de anulación"
+      hint="Por qué se anula un viaje cargado en la app: un duplicado, un error. Con «Otro» se exige un comentario."
+      newLabel="motivo"
+    />
+  )
+}

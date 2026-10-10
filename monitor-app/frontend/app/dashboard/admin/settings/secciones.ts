@@ -20,6 +20,7 @@ export const PERMISO_DE_SECCION = {
   'temperature-ranges':   'operations.configure',
   'driver-reasons':       'operations.configure',
   'unassigned-reasons':   'operations.configure',
+  'void-reasons':         'operations.configure',
   // Un origen es una ubicación marcada como origen: PATCH /locations.
   'origins':              'commercial.edit',
   'subtypes':             'operations.configure',

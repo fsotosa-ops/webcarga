@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DOMINIOS, dominioPorClave, puedeVerDominio } from './dominios'
+import { DOMINIOS, SECCION_DE_TAXONOMIA, dominioPorClave, puedeVerDominio } from './dominios'
 
 describe('registro de dominios', () => {
   it('las claves de dominio son unicas', () => {
@@ -50,7 +50,7 @@ describe('registro de dominios', () => {
       operations: [
         'alert-thresholds', 'driver-reasons', 'equipment-statuses',
         'operational-statuses', 'origins', 'temperature-ranges',
-        'tms-statuses', 'unassigned-reasons',
+        'tms-statuses', 'unassigned-reasons', 'void-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
       people:   ['roles', 'users'],
@@ -61,6 +61,12 @@ describe('registro de dominios', () => {
   // La seccion activa se guarda por clave en useState, asi que dos secciones
   // con la misma clave en dominios distintos no colisionan hoy -- pero si
   // alguna vez se pasa a la URL, si.
+  it('Operaciones tiene "Motivos de anulación", aparte y justo después de los de no asignación', () => {
+    const claves = dominioPorClave('operations')!.secciones.map(s => s.clave)
+    expect(claves.indexOf('void-reasons')).toBe(claves.indexOf('unassigned-reasons') + 1)
+    expect(SECCION_DE_TAXONOMIA.TRIP_VOID_REASON).toEqual(['operations', 'void-reasons'])
+  })
+
   it('las claves de seccion no se repiten entre dominios', () => {
     const todas = DOMINIOS.flatMap(d => d.secciones.map(s => s.clave))
     expect(new Set(todas).size).toBe(todas.length)

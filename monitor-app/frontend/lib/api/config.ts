@@ -84,6 +84,9 @@ export type TaxonomyDomain =
   // paso Viajes) — no confundir con DRIVER_REASON, que responde por qué un
   // conductor faltó. Sembrado en 20260818130000_trip_unassigned_reasons.sql.
   | 'TRIP_UNASSIGNED_REASON'
+  // Por qué se anuló un viaje manual (spec 2026-10-10): corrige un registro mal
+  // cargado. No confundir con TRIP_UNASSIGNED_REASON, que es un resultado de negocio.
+  | 'TRIP_VOID_REASON'
 /** `code` es el identificador ESTABLE de un valor del catálogo, separado del
  *  nombre visible. Lo tienen sólo los vocabularios a los que otras tablas
  *  apuntan por texto —hoy WEBCARGA_OPERATION_TYPE— y por eso es opcional. Es

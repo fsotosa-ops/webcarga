@@ -46,6 +46,11 @@ def test_cada_seccion_revisable_es_unica():
     assert len(claves) == len(set(claves))
 
 
+def test_los_motivos_de_anulacion_se_revisan_como_los_demas_vocabularios():
+    """Spec 2026-10-10 motivos de anulación §2.3: es un vocabulario más del catálogo."""
+    assert SECCION_DE_TAXONOMIA["TRIP_VOID_REASON"] == ("operations", "void-reasons")
+
+
 def test_personas_no_es_revisable():
     """Es opt-in a propósito: una cuenta de usuario no es una decisión de
     configuración que alguien tenga que confirmar. Si algún día lo fuera, se
