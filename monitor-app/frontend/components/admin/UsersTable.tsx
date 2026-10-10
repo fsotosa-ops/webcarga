@@ -10,7 +10,7 @@ import type { PermisoInfo, RoleInfo } from '@/lib/api/access'
 import { usersApi } from '@/lib/api/users'
 import {
   UserPlus, Trash2, Search,
-  ShieldCheck, UserCheck, UserX, MoreHorizontal, KeyRound,
+  ShieldCheck, UserCheck, UserX, MoreHorizontal, KeyRound, X,
 } from 'lucide-react'
 
 const METODO: Record<string, string> = { google: 'Google', azure: 'Microsoft', email: 'Email' }
@@ -51,6 +51,9 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
   const [, startTransition]              = useTransition()
 
   const editando = users.find(u => u.id === editandoId) ?? null
+  // Por qué la API rechazó el último cambio (403 de MFA, 409 del último
+  // Propietario). Antes el interruptor volvía atrás sin decir nada.
+  const [aviso, setAviso] = useState<string | null>(null)
 
   function updateLocal(id: string, patch: Partial<Profile>) {
     setUsers(prev => prev.map(u => (u.id === id ? { ...u, ...patch } : u)))
@@ -59,10 +62,14 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
   function toggleActive(user: Profile) {
     const next = !user.active
     setActionMenuId(null)
+    setAviso(null)
     updateLocal(user.id, { active: next })
     startTransition(async () => {
       try { await usersApi.patch(user.id, { active: next }) }
-      catch { updateLocal(user.id, { active: user.active }) }
+      catch (e) {
+        updateLocal(user.id, { active: user.active })
+        setAviso(e instanceof Error ? e.message : 'No se pudo cambiar el acceso')
+      }
     })
   }
 
@@ -131,6 +138,15 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
           className="fixed inset-0 z-10"
           onClick={() => setActionMenuId(null)}
         />
+      )}
+
+      {aviso && (
+        <div role="alert" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-border bg-white px-4 py-2.5 text-dato text-status-incidente">
+          <span>{aviso}</span>
+          <button type="button" onClick={() => setAviso(null)} aria-label="Cerrar aviso" className="text-informativo hover:text-text-primary">
+            <X size={14} />
+          </button>
+        </div>
       )}
 
       <div className="bg-white rounded-2xl border border-border overflow-hidden">

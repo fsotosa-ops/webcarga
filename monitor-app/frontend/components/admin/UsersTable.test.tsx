@@ -3,6 +3,8 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import UsersTable from './UsersTable'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
 import { accessApi } from '@/lib/api/access'
+import { usersApi } from '@/lib/api/users'
+import { ApiError } from '@/lib/api/client'
 import type { Profile } from '@/lib/types'
 import { ADMIN, CATALOGO, ROLES } from './rolesDePrueba'
 
@@ -43,4 +45,16 @@ describe('UsersTable', () => {
     expect(within(fila('Pablo')).queryByRole('button', { name: 'Acciones' })).not.toBeInTheDocument()
     expect(within(fila('María')).getByRole('button', { name: 'Acciones' })).toBeInTheDocument()
   })
+
+  // Menor 3 de la revisión final RBAC: el interruptor volvía atrás sin decir
+  // por qué (403 de MFA, 409 del último Propietario).
+  it('si la API rechaza desactivar, dice por qué y la fila vuelve a como estaba', async () => {
+    vi.mocked(usersApi.patch).mockRejectedValue(new ApiError('Debe quedar al menos un Propietario', 409, null))
+    mostrar()
+    fireEvent.click(within(fila('María')).getByRole('button', { name: 'Acciones' }))
+    fireEvent.click(screen.getByRole('button', { name: /Desactivar acceso/ }))
+    expect(await screen.findByText('Debe quedar al menos un Propietario')).toBeInTheDocument()
+    expect(within(fila('María')).getByText('Activo')).toBeInTheDocument()
+  })
 })
+
