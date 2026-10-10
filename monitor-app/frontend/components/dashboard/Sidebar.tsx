@@ -275,8 +275,10 @@ export default function Sidebar({ acceso }: SidebarProps) {
           ) : (
             <>
               <div className="flex-1 min-w-0">
-                <LogoWebCarga forma="completo" alto={24} prioridad />
-                <p className="text-white/35 text-[10px] tracking-wide mt-1">Plataforma logística</p>
+                {/* block: una imagen en línea deja el espacio de los descendentes
+                    abajo y empujaba el logo contra el borde superior. */}
+                <LogoWebCarga forma="completo" alto={20} prioridad className="block" />
+                <p className="text-white/35 text-[10px] leading-none tracking-wide mt-1.5">Plataforma logística</p>
               </div>
               <button
                 onClick={toggle}
