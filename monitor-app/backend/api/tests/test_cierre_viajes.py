@@ -696,6 +696,22 @@ async def test_deshacer_devuelve_lo_que_el_viaje_era_no_lo_activa_a_ciegas(conex
     assert await conn.fetchval("SELECT is_active FROM app.trips WHERE id = $1", trip_id) is False
 
 
+async def _firmar_dia(conn, dia, user, hace: timedelta = timedelta(0)) -> None:
+    """Un día firmado como lo deja `cerrar`: el período CLOSED y su firma
+    (app.closure_signatures, spec 2026-10-10 §3). La regla de deshacer compara la
+    declaración con la fecha de la firma; un período CLOSED sin firma ya no existe."""
+    await conn.execute(
+        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
+        "VALUES ($1, 'CLOSED', $2::uuid, now() - $3::interval) "
+        "ON CONFLICT (business_date) DO UPDATE SET status = 'CLOSED', closed_by = $2::uuid, "
+        "closed_at = now() - $3::interval",
+        dia, user["sub"], hace)
+    await conn.execute(
+        "INSERT INTO app.closure_signatures (business_date, version, signed_by, signed_at, totals, captured_from) "
+        "VALUES ($1, 1, $2::uuid, now() - $3::interval, '{}'::jsonb, 'signing')",
+        dia, user["sub"], hace)
+
+
 async def test_deshacer_sobre_un_dia_firmado_despues_de_declarar_es_409_y_no_cambia_nada(conexion_revertida):
     from fastapi import HTTPException
     from app.routers.trips import bulk_close_trips, bulk_reopen_trips
@@ -708,11 +724,7 @@ async def test_deshacer_sobre_un_dia_firmado_despues_de_declarar_es_409_y_no_cam
     trip_id = await _crear_viaje(conn, planning_date=dia, is_active=True, is_assigned=False)
     motivo = await _motivo_de_viaje(conn)
     await bulk_close_trips(TripBulkCloseBody(trip_ids=[str(trip_id)], unassigned_reason_id=motivo), pool, user)
-    await conn.execute(
-        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
-        "VALUES ($1, 'CLOSED', $2::uuid, now()) "
-        "ON CONFLICT (business_date) DO UPDATE SET status = 'CLOSED', closed_by = $2::uuid, closed_at = now()",
-        dia, user["sub"])
+    await _firmar_dia(conn, dia, user)
 
     with pytest.raises(HTTPException) as exc:
         await bulk_reopen_trips(TripBulkReopenBody(trip_ids=[str(trip_id)]), pool, user)
@@ -733,12 +745,7 @@ async def test_deshacer_un_viaje_de_un_dia_firmado_antes_de_declararlo_se_puede(
     user = await _usuario_real(conn)
     dia = date.fromisoformat("2026-06-12")
     trip_id = await _crear_viaje(conn, planning_date=dia, is_active=True, is_assigned=False)
-    await conn.execute(
-        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
-        "VALUES ($1, 'CLOSED', $2::uuid, now() - interval '1 day') "
-        "ON CONFLICT (business_date) DO UPDATE SET status = 'CLOSED', closed_by = $2::uuid, "
-        "closed_at = now() - interval '1 day'",
-        dia, user["sub"])
+    await _firmar_dia(conn, dia, user, hace=timedelta(days=1))
     await bulk_close_trips(
         TripBulkCloseBody(trip_ids=[str(trip_id)], unassigned_reason_id=await _motivo_de_viaje(conn)), pool, user)
 
