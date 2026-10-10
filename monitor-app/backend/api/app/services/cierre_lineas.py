@@ -28,7 +28,7 @@ from enum import StrEnum
 from fastapi import HTTPException
 
 from .audit import log_change
-from .cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
+from .cierre_viajes import SQL_VIAJES_DEL_DIA
 from .driver_roster import TRACTOREO_ROSTER_CTE
 from .pre_cierre import aplicar_correcciones, avisos_del_dia
 
@@ -305,14 +305,57 @@ async def frescura_del_dia(pool, fecha: date) -> dict:
     return dict(fila)
 
 
+def ultima_firma(dia: str, alias: str) -> str:
+    """La última firma de un día, como LEFT JOIN LATERAL (patrón de
+    `_compliance_alert_lateral`). `dia` es la expresión SQL de la fecha."""
+    return f"""
+    LEFT JOIN LATERAL (
+        SELECT s.id, s.version, s.signed_by, s.signed_at, s.override_count, s.override_note, s.totals
+        FROM app.closure_signatures s
+        WHERE s.business_date = {dia}
+        ORDER BY s.version DESC
+        LIMIT 1
+    ) {alias} ON true
+    """
+
+
+_SQL_FIRMAR = """
+INSERT INTO app.closure_signatures
+    (business_date, version, signed_by, signed_at, override_count, override_note, totals, captured_from)
+SELECT $1, COALESCE(max(version), 0) + 1, $2::uuid, now(), $3, $4, $5::jsonb, 'signing'
+FROM app.closure_signatures WHERE business_date = $1
+RETURNING id, version, signed_at
+"""
+
+_SQL_COPIAR_LINEAS = """
+INSERT INTO app.closure_signature_lines
+    (signature_id, subject_type, subject_id, status, requires_reason, reason_id, valid_until, comentario,
+     resolved_by, resolved_at, computed_at, home_location_id, reason_from_driver_id)
+SELECT $2, l.subject_type, l.subject_id, l.status, l.requires_reason, l.reason_id, l.valid_until, l.comentario,
+       l.resolved_by, l.resolved_at, l.computed_at, l.home_location_id, l.reason_from_driver_id
+FROM app.closure_lines l
+WHERE l.business_date = $1
+"""
+
+_SQL_COPIAR_VIAJES = f"""
+INSERT INTO app.closure_signature_trips (signature_id, trip_id)
+SELECT $2, v.id FROM ({SQL_VIAJES_DEL_DIA}) v
+"""
+
+
 async def periodo(pool, fecha: date) -> dict | None:
+    """El estado del día y su última firma (app.closure_signatures). Las claves
+    closed_by/closed_at/override_count/frozen_totals se conservan para los lectores;
+    vienen de la firma, no de closure_periods (sus columnas se retiran en el contract)."""
     fila = await pool.fetchrow(
-        """
-        SELECT p.status, p.closed_by, p.closed_at, p.override_count, p.frozen_totals,
-               p.reopened_by, p.reopened_at, p.reopen_note,
+        f"""
+        SELECT p.status, p.reopened_by, p.reopened_at, p.reopen_note,
+               s.signed_by AS closed_by, s.signed_at AS closed_at, s.override_count,
+               s.totals AS frozen_totals, s.version AS signature_version,
                cp.full_name AS closed_by_name
         FROM app.closure_periods p
-        LEFT JOIN public.profiles cp ON cp.id = p.closed_by
+        {ultima_firma('p.business_date', 's')}
+        LEFT JOIN public.profiles cp ON cp.id = s.signed_by
         WHERE p.business_date = $1
         """,
         fecha,
@@ -323,6 +366,27 @@ async def periodo(pool, fecha: date) -> dict | None:
     if isinstance(datos["frozen_totals"], str):
         datos["frozen_totals"] = json.loads(datos["frozen_totals"])
     return datos
+
+
+async def firmas_del_dia(pool, fecha: date) -> list[dict]:
+    """Historial de firmas del día, de la más reciente a la más antigua."""
+    filas = await pool.fetch(
+        """
+        SELECT s.version, s.signed_at, s.override_count, s.totals, s.captured_from,
+               p.full_name AS signed_by_name
+        FROM app.closure_signatures s
+        LEFT JOIN public.profiles p ON p.id = s.signed_by
+        WHERE s.business_date = $1
+        ORDER BY s.version DESC
+        """,
+        fecha,
+    )
+    return [
+        {**dict(f), "signed_at": f["signed_at"].isoformat(),
+         "totals": json.loads(f["totals"]) if isinstance(f["totals"], str) else f["totals"]}
+        for f in filas
+    ]
+
 
 
 # ── recalcular ───────────────────────────────────────────────────────────────
@@ -576,7 +640,7 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                 """,
                 fecha,
             )
-            total_trips = await conn.fetchval(SQL_TOTAL_TRIPS_DEL_DIA, fecha)
+            total_trips = await conn.fetchval(f"SELECT count(*) FROM ({SQL_VIAJES_DEL_DIA}) v", fecha)
             totales = {
                 "conductores": conteos["conductores"],
                 "conductores_resueltos": conteos["conductores"] - len(conductores_pendientes),
@@ -584,24 +648,34 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                 "tractos_resueltos": conteos["tractos"] - len(tractos_pendientes),
                 "viajes": total_trips,
             }
-            cerrado = await conn.fetchrow(
+            firma_args = (fecha, user["sub"], forzados if override else 0,
+                          override_note if forzados else None, json.dumps(totales))
+            # Doble escritura mientras dure el expand: closure_periods_cerrado_tiene_firma
+            # exige quién y cuándo en el período CLOSED. Los lectores leen la firma
+            # (`periodo`); estas columnas y ese CHECK se retiran en el contract.
+            await conn.execute(
                 """
                 UPDATE app.closure_periods
                 SET status = 'CLOSED', closed_by = $2::uuid, closed_at = now(),
                     override_count = $3, override_note = $4, frozen_totals = $5::jsonb,
                     updated_at = now()
                 WHERE business_date = $1
-                RETURNING closed_at
                 """,
-                fecha, user["sub"], forzados if override else 0,
-                override_note if forzados else None, json.dumps(totales),
+                *firma_args,
             )
+            # La copia inmutable de lo firmado (spec 2026-10-10 §3). El bloqueo del
+            # período serializa las firmas del día, así que max(version)+1 no choca;
+            # UNIQUE (business_date, version) lo respalda.
+            firma = await conn.fetchrow(_SQL_FIRMAR, *firma_args)
+            await conn.execute(_SQL_COPIAR_LINEAS, fecha, firma["id"])
+            await conn.execute(_SQL_COPIAR_VIAJES, fecha, firma["id"])
 
             await conn.execute("DELETE FROM app.closure_recompute_queue WHERE business_date = $1", fecha)
 
     return {
         "business_date": fecha.isoformat(),
-        "closed_at": cerrado["closed_at"].isoformat(),
+        "closed_at": firma["signed_at"].isoformat(),
+        "version": firma["version"],
         "totales": totales,
         "overridden": forzados if override else 0,
     }

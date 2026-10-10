@@ -26,11 +26,11 @@ DIAS_SIN_NOVEDAD = 7
 # un arreglo de catalogo, no de este servicio.
 GRUPOS_NO_TERMINALES = ("en_ruta", "retornando", "en_local", "otro")
 
-# El universo del dia "posterior al cierre" (Importante 4, revision de rama
-# 2026-08-18): app/routers/daily_closures.py lo necesitaba en DOS lugares
-# (guardar total_trips al firmar, y volver a contarlo despues para el delta)
-# y las dos veces estaba escrito a mano. Un solo lugar, consumido por los dos.
-SQL_TOTAL_TRIPS_DEL_DIA = "SELECT count(*) FROM app.trips WHERE planning_date = $1"
+# Los viajes del día D: los planificados para D y sin anular. Es el universo que firma
+# el Cierre (app.closure_signature_trips, totals.viajes) y contra el que se calculan
+# los ajustes posteriores. Una sola definición (Importante 4, revisión de rama
+# 2026-08-18; spec 2026-10-10 anulación §3). Parámetro: $1 = D.
+SQL_VIAJES_DEL_DIA = "SELECT t.id FROM app.trips t WHERE t.planning_date = $1 AND t.voided_at IS NULL"
 
 SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
            -- El nombre prolijo, no el crudo del TMS. Visto en pantalla el
@@ -90,7 +90,9 @@ SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
     -- que puede alcanzar (abandonado, que no exige fecha) queda disponible
     -- para él, pero un viaje activo sin fecha sigue sin calzar en ningún
     -- grupo (hoy/rezago/en_curso sí exigen fecha, eso no cambia).
-    WHERE t.planning_date <= $1::date OR (t.planning_date IS NULL AND NOT t.is_active)
+    WHERE (t.planning_date <= $1::date OR (t.planning_date IS NULL AND NOT t.is_active))
+      -- Los anulados no se cierran (spec 2026-10-10 anulación §2.2).
+      AND t.voided_at IS NULL
 """
 
 SQL_GRUPOS_CIERRE = f"""

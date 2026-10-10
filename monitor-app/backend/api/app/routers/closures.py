@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.closures import CerrarDiaBody, ReabrirDiaBody
-from ..services.cierre_lineas import cerrar, reabrir
+from ..services.cierre_lineas import cerrar, firmas_del_dia, reabrir
 
 router = APIRouter(prefix="/closures", tags=["closures"])
 
@@ -33,3 +33,9 @@ async def cerrar_dia(fecha: str, body: CerrarDiaBody, pool=Depends(get_pool), us
 @router.post("/{fecha}/reopen")
 async def reabrir_dia(fecha: str, body: ReabrirDiaBody, pool=Depends(get_pool), user=Depends(require(Permission.CLOSURES_SIGN))):
     return await reabrir(pool, _fecha(fecha), nota=body.nota, user=user)
+
+
+@router.get("/{fecha}/signatures")
+async def firmas(fecha: str, pool=Depends(get_pool), user=Depends(require(Permission.OPERATIONS_READ))):
+    """Historial de firmas del día (spec 2026-10-10 §3.2): versión, quién, cuándo, totales."""
+    return {"business_date": fecha, "signatures": await firmas_del_dia(pool, _fecha(fecha))}

@@ -26,9 +26,9 @@ from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
 from ..services.origen_del_viaje import origen_del_viaje
+from ..services.cierre_viajes import SQL_VIAJES_DEL_DIA
 from ..services.cierre_lineas import LINEAS_CONDUCTORES, frescura_del_dia, periodo, poner_motivo
 from ..services.pre_cierre import avisos_del_dia
-from ..services.cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
 
@@ -244,7 +244,7 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
     total_trips_al_firmar = closure_dict.get("total_trips") if closure_dict else None
     posteriores_al_cierre = 0
     if total_trips_al_firmar is not None:
-        ahora = await pool.fetchval(SQL_TOTAL_TRIPS_DEL_DIA, business_date)
+        ahora = await pool.fetchval(f"SELECT count(*) FROM ({SQL_VIAJES_DEL_DIA}) v", business_date)
         posteriores_al_cierre = max(0, ahora - total_trips_al_firmar)
 
     return {

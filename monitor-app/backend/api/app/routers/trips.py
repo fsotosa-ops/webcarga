@@ -21,6 +21,7 @@ from ..services.audit import log_change
 from ..services.anular_viajes import (
     SQL_COLUMNAS_ANULABLE, SQL_JOIN_ANULABLE, anotar_anulable, anular_viajes, revertir_anulacion,
 )
+from ..services.cierre_lineas import ultima_firma
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 from ..services.origen_del_viaje import origen_del_viaje
 
@@ -2574,12 +2575,13 @@ async def bulk_reopen_trips(
             # firmado, no se podía deshacer. Sin traza de la declaración no hay
             # cómo saberlo, y se bloquea.
             firmados = await conn.fetch(
-                """
+                f"""
                 SELECT DISTINCT cp.business_date
                 FROM app.trips t
                 JOIN app.closure_periods cp
                   ON cp.status = 'CLOSED'
                  AND cp.business_date BETWEEN t.planning_date AND t.planning_date + 45
+                {ultima_firma('cp.business_date', 'firma')}
                 LEFT JOIN LATERAL (
                     SELECT max(a.occurred_at) AS declarado_at
                     FROM public.audit_log a
@@ -2589,7 +2591,7 @@ async def bulk_reopen_trips(
                 ) decl ON true
                 WHERE t.id = ANY($1::uuid[])
                   AND t.id IN (SELECT trip_id FROM app.trips_del_dia(cp.business_date))
-                  AND (decl.declarado_at IS NULL OR cp.closed_at >= decl.declarado_at)
+                  AND (decl.declarado_at IS NULL OR firma.signed_at >= decl.declarado_at)
                 ORDER BY 1
                 """,
                 ids,
