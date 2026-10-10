@@ -16,7 +16,7 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-09 — Roles y permisos (RBAC NIST): Tasks 1-11 DESPLEGADAS en dev
+### 2026-10-09 — Roles y permisos (RBAC NIST): plan completo (Tasks 1-13) en dev
 
 Pedido del usuario: modelo de roles y permisos de estándar de industria, *"sin parche, respetando el diseño del
 backend, mantenible, robusto y escalable"*. Spec: `docs/superpowers/specs/2026-10-09-roles-y-permisos-design.md`
@@ -63,18 +63,26 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
       caída de la API ya no cierra sesión (`7d70b10b`); candado del último Propietario (`e73fe88c`); cada
       sección de Configuración edita con el permiso de su API, alertas de vencimiento → certification.configure
       (`29e5266a`); extender la vigencia de un documento aprobado exige revisar (`5e8582d8`).
-- [ ] **Menores diferidos (decide el usuario)**: ver líneas `minor (deferred)` del ledger — PUT roles con [] y
-      500 por id inválido, prefijo para códigos personalizados, inventario de Configuración, "Confirmar cierre"
-      sin closures.sign, toggleActive silencioso, lecturas no separadas por área, huecos de test.
-- [ ] Spec §9: registrar el otorgamiento del 09/10 (3 Lectura → + Operador de Operaciones, pedido del usuario).
-- [ ] Task 13 (contract) cuando la API de `main` se redespliegue o retire; resuelve también que set_user_roles
-      no escribe profiles.role.
-- [ ] Hallazgo para la revisión final: `GET /config/inventario` exige settings.manage (Supervisores ven la portada
-      sin conteos) y expone el conteo de personas sin users.manage.
-- [ ] Task 13: contract (DROP `profiles.role` / `admin_whitelist.role`) — compuerta: la API de `main`
-      (`webcarga-monitor-api`) redesplegada o retirada, porque todavía lee `profiles.role`.
-- [ ] Revisión final de toda la rama (revisor fresco, modelo más capaz) → finishing-a-development-branch.
-- [ ] Nota: "Confirmar cierre" sigue visible sin `closures.sign` (la API da 403); candidato para la Task 12.
+- [x] Spec §9 con los ajustes del 09/10 (`c0a69b1d`).
+- [x] Task 13 contract (`23fef6ee` + migración `rbac_contract` aplicada): sin `profiles.role` ni
+      `admin_whitelist.role`; respaldo en `app.rbac_legacy_roles` (24 filas); `is_admin()` sobre users.manage.
+      Decisión del usuario: *"solo aplica dev de momento, no tomes en cuenta main"* — el stack de `main`
+      (api/frontend prod, sin uso en 30 días, misma base) queda roto hasta desplegar `main`.
+- [ ] **Menores diferidos (decide el usuario)**, de la revisión final:
+      - PUT /users/{id}/roles acepta `[]` y responde 500 con un id inválido (debería 422/404).
+      - Códigos de roles personalizados sin prefijo reservado (posible choque con un rol de sistema futuro).
+      - GET /config/inventario exige settings.manage: Supervisores ven la portada sin conteos; expone el
+        conteo de personas sin users.manage.
+      - "Confirmar cierre" visible sin closures.sign (Lectura/Soporte); la API responde 403.
+      - toggleActive en UsersTable revierte en silencio ante 403/409.
+      - set_user_roles valida el conjunto completo: conservar un rol que el actor no podría dar también falla.
+      - Ventana chica de caché obsoleta (lectura antes del commit escrita después de invalidate_access).
+      - Huecos de test: caché tras cambio de roles; rol personalizado con solo permisos retirados (huérfanos
+        solo en el log).
+      - Lecturas no separadas por área (directory.read sirve pólizas y documentos; el Sidebar no esconde por
+        lectura) — solo importa para roles personalizados restringidos.
+- [ ] Para WebCarga (sin código): asignar a cada persona su área real, nombrar un segundo Propietario de
+      WebCarga y pasar la cuenta de Sumadots a Soporte técnico.
 - [ ] Pendiente previo, independiente: probar invitación por correo y recuperación con f.soto.santibanez@gmail.com.
 
 ### 2026-10-09 — Seguridad de acceso: solo por invitación, mínimo privilegio, MFA para admin
