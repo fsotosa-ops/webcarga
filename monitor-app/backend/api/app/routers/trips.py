@@ -14,12 +14,12 @@ from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
-    AsignarConductorBody, TripBulkCloseBody, TripBulkDeleteBody, TripBulkReopenBody, TripPatch, TripStopPatch,
+    AsignarConductorBody, TripBulkCloseBody, TripVoidBody, TripVoidRevertBody, TripBulkReopenBody, TripPatch, TripStopPatch,
     STOP_FIELD_PERMISSIONS, TRIP_FIELD_PERMISSIONS,
 )
 from ..services.audit import log_change
-from ..services.eliminar_viajes import (
-    SQL_COLUMNAS_ELIMINABLE, SQL_JOIN_ELIMINABLE, anotar_eliminable, eliminar_viajes_manuales,
+from ..services.anular_viajes import (
+    SQL_COLUMNAS_ANULABLE, SQL_JOIN_ANULABLE, anotar_anulable, anular_viajes, revertir_anulacion,
 )
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 from ..services.origen_del_viaje import origen_del_viaje
@@ -605,7 +605,7 @@ _FLEET_MATCH_CASE = """
       ELSE 'MATCHED'
     END
 """
-_TRIP_SELECT = _TRIP_SELECT.format(fleet_match_case=_FLEET_MATCH_CASE) + ",\n" + SQL_COLUMNAS_ELIMINABLE
+_TRIP_SELECT = _TRIP_SELECT.format(fleet_match_case=_FLEET_MATCH_CASE) + ",\n" + SQL_COLUMNAS_ANULABLE
 
 
 def _compliance_alert_lateral(alias: str, entity_type: str, id_expr: str, critical_codes: tuple[str, ...] = ()) -> str:
@@ -663,9 +663,9 @@ _DRIVER_CRITICAL_DOC_CODES = ("LICENCIA_CONDUCIR", "COPIA_CI_CONDUCTOR")
 
 _TRIP_FROM = """
     FROM app.trips t
-    -- Quién creó un viaje manual: decide si se puede eliminar (ver
-    -- services/eliminar_viajes.py). 1:1 por PK, no multiplica filas.
-    """ + SQL_JOIN_ELIMINABLE + """
+    -- Quién creó un viaje manual, quién lo anuló y si su día está firmado: deciden
+    -- si se puede anular (ver services/anular_viajes.py). 1:1, no multiplican filas.
+    """ + SQL_JOIN_ANULABLE + """
     -- FIX 2026-07-18 (Fase 1 del hardening): antes unía por fl.id = t.fleet_link_id,
     -- una columna que dbt resetea a NULL en cada --full-refresh de app.trips
     -- (protegida solo en el MERGE incremental, no en un full-refresh que
@@ -787,6 +787,8 @@ async def list_trips(
     user=Depends(require(Permission.OPERATIONS_READ)),
 ):
     filters: list[str] = [
+        # Los anulados no se listan (spec 2026-10-10 anulación §2.2); el detalle sí los abre.
+        "t.voided_at IS NULL",
         "($1 = '' OR t.fleet->>'tractor_plate' ILIKE '%'||$1||'%' "
         "OR fl.tractor_plate ILIKE '%'||$1||'%' "
         "OR t.fleet->>'driver_name_tms' ILIKE '%'||$1||'%' "
@@ -938,7 +940,7 @@ async def list_trips(
         _attach_origin(d)
         _apply_operation_types(d, op_type_buckets)
         d["tms_dropped"] = _tms_dropped(d, dropped_ctx)
-        anotar_eliminable(d, user)
+        anotar_anulable(d, user)
 
     return {"data": data, "count": count, "page": page, "limit": limit}
 
@@ -2370,41 +2372,29 @@ async def get_trip(
     op_type_buckets = await _load_operation_type_buckets(pool, client_names)
     _apply_operation_types(d, op_type_buckets)
     await _log_tms_divergence_once(pool, trip_id, user, d)
-    anotar_eliminable(d, user)
+    anotar_anulable(d, user)
     return d
 
 
-async def _eliminar(pool, supabase, trip_ids: list[str], user: dict) -> dict:
+@router.post("/void")
+async def void_trips(body: TripVoidBody, pool=Depends(get_pool), user=Depends(require(Permission.TRIPS_VOID))):
+    """Anula viajes manuales con motivo, todo o nada. El permiso fino (creador,
+    trips.void_any o closures.sign si su día está firmado) se decide por viaje en
+    services/anular_viajes.py. Declarado antes de las rutas /{trip_id}."""
     async with pool.acquire() as conn:
         async with conn.transaction():
-            rutas = await eliminar_viajes_manuales(conn, trip_ids, user)
-    # Después del commit: un archivo borrado no vuelve con un rollback. Si
-    # Storage falla, queda un archivo huérfano, nunca un viaje a medias.
-    if rutas:
-        try:
-            supabase.storage.from_(ATTACHMENT_BUCKET).remove(rutas)
-        except Exception:
-            pass
-    return {"ok": True, "deleted": len(dict.fromkeys(trip_ids))}
+            n = await anular_viajes(conn, [str(t) for t in body.trip_ids], body.reason, user)
+    return {"ok": True, "voided": n}
 
 
-@router.post("/bulk-delete")
-async def bulk_delete_trips(
-    body: TripBulkDeleteBody, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require(Permission.TRIPS_DELETE)),
+@router.post("/void/revert")
+async def revert_void_trips(
+    body: TripVoidRevertBody, pool=Depends(get_pool), user=Depends(require(Permission.TRIPS_VOID)),
 ):
-    """Elimina viajes manuales en lote, todo o nada. El permiso fino (creador
-    o admin/owner, día no firmado) se decide por viaje en
-    services/eliminar_viajes.py; la ruta sólo exige poder escribir."""
-    return await _eliminar(pool, supabase, [str(t) for t in body.trip_ids], user)
-
-
-@router.delete("/{trip_id}")
-async def delete_trip(
-    trip_id: UUID, pool=Depends(get_pool),
-    supabase=Depends(get_supabase), user=Depends(require(Permission.TRIPS_DELETE)),
-):
-    return await _eliminar(pool, supabase, [str(trip_id)], user)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            n = await revertir_anulacion(conn, [str(t) for t in body.trip_ids], user)
+    return {"ok": True, "reverted": n}
 
 
 @router.patch("/bulk-close")

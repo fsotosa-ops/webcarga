@@ -56,7 +56,7 @@ def test_el_supervisor_incluye_al_operador():
 def test_firma_y_borrado_de_viajes_en_el_operador():
     # Hoy writer firma, reabre y elimina viajes manuales (require_writer): nadie pierde.
     op = next(r for r in SYSTEM_ROLES if r.code == "operations_operator")
-    assert {Permission.CLOSURES_SIGN, Permission.TRIPS_DELETE} <= op.permissions
+    assert {Permission.CLOSURES_SIGN, Permission.TRIPS_VOID} <= op.permissions
 
 
 def test_privilegiados_son_los_de_administracion():
@@ -91,14 +91,19 @@ def test_lo_que_hoy_es_solo_de_admin_queda_en_administracion():
     cierre con pendientes y eliminar viajes manuales de otra persona. Se
     conservan en Administración: nadie gana ni pierde (spec §9)."""
     admin = next(r for r in SYSTEM_ROLES if r.code == "admin")
-    assert {Permission.CLOSURES_OVERRIDE, Permission.TRIPS_DELETE_ANY} <= admin.permissions
+    assert {Permission.CLOSURES_OVERRIDE, Permission.TRIPS_VOID_ANY} <= admin.permissions
     for r in SYSTEM_ROLES:
         if r.code not in ("admin", "owner"):
             assert Permission.CLOSURES_OVERRIDE not in r.permissions, r.code
-            assert Permission.TRIPS_DELETE_ANY not in r.permissions, r.code
+            assert Permission.TRIPS_VOID_ANY not in r.permissions, r.code
 
 
 def test_ningun_rol_de_sistema_usa_el_prefijo_de_los_personalizados():
     """Menor 6 de la revisión final RBAC: los personalizados son custom_*; un
     rol de sistema con ese prefijo podría chocar con uno ya creado."""
     assert not [r.code for r in SYSTEM_ROLES if r.code.startswith("custom_")]
+
+
+def test_eliminar_viajes_ya_no_es_un_permiso():
+    """Eliminar pasó a anular con motivo (spec 2026-10-10): el borrado físico no existe."""
+    assert not any(p.value.startswith("trips.delete") for p in Permission)

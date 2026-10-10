@@ -23,8 +23,8 @@ class Permission(str, Enum):
     TRIPS_EDIT_BASIC = "trips.edit_basic"
     TRIPS_EDIT_SENSITIVE = "trips.edit_sensitive"
     TRIPS_CREATE = "trips.create"
-    TRIPS_DELETE = "trips.delete"
-    TRIPS_DELETE_ANY = "trips.delete_any"
+    TRIPS_VOID = "trips.void"
+    TRIPS_VOID_ANY = "trips.void_any"
     CLOSURES_DECLARE = "closures.declare"
     CLOSURES_SIGN = "closures.sign"
     CLOSURES_OVERRIDE = "closures.override"
@@ -68,8 +68,8 @@ PERMISSION_META: dict[Permission, PermissionMeta] = {
     P.TRIPS_EDIT_BASIC: PermissionMeta("operations", "Editar los campos básicos de un viaje, sus paradas y notas"),
     P.TRIPS_EDIT_SENSITIVE: PermissionMeta("operations", "Editar patente, conductor, empresa y vínculo de flota de un viaje"),
     P.TRIPS_CREATE: PermissionMeta("operations", "Crear viajes manuales y cargarlos en lote"),
-    P.TRIPS_DELETE: PermissionMeta("operations", "Eliminar los viajes manuales que creó uno mismo"),
-    P.TRIPS_DELETE_ANY: PermissionMeta("operations", "Eliminar viajes manuales creados por otra persona"),
+    P.TRIPS_VOID: PermissionMeta("operations", "Anular con motivo los viajes manuales que creó uno mismo, en días abiertos"),
+    P.TRIPS_VOID_ANY: PermissionMeta("operations", "Anular con motivo viajes manuales creados por otra persona, en días abiertos"),
     P.CLOSURES_DECLARE: PermissionMeta("operations", "Declarar motivos en el cierre del día"),
     P.CLOSURES_SIGN: PermissionMeta("operations", "Firmar y reabrir el cierre del día"),
     P.CLOSURES_OVERRIDE: PermissionMeta("operations", "Firmar el cierre del día con pendientes"),
@@ -112,7 +112,7 @@ def _rol(code: str, name: str, description: str, *extra: Permission) -> SystemRo
     return SystemRole(code, name, description, READ_ALL | frozenset(extra))
 
 
-_OPS_OPERADOR = (P.TRIPS_EDIT_BASIC, P.TRIPS_DELETE, P.CLOSURES_DECLARE, P.CLOSURES_SIGN)
+_OPS_OPERADOR = (P.TRIPS_EDIT_BASIC, P.TRIPS_VOID, P.CLOSURES_DECLARE, P.CLOSURES_SIGN)
 _CERT_OPERADOR = (P.DOCUMENTS_UPLOAD,)
 _SEG_OPERADOR = (P.POLICIES_EDIT,)
 
@@ -120,10 +120,10 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     SystemRole("owner", "Propietario (Super admin)",
                "Dueño funcional de WebCarga: puede todo y nombra a otros Propietarios.",
                frozenset(), grants_all=True),
-    # CLOSURES_OVERRIDE y TRIPS_DELETE_ANY: hoy solo admin (chequeos que vivían
-    # en services/cierre_lineas.py y services/eliminar_viajes.py); se conservan acá.
+    # CLOSURES_OVERRIDE y TRIPS_VOID_ANY: hoy solo admin (chequeos que viven en
+    # services/cierre_lineas.py y services/anular_viajes.py).
     _rol("admin", "Administración", "Gestiona personas, roles y la configuración general.",
-         P.USERS_MANAGE, P.ROLES_MANAGE, P.SETTINGS_MANAGE, P.CLOSURES_OVERRIDE, P.TRIPS_DELETE_ANY),
+         P.USERS_MANAGE, P.ROLES_MANAGE, P.SETTINGS_MANAGE, P.CLOSURES_OVERRIDE, P.TRIPS_VOID_ANY),
     _rol("support", "Soporte técnico (proveedor)", "Lee para diagnosticar; no ejecuta acciones de negocio."),
     _rol("reader", "Lectura", "Ve todas las áreas sin editar."),
     _rol("operations_operator", "Operador de Operaciones",
