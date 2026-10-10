@@ -1377,13 +1377,35 @@ export type PreCierreResult = {
   escalations:   PreCierreEscalations
 }
 
-/** Tarea 7 (plan cierre-paso-viajes): el delta de viajes que llegaron
- *  después de firmar el día. El día no se reabre — la firma sigue siendo
- *  verdadera sobre `total_trips_al_firmar`; `posteriores_al_cierre` es lo
- *  que se sumó después, sin invalidar la firma original. */
+/** Un cambio en un día firmado, posterior a su última firma (spec 2026-10-10 §4):
+ *  un viaje del día que no estaba en la firma (agregado) o uno firmado que ya no
+ *  está (quitado; si fue por anulación, quién, cuándo y el motivo). */
+export type AjustePosterior = {
+  trip_id:               string
+  tipo:                  'agregado' | 'quitado'
+  source_system_trip_id: string | null
+  client_name:           string | null
+  voided_at:             string | null
+  voided_by_name:        string | null
+  void_reason:           string | null
+}
+
+/** Una firma del día (GET /closures/{fecha}/signatures). */
+export type FirmaDelDia = {
+  version:        number
+  signed_at:      string
+  signed_by_name: string | null
+  override_count: number
+  totals:         Record<string, number>
+  captured_from:  'signing' | 'backfill'
+}
+
+/** El día no se reabre: la firma es una copia inmutable de lo que existía al
+ *  firmar, y `ajustes` son los cambios posteriores, viaje por viaje
+ *  (spec 2026-10-10 §4). */
 export type CierrePosteriorInfo = {
   total_trips_al_firmar: number | null
-  posteriores_al_cierre: number
+  ajustes:               AjustePosterior[]
 }
 
 export type DailyClosureStatus = {

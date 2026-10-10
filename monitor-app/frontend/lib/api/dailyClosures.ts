@@ -13,9 +13,8 @@ export type CambiosDeLinea = {
 }
 
 export const dailyClosuresApi = {
-  /** Trae `cierre.posteriores_al_cierre` además del detalle por conductor — el
-   *  día firmado no se recalcula, ese campo es el delta de viajes que llegaron
-   *  después de la firma. */
+  /** Trae `cierre.ajustes` además del detalle por conductor — el día firmado no
+   *  se recalcula; son los cambios posteriores a la firma, viaje por viaje. */
   get: (fecha: string) =>
     apiFetch<DailyClosureStatus>(`/api/v1/daily-closures?fecha=${encodeURIComponent(fecha)}`),
 

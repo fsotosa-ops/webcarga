@@ -39,7 +39,7 @@ vi.mock('@/lib/api/equipmentClosures', () => ({
 }))
 
 vi.mock('@/lib/api/closures', () => ({
-  closuresApi: { cerrar: vi.fn(), reabrir: vi.fn() },
+  closuresApi: { cerrar: vi.fn(), reabrir: vi.fn(), signatures: vi.fn().mockResolvedValue({ business_date: '', signatures: [] }) },
   isCierrePendienteError: vi.fn(() => false),
 }))
 
@@ -62,7 +62,7 @@ vi.mock('@/lib/api/statusReport', () => ({
 
 const EMPTY_STATUS: DailyClosureStatus = {
   business_date: '2026-08-04', closed: false, closure: null,
-  cierre: { total_trips_al_firmar: null, posteriores_al_cierre: 0 },
+  cierre: { total_trips_al_firmar: null, ajustes: [] },
   total_drivers: 0, assigned_count: 0, unassigned_count: 0, mismatch_count: 0, pending_count: 0,
   drivers: [], pre_cierre: EMPTY_PRE_CIERRE,
 }

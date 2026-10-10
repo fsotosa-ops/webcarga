@@ -19,7 +19,8 @@ import { FlotaDelDiaSection } from '@/components/dashboard/sections/FlotaDelDiaS
 import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
 import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
 import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSection'
-import { AvisoPosteriorAlCierre } from '@/components/dashboard/AvisoPosteriorAlCierre'
+import { AjustesPosterioresAlCierre } from '@/components/dashboard/AjustesPosterioresAlCierre'
+import { HistorialDeFirmas } from '@/components/dashboard/HistorialDeFirmas'
 import { AvisoDeActualizacion } from '@/components/dashboard/AvisoDeActualizacion'
 import { Estado } from '@/components/ui/Estado'
 import { urlDelViaje } from '@/lib/navegacion/viaje'
@@ -121,8 +122,8 @@ function ClosuresCenterPageInner() {
 
   // Tarea 7 (plan cierre-paso-viajes): misma queryKey que FlotaDelDiaSection
   // — se comparte la respuesta ya en caché, no se dispara un segundo fetch.
-  // El día no se reabre: `posteriores_al_cierre` es sólo el delta que llegó
-  // después de la firma.
+  // El día no se reabre: `cierre.ajustes` son los cambios posteriores a la firma,
+  // viaje por viaje (spec 2026-10-10 §4).
   const cierreQuery = useQuery({
     queryKey: ['daily-closure', fecha],
     queryFn: () => dailyClosuresApi.get(fecha),
@@ -132,6 +133,13 @@ function ClosuresCenterPageInner() {
   })
 
   const diaCerrado = cierreQuery.data?.closed ?? false
+
+  // Las veces que se firmó el día (spec 2026-10-10 §3): sólo si está firmado.
+  const firmasQuery = useQuery({
+    queryKey: ['closure-signatures', fecha],
+    queryFn: () => closuresApi.signatures(fecha),
+    enabled: diaCerrado,
+  })
 
   // Cuando el día queda al día, las otras dos consultas del mismo día también
   // se refrescan: las tres leen las mismas líneas.
@@ -208,6 +216,7 @@ function ClosuresCenterPageInner() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] }),
       queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] }),
+      queryClient.invalidateQueries({ queryKey: ['closure-signatures', fecha] }),
     ])
   }
 
@@ -261,12 +270,16 @@ function ClosuresCenterPageInner() {
     }
   }
 
-  function handleSelectTrip(tripId: string) {
-    // Al cerrar el detalle, de vuelta a este cierre: misma fecha y pestaña.
+  /** Este cierre, con su fecha y pestaña: a donde vuelve el detalle de un viaje. */
+  function urlDeEsteCierre(): string {
     const params = new URLSearchParams(searchParams.toString())
     params.set('fecha', fecha)
     params.set('tab', tab)
-    router.push(urlDelViaje(tripId, `/dashboard/operations/closures?${params.toString()}`))
+    return `/dashboard/operations/closures?${params.toString()}`
+  }
+
+  function handleSelectTrip(tripId: string) {
+    router.push(urlDelViaje(tripId, urlDeEsteCierre()))
   }
 
   return (
@@ -298,9 +311,11 @@ function ClosuresCenterPageInner() {
       {/* Va AL LADO del encabezado de arriba, no lo reemplaza: el día sigue
           firmado y sigue diciendo "Cerrado" — esto es el delta que llegó
           después, nunca una reapertura. */}
-      <AvisoPosteriorAlCierre
-        cantidad={cierreQuery.data?.cierre?.posteriores_al_cierre ?? 0}
+      <AjustesPosterioresAlCierre
+        ajustes={cierreQuery.data?.cierre?.ajustes ?? []}
+        volverA={urlDeEsteCierre()}
       />
+      <HistorialDeFirmas firmas={firmasQuery.data?.signatures ?? []} />
       {cierreQuery.data && (
         <AvisoDeActualizacion pendienteDesde={pendiente} calculadoA={cierreQuery.data.calculado_a ?? null} />
       )}

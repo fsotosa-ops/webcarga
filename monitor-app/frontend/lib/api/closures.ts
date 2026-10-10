@@ -1,5 +1,5 @@
 import { apiFetch, ApiError } from './client'
-import type { DriverDayStatusValue, EquipmentClosePending } from '@/lib/types'
+import type { DriverDayStatusValue, EquipmentClosePending, FirmaDelDia } from '@/lib/types'
 
 /** Un viaje cuya flota no está en el directorio, tal como lo arma
  *  `pendientes_de_flota` en services/cierre_lineas.py: `tipo` más los campos de
@@ -57,5 +57,11 @@ export const closuresApi = {
     apiFetch<{ business_date: string; status: 'OPEN' }>(
       `/api/v1/closures/${encodeURIComponent(fecha)}/reopen`,
       { method: 'POST', body: JSON.stringify({ nota }) },
+    ),
+
+  /** Historial de firmas del día, de la más reciente a la más antigua (spec 2026-10-10 §3.2). */
+  signatures: (fecha: string) =>
+    apiFetch<{ business_date: string; signatures: FirmaDelDia[] }>(
+      `/api/v1/closures/${encodeURIComponent(fecha)}/signatures`,
     ),
 }
