@@ -18,6 +18,22 @@
 
 ### 2026-10-09 — Roles y permisos (RBAC NIST): plan completo (Tasks 1-13) en dev
 
+> **Cierre de sesión 2026-10-10 (~00:00 CL).** Todo comiteado y desplegado en dev (último `feat(marca)` de la barra
+> contraída). Nada en vuelo, ningún job ni deploy corriendo.
+>
+> **Siguiente paso exacto (en este orden):**
+> 1. Para WebCarga, sin código: asignar a cada persona su área real, nombrar un segundo Propietario de WebCarga y
+>    pasar la cuenta de Sumadots a Soporte técnico (Configuración › Personas y accesos › Editar roles).
+> 2. Probar invitación por correo y recuperación de contraseña con f.soto.santibanez@gmail.com (pendiente del 09/10).
+> 3. Pedir a WebCarga el logo en SVG o PNG grande (el del sitio es 279×60; se reemplaza en `public/brand/`).
+> 4. Pendientes por decisión del usuario: menores 8 (caché 60 s) y 9 (lectura por área).
+> 5. El stack de `main` sigue roto a propósito (lee `profiles.role`, ya borrada): resolver al desplegar `main`.
+>
+> **Decisiones de arquitectura de esta sesión:** permisos en código / roles y asignaciones en base (NIST RBAC);
+> el permiso que edita cada sección de Configuración vive en `secciones.ts` y `REVISABLES` con test de sincronía;
+> candado único `LLAVE_PROPIETARIOS` para todo lo que toca Propietarios; rutas siempre en inglés
+> (`lib/rutas.test.ts`); marca en un solo componente `LogoWebCarga` (forma como prop); estáticos fuera del proxy.
+
 Pedido del usuario: modelo de roles y permisos de estándar de industria, *"sin parche, respetando el diseño del
 backend, mantenible, robusto y escalable"*. Spec: `docs/superpowers/specs/2026-10-09-roles-y-permisos-design.md`
 (`3db8062d`). Proceso: superpowers:brainstorming, ruta arquitectónica (spec → plan → ejecución).
@@ -81,6 +97,8 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
       y login, cubo azul en encabezado móvil y contraseñas; `app/icon.png` reemplaza el favicon de Next; el
       proxy deja pasar archivos estáticos (`proxy.matcher.test.ts`). Pendiente: pedir a WebCarga el logo en
       SVG o PNG grande (el del sitio es de baja resolución).
+- [x] Barra lateral: logo centrado en su franja (`block`, 20 px) y, contraída, el cubo de WebCarga como botón
+      "Expandir barra lateral".
 - [ ] Pendientes por decisión del usuario (10/10, "dejemos pendiente 8 y 9"): ventana de hasta 60 s de permisos viejos en caché tras
       cambiar roles; lecturas no separadas por área (solo importa con roles personalizados restringidos).
 - [ ] Para WebCarga (sin código): asignar a cada persona su área real, nombrar un segundo Propietario de
