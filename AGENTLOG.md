@@ -76,7 +76,12 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
 - [x] Ruta en español corregida (feedback del usuario, "de nuevo estás usando rutas en español"):
       `/auth/no-disponible` → `/auth/unavailable` (`3da942c3`) + `lib/rutas.test.ts`, que obliga a declarar cada
       segmento de ruta en inglés (solo quedan las dos redirecciones viejas `configuracion` y `usuarios`).
-- [ ] Diferidos a propósito (el usuario eligió 1-7): ventana de hasta 60 s de permisos viejos en caché tras
+- [x] Marca (`fd0e2d8a`, en dev): logo e ícono oficiales tomados de app.webcarga.com con Playwright
+      (`public/brand/`, PNG 279×60 y 64×64). `LogoWebCarga forma="completo|isotipo"`: blanco en barra lateral
+      y login, cubo azul en encabezado móvil y contraseñas; `app/icon.png` reemplaza el favicon de Next; el
+      proxy deja pasar archivos estáticos (`proxy.matcher.test.ts`). Pendiente: pedir a WebCarga el logo en
+      SVG o PNG grande (el del sitio es de baja resolución).
+- [ ] Pendientes por decisión del usuario (10/10, "dejemos pendiente 8 y 9"): ventana de hasta 60 s de permisos viejos en caché tras
       cambiar roles; lecturas no separadas por área (solo importa con roles personalizados restringidos).
 - [ ] Para WebCarga (sin código): asignar a cada persona su área real, nombrar un segundo Propietario de
       WebCarga y pasar la cuenta de Sumadots a Soporte técnico.
