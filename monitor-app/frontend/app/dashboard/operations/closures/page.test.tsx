@@ -42,7 +42,8 @@ vi.mock('@/lib/api/closures', () => ({
   isCierrePendienteError: vi.fn(() => false),
 }))
 
-// Por defecto sin ningún permiso de cierre: el default es la puerta más chica.
+// Por defecto, el Operador de Operaciones (declara y firma): quien usa esta
+// pantalla. Forzar y la vista sin firma se prueban aparte.
 const permisos = vi.hoisted(() => ({ dados: new Set<string>() }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: (p: string) => permisos.dados.has(p) }))
 
@@ -100,7 +101,7 @@ beforeEach(async () => {
   vi.mocked(closuresApi.cerrar).mockReset()
   vi.mocked(closuresApi.reabrir).mockReset()
   vi.mocked(isCierrePendienteError).mockReset().mockReturnValue(false)
-  permisos.dados = new Set()
+  permisos.dados = new Set(['closures.declare', 'closures.sign'])
   push.mockReset(); replace.mockReset()
 })
 
@@ -131,6 +132,15 @@ describe('ClosuresCenterPage', () => {
     expect(screen.getByLabelText('Fecha del cierre')).toHaveValue('2026-08-04')
 
     await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalledWith('2026-08-04'))
+  })
+
+  // Menor 1 de la revisión final: Lectura y Soporte veían el botón y la API
+  // les respondía 403.
+  it('sin closures.sign no ofrece firmar y dice quién lo hace', async () => {
+    permisos.dados = new Set()
+    renderPage()
+    expect(await screen.findByText(/El cierre lo firma Operaciones/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmar cierre' })).not.toBeInTheDocument()
   })
 
   it('"Confirmar cierre" está siempre visible, sin importar qué tab esté activa', () => {
@@ -185,6 +195,7 @@ describe('ClosuresCenterPage', () => {
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(CERRADO)
     vi.mocked(closuresApi.reabrir).mockResolvedValue({ business_date: '2026-08-04', status: 'OPEN' })
 
+    permisos.dados = new Set()
     const sinPermiso = renderPage()
     await screen.findByText(/Día cerrado por/)
     expect(screen.queryByRole('button', { name: /Reabrir día/ })).not.toBeInTheDocument()

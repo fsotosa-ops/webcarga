@@ -72,7 +72,9 @@ function ClosuresCenterPageInner() {
   const [tripsMeta, setTripsMeta] = useState<TripsMeta | null>(null)
   // Forzar con pendientes: closures.override; reabrir: closures.sign (RBAC).
   const puedeForzar = usePermiso('closures.override')
+  // Firmar y reabrir son el mismo permiso (closures.sign).
   const puedeReabrir = usePermiso('closures.sign')
+  const puedeFirmar = puedeReabrir
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [overridePending, setOverridePending] = useState(false)
@@ -343,7 +345,9 @@ function ClosuresCenterPageInner() {
             <div>
               <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Firma conductores y tractos juntos. Los dos exigen motivo en sus pendientes; Equipo Completo nunca bloquea.
+                {puedeFirmar
+                  ? 'Firma conductores y tractos juntos. Los dos exigen motivo en sus pendientes; Equipo Completo nunca bloquea.'
+                  : 'El cierre lo firma Operaciones. Puedes revisarlo, pero no firmarlo.'}
               </p>
             </div>
           )}
@@ -392,7 +396,7 @@ function ClosuresCenterPageInner() {
               datos que todavia no llegaron. El boton solo miraba `closing` (si
               el cierre esta en curso), asi que quedaba habilitado mientras el
               area de datos mostraba el spinner. */}
-          {!diaCerrado && (
+          {!diaCerrado && puedeFirmar && (
             <button
               type="button"
               disabled={closing || cargandoDatos}
